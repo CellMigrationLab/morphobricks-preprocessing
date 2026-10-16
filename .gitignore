@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Tools
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Generated experiment data (regenerate with the scripts in experiments/)
+experiments/**/simulated_experiment*/
+experiments/**/results*/
+experiments/**/*_parameters.json
+
+# Image data and outputs never belong in the repository
+*.tif
+*.tiff
+*_MorphoBricks_Preprocessing/
+
+# OS files
+.DS_Store
+Thumbs.db
