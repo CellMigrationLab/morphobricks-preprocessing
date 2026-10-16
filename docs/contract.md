@@ -14,8 +14,10 @@ new `schema_version`.
 | Leaf folder | A folder that contains images and no subfolders. Only TIFFs directly in leaf folders are analysed. |
 | Missing levels | A branch may stop early; the missing labels are `single`. If the root itself is the leaf, all three labels are `single`. |
 | Skipped levels | Not possible: a level only exists below its parent level. |
-| Reserved name | A folder named `single` is an error. |
-| Uniqueness | Folder names need only be unique among siblings. |
+| Reserved name | A folder named `single` (in any upper/lower case) is an error. |
+| Uniqueness | Folder names need only be unique among siblings, ignoring case: siblings whose names differ only in case are an error. |
+| Depth | At most three folder levels below the root. A folder below the technical-repeat level is an error. |
+| System files | Dot-files and dot-folders (`.DS_Store`, `._*`, `.ipynb_checkpoints`), `Thumbs.db`, `desktop.ini` and `__MACOSX` are ignored without a warning. |
 | Scope | A group is identified by its full label path, e.g. `(control, bio_rep1)`. |
 | Paths | `source_relative_path` is relative to the experiment root, with `/` separators. |
 
@@ -118,7 +120,7 @@ A zero or non-finite scale is an error with a plain-language message.
 
 | Severity | Situations | Effect |
 |---|---|---|
-| Error | Mixed dtypes; unreadable TIFF in a leaf folder; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, inconsistent mapping; plane over the memory limit; folder named `single`; output folder inside the experiment; no usable planes | Processing is blocked |
+| Error | Mixed dtypes; unreadable TIFF in a leaf folder; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, inconsistent mapping; plane over the memory limit; folder named `single`; sibling folders differing only in case; folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
 | Warning | Non-TIFF files; empty folders; TIFFs outside leaf folders; non-finite pixels; different image sizes with a valid mapping; planes without finite pixels while others remain | Processing continues; the item is reported |
 
 Every message states what happened in plain language, lists the affected paths, and

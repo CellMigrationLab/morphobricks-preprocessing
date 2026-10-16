@@ -151,8 +151,10 @@ complete successful run.
 
 Block processing for: mixed dtypes; unreadable TIFFs in leaf folders; unsupported sample
 formats or axes; missing/duplicate X or Y, duplicate roles or inconsistent mapping; a plane
-over the memory limit; a folder named `single`; an output folder inside the experiment;
-no usable planes.
+over the memory limit; a folder named `single`; sibling folders whose names differ only in
+case; a folder below the technical-repeat level; an output folder inside the experiment;
+no usable planes. System files (dot-files, `Thumbs.db`, `desktop.ini`, `__MACOSX`) are
+ignored silently.
 
 Continue with warnings for: non-TIFF files; empty folders; TIFFs outside leaf folders;
 non-finite pixels (ignored and counted); different image sizes with a valid axis
@@ -188,7 +190,8 @@ API, CLI). The notebook and CLI only call the API.
 - **Milestone 0 — Contract:** folder rules, axis rules, histogram semantics, CSV schema,
   validation severities ([contract.md](contract.md)). *Done.*
 - **Milestone 1 — Scanner/validator:** folder tree, TIFF headers, inferred hierarchy,
-  dtype, axes, actionable validation results.
+  dtype, axes, actionable validation results. *Folder discovery, header inspection and
+  dtype/dimension checks implemented; axis-role checks follow with the axis review.*
 - **Milestone 2 — Axis review UI:** metadata-prefilled selectors, plane preview, confirmed
   mapping saved to the manifest.
 - **Milestone 3 — Histogram engine:** per-plane histograms, extrema, non-finite and
@@ -232,6 +235,8 @@ Raised during review; to be decided before the milestones that need them:
    metadata provides them?
 5. Ignore system files (`._*`, `Thumbs.db`, `.DS_Store`, `__MACOSX`,
    `.ipynb_checkpoints`) silently, and treat the `single` check and sibling uniqueness as
-   case-insensitive?
+   case-insensitive? *Decided (October 2026): yes to both; dot-files, `Thumbs.db`,
+   `desktop.ini` and `__MACOSX` are skipped without a warning.*
 6. Corrupt files: allow the user to exclude one explicitly and continue?
 7. Folders deeper than the technical-repeat level: warning or error?
+   *Decided (October 2026): error, so that a layer of images is never dropped silently.*
