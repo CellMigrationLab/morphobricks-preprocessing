@@ -17,6 +17,7 @@ import os
 from collections.abc import Callable, Hashable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from xml.etree import ElementTree
 
 import numpy as np
 import tifffile
@@ -52,6 +53,12 @@ class TiffMetadata:
         Number of TIFF pages (IFDs) in the file.
     error
         Technical reason the file could not be opened, for the diagnostic log.
+    channel_names
+        Channel names from OME metadata, by channel index; None for a channel
+        without a name. Empty when the file has no OME channel information.
+    significant_bits
+        Bits per pixel that carry data (e.g. 12 for a 12-bit camera in 16-bit
+        files), from OME metadata; None when not given. For information only.
     """
 
     relative_path: str
@@ -62,6 +69,8 @@ class TiffMetadata:
     series_count: int = 0
     page_count: int = 0
     error: str | None = None
+    channel_names: tuple[str | None, ...] = ()
+    significant_bits: int | None = None
 
     @property
     def ndim(self) -> int:
@@ -139,6 +148,7 @@ def inspect_tiff(path: str | os.PathLike, relative_path: str | None = None) -> T
                 axes=str(first.axes),
                 series_count=len(series),
                 page_count=len(tif.pages),
+                **_ome_details(tif),
             )
     except Exception as exc:  # any failure to parse means the file cannot be used
         logger.debug("Cannot read the TIFF header of %s", path, exc_info=True)
@@ -254,7 +264,61 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
         )
 
     issues.extend(_check_dimensions(readable))
+    issues.extend(_check_channel_names(readable))
     return issues
+
+
+def _ome_details(tif: tifffile.TiffFile) -> dict:
+    """Channel names and significant bits of the first OME image, if present."""
+    if not tif.is_ome:
+        return {}
+    try:
+        root = ElementTree.fromstring(tif.ome_metadata)
+    except (ElementTree.ParseError, TypeError, ValueError):
+        logger.debug("Cannot parse the OME metadata of %s", tif.filename, exc_info=True)
+        return {}
+    pixels = next((e for e in root.iter() if _local_name(e.tag) == "Pixels"), None)
+    if pixels is None:
+        return {}
+    names = tuple(
+        channel.get("Name") or None for channel in pixels if _local_name(channel.tag) == "Channel"
+    )
+    bits = pixels.get("SignificantBits")
+    return {
+        "channel_names": names if any(names) else (),
+        "significant_bits": int(bits) if bits and bits.isdigit() else None,
+    }
+
+
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _check_channel_names(files: list[TiffMetadata]) -> list[ValidationIssue]:
+    named = [f for f in files if f.channel_names]
+    if len(named) < 2:
+        return []
+    differing: list[str] = []
+    descriptions: list[str] = []
+    for index in range(max(len(f.channel_names) for f in named)):
+        at_index = [f for f in named if index < len(f.channel_names) and f.channel_names[index]]
+        if len({f.channel_names[index] for f in at_index}) > 1:
+            summary, minority = _breakdown(at_index, lambda f, i=index: f.channel_names[i], str)
+            descriptions.append(f"channel {index}: {summary}")
+            differing.extend(minority)
+    if not differing:
+        return []
+    return [
+        warning(
+            "channel_names_differ",
+            "The images name their channels differently at the same channel position ("
+            + "; ".join(descriptions)
+            + "). Planes with the same channel number may show different stains.",
+            sorted(set(differing)),
+            "No action needed if the names only differ in spelling. Otherwise check the "
+            "channel order of these images before comparing channels.",
+        )
+    ]
 
 
 def _check_dimensions(files: list[TiffMetadata]) -> list[ValidationIssue]:

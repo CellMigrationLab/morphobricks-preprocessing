@@ -156,6 +156,17 @@ Existing rows of unchanged files are never recomputed, because each row depends 
 its own plane. Write to a temporary file and replace the previous output only after a
 complete successful run.
 
+A file is unchanged when its size, modification time, labels and axis layout match the
+manifest and the table still holds all its rows. Every row is recomputed when there is no
+readable earlier manifest, when a rebuild is requested, or when the pixel type, bin count
+or axis mapping changed. The manifest stores the SHA-256 of the table it was written
+with, so a table edited or replaced afterwards is rebuilt rather than trusted. Changing
+only the memory limit or the exclusions recomputes nothing.
+
+The user may exclude images explicitly by relative path, for example a damaged file, and
+continue. Excluded images are not read, are reported as a warning, are listed in the
+manifest, and lose any rows they had.
+
 ## 8. Validation behavior and user messages
 
 Block processing for: mixed dtypes; unreadable TIFFs in leaf folders; unsupported sample
@@ -208,7 +219,8 @@ API, CLI). The notebook and CLI only call the API.
 - **Milestone 3 — Histogram engine:** per-plane histograms, extrema, non-finite and
   constant planes, pooling, normalization library. *Core implemented and tested.*
 - **Milestone 4 — CSV and reruns:** write/update the CSV and manifest, detect
-  new/changed/deleted planes, force rebuild. *CSV reading/writing implemented.*
+  new/changed/deleted planes, force rebuild. *Implemented: run manifest (`manifest`),
+  preflight and incremental runs with exclusions (`run`).*
 - **Milestone 5 — Integration and docs:** public API, notebook, CLI, user documentation.
 - **Later:** OME-Zarr and chunked processing for planes above the memory limit.
 
@@ -258,5 +270,8 @@ Raised during review; to be decided before the milestones that need them:
    case-insensitive? *Decided (October 2026): yes to both; dot-files, `Thumbs.db`,
    `desktop.ini` and `__MACOSX` are skipped without a warning.*
 6. Corrupt files: allow the user to exclude one explicitly and continue?
+   *Decided (October 2026): yes. The run takes a list of images to exclude; they are not
+   read, are reported as a warning and recorded in the manifest, and their rows are
+   removed.*
 7. Folders deeper than the technical-repeat level: warning or error?
    *Decided (October 2026): error, so that a layer of images is never dropped silently.*

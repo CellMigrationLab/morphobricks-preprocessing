@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 import tifffile
@@ -106,6 +108,51 @@ def test_pyramid_levels_are_not_separate_series(tmp_path):
     info = inspect_tiff(path)
     assert info.series_count == 1 and info.shape == (32, 32)
     assert check_metadata([info]) == []
+
+
+def test_ome_channel_names_and_significant_bits(tmp_path, no_pixel_reads):
+    path = tmp_path / "a.ome.tif"
+    tifffile.imwrite(
+        path,
+        np.zeros((2, 6, 7), np.uint16),
+        ome=True,
+        photometric="minisblack",
+        metadata={"axes": "CYX", "Channel": {"Name": ["DAPI", "GFP"]}, "SignificantBits": 12},
+    )
+    info = inspect_tiff(path)
+    assert info.channel_names == ("DAPI", "GFP")
+    assert info.significant_bits == 12
+
+
+def test_no_channel_names_without_ome_metadata(tmp_path):
+    info = inspect_tiff(write_tiff(tmp_path / "a.tif", (2, 6, 7), axes="CYX", imagej=True))
+    assert info.channel_names == () and info.significant_bits is None
+
+
+def test_unnamed_ome_channels_are_empty(tmp_path):
+    info = inspect_tiff(write_tiff(tmp_path / "a.tif", (2, 6, 7), axes="CYX", ome=True))
+    assert info.channel_names == ()
+
+
+def test_differing_channel_names_are_a_warning():
+    base = meta("a.tif", (2, 8, 8), axes="CYX")
+    files = [
+        replace(base, channel_names=("DAPI", "GFP")),
+        replace(base, relative_path="b.tif", channel_names=("DAPI", "GFP")),
+        replace(base, relative_path="c.tif", channel_names=("DAPI", "RFP")),
+        replace(base, relative_path="d.tif", channel_names=(None, None)),
+    ]
+    found = issue(check_metadata(files), "channel_names_differ")
+    assert found.severity is Severity.WARNING
+    assert found.paths == ("c.tif",)
+    assert "channel 1: GFP (2 images), RFP (1 image)" in found.message
+
+
+def test_matching_or_missing_channel_names_give_no_warning():
+    unnamed = meta("b.tif", (2, 8, 8), axes="CYX")
+    named = replace(unnamed, relative_path="a.tif", channel_names=("A",))
+    assert check_metadata([named, replace(named, relative_path="c.tif")]) == []
+    assert check_metadata([named, unnamed]) == []
 
 
 @pytest.mark.parametrize(
