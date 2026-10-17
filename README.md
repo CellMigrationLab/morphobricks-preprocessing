@@ -15,14 +15,20 @@ The normalization methods live in this package so other bricks can import them.
 
 Pre-alpha. Implemented and tested:
 
+- Folder discovery and validation (`discovery`, `validation`)
+- TIFF header inspection without reading pixels (`metadata`)
+- Axis mapping: prefill from metadata, validation, applying one mapping to every
+  file (`axes`)
+- Reading TIFFs one 2D plane at a time, with a memory limit and a preview plane
+  (`planes`)
 - Per-plane histograms for all supported pixel types (`histogram`)
 - Reading and writing the histogram table (`csv_io`)
 - Group statistics pooled from histograms (`pooling`)
 - Normalization parameters and their application (`normalization`)
 
-Planned (see [docs/plan.md](docs/plan.md)): folder discovery and validation, TIFF
-metadata and axis review, the run manifest and incremental updates, the
-notebook interface and the command-line interface.
+Planned (see [docs/plan.md](docs/plan.md)): the run manifest and incremental
+updates, the notebook interface (including the axis review widgets) and the
+command-line interface.
 
 ## Installation
 

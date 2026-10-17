@@ -10,9 +10,13 @@ import tifffile
 
 def write_tiff(path, shape=(8, 8), dtype=np.uint16, axes=None, **kwargs):
     """Write a small TIFF, creating parent folders; ``axes`` is stored as metadata."""
+    return write_data(path, np.zeros(shape, dtype=dtype), axes, **kwargs)
+
+
+def write_data(path, data, axes=None, **kwargs):
+    """Write ``data`` as a TIFF, creating parent folders; ``axes`` is stored as metadata."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = np.zeros(shape, dtype=dtype)
     metadata = {"axes": axes} if axes is not None else {}
     # Without this, tifffile stores 3-sample stacks as RGB planes (deprecated behaviour).
     kwargs.setdefault("photometric", "minisblack")

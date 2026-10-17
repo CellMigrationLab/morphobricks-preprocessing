@@ -178,8 +178,9 @@ def inspect_experiment(discovery: DiscoveryResult) -> MetadataReport:
 def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     """Check image headers against the experiment-wide rules.
 
-    Reports, as errors: files that do not open, unsupported pixel types, more
-    than one pixel type, and files whose dimensions are arranged differently.
+    Reports, as errors: files that do not open, files with more than one image
+    series, unsupported pixel types, more than one pixel type, and files whose
+    dimensions are arranged differently.
     Reports, as a warning: files with the same arrangement but different
     dimension lengths.
 
@@ -207,6 +208,20 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
                 unreadable,
                 "Export the images again from the acquisition software, or remove them "
                 "from the experiment folder.",
+            )
+        )
+
+    multi_series = [f.relative_path for f in readable if f.series_count > 1]
+    if multi_series:
+        issues.append(
+            error(
+                "multiple_series",
+                f"{plural(len(multi_series), 'image')} contain more than one image series, "
+                "for example several positions or scenes in one file. Such files are not "
+                "supported yet. (Resolution levels of a pyramidal image are not separate "
+                "series; only the full-resolution level is read.)",
+                multi_series,
+                "Export each position or scene as a separate image file.",
             )
         )
 
