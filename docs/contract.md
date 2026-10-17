@@ -27,6 +27,15 @@ Roles X, Y, Z, C, T. Exactly one X and one Y; each role at most once. Non-single
 must have a supported role. One confirmed mapping per experiment. Plane coordinates `z`,
 `c`, `t` are zero-based and blank when the axis is absent.
 
+| Rule | Detail |
+|---|---|
+| Prefill | Axis labels from metadata: `X`, `Y`, `Z`, `C`, `T` keep their role; the RGB samples axis `S` becomes C when there is no other `C`. Every other label is left unassigned for the user to choose. |
+| Unsupported axes | Position-like axes (tile `R`, mosaic `M`, row `K`, column `J`) cannot have a role. If they hold more than one plane, the file is an error. |
+| Singleton axes | An axis of length 1 needs no role; its index is always 0. |
+| Missing axes | A file lacking axes the mapping has is read with those axes as length 1 only when the user confirmed this and only one arrangement fits; its coordinates for them are 0. |
+| Series | Only the first image series, at full-resolution level 0. A file with more than one series is an error. |
+| Channel names, significant bits | Recorded in the run manifest when metadata provides them; not part of the CSV. Channel names that differ at the same channel index are a warning. |
+
 ## 3. Pixel types
 
 | Kind | Types | Default bins | Allowed bins |
@@ -120,8 +129,8 @@ A zero or non-finite scale is an error with a plain-language message.
 
 | Severity | Situations | Effect |
 |---|---|---|
-| Error | Mixed dtypes; unreadable TIFF in a leaf folder; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, inconsistent mapping; plane over the memory limit; folder named `single`; sibling folders differing only in case; folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
-| Warning | Non-TIFF files; empty folders; TIFFs outside leaf folders; non-finite pixels; different image sizes with a valid mapping; planes without finite pixels while others remain | Processing continues; the item is reported |
+| Error | Mixed dtypes; unreadable TIFF in a leaf folder; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane over the memory limit; folder named `single`; sibling folders differing only in case; folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
+| Warning | Non-TIFF files; empty folders; TIFFs outside leaf folders; channel names differing between files; non-finite pixels; different image sizes with a valid mapping; planes without finite pixels while others remain | Processing continues; the item is reported |
 
 Every message states what happened in plain language, lists the affected paths, and
 suggests an action. Technical details go to the diagnostic log.

@@ -177,6 +177,39 @@ def compute_plane_histogram(plane: np.ndarray, bin_count: int | None = None) -> 
     return _float_histogram(values, dtype, n)
 
 
+def estimate_histogram_memory(
+    pixel_count: int, dtype: np.dtype, bin_count: int | None = None
+) -> int:
+    """Estimate the temporary memory :func:`compute_plane_histogram` needs, in bytes.
+
+    Covers the arrays created while binning, not the plane itself. It is an
+    upper estimate: integer planes allow for the widest per-value count table
+    (used when a plane holds up to 2**24 distinct values), whatever the actual
+    range of the plane turns out to be.
+
+    Parameters
+    ----------
+    pixel_count
+        Number of pixels in the plane.
+    dtype
+        Pixel type of the plane.
+    bin_count
+        Number of bins; defaults as in :func:`compute_plane_histogram`.
+    """
+    dt = check_supported(dtype)
+    n = default_bin_count(dt) if bin_count is None else bin_count
+    # Bin counts, limits and representatives: a few float64/int64 arrays per bin.
+    per_bin = 4 * 8 * n
+    if is_integer(dt):
+        # Either up to four 8-byte arrays per pixel (ordered copy, offsets, bin index), or
+        # two per pixel while the per-value count table and its lookups (four 8-byte
+        # arrays per value) exist.
+        table = min(2 ** (dt.itemsize * 8), _PER_VALUE_COUNT_LIMIT)
+        return max(4 * 8 * pixel_count, 2 * 8 * pixel_count + 4 * 8 * table) + per_bin
+    # Finite mask, float64 copy, two scaled temporaries and the bin index.
+    return (1 + 4 * 8) * pixel_count + per_bin
+
+
 def _integer_bin_starts(width: int, bin_count: int) -> list[int]:
     """Offsets at which bins ``0 .. bin_count`` start (the last entry is ``width``)."""
     if width <= bin_count:

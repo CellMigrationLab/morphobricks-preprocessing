@@ -68,7 +68,13 @@ Supported axis roles are X, Y, Z, C and T. Require exactly one X and one Y; role
 unique. Unsupported axes (position/scene) block processing in this milestone. Prefill axis
 selectors from metadata, let the user edit them, show a small preview of the resulting XY
 plane, and have the user confirm one mapping for the experiment. X and Y are locked once
-the experiment mapping is confirmed.
+the experiment mapping is confirmed. The RGB samples axis (`S`) is prefilled as C when the
+file has no other channel axis. Axes that metadata marks only as a generic sequence are
+left unassigned for the user to choose; they are never guessed.
+
+Only the first image series is used, at full-resolution level 0 for pyramidal files. A
+file with more than one image series (several positions or scenes) is an error in this
+milestone.
 
 Files with a conflicting number or arrangement of dimensions block processing until
 resolved. Different dimension lengths are allowed with a warning. A file missing an axis
@@ -134,7 +140,10 @@ schema_version`, then `histogram_bin_00000` onwards. Details in contract §5.
 The wide CSV is for computational use; spreadsheet programs may not open all columns. The
 package provides `read_plane_histograms()`, which keeps labels as text. Alongside the CSV,
 a run manifest (`run_manifest.json`) records the confirmed labels and axis mapping, the
-settings, package versions and each source file's size and modification time.
+settings, package versions and each source file's size and modification time. It also
+records each file's channel names and significant bits when metadata provides them, for
+information only; channel names that differ between files at the same channel index are
+reported as a warning.
 
 ## 7. Incremental updates
 
@@ -193,7 +202,9 @@ API, CLI). The notebook and CLI only call the API.
   dtype, axes, actionable validation results. *Folder discovery, header inspection and
   dtype/dimension checks implemented; axis-role checks follow with the axis review.*
 - **Milestone 2 — Axis review UI:** metadata-prefilled selectors, plane preview, confirmed
-  mapping saved to the manifest.
+  mapping saved to the manifest. *Core implemented: axis mapping, prefill and validation
+  (`axes`), plane-by-plane reading with a memory limit and the preview plane (`planes`);
+  the widgets follow with the notebook.*
 - **Milestone 3 — Histogram engine:** per-plane histograms, extrema, non-finite and
   constant planes, pooling, normalization library. *Core implemented and tested.*
 - **Milestone 4 — CSV and reruns:** write/update the CSV and manifest, detect
@@ -228,11 +239,20 @@ Raised during review; to be decided before the milestones that need them:
 
 1. Channel identity: record channel names from metadata in an optional `channel_name`
    column and warn when names at the same index differ between files?
+   *Decided (October 2026): record channel names per file in the run manifest, not in the
+   CSV, and warn when the names at the same channel index differ between files. The CSV
+   stays at schema version 1.*
 2. Multi-series and pyramidal TIFFs: use only full-resolution level 0, and block files
    with several positions?
+   *Decided (October 2026): yes. Pyramidal files are read at full-resolution level 0 only;
+   a file with more than one image series is an error in this milestone.*
 3. RGB samples axis (`S`): allow mapping it to C?
+   *Decided (October 2026): yes. The axis review prefills `S` as C (when the file has no
+   other channel axis) and the user confirms it like any other role.*
 4. Bit depth: record significant bits (for example 12-bit cameras in 16-bit files) when
    metadata provides them?
+   *Decided (October 2026): record them in the run manifest when metadata provides them,
+   for information only. `bit_depth`, binning and the CSV are unchanged.*
 5. Ignore system files (`._*`, `Thumbs.db`, `.DS_Store`, `__MACOSX`,
    `.ipynb_checkpoints`) silently, and treat the `single` check and sibling uniqueness as
    case-insensitive? *Decided (October 2026): yes to both; dot-files, `Thumbs.db`,

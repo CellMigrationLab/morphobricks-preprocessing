@@ -86,6 +86,28 @@ def test_page_and_series_counts(tmp_path):
     assert info.shape == (4, 5)  # the first series
 
 
+def test_multiple_series_are_an_error(tmp_path):
+    with tifffile.TiffWriter(tmp_path / "multi.tif") as writer:
+        writer.write(np.zeros((4, 5), np.uint8))
+        writer.write(np.zeros((6, 7), np.uint8))
+    write_tiff(tmp_path / "one.tif", dtype=np.uint8)
+    report = inspect_images(tmp_path, ["multi.tif", "one.tif"])
+    found = issue(report.issues, "multiple_series")
+    assert found.severity is Severity.ERROR
+    assert found.paths == ("multi.tif",)
+    assert "separate image file" in found.action
+
+
+def test_pyramid_levels_are_not_separate_series(tmp_path):
+    path = tmp_path / "pyramid.ome.tif"
+    with tifffile.TiffWriter(path, ome=True) as writer:
+        writer.write(np.zeros((32, 32), np.uint16), subifds=1, photometric="minisblack")
+        writer.write(np.zeros((16, 16), np.uint16), subfiletype=1, photometric="minisblack")
+    info = inspect_tiff(path)
+    assert info.series_count == 1 and info.shape == (32, 32)
+    assert check_metadata([info]) == []
+
+
 @pytest.mark.parametrize(
     "dtype", ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
 )
