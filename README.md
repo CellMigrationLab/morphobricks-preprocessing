@@ -21,14 +21,15 @@ Pre-alpha. Implemented and tested:
   file (`axes`)
 - Reading TIFFs one 2D plane at a time, with a memory limit and a preview plane
   (`planes`)
+- Running an experiment end to end and updating earlier output incrementally, with a
+  run manifest (`run`, `manifest`)
 - Per-plane histograms for all supported pixel types (`histogram`)
 - Reading and writing the histogram table (`csv_io`)
 - Group statistics pooled from histograms (`pooling`)
 - Normalization parameters and their application (`normalization`)
 
-Planned (see [docs/plan.md](docs/plan.md)): the run manifest and incremental
-updates, the notebook interface (including the axis review widgets) and the
-command-line interface.
+Planned (see [docs/plan.md](docs/plan.md)): the notebook interface (including
+the axis review widgets) and the command-line interface.
 
 ## Installation
 
@@ -43,6 +44,23 @@ pip install -e ".[dev]"
 ```
 
 The optional `notebook` extra installs the widget dependencies.
+
+## Running an experiment
+
+```python
+from morphobricks_preprocessing import preflight, run_experiment
+
+check = preflight("/data/exp1")  # folder and headers only, no pixels read
+for issue in check.issues:
+    print(issue)
+mapping = check.suggested_mapping  # review and edit, e.g. mapping.with_role(0, "T")
+
+result = run_experiment("/data/exp1", mapping)  # writes to /data/exp1_MorphoBricks_Preprocessing
+print(result.written, result.read, result.unchanged)
+```
+
+Rerunning only reads images that are new or changed; `force_rebuild=True`
+recomputes everything, and `exclude=[...]` leaves out damaged files.
 
 ## Example
 

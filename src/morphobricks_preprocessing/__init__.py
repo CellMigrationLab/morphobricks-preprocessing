@@ -26,6 +26,15 @@ from .discovery import (
 )
 from .dtypes import UnsupportedDtypeError, default_bin_count
 from .histogram import PlaneHistogram, compute_plane_histogram
+from .manifest import (
+    MANIFEST_FILENAME,
+    FileEntry,
+    ManifestFormatError,
+    RunManifest,
+    RunSettings,
+    read_manifest,
+    write_manifest,
+)
 from .metadata import (
     MetadataReport,
     TiffMetadata,
@@ -55,6 +64,7 @@ from .planes import (
 )
 from .pooling import NoValidPixelsError, PooledHistogram, PooledStatistics, pooled_statistics
 from .records import SINGLE, PlaneRecord, group_records, make_plane_id
+from .run import Preflight, RunResult, preflight, run_experiment
 from .validation import Severity, ValidationIssue, has_errors
 
 try:
@@ -64,12 +74,15 @@ except PackageNotFoundError:  # running from a source checkout without installin
 
 __all__ = [
     "DEFAULT_MEMORY_LIMIT",
+    "MANIFEST_FILENAME",
     "OUTPUT_FILENAME",
     "SINGLE",
     "AxisMapping",
     "AxisReview",
     "DiscoveryResult",
+    "FileEntry",
     "LeafFolder",
+    "ManifestFormatError",
     "MetadataReport",
     "NoValidPixelsError",
     "NormalizationParameters",
@@ -81,6 +94,10 @@ __all__ = [
     "PlaneRecord",
     "PooledHistogram",
     "PooledStatistics",
+    "Preflight",
+    "RunManifest",
+    "RunResult",
+    "RunSettings",
     "Severity",
     "TiffMetadata",
     "UnsupportedDtypeError",
@@ -106,12 +123,16 @@ __all__ = [
     "pooled_statistics",
     "prefill_experiment_mapping",
     "prefill_mapping",
+    "preflight",
+    "read_manifest",
     "read_plane",
     "read_plane_histograms",
     "read_sample_plane",
     "reference_axes",
     "review_axes",
     "robust_z_score",
+    "run_experiment",
+    "write_manifest",
     "write_plane_histograms",
     "z_score",
 ]

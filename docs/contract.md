@@ -129,8 +129,28 @@ A zero or non-finite scale is an error with a plain-language message.
 
 | Severity | Situations | Effect |
 |---|---|---|
-| Error | Mixed dtypes; unreadable TIFF in a leaf folder; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane over the memory limit; folder named `single`; sibling folders differing only in case; folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
-| Warning | Non-TIFF files; empty folders; TIFFs outside leaf folders; channel names differing between files; non-finite pixels; different image sizes with a valid mapping; planes without finite pixels while others remain | Processing continues; the item is reported |
+| Error | Mixed dtypes; unreadable TIFF (header or pixel data) in a leaf folder that is not excluded; every image excluded; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane over the memory limit; folder named `single`; sibling folders differing only in case; folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
+| Warning | Non-TIFF files; empty folders; TIFFs outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image sizes with a valid mapping; planes without finite pixels while others remain | Processing continues; the item is reported |
 
 Every message states what happened in plain language, lists the affected paths, and
 suggests an action. Technical details go to the diagnostic log.
+
+## 9. Run manifest (`run_manifest.json`, manifest version 1)
+
+UTF-8 JSON next to `plane_histograms.csv`, written after the table and only when the run
+succeeded.
+
+| Key | Meaning |
+|---|---|
+| `manifest_version`, `schema_version` | Manifest format (`1`) and CSV format (`1`). |
+| `written_at` | UTC time of writing, ISO 8601. |
+| `experiment_root` | Absolute path of the experiment folder, for information. |
+| `dtype` | Pixel type of the experiment. |
+| `settings` | `bin_count`, `memory_limit` (bytes), `missing_as_singleton`, `exclude` (sorted relative paths). |
+| `axis_mapping` | `axes` (file axis labels) and `roles` (`X`, `Y`, `Z`, `C`, `T` or null per axis). |
+| `labels` | One entry per leaf folder: `folder` (relative path, `.` for the root) and its three labels. |
+| `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count`, `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata). |
+| `csv_sha256` | SHA-256 of the table written with this manifest. |
+| `versions` | Versions of `morphobricks-preprocessing`, `numpy`, `tifffile` and Python. |
+
+Channel names and significant bits come from OME metadata and are for information only.
