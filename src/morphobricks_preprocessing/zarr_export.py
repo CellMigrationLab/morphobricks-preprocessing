@@ -158,6 +158,16 @@ def read_physical_sizes(path: str | os.PathLike) -> PhysicalSizes:
     return PhysicalSizes()
 
 
+def canonical_dtype(dtype: np.dtype) -> np.dtype:
+    """Return the standard NumPy dtype with the same name, e.g. ``int64`` for ``longlong``.
+
+    On Linux and macOS, NumPy has two 64-bit integer types (``long`` and ``long
+    long``) that compare equal but are different classes; tifffile may return
+    either, and zarr 3 only recognises the standard one.
+    """
+    return np.dtype(np.dtype(dtype).name)
+
+
 def pyramid_shapes(plane_shape: tuple[int, int]) -> list[tuple[int, int]]:
     """Return (Y, X) of every level: level 0, then halved until it fits ``PYRAMID_TARGET``."""
     shapes = [tuple(plane_shape)]
@@ -229,7 +239,7 @@ class OmeZarrWriter:
             path=Path(path),
             roles=roles,
             shape=tuple(lengths[r] for r in roles),
-            dtype=layout.dtype,
+            dtype=canonical_dtype(layout.dtype),
             sizes=sizes or PhysicalSizes(),
             channel_names=tuple(channel_names),
             name=name,
@@ -242,7 +252,7 @@ class OmeZarrWriter:
         index = tuple(
             (plane.coordinates[r.lower()] or 0) for r in self.roles if r not in ("Y", "X")
         )
-        pixels = plane.pixels
+        pixels = plane.pixels.view(self.dtype)
         for level, array in enumerate(self._levels):
             if level:
                 pixels = downsample(pixels)

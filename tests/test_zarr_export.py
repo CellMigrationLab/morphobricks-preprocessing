@@ -432,3 +432,34 @@ def test_old_manifest_without_ome_zarr_fields_loads(experiment):
     manifest = read_manifest(result.manifest_path)
     assert not manifest.settings.ome_zarr and manifest.files[0].ome_zarr_path is None
     assert run_experiment(experiment, ZYX).read == ()
+
+
+@pytest.mark.parametrize("code", ["q", "Q", "l", "L", "i", "h", "b", "B", "f", "d"])
+def test_canonical_dtype(code):
+    from morphobricks_preprocessing.zarr_export import canonical_dtype
+
+    dtype = np.dtype(code)
+    canonical = canonical_dtype(dtype)
+    assert canonical == dtype and canonical is np.dtype(dtype.name)
+
+
+@needs_zarr
+@pytest.mark.parametrize("code", ["q", "Q"])
+def test_long_long_planes_are_written(tmp_path, code):
+    # On Linux and macOS, tifffile can return 64-bit integers as numpy "long long",
+    # a dtype class zarr 3 does not accept although it equals int64.
+    from dataclasses import replace
+
+    from morphobricks_preprocessing import Plane, plane_layout
+    from morphobricks_preprocessing.zarr_export import OmeZarrWriter
+
+    data = random_data((2, 6, 7), np.dtype(code).name).astype(np.dtype(code))
+    path = write_data(tmp_path / "a.tif", data, axes="ZYX")
+    layout = replace(plane_layout(path, ZYX), dtype=np.dtype(code))
+    writer = OmeZarrWriter.create(tmp_path / "a.ome.zarr", ZYX, layout)
+    for z in range(2):
+        writer.write(Plane(z, None, None, np.ascontiguousarray(data[z])))
+    writer.finish()
+    import zarr
+
+    np.testing.assert_array_equal(zarr.open_group(str(tmp_path / "a.ome.zarr"))["0"][:], data)
