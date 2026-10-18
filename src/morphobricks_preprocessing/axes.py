@@ -155,13 +155,21 @@ class AxisMapping:
             tuple(r for r in dropped if r is not None),
         )
 
+    @property
+    def roles_string(self) -> str:
+        """The roles as text, ``"-"`` for no role, e.g. ``"T-YX"``.
+
+        ``AxisMapping(axes, mapping.roles_string)`` gives the mapping back.
+        """
+        return "".join(role or "-" for role in self.roles)
+
     def describe(self) -> str:
-        """Plain-language summary, e.g. ``"T (time) → Z, C (channel) → C, ..."``."""
+        """Plain-language summary, e.g. ``"T (time) -> Z, C (channel) -> C, ..."``."""
         parts = []
         for axis, role in zip(self.axes, self.roles, strict=True):
             name = _AXIS_NAMES.get(axis)
             label = f"{axis} ({name})" if name else axis
-            parts.append(f"{label} → {role or 'no role'}")
+            parts.append(f"{label} -> {role or 'no role'}")
         return ", ".join(parts)
 
 
@@ -249,6 +257,32 @@ def prefill_experiment_mapping(metadata: MetadataReport) -> AxisMapping | None:
     """
     axes = reference_axes(metadata.files)
     return None if axes is None else prefill_mapping(axes)
+
+
+def axis_length_ranges(
+    mapping: AxisMapping, files: Iterable[TiffMetadata]
+) -> list[tuple[int, int]]:
+    """Smallest and largest length of each mapping axis across the files.
+
+    Files lacking an axis count as length 1 along it; files that do not fit the
+    mapping are left out. Returns ``(0, 0)`` for every axis if no file fits.
+    """
+    sizes = [
+        _sizes(f, mapping)
+        for f in files
+        if f.readable and (f.axes == mapping.axes or len(_embeddings(f.axes, mapping.axes)) == 1)
+    ]
+    if not sizes:
+        return [(0, 0)] * mapping.ndim
+    return [
+        (min(s.get(d, 1) for s in sizes), max(s.get(d, 1) for s in sizes))
+        for d in range(mapping.ndim)
+    ]
+
+
+def axis_name(axis: str) -> str:
+    """Plain-language label of a ``tifffile`` axis code, e.g. ``"Z (depth)"``."""
+    return _axis_label(axis)
 
 
 def check_mapping(

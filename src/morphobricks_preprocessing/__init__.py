@@ -10,6 +10,7 @@ from importlib.metadata import PackageNotFoundError, version
 from .axes import (
     AxisMapping,
     AxisReview,
+    axis_length_ranges,
     check_mapping,
     prefill_experiment_mapping,
     prefill_mapping,
@@ -64,7 +65,8 @@ from .planes import (
 )
 from .pooling import NoValidPixelsError, PooledHistogram, PooledStatistics, pooled_statistics
 from .records import SINGLE, PlaneRecord, group_records, make_plane_id
-from .run import Preflight, RunResult, preflight, run_experiment
+from .report import GroupSummary, group_summaries
+from .run import Preflight, RunResult, SamplePlane, preflight, run_experiment, sample_planes
 from .validation import Severity, ValidationIssue, has_errors
 
 try:
@@ -81,6 +83,7 @@ __all__ = [
     "AxisReview",
     "DiscoveryResult",
     "FileEntry",
+    "GroupSummary",
     "LeafFolder",
     "ManifestFormatError",
     "MetadataReport",
@@ -98,10 +101,12 @@ __all__ = [
     "RunManifest",
     "RunResult",
     "RunSettings",
+    "SamplePlane",
     "Severity",
     "TiffMetadata",
     "UnsupportedDtypeError",
     "ValidationIssue",
+    "axis_length_ranges",
     "check_mapping",
     "check_metadata",
     "check_output_folder",
@@ -111,6 +116,7 @@ __all__ = [
     "default_output_folder",
     "discover_experiment",
     "group_records",
+    "group_summaries",
     "has_errors",
     "inspect_experiment",
     "inspect_images",
@@ -132,6 +138,7 @@ __all__ = [
     "review_axes",
     "robust_z_score",
     "run_experiment",
+    "sample_planes",
     "write_manifest",
     "write_plane_histograms",
     "z_score",

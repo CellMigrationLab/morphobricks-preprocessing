@@ -213,15 +213,18 @@ API, CLI). The notebook and CLI only call the API.
   dtype, axes, actionable validation results. *Folder discovery, header inspection and
   dtype/dimension checks implemented; axis-role checks follow with the axis review.*
 - **Milestone 2 — Axis review UI:** metadata-prefilled selectors, plane preview, confirmed
-  mapping saved to the manifest. *Core implemented: axis mapping, prefill and validation
-  (`axes`), plane-by-plane reading with a memory limit and the preview plane (`planes`);
-  the widgets follow with the notebook.*
+  mapping saved to the manifest. *Implemented: axis mapping, prefill and validation
+  (`axes`), plane-by-plane reading with a memory limit and the preview plane (`planes`),
+  and the axis review step of the notebook.*
 - **Milestone 3 — Histogram engine:** per-plane histograms, extrema, non-finite and
   constant planes, pooling, normalization library. *Core implemented and tested.*
 - **Milestone 4 — CSV and reruns:** write/update the CSV and manifest, detect
   new/changed/deleted planes, force rebuild. *Implemented: run manifest (`manifest`),
   preflight and incremental runs with exclusions (`run`).*
 - **Milestone 5 — Integration and docs:** public API, notebook, CLI, user documentation.
+  *Implemented: summaries (`report`), notebook widgets (`notebook_ui`,
+  `notebooks/preprocessing.ipynb`), `check`/`run` command line (`cli`) and the
+  [user guide](user_guide.md).*
 - **Later:** OME-Zarr and chunked processing for planes above the memory limit.
 
 ## 11. Tests and acceptance criteria

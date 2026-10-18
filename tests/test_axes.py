@@ -65,7 +65,7 @@ def test_index_of_rejects_duplicates():
 
 def test_describe_is_plain_language():
     text = prefill_mapping("IYXS").describe()
-    assert text == "I (sequence) → no role, Y (height) → Y, X (width) → X, S (sample) → C"
+    assert text == "I (sequence) -> no role, Y (height) -> Y, X (width) -> X, S (sample) -> C"
 
 
 # Prefill ------------------------------------------------------------------------------
@@ -303,3 +303,23 @@ def test_combined_issues_put_errors_first(tmp_path):
     report = inspect_images(tmp_path, ["a.tif", "b.tif"])
     review = review_axes(report, prefill_mapping("QYX"))
     assert codes(review.combined_issues(report)) == ["unassigned_axis", "different_sizes"]
+
+
+def test_roles_string_round_trips():
+    mapping = AxisMapping("QZYX", "T-YX")
+    assert mapping.roles_string == "T-YX"
+    assert AxisMapping(mapping.axes, mapping.roles_string) == mapping
+
+
+def test_axis_length_ranges():
+    from morphobricks_preprocessing import axis_length_ranges
+
+    files = [
+        meta("a.tif", (2, 3, 8, 8), "ZCYX"),
+        meta("b.tif", (5, 9, 9), "ZYX"),
+        meta("c.tif", (3, 2, 8, 8), "CZYX"),
+        TiffMetadata("bad.tif", readable=False),
+    ]
+    mapping = prefill_mapping("ZCYX")
+    assert axis_length_ranges(mapping, files) == [(2, 5), (1, 3), (8, 9), (8, 9)]
+    assert axis_length_ranges(mapping, []) == [(0, 0)] * 4

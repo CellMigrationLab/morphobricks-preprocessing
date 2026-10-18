@@ -496,3 +496,41 @@ def test_preflight_leaves_excluded_files_out(experiment):
     assert "unreadable_tiff" in codes(preflight(experiment).issues)
     result = preflight(experiment, exclude=["control/bio_rep1/tech_rep1/bad.tif"])
     assert result.ok and codes(result.issues) == ["excluded_images"]
+
+
+# Progress and preview -----------------------------------------------------------------
+
+
+def test_progress_reports_each_file_read(experiment):
+    calls = []
+    run_experiment(experiment, ZYX, progress=lambda *args: calls.append(args))
+    total = len(IMAGES)
+    assert calls == [(i, total, rel) for i, rel in enumerate(sorted(IMAGES))] + [(total, total, "")]
+    calls.clear()
+    run_experiment(experiment, ZYX, progress=lambda *args: calls.append(args))
+    assert calls == [(0, 0, "")]
+
+
+def test_sample_planes_one_per_axis_arrangement(tmp_path):
+    root = tmp_path / "exp"
+    write_data(root / "a.tif", stack(0, n_z=3)[:, None].repeat(2, axis=1), axes="ZCYX")
+    write_data(root / "b.tif", stack(1, n_z=3)[:, None].repeat(2, axis=1), axes="ZCYX")
+    write_data(root / "c.tif", stack(2, n_z=3), axes="ZYX")
+    write_file(root / "d.tif", b"garbage")
+    pre = preflight(root)
+    samples = run_module.sample_planes(pre, prefill_mapping("ZCYX"))
+    assert [(s.relative_path, s.axes) for s in samples] == [("a.tif", "ZCYX"), ("c.tif", "ZYX")]
+    assert (samples[0].plane.z, samples[0].plane.c) == (1, 0)
+    assert (samples[1].plane.z, samples[1].plane.c) == (1, 0)  # missing C read as length 1
+    np.testing.assert_array_equal(samples[1].plane.pixels, tifffile.imread(root / "c.tif")[1])
+
+
+def test_sample_planes_report_problems(tmp_path):
+    root = tmp_path / "exp"
+    write_data(root / "a.tif", stack(0), axes="ZYX")
+    write_data(root / "b.tif", stack(1), axes="CYX")
+    pre = preflight(root)
+    misfit, fits = sorted(run_module.sample_planes(pre, ZYX), key=lambda s: s.plane is not None)
+    assert misfit.relative_path == "b.tif" and "does not fit" in misfit.error
+    too_big = run_module.sample_planes(pre, ZYX, memory_limit=100)
+    assert "limit" in too_big[0].error and too_big[0].plane is None
