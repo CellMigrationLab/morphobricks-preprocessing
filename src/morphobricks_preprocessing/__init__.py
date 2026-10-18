@@ -68,6 +68,14 @@ from .records import SINGLE, PlaneRecord, group_records, make_plane_id
 from .report import GroupSummary, group_summaries
 from .run import Preflight, RunResult, SamplePlane, preflight, run_experiment, sample_planes
 from .validation import Severity, ValidationIssue, has_errors
+from .zarr_export import (
+    OmeZarrWriter,
+    PhysicalSizes,
+    ZarrUnavailableError,
+    ome_zarr_relative_path,
+    read_physical_sizes,
+    zarr_available,
+)
 
 try:
     __version__ = version("morphobricks-preprocessing")
@@ -89,6 +97,8 @@ __all__ = [
     "MetadataReport",
     "NoValidPixelsError",
     "NormalizationParameters",
+    "OmeZarrWriter",
+    "PhysicalSizes",
     "Plane",
     "PlaneHistogram",
     "PlaneLayout",
@@ -106,6 +116,7 @@ __all__ = [
     "TiffMetadata",
     "UnsupportedDtypeError",
     "ValidationIssue",
+    "ZarrUnavailableError",
     "axis_length_ranges",
     "check_mapping",
     "check_metadata",
@@ -124,6 +135,7 @@ __all__ = [
     "iter_planes",
     "make_plane_id",
     "min_max",
+    "ome_zarr_relative_path",
     "percentile_range",
     "plane_layout",
     "pooled_statistics",
@@ -131,6 +143,7 @@ __all__ = [
     "prefill_mapping",
     "preflight",
     "read_manifest",
+    "read_physical_sizes",
     "read_plane",
     "read_plane_histograms",
     "read_sample_plane",
@@ -142,4 +155,5 @@ __all__ = [
     "write_manifest",
     "write_plane_histograms",
     "z_score",
+    "zarr_available",
 ]

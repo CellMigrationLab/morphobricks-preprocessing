@@ -235,3 +235,20 @@ def test_notebook_cells_run():
         if cell["cell_type"] == "code":
             exec("".join(cell["source"]), namespace)  # noqa: S102 - our own notebook
     assert isinstance(namespace["notebook"], PreprocessingNotebook)
+
+
+def test_ome_zarr_checkbox(experiment, tmp_path):
+    from morphobricks_preprocessing.zarr_export import zarr_available
+
+    nb = ready(experiment, output_folder=str(tmp_path / "out"))
+    assert nb.ome_zarr.disabled == (not zarr_available())
+    if not zarr_available():
+        assert "[zarr]" in nb.ome_zarr_hint.value
+        return
+    nb.labels_confirmed.value = True
+    nb.confirm_button.click()
+    nb.ome_zarr.value = True
+    result = nb.run()
+    assert len(result.converted) == 3
+    assert "OME-Zarr copies written: 3 images" in nb.run_output.value
+    assert (tmp_path / "out" / "ome_zarr" / "ctrl" / "rep1" / "a.ome.zarr").is_dir()

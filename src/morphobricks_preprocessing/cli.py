@@ -87,6 +87,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--force-rebuild", action="store_true", help="recompute every row of the table"
     )
+    run.add_argument(
+        "--ome-zarr",
+        action="store_true",
+        help="also write an OME-Zarr copy of every image to <output>/ome_zarr "
+        "(needs the zarr extra)",
+    )
     run.add_argument("--log", metavar="FILE", help="write technical details to this file")
     return parser
 
@@ -171,6 +177,7 @@ def _run(args: argparse.Namespace) -> int:
         exclude=args.exclude,
         force_rebuild=args.force_rebuild,
         progress=progress,
+        ome_zarr=args.ome_zarr,
     )
     if result.issues:
         print(format_issues(result.issues))

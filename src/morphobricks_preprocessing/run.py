@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
+import tempfile
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -46,17 +48,26 @@ from .manifest import (
     read_manifest,
     write_manifest,
 )
-from .metadata import MetadataReport, inspect_images
+from .metadata import MetadataReport, TiffMetadata, inspect_images
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
     Plane,
     PlaneReadError,
     check_planes,
     iter_planes,
+    plane_layout,
     read_sample_plane,
 )
 from .records import PlaneRecord
 from .validation import ValidationIssue, error, has_errors, plural, warning
+from .zarr_export import (
+    OmeZarrWriter,
+    ome_zarr_relative_path,
+    read_physical_sizes,
+    remove_copies,
+    replace_folder,
+    zarr_available,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +133,8 @@ class RunResult:
         Why every row was recomputed, or None when the earlier table was updated.
     plane_count
         Number of rows in the written table.
+    converted
+        Files whose OME-Zarr copy was written in this run.
     """
 
     output_folder: Path
@@ -135,6 +148,7 @@ class RunResult:
     excluded: tuple[str, ...] = ()
     rebuild_reason: str | None = None
     plane_count: int = 0
+    converted: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
@@ -257,6 +271,7 @@ def run_experiment(
     exclude: Iterable[str] = (),
     force_rebuild: bool = False,
     progress: Callable[[int, int, str], None] | None = None,
+    ome_zarr: bool = False,
 ) -> RunResult:
     """Pass 2: write or update the histogram table and the run manifest.
 
@@ -283,6 +298,10 @@ def run_experiment(
     progress
         Called as ``progress(done, total, relative_path)`` before each file is
         read, and as ``progress(total, total, "")`` when reading is finished.
+    ome_zarr
+        Also write an OME-Zarr copy of every image to ``<output>/ome_zarr``
+        (needs the ``zarr`` extra). Copies of unchanged images are kept; copies
+        of images no longer analysed are removed.
 
     Returns
     -------
@@ -301,6 +320,15 @@ def run_experiment(
         issues.extend(bin_issue)
     if not has_errors(issues):
         issues.extend(check_planes(root, review, memory_limit=memory_limit, bin_count=bins))
+    if ome_zarr and not zarr_available():
+        issues.append(
+            error(
+                "zarr_not_installed",
+                "OME-Zarr copies were requested, but the zarr package is not installed.",
+                action='Install it with pip install "morphobricks-preprocessing[zarr]", or '
+                "run without OME-Zarr copies.",
+            )
+        )
 
     def stop(**counts) -> RunResult:
         return RunResult(output, False, _sorted(issues), excluded=pre.excluded, **counts)
@@ -308,7 +336,7 @@ def run_experiment(
     if has_errors(issues):
         return stop()
 
-    settings = RunSettings(bins, memory_limit, missing_as_singleton, pre.excluded)
+    settings = RunSettings(bins, memory_limit, missing_as_singleton, pre.excluded, ome_zarr)
     previous, previous_records, reason = _load_previous(
         output, settings, mapping, dtype.name, force_rebuild
     )
@@ -350,20 +378,43 @@ def run_experiment(
         "rebuild_reason": reason,
     }
 
+    # Unchanged images without an OME-Zarr copy are read for the copy only.
+    convert_only = [
+        rel
+        for rel in (unchanged if ome_zarr and not reason else ())
+        if previous.file(rel).ome_zarr_path is None
+        or not (output / ome_zarr_relative_path(rel)).is_dir()
+    ]
+    work = sorted([*to_read, *convert_only])
+    to_convert = work if ome_zarr else []
+    staging = _Staging(output, root) if to_convert else None
+
     records: list[PlaneRecord] = []
     for rel in unchanged if not reason else ():
         records.extend(previous_records[rel])
     failed: list[str] = []
-    for done, rel in enumerate(to_read):
-        if progress is not None:
-            progress(done, len(to_read), rel)
-        try:
-            records.extend(_read_file(root, rel, labels[rel], review.file_mappings[rel], settings))
-        except PlaneReadError:
-            logger.warning("Cannot read the planes of %s", rel, exc_info=True)
-            failed.append(rel)
+    try:
+        for done, rel in enumerate(work):
+            if progress is not None:
+                progress(done, len(work), rel)
+            file_mapping = review.file_mappings[rel]
+            writer = None if staging is None else staging.writer(rel, file_mapping, headers[rel])
+            try:
+                planes = _read_file(root, rel, labels[rel], file_mapping, settings, writer)
+            except PlaneReadError:
+                logger.warning("Cannot read the planes of %s", rel, exc_info=True)
+                failed.append(rel)
+                continue
+            if writer is not None:
+                writer.finish()
+            if rel not in convert_only:
+                records.extend(planes)
+    except BaseException:
+        if staging is not None:
+            staging.discard()
+        raise
     if progress is not None:
-        progress(len(to_read), len(to_read), "")
+        progress(len(work), len(work), "")
     if failed:
         issues.append(
             error(
@@ -374,11 +425,15 @@ def run_experiment(
                 "Export the images again, or exclude them from the run to continue without them.",
             )
         )
-        return stop(read=tuple(to_read), **counts)
+        if staging is not None:
+            staging.discard()
+        return stop(read=tuple(work), **counts)
 
     issues.extend(_pixel_issues(records))
     if has_errors(issues):
-        return stop(read=tuple(to_read), **counts)
+        if staging is not None:
+            staging.discard()
+        return stop(read=tuple(work), **counts)
 
     records.sort(key=_row_order)
     per_file: dict[str, int] = {}
@@ -386,13 +441,29 @@ def run_experiment(
         per_file[record.source_relative_path] = per_file.get(record.source_relative_path, 0) + 1
     output.mkdir(parents=True, exist_ok=True)
     csv_path = write_plane_histograms(records, output / OUTPUT_FILENAME)
+    if staging is not None:
+        staging.commit()
+    if previous is not None:
+        remove_copies(
+            output,
+            [
+                f.ome_zarr_path
+                for f in previous.files
+                if f.ome_zarr_path and f.relative_path in removed
+            ],
+        )
     manifest = RunManifest(
         experiment_root=root.as_posix(),
         dtype=dtype.name,
         settings=settings,
         mapping=mapping,
         files=tuple(
-            replace(entry, plane_count=per_file[rel]) for rel, entry in sorted(entries.items())
+            replace(
+                entry,
+                plane_count=per_file[rel],
+                ome_zarr_path=ome_zarr_relative_path(rel) if ome_zarr else None,
+            )
+            for rel, entry in sorted(entries.items())
         ),
         csv_sha256=file_sha256(csv_path),
         versions=package_versions(),
@@ -410,29 +481,77 @@ def run_experiment(
         output,
         True,
         _sorted(issues),
-        read=tuple(to_read),
+        read=tuple(work),
         excluded=pre.excluded,
         plane_count=len(records),
+        converted=tuple(to_convert),
         **counts,
     )
 
 
 def _read_file(
-    root: Path, rel: str, labels: tuple[str, str, str], mapping: AxisMapping, settings
+    root: Path,
+    rel: str,
+    labels: tuple[str, str, str],
+    mapping: AxisMapping,
+    settings: RunSettings,
+    writer: OmeZarrWriter | None = None,
 ) -> list[PlaneRecord]:
-    return [
-        PlaneRecord(
-            rel,
-            *labels,
-            histogram=compute_plane_histogram(plane.pixels, settings.bin_count),
-            z=plane.z,
-            c=plane.c,
-            t=plane.t,
+    """Histogram every plane of a file, copying each plane to ``writer`` if given."""
+    records = []
+    for plane in iter_planes(
+        root / rel, mapping, memory_limit=settings.memory_limit, bin_count=settings.bin_count
+    ):
+        records.append(
+            PlaneRecord(
+                rel,
+                *labels,
+                histogram=compute_plane_histogram(plane.pixels, settings.bin_count),
+                z=plane.z,
+                c=plane.c,
+                t=plane.t,
+            )
         )
-        for plane in iter_planes(
-            root / rel, mapping, memory_limit=settings.memory_limit, bin_count=settings.bin_count
+        if writer is not None:
+            writer.write(plane)
+    return records
+
+
+class _Staging:
+    """OME-Zarr copies written during a run, moved into place only if the run succeeds."""
+
+    def __init__(self, output: Path, experiment_root: Path):
+        self.output = output
+        self.experiment_root = experiment_root
+        self.created_output = not output.exists()
+        output.mkdir(parents=True, exist_ok=True)
+        self.root = Path(tempfile.mkdtemp(prefix=".staging-", dir=output))
+        self.staged: list[str] = []
+
+    def writer(self, rel: str, mapping: AxisMapping, header: TiffMetadata) -> OmeZarrWriter:
+        source = self.experiment_root / rel
+        target = ome_zarr_relative_path(rel)
+        self.staged.append(target)
+        return OmeZarrWriter.create(
+            self.root / target,
+            mapping,
+            plane_layout(source, mapping),
+            sizes=read_physical_sizes(source),
+            channel_names=header.channel_names,
+            name=rel,
         )
-    ]
+
+    def commit(self) -> None:
+        for target in self.staged:
+            staged = self.root / target
+            if staged.is_dir():
+                replace_folder(staged, self.output / target)
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def discard(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+        if self.created_output and not any(self.output.iterdir()):
+            self.output.rmdir()
 
 
 def _load_previous(

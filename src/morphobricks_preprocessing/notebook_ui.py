@@ -49,6 +49,7 @@ from .report import (
 )
 from .run import Preflight, RunResult, preflight, run_experiment, sample_planes
 from .validation import ValidationIssue, has_errors, plural
+from .zarr_export import zarr_available
 
 ROLE_OPTIONS = [
     ("no role", "-"),
@@ -170,6 +171,20 @@ class PreprocessingNotebook:
         self.force_rebuild = widgets.Checkbox(
             description="Recompute every row, even for unchanged images", indent=False
         )
+        self.ome_zarr = widgets.Checkbox(
+            description="Also save OME-Zarr copies of the images (in the output folder)",
+            indent=False,
+            layout=widgets.Layout(width="auto"),
+            disabled=not zarr_available(),
+        )
+        self.ome_zarr_hint = widgets.HTML(
+            ""
+            if zarr_available()
+            else _note(
+                "OME-Zarr copies need the zarr package: "
+                'pip install "morphobricks-preprocessing[zarr]"'
+            )
+        )
         self.run_button = widgets.Button(
             description="Run", button_style="primary", icon="play", disabled=True
         )
@@ -237,6 +252,8 @@ class PreprocessingNotebook:
                 widgets.HBox([self.bins, self.bins_hint]),
                 self.memory_gib,
                 self.force_rebuild,
+                self.ome_zarr,
+                self.ome_zarr_hint,
                 self.run_button,
                 self.run_status,
                 self.progress,
@@ -354,6 +371,7 @@ class PreprocessingNotebook:
                 exclude=self._excluded(),
                 force_rebuild=self.force_rebuild.value,
                 progress=self._progress,
+                ome_zarr=self.ome_zarr.value,
             )
         self.run_output.value = _pre(run_summary(self.result))
         self.run_issues.value = issues_html(self.result.issues)

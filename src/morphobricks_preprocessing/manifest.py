@@ -51,12 +51,16 @@ class RunSettings:
         them.
     exclude
         Relative paths of images the user excluded from the run, sorted.
+    ome_zarr
+        Whether OME-Zarr copies of the images are written. It does not change
+        any row.
     """
 
     bin_count: int
     memory_limit: int
     missing_as_singleton: bool = False
     exclude: tuple[str, ...] = ()
+    ome_zarr: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "exclude", tuple(sorted(set(self.exclude))))
@@ -86,6 +90,8 @@ class FileEntry:
         Channel names from metadata; empty when not given.
     significant_bits
         Significant bits from metadata; None when not given.
+    ome_zarr_path
+        The file's OME-Zarr copy relative to the output folder, or None.
     """
 
     relative_path: str
@@ -97,6 +103,7 @@ class FileEntry:
     plane_count: int = 0
     channel_names: tuple[str | None, ...] = ()
     significant_bits: int | None = None
+    ome_zarr_path: str | None = None
 
     def same_source(self, other: FileEntry) -> bool:
         """Return True if ``other`` describes the same unchanged file, read the same way."""
@@ -175,6 +182,7 @@ class RunManifest:
                 "memory_limit": self.settings.memory_limit,
                 "missing_as_singleton": self.settings.missing_as_singleton,
                 "exclude": list(self.settings.exclude),
+                "ome_zarr": self.settings.ome_zarr,
             },
             "axis_mapping": {"axes": self.mapping.axes, "roles": list(self.mapping.roles)},
             "labels": [
@@ -216,6 +224,7 @@ class RunManifest:
                     memory_limit=int(settings["memory_limit"]),
                     missing_as_singleton=bool(settings["missing_as_singleton"]),
                     exclude=tuple(str(p) for p in settings["exclude"]),
+                    ome_zarr=bool(settings.get("ome_zarr", False)),
                 ),
                 mapping=AxisMapping(str(mapping["axes"]), tuple(mapping["roles"])),
                 files=tuple(_file_entry(f) for f in data["files"]),
@@ -323,6 +332,7 @@ def _file_dict(entry: FileEntry) -> dict:
         "plane_count": entry.plane_count,
         "channel_names": list(entry.channel_names),
         "significant_bits": entry.significant_bits,
+        "ome_zarr_path": entry.ome_zarr_path,
     }
 
 
@@ -342,6 +352,7 @@ def _file_entry(data: dict) -> FileEntry:
         plane_count=int(data["plane_count"]),
         channel_names=tuple(None if n is None else str(n) for n in data.get("channel_names", [])),
         significant_bits=None if bits is None else int(bits),
+        ome_zarr_path=None if data.get("ome_zarr_path") is None else str(data["ome_zarr_path"]),
     )
 
 

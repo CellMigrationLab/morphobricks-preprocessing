@@ -18,6 +18,9 @@ pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellM
 pip install jupyterlab
 ```
 
+To also save OME-Zarr copies of the images (§6), install the `zarr` extra too:
+`pip install "morphobricks-preprocessing[notebook,zarr] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git"`.
+
 Download [`notebooks/preprocessing.ipynb`](../notebooks/preprocessing.ipynb), start
 JupyterLab with `jupyter lab`, and open the notebook.
 
@@ -89,6 +92,8 @@ happened, which files are affected and what to do.
    - *Memory limit:* the most working memory one plane may need (default 1 GiB). Raise it
      only if the computer has enough memory.
    - *Recompute every row:* start from scratch instead of updating the earlier table.
+   - *Also save OME-Zarr copies:* write a copy of every image in OME-Zarr format to the
+     output folder (needs the `zarr` extra; see §6).
 
    Nothing is written unless the whole run succeeds. *Technical details* holds the log for
    troubleshooting.
@@ -123,6 +128,7 @@ without being stated. Other options:
 | `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` |
 | `--missing-as-singleton` | Confirm that images lacking some dimensions have one plane along them |
 | `--force-rebuild` | Recompute every row |
+| `--ome-zarr` | Also write OME-Zarr copies of the images (needs the `zarr` extra) |
 | `--log FILE` | Write technical details to a file |
 
 Both commands exit with status 1 when an error blocks processing.
@@ -143,6 +149,15 @@ The default output folder is next to the experiment folder:
   bin count, memory limit, excluded images, package versions, and each image's size and
   modification time. Channel names and significant bits are recorded when the metadata
   provides them. Format in [contract.md](contract.md) §9.
+- **`ome_zarr/`** (only when OME-Zarr copies are switched on): one `.ome.zarr` folder per
+  image, in the same folder structure as the experiment, e.g.
+  `ome_zarr/control/bio_rep1/tech_rep1/img_01.ome.zarr`. The full-resolution level holds
+  exactly the source pixel values; smaller levels are averages for fast viewing (for
+  example in napari with the `napari-ome-zarr` plugin). Pixel sizes and channel names are
+  copied from the metadata when present. Copies of unchanged images are kept on later
+  runs, copies of deleted or excluded images are removed. Switching the option off keeps
+  the existing copies but no longer updates them. Details in
+  [contract.md](contract.md) §10.
 
 ## 7. Running again, and excluding images
 
@@ -194,6 +209,7 @@ continues.
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
 | `no_finite_pixels` | Warning | Some planes have no finite pixels; they are left out of group statistics. |
 | `excluded_images`, `excluded_path_not_found` | Warning | Images excluded as requested, or an excluded path that matches no image. |
+| `zarr_not_installed` | Error | OME-Zarr copies were requested without the `zarr` extra. Install it, or run without copies. |
 
 ## 9. Python interface
 

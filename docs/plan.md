@@ -4,7 +4,7 @@
 **Scope:** folder validation, TIFF metadata review, per-plane intensity histograms, the
 histogram CSV, and a normalization library for later bricks
 **Out of scope for this milestone:** applying normalization (done by the patch-extraction
-brick), OME-Zarr conversion, spatial correction methods
+brick), spatial correction methods. OME-Zarr copies are an optional extra (§10).
 
 The exact rules (folder layout, binning formulas, CSV columns, statistic definitions,
 validation severities) are in [contract.md](contract.md). Coding conventions are in
@@ -225,7 +225,12 @@ API, CLI). The notebook and CLI only call the API.
   *Implemented: summaries (`report`), notebook widgets (`notebook_ui`,
   `notebooks/preprocessing.ipynb`), `check`/`run` command line (`cli`) and the
   [user guide](user_guide.md).*
-- **Later:** OME-Zarr and chunked processing for planes above the memory limit.
+- **OME-Zarr copies (optional `zarr` extra):** each analysed TIFF can be copied to
+  `<output>/ome_zarr/<relative path>.ome.zarr` (OME-NGFF 0.4) in the same pass that reads
+  it for the histograms. Level 0 holds the source values; smaller levels (2 x 2 means) are
+  for viewers. Copies follow the incremental rules of §7 and are written only when the
+  run succeeds. *Implemented (`zarr_export`).*
+- **Later:** chunked processing for planes above the memory limit.
 
 ## 11. Tests and acceptance criteria
 

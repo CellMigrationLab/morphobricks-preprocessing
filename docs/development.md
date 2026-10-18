@@ -4,7 +4,8 @@
 
 - Python 3.10 or newer.
 - Core dependencies: `numpy` and `tifffile` only. Notebook dependencies (`ipywidgets`,
-  `matplotlib`) are in the `notebook` extra; development tools in the `dev` extra.
+  `matplotlib`) are in the `notebook` extra, `zarr` (2.18 or 3.x, for OME-Zarr copies) in
+  the `zarr` extra, and development tools in the `dev` extra.
 - Set up a clone with `python -m venv .venv` and `pip install -e ".[dev]"`.
 
 ## Layout

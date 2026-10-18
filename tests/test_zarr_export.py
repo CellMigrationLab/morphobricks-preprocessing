@@ -1,0 +1,434 @@
+import json
+import os
+
+import numpy as np
+import pytest
+import tifffile
+
+from morphobricks_preprocessing import (
+    AxisMapping,
+    PhysicalSizes,
+    PlaneReadError,
+    ome_zarr_relative_path,
+    prefill_mapping,
+    read_manifest,
+    read_physical_sizes,
+    read_plane_histograms,
+    run_experiment,
+)
+from morphobricks_preprocessing import planes as planes_module
+from morphobricks_preprocessing import run as run_module
+from morphobricks_preprocessing.cli import main
+from morphobricks_preprocessing.zarr_export import (
+    PYRAMID_TARGET,
+    downsample,
+    pyramid_shapes,
+    remove_copies,
+)
+from tiff_tree import write_data, write_file
+
+ZYX = prefill_mapping("ZYX")
+
+needs_zarr = pytest.mark.skipif(
+    not run_module.zarr_available(), reason="the zarr extra is not installed"
+)
+
+
+def random_data(shape, dtype="uint16", seed=0):
+    dt = np.dtype(dtype)
+    rng = np.random.default_rng(seed)
+    if dt.kind == "f":
+        return rng.normal(100, 30, shape).astype(dt)
+    info = np.iinfo(dt)
+    return rng.integers(info.min, info.max, shape, dtype=dt, endpoint=True)
+
+
+def open_copy(output, rel):
+    import zarr
+
+    return zarr.open_group(str(output / ome_zarr_relative_path(rel)), mode="r")
+
+
+def multiscale(group):
+    return dict(group.attrs)["multiscales"][0]
+
+
+# Pure helpers (no zarr needed) --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("source", "copy"),
+    [
+        ("ctrl/rep1/img_01.tif", "ome_zarr/ctrl/rep1/img_01.ome.zarr"),
+        ("a.TIFF", "ome_zarr/a.ome.zarr"),
+        ("x/b.ome.tif", "ome_zarr/x/b.ome.zarr"),
+        ("x/c.OME.TIFF", "ome_zarr/x/c.ome.zarr"),
+    ],
+)
+def test_copy_location_mirrors_the_experiment(source, copy):
+    assert ome_zarr_relative_path(source) == copy
+
+
+def test_pyramid_shapes():
+    assert pyramid_shapes((100, 80)) == [(100, 80)]
+    assert pyramid_shapes((1100, 700)) == [(1100, 700), (550, 350), (275, 175)]
+    assert max(pyramid_shapes((3000, 10))[-1]) <= PYRAMID_TARGET
+    assert len(pyramid_shapes((10**7, 10**7))) == 8
+
+
+def test_downsample_integers_round_and_keep_type():
+    pixels = np.array([[0, 1, 255], [1, 1, 255], [7, 7, 9]], dtype=np.uint8)
+    small = downsample(pixels)
+    assert small.dtype == np.uint8
+    # Blocks: [[0,1],[1,1]] -> 0.75 -> 1; [[255],[255]] padded -> 255; [7,7] row padded -> 7.
+    np.testing.assert_array_equal(small, [[1, 255], [7, 9]])
+
+
+def test_downsample_floats_propagate_nan():
+    pixels = np.array([[1.0, 3.0], [np.nan, 0.0]], dtype=np.float32)
+    assert np.isnan(downsample(pixels)[0, 0])
+    np.testing.assert_allclose(downsample(np.full((4, 4), 2.5)), np.full((2, 2), 2.5))
+
+
+def test_physical_sizes_from_ome(tmp_path):
+    path = tmp_path / "a.ome.tif"
+    tifffile.imwrite(
+        path,
+        np.zeros((2, 3, 8, 8), np.uint16),
+        ome=True,
+        photometric="minisblack",
+        metadata={
+            "axes": "TZYX",
+            "PhysicalSizeX": 120.0,
+            "PhysicalSizeXUnit": "nm",
+            "PhysicalSizeY": 120.0,
+            "PhysicalSizeYUnit": "nm",
+            "PhysicalSizeZ": 500.0,
+            "TimeIncrement": 30.0,
+            "TimeIncrementUnit": "s",
+        },
+    )
+    assert read_physical_sizes(path) == PhysicalSizes(
+        x=120.0, y=120.0, z=500.0, t=30.0, space_unit="nanometer", time_unit="second"
+    )
+
+
+def test_physical_sizes_from_imagej(tmp_path):
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(
+        path,
+        np.zeros((3, 8, 8), np.uint16),
+        imagej=True,
+        resolution=(1 / 0.25, 1 / 0.25),
+        metadata={"axes": "ZYX", "unit": "um", "spacing": 1.5},
+    )
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.y, sizes.z, sizes.space_unit) == (0.25, 0.25, 1.5, "micrometer")
+
+
+def test_physical_sizes_unknown(tmp_path):
+    plain = write_data(tmp_path / "a.tif", np.zeros((8, 8), np.uint8))
+    assert read_physical_sizes(plain) == PhysicalSizes()
+    no_unit = tmp_path / "b.tif"
+    tifffile.imwrite(no_unit, np.zeros((8, 8), np.uint8), imagej=True, resolution=(2.0, 2.0))
+    assert read_physical_sizes(no_unit).x is None
+    assert read_physical_sizes(write_file(tmp_path / "bad.tif", b"garbage")) == PhysicalSizes()
+    assert PhysicalSizes().scale("X") == 1.0 and PhysicalSizes().unit("X") is None
+
+
+def test_remove_copies_only_touches_copies(tmp_path):
+    copy = tmp_path / "ome_zarr" / "a" / "x.ome.zarr"
+    copy.mkdir(parents=True)
+    elsewhere = tmp_path / "keep.ome.zarr"
+    elsewhere.mkdir()
+    removed = remove_copies(tmp_path, ["ome_zarr/a/x.ome.zarr", "../keep.ome.zarr", "plane.csv"])
+    assert removed == ["ome_zarr/a/x.ome.zarr"]
+    assert not copy.exists() and elsewhere.exists()
+
+
+def test_missing_zarr_is_a_clear_error(tmp_path, monkeypatch):
+    write_data(tmp_path / "exp/a.tif", random_data((2, 8, 8)), axes="ZYX")
+    monkeypatch.setattr(run_module, "zarr_available", lambda: False)
+    result = run_experiment(tmp_path / "exp", ZYX, ome_zarr=True)
+    (found,) = [i for i in result.issues if i.code == "zarr_not_installed"]
+    assert "[zarr]" in found.action and not result.written
+    assert run_experiment(tmp_path / "exp", ZYX).written
+
+
+# Writing copies -----------------------------------------------------------------------
+
+
+LAYOUTS = [
+    pytest.param((6, 7), "YX", {}, None, ("Y", "X"), id="2d"),
+    pytest.param((3, 6, 7), "ZYX", {}, None, ("Z", "Y", "X"), id="zstack"),
+    pytest.param((3, 2, 6, 7), "ZCYX", {}, None, ("C", "Z", "Y", "X"), id="zcyx"),
+    pytest.param(
+        (2, 3, 2, 6, 7), "TZCYX", {"imagej": True}, None, ("T", "C", "Z", "Y", "X"), id="imagej"
+    ),
+    pytest.param(
+        (2, 6, 7, 3), "ZYXS", {"photometric": "rgb"}, None, ("C", "Z", "Y", "X"), id="rgb"
+    ),
+    pytest.param((3, 6, 7), "ZXY", {}, None, ("Z", "Y", "X"), id="x-before-y"),
+    pytest.param((1, 3, 6, 7), "QZYX", {}, None, ("Z", "Y", "X"), id="unassigned-singleton"),
+    pytest.param((4, 6, 7), None, {}, "TYX", ("T", "Y", "X"), id="pages-as-time"),
+]
+
+
+@needs_zarr
+@pytest.mark.parametrize(("shape", "axes", "kwargs", "roles", "ngff"), LAYOUTS)
+def test_copy_holds_the_source_values(tmp_path, shape, axes, kwargs, roles, ngff):
+    data = random_data(shape, "uint8" if "photometric" in kwargs else "uint16")
+    write_data(tmp_path / "exp/a.tif", data, axes=axes, **kwargs)
+    info = run_module.preflight(tmp_path / "exp").metadata.files[0]
+    mapping = AxisMapping(info.axes, roles) if roles else prefill_mapping(info.axes)
+    result = run_experiment(tmp_path / "exp", mapping, ome_zarr=True)
+    assert result.written and result.converted == ("a.tif",)
+
+    group = open_copy(result.output_folder, "a.tif")
+    meta = multiscale(group)
+    assert [a["name"] for a in meta["axes"]] == [r.lower() for r in ngff]
+    assert meta["version"] == "0.4"
+    # Reorder the source to OME-NGFF order with NumPy and compare with level 0.
+    present = [r for r in mapping.roles if r is not None]
+    keep = tuple(slice(None) if r is not None else 0 for r in mapping.roles)
+    expected = np.moveaxis(data[keep], [present.index(r) for r in ngff], range(len(ngff)))
+    np.testing.assert_array_equal(group["0"][:], expected)
+    assert group["0"].dtype == data.dtype
+
+
+@needs_zarr
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "float32",
+        "float64",
+    ],
+)
+def test_every_dtype_is_copied_unchanged(tmp_path, dtype):
+    data = random_data((2, 9, 11), dtype)
+    if data.dtype.kind == "f":
+        data[0, 0, :2] = [np.nan, np.inf]
+    write_data(tmp_path / "exp/a.tif", data, axes="ZYX")
+    result = run_experiment(tmp_path / "exp", ZYX, ome_zarr=True)
+    np.testing.assert_array_equal(open_copy(result.output_folder, "a.tif")["0"][:], data)
+
+
+@needs_zarr
+def test_pyramid_levels_and_scales(tmp_path):
+    data = random_data((2, 1100, 700), "uint16")
+    path = tmp_path / "exp/a.ome.tif"
+    path.parent.mkdir(parents=True)
+    tifffile.imwrite(
+        path,
+        data,
+        ome=True,
+        photometric="minisblack",
+        metadata={"axes": "ZYX", "PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5, "PhysicalSizeZ": 2},
+    )
+    result = run_experiment(tmp_path / "exp", ZYX, ome_zarr=True)
+    group = open_copy(result.output_folder, "a.ome.tif")
+    meta = multiscale(group)
+    assert [d["path"] for d in meta["datasets"]] == ["0", "1", "2"]
+    scales = [d["coordinateTransformations"][0]["scale"] for d in meta["datasets"]]
+    assert scales == [[2.0, 0.5, 0.5], [2.0, 1.0, 1.0], [2.0, 2.0, 2.0]]
+    assert meta["axes"][2] == {"name": "x", "type": "space", "unit": "micrometer"}
+    assert group["1"].shape == (2, 550, 350) and group["2"].shape == (2, 275, 175)
+    np.testing.assert_array_equal(group["1"][1], downsample(data[1]))
+    assert group["0"].chunks == (1, 1024, 700)
+
+
+@needs_zarr
+def test_channel_names_and_display_ranges(tmp_path):
+    data = random_data((2, 8, 8), "uint16")
+    path = tmp_path / "exp/a.ome.tif"
+    path.parent.mkdir(parents=True)
+    tifffile.imwrite(
+        path,
+        data,
+        ome=True,
+        photometric="minisblack",
+        metadata={"axes": "CYX", "Channel": {"Name": ["DAPI", "GFP"]}},
+    )
+    result = run_experiment(tmp_path / "exp", prefill_mapping("CYX"), ome_zarr=True)
+    omero = dict(open_copy(result.output_folder, "a.ome.tif").attrs)["omero"]
+    assert [c["label"] for c in omero["channels"]] == ["DAPI", "GFP"]
+    window = omero["channels"][1]["window"]
+    assert (window["min"], window["max"]) == (float(data[1].min()), float(data[1].max()))
+
+
+@needs_zarr
+def test_missing_axis_becomes_length_one(tmp_path):
+    write_data(tmp_path / "exp/a.tif", random_data((2, 3, 8, 8)), axes="ZCYX")
+    data = random_data((2, 8, 8), seed=1)
+    write_data(tmp_path / "exp/b.tif", data, axes="ZYX")
+    result = run_experiment(
+        tmp_path / "exp", prefill_mapping("ZCYX"), ome_zarr=True, missing_as_singleton=True
+    )
+    group = open_copy(result.output_folder, "b.tif")
+    assert group["0"].shape == (1, 2, 8, 8)
+    np.testing.assert_array_equal(group["0"][0], data)
+
+
+# Runs and reruns ----------------------------------------------------------------------
+
+
+@pytest.fixture
+def experiment(tmp_path):
+    root = tmp_path / "exp"
+    for i, rel in enumerate(["ctrl/a.tif", "ctrl/b.tif", "drug/a.tif"]):
+        write_data(root / rel, random_data((2, 16, 16), "uint8", seed=i), axes="ZYX")
+    return root
+
+
+def copy_mtimes(output):
+    base = output / "ome_zarr"
+    return {
+        p.relative_to(base).as_posix(): p.stat().st_mtime_ns for p in base.rglob("*") if p.is_file()
+    }
+
+
+@needs_zarr
+def test_manifest_records_the_copies(experiment):
+    result = run_experiment(experiment, ZYX, ome_zarr=True)
+    manifest = read_manifest(result.manifest_path)
+    assert manifest.settings.ome_zarr
+    assert [f.ome_zarr_path for f in manifest.files] == [
+        "ome_zarr/ctrl/a.ome.zarr",
+        "ome_zarr/ctrl/b.ome.zarr",
+        "ome_zarr/drug/a.ome.zarr",
+    ]
+    assert not [p for p in result.output_folder.iterdir() if p.name.startswith(".staging")]
+
+
+@needs_zarr
+def test_rerun_keeps_unchanged_copies(experiment):
+    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    before = copy_mtimes(first.output_folder)
+    second = run_experiment(experiment, ZYX, ome_zarr=True)
+    assert second.read == second.converted == ()
+    assert copy_mtimes(second.output_folder) == before
+
+
+@needs_zarr
+def test_changed_image_is_copied_again(experiment):
+    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    path = experiment / "ctrl/b.tif"
+    new_data = random_data((2, 16, 16), "uint8", seed=42)
+    stat = os.stat(path)
+    write_data(path, new_data, axes="ZYX")
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**9))
+    second = run_experiment(experiment, ZYX, ome_zarr=True)
+    assert second.converted == ("ctrl/b.tif",)
+    np.testing.assert_array_equal(open_copy(first.output_folder, "ctrl/b.tif")["0"][:], new_data)
+
+
+@needs_zarr
+def test_removed_and_excluded_images_lose_their_copies(experiment):
+    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    (experiment / "ctrl/a.tif").unlink()
+    run_experiment(experiment, ZYX, ome_zarr=True, exclude=["drug/a.tif"])
+    remaining = sorted(
+        p.relative_to(first.output_folder).as_posix()
+        for p in (first.output_folder / "ome_zarr").rglob("*.ome.zarr")
+    )
+    assert remaining == ["ome_zarr/ctrl/b.ome.zarr"]
+
+
+@needs_zarr
+def test_turning_copies_on_later_reads_pixels_but_keeps_rows(experiment):
+    first = run_experiment(experiment, ZYX)
+    table = first.csv_path.read_bytes()
+    second = run_experiment(experiment, ZYX, ome_zarr=True)
+    assert second.rebuild_reason is None
+    assert second.converted == ("ctrl/a.tif", "ctrl/b.tif", "drug/a.tif") == second.read
+    assert second.csv_path.read_bytes() == table
+    # A copy deleted by hand is written again.
+    import shutil
+
+    shutil.rmtree(second.output_folder / "ome_zarr/drug/a.ome.zarr")
+    third = run_experiment(experiment, ZYX, ome_zarr=True)
+    assert third.converted == ("drug/a.tif",)
+
+
+@needs_zarr
+def test_turning_copies_off_keeps_them_untracked(experiment):
+    run_experiment(experiment, ZYX, ome_zarr=True)
+    result = run_experiment(experiment, ZYX)
+    assert result.read == ()
+    assert all(f.ome_zarr_path is None for f in read_manifest(result.manifest_path).files)
+    assert (result.output_folder / "ome_zarr/ctrl/a.ome.zarr").is_dir()
+
+
+@needs_zarr
+def test_failed_run_writes_no_copies(experiment, monkeypatch):
+    original = planes_module._read_page
+
+    def broken(series, index, layout, path):
+        if str(path).endswith("b.tif"):
+            raise PlaneReadError("cannot be decoded")
+        return original(series, index, layout, path)
+
+    monkeypatch.setattr(planes_module, "_read_page", broken)
+    result = run_experiment(experiment, ZYX, ome_zarr=True)
+    assert not result.written
+    assert not result.output_folder.exists()
+
+
+@needs_zarr
+def test_failed_rerun_keeps_earlier_copies(experiment, monkeypatch):
+    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    before = copy_mtimes(first.output_folder)
+    write_data(experiment / "ctrl/c.tif", random_data((2, 16, 16), "uint8", seed=7), axes="ZYX")
+    original = planes_module._read_page
+
+    def broken(series, index, layout, path):
+        if str(path).endswith("c.tif"):
+            raise PlaneReadError("cannot be decoded")
+        return original(series, index, layout, path)
+
+    monkeypatch.setattr(planes_module, "_read_page", broken)
+    assert not run_experiment(experiment, ZYX, ome_zarr=True).written
+    assert copy_mtimes(first.output_folder) == before
+    assert sorted(p.name for p in first.output_folder.iterdir()) == [
+        "ome_zarr",
+        "plane_histograms.csv",
+        "run_manifest.json",
+    ]
+
+
+@needs_zarr
+def test_table_is_the_same_with_or_without_copies(experiment, tmp_path):
+    with_copies = run_experiment(experiment, ZYX, ome_zarr=True, output_folder=tmp_path / "a")
+    without = run_experiment(experiment, ZYX, output_folder=tmp_path / "b")
+    a = read_plane_histograms(with_copies.csv_path)
+    b = read_plane_histograms(without.csv_path)
+    assert [r.plane_id for r in a] == [r.plane_id for r in b]
+    assert all(
+        np.array_equal(x.histogram.counts, y.histogram.counts) for x, y in zip(a, b, strict=True)
+    )
+
+
+@needs_zarr
+def test_cli_option(experiment, capsys):
+    assert main(["run", str(experiment), "--axes", "ZYX", "--ome-zarr"]) == 0
+    assert "OME-Zarr copies written: 3 images" in capsys.readouterr().out
+
+
+def test_old_manifest_without_ome_zarr_fields_loads(experiment):
+    result = run_experiment(experiment, ZYX)
+    data = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    del data["settings"]["ome_zarr"]
+    for entry in data["files"]:
+        del entry["ome_zarr_path"]
+    result.manifest_path.write_text(json.dumps(data), encoding="utf-8")
+    manifest = read_manifest(result.manifest_path)
+    assert not manifest.settings.ome_zarr and manifest.files[0].ome_zarr_path is None
+    assert run_experiment(experiment, ZYX).read == ()

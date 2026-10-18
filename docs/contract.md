@@ -129,7 +129,7 @@ A zero or non-finite scale is an error with a plain-language message.
 
 | Severity | Situations | Effect |
 |---|---|---|
-| Error | Mixed dtypes; unreadable TIFF (header or pixel data) in a leaf folder that is not excluded; every image excluded; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane over the memory limit; folder named `single`; sibling folders differing only in case; folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
+| Error | Mixed dtypes; unreadable TIFF (header or pixel data) in a leaf folder that is not excluded; every image excluded; OME-Zarr copies requested without the `zarr` extra; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane over the memory limit; folder named `single`; sibling folders differing only in case; folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
 | Warning | Non-TIFF files; empty folders; TIFFs outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image sizes with a valid mapping; planes without finite pixels while others remain | Processing continues; the item is reported |
 
 Every message states what happened in plain language, lists the affected paths, and
@@ -146,11 +146,24 @@ succeeded.
 | `written_at` | UTC time of writing, ISO 8601. |
 | `experiment_root` | Absolute path of the experiment folder, for information. |
 | `dtype` | Pixel type of the experiment. |
-| `settings` | `bin_count`, `memory_limit` (bytes), `missing_as_singleton`, `exclude` (sorted relative paths). |
+| `settings` | `bin_count`, `memory_limit` (bytes), `missing_as_singleton`, `exclude` (sorted relative paths), `ome_zarr` (whether copies are written; false when absent). |
 | `axis_mapping` | `axes` (file axis labels) and `roles` (`X`, `Y`, `Z`, `C`, `T` or null per axis). |
 | `labels` | One entry per leaf folder: `folder` (relative path, `.` for the root) and its three labels. |
-| `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count`, `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata). |
+| `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count`, `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata), `ome_zarr_path` (the copy relative to the output folder; null when no copy is tracked or the key is absent). |
 | `csv_sha256` | SHA-256 of the table written with this manifest. |
 | `versions` | Versions of `morphobricks-preprocessing`, `numpy`, `tifffile` and Python. |
 
 Channel names and significant bits come from OME metadata and are for information only.
+
+## 10. OME-Zarr copies (optional)
+
+| Rule | Detail |
+|---|---|
+| Location | `<output>/ome_zarr/<source_relative_path without .tif/.tiff/.ome.tif>.ome.zarr` |
+| Format | OME-NGFF 0.4, Zarr format 2, `/` chunk separator, Blosc compression |
+| Axes | `t`, `c`, `z`, `y`, `x` in that order, only the roles of the confirmed mapping (missing axes resolved as singletons have length 1; axes without a role are dropped) |
+| Level 0 | The source values, unchanged, in the source pixel type; chunks of one plane, at most 1024 x 1024 pixels |
+| Further levels | 2 x 2 block means rounded to the pixel type, until a plane fits in 512 x 512 (at most 8 levels); for viewing only |
+| Scale | Physical pixel sizes, z-step and time step from OME or ImageJ metadata, with OME-NGFF units; 1 when unknown |
+| Channels | `omero` block with channel names from metadata (or `Channel <i>`) and each channel's observed minimum and maximum as display window |
+| Updates | Copies of unchanged images are kept, of new or changed images rewritten, and of images no longer analysed removed; a failed run writes no copy |
