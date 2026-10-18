@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,7 +47,14 @@ from .manifest import (
     write_manifest,
 )
 from .metadata import MetadataReport, inspect_images
-from .planes import DEFAULT_MEMORY_LIMIT, PlaneReadError, check_planes, iter_planes
+from .planes import (
+    DEFAULT_MEMORY_LIMIT,
+    Plane,
+    PlaneReadError,
+    check_planes,
+    iter_planes,
+    read_sample_plane,
+)
 from .records import PlaneRecord
 from .validation import ValidationIssue, error, has_errors, plural, warning
 
@@ -145,6 +152,63 @@ class RunResult:
         return self.output_folder / MANIFEST_FILENAME
 
 
+@dataclass(frozen=True)
+class SamplePlane:
+    """A plane shown in the axis preview.
+
+    Attributes
+    ----------
+    relative_path
+        The file the plane comes from.
+    axes
+        The file's axis labels; one sample is taken per arrangement of axes.
+    plane
+        The plane, or None if it could not be read.
+    error
+        Why the plane could not be read, in plain language.
+    """
+
+    relative_path: str
+    axes: str
+    plane: Plane | None = None
+    error: str | None = None
+
+
+def sample_planes(
+    pre: Preflight,
+    mapping: AxisMapping,
+    *,
+    memory_limit: int = DEFAULT_MEMORY_LIMIT,
+) -> list[SamplePlane]:
+    """Read one preview plane per arrangement of axes, from the first file that has it.
+
+    Files lacking some of the mapping's axes are previewed with those axes as
+    length 1, so the user can see them before confirming that this is right.
+    """
+    samples = []
+    seen: set[str] = set()
+    for f in pre.metadata.files:
+        if not f.readable or f.axes in seen:
+            continue
+        seen.add(f.axes)
+        file_mapping = mapping.for_axes(f.axes)
+        if file_mapping is None:
+            samples.append(
+                SamplePlane(f.relative_path, f.axes, error="The axis mapping does not fit it.")
+            )
+            continue
+        try:
+            plane = read_sample_plane(
+                pre.discovery.root / f.relative_path, file_mapping, memory_limit=memory_limit
+            )
+        except PlaneReadError as exc:
+            logger.debug("Cannot preview %s", f.relative_path, exc_info=True)
+            samples.append(SamplePlane(f.relative_path, f.axes, error=str(exc)))
+            continue
+        samples.append(SamplePlane(f.relative_path, f.axes, plane))
+    return samples
+
+
 def preflight(
     experiment_root: str | os.PathLike,
     output_folder: str | os.PathLike | None = None,
@@ -192,6 +256,7 @@ def run_experiment(
     missing_as_singleton: bool = False,
     exclude: Iterable[str] = (),
     force_rebuild: bool = False,
+    progress: Callable[[int, int, str], None] | None = None,
 ) -> RunResult:
     """Pass 2: write or update the histogram table and the run manifest.
 
@@ -215,6 +280,9 @@ def run_experiment(
         removed.
     force_rebuild
         Recompute every row even if the earlier output is up to date.
+    progress
+        Called as ``progress(done, total, relative_path)`` before each file is
+        read, and as ``progress(total, total, "")`` when reading is finished.
 
     Returns
     -------
@@ -286,12 +354,16 @@ def run_experiment(
     for rel in unchanged if not reason else ():
         records.extend(previous_records[rel])
     failed: list[str] = []
-    for rel in to_read:
+    for done, rel in enumerate(to_read):
+        if progress is not None:
+            progress(done, len(to_read), rel)
         try:
             records.extend(_read_file(root, rel, labels[rel], review.file_mappings[rel], settings))
         except PlaneReadError:
             logger.warning("Cannot read the planes of %s", rel, exc_info=True)
             failed.append(rel)
+    if progress is not None:
+        progress(len(to_read), len(to_read), "")
     if failed:
         issues.append(
             error(

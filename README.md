@@ -23,13 +23,16 @@ Pre-alpha. Implemented and tested:
   (`planes`)
 - Running an experiment end to end and updating earlier output incrementally, with a
   run manifest (`run`, `manifest`)
+- A step-by-step notebook ([notebooks/preprocessing.ipynb](notebooks/preprocessing.ipynb))
+  and a command line (`morphobricks-preprocessing check` / `run`)
 - Per-plane histograms for all supported pixel types (`histogram`)
 - Reading and writing the histogram table (`csv_io`)
 - Group statistics pooled from histograms (`pooling`)
 - Normalization parameters and their application (`normalization`)
 
-Planned (see [docs/plan.md](docs/plan.md)): the notebook interface (including
-the axis review widgets) and the command-line interface.
+Planned (see [docs/plan.md](docs/plan.md)): OME-Zarr and chunked processing for
+planes above the memory limit. **New users: start with the
+[user guide](docs/user_guide.md).**
 
 ## Installation
 
@@ -43,7 +46,15 @@ For development, from a clone:
 pip install -e ".[dev]"
 ```
 
-The optional `notebook` extra installs the widget dependencies.
+The optional `notebook` extra installs the widget dependencies for the notebook
+(`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git"`).
+
+From a terminal:
+
+```bash
+morphobricks-preprocessing check /data/exp1
+morphobricks-preprocessing run /data/exp1 --axes ZCYX
+```
 
 ## Running an experiment
 

@@ -34,6 +34,9 @@ dev = [
     "ruff>=0.6",
 ]
 
+[project.scripts]
+morphobricks-preprocessing = "morphobricks_preprocessing.cli:main"
+
 [project.urls]
 Repository = "https://github.com/CellMigrationLab/morphobricks-preprocessing"
 

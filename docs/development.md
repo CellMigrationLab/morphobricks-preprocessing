@@ -14,7 +14,7 @@ src/morphobricks_preprocessing/   importable package, one module per job
 tests/                            pytest suite with simulated data
 docs/                             plan, contract, these conventions
 experiments/                      studies behind design decisions (not part of the package)
-notebooks/                        biologist-facing notebooks, calling the API only (planned)
+notebooks/                        biologist-facing notebooks, calling the API only
 ```
 
 The notebook and the CLI contain no processing logic; they call the same public
