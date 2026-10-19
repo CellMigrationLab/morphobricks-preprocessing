@@ -76,7 +76,7 @@ EXCLUDABLE_CODES = ("unreadable_tiff", "multiple_series", "unsupported_dtype")
 _SKIPPED_CODES = ("non_tiff_file", "tiff_outside_leaf", "empty_folder")
 _MAX_PLOTTED_GROUPS = 12
 _PACKAGE_LOGGER = "morphobricks_preprocessing"
-_WIDE = {"width": "100%"}
+_WIDE = {"width": "99%"}
 
 
 class PreprocessingNotebook:
@@ -196,17 +196,19 @@ class PreprocessingNotebook:
     def results_step(self) -> widgets.Widget:
         """Step 4: pooled statistics and intensity distributions from the table."""
         return ui.page(
-            "Step 4 · Look at the results",
-            "Compare conditions and repeats using the histograms just computed.",
+            "Step 4 · Calculate the statistics (optional)",
+            "Compare conditions and repeats using the histograms computed in step 3.",
             [
                 ui.intro(
-                    "Statistics are <b>pooled</b> from the histograms of all planes in each "
-                    "group: a group's median is the median of all its pixels, not an average "
-                    "of per-image medians. Later bricks normalise images the same way."
+                    "<b>This step is optional.</b> The histogram table written in step 3 is "
+                    "all that later MorphoBricks bricks need; this step does not change it "
+                    "and writes no files. Use it to compare groups and check that the "
+                    "brightness looks as expected.<br>Statistics are <b>pooled</b> from the "
+                    "histograms of all planes in each group: a group's median is the median "
+                    "of all its pixels, not an average of per-image medians."
                 ),
+                self.csv_card,
                 self.results_card,
-                self.statistics_button,
-                self.stats_status,
                 self.stats_tiles,
                 self.statistics_card,
                 self.distribution_card,
@@ -253,7 +255,7 @@ class PreprocessingNotebook:
         )
         self.exclude = widgets.Textarea(
             placeholder="control/bio_rep1/tech_rep1/damaged_image.tif",
-            layout=widgets.Layout(width="100%", height="5em"),
+            layout=widgets.Layout(width="99%", height="5em"),
         )
         self.exclude_box = widgets.Accordion(
             children=[
@@ -281,12 +283,16 @@ class PreprocessingNotebook:
         self.folder_status = widgets.HTML()
         self.folder_tiles = widgets.HTML()
         self.labels_table = widgets.HTML()
-        self.labels_confirmed = widgets.Checkbox(
-            description="I checked the labels above: they are correct",
-            indent=False,
-            disabled=True,
-            layout=widgets.Layout(width="auto"),
+        self.labels_confirmed = ui.ConfirmToggle(
+            "Do the labels in the table match your experiment?",
+            "Check that every image folder has the right condition, biological repeat and "
+            "technical repeat. If a label is wrong, rename the folder and click <b>Check "
+            "folder</b> again. Step 3 can only run once the labels are confirmed.",
+            "Yes, the labels are correct",
+            "Labels confirmed. Continue with step 2.",
+            "Undo: the labels are not right",
         )
+        self.labels_confirmed.disabled = True
         self.labels_card = ui.card(
             "Labels from the folder names",
             [
@@ -296,7 +302,7 @@ class PreprocessingNotebook:
                     "rename the folder and press <b>Check folder</b> again."
                 ),
                 self.labels_table,
-                self.labels_confirmed,
+                self.labels_confirmed.widget,
             ],
             visible=False,
         )
@@ -318,7 +324,7 @@ class PreprocessingNotebook:
         self.exclude_button.on_click(lambda _: self._exclude_blocking_images())
         self.folder.observe(lambda _: self._folder_edited(), names="value")
         self.output.observe(lambda _: self._update_output_hint(), names="value")
-        self.labels_confirmed.observe(lambda _: self._refresh_run_step(), names="value")
+        self.labels_confirmed.observe(lambda _: self._refresh_run_step())
         self._update_output_hint()
 
     def check_folder(self) -> Preflight | None:
@@ -341,7 +347,7 @@ class PreprocessingNotebook:
         self.mapping = pre.suggested_mapping
         self.confirmed_mapping = None
         self.result = None
-        self.missing_as_singleton.value = False
+        self.missing_as_singleton.set(False, notify=False)
         self._show_folder_results(pre)
         self._reset_settings(pre)
         self._refresh_axis_step()
@@ -362,17 +368,17 @@ class PreprocessingNotebook:
             self.folder_status.value = ui.status(
                 "warn",
                 f"Ready, with {plural(len(warnings), 'warning')} to read.",
-                ["Check the labels below and tick the box, then continue to step 2."],
+                ["Check the labels table below and click Yes, the labels are correct."],
             )
         else:
             self.folder_status.value = ui.status(
                 "ok",
                 "The folder looks good.",
-                ["Check the labels below and tick the box, then continue to step 2."],
+                ["Check the labels table below and click Yes, the labels are correct."],
             )
         self.folder_tiles.value = ui.tiles(_folder_tiles(pre))
         self.labels_table.value = labels_html(pre)
-        self.labels_confirmed.value = False
+        self.labels_confirmed.set(False, notify=False)
         self.labels_confirmed.disabled = not pre.discovery.leaves
         ui.set_visible(self.labels_card, bool(pre.discovery.leaves))
         self.folder_issues.value = issues_html(pre.issues)
@@ -392,7 +398,7 @@ class PreprocessingNotebook:
             "info", "The folder changed.", ["Press Check folder to check the new folder."]
         )
         self.folder_tiles.value = ""
-        self.labels_confirmed.value = False
+        self.labels_confirmed.set(False, notify=False)
         ui.set_visible(self.labels_card, False)
         ui.set_visible(self.issues_card, False)
         self._refresh_axis_step()
@@ -404,14 +410,14 @@ class PreprocessingNotebook:
         if not folder and not output:
             self.output_hint.value = (
                 "<div class='mb-help'>Results go next to the experiment folder, in "
-                "<code>&lt;experiment&gt;_MorphoBricks_Preprocessing</code>.</div>"
+                "<b>&lt;experiment&gt;_MorphoBricks_Preprocessing</b>.</div>"
             )
             return
         target = Path(output) if output else default_output_folder(folder)
         lines = [
-            f"Results will be written to <code>{html.escape(str(target))}</code>"
+            f"Results will be written to <b>{html.escape(str(target))}</b>"
             + ("" if output else " (default)")
-            + f": <code>{OUTPUT_FILENAME}</code> and <code>{MANIFEST_FILENAME}</code>."
+            + f": <b>{OUTPUT_FILENAME}</b> and <b>{MANIFEST_FILENAME}</b>."
         ]
         if folder and output and check_output_folder(folder, output):
             lines.append(
@@ -448,17 +454,21 @@ class PreprocessingNotebook:
         self.plane_summary = widgets.HTML()
         self.axis_status = widgets.HTML()
         self.missing_note = widgets.HTML()
-        self.missing_as_singleton = widgets.Checkbox(
-            description="Yes, these images have a single plane along the missing axes",
-            indent=False,
-            layout=widgets.Layout(width="auto"),
+        self.missing_as_singleton = ui.ConfirmToggle(
+            "Do these images really have a single plane along the missing axes?",
+            "Usually the file leaves out a dimension of length 1, for example when an image "
+            "has only one channel. If these images were exported differently, export them "
+            "again instead.",
+            "Yes, they have a single plane there",
+            "Confirmed: the missing axes are read as length 1 (their coordinate is 0).",
+            "Undo: they are different",
         )
         self.missing_card = ui.card(
             "Images with fewer axes",
-            [self.missing_note, self.missing_as_singleton],
+            [self.missing_note, self.missing_as_singleton.widget],
             visible=False,
         )
-        self.preview_file = widgets.Dropdown(layout=widgets.Layout(width="100%"))
+        self.preview_file = widgets.Dropdown(layout=widgets.Layout(width="99%"))
         self.preview_sliders = {
             role: widgets.IntSlider(
                 description=f"{role.lower()} ({name})",
@@ -478,12 +488,16 @@ class PreprocessingNotebook:
         )
         self.preview_image = widgets.Image(format="png", layout=widgets.Layout(max_width="420px"))
         self.preview_caption = widgets.HTML()
-        self.preview_checked = widgets.Checkbox(
-            description="The preview shows a normal 2D image (not stripes or a smear)",
-            indent=False,
-            disabled=True,
-            layout=widgets.Layout(width="auto"),
+        self.preview_checked = ui.ConfirmToggle(
+            "Does the preview look like a normal image of your sample?",
+            "Look at a few planes with the sliders. Stripes, repeating patterns or a smeared "
+            "picture mean that X or Y is on the wrong dimension: change the roles above. "
+            "The axis roles can only be confirmed once the preview looks right.",
+            "Yes, the preview looks right",
+            "Preview checked. Now click Confirm axis roles below.",
+            "Undo: the preview does not look right",
         )
+        self.preview_checked.disabled = True
         self.preview_card = ui.card(
             "Preview",
             [
@@ -496,7 +510,7 @@ class PreprocessingNotebook:
                 *self.preview_sliders.values(),
                 widgets.HBox([self.preview_image]),
                 self.preview_caption,
-                self.preview_checked,
+                self.preview_checked.widget,
             ],
         )
         self.confirm_button = ui.button(
@@ -507,12 +521,12 @@ class PreprocessingNotebook:
             main=True,
         )
         self.confirmed_status = widgets.HTML()
-        self.missing_as_singleton.observe(lambda _: self._mapping_changed(), names="value")
+        self.missing_as_singleton.observe(lambda _: self._mapping_changed())
         self.preview_button.on_click(lambda _: self.show_preview())
         self.preview_file.observe(lambda _: self._preview_file_changed(), names="value")
         for slider in self.preview_sliders.values():
             slider.observe(lambda _: self._render_preview_if_shown(), names="value")
-        self.preview_checked.observe(lambda _: self._update_confirm_button(), names="value")
+        self.preview_checked.observe(lambda _: self._update_confirm_button())
         self.confirm_button.on_click(lambda _: self._toggle_confirmation())
 
     def _refresh_axis_step(self) -> None:
@@ -546,10 +560,10 @@ class PreprocessingNotebook:
             self.mapping.axes, self.mapping.roles, ranges, strict=True
         ):
             dropdown = widgets.Dropdown(
-                options=ROLE_OPTIONS, value=role or "-", layout=widgets.Layout(width="100%")
+                options=ROLE_OPTIONS, value=role or "-", layout=widgets.Layout(width="99%")
             )
             note = widgets.HTML()
-            dropdown.observe(lambda _: self._mapping_changed(), names="value")
+            dropdown.observe(lambda _: self._roles_edited(), names="value")
             self.role_dropdowns.append(dropdown)
             self.role_notes.append(note)
             length = f"{low}" if low == high else f"{low} to {high}"
@@ -573,7 +587,7 @@ class PreprocessingNotebook:
             ),
         )
         self._refresh_missing_card(pre)
-        self.preview_checked.value = False
+        self.preview_checked.set(False, notify=False)
         self.preview_checked.disabled = True
         for slider in self.preview_sliders.values():
             ui.set_visible(slider, False)
@@ -625,10 +639,16 @@ class PreprocessingNotebook:
             [
                 *lines,
                 "This usually means they have a single channel or slice, which the file "
-                "does not store. Tick the box only if that is the case.",
+                "does not store. Confirm below only if that is the case.",
             ],
             raw=True,
         )
+
+    def _roles_edited(self) -> None:
+        # A preview checked with other roles says nothing about the new ones.
+        if self.preview_checked.value:
+            self.preview_checked.set(False, notify=False)
+        self._mapping_changed()
 
     def _mapping_changed(self) -> None:
         if self.preflight is None or self.mapping is None or not self.role_dropdowns:
@@ -655,7 +675,7 @@ class PreprocessingNotebook:
             self.axis_status.value = ui.status(
                 "ok",
                 "These roles are valid for every image.",
-                ["Look at the preview, tick the box under it, then confirm."],
+                ["Click Show preview, check the picture, then confirm below."],
             )
         self._review_ok = review.ok
         if self._preview_shown:
@@ -781,6 +801,7 @@ class PreprocessingNotebook:
         for dropdown in self.role_dropdowns:
             dropdown.disabled = locked
         self.missing_as_singleton.disabled = locked
+        self.preview_checked.disabled = locked or not self._preview_shown
         self.confirm_button.description = " Change axis roles" if locked else " Confirm axis roles"
         self.confirm_button.icon = "pencil" if locked else "check"
         self.confirm_button.button_style = "warning" if locked else "success"
@@ -842,14 +863,14 @@ class PreprocessingNotebook:
             main=True,
         )
         self.progress = widgets.IntProgress(
-            value=0, min=0, max=1, bar_style="info", layout=widgets.Layout(width="100%")
+            value=0, min=0, max=1, bar_style="info", layout=widgets.Layout(width="99%")
         )
         ui.set_visible(self.progress, False)
         self.run_status = widgets.HTML()
         self.run_tiles = widgets.HTML()
         self.run_issues = widgets.HTML()
         self.details = widgets.Textarea(
-            layout=widgets.Layout(width="100%", height="14em"), disabled=True
+            layout=widgets.Layout(width="99%", height="14em"), disabled=True
         )
         self.details_box = widgets.Accordion(
             children=[self.details], titles=("Technical details (log)",), selected_index=None
@@ -920,9 +941,9 @@ class PreprocessingNotebook:
             + (
                 f" ({len(self.preflight.excluded):,} excluded)." if self.preflight.excluded else "."
             ),
-            f"Output folder: <code>{html.escape(str(output))}</code>",
-            f"Files written: <code>{OUTPUT_FILENAME}</code> (one row per plane) and "
-            f"<code>{MANIFEST_FILENAME}</code> (what was read, with which settings).",
+            f"Output folder: <b>{html.escape(str(output))}</b>",
+            f"Files written: <b>{OUTPUT_FILENAME}</b> (one row per plane) and "
+            f"<b>{MANIFEST_FILENAME}</b> (what was read, with which settings).",
         ]
         manifest = output / MANIFEST_FILENAME
         if self.force_rebuild.value:
@@ -984,7 +1005,12 @@ class PreprocessingNotebook:
         self._show_run_result(self.result)
         self._show_log()
         if self.result.written:
-            self.show_statistics()
+            self.csv_file.value = str(self.result.csv_path)
+            self.stats_status.value = ui.status(
+                "info",
+                "The table from step 3 is selected.",
+                ["Click Calculate statistics to compare the groups (optional)."],
+            )
         return self.result
 
     def _show_run_result(self, result: RunResult) -> None:
@@ -1000,7 +1026,7 @@ class PreprocessingNotebook:
         lines = [f"Table: {result.csv_path}", f"Manifest: {result.manifest_path}"]
         if result.rebuild_reason:
             lines.append(f"Every image was read because {result.rebuild_reason}.")
-        lines.append("You can now continue to step 4.")
+        lines.append("Step 4 (optional) calculates statistics per group from this table.")
         self.run_status.value = ui.status(
             "ok", f"Done: {plural(result.plane_count, 'plane')} in the table.", lines
         )
@@ -1029,6 +1055,25 @@ class PreprocessingNotebook:
     # Step 4 ------------------------------------------------------------------------------
 
     def _build_results_step(self) -> None:
+        self.csv_file = widgets.Text(
+            placeholder="filled in after step 3, or choose a plane_histograms.csv",
+            layout=widgets.Layout(flex="1 1 auto", width="auto"),
+        )
+        self.csv_browse = ui.button(
+            "Browse…", icon="folder-open", tooltip="Choose a plane_histograms.csv file"
+        )
+        self.csv_card = ui.card(
+            "Histogram table",
+            [
+                widgets.HBox([self.csv_file, self.csv_browse], layout=widgets.Layout(**_WIDE)),
+                ui.help_text(
+                    "The table to calculate the statistics from. After a successful run in "
+                    "step 3 this is the table just written. To look at another experiment, "
+                    "paste the path of its <b>plane_histograms.csv</b> or use "
+                    "<b>Browse…</b>."
+                ),
+            ],
+        )
         self.level = widgets.ToggleButtons(
             options=LEVEL_OPTIONS,
             value="condition",
@@ -1041,6 +1086,14 @@ class PreprocessingNotebook:
             style={"button_width": "150px"},
         )
         self.percentiles = widgets.Text(value="1, 99.8", layout=widgets.Layout(width="200px"))
+        self.statistics_button = ui.button(
+            " Calculate statistics",
+            style="info",
+            icon="calculator",
+            tooltip="Read the histogram table and pool the planes of every group",
+            main=True,
+        )
+        self.stats_status = widgets.HTML()
         self.results_card = ui.card(
             "Group by",
             [
@@ -1052,16 +1105,10 @@ class PreprocessingNotebook:
                     "Numbers from 0 to 100 separated by commas. 1 and 99.8 are the default "
                     "range for percentile normalisation in later bricks."
                 ),
+                self.statistics_button,
+                self.stats_status,
             ],
         )
-        self.statistics_button = ui.button(
-            " Show statistics",
-            style="info",
-            icon="table",
-            tooltip="Read the histogram table and pool every group",
-            main=True,
-        )
-        self.stats_status = widgets.HTML()
         self.stats_tiles = widgets.HTML()
         self.statistics = widgets.HTML()
         self.statistics_card = ui.card(
@@ -1090,7 +1137,28 @@ class PreprocessingNotebook:
             visible=False,
         )
         self.statistics_button.on_click(lambda _: self.show_statistics())
+        self.csv_browse.on_click(lambda _: self._browse_csv())
+        self.csv_file.observe(lambda _: self._csv_changed(), names="value")
         self.level.observe(lambda _: self._statistics_option_changed(), names="value")
+
+    def _browse_csv(self) -> None:
+        current = ui.clean_path(self.csv_file.value)
+        start = str(Path(current).parent) if current else ui.clean_path(self.folder.value)
+        chosen = ui.ask_open_file(start, (("Histogram tables", "*.csv"), ("All files", "*.*")))
+        if chosen is None:
+            self.stats_status.value = ui.status(
+                "warn",
+                "The file dialog could not be opened here.",
+                ["Paste the path of the plane_histograms.csv file into the box instead."],
+            )
+        elif chosen:
+            self.csv_file.value = chosen
+
+    def _csv_changed(self) -> None:
+        # Results of another table must not stay on screen next to the new path.
+        self.stats_status.value = self.stats_tiles.value = self.statistics.value = ""
+        ui.set_visible(self.statistics_card, False)
+        ui.set_visible(self.distribution_card, False)
 
     def _statistics_option_changed(self) -> None:
         if self.statistics.value:
@@ -1099,10 +1167,17 @@ class PreprocessingNotebook:
     def show_statistics(self) -> None:
         """Show pooled statistics and distributions per group from the histogram table."""
         path = self._csv_path()
-        if path is None or not path.exists():
-            self.stats_status.value = ui.status(
-                "info", "There is no histogram table yet.", ["Run step 3 first."]
-            )
+        if path is None or not path.is_file():
+            if path is None:
+                self.stats_status.value = ui.status(
+                    "info",
+                    "Choose a histogram table first.",
+                    ["Run step 3, or click Browse… above to pick a plane_histograms.csv."],
+                )
+            else:
+                self.stats_status.value = ui.status(
+                    "warn", "This histogram table does not exist.", [str(path)]
+                )
             self.statistics.value = ""
             ui.set_visible(self.statistics_card, False)
             ui.set_visible(self.distribution_card, False)
@@ -1130,8 +1205,8 @@ class PreprocessingNotebook:
         first = records[0].histogram if records else None
         self.stats_status.value = ui.status(
             "ok",
-            f"{plural(len(summaries), LEVEL_NAMES[level])} from {path.name}.",
-            [str(path)],
+            f"Statistics of {plural(len(summaries), LEVEL_NAMES[level])} calculated.",
+            [f"From the table {path}"],
         )
         self.stats_tiles.value = ui.tiles(
             [
@@ -1171,12 +1246,8 @@ class PreprocessingNotebook:
         return ui.clean_path(self.output.value) or None
 
     def _csv_path(self) -> Path | None:
-        if self.result is not None and self.result.written:
-            return self.result.csv_path
-        folder = ui.clean_path(self.folder.value)
-        if not folder:
-            return None
-        return Path(self._output_folder() or default_output_folder(folder)) / OUTPUT_FILENAME
+        path = ui.clean_path(self.csv_file.value)
+        return Path(path) if path else None
 
     def _memory_limit(self) -> int:
         return int(self.memory_gib.value * 2**30)
@@ -1225,7 +1296,7 @@ def labels_html(pre: Preflight) -> str:
             "<tr>"
             + "".join(f"<td>{cell}</td>" for cell in cells)
             + f"<td class='mb-num'>{len(leaf.images):,}</td>"
-            + f"<td><code>{html.escape(folder)}</code></td></tr>"
+            + f"<td><b>{html.escape(folder)}</b></td></tr>"
         )
     header = "".join(
         f"<th>{h}</th>"
