@@ -11,15 +11,34 @@ its own output folder, which is never inside the experiment folder.
 
 ## 1. Installation
 
-You need Python 3.10 or newer and JupyterLab (or Jupyter Notebook). In a terminal:
+You need Python 3.10 or newer and JupyterLab (or Jupyter Notebook). Download
+[`notebooks/MorphoBricks_Preprocessing.ipynb`](../notebooks/MorphoBricks_Preprocessing.ipynb), open it in Jupyter and
+run **Step 0**. It detects local Jupyter or Google Colab and checks these options:
+
+1. **Nearby checkout:** if the kernel is running in this repository or one of its
+   subfolders, use that checkout's source code, including local edits.
+2. **Installed package:** otherwise, use the package already available to this kernel.
+3. **GitHub installation:** if the package is missing, install it with the notebook
+   dependencies from the project's GitHub repository.
+
+Missing notebook dependencies are installed into the same Python environment as the
+kernel. A local checkout is installed in editable mode when it needs dependencies;
+an installed package's notebook extra is used when its UI dependencies are missing.
+Setup prints the selected source and Python executable. It does not upgrade an already
+usable installation. Installation needs internet access, and the GitHub option needs Git.
+If another copy of the package is already loaded, restart the kernel to switch checkouts.
+
+To install everything manually instead, run these commands in the environment used by
+your notebook kernel:
 
 ```bash
 pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git"
 pip install jupyterlab
 ```
 
-Download [`notebooks/preprocessing.ipynb`](../notebooks/preprocessing.ipynb), start
-JupyterLab with `jupyter lab`, and open the notebook.
+Start JupyterLab with `jupyter lab` and open the notebook. Google Colab is detected by the
+setup cell, but native **Browse…** dialogs are only available with a local desktop: paste
+paths on the runtime filesystem when using a hosted notebook.
 
 ## 2. Organising the experiment folder
 
@@ -80,7 +99,8 @@ question and you answer with a large green **Yes, …** button. The box turns gr
 **Undo** button takes the answer back. Later steps stay locked until the earlier ones are
 confirmed. If you change the experiment folder, everything after it is reset.
 
-0. **Start the notebook.** A green box confirms the notebook is ready and shows the package
+0. **Start the notebook.** The setup cell checks the environment and installs missing
+   requirements if needed. A green box then confirms it is ready and shows the package
    version.
 1. **Check the experiment folder.**
    - Paste the folder path, or click **Browse…** to choose it in a dialog. Below the output

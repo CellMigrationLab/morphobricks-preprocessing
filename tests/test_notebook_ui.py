@@ -1,3 +1,4 @@
+import ast
 import json
 import os
 from pathlib import Path
@@ -23,7 +24,7 @@ from morphobricks_preprocessing.notebook_ui import (  # noqa: E402
 from morphobricks_preprocessing.validation import error, warning  # noqa: E402
 from tiff_tree import write_data, write_file  # noqa: E402
 
-NOTEBOOK = Path(__file__).parents[1] / "notebooks" / "preprocessing.ipynb"
+NOTEBOOK = Path(__file__).parents[1] / "notebooks" / "MorphoBricks_Preprocessing.ipynb"
 
 
 @pytest.fixture
@@ -633,11 +634,18 @@ def test_notebook_code_cells_are_hidden_and_titled():
             assert cell["source"][0].startswith("# @markdown ### Run to ")
 
 
-def test_notebook_only_calls_the_package():
+def test_notebook_keeps_processing_in_the_package():
     sources = [
         "".join(c["source"][1:]).strip() for c in _notebook()["cells"] if c["cell_type"] == "code"
     ]
-    assert sources[0].startswith("from morphobricks_preprocessing.notebook_ui import")
+    # Step 0 must work before the package or third-party dependencies are installed.
+    setup_imports = set()
+    for node in ast.walk(ast.parse(sources[0])):
+        if isinstance(node, ast.Import):
+            setup_imports.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            setup_imports.add(node.module.split(".")[0])
+    assert setup_imports <= {"subprocess", "sys", "importlib", "pathlib"}
     assert sources[1:] == [
         "notebook.folder_step()",
         "notebook.axis_step()",

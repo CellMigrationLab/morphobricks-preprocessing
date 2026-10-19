@@ -234,10 +234,12 @@ API, CLI). The notebook and CLI only call the API.
   and keep backup files with a recovery message if restoration fails.*
 - **Milestone 5 — Integration and docs:** public API, notebook, CLI, user documentation.
   *Implemented: summaries (`report`), notebook widgets (`notebook_ui`,
-  `notebooks/preprocessing.ipynb`), `check`/`run` command line (`cli`) and the
+  `notebooks/MorphoBricks_Preprocessing.ipynb`), `check`/`run` command line (`cli`) and the
   [user guide](user_guide.md).*
   *Step-4 feedback: show an animated spinner through table loading, statistics and plotting;
   disable the calculation button while busy and restore it on success or failure.*
+  *Setup feedback: standalone Step 0 detects the environment, prefers a nearby checkout,
+  reuses an installed package, or installs missing requirements into the active kernel.*
 - **Later:** OME-Zarr and chunked processing for planes above the memory limit.
 
 ## 11. Tests and acceptance criteria
@@ -304,3 +306,11 @@ Raised during review; to be decided before the milestones that need them:
    change the button to "Calculating…" and disable duplicate calculations. Keep the busy
    state until plotting finishes, and restore the button after success or failure. This
    is a notebook interaction change; statistical definitions and file schemas are unchanged.*
+10. Can the notebook initialise its environment before importing the package?
+    *Decided (October 2026): Step 0 uses the standard library to detect local Jupyter or
+    Google Colab, prefer a nearby source checkout, reuse an installed package, or install
+    from GitHub when missing. Install missing notebook requirements with the kernel's
+    Python, using an editable install for a checkout. Reuse usable installations without
+    automatic upgrades, and request a kernel restart before switching an already loaded
+    package to another checkout. All image processing and widget logic stay in the package;
+    schemas and statistical definitions are unchanged.*
