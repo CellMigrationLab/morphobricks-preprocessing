@@ -1,6 +1,6 @@
 """Widgets for the biologist-facing notebook.
 
-The notebook ``notebooks/preprocessing.ipynb`` shows the four steps of
+The notebook ``notebooks/MorphoBricks_Preprocessing.ipynb`` shows the four steps of
 :class:`PreprocessingNotebook`, one per cell:
 
 1. **Folder** - choose the experiment folder, check it, and confirm the labels

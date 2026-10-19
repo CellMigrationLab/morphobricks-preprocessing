@@ -23,7 +23,7 @@ Pre-alpha. Implemented and tested:
   (`planes`)
 - Running an experiment end to end and updating earlier output incrementally, with a
   run manifest (`run`, `manifest`)
-- A step-by-step notebook ([notebooks/preprocessing.ipynb](notebooks/preprocessing.ipynb))
+- A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
   and a command line (`morphobricks-preprocessing check` / `run`)
 - Per-plane histograms for all supported pixel types (`histogram`)
 - Reading and writing the histogram table (`csv_io`)
@@ -48,6 +48,9 @@ pip install -e ".[dev]"
 
 The optional `notebook` extra installs the widget dependencies for the notebook
 (`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git"`).
+The notebook's Step 0 can set this up automatically: it uses a nearby checkout or an
+installed package, and installs missing requirements into the active kernel. A standalone
+download installs from GitHub if needed (internet access and Git required).
 
 From a terminal:
 
