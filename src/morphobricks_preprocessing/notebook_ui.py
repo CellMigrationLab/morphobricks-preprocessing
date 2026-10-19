@@ -1182,6 +1182,8 @@ class PreprocessingNotebook:
 
     def show_statistics(self) -> None:
         """Show pooled statistics and distributions per group from the histogram table."""
+        if self.statistics_button.disabled:
+            return
         path = self._csv_path()
         if path is None or not path.is_file():
             if path is None:
@@ -1209,21 +1211,39 @@ class PreprocessingNotebook:
                 ["Use numbers from 0 to 100 separated by commas, for example 1, 99.8."],
             )
             return
+        self._busy(self.statistics_button, "Calculating…")
+        self.stats_status.value = ui.working("Reading the histogram table…")
+        self.stats_tiles.value = self.statistics.value = ""
+        ui.set_visible(self.statistics_card, False)
+        ui.set_visible(self.distribution_card, False)
+        try:
+            self._calculate_statistics(path, percentiles)
+        except Exception as exc:
+            self.log.lines.append(traceback.format_exc())
+            self.stats_status.value = ui.status(
+                "error",
+                "The statistics could not be calculated.",
+                [f"{type(exc).__name__}: {exc}", "Check the histogram table and try again."],
+            )
+            ui.set_visible(self.statistics_card, False)
+            ui.set_visible(self.distribution_card, False)
+        finally:
+            self._idle(self.statistics_button, " Calculate statistics", "calculator")
+            self._show_log()
+
+    def _calculate_statistics(self, path: Path, percentiles: Sequence[float]) -> None:
+        """Read, summarise and plot the table while reporting the current stage."""
         try:
             records = read_plane_histograms(path)
         except (CsvFormatError, OSError) as exc:
             self.stats_status.value = ui.status("error", "The table cannot be read.", [str(exc)])
             return
+        self.stats_status.value = ui.working("Calculating statistics for each group…")
         level = self.level.value
         summaries = group_summaries(records, level, percentiles)
         groups = group_records(records, level)
         images = {r.source_relative_path for r in records}
         first = records[0].histogram if records else None
-        self.stats_status.value = ui.status(
-            "ok",
-            f"Statistics of {plural(len(summaries), LEVEL_NAMES[level])} calculated.",
-            [f"From the table {path}"],
-        )
         self.stats_tiles.value = ui.tiles(
             [
                 ("🧪", f"{len(summaries):,}", f"{LEVEL_NAMES[level]} groups"),
@@ -1237,9 +1257,15 @@ class PreprocessingNotebook:
         depth = len(summaries[0].labels) if summaries else 1
         self.statistics.value = ui.table(rows, numeric_from=depth)
         ui.set_visible(self.statistics_card, True)
+        self.stats_status.value = ui.working("Drawing the intensity distributions…")
         png = distribution_png(groups)
         self.distribution.value = png or b""
         ui.set_visible(self.distribution_card, bool(png))
+        self.stats_status.value = ui.status(
+            "ok",
+            f"Statistics of {plural(len(summaries), LEVEL_NAMES[level])} calculated.",
+            [f"From the table {path}"],
+        )
 
     # Shared ------------------------------------------------------------------------------
 

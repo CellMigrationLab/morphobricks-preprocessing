@@ -130,6 +130,9 @@ confirmed. If you change the experiment folder, everything after it is reset.
      experiment, paste the path of its `plane_histograms.csv` or click **Browse…**.
    - Choose **Condition**, **Biological repeat**, **Technical repeat** or **Image**, and the
      percentiles to report, then click **Calculate statistics**.
+   - A spinning wheel shows that work is in progress while the table is read, statistics
+     are calculated and the plot is drawn. The button says **Calculating…** and stays
+     disabled until the calculation finishes or an error is shown; you can then try again.
    - The table lists pooled statistics per group: minimum, maximum, mean, standard
      deviation, median and percentiles.
    - The plot compares the groups' intensity distributions: curves further right are
