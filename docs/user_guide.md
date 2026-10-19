@@ -107,6 +107,8 @@ confirmed. If you change the experiment folder, everything after it is reset.
      The confirmed roles are locked until you click **Change axis roles**.
    - If some images lack a dimension the others have (often a single channel), a yellow box
      lists them; press **Yes, they have a single plane there** if that is the case.
+     Once you confirm the axis roles, this resolves the missing-axis error for step 3.
+     Any other errors still need to be fixed before running.
 3. **Compute the histograms.**
    - **Before you run** lists anything still to do.
    - **What will happen** names the output folder and files, and says whether an earlier
@@ -183,6 +185,15 @@ The default output folder is next to the experiment folder:
   bin count, memory limit, excluded images, package versions, and each image's size and
   modification time. Channel names and significant bits are recorded when the metadata
   provides them. Format in [contract.md](contract.md) §9.
+
+The table and manifest are both prepared before the earlier files are replaced. If a
+replacement fails, the earlier files are restored. This needs temporary disk space for
+the new outputs and copies of the earlier pair. If restoration also fails (for example,
+another program locks an output file), the error names a backup folder: close programs
+using the output files and restore those backups before running again.
+
+Run only one writer per output folder. If the process is forcibly stopped during output
+replacement, rerunning checks the table against the manifest and rebuilds a mismatched pair.
 
 ## 7. Running again, and excluding images
 

@@ -46,6 +46,10 @@ functions the tests use.
 - Floats are written at full precision (`repr`); files are UTF-8.
 - Outputs are written to a temporary file and replace the previous version only after a
   complete successful write.
+- Experiment runs stage both the CSV and manifest before publishing either, back up
+  earlier outputs, and restore their previous state if publication raises. Preserve
+  backups if recovery fails. The CSV hash check still detects forced termination between
+  replacements; run only one writer per output folder.
 
 ## Tests
 

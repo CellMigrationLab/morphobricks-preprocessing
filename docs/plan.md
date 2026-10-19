@@ -153,8 +153,15 @@ new and changed files without reading unchanged pixels. Provide a force-rebuild 
 On rerun: add rows for new planes; replace rows for changed files or changed axis/bin
 settings; remove rows for deleted or renamed files (a rename is a delete plus an add).
 Existing rows of unchanged files are never recomputed, because each row depends only on
-its own plane. Write to a temporary file and replace the previous output only after a
-complete successful run.
+its own plane. Prepare the CSV and manifest in a temporary folder on the output filesystem
+before replacing either output. Back up earlier files before publication; if replacing
+either file fails, restore the earlier pair (or remove newly created files on a first run).
+If restoration itself fails, keep the backups and report their location for manual recovery.
+Temporary-file cleanup failures are logged without treating a completed run as failed.
+
+The two replacements are not a single filesystem transaction. If the process is forcibly
+terminated between them, the CSV hash check on the next run detects the mismatch and
+rebuilds the output. Runs writing to the same output folder must be performed one at a time.
 
 A file is unchanged when its size, modification time, labels and axis layout match the
 manifest and the table still holds all its rows. Every row is recomputed when there is no
@@ -216,11 +223,15 @@ API, CLI). The notebook and CLI only call the API.
   mapping saved to the manifest. *Implemented: axis mapping, prefill and validation
   (`axes`), plane-by-plane reading with a memory limit and the preview plane (`planes`),
   and the axis review step of the notebook.*
+  *Review fix: confirmed singleton axes clear the corresponding readiness error while
+  folder, exclusion and other metadata errors continue to block the run.*
 - **Milestone 3 — Histogram engine:** per-plane histograms, extrema, non-finite and
   constant planes, pooling, normalization library. *Core implemented and tested.*
 - **Milestone 4 — CSV and reruns:** write/update the CSV and manifest, detect
   new/changed/deleted planes, force rebuild. *Implemented: run manifest (`manifest`),
   preflight and incremental runs with exclusions (`run`).*
+  *Review fix: stage both files, preserve earlier output on write/publication failures,
+  and keep backup files with a recovery message if restoration fails.*
 - **Milestone 5 — Integration and docs:** public API, notebook, CLI, user documentation.
   *Implemented: summaries (`report`), notebook widgets (`notebook_ui`,
   `notebooks/preprocessing.ipynb`), `check`/`run` command line (`cli`) and the
@@ -278,3 +289,11 @@ Raised during review; to be decided before the milestones that need them:
    removed.*
 7. Folders deeper than the technical-repeat level: warning or error?
    *Decided (October 2026): error, so that a layer of images is never dropped silently.*
+8. High-priority review fixes: how should confirmed singleton axes and failed output
+   publication behave?
+   *Decided (October 2026): notebook readiness uses the confirmed axis review together
+   with all remaining folder, exclusion and metadata issues. Both output files are staged
+   before publication, and a caught publication failure restores the previous state.
+   Backups are retained if restoration fails. Forced termination remains covered by the
+   existing CSV hash check on rerun. The CSV and manifest schemas stay at version 1;
+   their fields and interpretation are unchanged.*

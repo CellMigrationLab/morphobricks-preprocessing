@@ -18,7 +18,10 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable, Iterable
+import shutil
+import tempfile
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -385,20 +388,21 @@ def run_experiment(
     for record in records:
         per_file[record.source_relative_path] = per_file.get(record.source_relative_path, 0) + 1
     output.mkdir(parents=True, exist_ok=True)
-    csv_path = write_plane_histograms(records, output / OUTPUT_FILENAME)
-    manifest = RunManifest(
-        experiment_root=root.as_posix(),
-        dtype=dtype.name,
-        settings=settings,
-        mapping=mapping,
-        files=tuple(
-            replace(entry, plane_count=per_file[rel]) for rel, entry in sorted(entries.items())
-        ),
-        csv_sha256=file_sha256(csv_path),
-        versions=package_versions(),
-        written_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-    )
-    write_manifest(manifest, output / MANIFEST_FILENAME)
+    with _staged_outputs(output) as staged:
+        csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME)
+        manifest = RunManifest(
+            experiment_root=root.as_posix(),
+            dtype=dtype.name,
+            settings=settings,
+            mapping=mapping,
+            files=tuple(
+                replace(entry, plane_count=per_file[rel]) for rel, entry in sorted(entries.items())
+            ),
+            csv_sha256=file_sha256(csv_path),
+            versions=package_versions(),
+            written_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        )
+        write_manifest(manifest, staged / MANIFEST_FILENAME)
     logger.info(
         "Wrote %d planes (%d files read, %d kept) to %s",
         len(records),
@@ -415,6 +419,63 @@ def run_experiment(
         plane_count=len(records),
         **counts,
     )
+
+
+class _OutputRollbackError(RuntimeError):
+    """Raised when an output update fails and its earlier files cannot be restored."""
+
+
+@contextmanager
+def _staged_outputs(output: Path) -> Iterator[Path]:
+    """Prepare both outputs before publishing, and retain backups if recovery fails."""
+    staged = Path(tempfile.mkdtemp(prefix=".run-", dir=output))
+    keep_backups = False
+    try:
+        yield staged
+        _publish_outputs(output, staged)
+    except _OutputRollbackError:
+        keep_backups = True
+        raise
+    finally:
+        if not keep_backups:
+            try:
+                shutil.rmtree(staged)
+            except OSError:
+                # A leftover temporary directory does not invalidate completed output.
+                logger.warning("Cannot remove temporary output folder %s", staged, exc_info=True)
+
+
+def _publish_outputs(output: Path, staged: Path) -> None:
+    """Replace the output pair, restoring its previous state on a publication failure."""
+    filenames = (OUTPUT_FILENAME, MANIFEST_FILENAME)
+    backup = staged / "previous"
+    backup.mkdir()
+    # Copy before replacing either file, so even a backup failure leaves the
+    # earlier output intact. Keep backups on the same filesystem for atomic restores.
+    for name in filenames:
+        previous = output / name
+        if previous.exists() or previous.is_symlink():
+            shutil.copy2(previous, backup / name, follow_symlinks=False)
+    published: list[str] = []
+    try:
+        for name in filenames:
+            os.replace(staged / name, output / name)
+            published.append(name)
+    except BaseException:
+        try:
+            for name in reversed(published):
+                previous = backup / name
+                if previous.exists() or previous.is_symlink():
+                    os.replace(previous, output / name)
+                else:
+                    (output / name).unlink()
+        except BaseException as exc:
+            raise _OutputRollbackError(
+                "The output update failed and the earlier files could not be fully restored. "
+                f"Backup files have been kept in {backup}. Close programs using the output "
+                "files and restore the backups before running again."
+            ) from exc
+        raise
 
 
 def _read_file(
