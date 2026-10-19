@@ -71,30 +71,64 @@ To change a label, rename the folder and check again.
 
 ## 4. The notebook, step by step
 
-Run the cells from top to bottom. Each step explains what it found; errors say what
-happened, which files are affected and what to do.
+The notebook's code cells are hidden: run them from top to bottom (click a cell and press
+**Shift + Enter**). Each step is a page of boxes. A blue box at the top says what the step
+is for, every control has a grey help line, and one coloured message says what happened
+and what to do next. Green means done, amber means "please check", and red means
+something must be fixed first. Later steps stay locked until the earlier ones are
+confirmed. If you change the experiment folder, everything after it is reset.
 
-1. **Check the experiment folder.** Paste the folder path and press *Check folder*. The
-   folders and image headers are inspected without reading pixels. Look at the tree of
-   labels and tick *The folders and labels above are correct*. If some images cannot be
-   read, *Exclude these images and check again* leaves them out (see §7).
-2. **Review the axis roles.** Each dimension of the images gets a role, suggested from the
-   image metadata. Dimensions of length 1 need no role. Press *Show preview*: each picture
-   should be a normal 2D image (if it looks like stripes or a smear, X or Y is on the wrong
-   dimension). Press *Confirm axis roles*. If some images lack a dimension the others have
-   (often a single channel), tick the box that confirms they have one plane along it.
-3. **Compute the histograms.** Press *Run*. The defaults suit most experiments:
-   - *Bins per plane:* one bin per possible value for 8- and 16-bit images (exact
-     histograms); 65,536 bins for wider integers and 10,000 for floats.
-   - *Memory limit:* the most working memory one plane may need (default 1 GiB). Raise it
-     only if the computer has enough memory.
-   - *Recompute every row:* start from scratch instead of updating the earlier table.
+0. **Start the notebook.** A green box confirms the notebook is ready and shows the package
+   version.
+1. **Check the experiment folder.**
+   - Paste the folder path, or click **Browse…** to choose it in a dialog. Below the output
+     folder, a line shows where the results will go.
+   - Click **Check folder**. Only folder names and image headers are read.
+   - Tiles summarise the result: images to analyse, image folders, conditions, pixel type,
+     skipped files, and errors and warnings.
+   - The **Labels from the folder names** table shows every image folder with its condition,
+     biological repeat and technical repeat (*single* where a level is missing). Tick
+     **I checked the labels above: they are correct**.
+   - **Messages** list each problem with the affected files and what to do. If some images
+     cannot be read, **Exclude these images and check again** leaves them out (see §7).
+2. **Review the axis roles.**
+   - Each dimension of the images has its own box. It shows the dimension's length and the
+     role suggested from the metadata, with a dropdown to change it.
+   - A line under each dropdown says what the choice means, for example *3 depth slices,
+     numbered z = 0 to 2*. A blue line says how many planes each image will be split into.
+   - Click **Show preview** and move the sliders to look at different slices, channels and
+     time points of any image. Each picture should be a normal image of your sample;
+     stripes or a smear mean X or Y is on the wrong dimension. Brightness is stretched for
+     display only.
+   - Tick **The preview shows a normal 2D image**, then click **Confirm axis roles**. The
+     roles are locked until you click **Change axis roles**.
+   - If some images lack a dimension the others have (often a single channel), a yellow box
+     lists them and asks you to confirm they have one plane along it.
+3. **Compute the histograms.**
+   - **Before you run** lists anything still to do.
+   - **What will happen** names the output folder and files, and says whether an earlier
+     run was found and what will be read.
+   - The recommended settings suit most experiments. Untick **Use the recommended
+     settings** to change them:
+     - *Bins per plane:* one bin per possible value for 8- and 16-bit images (exact
+       histograms); 65,536 bins for wider integers and 10,000 for floats.
+     - *Memory limit:* the most working memory one plane may need (default 1 GiB). Raise it
+       only if the computer has enough memory.
+     - *Recompute every row:* start from scratch instead of updating the earlier table.
+   - Click **Compute histograms**. A progress bar shows which image is being read. Tiles
+     then summarise planes written, images read, kept, new, changed, removed and excluded.
+     Nothing is written unless the whole run succeeds. **Technical details (log)** holds
+     the log for troubleshooting.
+4. **Look at the results.**
+   - Choose **Condition**, **Biological repeat**, **Technical repeat** or **Image**, and the
+     percentiles to report.
+   - The table lists pooled statistics per group: minimum, maximum, mean, standard
+     deviation, median and percentiles.
+   - The plot compares the groups' intensity distributions: curves further right are
+     brighter.
 
-   Nothing is written unless the whole run succeeds. *Technical details* holds the log for
-   troubleshooting.
-4. **Look at the results.** Pooled statistics (minimum, maximum, mean, standard deviation,
-   median and chosen percentiles) for each condition, biological repeat, technical repeat
-   or image.
+In JupyterLab, the optional `jl-hidecode` extension keeps the code cells collapsed and adds
+a run button to each; without it, click the "…" of a cell to see its code.
 
 ## 5. Command line
 
