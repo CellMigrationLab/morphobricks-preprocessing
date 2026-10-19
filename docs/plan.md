@@ -236,6 +236,8 @@ API, CLI). The notebook and CLI only call the API.
   *Implemented: summaries (`report`), notebook widgets (`notebook_ui`,
   `notebooks/preprocessing.ipynb`), `check`/`run` command line (`cli`) and the
   [user guide](user_guide.md).*
+  *Step-4 feedback: show an animated spinner through table loading, statistics and plotting;
+  disable the calculation button while busy and restore it on success or failure.*
 - **Later:** OME-Zarr and chunked processing for planes above the memory limit.
 
 ## 11. Tests and acceptance criteria
@@ -297,3 +299,8 @@ Raised during review; to be decided before the milestones that need them:
    Backups are retained if restoration fails. Forced termination remains covered by the
    existing CSV hash check on rerun. The CSV and manifest schemas stay at version 1;
    their fields and interpretation are unchanged.*
+9. Step-4 feedback while statistics are calculated?
+   *Decided (October 2026): show the existing animated spinner with the current stage,
+   change the button to "Calculating…" and disable duplicate calculations. Keep the busy
+   state until plotting finishes, and restore the button after success or failure. This
+   is a notebook interaction change; statistical definitions and file schemas are unchanged.*

@@ -420,6 +420,58 @@ def test_unexpected_failures_are_reported(experiment, monkeypatch):
 # Step 4 -----------------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("failure", [None, "read", "pool", "plot"])
+def test_statistics_stay_busy_until_finished_and_recover_on_failure(
+    experiment, monkeypatch, failure
+):
+    import morphobricks_preprocessing.notebook_ui as module
+
+    nb = confirmed(experiment)
+    nb.run()
+    stages = []
+    for stage, name in (
+        ("read", "read_plane_histograms"),
+        ("pool", "group_summaries"),
+        ("plot", "distribution_png"),
+    ):
+        original = getattr(module, name)
+
+        def while_busy(*args, stage=stage, original=original, **kwargs):
+            assert nb.statistics_button.disabled
+            assert nb.statistics_button.description.strip() == "Calculating…"
+            assert nb.statistics_button.icon == "spinner"
+            assert "mb-spinner" in nb.stats_status.value
+            assert "calculated." not in nb.stats_status.value
+            stages.append(stage)
+            nb.show_statistics()  # a second request must not start another calculation
+            if failure == stage:
+                if stage == "read":
+                    raise OSError("simulated unreadable table")
+                raise RuntimeError("simulated calculation failure")
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(module, name, while_busy)
+    nb.statistics_button.click()
+    assert stages == ["read", "pool", "plot"][: {"read": 1, "pool": 2}.get(failure, 3)]
+    assert not nb.statistics_button.disabled
+    assert nb.statistics_button.description.strip() == "Calculate statistics"
+    assert nb.statistics_button.icon == "calculator"
+    assert "mb-spinner" not in nb.stats_status.value
+    if failure:
+        assert "mb-error" in nb.stats_status.value
+        assert not ui.is_visible(nb.statistics_card)
+        assert not ui.is_visible(nb.distribution_card)
+        if failure == "read":
+            assert "The table cannot be read" in nb.stats_status.value
+        else:
+            assert "simulated calculation failure" in nb.stats_status.value
+            assert "Traceback" in nb.details.value
+    else:
+        assert "Statistics of 2 conditions calculated" in nb.stats_status.value
+        assert ui.is_visible(nb.statistics_card)
+        assert ui.is_visible(nb.distribution_card)
+
+
 def test_statistics_by_level_and_percentiles(experiment):
     nb = confirmed(experiment)
     nb.run()
