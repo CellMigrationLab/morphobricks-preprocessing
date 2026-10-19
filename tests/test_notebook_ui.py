@@ -8,7 +8,7 @@ import pytest
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
 
-from morphobricks_preprocessing import Plane, read_manifest  # noqa: E402
+from morphobricks_preprocessing import Plane, read_manifest, read_plane_histograms  # noqa: E402
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.axes import AxisMapping  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import (  # noqa: E402
@@ -272,6 +272,49 @@ def test_missing_axes_card(tmp_path):
     assert not nb.confirm_button.disabled
 
 
+@pytest.mark.parametrize("blocking_file", [False, True])
+def test_confirmed_missing_axes_allow_running_unless_other_errors_remain(tmp_path, blocking_file):
+    root = tmp_path / "exp"
+    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZCYX")
+    write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
+    if blocking_file:
+        write_file(root / "bad.tif", b"garbage")
+    nb = checked(root)
+    nb.labels_confirmed.button.click()
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    assert nb.run_button.disabled
+    nb.missing_as_singleton.button.click()
+    nb.confirm_button.click()
+    assert nb.confirmed_mapping is not None
+    assert nb.run_button.disabled == blocking_file
+    if blocking_file:
+        assert nb.run() is None
+        assert "could not be opened" in nb.folder_issues.value
+    else:
+        result = nb.run()
+        assert result.written
+        rows = read_plane_histograms(result.csv_path)
+        assert [(r.z, r.c) for r in rows if r.source_relative_path == "b.tif"] == [(0, 0), (1, 0)]
+
+
+def test_undoing_missing_axes_confirmation_blocks_running_again(tmp_path):
+    root = tmp_path / "exp"
+    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZCYX")
+    write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
+    nb = checked(root)
+    nb.labels_confirmed.button.click()
+    nb.missing_as_singleton.button.click()
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    nb.confirm_button.click()
+    assert not nb.run_button.disabled
+    nb.confirm_button.click()  # unlock the roles before undoing singleton confirmation
+    nb.missing_as_singleton.button.click()
+    assert nb.run_button.disabled and nb.confirm_button.disabled
+    assert nb.run() is None
+
+
 def test_conflicting_axes_explain_why_no_roles_are_offered(tmp_path):
     write_data(tmp_path / "exp/a.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
     write_data(tmp_path / "exp/b.tif", np.zeros((2, 8, 8), np.uint8), axes="CYX")
@@ -369,6 +412,7 @@ def test_unexpected_failures_are_reported(experiment, monkeypatch):
     assert nb.run() is None
     assert "unexpected problem" in nb.run_status.value
     assert "RuntimeError: disk on fire" in nb.run_status.value
+    assert "Nothing was written" not in nb.run_status.value
     assert "Traceback" in nb.details.value
     assert not nb.run_button.disabled
 

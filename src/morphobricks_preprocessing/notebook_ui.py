@@ -914,8 +914,24 @@ class PreprocessingNotebook:
 
     def _refresh_run_step(self) -> None:
         pre = self.preflight
+        folder_ok = pre is not None and pre.ok
+        if pre is not None and self.confirmed_mapping is not None:
+            # Axis confirmation can resolve a preflight missing-axes error, but
+            # folder, exclusion and other metadata errors must still block the run.
+            review = review_axes(
+                pre.metadata,
+                self.confirmed_mapping,
+                missing_as_singleton=self.missing_as_singleton.value,
+            )
+            folder_ok = not has_errors(
+                (
+                    *pre.discovery.issues,
+                    *pre.exclusion_issues,
+                    *review.combined_issues(pre.metadata),
+                )
+            )
         items = [
-            (pre is not None and pre.ok, "Check the experiment folder and fix any errors (step 1)"),
+            (folder_ok, "Check the experiment folder and fix any errors (step 1)"),
             (pre is not None and self.labels_confirmed.value, "Confirm the labels (step 1)"),
             (self.confirmed_mapping is not None, "Confirm the axis roles (step 2)"),
         ]
@@ -995,7 +1011,7 @@ class PreprocessingNotebook:
                 "The run stopped because of an unexpected problem.",
                 [
                     f"{type(exc).__name__}: {exc}",
-                    "Nothing was written. Open Technical details below for the full report.",
+                    "Open Technical details below for the full report.",
                 ],
             )
             self._show_log()
