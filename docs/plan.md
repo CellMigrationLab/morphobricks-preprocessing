@@ -240,6 +240,7 @@ API, CLI). The notebook and CLI only call the API.
   disable the calculation button while busy and restore it on success or failure.*
   *Setup feedback: standalone Step 0 detects the environment, prefers a nearby checkout,
   reuses an installed package, or installs missing requirements into the active kernel.*
+  *Step-1 feedback: centre the folder-label table's headers and contents consistently.*
 - **Later:** OME-Zarr and chunked processing for planes above the memory limit.
 
 ## 11. Tests and acceptance criteria
@@ -314,3 +315,7 @@ Raised during review; to be decided before the milestones that need them:
     automatic upgrades, and request a kernel restart before switching an already loaded
     package to another checkout. All image processing and widget logic stay in the package;
     schemas and statistical definitions are unchanged.*
+11. How should the Step-1 folder-label table be aligned?
+    *Decided (October 2026): centre all headers and cells, including image counts, so
+    labels line up with their column headings. Apply this styling to the folder-label
+    table only.*

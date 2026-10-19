@@ -1345,7 +1345,7 @@ def labels_html(pre: Preflight) -> str:
         for h in ("Condition", "Biological repeat", "Technical repeat", "Images", "Folder")
     )
     return (
-        "<div class='mb-table-wrap'><table class='mb-table'>"
+        "<div class='mb-table-wrap'><table class='mb-table mb-labels'>"
         f"<thead><tr>{header}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
     )
 
