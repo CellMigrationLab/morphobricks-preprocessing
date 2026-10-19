@@ -153,8 +153,15 @@ new and changed files without reading unchanged pixels. Provide a force-rebuild 
 On rerun: add rows for new planes; replace rows for changed files or changed axis/bin
 settings; remove rows for deleted or renamed files (a rename is a delete plus an add).
 Existing rows of unchanged files are never recomputed, because each row depends only on
-its own plane. Write to a temporary file and replace the previous output only after a
-complete successful run.
+its own plane. Prepare the CSV and manifest in a temporary folder on the output filesystem
+before replacing either output. Back up earlier files before publication; if replacing
+either file fails, restore the earlier pair (or remove newly created files on a first run).
+If restoration itself fails, keep the backups and report their location for manual recovery.
+Temporary-file cleanup failures are logged without treating a completed run as failed.
+
+The two replacements are not a single filesystem transaction. If the process is forcibly
+terminated between them, the CSV hash check on the next run detects the mismatch and
+rebuilds the output. Runs writing to the same output folder must be performed one at a time.
 
 A file is unchanged when its size, modification time, labels and axis layout match the
 manifest and the table still holds all its rows. Every row is recomputed when there is no
@@ -216,20 +223,30 @@ API, CLI). The notebook and CLI only call the API.
   mapping saved to the manifest. *Implemented: axis mapping, prefill and validation
   (`axes`), plane-by-plane reading with a memory limit and the preview plane (`planes`),
   and the axis review step of the notebook.*
+  *Review fix: confirmed singleton axes clear the corresponding readiness error while
+  folder, exclusion and other metadata errors continue to block the run.*
 - **Milestone 3 — Histogram engine:** per-plane histograms, extrema, non-finite and
   constant planes, pooling, normalization library. *Core implemented and tested.*
 - **Milestone 4 — CSV and reruns:** write/update the CSV and manifest, detect
   new/changed/deleted planes, force rebuild. *Implemented: run manifest (`manifest`),
   preflight and incremental runs with exclusions (`run`).*
+  *Review fix: stage both files, preserve earlier output on write/publication failures,
+  and keep backup files with a recovery message if restoration fails.*
 - **Milestone 5 — Integration and docs:** public API, notebook, CLI, user documentation.
   *Implemented: summaries (`report`), notebook widgets (`notebook_ui`,
-  `notebooks/preprocessing.ipynb`), `check`/`run` command line (`cli`) and the
+  `notebooks/MorphoBricks_Preprocessing.ipynb`), `check`/`run` command line (`cli`) and the
   [user guide](user_guide.md).*
+  *Step-4 feedback: show an animated spinner through table loading, statistics and plotting;
+  disable the calculation button while busy and restore it on success or failure.*
+  *Setup feedback: standalone Step 0 detects the environment, prefers a nearby checkout,
+  reuses an installed package, or installs missing requirements into the active kernel.*
+  *Step-1 feedback: centre the folder-label table's headers and contents consistently.*
 - **OME-Zarr copies (optional `zarr` extra):** each analysed TIFF can be copied to
   `<output>/ome_zarr/<relative path>.ome.zarr` (OME-NGFF 0.4) in the same pass that reads
   it for the histograms. Level 0 holds the source values; smaller levels (2 x 2 means) are
-  for viewers. Copies follow the incremental rules of §7 and are written only when the
-  run succeeds. *Implemented (`zarr_export`).*
+  for viewers. Copies follow the incremental rules of §7 and are published with the table
+  and manifest, so a failed run leaves the earlier copies in place. In the notebook the
+  option is in step 3's Settings card. *Implemented (`zarr_export`), see question 12.*
 - **Later:** chunked processing for planes above the memory limit.
 
 ## 11. Tests and acceptance criteria
@@ -283,3 +300,37 @@ Raised during review; to be decided before the milestones that need them:
    removed.*
 7. Folders deeper than the technical-repeat level: warning or error?
    *Decided (October 2026): error, so that a layer of images is never dropped silently.*
+8. High-priority review fixes: how should confirmed singleton axes and failed output
+   publication behave?
+   *Decided (October 2026): notebook readiness uses the confirmed axis review together
+   with all remaining folder, exclusion and metadata issues. Both output files are staged
+   before publication, and a caught publication failure restores the previous state.
+   Backups are retained if restoration fails. Forced termination remains covered by the
+   existing CSV hash check on rerun. The CSV and manifest schemas stay at version 1;
+   their fields and interpretation are unchanged.*
+9. Step-4 feedback while statistics are calculated?
+   *Decided (October 2026): show the existing animated spinner with the current stage,
+   change the button to "Calculating…" and disable duplicate calculations. Keep the busy
+   state until plotting finishes, and restore the button after success or failure. This
+   is a notebook interaction change; statistical definitions and file schemas are unchanged.*
+10. Can the notebook initialise its environment before importing the package?
+    *Decided (October 2026): Step 0 uses the standard library to detect local Jupyter or
+    Google Colab, prefer a nearby source checkout, reuse an installed package, or install
+    from GitHub when missing. Install missing notebook requirements with the kernel's
+    Python, using an editable install for a checkout. Reuse usable installations without
+    automatic upgrades, and request a kernel restart before switching an already loaded
+    package to another checkout. All image processing and widget logic stay in the package;
+    schemas and statistical definitions are unchanged.*
+11. How should the Step-1 folder-label table be aligned?
+    *Decided (October 2026): centre all headers and cells, including image counts, so
+    labels line up with their column headings. Apply this styling to the folder-label
+    table only.*
+12. OME-Zarr: what should the brick write, and with which dependency?
+    *Decided (October 2026): an optional OME-Zarr copy of each analysed TIFF in the output
+    folder, written in the same pass as the histograms; reading OME-Zarr input and
+    chunked processing of large planes are not part of it. `zarr` (2.18 or 3.x) is an
+    optional `zarr` extra; the core stays numpy and tifffile. Copies use OME-NGFF 0.4
+    (Zarr format 2) for the widest viewer support, keep the exact source values at level
+    0, and follow the run's incremental rules and output publication. The CSV and
+    manifest schemas stay at version 1 (the manifest gains optional keys). The change is
+    delivered as a draft PR for separate testing.*

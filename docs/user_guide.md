@@ -11,7 +11,25 @@ its own output folder, which is never inside the experiment folder.
 
 ## 1. Installation
 
-You need Python 3.10 or newer and JupyterLab (or Jupyter Notebook). In a terminal:
+You need Python 3.10 or newer and JupyterLab (or Jupyter Notebook). Download
+[`notebooks/MorphoBricks_Preprocessing.ipynb`](../notebooks/MorphoBricks_Preprocessing.ipynb), open it in Jupyter and
+run **Step 0**. It detects local Jupyter or Google Colab and checks these options:
+
+1. **Nearby checkout:** if the kernel is running in this repository or one of its
+   subfolders, use that checkout's source code, including local edits.
+2. **Installed package:** otherwise, use the package already available to this kernel.
+3. **GitHub installation:** if the package is missing, install it with the notebook
+   dependencies from the project's GitHub repository.
+
+Missing notebook dependencies are installed into the same Python environment as the
+kernel. A local checkout is installed in editable mode when it needs dependencies;
+an installed package's notebook extra is used when its UI dependencies are missing.
+Setup prints the selected source and Python executable. It does not upgrade an already
+usable installation. Installation needs internet access, and the GitHub option needs Git.
+If another copy of the package is already loaded, restart the kernel to switch checkouts.
+
+To install everything manually instead, run these commands in the environment used by
+your notebook kernel:
 
 ```bash
 pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git"
@@ -21,8 +39,9 @@ pip install jupyterlab
 To also save OME-Zarr copies of the images (§6), install the `zarr` extra too:
 `pip install "morphobricks-preprocessing[notebook,zarr] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git"`.
 
-Download [`notebooks/preprocessing.ipynb`](../notebooks/preprocessing.ipynb), start
-JupyterLab with `jupyter lab`, and open the notebook.
+Start JupyterLab with `jupyter lab` and open the notebook. Google Colab is detected by the
+setup cell, but native **Browse…** dialogs are only available with a local desktop: paste
+paths on the runtime filesystem when using a hosted notebook.
 
 ## 2. Organising the experiment folder
 
@@ -74,32 +93,81 @@ To change a label, rename the folder and check again.
 
 ## 4. The notebook, step by step
 
-Run the cells from top to bottom. Each step explains what it found; errors say what
-happened, which files are affected and what to do.
+The notebook's code cells are hidden: run them from top to bottom (click a cell and press
+**Shift + Enter**). Each step is a page of boxes. A blue box at the top says what the step
+is for, every control has a grey help line, and one coloured message says what happened
+and what to do next. Green means done, amber means "please check", and red means
+something must be fixed first. Where you need to confirm something, a yellow box asks the
+question and you answer with a large green **Yes, …** button. The box turns green, and an
+**Undo** button takes the answer back. Later steps stay locked until the earlier ones are
+confirmed. If you change the experiment folder, everything after it is reset.
 
-1. **Check the experiment folder.** Paste the folder path and press *Check folder*. The
-   folders and image headers are inspected without reading pixels. Look at the tree of
-   labels and tick *The folders and labels above are correct*. If some images cannot be
-   read, *Exclude these images and check again* leaves them out (see §7).
-2. **Review the axis roles.** Each dimension of the images gets a role, suggested from the
-   image metadata. Dimensions of length 1 need no role. Press *Show preview*: each picture
-   should be a normal 2D image (if it looks like stripes or a smear, X or Y is on the wrong
-   dimension). Press *Confirm axis roles*. If some images lack a dimension the others have
-   (often a single channel), tick the box that confirms they have one plane along it.
-3. **Compute the histograms.** Press *Run*. The defaults suit most experiments:
-   - *Bins per plane:* one bin per possible value for 8- and 16-bit images (exact
-     histograms); 65,536 bins for wider integers and 10,000 for floats.
-   - *Memory limit:* the most working memory one plane may need (default 1 GiB). Raise it
-     only if the computer has enough memory.
-   - *Recompute every row:* start from scratch instead of updating the earlier table.
-   - *Also save OME-Zarr copies:* write a copy of every image in OME-Zarr format to the
-     output folder (needs the `zarr` extra; see §6).
+0. **Start the notebook.** The setup cell checks the environment and installs missing
+   requirements if needed. A green box then confirms it is ready and shows the package
+   version.
+1. **Check the experiment folder.**
+   - Paste the folder path, or click **Browse…** to choose it in a dialog. Below the output
+     folder, a line shows where the results will go.
+   - Click **Check folder**. Only folder names and image headers are read.
+   - Tiles summarise the result: images to analyse, image folders, conditions, pixel type,
+     skipped files, and errors and warnings.
+   - The **Labels from the folder names** table shows every image folder with its condition,
+     biological repeat and technical repeat (*single* where a level is missing). If they
+     are right, press **Yes, the labels are correct** in the yellow box under the table.
+   - **Messages** list each problem with the affected files and what to do. If some images
+     cannot be read, **Exclude these images and check again** leaves them out (see §7).
+2. **Review the axis roles.**
+   - Each dimension of the images has its own box. It shows the dimension's length and the
+     role suggested from the metadata, with a dropdown to change it.
+   - A line under each dropdown says what the choice means, for example *3 depth slices,
+     numbered z = 0 to 2*. A blue line says how many planes each image will be split into.
+   - Click **Show preview** and move the sliders to look at different slices, channels and
+     time points of any image. Each picture should be a normal image of your sample;
+     stripes or a smear mean X or Y is on the wrong dimension. Brightness is stretched for
+     display only.
+   - If the preview looks right, press **Yes, the preview looks right**, then click
+     **Confirm axis roles**. Changing a role afterwards asks you to check the preview again.
+     The confirmed roles are locked until you click **Change axis roles**.
+   - If some images lack a dimension the others have (often a single channel), a yellow box
+     lists them; press **Yes, they have a single plane there** if that is the case.
+     Once you confirm the axis roles, this resolves the missing-axis error for step 3.
+     Any other errors still need to be fixed before running.
+3. **Compute the histograms.**
+   - **Before you run** lists anything still to do.
+   - **What will happen** names the output folder and files, and says whether an earlier
+     run was found and what will be read.
+   - The recommended settings suit most experiments. Untick **Use the recommended
+     settings** to change them:
+     - *Bins per plane:* one bin per possible value for 8- and 16-bit images (exact
+       histograms); 65,536 bins for wider integers and 10,000 for floats.
+     - *Memory limit:* the most working memory one plane may need (default 1 GiB). Raise it
+       only if the computer has enough memory.
+     - *Recompute every row:* start from scratch instead of updating the earlier table.
+   - **Also save OME-Zarr copies of the images** (off by default) also writes every image
+     in OME-Zarr format to the **ome_zarr** folder of the output (see §6). It is greyed out,
+     with the install command below it, when the `zarr` extra is not installed. When it is
+     ticked, **What will happen** names the copies' folder and a tile counts the copies
+     written.
+   - Click **Compute histograms**. A progress bar shows which image is being read. Tiles
+     then summarise planes written, images read, kept, new, changed, removed and excluded.
+     Nothing is written unless the whole run succeeds. **Technical details (log)** holds
+     the log for troubleshooting.
+4. **Calculate the statistics (optional).** The table from step 3 is all that later bricks
+   need; this step only reads it to compare groups and writes no files.
+   - **Histogram table** is filled in with the table from step 3. To look at another
+     experiment, paste the path of its `plane_histograms.csv` or click **Browse…**.
+   - Choose **Condition**, **Biological repeat**, **Technical repeat** or **Image**, and the
+     percentiles to report, then click **Calculate statistics**.
+   - A spinning wheel shows that work is in progress while the table is read, statistics
+     are calculated and the plot is drawn. The button says **Calculating…** and stays
+     disabled until the calculation finishes or an error is shown; you can then try again.
+   - The table lists pooled statistics per group: minimum, maximum, mean, standard
+     deviation, median and percentiles.
+   - The plot compares the groups' intensity distributions: curves further right are
+     brighter.
 
-   Nothing is written unless the whole run succeeds. *Technical details* holds the log for
-   troubleshooting.
-4. **Look at the results.** Pooled statistics (minimum, maximum, mean, standard deviation,
-   median and chosen percentiles) for each condition, biological repeat, technical repeat
-   or image.
+In JupyterLab, the optional `jl-hidecode` extension keeps the code cells collapsed and adds
+a run button to each; without it, click the "…" of a cell to see its code.
 
 ## 5. Command line
 
@@ -158,6 +226,15 @@ The default output folder is next to the experiment folder:
   runs, copies of deleted or excluded images are removed. Switching the option off keeps
   the existing copies but no longer updates them. Details in
   [contract.md](contract.md) §10.
+
+The table and manifest are both prepared before the earlier files are replaced. If a
+replacement fails, the earlier files are restored. This needs temporary disk space for
+the new outputs and copies of the earlier pair. If restoration also fails (for example,
+another program locks an output file), the error names a backup folder: close programs
+using the output files and restore those backups before running again.
+
+Run only one writer per output folder. If the process is forcibly stopped during output
+replacement, rerunning checks the table against the manifest and rebuilds a mismatched pair.
 
 ## 7. Running again, and excluding images
 

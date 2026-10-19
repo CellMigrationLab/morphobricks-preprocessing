@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -22,8 +23,8 @@ from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.zarr_export import (
     PYRAMID_TARGET,
     downsample,
+    is_copy_path,
     pyramid_shapes,
-    remove_copies,
 )
 from tiff_tree import write_data, write_file
 
@@ -136,14 +137,12 @@ def test_physical_sizes_unknown(tmp_path):
     assert PhysicalSizes().scale("X") == 1.0 and PhysicalSizes().unit("X") is None
 
 
-def test_remove_copies_only_touches_copies(tmp_path):
-    copy = tmp_path / "ome_zarr" / "a" / "x.ome.zarr"
-    copy.mkdir(parents=True)
-    elsewhere = tmp_path / "keep.ome.zarr"
-    elsewhere.mkdir()
-    removed = remove_copies(tmp_path, ["ome_zarr/a/x.ome.zarr", "../keep.ome.zarr", "plane.csv"])
-    assert removed == ["ome_zarr/a/x.ome.zarr"]
-    assert not copy.exists() and elsewhere.exists()
+def test_only_copies_inside_the_ome_zarr_folder_count(tmp_path):
+    assert is_copy_path(tmp_path, "ome_zarr/a/x.ome.zarr")
+    assert not is_copy_path(tmp_path, "../keep.ome.zarr")
+    assert not is_copy_path(tmp_path, "ome_zarr/../../x.ome.zarr")
+    assert not is_copy_path(tmp_path, "ome_zarr/a/x.zarr")
+    assert not is_copy_path(tmp_path, "plane_histograms.csv")
 
 
 def test_missing_zarr_is_a_clear_error(tmp_path, monkeypatch):
@@ -463,3 +462,89 @@ def test_long_long_planes_are_written(tmp_path, code):
     import zarr
 
     np.testing.assert_array_equal(zarr.open_group(str(tmp_path / "a.ome.zarr"))["0"][:], data)
+
+
+# Publication with copies (same protocol as the table and manifest) ----------------------
+
+
+def output_state(output):
+    """Every file under the output folder with its bytes, ignoring temporary folders."""
+    return {
+        p.relative_to(output).as_posix(): p.read_bytes()
+        for p in output.rglob("*")
+        if p.is_file() and not p.relative_to(output).parts[0].startswith(".run-")
+    }
+
+
+def change(path, seed):
+    stat = os.stat(path)
+    write_data(path, random_data((2, 16, 16), "uint8", seed=seed), axes="ZYX")
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**9))
+
+
+@needs_zarr
+@pytest.mark.parametrize("failed", ["copy", "csv", "manifest"])
+def test_failed_publication_restores_earlier_copies(experiment, monkeypatch, failed):
+    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    (experiment / "drug/a.tif").unlink()  # its copy is removed by the next run
+    change(experiment / "ctrl/b.tif", 42)  # its copy is replaced by the next run
+    before = output_state(first.output_folder)
+    targets = {
+        "copy": first.output_folder / "ome_zarr/ctrl/b.ome.zarr",
+        "csv": first.csv_path,
+        "manifest": first.manifest_path,
+    }
+    original_replace = os.replace
+
+    def broken_replace(source, destination):
+        staged_new = ".run-" in str(source) and "previous" not in Path(source).parts
+        if Path(destination) == targets[failed] and staged_new:
+            raise PermissionError("simulated publication failure")
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(run_module.os, "replace", broken_replace)
+    with pytest.raises(PermissionError, match="simulated"):
+        run_experiment(experiment, ZYX, ome_zarr=True)
+    monkeypatch.undo()
+    assert output_state(first.output_folder) == before
+    assert not list(first.output_folder.glob(".run-*"))
+    retried = run_experiment(experiment, ZYX, ome_zarr=True)
+    assert retried.converted == ("ctrl/b.tif",) and retried.removed == ("drug/a.tif",)
+    assert not (first.output_folder / "ome_zarr/drug/a.ome.zarr").exists()
+
+
+@needs_zarr
+def test_failed_table_write_keeps_earlier_copies(experiment, monkeypatch):
+    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    change(experiment / "ctrl/b.tif", 42)
+    before = output_state(first.output_folder)
+
+    def broken_csv(*args, **kwargs):
+        raise OSError("simulated CSV failure")
+
+    monkeypatch.setattr(run_module, "write_plane_histograms", broken_csv)
+    with pytest.raises(OSError, match="simulated"):
+        run_experiment(experiment, ZYX, ome_zarr=True)
+    assert output_state(first.output_folder) == before
+    assert not list(first.output_folder.glob(".run-*"))
+
+
+@needs_zarr
+def test_failed_rollback_keeps_the_earlier_copy_in_the_backup(experiment, monkeypatch):
+    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    change(experiment / "ctrl/b.tif", 42)
+    old_copy = output_state(first.output_folder / "ome_zarr/ctrl/b.ome.zarr")
+    original_replace = os.replace
+
+    def broken_replace(source, destination):
+        source, destination = Path(source), Path(destination)
+        if destination == first.manifest_path or "previous" in source.parts:
+            raise PermissionError("simulated locked output")
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(run_module.os, "replace", broken_replace)
+    with pytest.raises(RuntimeError, match="could not be fully restored"):
+        run_experiment(experiment, ZYX, ome_zarr=True)
+    (staged,) = first.output_folder.glob(".run-*")
+    backup = staged / "previous" / "ome_zarr" / "ctrl" / "b.ome.zarr"
+    assert output_state(backup) == old_copy

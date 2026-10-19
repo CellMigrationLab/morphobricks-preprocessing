@@ -22,8 +22,7 @@ from __future__ import annotations
 import logging
 import math
 import os
-import shutil
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from xml.etree import ElementTree
@@ -340,31 +339,16 @@ class OmeZarrWriter:
         return {"version": NGFF_VERSION, "channels": channels}
 
 
-def replace_folder(staged: Path, final: Path) -> None:
-    """Move a finished copy into place, replacing an older one."""
-    final.parent.mkdir(parents=True, exist_ok=True)
-    if final.exists():
-        shutil.rmtree(final)
-    os.replace(staged, final)
+def is_copy_path(output_folder: str | os.PathLike, relative_path: str) -> bool:
+    """Return True if ``relative_path`` names an OME-Zarr copy inside ``<output>/ome_zarr``.
 
-
-def remove_copies(output_folder: Path, relative_paths: Iterable[str]) -> list[str]:
-    """Delete OME-Zarr copies recorded for files no longer analysed.
-
-    Only folders inside ``<output>/ome_zarr`` ending in ``.ome.zarr`` are
-    removed, so a damaged manifest cannot point this anywhere else.
+    Used before moving or removing a copy recorded in a manifest, so that a damaged
+    manifest cannot point outside this brick's own copies.
     """
-    base = (output_folder / OME_ZARR_FOLDER).resolve()
-    removed = []
-    for rel in relative_paths:
-        target = (output_folder / rel).resolve()
-        if base not in target.parents or not target.name.endswith(OME_ZARR_SUFFIX):
-            logger.warning("Not removing %s: it is not an OME-Zarr copy of this brick", target)
-            continue
-        if target.is_dir():
-            shutil.rmtree(target)
-            removed.append(rel)
-    return removed
+    output = Path(output_folder)
+    base = (output / OME_ZARR_FOLDER).resolve()
+    target = (output / relative_path).resolve()
+    return base in target.parents and target.name.endswith(OME_ZARR_SUFFIX)
 
 
 # zarr 2 / 3 ---------------------------------------------------------------------------

@@ -20,6 +20,9 @@ notebooks/                        biologist-facing notebooks, calling the API on
 
 The notebook and the CLI contain no processing logic; they call the same public
 functions the tests use.
+The notebook's Step 0 contains a standalone bootstrap using only the standard library,
+so it can locate a checkout or install missing requirements before importing the package.
+Its environment alternatives are tested without installing packages during the test suite.
 
 ## Style
 
@@ -47,6 +50,11 @@ functions the tests use.
 - Floats are written at full precision (`repr`); files are UTF-8.
 - Outputs are written to a temporary file and replace the previous version only after a
   complete successful write.
+- Experiment runs stage both the CSV and manifest (and any OME-Zarr copies) before
+  publishing either, back up earlier outputs, and restore their previous state if
+  publication raises. Preserve
+  backups if recovery fails. The CSV hash check still detects forced termination between
+  replacements; run only one writer per output folder.
 
 ## Tests
 

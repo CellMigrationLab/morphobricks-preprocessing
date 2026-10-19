@@ -33,6 +33,7 @@ must have a supported role. One confirmed mapping per experiment. Plane coordina
 | Unsupported axes | Position-like axes (tile `R`, mosaic `M`, row `K`, column `J`) cannot have a role. If they hold more than one plane, the file is an error. |
 | Singleton axes | An axis of length 1 needs no role; its index is always 0. |
 | Missing axes | A file lacking axes the mapping has is read with those axes as length 1 only when the user confirmed this and only one arrangement fits; its coordinates for them are 0. |
+| Notebook readiness | Confirming a valid singleton mapping resolves its missing-axis error for running; folder, exclusion and all other metadata errors still block processing. |
 | Series | Only the first image series, at full-resolution level 0. A file with more than one series is an error. |
 | Channel names, significant bits | Recorded in the run manifest when metadata provides them; not part of the CSV. Channel names that differ at the same channel index are a warning. |
 
@@ -140,6 +141,20 @@ suggests an action. Technical details go to the diagnostic log.
 UTF-8 JSON next to `plane_histograms.csv`, written after the table and only when the run
 succeeded.
 
+Both files are prepared in a temporary folder before either earlier output is replaced.
+OME-Zarr copies (§10), when requested, are written to the same temporary folder and
+published first, so the manifest never names a copy that is not in place. Earlier files
+are backed up before publication; earlier copies that are replaced or removed are moved
+into the backup folder. A caught replacement failure restores the
+previous state, including the absence of files on a first run. If restoration fails, the
+backup folder is retained and its location is reported for manual recovery. Failures to
+remove temporary files after a successful publication are logged.
+
+The two replacements are not jointly atomic: forced process termination between them can
+leave a mismatched pair, detected by `csv_sha256` on the next run and rebuilt. Only one run
+may write to a given output folder at a time. This write protocol does not change either
+file's schema or statistical interpretation.
+
 | Key | Meaning |
 |---|---|
 | `manifest_version`, `schema_version` | Manifest format (`1`) and CSV format (`1`). |
@@ -166,4 +181,5 @@ Channel names and significant bits come from OME metadata and are for informatio
 | Further levels | 2 x 2 block means rounded to the pixel type, until a plane fits in 512 x 512 (at most 8 levels); for viewing only |
 | Scale | Physical pixel sizes, z-step and time step from OME or ImageJ metadata, with OME-NGFF units; 1 when unknown |
 | Channels | `omero` block with channel names from metadata (or `Channel <i>`) and each channel's observed minimum and maximum as display window |
-| Updates | Copies of unchanged images are kept, of new or changed images rewritten, and of images no longer analysed removed; a failed run writes no copy |
+| Updates | Copies of unchanged images are kept, of new or changed images rewritten, and of images no longer analysed removed; a failed run leaves the earlier copies as they were (see §9 for publication) |
+| Option off | Existing copies are kept but no longer updated or recorded in the manifest |

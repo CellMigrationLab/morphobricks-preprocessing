@@ -20,7 +20,8 @@ import logging
 import os
 import shutil
 import tempfile
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,10 +63,9 @@ from .records import PlaneRecord
 from .validation import ValidationIssue, error, has_errors, plural, warning
 from .zarr_export import (
     OmeZarrWriter,
+    is_copy_path,
     ome_zarr_relative_path,
     read_physical_sizes,
-    remove_copies,
-    replace_folder,
     zarr_available,
 )
 
@@ -387,7 +387,7 @@ def run_experiment(
     ]
     work = sorted([*to_read, *convert_only])
     to_convert = work if ome_zarr else []
-    staging = _Staging(output, root) if to_convert else None
+    staging = _CopyStaging(output, root) if to_convert else None
 
     records: list[PlaneRecord] = []
     for rel in unchanged if not reason else ():
@@ -440,36 +440,38 @@ def run_experiment(
     for record in records:
         per_file[record.source_relative_path] = per_file.get(record.source_relative_path, 0) + 1
     output.mkdir(parents=True, exist_ok=True)
-    csv_path = write_plane_histograms(records, output / OUTPUT_FILENAME)
-    if staging is not None:
-        staging.commit()
-    if previous is not None:
-        remove_copies(
-            output,
-            [
-                f.ome_zarr_path
-                for f in previous.files
-                if f.ome_zarr_path and f.relative_path in removed
-            ],
+    # Copies recorded for images no longer analysed are removed; a damaged manifest
+    # cannot point the removal outside this brick's own ome_zarr folder.
+    removed_copies = [
+        f.ome_zarr_path
+        for f in (previous.files if previous else ())
+        if f.relative_path in removed and f.ome_zarr_path and is_copy_path(output, f.ome_zarr_path)
+    ]
+    with _staged_outputs(
+        output,
+        staging.root if staging is not None else None,
+        copies=[ome_zarr_relative_path(rel) for rel in to_convert],
+        removed_copies=removed_copies,
+    ) as staged:
+        csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME)
+        manifest = RunManifest(
+            experiment_root=root.as_posix(),
+            dtype=dtype.name,
+            settings=settings,
+            mapping=mapping,
+            files=tuple(
+                replace(
+                    entry,
+                    plane_count=per_file[rel],
+                    ome_zarr_path=ome_zarr_relative_path(rel) if ome_zarr else None,
+                )
+                for rel, entry in sorted(entries.items())
+            ),
+            csv_sha256=file_sha256(csv_path),
+            versions=package_versions(),
+            written_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         )
-    manifest = RunManifest(
-        experiment_root=root.as_posix(),
-        dtype=dtype.name,
-        settings=settings,
-        mapping=mapping,
-        files=tuple(
-            replace(
-                entry,
-                plane_count=per_file[rel],
-                ome_zarr_path=ome_zarr_relative_path(rel) if ome_zarr else None,
-            )
-            for rel, entry in sorted(entries.items())
-        ),
-        csv_sha256=file_sha256(csv_path),
-        versions=package_versions(),
-        written_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-    )
-    write_manifest(manifest, output / MANIFEST_FILENAME)
+        write_manifest(manifest, staged / MANIFEST_FILENAME)
     logger.info(
         "Wrote %d planes (%d files read, %d kept) to %s",
         len(records),
@@ -487,6 +489,98 @@ def run_experiment(
         converted=tuple(to_convert),
         **counts,
     )
+
+
+class _OutputRollbackError(RuntimeError):
+    """Raised when an output update fails and its earlier files cannot be restored."""
+
+
+@contextmanager
+def _staged_outputs(
+    output: Path,
+    staged: Path | None = None,
+    *,
+    copies: Sequence[str] = (),
+    removed_copies: Sequence[str] = (),
+) -> Iterator[Path]:
+    """Prepare all outputs before publishing, and retain backups if recovery fails.
+
+    ``staged`` is a temporary folder inside ``output`` that may already hold the
+    OME-Zarr ``copies`` written while reading; one is created if None.
+    """
+    staged = staged or Path(tempfile.mkdtemp(prefix=".run-", dir=output))
+    keep_backups = False
+    try:
+        yield staged
+        _publish_outputs(output, staged, copies, removed_copies)
+    except _OutputRollbackError:
+        keep_backups = True
+        raise
+    finally:
+        if not keep_backups:
+            try:
+                shutil.rmtree(staged)
+            except OSError:
+                # A leftover temporary directory does not invalidate completed output.
+                logger.warning("Cannot remove temporary output folder %s", staged, exc_info=True)
+
+
+def _publish_outputs(
+    output: Path,
+    staged: Path,
+    copies: Sequence[str] = (),
+    removed_copies: Sequence[str] = (),
+) -> None:
+    """Replace the outputs, restoring their previous state on a publication failure.
+
+    OME-Zarr copies are published first and the manifest last, so a manifest never
+    names a copy that is not in place. Earlier copies are moved into the backup
+    folder rather than copied, because they can be large.
+    """
+    filenames = (OUTPUT_FILENAME, MANIFEST_FILENAME)
+    backup = staged / "previous"
+    backup.mkdir()
+    # Copy before replacing either file, so even a backup failure leaves the
+    # earlier output intact. Keep backups on the same filesystem for atomic restores.
+    for name in filenames:
+        previous = output / name
+        if previous.exists() or previous.is_symlink():
+            shutil.copy2(previous, backup / name, follow_symlinks=False)
+    # Undo steps in order: ("moved", copy) went to the backup, ("placed", copy) is new,
+    # ("file", name) is a published table or manifest.
+    done: list[tuple[str, str]] = []
+    try:
+        for target in removed_copies:
+            if (output / target).exists():
+                _move(output / target, backup / target)
+                done.append(("moved", target))
+        for target in copies:
+            if (output / target).exists():
+                _move(output / target, backup / target)
+                done.append(("moved", target))
+            _move(staged / target, output / target)
+            done.append(("placed", target))
+        for name in filenames:
+            os.replace(staged / name, output / name)
+            done.append(("file", name))
+    except BaseException:
+        try:
+            for kind, item in reversed(done):
+                if kind == "placed":
+                    shutil.rmtree(output / item)
+                elif kind == "moved":
+                    _move(backup / item, output / item)
+                elif (backup / item).exists() or (backup / item).is_symlink():
+                    os.replace(backup / item, output / item)
+                else:
+                    (output / item).unlink()
+        except BaseException as exc:
+            raise _OutputRollbackError(
+                "The output update failed and the earlier files could not be fully restored. "
+                f"Backup files have been kept in {backup}. Close programs using the output "
+                "files and restore the backups before running again."
+            ) from exc
+        raise
 
 
 def _read_file(
@@ -517,23 +611,31 @@ def _read_file(
     return records
 
 
-class _Staging:
-    """OME-Zarr copies written during a run, moved into place only if the run succeeds."""
+def _move(source: Path, destination: Path) -> None:
+    """Rename a file or folder, creating the destination's parent folders."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(source, destination)
+
+
+class _CopyStaging:
+    """The run's temporary folder while OME-Zarr copies are written during reading.
+
+    The copies are published with the table and manifest by :func:`_staged_outputs`,
+    which reuses this folder; :meth:`discard` removes it when the run stops early.
+    """
 
     def __init__(self, output: Path, experiment_root: Path):
         self.output = output
         self.experiment_root = experiment_root
         self.created_output = not output.exists()
         output.mkdir(parents=True, exist_ok=True)
-        self.root = Path(tempfile.mkdtemp(prefix=".staging-", dir=output))
-        self.staged: list[str] = []
+        self.root = Path(tempfile.mkdtemp(prefix=".run-", dir=output))
 
     def writer(self, rel: str, mapping: AxisMapping, header: TiffMetadata) -> OmeZarrWriter:
+        """Create the writer of one image's copy inside the temporary folder."""
         source = self.experiment_root / rel
-        target = ome_zarr_relative_path(rel)
-        self.staged.append(target)
         return OmeZarrWriter.create(
-            self.root / target,
+            self.root / ome_zarr_relative_path(rel),
             mapping,
             plane_layout(source, mapping),
             sizes=read_physical_sizes(source),
@@ -541,14 +643,8 @@ class _Staging:
             name=rel,
         )
 
-    def commit(self) -> None:
-        for target in self.staged:
-            staged = self.root / target
-            if staged.is_dir():
-                replace_folder(staged, self.output / target)
-        shutil.rmtree(self.root, ignore_errors=True)
-
     def discard(self) -> None:
+        """Remove the temporary folder, and the output folder if this run created it."""
         shutil.rmtree(self.root, ignore_errors=True)
         if self.created_output and not any(self.output.iterdir()):
             self.output.rmdir()
