@@ -45,9 +45,9 @@ def checked(experiment, **kwargs):
 
 def confirmed(experiment, **kwargs):
     nb = checked(experiment, **kwargs)
-    nb.labels_confirmed.value = True
+    nb.labels_confirmed.button.click()
     nb.preview_button.click()
-    nb.preview_checked.value = True
+    nb.preview_checked.button.click()
     nb.confirm_button.click()
     return nb
 
@@ -114,9 +114,9 @@ def test_unreadable_image_can_be_excluded(experiment):
     nb.exclude_button.click()
     assert nb.exclude.value == "ctrl/rep1/bad.tif"
     assert nb.preflight.ok and not ui.is_visible(nb.exclude_button)
-    nb.labels_confirmed.value = True
+    nb.labels_confirmed.button.click()
     nb.preview_button.click()
-    nb.preview_checked.value = True
+    nb.preview_checked.button.click()
     nb.confirm_button.click()
     assert nb.run().excluded == ("ctrl/rep1/bad.tif",)
 
@@ -172,15 +172,43 @@ def test_confirm_needs_valid_roles_and_a_checked_preview(experiment):
     assert nb.preview_checked.disabled  # the preview must be shown first
     nb.preview_button.click()
     assert not nb.preview_checked.disabled
-    nb.preview_checked.value = True
+    nb.preview_checked.button.click()
     assert not nb.confirm_button.disabled
     nb.role_dropdowns[1].value = "-"
     assert "needs a role" in nb.role_notes[1].value
     assert "No role is chosen for the axis C (channel)" in nb.axis_status.value
     assert nb.confirm_button.disabled
     nb.role_dropdowns[1].value = "T"
+    assert nb.confirm_button.disabled  # new roles: the preview must be checked again
+    nb.preview_checked.button.click()
     assert not nb.confirm_button.disabled
     assert nb.mapping.roles == ("Z", "T", "Y", "X")
+
+
+def test_confirmations_are_buttons_that_can_be_undone(experiment):
+    nb = checked(experiment)
+    toggle = nb.labels_confirmed
+    assert "Do the labels in the table match your experiment?" in toggle.prompt.value
+    assert toggle.button.description.strip() == "Yes, the labels are correct"
+    assert toggle.button.button_style == "success"
+    toggle.button.click()
+    assert toggle.value and "Labels confirmed" in toggle.message.value
+    assert toggle.button.description.strip() == "Undo: the labels are not right"
+    assert "mb-confirmed" in toggle.widget._dom_classes
+    assert "Still to do: confirm the axis roles" in nb.readiness.value
+    toggle.button.click()
+    assert not toggle.value and toggle.message.value == ""
+    assert "Still to do: confirm the labels" in nb.readiness.value
+
+
+def test_changing_a_role_asks_for_the_preview_again(experiment):
+    nb = checked(experiment)
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    assert not nb.confirm_button.disabled
+    nb.role_dropdowns[0].value = "T"
+    assert not nb.preview_checked.value
+    assert nb.confirm_button.disabled
 
 
 def test_confirmation_locks_and_unlocks(experiment):
@@ -238,9 +266,9 @@ def test_missing_axes_card(tmp_path):
     assert ui.is_visible(nb.missing_card)
     assert "1 image with axes <b>ZYX</b> lack C (channel)" in nb.missing_note.value
     nb.preview_button.click()
-    nb.preview_checked.value = True
+    nb.preview_checked.button.click()
     assert nb.confirm_button.disabled
-    nb.missing_as_singleton.value = True
+    nb.missing_as_singleton.button.click()
     assert not nb.confirm_button.disabled
 
 
@@ -261,10 +289,10 @@ def test_readiness_checklist(experiment):
     assert "Almost ready" in nb.readiness.value
     assert "Still to do: confirm the labels" in nb.readiness.value
     assert "✅ Check the experiment folder" in nb.readiness.value
-    nb.labels_confirmed.value = True
+    nb.labels_confirmed.button.click()
     assert "Still to do: confirm the axis roles" in nb.readiness.value
     nb.preview_button.click()
-    nb.preview_checked.value = True
+    nb.preview_checked.button.click()
     nb.confirm_button.click()
     assert "Ready to run" in nb.readiness.value and not nb.run_button.disabled
 
@@ -300,15 +328,21 @@ def test_full_run_and_statistics(experiment, tmp_path):
     nb.run_button.click()
     assert nb.result.written
     assert "Done: 18 planes in the table" in nb.run_status.value
-    assert "You can now continue to step 4" in nb.run_status.value
+    assert "Step 4 (optional)" in nb.run_status.value
     assert "planes in the table" in nb.run_tiles.value
     assert nb.progress.value == nb.progress.max == 3
     assert nb.progress.bar_style == "success"
     assert nb.run_button.description == " Compute histograms" and not nb.run_button.disabled
     assert "Wrote 18 planes" in nb.details.value  # the log reaches "Technical details"
     assert read_manifest(tmp_path / "out" / "run_manifest.json").settings.bin_count == 64
-    # Step 4 is filled in automatically after a successful run.
+    # Step 4 is optional: the new table is selected but nothing is calculated yet.
+    assert nb.csv_file.value == str(tmp_path / "out" / "plane_histograms.csv")
+    assert "The table from step 3 is selected" in nb.stats_status.value
+    assert not ui.is_visible(nb.statistics_card)
+    nb.statistics_button.click()
     assert ui.is_visible(nb.statistics_card) and "<td>ctrl</td>" in nb.statistics.value
+    assert "Statistics of 2 conditions calculated" in nb.stats_status.value
+    assert "plane_histograms.csv" in nb.stats_status.value
     assert ui.is_visible(nb.distribution_card)
     assert bytes(nb.distribution.value).startswith(b"\x89PNG")
 
@@ -345,7 +379,8 @@ def test_unexpected_failures_are_reported(experiment, monkeypatch):
 def test_statistics_by_level_and_percentiles(experiment):
     nb = confirmed(experiment)
     nb.run()
-    nb.level.value = "image"
+    nb.statistics_button.click()
+    nb.level.value = "image"  # recalculated at once once statistics are shown
     assert "<th>image</th>" in nb.statistics.value
     assert "image groups" in nb.stats_tiles.value
     nb.percentiles.value = "50"
@@ -356,11 +391,14 @@ def test_statistics_by_level_and_percentiles(experiment):
 def test_statistics_need_a_table_and_valid_percentiles(experiment):
     nb = checked(experiment)
     nb.show_statistics()
-    assert "There is no histogram table yet" in nb.stats_status.value
+    assert "Choose a histogram table first" in nb.stats_status.value
     assert not ui.is_visible(nb.statistics_card)
-    nb.labels_confirmed.value = True
+    nb.csv_file.value = str(experiment / "missing.csv")
+    nb.show_statistics()
+    assert "does not exist" in nb.stats_status.value
+    nb.labels_confirmed.button.click()
     nb.preview_button.click()
-    nb.preview_checked.value = True
+    nb.preview_checked.button.click()
     nb.confirm_button.click()
     nb.run()
     nb.percentiles.value = "1, 120"
@@ -368,11 +406,32 @@ def test_statistics_need_a_table_and_valid_percentiles(experiment):
     assert "percentiles cannot be read" in nb.stats_status.value
 
 
-def test_statistics_of_an_earlier_run(experiment):
-    confirmed(experiment).run()
-    later = PreprocessingNotebook(str(experiment))
-    later.show_statistics()
+def test_statistics_of_another_table(experiment, monkeypatch):
+    table = confirmed(experiment).run().csv_path
+    later = PreprocessingNotebook()
+    assert later.csv_file.value == ""  # no table calculated in this session
+    monkeypatch.setattr(ui, "ask_open_file", lambda initial, filetypes: str(table))
+    later.csv_browse.click()
+    assert later.csv_file.value == str(table)
+    later.statistics_button.click()
     assert "<td>drug</td>" in later.statistics.value
+    # Choosing another table clears the results of the previous one.
+    later.csv_file.value = str(table) + "x"
+    assert later.statistics.value == "" and not ui.is_visible(later.statistics_card)
+    monkeypatch.setattr(ui, "ask_open_file", lambda initial, filetypes: None)
+    later.csv_browse.click()
+    assert "could not be opened" in later.stats_status.value
+
+
+def test_step_4_is_optional_and_keeps_its_controls_in_the_group_card():
+    nb = PreprocessingNotebook()
+    page = nb.results_step()
+    root = page.children[1]
+    assert "Calculate the statistics (optional)" in root.children[0].value
+    assert "This step is optional" in root.children[2].value
+    assert nb.statistics_button in nb.results_card.children
+    assert nb.stats_status in nb.results_card.children
+    assert nb.statistics_button.description.strip() == "Calculate statistics"
 
 
 # Rendering helpers -------------------------------------------------------------------------
@@ -491,12 +550,27 @@ def test_notebook_only_calls_the_package():
     ]
 
 
+def test_widgets_use_99_percent_width_and_bold_paths(experiment):
+    import morphobricks_preprocessing.notebook_style as style_module
+    import morphobricks_preprocessing.notebook_ui as ui_module
+
+    for module in (style_module, ui_module):
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        assert "100%" not in source
+        assert "<code>" not in source
+    nb = checked(experiment)
+    assert "<b>" in nb.output_hint.value and "<code>" not in nb.labels_table.value
+
+
 def test_notebook_names_buttons_that_exist():
     text = "".join("".join(c["source"]) for c in _notebook()["cells"])
     nb = PreprocessingNotebook()
     for button in (
         nb.check_button,
+        nb.labels_confirmed.button,
         nb.preview_button,
+        nb.preview_checked.button,
+        nb.missing_as_singleton.button,
         nb.confirm_button,
         nb.run_button,
         nb.statistics_button,

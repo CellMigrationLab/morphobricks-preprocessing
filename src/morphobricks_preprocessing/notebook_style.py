@@ -23,6 +23,7 @@ STYLE_CSS = """
   color: #0F172A; font-size: 14px; box-sizing: border-box; overflow: hidden !important;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 .mb-page { overflow: hidden !important; }
+.mb-root .widget-box { overflow-x: hidden !important; }
 .mb-root * { box-sizing: border-box; }
 .mb-root .widget-label, .mb-root label { color: #0F172A; }
 .mb-card { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 8px; padding: 14px 16px;
@@ -50,7 +51,7 @@ STYLE_CSS = """
 .mb-tile .mb-tile-value { font-size: 20px; font-weight: 700; color: #0F172A; }
 .mb-tile .mb-tile-label { font-size: 12px; color: #64748B; }
 .mb-table-wrap { overflow-x: auto; max-height: 460px; overflow-y: auto; }
-.mb-table { border-collapse: collapse; font-size: 13px; width: 100%; }
+.mb-table { border-collapse: collapse; font-size: 13px; width: 99%; }
 .mb-table th { background: #F8FAFC; text-align: left; padding: 6px 10px; position: sticky; top: 0;
   border-bottom: 2px solid #CBD5E1; white-space: nowrap; }
 .mb-table td { padding: 5px 10px; border-bottom: 1px solid #E2E8F0; }
@@ -60,9 +61,10 @@ STYLE_CSS = """
 .mb-pill-single { background: #F1F5F9; color: #64748B; font-style: italic; }
 .mb-check { list-style: none; padding-left: 0; margin: 4px 0; }
 .mb-check li { margin: 2px 0; }
-.mb-code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px;
-  background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 10px;
-  white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; }
+.mb-confirm { border: 2px solid #F59E0B; background: #FFFBEB; border-radius: 8px;
+  padding: 10px 12px; margin: 10px 0 4px 0; }
+.mb-confirm.mb-confirmed { border-color: #16A34A; background: #F0FDF4; }
+.mb-question { color: #0F172A; line-height: 1.5; margin-bottom: 8px; }
 .mb-spinner { display: inline-block; width: 12px; height: 12px; margin-right: 8px;
   border: 2px solid #93C5FD; border-top-color: #2563EB; border-radius: 50%;
   animation: mb-spin 0.8s linear infinite; vertical-align: -1px; }
@@ -86,7 +88,7 @@ def page(title: str, subtitle: str, children: Sequence[widgets.Widget]) -> widge
         ]
     )
     root.add_class("mb-root")
-    outer = widgets.VBox([widgets.HTML(STYLE_CSS), root], layout=widgets.Layout(width="100%"))
+    outer = widgets.VBox([widgets.HTML(STYLE_CSS), root], layout=widgets.Layout(width="99%"))
     outer.add_class("mb-page")
     return outer
 
@@ -149,7 +151,7 @@ def working(text: str) -> str:
 
 def path_list(paths: Sequence[str], limit: int = _MAX_LIST) -> str:
     """HTML list of paths; long lists are folded behind a "show all" toggle."""
-    escaped = [f"<code>{html.escape(p)}</code>" for p in paths]
+    escaped = [f"<b>{html.escape(p)}</b>" for p in paths]
     if len(escaped) <= limit:
         return "<ul>" + "".join(f"<li>{p}</li>" for p in escaped) + "</ul>"
     shown = "".join(f"<li>{p}</li>" for p in escaped[:limit])
@@ -202,7 +204,7 @@ def checklist(items: Iterable[tuple[bool, str]]) -> str:
 
 def button(description: str, *, style: str = "", icon: str = "", tooltip: str = "", main=False):
     """Build a button; ``main`` buttons are full width and taller, for a step's main action."""
-    layout = widgets.Layout(width="100%", height="42px") if main else widgets.Layout(width="auto")
+    layout = widgets.Layout(width="99%", height="42px") if main else widgets.Layout(width="auto")
     return widgets.Button(
         description=description, button_style=style, icon=icon, tooltip=tooltip, layout=layout
     )
@@ -234,6 +236,114 @@ def ask_directory(initial: str = "") -> str | None:
         root.attributes("-topmost", True)
         start = initial if initial and os.path.isdir(initial) else os.path.expanduser("~")
         chosen = filedialog.askdirectory(parent=root, initialdir=start, mustexist=True)
+    finally:
+        root.destroy()
+    return os.path.normpath(chosen) if chosen else ""
+
+
+class ConfirmToggle:
+    """A question the user answers with a large button, instead of a small checkbox.
+
+    Before confirmation it shows the question, what to check, and a green
+    "Yes, ..." button. After the click it shows a green "confirmed" message and
+    the button turns into an amber "Undo" button. ``widget`` is what goes on the
+    page; ``value`` is True once confirmed.
+
+    Parameters
+    ----------
+    question
+        The question, e.g. "Do the labels in the table match your experiment?".
+    explanation
+        What to look at before answering (HTML).
+    confirm_label
+        Text of the confirm button.
+    confirmed_text
+        Message shown once confirmed.
+    undo_label
+        Text of the button that takes the confirmation back.
+    """
+
+    def __init__(
+        self,
+        question: str,
+        explanation: str,
+        confirm_label: str,
+        confirmed_text: str,
+        undo_label: str,
+    ):
+        self._labels = (confirm_label, undo_label)
+        self._confirmed_text = confirmed_text
+        self._value = False
+        self._callbacks: list = []
+        self.prompt = widgets.HTML(
+            f"<div class='mb-question'><b>❓ {html.escape(question)}</b>"
+            f"<div class='mb-help' style='margin-bottom:0'>{explanation}</div></div>"
+        )
+        self.button = button(f" {confirm_label}", style="success", icon="check", main=True)
+        self.message = widgets.HTML()
+        self.widget = widgets.VBox([self.prompt, self.button, self.message])
+        self.widget.add_class("mb-confirm")
+        self.button.on_click(lambda _: self.set(not self._value))
+
+    @property
+    def value(self) -> bool:
+        """True once the user confirmed."""
+        return self._value
+
+    @property
+    def disabled(self) -> bool:
+        """True while the question cannot be answered yet."""
+        return self.button.disabled
+
+    @disabled.setter
+    def disabled(self, disabled: bool) -> None:
+        self.button.disabled = disabled
+
+    def observe(self, callback) -> None:
+        """Call ``callback(value)`` whenever the answer changes."""
+        self._callbacks.append(callback)
+
+    def set(self, value: bool, *, notify: bool = True) -> None:
+        """Set the answer and update the button and message."""
+        changed = value != self._value
+        self._value = value
+        confirm_label, undo_label = self._labels
+        if value:
+            self.button.description = f" {undo_label}"
+            self.button.icon = "undo"
+            self.button.button_style = "warning"
+            self.message.value = status("ok", self._confirmed_text)
+            self.widget.add_class("mb-confirmed")
+        else:
+            self.button.description = f" {confirm_label}"
+            self.button.icon = "check"
+            self.button.button_style = "success"
+            self.message.value = ""
+            self.widget.remove_class("mb-confirmed")
+        if changed and notify:
+            for callback in self._callbacks:
+                callback(value)
+
+
+def ask_open_file(initial: str = "", filetypes=(("All files", "*.*"),)) -> str | None:
+    """Open the system's file dialog; return the chosen file, ``""`` if cancelled.
+
+    Returns None when no dialog can be shown, like :func:`ask_directory`.
+    """
+    try:
+        import tkinter
+        from tkinter import filedialog
+    except ImportError:
+        return None
+    try:
+        root = tkinter.Tk()
+    except tkinter.TclError:
+        return None
+    try:
+        root.withdraw()
+        root.attributes("-topmost", True)
+        start = initial if initial and os.path.isdir(initial) else os.path.expanduser("~")
+        chosen = filedialog.askopenfilename(parent=root, initialdir=start, filetypes=filetypes)
     finally:
         root.destroy()
     return os.path.normpath(chosen) if chosen else ""

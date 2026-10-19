@@ -75,7 +75,9 @@ The notebook's code cells are hidden: run them from top to bottom (click a cell 
 **Shift + Enter**). Each step is a page of boxes. A blue box at the top says what the step
 is for, every control has a grey help line, and one coloured message says what happened
 and what to do next. Green means done, amber means "please check", and red means
-something must be fixed first. Later steps stay locked until the earlier ones are
+something must be fixed first. Where you need to confirm something, a yellow box asks the
+question and you answer with a large green **Yes, …** button. The box turns green, and an
+**Undo** button takes the answer back. Later steps stay locked until the earlier ones are
 confirmed. If you change the experiment folder, everything after it is reset.
 
 0. **Start the notebook.** A green box confirms the notebook is ready and shows the package
@@ -87,8 +89,8 @@ confirmed. If you change the experiment folder, everything after it is reset.
    - Tiles summarise the result: images to analyse, image folders, conditions, pixel type,
      skipped files, and errors and warnings.
    - The **Labels from the folder names** table shows every image folder with its condition,
-     biological repeat and technical repeat (*single* where a level is missing). Tick
-     **I checked the labels above: they are correct**.
+     biological repeat and technical repeat (*single* where a level is missing). If they
+     are right, press **Yes, the labels are correct** in the yellow box under the table.
    - **Messages** list each problem with the affected files and what to do. If some images
      cannot be read, **Exclude these images and check again** leaves them out (see §7).
 2. **Review the axis roles.**
@@ -100,10 +102,11 @@ confirmed. If you change the experiment folder, everything after it is reset.
      time points of any image. Each picture should be a normal image of your sample;
      stripes or a smear mean X or Y is on the wrong dimension. Brightness is stretched for
      display only.
-   - Tick **The preview shows a normal 2D image**, then click **Confirm axis roles**. The
-     roles are locked until you click **Change axis roles**.
+   - If the preview looks right, press **Yes, the preview looks right**, then click
+     **Confirm axis roles**. Changing a role afterwards asks you to check the preview again.
+     The confirmed roles are locked until you click **Change axis roles**.
    - If some images lack a dimension the others have (often a single channel), a yellow box
-     lists them and asks you to confirm they have one plane along it.
+     lists them; press **Yes, they have a single plane there** if that is the case.
 3. **Compute the histograms.**
    - **Before you run** lists anything still to do.
    - **What will happen** names the output folder and files, and says whether an earlier
@@ -119,9 +122,12 @@ confirmed. If you change the experiment folder, everything after it is reset.
      then summarise planes written, images read, kept, new, changed, removed and excluded.
      Nothing is written unless the whole run succeeds. **Technical details (log)** holds
      the log for troubleshooting.
-4. **Look at the results.**
+4. **Calculate the statistics (optional).** The table from step 3 is all that later bricks
+   need; this step only reads it to compare groups and writes no files.
+   - **Histogram table** is filled in with the table from step 3. To look at another
+     experiment, paste the path of its `plane_histograms.csv` or click **Browse…**.
    - Choose **Condition**, **Biological repeat**, **Technical repeat** or **Image**, and the
-     percentiles to report.
+     percentiles to report, then click **Calculate statistics**.
    - The table lists pooled statistics per group: minimum, maximum, mean, standard
      deviation, median and percentiles.
    - The plot compares the groups' intensity distributions: curves further right are
