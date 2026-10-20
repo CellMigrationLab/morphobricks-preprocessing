@@ -13,9 +13,9 @@ The notebook ``notebooks/MorphoBricks_Preprocessing.ipynb`` shows the four steps
 
 Each step is a page of cards (see :mod:`.notebook_style`): a blue box says what
 the step is for, every control has a help line, the main button is at the
-bottom, and one status card says what happened and what to do next. Later steps
-stay locked until the earlier ones are confirmed, and changing the folder resets
-them. The widgets only collect choices and show results; every check and
+bottom, a status card says what happened, and a separate "What next?" box explains
+the next action. Later steps stay locked until the earlier ones are confirmed, and
+changing the folder resets them. The widgets only collect choices and show results; every check and
 computation is done by the same functions the command line and the tests use.
 Needs the ``notebook`` extra (``ipywidgets`` and ``matplotlib``).
 """
@@ -93,9 +93,9 @@ CONVERSION_OPTIONS = [
 ]
 
 PYRAMID_OPTIONS = [
-    ("Automatic: halve until a plane fits 512 px", "auto"),
-    ("None: full resolution only (least disk space)", "none"),
-    ("A fixed number of smaller levels", "fixed"),
+    ("Automatic (recommended)", "auto"),
+    ("Full resolution only", "none"),
+    ("Choose the number of smaller copies", "fixed"),
 ]
 _MAX_PLOTTED_GROUPS = 12
 _PACKAGE_LOGGER = "morphobricks_preprocessing"
@@ -153,9 +153,14 @@ class PreprocessingNotebook:
                     ui.status(
                         "ok",
                         f"The notebook is ready (morphobricks-preprocessing {__version__}).",
-                        ["Continue with step 1 below: run its cell to choose your folder."],
                     )
-                )
+                ),
+                widgets.HTML(
+                    ui.next_steps(
+                        "Go to Step 1 and check your experiment folder.",
+                        "Run its cell, choose your image folder, then click Check folder.",
+                    )
+                ),
             ],
         )
 
@@ -179,6 +184,7 @@ class PreprocessingNotebook:
                 self.folder_tiles,
                 self.labels_card,
                 self.issues_card,
+                self.folder_next,
             ],
         )
 
@@ -214,6 +220,7 @@ class PreprocessingNotebook:
                 self.run_tiles,
                 self.run_issues,
                 self.details_box,
+                self.run_next,
             ],
         )
 
@@ -236,6 +243,7 @@ class PreprocessingNotebook:
                 self.stats_tiles,
                 self.statistics_card,
                 self.distribution_card,
+                self.stats_next,
             ],
         )
 
@@ -305,6 +313,7 @@ class PreprocessingNotebook:
             main=True,
         )
         self.folder_status = widgets.HTML()
+        self.folder_next = widgets.HTML()
         self.folder_tiles = widgets.HTML()
         self.labels_table = widgets.HTML()
         self.labels_confirmed = ui.ConfirmToggle(
@@ -313,7 +322,7 @@ class PreprocessingNotebook:
             "technical repeat. If a label is wrong, rename the folder and click <b>Check "
             "folder</b> again. Step 3 can only run once the labels are confirmed.",
             "Yes, the labels are correct",
-            "Labels confirmed. Continue with step 2.",
+            "Labels confirmed.",
             "Undo: the labels are not right",
         )
         self.labels_confirmed.disabled = True
@@ -338,8 +347,14 @@ class PreprocessingNotebook:
             tooltip="Add the images that cannot be processed to the exclusion list",
         )
         ui.set_visible(self.exclude_button, False)
+        self.issue_counts = widgets.HTML()
+        self.issue_details = widgets.Accordion(
+            children=[widgets.VBox([self.folder_issues, self.exclude_button])],
+            titles=("Show warnings and errors",),
+            selected_index=None,
+        )
         self.issues_card = ui.card(
-            "Messages", [self.folder_issues, self.exclude_button], visible=False
+            "Messages", [self.issue_counts, self.issue_details], visible=False
         )
 
         self.folder_browse.on_click(lambda _: self._browse(self.folder))
@@ -348,7 +363,7 @@ class PreprocessingNotebook:
         self.exclude_button.on_click(lambda _: self._exclude_blocking_images())
         self.folder.observe(lambda _: self._folder_edited(), names="value")
         self.output.observe(lambda _: self._output_edited(), names="value")
-        self.labels_confirmed.observe(lambda _: self._refresh_run_step())
+        self.labels_confirmed.observe(lambda _: self._labels_changed())
         self._update_output_hint()
 
     def check_folder(self) -> Preflight | None:
@@ -360,6 +375,7 @@ class PreprocessingNotebook:
             )
             return None
         self._busy(self.check_button, "Checking…")
+        self.folder_next.value = ""
         self.folder_status.value = ui.working("Checking the folders and image headers…")
         try:
             with self.log.attached():
@@ -392,13 +408,11 @@ class PreprocessingNotebook:
             self.folder_status.value = ui.status(
                 "warn",
                 f"Ready, with {plural(len(warnings), 'warning')} to read.",
-                ["Check the labels table below and click Yes, the labels are correct."],
             )
         else:
             self.folder_status.value = ui.status(
                 "ok",
                 "The folder looks good.",
-                ["Check the labels table below and click Yes, the labels are correct."],
             )
         self.folder_tiles.value = ui.tiles(_folder_tiles(pre))
         self.labels_table.value = labels_html(pre)
@@ -406,9 +420,37 @@ class PreprocessingNotebook:
         self.labels_confirmed.disabled = not pre.discovery.leaves
         ui.set_visible(self.labels_card, bool(pre.discovery.leaves))
         self.folder_issues.value = issues_html(pre.issues)
+        self.issue_counts.value = "".join(
+            f"<span class='mb-issue-count mb-{kind}'>{plural(len(items), name)}</span>"
+            for kind, items, name in (("error", errors, "error"), ("warn", warnings, "warning"))
+            if items
+        )
+        self.issue_details.selected_index = None
         ui.set_visible(self.issues_card, bool(pre.issues))
         blocking = any(i.code in EXCLUDABLE_CODES for i in pre.issues)
         ui.set_visible(self.exclude_button, blocking)
+        self._refresh_folder_next()
+
+    def _labels_changed(self) -> None:
+        self._refresh_folder_next()
+        if self.confirmed_mapping is not None:
+            self._refresh_axis_next()
+        self._refresh_run_step()
+
+    def _refresh_folder_next(self) -> None:
+        self.folder_next.value = ""
+        if self.preflight is None or not self.preflight.ok:
+            return
+        if self.labels_confirmed.value:
+            self.folder_next.value = ui.next_steps(
+                "Go to Step 2 and review the axis roles.",
+                "Run its cell, check the preview, then click Confirm axis roles.",
+            )
+        else:
+            self.folder_next.value = ui.next_steps(
+                "Check the labels in Step 1 and confirm them.",
+                "Read any warnings and review the labels, then click Yes, the labels are correct.",
+            )
 
     def _folder_edited(self) -> None:
         self._update_output_hint()
@@ -422,6 +464,7 @@ class PreprocessingNotebook:
             "info", "The folder changed.", ["Press Check folder to check the new folder."]
         )
         self.folder_tiles.value = ""
+        self.folder_next.value = ""
         self.labels_confirmed.set(False, notify=False)
         ui.set_visible(self.labels_card, False)
         ui.set_visible(self.issues_card, False)
@@ -551,6 +594,7 @@ class PreprocessingNotebook:
             main=True,
         )
         self.confirmed_status = widgets.HTML()
+        self.axis_next = widgets.HTML()
         self.missing_as_singleton.observe(lambda _: self._mapping_changed())
         self.preview_button.on_click(lambda _: self.show_preview())
         self.preview_file.observe(lambda _: self._preview_file_changed(), names="value")
@@ -561,6 +605,7 @@ class PreprocessingNotebook:
 
     def _refresh_axis_step(self) -> None:
         pre = self.preflight
+        self.axis_next.value = ""
         self._preview_shown = False
         if pre is None:
             self.axis_box.children = [
@@ -643,6 +688,7 @@ class PreprocessingNotebook:
             self.preview_card,
             self.confirm_button,
             self.confirmed_status,
+            self.axis_next,
         ]
         self._fill_preview_files()
         self._mapping_changed()
@@ -707,11 +753,15 @@ class PreprocessingNotebook:
         )
         if review.issues:
             self.axis_status.value = issues_html(review.issues)
+            self.axis_next.value = ""
         else:
             self.axis_status.value = ui.status(
                 "ok",
                 "These roles are valid for every image.",
-                ["Click Show preview, check the picture, then confirm below."],
+            )
+            self.axis_next.value = ui.next_steps(
+                "Check the preview in Step 2, then confirm the axis roles.",
+                "Click Show preview and inspect a few planes before confirming.",
             )
         self._review_ok = review.ok
         if self._preview_shown:
@@ -829,13 +879,26 @@ class PreprocessingNotebook:
                 )
                 if r is not None
             ]
-            self.confirmed_status.value = ui.status(
-                "ok", "Axis roles confirmed.", [*roles, "Continue to step 3."]
-            )
+            self.confirmed_status.value = ui.status("ok", "Axis roles confirmed.", roles)
+            self._refresh_axis_next()
         else:
             self.confirmed_status.value = ""
+            self._mapping_changed()
         self._update_confirm_button()
         self._refresh_run_step()
+
+    def _refresh_axis_next(self) -> None:
+        if not self.labels_confirmed.value:
+            self.axis_next.value = ui.next_steps(
+                "Go to Step 1 and confirm the folder labels.",
+                "Review the labels and click Yes, the labels are correct before running Step 3.",
+            )
+        else:
+            self.axis_next.value = ui.next_steps(
+                "Go to Step 3 and compute the histograms.",
+                "Run its cell and review the settings and What will happen. "
+                "Then click Compute histograms.",
+            )
 
     def _set_locked(self, locked: bool) -> None:
         for dropdown in self.role_dropdowns:
@@ -908,6 +971,7 @@ class PreprocessingNotebook:
         )
         ui.set_visible(self.progress, False)
         self.run_status = widgets.HTML()
+        self.run_next = widgets.HTML()
         self.run_tiles = widgets.HTML()
         self.run_issues = widgets.HTML()
         self.details = widgets.Textarea(
@@ -938,73 +1002,116 @@ class PreprocessingNotebook:
             min=MIN_CHUNK_SIZE,
             max=MAX_CHUNK_SIZE,
             step=256,
-            description="Chunk size (px)",
+            description="Side length (px)",
             style=_label(),
+            layout=widgets.Layout(width="99%"),
         )
         self.compression = widgets.Dropdown(
             options=[(label, key) for key, label in COMPRESSIONS.items()],
             value="lz4",
-            description="Compression",
             style=_label(),
-            layout=widgets.Layout(width="34em"),
+            layout=widgets.Layout(width="99%"),
         )
         self.compression_level = widgets.BoundedIntText(
-            value=5, min=1, max=9, description="Compression level", style=_label()
+            value=5,
+            min=1,
+            max=9,
+            description="Level (1–9)",
+            style=_label(),
+            layout=widgets.Layout(width="99%"),
         )
         self.compression_level_box = widgets.VBox(
             [
                 self.compression_level,
                 ui.help_text(
-                    "<ul><li>1 is the fastest, 9 gives the smallest files (default 5).</li></ul>"
+                    "1 favours speed; 9 favours smaller files. The default is 5. "
+                    "Every level keeps the full-resolution pixel values unchanged."
                 ),
             ]
         )
         self.pyramid = widgets.Dropdown(
             options=PYRAMID_OPTIONS,
             value="auto",
-            description="Pyramid levels",
             style=_label(),
-            layout=widgets.Layout(width="34em"),
+            layout=widgets.Layout(width="99%"),
         )
         self.pyramid_count = widgets.BoundedIntText(
-            value=2, min=1, max=MAX_LEVELS - 1, description="Number of levels", style=_label()
+            value=2,
+            min=1,
+            max=MAX_LEVELS - 1,
+            description="Extra levels",
+            style=_label(),
+            layout=widgets.Layout(width="99%"),
         )
         self.pyramid_count_box = widgets.VBox(
             [
                 self.pyramid_count,
                 ui.help_text(
-                    f"<ul><li>How many halved levels to add (1 to {MAX_LEVELS - 1}).</li></ul>"
+                    f"Add 1 to {MAX_LEVELS - 1} smaller copies, each half the width and "
+                    "height of the previous level. Two adds half-size and quarter-size copies."
                 ),
             ]
         )
-        self.conversion_settings = widgets.VBox(
+        storage_card = ui.card(
+            "Storage block size",
             [
-                widgets.HTML("<b>Conversion settings</b>"),
+                ui.help_text(
+                    "Each plane is stored in square blocks called chunks. "
+                    "This changes how the copy is stored and read."
+                ),
                 self.chunk_size,
                 ui.help_text(
-                    "<ul><li>The size of the square tiles (chunks) the copies are stored in, "
-                    f"in pixels: {MIN_CHUNK_SIZE} to {MAX_CHUNK_SIZE:,}, default "
-                    f"{CHUNK_SIDE:,}.</li><li>Each chunk holds one plane along Z, C and T.</li>"
-                    "<li>Smaller chunks load faster in viewers and when later bricks read "
-                    "patches; larger chunks give fewer files.</li></ul>"
+                    f"Default: {CHUNK_SIDE:,} × {CHUNK_SIDE:,} pixels per block, or smaller "
+                    f"at an image edge. Allowed side lengths: {MIN_CHUNK_SIZE}–{MAX_CHUNK_SIZE:,} "
+                    "pixels. Each block belongs to one depth slice, channel and time point."
                 ),
+                ui.help_text(
+                    "Smaller blocks let viewers read smaller regions; larger blocks mean fewer "
+                    "blocks to manage. Leave the default if you are unsure."
+                ),
+            ],
+        )
+        compression_card = ui.card(
+            "Lossless compression",
+            [
+                ui.help_text("Reduce the space used by the copies without changing pixel values."),
                 self.compression,
                 ui.help_text(
-                    "<ul><li>Always lossless: pixel values never change.</li>"
-                    "<li><b>LZ4</b> (default) is fast; <b>Zstandard</b> gives smaller files "
-                    "but is slower; <b>no compression</b> is the fastest and largest.</li>"
-                    "</ul>"
+                    "LZ4 (recommended) favours speed. Zstandard favours smaller files and "
+                    "may take longer. No compression skips compression and uses more disk space."
                 ),
                 self.compression_level_box,
+            ],
+        )
+        preview_card = ui.card(
+            "Preview resolutions",
+            [
+                ui.help_text(
+                    "Add smaller versions for viewers to zoom out quickly. These versions "
+                    "form an image pyramid; histograms always use the full resolution."
+                ),
                 self.pyramid,
                 ui.help_text(
-                    "<ul><li>Smaller copies of each plane, for fast viewing. The histograms "
-                    "always use the full resolution.</li><li><b>Automatic</b> (default) "
-                    "halves a plane until it fits 512 pixels.</li><li><b>None</b> keeps only "
-                    "the full resolution and saves the most disk space.</li></ul>"
+                    "Automatic (recommended) halves each plane until it fits within "
+                    "512 × 512 pixels. Full resolution only saves space by omitting smaller "
+                    "versions. Choose the number of copies to set how many to add."
                 ),
                 self.pyramid_count_box,
-            ]
+            ],
+        )
+        self.conversion_grid = widgets.GridBox(
+            [storage_card, compression_card, preview_card],
+            layout=widgets.Layout(
+                width="99%",
+                grid_template_columns="repeat(auto-fit, minmax(min(99%, 320px), 1fr))",
+                grid_gap="10px",
+            ),
+        )
+        self.conversion_settings = widgets.Accordion(
+            children=[self.conversion_grid],
+            titles=("OME-Zarr conversion settings",),
+            selected_index=None,
+            layout=widgets.Layout(width="99%"),
         )
         self.conversion_card = ui.card(
             "(Optional) Image conversion",
@@ -1026,6 +1133,9 @@ class PreprocessingNotebook:
 
     def _refresh_conversion(self) -> None:
         converting = self._convert_tiffs()
+        # Open on choosing conversion, but preserve a deliberate collapse while editing.
+        if converting and not ui.is_visible(self.conversion_settings):
+            self.conversion_settings.selected_index = 0
         ui.set_visible(self.conversion_settings, converting)
         ui.set_visible(self.compression_level_box, self.compression.value != "none")
         ui.set_visible(self.pyramid_count_box, self.pyramid.value == "fixed")
@@ -1114,6 +1224,8 @@ class PreprocessingNotebook:
         self._refresh_run_step()
 
     def _refresh_run_step(self) -> None:
+        if self.result is None:
+            self.run_next.value = ""
         pre = self.preflight
         folder_ok = pre is not None and pre.ok
         if pre is not None and self.confirmed_mapping is not None:
@@ -1138,11 +1250,12 @@ class PreprocessingNotebook:
         ]
         missing = [text for done, text in items if not done]
         if missing:
+            self.run_next.value = ""
             title = ui.status(
                 "warn", "Almost ready.", [f"Still to do: {missing[0][0].lower()}{missing[0][1:]}."]
             )
         else:
-            title = ui.status("ok", "Ready to run.", ["Press Compute histograms below."])
+            title = ui.status("ok", "Ready to run.")
         self.readiness.value = title + ui.checklist(items)
         self.run_button.disabled = bool(missing)
         self.plan.value = self._plan_html()
@@ -1204,6 +1317,7 @@ class PreprocessingNotebook:
         if self.run_button.disabled:
             return None
         self._busy(self.run_button, "Computing…")
+        self.run_next.value = ""
         ui.set_visible(self.progress, True)
         self.progress.value, self.progress.max, self.progress.bar_style = 0, 1, "info"
         self.run_status.value = ui.working("Preparing: checking everything again…")
@@ -1250,6 +1364,7 @@ class PreprocessingNotebook:
         return self.result
 
     def _show_run_result(self, result: RunResult) -> None:
+        self.run_next.value = ""
         self.progress.bar_style = "success" if result.written else "danger"
         self.run_issues.value = issues_html(result.issues) if result.issues else ""
         if not result.written:
@@ -1267,9 +1382,13 @@ class PreprocessingNotebook:
             )
         if result.rebuild_reason:
             lines.append(f"Every image was read because {result.rebuild_reason}.")
-        lines.append("Step 4 (optional) calculates statistics per group from this table.")
         self.run_status.value = ui.status(
             "ok", f"Done: {plural(result.plane_count, 'plane')} in the table.", lines
+        )
+        self.run_next.value = ui.next_steps(
+            "Go to Step 4 (optional) and calculate the statistics.",
+            "Run its cell, choose how to group the images, then click Calculate statistics. "
+            "You can also finish here: the histogram table is ready for later MorphoBricks bricks.",
         )
         kept = 0 if result.rebuild_reason else len(result.unchanged)
         tiles = [
@@ -1339,6 +1458,7 @@ class PreprocessingNotebook:
             main=True,
         )
         self.stats_status = widgets.HTML()
+        self.stats_next = widgets.HTML()
         self.results_card = ui.card(
             "Group by",
             [
@@ -1402,6 +1522,7 @@ class PreprocessingNotebook:
     def _csv_changed(self) -> None:
         # Results of another table must not stay on screen next to the new path.
         self.stats_status.value = self.stats_tiles.value = self.statistics.value = ""
+        self.stats_next.value = ""
         ui.set_visible(self.statistics_card, False)
         ui.set_visible(self.distribution_card, False)
 
@@ -1413,6 +1534,7 @@ class PreprocessingNotebook:
         """Show pooled statistics and distributions per group from the histogram table."""
         if self.statistics_button.disabled:
             return
+        self.stats_next.value = ""
         path = self._csv_path()
         if path is None or not path.is_file():
             if path is None:
@@ -1494,6 +1616,11 @@ class PreprocessingNotebook:
             "ok",
             f"Statistics of {plural(len(summaries), LEVEL_NAMES[level])} calculated.",
             [f"From the table {path}"],
+        )
+        self.stats_next.value = ui.next_steps(
+            "Review the group statistics and intensity distributions above.",
+            "Choose another grouping to compare repeats or images. The histogram table "
+            "is ready for later MorphoBricks bricks; this optional step writes no files.",
         )
 
     # Shared ------------------------------------------------------------------------------

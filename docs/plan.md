@@ -262,6 +262,10 @@ API, CLI). The notebook and CLI only call the API.
   *Setup feedback: standalone Step 0 detects the environment, prefers a nearby checkout,
   reuses an installed package, or installs missing requirements into the active kernel.*
   *Step-1 feedback: centre the folder-label table's headers and contents consistently.*
+  *Notebook guidance feedback: separate "What next?" boxes show the next action in larger
+  text, following the current confirmations. Step-1 message details are collapsed with
+  persistent orange warning and red error counts. Step-3 conversion settings use an
+  expandable panel with separate storage, compression and preview-resolution cards.*
 - **OME-Zarr (optional `zarr` extra):** OME-Zarr images (OME-NGFF 0.4 and 0.5) are read
   as input next to TIFF files, plane by plane from level 0, with their declared axes
   (`zarr_input`). For TIFF images the user chooses once per experiment: read them
@@ -382,3 +386,15 @@ Raised during review; to be decided before the milestones that need them:
     not offered: OME-Zarr chunks never overlap; overlap belongs to patch extraction. The
     settings are recorded in the manifest; changing them rewrites the copies (rows stay
     the same). The CLI offers the same settings.*
+14. Notebook feedback: how should next actions, folder messages and conversion settings
+    be presented?
+    *Decided (October 2026): show successful actions' guidance in a separate "What next?"
+    box with larger action text, rather than a continuation bullet. Folder-label and axis
+    confirmations control when the next step is suggested; step 4 stays optional. Step-1
+    messages start collapsed after each check, with orange warning and red error counts
+    visible outside the dropdown; the exclusion action stays inside it. Choosing conversion
+    opens an expandable "OME-Zarr conversion settings" panel containing three cards:
+    storage block size, lossless compression and preview resolutions, with plain-language
+    explanations. Manual collapse and control values survive other setting edits; the
+    disk-space warning stays outside the panel. Processing defaults, validation severities,
+    output formats and statistical definitions are unchanged.*

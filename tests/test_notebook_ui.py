@@ -71,7 +71,10 @@ def test_pages_build_without_a_folder():
 def test_welcome_shows_the_version():
     page = PreprocessingNotebook().welcome()
     root = page.children[1]
-    assert "The notebook is ready" in root.children[-1].value
+    assert "The notebook is ready" in root.children[-2].value
+    assert "What next?" in root.children[-1].value
+    assert "Go to Step 1" in root.children[-1].value
+    assert "<li>" not in root.children[-1].value
 
 
 def test_check_shows_status_tiles_labels_and_roles(experiment):
@@ -105,6 +108,52 @@ def test_warnings_are_shown_with_paths_and_actions(experiment):
     assert ui.is_visible(nb.issues_card)
     assert "ctrl/notes.txt" in nb.folder_issues.value
     assert "What to do:" in nb.folder_issues.value
+    assert nb.issue_details.selected_index is None
+    assert "mb-warn" in nb.issue_counts.value and "1 warning" in nb.issue_counts.value
+    nb.issue_details.selected_index = 0
+    assert nb.exclude_button in nb.issue_details.children[0].children
+    nb.check_folder()
+    assert nb.issue_details.selected_index is None
+
+
+def test_errors_and_warnings_remain_counted_when_messages_are_collapsed(experiment):
+    write_file(experiment / "ctrl/notes.txt")
+    write_file(experiment / "ctrl/rep1/bad.tif", b"garbage")
+    nb = checked(experiment)
+    assert nb.issue_details.selected_index is None
+    assert "mb-error'>1 error" in nb.issue_counts.value
+    assert "mb-warn'>1 warning" in nb.issue_counts.value
+    assert nb.folder_next.value == ""
+    nb.issue_details.selected_index = 0
+    nb.exclude_button.click()
+    assert nb.preflight.ok
+    assert "mb-error" not in nb.issue_counts.value
+    assert nb.issue_details.selected_index is None
+
+
+def test_next_steps_follow_confirmation_and_folder_changes(experiment):
+    nb = checked(experiment)
+    assert "Check the labels in Step 1" in nb.folder_next.value
+    assert "Go to Step 2" not in nb.folder_next.value
+    nb.labels_confirmed.button.click()
+    assert "Go to Step 2" in nb.folder_next.value
+    assert "Continue" not in nb.labels_confirmed.message.value
+    nb.labels_confirmed.button.click()
+    assert "Go to Step 2" not in nb.folder_next.value
+    nb.labels_confirmed.button.click()
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    nb.confirm_button.click()
+    assert "Go to Step 3" in nb.axis_next.value
+    assert "Continue" not in nb.confirmed_status.value
+    nb.labels_confirmed.button.click()
+    assert "Go to Step 1" in nb.axis_next.value
+    nb.labels_confirmed.button.click()
+    assert "Go to Step 3" in nb.axis_next.value
+    nb.confirm_button.click()
+    assert "Go to Step 3" not in nb.axis_next.value
+    nb.folder.value += "_other"
+    assert nb.folder_next.value == nb.axis_next.value == nb.run_next.value == ""
 
 
 def test_unreadable_image_can_be_excluded(experiment):
@@ -432,6 +481,36 @@ def test_conversion_shows_settings_and_the_disk_space_warning(experiment):
     assert not ui.is_visible(nb.conversion_settings) and nb.space_warning.value == ""
 
 
+def test_conversion_cards_can_be_collapsed_without_losing_choices(experiment):
+    nb = checked(experiment)
+    if nb.conversion.disabled:
+        pytest.skip("zarr is not installed")
+    nb.conversion.value = "convert"
+    assert nb.conversion_settings.selected_index == 0
+    assert nb.conversion_settings.get_title(0) == "OME-Zarr conversion settings"
+    cards = nb.conversion_grid.children
+    assert len(cards) == 3
+    assert "Storage block size" in cards[0].children[0].value
+    assert nb.chunk_size in cards[0].children
+    assert nb.compression in cards[1].children
+    assert nb.pyramid in cards[2].children
+    nb.conversion_settings.selected_index = None
+    nb.chunk_size.value = 512
+    nb.compression.value = "zstd"
+    nb.compression_level.value = 7
+    nb.pyramid.value = "none"
+    nb.recommended.value = False
+    nb.recommended.value = True
+    assert nb.conversion_settings.selected_index is None
+    assert "Free space on the drive" in nb.space_warning.value
+    settings = nb._conversion_settings()
+    assert settings == ConversionSettings(512, "zstd", 7, 0)
+    nb.conversion.value = "read"
+    nb.conversion.value = "convert"
+    assert nb.conversion_settings.selected_index == 0
+    assert nb._conversion_settings() == settings
+
+
 def test_disk_space_warning_turns_red_when_space_is_short(experiment, monkeypatch):
     from morphobricks_preprocessing import notebook_ui
 
@@ -495,7 +574,9 @@ def test_full_run_and_statistics(experiment, tmp_path):
     nb.run_button.click()
     assert nb.result.written
     assert "Done: 18 planes in the table" in nb.run_status.value
-    assert "Step 4 (optional)" in nb.run_status.value
+    assert "Step 4 (optional)" in nb.run_next.value
+    assert "What next?" in nb.run_next.value
+    assert "Calculate statistics" in nb.run_next.value
     assert "planes in the table" in nb.run_tiles.value
     assert nb.progress.value == nb.progress.max == 3
     assert nb.progress.bar_style == "success"
@@ -512,16 +593,24 @@ def test_full_run_and_statistics(experiment, tmp_path):
     assert "plane_histograms.csv" in nb.stats_status.value
     assert ui.is_visible(nb.distribution_card)
     assert bytes(nb.distribution.value).startswith(b"\x89PNG")
+    assert "What next?" in nb.stats_next.value
+    assert "Review the group statistics" in nb.stats_next.value
+    nb.percentiles.value = "invalid"
+    nb.statistics_button.click()
+    assert nb.stats_next.value == ""
 
 
 def test_run_with_errors_shows_what_to_do(experiment, monkeypatch):
     nb = confirmed(experiment)
+    nb.run()  # a failed rerun must remove the earlier success guidance
+    assert nb.run_next.value
     write_file(experiment / "ctrl/rep1/bad.tif", b"garbage")  # appears after the check
     nb.run()
     assert not nb.result.written
     assert "Nothing was written" in nb.run_status.value
     assert "could not be opened" in nb.run_issues.value
     assert nb.progress.bar_style == "danger"
+    assert nb.run_next.value == ""
 
 
 def test_unexpected_failures_are_reported(experiment, monkeypatch):
@@ -565,6 +654,7 @@ def test_statistics_stay_busy_until_finished_and_recover_on_failure(
             assert nb.statistics_button.description.strip() == "Calculating…"
             assert nb.statistics_button.icon == "spinner"
             assert "mb-spinner" in nb.stats_status.value
+            assert nb.stats_next.value == ""
             assert "calculated." not in nb.stats_status.value
             stages.append(stage)
             nb.show_statistics()  # a second request must not start another calculation
@@ -585,6 +675,7 @@ def test_statistics_stay_busy_until_finished_and_recover_on_failure(
         assert "mb-error" in nb.stats_status.value
         assert not ui.is_visible(nb.statistics_card)
         assert not ui.is_visible(nb.distribution_card)
+        assert nb.stats_next.value == ""
         if failure == "read":
             assert "The table cannot be read" in nb.stats_status.value
         else:
@@ -594,6 +685,7 @@ def test_statistics_stay_busy_until_finished_and_recover_on_failure(
         assert "Statistics of 2 conditions calculated" in nb.stats_status.value
         assert ui.is_visible(nb.statistics_card)
         assert ui.is_visible(nb.distribution_card)
+        assert "What next?" in nb.stats_next.value
 
 
 def test_statistics_by_level_and_percentiles(experiment):
@@ -638,6 +730,7 @@ def test_statistics_of_another_table(experiment, monkeypatch):
     # Choosing another table clears the results of the previous one.
     later.csv_file.value = str(table) + "x"
     assert later.statistics.value == "" and not ui.is_visible(later.statistics_card)
+    assert later.stats_next.value == ""
     monkeypatch.setattr(ui, "ask_open_file", lambda initial, filetypes: None)
     later.csv_browse.click()
     assert "could not be opened" in later.stats_status.value

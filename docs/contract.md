@@ -140,6 +140,10 @@ A zero or non-finite scale is an error with a plain-language message.
 Every message states what happened in plain language, lists the affected paths, and
 suggests an action. Technical details go to the diagnostic log.
 
+In notebook step 1, message details start collapsed with orange warning and red error
+counts visible outside the dropdown. Collapsing details does not change severity or
+whether processing is blocked.
+
 ## 9. Run manifest (`run_manifest.json`, manifest version 1)
 
 UTF-8 JSON next to `plane_histograms.csv`, written after the table and only when the run
@@ -181,6 +185,11 @@ and its rows are computed from the converted copy, like for any OME-Zarr image. 
 holds the source values, so the rows equal those of reading the TIFF directly; the
 `source_relative_path` of the rows stays the TIFF's path. OME-Zarr input images are never
 converted.
+
+The notebook groups conversion controls in an expandable panel with storage block size,
+lossless compression and preview-resolution cards. Choosing conversion opens the panel;
+collapsing it preserves the settings and leaves the disk-space warning visible. This
+presentation does not change the conversion rules below.
 
 | Rule | Detail |
 |---|---|

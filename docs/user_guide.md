@@ -114,6 +114,11 @@ question and you answer with a large green **Yes, …** button. The box turns gr
 **Undo** button takes the answer back. Later steps stay locked until the earlier ones are
 confirmed. If you change the experiment folder, everything after it is reset.
 
+After a successful action, a separate **What next?** box gives the next action in larger
+text. In step 1 it first asks you to check the labels, then points to step 2 once they are
+confirmed. Step 3 offers the optional statistics step, and step 4 suggests reviewing the
+results or comparing another grouping.
+
 0. **Start the notebook.** The setup cell checks the environment and installs missing
    requirements if needed. A green box then confirms it is ready and shows the package
    version.
@@ -126,8 +131,10 @@ confirmed. If you change the experiment folder, everything after it is reset.
    - The **Labels from the folder names** table shows every image folder with its condition,
      biological repeat and technical repeat (*single* where a level is missing). If they
      are right, press **Yes, the labels are correct** in the yellow box under the table.
-   - **Messages** list each problem with the affected files and what to do. If some images
-     cannot be read, **Exclude these images and check again** leaves them out (see §7).
+   - **Messages** keeps the warning count visible in orange and the error count in red.
+     Expand **Show warnings and errors** to see each problem, the affected files and what
+     to do. The details start collapsed after each check. If some images cannot be read,
+     **Exclude these images and check again** inside the dropdown leaves them out (see §7).
 2. **Review the axis roles.**
    - Each dimension of the images has its own box. It shows the dimension's length and the
      role suggested from the metadata, with a dropdown to change it.
@@ -166,11 +173,14 @@ confirmed. If you change the experiment folder, everything after it is reset.
        they occupy is duplicated. It shows the size of the TIFF images, the most the copies
        may need (before compression) and the free space on the output drive. It turns red
        if the space may not be enough, but you can still run.
-     - **Conversion settings** (shown only when converting): **Chunk size** (the size of the
-       stored tiles, default 1,024 pixels), **Compression** (lossless: LZ4 by default,
-       Zstandard for smaller files, or none) with its **level**, and **Pyramid levels**
-       (smaller copies for fast viewing: automatic, none, or a fixed number). Changing them
-       later writes the copies again; the histograms do not change.
+     - **OME-Zarr conversion settings** opens when you choose conversion. Click its header
+       to collapse or expand three cards, each with its own controls and explanation:
+       **Storage block size** (square chunks, default 1,024 pixels per side), **Lossless
+       compression** (LZ4 by default, Zstandard, or none, with a level from 1 to 9), and
+       **Preview resolutions** (smaller copies for fast viewing: automatic, full resolution
+       only, or a fixed number). Histograms use full resolution. Collapsing the panel keeps
+       your choices and leaves the disk-space warning visible. Changing the settings later
+       writes the copies again; the histograms do not change.
      - The choice is greyed out, with the install command below it, when the `zarr` extra
        is not installed. **What will happen** says which images are converted and with
        which settings, and a tile counts the conversions.
