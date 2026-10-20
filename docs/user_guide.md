@@ -159,8 +159,11 @@ results or comparing another grouping.
      settings** to change them:
      - *Bins per plane:* one bin per possible value for 8- and 16-bit images (exact
        histograms); 65,536 bins for wider integers and 10,000 for floats.
-     - *Memory limit:* the most working memory one plane may need (default 1 GiB). Raise it
-       only if the computer has enough memory.
+     - *Memory limit:* the most working memory one plane may need (default 1 GiB). A
+       plane that needs more (roughly above 5,000 x 5,000 pixels) is read in blocks
+       instead, and the run reports this as a warning: the histograms are exactly the
+       same, only reading takes longer. Raise the limit only if the computer has enough
+       memory.
      - *Recompute every row:* start from scratch instead of updating the earlier table.
    - **(Optional) Image conversion:**
      - **Read the images directly** (the default and recommended choice) reads TIFF and
@@ -255,7 +258,8 @@ The default output folder is next to the experiment folder:
 - **`run_manifest.json`:** what the run read and with which settings: labels, axis roles,
   bin count, memory limit, excluded images, package versions, and each image's size and
   modification time. Channel names and significant bits are recorded when the metadata
-  provides them. Format in [contract.md](contract.md) §9.
+  provides them, and whether the image's planes were too large to read whole and are read
+  in blocks. Format in [contract.md](contract.md) §9.
 - **`ome_zarr/`** (only when TIFF images are converted): one `.ome.zarr` folder per TIFF
   image, in the same folder structure as the experiment, e.g.
   `ome_zarr/control/bio_rep1/tech_rep1/img_01.ome.zarr`. The full-resolution level holds
@@ -316,12 +320,13 @@ continues.
 | `missing_xy_axis`, `duplicate_axis_role` | Error | X/Y missing or a role used twice. Correct the axis roles. |
 | `unassigned_axis` | Error | A dimension with several planes has no role. Choose Z, C or T. |
 | `unsupported_axis` | Error | A position or tile dimension. Export each position separately. |
-| `plane_over_memory_limit` | Error | A plane needs more memory than the limit. Raise the limit or crop the images. |
+| `plane_over_memory_limit` | Error | A plane cannot be read within the memory limit, not even in blocks (for example, it is stored compressed in one piece). Raise the limit, or save the images again as tiled or uncompressed TIFF files or as OME-Zarr with smaller chunks. |
 | `unsupported_layout` | Error | The image cannot be read one plane at a time. Check the axis roles or export again. |
 | `unreadable_planes` | Error | Pixel data cannot be decoded. Export again, or exclude the image. |
 | `invalid_bin_count` | Error | Bin count outside the allowed range. Use the default or a value in range. |
 | `no_usable_planes` | Error | No plane has finite pixel values. Check the images. |
 | `non_tiff_file`, `empty_folder`, `tiff_outside_leaf` | Warning | Files or folders that are skipped. |
+| `planes_read_in_blocks` | Warning | Planes too large for the memory limit are read in blocks. The results are the same; nothing to do. Raise the limit to read them whole, which is faster. |
 | `different_sizes` | Warning | Images have different dimension lengths. Usually expected. |
 | `channel_names_differ` | Warning | Channel names differ between images at the same position. Check the channel order. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |

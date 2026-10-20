@@ -27,6 +27,7 @@ which bounds the error of any percentile computed from these histograms (see
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import cached_property
 
@@ -169,12 +170,50 @@ def compute_plane_histogram(plane: np.ndarray, bin_count: int | None = None) -> 
         If the bin count is not allowed for the pixel type.
     """
     values = np.asarray(plane)
-    dtype = check_supported(values.dtype)
+    return compute_block_histogram(lambda: (values,), values.dtype, bin_count)
+
+
+def compute_block_histogram(
+    blocks: Callable[[], Iterable[np.ndarray]],
+    dtype: np.dtype,
+    bin_count: int | None = None,
+) -> PlaneHistogram:
+    """Compute the histogram of a plane given in blocks, without joining them.
+
+    The result is identical to :func:`compute_plane_histogram` of the whole
+    plane: a first pass over the blocks finds the exact extrema, a second pass
+    counts every pixel into the bins with the same formulas. Integer planes of 8
+    and 16 bits need only one pass: they are counted per value first, and the
+    counts are put into bins once the extrema are known.
+
+    Parameters
+    ----------
+    blocks
+        Called once per pass; returns the blocks of the plane (arrays of any
+        shape, together holding every pixel of the plane exactly once).
+    dtype
+        Pixel type of the plane.
+    bin_count
+        Number of bins; defaults as in :func:`compute_plane_histogram`.
+
+    Returns
+    -------
+    PlaneHistogram
+
+    Raises
+    ------
+    UnsupportedDtypeError
+        If the pixel type is not supported.
+    ValueError
+        If the bin count is not allowed for the pixel type.
+    """
+    dtype = check_supported(np.dtype(dtype))
     n = validate_bin_count(dtype, default_bin_count(dtype) if bin_count is None else bin_count)
-    values = values.ravel()
+    if is_integer(dtype) and dtype.itemsize <= 2:
+        return _small_integer_histogram(blocks(), dtype, n)
     if is_integer(dtype):
-        return _integer_histogram(values, dtype, n)
-    return _float_histogram(values, dtype, n)
+        return _integer_histogram(blocks, dtype, n)
+    return _float_histogram(blocks, dtype, n)
 
 
 def estimate_histogram_memory(
@@ -225,40 +264,112 @@ def _as_ordered_uint64(values: np.ndarray) -> np.ndarray:
     return values.astype(np.int64).view(np.uint64) ^ np.uint64(1 << 63)
 
 
-def _integer_histogram(values: np.ndarray, dtype: np.dtype, n: int) -> PlaneHistogram:
-    total = int(values.size)
+def _counts_from_per_value(per_value: np.ndarray, starts: list[int], n: int) -> np.ndarray:
+    """Sum per-value counts (offsets ``0 .. width - 1``) into bins starting at ``starts``."""
+    bin_of_value = np.searchsorted(np.array(starts[:-1]), np.arange(per_value.size), side="right")
+    counts = np.bincount(bin_of_value - 1, weights=per_value, minlength=n)
+    return np.rint(counts).astype(np.int64)
+
+
+def _small_integer_histogram(
+    blocks: Iterable[np.ndarray], dtype: np.dtype, n: int
+) -> PlaneHistogram:
+    """One pass for 8- and 16-bit integers: count every possible value, then bin."""
+    bits = dtype.itemsize * 8
+    table = np.zeros(2**bits, dtype=np.int64)
+    total = 0
+    for block in blocks:
+        values = np.asarray(block).ravel()
+        if values.size == 0:
+            continue
+        total += int(values.size)
+        unsigned = values.view(f"u{dtype.itemsize}")
+        if dtype.kind == "i":
+            # Flipping the sign bit keeps the order: the smallest value becomes 0.
+            unsigned = unsigned ^ np.array(1 << (bits - 1), dtype=unsigned.dtype)
+        table += np.bincount(unsigned, minlength=table.size)
     if total == 0:
         return PlaneHistogram(dtype, n, None, None, np.zeros(n, np.int64), 0, 0)
-    lo, hi = int(values.min()), int(values.max())
+    present = np.flatnonzero(table)
+    first, last = int(present[0]), int(present[-1])
+    smallest = int(np.iinfo(dtype).min)
+    starts = _integer_bin_starts(last + 1 - first, n)
+    counts = _counts_from_per_value(table[first : last + 1], starts, n)
+    return PlaneHistogram(dtype, n, smallest + first, smallest + last, counts, total, total)
+
+
+def _integer_histogram(
+    blocks: Callable[[], Iterable[np.ndarray]], dtype: np.dtype, n: int
+) -> PlaneHistogram:
+    """Two passes for wider integers: exact extrema first, then the bin counts."""
+    total, lo, hi = 0, None, None
+    for block in blocks():
+        values = np.asarray(block).ravel()
+        if values.size == 0:
+            continue
+        total += int(values.size)
+        low, high = int(values.min()), int(values.max())
+        lo = low if lo is None else min(lo, low)
+        hi = high if hi is None else max(hi, high)
+    if total == 0:
+        return PlaneHistogram(dtype, n, None, None, np.zeros(n, np.int64), 0, 0)
     width = hi + 1 - lo
-    ordered = _as_ordered_uint64(values)
-    offsets = ordered - ordered.min()
     starts = _integer_bin_starts(width, n)
+    origin = _as_ordered_uint64(np.array([lo], dtype=dtype))[0]
     if width <= _PER_VALUE_COUNT_LIMIT:
-        per_value = np.bincount(offsets.astype(np.intp), minlength=width)
-        bin_of_value = np.searchsorted(np.array(starts[:-1]), np.arange(width), side="right") - 1
-        counts = np.bincount(bin_of_value, weights=per_value, minlength=n)
-        counts = np.rint(counts).astype(np.int64)
+        per_value = np.zeros(width, dtype=np.int64)
+        for block in blocks():
+            values = np.asarray(block).ravel()
+            if values.size == 0:
+                continue
+            offsets = _as_ordered_uint64(values) - origin
+            # Count over the block's own range only, so that many blocks stay cheap.
+            first, last = int(offsets.min()), int(offsets.max())
+            per_value[first : last + 1] += np.bincount((offsets - np.uint64(first)).astype(np.intp))
+        counts = _counts_from_per_value(per_value, starts, n)
     else:
         bin_starts = np.array(starts[:-1], dtype=np.uint64)
-        counts = np.bincount(np.searchsorted(bin_starts, offsets, side="right") - 1, minlength=n)
-        counts = counts.astype(np.int64)
+        counts = np.zeros(n, dtype=np.int64)
+        for block in blocks():
+            values = np.asarray(block).ravel()
+            if values.size == 0:
+                continue
+            offsets = _as_ordered_uint64(values) - origin
+            index = np.searchsorted(bin_starts, offsets, side="right") - 1
+            counts += np.bincount(index, minlength=n)
     return PlaneHistogram(dtype, n, lo, hi, counts, total, total)
 
 
-def _float_histogram(values: np.ndarray, dtype: np.dtype, n: int) -> PlaneHistogram:
-    total = int(values.size)
-    finite = values[np.isfinite(values)].astype(np.float64, copy=False)
+def _float_histogram(
+    blocks: Callable[[], Iterable[np.ndarray]], dtype: np.dtype, n: int
+) -> PlaneHistogram:
+    """Two passes: exact finite extrema first, then the bin counts."""
+    total = valid = 0
+    lo = hi = None
+    for block in blocks():
+        values = np.asarray(block).ravel()
+        total += int(values.size)
+        finite = values[np.isfinite(values)]
+        if finite.size == 0:
+            continue
+        valid += int(finite.size)
+        low, high = float(finite.min()), float(finite.max())
+        lo = low if lo is None else min(lo, low)
+        hi = high if hi is None else max(hi, high)
     counts = np.zeros(n, dtype=np.int64)
-    if finite.size == 0:
+    if valid == 0:
         return PlaneHistogram(dtype, n, None, None, counts, total, 0)
-    lo, hi = float(finite.min()), float(finite.max())
     if lo == hi:
-        counts[0] = finite.size
-    else:
-        # Halving keeps hi - lo finite even for ranges near the float64 limits.
-        half_range = hi * 0.5 - lo * 0.5
+        counts[0] = valid
+        return PlaneHistogram(dtype, n, lo, hi, counts, total, valid)
+    # Halving keeps hi - lo finite even for ranges near the float64 limits.
+    half_range = hi * 0.5 - lo * 0.5
+    for block in blocks():
+        values = np.asarray(block).ravel()
+        finite = values[np.isfinite(values)].astype(np.float64, copy=False)
+        if finite.size == 0:
+            continue
         index = np.floor((finite * 0.5 - lo * 0.5) * (n / half_range)).astype(np.int64)
         np.clip(index, 0, n - 1, out=index)
         counts += np.bincount(index, minlength=n)
-    return PlaneHistogram(dtype, n, lo, hi, counts, total, int(finite.size))
+    return PlaneHistogram(dtype, n, lo, hi, counts, total, valid)

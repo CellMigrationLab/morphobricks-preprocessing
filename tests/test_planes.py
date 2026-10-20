@@ -1,4 +1,5 @@
 import itertools
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -326,15 +327,32 @@ def test_histogram_memory_estimate_grows_with_the_plane():
     assert estimate_histogram_memory(10, np.dtype("uint8")) < 2**20
 
 
-def test_plane_over_the_limit_is_refused_before_reading(tmp_path, page_reads):
+def test_plane_over_the_limit_is_read_in_blocks_not_whole(tmp_path, page_reads):
     path = write_data(tmp_path / "a.tif", random_data((2, 64, 64), "float32"), axes="ZYX")
     mapping = prefill_mapping("ZYX")
     estimate = plane_layout(path, mapping).memory_estimate
+    planes = list(iter_planes(path, mapping, memory_limit=estimate - 1))
+    assert len(planes) == 2 and all(plane.in_blocks for plane in planes)
+    with pytest.raises(PlaneMemoryError, match="only be read in blocks") as excinfo:
+        read_plane(path, mapping, memory_limit=estimate - 1)
+    assert "a.tif" in str(excinfo.value)
+    assert page_reads == []
+    assert not any(p.in_blocks for p in iter_planes(path, mapping, memory_limit=estimate))
+
+
+def test_plane_that_cannot_be_split_is_refused_before_reading(tmp_path, page_reads):
+    # Compressed in one strip: the whole plane has to be decoded at once.
+    data = random_data((2, 64, 64), "float32")
+    path = write_data(tmp_path / "a.tif", data, axes="ZYX", compression="zlib", rowsperstrip=64)
+    mapping = prefill_mapping("ZYX")
+    layout = plane_layout(path, mapping, memory_limit=1)
+    assert layout.block_memory_estimate is None and not layout.fits
+    estimate = layout.memory_estimate
     with pytest.raises(PlaneMemoryError, match="limit") as excinfo:
         next(iter_planes(path, mapping, memory_limit=estimate - 1))
-    assert "a.tif" in str(excinfo.value)
+    assert "a.tif" in str(excinfo.value) and "even in blocks" in str(excinfo.value)
     with pytest.raises(PlaneMemoryError):
-        read_plane(path, mapping, memory_limit=estimate - 1)
+        read_plane(path, mapping, memory_limit=estimate - 1, preview=True)
     with pytest.raises(PlaneMemoryError):
         read_sample_plane(path, mapping, memory_limit=estimate - 1)
     assert page_reads == []
@@ -350,7 +368,8 @@ def test_memory_estimate_depends_on_bin_count(tmp_path):
 
 
 def test_check_planes_reports_planes_over_the_limit(tmp_path):
-    write_data(tmp_path / "c/big.tif", random_data((2, 64, 64), "uint16"), axes="ZYX")
+    big = random_data((2, 64, 64), "uint16")
+    write_data(tmp_path / "c/big.tif", big, axes="ZYX", compression="zlib", rowsperstrip=64)
     write_data(tmp_path / "c/small.tif", random_data((2, 8, 8), "uint16"), axes="ZYX")
     report = inspect_images(tmp_path, ["c/big.tif", "c/small.tif"])
     review = review_axes(report, prefill_mapping("ZYX"))
@@ -361,9 +380,269 @@ def test_check_planes_reports_planes_over_the_limit(tmp_path):
     assert found.code == "plane_over_memory_limit"
     assert found.severity is Severity.ERROR
     assert found.paths == ("c/big.tif",)
-    assert "MiB" in found.message and "memory limit" in found.action
+    assert "MiB" in found.message and "not even in blocks" in found.message
+    assert "memory limit" in found.action and "tiled" in found.action
     # The per-file mappings work as well as the review.
     assert check_planes(tmp_path, dict(review.file_mappings), memory_limit=small) == [found]
+
+
+def test_check_planes_reports_planes_read_in_blocks(tmp_path, monkeypatch):
+    write_data(tmp_path / "c/big.tif", random_data((2, 64, 64), "uint16"), axes="ZYX")
+    write_data(tmp_path / "c/small.tif", random_data((2, 8, 8), "uint16"), axes="ZYX")
+    review = review_axes(
+        inspect_images(tmp_path, ["c/big.tif", "c/small.tif"]), prefill_mapping("ZYX")
+    )
+    small = plane_layout(tmp_path / "c/small.tif", prefill_mapping("ZYX")).memory_estimate
+    big = plane_layout(tmp_path / "c/big.tif", prefill_mapping("ZYX")).memory_estimate
+
+    def fail(*args, **kwargs):
+        raise AssertionError("pixel data was read")
+
+    for cls in (tifffile.TiffFile, tifffile.TiffPage, tifffile.TiffFrame, tifffile.TiffPageSeries):
+        monkeypatch.setattr(cls, "asarray", fail)
+    monkeypatch.setattr(planes_module, "_read_segment", fail)
+    (found,) = check_planes(tmp_path, review, memory_limit=small)
+    assert found.code == "planes_read_in_blocks"
+    assert found.severity is Severity.WARNING
+    assert found.paths == ("c/big.tif",)
+    assert "exactly the same" in found.message
+    assert planes_module.format_bytes(big) in found.action
+
+
+# Planes in blocks (plan §5) -----------------------------------------------------------
+
+
+@pytest.fixture
+def segment_reads(monkeypatch):
+    """Count strips and tiles read, and fail if a whole page or series is decoded."""
+    reads = []
+    original = planes_module._read_segment
+
+    def counting(page, index, *args):
+        reads.append(index)
+        return original(page, index, *args)
+
+    def fail(*args, **kwargs):
+        raise AssertionError("a whole page or series was decoded")
+
+    monkeypatch.setattr(planes_module, "_read_segment", counting)
+    for cls in (tifffile.TiffFile, tifffile.TiffPage, tifffile.TiffFrame, tifffile.TiffPageSeries):
+        monkeypatch.setattr(cls, "asarray", fail)
+    return reads
+
+
+def smallest_limit(path, mapping, bin_count=None):
+    """The memory limit that gives the smallest blocks a file can be read in."""
+    layout = plane_layout(path, mapping, memory_limit=1, bin_count=bin_count)
+    assert layout.block_memory_estimate is not None, "the planes cannot be split"
+    return layout.block_memory_estimate
+
+
+def assert_blocks_tile_the_plane(plane, expected, block_shape):
+    """The blocks hold every pixel of ``expected`` exactly once, at the right place."""
+    covered = np.zeros(expected.shape, dtype=int)
+    for block in plane.blocks():
+        rows, cols = block.pixels.shape
+        assert rows <= block_shape[0] and cols <= block_shape[1]
+        assert block.pixels.dtype == expected.dtype
+        where = (slice(block.y, block.y + rows), slice(block.x, block.x + cols))
+        np.testing.assert_array_equal(block.pixels, expected[where])
+        covered[where] += 1
+    assert (covered == 1).all()
+
+
+BLOCK_LAYOUTS = [
+    pytest.param((3, 50, 70), "ZYX", {}, None, id="uncompressed"),
+    pytest.param((3, 50, 70), "ZYX", {"compression": "zlib", "rowsperstrip": 7}, None, id="strips"),
+    pytest.param((2, 50, 70), "ZYX", {"compression": "zlib", "tile": (16, 32)}, None, id="tiles"),
+    pytest.param((2, 50, 70), "ZYX", {"tile": (16, 32)}, None, id="uncompressed-tiles"),
+    pytest.param((2, 3, 40, 30), "ZCYX", {"compression": "zlib", "rowsperstrip": 4}, None, id="zc"),
+    pytest.param((2, 3, 2, 40, 30), "TZCYX", {"ome": True}, None, id="ome"),
+    pytest.param((2, 3, 2, 40, 30), "TZCYX", {"imagej": True}, None, id="imagej"),
+    pytest.param((50, 70, 3), "YXS", {"photometric": "rgb"}, None, id="rgb"),
+    pytest.param(
+        (50, 70, 3),
+        "YXS",
+        {"photometric": "rgb", "compression": "zlib", "rowsperstrip": 5},
+        None,
+        id="rgb-strips",
+    ),
+    pytest.param(
+        (3, 50, 70),
+        "SYX",
+        {
+            "photometric": "rgb",
+            "planarconfig": "separate",
+            "compression": "zlib",
+            "rowsperstrip": 5,
+        },
+        None,
+        id="rgb-planar",
+    ),
+    pytest.param(
+        (5, 48, 64),
+        "ZYX",
+        {"tile": (2, 16, 16), "volumetric": True, "compression": "zlib"},
+        None,
+        id="volume-tiles",
+    ),
+    pytest.param((5, 48, 64), "ZYX", {"tile": (2, 16, 16), "volumetric": True}, None, id="volume"),
+    pytest.param((3, 50, 70), "ZXY", {}, None, id="x-before-y"),
+    pytest.param(
+        (3, 50, 70), "ZXY", {"compression": "zlib", "tile": (16, 16)}, None, id="x-y-tiles"
+    ),
+    pytest.param((4, 40, 30), None, {}, "TYX", id="plain-pages-as-time"),
+]
+
+
+@pytest.mark.parametrize(("shape", "axes", "kwargs", "roles"), BLOCK_LAYOUTS)
+def test_planes_in_blocks_match_the_source(tmp_path, segment_reads, shape, axes, kwargs, roles):
+    dtype = "uint8" if "photometric" in kwargs else "uint16"
+    data = random_data(shape, dtype)
+    path = write_data(tmp_path / "a.tif", data, axes=axes, **kwargs)
+    info = inspect_tiff(path)
+    mapping = AxisMapping(info.axes, roles) if roles else prefill_mapping(info.axes)
+    limit = smallest_limit(path, mapping)
+    layout = plane_layout(path, mapping, memory_limit=limit)
+    assert layout.in_blocks and layout.block_memory_estimate <= limit
+
+    expected = expected_planes(data, mapping.roles)
+    planes = iter_planes(path, mapping, memory_limit=limit)
+    for plane, (coords, pixels) in zip(planes, expected, strict=True):
+        assert plane.in_blocks and plane.pixels is None
+        assert plane.coordinates == coords
+        assert plane.shape == pixels.shape and plane.dtype == pixels.dtype
+        assert_blocks_tile_the_plane(plane, pixels, layout.block_shape)
+        whole = compute_plane_histogram(pixels)
+        in_blocks = plane.histogram()
+        assert (in_blocks.binning_min, in_blocks.binning_max) == (whole.pixel_min, whole.pixel_max)
+        np.testing.assert_array_equal(in_blocks.counts, whole.counts)
+    assert segment_reads  # read piece by piece, never as whole pages
+
+
+@pytest.mark.parametrize("dtype", DTYPES + [">u2", ">i4", ">f4", ">f8"])
+@pytest.mark.parametrize("kwargs", [{}, {"compression": "zlib", "rowsperstrip": 3}])
+def test_every_dtype_in_blocks_gives_the_same_histograms(tmp_path, segment_reads, dtype, kwargs):
+    data = random_data((2, 20, 24), dtype)
+    if data.dtype.kind == "f":
+        data[0, 1, :3] = [np.nan, np.inf, -np.inf]
+        data[1] = np.nan  # a plane without finite pixels
+    path = write_data(tmp_path / "a.tif", data, axes="ZYX", **kwargs)
+    mapping = prefill_mapping("ZYX")
+    for bins in (None, 5):
+        limit = smallest_limit(path, mapping, bin_count=bins)
+        planes = iter_planes(path, mapping, memory_limit=limit, bin_count=bins)
+        for plane, source in zip(planes, data, strict=True):
+            assert plane.in_blocks
+            expected = compute_plane_histogram(source.astype(source.dtype.newbyteorder("=")), bins)
+            hist = plane.histogram(bins)
+            assert hist.dtype == expected.dtype
+            assert (hist.pixel_min, hist.pixel_max) == (expected.pixel_min, expected.pixel_max)
+            assert (hist.total_pixel_count, hist.valid_pixel_count) == (
+                expected.total_pixel_count,
+                expected.valid_pixel_count,
+            )
+            np.testing.assert_array_equal(hist.counts, expected.counts)
+
+
+def test_constant_plane_in_blocks(tmp_path):
+    data = np.full((2, 30, 20), 7, dtype=np.uint32)
+    path = write_data(tmp_path / "a.tif", data, axes="ZYX", compression="zlib", rowsperstrip=4)
+    mapping = prefill_mapping("ZYX")
+    for plane in iter_planes(path, mapping, memory_limit=smallest_limit(path, mapping)):
+        hist = plane.histogram(16)
+        assert (hist.pixel_min, hist.pixel_max) == (7, 7) and hist.counts[0] == 600
+
+
+@pytest.mark.parametrize(("dtype", "passes"), [("uint16", 1), ("float32", 2)])
+def test_each_strip_is_read_once_per_pass(tmp_path, segment_reads, dtype, passes):
+    data = random_data((2, 21, 16), dtype)
+    path = write_data(tmp_path / "a.tif", data, axes="ZYX", compression="zlib", rowsperstrip=4)
+    mapping = prefill_mapping("ZYX")
+    for plane in iter_planes(path, mapping, memory_limit=smallest_limit(path, mapping)):
+        plane.histogram()
+    strips = 6  # ceil(21 / 4) per plane, numbered within each page
+    assert sorted(segment_reads) == sorted(list(range(strips)) * 2 * passes)
+
+
+def test_larger_limits_give_larger_blocks_within_the_limit(tmp_path):
+    data = random_data((1, 64, 48), "uint16")
+    path = write_data(tmp_path / "a.tif", data, axes="ZYX", compression="zlib", rowsperstrip=2)
+    mapping = prefill_mapping("ZYX")
+    smallest = smallest_limit(path, mapping)
+    whole = plane_layout(path, mapping).memory_estimate
+    sizes = []
+    for limit in np.linspace(smallest, whole - 1, 6).astype(int):
+        layout = plane_layout(path, mapping, memory_limit=int(limit))
+        assert layout.in_blocks and layout.block_memory_estimate <= limit
+        assert layout.block_shape[0] % 2 == 0 or layout.block_shape[0] == 64  # whole strips
+        sizes.append(layout.block_shape[0] * layout.block_shape[1])
+    assert sizes == sorted(sizes) and sizes[-1] > sizes[0]
+    assert not plane_layout(path, mapping, memory_limit=whole).in_blocks
+
+
+def test_compressed_tiles_are_grouped_across_and_down(tmp_path):
+    data = random_data((1, 64, 64), "uint8")
+    path = write_data(tmp_path / "a.tif", data, axes="ZYX", compression="zlib", tile=(16, 16))
+    mapping = prefill_mapping("ZYX")
+    smallest = plane_layout(path, mapping, memory_limit=smallest_limit(path, mapping))
+    assert smallest.block_shape == (16, 16)  # a single tile
+    larger = plane_layout(path, mapping, memory_limit=smallest.block_memory_estimate + 50_000)
+    assert larger.block_shape[0] % 16 == 0 and larger.block_shape[1] % 16 == 0
+    assert larger.block_shape[0] * larger.block_shape[1] > 16 * 16
+
+
+def test_damaged_strip_raises_plane_read_error(tmp_path):
+    data = random_data((1, 32, 16), "uint16")
+    path = write_data(tmp_path / "a.tif", data, axes="ZYX", compression="zlib", rowsperstrip=4)
+    with tifffile.TiffFile(path) as tif:
+        offset = tif.pages[0].dataoffsets[3]
+    raw = bytearray(path.read_bytes())
+    raw[offset : offset + 8] = b"\xff" * 8
+    path.write_bytes(bytes(raw))
+    mapping = prefill_mapping("ZYX")
+    plane = next(iter_planes(path, mapping, memory_limit=smallest_limit(path, mapping)))
+    with pytest.raises(PlaneReadError, match="cannot be read"):
+        plane.histogram()
+
+
+def test_preview_of_a_plane_in_blocks_is_reduced(tmp_path):
+    data = random_data((3, 64, 50), "uint16")
+    path = write_data(tmp_path / "a.tif", data, axes="ZYX", compression="zlib", rowsperstrip=8)
+    mapping = prefill_mapping("ZYX")
+    limit = plane_layout(path, mapping).memory_estimate - 1
+    with pytest.raises(PlaneMemoryError, match="in blocks"):
+        read_plane(path, mapping, z=2, memory_limit=limit)
+    plane = read_plane(path, mapping, z=2, memory_limit=limit, preview=True)
+    assert plane.step >= 2 and plane.z == 2 and plane.shape == (64, 50)
+    np.testing.assert_array_equal(plane.pixels, data[2, :: plane.step, :: plane.step])
+    with pytest.raises(ValueError, match="reduced"):
+        next(plane.blocks())
+    sample = read_sample_plane(path, mapping, memory_limit=limit)
+    assert sample.z == 1 and sample.step == plane.step
+    np.testing.assert_array_equal(sample.pixels, data[1, :: sample.step, :: sample.step])
+    # A plane that fits is shown whole, as before.
+    whole = read_plane(path, mapping, z=2, memory_limit=limit + 1, preview=True)
+    assert whole.step == 1 and not whole.in_blocks
+    np.testing.assert_array_equal(whole.pixels, data[2])
+
+
+def test_preview_step_keeps_previews_small(tmp_path):
+    layout = planes_module.PlaneLayout(
+        shape=(20_000, 30_000),
+        dtype=np.dtype("uint16"),
+        plane_shape=(20_000, 30_000),
+        plane_count=1,
+        page_shape=(20_000, 30_000),
+        page_nbytes=0,
+        encoded_nbytes=0,
+        memory_estimate=2**34,
+    )
+    step = planes_module._preview_step(layout)
+    assert max(-(-20_000 // step), -(-30_000 // step)) <= planes_module.PREVIEW_SIDE
+    small = planes_module._preview_step(replace(layout, memory_limit=2**24))
+    pixels = -(-20_000 // small) * -(-30_000 // small)
+    assert small > step and pixels * (2 + 16) <= 2**24 // 4
 
 
 def test_check_planes_reads_no_pixels(tmp_path, monkeypatch):

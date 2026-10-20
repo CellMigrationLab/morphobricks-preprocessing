@@ -4,8 +4,10 @@ An optional part of a run: each analysed TIFF is copied to
 ``<output>/ome_zarr/<relative path>.ome.zarr`` so that later bricks and viewers
 can read it lazily, chunk by chunk. The source images are never changed.
 
-The copy is written plane by plane while the histograms are computed, so the
-image is read only once and never held in memory as a whole. Axes follow the
+The copy is written plane by plane, so the image is never held in memory as a
+whole. A plane too large for the memory limit is written block by block; its
+smaller levels are then built from the stored level above, a region at a time,
+so they equal those of a plane written whole. Axes follow the
 OME-NGFF order ``t, c, z, y, x`` with the roles of the confirmed axis mapping
 (axes without a role are dropped; they have length 1). Pixel values are copied
 unchanged at level 0; smaller levels for viewers are 2 x 2 averages, rounded to
@@ -33,7 +35,7 @@ import tifffile
 
 from .axes import AxisMapping
 from .dtypes import is_integer
-from .planes import Plane, PlaneLayout
+from .planes import DEFAULT_MEMORY_LIMIT, Plane, PlaneLayout
 from .zarr_input import (  # noqa: F401 - re-exported for callers of this module
     ZarrUnavailableError,
     _zarr,
@@ -358,6 +360,7 @@ class OmeZarrWriter:
     """Writes one image as OME-Zarr, one plane at a time.
 
     Use :meth:`create`, then :meth:`write` every plane, then :meth:`finish`.
+    Planes read in blocks are written block by block.
 
     Attributes
     ----------
@@ -367,6 +370,9 @@ class OmeZarrWriter:
         Roles of the array axes, in OME-NGFF order (e.g. ``("C", "Z", "Y", "X")``).
     shape
         Shape of level 0.
+    memory_limit
+        Working memory allowed while the smaller levels of a plane read in
+        blocks are built, in bytes.
     """
 
     path: Path
@@ -377,6 +383,7 @@ class OmeZarrWriter:
     channel_names: tuple[str | None, ...] = ()
     name: str = ""
     settings: ConversionSettings = field(default_factory=ConversionSettings)
+    memory_limit: int = DEFAULT_MEMORY_LIMIT
     _levels: list = field(default_factory=list, repr=False)
     _channel_ranges: dict = field(default_factory=dict, repr=False)
 
@@ -391,6 +398,7 @@ class OmeZarrWriter:
         channel_names: Sequence[str | None] = (),
         name: str = "",
         settings: ConversionSettings | None = None,
+        memory_limit: int = DEFAULT_MEMORY_LIMIT,
     ) -> OmeZarrWriter:
         """Create the empty arrays of an image with ``mapping`` and ``layout``."""
         roles = tuple(r for r in AXIS_ORDER if r in ("Y", "X") or r in mapping.plane_roles)
@@ -407,6 +415,7 @@ class OmeZarrWriter:
             channel_names=tuple(channel_names),
             name=name,
             settings=settings or ConversionSettings(),
+            memory_limit=memory_limit,
         )
         writer._open()
         return writer
@@ -421,6 +430,9 @@ class OmeZarrWriter:
         index = tuple(
             (plane.coordinates[r.lower()] or 0) for r in self.roles if r not in ("Y", "X")
         )
+        if plane.in_blocks:
+            self._write_blocks(index, plane)
+            return
         pixels = plane.pixels.view(self.dtype)
         for level, array in enumerate(self._levels):
             if level:
@@ -428,6 +440,42 @@ class OmeZarrWriter:
             array[index] = pixels
         if "C" in self.roles:
             self._track_channel(plane.c or 0, plane.pixels)
+
+    def _write_blocks(self, index: tuple[int, ...], plane: Plane) -> None:
+        """Write a plane read in blocks, then build its smaller levels from the stored ones."""
+        level0 = self._levels[0]
+        for block in plane.blocks():
+            rows, cols = block.pixels.shape
+            region = (slice(block.y, block.y + rows), slice(block.x, block.x + cols))
+            level0[(*index, *region)] = block.pixels.view(self.dtype)
+            if "C" in self.roles:
+                self._track_channel(plane.c or 0, block.pixels)
+        for above, array in zip(self._levels, self._levels[1:], strict=False):
+            height, width = above.shape[-2:]
+            # Regions of even size at even positions halve exactly like the whole plane;
+            # only the last row and column of the plane are repeated for odd sizes.
+            side = self._region_side()
+            for top in range(0, height, side):
+                for left in range(0, width, side):
+                    pixels = np.asarray(
+                        above[(*index, slice(top, top + side), slice(left, left + side))]
+                    )
+                    smaller = downsample(pixels)
+                    rows, cols = smaller.shape
+                    target = (slice(top // 2, top // 2 + rows), slice(left // 2, left // 2 + cols))
+                    array[(*index, *target)] = smaller
+
+    def _region_side(self) -> int:
+        """Side of the regions read to build a smaller level: even, within the memory limit."""
+        side = 2 * self.settings.chunk_size
+        # The region, its float64 copy and means, and the chunks read and written.
+        chunk = self.settings.chunk_size**2 * self.dtype.itemsize
+        while (
+            side > 2
+            and side * side * (2 * self.dtype.itemsize + 12) + 5 * chunk > self.memory_limit
+        ):
+            side = max(2, side // 4 * 2)
+        return side
 
     def finish(self) -> Path:
         """Write the OME-NGFF metadata; return the image folder."""

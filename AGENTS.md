@@ -33,16 +33,18 @@ brick**.
   normalization itself.
 - **Optional (`zarr` extra, plan §12 question 12):** OME-Zarr input, and converting TIFF
   images to OME-Zarr in the output folder before processing them (contract §10).
-- **Out of scope:** spatial corrections (flat-field, BaSiC, CLAHE), chunked processing of
-  planes above the memory limit.
+- **Large planes (plan §12 question 15):** planes over the memory limit are read in blocks,
+  automatically and announced, with identical rows.
+- **Out of scope:** spatial corrections (flat-field, BaSiC, CLAHE).
 
 Pipeline:
 
 1. **Pass 1 (preflight):** folder discovery, then TIFF header inspection without reading
    pixels, then a suggested axis mapping.
 2. **The user confirms** the labels and the axis roles.
-3. **Pass 2:** read one 2D plane at a time, compute exact extrema and the histogram, write
-   the CSV and the manifest. Reruns only read new or changed files.
+3. **Pass 2:** read one 2D plane at a time (in blocks when it is over the memory limit),
+   compute exact extrema and the histogram, write the CSV and the manifest. Reruns only
+   read new or changed files.
 
 ---
 
@@ -57,9 +59,12 @@ src/morphobricks_preprocessing/
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
   planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), memory estimate,
-                    check_planes (preflight memory / layout errors)
+                    check_planes (preflight memory / layout errors); planes over the limit read in
+                    blocks of TIFF strips/tiles or zarr chunks (Plane.blocks, BlockReader), reduced
+                    previews
   dtypes.py         supported dtypes, default and allowed bin counts
-  histogram.py      per-plane histogram (PlaneHistogram, compute_plane_histogram), memory estimate
+  histogram.py      per-plane histogram (PlaneHistogram, compute_plane_histogram, and
+                    compute_block_histogram: two passes over blocks, identical result), memory estimate
   records.py        PlaneRecord (one CSV row), plane_id, group_records
   csv_io.py         write/read plane_histograms.csv (atomic write, labels always text)
   pooling.py        PooledHistogram: pooled counts, never mean-of-means
@@ -70,7 +75,8 @@ src/morphobricks_preprocessing/
   cli.py, __main__  `morphobricks-preprocessing check|run` (also `python -m morphobricks_preprocessing`)
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array and axis
                     letters), zarr 2/3 helpers, canonical_dtype; needs the `zarr` extra
-  zarr_export.py    TIFF -> OME-Zarr conversion (OmeZarrWriter, OME-NGFF 0.4, plane by plane),
+  zarr_export.py    TIFF -> OME-Zarr conversion (OmeZarrWriter, OME-NGFF 0.4, plane by plane or
+                    block by block),
                     ConversionSettings (chunk size, compression, pyramid levels), estimate_conversion
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
   notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra)
@@ -232,8 +238,26 @@ functions the tests use.
 - **Estimate per plane, from the header:** decoded page + encoded bytes + plane copy +
   histogram temporaries (`histogram.estimate_histogram_memory`). It is deliberately an
   upper estimate.
-- **Limit:** default 1 GiB. Over the limit gives the `plane_over_memory_limit` preflight
-  error, and the readers raise `PlaneMemoryError` before reading.
+- **Limit:** default 1 GiB. A plane over the limit is read in blocks (question 15):
+  - Blocks are whole TIFF strips or tiles, or OME-Zarr chunks, in full-width bands first,
+    as many as fit the limit (`planes._choose_block`, estimate `planes._block_memory`).
+    Uncompressed TIFF pieces (read straight from the file) and zarr chunks may also be read
+    a few rows at a time. No block setting: the limit decides.
+  - Announced, never silent: warning `planes_read_in_blocks` in `check_planes`, and
+    `read_in_blocks` per file in the manifest (information only, not part of
+    `same_source`).
+  - Histograms: `compute_block_histogram` reads the blocks twice (extrema, then counts);
+    8- and 16-bit integers once (a count per possible value). Identical to the whole plane,
+    and `compute_plane_histogram` uses the same code with one block.
+  - A plane read in blocks is a `Plane` with `pixels=None`; `Plane.blocks()` reads from
+    the open file, so use it before asking `iter_planes` for the next plane.
+  - Previews (`read_plane(preview=True)`, `read_sample_plane`) are reduced to every n-th
+    pixel (`Plane.step`, at most 4,096 px per side).
+  - A compressed TIFF storing a plane in one strip/tile cannot be split: still the
+    `plane_over_memory_limit` error, like a plane whose smallest block is over the limit.
+    The readers raise `PlaneMemoryError` before reading.
+  - Wide integers (32/64-bit) reserve up to 512 MiB for the per-value count table in
+    `estimate_histogram_memory`, so they need a limit above about 520 MiB even in blocks.
 
 ### Validation messages (contract §8)
 
@@ -266,6 +290,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Corrupt files (Q6) | Explicit exclusion list, recorded in manifest, rows removed |
 | Notebook target | Local Jupyter (not Colab-first) |
 | CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--memory-limit 2GiB`, `--missing-as-singleton`, `--force-rebuild`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata. Exit 1 on errors |
+| Large planes (Q15) | Planes over the memory limit are read in blocks automatically, announced by the warning `planes_read_in_blocks` and `read_in_blocks` in the manifest. Block size derived from the limit (whole strips/tiles/chunks, uncompressed pieces and chunks also by rows). Compressed single-strip/tile planes keep the `plane_over_memory_limit` error. Two-pass histograms identical to whole planes. OME-Zarr copies written block by block, smaller levels built from the stored level above. Axis preview reduced (every n-th pixel) with a caption saying so |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
 | Paths and filenames in widget HTML and notebook text | **`<b>…</b>` / `**…**`, never `<code>` or inline code** |
@@ -319,7 +344,13 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
   `write_plate`) writes stores with zarr directly, independent of `zarr_export`; 0.5 tests
   skip with zarr 2.18.
 - **Proving "one page at a time":** spy on `planes._read_page`. To prove "only changed
-  files are read", spy on `run.iter_planes`.
+  files are read", spy on `run.iter_planes`. For planes in blocks, spy on
+  `planes._read_segment` and make `asarray` of every tifffile class fail.
+- **Planes in blocks with small test images:** the memory limit
+  `plane_layout(path, mapping, memory_limit=1).block_memory_estimate` gives the smallest
+  blocks a file can be read in. Consume each lazy plane before the next one (the file
+  closes when `iter_planes` ends). `tests/test_histogram.py` keeps an independent copy of
+  the original whole-plane formulas (`reference_histogram`).
 - **Speed:** rerun tests use 8-bit images (256 bins). Wide 65,536-bin CSVs make every run
   about 1 s.
 - **Platform-specific tests** (case-sensitive file system, POSIX permissions) skip with a
@@ -515,12 +546,12 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 ## 11. Status (October 2026)
 
 - **Done:** Milestones 0–5 (contract, scanner and validator, axis review, histogram engine,
-  CSV and reruns, notebook + CLI + user guide), and the notebook redesign plus feedback
-  round (PRs #6 and #7).
-- **Open:** PR #5 (draft), OME-Zarr input and optional TIFF -> OME-Zarr conversion. The
-  choice is in the step-3 Settings card, and copies are published with the table and
-  manifest using the staged-output protocol.
-- **Later (plan §10):** chunked processing for planes above the memory limit.
+  CSV and reruns, notebook + CLI + user guide), the notebook redesign plus feedback
+  round (PRs #6 and #7), and OME-Zarr input with optional TIFF -> OME-Zarr conversion
+  (PR #5).
+- **In review (local):** planes over the memory limit read in blocks (plan §12 question 15).
+- **Not yet done for large planes:** the step-3 "What will happen" box does not yet say
+  which images will be read in blocks before the run (the warning comes with the run).
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;
   - the optional `jl-hidecode` JupyterLab extension, which keeps code cells collapsed. It

@@ -15,6 +15,7 @@ from morphobricks_preprocessing import (
     PooledHistogram,
     Severity,
     group_records,
+    plane_layout,
     prefill_mapping,
     preflight,
     read_manifest,
@@ -493,6 +494,23 @@ def test_plane_over_memory_limit_blocks(experiment, reads):
     result = run_experiment(experiment, ZYX, memory_limit=1000)
     assert codes(result.issues) == ["plane_over_memory_limit"]
     assert not result.written and reads == []
+
+
+def test_planes_over_the_memory_limit_are_read_in_blocks(experiment, tmp_path, reads):
+    whole = run_experiment(experiment, ZYX, output_folder=tmp_path / "whole")
+    limit = plane_layout(experiment / IMAGES[0], ZYX, memory_limit=1).block_memory_estimate
+    blocks = run_experiment(experiment, ZYX, output_folder=tmp_path / "blocks", memory_limit=limit)
+    assert blocks.written and codes(blocks.issues) == ["planes_read_in_blocks"]
+    found = issue(blocks.issues, "planes_read_in_blocks")
+    assert found.severity is Severity.WARNING and found.paths == tuple(sorted(IMAGES))
+    assert csv_bytes(blocks) == csv_bytes(whole)
+    assert all(f.read_in_blocks for f in read_manifest(blocks.manifest_path).files)
+    assert not any(f.read_in_blocks for f in read_manifest(whole.manifest_path).files)
+    # Changing only the limit reads nothing again; the manifest records the new way.
+    reads.clear()
+    again = run_experiment(experiment, ZYX, output_folder=tmp_path / "blocks")
+    assert again.read == () and reads == [] and csv_bytes(again) == csv_bytes(whole)
+    assert not any(f.read_in_blocks for f in read_manifest(again.manifest_path).files)
 
 
 def test_pixel_data_that_cannot_be_decoded_blocks(experiment, monkeypatch):

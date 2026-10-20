@@ -38,7 +38,9 @@ The brick must:
 6. Write a self-describing CSV that later bricks use to calculate normalization
    parameters for any group of planes.
 7. Support incremental updates without rereading unchanged images.
-8. Fail clearly when a plane exceeds the configured in-memory limit.
+8. Read planes too large for the configured in-memory limit in blocks, with exactly the
+   same results, and fail clearly only when a plane cannot be read within the limit even
+   in blocks.
 9. Provide the normalization methods (min-max, percentile range, z-score, robust
    z-score) as an importable library, without applying them.
 
@@ -141,8 +143,18 @@ finite extrema, pixel counts and histogram in a single read. Never load a full Z
 when only a plane is needed.
 
 Estimate each plane's working memory before loading it, including the decoded I/O unit and
-temporary arrays. Use a configurable limit (default 1 GiB) and stop with a clear error when
-it would be exceeded. Do not convert or silently switch readers.
+temporary arrays. Use a configurable limit (default 1 GiB). A plane whose estimate is over
+the limit is read in blocks instead (question 15): rectangles of the pieces the image is
+stored in (TIFF strips or tiles, OME-Zarr chunks), as large as the limit allows, so the
+memory limit keeps its meaning as the most one step may use. Uncompressed TIFF pieces and
+OME-Zarr chunks may also be read a few rows at a time. Each plane's histogram stays exact:
+a first pass over its blocks finds the exact extrema and a second pass counts the pixels
+into bins with the same formulas, so the row equals the row of the whole plane (8- and
+16-bit integer planes need only one pass, counting every possible value). The switch is
+never silent: the run reports the images as a warning and the manifest records it. A plane
+stored compressed in one piece must be decoded whole and cannot be split; it, and any plane
+whose smallest block is still over the limit, stops the run with a clear error. Never
+convert source values.
 
 ## 6. Output CSV contract
 
@@ -198,7 +210,7 @@ Block processing for: mixed dtypes; unreadable TIFF files or OME-Zarr folders in
 folders (or OME-Zarr images without the `zarr` extra); OME-Zarr images whose declared axes
 do not fit the experiment's roles; unsupported sample
 formats or axes; missing/duplicate X or Y, duplicate roles or inconsistent mapping; a plane
-over the memory limit; a folder named `single`; sibling folders whose names differ only in
+that cannot be read within the memory limit, not even in blocks; a folder named `single`; sibling folders whose names differ only in
 case; a folder below the technical-repeat level; an output folder inside the experiment;
 no usable planes. System files (dot-files, `Thumbs.db`, `desktop.ini`, `__MACOSX`) are
 ignored silently.
@@ -206,7 +218,8 @@ ignored silently.
 Continue with warnings for: files that are not images; empty folders; images outside leaf
 folders;
 non-finite pixels (ignored and counted); different image sizes with a valid axis
-interpretation; planes with no finite values while others remain usable.
+interpretation; planes with no finite values while others remain usable; planes over the
+memory limit that are read in blocks.
 
 Show a preflight summary (files to analyse, files/folders skipped, dtype, axis mapping,
 warnings). Never show raw stack traces as the primary message; keep technical details in a
@@ -276,7 +289,12 @@ API, CLI). The notebook and CLI only call the API.
   so a failed run leaves the earlier copies in place. In the notebook the choice and the
   conversion settings (chunk size, compression, pyramid levels) are in step 3's
   "(Optional) Image conversion" card. *Implemented, see questions 12 and 13.*
-- **Later:** chunked processing for planes above the memory limit.
+- **Large planes in blocks:** planes over the memory limit are read in blocks of their
+  stored strips, tiles or chunks, sized by the memory limit (`planes`), and their
+  histograms are computed in two passes over the blocks with results identical to whole
+  planes (`histogram.compute_block_histogram`). OME-Zarr copies of such planes are written
+  block by block, with their smaller levels built from the stored level above
+  (`zarr_export`). The axis preview shows them reduced. *Implemented, see question 15.*
 
 ## 11. Tests and acceptance criteria
 
@@ -296,6 +314,8 @@ Acceptance checks:
   the widest bin in the group, at every level and for integer and float data.
 - Pooled counts are used at every level; no mean-of-means is used.
 - Reruns are idempotent and only new or changed files are read.
+- Planes read in blocks give the same rows (and OME-Zarr copies) as planes read whole, for
+  every pixel type and for constant, non-finite and empty planes.
 - The CSV round-trips through `read_plane_histograms()` with labels unchanged, and the
   notebook shows understandable summaries and validation messages.
 
@@ -398,3 +418,25 @@ Raised during review; to be decided before the milestones that need them:
     explanations. Manual collapse and control values survive other setting edits; the
     disk-space warning stays outside the panel. Processing defaults, validation severities,
     output formats and statistical definitions are unchanged.*
+15. Planes too large for the memory limit (plan §10 "Later"): process them in blocks
+    instead of stopping with `plane_over_memory_limit`? When, in which blocks, what about
+    files that cannot be split, and how is the preview shown?
+    *Decided (October 2026): yes, automatically and announced. A plane whose estimate is
+    over the memory limit is read in blocks without a new setting; the run reports the
+    images with the warning `planes_read_in_blocks` (the histograms are the same, reading
+    takes longer, raising the limit reads them whole) and the manifest records
+    `read_in_blocks` per file, for information only. The block size is derived from the
+    memory limit: whole TIFF strips or tiles, or OME-Zarr chunks, in full-width bands
+    first, as many as fit; uncompressed TIFF pieces and OME-Zarr chunks may be read a few
+    rows at a time. A compressed TIFF that stores a plane in one strip or tile cannot be
+    decoded in parts, so it keeps the `plane_over_memory_limit` error (with an action to
+    raise the limit or save the images tiled, uncompressed or as OME-Zarr), as does any
+    plane whose smallest block is still over the limit. Histograms are computed in two
+    passes over the blocks (exact extrema, then bin counts) and are identical to those of
+    whole planes; 8- and 16-bit integer planes need one pass. OME-Zarr copies of such
+    planes are written block by block, and their smaller levels are built from the stored
+    level above in regions of even size, so the copies equal those of whole planes. The
+    axis preview of such a plane is read in blocks and reduced (every n-th pixel, at most
+    4,096 pixels per side), and its caption says so. The CSV stays at schema version 1;
+    the manifest gains an optional key. Built on main, which already includes the
+    OME-Zarr work (PR #5).*
