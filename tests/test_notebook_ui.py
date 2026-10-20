@@ -5,11 +5,17 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import tifffile
 
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
 
-from morphobricks_preprocessing import Plane, read_manifest, read_plane_histograms  # noqa: E402
+from morphobricks_preprocessing import (  # noqa: E402
+    Plane,
+    notebook_ui,
+    read_manifest,
+    read_plane_histograms,
+)
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.axes import AxisMapping  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import (  # noqa: E402
@@ -22,6 +28,7 @@ from morphobricks_preprocessing.notebook_ui import (  # noqa: E402
     preview_caption,
     role_effect,
 )
+from morphobricks_preprocessing.planes import DEFAULT_MEMORY_LIMIT, plane_layout  # noqa: E402
 from morphobricks_preprocessing.validation import error, warning  # noqa: E402
 from morphobricks_preprocessing.zarr_export import ConversionSettings  # noqa: E402
 from tiff_tree import write_data, write_file  # noqa: E402
@@ -433,6 +440,118 @@ def test_plan_describes_the_run(experiment):
     nb.run()
     nb._refresh_run_step()
     assert "An earlier run was found (3 images" in nb.plan.value
+
+
+def large_planes_experiment(tmp_path, **big_kwargs):
+    root = tmp_path / "exp"
+    rng = np.random.default_rng(0)
+    big = rng.integers(0, 4000, (2, 64, 64), dtype=np.uint16)
+    write_data(root / "ctrl/rep1/big.tif", big, axes="ZYX", **big_kwargs)
+    small = rng.integers(0, 4000, (2, 8, 8), dtype=np.uint16)
+    write_data(root / "ctrl/rep1/small.tif", small, axes="ZYX")
+    return root
+
+
+def set_memory_limit(nb, limit):
+    nb.recommended.value = False
+    nb.memory_gib.min = 0  # the widget stops at 0.01 GiB; the test images are tiny
+    nb.memory_gib.value = limit / 2**30
+    assert nb._memory_limit() == limit
+
+
+def small_estimate(root):
+    mapping = AxisMapping("ZYX", ("Z", "Y", "X"))
+    return plane_layout(root / "ctrl/rep1/small.tif", mapping, bin_count=65_536).memory_estimate
+
+
+def test_plan_names_images_read_in_blocks(tmp_path, monkeypatch):
+    root = large_planes_experiment(tmp_path)
+    nb = checked(root)
+    set_memory_limit(nb, small_estimate(root))
+    # Before the axis roles are confirmed the planes are not known yet.
+    assert "read in blocks" not in nb.plan.value
+
+    def fail(*args, **kwargs):
+        raise AssertionError("pixel data was read")
+
+    nb.labels_confirmed.button.click()
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    for cls in (tifffile.TiffFile, tifffile.TiffPage, tifffile.TiffFrame, tifffile.TiffPageSeries):
+        monkeypatch.setattr(cls, "asarray", fail)
+    nb.confirm_button.click()
+    plan = nb.plan.value
+    assert "<b>1 image</b> has planes too large to read whole" in plan
+    assert "will be read in blocks" in plan and "exactly the same" in plan
+    assert "<b>ctrl/rep1/big.tif</b>" in plan and "small.tif" not in plan
+    assert "cannot be read within the memory limit" not in plan
+    assert plan.index("read in blocks") < plan.index("No earlier run was found")
+    assert not nb.run_button.disabled
+    # Raising the limit reads the planes whole again.
+    set_memory_limit(nb, DEFAULT_MEMORY_LIMIT)
+    assert "read in blocks" not in nb.plan.value
+
+
+def test_plan_warns_about_images_that_cannot_be_read_within_the_limit(tmp_path):
+    # Compressed in one strip per plane: cannot be decoded in parts.
+    root = large_planes_experiment(tmp_path, compression="zlib", rowsperstrip=64)
+    nb = confirmed(root)
+    assert "cannot be read" not in nb.plan.value
+    set_memory_limit(nb, small_estimate(root))
+    plan = nb.plan.value
+    assert "mb-error" in plan
+    assert "1 image cannot be read within the memory limit; the run will stop." in plan
+    assert "<b>ctrl/rep1/big.tif</b>" in plan and "exclude these images in step 1" in plan
+    assert "read in blocks" not in plan
+    # The run itself reports the error, so Run stays enabled.
+    assert not nb.run_button.disabled
+    nb.run()
+    assert "plane over memory limit" in nb.run_issues.value
+
+
+def test_plan_layouts_are_cached_until_their_inputs_change(tmp_path, monkeypatch):
+    root = large_planes_experiment(tmp_path)
+    calls = []
+    real = notebook_ui.plane_layout
+
+    def spy(path, *args, **kwargs):
+        calls.append(Path(path).name)
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(notebook_ui, "plane_layout", spy)
+    nb = checked(root)
+    nb.recommended.value = False
+    assert calls == []  # nothing is opened before the axis roles are confirmed
+    nb.labels_confirmed.button.click()
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    nb.confirm_button.click()
+    assert sorted(calls) == ["big.tif", "small.tif"]
+
+    def recomputed():
+        count = len(calls)
+        calls.clear()
+        return count
+
+    calls.clear()
+    nb.force_rebuild.value = True
+    nb._refresh_run_step()
+    assert recomputed() == 0
+    nb.memory_gib.value = 2.0
+    assert recomputed() == 2
+    nb.bins.value = 1_000
+    assert recomputed() == 2
+    nb.confirm_button.click()  # undo: the roles may change
+    assert recomputed() == 0
+    nb.preview_checked.button.click()
+    nb.confirm_button.click()
+    assert recomputed() == 0  # the same roles and settings as before
+    nb.check_button.click()
+    nb.labels_confirmed.button.click()
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    nb.confirm_button.click()
+    assert recomputed() == 2  # a new check of the folder
 
 
 def test_conversion_card_reads_directly_by_default(experiment):

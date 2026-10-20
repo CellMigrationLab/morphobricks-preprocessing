@@ -274,6 +274,13 @@ class PlaneLayout:
         """True when planes can be read within the memory limit, whole or in blocks."""
         return self.memory_estimate <= self.memory_limit or self.in_blocks
 
+    @property
+    def min_memory_estimate(self) -> int:
+        """Working memory of the smallest part of a plane that can be read on its own."""
+        if self.block_memory_estimate is None:
+            return self.memory_estimate
+        return min(self.memory_estimate, self.block_memory_estimate)
+
 
 def plane_layout(
     path: str | os.PathLike,
@@ -489,7 +496,7 @@ def check_planes(
 
     issues = []
     if over:
-        largest = max(_smallest_need(layout) for _, layout in over)
+        largest = max(layout.min_memory_estimate for _, layout in over)
         issues.append(
             error(
                 "plane_over_memory_limit",
@@ -634,18 +641,11 @@ def _check_limit(layout: PlaneLayout, path) -> None:
     if not layout.fits:
         raise PlaneMemoryError(
             f"Reading one plane of {Path(path).name} needs about "
-            f"{format_bytes(_smallest_need(layout))} of working memory, more than the "
+            f"{format_bytes(layout.min_memory_estimate)} of working memory, more than the "
             f"limit of {format_bytes(layout.memory_limit)}, even in blocks. Raise the memory "
             "limit if this computer has enough memory, or save the image again as a tiled "
             "or uncompressed TIFF file or as OME-Zarr with smaller chunks."
         )
-
-
-def _smallest_need(layout: PlaneLayout) -> int:
-    """Working memory of the smallest part of a plane that can be read on its own."""
-    if layout.block_memory_estimate is None:
-        return layout.memory_estimate
-    return min(layout.memory_estimate, layout.block_memory_estimate)
 
 
 def _positions(layout: PlaneLayout, mapping: AxisMapping) -> Iterator[dict[int, int]]:
