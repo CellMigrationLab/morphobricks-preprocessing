@@ -89,7 +89,7 @@ def test_preflight_summary(experiment):
     text = preflight_summary(preflight(experiment, exclude=["ctrl/rep2/a.tif"]))
     assert "Images to analyse: 3 in 3 leaf folders" in text
     assert "Excluded at your request: 1 image" in text
-    assert "Skipped: 2 files that are not TIFF images" in text
+    assert "Skipped: 2 files that are not images" in text
     assert "Pixel type: uint8" in text
     assert "Axes in the files: ZYX (3 images)" in text
     assert "Z (depth), length 2 -> Z" in text

@@ -26,8 +26,8 @@ LEVEL_NAMES = {
 
 # Warnings whose paths are files or folders that will not be analysed.
 _SKIPPED_CODES = {
-    "non_tiff_file": ("file that is not a TIFF image", "files that are not TIFF images"),
-    "tiff_outside_leaf": ("TIFF file outside leaf folders", "TIFF files outside leaf folders"),
+    "non_tiff_file": ("file that is not an image", "files that are not images"),
+    "tiff_outside_leaf": ("image outside leaf folders", "images outside leaf folders"),
     "empty_folder": ("empty folder", "empty folders"),
 }
 
@@ -94,6 +94,12 @@ def preflight_summary(pre: Preflight) -> str:
         f"Images to analyse: {len(metadata.files):,} in "
         f"{plural(len(discovery.leaves), 'leaf folder')}"
     )
+    zarr = sum(f.is_ome_zarr for f in metadata.files)
+    if zarr:
+        lines.append(
+            f"Formats: {len(metadata.files) - zarr:,} TIFF, {zarr:,} OME-Zarr "
+            "(OME-Zarr axes come from their metadata)"
+        )
     if pre.excluded:
         lines.append(f"Excluded at your request: {plural(len(pre.excluded), 'image')}")
     for issue in discovery.issues:
@@ -136,7 +142,7 @@ def run_summary(result: RunResult) -> str:
         ("Unchanged (rows kept)", () if result.rebuild_reason else result.unchanged),
         ("Removed from the table", result.removed),
         ("Excluded", result.excluded),
-        ("OME-Zarr copies written", result.converted),
+        ("TIFF images converted to OME-Zarr", result.converted),
     ):
         if files:
             lines.append(f"{label}: {plural(len(files), 'image')}")

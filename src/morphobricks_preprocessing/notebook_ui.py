@@ -42,7 +42,7 @@ except ImportError as exc:  # pragma: no cover - depends on the environment
     ) from exc
 
 from . import notebook_style as ui
-from .axes import AxisMapping, axis_length_ranges, axis_name, review_axes
+from .axes import AxisMapping, axis_length_ranges, axis_name, file_mapping_for, review_axes
 from .csv_io import OUTPUT_FILENAME, CsvFormatError, read_plane_histograms
 from .discovery import check_output_folder, default_output_folder
 from .dtypes import MAX_BIN_COUNT, MIN_FLOAT_BIN_COUNT, default_bin_count, is_integer
@@ -75,6 +75,11 @@ LEVEL_OPTIONS = [
 EXCLUDABLE_CODES = ("unreadable_tiff", "multiple_series", "unsupported_dtype")
 
 _SKIPPED_CODES = ("non_tiff_file", "tiff_outside_leaf", "empty_folder")
+
+TIFF_OPTIONS = [
+    ("Read the TIFF images directly (recommended)", "read"),
+    ("Convert the TIFF images to OME-Zarr first, then process the copies", "convert"),
+]
 _MAX_PLOTTED_GROUPS = 12
 _PACKAGE_LOGGER = "morphobricks_preprocessing"
 _WIDE = {"width": "99%"}
@@ -125,7 +130,7 @@ class PreprocessingNotebook:
 
         return ui.page(
             "MorphoBricks preprocessing",
-            "Per-plane intensity histograms for an experiment folder of TIFF images.",
+            "Per-plane intensity histograms for an experiment folder of TIFF and OME-Zarr images.",
             [
                 widgets.HTML(
                     ui.status(
@@ -619,16 +624,22 @@ class PreprocessingNotebook:
         self._mapping_changed()
 
     def _refresh_missing_card(self, pre: Preflight) -> None:
-        lacking = [f for f in pre.metadata.files if f.readable and f.axes != self.mapping.axes]
+        # OME-Zarr images may store the same roles in another order; only roles that
+        # an image lacks need the user's confirmation.
+        lacking: dict[str, str] = {}
+        for f in pre.metadata.files:
+            resolved = file_mapping_for(f, self.mapping) if f.readable else None
+            if resolved is not None and resolved.singleton_roles:
+                lacking[f.relative_path] = "".join(resolved.singleton_roles)
         ui.set_visible(self.missing_card, bool(lacking))
         if not lacking:
             return
-        by_axes: dict[str, list[str]] = {}
-        for f in lacking:
-            by_axes.setdefault(f.axes, []).append(f.relative_path)
+        by_axes: dict[tuple[str, str], list[str]] = {}
+        headers = {f.relative_path: f for f in pre.metadata.files}
+        for rel, missing in lacking.items():
+            by_axes.setdefault((headers[rel].axes, missing), []).append(rel)
         lines = []
-        for axes, paths in sorted(by_axes.items()):
-            missing = "".join(a for a in self.mapping.axes if a not in axes) or "?"
+        for (axes, missing), paths in sorted(by_axes.items()):
             names = ", ".join(axis_name(a) for a in missing)
             lines.append(
                 f"{plural(len(paths), 'image')} with axes <b>{html.escape(axes)}</b> "
@@ -700,10 +711,14 @@ class PreprocessingNotebook:
         files = [
             f
             for f in self.preflight.metadata.files
-            if f.readable and self.mapping.for_axes(f.axes) is not None
+            if f.readable and file_mapping_for(f, self.mapping) is not None
         ]
         options = [
-            (f"{f.relative_path}  ({f.axes}, {' × '.join(map(str, f.shape))})", f.relative_path)
+            (
+                f"{f.relative_path}  ({'OME-Zarr, ' if f.is_ome_zarr else ''}{f.axes}, "
+                f"{' × '.join(map(str, f.shape))})",
+                f.relative_path,
+            )
             for f in files
         ]
         self.preview_file.options = options
@@ -716,7 +731,7 @@ class PreprocessingNotebook:
 
     def _configure_sliders(self, reset: bool) -> None:
         header = self._preview_header()
-        file_mapping = self.mapping.for_axes(header.axes) if header else None
+        file_mapping = file_mapping_for(header, self.mapping) if header else None
         for role, slider in self.preview_sliders.items():
             dim = None if file_mapping is None else file_mapping.index_of(role)
             length = 1 if dim is None else header.shape[dim]
@@ -745,7 +760,7 @@ class PreprocessingNotebook:
         if header is None:
             self.preview_caption.value = ui.status("warn", "No image fits these axis roles.")
             return
-        file_mapping = self.mapping.for_axes(header.axes)
+        file_mapping = file_mapping_for(header, self.mapping)
         coords = {
             role.lower(): self.preview_sliders[role].value
             for role in ("Z", "C", "T")
@@ -851,22 +866,24 @@ class PreprocessingNotebook:
             ]
         )
         ui.set_visible(self.advanced, False)
-        # A separate output, not a tuning value, so the recommended settings leave it alone.
-        self.ome_zarr = widgets.Checkbox(
-            description="Also save OME-Zarr copies of the images",
-            indent=False,
+        # How TIFF images are read is a choice about the data, not a tuning value, so
+        # the recommended settings leave it alone.
+        self.tiff_handling = widgets.RadioButtons(
+            options=TIFF_OPTIONS,
+            value="read",
             disabled=not zarr_available(),
             layout=widgets.Layout(width="99%"),
         )
-        self.ome_zarr_hint = ui.help_text(_ome_zarr_help(zarr_available()))
+        self.tiff_handling_hint = ui.help_text(_tiff_handling_help(zarr_available()))
         self.settings_card = ui.card(
             "Settings",
             [
                 self.recommended,
                 self.recommended_hint,
                 self.advanced,
-                self.ome_zarr,
-                self.ome_zarr_hint,
+                widgets.HTML("<b>TIFF images</b>"),
+                self.tiff_handling,
+                self.tiff_handling_hint,
             ],
         )
         self.plan = widgets.HTML()
@@ -892,7 +909,7 @@ class PreprocessingNotebook:
             children=[self.details], titles=("Technical details (log)",), selected_index=None
         )
         self.recommended.observe(lambda _: self._recommended_changed(), names="value")
-        for control in (self.bins, self.memory_gib, self.force_rebuild, self.ome_zarr):
+        for control in (self.bins, self.memory_gib, self.force_rebuild, self.tiff_handling):
             control.observe(lambda _: self._refresh_run_step(), names="value")
         self.run_button.on_click(lambda _: self.run())
 
@@ -977,12 +994,20 @@ class PreprocessingNotebook:
             f"Files written: <b>{OUTPUT_FILENAME}</b> (one row per plane) and "
             f"<b>{MANIFEST_FILENAME}</b> (what was read, with which settings).",
         ]
-        if self.ome_zarr.value:
+        files = self.preflight.metadata.files
+        tiffs = sum(not f.is_ome_zarr for f in files)
+        zarrs = len(files) - tiffs
+        if zarrs:
+            lines.append(
+                f"<b>{plural(zarrs, 'OME-Zarr image')}</b> will be read directly, with the axes "
+                f"{'its' if zarrs == 1 else 'their'} metadata declares."
+            )
+        if tiffs and self._convert_tiffs():
             copies = html.escape(str(output / OME_ZARR_FOLDER))
             lines.append(
-                f"OME-Zarr copies of the images go to <b>{copies}</b>. Copies of unchanged "
-                "images are kept; new and changed images, and images without a copy yet, are "
-                "copied."
+                f"<b>{plural(tiffs, 'TIFF image')}</b> will be converted to OME-Zarr in "
+                f"<b>{copies}</b> first; their histograms are computed from the copies. "
+                "Copies of unchanged images are kept."
             )
         manifest = output / MANIFEST_FILENAME
         if self.force_rebuild.value:
@@ -1025,7 +1050,7 @@ class PreprocessingNotebook:
                     exclude=self._excluded(),
                     force_rebuild=self.force_rebuild.value,
                     progress=self._progress,
-                    ome_zarr=self.ome_zarr.value,
+                    convert_tiffs=self._convert_tiffs(),
                 )
         except Exception as exc:  # unexpected failures still get a readable message
             self.log.lines.append(traceback.format_exc())
@@ -1064,10 +1089,10 @@ class PreprocessingNotebook:
             )
             return
         lines = [f"Table: {result.csv_path}", f"Manifest: {result.manifest_path}"]
-        if result.converted or self.ome_zarr.value:
+        if result.converted or self._convert_tiffs():
             lines.append(
-                f"OME-Zarr copies: {result.output_folder / OME_ZARR_FOLDER} "
-                f"({plural(len(result.converted), 'image')} copied in this run)"
+                f"Converted TIFF images: {result.output_folder / OME_ZARR_FOLDER} "
+                f"({plural(len(result.converted), 'image')} converted in this run)"
             )
         if result.rebuild_reason:
             lines.append(f"Every image was read because {result.rebuild_reason}.")
@@ -1085,10 +1110,13 @@ class PreprocessingNotebook:
             ("🗑️", f"{len(result.removed):,}", "images removed"),
             ("⛔", f"{len(result.excluded):,}", "excluded images"),
         ]
-        if result.converted or self.ome_zarr.value:
-            tiles.append(("🗂️", f"{len(result.converted):,}", "OME-Zarr copies written"))
+        if result.converted or self._convert_tiffs():
+            tiles.append(("🗂️", f"{len(result.converted):,}", "TIFF images converted"))
         tiles.append(("⚠️", issue_counts(result.issues), "checks"))
         self.run_tiles.value = ui.tiles(tiles)
+
+    def _convert_tiffs(self) -> bool:
+        return self.tiff_handling.value == "convert"
 
     def _progress(self, done: int, total: int, path: str) -> None:
         self.progress.max = max(total, 1)
@@ -1539,6 +1567,7 @@ def _folder_tiles(pre: Preflight) -> list[tuple[str, str, str]]:
         ("📂", f"{len(pre.discovery.leaves):,}", "image folders"),
         ("🧪", f"{len(conditions):,}", "conditions"),
         ("🔢", dtype.name if dtype is not None else "mixed", "pixel type"),
+        ("🗂️", f"{sum(f.is_ome_zarr for f in pre.metadata.files):,}", "OME-Zarr images"),
         ("⏭️", f"{skipped:,}", "files or folders skipped"),
         (
             "⛔" if errors else "⚠️" if warnings else "✅",
@@ -1548,17 +1577,20 @@ def _folder_tiles(pre: Preflight) -> list[tuple[str, str, str]]:
     ]
 
 
-def _ome_zarr_help(available: bool) -> str:
-    """Help line under the OME-Zarr option."""
+def _tiff_handling_help(available: bool) -> str:
+    """Help line under the choice of how TIFF images are read."""
     text = (
-        "Off by default. When ticked, every image is also saved in OME-Zarr format in the "
-        f"<b>{OME_ZARR_FOLDER}</b> folder of the output, for viewers such as napari and for "
-        "later bricks. The full-resolution level keeps the exact pixel values; your images "
-        "are not changed. Copying takes extra time and disk space."
+        "How TIFF images are processed; OME-Zarr images are always read directly. By "
+        "default TIFF images are read as they are. <b>Convert</b> first writes every TIFF "
+        f"image in OME-Zarr format to the <b>{OME_ZARR_FOLDER}</b> folder of the output and "
+        "then computes the histograms from these copies, like for any OME-Zarr image. The "
+        "copies keep the exact pixel values and can be opened in viewers such as napari; "
+        "your images are not changed. Converting takes extra time and disk space, and "
+        "switching between the two recomputes every TIFF image."
     )
     if not available:
         text += (
-            " <b>Not available:</b> it needs the zarr package. Install it with "
+            " <b>Converting is not available:</b> it needs the zarr package. Install it with "
             '<b>pip install "morphobricks-preprocessing[zarr]"</b> and restart the notebook.'
         )
     return text

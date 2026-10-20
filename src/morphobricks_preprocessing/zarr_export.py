@@ -33,6 +33,13 @@ import tifffile
 from .axes import AxisMapping
 from .dtypes import is_integer
 from .planes import Plane, PlaneLayout
+from .zarr_input import (  # noqa: F401 - re-exported for callers of this module
+    ZarrUnavailableError,
+    _zarr,
+    _zarr_major,
+    canonical_dtype,
+    zarr_available,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,19 +81,6 @@ _TIME_UNITS = {
     "min": "minute",
     "h": "hour",
 }
-
-
-class ZarrUnavailableError(ImportError):
-    """Raised when OME-Zarr copies are requested but ``zarr`` is not installed."""
-
-
-def zarr_available() -> bool:
-    """Return True if the ``zarr`` package can be imported."""
-    try:
-        _zarr()
-    except ZarrUnavailableError:
-        return False
-    return True
 
 
 def ome_zarr_relative_path(source_relative_path: str) -> str:
@@ -155,16 +149,6 @@ def read_physical_sizes(path: str | os.PathLike) -> PhysicalSizes:
     except Exception:  # metadata is optional; a damaged header is reported elsewhere
         logger.debug("Cannot read physical sizes of %s", path, exc_info=True)
     return PhysicalSizes()
-
-
-def canonical_dtype(dtype: np.dtype) -> np.dtype:
-    """Return the standard NumPy dtype with the same name, e.g. ``int64`` for ``longlong``.
-
-    On Linux and macOS, NumPy has two 64-bit integer types (``long`` and ``long
-    long``) that compare equal but are different classes; tifffile may return
-    either, and zarr 3 only recognises the standard one.
-    """
-    return np.dtype(np.dtype(dtype).name)
 
 
 def pyramid_shapes(plane_shape: tuple[int, int]) -> list[tuple[int, int]]:
@@ -245,6 +229,11 @@ class OmeZarrWriter:
         )
         writer._open()
         return writer
+
+    @property
+    def mapping(self) -> AxisMapping:
+        """Axis mapping of the copy itself, for reading it back plane by plane."""
+        return AxisMapping("".join(self.roles), self.roles)
 
     def write(self, plane: Plane) -> None:
         """Store one plane at its coordinates, at every level."""
@@ -352,21 +341,6 @@ def is_copy_path(output_folder: str | os.PathLike, relative_path: str) -> bool:
 
 
 # zarr 2 / 3 ---------------------------------------------------------------------------
-
-
-def _zarr():
-    try:
-        import zarr
-    except ImportError as exc:
-        raise ZarrUnavailableError(
-            "Writing OME-Zarr copies needs the zarr package. Install it with: "
-            'pip install "morphobricks-preprocessing[zarr]"'
-        ) from exc
-    return zarr
-
-
-def _zarr_major() -> int:
-    return int(_zarr().__version__.split(".")[0])
 
 
 def _create_group(path: Path):

@@ -26,7 +26,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .axes import AxisMapping, prefill_experiment_mapping, review_axes
+from .axes import AxisMapping, file_mapping_for, prefill_experiment_mapping, review_axes
 from .csv_io import (
     OUTPUT_FILENAME,
     SCHEMA_VERSION,
@@ -194,18 +194,18 @@ def sample_planes(
     *,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> list[SamplePlane]:
-    """Read one preview plane per arrangement of axes, from the first file that has it.
+    """Read one preview plane per format and arrangement of axes, from the first image.
 
-    Files lacking some of the mapping's axes are previewed with those axes as
+    Images lacking some of the mapping's axes are previewed with those axes as
     length 1, so the user can see them before confirming that this is right.
     """
     samples = []
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     for f in pre.metadata.files:
-        if not f.readable or f.axes in seen:
+        if not f.readable or (f.kind, f.axes) in seen:
             continue
-        seen.add(f.axes)
-        file_mapping = mapping.for_axes(f.axes)
+        seen.add((f.kind, f.axes))
+        file_mapping = file_mapping_for(f, mapping)
         if file_mapping is None:
             samples.append(
                 SamplePlane(f.relative_path, f.axes, error="The axis mapping does not fit it.")
@@ -271,7 +271,7 @@ def run_experiment(
     exclude: Iterable[str] = (),
     force_rebuild: bool = False,
     progress: Callable[[int, int, str], None] | None = None,
-    ome_zarr: bool = False,
+    convert_tiffs: bool = False,
 ) -> RunResult:
     """Pass 2: write or update the histogram table and the run manifest.
 
@@ -298,10 +298,12 @@ def run_experiment(
     progress
         Called as ``progress(done, total, relative_path)`` before each file is
         read, and as ``progress(total, total, "")`` when reading is finished.
-    ome_zarr
-        Also write an OME-Zarr copy of every image to ``<output>/ome_zarr``
-        (needs the ``zarr`` extra). Copies of unchanged images are kept; copies
-        of images no longer analysed are removed.
+    convert_tiffs
+        Convert every TIFF image to OME-Zarr in ``<output>/ome_zarr`` and compute
+        its histograms from the converted copy, as for any OME-Zarr image (needs
+        the ``zarr`` extra). Copies of unchanged images are kept; copies of
+        images no longer converted are removed. Switching this recomputes the
+        rows of every TIFF image.
 
     Returns
     -------
@@ -320,13 +322,14 @@ def run_experiment(
         issues.extend(bin_issue)
     if not has_errors(issues):
         issues.extend(check_planes(root, review, memory_limit=memory_limit, bin_count=bins))
-    if ome_zarr and not zarr_available():
+    if convert_tiffs and not zarr_available():
         issues.append(
             error(
                 "zarr_not_installed",
-                "OME-Zarr copies were requested, but the zarr package is not installed.",
+                "Converting the TIFF images to OME-Zarr was requested, but the zarr package "
+                "is not installed.",
                 action='Install it with pip install "morphobricks-preprocessing[zarr]", or '
-                "run without OME-Zarr copies.",
+                "read the TIFF images directly.",
             )
         )
 
@@ -336,7 +339,7 @@ def run_experiment(
     if has_errors(issues):
         return stop()
 
-    settings = RunSettings(bins, memory_limit, missing_as_singleton, pre.excluded, ome_zarr)
+    settings = RunSettings(bins, memory_limit, missing_as_singleton, pre.excluded, convert_tiffs)
     previous, previous_records, reason = _load_previous(
         output, settings, mapping, dtype.name, force_rebuild
     )
@@ -346,6 +349,7 @@ def run_experiment(
     new, changed, unchanged = [], [], []
     for rel, file_mapping in sorted(review.file_mappings.items()):
         header = headers[rel]
+        copy = ome_zarr_relative_path(rel) if convert_tiffs and not header.is_ome_zarr else None
         entries[rel] = file_entry_for(
             root,
             rel,
@@ -353,13 +357,17 @@ def run_experiment(
             file_mapping,
             channel_names=header.channel_names,
             significant_bits=header.significant_bits,
+            ome_zarr_path=copy,
         )
         before = previous.file(rel) if previous is not None else None
         if before is None:
             new.append(rel)
-        elif before.same_source(entries[rel]) and (
+        elif (
+            before.same_source(entries[rel])
             # During a rebuild there are no rows to check; otherwise the rows must be complete.
-            reason is not None or len(previous_records.get(rel, ())) == before.plane_count
+            and (reason is not None or len(previous_records.get(rel, ())) == before.plane_count)
+            # Rows of a converted TIFF are only kept while its copy is still there.
+            and (copy is None or (output / copy).is_dir())
         ):
             unchanged.append(rel)
         else:
@@ -378,15 +386,7 @@ def run_experiment(
         "rebuild_reason": reason,
     }
 
-    # Unchanged images without an OME-Zarr copy are read for the copy only.
-    convert_only = [
-        rel
-        for rel in (unchanged if ome_zarr and not reason else ())
-        if previous.file(rel).ome_zarr_path is None
-        or not (output / ome_zarr_relative_path(rel)).is_dir()
-    ]
-    work = sorted([*to_read, *convert_only])
-    to_convert = work if ome_zarr else []
+    to_convert = [rel for rel in to_read if entries[rel].ome_zarr_path]
     staging = _CopyStaging(output, root) if to_convert else None
 
     records: list[PlaneRecord] = []
@@ -394,27 +394,26 @@ def run_experiment(
         records.extend(previous_records[rel])
     failed: list[str] = []
     try:
-        for done, rel in enumerate(work):
+        for done, rel in enumerate(to_read):
             if progress is not None:
-                progress(done, len(work), rel)
+                progress(done, len(to_read), rel)
             file_mapping = review.file_mappings[rel]
-            writer = None if staging is None else staging.writer(rel, file_mapping, headers[rel])
             try:
-                planes = _read_file(root, rel, labels[rel], file_mapping, settings, writer)
+                if rel in to_convert:
+                    # Convert first, then read the copy like any other OME-Zarr image.
+                    copy, copy_mapping = staging.convert(rel, file_mapping, headers[rel], settings)
+                    records.extend(_read_file(copy, rel, labels[rel], copy_mapping, settings))
+                else:
+                    records.extend(_read_file(root / rel, rel, labels[rel], file_mapping, settings))
             except PlaneReadError:
                 logger.warning("Cannot read the planes of %s", rel, exc_info=True)
                 failed.append(rel)
-                continue
-            if writer is not None:
-                writer.finish()
-            if rel not in convert_only:
-                records.extend(planes)
     except BaseException:
         if staging is not None:
             staging.discard()
         raise
     if progress is not None:
-        progress(len(work), len(work), "")
+        progress(len(to_read), len(to_read), "")
     if failed:
         issues.append(
             error(
@@ -427,25 +426,28 @@ def run_experiment(
         )
         if staging is not None:
             staging.discard()
-        return stop(read=tuple(work), **counts)
+        return stop(read=tuple(to_read), **counts)
 
     issues.extend(_pixel_issues(records))
     if has_errors(issues):
         if staging is not None:
             staging.discard()
-        return stop(read=tuple(work), **counts)
+        return stop(read=tuple(to_read), **counts)
 
     records.sort(key=_row_order)
     per_file: dict[str, int] = {}
     for record in records:
         per_file[record.source_relative_path] = per_file.get(record.source_relative_path, 0) + 1
     output.mkdir(parents=True, exist_ok=True)
-    # Copies recorded for images no longer analysed are removed; a damaged manifest
-    # cannot point the removal outside this brick's own ome_zarr folder.
+    # Copies recorded for images no longer analysed, or no longer converted, are
+    # removed; a damaged manifest cannot point the removal outside this brick's own
+    # ome_zarr folder.
     removed_copies = [
         f.ome_zarr_path
         for f in (previous.files if previous else ())
-        if f.relative_path in removed and f.ome_zarr_path and is_copy_path(output, f.ome_zarr_path)
+        if f.ome_zarr_path
+        and (f.relative_path not in entries or entries[f.relative_path].ome_zarr_path is None)
+        and is_copy_path(output, f.ome_zarr_path)
     ]
     with _staged_outputs(
         output,
@@ -460,12 +462,7 @@ def run_experiment(
             settings=settings,
             mapping=mapping,
             files=tuple(
-                replace(
-                    entry,
-                    plane_count=per_file[rel],
-                    ome_zarr_path=ome_zarr_relative_path(rel) if ome_zarr else None,
-                )
-                for rel, entry in sorted(entries.items())
+                replace(entry, plane_count=per_file[rel]) for rel, entry in sorted(entries.items())
             ),
             csv_sha256=file_sha256(csv_path),
             versions=package_versions(),
@@ -483,7 +480,7 @@ def run_experiment(
         output,
         True,
         _sorted(issues),
-        read=tuple(work),
+        read=tuple(to_read),
         excluded=pre.excluded,
         plane_count=len(records),
         converted=tuple(to_convert),
@@ -584,17 +581,16 @@ def _publish_outputs(
 
 
 def _read_file(
-    root: Path,
+    path: Path,
     rel: str,
     labels: tuple[str, str, str],
     mapping: AxisMapping,
     settings: RunSettings,
-    writer: OmeZarrWriter | None = None,
 ) -> list[PlaneRecord]:
-    """Histogram every plane of a file, copying each plane to ``writer`` if given."""
+    """Histogram every plane of ``path``, recording the rows under the source ``rel``."""
     records = []
     for plane in iter_planes(
-        root / rel, mapping, memory_limit=settings.memory_limit, bin_count=settings.bin_count
+        path, mapping, memory_limit=settings.memory_limit, bin_count=settings.bin_count
     ):
         records.append(
             PlaneRecord(
@@ -606,8 +602,6 @@ def _read_file(
                 t=plane.t,
             )
         )
-        if writer is not None:
-            writer.write(plane)
     return records
 
 
@@ -618,7 +612,7 @@ def _move(source: Path, destination: Path) -> None:
 
 
 class _CopyStaging:
-    """The run's temporary folder while OME-Zarr copies are written during reading.
+    """The run's temporary folder while TIFF images are converted to OME-Zarr.
 
     The copies are published with the table and manifest by :func:`_staged_outputs`,
     which reuses this folder; :meth:`discard` removes it when the run stops early.
@@ -642,6 +636,20 @@ class _CopyStaging:
             channel_names=header.channel_names,
             name=rel,
         )
+
+    def convert(
+        self, rel: str, mapping: AxisMapping, header: TiffMetadata, settings: RunSettings
+    ) -> tuple[Path, AxisMapping]:
+        """Convert one TIFF plane by plane; return the copy and its own axis mapping."""
+        writer = self.writer(rel, mapping, header)
+        for plane in iter_planes(
+            self.experiment_root / rel,
+            mapping,
+            memory_limit=settings.memory_limit,
+            bin_count=settings.bin_count,
+        ):
+            writer.write(plane)
+        return writer.finish(), writer.mapping
 
     def discard(self) -> None:
         """Remove the temporary folder, and the output folder if this run created it."""

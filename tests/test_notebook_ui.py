@@ -259,6 +259,25 @@ def test_preview_reports_planes_it_cannot_read(experiment):
     assert "cannot be shown" in nb.preview_caption.value
 
 
+def test_preview_and_roles_with_an_ome_zarr_image(tmp_path):
+    pytest.importorskip("zarr")
+    from zarr_tree import write_ngff
+
+    root = tmp_path / "exp"
+    write_data(root / "a.tif", np.zeros((3, 2, 8, 8), np.uint8), axes="ZCYX", imagej=True)
+    data = np.arange(2 * 3 * 8 * 8, dtype=np.uint8).reshape(2, 3, 8, 8)
+    write_ngff(root / "b.ome.zarr", data, "czyx")
+    nb = checked(root)
+    assert "OME-Zarr images" in nb.folder_tiles.value
+    # Same roles in another order: nothing is missing.
+    assert not ui.is_visible(nb.missing_card)
+    labels = [label for label, _ in nb.preview_file.options]
+    assert any("b.ome.zarr" in label and "OME-Zarr, CZYX" in label for label in labels)
+    nb.preview_file.value = "b.ome.zarr"
+    nb.preview_button.click()
+    assert "b.ome.zarr" in nb.preview_caption.value and "z = 1, c = 0" in nb.preview_caption.value
+
+
 def test_missing_axes_card(tmp_path):
     root = tmp_path / "exp"
     write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZCYX")
@@ -365,40 +384,41 @@ def test_plan_describes_the_run(experiment):
     assert "An earlier run was found (3 images" in nb.plan.value
 
 
-def test_ome_zarr_option_is_off_and_survives_the_recommended_settings(experiment):
+def test_tiff_option_reads_directly_and_survives_the_recommended_settings(experiment):
     nb = checked(experiment)
-    assert not nb.ome_zarr.value
-    assert "OME-Zarr" in nb.ome_zarr_hint.value and "<code>" not in nb.ome_zarr_hint.value
-    if nb.ome_zarr.disabled:
+    assert nb.tiff_handling.value == "read"
+    hint = nb.tiff_handling_hint.value
+    assert "OME-Zarr images are always read directly" in hint and "<code>" not in hint
+    if nb.tiff_handling.disabled:
         return
-    nb.ome_zarr.value = True
+    nb.tiff_handling.value = "convert"
     nb.recommended.value = False
     nb.recommended.value = True
-    assert nb.ome_zarr.value  # a separate output, not one of the recommended settings
+    assert nb.tiff_handling.value == "convert"  # a choice about the data, not a tuning value
 
 
-def test_ome_zarr_option_without_zarr(experiment, monkeypatch):
+def test_tiff_conversion_without_zarr(experiment, monkeypatch):
     from morphobricks_preprocessing import notebook_ui
 
     monkeypatch.setattr(notebook_ui, "zarr_available", lambda: False)
     nb = checked(experiment)
-    assert nb.ome_zarr.disabled
-    assert "Not available" in nb.ome_zarr_hint.value
-    assert '<b>pip install "morphobricks-preprocessing[zarr]"</b>' in nb.ome_zarr_hint.value
+    assert nb.tiff_handling.disabled and nb.tiff_handling.value == "read"
+    assert "Converting is not available" in nb.tiff_handling_hint.value
+    assert '<b>pip install "morphobricks-preprocessing[zarr]"</b>' in nb.tiff_handling_hint.value
 
 
-def test_ome_zarr_copies_from_the_notebook(experiment, tmp_path):
+def test_tiff_conversion_from_the_notebook(experiment, tmp_path):
     pytest.importorskip("zarr")
     nb = confirmed(experiment, output_folder=str(tmp_path / "out"))
-    assert "OME-Zarr copies" not in nb.plan.value
-    nb.ome_zarr.value = True
-    assert "OME-Zarr copies of the images go to" in nb.plan.value
+    assert "converted to OME-Zarr" not in nb.plan.value
+    nb.tiff_handling.value = "convert"
+    assert "<b>3 TIFF images</b> will be converted to OME-Zarr" in nb.plan.value
     result = nb.run()
     assert result.converted == ("ctrl/rep1/a.tif", "ctrl/rep1/b.tif", "drug/rep1/a.tif")
-    assert "OME-Zarr copies written" in nb.run_tiles.value
-    assert "3 images copied in this run" in nb.run_status.value
+    assert "TIFF images converted" in nb.run_tiles.value
+    assert "3 images converted in this run" in nb.run_status.value
     assert (tmp_path / "out" / "ome_zarr" / "ctrl" / "rep1" / "a.ome.zarr").is_dir()
-    assert read_manifest(result.manifest_path).settings.ome_zarr
+    assert read_manifest(result.manifest_path).settings.convert_tiffs
 
 
 def test_full_run_and_statistics(experiment, tmp_path):

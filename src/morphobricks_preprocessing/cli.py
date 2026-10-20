@@ -53,7 +53,8 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
         prog="morphobricks-preprocessing",
-        description="Per-plane intensity histograms for an experiment folder of TIFF images.",
+        description="Per-plane intensity histograms for an experiment folder of TIFF and "
+        "OME-Zarr images.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -88,10 +89,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--force-rebuild", action="store_true", help="recompute every row of the table"
     )
     run.add_argument(
-        "--ome-zarr",
+        "--convert-tiff",
         action="store_true",
-        help="also write an OME-Zarr copy of every image to <output>/ome_zarr "
-        "(needs the zarr extra)",
+        help="convert every TIFF image to OME-Zarr in <output>/ome_zarr first and compute "
+        "its histograms from the copy (needs the zarr extra); OME-Zarr images are always "
+        "read directly",
     )
     run.add_argument("--log", metavar="FILE", help="write technical details to this file")
     return parser
@@ -177,7 +179,7 @@ def _run(args: argparse.Namespace) -> int:
         exclude=args.exclude,
         force_rebuild=args.force_rebuild,
         progress=progress,
-        ome_zarr=args.ome_zarr,
+        convert_tiffs=args.convert_tiff,
     )
     if result.issues:
         print(format_issues(result.issues))

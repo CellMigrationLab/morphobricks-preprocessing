@@ -148,7 +148,7 @@ def test_only_copies_inside_the_ome_zarr_folder_count(tmp_path):
 def test_missing_zarr_is_a_clear_error(tmp_path, monkeypatch):
     write_data(tmp_path / "exp/a.tif", random_data((2, 8, 8)), axes="ZYX")
     monkeypatch.setattr(run_module, "zarr_available", lambda: False)
-    result = run_experiment(tmp_path / "exp", ZYX, ome_zarr=True)
+    result = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True)
     (found,) = [i for i in result.issues if i.code == "zarr_not_installed"]
     assert "[zarr]" in found.action and not result.written
     assert run_experiment(tmp_path / "exp", ZYX).written
@@ -180,7 +180,7 @@ def test_copy_holds_the_source_values(tmp_path, shape, axes, kwargs, roles, ngff
     write_data(tmp_path / "exp/a.tif", data, axes=axes, **kwargs)
     info = run_module.preflight(tmp_path / "exp").metadata.files[0]
     mapping = AxisMapping(info.axes, roles) if roles else prefill_mapping(info.axes)
-    result = run_experiment(tmp_path / "exp", mapping, ome_zarr=True)
+    result = run_experiment(tmp_path / "exp", mapping, convert_tiffs=True)
     assert result.written and result.converted == ("a.tif",)
 
     group = open_copy(result.output_folder, "a.tif")
@@ -216,7 +216,7 @@ def test_every_dtype_is_copied_unchanged(tmp_path, dtype):
     if data.dtype.kind == "f":
         data[0, 0, :2] = [np.nan, np.inf]
     write_data(tmp_path / "exp/a.tif", data, axes="ZYX")
-    result = run_experiment(tmp_path / "exp", ZYX, ome_zarr=True)
+    result = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True)
     np.testing.assert_array_equal(open_copy(result.output_folder, "a.tif")["0"][:], data)
 
 
@@ -232,7 +232,7 @@ def test_pyramid_levels_and_scales(tmp_path):
         photometric="minisblack",
         metadata={"axes": "ZYX", "PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5, "PhysicalSizeZ": 2},
     )
-    result = run_experiment(tmp_path / "exp", ZYX, ome_zarr=True)
+    result = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True)
     group = open_copy(result.output_folder, "a.ome.tif")
     meta = multiscale(group)
     assert [d["path"] for d in meta["datasets"]] == ["0", "1", "2"]
@@ -256,7 +256,7 @@ def test_channel_names_and_display_ranges(tmp_path):
         photometric="minisblack",
         metadata={"axes": "CYX", "Channel": {"Name": ["DAPI", "GFP"]}},
     )
-    result = run_experiment(tmp_path / "exp", prefill_mapping("CYX"), ome_zarr=True)
+    result = run_experiment(tmp_path / "exp", prefill_mapping("CYX"), convert_tiffs=True)
     omero = dict(open_copy(result.output_folder, "a.ome.tif").attrs)["omero"]
     assert [c["label"] for c in omero["channels"]] == ["DAPI", "GFP"]
     window = omero["channels"][1]["window"]
@@ -269,7 +269,7 @@ def test_missing_axis_becomes_length_one(tmp_path):
     data = random_data((2, 8, 8), seed=1)
     write_data(tmp_path / "exp/b.tif", data, axes="ZYX")
     result = run_experiment(
-        tmp_path / "exp", prefill_mapping("ZCYX"), ome_zarr=True, missing_as_singleton=True
+        tmp_path / "exp", prefill_mapping("ZCYX"), convert_tiffs=True, missing_as_singleton=True
     )
     group = open_copy(result.output_folder, "b.tif")
     assert group["0"].shape == (1, 2, 8, 8)
@@ -296,9 +296,9 @@ def copy_mtimes(output):
 
 @needs_zarr
 def test_manifest_records_the_copies(experiment):
-    result = run_experiment(experiment, ZYX, ome_zarr=True)
+    result = run_experiment(experiment, ZYX, convert_tiffs=True)
     manifest = read_manifest(result.manifest_path)
-    assert manifest.settings.ome_zarr
+    assert manifest.settings.convert_tiffs
     assert [f.ome_zarr_path for f in manifest.files] == [
         "ome_zarr/ctrl/a.ome.zarr",
         "ome_zarr/ctrl/b.ome.zarr",
@@ -309,31 +309,31 @@ def test_manifest_records_the_copies(experiment):
 
 @needs_zarr
 def test_rerun_keeps_unchanged_copies(experiment):
-    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    first = run_experiment(experiment, ZYX, convert_tiffs=True)
     before = copy_mtimes(first.output_folder)
-    second = run_experiment(experiment, ZYX, ome_zarr=True)
+    second = run_experiment(experiment, ZYX, convert_tiffs=True)
     assert second.read == second.converted == ()
     assert copy_mtimes(second.output_folder) == before
 
 
 @needs_zarr
 def test_changed_image_is_copied_again(experiment):
-    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    first = run_experiment(experiment, ZYX, convert_tiffs=True)
     path = experiment / "ctrl/b.tif"
     new_data = random_data((2, 16, 16), "uint8", seed=42)
     stat = os.stat(path)
     write_data(path, new_data, axes="ZYX")
     os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**9))
-    second = run_experiment(experiment, ZYX, ome_zarr=True)
+    second = run_experiment(experiment, ZYX, convert_tiffs=True)
     assert second.converted == ("ctrl/b.tif",)
     np.testing.assert_array_equal(open_copy(first.output_folder, "ctrl/b.tif")["0"][:], new_data)
 
 
 @needs_zarr
 def test_removed_and_excluded_images_lose_their_copies(experiment):
-    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    first = run_experiment(experiment, ZYX, convert_tiffs=True)
     (experiment / "ctrl/a.tif").unlink()
-    run_experiment(experiment, ZYX, ome_zarr=True, exclude=["drug/a.tif"])
+    run_experiment(experiment, ZYX, convert_tiffs=True, exclude=["drug/a.tif"])
     remaining = sorted(
         p.relative_to(first.output_folder).as_posix()
         for p in (first.output_folder / "ome_zarr").rglob("*.ome.zarr")
@@ -342,28 +342,48 @@ def test_removed_and_excluded_images_lose_their_copies(experiment):
 
 
 @needs_zarr
-def test_turning_copies_on_later_reads_pixels_but_keeps_rows(experiment):
+def test_switching_to_conversion_recomputes_the_tiff_rows_from_copies(experiment):
     first = run_experiment(experiment, ZYX)
     table = first.csv_path.read_bytes()
-    second = run_experiment(experiment, ZYX, ome_zarr=True)
+    second = run_experiment(experiment, ZYX, convert_tiffs=True)
     assert second.rebuild_reason is None
-    assert second.converted == ("ctrl/a.tif", "ctrl/b.tif", "drug/a.tif") == second.read
+    assert second.changed == ("ctrl/a.tif", "ctrl/b.tif", "drug/a.tif") == second.converted
+    # The copies hold the source values, so the rows are byte-identical.
     assert second.csv_path.read_bytes() == table
-    # A copy deleted by hand is written again.
+    # A copy deleted by hand is converted again, with its rows.
     import shutil
 
     shutil.rmtree(second.output_folder / "ome_zarr/drug/a.ome.zarr")
-    third = run_experiment(experiment, ZYX, ome_zarr=True)
-    assert third.converted == ("drug/a.tif",)
+    third = run_experiment(experiment, ZYX, convert_tiffs=True)
+    assert third.changed == ("drug/a.tif",) == third.converted
 
 
 @needs_zarr
-def test_turning_copies_off_keeps_them_untracked(experiment):
-    run_experiment(experiment, ZYX, ome_zarr=True)
+def test_histograms_are_computed_from_the_converted_copies(experiment, monkeypatch):
+    read_paths = []
+    original = run_module.iter_planes
+
+    def spy(path, *args, **kwargs):
+        read_paths.append(Path(path))
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(run_module, "iter_planes", spy)
+    run_experiment(experiment, ZYX, convert_tiffs=True)
+    copies = [p for p in read_paths if p.name.endswith(".ome.zarr")]
+    sources = [p for p in read_paths if p.suffix == ".tif"]
+    # Each TIFF is read once to convert it, and its copy once for the histograms.
+    assert len(sources) == len(copies) == 3
+    assert all(".run-" in str(p) for p in copies)
+
+
+@needs_zarr
+def test_switching_back_to_reading_tiffs_removes_the_copies(experiment):
+    run_experiment(experiment, ZYX, convert_tiffs=True)
     result = run_experiment(experiment, ZYX)
-    assert result.read == ()
+    assert result.changed == ("ctrl/a.tif", "ctrl/b.tif", "drug/a.tif")
+    assert result.converted == ()
     assert all(f.ome_zarr_path is None for f in read_manifest(result.manifest_path).files)
-    assert (result.output_folder / "ome_zarr/ctrl/a.ome.zarr").is_dir()
+    assert not list((result.output_folder / "ome_zarr").rglob("*.ome.zarr"))
 
 
 @needs_zarr
@@ -376,14 +396,14 @@ def test_failed_run_writes_no_copies(experiment, monkeypatch):
         return original(series, index, layout, path)
 
     monkeypatch.setattr(planes_module, "_read_page", broken)
-    result = run_experiment(experiment, ZYX, ome_zarr=True)
+    result = run_experiment(experiment, ZYX, convert_tiffs=True)
     assert not result.written
     assert not result.output_folder.exists()
 
 
 @needs_zarr
 def test_failed_rerun_keeps_earlier_copies(experiment, monkeypatch):
-    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    first = run_experiment(experiment, ZYX, convert_tiffs=True)
     before = copy_mtimes(first.output_folder)
     write_data(experiment / "ctrl/c.tif", random_data((2, 16, 16), "uint8", seed=7), axes="ZYX")
     original = planes_module._read_page
@@ -394,7 +414,7 @@ def test_failed_rerun_keeps_earlier_copies(experiment, monkeypatch):
         return original(series, index, layout, path)
 
     monkeypatch.setattr(planes_module, "_read_page", broken)
-    assert not run_experiment(experiment, ZYX, ome_zarr=True).written
+    assert not run_experiment(experiment, ZYX, convert_tiffs=True).written
     assert copy_mtimes(first.output_folder) == before
     assert sorted(p.name for p in first.output_folder.iterdir()) == [
         "ome_zarr",
@@ -405,7 +425,7 @@ def test_failed_rerun_keeps_earlier_copies(experiment, monkeypatch):
 
 @needs_zarr
 def test_table_is_the_same_with_or_without_copies(experiment, tmp_path):
-    with_copies = run_experiment(experiment, ZYX, ome_zarr=True, output_folder=tmp_path / "a")
+    with_copies = run_experiment(experiment, ZYX, convert_tiffs=True, output_folder=tmp_path / "a")
     without = run_experiment(experiment, ZYX, output_folder=tmp_path / "b")
     a = read_plane_histograms(with_copies.csv_path)
     b = read_plane_histograms(without.csv_path)
@@ -417,19 +437,19 @@ def test_table_is_the_same_with_or_without_copies(experiment, tmp_path):
 
 @needs_zarr
 def test_cli_option(experiment, capsys):
-    assert main(["run", str(experiment), "--axes", "ZYX", "--ome-zarr"]) == 0
-    assert "OME-Zarr copies written: 3 images" in capsys.readouterr().out
+    assert main(["run", str(experiment), "--axes", "ZYX", "--convert-tiff"]) == 0
+    assert "TIFF images converted to OME-Zarr: 3 images" in capsys.readouterr().out
 
 
 def test_old_manifest_without_ome_zarr_fields_loads(experiment):
     result = run_experiment(experiment, ZYX)
     data = json.loads(result.manifest_path.read_text(encoding="utf-8"))
-    del data["settings"]["ome_zarr"]
+    del data["settings"]["convert_tiffs"]
     for entry in data["files"]:
         del entry["ome_zarr_path"]
     result.manifest_path.write_text(json.dumps(data), encoding="utf-8")
     manifest = read_manifest(result.manifest_path)
-    assert not manifest.settings.ome_zarr and manifest.files[0].ome_zarr_path is None
+    assert not manifest.settings.convert_tiffs and manifest.files[0].ome_zarr_path is None
     assert run_experiment(experiment, ZYX).read == ()
 
 
@@ -485,7 +505,7 @@ def change(path, seed):
 @needs_zarr
 @pytest.mark.parametrize("failed", ["copy", "csv", "manifest"])
 def test_failed_publication_restores_earlier_copies(experiment, monkeypatch, failed):
-    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    first = run_experiment(experiment, ZYX, convert_tiffs=True)
     (experiment / "drug/a.tif").unlink()  # its copy is removed by the next run
     change(experiment / "ctrl/b.tif", 42)  # its copy is replaced by the next run
     before = output_state(first.output_folder)
@@ -504,18 +524,18 @@ def test_failed_publication_restores_earlier_copies(experiment, monkeypatch, fai
 
     monkeypatch.setattr(run_module.os, "replace", broken_replace)
     with pytest.raises(PermissionError, match="simulated"):
-        run_experiment(experiment, ZYX, ome_zarr=True)
+        run_experiment(experiment, ZYX, convert_tiffs=True)
     monkeypatch.undo()
     assert output_state(first.output_folder) == before
     assert not list(first.output_folder.glob(".run-*"))
-    retried = run_experiment(experiment, ZYX, ome_zarr=True)
+    retried = run_experiment(experiment, ZYX, convert_tiffs=True)
     assert retried.converted == ("ctrl/b.tif",) and retried.removed == ("drug/a.tif",)
     assert not (first.output_folder / "ome_zarr/drug/a.ome.zarr").exists()
 
 
 @needs_zarr
 def test_failed_table_write_keeps_earlier_copies(experiment, monkeypatch):
-    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    first = run_experiment(experiment, ZYX, convert_tiffs=True)
     change(experiment / "ctrl/b.tif", 42)
     before = output_state(first.output_folder)
 
@@ -524,14 +544,14 @@ def test_failed_table_write_keeps_earlier_copies(experiment, monkeypatch):
 
     monkeypatch.setattr(run_module, "write_plane_histograms", broken_csv)
     with pytest.raises(OSError, match="simulated"):
-        run_experiment(experiment, ZYX, ome_zarr=True)
+        run_experiment(experiment, ZYX, convert_tiffs=True)
     assert output_state(first.output_folder) == before
     assert not list(first.output_folder.glob(".run-*"))
 
 
 @needs_zarr
 def test_failed_rollback_keeps_the_earlier_copy_in_the_backup(experiment, monkeypatch):
-    first = run_experiment(experiment, ZYX, ome_zarr=True)
+    first = run_experiment(experiment, ZYX, convert_tiffs=True)
     change(experiment / "ctrl/b.tif", 42)
     old_copy = output_state(first.output_folder / "ome_zarr/ctrl/b.ome.zarr")
     original_replace = os.replace
@@ -544,7 +564,7 @@ def test_failed_rollback_keeps_the_earlier_copy_in_the_backup(experiment, monkey
 
     monkeypatch.setattr(run_module.os, "replace", broken_replace)
     with pytest.raises(RuntimeError, match="could not be fully restored"):
-        run_experiment(experiment, ZYX, ome_zarr=True)
+        run_experiment(experiment, ZYX, convert_tiffs=True)
     (staged,) = first.output_folder.glob(".run-*")
     backup = staged / "previous" / "ome_zarr" / "ctrl" / "b.ome.zarr"
     assert output_state(backup) == old_copy

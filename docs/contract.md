@@ -11,7 +11,8 @@ new `schema_version`.
 
 | Rule | Detail |
 |---|---|
-| Leaf folder | A folder that contains images and no subfolders. Only TIFFs directly in leaf folders are analysed. |
+| Images | TIFF files (`.tif`, `.tiff`, any case) and OME-Zarr images: folders whose names end in `.zarr` (any case, usually `.ome.zarr`). An OME-Zarr folder is one image, never a subfolder, and is not entered. Both may be mixed in one experiment. |
+| Leaf folder | A folder that contains images and no subfolders. Only images directly in leaf folders are analysed. |
 | Missing levels | A branch may stop early; the missing labels are `single`. If the root itself is the leaf, all three labels are `single`. |
 | Skipped levels | Not possible: a level only exists below its parent level. |
 | Reserved name | A folder named `single` (in any upper/lower case) is an error. |
@@ -35,6 +36,9 @@ must have a supported role. One confirmed mapping per experiment. Plane coordina
 | Missing axes | A file lacking axes the mapping has is read with those axes as length 1 only when the user confirmed this and only one arrangement fits; its coordinates for them are 0. |
 | Notebook readiness | Confirming a valid singleton mapping resolves its missing-axis error for running; folder, exclusion and all other metadata errors still block processing. |
 | Series | Only the first image series, at full-resolution level 0. A file with more than one series is an error. |
+| OME-Zarr axes | Taken from the OME-NGFF metadata (0.4 and 0.5; 0.1–0.3 fixed `t, c, z, y, x` or axis names): a time axis is T, a channel axis C, space axes named z, y, x are Z, Y, X; any other axis has no role. An OME-Zarr image with the experiment mapping's arrangement uses the mapping; others are matched by role: a Z, C or T axis the experiment lacks is allowed only with length 1, an axis without a role only with length 1, and experiment roles the image lacks follow the missing-axes rule. Otherwise `ome_zarr_axes_mismatch` is an error. |
+| OME-Zarr images | Only level 0 (the first dataset of the first multiscales image) is read. A store with more than one image (several multiscales, a bioformats2raw folder with several series, a plate, a well with several fields) is an error (`multiple_series`). |
+| Experiment mapping | Defined on the TIFF arrangement when the experiment has TIFF files; in an experiment of OME-Zarr images only, on their arrangement with the most axes. |
 | Channel names, significant bits | Recorded in the run manifest when metadata provides them; not part of the CSV. Channel names that differ at the same channel index are a warning. |
 
 ## 3. Pixel types
@@ -130,8 +134,8 @@ A zero or non-finite scale is an error with a plain-language message.
 
 | Severity | Situations | Effect |
 |---|---|---|
-| Error | Mixed dtypes; unreadable TIFF (header or pixel data) in a leaf folder that is not excluded; every image excluded; OME-Zarr copies requested without the `zarr` extra; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane over the memory limit; folder named `single`; sibling folders differing only in case; folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
-| Warning | Non-TIFF files; empty folders; TIFFs outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image sizes with a valid mapping; planes without finite pixels while others remain | Processing continues; the item is reported |
+| Error | Mixed dtypes; unreadable TIFF (header or pixel data) or OME-Zarr folder in a leaf folder that is not excluded; OME-Zarr images, or converting TIFF images to OME-Zarr, without the `zarr` extra; OME-Zarr images whose declared axes do not fit the experiment's roles; every image excluded; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane over the memory limit; folder named `single`; sibling folders differing only in case; folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
+| Warning | Files that are not images; empty folders; images outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image sizes with a valid mapping; planes without finite pixels while others remain | Processing continues; the item is reported |
 
 Every message states what happened in plain language, lists the affected paths, and
 suggests an action. Technical details go to the diagnostic log.
@@ -142,8 +146,8 @@ UTF-8 JSON next to `plane_histograms.csv`, written after the table and only when
 succeeded.
 
 Both files are prepared in a temporary folder before either earlier output is replaced.
-OME-Zarr copies (§10), when requested, are written to the same temporary folder and
-published first, so the manifest never names a copy that is not in place. Earlier files
+OME-Zarr copies of TIFF images (§10), when requested, are written to the same temporary
+folder and published first, so the manifest never names a copy that is not in place. Earlier files
 are backed up before publication; earlier copies that are replaced or removed are moved
 into the backup folder. A caught replacement failure restores the
 previous state, including the absence of files on a first run. If restoration fails, the
@@ -161,16 +165,22 @@ file's schema or statistical interpretation.
 | `written_at` | UTC time of writing, ISO 8601. |
 | `experiment_root` | Absolute path of the experiment folder, for information. |
 | `dtype` | Pixel type of the experiment. |
-| `settings` | `bin_count`, `memory_limit` (bytes), `missing_as_singleton`, `exclude` (sorted relative paths), `ome_zarr` (whether copies are written; false when absent). |
+| `settings` | `bin_count`, `memory_limit` (bytes), `missing_as_singleton`, `exclude` (sorted relative paths), `convert_tiffs` (whether TIFF images are converted to OME-Zarr and processed from the copies; false when absent). |
 | `axis_mapping` | `axes` (file axis labels) and `roles` (`X`, `Y`, `Z`, `C`, `T` or null per axis). |
 | `labels` | One entry per leaf folder: `folder` (relative path, `.` for the root) and its three labels. |
-| `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count`, `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata), `ome_zarr_path` (the copy relative to the output folder; null when no copy is tracked or the key is absent). |
+| `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count`, `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata), `ome_zarr_path` (for a TIFF converted to OME-Zarr, the copy relative to the output folder; null otherwise or when the key is absent). For an OME-Zarr image, `size` is the total size of its files and `mtime_ns` the time of its newest file. |
 | `csv_sha256` | SHA-256 of the table written with this manifest. |
 | `versions` | Versions of `morphobricks-preprocessing`, `numpy`, `tifffile` and Python. |
 
 Channel names and significant bits come from OME metadata and are for information only.
 
-## 10. OME-Zarr copies (optional)
+## 10. Converting TIFF images to OME-Zarr (optional)
+
+When `convert_tiffs` is on, every TIFF image is converted to OME-Zarr in the output folder
+and its rows are computed from the converted copy, like for any OME-Zarr image. The copy
+holds the source values, so the rows equal those of reading the TIFF directly; the
+`source_relative_path` of the rows stays the TIFF's path. OME-Zarr input images are never
+converted.
 
 | Rule | Detail |
 |---|---|
@@ -182,4 +192,5 @@ Channel names and significant bits come from OME metadata and are for informatio
 | Scale | Physical pixel sizes, z-step and time step from OME or ImageJ metadata, with OME-NGFF units; 1 when unknown |
 | Channels | `omero` block with channel names from metadata (or `Channel <i>`) and each channel's observed minimum and maximum as display window |
 | Updates | Copies of unchanged images are kept, of new or changed images rewritten, and of images no longer analysed removed; a failed run leaves the earlier copies as they were (see §9 for publication) |
-| Option off | Existing copies are kept but no longer updated or recorded in the manifest |
+| Switching | Turning conversion on or off recomputes every TIFF row; turning it off removes the copies the manifest recorded |
+| Missing copy | A converted TIFF whose copy was deleted counts as changed and is converted again |

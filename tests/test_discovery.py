@@ -143,7 +143,7 @@ def test_non_tiff_files_are_warned_and_skipped(tmp_path):
     found = issue(result, "non_tiff_file")
     assert found.severity is Severity.WARNING
     assert found.paths == ("cond/image.png", "cond/notes.txt", "readme.md")
-    assert "3 files are not TIFF images" in found.message
+    assert "3 files are not images (TIFF or OME-Zarr)" in found.message
     assert result.images == ("cond/a.tif",)
 
 
@@ -366,6 +366,8 @@ def test_all_warnings_together_keep_a_stable_order(tmp_path):
 def test_issue_text_lists_paths_and_action(tmp_path):
     make_tree(tmp_path, ["cond/a.tif", "cond/notes.txt"])
     text = str(issue(discover_experiment(tmp_path), "non_tiff_file"))
-    assert text.startswith("Warning: 1 file is not a TIFF image and will not be analysed.")
+    assert text.startswith(
+        "Warning: 1 file is not an image (TIFF or OME-Zarr) and will not be analysed."
+    )
     assert "  - cond/notes.txt" in text
     assert "Suggested action:" in text

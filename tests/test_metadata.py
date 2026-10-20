@@ -97,7 +97,7 @@ def test_multiple_series_are_an_error(tmp_path):
     found = issue(report.issues, "multiple_series")
     assert found.severity is Severity.ERROR
     assert found.paths == ("multi.tif",)
-    assert "separate image file" in found.action
+    assert "separate image" in found.action
 
 
 def test_pyramid_levels_are_not_separate_series(tmp_path):
