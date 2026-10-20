@@ -151,7 +151,8 @@ OME-Zarr chunks may also be read a few rows at a time. Each plane's histogram st
 a first pass over its blocks finds the exact extrema and a second pass counts the pixels
 into bins with the same formulas, so the row equals the row of the whole plane (8- and
 16-bit integer planes need only one pass, counting every possible value). The switch is
-never silent: the run reports the images as a warning and the manifest records it. A plane
+never silent: the notebook's "What will happen" box names the images before the run
+(question 16), the run reports them as a warning and the manifest records it. A plane
 stored compressed in one piece must be decoded whole and cannot be split; it, and any plane
 whose smallest block is still over the limit, stops the run with a clear error. Never
 convert source values.
@@ -294,7 +295,8 @@ API, CLI). The notebook and CLI only call the API.
   histograms are computed in two passes over the blocks with results identical to whole
   planes (`histogram.compute_block_histogram`). OME-Zarr copies of such planes are written
   block by block, with their smaller levels built from the stored level above
-  (`zarr_export`). The axis preview shows them reduced. *Implemented, see question 15.*
+  (`zarr_export`). The axis preview shows them reduced. Step 3's "What will happen" box
+  names these images before the run. *Implemented, see questions 15 and 16.*
 
 ## 11. Tests and acceptance criteria
 
@@ -440,3 +442,18 @@ Raised during review; to be decided before the milestones that need them:
     4,096 pixels per side), and its caption says so. The CSV stays at schema version 1;
     the manifest gains an optional key. Built on main, which already includes the
     OME-Zarr work (PR #5).*
+16. Should the notebook say before the run which images will be read in blocks, and which
+    cannot be read within the memory limit at all?
+    *Decided (October 2026): yes, in step 3's "What will happen" box, once the axis roles
+    are confirmed. Images read in blocks get one more bullet in the list (information
+    only: the histograms are the same, reading takes longer, and raising the memory limit
+    in Settings reads them whole), with their names folded behind "Show N more". Images
+    that cannot be read within the limit, not even in blocks, get a red card below the
+    list saying the run will stop, how much memory they need, and what to do (raise the
+    limit, exclude them in step 1, or save them again tiled, uncompressed or as
+    OME-Zarr). Run stays enabled: the run reports the same `plane_over_memory_limit`
+    error, and the "Before you run" checklist keeps only the folder, label and axis
+    steps. The notice is worked out from the headers only (`planes.plane_layout`) and
+    kept until the checked folder, the axis roles, the memory limit or the bin count
+    change. Nothing else changes: messages, validation severities and output formats
+    stay as in question 15.*

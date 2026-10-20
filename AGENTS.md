@@ -452,7 +452,9 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
    updates with the choice ("3 depth slices, numbered z = 0 to 2; each becomes its own
    plane"), and a summary says how many planes of which size each image gives.
 4. **Show what will happen before it happens.** "What will happen" lists the output folder,
-   the files to be written, and whether an earlier run exists and what will be reread. A
+   the files to be written, whether an earlier run exists and what will be reread, and
+   (once the axis roles are confirmed, from the headers only, cached) which images will
+   be read in blocks or cannot be read within the memory limit. A
    live line under the output folder shows where results go and warns if that is inside
    the experiment.
 5. **Recommended settings first.** A ticked "Use the recommended settings" hides the
@@ -547,11 +549,11 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 
 - **Done:** Milestones 0–5 (contract, scanner and validator, axis review, histogram engine,
   CSV and reruns, notebook + CLI + user guide), the notebook redesign plus feedback
-  round (PRs #6 and #7), and OME-Zarr input with optional TIFF -> OME-Zarr conversion
-  (PR #5).
-- **In review (local):** planes over the memory limit read in blocks (plan §12 question 15).
-- **Not yet done for large planes:** the step-3 "What will happen" box does not yet say
-  which images will be read in blocks before the run (the warning comes with the run).
+  round (PRs #6 and #7), OME-Zarr input with optional TIFF -> OME-Zarr conversion
+  (PR #5), and planes over the memory limit read in blocks (PR #12, plan §12 question 15).
+- **In review:** the step-3 "What will happen" box names, before the run, the
+  images read in blocks and those that cannot be read within the memory limit (plan §12
+  question 16).
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;
   - the optional `jl-hidecode` JupyterLab extension, which keeps code cells collapsed. It

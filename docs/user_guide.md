@@ -154,7 +154,10 @@ results or comparing another grouping.
 3. **Compute the histograms.**
    - **Before you run** lists anything still to do.
    - **What will happen** names the output folder and files, and says whether an earlier
-     run was found and what will be read.
+     run was found and what will be read. Once the axis roles are confirmed it also names
+     the images whose planes are too large for the memory limit and will be read in
+     blocks, and, in a red box, any image that cannot be read within the limit at all
+     (the run would stop; raise the limit or exclude the image).
    - The recommended settings suit most experiments. Untick **Use the recommended
      settings** to change them:
      - *Bins per plane:* one bin per possible value for 8- and 16-bit images (exact

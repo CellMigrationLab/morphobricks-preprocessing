@@ -42,12 +42,27 @@ except ImportError as exc:  # pragma: no cover - depends on the environment
     ) from exc
 
 from . import notebook_style as ui
-from .axes import AxisMapping, axis_length_ranges, axis_name, file_mapping_for, review_axes
+from .axes import (
+    AxisMapping,
+    AxisReview,
+    axis_length_ranges,
+    axis_name,
+    file_mapping_for,
+    review_axes,
+)
 from .csv_io import OUTPUT_FILENAME, CsvFormatError, read_plane_histograms
 from .discovery import check_output_folder, default_output_folder
 from .dtypes import MAX_BIN_COUNT, MIN_FLOAT_BIN_COUNT, default_bin_count, is_integer
 from .manifest import MANIFEST_FILENAME, ManifestFormatError, read_manifest
-from .planes import DEFAULT_MEMORY_LIMIT, Plane, PlaneReadError, format_bytes, read_plane
+from .planes import (
+    DEFAULT_MEMORY_LIMIT,
+    Plane,
+    PlaneLayout,
+    PlaneReadError,
+    format_bytes,
+    plane_layout,
+    read_plane,
+)
 from .pooling import NoValidPixelsError, PooledHistogram
 from .records import group_records
 from .report import LEVEL_NAMES, group_summaries, group_table, issue_counts
@@ -86,6 +101,9 @@ LEVEL_OPTIONS = [
 EXCLUDABLE_CODES = ("unreadable_tiff", "multiple_series", "unsupported_dtype")
 
 _SKIPPED_CODES = ("non_tiff_file", "tiff_outside_leaf", "empty_folder")
+
+# "What will happen" is a short summary, so its lists of images fold early.
+_PLAN_PATHS = 5
 
 CONVERSION_OPTIONS = [
     ("Read the images directly (recommended; nothing extra is saved)", "read"),
@@ -132,6 +150,7 @@ class PreprocessingNotebook:
         self.log = _LogCapture()
         self._checked_folder = ""
         self._preview_shown = False
+        self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None
         self._build_folder_step(str(experiment_folder), str(output_folder))
         self._build_axis_step()
         self._build_run_step()
@@ -1230,6 +1249,7 @@ class PreprocessingNotebook:
             self.run_next.value = ""
         pre = self.preflight
         folder_ok = pre is not None and pre.ok
+        review = None
         if pre is not None and self.confirmed_mapping is not None:
             # Axis confirmation can resolve a preflight missing-axes error, but
             # folder, exclusion and other metadata errors must still block the run.
@@ -1260,10 +1280,80 @@ class PreprocessingNotebook:
             title = ui.status("ok", "Ready to run.")
         self.readiness.value = title + ui.checklist(items)
         self.run_button.disabled = bool(missing)
-        self.plan.value = self._plan_html()
+        self.plan.value = self._plan_html(review if folder_ok else None)
         self._refresh_conversion()
 
-    def _plan_html(self) -> str:
+    def _plan_layouts(self, review: AxisReview) -> dict[str, PlaneLayout]:
+        """Return how each image's planes are read, from the headers only.
+
+        Opening every header takes a moment on large experiments, and this runs on
+        every settings edit, so the layouts are kept until the checked folder, the
+        axis roles, the memory limit or the bin count change.
+        """
+        bins = self.bins.value or None
+        key = (
+            self.confirmed_mapping,
+            self.missing_as_singleton.value,
+            self._memory_limit(),
+            bins,
+        )
+        cached = self._layouts_cache
+        # A new check of the folder gives a new Preflight, even for the same folder.
+        if cached is not None and cached[0][0] is self.preflight and cached[0][1:] == key:
+            return cached[1]
+        root = self.preflight.discovery.root
+        layouts = {}
+        for rel, mapping in sorted(review.file_mappings.items()):
+            try:
+                layouts[rel] = plane_layout(
+                    root / rel, mapping, memory_limit=self._memory_limit(), bin_count=bins
+                )
+            except PlaneReadError:
+                continue  # the run reports these images as unsupported_layout
+        self._layouts_cache = ((self.preflight, *key), layouts)
+        return layouts
+
+    def _memory_plan(self, review: AxisReview) -> tuple[str, str]:
+        """Return the "read in blocks" bullet and the "cannot be read" card, if any."""
+        layouts = self._plan_layouts(review)
+        limit = format_bytes(self._memory_limit())
+        blocked = {rel: lay for rel, lay in layouts.items() if lay.fits and lay.in_blocks}
+        over = {rel: lay for rel, lay in layouts.items() if not lay.fits}
+        line = card = ""
+        if blocked:
+            largest = format_bytes(max(lay.memory_estimate for lay in blocked.values()))
+            line = (
+                f"<b>{plural(len(blocked), 'image')}</b> {'has' if len(blocked) == 1 else 'have'} "
+                f"planes too large to read whole within the memory limit of {limit} (they need "
+                f"up to {largest}), so they will be read in blocks. The histograms are exactly the "
+                "same; reading takes longer. To read them whole, raise the memory limit to "
+                f"{largest} or more in <b>Settings</b> above (untick <b>Use the recommended "
+                "settings</b>), "
+                "if this computer has enough memory."
+                + ui.path_list(list(blocked), limit=_PLAN_PATHS)
+            )
+        if over:
+            need = format_bytes(max(lay.min_memory_estimate for lay in over.values()))
+            card = ui.status(
+                "error",
+                f"{plural(len(over), 'image')} cannot be read within the memory limit; "
+                "the run will stop.",
+                [
+                    f"The smallest part of a plane that can be read on its own needs up to "
+                    f"{need}, more than the limit of {limit}. A plane stored compressed in "
+                    "one piece has to be decoded whole."
+                    + ui.path_list(list(over), limit=_PLAN_PATHS),
+                    f"<b>What to do:</b> raise the memory limit to {need} or more in "
+                    "<b>Settings</b> above, if this computer has enough memory, or exclude "
+                    "these images in step 1. "
+                    "Saving them again as tiled or uncompressed TIFF files, or as OME-Zarr, "
+                    "also works.",
+                ],
+                raw=True,
+            )
+        return line, card
+
+    def _plan_html(self, review: AxisReview | None = None) -> str:
         folder = ui.clean_path(self.folder.value)
         if self.preflight is None or not folder:
             return "<div class='mb-help'>Check the experiment folder in step 1 first.</div>"
@@ -1294,6 +1384,11 @@ class PreprocessingNotebook:
                 f"<b>{copies}</b> first ({settings}); their histograms are computed from the "
                 "copies. Copies of unchanged images are kept."
             )
+        # Which images are read in blocks depends on the axis roles, so it is only
+        # worked out once they are confirmed (``review`` is None until then).
+        blocks_line, over_card = self._memory_plan(review) if review is not None else ("", "")
+        if blocks_line:
+            lines.append(blocks_line)
         manifest = output / MANIFEST_FILENAME
         if self.force_rebuild.value:
             lines.append("Every image will be read (recompute every row is ticked).")
@@ -1311,7 +1406,7 @@ class PreprocessingNotebook:
         else:
             lines.append("No earlier run was found: every image will be read.")
         lines.append("Nothing is written unless the whole run succeeds.")
-        return "<ul>" + "".join(f"<li>{line}</li>" for line in lines) + "</ul>"
+        return "<ul>" + "".join(f"<li>{line}</li>" for line in lines) + "</ul>" + over_card
 
     def run(self) -> RunResult | None:
         """Compute or update the histogram table (pass 2) and show what happened."""
