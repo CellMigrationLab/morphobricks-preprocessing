@@ -27,6 +27,7 @@ import tifffile
 
 from .axes import AxisMapping
 from .csv_io import SCHEMA_VERSION
+from .zarr_export import ConversionSettings
 
 MANIFEST_FILENAME = "run_manifest.json"
 MANIFEST_VERSION = "1"
@@ -54,6 +55,9 @@ class RunSettings:
     convert_tiffs
         Whether TIFF images are converted to OME-Zarr in the output folder and
         their histograms computed from the converted copies.
+    conversion
+        How the copies are written (chunk size, compression, smaller levels);
+        only used when ``convert_tiffs`` is on. It does not change any row.
     """
 
     bin_count: int
@@ -61,6 +65,7 @@ class RunSettings:
     missing_as_singleton: bool = False
     exclude: tuple[str, ...] = ()
     convert_tiffs: bool = False
+    conversion: ConversionSettings = field(default_factory=ConversionSettings)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "exclude", tuple(sorted(set(self.exclude))))
@@ -187,6 +192,7 @@ class RunManifest:
                 "missing_as_singleton": self.settings.missing_as_singleton,
                 "exclude": list(self.settings.exclude),
                 "convert_tiffs": self.settings.convert_tiffs,
+                "conversion": self.settings.conversion.to_dict(),
             },
             "axis_mapping": {"axes": self.mapping.axes, "roles": list(self.mapping.roles)},
             "labels": [
@@ -229,6 +235,7 @@ class RunManifest:
                     missing_as_singleton=bool(settings["missing_as_singleton"]),
                     exclude=tuple(str(p) for p in settings["exclude"]),
                     convert_tiffs=bool(settings.get("convert_tiffs", False)),
+                    conversion=ConversionSettings.from_dict(settings.get("conversion")),
                 ),
                 mapping=AxisMapping(str(mapping["axes"]), tuple(mapping["roles"])),
                 files=tuple(_file_entry(f) for f in data["files"]),

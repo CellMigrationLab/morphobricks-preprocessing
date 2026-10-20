@@ -22,7 +22,10 @@ from morphobricks_preprocessing import run as run_module
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.zarr_export import (
     PYRAMID_TARGET,
+    ConversionSettings,
     downsample,
+    estimate_conversion,
+    free_space,
     is_copy_path,
     pyramid_shapes,
 )
@@ -75,6 +78,74 @@ def test_pyramid_shapes():
     assert pyramid_shapes((1100, 700)) == [(1100, 700), (550, 350), (275, 175)]
     assert max(pyramid_shapes((3000, 10))[-1]) <= PYRAMID_TARGET
     assert len(pyramid_shapes((10**7, 10**7))) == 8
+
+
+def test_pyramid_shapes_with_a_number_of_levels():
+    assert pyramid_shapes((1100, 700), 0) == [(1100, 700)]
+    assert pyramid_shapes((100, 80), 2) == [(100, 80), (50, 40), (25, 20)]
+    assert pyramid_shapes((2, 2), 5) == [(2, 2), (1, 1)]  # stops at a single pixel
+
+
+# Conversion settings --------------------------------------------------------------------
+
+
+def test_conversion_settings_defaults_and_round_trip():
+    default = ConversionSettings()
+    assert (default.chunk_size, default.compression, default.compression_level) == (1024, "lz4", 5)
+    assert default.pyramid_levels is None
+    custom = ConversionSettings(256, "zstd", 9, 3)
+    assert ConversionSettings.from_dict(custom.to_dict()) == custom
+    assert ConversionSettings.from_dict(None) == default
+    assert ConversionSettings.from_dict({"compression": "none"}).compression == "none"
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"chunk_size": 8},
+        {"chunk_size": 9000},
+        {"compression": "gzip"},
+        {"compression_level": 0},
+        {"compression_level": 10},
+        {"pyramid_levels": -1},
+        {"pyramid_levels": 8},
+    ],
+)
+def test_conversion_settings_reject_bad_values(kwargs):
+    with pytest.raises(ValueError):
+        ConversionSettings(**kwargs)
+
+
+def test_conversion_settings_describe():
+    assert ConversionSettings().describe() == (
+        "chunks of 1024 x 1024 px, Blosc LZ4 level 5, smaller levels until a plane fits 512 px"
+    )
+    assert ConversionSettings(256, "none", 5, 0).describe() == (
+        "chunks of 256 x 256 px, no compression, no smaller levels"
+    )
+
+
+def test_estimate_conversion(tmp_path):
+    from morphobricks_preprocessing import TiffMetadata
+
+    path = write_data(tmp_path / "a.tif", random_data((2, 1024, 600), "uint16"), axes="ZYX")
+    files = [
+        TiffMetadata("a.tif", True, (2, 1024, 600), np.dtype("uint16"), "ZYX", 1, 2),
+        TiffMetadata(
+            "b.ome.zarr", True, (2, 8, 8), np.dtype("uint16"), "ZYX", 1, 0, kind="ome-zarr"
+        ),
+        TiffMetadata("bad.tif", False),
+    ]
+    level0 = 2 * 1024 * 600 * 2
+    flat = estimate_conversion(tmp_path, files, ConversionSettings(pyramid_levels=0))
+    assert (flat.image_count, flat.copy_bytes) == (1, level0)
+    assert flat.source_bytes == path.stat().st_size
+    pyramid = estimate_conversion(tmp_path, files)  # 1024 x 600 -> 512 x 300
+    assert pyramid.copy_bytes == level0 + 2 * 512 * 300 * 2
+
+
+def test_free_space_uses_the_nearest_existing_folder(tmp_path):
+    assert free_space(tmp_path / "not" / "yet" / "there") == free_space(tmp_path) > 0
 
 
 def test_downsample_integers_round_and_keep_type():
@@ -568,3 +639,59 @@ def test_failed_rollback_keeps_the_earlier_copy_in_the_backup(experiment, monkey
     (staged,) = first.output_folder.glob(".run-*")
     backup = staged / "previous" / "ome_zarr" / "ctrl" / "b.ome.zarr"
     assert output_state(backup) == old_copy
+
+
+# Conversion settings in a run ------------------------------------------------------------
+
+
+@needs_zarr
+@pytest.mark.parametrize(
+    ("settings", "compressor"),
+    [
+        (ConversionSettings(), {"cname": "lz4", "clevel": 5}),
+        (
+            ConversionSettings(compression="zstd", compression_level=9),
+            {"cname": "zstd", "clevel": 9},
+        ),
+        (ConversionSettings(compression="none"), None),
+    ],
+)
+def test_copies_follow_the_conversion_settings(tmp_path, settings, compressor):
+    data = random_data((2, 100, 80), "uint16")
+    write_data(tmp_path / "exp/a.tif", data, axes="ZYX")
+    custom = ConversionSettings(
+        chunk_size=32,
+        compression=settings.compression,
+        compression_level=settings.compression_level,
+        pyramid_levels=2,
+    )
+    result = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True, conversion=custom)
+    group = open_copy(result.output_folder, "a.tif")
+    assert sorted(group.array_keys()) == ["0", "1", "2"]
+    assert group["0"].chunks == (1, 32, 32) and group["2"].shape == (2, 25, 20)
+    np.testing.assert_array_equal(group["0"][:], data)
+    zarray = json.loads(
+        (result.output_folder / "ome_zarr/a.ome.zarr/0/.zarray").read_text(encoding="utf-8")
+    )
+    if compressor is None:
+        assert zarray["compressor"] is None
+    else:
+        assert {k: zarray["compressor"][k] for k in compressor} == compressor
+    assert read_manifest(result.manifest_path).settings.conversion == custom
+
+
+@needs_zarr
+def test_changed_conversion_settings_rewrite_the_copies(experiment):
+    first = run_experiment(experiment, ZYX, convert_tiffs=True)
+    table = first.csv_path.read_bytes()
+    same = run_experiment(experiment, ZYX, convert_tiffs=True)
+    assert same.converted == ()
+    changed = run_experiment(
+        experiment, ZYX, convert_tiffs=True, conversion=ConversionSettings(chunk_size=16)
+    )
+    assert changed.converted == ("ctrl/a.tif", "ctrl/b.tif", "drug/a.tif")
+    assert changed.csv_path.read_bytes() == table  # same pixels, same rows
+    assert open_copy(changed.output_folder, "ctrl/a.tif")["0"].chunks == (1, 16, 16)
+    # Without conversion the settings are recorded but change nothing.
+    plain = run_experiment(experiment, ZYX, conversion=ConversionSettings(chunk_size=64))
+    assert plain.converted == ()

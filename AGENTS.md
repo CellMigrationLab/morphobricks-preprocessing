@@ -70,7 +70,8 @@ src/morphobricks_preprocessing/
   cli.py, __main__  `morphobricks-preprocessing check|run` (also `python -m morphobricks_preprocessing`)
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array and axis
                     letters), zarr 2/3 helpers, canonical_dtype; needs the `zarr` extra
-  zarr_export.py    TIFF -> OME-Zarr conversion (OmeZarrWriter, OME-NGFF 0.4, plane by plane)
+  zarr_export.py    TIFF -> OME-Zarr conversion (OmeZarrWriter, OME-NGFF 0.4, plane by plane),
+                    ConversionSettings (chunk size, compression, pyramid levels), estimate_conversion
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
   notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra)
 notebooks/MorphoBricks_Preprocessing.ipynb   thin notebook: every code cell calls notebook_ui only
@@ -255,7 +256,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 |---|---|
 | Binning | Per-plane min–max, same bin count per experiment, pooled counts for groups (binning study) |
 | Core dependencies | `numpy` and `tifffile` only. `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
-| OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: radio buttons in step 3's Settings card (not one of the recommended settings); CLI `--convert-tiff` |
+| OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
 | Channel names (Q1) | Manifest only (from OME), warning `channel_names_differ`; CSV stays at schema 1 |
@@ -264,7 +265,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Significant bits (Q4) | Manifest only, information only; `bit_depth` and binning unchanged |
 | Corrupt files (Q6) | Explicit exclusion list, recorded in manifest, rows removed |
 | Notebook target | Local Jupyter (not Colab-first) |
-| CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--memory-limit 2GiB`, `--missing-as-singleton`, `--force-rebuild`, `--log`. Axis roles are always stated explicitly, never taken silently from metadata. Exit 1 on errors |
+| CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--memory-limit 2GiB`, `--missing-as-singleton`, `--force-rebuild`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata. Exit 1 on errors |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
 | Paths and filenames in widget HTML and notebook text | **`<b>…</b>` / `**…**`, never `<code>` or inline code** |

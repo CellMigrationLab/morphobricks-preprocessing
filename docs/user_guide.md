@@ -155,13 +155,25 @@ confirmed. If you change the experiment folder, everything after it is reset.
      - *Memory limit:* the most working memory one plane may need (default 1 GiB). Raise it
        only if the computer has enough memory.
      - *Recompute every row:* start from scratch instead of updating the earlier table.
-   - **TIFF images:** **Read the TIFF images directly** (the default) or **Convert the TIFF
-     images to OME-Zarr first, then process the copies**. Converting writes every TIFF image
-     in OME-Zarr format to the **ome_zarr** folder of the output (see §6) and computes its
-     histograms from that copy, like for any OME-Zarr image; the results are the same.
-     OME-Zarr images are always read directly. The choice is greyed out, with the install
-     command below it, when the `zarr` extra is not installed. **What will happen** says
-     which images are converted, and a tile counts the conversions.
+   - **(Optional) Image conversion:**
+     - **Read the images directly** (the default and recommended choice) reads TIFF and
+       OME-Zarr images as they are and saves nothing extra.
+     - **Convert the TIFF images to OME-Zarr, then process the converted copies** writes
+       every TIFF image in OME-Zarr format to the **ome_zarr** folder of the output (see
+       §6) and computes its histograms from that copy, like for any OME-Zarr image; the
+       results are the same. OME-Zarr images are never converted.
+     - When converting, an amber box warns that the images are stored again, so the space
+       they occupy is duplicated. It shows the size of the TIFF images, the most the copies
+       may need (before compression) and the free space on the output drive. It turns red
+       if the space may not be enough, but you can still run.
+     - **Conversion settings** (shown only when converting): **Chunk size** (the size of the
+       stored tiles, default 1,024 pixels), **Compression** (lossless: LZ4 by default,
+       Zstandard for smaller files, or none) with its **level**, and **Pyramid levels**
+       (smaller copies for fast viewing: automatic, none, or a fixed number). Changing them
+       later writes the copies again; the histograms do not change.
+     - The choice is greyed out, with the install command below it, when the `zarr` extra
+       is not installed. **What will happen** says which images are converted and with
+       which settings, and a tile counts the conversions.
    - Click **Compute histograms**. A progress bar shows which image is being read. Tiles
      then summarise planes written, images read, kept, new, changed, removed and excluded.
      Nothing is written unless the whole run succeeds. **Technical details (log)** holds
@@ -210,7 +222,10 @@ without being stated. Other options:
 | `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` |
 | `--missing-as-singleton` | Confirm that images lacking some dimensions have one plane along them |
 | `--force-rebuild` | Recompute every row |
-| `--convert-tiff` | Convert the TIFF images to OME-Zarr first and process the copies (needs the `zarr` extra) |
+| `--convert-tiff` | Convert the TIFF images to OME-Zarr first and process the copies (needs the `zarr` extra); prints the disk space needed |
+| `--chunk-size PX` | With `--convert-tiff`: tile size of the copies (16 to 8192, default 1024) |
+| `--compression lz4\|zstd\|none`, `--compression-level N` | With `--convert-tiff`: lossless compression (default lz4, level 5) |
+| `--pyramid-levels auto\|none\|N` | With `--convert-tiff`: smaller levels for viewing (default auto) |
 | `--log FILE` | Write technical details to a file |
 
 Both commands exit with status 1 when an error blocks processing.

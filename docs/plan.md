@@ -269,8 +269,9 @@ API, CLI). The notebook and CLI only call the API.
   and compute its histograms from the copy, like any OME-Zarr image (`zarr_export`). The
   copies keep the source values at level 0; smaller levels (2 x 2 means) are for viewers.
   They follow the incremental rules of §7 and are published with the table and manifest,
-  so a failed run leaves the earlier copies in place. In the notebook the choice is in
-  step 3's Settings card. *Implemented, see question 12.*
+  so a failed run leaves the earlier copies in place. In the notebook the choice and the
+  conversion settings (chunk size, compression, pyramid levels) are in step 3's
+  "(Optional) Image conversion" card. *Implemented, see questions 12 and 13.*
 - **Later:** chunked processing for planes above the memory limit.
 
 ## 11. Tests and acceptance criteria
@@ -367,3 +368,17 @@ Raised during review; to be decided before the milestones that need them:
     values at level 0. Chunked processing of planes above the memory limit is not part of
     it. The CSV schema stays at version 1; the manifest gains optional keys. Delivered as a
     draft PR for separate testing.*
+13. Notebook feedback on the conversion option: where does it go, and what can the user set?
+    *Decided (October 2026): a separate step-3 card, "(Optional) Image conversion", after
+    the Settings card and not titled after TIFF images. Reading the images directly is the
+    default and recommended choice and saves nothing extra. Choosing to convert shows the
+    conversion settings — chunk size (16 to 8,192 px, default 1,024), lossless
+    compression (Blosc LZ4 default, Blosc Zstandard or none, level 1–9) and pyramid levels
+    (automatic, none, or 1–7) — and a disk-space warning that the images are stored again
+    in the converted format, so the space they occupy is duplicated. The warning shows the
+    TIFF images' size, an upper estimate of the copies (uncompressed, with the smaller
+    levels) and the free space on the output drive; it turns red when the estimate exceeds
+    the free space but never blocks the run. Help is given as separate points. Overlap is
+    not offered: OME-Zarr chunks never overlap; overlap belongs to patch extraction. The
+    settings are recorded in the manifest; changing them rewrites the copies (rows stay
+    the same). The CLI offers the same settings.*

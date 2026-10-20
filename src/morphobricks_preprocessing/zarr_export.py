@@ -22,7 +22,8 @@ from __future__ import annotations
 import logging
 import math
 import os
-from collections.abc import Sequence
+import shutil
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from xml.etree import ElementTree
@@ -151,10 +152,187 @@ def read_physical_sizes(path: str | os.PathLike) -> PhysicalSizes:
     return PhysicalSizes()
 
 
-def pyramid_shapes(plane_shape: tuple[int, int]) -> list[tuple[int, int]]:
-    """Return (Y, X) of every level: level 0, then halved until it fits ``PYRAMID_TARGET``."""
+COMPRESSIONS = {
+    "lz4": "Blosc LZ4 (fast)",
+    "zstd": "Blosc Zstandard (smaller, slower)",
+    "none": "no compression",
+}
+"""Lossless compressions offered for converted images; pixel values never change."""
+
+MIN_CHUNK_SIZE = 16
+MAX_CHUNK_SIZE = 8192
+
+
+@dataclass(frozen=True)
+class ConversionSettings:
+    """How TIFF images are written when they are converted to OME-Zarr.
+
+    Attributes
+    ----------
+    chunk_size
+        Side of the stored tiles in X and Y, in pixels (16 to 8,192). Along Z, C
+        and T every chunk holds one plane.
+    compression
+        ``"lz4"`` (Blosc LZ4, default), ``"zstd"`` (Blosc Zstandard) or ``"none"``.
+        All are lossless.
+    compression_level
+        1 (fastest) to 9 (smallest); ignored without compression.
+    pyramid_levels
+        Smaller levels added for viewers: None to halve until a plane fits 512
+        pixels (default), 0 for none, or a number of levels (1 to 7).
+
+    Raises
+    ------
+    ValueError
+        If a setting is outside its allowed range.
+    """
+
+    chunk_size: int = CHUNK_SIDE
+    compression: str = "lz4"
+    compression_level: int = 5
+    pyramid_levels: int | None = None
+
+    def __post_init__(self) -> None:
+        if not MIN_CHUNK_SIZE <= int(self.chunk_size) <= MAX_CHUNK_SIZE:
+            raise ValueError(
+                f"The chunk size must be between {MIN_CHUNK_SIZE} and {MAX_CHUNK_SIZE:,} "
+                f"pixels; got {self.chunk_size}."
+            )
+        if self.compression not in COMPRESSIONS:
+            raise ValueError(
+                f"Unknown compression {self.compression!r}; choose one of {sorted(COMPRESSIONS)}."
+            )
+        if not 1 <= int(self.compression_level) <= 9:
+            raise ValueError(
+                f"The compression level must be between 1 and 9; got {self.compression_level}."
+            )
+        if self.pyramid_levels is not None and not 0 <= int(self.pyramid_levels) < MAX_LEVELS:
+            raise ValueError(
+                f"The number of pyramid levels must be between 0 and {MAX_LEVELS - 1}; "
+                f"got {self.pyramid_levels}."
+            )
+
+    def describe(self) -> str:
+        """Return a plain-language summary, e.g. for the run summary."""
+        compression = COMPRESSIONS[self.compression].split(" (")[0]
+        if self.compression != "none":
+            compression += f" level {self.compression_level}"
+        if self.pyramid_levels is None:
+            pyramid = "smaller levels until a plane fits 512 px"
+        elif self.pyramid_levels == 0:
+            pyramid = "no smaller levels"
+        else:
+            pyramid = f"{self.pyramid_levels} smaller level(s)"
+        side = self.chunk_size
+        return f"chunks of {side} x {side} px, {compression}, {pyramid}"
+
+    def to_dict(self) -> dict:
+        """Return the settings as JSON-compatible data."""
+        return {
+            "chunk_size": self.chunk_size,
+            "compression": self.compression,
+            "compression_level": self.compression_level,
+            "pyramid_levels": self.pyramid_levels,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> ConversionSettings:
+        """Build settings from :meth:`to_dict` data; missing keys get the defaults."""
+        data = data or {}
+        levels = data.get("pyramid_levels")
+        return cls(
+            chunk_size=int(data.get("chunk_size", CHUNK_SIDE)),
+            compression=str(data.get("compression", "lz4")),
+            compression_level=int(data.get("compression_level", 5)),
+            pyramid_levels=None if levels is None else int(levels),
+        )
+
+
+@dataclass(frozen=True)
+class ConversionEstimate:
+    """How much disk space converting images to OME-Zarr may take.
+
+    Attributes
+    ----------
+    image_count
+        TIFF images to convert.
+    source_bytes
+        Size of these TIFF files on disk.
+    copy_bytes
+        Uncompressed size of the copies, including the smaller levels. It is an
+        upper estimate: compression usually makes the copies smaller.
+    """
+
+    image_count: int
+    source_bytes: int
+    copy_bytes: int
+
+
+def estimate_conversion(
+    experiment_root: str | os.PathLike,
+    files: Iterable,
+    settings: ConversionSettings | None = None,
+) -> ConversionEstimate:
+    """Estimate the disk space for converting the TIFF images among ``files``.
+
+    Parameters
+    ----------
+    experiment_root
+        The experiment folder.
+    files
+        Image headers (:class:`~morphobricks_preprocessing.metadata.TiffMetadata`);
+        OME-Zarr images and unreadable files are left out, as they are not converted.
+    settings
+        The conversion settings; they decide the smaller levels.
+    """
+    settings = settings or ConversionSettings()
+    root = Path(experiment_root)
+    count = source = copy = 0
+    for f in files:
+        if not f.readable or f.is_ome_zarr or f.dtype is None or len(f.shape) < 2:
+            continue
+        count += 1
+        try:
+            source += (root / f.relative_path).stat().st_size
+        except OSError:
+            pass
+        y, x = f.shape[-2], f.shape[-1]
+        levels = pyramid_shapes((y, x), settings.pyramid_levels)
+        factor = sum(ly * lx for ly, lx in levels) / max(y * x, 1)
+        copy += int(math.prod(f.shape) * np.dtype(f.dtype).itemsize * factor)
+    return ConversionEstimate(count, source, copy)
+
+
+def free_space(path: str | os.PathLike) -> int | None:
+    """Return the free space on the drive holding ``path`` (or its nearest existing parent).
+
+    Returns None when it cannot be determined.
+    """
+    path = Path(path).resolve()
+    for candidate in (path, *path.parents):
+        if candidate.exists():
+            try:
+                return shutil.disk_usage(candidate).free
+            except OSError:
+                return None
+    return None
+
+
+def pyramid_shapes(
+    plane_shape: tuple[int, int], levels: int | None = None
+) -> list[tuple[int, int]]:
+    """Return (Y, X) of every level: level 0, then halved planes.
+
+    With ``levels`` None, planes are halved until they fit ``PYRAMID_TARGET``
+    (at most ``MAX_LEVELS`` levels in all); otherwise ``levels`` smaller levels
+    are added, stopping early once a plane is a single pixel.
+    """
     shapes = [tuple(plane_shape)]
-    while max(shapes[-1]) > PYRAMID_TARGET and len(shapes) < MAX_LEVELS:
+    while len(shapes) < MAX_LEVELS:
+        if levels is None and max(shapes[-1]) <= PYRAMID_TARGET:
+            break
+        if levels is not None and (len(shapes) > levels or max(shapes[-1]) <= 1):
+            break
         y, x = shapes[-1]
         shapes.append((math.ceil(y / 2), math.ceil(x / 2)))
     return shapes
@@ -198,6 +376,7 @@ class OmeZarrWriter:
     sizes: PhysicalSizes
     channel_names: tuple[str | None, ...] = ()
     name: str = ""
+    settings: ConversionSettings = field(default_factory=ConversionSettings)
     _levels: list = field(default_factory=list, repr=False)
     _channel_ranges: dict = field(default_factory=dict, repr=False)
 
@@ -211,6 +390,7 @@ class OmeZarrWriter:
         sizes: PhysicalSizes | None = None,
         channel_names: Sequence[str | None] = (),
         name: str = "",
+        settings: ConversionSettings | None = None,
     ) -> OmeZarrWriter:
         """Create the empty arrays of an image with ``mapping`` and ``layout``."""
         roles = tuple(r for r in AXIS_ORDER if r in ("Y", "X") or r in mapping.plane_roles)
@@ -226,6 +406,7 @@ class OmeZarrWriter:
             sizes=sizes or PhysicalSizes(),
             channel_names=tuple(channel_names),
             name=name,
+            settings=settings or ConversionSettings(),
         )
         writer._open()
         return writer
@@ -292,10 +473,16 @@ class OmeZarrWriter:
     def _open(self) -> None:
         self._group = _create_group(self.path)
         self._levels = []
-        for level, (y, x) in enumerate(pyramid_shapes(self.shape[-2:])):
+        side = self.settings.chunk_size
+        compressor = _compressor(self.settings)
+        for level, (y, x) in enumerate(
+            pyramid_shapes(self.shape[-2:], self.settings.pyramid_levels)
+        ):
             shape = (*self.shape[:-2], y, x)
-            chunks = (*(1,) * (len(shape) - 2), min(y, CHUNK_SIDE), min(x, CHUNK_SIDE))
-            self._levels.append(_create_array(self._group, str(level), shape, chunks, self.dtype))
+            chunks = (*(1,) * (len(shape) - 2), min(y, side), min(x, side))
+            self._levels.append(
+                _create_array(self._group, str(level), shape, chunks, self.dtype, compressor)
+            )
 
     def _track_channel(self, channel: int, pixels: np.ndarray) -> None:
         finite = pixels[np.isfinite(pixels)] if pixels.dtype.kind == "f" else pixels
@@ -350,7 +537,20 @@ def _create_group(path: Path):
     return zarr.open_group(str(path), mode="w")
 
 
-def _create_array(group, name: str, shape, chunks, dtype):
+def _compressor(settings: ConversionSettings):
+    """Return the numcodecs compressor for ``settings``; None means no compression."""
+    if settings.compression == "none":
+        return None
+    import numcodecs  # installed with zarr
+
+    return numcodecs.Blosc(
+        cname=settings.compression,
+        clevel=settings.compression_level,
+        shuffle=numcodecs.Blosc.SHUFFLE,
+    )
+
+
+def _create_array(group, name: str, shape, chunks, dtype, compressor):
     if _zarr_major() >= 3:
         return group.create_array(
             name,
@@ -358,10 +558,17 @@ def _create_array(group, name: str, shape, chunks, dtype):
             chunks=chunks,
             dtype=dtype,
             fill_value=0,
+            compressors=compressor,
             chunk_key_encoding={"name": "v2", "separator": "/"},
         )
     return group.create_dataset(
-        name, shape=shape, chunks=chunks, dtype=dtype, fill_value=0, dimension_separator="/"
+        name,
+        shape=shape,
+        chunks=chunks,
+        dtype=dtype,
+        fill_value=0,
+        compressor=compressor,
+        dimension_separator="/",
     )
 
 

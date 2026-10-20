@@ -74,8 +74,11 @@ from .report import GroupSummary, group_summaries
 from .run import Preflight, RunResult, SamplePlane, preflight, run_experiment, sample_planes
 from .validation import Severity, ValidationIssue, has_errors
 from .zarr_export import (
+    ConversionEstimate,
+    ConversionSettings,
     OmeZarrWriter,
     PhysicalSizes,
+    estimate_conversion,
     ome_zarr_relative_path,
     read_physical_sizes,
 )
@@ -100,6 +103,8 @@ __all__ = [
     "SINGLE",
     "AxisMapping",
     "AxisReview",
+    "ConversionEstimate",
+    "ConversionSettings",
     "DiscoveryResult",
     "FileEntry",
     "GroupSummary",
@@ -141,6 +146,7 @@ __all__ = [
     "default_bin_count",
     "default_output_folder",
     "discover_experiment",
+    "estimate_conversion",
     "file_mapping_for",
     "group_records",
     "group_summaries",

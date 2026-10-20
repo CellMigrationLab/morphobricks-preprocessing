@@ -165,7 +165,7 @@ file's schema or statistical interpretation.
 | `written_at` | UTC time of writing, ISO 8601. |
 | `experiment_root` | Absolute path of the experiment folder, for information. |
 | `dtype` | Pixel type of the experiment. |
-| `settings` | `bin_count`, `memory_limit` (bytes), `missing_as_singleton`, `exclude` (sorted relative paths), `convert_tiffs` (whether TIFF images are converted to OME-Zarr and processed from the copies; false when absent). |
+| `settings` | `bin_count`, `memory_limit` (bytes), `missing_as_singleton`, `exclude` (sorted relative paths), `convert_tiffs` (whether TIFF images are converted to OME-Zarr and processed from the copies; false when absent), `conversion` (`chunk_size`, `compression`, `compression_level`, `pyramid_levels` — null for automatic; defaults when absent). |
 | `axis_mapping` | `axes` (file axis labels) and `roles` (`X`, `Y`, `Z`, `C`, `T` or null per axis). |
 | `labels` | One entry per leaf folder: `folder` (relative path, `.` for the root) and its three labels. |
 | `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count`, `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata), `ome_zarr_path` (for a TIFF converted to OME-Zarr, the copy relative to the output folder; null otherwise or when the key is absent). For an OME-Zarr image, `size` is the total size of its files and `mtime_ns` the time of its newest file. |
@@ -185,12 +185,14 @@ converted.
 | Rule | Detail |
 |---|---|
 | Location | `<output>/ome_zarr/<source_relative_path without .tif/.tiff/.ome.tif>.ome.zarr` |
-| Format | OME-NGFF 0.4, Zarr format 2, `/` chunk separator, Blosc compression |
+| Format | OME-NGFF 0.4, Zarr format 2, `/` chunk separator |
+| Compression | Lossless: Blosc LZ4 (default), Blosc Zstandard or none; level 1–9 (default 5) |
 | Axes | `t`, `c`, `z`, `y`, `x` in that order, only the roles of the confirmed mapping (missing axes resolved as singletons have length 1; axes without a role are dropped) |
-| Level 0 | The source values, unchanged, in the source pixel type; chunks of one plane, at most 1024 x 1024 pixels |
-| Further levels | 2 x 2 block means rounded to the pixel type, until a plane fits in 512 x 512 (at most 8 levels); for viewing only |
+| Level 0 | The source values, unchanged, in the source pixel type; chunks of one plane along Z, C and T and at most the chunk size (16 to 8,192 px, default 1,024) in X and Y |
+| Further levels | 2 x 2 block means rounded to the pixel type; automatic (default: until a plane fits in 512 x 512, at most 8 levels in all), none, or 1 to 7 levels; for viewing only |
 | Scale | Physical pixel sizes, z-step and time step from OME or ImageJ metadata, with OME-NGFF units; 1 when unknown |
 | Channels | `omero` block with channel names from metadata (or `Channel <i>`) and each channel's observed minimum and maximum as display window |
 | Updates | Copies of unchanged images are kept, of new or changed images rewritten, and of images no longer analysed removed; a failed run leaves the earlier copies as they were (see §9 for publication) |
 | Switching | Turning conversion on or off recomputes every TIFF row; turning it off removes the copies the manifest recorded |
 | Missing copy | A converted TIFF whose copy was deleted counts as changed and is converted again |
+| Settings change | Copies written with other conversion settings (recorded in the manifest) are written again; their rows do not change |

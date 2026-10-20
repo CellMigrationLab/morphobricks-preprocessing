@@ -47,13 +47,24 @@ from .csv_io import OUTPUT_FILENAME, CsvFormatError, read_plane_histograms
 from .discovery import check_output_folder, default_output_folder
 from .dtypes import MAX_BIN_COUNT, MIN_FLOAT_BIN_COUNT, default_bin_count, is_integer
 from .manifest import MANIFEST_FILENAME, ManifestFormatError, read_manifest
-from .planes import DEFAULT_MEMORY_LIMIT, Plane, PlaneReadError, read_plane
+from .planes import DEFAULT_MEMORY_LIMIT, Plane, PlaneReadError, format_bytes, read_plane
 from .pooling import NoValidPixelsError, PooledHistogram
 from .records import group_records
 from .report import LEVEL_NAMES, group_summaries, group_table, issue_counts
 from .run import Preflight, RunResult, preflight, run_experiment
 from .validation import ValidationIssue, has_errors, plural
-from .zarr_export import OME_ZARR_FOLDER, zarr_available
+from .zarr_export import (
+    CHUNK_SIDE,
+    COMPRESSIONS,
+    MAX_CHUNK_SIZE,
+    MAX_LEVELS,
+    MIN_CHUNK_SIZE,
+    OME_ZARR_FOLDER,
+    ConversionSettings,
+    estimate_conversion,
+    free_space,
+    zarr_available,
+)
 
 ROLE_OPTIONS = [
     ("Z - depth (focal planes)", "Z"),
@@ -76,9 +87,15 @@ EXCLUDABLE_CODES = ("unreadable_tiff", "multiple_series", "unsupported_dtype")
 
 _SKIPPED_CODES = ("non_tiff_file", "tiff_outside_leaf", "empty_folder")
 
-TIFF_OPTIONS = [
-    ("Read the TIFF images directly (recommended)", "read"),
-    ("Convert the TIFF images to OME-Zarr first, then process the copies", "convert"),
+CONVERSION_OPTIONS = [
+    ("Read the images directly (recommended; nothing extra is saved)", "read"),
+    ("Convert the TIFF images to OME-Zarr, then process the converted copies", "convert"),
+]
+
+PYRAMID_OPTIONS = [
+    ("Automatic: halve until a plane fits 512 px", "auto"),
+    ("None: full resolution only (least disk space)", "none"),
+    ("A fixed number of smaller levels", "fixed"),
 ]
 _MAX_PLOTTED_GROUPS = 12
 _PACKAGE_LOGGER = "morphobricks_preprocessing"
@@ -189,6 +206,7 @@ class PreprocessingNotebook:
             [
                 self.readiness_card,
                 self.settings_card,
+                self.conversion_card,
                 self.plan_card,
                 self.run_button,
                 self.progress,
@@ -329,7 +347,7 @@ class PreprocessingNotebook:
         self.check_button.on_click(lambda _: self.check_folder())
         self.exclude_button.on_click(lambda _: self._exclude_blocking_images())
         self.folder.observe(lambda _: self._folder_edited(), names="value")
-        self.output.observe(lambda _: self._update_output_hint(), names="value")
+        self.output.observe(lambda _: self._output_edited(), names="value")
         self.labels_confirmed.observe(lambda _: self._refresh_run_step())
         self._update_output_hint()
 
@@ -409,6 +427,12 @@ class PreprocessingNotebook:
         ui.set_visible(self.issues_card, False)
         self._refresh_axis_step()
         self._refresh_run_step()
+
+    def _output_edited(self) -> None:
+        self._update_output_hint()
+        # "What will happen" and the free disk space depend on the output folder.
+        if hasattr(self, "readiness"):
+            self._refresh_run_step()
 
     def _update_output_hint(self) -> None:
         folder = ui.clean_path(self.folder.value)
@@ -866,26 +890,10 @@ class PreprocessingNotebook:
             ]
         )
         ui.set_visible(self.advanced, False)
-        # How TIFF images are read is a choice about the data, not a tuning value, so
-        # the recommended settings leave it alone.
-        self.tiff_handling = widgets.RadioButtons(
-            options=TIFF_OPTIONS,
-            value="read",
-            disabled=not zarr_available(),
-            layout=widgets.Layout(width="99%"),
-        )
-        self.tiff_handling_hint = ui.help_text(_tiff_handling_help(zarr_available()))
         self.settings_card = ui.card(
-            "Settings",
-            [
-                self.recommended,
-                self.recommended_hint,
-                self.advanced,
-                widgets.HTML("<b>TIFF images</b>"),
-                self.tiff_handling,
-                self.tiff_handling_hint,
-            ],
+            "Settings", [self.recommended, self.recommended_hint, self.advanced]
         )
+        self._build_conversion_card()
         self.plan = widgets.HTML()
         self.plan_card = ui.card("What will happen", [self.plan])
         self.run_button = ui.button(
@@ -909,9 +917,168 @@ class PreprocessingNotebook:
             children=[self.details], titles=("Technical details (log)",), selected_index=None
         )
         self.recommended.observe(lambda _: self._recommended_changed(), names="value")
-        for control in (self.bins, self.memory_gib, self.force_rebuild, self.tiff_handling):
+        for control in (self.bins, self.memory_gib, self.force_rebuild):
             control.observe(lambda _: self._refresh_run_step(), names="value")
         self.run_button.on_click(lambda _: self.run())
+
+    def _build_conversion_card(self) -> None:
+        # Converting is a choice about the data, not a tuning value, so it has its own
+        # card and the recommended settings leave it alone.
+        available = zarr_available()
+        self.conversion = widgets.RadioButtons(
+            options=CONVERSION_OPTIONS,
+            value="read",
+            disabled=not available,
+            layout=widgets.Layout(width="99%"),
+        )
+        self.conversion_help = ui.help_text(_conversion_help(available))
+        self.space_warning = widgets.HTML()
+        self.chunk_size = widgets.BoundedIntText(
+            value=CHUNK_SIDE,
+            min=MIN_CHUNK_SIZE,
+            max=MAX_CHUNK_SIZE,
+            step=256,
+            description="Chunk size (px)",
+            style=_label(),
+        )
+        self.compression = widgets.Dropdown(
+            options=[(label, key) for key, label in COMPRESSIONS.items()],
+            value="lz4",
+            description="Compression",
+            style=_label(),
+            layout=widgets.Layout(width="34em"),
+        )
+        self.compression_level = widgets.BoundedIntText(
+            value=5, min=1, max=9, description="Compression level", style=_label()
+        )
+        self.compression_level_box = widgets.VBox(
+            [
+                self.compression_level,
+                ui.help_text(
+                    "<ul><li>1 is the fastest, 9 gives the smallest files (default 5).</li></ul>"
+                ),
+            ]
+        )
+        self.pyramid = widgets.Dropdown(
+            options=PYRAMID_OPTIONS,
+            value="auto",
+            description="Pyramid levels",
+            style=_label(),
+            layout=widgets.Layout(width="34em"),
+        )
+        self.pyramid_count = widgets.BoundedIntText(
+            value=2, min=1, max=MAX_LEVELS - 1, description="Number of levels", style=_label()
+        )
+        self.pyramid_count_box = widgets.VBox(
+            [
+                self.pyramid_count,
+                ui.help_text(
+                    f"<ul><li>How many halved levels to add (1 to {MAX_LEVELS - 1}).</li></ul>"
+                ),
+            ]
+        )
+        self.conversion_settings = widgets.VBox(
+            [
+                widgets.HTML("<b>Conversion settings</b>"),
+                self.chunk_size,
+                ui.help_text(
+                    "<ul><li>The size of the square tiles (chunks) the copies are stored in, "
+                    f"in pixels: {MIN_CHUNK_SIZE} to {MAX_CHUNK_SIZE:,}, default "
+                    f"{CHUNK_SIDE:,}.</li><li>Each chunk holds one plane along Z, C and T.</li>"
+                    "<li>Smaller chunks load faster in viewers and when later bricks read "
+                    "patches; larger chunks give fewer files.</li></ul>"
+                ),
+                self.compression,
+                ui.help_text(
+                    "<ul><li>Always lossless: pixel values never change.</li>"
+                    "<li><b>LZ4</b> (default) is fast; <b>Zstandard</b> gives smaller files "
+                    "but is slower; <b>no compression</b> is the fastest and largest.</li>"
+                    "</ul>"
+                ),
+                self.compression_level_box,
+                self.pyramid,
+                ui.help_text(
+                    "<ul><li>Smaller copies of each plane, for fast viewing. The histograms "
+                    "always use the full resolution.</li><li><b>Automatic</b> (default) "
+                    "halves a plane until it fits 512 pixels.</li><li><b>None</b> keeps only "
+                    "the full resolution and saves the most disk space.</li></ul>"
+                ),
+                self.pyramid_count_box,
+            ]
+        )
+        self.conversion_card = ui.card(
+            "(Optional) Image conversion",
+            [self.conversion, self.conversion_help, self.space_warning, self.conversion_settings],
+        )
+        for control in (
+            self.conversion,
+            self.chunk_size,
+            self.compression,
+            self.compression_level,
+            self.pyramid,
+            self.pyramid_count,
+        ):
+            control.observe(lambda _: self._conversion_changed(), names="value")
+        self._refresh_conversion()
+
+    def _conversion_changed(self) -> None:
+        self._refresh_run_step()
+
+    def _refresh_conversion(self) -> None:
+        converting = self._convert_tiffs()
+        ui.set_visible(self.conversion_settings, converting)
+        ui.set_visible(self.compression_level_box, self.compression.value != "none")
+        ui.set_visible(self.pyramid_count_box, self.pyramid.value == "fixed")
+        self.space_warning.value = self._space_warning_html() if converting else ""
+
+    def _space_warning_html(self) -> str:
+        if self.preflight is None:
+            return ui.status(
+                "warn",
+                "Converting stores your images a second time.",
+                ["Check the experiment folder in step 1 to see how much disk space it needs."],
+            )
+        folder = ui.clean_path(self.folder.value)
+        estimate = estimate_conversion(
+            folder, self.preflight.metadata.files, self._conversion_settings()
+        )
+        if not estimate.image_count:
+            return ui.status(
+                "info",
+                "There is nothing to convert.",
+                ["Every image is already OME-Zarr; they are always read directly."],
+            )
+        output = Path(self._output_folder() or default_output_folder(folder))
+        free = free_space(output)
+        lines = [
+            f"All {plural(estimate.image_count, 'TIFF image')} will be stored again in the "
+            "converted format, so all the space they occupy is duplicated.",
+            f"The TIFF images take {format_bytes(estimate.source_bytes)}. The copies need up "
+            f"to about {format_bytes(estimate.copy_bytes)} (before compression, including the "
+            "smaller levels); compression usually makes them smaller.",
+            "Free space on the drive of the output folder: "
+            + (format_bytes(free) if free is not None else "unknown")
+            + ".",
+            "The copies are kept in the output folder; choosing Read the images directly "
+            "later removes them.",
+        ]
+        if free is not None and estimate.copy_bytes > free:
+            lines.append(
+                "This may not be enough space. Free some space, or choose an output folder "
+                "on another drive in step 1."
+            )
+            return ui.status("error", "The converted images may not fit on the drive.", lines)
+        return ui.status("warn", "Converting duplicates the space your images take.", lines)
+
+    def _conversion_settings(self) -> ConversionSettings:
+        return ConversionSettings(
+            chunk_size=self.chunk_size.value,
+            compression=self.compression.value,
+            compression_level=self.compression_level.value,
+            pyramid_levels={"auto": None, "none": 0}.get(
+                self.pyramid.value, self.pyramid_count.value
+            ),
+        )
 
     def _reset_settings(self, pre: Preflight) -> None:
         dtype = pre.metadata.dtype
@@ -928,6 +1095,7 @@ class PreprocessingNotebook:
             self.bins.value = self._default_bins
             self.bins_hint.value = f"<div class='mb-help'>{_bins_help(dtype)}</div>"
         self._recommended_changed()
+        self._refresh_conversion()
 
     def _recommended_changed(self) -> None:
         recommended = self.recommended.value
@@ -978,6 +1146,7 @@ class PreprocessingNotebook:
         self.readiness.value = title + ui.checklist(items)
         self.run_button.disabled = bool(missing)
         self.plan.value = self._plan_html()
+        self._refresh_conversion()
 
     def _plan_html(self) -> str:
         folder = ui.clean_path(self.folder.value)
@@ -1004,10 +1173,11 @@ class PreprocessingNotebook:
             )
         if tiffs and self._convert_tiffs():
             copies = html.escape(str(output / OME_ZARR_FOLDER))
+            settings = html.escape(self._conversion_settings().describe())
             lines.append(
                 f"<b>{plural(tiffs, 'TIFF image')}</b> will be converted to OME-Zarr in "
-                f"<b>{copies}</b> first; their histograms are computed from the copies. "
-                "Copies of unchanged images are kept."
+                f"<b>{copies}</b> first ({settings}); their histograms are computed from the "
+                "copies. Copies of unchanged images are kept."
             )
         manifest = output / MANIFEST_FILENAME
         if self.force_rebuild.value:
@@ -1051,6 +1221,7 @@ class PreprocessingNotebook:
                     force_rebuild=self.force_rebuild.value,
                     progress=self._progress,
                     convert_tiffs=self._convert_tiffs(),
+                    conversion=self._conversion_settings(),
                 )
         except Exception as exc:  # unexpected failures still get a readable message
             self.log.lines.append(traceback.format_exc())
@@ -1116,7 +1287,7 @@ class PreprocessingNotebook:
         self.run_tiles.value = ui.tiles(tiles)
 
     def _convert_tiffs(self) -> bool:
-        return self.tiff_handling.value == "convert"
+        return self.conversion.value == "convert"
 
     def _progress(self, done: int, total: int, path: str) -> None:
         self.progress.max = max(total, 1)
@@ -1577,23 +1748,25 @@ def _folder_tiles(pre: Preflight) -> list[tuple[str, str, str]]:
     ]
 
 
-def _tiff_handling_help(available: bool) -> str:
-    """Help line under the choice of how TIFF images are read."""
-    text = (
-        "How TIFF images are processed; OME-Zarr images are always read directly. By "
-        "default TIFF images are read as they are. <b>Convert</b> first writes every TIFF "
-        f"image in OME-Zarr format to the <b>{OME_ZARR_FOLDER}</b> folder of the output and "
-        "then computes the histograms from these copies, like for any OME-Zarr image. The "
-        "copies keep the exact pixel values and can be opened in viewers such as napari; "
-        "your images are not changed. Converting takes extra time and disk space, and "
-        "switching between the two recomputes every TIFF image."
-    )
+def _conversion_help(available: bool) -> str:
+    """Help lines under the choice between reading and converting."""
+    items = [
+        "<b>Read the images directly</b> (recommended): TIFF and OME-Zarr images are read "
+        "as they are, and nothing extra is saved.",
+        "<b>Convert</b>: every TIFF image is first written in OME-Zarr format to the "
+        f"<b>{OME_ZARR_FOLDER}</b> folder of the output, and its histograms are computed from "
+        "that copy, like for any OME-Zarr image. The results are the same.",
+        "OME-Zarr images are always read directly; they are never converted.",
+        "The copies keep the exact pixel values and can be opened in viewers such as napari. "
+        "Your images are never changed.",
+        "Switching between the two later recomputes every TIFF image.",
+    ]
     if not available:
-        text += (
-            " <b>Converting is not available:</b> it needs the zarr package. Install it with "
+        items.append(
+            "<b>Converting is not available:</b> it needs the zarr package. Install it with "
             '<b>pip install "morphobricks-preprocessing[zarr]"</b> and restart the notebook.'
         )
-    return text
+    return "<ul>" + "".join(f"<li>{item}</li>" for item in items) + "</ul>"
 
 
 def _bins_help(dtype) -> str:

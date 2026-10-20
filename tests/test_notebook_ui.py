@@ -22,6 +22,7 @@ from morphobricks_preprocessing.notebook_ui import (  # noqa: E402
     role_effect,
 )
 from morphobricks_preprocessing.validation import error, warning  # noqa: E402
+from morphobricks_preprocessing.zarr_export import ConversionSettings  # noqa: E402
 from tiff_tree import write_data, write_file  # noqa: E402
 
 NOTEBOOK = Path(__file__).parents[1] / "notebooks" / "MorphoBricks_Preprocessing.ipynb"
@@ -384,41 +385,107 @@ def test_plan_describes_the_run(experiment):
     assert "An earlier run was found (3 images" in nb.plan.value
 
 
-def test_tiff_option_reads_directly_and_survives_the_recommended_settings(experiment):
+def test_conversion_card_reads_directly_by_default(experiment):
     nb = checked(experiment)
-    assert nb.tiff_handling.value == "read"
-    hint = nb.tiff_handling_hint.value
-    assert "OME-Zarr images are always read directly" in hint and "<code>" not in hint
-    if nb.tiff_handling.disabled:
-        return
-    nb.tiff_handling.value = "convert"
+    assert nb.conversion.value == "read"
+    assert not ui.is_visible(nb.conversion_settings) and nb.space_warning.value == ""
+    help_text = nb.conversion_help.value
+    assert help_text.count("<li>") >= 4 and "nothing extra is saved" in help_text
+    assert "OME-Zarr images are always read directly" in help_text
+    assert "<code>" not in help_text
+    page = nb.run_step()
+    root = page.children[1]
+    assert nb.conversion_card in root.children
+    assert root.children.index(nb.conversion_card) == root.children.index(nb.settings_card) + 1
+
+
+def test_conversion_card_survives_the_recommended_settings(experiment):
+    nb = checked(experiment)
+    if nb.conversion.disabled:
+        pytest.skip("zarr is not installed")
+    nb.conversion.value = "convert"
     nb.recommended.value = False
     nb.recommended.value = True
-    assert nb.tiff_handling.value == "convert"  # a choice about the data, not a tuning value
+    assert nb.conversion.value == "convert"  # a choice about the data, not a tuning value
 
 
-def test_tiff_conversion_without_zarr(experiment, monkeypatch):
+def test_conversion_shows_settings_and_the_disk_space_warning(experiment):
+    nb = checked(experiment)
+    if nb.conversion.disabled:
+        pytest.skip("zarr is not installed")
+    nb.conversion.value = "convert"
+    assert ui.is_visible(nb.conversion_settings)
+    warning = nb.space_warning.value
+    assert "Converting duplicates the space your images take" in warning
+    assert "All 3 TIFF images will be stored again in the converted format" in warning
+    assert "all the space they occupy is duplicated" in warning
+    assert "Free space on the drive of the output folder" in warning
+    nb.compression.value = "none"
+    assert not ui.is_visible(nb.compression_level_box)
+    nb.pyramid.value = "fixed"
+    assert ui.is_visible(nb.pyramid_count_box)
+    nb.pyramid_count.value = 3
+    nb.chunk_size.value = 256
+    assert nb._conversion_settings() == ConversionSettings(256, "none", 5, 3)
+    assert "chunks of 256 x 256 px, no compression, 3 smaller level(s)" in nb.plan.value
+    nb.conversion.value = "read"
+    assert not ui.is_visible(nb.conversion_settings) and nb.space_warning.value == ""
+
+
+def test_disk_space_warning_turns_red_when_space_is_short(experiment, monkeypatch):
+    from morphobricks_preprocessing import notebook_ui
+
+    nb = checked(experiment)
+    if nb.conversion.disabled:
+        pytest.skip("zarr is not installed")
+    monkeypatch.setattr(notebook_ui, "free_space", lambda path: 10)
+    nb = confirmed(nb.folder.value)
+    nb.conversion.value = "convert"
+    assert "may not fit on the drive" in nb.space_warning.value
+    assert "choose an output folder on another drive" in nb.space_warning.value
+    assert not nb.run_button.disabled  # a warning, never a block
+
+
+def test_nothing_to_convert_in_an_ome_zarr_experiment(tmp_path):
+    pytest.importorskip("zarr")
+    from zarr_tree import write_ngff
+
+    write_ngff(tmp_path / "exp/a.ome.zarr", np.zeros((2, 8, 8), np.uint8), "zyx")
+    nb = checked(tmp_path / "exp")
+    nb.conversion.value = "convert"
+    assert "There is nothing to convert" in nb.space_warning.value
+
+
+def test_conversion_without_zarr(experiment, monkeypatch):
     from morphobricks_preprocessing import notebook_ui
 
     monkeypatch.setattr(notebook_ui, "zarr_available", lambda: False)
     nb = checked(experiment)
-    assert nb.tiff_handling.disabled and nb.tiff_handling.value == "read"
-    assert "Converting is not available" in nb.tiff_handling_hint.value
-    assert '<b>pip install "morphobricks-preprocessing[zarr]"</b>' in nb.tiff_handling_hint.value
+    assert nb.conversion.disabled and nb.conversion.value == "read"
+    assert "Converting is not available" in nb.conversion_help.value
+    assert '<b>pip install "morphobricks-preprocessing[zarr]"</b>' in nb.conversion_help.value
 
 
-def test_tiff_conversion_from_the_notebook(experiment, tmp_path):
+def test_conversion_from_the_notebook(experiment, tmp_path):
     pytest.importorskip("zarr")
     nb = confirmed(experiment, output_folder=str(tmp_path / "out"))
     assert "converted to OME-Zarr" not in nb.plan.value
-    nb.tiff_handling.value = "convert"
+    nb.conversion.value = "convert"
+    nb.chunk_size.value = 16
     assert "<b>3 TIFF images</b> will be converted to OME-Zarr" in nb.plan.value
     result = nb.run()
     assert result.converted == ("ctrl/rep1/a.tif", "ctrl/rep1/b.tif", "drug/rep1/a.tif")
     assert "TIFF images converted" in nb.run_tiles.value
     assert "3 images converted in this run" in nb.run_status.value
     assert (tmp_path / "out" / "ome_zarr" / "ctrl" / "rep1" / "a.ome.zarr").is_dir()
-    assert read_manifest(result.manifest_path).settings.convert_tiffs
+    settings = read_manifest(result.manifest_path).settings
+    assert settings.convert_tiffs and settings.conversion.chunk_size == 16
+
+
+def test_output_folder_edits_refresh_the_plan(experiment, tmp_path):
+    nb = confirmed(experiment)
+    nb.output.value = str(tmp_path / "elsewhere")
+    assert "elsewhere" in nb.plan.value
 
 
 def test_full_run_and_statistics(experiment, tmp_path):

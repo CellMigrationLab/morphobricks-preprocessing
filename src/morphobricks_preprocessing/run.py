@@ -62,6 +62,7 @@ from .planes import (
 from .records import PlaneRecord
 from .validation import ValidationIssue, error, has_errors, plural, warning
 from .zarr_export import (
+    ConversionSettings,
     OmeZarrWriter,
     is_copy_path,
     ome_zarr_relative_path,
@@ -272,6 +273,7 @@ def run_experiment(
     force_rebuild: bool = False,
     progress: Callable[[int, int, str], None] | None = None,
     convert_tiffs: bool = False,
+    conversion: ConversionSettings | None = None,
 ) -> RunResult:
     """Pass 2: write or update the histogram table and the run manifest.
 
@@ -304,6 +306,10 @@ def run_experiment(
         the ``zarr`` extra). Copies of unchanged images are kept; copies of
         images no longer converted are removed. Switching this recomputes the
         rows of every TIFF image.
+    conversion
+        How converted copies are written (chunk size, compression, smaller
+        levels); defaults to :class:`ConversionSettings`. Changing it rewrites
+        the copies of every TIFF image.
 
     Returns
     -------
@@ -339,10 +345,15 @@ def run_experiment(
     if has_errors(issues):
         return stop()
 
-    settings = RunSettings(bins, memory_limit, missing_as_singleton, pre.excluded, convert_tiffs)
+    conversion = conversion or ConversionSettings()
+    settings = RunSettings(
+        bins, memory_limit, missing_as_singleton, pre.excluded, convert_tiffs, conversion
+    )
     previous, previous_records, reason = _load_previous(
         output, settings, mapping, dtype.name, force_rebuild
     )
+    # Copies written with other conversion settings are rewritten (their rows are the same).
+    same_conversion = previous is None or previous.settings.conversion == conversion
     labels = {image: leaf.labels for leaf in pre.discovery.leaves for image in leaf.images}
     headers = {f.relative_path: f for f in pre.metadata.files}
     entries: dict[str, FileEntry] = {}
@@ -366,8 +377,9 @@ def run_experiment(
             before.same_source(entries[rel])
             # During a rebuild there are no rows to check; otherwise the rows must be complete.
             and (reason is not None or len(previous_records.get(rel, ())) == before.plane_count)
-            # Rows of a converted TIFF are only kept while its copy is still there.
-            and (copy is None or (output / copy).is_dir())
+            # Rows of a converted TIFF are only kept while its copy is still there, as
+            # written with the same settings.
+            and (copy is None or ((output / copy).is_dir() and same_conversion))
         ):
             unchanged.append(rel)
         else:
@@ -387,7 +399,7 @@ def run_experiment(
     }
 
     to_convert = [rel for rel in to_read if entries[rel].ome_zarr_path]
-    staging = _CopyStaging(output, root) if to_convert else None
+    staging = _CopyStaging(output, root, conversion) if to_convert else None
 
     records: list[PlaneRecord] = []
     for rel in unchanged if not reason else ():
@@ -618,9 +630,10 @@ class _CopyStaging:
     which reuses this folder; :meth:`discard` removes it when the run stops early.
     """
 
-    def __init__(self, output: Path, experiment_root: Path):
+    def __init__(self, output: Path, experiment_root: Path, settings: ConversionSettings):
         self.output = output
         self.experiment_root = experiment_root
+        self.settings = settings
         self.created_output = not output.exists()
         output.mkdir(parents=True, exist_ok=True)
         self.root = Path(tempfile.mkdtemp(prefix=".run-", dir=output))
@@ -635,6 +648,7 @@ class _CopyStaging:
             sizes=read_physical_sizes(source),
             channel_names=header.channel_names,
             name=rel,
+            settings=self.settings,
         )
 
     def convert(
