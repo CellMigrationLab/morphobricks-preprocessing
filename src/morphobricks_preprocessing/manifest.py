@@ -27,6 +27,7 @@ import tifffile
 
 from .axes import AxisMapping
 from .csv_io import SCHEMA_VERSION
+from .zarr_export import ConversionSettings
 
 MANIFEST_FILENAME = "run_manifest.json"
 MANIFEST_VERSION = "1"
@@ -51,12 +52,20 @@ class RunSettings:
         them.
     exclude
         Relative paths of images the user excluded from the run, sorted.
+    convert_tiffs
+        Whether TIFF images are converted to OME-Zarr in the output folder and
+        their histograms computed from the converted copies.
+    conversion
+        How the copies are written (chunk size, compression, smaller levels);
+        only used when ``convert_tiffs`` is on. It does not change any row.
     """
 
     bin_count: int
     memory_limit: int
     missing_as_singleton: bool = False
     exclude: tuple[str, ...] = ()
+    convert_tiffs: bool = False
+    conversion: ConversionSettings = field(default_factory=ConversionSettings)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "exclude", tuple(sorted(set(self.exclude))))
@@ -71,9 +80,11 @@ class FileEntry:
     relative_path
         Path relative to the experiment root, with ``/`` separators.
     size
-        File size in bytes when it was read.
+        File size in bytes when it was read; for an OME-Zarr folder, the total
+        size of its files.
     mtime_ns
-        Modification time in nanoseconds when it was read.
+        Modification time in nanoseconds when it was read; for an OME-Zarr
+        folder, the time of its most recently modified file.
     labels
         ``(condition, biological_repeat, technical_repeat)``.
     axes
@@ -86,6 +97,9 @@ class FileEntry:
         Channel names from metadata; empty when not given.
     significant_bits
         Significant bits from metadata; None when not given.
+    ome_zarr_path
+        For a TIFF converted to OME-Zarr, the converted copy relative to the
+        output folder (its rows are computed from it); otherwise None.
     """
 
     relative_path: str
@@ -97,6 +111,7 @@ class FileEntry:
     plane_count: int = 0
     channel_names: tuple[str | None, ...] = ()
     significant_bits: int | None = None
+    ome_zarr_path: str | None = None
 
     def same_source(self, other: FileEntry) -> bool:
         """Return True if ``other`` describes the same unchanged file, read the same way."""
@@ -107,6 +122,7 @@ class FileEntry:
             and self.labels == other.labels
             and self.axes == other.axes
             and self.singleton_roles == other.singleton_roles
+            and self.ome_zarr_path == other.ome_zarr_path
         )
 
 
@@ -175,6 +191,8 @@ class RunManifest:
                 "memory_limit": self.settings.memory_limit,
                 "missing_as_singleton": self.settings.missing_as_singleton,
                 "exclude": list(self.settings.exclude),
+                "convert_tiffs": self.settings.convert_tiffs,
+                "conversion": self.settings.conversion.to_dict(),
             },
             "axis_mapping": {"axes": self.mapping.axes, "roles": list(self.mapping.roles)},
             "labels": [
@@ -216,6 +234,8 @@ class RunManifest:
                     memory_limit=int(settings["memory_limit"]),
                     missing_as_singleton=bool(settings["missing_as_singleton"]),
                     exclude=tuple(str(p) for p in settings["exclude"]),
+                    convert_tiffs=bool(settings.get("convert_tiffs", False)),
+                    conversion=ConversionSettings.from_dict(settings.get("conversion")),
                 ),
                 mapping=AxisMapping(str(mapping["axes"]), tuple(mapping["roles"])),
                 files=tuple(_file_entry(f) for f in data["files"]),
@@ -239,20 +259,42 @@ def file_entry_for(
     plane_count: int = 0,
     channel_names: tuple[str | None, ...] = (),
     significant_bits: int | None = None,
+    ome_zarr_path: str | None = None,
 ) -> FileEntry:
-    """Describe a source file as it is on disk now."""
-    stat = (Path(root) / relative_path).stat()
+    """Describe a source image as it is on disk now."""
+    size, mtime_ns = source_fingerprint(Path(root) / relative_path)
     return FileEntry(
         relative_path=relative_path,
-        size=stat.st_size,
-        mtime_ns=stat.st_mtime_ns,
+        size=size,
+        mtime_ns=mtime_ns,
         labels=tuple(labels),
         axes=mapping.axes,
         singleton_roles=mapping.singleton_roles,
         plane_count=plane_count,
         channel_names=tuple(channel_names),
         significant_bits=significant_bits,
+        ome_zarr_path=ome_zarr_path,
     )
+
+
+def source_fingerprint(path: str | os.PathLike) -> tuple[int, int]:
+    """Size and modification time used to tell whether an image changed.
+
+    A TIFF file gives its own size and time. An OME-Zarr folder gives the total
+    size of its files and the time of the newest one, so rewriting any chunk or
+    metadata file counts as a change.
+    """
+    path = Path(path)
+    if not path.is_dir():
+        stat = path.stat()
+        return stat.st_size, stat.st_mtime_ns
+    size, newest = 0, path.stat().st_mtime_ns
+    for folder, _, names in os.walk(path):
+        for name in names:
+            stat = (Path(folder) / name).stat()
+            size += stat.st_size
+            newest = max(newest, stat.st_mtime_ns)
+    return size, newest
 
 
 def package_versions() -> dict[str, str]:
@@ -323,6 +365,7 @@ def _file_dict(entry: FileEntry) -> dict:
         "plane_count": entry.plane_count,
         "channel_names": list(entry.channel_names),
         "significant_bits": entry.significant_bits,
+        "ome_zarr_path": entry.ome_zarr_path,
     }
 
 
@@ -342,6 +385,7 @@ def _file_entry(data: dict) -> FileEntry:
         plane_count=int(data["plane_count"]),
         channel_names=tuple(None if n is None else str(n) for n in data.get("channel_names", [])),
         significant_bits=None if bits is None else int(bits),
+        ome_zarr_path=None if data.get("ome_zarr_path") is None else str(data["ome_zarr_path"]),
     )
 
 

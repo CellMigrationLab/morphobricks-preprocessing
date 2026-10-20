@@ -22,7 +22,8 @@ do not say: how we work, why things are the way they are, and the traps we alrea
 MorphoBricks is a modular microscopy pipeline. This repository is its **preprocessing
 brick**.
 
-- **Input:** one experiment folder of TIFF images.
+- **Input:** one experiment folder of TIFF images and/or OME-Zarr images (OME-NGFF 0.4/0.5,
+  `zarr` extra).
 - **Output:** one intensity histogram per 2D plane in `plane_histograms.csv`, plus
   `run_manifest.json`, both in an output folder outside the experiment.
 - **Library:** pooling (`PooledHistogram`) and normalization parameters (`min_max`,
@@ -30,8 +31,10 @@ brick**.
   use these to normalise any group of planes without rereading pixels.
 - **Never:** modifies source images, writes inside the experiment folder, or applies a
   normalization itself.
-- **Out of scope:** OME-Zarr conversion (an optional export is in progress, see §11),
-  spatial corrections (flat-field, BaSiC, CLAHE).
+- **Optional (`zarr` extra, plan §12 question 12):** OME-Zarr input, and converting TIFF
+  images to OME-Zarr in the output folder before processing them (contract §10).
+- **Out of scope:** spatial corrections (flat-field, BaSiC, CLAHE), chunked processing of
+  planes above the memory limit.
 
 Pipeline:
 
@@ -65,6 +68,10 @@ src/morphobricks_preprocessing/
   run.py            preflight(), run_experiment() (incremental), sample_planes() for previews
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
   cli.py, __main__  `morphobricks-preprocessing check|run` (also `python -m morphobricks_preprocessing`)
+  zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array and axis
+                    letters), zarr 2/3 helpers, canonical_dtype; needs the `zarr` extra
+  zarr_export.py    TIFF -> OME-Zarr conversion (OmeZarrWriter, OME-NGFF 0.4, plane by plane),
+                    ConversionSettings (chunk size, compression, pyramid levels), estimate_conversion
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
   notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra)
 notebooks/MorphoBricks_Preprocessing.ipynb   thin notebook: every code cell calls notebook_ui only
@@ -109,6 +116,8 @@ functions the tests use.
 
 ### Folders and labels (contract §1)
 
+- **Images:** TIFF files and OME-Zarr folders (name ends in `.zarr`). A store is one image,
+  never a folder level, and discovery never enters it.
 - **Hierarchy:** `<experiment>/<condition>/<biological repeat>/<technical repeat>/<image>.tif`.
 - **Leaf folders:** a leaf folder has images and no subfolders. Only TIFFs directly in
   leaf folders are analysed.
@@ -142,6 +151,12 @@ functions the tests use.
   non-OME SubIFD pyramids appear as two series in tifffile and are therefore blocked.
 - **Coordinates:** plane coordinates `z, c, t` are zero-based; blank (None) when the
   experiment has no such axis.
+- **OME-Zarr axes:** translated from OME-NGFF metadata (`zarr_input.ngff_axes`: time -> T,
+  channel -> C, space z/y/x -> Z/Y/X, anything else -> Q). The experiment mapping is
+  defined on the TIFF arrangement if there are TIFFs; OME-Zarr images with another order
+  are matched by role (`axes.declared_mapping`, `file_mapping_for`); a misfit is
+  `ome_zarr_axes_mismatch`. Use `file_mapping_for`, never `mapping.for_axes`, to get an
+  image's mapping.
 
 ### Pixel types and binning (contract §3–§4)
 
@@ -240,7 +255,8 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Topic | Decision |
 |---|---|
 | Binning | Per-plane min–max, same bin count per experiment, pooled counts for groups (binning study) |
-| Core dependencies | `numpy` and `tifffile` only. `ipywidgets` and `matplotlib` in the `notebook` extra; `pytest` and `ruff` in `dev` |
+| Core dependencies | `numpy` and `tifffile` only. `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
+| OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
 | Channel names (Q1) | Manifest only (from OME), warning `channel_names_differ`; CSV stays at schema 1 |
@@ -249,7 +265,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Significant bits (Q4) | Manifest only, information only; `bit_depth` and binning unchanged |
 | Corrupt files (Q6) | Explicit exclusion list, recorded in manifest, rows removed |
 | Notebook target | Local Jupyter (not Colab-first) |
-| CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--memory-limit 2GiB`, `--missing-as-singleton`, `--force-rebuild`, `--log`. Axis roles are always stated explicitly, never taken silently from metadata. Exit 1 on errors |
+| CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--memory-limit 2GiB`, `--missing-as-singleton`, `--force-rebuild`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata. Exit 1 on errors |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
 | Paths and filenames in widget HTML and notebook text | **`<b>…</b>` / `**…**`, never `<code>` or inline code** |
@@ -299,6 +315,9 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
   without it.
 - **Proving "no pixels are read":** monkeypatch `asarray` on `TiffFile`, `TiffPage`,
   `TiffFrame` and `TiffPageSeries` to raise.
+- **OME-Zarr test data:** `tests/zarr_tree.py` (`write_ngff`, `write_bioformats2raw`,
+  `write_plate`) writes stores with zarr directly, independent of `zarr_export`; 0.5 tests
+  skip with zarr 2.18.
 - **Proving "one page at a time":** spy on `planes._read_page`. To prove "only changed
   files are read", spy on `run.iter_planes`.
 - **Speed:** rerun tests use 8-bit images (256 bins). Wide 65,536-bin CSVs make every run
@@ -307,7 +326,8 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
   reason on Windows.
 - **Notebook widgets are tested headless:** build the pages, drive them with
   `button.click()` and `.value = …`, and assert on `.value` of HTML widgets. Tests skip
-  if ipywidgets/matplotlib are missing; CI installs `.[dev,notebook]`.
+  if ipywidgets/matplotlib are missing; CI installs `.[dev,notebook,zarr]`. OME-Zarr
+  tests skip without zarr; CI's Python 3.10 jobs get zarr 2.18 and 3.13 jobs zarr 3.
 - **The notebook file is tested too:**
   - valid nbformat 4, with no outputs;
   - code cells hidden and titled `# @markdown ### Run to …`;
@@ -481,7 +501,7 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
 
 ```bash
 python -m venv .venv
-pip install -e ".[dev,notebook]"
+pip install -e ".[dev,notebook,zarr]"
 ruff check .
 ruff format --check .
 pytest
@@ -497,9 +517,9 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 - **Done:** Milestones 0–5 (contract, scanner and validator, axis review, histogram engine,
   CSV and reruns, notebook + CLI + user guide), and the notebook redesign plus feedback
   round (PRs #6 and #7).
-- **Open:** PR #5, an optional OME-Zarr copy of the source images. It touches
-  `notebook_ui.py`, its tests and the user guide. After the notebook redesign its UI
-  option must be re-added to the step-3 settings card in the new style.
+- **Open:** PR #5 (draft), OME-Zarr input and optional TIFF -> OME-Zarr conversion. The
+  choice is in the step-3 Settings card, and copies are published with the table and
+  manifest using the staged-output protocol.
 - **Later (plan §10):** chunked processing for planes above the memory limit.
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;

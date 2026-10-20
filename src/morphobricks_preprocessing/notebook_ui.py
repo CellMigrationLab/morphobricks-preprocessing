@@ -13,9 +13,9 @@ The notebook ``notebooks/MorphoBricks_Preprocessing.ipynb`` shows the four steps
 
 Each step is a page of cards (see :mod:`.notebook_style`): a blue box says what
 the step is for, every control has a help line, the main button is at the
-bottom, and one status card says what happened and what to do next. Later steps
-stay locked until the earlier ones are confirmed, and changing the folder resets
-them. The widgets only collect choices and show results; every check and
+bottom, a status card says what happened, and a separate "What next?" box explains
+the next action. Later steps stay locked until the earlier ones are confirmed, and
+changing the folder resets them. The widgets only collect choices and show results; every check and
 computation is done by the same functions the command line and the tests use.
 Needs the ``notebook`` extra (``ipywidgets`` and ``matplotlib``).
 """
@@ -42,17 +42,29 @@ except ImportError as exc:  # pragma: no cover - depends on the environment
     ) from exc
 
 from . import notebook_style as ui
-from .axes import AxisMapping, axis_length_ranges, axis_name, review_axes
+from .axes import AxisMapping, axis_length_ranges, axis_name, file_mapping_for, review_axes
 from .csv_io import OUTPUT_FILENAME, CsvFormatError, read_plane_histograms
 from .discovery import check_output_folder, default_output_folder
 from .dtypes import MAX_BIN_COUNT, MIN_FLOAT_BIN_COUNT, default_bin_count, is_integer
 from .manifest import MANIFEST_FILENAME, ManifestFormatError, read_manifest
-from .planes import DEFAULT_MEMORY_LIMIT, Plane, PlaneReadError, read_plane
+from .planes import DEFAULT_MEMORY_LIMIT, Plane, PlaneReadError, format_bytes, read_plane
 from .pooling import NoValidPixelsError, PooledHistogram
 from .records import group_records
 from .report import LEVEL_NAMES, group_summaries, group_table, issue_counts
 from .run import Preflight, RunResult, preflight, run_experiment
 from .validation import ValidationIssue, has_errors, plural
+from .zarr_export import (
+    CHUNK_SIDE,
+    COMPRESSIONS,
+    MAX_CHUNK_SIZE,
+    MAX_LEVELS,
+    MIN_CHUNK_SIZE,
+    OME_ZARR_FOLDER,
+    ConversionSettings,
+    estimate_conversion,
+    free_space,
+    zarr_available,
+)
 
 ROLE_OPTIONS = [
     ("Z - depth (focal planes)", "Z"),
@@ -74,6 +86,17 @@ LEVEL_OPTIONS = [
 EXCLUDABLE_CODES = ("unreadable_tiff", "multiple_series", "unsupported_dtype")
 
 _SKIPPED_CODES = ("non_tiff_file", "tiff_outside_leaf", "empty_folder")
+
+CONVERSION_OPTIONS = [
+    ("Read the images directly (recommended; nothing extra is saved)", "read"),
+    ("Convert the TIFF images to OME-Zarr, then process the converted copies", "convert"),
+]
+
+PYRAMID_OPTIONS = [
+    ("Automatic (recommended)", "auto"),
+    ("Full resolution only", "none"),
+    ("Choose the number of smaller copies", "fixed"),
+]
 _MAX_PLOTTED_GROUPS = 12
 _PACKAGE_LOGGER = "morphobricks_preprocessing"
 _WIDE = {"width": "99%"}
@@ -124,15 +147,20 @@ class PreprocessingNotebook:
 
         return ui.page(
             "MorphoBricks preprocessing",
-            "Per-plane intensity histograms for an experiment folder of TIFF images.",
+            "Per-plane intensity histograms for an experiment folder of TIFF and OME-Zarr images.",
             [
                 widgets.HTML(
                     ui.status(
                         "ok",
                         f"The notebook is ready (morphobricks-preprocessing {__version__}).",
-                        ["Continue with step 1 below: run its cell to choose your folder."],
                     )
-                )
+                ),
+                widgets.HTML(
+                    ui.next_steps(
+                        "Go to Step 1 and check your experiment folder.",
+                        "Run its cell, choose your image folder, then click Check folder.",
+                    )
+                ),
             ],
         )
 
@@ -156,6 +184,7 @@ class PreprocessingNotebook:
                 self.folder_tiles,
                 self.labels_card,
                 self.issues_card,
+                self.folder_next,
             ],
         )
 
@@ -183,6 +212,7 @@ class PreprocessingNotebook:
             [
                 self.readiness_card,
                 self.settings_card,
+                self.conversion_card,
                 self.plan_card,
                 self.run_button,
                 self.progress,
@@ -190,6 +220,7 @@ class PreprocessingNotebook:
                 self.run_tiles,
                 self.run_issues,
                 self.details_box,
+                self.run_next,
             ],
         )
 
@@ -212,6 +243,7 @@ class PreprocessingNotebook:
                 self.stats_tiles,
                 self.statistics_card,
                 self.distribution_card,
+                self.stats_next,
             ],
         )
 
@@ -281,6 +313,7 @@ class PreprocessingNotebook:
             main=True,
         )
         self.folder_status = widgets.HTML()
+        self.folder_next = widgets.HTML()
         self.folder_tiles = widgets.HTML()
         self.labels_table = widgets.HTML()
         self.labels_confirmed = ui.ConfirmToggle(
@@ -289,7 +322,7 @@ class PreprocessingNotebook:
             "technical repeat. If a label is wrong, rename the folder and click <b>Check "
             "folder</b> again. Step 3 can only run once the labels are confirmed.",
             "Yes, the labels are correct",
-            "Labels confirmed. Continue with step 2.",
+            "Labels confirmed.",
             "Undo: the labels are not right",
         )
         self.labels_confirmed.disabled = True
@@ -314,8 +347,14 @@ class PreprocessingNotebook:
             tooltip="Add the images that cannot be processed to the exclusion list",
         )
         ui.set_visible(self.exclude_button, False)
+        self.issue_counts = widgets.HTML()
+        self.issue_details = widgets.Accordion(
+            children=[widgets.VBox([self.folder_issues, self.exclude_button])],
+            titles=("Show warnings and errors",),
+            selected_index=None,
+        )
         self.issues_card = ui.card(
-            "Messages", [self.folder_issues, self.exclude_button], visible=False
+            "Messages", [self.issue_counts, self.issue_details], visible=False
         )
 
         self.folder_browse.on_click(lambda _: self._browse(self.folder))
@@ -323,8 +362,8 @@ class PreprocessingNotebook:
         self.check_button.on_click(lambda _: self.check_folder())
         self.exclude_button.on_click(lambda _: self._exclude_blocking_images())
         self.folder.observe(lambda _: self._folder_edited(), names="value")
-        self.output.observe(lambda _: self._update_output_hint(), names="value")
-        self.labels_confirmed.observe(lambda _: self._refresh_run_step())
+        self.output.observe(lambda _: self._output_edited(), names="value")
+        self.labels_confirmed.observe(lambda _: self._labels_changed())
         self._update_output_hint()
 
     def check_folder(self) -> Preflight | None:
@@ -336,6 +375,7 @@ class PreprocessingNotebook:
             )
             return None
         self._busy(self.check_button, "Checking…")
+        self.folder_next.value = ""
         self.folder_status.value = ui.working("Checking the folders and image headers…")
         try:
             with self.log.attached():
@@ -368,13 +408,11 @@ class PreprocessingNotebook:
             self.folder_status.value = ui.status(
                 "warn",
                 f"Ready, with {plural(len(warnings), 'warning')} to read.",
-                ["Check the labels table below and click Yes, the labels are correct."],
             )
         else:
             self.folder_status.value = ui.status(
                 "ok",
                 "The folder looks good.",
-                ["Check the labels table below and click Yes, the labels are correct."],
             )
         self.folder_tiles.value = ui.tiles(_folder_tiles(pre))
         self.labels_table.value = labels_html(pre)
@@ -382,9 +420,37 @@ class PreprocessingNotebook:
         self.labels_confirmed.disabled = not pre.discovery.leaves
         ui.set_visible(self.labels_card, bool(pre.discovery.leaves))
         self.folder_issues.value = issues_html(pre.issues)
+        self.issue_counts.value = "".join(
+            f"<span class='mb-issue-count mb-{kind}'>{plural(len(items), name)}</span>"
+            for kind, items, name in (("error", errors, "error"), ("warn", warnings, "warning"))
+            if items
+        )
+        self.issue_details.selected_index = None
         ui.set_visible(self.issues_card, bool(pre.issues))
         blocking = any(i.code in EXCLUDABLE_CODES for i in pre.issues)
         ui.set_visible(self.exclude_button, blocking)
+        self._refresh_folder_next()
+
+    def _labels_changed(self) -> None:
+        self._refresh_folder_next()
+        if self.confirmed_mapping is not None:
+            self._refresh_axis_next()
+        self._refresh_run_step()
+
+    def _refresh_folder_next(self) -> None:
+        self.folder_next.value = ""
+        if self.preflight is None or not self.preflight.ok:
+            return
+        if self.labels_confirmed.value:
+            self.folder_next.value = ui.next_steps(
+                "Go to Step 2 and review the axis roles.",
+                "Run its cell, check the preview, then click Confirm axis roles.",
+            )
+        else:
+            self.folder_next.value = ui.next_steps(
+                "Check the labels in Step 1 and confirm them.",
+                "Read any warnings and review the labels, then click Yes, the labels are correct.",
+            )
 
     def _folder_edited(self) -> None:
         self._update_output_hint()
@@ -398,11 +464,18 @@ class PreprocessingNotebook:
             "info", "The folder changed.", ["Press Check folder to check the new folder."]
         )
         self.folder_tiles.value = ""
+        self.folder_next.value = ""
         self.labels_confirmed.set(False, notify=False)
         ui.set_visible(self.labels_card, False)
         ui.set_visible(self.issues_card, False)
         self._refresh_axis_step()
         self._refresh_run_step()
+
+    def _output_edited(self) -> None:
+        self._update_output_hint()
+        # "What will happen" and the free disk space depend on the output folder.
+        if hasattr(self, "readiness"):
+            self._refresh_run_step()
 
     def _update_output_hint(self) -> None:
         folder = ui.clean_path(self.folder.value)
@@ -521,6 +594,7 @@ class PreprocessingNotebook:
             main=True,
         )
         self.confirmed_status = widgets.HTML()
+        self.axis_next = widgets.HTML()
         self.missing_as_singleton.observe(lambda _: self._mapping_changed())
         self.preview_button.on_click(lambda _: self.show_preview())
         self.preview_file.observe(lambda _: self._preview_file_changed(), names="value")
@@ -531,6 +605,7 @@ class PreprocessingNotebook:
 
     def _refresh_axis_step(self) -> None:
         pre = self.preflight
+        self.axis_next.value = ""
         self._preview_shown = False
         if pre is None:
             self.axis_box.children = [
@@ -613,21 +688,28 @@ class PreprocessingNotebook:
             self.preview_card,
             self.confirm_button,
             self.confirmed_status,
+            self.axis_next,
         ]
         self._fill_preview_files()
         self._mapping_changed()
 
     def _refresh_missing_card(self, pre: Preflight) -> None:
-        lacking = [f for f in pre.metadata.files if f.readable and f.axes != self.mapping.axes]
+        # OME-Zarr images may store the same roles in another order; only roles that
+        # an image lacks need the user's confirmation.
+        lacking: dict[str, str] = {}
+        for f in pre.metadata.files:
+            resolved = file_mapping_for(f, self.mapping) if f.readable else None
+            if resolved is not None and resolved.singleton_roles:
+                lacking[f.relative_path] = "".join(resolved.singleton_roles)
         ui.set_visible(self.missing_card, bool(lacking))
         if not lacking:
             return
-        by_axes: dict[str, list[str]] = {}
-        for f in lacking:
-            by_axes.setdefault(f.axes, []).append(f.relative_path)
+        by_axes: dict[tuple[str, str], list[str]] = {}
+        headers = {f.relative_path: f for f in pre.metadata.files}
+        for rel, missing in lacking.items():
+            by_axes.setdefault((headers[rel].axes, missing), []).append(rel)
         lines = []
-        for axes, paths in sorted(by_axes.items()):
-            missing = "".join(a for a in self.mapping.axes if a not in axes) or "?"
+        for (axes, missing), paths in sorted(by_axes.items()):
             names = ", ".join(axis_name(a) for a in missing)
             lines.append(
                 f"{plural(len(paths), 'image')} with axes <b>{html.escape(axes)}</b> "
@@ -671,11 +753,15 @@ class PreprocessingNotebook:
         )
         if review.issues:
             self.axis_status.value = issues_html(review.issues)
+            self.axis_next.value = ""
         else:
             self.axis_status.value = ui.status(
                 "ok",
                 "These roles are valid for every image.",
-                ["Click Show preview, check the picture, then confirm below."],
+            )
+            self.axis_next.value = ui.next_steps(
+                "Check the preview in Step 2, then confirm the axis roles.",
+                "Click Show preview and inspect a few planes before confirming.",
             )
         self._review_ok = review.ok
         if self._preview_shown:
@@ -699,10 +785,14 @@ class PreprocessingNotebook:
         files = [
             f
             for f in self.preflight.metadata.files
-            if f.readable and self.mapping.for_axes(f.axes) is not None
+            if f.readable and file_mapping_for(f, self.mapping) is not None
         ]
         options = [
-            (f"{f.relative_path}  ({f.axes}, {' × '.join(map(str, f.shape))})", f.relative_path)
+            (
+                f"{f.relative_path}  ({'OME-Zarr, ' if f.is_ome_zarr else ''}{f.axes}, "
+                f"{' × '.join(map(str, f.shape))})",
+                f.relative_path,
+            )
             for f in files
         ]
         self.preview_file.options = options
@@ -715,7 +805,7 @@ class PreprocessingNotebook:
 
     def _configure_sliders(self, reset: bool) -> None:
         header = self._preview_header()
-        file_mapping = self.mapping.for_axes(header.axes) if header else None
+        file_mapping = file_mapping_for(header, self.mapping) if header else None
         for role, slider in self.preview_sliders.items():
             dim = None if file_mapping is None else file_mapping.index_of(role)
             length = 1 if dim is None else header.shape[dim]
@@ -744,7 +834,7 @@ class PreprocessingNotebook:
         if header is None:
             self.preview_caption.value = ui.status("warn", "No image fits these axis roles.")
             return
-        file_mapping = self.mapping.for_axes(header.axes)
+        file_mapping = file_mapping_for(header, self.mapping)
         coords = {
             role.lower(): self.preview_sliders[role].value
             for role in ("Z", "C", "T")
@@ -789,13 +879,26 @@ class PreprocessingNotebook:
                 )
                 if r is not None
             ]
-            self.confirmed_status.value = ui.status(
-                "ok", "Axis roles confirmed.", [*roles, "Continue to step 3."]
-            )
+            self.confirmed_status.value = ui.status("ok", "Axis roles confirmed.", roles)
+            self._refresh_axis_next()
         else:
             self.confirmed_status.value = ""
+            self._mapping_changed()
         self._update_confirm_button()
         self._refresh_run_step()
+
+    def _refresh_axis_next(self) -> None:
+        if not self.labels_confirmed.value:
+            self.axis_next.value = ui.next_steps(
+                "Go to Step 1 and confirm the folder labels.",
+                "Review the labels and click Yes, the labels are correct before running Step 3.",
+            )
+        else:
+            self.axis_next.value = ui.next_steps(
+                "Go to Step 3 and compute the histograms.",
+                "Run its cell and review the settings and What will happen. "
+                "Then click Compute histograms.",
+            )
 
     def _set_locked(self, locked: bool) -> None:
         for dropdown in self.role_dropdowns:
@@ -853,6 +956,7 @@ class PreprocessingNotebook:
         self.settings_card = ui.card(
             "Settings", [self.recommended, self.recommended_hint, self.advanced]
         )
+        self._build_conversion_card()
         self.plan = widgets.HTML()
         self.plan_card = ui.card("What will happen", [self.plan])
         self.run_button = ui.button(
@@ -867,6 +971,7 @@ class PreprocessingNotebook:
         )
         ui.set_visible(self.progress, False)
         self.run_status = widgets.HTML()
+        self.run_next = widgets.HTML()
         self.run_tiles = widgets.HTML()
         self.run_issues = widgets.HTML()
         self.details = widgets.Textarea(
@@ -879,6 +984,211 @@ class PreprocessingNotebook:
         for control in (self.bins, self.memory_gib, self.force_rebuild):
             control.observe(lambda _: self._refresh_run_step(), names="value")
         self.run_button.on_click(lambda _: self.run())
+
+    def _build_conversion_card(self) -> None:
+        # Converting is a choice about the data, not a tuning value, so it has its own
+        # card and the recommended settings leave it alone.
+        available = zarr_available()
+        self.conversion = widgets.RadioButtons(
+            options=CONVERSION_OPTIONS,
+            value="read",
+            disabled=not available,
+            layout=widgets.Layout(width="99%"),
+        )
+        self.conversion_help = ui.help_text(_conversion_help(available))
+        self.space_warning = widgets.HTML()
+        self.chunk_size = widgets.BoundedIntText(
+            value=CHUNK_SIDE,
+            min=MIN_CHUNK_SIZE,
+            max=MAX_CHUNK_SIZE,
+            step=256,
+            description="Side length (px)",
+            style=_label(),
+            layout=widgets.Layout(width="99%"),
+        )
+        self.compression = widgets.Dropdown(
+            options=[(label, key) for key, label in COMPRESSIONS.items()],
+            value="lz4",
+            style=_label(),
+            layout=widgets.Layout(width="99%"),
+        )
+        self.compression_level = widgets.BoundedIntText(
+            value=5,
+            min=1,
+            max=9,
+            description="Level (1–9)",
+            style=_label(),
+            layout=widgets.Layout(width="99%"),
+        )
+        self.compression_level_box = widgets.VBox(
+            [
+                self.compression_level,
+                ui.help_text(
+                    "1 favours speed; 9 favours smaller files. The default is 5. "
+                    "Every level keeps the full-resolution pixel values unchanged."
+                ),
+            ]
+        )
+        self.pyramid = widgets.Dropdown(
+            options=PYRAMID_OPTIONS,
+            value="auto",
+            style=_label(),
+            layout=widgets.Layout(width="99%"),
+        )
+        self.pyramid_count = widgets.BoundedIntText(
+            value=2,
+            min=1,
+            max=MAX_LEVELS - 1,
+            description="Extra levels",
+            style=_label(),
+            layout=widgets.Layout(width="99%"),
+        )
+        self.pyramid_count_box = widgets.VBox(
+            [
+                self.pyramid_count,
+                ui.help_text(
+                    f"Add 1 to {MAX_LEVELS - 1} smaller copies, each half the width and "
+                    "height of the previous level. Two adds half-size and quarter-size copies."
+                ),
+            ]
+        )
+        storage_card = ui.card(
+            "Storage block size",
+            [
+                ui.help_text(
+                    "Each plane is stored in square blocks called chunks. "
+                    "This changes how the copy is stored and read."
+                ),
+                self.chunk_size,
+                ui.help_text(
+                    f"Default: {CHUNK_SIDE:,} × {CHUNK_SIDE:,} pixels per block, or smaller "
+                    f"at an image edge. Allowed side lengths: {MIN_CHUNK_SIZE}–{MAX_CHUNK_SIZE:,} "
+                    "pixels. Each block belongs to one depth slice, channel and time point."
+                ),
+                ui.help_text(
+                    "Smaller blocks let viewers read smaller regions; larger blocks mean fewer "
+                    "blocks to manage. Leave the default if you are unsure."
+                ),
+            ],
+        )
+        compression_card = ui.card(
+            "Lossless compression",
+            [
+                ui.help_text("Reduce the space used by the copies without changing pixel values."),
+                self.compression,
+                ui.help_text(
+                    "LZ4 (recommended) favours speed. Zstandard favours smaller files and "
+                    "may take longer. No compression skips compression and uses more disk space."
+                ),
+                self.compression_level_box,
+            ],
+        )
+        preview_card = ui.card(
+            "Preview resolutions",
+            [
+                ui.help_text(
+                    "Add smaller versions for viewers to zoom out quickly. These versions "
+                    "form an image pyramid; histograms always use the full resolution."
+                ),
+                self.pyramid,
+                ui.help_text(
+                    "Automatic (recommended) halves each plane until it fits within "
+                    "512 × 512 pixels. Full resolution only saves space by omitting smaller "
+                    "versions. Choose the number of copies to set how many to add."
+                ),
+                self.pyramid_count_box,
+            ],
+        )
+        self.conversion_grid = widgets.GridBox(
+            [storage_card, compression_card, preview_card],
+            layout=widgets.Layout(
+                width="99%",
+                grid_template_columns="repeat(auto-fit, minmax(min(99%, 320px), 1fr))",
+                grid_gap="10px",
+            ),
+        )
+        self.conversion_settings = widgets.Accordion(
+            children=[self.conversion_grid],
+            titles=("OME-Zarr conversion settings",),
+            selected_index=None,
+            layout=widgets.Layout(width="99%"),
+        )
+        self.conversion_card = ui.card(
+            "(Optional) Image conversion",
+            [self.conversion, self.conversion_help, self.space_warning, self.conversion_settings],
+        )
+        for control in (
+            self.conversion,
+            self.chunk_size,
+            self.compression,
+            self.compression_level,
+            self.pyramid,
+            self.pyramid_count,
+        ):
+            control.observe(lambda _: self._conversion_changed(), names="value")
+        self._refresh_conversion()
+
+    def _conversion_changed(self) -> None:
+        self._refresh_run_step()
+
+    def _refresh_conversion(self) -> None:
+        converting = self._convert_tiffs()
+        # Open on choosing conversion, but preserve a deliberate collapse while editing.
+        if converting and not ui.is_visible(self.conversion_settings):
+            self.conversion_settings.selected_index = 0
+        ui.set_visible(self.conversion_settings, converting)
+        ui.set_visible(self.compression_level_box, self.compression.value != "none")
+        ui.set_visible(self.pyramid_count_box, self.pyramid.value == "fixed")
+        self.space_warning.value = self._space_warning_html() if converting else ""
+
+    def _space_warning_html(self) -> str:
+        if self.preflight is None:
+            return ui.status(
+                "warn",
+                "Converting stores your images a second time.",
+                ["Check the experiment folder in step 1 to see how much disk space it needs."],
+            )
+        folder = ui.clean_path(self.folder.value)
+        estimate = estimate_conversion(
+            folder, self.preflight.metadata.files, self._conversion_settings()
+        )
+        if not estimate.image_count:
+            return ui.status(
+                "info",
+                "There is nothing to convert.",
+                ["Every image is already OME-Zarr; they are always read directly."],
+            )
+        output = Path(self._output_folder() or default_output_folder(folder))
+        free = free_space(output)
+        lines = [
+            f"All {plural(estimate.image_count, 'TIFF image')} will be stored again in the "
+            "converted format, so all the space they occupy is duplicated.",
+            f"The TIFF images take {format_bytes(estimate.source_bytes)}. The copies need up "
+            f"to about {format_bytes(estimate.copy_bytes)} (before compression, including the "
+            "smaller levels); compression usually makes them smaller.",
+            "Free space on the drive of the output folder: "
+            + (format_bytes(free) if free is not None else "unknown")
+            + ".",
+            "The copies are kept in the output folder; choosing Read the images directly "
+            "later removes them.",
+        ]
+        if free is not None and estimate.copy_bytes > free:
+            lines.append(
+                "This may not be enough space. Free some space, or choose an output folder "
+                "on another drive in step 1."
+            )
+            return ui.status("error", "The converted images may not fit on the drive.", lines)
+        return ui.status("warn", "Converting duplicates the space your images take.", lines)
+
+    def _conversion_settings(self) -> ConversionSettings:
+        return ConversionSettings(
+            chunk_size=self.chunk_size.value,
+            compression=self.compression.value,
+            compression_level=self.compression_level.value,
+            pyramid_levels={"auto": None, "none": 0}.get(
+                self.pyramid.value, self.pyramid_count.value
+            ),
+        )
 
     def _reset_settings(self, pre: Preflight) -> None:
         dtype = pre.metadata.dtype
@@ -895,6 +1205,7 @@ class PreprocessingNotebook:
             self.bins.value = self._default_bins
             self.bins_hint.value = f"<div class='mb-help'>{_bins_help(dtype)}</div>"
         self._recommended_changed()
+        self._refresh_conversion()
 
     def _recommended_changed(self) -> None:
         recommended = self.recommended.value
@@ -913,6 +1224,8 @@ class PreprocessingNotebook:
         self._refresh_run_step()
 
     def _refresh_run_step(self) -> None:
+        if self.result is None:
+            self.run_next.value = ""
         pre = self.preflight
         folder_ok = pre is not None and pre.ok
         if pre is not None and self.confirmed_mapping is not None:
@@ -937,14 +1250,16 @@ class PreprocessingNotebook:
         ]
         missing = [text for done, text in items if not done]
         if missing:
+            self.run_next.value = ""
             title = ui.status(
                 "warn", "Almost ready.", [f"Still to do: {missing[0][0].lower()}{missing[0][1:]}."]
             )
         else:
-            title = ui.status("ok", "Ready to run.", ["Press Compute histograms below."])
+            title = ui.status("ok", "Ready to run.")
         self.readiness.value = title + ui.checklist(items)
         self.run_button.disabled = bool(missing)
         self.plan.value = self._plan_html()
+        self._refresh_conversion()
 
     def _plan_html(self) -> str:
         folder = ui.clean_path(self.folder.value)
@@ -961,6 +1276,22 @@ class PreprocessingNotebook:
             f"Files written: <b>{OUTPUT_FILENAME}</b> (one row per plane) and "
             f"<b>{MANIFEST_FILENAME}</b> (what was read, with which settings).",
         ]
+        files = self.preflight.metadata.files
+        tiffs = sum(not f.is_ome_zarr for f in files)
+        zarrs = len(files) - tiffs
+        if zarrs:
+            lines.append(
+                f"<b>{plural(zarrs, 'OME-Zarr image')}</b> will be read directly, with the axes "
+                f"{'its' if zarrs == 1 else 'their'} metadata declares."
+            )
+        if tiffs and self._convert_tiffs():
+            copies = html.escape(str(output / OME_ZARR_FOLDER))
+            settings = html.escape(self._conversion_settings().describe())
+            lines.append(
+                f"<b>{plural(tiffs, 'TIFF image')}</b> will be converted to OME-Zarr in "
+                f"<b>{copies}</b> first ({settings}); their histograms are computed from the "
+                "copies. Copies of unchanged images are kept."
+            )
         manifest = output / MANIFEST_FILENAME
         if self.force_rebuild.value:
             lines.append("Every image will be read (recompute every row is ticked).")
@@ -986,6 +1317,7 @@ class PreprocessingNotebook:
         if self.run_button.disabled:
             return None
         self._busy(self.run_button, "Computing…")
+        self.run_next.value = ""
         ui.set_visible(self.progress, True)
         self.progress.value, self.progress.max, self.progress.bar_style = 0, 1, "info"
         self.run_status.value = ui.working("Preparing: checking everything again…")
@@ -1002,6 +1334,8 @@ class PreprocessingNotebook:
                     exclude=self._excluded(),
                     force_rebuild=self.force_rebuild.value,
                     progress=self._progress,
+                    convert_tiffs=self._convert_tiffs(),
+                    conversion=self._conversion_settings(),
                 )
         except Exception as exc:  # unexpected failures still get a readable message
             self.log.lines.append(traceback.format_exc())
@@ -1030,6 +1364,7 @@ class PreprocessingNotebook:
         return self.result
 
     def _show_run_result(self, result: RunResult) -> None:
+        self.run_next.value = ""
         self.progress.bar_style = "success" if result.written else "danger"
         self.run_issues.value = issues_html(result.issues) if result.issues else ""
         if not result.written:
@@ -1040,25 +1375,38 @@ class PreprocessingNotebook:
             )
             return
         lines = [f"Table: {result.csv_path}", f"Manifest: {result.manifest_path}"]
+        if result.converted or self._convert_tiffs():
+            lines.append(
+                f"Converted TIFF images: {result.output_folder / OME_ZARR_FOLDER} "
+                f"({plural(len(result.converted), 'image')} converted in this run)"
+            )
         if result.rebuild_reason:
             lines.append(f"Every image was read because {result.rebuild_reason}.")
-        lines.append("Step 4 (optional) calculates statistics per group from this table.")
         self.run_status.value = ui.status(
             "ok", f"Done: {plural(result.plane_count, 'plane')} in the table.", lines
         )
-        kept = 0 if result.rebuild_reason else len(result.unchanged)
-        self.run_tiles.value = ui.tiles(
-            [
-                ("🧩", f"{result.plane_count:,}", "planes in the table"),
-                ("📖", f"{len(result.read):,}", "images read"),
-                ("♻️", f"{kept:,}", "images kept from the last run"),
-                ("🆕", f"{len(result.new):,}", "new images"),
-                ("✏️", f"{len(result.changed):,}", "changed images"),
-                ("🗑️", f"{len(result.removed):,}", "images removed"),
-                ("⛔", f"{len(result.excluded):,}", "excluded images"),
-                ("⚠️", issue_counts(result.issues), "checks"),
-            ]
+        self.run_next.value = ui.next_steps(
+            "Go to Step 4 (optional) and calculate the statistics.",
+            "Run its cell, choose how to group the images, then click Calculate statistics. "
+            "You can also finish here: the histogram table is ready for later MorphoBricks bricks.",
         )
+        kept = 0 if result.rebuild_reason else len(result.unchanged)
+        tiles = [
+            ("🧩", f"{result.plane_count:,}", "planes in the table"),
+            ("📖", f"{len(result.read):,}", "images read"),
+            ("♻️", f"{kept:,}", "images kept from the last run"),
+            ("🆕", f"{len(result.new):,}", "new images"),
+            ("✏️", f"{len(result.changed):,}", "changed images"),
+            ("🗑️", f"{len(result.removed):,}", "images removed"),
+            ("⛔", f"{len(result.excluded):,}", "excluded images"),
+        ]
+        if result.converted or self._convert_tiffs():
+            tiles.append(("🗂️", f"{len(result.converted):,}", "TIFF images converted"))
+        tiles.append(("⚠️", issue_counts(result.issues), "checks"))
+        self.run_tiles.value = ui.tiles(tiles)
+
+    def _convert_tiffs(self) -> bool:
+        return self.conversion.value == "convert"
 
     def _progress(self, done: int, total: int, path: str) -> None:
         self.progress.max = max(total, 1)
@@ -1110,6 +1458,7 @@ class PreprocessingNotebook:
             main=True,
         )
         self.stats_status = widgets.HTML()
+        self.stats_next = widgets.HTML()
         self.results_card = ui.card(
             "Group by",
             [
@@ -1173,6 +1522,7 @@ class PreprocessingNotebook:
     def _csv_changed(self) -> None:
         # Results of another table must not stay on screen next to the new path.
         self.stats_status.value = self.stats_tiles.value = self.statistics.value = ""
+        self.stats_next.value = ""
         ui.set_visible(self.statistics_card, False)
         ui.set_visible(self.distribution_card, False)
 
@@ -1184,6 +1534,7 @@ class PreprocessingNotebook:
         """Show pooled statistics and distributions per group from the histogram table."""
         if self.statistics_button.disabled:
             return
+        self.stats_next.value = ""
         path = self._csv_path()
         if path is None or not path.is_file():
             if path is None:
@@ -1265,6 +1616,11 @@ class PreprocessingNotebook:
             "ok",
             f"Statistics of {plural(len(summaries), LEVEL_NAMES[level])} calculated.",
             [f"From the table {path}"],
+        )
+        self.stats_next.value = ui.next_steps(
+            "Review the group statistics and intensity distributions above.",
+            "Choose another grouping to compare repeats or images. The histogram table "
+            "is ready for later MorphoBricks bricks; this optional step writes no files.",
         )
 
     # Shared ------------------------------------------------------------------------------
@@ -1509,6 +1865,7 @@ def _folder_tiles(pre: Preflight) -> list[tuple[str, str, str]]:
         ("📂", f"{len(pre.discovery.leaves):,}", "image folders"),
         ("🧪", f"{len(conditions):,}", "conditions"),
         ("🔢", dtype.name if dtype is not None else "mixed", "pixel type"),
+        ("🗂️", f"{sum(f.is_ome_zarr for f in pre.metadata.files):,}", "OME-Zarr images"),
         ("⏭️", f"{skipped:,}", "files or folders skipped"),
         (
             "⛔" if errors else "⚠️" if warnings else "✅",
@@ -1516,6 +1873,27 @@ def _folder_tiles(pre: Preflight) -> list[tuple[str, str, str]]:
             "errors / warnings",
         ),
     ]
+
+
+def _conversion_help(available: bool) -> str:
+    """Help lines under the choice between reading and converting."""
+    items = [
+        "<b>Read the images directly</b> (recommended): TIFF and OME-Zarr images are read "
+        "as they are, and nothing extra is saved.",
+        "<b>Convert</b>: every TIFF image is first written in OME-Zarr format to the "
+        f"<b>{OME_ZARR_FOLDER}</b> folder of the output, and its histograms are computed from "
+        "that copy, like for any OME-Zarr image. The results are the same.",
+        "OME-Zarr images are always read directly; they are never converted.",
+        "The copies keep the exact pixel values and can be opened in viewers such as napari. "
+        "Your images are never changed.",
+        "Switching between the two later recomputes every TIFF image.",
+    ]
+    if not available:
+        items.append(
+            "<b>Converting is not available:</b> it needs the zarr package. Install it with "
+            '<b>pip install "morphobricks-preprocessing[zarr]"</b> and restart the notebook.'
+        )
+    return "<ul>" + "".join(f"<li>{item}</li>" for item in items) + "</ul>"
 
 
 def _bins_help(dtype) -> str:

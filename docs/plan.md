@@ -1,10 +1,12 @@
 # MorphoBricks Preprocessing Brick — Implementation Plan
 
 **Status:** design brief, revised after the binning study of October 2026
-**Scope:** folder validation, TIFF metadata review, per-plane intensity histograms, the
-histogram CSV, and a normalization library for later bricks
+**Scope:** folder validation, TIFF and OME-Zarr metadata review, per-plane intensity
+histograms, the histogram CSV, and a normalization library for later bricks. OME-Zarr input
+and the optional conversion of TIFF images to OME-Zarr need the `zarr` extra (§10, §12
+question 12).
 **Out of scope for this milestone:** applying normalization (done by the patch-extraction
-brick), OME-Zarr conversion, spatial correction methods
+brick), spatial correction methods.
 
 The exact rules (folder layout, binning formulas, CSV columns, statistic definitions,
 validation severities) are in [contract.md](contract.md). Coding conventions are in
@@ -28,8 +30,10 @@ The brick must:
 
 1. Accept one selected experiment folder.
 2. Validate and preview the folder hierarchy.
-3. Inspect TIFF metadata, allow axis confirmation, and preview the resulting XY plane.
-4. Read multidimensional TIFF data as individual 2D planes.
+3. Inspect TIFF and OME-Zarr metadata, allow axis confirmation, and preview the resulting
+   XY plane.
+4. Read multidimensional TIFF and OME-Zarr data as individual 2D planes; optionally convert
+   TIFF images to OME-Zarr first and process the copies.
 5. Create one histogram per plane, with exact extrema and pixel counts.
 6. Write a self-describing CSV that later bricks use to calculate normalization
    parameters for any group of planes.
@@ -42,23 +46,27 @@ The brick must:
 
 The selected directory is the experiment root:
 
-Experiment root → biological condition → biological repeat → technical repeat → TIFF images
+Experiment root → biological condition → biological repeat → technical repeat → images
+
+Images are TIFF files (`.tif`, `.tiff`) or OME-Zarr images: folders whose names end in
+`.zarr` (usually `.ome.zarr`). An OME-Zarr folder counts as one image, not as a subfolder.
+TIFF and OME-Zarr images may be mixed in one experiment.
 
 Folder names are arbitrary labels and need only be unique among siblings. Each branch may
 stop at any level; omitted levels receive the reserved value `single`. Levels cannot be
 skipped. Labels are scoped to their parents: `bio_rep1` under two conditions are two
 different samples, so groups are always identified by the full label path.
 
-A folder containing images and no subfolders is a leaf folder. Only TIFF files directly
-inside leaf folders are analysed. If the experiment root itself contains TIFFs and has no
+A folder containing images and no subfolders is a leaf folder. Only images directly
+inside leaf folders are analysed. If the experiment root itself contains images and has no
 subfolders, it is the leaf folder and every label is `single`.
 
 During preflight, show a tree/summary of the inferred labels and ask the user to confirm
 or correct it. The folder name `single` is reserved; report it as an error. Report
-warnings for non-TIFF files, empty folders and TIFF files outside leaf folders, and
+warnings for files that are not images, empty folders and images outside leaf folders, and
 explain that they will not be analysed.
 
-## 3. TIFF metadata and axis review
+## 3. Image metadata and axis review
 
 Inspect headers before loading pixels. Record the relative path and file name,
 series/page count, shape, dimensionality, dtype and bit depth, axis labels from metadata
@@ -75,6 +83,15 @@ left unassigned for the user to choose; they are never guessed.
 Only the first image series is used, at full-resolution level 0 for pyramidal files. A
 file with more than one image series (several positions or scenes) is an error in this
 milestone.
+
+OME-Zarr images (OME-NGFF 0.4 and 0.5) declare their axes (time, channel, space), so their
+roles are taken from that metadata rather than guessed. The experiment mapping is defined
+on the TIFF arrangement when there are TIFF files; OME-Zarr images with the same
+arrangement use it, and others are matched role by role: their declared roles must fit the
+experiment's, and experiment roles they lack are read as length 1 only after confirmation.
+Only level 0 of a single image is read; a store with several images (a bioformats2raw
+folder with several series, a plate or a well with several fields) is an error, like a
+multi-series TIFF.
 
 Files with a conflicting number or arrangement of dimensions block processing until
 resolved. Different dimension lengths are allowed with a warning. A file missing an axis
@@ -114,8 +131,9 @@ its representative, which bounds every percentile error (see contract §4).
 
 ## 5. Processing passes and memory
 
-**Pass 1, preflight:** walk the tree, identify leaf folders and candidate TIFFs, inspect
-headers, detect dtype/axis conflicts, and collect what the confirmation UI needs. Do not
+**Pass 1, preflight:** walk the tree, identify leaf folders and candidate images (TIFF
+files and OME-Zarr folders), inspect headers and OME-NGFF metadata, detect dtype/axis
+conflicts, and collect what the confirmation UI needs. Do not
 read every pixel (the axis preview reads one sample plane per distinct layout).
 
 **Pass 2, histograms:** after confirmation, read one 2D plane at a time; compute its exact
@@ -176,14 +194,17 @@ manifest, and lose any rows they had.
 
 ## 8. Validation behavior and user messages
 
-Block processing for: mixed dtypes; unreadable TIFFs in leaf folders; unsupported sample
+Block processing for: mixed dtypes; unreadable TIFF files or OME-Zarr folders in leaf
+folders (or OME-Zarr images without the `zarr` extra); OME-Zarr images whose declared axes
+do not fit the experiment's roles; unsupported sample
 formats or axes; missing/duplicate X or Y, duplicate roles or inconsistent mapping; a plane
 over the memory limit; a folder named `single`; sibling folders whose names differ only in
 case; a folder below the technical-repeat level; an output folder inside the experiment;
 no usable planes. System files (dot-files, `Thumbs.db`, `desktop.ini`, `__MACOSX`) are
 ignored silently.
 
-Continue with warnings for: non-TIFF files; empty folders; TIFFs outside leaf folders;
+Continue with warnings for: files that are not images; empty folders; images outside leaf
+folders;
 non-finite pixels (ignored and counted); different image sizes with a valid axis
 interpretation; planes with no finite values while others remain usable.
 
@@ -241,7 +262,21 @@ API, CLI). The notebook and CLI only call the API.
   *Setup feedback: standalone Step 0 detects the environment, prefers a nearby checkout,
   reuses an installed package, or installs missing requirements into the active kernel.*
   *Step-1 feedback: centre the folder-label table's headers and contents consistently.*
-- **Later:** OME-Zarr and chunked processing for planes above the memory limit.
+  *Notebook guidance feedback: separate "What next?" boxes show the next action in larger
+  text, following the current confirmations. Step-1 message details are collapsed with
+  persistent orange warning and red error counts. Step-3 conversion settings use an
+  expandable panel with separate storage, compression and preview-resolution cards.*
+- **OME-Zarr (optional `zarr` extra):** OME-Zarr images (OME-NGFF 0.4 and 0.5) are read
+  as input next to TIFF files, plane by plane from level 0, with their declared axes
+  (`zarr_input`). For TIFF images the user chooses once per experiment: read them
+  directly, or convert each to `<output>/ome_zarr/<relative path>.ome.zarr` (OME-NGFF 0.4)
+  and compute its histograms from the copy, like any OME-Zarr image (`zarr_export`). The
+  copies keep the source values at level 0; smaller levels (2 x 2 means) are for viewers.
+  They follow the incremental rules of §7 and are published with the table and manifest,
+  so a failed run leaves the earlier copies in place. In the notebook the choice and the
+  conversion settings (chunk size, compression, pyramid levels) are in step 3's
+  "(Optional) Image conversion" card. *Implemented, see questions 12 and 13.*
+- **Later:** chunked processing for planes above the memory limit.
 
 ## 11. Tests and acceptance criteria
 
@@ -319,3 +354,47 @@ Raised during review; to be decided before the milestones that need them:
     *Decided (October 2026): centre all headers and cells, including image counts, so
     labels line up with their column headings. Apply this styling to the folder-label
     table only.*
+12. OME-Zarr: which images can be input, how are TIFF images handled, and with which
+    dependency?
+    *Decided (October 2026), revising an earlier answer that covered only copies of TIFF
+    images: the input may be TIFF images or OME-Zarr images, mixed in one experiment.
+    OME-Zarr images are folders ending in `.zarr`, read from level 0 with the axes their
+    OME-NGFF metadata declares; OME-NGFF 0.4 and 0.5 are readable (0.5 needs zarr 3, so
+    Python 3.11 or newer). A store with several images is an error, like a multi-series
+    TIFF. For TIFF images the user chooses once per experiment: read them directly
+    (default), or convert them to OME-Zarr in the output folder first and compute the
+    histograms from the copies, like any other OME-Zarr image. The choice is recorded in
+    the manifest, and switching it recomputes every TIFF row; copies no longer used are
+    removed. An image's change detection uses its size and modification time; for an
+    OME-Zarr folder, the total size of its files and the newest file time. `zarr` (2.18 or
+    3.x) is an optional `zarr` extra; the core stays numpy and tifffile. Copies are written
+    as OME-NGFF 0.4 (Zarr format 2) for the widest viewer support and keep the exact source
+    values at level 0. Chunked processing of planes above the memory limit is not part of
+    it. The CSV schema stays at version 1; the manifest gains optional keys. Delivered as a
+    draft PR for separate testing.*
+13. Notebook feedback on the conversion option: where does it go, and what can the user set?
+    *Decided (October 2026): a separate step-3 card, "(Optional) Image conversion", after
+    the Settings card and not titled after TIFF images. Reading the images directly is the
+    default and recommended choice and saves nothing extra. Choosing to convert shows the
+    conversion settings — chunk size (16 to 8,192 px, default 1,024), lossless
+    compression (Blosc LZ4 default, Blosc Zstandard or none, level 1–9) and pyramid levels
+    (automatic, none, or 1–7) — and a disk-space warning that the images are stored again
+    in the converted format, so the space they occupy is duplicated. The warning shows the
+    TIFF images' size, an upper estimate of the copies (uncompressed, with the smaller
+    levels) and the free space on the output drive; it turns red when the estimate exceeds
+    the free space but never blocks the run. Help is given as separate points. Overlap is
+    not offered: OME-Zarr chunks never overlap; overlap belongs to patch extraction. The
+    settings are recorded in the manifest; changing them rewrites the copies (rows stay
+    the same). The CLI offers the same settings.*
+14. Notebook feedback: how should next actions, folder messages and conversion settings
+    be presented?
+    *Decided (October 2026): show successful actions' guidance in a separate "What next?"
+    box with larger action text, rather than a continuation bullet. Folder-label and axis
+    confirmations control when the next step is suggested; step 4 stays optional. Step-1
+    messages start collapsed after each check, with orange warning and red error counts
+    visible outside the dropdown; the exclusion action stays inside it. Choosing conversion
+    opens an expandable "OME-Zarr conversion settings" panel containing three cards:
+    storage block size, lossless compression and preview resolutions, with plain-language
+    explanations. Manual collapse and control values survive other setting edits; the
+    disk-space warning stays outside the panel. Processing defaults, validation severities,
+    output formats and statistical definitions are unchanged.*

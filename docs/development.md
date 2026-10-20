@@ -4,7 +4,8 @@
 
 - Python 3.10 or newer.
 - Core dependencies: `numpy` and `tifffile` only. Notebook dependencies (`ipywidgets`,
-  `matplotlib`) are in the `notebook` extra; development tools in the `dev` extra.
+  `matplotlib`) are in the `notebook` extra, `zarr` (2.18 or 3.x, for OME-Zarr copies) in
+  the `zarr` extra, and development tools in the `dev` extra.
 - Set up a clone with `python -m venv .venv` and `pip install -e ".[dev]"`.
 
 ## Layout
@@ -49,8 +50,9 @@ Its environment alternatives are tested without installing packages during the t
 - Floats are written at full precision (`repr`); files are UTF-8.
 - Outputs are written to a temporary file and replace the previous version only after a
   complete successful write.
-- Experiment runs stage both the CSV and manifest before publishing either, back up
-  earlier outputs, and restore their previous state if publication raises. Preserve
+- Experiment runs stage both the CSV and manifest (and any OME-Zarr copies) before
+  publishing either, back up earlier outputs, and restore their previous state if
+  publication raises. Preserve
   backups if recovery fails. The CSV hash check still detects forced termination between
   replacements; run only one writer per output folder.
 

@@ -1,7 +1,8 @@
-"""TIFF metadata review: inspect image headers without reading pixels.
+"""Image metadata review: inspect image headers without reading pixels.
 
-For each candidate image this records whether it opens, its shape, pixel type,
-axis labels and series/page counts. Across the experiment it checks the rules
+Images are TIFF files or OME-Zarr folders (:mod:`.zarr_input`). For each
+candidate image this records whether it opens, its shape, pixel type, axis
+labels and series/page counts. Across the experiment it checks the rules
 that must hold before any pixel is read (``docs/contract.md`` §3 and §8): one
 supported pixel type, and the same arrangement of dimensions in every file.
 Different dimension lengths are allowed with a warning.
@@ -25,32 +26,40 @@ import tifffile
 from .discovery import DiscoveryResult
 from .dtypes import UnsupportedDtypeError, check_supported
 from .validation import ValidationIssue, error, has_errors, plural, warning
+from .zarr_input import NgffError, ZarrUnavailableError, is_zarr_name, open_ngff
 
 logger = logging.getLogger(__name__)
+
+TIFF = "tiff"
+OME_ZARR = "ome-zarr"
 
 
 @dataclass(frozen=True)
 class TiffMetadata:
-    """Header information of one TIFF file.
+    """Header information of one image: a TIFF file or an OME-Zarr folder.
+
+    The name is kept from when only TIFF files were read; :data:`ImageMetadata`
+    is the same class.
 
     Attributes
     ----------
     relative_path
         Path relative to the experiment root, with ``/`` separators.
     readable
-        False if the file could not be opened as a TIFF; the other fields are
-        then empty.
+        False if the image could not be opened; the other fields are then empty.
     shape
-        Shape of the first image series, as ``tifffile`` reports it.
+        Shape of the first image series (TIFF) or of the level-0 array of the
+        first image (OME-Zarr).
     dtype
         Pixel type of the first series, in native byte order.
     axes
-        One character per dimension of the first series, e.g. ``"ZCYX"``.
-        ``tifffile`` uses ``Q`` or ``I`` for dimensions without a known role.
+        One character per dimension, e.g. ``"ZCYX"``. ``tifffile`` uses ``Q`` or
+        ``I`` for dimensions without a known role; OME-Zarr axes are translated
+        by :func:`.zarr_input.ngff_axes`.
     series_count
-        Number of image series in the file.
+        Number of image series in the file, or images in the OME-Zarr store.
     page_count
-        Number of TIFF pages (IFDs) in the file.
+        Number of TIFF pages (IFDs) in the file; 0 for OME-Zarr.
     error
         Technical reason the file could not be opened, for the diagnostic log.
     channel_names
@@ -59,6 +68,8 @@ class TiffMetadata:
     significant_bits
         Bits per pixel that carry data (e.g. 12 for a 12-bit camera in 16-bit
         files), from OME metadata; None when not given. For information only.
+    kind
+        ``"tiff"`` or ``"ome-zarr"``.
     """
 
     relative_path: str
@@ -71,6 +82,7 @@ class TiffMetadata:
     error: str | None = None
     channel_names: tuple[str | None, ...] = ()
     significant_bits: int | None = None
+    kind: str = TIFF
 
     @property
     def ndim(self) -> int:
@@ -87,6 +99,15 @@ class TiffMetadata:
         except UnsupportedDtypeError:
             return False
         return True
+
+    @property
+    def is_ome_zarr(self) -> bool:
+        """True for an OME-Zarr image, False for a TIFF file."""
+        return self.kind == OME_ZARR
+
+
+ImageMetadata = TiffMetadata
+"""Header information of one image (TIFF or OME-Zarr)."""
 
 
 @dataclass(frozen=True)
@@ -157,6 +178,56 @@ def inspect_tiff(path: str | os.PathLike, relative_path: str | None = None) -> T
         )
 
 
+def inspect_ome_zarr(path: str | os.PathLike, relative_path: str | None = None) -> TiffMetadata:
+    """Read the metadata of one OME-Zarr image without reading its pixels.
+
+    Returns
+    -------
+    TiffMetadata
+        With ``kind="ome-zarr"``; ``readable`` is False if the folder is not an
+        OME-Zarr image that can be read (or ``zarr`` is not installed). No
+        exception is raised.
+    """
+    path = Path(path)
+    relative_path = path.name if relative_path is None else relative_path
+    try:
+        image = open_ngff(path)
+        return TiffMetadata(
+            relative_path=relative_path,
+            readable=True,
+            shape=image.shape,
+            dtype=image.dtype,
+            axes=image.axes,
+            series_count=image.image_count,
+            page_count=0,
+            channel_names=image.channel_names,
+            kind=OME_ZARR,
+        )
+    except (NgffError, ZarrUnavailableError) as exc:
+        logger.debug("Cannot read the OME-Zarr image %s", path, exc_info=True)
+        return TiffMetadata(
+            relative_path=relative_path,
+            readable=False,
+            error=f"{type(exc).__name__}: {exc}",
+            kind=OME_ZARR,
+        )
+    except Exception as exc:  # anything else in a damaged store means it cannot be used
+        logger.debug("Cannot read the OME-Zarr image %s", path, exc_info=True)
+        return TiffMetadata(
+            relative_path=relative_path,
+            readable=False,
+            error=f"{type(exc).__name__}: {exc}",
+            kind=OME_ZARR,
+        )
+
+
+def inspect_image(path: str | os.PathLike, relative_path: str | None = None) -> TiffMetadata:
+    """Read the header of a TIFF file or the metadata of an OME-Zarr folder."""
+    if is_zarr_name(Path(path).name):
+        return inspect_ome_zarr(path, relative_path)
+    return inspect_tiff(path, relative_path)
+
+
 def inspect_images(
     experiment_root: str | os.PathLike, relative_paths: Iterable[str]
 ) -> MetadataReport:
@@ -176,7 +247,7 @@ def inspect_images(
         :func:`check_metadata`.
     """
     root = Path(experiment_root)
-    files = tuple(inspect_tiff(root / rel, rel) for rel in sorted(relative_paths))
+    files = tuple(inspect_image(root / rel, rel) for rel in sorted(relative_paths))
     return MetadataReport(files=files, issues=tuple(check_metadata(files)))
 
 
@@ -188,16 +259,19 @@ def inspect_experiment(discovery: DiscoveryResult) -> MetadataReport:
 def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     """Check image headers against the experiment-wide rules.
 
-    Reports, as errors: files that do not open, files with more than one image
-    series, unsupported pixel types, more than one pixel type, and files whose
-    dimensions are arranged differently.
-    Reports, as a warning: files with the same arrangement but different
-    dimension lengths.
+    Reports, as errors: images that do not open (``unreadable_tiff``,
+    ``unreadable_ome_zarr``, or ``zarr_not_installed`` for OME-Zarr images
+    without the ``zarr`` package), files or stores with more than one image,
+    unsupported pixel types, more than one pixel type, and TIFF files whose
+    dimensions are arranged differently. Reports, as a warning: TIFF files with
+    the same arrangement but different dimension lengths. OME-Zarr images
+    declare their axes, so their arrangement is checked by role during the
+    axis review instead.
 
     Parameters
     ----------
     files
-        Headers from :func:`inspect_tiff`.
+        Headers from :func:`inspect_image`.
 
     Returns
     -------
@@ -208,7 +282,41 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     readable = [f for f in files if f.readable]
     issues: list[ValidationIssue] = []
 
-    unreadable = [f.relative_path for f in files if not f.readable]
+    unreadable = [f.relative_path for f in files if not f.readable and not f.is_ome_zarr]
+    no_zarr = [
+        f.relative_path
+        for f in files
+        if not f.readable and f.is_ome_zarr and (f.error or "").startswith("ZarrUnavailableError")
+    ]
+    bad_zarr = [
+        f.relative_path
+        for f in files
+        if not f.readable and f.is_ome_zarr and f.relative_path not in no_zarr
+    ]
+    if no_zarr:
+        issues.append(
+            error(
+                "zarr_not_installed",
+                f"{plural(len(no_zarr), 'OME-Zarr image')} cannot be read because the zarr "
+                "package is not installed.",
+                no_zarr,
+                'Install it with pip install "morphobricks-preprocessing[zarr]", or exclude '
+                "these images.",
+            )
+        )
+    if bad_zarr:
+        reasons = sorted(
+            {(f.error or "").split(": ", 1)[-1] for f in files if f.relative_path in bad_zarr}
+        )
+        issues.append(
+            error(
+                "unreadable_ome_zarr",
+                f"{plural(len(bad_zarr), 'folder')} named like OME-Zarr images could not be "
+                "read: " + "; ".join(reasons) + ".",
+                bad_zarr,
+                "Export the images again as OME-Zarr (OME-NGFF 0.4 or 0.5), or exclude them.",
+            )
+        )
     if unreadable:
         issues.append(
             error(
@@ -226,12 +334,14 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
         issues.append(
             error(
                 "multiple_series",
-                f"{plural(len(multi_series), 'image')} contain more than one image series, "
-                "for example several positions or scenes in one file. Such files are not "
-                "supported yet. (Resolution levels of a pyramidal image are not separate "
-                "series; only the full-resolution level is read.)",
+                f"{plural(len(multi_series), 'image')} contain more than one image, for "
+                "example several positions or scenes in one TIFF file, or several series, "
+                "wells or fields in one OME-Zarr folder. Such images are not supported "
+                "yet. (Resolution levels of a pyramidal image are not separate images; "
+                "only the full-resolution level is read.)",
                 multi_series,
-                "Export each position or scene as a separate image file.",
+                "Export each position, scene or field as a separate image, or exclude these "
+                "images.",
             )
         )
 
@@ -263,7 +373,7 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
             )
         )
 
-    issues.extend(_check_dimensions(readable))
+    issues.extend(_check_dimensions([f for f in readable if not f.is_ome_zarr]))
     issues.extend(_check_channel_names(readable))
     return issues
 

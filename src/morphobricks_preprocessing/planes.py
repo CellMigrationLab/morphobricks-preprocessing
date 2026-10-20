@@ -1,17 +1,25 @@
-"""Read the 2D planes of a TIFF one at a time under a confirmed axis mapping.
+"""Read the 2D planes of an image one at a time under a confirmed axis mapping.
 
-The unit ``tifffile`` decodes is a TIFF page. Most microscopy files store one
-plane per page; RGB pages hold one plane per sample, and volumetric pages hold a
-whole stack. Each page is decoded once and the planes in it are yielded before
-the next page is read, so no more than one page is ever in memory, never a full
-Z/C/T volume (unless the file stores the volume as a single page).
+Images are TIFF files or OME-Zarr folders.
+
+For TIFF files, the unit ``tifffile`` decodes is a TIFF page. Most microscopy
+files store one plane per page; RGB pages hold one plane per sample, and
+volumetric pages hold a whole stack. Each page is decoded once and the planes in
+it are yielded before the next page is read, so no more than one page is ever in
+memory, never a full Z/C/T volume (unless the file stores the volume as a single
+page).
+
+For OME-Zarr images, each plane is read on its own from the level-0 array; zarr
+decodes only the chunks the plane touches. A chunk that spans several planes is
+decoded again for each of them, which costs time but never memory.
 
 Before anything is decoded, each plane's working memory is estimated from the
-header: the decoded page, its encoded bytes, a copy of the plane and the
-temporary arrays of the histogram. Planes above the limit (default 1 GiB) are
-reported by :func:`check_planes` and refused by the readers.
+header: the decoded page (for OME-Zarr, every chunk the plane touches), its
+encoded bytes, a copy of the plane and the temporary arrays of the histogram.
+Planes above the limit (default 1 GiB) are reported by :func:`check_planes` and
+refused by the readers.
 
-Only the first image series is read, at full-resolution level 0 for pyramidal
+Only the first image (series) is read, at full-resolution level 0 for pyramidal
 files (``docs/contract.md`` §2).
 """
 
@@ -30,6 +38,14 @@ import tifffile
 from .axes import PLANE_ROLES, AxisMapping, AxisReview
 from .histogram import estimate_histogram_memory
 from .validation import ValidationIssue, error, plural
+from .zarr_input import (
+    NgffError,
+    NgffImage,
+    ZarrUnavailableError,
+    is_zarr_store,
+    open_ngff,
+    read_selection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,11 +100,14 @@ class PlaneLayout:
     plane_count
         Number of planes in the file.
     page_shape
-        Shape of the unit decoded at once (one TIFF page), as a part of ``shape``.
+        Shape of the unit decoded at once: one TIFF page, as a part of ``shape``,
+        or the chunk shape of an OME-Zarr array.
     page_nbytes
-        Size of a decoded page in bytes.
+        Size of a decoded page in bytes; for OME-Zarr, of all chunks one plane
+        touches.
     encoded_nbytes
-        Size of a page as stored in the file (compressed size, if compressed).
+        Size of a page as stored in the file (compressed size, if compressed); 0
+        for OME-Zarr, whose compressed chunk sizes are not known in advance.
     memory_estimate
         Estimated working memory to read one plane and compute its histogram, in
         bytes.
@@ -129,6 +148,8 @@ def plane_layout(
         If the file does not open, the mapping does not fit it, or its planes
         cannot be read one at a time.
     """
+    if is_zarr_store(path):
+        return _zarr_layout(_open_zarr(path), mapping, path, bin_count)
     with _open(path) as tif:
         return _layout(tif.series[0], mapping, path, bin_count)
 
@@ -167,6 +188,16 @@ def iter_planes(
     PlaneReadError
         If the file cannot be read plane by plane under ``mapping``.
     """
+    if is_zarr_store(path):
+        image = _open_zarr(path)
+        layout = _zarr_layout(image, mapping, path, bin_count)
+        _check_limit(layout, path, memory_limit)
+        y, x = mapping.index_of("Y"), mapping.index_of("X")
+        others = [d for d in range(len(layout.shape)) if d not in (y, x)]
+        for index in np.ndindex(*(layout.shape[d] for d in others)):
+            position = dict(zip(others, index, strict=True))
+            yield _zarr_plane(image, layout, mapping, position, path)
+        return
     with _open(path) as tif:
         series = tif.series[0]
         layout = _layout(series, mapping, path, bin_count)
@@ -206,11 +237,17 @@ def read_plane(
     IndexError
         If a coordinate is outside the image, or given for an axis it lacks.
     """
+    wanted = {"Z": z, "C": c, "T": t}
+    if is_zarr_store(path):
+        image = _open_zarr(path)
+        layout = _zarr_layout(image, mapping, path, None)
+        _check_limit(layout, path, memory_limit)
+        return _zarr_plane(image, layout, mapping, _position(layout, mapping, wanted), path)
     with _open(path) as tif:
         series = tif.series[0]
         layout = _layout(series, mapping, path, None)
         _check_limit(layout, path, memory_limit)
-        return _read_one(series, layout, mapping, path, {"Z": z, "C": c, "T": t})
+        return _read_one(series, layout, mapping, path, wanted)
 
 
 def read_sample_plane(
@@ -219,8 +256,13 @@ def read_sample_plane(
     """Read one plane for the axis preview: the middle Z slice, first C and T.
 
     The middle slice is chosen because the first slice of a stack is often out
-    of focus. Only the page holding that plane is decoded.
+    of focus. Only the page (or chunks) holding that plane is decoded.
     """
+    if is_zarr_store(path):
+        dim = mapping.index_of("Z")
+        image = _open_zarr(path)
+        z = None if dim is None else image.shape[dim] // 2
+        return read_plane(path, mapping, z=z, memory_limit=memory_limit)
     with _open(path) as tif:
         series = tif.series[0]
         layout = _layout(series, mapping, path, None)
@@ -294,7 +336,7 @@ def check_planes(
                 "the way their pixel data is stored does not match the axis mapping.",
                 unsupported,
                 "Check the axis mapping, or export the images again as standard "
-                "multi-page TIFF files.",
+                "multi-page TIFF files or OME-Zarr.",
             )
         )
     return issues
@@ -323,13 +365,11 @@ def _open(path: str | os.PathLike) -> tifffile.TiffFile:
     return tif
 
 
-def _layout(
-    series: tifffile.TiffPageSeries, mapping: AxisMapping, path, bin_count: int | None
-) -> PlaneLayout:
-    shape = tuple(int(n) for n in series.shape)
-    if str(series.axes) != mapping.axes:
+def _check_fit(shape: tuple[int, ...], axes: str, mapping: AxisMapping, path) -> tuple[int, int]:
+    """Check that ``mapping`` fits an image; return the Y and X dimensions."""
+    if axes != mapping.axes:
         raise PlaneReadError(
-            f"The axis mapping is for axes {mapping.axes!r}, but {path} has axes {series.axes!r}."
+            f"The axis mapping is for axes {mapping.axes!r}, but {path} has axes {axes!r}."
         )
     duplicates = {r for r in mapping.roles if r is not None and mapping.roles.count(r) > 1}
     if duplicates:
@@ -342,7 +382,14 @@ def _layout(
             raise PlaneReadError(
                 f"Axis {mapping.axes[d]} of {path} has {shape[d]} planes but no role."
             )
+    return y, x
 
+
+def _layout(
+    series: tifffile.TiffPageSeries, mapping: AxisMapping, path, bin_count: int | None
+) -> PlaneLayout:
+    shape = tuple(int(n) for n in series.shape)
+    y, x = _check_fit(shape, str(series.axes), mapping, path)
     keyframe = series.keyframe
     page_count = len(series.pages)
     page_size = int(keyframe.size)
@@ -402,6 +449,15 @@ def _read_one(
     path,
     wanted: Mapping[str, int | None],
 ) -> Plane:
+    position = _position(layout, mapping, wanted)
+    page = _read_page(series, _page_index(layout, position), layout, path)
+    return _plane(page, layout, mapping, position)
+
+
+def _position(
+    layout: PlaneLayout, mapping: AxisMapping, wanted: Mapping[str, int | None]
+) -> dict[int, int]:
+    """Turn wanted z, c, t coordinates into an index per non-XY dimension."""
     position: dict[int, int] = {}
     for role, value in wanted.items():
         dim = mapping.index_of(role)
@@ -421,8 +477,7 @@ def _read_one(
     for d in range(len(layout.shape)):
         if d not in (y, x):
             position.setdefault(d, 0)
-    page = _read_page(series, _page_index(layout, position), layout, path)
-    return _plane(page, layout, mapping, position)
+    return position
 
 
 def _page_index(layout: PlaneLayout, position: Mapping[int, int]) -> int:
@@ -448,7 +503,13 @@ def _plane(
 ) -> Plane:
     k = layout.page_ndim
     selection = tuple(position.get(d, slice(None)) for d in range(k, len(layout.shape)))
-    pixels = page[selection]
+    return _finish(page[selection], layout, mapping, position)
+
+
+def _finish(
+    pixels: np.ndarray, layout: PlaneLayout, mapping: AxisMapping, position: Mapping[int, int]
+) -> Plane:
+    """Orient a selected (Y, X) or (X, Y) array and attach its coordinates."""
     if mapping.index_of("X") < mapping.index_of("Y"):
         pixels = pixels.T
     pixels = np.ascontiguousarray(pixels, dtype=layout.dtype)
@@ -462,3 +523,52 @@ def _plane(
         else:
             coords[role.lower()] = None
     return Plane(pixels=pixels, **coords)
+
+
+# OME-Zarr ------------------------------------------------------------------------------
+
+
+def _open_zarr(path) -> NgffImage:
+    try:
+        return open_ngff(path)
+    except (NgffError, ZarrUnavailableError) as exc:
+        raise PlaneReadError(f"{path} cannot be opened as an OME-Zarr image: {exc}") from exc
+
+
+def _zarr_layout(
+    image: NgffImage, mapping: AxisMapping, path, bin_count: int | None
+) -> PlaneLayout:
+    shape = image.shape
+    y, x = _check_fit(shape, image.axes, mapping, path)
+    dtype = image.dtype
+    chunks = image.chunks
+    # zarr decodes every chunk a plane touches; each chunk may also hold other planes.
+    chunks_per_plane = math.ceil(shape[y] / chunks[y]) * math.ceil(shape[x] / chunks[x])
+    page_nbytes = math.prod(chunks) * dtype.itemsize * chunks_per_plane
+    plane_pixels = shape[y] * shape[x]
+    memory = (
+        page_nbytes
+        + plane_pixels * dtype.itemsize
+        + estimate_histogram_memory(plane_pixels, dtype, bin_count)
+    )
+    return PlaneLayout(
+        shape=shape,
+        dtype=dtype,
+        plane_shape=(shape[y], shape[x]),
+        plane_count=math.prod(n for d, n in enumerate(shape) if d not in (x, y)),
+        page_shape=chunks,
+        page_nbytes=page_nbytes,
+        encoded_nbytes=0,
+        memory_estimate=memory,
+    )
+
+
+def _zarr_plane(
+    image: NgffImage, layout: PlaneLayout, mapping: AxisMapping, position: Mapping[int, int], path
+) -> Plane:
+    selection = tuple(position.get(d, slice(None)) for d in range(len(layout.shape)))
+    try:
+        pixels = read_selection(image.array, selection)
+    except Exception as exc:  # decoding errors come from many codecs and stores
+        raise PlaneReadError(f"A plane of {path} cannot be read: {exc}") from exc
+    return _finish(pixels, layout, mapping, position)

@@ -13,6 +13,7 @@ Nothing here reads pixels; the preview plane is read by
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -234,13 +235,22 @@ def prefill_mapping(axes: str) -> AxisMapping:
 def reference_axes(files: Iterable[TiffMetadata]) -> str | None:
     """Return the arrangement the experiment mapping is defined on.
 
-    This is the arrangement with the most dimensions, provided every other
-    readable file's arrangement is it with some dimensions left out. Returns None
-    if no file is readable or the arrangements conflict.
+    The TIFF files decide it when there are any, because their axes need the
+    user's confirmation: it is the TIFF arrangement with the most dimensions,
+    provided every other TIFF's arrangement is it with some dimensions left out.
+    OME-Zarr images declare their axes and are matched by role
+    (:func:`file_mapping_for`). In an experiment of OME-Zarr images only, it is
+    their arrangement with the most dimensions (then the most common one).
+    Returns None if no image is readable or the TIFF arrangements conflict.
     """
-    arrangements = {f.axes for f in files if f.readable}
-    if not arrangements:
-        return None
+    readable = [f for f in files if f.readable]
+    tiffs = [f for f in readable if not f.is_ome_zarr]
+    if not tiffs:
+        counts = Counter(f.axes for f in readable)
+        if not counts:
+            return None
+        return max(counts, key=lambda axes: (len(axes), counts[axes], axes))
+    arrangements = {f.axes for f in tiffs}
     longest = max(arrangements, key=lambda axes: (len(axes), axes))
     if sum(len(axes) == len(longest) for axes in arrangements) > 1:
         return None
@@ -257,6 +267,61 @@ def prefill_experiment_mapping(metadata: MetadataReport) -> AxisMapping | None:
     """
     axes = reference_axes(metadata.files)
     return None if axes is None else prefill_mapping(axes)
+
+
+def file_mapping_for(
+    f: TiffMetadata, mapping: AxisMapping, *, missing_as_singleton: bool = True
+) -> AxisMapping | None:
+    """Resolve the experiment mapping for one image, or None if it does not fit.
+
+    An image with the mapping's arrangement gets the mapping itself. A TIFF with
+    some of its dimensions left out gets :meth:`AxisMapping.for_axes`. An OME-Zarr
+    image with another arrangement is matched by the roles its metadata declares
+    (see :func:`declared_mapping`). Experiment roles an image lacks are read as
+    length 1 only if ``missing_as_singleton``.
+    """
+    if f.axes == mapping.axes:
+        return mapping
+    if f.is_ome_zarr:
+        resolved, problem = declared_mapping(f, mapping)
+    else:
+        resolved = mapping.for_axes(f.axes)
+        problem = "" if resolved is not None else "mismatch"
+    if resolved is None or problem == "mismatch":
+        return None
+    if resolved.singleton_roles and not missing_as_singleton:
+        return None
+    return resolved
+
+
+def declared_mapping(f: TiffMetadata, mapping: AxisMapping) -> tuple[AxisMapping | None, str]:
+    """Match an OME-Zarr image to the experiment mapping by the roles it declares.
+
+    OME-Zarr metadata says which axis is time, channel and space, so these roles
+    are taken as stated rather than by position. A declared Z, C or T axis the
+    experiment does not have is dropped if it has length 1. Experiment roles the
+    image lacks become :attr:`AxisMapping.singleton_roles`.
+
+    Returns
+    -------
+    tuple
+        ``(mapping, "")`` when it fits, ``(mapping, "missing")`` when it fits only
+        with experiment roles read as length 1, and ``(None, "mismatch")`` when
+        an axis with more than one plane has no matching role or X/Y is missing.
+    """
+    roles: list[str | None] = [axis if axis in ROLES else None for axis in f.axes]
+    experiment = {r for r in mapping.roles if r in PLANE_ROLES}
+    for i, (role, length) in enumerate(zip(roles, f.shape, strict=True)):
+        if role in PLANE_ROLES and role not in experiment:
+            if length > 1:
+                return None, "mismatch"
+            roles[i] = None
+        elif role is None and length > 1:
+            return None, "mismatch"
+    if roles.count("X") != 1 or roles.count("Y") != 1:
+        return None, "mismatch"
+    missing = tuple(r for r in PLANE_ROLES if r in experiment and r not in roles)
+    return AxisMapping(f.axes, tuple(roles), missing), "missing" if missing else ""
 
 
 def axis_length_ranges(
@@ -421,9 +486,21 @@ def review_axes(
     unconfirmed: list[str] = []
     ambiguous: list[str] = []
     misfits: list[str] = []
+    zarr_misfits: list[str] = []
+    by_role: list[str] = []
     for f in readable:
         if f.axes == mapping.axes:
             file_mappings[f.relative_path] = mapping
+            continue
+        if f.is_ome_zarr:
+            by_role.append(f.relative_path)
+            resolved, problem = declared_mapping(f, mapping)
+            if resolved is None:
+                zarr_misfits.append(f.relative_path)
+            elif problem == "missing" and not missing_as_singleton:
+                unconfirmed.append(f.relative_path)
+            else:
+                file_mappings[f.relative_path] = resolved
             continue
         resolved = mapping.for_axes(f.axes)
         if resolved is None:
@@ -436,7 +513,10 @@ def review_axes(
         else:
             file_mappings[f.relative_path] = resolved
 
-    issues = check_mapping(mapping, [f for f in readable if f.relative_path not in misfits])
+    issues = check_mapping(
+        mapping,
+        [f for f in readable if f.relative_path not in misfits and f.relative_path not in by_role],
+    )
     if unconfirmed:
         issues.append(
             error(
@@ -460,6 +540,19 @@ def review_axes(
                 ambiguous,
                 "Export the images again with the same dimensions as the others, or "
                 "process them as a separate experiment.",
+            )
+        )
+    if zarr_misfits:
+        issues.append(
+            error(
+                "ome_zarr_axes_mismatch",
+                f"The axes declared in {plural(len(zarr_misfits), 'OME-Zarr image')} do not "
+                f"match the axis roles of the experiment ({mapping.describe()}): they have an "
+                "axis with several planes that the experiment has no role for, or no X or Y "
+                "axis.",
+                zarr_misfits,
+                "Check the axis roles in the axis review, or process these images as a "
+                "separate experiment.",
             )
         )
     if misfits:

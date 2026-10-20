@@ -41,6 +41,13 @@ STYLE_CSS = """
   margin: 8px 0; overflow-wrap: anywhere; }
 .mb-status ul { margin: 4px 0 0 0; padding-left: 20px; }
 .mb-status details { margin-top: 4px; }
+.mb-next { background: #EFF6FF; border: 2px solid #93C5FD; border-radius: 8px;
+  padding: 14px 16px; margin: 12px 0; overflow-wrap: anywhere; }
+.mb-next-title { color: #1E40AF; font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+.mb-next-action { color: #0F172A; font-size: 19px; font-weight: 600; line-height: 1.5; }
+.mb-next-detail { color: #475569; font-size: 14px; line-height: 1.5; margin-top: 6px; }
+.mb-issue-count { display: inline-block; border-radius: 6px; padding: 5px 10px;
+  font-size: 16px; font-weight: 700; margin: 0 8px 8px 0; }
 .mb-ok { color: #166534; background: #ECFDF5; border-color: #16A34A; }
 .mb-info { color: #1E3A8A; background: #EFF6FF; border-color: #2563EB; }
 .mb-warn { color: #92400E; background: #FFFBEB; border-color: #D97706; }
@@ -147,6 +154,15 @@ def working(text: str) -> str:
     """HTML of a blue status card with a spinner, shown while something runs."""
     return (
         f"<div class='mb-status mb-info'><span class='mb-spinner'></span>{html.escape(text)}</div>"
+    )
+
+
+def next_steps(action: str, detail: str = "") -> str:
+    """Build a separate 'What next?' box with a prominent action and optional explanation."""
+    explanation = f"<div class='mb-next-detail'>{html.escape(detail)}</div>" if detail else ""
+    return (
+        "<div class='mb-next'><div class='mb-next-title'>What next?</div>"
+        f"<div class='mb-next-action'>{html.escape(action)}</div>{explanation}</div>"
     )
 
 

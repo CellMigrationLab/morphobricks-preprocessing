@@ -5,6 +5,10 @@ repeat, technical repeat). A folder with images and no subfolders is a leaf;
 its labels are the folder names on the way down, with ``single`` for the levels
 the branch does not have. The rules are in ``docs/contract.md`` §1.
 
+Images are TIFF files (``.tif``, ``.tiff``) and OME-Zarr images, which are
+folders whose names end in ``.zarr`` (usually ``.ome.zarr``). An OME-Zarr folder
+counts as one image, not as a subfolder, and is never entered.
+
 Only folder and file names are read here; image headers are inspected by
 :mod:`morphobricks_preprocessing.metadata`.
 """
@@ -18,6 +22,7 @@ from pathlib import Path
 
 from .records import LEVELS, SINGLE
 from .validation import ValidationIssue, error, has_errors, plural, warning
+from .zarr_input import is_zarr_name
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +52,14 @@ def is_tiff_name(name: str) -> bool:
     return name.lower().endswith(TIFF_SUFFIXES)
 
 
+def is_ome_zarr_folder(entry: os.DirEntry) -> bool:
+    """Return True for a folder that is an OME-Zarr image (its name ends in ``.zarr``).
+
+    Such a folder counts as one image, not as a subfolder: it is never entered.
+    """
+    return entry.is_dir() and is_zarr_name(entry.name)
+
+
 def default_output_folder(experiment_root: str | os.PathLike) -> Path:
     """Return the default output folder, a sibling of the experiment folder.
 
@@ -58,7 +71,7 @@ def default_output_folder(experiment_root: str | os.PathLike) -> Path:
 
 @dataclass(frozen=True)
 class LeafFolder:
-    """A folder whose TIFF files are analysed.
+    """A folder whose images are analysed.
 
     Attributes
     ----------
@@ -68,7 +81,8 @@ class LeafFolder:
     condition, biological_repeat, technical_repeat
         Labels from the folder names; ``"single"`` for missing levels.
     images
-        Relative paths of the TIFF files directly in this folder, sorted.
+        Relative paths of the images (TIFF files and OME-Zarr folders) directly in
+        this folder, sorted.
     """
 
     relative_path: str
@@ -103,7 +117,7 @@ class DiscoveryResult:
 
     @property
     def images(self) -> tuple[str, ...]:
-        """Relative paths of every TIFF file that will be analysed, sorted."""
+        """Relative paths of every image (TIFF or OME-Zarr) that will be analysed, sorted."""
         return tuple(sorted(path for leaf in self.leaves for path in leaf.images))
 
     @property
@@ -220,6 +234,8 @@ class _Walker:
             path = Path(entry.path)
             if is_system_name(entry.name):
                 logger.debug("Skipping system file %s", path)
+            elif is_ome_zarr_folder(entry):
+                tiffs.append(self.relative(path))
             elif entry.is_dir():
                 if path != self.excluded:
                     subfolders.append(path)
@@ -307,19 +323,19 @@ class _Walker:
                 warning(
                     "non_tiff_file",
                     f"{plural(len(self.non_tiff), 'file')} "
-                    f"{'is not a TIFF image' if len(self.non_tiff) == 1 else 'are not TIFF images'}"
-                    " and will not be analysed.",
+                    f"{'is not an image' if len(self.non_tiff) == 1 else 'are not images'}"
+                    " (TIFF or OME-Zarr) and will not be analysed.",
                     self.non_tiff,
                     "No action needed if these are not images. Convert images in other "
-                    "formats to TIFF to include them.",
+                    "formats to TIFF or OME-Zarr to include them.",
                 )
             )
         if self.empty:
             issues.append(
                 warning(
                     "empty_folder",
-                    f"{plural(len(self.empty), 'folder')} {_contain(self.empty)} no TIFF "
-                    "images and no subfolders and will not be analysed.",
+                    f"{plural(len(self.empty), 'folder')} {_contain(self.empty)} no images "
+                    "and no subfolders and will not be analysed.",
                     self.empty,
                     "No action needed if this is expected. Otherwise add the missing images "
                     "or remove the folders.",
@@ -329,7 +345,7 @@ class _Walker:
             issues.append(
                 warning(
                     "tiff_outside_leaf",
-                    f"{plural(len(self.outside_leaf), 'TIFF file')} {_are(self.outside_leaf)} "
+                    f"{plural(len(self.outside_leaf), 'image')} {_are(self.outside_leaf)} "
                     "in folders that also contain subfolders and will not be analysed. Only "
                     "images in folders without subfolders are used.",
                     self.outside_leaf,
@@ -340,11 +356,11 @@ class _Walker:
             issues.append(
                 error(
                     "no_images",
-                    "No TIFF images were found in folders without subfolders, so there is "
+                    "No images were found in folders without subfolders, so there is "
                     "nothing to analyse.",
                     [ROOT],
                     "Check that you selected the right experiment folder and that the "
-                    "images are .tif or .tiff files.",
+                    "images are .tif or .tiff files or .ome.zarr folders.",
                 )
             )
         return tuple(issues)

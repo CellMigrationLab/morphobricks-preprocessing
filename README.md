@@ -30,7 +30,8 @@ Pre-alpha. Implemented and tested:
 - Group statistics pooled from histograms (`pooling`)
 - Normalization parameters and their application (`normalization`)
 
-Planned (see [docs/plan.md](docs/plan.md)): OME-Zarr and chunked processing for
+Optional (the `zarr` extra): OME-Zarr images as input (`zarr_input`), and converting TIFF
+images to OME-Zarr before processing them (`zarr_export`). Planned (see [docs/plan.md](docs/plan.md)): chunked processing for
 planes above the memory limit. **New users: start with the
 [user guide](docs/user_guide.md).**
 

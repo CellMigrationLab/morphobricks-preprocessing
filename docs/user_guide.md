@@ -1,6 +1,7 @@
 # User Guide
 
-The preprocessing brick reads an experiment folder of microscopy TIFF images and computes
+The preprocessing brick reads an experiment folder of microscopy images (TIFF or
+OME-Zarr) and computes
 one intensity histogram for every 2D plane. The histograms, with each plane's labels, are
 saved in `plane_histograms.csv`. Later MorphoBricks bricks (for example patch extraction)
 use this table to normalise images per condition, repeat or image without reading the
@@ -36,6 +37,10 @@ pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellM
 pip install jupyterlab
 ```
 
+To read OME-Zarr images, or to convert TIFF images to OME-Zarr (§6), install the `zarr`
+extra too:
+`pip install "morphobricks-preprocessing[notebook,zarr] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git"`.
+
 Start JupyterLab with `jupyter lab` and open the notebook. Google Colab is detected by the
 setup cell, but native **Browse…** dialogs are only available with a local desktop: paste
 paths on the runtime filesystem when using a hosted notebook.
@@ -64,7 +69,10 @@ experiment/
 - A branch may stop early. The missing labels are `single`, so `treated/bio_rep1/img_01.tif`
   has the technical repeat `single`. If the images are directly in the experiment folder,
   every label is `single`.
-- Only images in folders **without subfolders** are analysed. TIFF files next to subfolders
+- Images are TIFF files or OME-Zarr images. An OME-Zarr image is a folder whose name ends
+  in `.zarr` (usually `.ome.zarr`); it counts as one image, not as a folder level, so put
+  it where you would put a TIFF file. TIFF and OME-Zarr images can be mixed.
+- Only images in folders **without subfolders** are analysed. Images next to subfolders
   are reported and skipped.
 - Do not name a folder `single`, and do not use two neighbouring folder names that differ
   only in upper/lower case (`Control` and `control`). Both are errors.
@@ -77,12 +85,19 @@ To change a label, rename the folder and check again.
 
 ## 3. Supported images
 
-- **Files:** `.tif` and `.tiff` (any case), including OME-TIFF and ImageJ hyperstacks.
+- **TIFF files:** `.tif` and `.tiff` (any case), including OME-TIFF and ImageJ hyperstacks.
+- **OME-Zarr images:** OME-NGFF 0.4 and 0.5 (needs the `zarr` extra; 0.5 needs Python 3.11
+  or newer). Their axes (time, channel, z, y, x) come from their metadata. Only the
+  full-resolution level of a single image is read; a folder holding several images (a
+  plate, or a bioformats2raw export with several series) is an error: export each image
+  separately or exclude it.
 - **Pixel types:** 8-, 16-, 32- and 64-bit signed or unsigned integers, 32- and 64-bit
   floats. All images of an experiment must have the same pixel type.
 - **Dimensions:** every image is split into 2D planes along Z (depth), C (channel) and T
-  (time). All images must have their dimensions in the same order; the lengths (number of
-  slices, time points, size) may differ.
+  (time). All TIFF images must have their dimensions in the same order; the lengths
+  (number of slices, time points, size) may differ. OME-Zarr images may store them in
+  another order: they are matched by role, so z = 2, c = 1 means the same plane in every
+  image.
 - **RGB images:** the three colour samples are treated as channels (C).
 - **Pyramidal images:** only the full-resolution level is read.
 - **Not supported yet:** files with several positions or scenes (several image series),
@@ -99,6 +114,11 @@ question and you answer with a large green **Yes, …** button. The box turns gr
 **Undo** button takes the answer back. Later steps stay locked until the earlier ones are
 confirmed. If you change the experiment folder, everything after it is reset.
 
+After a successful action, a separate **What next?** box gives the next action in larger
+text. In step 1 it first asks you to check the labels, then points to step 2 once they are
+confirmed. Step 3 offers the optional statistics step, and step 4 suggests reviewing the
+results or comparing another grouping.
+
 0. **Start the notebook.** The setup cell checks the environment and installs missing
    requirements if needed. A green box then confirms it is ready and shows the package
    version.
@@ -111,8 +131,10 @@ confirmed. If you change the experiment folder, everything after it is reset.
    - The **Labels from the folder names** table shows every image folder with its condition,
      biological repeat and technical repeat (*single* where a level is missing). If they
      are right, press **Yes, the labels are correct** in the yellow box under the table.
-   - **Messages** list each problem with the affected files and what to do. If some images
-     cannot be read, **Exclude these images and check again** leaves them out (see §7).
+   - **Messages** keeps the warning count visible in orange and the error count in red.
+     Expand **Show warnings and errors** to see each problem, the affected files and what
+     to do. The details start collapsed after each check. If some images cannot be read,
+     **Exclude these images and check again** inside the dropdown leaves them out (see §7).
 2. **Review the axis roles.**
    - Each dimension of the images has its own box. It shows the dimension's length and the
      role suggested from the metadata, with a dropdown to change it.
@@ -140,6 +162,28 @@ confirmed. If you change the experiment folder, everything after it is reset.
      - *Memory limit:* the most working memory one plane may need (default 1 GiB). Raise it
        only if the computer has enough memory.
      - *Recompute every row:* start from scratch instead of updating the earlier table.
+   - **(Optional) Image conversion:**
+     - **Read the images directly** (the default and recommended choice) reads TIFF and
+       OME-Zarr images as they are and saves nothing extra.
+     - **Convert the TIFF images to OME-Zarr, then process the converted copies** writes
+       every TIFF image in OME-Zarr format to the **ome_zarr** folder of the output (see
+       §6) and computes its histograms from that copy, like for any OME-Zarr image; the
+       results are the same. OME-Zarr images are never converted.
+     - When converting, an amber box warns that the images are stored again, so the space
+       they occupy is duplicated. It shows the size of the TIFF images, the most the copies
+       may need (before compression) and the free space on the output drive. It turns red
+       if the space may not be enough, but you can still run.
+     - **OME-Zarr conversion settings** opens when you choose conversion. Click its header
+       to collapse or expand three cards, each with its own controls and explanation:
+       **Storage block size** (square chunks, default 1,024 pixels per side), **Lossless
+       compression** (LZ4 by default, Zstandard, or none, with a level from 1 to 9), and
+       **Preview resolutions** (smaller copies for fast viewing: automatic, full resolution
+       only, or a fixed number). Histograms use full resolution. Collapsing the panel keeps
+       your choices and leaves the disk-space warning visible. Changing the settings later
+       writes the copies again; the histograms do not change.
+     - The choice is greyed out, with the install command below it, when the `zarr` extra
+       is not installed. **What will happen** says which images are converted and with
+       which settings, and a tile counts the conversions.
    - Click **Compute histograms**. A progress bar shows which image is being read. Tiles
      then summarise planes written, images read, kept, new, changed, removed and excluded.
      Nothing is written unless the whole run succeeds. **Technical details (log)** holds
@@ -188,6 +232,10 @@ without being stated. Other options:
 | `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` |
 | `--missing-as-singleton` | Confirm that images lacking some dimensions have one plane along them |
 | `--force-rebuild` | Recompute every row |
+| `--convert-tiff` | Convert the TIFF images to OME-Zarr first and process the copies (needs the `zarr` extra); prints the disk space needed |
+| `--chunk-size PX` | With `--convert-tiff`: tile size of the copies (16 to 8192, default 1024) |
+| `--compression lz4\|zstd\|none`, `--compression-level N` | With `--convert-tiff`: lossless compression (default lz4, level 5) |
+| `--pyramid-levels auto\|none\|N` | With `--convert-tiff`: smaller levels for viewing (default auto) |
 | `--log FILE` | Write technical details to a file |
 
 Both commands exit with status 1 when an error blocks processing.
@@ -208,6 +256,15 @@ The default output folder is next to the experiment folder:
   bin count, memory limit, excluded images, package versions, and each image's size and
   modification time. Channel names and significant bits are recorded when the metadata
   provides them. Format in [contract.md](contract.md) §9.
+- **`ome_zarr/`** (only when TIFF images are converted): one `.ome.zarr` folder per TIFF
+  image, in the same folder structure as the experiment, e.g.
+  `ome_zarr/control/bio_rep1/tech_rep1/img_01.ome.zarr`. The full-resolution level holds
+  exactly the source pixel values; smaller levels are averages for fast viewing (for
+  example in napari with the `napari-ome-zarr` plugin). Pixel sizes and channel names are
+  copied from the metadata when present. Copies of unchanged images are kept on later
+  runs, copies of deleted or excluded images are removed. Switching back to reading the
+  TIFF images directly removes the copies and recomputes their rows. Details in
+  [contract.md](contract.md) §10.
 
 The table and manifest are both prepared before the earlier files are replaced. If a
 replacement fails, the earlier files are restored. This needs temporary disk space for
@@ -247,8 +304,10 @@ continues.
 | `folder_too_deep` | Error | Folders below the technical repeat. Move the images up, or select a lower folder as the experiment. |
 | `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. |
 | `no_images` | Error | No images to analyse (or all excluded). Check the folder. |
-| `unreadable_tiff` | Error | An image cannot be opened. Export it again, or exclude it. |
-| `multiple_series` | Error | A file holds several positions or scenes. Export them separately, or exclude it. |
+| `unreadable_tiff` | Error | A TIFF file cannot be opened. Export it again, or exclude it. |
+| `unreadable_ome_zarr` | Error | A `.zarr` folder is not an OME-Zarr image that can be read. Export it again as OME-Zarr (OME-NGFF 0.4 or 0.5), or exclude it. |
+| `ome_zarr_axes_mismatch` | Error | An OME-Zarr image declares an axis with several planes that the experiment has no role for (or has no X/Y). Check the axis roles, or process it separately. |
+| `multiple_series` | Error | A file or OME-Zarr folder holds several images (positions, scenes, series, wells or fields). Export them separately, or exclude it. |
 | `unsupported_dtype` | Error | Unsupported pixel type (e.g. float16). Convert, or exclude it. |
 | `mixed_dtypes` | Error | Images have different pixel types. Process them separately or convert. |
 | `inconsistent_dimensions`, `inconsistent_mapping` | Error | Images have their dimensions in a different order. Export them the same way or process separately. |
@@ -268,6 +327,7 @@ continues.
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
 | `no_finite_pixels` | Warning | Some planes have no finite pixels; they are left out of group statistics. |
 | `excluded_images`, `excluded_path_not_found` | Warning | Images excluded as requested, or an excluded path that matches no image. |
+| `zarr_not_installed` | Error | OME-Zarr images, or converting TIFF images, need the `zarr` extra. Install it, exclude the OME-Zarr images, or read the TIFF images directly. |
 
 ## 9. Python interface
 
