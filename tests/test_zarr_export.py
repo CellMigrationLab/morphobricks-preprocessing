@@ -11,6 +11,7 @@ from morphobricks_preprocessing import (
     PhysicalSizes,
     PlaneReadError,
     ome_zarr_relative_path,
+    plane_layout,
     prefill_mapping,
     read_manifest,
     read_physical_sizes,
@@ -695,3 +696,95 @@ def test_changed_conversion_settings_rewrite_the_copies(experiment):
     # Without conversion the settings are recorded but change nothing.
     plain = run_experiment(experiment, ZYX, conversion=ConversionSettings(chunk_size=64))
     assert plain.converted == ()
+
+
+# Planes too large for the memory limit -------------------------------------------------
+
+
+def levels(group):
+    return {name: group[name][:] for name in sorted(group.array_keys())}
+
+
+@needs_zarr
+@pytest.mark.parametrize(
+    ("dtype", "storage"),
+    [
+        ("uint16", {}),
+        ("uint16", {"compression": "zlib", "rowsperstrip": 5}),
+        ("int32", {"tile": (16, 32)}),
+        ("float32", {"compression": "zlib", "rowsperstrip": 3}),
+    ],
+)
+def test_copies_of_planes_in_blocks_equal_whole_copies(tmp_path, dtype, storage):
+    data = random_data((2, 91, 70), dtype)  # odd sizes: the edges are repeated when halving
+    write_data(tmp_path / "exp/a.tif", data, axes="ZYX", **storage)
+    settings = ConversionSettings(chunk_size=16, pyramid_levels=3)
+    whole = run_experiment(
+        tmp_path / "exp",
+        ZYX,
+        output_folder=tmp_path / "whole",
+        convert_tiffs=True,
+        conversion=settings,
+    )
+    limit = plane_layout(tmp_path / "exp/a.tif", ZYX, memory_limit=1).block_memory_estimate
+    blocks = run_experiment(
+        tmp_path / "exp",
+        ZYX,
+        output_folder=tmp_path / "blocks",
+        convert_tiffs=True,
+        conversion=settings,
+        memory_limit=limit + 4096,
+    )
+    assert whole.written and blocks.written
+    assert [i.code for i in blocks.issues] == ["planes_read_in_blocks"]
+    assert read_manifest(blocks.manifest_path).files[0].read_in_blocks
+    assert not read_manifest(whole.manifest_path).files[0].read_in_blocks
+    assert blocks.csv_path.read_bytes() == whole.csv_path.read_bytes()
+    copied, expected = (
+        open_copy(blocks.output_folder, "a.tif"),
+        open_copy(whole.output_folder, "a.tif"),
+    )
+    np.testing.assert_array_equal(copied["0"][:], data)
+    got, want = levels(copied), levels(expected)
+    assert list(got) == ["0", "1", "2", "3"] and list(want) == list(got)
+    for name in want:
+        np.testing.assert_array_equal(got[name], want[name])
+    assert dict(copied.attrs) == dict(expected.attrs)  # same display ranges and scales
+
+
+@needs_zarr
+@pytest.mark.parametrize("memory_limit", [2**30, 6000])
+def test_writer_builds_smaller_levels_of_planes_in_blocks(tmp_path, memory_limit):
+    from morphobricks_preprocessing import Block, BlockReader, OmeZarrWriter, Plane
+
+    data = random_data((1, 77, 53), "uint16")
+    mapping = prefill_mapping("ZYX")
+    layout = plane_layout(write_data(tmp_path / "a.tif", data, axes="ZYX"), mapping)
+    settings = ConversionSettings(chunk_size=16, pyramid_levels=4)
+
+    def uneven_blocks():
+        for top, bottom in [(0, 5), (5, 40), (40, 77)]:
+            for left, right in [(0, 33), (33, 53)]:
+                yield Block(top, left, data[0, top:bottom, left:right])
+
+    reader = BlockReader((77, 53), data.dtype, uneven_blocks)
+    in_blocks = OmeZarrWriter.create(
+        tmp_path / "blocks.ome.zarr", mapping, layout, settings=settings, memory_limit=memory_limit
+    )
+    in_blocks.write(Plane(0, None, None, None, reader=reader))
+    in_blocks.finish()
+    whole = OmeZarrWriter.create(tmp_path / "whole.ome.zarr", mapping, layout, settings=settings)
+    whole.write(Plane(0, None, None, data[0]))
+    whole.finish()
+    import zarr
+
+    got = levels(zarr.open_group(str(tmp_path / "blocks.ome.zarr"), mode="r"))
+    want = levels(zarr.open_group(str(tmp_path / "whole.ome.zarr"), mode="r"))
+    assert list(got) == list(want) == ["0", "1", "2", "3", "4"]
+    for name in want:
+        np.testing.assert_array_equal(got[name], want[name])
+    assert in_blocks._region_side() == (32 if memory_limit == 2**30 else 8)
+    tiny = OmeZarrWriter.create(
+        tmp_path / "tiny.ome.zarr", mapping, layout, settings=settings, memory_limit=1
+    )
+    assert tiny._region_side() == 2  # the smallest region that halves exactly

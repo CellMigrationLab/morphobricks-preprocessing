@@ -118,6 +118,18 @@ def test_same_source_detects_changes(change):
 
 def test_same_source_ignores_informational_fields():
     assert entry().same_source(entry(plane_count=9, channel_names=("A",), significant_bits=12))
+    assert entry().same_source(entry(read_in_blocks=True))
+
+
+def test_read_in_blocks_round_trips_and_defaults_to_false(tmp_path):
+    original = manifest(files=(entry(read_in_blocks=True), entry("cond/rep/b.tif")))
+    path = write_manifest(original, tmp_path / "m.json")
+    assert read_manifest(path) == original
+    data = json.loads(path.read_bytes())
+    assert [f["read_in_blocks"] for f in data["files"]] == [True, False]
+    del data["files"][0]["read_in_blocks"]  # written before planes could be read in blocks
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert not read_manifest(path).files[0].read_in_blocks
 
 
 def test_file_entry_for_reads_size_and_time(tmp_path):

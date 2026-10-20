@@ -28,7 +28,7 @@ from .discovery import (
     discover_experiment,
 )
 from .dtypes import UnsupportedDtypeError, default_bin_count
-from .histogram import PlaneHistogram, compute_plane_histogram
+from .histogram import PlaneHistogram, compute_block_histogram, compute_plane_histogram
 from .manifest import (
     MANIFEST_FILENAME,
     FileEntry,
@@ -58,6 +58,8 @@ from .normalization import (
 )
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
+    Block,
+    BlockReader,
     Plane,
     PlaneLayout,
     PlaneMemoryError,
@@ -103,6 +105,8 @@ __all__ = [
     "SINGLE",
     "AxisMapping",
     "AxisReview",
+    "Block",
+    "BlockReader",
     "ConversionEstimate",
     "ConversionSettings",
     "DiscoveryResult",
@@ -141,6 +145,7 @@ __all__ = [
     "check_metadata",
     "check_output_folder",
     "check_planes",
+    "compute_block_histogram",
     "compute_plane_histogram",
     "declared_mapping",
     "default_bin_count",

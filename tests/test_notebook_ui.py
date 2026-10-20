@@ -19,6 +19,7 @@ from morphobricks_preprocessing.notebook_ui import (  # noqa: E402
     issues_html,
     plane_png,
     plane_summary_html,
+    preview_caption,
     role_effect,
 )
 from morphobricks_preprocessing.validation import error, warning  # noqa: E402
@@ -904,3 +905,16 @@ def test_notebook_cells_run():
         if cell["cell_type"] == "code":
             exec("".join(cell["source"]), namespace)  # noqa: S102 - our own notebook
     assert isinstance(namespace["notebook"], PreprocessingNotebook)
+
+
+def test_preview_caption_of_a_reduced_plane():
+    from morphobricks_preprocessing import BlockReader
+
+    reader = BlockReader((9000, 7000), np.dtype("uint16"), lambda: iter(()))
+    pixels = np.arange(12, dtype=np.uint16).reshape(3, 4)
+    plane = Plane(2, None, None, pixels, step=2250, reader=reader)
+    caption = preview_caption("ctrl/big.tif", plane)
+    assert "9000 × 7000 px" in caption and "1 pixel in 2250" in caption
+    assert "3 × 4 px shown" in caption and "shown values 0 to 11" in caption
+    whole = preview_caption("ctrl/a.tif", Plane(None, None, None, pixels))
+    assert "3 × 4 px" in whole and "reduced" not in whole

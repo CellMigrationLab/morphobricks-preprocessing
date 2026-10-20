@@ -846,6 +846,7 @@ class PreprocessingNotebook:
                     self.preflight.discovery.root / header.relative_path,
                     file_mapping,
                     memory_limit=self._memory_limit(),
+                    preview=True,
                     **coords,
                 )
         except (PlaneReadError, IndexError, ValueError) as exc:
@@ -942,8 +943,9 @@ class PreprocessingNotebook:
                 self.bins_hint,
                 self.memory_gib,
                 ui.help_text(
-                    "The most working memory one plane may use. A plane that needs more stops "
-                    "the run with a message. Raise it only if the computer has enough memory."
+                    "The most working memory one plane may use. A larger plane is read in "
+                    "blocks instead: the results are the same, but reading takes longer. Raise "
+                    "it only if the computer has enough memory."
                 ),
                 self.force_rebuild,
                 ui.help_text(
@@ -1756,10 +1758,20 @@ def preview_caption(relative_path: str, plane: Plane) -> str:
     pixels = plane.pixels
     finite = pixels[np.isfinite(pixels)] if pixels.dtype.kind == "f" else pixels
     values = f"values {finite.min():g} to {finite.max():g}" if finite.size else "no finite values"
+    height, width = plane.shape
+    reduced = ""
+    if plane.step > 1:
+        # Shown values come from the kept pixels only, so the range may be narrower.
+        values = values.replace("values", "shown values", 1)
+        reduced = (
+            f"<br>This plane is too large for the memory limit, so it is read in blocks and "
+            f"shown reduced: 1 pixel in {plane.step} along each side "
+            f"({pixels.shape[0]} × {pixels.shape[1]} px shown)."
+        )
     return (
         f"<div class='mb-help'><b>{html.escape(relative_path)}</b> · "
-        f"{html.escape(coords or 'single plane')} · {pixels.shape[0]} × {pixels.shape[1]} px · "
-        f"{pixels.dtype.name}, {values}</div>"
+        f"{html.escape(coords or 'single plane')} · {height} × {width} px · "
+        f"{pixels.dtype.name}, {values}{reduced}</div>"
     )
 
 

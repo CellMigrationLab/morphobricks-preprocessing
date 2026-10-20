@@ -36,7 +36,6 @@ from .csv_io import (
 )
 from .discovery import DiscoveryResult, default_output_folder, discover_experiment
 from .dtypes import default_bin_count, validate_bin_count
-from .histogram import compute_plane_histogram
 from .manifest import (
     MANIFEST_FILENAME,
     FileEntry,
@@ -355,6 +354,7 @@ def run_experiment(
     # Copies written with other conversion settings are rewritten (their rows are the same).
     same_conversion = previous is None or previous.settings.conversion == conversion
     labels = {image: leaf.labels for leaf in pre.discovery.leaves for image in leaf.images}
+    in_blocks = {path for i in issues if i.code == "planes_read_in_blocks" for path in i.paths}
     headers = {f.relative_path: f for f in pre.metadata.files}
     entries: dict[str, FileEntry] = {}
     new, changed, unchanged = [], [], []
@@ -369,6 +369,7 @@ def run_experiment(
             channel_names=header.channel_names,
             significant_bits=header.significant_bits,
             ome_zarr_path=copy,
+            read_in_blocks=rel in in_blocks,
         )
         before = previous.file(rel) if previous is not None else None
         if before is None:
@@ -608,7 +609,7 @@ def _read_file(
             PlaneRecord(
                 rel,
                 *labels,
-                histogram=compute_plane_histogram(plane.pixels, settings.bin_count),
+                histogram=plane.histogram(settings.bin_count),
                 z=plane.z,
                 c=plane.c,
                 t=plane.t,
@@ -638,7 +639,9 @@ class _CopyStaging:
         output.mkdir(parents=True, exist_ok=True)
         self.root = Path(tempfile.mkdtemp(prefix=".run-", dir=output))
 
-    def writer(self, rel: str, mapping: AxisMapping, header: TiffMetadata) -> OmeZarrWriter:
+    def writer(
+        self, rel: str, mapping: AxisMapping, header: TiffMetadata, memory_limit: int
+    ) -> OmeZarrWriter:
         """Create the writer of one image's copy inside the temporary folder."""
         source = self.experiment_root / rel
         return OmeZarrWriter.create(
@@ -649,13 +652,14 @@ class _CopyStaging:
             channel_names=header.channel_names,
             name=rel,
             settings=self.settings,
+            memory_limit=memory_limit,
         )
 
     def convert(
         self, rel: str, mapping: AxisMapping, header: TiffMetadata, settings: RunSettings
     ) -> tuple[Path, AxisMapping]:
         """Convert one TIFF plane by plane; return the copy and its own axis mapping."""
-        writer = self.writer(rel, mapping, header)
+        writer = self.writer(rel, mapping, header, settings.memory_limit)
         for plane in iter_planes(
             self.experiment_root / rel,
             mapping,

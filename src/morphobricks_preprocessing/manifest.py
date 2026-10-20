@@ -100,6 +100,9 @@ class FileEntry:
     ome_zarr_path
         For a TIFF converted to OME-Zarr, the converted copy relative to the
         output folder (its rows are computed from it); otherwise None.
+    read_in_blocks
+        True when the image's planes are too large for the memory limit and are
+        read in blocks. For information only: the rows are the same either way.
     """
 
     relative_path: str
@@ -112,6 +115,7 @@ class FileEntry:
     channel_names: tuple[str | None, ...] = ()
     significant_bits: int | None = None
     ome_zarr_path: str | None = None
+    read_in_blocks: bool = False
 
     def same_source(self, other: FileEntry) -> bool:
         """Return True if ``other`` describes the same unchanged file, read the same way."""
@@ -260,6 +264,7 @@ def file_entry_for(
     channel_names: tuple[str | None, ...] = (),
     significant_bits: int | None = None,
     ome_zarr_path: str | None = None,
+    read_in_blocks: bool = False,
 ) -> FileEntry:
     """Describe a source image as it is on disk now."""
     size, mtime_ns = source_fingerprint(Path(root) / relative_path)
@@ -274,6 +279,7 @@ def file_entry_for(
         channel_names=tuple(channel_names),
         significant_bits=significant_bits,
         ome_zarr_path=ome_zarr_path,
+        read_in_blocks=read_in_blocks,
     )
 
 
@@ -366,6 +372,7 @@ def _file_dict(entry: FileEntry) -> dict:
         "channel_names": list(entry.channel_names),
         "significant_bits": entry.significant_bits,
         "ome_zarr_path": entry.ome_zarr_path,
+        "read_in_blocks": entry.read_in_blocks,
     }
 
 
@@ -386,6 +393,7 @@ def _file_entry(data: dict) -> FileEntry:
         channel_names=tuple(None if n is None else str(n) for n in data.get("channel_names", [])),
         significant_bits=None if bits is None else int(bits),
         ome_zarr_path=None if data.get("ome_zarr_path") is None else str(data["ome_zarr_path"]),
+        read_in_blocks=bool(data.get("read_in_blocks", False)),
     )
 
 

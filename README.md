@@ -19,8 +19,8 @@ Pre-alpha. Implemented and tested:
 - TIFF header inspection without reading pixels (`metadata`)
 - Axis mapping: prefill from metadata, validation, applying one mapping to every
   file (`axes`)
-- Reading TIFFs one 2D plane at a time, with a memory limit and a preview plane
-  (`planes`)
+- Reading TIFFs one 2D plane at a time, with a memory limit and a preview plane;
+  planes too large for the limit are read in blocks with identical results (`planes`)
 - Running an experiment end to end and updating earlier output incrementally, with a
   run manifest (`run`, `manifest`)
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
@@ -31,8 +31,7 @@ Pre-alpha. Implemented and tested:
 - Normalization parameters and their application (`normalization`)
 
 Optional (the `zarr` extra): OME-Zarr images as input (`zarr_input`), and converting TIFF
-images to OME-Zarr before processing them (`zarr_export`). Planned (see [docs/plan.md](docs/plan.md)): chunked processing for
-planes above the memory limit. **New users: start with the
+images to OME-Zarr before processing them (`zarr_export`). **New users: start with the
 [user guide](docs/user_guide.md).**
 
 ## Installation

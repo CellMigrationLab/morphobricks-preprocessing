@@ -79,6 +79,12 @@ Notation: `n` = `bin_count`, `lo` = `binning_min`, `hi` = `binning_max`.
 - Representative value: the bin midpoint `lo + (i + 0.5)·width`.
 - Bound: every pixel is within `width / 2` of its representative.
 
+### Planes read in blocks
+
+A plane too large for the memory limit is read in blocks (rectangles of its stored strips,
+tiles or chunks). Its extrema, pixel counts and bin counts are exactly those of the whole
+plane, so a row never depends on whether, or in which blocks, its plane was read.
+
 ## 5. CSV schema (`plane_histograms.csv`, schema version 1)
 
 UTF-8, comma-separated, one header row, one row per plane, rows in a deterministic order.
@@ -134,8 +140,8 @@ A zero or non-finite scale is an error with a plain-language message.
 
 | Severity | Situations | Effect |
 |---|---|---|
-| Error | Mixed dtypes; unreadable TIFF (header or pixel data) or OME-Zarr folder in a leaf folder that is not excluded; OME-Zarr images, or converting TIFF images to OME-Zarr, without the `zarr` extra; OME-Zarr images whose declared axes do not fit the experiment's roles; every image excluded; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane over the memory limit; folder named `single`; sibling folders differing only in case; folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
-| Warning | Files that are not images; empty folders; images outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image sizes with a valid mapping; planes without finite pixels while others remain | Processing continues; the item is reported |
+| Error | Mixed dtypes; unreadable TIFF (header or pixel data) or OME-Zarr folder in a leaf folder that is not excluded; OME-Zarr images, or converting TIFF images to OME-Zarr, without the `zarr` extra; OME-Zarr images whose declared axes do not fit the experiment's roles; every image excluded; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane that cannot be read within the memory limit, not even in blocks (for example a plane stored compressed in one piece); folder named `single`; sibling folders differing only in case; folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
+| Warning | Files that are not images; empty folders; images outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image sizes with a valid mapping; planes without finite pixels while others remain; planes over the memory limit that are read in blocks | Processing continues; the item is reported |
 
 Every message states what happened in plain language, lists the affected paths, and
 suggests an action. Technical details go to the diagnostic log.
@@ -172,7 +178,7 @@ file's schema or statistical interpretation.
 | `settings` | `bin_count`, `memory_limit` (bytes), `missing_as_singleton`, `exclude` (sorted relative paths), `convert_tiffs` (whether TIFF images are converted to OME-Zarr and processed from the copies; false when absent), `conversion` (`chunk_size`, `compression`, `compression_level`, `pyramid_levels` — null for automatic; defaults when absent). |
 | `axis_mapping` | `axes` (file axis labels) and `roles` (`X`, `Y`, `Z`, `C`, `T` or null per axis). |
 | `labels` | One entry per leaf folder: `folder` (relative path, `.` for the root) and its three labels. |
-| `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count`, `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata), `ome_zarr_path` (for a TIFF converted to OME-Zarr, the copy relative to the output folder; null otherwise or when the key is absent). For an OME-Zarr image, `size` is the total size of its files and `mtime_ns` the time of its newest file. |
+| `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count`, `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata), `ome_zarr_path` (for a TIFF converted to OME-Zarr, the copy relative to the output folder; null otherwise or when the key is absent), `read_in_blocks` (true when the image's planes are over the memory limit and are read in blocks; information only, false when absent). For an OME-Zarr image, `size` is the total size of its files and `mtime_ns` the time of its newest file. |
 | `csv_sha256` | SHA-256 of the table written with this manifest. |
 | `versions` | Versions of `morphobricks-preprocessing`, `numpy`, `tifffile` and Python. |
 
@@ -199,6 +205,7 @@ presentation does not change the conversion rules below.
 | Axes | `t`, `c`, `z`, `y`, `x` in that order, only the roles of the confirmed mapping (missing axes resolved as singletons have length 1; axes without a role are dropped) |
 | Level 0 | The source values, unchanged, in the source pixel type; chunks of one plane along Z, C and T and at most the chunk size (16 to 8,192 px, default 1,024) in X and Y |
 | Further levels | 2 x 2 block means rounded to the pixel type; automatic (default: until a plane fits in 512 x 512, at most 8 levels in all), none, or 1 to 7 levels; for viewing only |
+| Large planes | A plane read in blocks is written block by block; its further levels are then built from the stored level above, in regions of even size, and equal those of a plane written whole |
 | Scale | Physical pixel sizes, z-step and time step from OME or ImageJ metadata, with OME-NGFF units; 1 when unknown |
 | Channels | `omero` block with channel names from metadata (or `Channel <i>`) and each channel's observed minimum and maximum as display window |
 | Updates | Copies of unchanged images are kept, of new or changed images rewritten, and of images no longer analysed removed; a failed run leaves the earlier copies as they were (see §9 for publication) |

@@ -369,9 +369,76 @@ def test_memory_limit_applies_to_stores(tmp_path):
 
     path = write_ngff(tmp_path / "a.ome.zarr", random_data((2, 32, 32)), "zyx")
     mapping = prefill_mapping("ZYX")
-    estimate = plane_layout(path, mapping).memory_estimate
-    with pytest.raises(PlaneMemoryError):
-        next(iter_planes(path, mapping, memory_limit=estimate - 1))
+    with pytest.raises(PlaneMemoryError, match="even in blocks"):
+        next(iter_planes(path, mapping, memory_limit=1000))
+
+
+def smallest_limit(path, mapping, bin_count=None):
+    layout = plane_layout(path, mapping, memory_limit=1, bin_count=bin_count)
+    return layout.block_memory_estimate
+
+
+@pytest.mark.parametrize(
+    ("shape", "axes", "chunks"),
+    [
+        pytest.param((2, 40, 36), "zyx", None, id="plane-chunks"),
+        pytest.param((2, 40, 36), "zyx", (1, 16, 16), id="small-chunks"),
+        pytest.param((2, 40, 36), "zyx", (2, 16, 16), id="chunks-across-planes"),
+        pytest.param((2, 3, 40, 36), "czyx", (1, 1, 32, 8), id="tall-chunks"),
+    ],
+)
+@pytest.mark.parametrize("version", VERSIONS)
+def test_planes_of_stores_in_blocks_match_the_source(tmp_path, shape, axes, chunks, version):
+    data = random_data(shape, "uint16")
+    path = write_ngff(tmp_path / "a.ome.zarr", data, axes, version=version, chunks=chunks)
+    mapping = prefill_mapping(axes.upper())
+    limit = smallest_limit(path, mapping)
+    layout = plane_layout(path, mapping, memory_limit=limit)
+    assert layout.in_blocks and layout.block_memory_estimate <= limit
+    planes = iter_planes(path, mapping, memory_limit=limit)
+    for plane, index in zip(planes, np.ndindex(*shape[:-2]), strict=True):
+        assert plane.in_blocks
+        expected = data[index]
+        covered = np.zeros(expected.shape, dtype=int)
+        for block in plane.blocks():
+            rows, cols = block.pixels.shape
+            where = (slice(block.y, block.y + rows), slice(block.x, block.x + cols))
+            np.testing.assert_array_equal(block.pixels, expected[where])
+            covered[where] += 1
+        assert (covered == 1).all()
+        np.testing.assert_array_equal(
+            plane.histogram().counts, compute_plane_histogram(expected).counts
+        )
+
+
+@pytest.mark.parametrize("dtype", ["int8", "uint32", "int64", "float32", "float64"])
+def test_store_planes_in_blocks_give_the_same_histograms(tmp_path, dtype):
+    data = random_data((2, 24, 20), dtype)
+    if data.dtype.kind == "f":
+        data[1, 3, :2] = [np.nan, np.inf]
+    path = write_ngff(tmp_path / "a.ome.zarr", data, "zyx", chunks=(1, 8, 8))
+    mapping = prefill_mapping("ZYX")
+    for plane, source in zip(
+        iter_planes(path, mapping, memory_limit=smallest_limit(path, mapping, 9), bin_count=9),
+        data,
+        strict=True,
+    ):
+        expected, hist = compute_plane_histogram(source, 9), plane.histogram(9)
+        assert plane.in_blocks
+        assert (hist.pixel_min, hist.pixel_max) == (expected.pixel_min, expected.pixel_max)
+        np.testing.assert_array_equal(hist.counts, expected.counts)
+
+
+def test_large_chunks_are_read_a_few_rows_at_a_time(tmp_path):
+    # A single chunk per plane, larger than the limit allows for the whole plane.
+    data = random_data((1, 64, 48), "uint16")
+    path = write_ngff(tmp_path / "a.ome.zarr", data, "zyx")
+    mapping = prefill_mapping("ZYX")
+    layout = plane_layout(path, mapping, memory_limit=smallest_limit(path, mapping))
+    assert layout.block_shape[0] < 64
+    preview = read_plane(path, mapping, memory_limit=layout.memory_estimate - 1, preview=True)
+    assert preview.step >= 2
+    np.testing.assert_array_equal(preview.pixels, data[0, :: preview.step, :: preview.step])
 
 
 def test_missing_role_reads_as_coordinate_zero(tmp_path):

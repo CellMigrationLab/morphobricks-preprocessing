@@ -16,8 +16,17 @@ decoded again for each of them, which costs time but never memory.
 Before anything is decoded, each plane's working memory is estimated from the
 header: the decoded page (for OME-Zarr, every chunk the plane touches), its
 encoded bytes, a copy of the plane and the temporary arrays of the histogram.
-Planes above the limit (default 1 GiB) are reported by :func:`check_planes` and
-refused by the readers.
+
+Planes above the memory limit (default 1 GiB) are read in blocks instead
+(``docs/plan.md`` §5): rectangles made of the pieces the image is stored in
+(TIFF strips or tiles, OME-Zarr chunks), as large as the limit allows. Such a
+plane is never held in memory as a whole; :meth:`Plane.blocks` reads its blocks
+again each time it is called, and :meth:`Plane.histogram` reads them twice to
+get the same histogram as from the whole plane. Uncompressed TIFF pieces and
+OME-Zarr chunks can also be read a few rows at a time. A compressed piece must
+be decoded whole, so a plane stored compressed in one piece cannot be split; it
+is reported by :func:`check_planes` and refused by the readers, like any plane
+whose smallest block would still need more memory than the limit.
 
 Only the first image (series) is read, at full-resolution level 0 for pyramidal
 files (``docs/contract.md`` §2).
@@ -28,16 +37,16 @@ from __future__ import annotations
 import logging
 import math
 import os
-from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
 import tifffile
 
 from .axes import PLANE_ROLES, AxisMapping, AxisReview
-from .histogram import estimate_histogram_memory
-from .validation import ValidationIssue, error, plural
+from .histogram import PlaneHistogram, compute_block_histogram, estimate_histogram_memory
+from .validation import ValidationIssue, error, plural, warning
 from .zarr_input import (
     NgffError,
     NgffImage,
@@ -52,6 +61,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_MEMORY_LIMIT = 2**30
 """Default working-memory limit per plane: 1 GiB."""
 
+PREVIEW_SIDE = 4096
+"""A reduced preview of a plane read in blocks has at most this many pixels per side."""
+
+# TIFF compression codes that need the JPEG tables of the file to decode a piece.
+_JPEG_COMPRESSIONS = {6, 7, 33007, 34892}
+
 
 class PlaneReadError(Exception):
     """Raised when a file's planes cannot be read under the given axis mapping."""
@@ -59,6 +74,42 @@ class PlaneReadError(Exception):
 
 class PlaneMemoryError(PlaneReadError):
     """Raised when reading a plane would need more memory than the limit allows."""
+
+
+@dataclass(frozen=True)
+class Block:
+    """A rectangle of a plane.
+
+    Attributes
+    ----------
+    y, x
+        Plane row and column of the block's first pixel.
+    pixels
+        The block as a (Y, X) array in native byte order.
+    """
+
+    y: int
+    x: int
+    pixels: np.ndarray
+
+
+@dataclass(frozen=True)
+class BlockReader:
+    """Reads a plane that is too large to hold whole, block by block.
+
+    Attributes
+    ----------
+    shape
+        (Y, X) shape of the whole plane.
+    dtype
+        Pixel type, in native byte order.
+    read
+        Called to read the blocks; each call reads them again from the file.
+    """
+
+    shape: tuple[int, int]
+    dtype: np.dtype
+    read: Callable[[], Iterator[Block]] = field(repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -71,18 +122,91 @@ class Plane:
         Zero-based coordinates; None when the experiment mapping has no such axis.
     pixels
         The plane as a (Y, X) array in native byte order, with the source values
-        unchanged.
+        unchanged. None for a plane read in blocks (see :meth:`blocks`).
+    step
+        1 for the plane itself. A reduced preview of a plane read in blocks keeps
+        only every ``step``-th pixel along Y and X.
+    reader
+        For a plane read in blocks (or its reduced preview): reads its blocks
+        from the open file. Use it before asking the reader for the next plane.
     """
 
     z: int | None
     c: int | None
     t: int | None
-    pixels: np.ndarray
+    pixels: np.ndarray | None
+    step: int = 1
+    reader: BlockReader | None = field(default=None, repr=False, compare=False)
 
     @property
     def coordinates(self) -> dict[str, int | None]:
         """The coordinates as ``{"z": ..., "c": ..., "t": ...}``."""
         return {"z": self.z, "c": self.c, "t": self.t}
+
+    @property
+    def in_blocks(self) -> bool:
+        """True when the plane is read in blocks and not held in memory."""
+        return self.pixels is None
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        """(Y, X) shape of the whole plane (not of a reduced preview)."""
+        if self.reader is not None:
+            return self.reader.shape
+        return tuple(self.pixels.shape)
+
+    @property
+    def dtype(self) -> np.dtype:
+        """Pixel type of the plane."""
+        return self.pixels.dtype if self.pixels is not None else self.reader.dtype
+
+    def blocks(self) -> Iterator[Block]:
+        """Yield the plane in blocks that together hold every pixel exactly once.
+
+        A plane held in memory is a single block. A plane read in blocks reads
+        them from the file again on every call.
+
+        Raises
+        ------
+        ValueError
+            For a reduced preview, which no longer holds every pixel.
+        PlaneReadError
+            If a block cannot be read.
+        """
+        if self.step != 1:
+            raise ValueError("A reduced preview does not hold every pixel of the plane.")
+        if self.pixels is not None:
+            yield Block(0, 0, self.pixels)
+        else:
+            yield from self.reader.read()
+
+    def histogram(self, bin_count: int | None = None) -> PlaneHistogram:
+        """Compute the plane's histogram; identical whether or not it is read in blocks."""
+        return compute_block_histogram(
+            lambda: (block.pixels for block in self.blocks()), self.dtype, bin_count
+        )
+
+
+@dataclass(frozen=True)
+class _Blocking:
+    """How a plane can be split into blocks, in the order of its stored axes.
+
+    ``rows`` and ``cols`` are the stored dimensions of the plane's two axes, in
+    array order (``rows`` first); blocks are rectangles of rows and columns of
+    those, aligned to the stored pieces (``unit`` rows and columns). Pieces that
+    can be read a few rows at a time allow blocks of fewer rows than a piece.
+    """
+
+    kind: str  # "tiff" or "zarr"
+    rows: int
+    cols: int
+    rows_are_y: bool
+    unit: tuple[int, int]
+    partial_rows: bool
+    piece_nbytes: int
+    encoded_nbytes: int = 0
+    row_nbytes: int = 0
+    stored: tuple[tuple[int, int], ...] = ()  # TIFF: (series dimension, stored dimension)
 
 
 @dataclass(frozen=True)
@@ -109,8 +233,17 @@ class PlaneLayout:
         Size of a page as stored in the file (compressed size, if compressed); 0
         for OME-Zarr, whose compressed chunk sizes are not known in advance.
     memory_estimate
-        Estimated working memory to read one plane and compute its histogram, in
-        bytes.
+        Estimated working memory to read one whole plane and compute its
+        histogram, in bytes.
+    memory_limit
+        The memory limit the layout was worked out for, in bytes.
+    block_shape
+        (Y, X) size of the blocks when planes are over the memory limit and are
+        read in blocks; None when planes are read whole or cannot be read.
+    block_memory_estimate
+        Estimated working memory for one block when planes are read in blocks;
+        for planes that cannot be read within the limit, for the smallest block
+        possible. None when planes fit whole or cannot be split.
     """
 
     shape: tuple[int, ...]
@@ -121,26 +254,47 @@ class PlaneLayout:
     page_nbytes: int
     encoded_nbytes: int
     memory_estimate: int
+    memory_limit: int = DEFAULT_MEMORY_LIMIT
+    block_shape: tuple[int, int] | None = None
+    block_memory_estimate: int | None = None
+    blocking: _Blocking | None = field(default=None, repr=False, compare=False)
 
     @property
     def page_ndim(self) -> int:
         """Number of leading axes that select a page; the others lie within a page."""
         return len(self.shape) - len(self.page_shape)
 
+    @property
+    def in_blocks(self) -> bool:
+        """True when planes are over the memory limit and are read in blocks."""
+        return self.block_shape is not None
+
+    @property
+    def fits(self) -> bool:
+        """True when planes can be read within the memory limit, whole or in blocks."""
+        return self.memory_estimate <= self.memory_limit or self.in_blocks
+
 
 def plane_layout(
-    path: str | os.PathLike, mapping: AxisMapping, *, bin_count: int | None = None
+    path: str | os.PathLike,
+    mapping: AxisMapping,
+    *,
+    bin_count: int | None = None,
+    memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> PlaneLayout:
     """Work out from the header how the planes of a file are read.
 
     Parameters
     ----------
     path
-        The TIFF file.
+        The TIFF file or OME-Zarr folder.
     mapping
         The axis mapping for this file (see :attr:`AxisReview.file_mappings`).
     bin_count
         Histogram bin count, for the memory estimate; the dtype's default if None.
+    memory_limit
+        Largest working memory allowed for one plane, in bytes; planes above it
+        are read in blocks when possible.
 
     Raises
     ------
@@ -149,9 +303,9 @@ def plane_layout(
         cannot be read one at a time.
     """
     if is_zarr_store(path):
-        return _zarr_layout(_open_zarr(path), mapping, path, bin_count)
+        return _zarr_layout(_open_zarr(path), mapping, path, bin_count, memory_limit)
     with _open(path) as tif:
-        return _layout(tif.series[0], mapping, path, bin_count)
+        return _layout(tif.series[0], mapping, path, bin_count, memory_limit)
 
 
 def iter_planes(
@@ -165,15 +319,18 @@ def iter_planes(
 
     Planes come in the file's storage order (the order of the axes). Each plane
     is checked against the memory limit before the file's pixel data is read.
+    Planes over the limit are yielded without pixels and read in blocks (see
+    :meth:`Plane.blocks`); use each such plane before asking for the next one,
+    while the file is still open.
 
     Parameters
     ----------
     path
-        The TIFF file.
+        The TIFF file or OME-Zarr folder.
     mapping
         The axis mapping for this file (see :attr:`AxisReview.file_mappings`).
     memory_limit
-        Largest working memory allowed for one plane, in bytes.
+        Largest working memory allowed for one plane or block, in bytes.
     bin_count
         Histogram bin count, for the memory estimate; the dtype's default if None.
 
@@ -184,29 +341,27 @@ def iter_planes(
     Raises
     ------
     PlaneMemoryError
-        If a plane needs more memory than ``memory_limit``.
+        If a plane cannot be read within ``memory_limit``, not even in blocks.
     PlaneReadError
         If the file cannot be read plane by plane under ``mapping``.
     """
     if is_zarr_store(path):
         image = _open_zarr(path)
-        layout = _zarr_layout(image, mapping, path, bin_count)
-        _check_limit(layout, path, memory_limit)
-        y, x = mapping.index_of("Y"), mapping.index_of("X")
-        others = [d for d in range(len(layout.shape)) if d not in (y, x)]
-        for index in np.ndindex(*(layout.shape[d] for d in others)):
-            position = dict(zip(others, index, strict=True))
+        layout = _zarr_layout(image, mapping, path, bin_count, memory_limit)
+        _check_limit(layout, path)
+        for position in _positions(layout, mapping):
             yield _zarr_plane(image, layout, mapping, position, path)
         return
     with _open(path) as tif:
         series = tif.series[0]
-        layout = _layout(series, mapping, path, bin_count)
-        _check_limit(layout, path, memory_limit)
-        y, x = mapping.index_of("Y"), mapping.index_of("X")
-        others = [d for d in range(len(layout.shape)) if d not in (y, x)]
+        layout = _layout(series, mapping, path, bin_count, memory_limit)
+        _check_limit(layout, path)
+        if layout.in_blocks:
+            for position in _positions(layout, mapping):
+                yield _tiff_block_plane(series, layout, mapping, position, path)
+            return
         current, page = -1, None
-        for index in np.ndindex(*(layout.shape[d] for d in others)):
-            position = dict(zip(others, index, strict=True))
+        for position in _positions(layout, mapping):
             page_index = _page_index(layout, position)
             if page_index != current:
                 page = None  # let the previous page go before decoding the next
@@ -223,15 +378,24 @@ def read_plane(
     c: int | None = None,
     t: int | None = None,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
+    preview: bool = False,
 ) -> Plane:
     """Read one plane, decoding only the page that holds it.
 
     Coordinates left as None default to 0 for the axes the mapping has.
 
+    Parameters
+    ----------
+    preview
+        For a plane over the memory limit, return a reduced preview read in
+        blocks (only every n-th pixel along Y and X, see :attr:`Plane.step`)
+        instead of raising :class:`PlaneMemoryError`.
+
     Raises
     ------
     PlaneMemoryError
-        If the plane needs more memory than ``memory_limit``.
+        If the plane needs more memory than ``memory_limit`` (with ``preview``,
+        if not even a reduced preview can be read within it).
     PlaneReadError
         If the file cannot be read under ``mapping``.
     IndexError
@@ -240,14 +404,15 @@ def read_plane(
     wanted = {"Z": z, "C": c, "T": t}
     if is_zarr_store(path):
         image = _open_zarr(path)
-        layout = _zarr_layout(image, mapping, path, None)
-        _check_limit(layout, path, memory_limit)
-        return _zarr_plane(image, layout, mapping, _position(layout, mapping, wanted), path)
+        layout = _zarr_layout(image, mapping, path, None, memory_limit)
+        layout = _whole_or_preview(layout, path, preview, _zarr_reblock(image, mapping, path))
+        position = _position(layout, mapping, wanted)
+        return _whole_or_reduced(_zarr_plane(image, layout, mapping, position, path), layout)
     with _open(path) as tif:
         series = tif.series[0]
-        layout = _layout(series, mapping, path, None)
-        _check_limit(layout, path, memory_limit)
-        return _read_one(series, layout, mapping, path, wanted)
+        layout = _layout(series, mapping, path, None, memory_limit)
+        layout = _whole_or_preview(layout, path, preview, _tiff_reblock(series, mapping, path))
+        return _whole_or_reduced(_read_one(series, layout, mapping, path, wanted), layout)
 
 
 def read_sample_plane(
@@ -256,20 +421,23 @@ def read_sample_plane(
     """Read one plane for the axis preview: the middle Z slice, first C and T.
 
     The middle slice is chosen because the first slice of a stack is often out
-    of focus. Only the page (or chunks) holding that plane is decoded.
+    of focus. Only the page (or chunks) holding that plane is decoded. A plane
+    over the memory limit is returned as a reduced preview (see
+    :func:`read_plane`).
     """
     if is_zarr_store(path):
         dim = mapping.index_of("Z")
         image = _open_zarr(path)
         z = None if dim is None else image.shape[dim] // 2
-        return read_plane(path, mapping, z=z, memory_limit=memory_limit)
+        return read_plane(path, mapping, z=z, memory_limit=memory_limit, preview=True)
     with _open(path) as tif:
         series = tif.series[0]
-        layout = _layout(series, mapping, path, None)
-        _check_limit(layout, path, memory_limit)
+        layout = _layout(series, mapping, path, None, memory_limit)
+        layout = _whole_or_preview(layout, path, True, _tiff_reblock(series, mapping, path))
         dim = mapping.index_of("Z")
         z = None if dim is None else layout.shape[dim] // 2
-        return _read_one(series, layout, mapping, path, {"Z": z, "C": None, "T": None})
+        wanted = {"Z": z, "C": None, "T": None}
+        return _whole_or_reduced(_read_one(series, layout, mapping, path, wanted), layout)
 
 
 def check_planes(
@@ -295,37 +463,59 @@ def check_planes(
     Returns
     -------
     list of ValidationIssue
-        Errors for planes over the memory limit (``plane_over_memory_limit``) and
-        for files whose planes cannot be read one at a time
-        (``unsupported_layout``).
+        Errors for planes that cannot be read within the memory limit, not even
+        in blocks (``plane_over_memory_limit``), and for files whose planes
+        cannot be read one at a time (``unsupported_layout``); a warning naming
+        the files whose planes are read in blocks (``planes_read_in_blocks``).
     """
     mappings = review.file_mappings if isinstance(review, AxisReview) else review
     root = Path(experiment_root)
     over: list[tuple[str, PlaneLayout]] = []
+    blocked: list[tuple[str, PlaneLayout]] = []
     unsupported: list[str] = []
     for rel in sorted(mappings):
         try:
-            layout = plane_layout(root / rel, mappings[rel], bin_count=bin_count)
+            layout = plane_layout(
+                root / rel, mappings[rel], bin_count=bin_count, memory_limit=memory_limit
+            )
         except PlaneReadError:
             logger.debug("Cannot read %s plane by plane", rel, exc_info=True)
             unsupported.append(rel)
             continue
-        if layout.memory_estimate > memory_limit:
+        if not layout.fits:
             over.append((rel, layout))
+        elif layout.in_blocks:
+            blocked.append((rel, layout))
 
     issues = []
     if over:
-        largest = max(layout.memory_estimate for _, layout in over)
+        largest = max(_smallest_need(layout) for _, layout in over)
         issues.append(
             error(
                 "plane_over_memory_limit",
-                f"Reading one plane of {plural(len(over), 'image')} needs more working memory "
-                f"than the limit of {format_bytes(memory_limit)} (up to "
-                f"{format_bytes(largest)}). Planes are never split or read with another "
-                "method, so these images cannot be processed with this limit.",
+                f"{plural(len(over), 'image')} cannot be read within the memory limit of "
+                f"{format_bytes(memory_limit)}, not even in blocks: the smallest part of a "
+                f"plane that can be read on its own needs up to {format_bytes(largest)}. A "
+                "plane stored compressed in one piece has to be decoded whole.",
                 [rel for rel, _ in over],
-                "Raise the memory limit if this computer has enough memory, or crop or "
-                "split the images before processing.",
+                "Raise the memory limit if this computer has enough memory, or save the "
+                "images again as tiled or uncompressed TIFF files or as OME-Zarr with smaller "
+                "chunks.",
+            )
+        )
+    if blocked:
+        largest = max(layout.memory_estimate for _, layout in blocked)
+        issues.append(
+            warning(
+                "planes_read_in_blocks",
+                f"The planes of {plural(len(blocked), 'image')} are too large to read whole "
+                f"within the memory limit of {format_bytes(memory_limit)} (they would need up "
+                f"to {format_bytes(largest)}), so they will be read in blocks. The histograms "
+                "are exactly the same; reading takes longer.",
+                [rel for rel, _ in blocked],
+                "Nothing needs to be done. To read the planes whole, which is faster, raise "
+                f"the memory limit to {format_bytes(largest)} or more if this computer has "
+                "enough memory.",
             )
         )
     if unsupported:
@@ -386,7 +576,11 @@ def _check_fit(shape: tuple[int, ...], axes: str, mapping: AxisMapping, path) ->
 
 
 def _layout(
-    series: tifffile.TiffPageSeries, mapping: AxisMapping, path, bin_count: int | None
+    series: tifffile.TiffPageSeries,
+    mapping: AxisMapping,
+    path,
+    bin_count: int | None,
+    memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> PlaneLayout:
     shape = tuple(int(n) for n in series.shape)
     y, x = _check_fit(shape, str(series.axes), mapping, path)
@@ -420,7 +614,7 @@ def _layout(
         + plane_pixels * dtype.itemsize
         + estimate_histogram_memory(plane_pixels, dtype, bin_count)
     )
-    return PlaneLayout(
+    layout = PlaneLayout(
         shape=shape,
         dtype=dtype,
         plane_shape=(shape[y], shape[x]),
@@ -429,17 +623,37 @@ def _layout(
         page_nbytes=page_nbytes,
         encoded_nbytes=encoded_nbytes,
         memory_estimate=memory,
+        memory_limit=memory_limit,
     )
+    if memory <= memory_limit:
+        return layout
+    return _with_blocks(layout, _tiff_blocking(keyframe, shape, split, y, x), bin_count)
 
 
-def _check_limit(layout: PlaneLayout, path, memory_limit: int) -> None:
-    if layout.memory_estimate > memory_limit:
+def _check_limit(layout: PlaneLayout, path) -> None:
+    if not layout.fits:
         raise PlaneMemoryError(
             f"Reading one plane of {Path(path).name} needs about "
-            f"{format_bytes(layout.memory_estimate)} of working memory, more than the "
-            f"limit of {format_bytes(memory_limit)}. Raise the memory limit if this "
-            "computer has enough memory, or crop or split the image."
+            f"{format_bytes(_smallest_need(layout))} of working memory, more than the "
+            f"limit of {format_bytes(layout.memory_limit)}, even in blocks. Raise the memory "
+            "limit if this computer has enough memory, or save the image again as a tiled "
+            "or uncompressed TIFF file or as OME-Zarr with smaller chunks."
         )
+
+
+def _smallest_need(layout: PlaneLayout) -> int:
+    """Working memory of the smallest part of a plane that can be read on its own."""
+    if layout.block_memory_estimate is None:
+        return layout.memory_estimate
+    return min(layout.memory_estimate, layout.block_memory_estimate)
+
+
+def _positions(layout: PlaneLayout, mapping: AxisMapping) -> Iterator[dict[int, int]]:
+    """Index per non-XY dimension of every plane, in storage order."""
+    y, x = mapping.index_of("Y"), mapping.index_of("X")
+    others = [d for d in range(len(layout.shape)) if d not in (y, x)]
+    for index in np.ndindex(*(layout.shape[d] for d in others)):
+        yield dict(zip(others, index, strict=True))
 
 
 def _read_one(
@@ -450,6 +664,8 @@ def _read_one(
     wanted: Mapping[str, int | None],
 ) -> Plane:
     position = _position(layout, mapping, wanted)
+    if layout.in_blocks:
+        return _tiff_block_plane(series, layout, mapping, position, path)
     page = _read_page(series, _page_index(layout, position), layout, path)
     return _plane(page, layout, mapping, position)
 
@@ -513,6 +729,10 @@ def _finish(
     if mapping.index_of("X") < mapping.index_of("Y"):
         pixels = pixels.T
     pixels = np.ascontiguousarray(pixels, dtype=layout.dtype)
+    return Plane(pixels=pixels, **_coordinates(mapping, position))
+
+
+def _coordinates(mapping: AxisMapping, position: Mapping[int, int]) -> dict[str, int | None]:
     coords = {}
     for role in PLANE_ROLES:
         dim = mapping.index_of(role)
@@ -522,7 +742,341 @@ def _finish(
             coords[role.lower()] = 0
         else:
             coords[role.lower()] = None
-    return Plane(pixels=pixels, **coords)
+    return coords
+
+
+# Blocks --------------------------------------------------------------------------------
+
+
+def _with_blocks(
+    layout: PlaneLayout, blocking: _Blocking | None, bin_count: int | None
+) -> PlaneLayout:
+    """Add the block size that fits the memory limit to a layout over the limit."""
+    if blocking is None:
+        return layout
+    rows, cols = layout.shape[blocking.rows], layout.shape[blocking.cols]
+    unit_rows, unit_cols = min(blocking.unit[0], rows), min(blocking.unit[1], cols)
+    if unit_rows >= rows and unit_cols >= cols and not blocking.partial_rows:
+        return layout  # a single piece holds the whole plane: it cannot be split
+
+    def cost(block_rows: int, block_cols: int) -> int:
+        return _block_memory(layout, blocking, block_rows, block_cols, bin_count)
+
+    size = _choose_block(
+        rows, cols, unit_rows, unit_cols, blocking.partial_rows, cost, layout.memory_limit
+    )
+    if size is None:
+        smallest = (1 if blocking.partial_rows else unit_rows, unit_cols)
+        return replace(layout, block_memory_estimate=cost(*smallest), blocking=blocking)
+    block_shape = size if blocking.rows_are_y else size[::-1]
+    return replace(
+        layout, block_shape=block_shape, block_memory_estimate=cost(*size), blocking=blocking
+    )
+
+
+def _choose_block(
+    rows: int,
+    cols: int,
+    unit_rows: int,
+    unit_cols: int,
+    partial_rows: bool,
+    cost: Callable[[int, int], int],
+    limit: int,
+) -> tuple[int, int] | None:
+    """Return the largest block (stored rows, columns) whose estimate fits the limit.
+
+    Full-width bands of whole pieces come first, then single bands of fewer
+    pieces, then (when pieces can be read in parts) bands of fewer rows.
+    """
+
+    def largest(count: int, size: Callable[[int], tuple[int, int]]) -> int:
+        low, high = 0, count  # largest k in 1..count with cost(size(k)) <= limit, else 0
+        while low < high:
+            middle = (low + high + 1) // 2
+            if cost(*size(middle)) <= limit:
+                low = middle
+            else:
+                high = middle - 1
+        return low
+
+    k = largest(math.ceil(rows / unit_rows), lambda k: (min(k * unit_rows, rows), cols))
+    if k:
+        return min(k * unit_rows, rows), cols
+    if unit_cols < cols:
+        j = largest(math.ceil(cols / unit_cols), lambda j: (unit_rows, min(j * unit_cols, cols)))
+        if j:
+            return unit_rows, min(j * unit_cols, cols)
+    if partial_rows:
+        for width in dict.fromkeys((cols, unit_cols)):
+            r = largest(unit_rows - 1, lambda r, width=width: (r, width))
+            if r:
+                return r, width
+    return None
+
+
+def _block_memory(
+    layout: PlaneLayout, blocking: _Blocking, rows: int, cols: int, bin_count: int | None
+) -> int:
+    """Estimated working memory to read one block and add it to the histogram."""
+    pixels = rows * cols
+    memory = pixels * layout.dtype.itemsize + estimate_histogram_memory(
+        pixels, layout.dtype, bin_count
+    )
+    unit_rows, unit_cols = blocking.unit
+    if blocking.kind == "zarr":
+        # zarr decodes every chunk the block touches and returns a copy of the block.
+        bands = math.ceil(rows / unit_rows) if rows >= unit_rows else 1
+        chunks = bands * math.ceil(cols / unit_cols)
+        return memory + chunks * blocking.piece_nbytes + pixels * layout.dtype.itemsize
+    if blocking.partial_rows:
+        # Uncompressed rows are read straight from the file, then copied into the block.
+        return memory + 2 * min(rows, unit_rows) * blocking.row_nbytes
+    # One compressed piece at a time is read and decoded, then copied into the block.
+    return memory + blocking.piece_nbytes + blocking.encoded_nbytes
+
+
+def _ranges(length: int, unit: int, size: int) -> list[tuple[int, int]]:
+    """Split ``0 .. length`` into blocks of ``size``, never across a piece when smaller."""
+    if size >= unit:
+        return [(a, min(a + size, length)) for a in range(0, length, size)]
+    return [
+        (a, min(a + size, band + unit, length))
+        for band in range(0, length, unit)
+        for a in range(band, min(band + unit, length), size)
+    ]
+
+
+def _iter_blocks(
+    layout: PlaneLayout, read: Callable[[int, int, int, int], np.ndarray]
+) -> Iterator[Block]:
+    """Yield the blocks of a plane in plane orientation, reading stored rectangles."""
+    blocking = layout.blocking
+    rows, cols = layout.shape[blocking.rows], layout.shape[blocking.cols]
+    block_rows, block_cols = layout.block_shape[:: 1 if blocking.rows_are_y else -1]
+    unit_rows, unit_cols = blocking.unit
+    for r0, r1 in _ranges(rows, unit_rows, block_rows):
+        for c0, c1 in _ranges(cols, unit_cols, block_cols):
+            pixels = read(r0, r1, c0, c1)
+            yield Block(r0, c0, pixels) if blocking.rows_are_y else Block(c0, r0, pixels.T)
+
+
+def _block_plane(
+    layout: PlaneLayout,
+    mapping: AxisMapping,
+    position: Mapping[int, int],
+    read: Callable[[int, int, int, int], np.ndarray],
+) -> Plane:
+    reader = BlockReader(layout.plane_shape, layout.dtype, lambda: _iter_blocks(layout, read))
+    return Plane(pixels=None, reader=reader, **_coordinates(mapping, position))
+
+
+def _whole_or_preview(
+    layout: PlaneLayout,
+    path,
+    preview: bool,
+    reblock: Callable[[int], PlaneLayout],
+) -> PlaneLayout:
+    """Check that a plane can be read whole, or (for a preview) reduced in blocks.
+
+    A reduced preview is held in memory while the blocks are read, so the blocks
+    get the memory limit minus the preview's size.
+    """
+    if not layout.in_blocks and layout.fits:
+        return layout
+    if not preview:
+        if layout.fits:
+            raise PlaneMemoryError(
+                f"Reading one plane of {Path(path).name} whole needs about "
+                f"{format_bytes(layout.memory_estimate)} of working memory, more than the "
+                f"limit of {format_bytes(layout.memory_limit)}. It can only be read in blocks."
+            )
+        _check_limit(layout, path)
+    step = _preview_step(layout)
+    reduced = layout.dtype.itemsize * math.prod(math.ceil(n / step) for n in layout.plane_shape)
+    smaller = reblock(layout.memory_limit - reduced)
+    if not smaller.in_blocks:
+        raise PlaneMemoryError(
+            f"Not even a reduced preview of a plane of {Path(path).name} can be read within "
+            f"the memory limit of {format_bytes(layout.memory_limit)}. Raise the memory limit "
+            "if this computer has enough memory."
+        )
+    return replace(smaller, memory_limit=layout.memory_limit)
+
+
+def _preview_step(layout: PlaneLayout) -> int:
+    """Return the step of a reduced preview: every ``step``-th pixel is kept.
+
+    The preview has at most ``PREVIEW_SIDE`` pixels per side and, with the float
+    copies made to display it, fits in a quarter of the memory limit.
+    """
+    rows, cols = layout.plane_shape
+    per_pixel = layout.dtype.itemsize + 16
+    allowed = max(1, layout.memory_limit // 4 // per_pixel)
+    step = max(2, math.ceil(max(rows, cols) / PREVIEW_SIDE), math.isqrt(rows * cols // allowed))
+    while math.ceil(rows / step) * math.ceil(cols / step) > allowed:
+        step += 1
+    return step
+
+
+def _whole_or_reduced(plane: Plane, layout: PlaneLayout) -> Plane:
+    """Return a plane held whole as it is, or a reduced preview of a plane read in blocks."""
+    if not plane.in_blocks:
+        return plane
+    step = _preview_step(layout)
+    rows, cols = plane.shape
+    reduced = np.empty((math.ceil(rows / step), math.ceil(cols / step)), dtype=plane.dtype)
+    for block in plane.blocks():
+        kept = block.pixels[(-block.y) % step :: step, (-block.x) % step :: step]
+        y, x = math.ceil(block.y / step), math.ceil(block.x / step)
+        reduced[y : y + kept.shape[0], x : x + kept.shape[1]] = kept
+    return replace(plane, pixels=reduced, step=step)
+
+
+# TIFF blocks ---------------------------------------------------------------------------
+
+
+def _tiff_blocking(
+    keyframe, shape: tuple[int, ...], split: int, y: int, x: int
+) -> _Blocking | None:
+    """Work out how the pages of a series are stored in strips or tiles, if they can be split.
+
+    Each page is a normalised array (separate samples, depth, rows, columns,
+    contiguous samples). The page's own axes of the series must line up with
+    that array, with the plane's two axes on its rows and columns.
+    """
+    if keyframe.is_subsampled or keyframe.jpegheader is not None or keyframe.dtype is None:
+        return None
+    stored_shape = tuple(int(n) for n in keyframe.shaped)
+    page_dims = [d for d in range(split, len(shape)) if shape[d] > 1]
+    stored_dims = [i for i in range(5) if stored_shape[i] > 1]
+    if [shape[d] for d in page_dims] != [stored_shape[i] for i in stored_dims]:
+        return None
+    stored = dict(zip(page_dims, stored_dims, strict=True))
+    rows, cols = sorted((y, x))
+    if stored.get(rows) != 2 or stored.get(cols) != 3:
+        return None
+    itemsize = np.dtype(keyframe.dtype).itemsize
+    samples = stored_shape[4]
+    if keyframe.is_tiled:
+        depth, unit = keyframe.tiledepth, (keyframe.tilelength, keyframe.tilewidth)
+    else:
+        depth, unit = 1, (min(keyframe.rowsperstrip, stored_shape[2]), stored_shape[3])
+    uncompressed = (
+        keyframe.compression == 1
+        and keyframe.predictor == 1
+        and keyframe.fillorder == 1
+        and keyframe.bitspersample == itemsize * 8
+    )
+    return _Blocking(
+        kind="tiff",
+        rows=rows,
+        cols=cols,
+        rows_are_y=rows == y,
+        unit=unit,
+        partial_rows=uncompressed,
+        piece_nbytes=depth * unit[0] * unit[1] * samples * itemsize,
+        encoded_nbytes=max((int(n) for n in keyframe.databytecounts), default=0),
+        row_nbytes=unit[1] * samples * itemsize,
+        stored=tuple(stored.items()),
+    )
+
+
+def _tiff_reblock(series, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:
+    return lambda limit: _layout(series, mapping, path, None, limit)
+
+
+def _tiff_block_plane(
+    series: tifffile.TiffPageSeries,
+    layout: PlaneLayout,
+    mapping: AxisMapping,
+    position: Mapping[int, int],
+    path,
+) -> Plane:
+    index = _page_index(layout, position)
+    page = series.pages[index]
+    if page is None:
+        raise PlaneReadError(f"Page {index} of {path} is missing from the file.")
+    # Index of the plane along the separate-sample, depth and contiguous-sample dimensions.
+    where = [0] * 5
+    for dim, stored in layout.blocking.stored:
+        if stored not in (2, 3):
+            where[stored] = position[dim]
+    return _block_plane(
+        layout,
+        mapping,
+        position,
+        lambda r0, r1, c0, c1: _read_tiff_block(page, layout, where, (r0, r1, c0, c1), path),
+    )
+
+
+def _read_tiff_block(page, layout: PlaneLayout, where: list[int], box, path) -> np.ndarray:
+    """Read rows ``r0 .. r1`` and columns ``c0 .. c1`` of one plane of a page, piece by piece."""
+    r0, r1, c0, c1 = box
+    keyframe = page.keyframe
+    blocking = layout.blocking
+    _, depth, length, width, samples = (int(n) for n in keyframe.shaped)
+    unit_rows, unit_cols = blocking.unit
+    sample, z, _, _, contiguous = where
+    out = np.empty((r1 - r0, c1 - c0), dtype=layout.dtype)
+    if keyframe.is_tiled:
+        tile_depth = keyframe.tiledepth
+        across, down = math.ceil(width / unit_cols), math.ceil(length / unit_rows)
+        first = (sample * math.ceil(depth / tile_depth) + z // tile_depth) * down * across
+        z_in_piece = z % tile_depth
+    else:
+        across, down = 1, math.ceil(length / unit_rows)
+        first = (sample * depth + z) * down
+        z_in_piece = 0
+    for row in range(r0 // unit_rows, math.ceil(r1 / unit_rows)):
+        top = row * unit_rows
+        a, b = max(r0, top) - top, min(r1, top + unit_rows, length) - top
+        for col in range(c0 // unit_cols, math.ceil(c1 / unit_cols)):
+            left = col * unit_cols
+            ca, cb = max(c0, left) - left, min(c1, left + unit_cols, width) - left
+            index = first + row * across + col
+            piece = _read_segment(page, index, z_in_piece, (a, b), blocking, path)
+            target = out[top + a - r0 : top + b - r0, left + ca - c0 : left + cb - c0]
+            if piece is None:
+                target[...] = keyframe.nodata
+            else:
+                target[...] = piece[:, ca:cb, contiguous]
+    return out
+
+
+def _read_segment(page, index: int, z: int, rows: tuple[int, int], blocking: _Blocking, path):
+    """Read rows of one strip or tile as (rows, columns, contiguous samples), or None if empty.
+
+    Uncompressed pieces are read straight from the file, only the rows wanted;
+    compressed pieces are decoded whole.
+    """
+    keyframe = page.keyframe
+    offset, count = int(page.dataoffsets[index]), int(page.databytecounts[index])
+    if offset == 0 or count == 0:
+        return None
+    fh = page.parent.filehandle
+    a, b = rows
+    try:
+        if blocking.partial_rows:
+            unit_rows, unit_cols = blocking.unit
+            per_row = blocking.row_nbytes // np.dtype(keyframe.dtype).itemsize
+            stored = np.dtype(page.parent.byteorder + np.dtype(keyframe.dtype).char)
+            with fh.lock:
+                fh.seek(offset + (z * unit_rows + a) * blocking.row_nbytes)
+                data = fh.read_array(stored, (b - a) * per_row)
+            return data.reshape(b - a, unit_cols, per_row // unit_cols)
+        with fh.lock:
+            fh.seek(offset)
+            data = fh.read(count)
+            decode = keyframe.decode
+        kwargs = {}
+        if keyframe.compression in _JPEG_COMPRESSIONS:
+            kwargs = {"jpegtables": page.jpegtables, "jpegheader": keyframe.jpegheader}
+        segment, _, _ = decode(data, index, **kwargs)
+    except Exception as exc:  # decoding errors come from many codecs
+        raise PlaneReadError(f"Part {index} of a page of {path} cannot be read: {exc}") from exc
+    if segment is None:
+        return None
+    return segment[z, a:b]
 
 
 # OME-Zarr ------------------------------------------------------------------------------
@@ -536,7 +1090,11 @@ def _open_zarr(path) -> NgffImage:
 
 
 def _zarr_layout(
-    image: NgffImage, mapping: AxisMapping, path, bin_count: int | None
+    image: NgffImage,
+    mapping: AxisMapping,
+    path,
+    bin_count: int | None,
+    memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> PlaneLayout:
     shape = image.shape
     y, x = _check_fit(shape, image.axes, mapping, path)
@@ -544,14 +1102,15 @@ def _zarr_layout(
     chunks = image.chunks
     # zarr decodes every chunk a plane touches; each chunk may also hold other planes.
     chunks_per_plane = math.ceil(shape[y] / chunks[y]) * math.ceil(shape[x] / chunks[x])
-    page_nbytes = math.prod(chunks) * dtype.itemsize * chunks_per_plane
+    chunk_nbytes = math.prod(chunks) * dtype.itemsize
+    page_nbytes = chunk_nbytes * chunks_per_plane
     plane_pixels = shape[y] * shape[x]
     memory = (
         page_nbytes
         + plane_pixels * dtype.itemsize
         + estimate_histogram_memory(plane_pixels, dtype, bin_count)
     )
-    return PlaneLayout(
+    layout = PlaneLayout(
         shape=shape,
         dtype=dtype,
         plane_shape=(shape[y], shape[x]),
@@ -560,15 +1119,44 @@ def _zarr_layout(
         page_nbytes=page_nbytes,
         encoded_nbytes=0,
         memory_estimate=memory,
+        memory_limit=memory_limit,
     )
+    if memory <= memory_limit:
+        return layout
+    rows, cols = sorted((y, x))
+    blocking = _Blocking(
+        kind="zarr",
+        rows=rows,
+        cols=cols,
+        rows_are_y=rows == y,
+        unit=(chunks[rows], chunks[cols]),
+        partial_rows=True,
+        piece_nbytes=chunk_nbytes,
+    )
+    return _with_blocks(layout, blocking, bin_count)
+
+
+def _zarr_reblock(image: NgffImage, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:
+    return lambda limit: _zarr_layout(image, mapping, path, None, limit)
 
 
 def _zarr_plane(
     image: NgffImage, layout: PlaneLayout, mapping: AxisMapping, position: Mapping[int, int], path
 ) -> Plane:
+    if layout.in_blocks:
+        rows, cols = layout.blocking.rows, layout.blocking.cols
+
+        def read(r0: int, r1: int, c0: int, c1: int) -> np.ndarray:
+            box = {**position, rows: slice(r0, r1), cols: slice(c0, c1)}
+            return _zarr_read(image, tuple(box[d] for d in range(len(layout.shape))), path)
+
+        return _block_plane(layout, mapping, position, read)
     selection = tuple(position.get(d, slice(None)) for d in range(len(layout.shape)))
+    return _finish(_zarr_read(image, selection, path), layout, mapping, position)
+
+
+def _zarr_read(image: NgffImage, selection: tuple, path) -> np.ndarray:
     try:
-        pixels = read_selection(image.array, selection)
+        return read_selection(image.array, selection)
     except Exception as exc:  # decoding errors come from many codecs and stores
         raise PlaneReadError(f"A plane of {path} cannot be read: {exc}") from exc
-    return _finish(pixels, layout, mapping, position)
