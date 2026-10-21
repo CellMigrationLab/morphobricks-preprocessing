@@ -457,3 +457,11 @@ Raised during review; to be decided before the milestones that need them:
     kept until the checked folder, the axis roles, the memory limit or the bin count
     change. Nothing else changes: messages, validation severities and output formats
     stay as in question 15.*
+17. Should every row carry all three plane coordinates, so that later bricks (patch
+    extraction) identify a plane the same way whether or not its file has the axis?
+    *Decided (October 2026): yes. `z`, `c` and `t` are always written, 0 for an axis the
+    image does not have (or has with length 1 and no role), and `plane_id` always ends in
+    `::z=…,c=…,t=…` (`img.tif::z=0,c=0,t=0` for a 2D image). The CSV moves to schema
+    version 2; a table of version 1 in the output folder is recomputed on the next run
+    ("the earlier table uses a different format version"), and readers of version 1 reject
+    version 2 tables. The manifest format stays at version 1.*

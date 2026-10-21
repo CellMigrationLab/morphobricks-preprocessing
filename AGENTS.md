@@ -155,8 +155,9 @@ functions the tests use.
 - **Series and pyramids:** only the first image series, at full-resolution level 0. A file
   with more than one series is an error (`multiple_series`). OME pyramids are one series;
   non-OME SubIFD pyramids appear as two series in tifffile and are therefore blocked.
-- **Coordinates:** plane coordinates `z, c, t` are zero-based; blank (None) when the
-  experiment has no such axis.
+- **Coordinates:** plane coordinates `z, c, t` are zero-based and always written: 0 when
+  the image has no such axis (question 17). `PlaneRecord` stores None as 0; `Plane`
+  coordinates stay None for axes the file lacks.
 - **OME-Zarr axes:** translated from OME-NGFF metadata (`zarr_input.ngff_axes`: time -> T,
   channel -> C, space z/y/x -> Z/Y/X, anything else -> Q). The experiment mapping is
   defined on the TIFF arrangement if there are TIFFs; OME-Zarr images with another order
@@ -199,14 +200,14 @@ functions the tests use.
   Percentile range defaults to 1–99.8. Robust z-score uses MAD × 1.4826. A zero or
   non-finite scale is an error.
 
-### CSV (contract §5, schema version 1)
+### CSV (contract §5, schema version 2)
 
 - **Columns:**
   `position_id, image_file, z, c, t, condition, biological_repeat, technical_repeat,
   source_relative_path, plane_id, dtype, bit_depth, pixel_min, pixel_max, total_pixel_count,
   valid_pixel_count, binning_min, binning_max, bin_count, schema_version, histogram_bin_00000…`.
-- **`plane_id`** = relative path plus `::z=…,c=…,t=…` for the coordinates present. It is
-  the row key.
+- **`plane_id`** = relative path plus `::z=…,c=…,t=…`, always all three
+  (`img.tif::z=0,c=0,t=0` for a 2D image). It is the row key.
 - **Rows** are sorted by path, then z, c, t.
 - **Reading:** labels are always read back as text (`NA`, `001`, `TRUE` stay as typed).
   Floats are written with `repr`.
@@ -284,6 +285,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
 | Channel names (Q1) | Manifest only (from OME), warning `channel_names_differ`; CSV stays at schema 1 |
+| Plane coordinates (Q17) | `z`, `c`, `t` always written (0 for absent axes), `plane_id` always `::z=…,c=…,t=…`; CSV schema 2, version-1 tables recomputed on the next run |
 | Multi-series / pyramids (Q2) | Level 0 only; more than one series is an error |
 | RGB `S` axis (Q3) | Prefilled as C, confirmed like any role |
 | Significant bits (Q4) | Manifest only, information only; `bit_depth` and binning unchanged |

@@ -113,7 +113,7 @@ def test_labels_and_coordinates_in_the_table(experiment):
     result = run_experiment(experiment, ZYX)
     records = read_plane_histograms(result.csv_path)
     assert [r.plane_id for r in records] == [
-        f"{rel}::z={z}" for rel in sorted(IMAGES) for z in (0, 1)
+        f"{rel}::z={z},c=0,t=0" for rel in sorted(IMAGES) for z in (0, 1)
     ]
     by_path = {r.source_relative_path: r for r in records}
     short = by_path["treated/bio_rep1/img_01.tif"]
@@ -123,7 +123,7 @@ def test_labels_and_coordinates_in_the_table(experiment):
         SINGLE,
     )
     assert {r.z for r in records} == {0, 1}
-    assert all(r.c is None and r.t is None for r in records)
+    assert all(r.c == 0 and r.t == 0 for r in records)
 
 
 def test_table_matches_the_pixels(experiment):
@@ -278,7 +278,19 @@ def test_changed_axis_mapping_rebuilds(experiment):
     result = run_experiment(experiment, AxisMapping("ZYX", "TYX"))
     assert result.rebuild_reason == "the axis mapping changed"
     records = read_plane_histograms(result.csv_path)
-    assert {r.t for r in records} == {0, 1} and {r.z for r in records} == {None}
+    assert {r.t for r in records} == {0, 1} and {r.z for r in records} == {0}
+
+
+def test_table_of_an_earlier_format_version_is_recomputed(experiment, reads):
+    first = run_experiment(experiment, ZYX)
+    manifest = json.loads(first.manifest_path.read_text(encoding="utf-8"))
+    manifest["schema_version"] = "1"
+    first.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    reads.clear()
+    result = run_experiment(experiment, ZYX)
+    assert result.rebuild_reason == "the earlier table uses a different format version"
+    assert sorted(reads.relative(experiment)) == sorted(IMAGES)
+    assert csv_bytes(result) == csv_bytes(first)
 
 
 def test_memory_limit_change_keeps_rows(experiment, reads):

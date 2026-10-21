@@ -26,7 +26,8 @@ new `schema_version`.
 
 Roles X, Y, Z, C, T. Exactly one X and one Y; each role at most once. Non-singleton axes
 must have a supported role. One confirmed mapping per experiment. Plane coordinates `z`,
-`c`, `t` are zero-based and blank when the axis is absent.
+`c`, `t` are zero-based and always written: an axis the image does not have, or has with
+length 1 and no role, has coordinate 0.
 
 | Rule | Detail |
 |---|---|
@@ -85,7 +86,7 @@ A plane too large for the memory limit is read in blocks (rectangles of its stor
 tiles or chunks). Its extrema, pixel counts and bin counts are exactly those of the whole
 plane, so a row never depends on whether, or in which blocks, its plane was read.
 
-## 5. CSV schema (`plane_histograms.csv`, schema version 1)
+## 5. CSV schema (`plane_histograms.csv`, schema version 2)
 
 UTF-8, comma-separated, one header row, one row per plane, rows in a deterministic order.
 
@@ -93,10 +94,10 @@ UTF-8, comma-separated, one header row, one row per plane, rows in a determinist
 |---|---|---|
 | `position_id` | text or blank | From reliable metadata only; never inferred from file names. |
 | `image_file` | text | File name. |
-| `z`, `c`, `t` | integer or blank | Zero-based plane coordinates; blank when the axis is absent. |
+| `z`, `c`, `t` | integer | Zero-based plane coordinates, always written; 0 for an axis the image does not have (§2). |
 | `condition`, `biological_repeat`, `technical_repeat` | text | Folder labels; `single` when absent. Always read as text. |
 | `source_relative_path` | text | Path relative to the experiment root, `/`-separated. |
-| `plane_id` | text | `source_relative_path`, plus `::z=…,c=…,t=…` for the coordinates present. Row key. |
+| `plane_id` | text | `source_relative_path::z=…,c=…,t=…`, always with all three coordinates (`control/img.tif::z=0,c=0,t=0` for a 2D image). Row key. |
 | `dtype` | text | NumPy dtype name, e.g. `uint16`. |
 | `bit_depth` | integer | Storage bits (8, 16, 32, 64). |
 | `pixel_min`, `pixel_max` | number or blank | Exact finite extrema. Floats written at full precision. |
@@ -104,7 +105,7 @@ UTF-8, comma-separated, one header row, one row per plane, rows in a determinist
 | `valid_pixel_count` | integer | Finite pixels; equals the sum of the bin columns. |
 | `binning_min`, `binning_max` | number or blank | Range the bins cover (equal to the extrema). |
 | `bin_count` | integer | Number of bin columns. |
-| `schema_version` | text | `1`. |
+| `schema_version` | text | `2`. Version 1 left `z`, `c`, `t` blank for absent axes and out of `plane_id`; a table of another version is recomputed on the next run. |
 | `histogram_bin_00000` … | integer | Pixel count per bin. |
 
 ## 6. Group statistics
@@ -171,7 +172,7 @@ file's schema or statistical interpretation.
 
 | Key | Meaning |
 |---|---|
-| `manifest_version`, `schema_version` | Manifest format (`1`) and CSV format (`1`). |
+| `manifest_version`, `schema_version` | Manifest format (`1`) and CSV format (`2`). |
 | `written_at` | UTC time of writing, ISO 8601. |
 | `experiment_root` | Absolute path of the experiment folder, for information. |
 | `dtype` | Pixel type of the experiment. |

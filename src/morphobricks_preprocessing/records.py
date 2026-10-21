@@ -29,7 +29,8 @@ class PlaneRecord:
     histogram
         The plane's :class:`~morphobricks_preprocessing.histogram.PlaneHistogram`.
     z, c, t
-        Zero-based plane coordinates, or None when the axis is not present.
+        Zero-based plane coordinates. An axis the image does not have, or has
+        with length 1, has coordinate 0; None is stored as 0.
     position_id
         Position identifier from reliable metadata, or None.
     """
@@ -39,10 +40,17 @@ class PlaneRecord:
     biological_repeat: str
     technical_repeat: str
     histogram: PlaneHistogram
-    z: int | None = None
-    c: int | None = None
-    t: int | None = None
+    z: int = 0
+    c: int = 0
+    t: int = 0
     position_id: str | None = None
+
+    def __post_init__(self) -> None:
+        # Every plane has all three coordinates (contract §2), so a plane is
+        # identified the same way whether or not its file has the axis.
+        for name in ("z", "c", "t"):
+            if getattr(self, name) is None:
+                object.__setattr__(self, name, 0)
 
     @property
     def image_file(self) -> str:
@@ -69,17 +77,18 @@ class PlaneRecord:
 
 
 def make_plane_id(
-    source_relative_path: str, *, z: int | None = None, c: int | None = None, t: int | None = None
+    source_relative_path: str, *, z: int | None = 0, c: int | None = 0, t: int | None = 0
 ) -> str:
-    """Build a plane identifier such as ``"cond/rep1/img.tif::z=3,c=0"``.
+    """Build a plane identifier such as ``"cond/rep1/img.tif::z=3,c=0,t=0"``.
 
-    Coordinates that are None (axis not present) are left out, so a 2D image's
-    identifier is its relative path.
+    All three coordinates are always written; None (an axis the image does not
+    have) is written as 0, so a 2D image's identifier is
+    ``"<path>::z=0,c=0,t=0"``.
     """
-    coords = [
-        f"{name}={value}" for name, value in (("z", z), ("c", c), ("t", t)) if value is not None
-    ]
-    return source_relative_path if not coords else f"{source_relative_path}::{','.join(coords)}"
+    coords = ",".join(
+        f"{name}={0 if value is None else value}" for name, value in (("z", z), ("c", c), ("t", t))
+    )
+    return f"{source_relative_path}::{coords}"
 
 
 def group_records(
