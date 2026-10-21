@@ -477,8 +477,8 @@ def test_ome_zarr_experiment_end_to_end(zarr_experiment):
         plane = np.asarray(data[record.c, record.z])
         expected = compute_plane_histogram(plane)
         np.testing.assert_array_equal(record.histogram.counts, expected.counts)
-        assert record.t is None
-    assert records[0].plane_id == "ctrl/rep1/a.ome.zarr::z=0,c=0"
+        assert record.t == 0
+    assert records[0].plane_id == "ctrl/rep1/a.ome.zarr::z=0,c=0,t=0"
 
 
 def test_rerun_detects_a_changed_store(zarr_experiment):
@@ -517,11 +517,11 @@ def test_mixed_tiff_and_ome_zarr_experiment(tmp_path):
     assert result.written
     rows = {r.plane_id: r for r in read_plane_histograms(result.csv_path)}
     # The same coordinates mean the same plane, whatever the storage order.
-    b = rows["ctrl/b.ome.zarr::z=2,c=1"]
+    b = rows["ctrl/b.ome.zarr::z=2,c=1,t=0"]
     np.testing.assert_array_equal(
         b.histogram.counts, compute_plane_histogram(zarr_data[1, 2]).counts
     )
-    a = rows["ctrl/a.tif::z=2,c=1"]
+    a = rows["ctrl/a.tif::z=2,c=1,t=0"]
     np.testing.assert_array_equal(
         a.histogram.counts, compute_plane_histogram(tiff_data[2, 1]).counts
     )

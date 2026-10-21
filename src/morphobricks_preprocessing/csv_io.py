@@ -23,7 +23,8 @@ from .dtypes import bit_depth, check_supported, is_integer
 from .histogram import PlaneHistogram
 from .records import PlaneRecord
 
-SCHEMA_VERSION = "1"
+# Version 2: z, c and t are always written (0 for an axis the image lacks).
+SCHEMA_VERSION = "2"
 OUTPUT_FILENAME = "plane_histograms.csv"
 
 METADATA_COLUMNS = (
@@ -182,9 +183,9 @@ def _record(row: list[str], n_meta: int, n_bins: int, path, line: int) -> PlaneR
             biological_repeat=meta["biological_repeat"],
             technical_repeat=meta["technical_repeat"],
             histogram=histogram,
-            z=_value(meta["z"], int),
-            c=_value(meta["c"], int),
-            t=_value(meta["t"], int),
+            z=int(meta["z"]),
+            c=int(meta["c"]),
+            t=int(meta["t"]),
             position_id=meta["position_id"] or None,
         )
     except ValueError as error:

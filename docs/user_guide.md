@@ -253,7 +253,7 @@ The default output folder is next to the experiment folder:
 `/data/exp1` → `/data/exp1_MorphoBricks_Preprocessing`.
 
 - **`plane_histograms.csv`:** one row per plane with the file name, the zero-based plane
-  coordinates `z`, `c`, `t` (blank when the image has no such dimension), the three
+  coordinates `z`, `c`, `t` (0 when the image has no such dimension), the three
   labels, the pixel type, the exact minimum and maximum, pixel counts and the histogram.
   The table is very wide (one column per bin), so spreadsheet programs may not open it
   completely; read it in Python with `read_plane_histograms()`. The columns are defined in

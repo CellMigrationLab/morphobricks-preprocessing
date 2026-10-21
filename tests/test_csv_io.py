@@ -1,3 +1,5 @@
+import csv
+
 import numpy as np
 import pytest
 
@@ -5,6 +7,7 @@ from morphobricks_preprocessing import (
     PlaneRecord,
     compute_plane_histogram,
     csv_io,
+    make_plane_id,
     read_plane_histograms,
     write_plane_histograms,
 )
@@ -97,9 +100,12 @@ def test_header_follows_the_contract(tmp_path):
     ]
 
 
-def test_plane_id_includes_present_coordinates(tmp_path):
-    assert record().plane_id == "control/bio_rep1/tech_rep1/img.tif"
-    assert record(z=3, c=0).plane_id == "control/bio_rep1/tech_rep1/img.tif::z=3,c=0"
+def test_plane_id_always_has_all_coordinates(tmp_path):
+    assert record().plane_id == "control/bio_rep1/tech_rep1/img.tif::z=0,c=0,t=0"
+    assert record(z=3, c=1).plane_id == "control/bio_rep1/tech_rep1/img.tif::z=3,c=1,t=0"
+    # An axis the image does not have is coordinate 0, also when given as None.
+    assert (record(z=None).z, record(z=None).plane_id) == (0, record().plane_id)
+    assert make_plane_id("img.tif", z=None, t=2) == "img.tif::z=0,c=0,t=2"
 
 
 def test_mixed_bin_counts_are_rejected(tmp_path):
@@ -125,11 +131,24 @@ def test_failed_write_leaves_previous_file_untouched(tmp_path, monkeypatch):
     assert [p.name for p in tmp_path.iterdir()] == ["t.csv"]  # no temporary files left
 
 
-def test_unknown_schema_version_is_rejected(tmp_path):
+def table_with(tmp_path, column, value):
+    """Write a one-row table, then set ``column`` of its row to ``value``."""
+    # plane_id holds commas, so the row is edited with the csv module.
     path = write_plane_histograms([record(bin_count=2)], tmp_path / "t.csv")
-    lines = path.read_text(encoding="utf-8").splitlines()
-    fields = lines[1].split(",")
-    fields[METADATA_COLUMNS.index("schema_version")] = "99"
-    path.write_text("\n".join([lines[0], ",".join(fields)]) + "\n", encoding="utf-8")
+    with open(path, newline="", encoding="utf-8") as fh:
+        header, row = list(csv.reader(fh))
+    row[METADATA_COLUMNS.index(column)] = value
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        csv.writer(fh).writerows([header, row])
+    return path
+
+
+def test_blank_coordinates_are_rejected(tmp_path):
+    # Version 1 tables left absent axes blank; version 2 always writes them.
+    with pytest.raises(CsvFormatError, match="line 2: invalid literal"):
+        read_plane_histograms(table_with(tmp_path, "z", ""))
+
+
+def test_unknown_schema_version_is_rejected(tmp_path):
     with pytest.raises(CsvFormatError, match="schema version"):
-        read_plane_histograms(path)
+        read_plane_histograms(table_with(tmp_path, "schema_version", "99"))

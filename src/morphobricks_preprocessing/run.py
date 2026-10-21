@@ -819,10 +819,7 @@ def _normalise(path: str) -> str:
 
 
 def _row_order(record: PlaneRecord) -> tuple:
-    def key(value: int | None) -> int:
-        return -1 if value is None else value
-
-    return (record.source_relative_path, key(record.z), key(record.c), key(record.t))
+    return (record.source_relative_path, record.z, record.c, record.t)
 
 
 def _sorted(issues: list[ValidationIssue]) -> tuple[ValidationIssue, ...]:
