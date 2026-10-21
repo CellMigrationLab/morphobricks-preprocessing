@@ -15,6 +15,11 @@ A store that holds several images (several ``multiscales`` entries, a
 several fields) is described by its first image and reports how many images it
 holds, so that the preflight can block it like a multi-series TIFF.
 
+The label images of an image (segmentations in its OME-NGFF ``labels`` group,
+such as ``cells`` or ``nuclei``) can be listed with :func:`ngff_label_names`
+and opened with :func:`open_ngff_labels`, for later bricks that use them as
+masks; this brick does not analyse them.
+
 Needs the ``zarr`` extra. OME-NGFF 0.4 (Zarr format 2) can be read with zarr 2.18
 or 3.x; OME-NGFF 0.5 (Zarr format 3) needs zarr 3, which needs Python 3.11 or newer.
 """
@@ -122,6 +127,79 @@ def open_ngff(path: str | os.PathLike) -> NgffImage:
     NgffError
         If the folder cannot be opened or has no usable OME-NGFF metadata.
     """
+    prefix, group, meta, image_count = _image_group(path)
+    return _level0(group, meta, prefix, image_count)
+
+
+def ngff_label_names(path: str | os.PathLike) -> tuple[str, ...]:
+    """Return the names of the label images of the first image in an OME-Zarr store.
+
+    They are listed in the ``labels`` group next to the image (OME-NGFF 0.4 and
+    0.5), for example ``("cells", "nuclei")``. Empty when the image has no
+    ``labels`` group.
+
+    Raises
+    ------
+    ZarrUnavailableError
+        If the ``zarr`` package is not installed.
+    NgffError
+        If the store cannot be opened or its ``labels`` metadata is malformed.
+    """
+    _, group, _, _ = _image_group(path)
+    labels = _labels_group(group)
+    if labels is None:
+        return ()
+    names = _ome_attrs(labels).get("labels")
+    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+        raise NgffError("its labels group does not list its label images")
+    return tuple(names)
+
+
+def open_ngff_labels(path: str | os.PathLike, name: str | None = None) -> NgffImage:
+    """Open level 0 of a label image of an OME-Zarr store without reading its pixels.
+
+    Parameters
+    ----------
+    path
+        The OME-Zarr image.
+    name
+        The label image, one of :func:`ngff_label_names`. May be None when the
+        image has exactly one.
+
+    Returns
+    -------
+    NgffImage
+        The label image's level-0 array and axes; ``dataset_path`` is its path
+        inside the store, e.g. ``"labels/cells/0"``.
+
+    Raises
+    ------
+    ZarrUnavailableError
+        If the ``zarr`` package is not installed.
+    NgffError
+        If the image has no label images, ``name`` is not one of them, or
+        ``name`` is None and there are several.
+    """
+    prefix, group, _, _ = _image_group(path)
+    names = ngff_label_names(path)
+    if not names:
+        raise NgffError("it has no label images (no labels group)")
+    if name is None:
+        if len(names) > 1:
+            raise NgffError(f"it has several label images ({', '.join(names)}); choose one by name")
+        name = names[0]
+    if name not in names:
+        raise NgffError(f"it has no label image {name!r}; its label images are {', '.join(names)}")
+    labels = _labels_group(group)
+    try:
+        label_group = labels[name]
+    except KeyError as exc:
+        raise NgffError(f"the label image {name!r} listed in its metadata is missing") from exc
+    return _level0(label_group, _ome_attrs(label_group), f"{prefix}labels/{name}/", 1)
+
+
+def _image_group(path: str | os.PathLike) -> tuple[str, Any, dict, int]:
+    """Open a store and descend to its first image: ``(prefix, group, meta, image_count)``."""
     zarr = _zarr()
     path = Path(path)
     if (path / "zarr.json").exists() and _zarr_major() < 3:
@@ -159,7 +237,11 @@ def open_ngff(path: str | os.PathLike) -> NgffImage:
         sub, group, meta, _ = _descend(group, series[0])
         prefix = f"{prefix}{sub}"
         image_count = max(image_count, len(series))
+    return prefix, group, meta, image_count
 
+
+def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:
+    """Describe level 0 of the multiscales image in ``group``."""
     multiscales = meta.get("multiscales")
     if not multiscales:
         raise NgffError("it has no OME-NGFF multiscales metadata")
@@ -189,6 +271,15 @@ def open_ngff(path: str | os.PathLike) -> NgffImage:
         channel_names=labels if any(labels) else (),
         dataset_path=f"{prefix}{dataset_path}",
     )
+
+
+def _labels_group(group):
+    """Return the ``labels`` group next to an image, or None when it has none."""
+    try:
+        labels = group["labels"]
+    except KeyError:
+        return None
+    return labels if hasattr(labels, "group_keys") else None
 
 
 def ngff_axes(axes: Any, ndim: int) -> str:

@@ -89,7 +89,9 @@ from .zarr_input import (
     NgffImage,
     ZarrUnavailableError,
     is_zarr_store,
+    ngff_label_names,
     open_ngff,
+    open_ngff_labels,
     zarr_available,
 )
 
@@ -165,8 +167,10 @@ __all__ = [
     "iter_planes",
     "make_plane_id",
     "min_max",
+    "ngff_label_names",
     "ome_zarr_relative_path",
     "open_ngff",
+    "open_ngff_labels",
     "percentile_range",
     "plane_layout",
     "pooled_statistics",

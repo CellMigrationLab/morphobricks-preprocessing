@@ -74,7 +74,8 @@ src/morphobricks_preprocessing/
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
   cli.py, __main__  `morphobricks-preprocessing check|run` (also `python -m morphobricks_preprocessing`)
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array and axis
-                    letters), zarr 2/3 helpers, canonical_dtype; needs the `zarr` extra
+                    letters), ngff_label_names/open_ngff_labels (label images, for later bricks),
+                    zarr 2/3 helpers, canonical_dtype; needs the `zarr` extra
   zarr_export.py    TIFF -> OME-Zarr conversion (OmeZarrWriter, OME-NGFF 0.4, plane by plane or
                     block by block),
                     ConversionSettings (chunk size, compression, pyramid levels), estimate_conversion
@@ -286,6 +287,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Too-deep folders (Q7) | Error |
 | Channel names (Q1) | Manifest only (from OME), warning `channel_names_differ`; CSV stays at schema 1 |
 | Plane coordinates (Q17) | `z`, `c`, `t` always written (0 for absent axes), `plane_id` always `::z=…,c=…,t=…`; CSV schema 2, version-1 tables recomputed on the next run |
+| OME-NGFF labels (Q18) | Read-only helpers `ngff_label_names`/`open_ngff_labels` for later bricks (CellPatcher masks); label images are never analysed and the outputs do not change |
 | Multi-series / pyramids (Q2) | Level 0 only; more than one series is an error |
 | RGB `S` axis (Q3) | Prefilled as C, confirmed like any role |
 | Significant bits (Q4) | Manifest only, information only; `bit_depth` and binning unchanged |
