@@ -61,6 +61,33 @@ def write_ngff(
     return path
 
 
+def write_labels(path, labels, axes="zyx", *, version="0.4"):
+    """Add label images to the OME-Zarr image at ``path``: ``labels`` maps names to arrays.
+
+    Each label image is written like an image (one level, ``image-label``
+    metadata) under ``<path>/labels/<name>``, and listed in ``<path>/labels``.
+    """
+    zarr = pytest.importorskip("zarr")
+    path = Path(path)
+    zarr_format = 3 if version == "0.5" else 2
+    for name, data in labels.items():
+        write_ngff(path / "labels" / name, data, axes, version=version)
+        label_group = zarr.open_group(str(path / "labels" / name), mode="a")
+        image_label = {"image-label": {"version": version}}
+        if version == "0.5":
+            label_group.attrs.update({"ome": {**dict(label_group.attrs)["ome"], **image_label}})
+        else:
+            label_group.attrs.update(image_label)
+    group = (
+        zarr.open_group(str(path / "labels"), mode="a", zarr_format=zarr_format)
+        if zarr_major() >= 3
+        else zarr.open_group(str(path / "labels"), mode="a")
+    )
+    listing = {"labels": list(labels)}
+    group.attrs.update({"ome": {"version": "0.5", **listing}} if version == "0.5" else listing)
+    return path
+
+
 def write_bioformats2raw(path, images, axes="zyx"):
     """Write a bioformats2raw folder holding one OME-NGFF 0.4 image per entry of ``images``."""
     zarr = pytest.importorskip("zarr")

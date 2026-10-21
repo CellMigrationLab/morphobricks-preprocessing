@@ -465,3 +465,10 @@ Raised during review; to be decided before the milestones that need them:
     version 2; a table of version 1 in the output folder is recomputed on the next run
     ("the earlier table uses a different format version"), and readers of version 1 reject
     version 2 tables. The manifest format stays at version 1.*
+18. Should the package read OME-NGFF label images, which CellPatcher uses as masks for
+    OME-Zarr images (its normalization contract §1 and §4)?
+    *Decided (October 2026): yes, as read-only helpers in `zarr_input`: `ngff_label_names`
+    lists the label images of the first image in a store (from its `labels` group, OME-NGFF
+    0.4 and 0.5) and `open_ngff_labels` opens level 0 of one by name, which may be left out
+    when there is only one. Errors (no labels, unknown or ambiguous name) are `NgffError`.
+    This brick does not analyse label images; its outputs do not change.*
