@@ -579,12 +579,14 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 - **Done:** Milestones 0–5 (contract, scanner and validator, axis review, histogram engine,
   CSV and reruns, notebook + CLI + user guide), the notebook redesign plus feedback
   round (PRs #6 and #7), OME-Zarr input with optional TIFF -> OME-Zarr conversion
-  (PR #5), and planes over the memory limit read in blocks (PR #12, plan §12 question 15).
-- **In review:** the step-3 "What will happen" box names, before the run, the
-  images read in blocks and those that cannot be read within the memory limit (plan §12
-  question 16); follow-up P1 of the normalization plan: depend on
-  `morphobricks-normalization` v0.1.0 and keep deprecated re-exports (plan §12
-  question 19).
+  (PR #5), planes over the memory limit read in blocks (PR #12, plan §12 question 15),
+  naming those images before the run (PR #13, question 16), plane coordinates always
+  written (PR #14, question 17), OME-NGFF label readers (PR #15, question 18), and
+  follow-up P1 of the normalization plan: the dependency on `morphobricks-normalization`
+  v0.1.0 with deprecated re-exports, its version in the manifest, Step 0 checking for it,
+  and contract §3–§7 moved to the normalization contract (PRs #16 and #17, question 19).
+- **Next (not started):** follow-ups P2–P5 of the normalization plan (modality,
+  references, colour statistics, previews).
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;
   - the optional `jl-hidecode` JupyterLab extension, which keeps code cells collapsed. It
