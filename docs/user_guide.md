@@ -342,7 +342,8 @@ continues.
 Everything the notebook does is available as functions:
 
 ```python
-from morphobricks_preprocessing import preflight, run_experiment, read_plane_histograms
+from morphobricks_normalization import read_plane_histograms
+from morphobricks_preprocessing import preflight, run_experiment
 
 check = preflight("/data/exp1")  # pass 1: folders and headers
 print(check.issues)
@@ -351,6 +352,9 @@ result = run_experiment("/data/exp1", mapping)
 records = read_plane_histograms(result.csv_path)
 ```
 
-Group statistics and normalisation parameters for later bricks: `PooledHistogram`,
-`group_records`, `min_max`, `percentile_range`, `z_score` and `robust_z_score`. The rules
+Reading the table, group statistics and normalisation parameters come from the
+normalization brick (`morphobricks_normalization`, installed with this package):
+`read_plane_histograms`, `PooledHistogram`, `group_records`, `min_max`,
+`percentile_range`, `z_score` and `robust_z_score`. The same names imported from
+`morphobricks_preprocessing` still work for one version, with a warning. The rules
 behind them are in [contract.md](contract.md); the design in [plan.md](plan.md).

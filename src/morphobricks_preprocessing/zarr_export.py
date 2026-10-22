@@ -32,9 +32,9 @@ from xml.etree import ElementTree
 
 import numpy as np
 import tifffile
+from morphobricks_normalization.dtypes import is_integer
 
 from .axes import AxisMapping
-from .dtypes import is_integer
 from .planes import DEFAULT_MEMORY_LIMIT, Plane, PlaneLayout
 from .zarr_input import (  # noqa: F401 - re-exported for callers of this module
     ZarrUnavailableError,

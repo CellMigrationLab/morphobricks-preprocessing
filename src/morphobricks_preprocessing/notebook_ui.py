@@ -41,6 +41,16 @@ except ImportError as exc:  # pragma: no cover - depends on the environment
         'pip install "morphobricks-preprocessing[notebook]"'
     ) from exc
 
+from morphobricks_normalization.csv_io import OUTPUT_FILENAME, CsvFormatError, read_plane_histograms
+from morphobricks_normalization.dtypes import (
+    MAX_BIN_COUNT,
+    MIN_FLOAT_BIN_COUNT,
+    default_bin_count,
+    is_integer,
+)
+from morphobricks_normalization.pooling import NoValidPixelsError, PooledHistogram
+from morphobricks_normalization.records import group_records
+
 from . import notebook_style as ui
 from .axes import (
     AxisMapping,
@@ -50,9 +60,7 @@ from .axes import (
     file_mapping_for,
     review_axes,
 )
-from .csv_io import OUTPUT_FILENAME, CsvFormatError, read_plane_histograms
 from .discovery import check_output_folder, default_output_folder
-from .dtypes import MAX_BIN_COUNT, MIN_FLOAT_BIN_COUNT, default_bin_count, is_integer
 from .manifest import MANIFEST_FILENAME, ManifestFormatError, read_manifest
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
@@ -63,8 +71,6 @@ from .planes import (
     plane_layout,
     read_plane,
 )
-from .pooling import NoValidPixelsError, PooledHistogram
-from .records import group_records
 from .report import LEVEL_NAMES, group_summaries, group_table, issue_counts
 from .run import Preflight, RunResult, preflight, run_experiment
 from .validation import ValidationIssue, has_errors, plural

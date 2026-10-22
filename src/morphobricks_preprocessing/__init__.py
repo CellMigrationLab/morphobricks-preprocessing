@@ -7,6 +7,9 @@ group statistics and normalization parameters without rereading the images.
 
 from importlib.metadata import PackageNotFoundError, version
 
+# The modules that moved to morphobricks_normalization stay importable as
+# deprecated stand-ins for one version (see _moved).
+from . import _moved, csv_io, dtypes, histogram, normalization, pooling, records  # noqa: F401
 from .axes import (
     AxisMapping,
     AxisReview,
@@ -19,7 +22,6 @@ from .axes import (
     reference_axes,
     review_axes,
 )
-from .csv_io import OUTPUT_FILENAME, read_plane_histograms, write_plane_histograms
 from .discovery import (
     DiscoveryResult,
     LeafFolder,
@@ -27,8 +29,6 @@ from .discovery import (
     default_output_folder,
     discover_experiment,
 )
-from .dtypes import UnsupportedDtypeError, default_bin_count
-from .histogram import PlaneHistogram, compute_block_histogram, compute_plane_histogram
 from .manifest import (
     MANIFEST_FILENAME,
     FileEntry,
@@ -49,13 +49,6 @@ from .metadata import (
     inspect_ome_zarr,
     inspect_tiff,
 )
-from .normalization import (
-    NormalizationParameters,
-    min_max,
-    percentile_range,
-    robust_z_score,
-    z_score,
-)
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
     Block,
@@ -70,8 +63,6 @@ from .planes import (
     read_plane,
     read_sample_plane,
 )
-from .pooling import NoValidPixelsError, PooledHistogram, PooledStatistics, pooled_statistics
-from .records import SINGLE, PlaneRecord, group_records, make_plane_id
 from .report import GroupSummary, group_summaries
 from .run import Preflight, RunResult, SamplePlane, preflight, run_experiment, sample_planes
 from .validation import Severity, ValidationIssue, has_errors
@@ -94,6 +85,20 @@ from .zarr_input import (
     open_ngff_labels,
     zarr_available,
 )
+
+
+def __getattr__(name: str) -> object:
+    # Called only for names not defined here: the moved ones warn and come from
+    # the normalization brick, anything else is missing.
+    module = _moved.TOP_LEVEL_NAMES.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return _moved.moved_attribute(__name__, module, name)
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *_moved.TOP_LEVEL_NAMES})
+
 
 try:
     __version__ = version("morphobricks-preprocessing")

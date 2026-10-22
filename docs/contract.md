@@ -3,6 +3,13 @@
 This document fixes the rules other bricks can rely on. Changing any of them requires a
 new `schema_version`.
 
+Sections 3–7 (pixel types, histograms, the CSV, group statistics, normalization
+parameters) are defined by the
+[normalization brick's contract](https://github.com/CellMigrationLab/morphobricks-normalization/blob/main/docs/contract.md)
+(its §1), whose code computes them (`morphobricks_normalization`, plan §12 question 19).
+That contract includes the text of §3–§7 below by reference, so it stays here until it
+moves there; any change to these rules goes through the normalization brick.
+
 ## 1. Folder hierarchy and labels
 
 ```
@@ -44,6 +51,9 @@ length 1 and no role, has coordinate 0.
 | Channel names, significant bits | Recorded in the run manifest when metadata provides them; not part of the CSV. Channel names that differ at the same channel index are a warning. |
 
 ## 3. Pixel types
+
+> Sections 3–7 are defined by the normalization brick's contract (§1); see the note at
+> the top.
 
 | Kind | Types | Default bins | Allowed bins |
 |---|---|---|---|

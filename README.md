@@ -9,7 +9,10 @@ with each plane's experimental labels, to `plane_histograms.csv`. Later bricks
 parameters for any group of images without rereading the pixels.
 
 The brick never modifies source images and never applies a normalization itself.
-The normalization methods live in this package so other bricks can import them.
+The histograms, the table format, pooling and the normalization methods come from the
+[normalization brick](https://github.com/CellMigrationLab/morphobricks-normalization)
+(`morphobricks_normalization`), installed with this package; other bricks import them
+from there.
 
 ## Status
 
@@ -25,10 +28,12 @@ Pre-alpha. Implemented and tested:
   run manifest (`run`, `manifest`)
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
   and a command line (`morphobricks-preprocessing check` / `run`)
-- Per-plane histograms for all supported pixel types (`histogram`)
-- Reading and writing the histogram table (`csv_io`)
-- Group statistics pooled from histograms (`pooling`)
-- Normalization parameters and their application (`normalization`)
+
+From the normalization brick (`morphobricks_normalization`, a required dependency):
+per-plane histograms (`histogram`), the histogram table (`csv_io`), pooled group
+statistics (`pooling`) and normalization parameters (`normalization`). Importing these
+names from `morphobricks_preprocessing` still works for one version, with a
+`DeprecationWarning`.
 
 Optional (the `zarr` extra): OME-Zarr images as input (`zarr_input`), and converting TIFF
 images to OME-Zarr before processing them (`zarr_export`). **New users: start with the
@@ -80,7 +85,7 @@ recomputes everything, and `exclude=[...]` leaves out damaged files.
 
 ```python
 import numpy as np
-from morphobricks_preprocessing import (
+from morphobricks_normalization import (
     PlaneRecord,
     PooledHistogram,
     compute_plane_histogram,

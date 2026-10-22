@@ -22,6 +22,8 @@ classifiers = [
 dependencies = [
     "numpy>=1.24",
     "tifffile>=2023.7.10",
+    # Per-plane histograms, the CSV table, pooling and normalization (moved there in P1).
+    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +44,10 @@ morphobricks-preprocessing = "morphobricks_preprocessing.cli:main"
 
 [project.urls]
 Repository = "https://github.com/CellMigrationLab/morphobricks-preprocessing"
+
+[tool.hatch.metadata]
+# Needed for the git dependency on morphobricks-normalization, which is not on PyPI.
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/morphobricks_preprocessing"]

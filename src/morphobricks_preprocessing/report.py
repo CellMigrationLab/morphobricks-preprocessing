@@ -10,10 +10,11 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from morphobricks_normalization.pooling import NoValidPixelsError, PooledHistogram
+from morphobricks_normalization.records import LEVELS, PlaneRecord, group_records
+
 from .axes import AxisMapping, axis_length_ranges, axis_name
 from .discovery import DiscoveryResult
-from .pooling import NoValidPixelsError, PooledHistogram
-from .records import LEVELS, PlaneRecord, group_records
 from .run import Preflight, RunResult
 from .validation import Severity, ValidationIssue, plural
 
