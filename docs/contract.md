@@ -4,11 +4,12 @@ This document fixes the rules other bricks can rely on. Changing any of them req
 new `schema_version`.
 
 Sections 3–7 (pixel types, histograms, the CSV, group statistics, normalization
-parameters) are defined by the
-[normalization brick's contract](https://github.com/CellMigrationLab/morphobricks-normalization/blob/main/docs/contract.md)
-(its §1), whose code computes them (`morphobricks_normalization`, plan §12 question 19).
-That contract includes the text of §3–§7 below by reference, so it stays here until it
-moves there; any change to these rules goes through the normalization brick.
+parameters) are defined by the [normalization brick's contract][normalization contract]
+(§1.2 and §8), whose code computes them (`morphobricks_normalization`, plan §12 question
+19). They keep their numbers here as short pointers, with the rules this brick adds for a
+whole experiment; any change to them goes through the normalization brick.
+
+[normalization contract]: https://github.com/CellMigrationLab/morphobricks-normalization/blob/main/docs/contract.md
 
 ## 1. Folder hierarchy and labels
 
@@ -52,101 +53,33 @@ length 1 and no role, has coordinate 0.
 
 ## 3. Pixel types
 
-> Sections 3–7 are defined by the normalization brick's contract (§1); see the note at
-> the top.
-
-| Kind | Types | Default bins | Allowed bins |
-|---|---|---|---|
-| Integer | int8/16/32/64, uint8/16/32/64 | min(65,536, 2^bits) | 1 to min(65,536, 2^bits) |
-| Float | float32, float64 | 10,000 | 2 to 65,536 |
-
-Everything else (bool, complex, float16, ...) is rejected. One dtype per experiment. All
+Defined by the [normalization brick's contract][normalization contract] §1.2.1: integers
+int8–uint64 and float32/float64, everything else rejected, with their default and allowed
+bin counts. This brick adds: one dtype per experiment (`mixed_dtypes` error), and all
 planes of an experiment use the same bin count.
 
 ## 4. Histogram semantics
 
-Notation: `n` = `bin_count`, `lo` = `binning_min`, `hi` = `binning_max`.
-
-### Integer planes
-
-`lo` and `hi` are the plane's exact minimum and maximum. `W = hi − lo + 1` values.
-
-- If `W ≤ n`: bin `i` holds exactly the value `lo + i` for `i < W`; bins `W .. n−1` are
-  empty. The histogram is exact.
-- If `W > n`: bin `i` holds the values `lo + ceil(i·W/n)` to `lo + ceil((i+1)·W/n) − 1`.
-  Limits are whole numbers, consecutive bins touch without gaps or overlaps, and widths
-  are `floor(W/n)` or `ceil(W/n)` values.
-- Representative value of a bin: `(first value + last value) / 2`.
-- Bound: every pixel is within `(widest bin − 1) / 2` of its representative.
-
-### Float planes
-
-`lo` and `hi` are the plane's finite minimum and maximum; NaN and ±infinity are ignored.
-
-- Bin width `(hi − lo) / n`. Bin `i` is `[lo + i·width, lo + (i+1)·width)`; the last bin
-  also includes `hi`. A pixel `x` goes to bin `floor((x − lo) / width)`, clipped to
-  `n − 1` (edge assignment is subject to floating-point rounding).
-- Constant plane (`lo == hi`): all pixels in bin 0; representative `lo`.
-- No finite pixels: `lo`, `hi` blank; all counts 0.
-- Representative value: the bin midpoint `lo + (i + 0.5)·width`.
-- Bound: every pixel is within `width / 2` of its representative.
-
-### Planes read in blocks
-
-A plane too large for the memory limit is read in blocks (rectangles of its stored strips,
-tiles or chunks). Its extrema, pixel counts and bin counts are exactly those of the whole
-plane, so a row never depends on whether, or in which blocks, its plane was read.
+Defined by the [normalization brick's contract][normalization contract] §1.2.2: each plane
+is binned over its own exact range; integer bins have whole-number limits, float bins
+equal widths; every pixel is within half a bin of its representative; a plane read in
+blocks gives exactly the row of the whole plane.
 
 ## 5. CSV schema (`plane_histograms.csv`, schema version 2)
 
-UTF-8, comma-separated, one header row, one row per plane, rows in a deterministic order.
-
-| Column | Type | Meaning |
-|---|---|---|
-| `position_id` | text or blank | From reliable metadata only; never inferred from file names. |
-| `image_file` | text | File name. |
-| `z`, `c`, `t` | integer | Zero-based plane coordinates, always written; 0 for an axis the image does not have (§2). |
-| `condition`, `biological_repeat`, `technical_repeat` | text | Folder labels; `single` when absent. Always read as text. |
-| `source_relative_path` | text | Path relative to the experiment root, `/`-separated. |
-| `plane_id` | text | `source_relative_path::z=…,c=…,t=…`, always with all three coordinates (`control/img.tif::z=0,c=0,t=0` for a 2D image). Row key. |
-| `dtype` | text | NumPy dtype name, e.g. `uint16`. |
-| `bit_depth` | integer | Storage bits (8, 16, 32, 64). |
-| `pixel_min`, `pixel_max` | number or blank | Exact finite extrema. Floats written at full precision. |
-| `total_pixel_count` | integer | All pixels in the plane. |
-| `valid_pixel_count` | integer | Finite pixels; equals the sum of the bin columns. |
-| `binning_min`, `binning_max` | number or blank | Range the bins cover (equal to the extrema). |
-| `bin_count` | integer | Number of bin columns. |
-| `schema_version` | text | `2`. Version 1 left `z`, `c`, `t` blank for absent axes and out of `plane_id`; a table of another version is recomputed on the next run. |
-| `histogram_bin_00000` … | integer | Pixel count per bin. |
+Defined by the [normalization brick's contract][normalization contract] §8.2 (columns) and
+§8.1 (shared format). This brick writes it next to `run_manifest.json` (§9), with plane
+coordinates and labels as in §1–§2.
 
 ## 6. Group statistics
 
-Groups pool their planes' (representative value, count) pairs; per-plane statistics are
-never averaged.
-
-| Statistic | Definition | Accuracy |
-|---|---|---|
-| min, max | Smallest `pixel_min`, largest `pixel_max` | Exact |
-| mean, std | Count-weighted mean and population std (÷N) of representatives | Exact for exact histograms; otherwise very close (errors cancel) |
-| percentile q | Smallest representative with cumulative count ≥ ceil(q/100 · N) (numpy `inverted_cdf`) | Within the group's largest per-plane bound |
-| median | 50th percentile | As percentiles |
-| MAD | Median of \|representative − median\| | Within twice the bound |
-
-Planes without finite pixels are excluded and reported; a group with no finite pixels is
-an error.
+Defined by the [normalization brick's contract][normalization contract] §1.2.3: groups
+pool their planes' (representative, count) pairs and never average per-plane statistics.
 
 ## 7. Normalization parameters
 
-Every method is an offset and a scale; applying it computes `(pixels − offset) / scale`.
-
-| Method | Offset | Scale |
-|---|---|---|
-| min-max | min | max − min |
-| percentile range (default 1–99.8) | low percentile | high − low percentile |
-| z-score | mean | std |
-| robust z-score | median | MAD × 1.4826 |
-
-A zero or non-finite scale is an error with a plain-language message.
+Defined by the [normalization brick's contract][normalization contract] §1.2.4: every
+method is an offset and a scale, `(pixels − offset) / scale`.
 
 ## 8. Validation severities
 
@@ -192,7 +125,7 @@ file's schema or statistical interpretation.
 | `labels` | One entry per leaf folder: `folder` (relative path, `.` for the root) and its three labels. |
 | `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count`, `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata), `ome_zarr_path` (for a TIFF converted to OME-Zarr, the copy relative to the output folder; null otherwise or when the key is absent), `read_in_blocks` (true when the image's planes are over the memory limit and are read in blocks; information only, false when absent). For an OME-Zarr image, `size` is the total size of its files and `mtime_ns` the time of its newest file. |
 | `csv_sha256` | SHA-256 of the table written with this manifest. |
-| `versions` | Versions of `morphobricks-preprocessing`, `numpy`, `tifffile` and Python. |
+| `versions` | Versions of `morphobricks-preprocessing`, `morphobricks-normalization` (which computes the histograms and writes the CSV; absent in manifests written before it), `numpy`, `tifffile` and Python. Information only: a different version never causes a rebuild. |
 
 Channel names and significant bits come from OME metadata and are for information only.
 

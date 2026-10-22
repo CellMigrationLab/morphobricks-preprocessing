@@ -160,7 +160,13 @@ def test_manifest_records_labels_mapping_settings_and_files(experiment):
     entry = manifest.file(IMAGES[0])
     stat = os.stat(experiment / IMAGES[0])
     assert (entry.size, entry.mtime_ns, entry.plane_count) == (stat.st_size, stat.st_mtime_ns, 2)
-    assert set(manifest.versions) == {"morphobricks-preprocessing", "numpy", "tifffile", "python"}
+    assert set(manifest.versions) == {
+        "morphobricks-preprocessing",
+        "morphobricks-normalization",
+        "numpy",
+        "tifffile",
+        "python",
+    }
     assert manifest.written_at.endswith("+00:00")
 
 
