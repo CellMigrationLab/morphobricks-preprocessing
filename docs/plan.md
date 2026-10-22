@@ -2,7 +2,8 @@
 
 **Status:** design brief, revised after the binning study of October 2026
 **Scope:** folder validation, TIFF and OME-Zarr metadata review, per-plane intensity
-histograms, the histogram CSV, and a normalization library for later bricks. OME-Zarr input
+histograms and the histogram CSV, computed with the normalization brick's library
+(`morphobricks-normalization`, question 19), which later bricks also use. OME-Zarr input
 and the optional conversion of TIFF images to OME-Zarr need the `zarr` extra (§10, §12
 question 12).
 **Out of scope for this milestone:** applying normalization (done by the patch-extraction
@@ -228,7 +229,9 @@ diagnostic log.
 
 ## 9. Group statistics and normalization
 
-This brick does not apply transformations. The package provides:
+This brick does not apply transformations. The code below moved unchanged to the
+normalization brick (`morphobricks_normalization`, question 19); this package re-exports
+it, deprecated, for one version. It provides:
 
 - **Pooling** (`PooledHistogram`): combines any selection of planes (an image, a technical
   repeat, a biological repeat, a condition, or any custom set) by merging their
@@ -297,6 +300,10 @@ API, CLI). The notebook and CLI only call the API.
   block by block, with their smaller levels built from the stored level above
   (`zarr_export`). The axis preview shows them reduced. Step 3's "What will happen" box
   names these images before the run. *Implemented, see questions 15 and 16.*
+- **Normalization brick (follow-up P1):** the histogram, bin-count, record, CSV, pooling
+  and normalization modules come from `morphobricks-normalization` v0.1.0, a required
+  dependency; the old names stay importable here with a `DeprecationWarning` for one
+  version. Outputs are unchanged. *Implemented, see question 19.*
 
 ## 11. Tests and acceptance criteria
 
@@ -472,3 +479,16 @@ Raised during review; to be decided before the milestones that need them:
     0.4 and 0.5) and `open_ngff_labels` opens level 0 of one by name, which may be left out
     when there is only one. Errors (no labels, unknown or ambiguous name) are `NgffError`.
     This brick does not analyse label images; its outputs do not change.*
+19. Where do the histogram, CSV, pooling and normalization code live once the
+    normalization brick exists?
+    *Decided (October 2026, normalization plan N1, N2 and N6, follow-up P1): in
+    `morphobricks_normalization`. The modules `dtypes`, `histogram`, `records`, `csv_io`,
+    `pooling` and `normalization` moved there unchanged (from commit `fd923c9`) and this
+    brick depends on its release v0.1.0 (a git dependency pinned to the tag). Their public
+    names stay importable from `morphobricks_preprocessing` and from the old submodules
+    (e.g. `morphobricks_preprocessing.histogram`) for one version: each old path warns
+    once with a `DeprecationWarning` naming `morphobricks_normalization.<module>.<name>`
+    and returns the same object, so `isinstance` and `except` keep working. The package's
+    own code imports from the normalization brick and never warns. Outputs (CSV schema 2,
+    manifest, OME-Zarr copies) are byte-identical; the contract's §3–§7 are defined by
+    the normalization brick's contract.*

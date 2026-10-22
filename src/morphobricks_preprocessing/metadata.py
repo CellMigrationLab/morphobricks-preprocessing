@@ -22,9 +22,9 @@ from xml.etree import ElementTree
 
 import numpy as np
 import tifffile
+from morphobricks_normalization.dtypes import UnsupportedDtypeError, check_supported
 
 from .discovery import DiscoveryResult
-from .dtypes import UnsupportedDtypeError, check_supported
 from .validation import ValidationIssue, error, has_errors, plural, warning
 from .zarr_input import NgffError, ZarrUnavailableError, is_zarr_name, open_ngff
 

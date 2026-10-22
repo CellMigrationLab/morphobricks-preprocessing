@@ -24,9 +24,9 @@ from pathlib import Path
 
 import numpy as np
 import tifffile
+from morphobricks_normalization.csv_io import SCHEMA_VERSION
 
 from .axes import AxisMapping
-from .csv_io import SCHEMA_VERSION
 from .zarr_export import ConversionSettings
 
 MANIFEST_FILENAME = "run_manifest.json"

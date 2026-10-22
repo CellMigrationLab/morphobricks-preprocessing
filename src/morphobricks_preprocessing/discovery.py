@@ -20,7 +20,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from .records import LEVELS, SINGLE
+from morphobricks_normalization.records import LEVELS, SINGLE
+
 from .validation import ValidationIssue, error, has_errors, plural, warning
 from .zarr_input import is_zarr_name
 

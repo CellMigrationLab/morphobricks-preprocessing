@@ -14,6 +14,7 @@ do not say: how we work, why things are the way they are, and the traps we alrea
 | `docs/contract.md` | Rules other bricks rely on: folders, axes, dtypes, binning, CSV schema, statistics, normalization, validation severities, manifest format. Changing it may need a new `schema_version` |
 | `docs/development.md` | Coding conventions |
 | `docs/user_guide.md` | Biologist-facing guide: notebook, CLI, outputs, every message code |
+| [morphobricks-normalization](https://github.com/CellMigrationLab/morphobricks-normalization) `docs/contract.md` | Pixel types, binning, the CSV, group statistics and normalization parameters (its §1); this repo's contract §3–§7 keeps the text it refers to |
 
 ---
 
@@ -26,9 +27,13 @@ brick**.
   `zarr` extra).
 - **Output:** one intensity histogram per 2D plane in `plane_histograms.csv`, plus
   `run_manifest.json`, both in an output folder outside the experiment.
-- **Library:** pooling (`PooledHistogram`) and normalization parameters (`min_max`,
-  `percentile_range`, `z_score`, `robust_z_score`). Later bricks such as patch extraction
-  use these to normalise any group of planes without rereading pixels.
+- **Statistics code (from the normalization brick):** the per-plane histogram, the CSV
+  reader and writer, pooling (`PooledHistogram`) and normalization parameters (`min_max`,
+  `percentile_range`, `z_score`, `robust_z_score`) live in the required dependency
+  `morphobricks_normalization` (pinned to its release v0.1.0). This brick runs them over
+  the experiment. Later bricks such as patch extraction use them to normalise any group of
+  planes without rereading pixels. The old names stay importable from here, deprecated,
+  for one version (follow-up P1, normalization plan N6).
 - **Never:** modifies source images, writes inside the experiment folder, or applies a
   normalization itself.
 - **Optional (`zarr` extra, plan §12 question 12):** OME-Zarr input, and converting TIFF
@@ -62,13 +67,10 @@ src/morphobricks_preprocessing/
                     check_planes (preflight memory / layout errors); planes over the limit read in
                     blocks of TIFF strips/tiles or zarr chunks (Plane.blocks, BlockReader), reduced
                     previews
-  dtypes.py         supported dtypes, default and allowed bin counts
-  histogram.py      per-plane histogram (PlaneHistogram, compute_plane_histogram, and
-                    compute_block_histogram: two passes over blocks, identical result), memory estimate
-  records.py        PlaneRecord (one CSV row), plane_id, group_records
-  csv_io.py         write/read plane_histograms.csv (atomic write, labels always text)
-  pooling.py        PooledHistogram: pooled counts, never mean-of-means
-  normalization.py  NormalizationParameters (offset, scale) and the four methods
+  _moved.py         deprecated access to the code moved to morphobricks_normalization: the moved
+                    names, warn-once DeprecationWarning, __getattr__ helpers
+  dtypes.py, histogram.py, records.py, csv_io.py, pooling.py, normalization.py
+                    deprecated stand-ins (module __getattr__ only, no code) for one version
   manifest.py       RunManifest / RunSettings / FileEntry, JSON read/write, SHA-256 of the CSV
   run.py            preflight(), run_experiment() (incremental), sample_planes() for previews
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
@@ -85,6 +87,23 @@ notebooks/MorphoBricks_Preprocessing.ipynb   thin notebook: every code cell call
 tests/              pytest with simulated TIFFs (tests/tiff_tree.py, tests/simulation.py)
 experiments/binning_study/      the study behind the binning decisions (not part of the package)
 ```
+
+Moved to [morphobricks-normalization](https://github.com/CellMigrationLab/morphobricks-normalization) (P1), imported from
+`morphobricks_normalization.<module>` by the code here:
+
+```
+  dtypes.py         supported dtypes, default and allowed bin counts
+  histogram.py      per-plane histogram (PlaneHistogram, compute_plane_histogram, and
+                    compute_block_histogram: two passes over blocks, identical result), memory estimate
+  records.py        PlaneRecord (one CSV row), plane_id, group_records
+  csv_io.py         write/read plane_histograms.csv (atomic write, labels always text)
+  pooling.py        PooledHistogram: pooled counts, never mean-of-means
+  normalization.py  NormalizationParameters (offset, scale) and the four methods
+```
+
+Their tests (`test_histogram.py`, `test_csv_io.py`, `test_pooling.py`,
+`test_normalization.py`) moved with them. `tests/test_moved.py` checks the deprecated
+names here.
 
 The notebook and the CLI contain **no processing logic**. They call the same public
 functions the tests use.
@@ -166,7 +185,7 @@ functions the tests use.
   `ome_zarr_axes_mismatch`. Use `file_mapping_for`, never `mapping.for_axes`, to get an
   image's mapping.
 
-### Pixel types and binning (contract §3–§4)
+### Pixel types and binning (contract §3–§4, defined by the normalization brick)
 
 - **Supported dtypes:** int8/16/32/64, uint8/16/32/64, float32, float64. Everything else
   (bool, complex, float16, …) is rejected. One dtype per experiment (`mixed_dtypes` error).
@@ -281,7 +300,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Topic | Decision |
 |---|---|
 | Binning | Per-plane min–max, same bin count per experiment, pooled counts for groups (binning study) |
-| Core dependencies | `numpy` and `tifffile` only. `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
+| Core dependencies | `numpy`, `tifffile` and `morphobricks-normalization` (git dependency pinned to a release tag; `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
 | OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
@@ -295,6 +314,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Notebook target | Local Jupyter (not Colab-first) |
 | CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--memory-limit 2GiB`, `--missing-as-singleton`, `--force-rebuild`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata. Exit 1 on errors |
 | Large planes (Q15) | Planes over the memory limit are read in blocks automatically, announced by the warning `planes_read_in_blocks` and `read_in_blocks` in the manifest. Block size derived from the limit (whole strips/tiles/chunks, uncompressed pieces and chunks also by rows). Compressed single-strip/tile planes keep the `plane_over_memory_limit` error. Two-pass histograms identical to whole planes. OME-Zarr copies written block by block, smaller levels built from the stored level above. Axis preview reduced (every n-th pixel) with a caption saying so |
+| Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Their public names stay importable from `morphobricks_preprocessing` and from the old submodules for one version: module `__getattr__` stand-ins (`_moved.py`), one `DeprecationWarning` per old path naming `morphobricks_normalization.<module>.<name>`, same objects. The package's own code never uses the old paths. Outputs unchanged (CSV schema 2) |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
 | Paths and filenames in widget HTML and notebook text | **`<b>…</b>` / `**…**`, never `<code>` or inline code** |
@@ -333,7 +353,12 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 - **No new core dependencies** without asking. tkinter (for folder dialogs) is optional
   and imported lazily with a fallback.
 - **Public API** is re-exported in `__init__.py`. `__all__` is sorted: constants, then
-  classes, then functions.
+  classes, then functions. It still lists the deprecated names moved to the normalization
+  brick; they are served by `__getattr__` (see `_moved.py`), never imported in
+  `__init__.py`.
+- **Code from the normalization brick:** import it as
+  `from morphobricks_normalization.<module> import ...`, never through the deprecated
+  `morphobricks_preprocessing` paths (`tests/test_moved.py` checks this).
 
 ### Tests
 
@@ -353,8 +378,8 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 - **Planes in blocks with small test images:** the memory limit
   `plane_layout(path, mapping, memory_limit=1).block_memory_estimate` gives the smallest
   blocks a file can be read in. Consume each lazy plane before the next one (the file
-  closes when `iter_planes` ends). `tests/test_histogram.py` keeps an independent copy of
-  the original whole-plane formulas (`reference_histogram`).
+  closes when `iter_planes` ends). The histogram tests, with an independent copy of the
+  original whole-plane formulas (`reference_histogram`), are in the normalization brick.
 - **Speed:** rerun tests use 8-bit images (256 bins). Wide 65,536-bin CSVs make every run
   about 1 s.
 - **Platform-specific tests** (case-sensitive file system, POSIX permissions) skip with a
@@ -557,7 +582,9 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   (PR #5), and planes over the memory limit read in blocks (PR #12, plan §12 question 15).
 - **In review:** the step-3 "What will happen" box names, before the run, the
   images read in blocks and those that cannot be read within the memory limit (plan §12
-  question 16).
+  question 16); follow-up P1 of the normalization plan: depend on
+  `morphobricks-normalization` v0.1.0 and keep deprecated re-exports (plan §12
+  question 19).
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;
   - the optional `jl-hidecode` JupyterLab extension, which keeps code cells collapsed. It

@@ -43,9 +43,13 @@ from pathlib import Path
 
 import numpy as np
 import tifffile
+from morphobricks_normalization.histogram import (
+    PlaneHistogram,
+    compute_block_histogram,
+    estimate_histogram_memory,
+)
 
 from .axes import PLANE_ROLES, AxisMapping, AxisReview
-from .histogram import PlaneHistogram, compute_block_histogram, estimate_histogram_memory
 from .validation import ValidationIssue, error, plural, warning
 from .zarr_input import (
     NgffError,
