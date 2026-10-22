@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -145,8 +146,19 @@ def test_estimate_conversion(tmp_path):
     assert pyramid.copy_bytes == level0 + 2 * 512 * 300 * 2
 
 
-def test_free_space_uses_the_nearest_existing_folder(tmp_path):
-    assert free_space(tmp_path / "not" / "yet" / "there") == free_space(tmp_path) > 0
+def test_free_space_uses_the_nearest_existing_folder(tmp_path, monkeypatch):
+    # Compare the folder asked about, not two readings of the free space: other processes
+    # can write to the drive in between (seen on CI runners).
+    real = shutil.disk_usage
+    asked = []
+
+    def spy(path):
+        asked.append(Path(path))
+        return real(path)
+
+    monkeypatch.setattr(shutil, "disk_usage", spy)
+    assert free_space(tmp_path / "not" / "yet" / "there") > 0
+    assert asked == [tmp_path.resolve()]
 
 
 def test_downsample_integers_round_and_keep_type():

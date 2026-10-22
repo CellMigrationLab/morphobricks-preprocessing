@@ -147,7 +147,13 @@ def test_file_sha256(tmp_path):
 
 def test_package_versions():
     versions = package_versions()
-    assert set(versions) == {"morphobricks-preprocessing", "numpy", "tifffile", "python"}
+    assert set(versions) == {
+        "morphobricks-preprocessing",
+        "morphobricks-normalization",
+        "numpy",
+        "tifffile",
+        "python",
+    }
     assert all(versions.values())
 
 
