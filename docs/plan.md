@@ -490,5 +490,8 @@ Raised during review; to be decided before the milestones that need them:
     once with a `DeprecationWarning` naming `morphobricks_normalization.<module>.<name>`
     and returns the same object, so `isinstance` and `except` keep working. The package's
     own code imports from the normalization brick and never warns. Outputs (CSV schema 2,
-    manifest, OME-Zarr copies) are byte-identical; the contract's §3–§7 are defined by
-    the normalization brick's contract.*
+    OME-Zarr copies) are byte-identical. Agreed in review: the manifest's `versions` also
+    records `morphobricks-normalization` (information only, never a reason to rebuild);
+    the notebook's Step 0 installs the new dependency into environments set up before it;
+    and the text of contract §3–§7 moved to the normalization brick's contract (§1.2 and
+    §8.2), leaving short pointers here.*

@@ -257,7 +257,7 @@ The default output folder is next to the experiment folder:
   labels, the pixel type, the exact minimum and maximum, pixel counts and the histogram.
   The table is very wide (one column per bin), so spreadsheet programs may not open it
   completely; read it in Python with `read_plane_histograms()`. The columns are defined in
-  [contract.md](contract.md) §5.
+  the [normalization brick's contract](https://github.com/CellMigrationLab/morphobricks-normalization/blob/main/docs/contract.md) §8.2.
 - **`run_manifest.json`:** what the run read and with which settings: labels, axis roles,
   bin count, memory limit, excluded images, package versions, and each image's size and
   modification time. Channel names and significant bits are recorded when the metadata

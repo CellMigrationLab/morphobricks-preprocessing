@@ -14,7 +14,7 @@ do not say: how we work, why things are the way they are, and the traps we alrea
 | `docs/contract.md` | Rules other bricks rely on: folders, axes, dtypes, binning, CSV schema, statistics, normalization, validation severities, manifest format. Changing it may need a new `schema_version` |
 | `docs/development.md` | Coding conventions |
 | `docs/user_guide.md` | Biologist-facing guide: notebook, CLI, outputs, every message code |
-| [morphobricks-normalization](https://github.com/CellMigrationLab/morphobricks-normalization) `docs/contract.md` | Pixel types, binning, the CSV, group statistics and normalization parameters (its §1); this repo's contract §3–§7 keeps the text it refers to |
+| [morphobricks-normalization](https://github.com/CellMigrationLab/morphobricks-normalization) `docs/contract.md` | Pixel types, binning, group statistics and normalization parameters (§1.2) and the `plane_histograms.csv` columns (§8.2); this repo's contract §3–§7 only point there |
 
 ---
 
@@ -185,7 +185,7 @@ functions the tests use.
   `ome_zarr_axes_mismatch`. Use `file_mapping_for`, never `mapping.for_axes`, to get an
   image's mapping.
 
-### Pixel types and binning (contract §3–§4, defined by the normalization brick)
+### Pixel types and binning (normalization contract §1.2.1–§1.2.2)
 
 - **Supported dtypes:** int8/16/32/64, uint8/16/32/64, float32, float64. Everything else
   (bool, complex, float16, …) is rejected. One dtype per experiment (`mixed_dtypes` error).
@@ -209,7 +209,7 @@ functions the tests use.
 - **Representative value** of a bin is its midpoint; no pixel is further than half a bin
   from it.
 
-### Statistics and normalization (contract §6–§7)
+### Statistics and normalization (normalization contract §1.2.3–§1.2.4)
 
 - **Groups pool their planes' (representative, count) pairs. Never average per-plane
   statistics.** In the study, mean-of-means underestimated std by up to 22% and p99.9 by up
@@ -220,7 +220,7 @@ functions the tests use.
   Percentile range defaults to 1–99.8. Robust z-score uses MAD × 1.4826. A zero or
   non-finite scale is an error.
 
-### CSV (contract §5, schema version 2)
+### CSV (normalization contract §8.2, schema version 2)
 
 - **Columns:**
   `position_id, image_file, z, c, t, condition, biological_repeat, technical_repeat,
@@ -238,7 +238,7 @@ functions the tests use.
   - settings, the confirmed labels per leaf, and the axis mapping;
   - per-file size, `mtime_ns`, axes, `singleton_roles` and plane count;
   - channel names and significant bits (OME only, information only);
-  - the CSV's SHA-256 and package versions.
+  - the CSV's SHA-256 and package versions (including `morphobricks-normalization`).
 - **A file is unchanged** when its size, mtime, labels and axis layout match and the table
   still holds all its rows. Unchanged rows are reused; new and changed files are read;
   deleted, renamed or excluded files lose their rows.
@@ -314,7 +314,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Notebook target | Local Jupyter (not Colab-first) |
 | CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--memory-limit 2GiB`, `--missing-as-singleton`, `--force-rebuild`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata. Exit 1 on errors |
 | Large planes (Q15) | Planes over the memory limit are read in blocks automatically, announced by the warning `planes_read_in_blocks` and `read_in_blocks` in the manifest. Block size derived from the limit (whole strips/tiles/chunks, uncompressed pieces and chunks also by rows). Compressed single-strip/tile planes keep the `plane_over_memory_limit` error. Two-pass histograms identical to whole planes. OME-Zarr copies written block by block, smaller levels built from the stored level above. Axis preview reduced (every n-th pixel) with a caption saying so |
-| Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Their public names stay importable from `morphobricks_preprocessing` and from the old submodules for one version: module `__getattr__` stand-ins (`_moved.py`), one `DeprecationWarning` per old path naming `morphobricks_normalization.<module>.<name>`, same objects. The package's own code never uses the old paths. Outputs unchanged (CSV schema 2) |
+| Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Their public names stay importable from `morphobricks_preprocessing` and from the old submodules for one version: module `__getattr__` stand-ins (`_moved.py`), one `DeprecationWarning` per old path naming `morphobricks_normalization.<module>.<name>`, same objects. The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, §8.2) |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
 | Paths and filenames in widget HTML and notebook text | **`<b>…</b>` / `**…**`, never `<code>` or inline code** |

@@ -11,7 +11,14 @@ from types import SimpleNamespace
 import pytest
 
 NOTEBOOK = Path(__file__).parents[1] / "notebooks/MorphoBricks_Preprocessing.ipynb"
-REQUIRED = {"morphobricks_preprocessing", "numpy", "tifffile", "ipywidgets", "matplotlib"}
+REQUIRED = {
+    "morphobricks_preprocessing",
+    "morphobricks_normalization",
+    "numpy",
+    "tifffile",
+    "ipywidgets",
+    "matplotlib",
+}
 
 
 @pytest.fixture
@@ -88,6 +95,22 @@ def test_setup_repairs_missing_notebook_dependencies(setup_environment):
     state.available.remove("ipywidgets")
     state.start()
     assert state.installs[0][-1] == "morphobricks-preprocessing[notebook]"
+    assert state.welcomes == ["ready"]
+
+
+def test_setup_installs_the_normalization_brick_into_an_older_checkout_environment(
+    setup_environment, tmp_path, monkeypatch, capsys
+):
+    # Environments set up before preprocessing depended on morphobricks-normalization.
+    state = setup_environment
+    checkout = checkout_at(tmp_path / "checkout")
+    monkeypatch.chdir(checkout)
+    state.available.remove("morphobricks_normalization")
+    state.start()
+    assert (
+        "Installing notebook requirements (morphobricks_normalization)" in capsys.readouterr().out
+    )
+    assert state.installs[0][-2:] == ["-e", f"{checkout}[notebook]"]
     assert state.welcomes == ["ready"]
 
 

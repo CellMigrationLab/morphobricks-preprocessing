@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+import morphobricks_normalization
 import numpy as np
 import tifffile
 from morphobricks_normalization.csv_io import SCHEMA_VERSION
@@ -311,6 +312,8 @@ def package_versions() -> dict[str, str]:
         own = "0.0.0+unknown"
     return {
         "morphobricks-preprocessing": own,
+        # Computes the histograms and writes the CSV.
+        "morphobricks-normalization": morphobricks_normalization.__version__,
         "numpy": np.__version__,
         "tifffile": tifffile.__version__,
         "python": platform.python_version(),
