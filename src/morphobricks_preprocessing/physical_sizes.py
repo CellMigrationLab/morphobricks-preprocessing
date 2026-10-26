@@ -59,31 +59,28 @@ _OME_DEFAULT_SPACE_UNIT = "µm"
 _OME_DEFAULT_TIME_UNIT = "s"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class PhysicalSizes:
     """Pixel sizes from metadata; None where unknown.
 
     Attributes
     ----------
     x, y, z
-        Pixel size and z-step, each in its own unit (``x_unit``, ``y_unit``,
-        ``z_unit``).
+        Pixel size and z-step, each in its own unit (see :meth:`unit`).
     t
         Time between frames in ``time_unit``.
     space_unit
-        The unit of X. Kept for callers written when one unit served every space
-        axis; :meth:`unit` gives each axis's own unit. Given alone, it is the unit
-        of X, Y and Z.
+        The unit of the space axes that have no unit of their own. Given alone, as
+        before per-axis units, it is the unit of X, Y and Z; the readers give it
+        the unit of X (None when a space axis with a size has no unit).
     time_unit
         The unit of T.
     x_unit, y_unit, z_unit
-        OME-NGFF unit names per space axis, e.g. ``"micrometer"``; None when the
-        metadata gives none.
+        An axis's own unit, as an OME-NGFF unit name such as ``"micrometer"``;
+        None means ``space_unit``. :meth:`unit` resolves them, so they stay
+        consistent under :func:`dataclasses.replace` and pickling.
 
-    Raises
-    ------
-    ValueError
-        If ``space_unit`` and ``x_unit`` are both given and differ.
+    Two sizes are equal when their sizes, ``space_unit`` and resolved units are.
     """
 
     x: float | None = None
@@ -96,21 +93,25 @@ class PhysicalSizes:
     y_unit: str | None = None
     z_unit: str | None = None
 
-    def __post_init__(self) -> None:
-        if self.x_unit is None and self.y_unit is None and self.z_unit is None:
-            # Sizes made with one space unit (before per-axis units) keep meaning it
-            # for every space axis.
-            for name in ("x_unit", "y_unit", "z_unit"):
-                object.__setattr__(self, name, self.space_unit)
-        elif self.x_unit is None:
-            object.__setattr__(self, "x_unit", self.space_unit)
-        elif self.space_unit is None:
-            object.__setattr__(self, "space_unit", self.x_unit)
-        elif self.space_unit != self.x_unit:
-            raise ValueError(
-                f"space_unit is the unit of X: {self.space_unit!r} differs from x_unit "
-                f"{self.x_unit!r}"
-            )
+    def _space_units(self) -> tuple[str | None, str | None, str | None]:
+        """Return the units of X, Y and Z, each falling back to ``space_unit``."""
+        return tuple(
+            own if own is not None else self.space_unit
+            for own in (self.x_unit, self.y_unit, self.z_unit)
+        )
+
+    def _key(self) -> tuple:
+        return (self.x, self.y, self.z, self.t, self.space_unit, self.time_unit) + (
+            self._space_units()
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self._key() == other._key()
+
+    def __hash__(self) -> int:
+        return hash(self._key())
 
     def scale(self, role: str) -> float:
         """Return the size of one step along ``role`` (1 when unknown)."""
@@ -123,12 +124,39 @@ class PhysicalSizes:
             return self.time_unit if self.t is not None else None
         if role == "C":
             return None
-        size, unit = {
-            "X": (self.x, self.x_unit),
-            "Y": (self.y, self.y_unit),
-            "Z": (self.z, self.z_unit),
-        }[role]
-        return unit if size is not None else None
+        index = "XYZ".index(role)
+        size = (self.x, self.y, self.z)[index]
+        return self._space_units()[index] if size is not None else None
+
+
+def _sizes(
+    x: float | None,
+    y: float | None,
+    z: float | None,
+    t: float | None,
+    units: dict[str, str | None],
+    time_unit: str | None,
+) -> PhysicalSizes:
+    """Build sizes from metadata with each space axis's own unit (``units`` by letter).
+
+    ``space_unit`` is the unit of X, as before per-axis units, unless a space axis
+    with a size has no unit: it would then fall back to X's unit, so ``space_unit``
+    is None.
+    """
+    unitless = any(
+        size is not None and units[a] is None for a, size in zip("XYZ", (x, y, z), strict=True)
+    )
+    return PhysicalSizes(
+        x=x,
+        y=y,
+        z=z,
+        t=t,
+        space_unit=None if unitless else units["X"],
+        time_unit=time_unit,
+        x_unit=units["X"],
+        y_unit=units["Y"],
+        z_unit=units["Z"],
+    )
 
 
 def read_physical_sizes(path: str | os.PathLike) -> PhysicalSizes:
@@ -207,16 +235,13 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
         if letter in "XYZT":
             found.setdefault(letter, (_number(size), unit))
     sizes = {letter: found.get(letter, (None, None)) for letter in "XYZT"}
-    return PhysicalSizes(
-        x=sizes["X"][0],
-        y=sizes["Y"][0],
-        z=sizes["Z"][0],
-        t=sizes["T"][0],
-        space_unit=sizes["X"][1],
-        time_unit=sizes["T"][1],
-        x_unit=sizes["X"][1],
-        y_unit=sizes["Y"][1],
-        z_unit=sizes["Z"][1],
+    return _sizes(
+        sizes["X"][0],
+        sizes["Y"][0],
+        sizes["Z"][0],
+        sizes["T"][0],
+        {letter: sizes[letter][1] for letter in "XYZ"},
+        sizes["T"][1],
     )
 
 
@@ -271,16 +296,13 @@ def _ome_sizes(xml: str) -> PhysicalSizes:
         for axis in "XYZ"
     }
     time_unit = _TIME_UNITS.get(pixels.get("TimeIncrementUnit", _OME_DEFAULT_TIME_UNIT))
-    return PhysicalSizes(
-        x=_number(pixels.get("PhysicalSizeX")),
-        y=_number(pixels.get("PhysicalSizeY")),
-        z=_number(pixels.get("PhysicalSizeZ")),
-        t=_number(pixels.get("TimeIncrement")) if time_unit else None,
-        space_unit=units["X"],
-        time_unit=time_unit,
-        x_unit=units["X"],
-        y_unit=units["Y"],
-        z_unit=units["Z"],
+    return _sizes(
+        _number(pixels.get("PhysicalSizeX")),
+        _number(pixels.get("PhysicalSizeY")),
+        _number(pixels.get("PhysicalSizeZ")),
+        _number(pixels.get("TimeIncrement")) if time_unit else None,
+        units,
+        time_unit,
     )
 
 
@@ -293,16 +315,13 @@ def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
     page = tif.pages.first
     time_unit = _TIME_UNITS.get(str(meta.get("tunit", "sec")).strip().lower())
     # Without a unit the resolution tags are a default (often 1 pixel per inch).
-    return PhysicalSizes(
-        x=_resolution(page.tags.get("XResolution")) if unit else None,
-        y=_resolution(page.tags.get("YResolution")) if y_unit else None,
-        z=_number(meta.get("spacing")) if z_unit else None,
-        t=_number(meta.get("finterval")) if time_unit else None,
-        space_unit=unit,
-        time_unit=time_unit,
-        x_unit=unit,
-        y_unit=y_unit,
-        z_unit=z_unit,
+    return _sizes(
+        _resolution(page.tags.get("XResolution")) if unit else None,
+        _resolution(page.tags.get("YResolution")) if y_unit else None,
+        _number(meta.get("spacing")) if z_unit else None,
+        _number(meta.get("finterval")) if time_unit else None,
+        {"X": unit, "Y": y_unit, "Z": z_unit},
+        time_unit,
     )
 
 

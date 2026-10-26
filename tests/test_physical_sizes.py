@@ -1,9 +1,19 @@
+import pickle
+from dataclasses import replace
+
 import numpy as np
-import pytest
 import tifffile
 
 from morphobricks_preprocessing import PhysicalSizes, read_physical_sizes, zarr_export
 from morphobricks_preprocessing import physical_sizes as physical_sizes_module
+
+# PhysicalSizes(x=0.1, y=0.2, z=0.5, space_unit="micrometer") pickled before per-axis units.
+OLD_PICKLE = bytes.fromhex(
+    "80049597000000000000008c266d6f7270686f627269636b735f70726570726f63657373696e672e7a617272"
+    "5f6578706f7274948c0d506879736963616c53697a65739493942981947d94288c017894473fb99999999999"
+    "9a8c017994473fc999999999999a8c017a94473fe00000000000008c0174944e8c0a73706163655f756e6974"
+    "948c0a6d6963726f6d65746572948c0974696d655f756e6974944e75622e"
+)
 
 
 def write_ome(path, **sizes):
@@ -94,17 +104,44 @@ def test_space_unit_alone_is_the_unit_of_every_space_axis():
     )
 
 
-def test_per_axis_units_set_space_unit_to_the_unit_of_x():
+def test_per_axis_units_fall_back_to_space_unit():
     sizes = PhysicalSizes(x=1.0, y=2.0, x_unit="nanometer", y_unit="micrometer")
-    assert sizes.space_unit == "nanometer"
-    assert sizes.unit("Y") == "micrometer"
-    # An axis given no unit has none, even when X has one.
+    assert (sizes.unit("X"), sizes.unit("Y")) == ("nanometer", "micrometer")
+    # An axis given no unit has space_unit, here none, even when X has one.
     assert PhysicalSizes(x=1.0, y=2.0, x_unit="nanometer", z_unit="meter").unit("Y") is None
+    partial = PhysicalSizes(y=1.0, z=1.0, space_unit="micrometer", y_unit="nanometer")
+    assert (partial.unit("Y"), partial.unit("Z")) == ("nanometer", "micrometer")
+    # An axis's own unit wins over space_unit.
+    assert PhysicalSizes(x=1.0, space_unit="micrometer", x_unit="nanometer").unit("X") == (
+        "nanometer"
+    )
 
 
-def test_space_unit_and_x_unit_must_agree():
-    with pytest.raises(ValueError, match="unit of X"):
-        PhysicalSizes(x=1.0, space_unit="micrometer", x_unit="nanometer")
+def test_replace_keeps_units_consistent():
+    sizes = PhysicalSizes(x=0.1, y=0.1, space_unit="micrometer")
+    assert replace(sizes, space_unit="nanometer").unit("Y") == "nanometer"
+    assert replace(sizes, x_unit="nanometer").unit("X") == "nanometer"
+    assert replace(sizes, x_unit="nanometer").unit("Y") == "micrometer"
+    assert replace(sizes, space_unit=None).unit("X") is None
+
+
+def test_sizes_pickled_before_per_axis_units_keep_their_unit():
+    # PhysicalSizes(x=0.1, y=0.2, z=0.5, space_unit="micrometer") pickled by the version
+    # before per-axis units (as morphobricks_preprocessing.zarr_export.PhysicalSizes).
+    sizes = pickle.loads(OLD_PICKLE)
+    assert [sizes.unit(role) for role in "XYZ"] == ["micrometer"] * 3
+    assert sizes == PhysicalSizes(x=0.1, y=0.2, z=0.5, space_unit="micrometer")
+    assert pickle.loads(pickle.dumps(sizes)) == sizes
+
+
+def test_equal_sizes_hash_alike():
+    given = PhysicalSizes(x=0.1, space_unit="micrometer")
+    spelled_out = PhysicalSizes(
+        x=0.1, space_unit="micrometer", x_unit="micrometer", y_unit="micrometer"
+    )
+    assert given == spelled_out and len({given, spelled_out}) == 1
+    assert given != PhysicalSizes(x=0.1, space_unit="micrometer", y_unit="nanometer")
+    assert given != "not sizes"
 
 
 def test_units_of_unknown_sizes_and_channels_are_none():

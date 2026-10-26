@@ -546,9 +546,13 @@ Raised during review; to be decided before the milestones that need them:
     *Decided (October 2026): yes to both. `PhysicalSizes` gains `x_unit`, `y_unit` and
     `z_unit`; `unit(role)` returns each axis's own unit, from OME `PhysicalSizeYUnit` and
     `PhysicalSizeZUnit` (the OME default, micrometres, when left out, as for X) or ImageJ
-    `yunit` and `zunit` (the X unit when left out, as ImageJ writes them). `space_unit`
-    stays the unit of X, and sizes made with `space_unit` alone keep it for every space
-    axis, so existing callers are unchanged. `inspect_image` (`TiffMetadata`) gains the
+    `yunit` and `zunit` (the X unit when left out, as ImageJ writes them). The per-axis
+    units are kept as given and resolved when read: an axis without its own unit has
+    `space_unit`, so sizes made with `space_unit` alone keep it for every space axis and
+    stay consistent under `dataclasses.replace` and pickles written before; the readers
+    give `space_unit` the unit of X, as before (None when a space axis with a size has no
+    unit). Equality and hashing compare the resolved units, so existing callers are
+    unchanged. `inspect_image` (`TiffMetadata`) gains the
     field `physical_sizes`, read from the header already open, for information only; the
     existing fields are unchanged. OME-Zarr copies of images whose Y or Z unit differs
     from X now write that axis's own unit. `PhysicalSizes` and `read_physical_sizes` moved
