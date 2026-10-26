@@ -405,20 +405,30 @@ def run_experiment(
 
     records: list[PlaneRecord] = []
     for rel in unchanged if not reason else ():
-        records.extend(previous_records[rel])
+        # Tables written before position identifiers were recorded have them blank;
+        # the identifier depends only on the path, so it is filled without reading.
+        records.extend(
+            replace(record, position_id=entries[rel].position_id)
+            for record in previous_records[rel]
+        )
     failed: list[str] = []
     try:
         for done, rel in enumerate(to_read):
             if progress is not None:
                 progress(done, len(to_read), rel)
             file_mapping = review.file_mappings[rel]
+            position = entries[rel].position_id
             try:
                 if rel in to_convert:
                     # Convert first, then read the copy like any other OME-Zarr image.
                     copy, copy_mapping = staging.convert(rel, file_mapping, headers[rel], settings)
-                    records.extend(_read_file(copy, rel, labels[rel], copy_mapping, settings))
+                    records.extend(
+                        _read_file(copy, rel, labels[rel], copy_mapping, settings, position)
+                    )
                 else:
-                    records.extend(_read_file(root / rel, rel, labels[rel], file_mapping, settings))
+                    records.extend(
+                        _read_file(root / rel, rel, labels[rel], file_mapping, settings, position)
+                    )
             except PlaneReadError:
                 logger.warning("Cannot read the planes of %s", rel, exc_info=True)
                 failed.append(rel)
@@ -600,6 +610,7 @@ def _read_file(
     labels: tuple[str, str, str],
     mapping: AxisMapping,
     settings: RunSettings,
+    position: str | None,
 ) -> list[PlaneRecord]:
     """Histogram every plane of ``path``, recording the rows under the source ``rel``."""
     records = []
@@ -614,6 +625,7 @@ def _read_file(
                 z=plane.z,
                 c=plane.c,
                 t=plane.t,
+                position_id=position,
             )
         )
     return records

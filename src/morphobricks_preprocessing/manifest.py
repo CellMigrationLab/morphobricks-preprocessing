@@ -28,6 +28,7 @@ import tifffile
 from morphobricks_normalization.csv_io import SCHEMA_VERSION
 
 from .axes import AxisMapping
+from .discovery import position_id
 from .zarr_export import ConversionSettings
 
 MANIFEST_FILENAME = "run_manifest.json"
@@ -104,6 +105,10 @@ class FileEntry:
     read_in_blocks
         True when the image's planes are too large for the memory limit and are
         read in blocks. For information only: the rows are the same either way.
+    position_id
+        The image's position identifier, its name without the extension
+        (:func:`~morphobricks_preprocessing.discovery.position_id`); None in
+        manifests written before it was recorded.
     """
 
     relative_path: str
@@ -117,6 +122,7 @@ class FileEntry:
     significant_bits: int | None = None
     ome_zarr_path: str | None = None
     read_in_blocks: bool = False
+    position_id: str | None = None
 
     def same_source(self, other: FileEntry) -> bool:
         """Return True if ``other`` describes the same unchanged file, read the same way."""
@@ -267,7 +273,7 @@ def file_entry_for(
     ome_zarr_path: str | None = None,
     read_in_blocks: bool = False,
 ) -> FileEntry:
-    """Describe a source image as it is on disk now."""
+    """Describe a source image as it is on disk now, with its position identifier."""
     size, mtime_ns = source_fingerprint(Path(root) / relative_path)
     return FileEntry(
         relative_path=relative_path,
@@ -281,6 +287,7 @@ def file_entry_for(
         significant_bits=significant_bits,
         ome_zarr_path=ome_zarr_path,
         read_in_blocks=read_in_blocks,
+        position_id=position_id(relative_path),
     )
 
 
@@ -376,6 +383,7 @@ def _file_dict(entry: FileEntry) -> dict:
         "significant_bits": entry.significant_bits,
         "ome_zarr_path": entry.ome_zarr_path,
         "read_in_blocks": entry.read_in_blocks,
+        "position_id": entry.position_id,
     }
 
 
@@ -397,6 +405,7 @@ def _file_entry(data: dict) -> FileEntry:
         significant_bits=None if bits is None else int(bits),
         ome_zarr_path=None if data.get("ome_zarr_path") is None else str(data["ome_zarr_path"]),
         read_in_blocks=bool(data.get("read_in_blocks", False)),
+        position_id=None if data.get("position_id") is None else str(data["position_id"]),
     )
 
 

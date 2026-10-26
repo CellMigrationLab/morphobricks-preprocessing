@@ -9,6 +9,10 @@ Images are TIFF files (``.tif``, ``.tiff``) and OME-Zarr images, which are
 folders whose names end in ``.zarr`` (usually ``.ome.zarr``). An OME-Zarr folder
 counts as one image, not as a subfolder, and is never entered.
 
+Each image is one position (field of view): files with several positions are
+refused when their headers are checked. A position is identified by its labels
+and its ``position_id``, the image name without its extension (contract §1).
+
 Only folder and file names are read here; image headers are inspected by
 :mod:`morphobricks_preprocessing.metadata`.
 """
@@ -38,6 +42,10 @@ OUTPUT_FOLDER_SUFFIX = "_MorphoBricks_Preprocessing"
 
 ROOT = "."
 
+# Image name endings removed to give the position identifier, longest first, so
+# that "img_01.ome.tif" and "img_01.ome.zarr" both give "img_01".
+IMAGE_SUFFIXES = (".ome.tiff", ".ome.tif", ".ome.zarr", ".tiff", ".tif", ".zarr")
+
 
 def is_system_name(name: str) -> bool:
     """Return True for system files and folders that are skipped silently.
@@ -59,6 +67,34 @@ def is_ome_zarr_folder(entry: os.DirEntry) -> bool:
     Such a folder counts as one image, not as a subfolder: it is never entered.
     """
     return entry.is_dir() and is_zarr_name(entry.name)
+
+
+def position_id(image: str) -> str:
+    """Return the position identifier of an image: its name without the extension.
+
+    Every image is exactly one position, because files holding several
+    positions, scenes or tiles are refused, so the file name identifies the
+    position within its technical repeat. The full position (field of view) key
+    is ``condition``, ``biological_repeat``, ``technical_repeat`` and this
+    identifier (contract §1). The extension is ``.tif``, ``.tiff`` or ``.zarr``
+    (any case), together with a preceding ``.ome``.
+
+    Parameters
+    ----------
+    image
+        The image's path relative to the experiment root, or its name.
+
+    Returns
+    -------
+    str
+        For example ``"img_01"`` for ``"ctrl/rep1/img_01.ome.tif"``.
+    """
+    name = image.replace("\\", "/").rsplit("/", 1)[-1]
+    lowered = name.lower()
+    for suffix in IMAGE_SUFFIXES:
+        if lowered.endswith(suffix) and len(name) > len(suffix):
+            return name[: -len(suffix)]
+    return name
 
 
 def default_output_folder(experiment_root: str | os.PathLike) -> Path:
@@ -217,6 +253,7 @@ class _Walker:
         self.non_tiff: list[str] = []
         self.empty: list[str] = []
         self.outside_leaf: list[str] = []
+        self.same_position: list[str] = []
 
     def relative(self, path: Path) -> str:
         return path.relative_to(self.root).as_posix() or ROOT
@@ -249,6 +286,7 @@ class _Walker:
             if tiffs:
                 labels = names + (SINGLE,) * (len(LEVELS) - len(names))
                 self.leaves.append(LeafFolder(self.relative(folder), *labels, tuple(tiffs)))
+                self._check_positions(tiffs)
             else:
                 self.empty.append(self.relative(folder))
             return
@@ -274,6 +312,17 @@ class _Walker:
         for paths in by_key.values():
             if len(paths) > 1:
                 self.case_conflicts.extend(self.relative(path) for path in paths)
+
+    def _check_positions(self, images: list[str]) -> None:
+        # Two images of one technical repeat with the same position identifier would
+        # be the same field of view to every later brick, so this is refused rather
+        # than guessed. Case is ignored for the same reason as for folder names.
+        by_key: dict[str, list[str]] = {}
+        for image in images:
+            by_key.setdefault(position_id(image).casefold(), []).append(image)
+        for paths in by_key.values():
+            if len(paths) > 1:
+                self.same_position.extend(paths)
 
     def finish(self) -> tuple[ValidationIssue, ...]:
         issues = self.issues
@@ -317,6 +366,19 @@ class _Walker:
                     self.too_deep,
                     "Move the images up into the technical-repeat folder, or select a "
                     "folder lower in the hierarchy as the experiment folder.",
+                )
+            )
+        if self.same_position:
+            issues.append(
+                error(
+                    "duplicate_position_id",
+                    "Some images in the same folder have the same name apart from the file "
+                    "extension or upper/lower case (for example img_01.tif and img_01.ome.zarr). "
+                    "Each image is one position, named after its file, so these positions "
+                    "could not be told apart.",
+                    sorted(self.same_position),
+                    "Rename the images so that their names differ by more than the extension "
+                    "or case, or move the extra copies out of the experiment folder.",
                 )
             )
         if self.non_tiff:

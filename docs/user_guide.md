@@ -76,6 +76,11 @@ experiment/
   are reported and skipped.
 - Do not name a folder `single`, and do not use two neighbouring folder names that differ
   only in upper/lower case (`Control` and `control`). Both are errors.
+- Each image is one position (field of view), named after its file without the extension:
+  `img_01.tif` and `img_01.ome.zarr` are both position `img_01`. The same name may be used
+  in different folders (`tech_rep1/img_01.tif` and `tech_rep2/img_01.tif` are two
+  positions), but two images in one folder must not share a name apart from the extension
+  or upper/lower case. That is an error; rename one or move it out of the experiment.
 - A fourth level of folders (below the technical repeat) is an error, so that no layer of
   images is dropped silently.
 - Other files (`.txt`, `.csv`, ...) are reported and skipped. System files such as
@@ -252,15 +257,16 @@ Both commands exit with status 1 when an error blocks processing.
 The default output folder is next to the experiment folder:
 `/data/exp1` → `/data/exp1_MorphoBricks_Preprocessing`.
 
-- **`plane_histograms.csv`:** one row per plane with the file name, the zero-based plane
+- **`plane_histograms.csv`:** one row per plane with the position (`position_id`, the file
+  name without its extension), the file name, the zero-based plane
   coordinates `z`, `c`, `t` (0 when the image has no such dimension), the three
   labels, the pixel type, the exact minimum and maximum, pixel counts and the histogram.
   The table is very wide (one column per bin), so spreadsheet programs may not open it
   completely; read it in Python with `read_plane_histograms()`. The columns are defined in
   the [normalization brick's contract](https://github.com/CellMigrationLab/morphobricks-normalization/blob/main/docs/contract.md) §8.2.
 - **`run_manifest.json`:** what the run read and with which settings: labels, axis roles,
-  bin count, memory limit, excluded images, package versions, and each image's size and
-  modification time. Channel names and significant bits are recorded when the metadata
+  bin count, memory limit, excluded images, package versions, and each image's position,
+  size and modification time. Channel names and significant bits are recorded when the metadata
   provides them, and whether the image's planes were too large to read whole and are read
   in blocks. Format in [contract.md](contract.md) §9.
 - **`ome_zarr/`** (only when TIFF images are converted): one `.ome.zarr` folder per TIFF
@@ -308,6 +314,7 @@ continues.
 | `unreadable_folder` | Error | A folder could not be opened. Check permissions. |
 | `reserved_folder_name` | Error | A folder is named `single`. Rename it. |
 | `case_conflict` | Error | Neighbouring folders differ only in case. Rename or merge them. |
+| `duplicate_position_id` | Error | Two images in one folder have the same name apart from the extension or upper/lower case (`img_01.tif` and `img_01.ome.zarr`), so their positions cannot be told apart. Rename one, or move it out of the experiment. |
 | `folder_too_deep` | Error | Folders below the technical repeat. Move the images up, or select a lower folder as the experiment. |
 | `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. |
 | `no_images` | Error | No images to analyse (or all excluded). Check the folder. |

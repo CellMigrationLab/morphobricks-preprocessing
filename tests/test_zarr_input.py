@@ -479,6 +479,11 @@ def test_ome_zarr_experiment_end_to_end(zarr_experiment):
         np.testing.assert_array_equal(record.histogram.counts, expected.counts)
         assert record.t == 0
     assert records[0].plane_id == "ctrl/rep1/a.ome.zarr::z=0,c=0,t=0"
+    assert {(r.condition, r.position_id) for r in records} == {
+        ("ctrl", "a"),
+        ("ctrl", "b"),
+        ("drug", "a"),
+    }
 
 
 def test_rerun_detects_a_changed_store(zarr_experiment):
@@ -541,6 +546,9 @@ def test_conversion_leaves_ome_zarr_images_alone(tmp_path):
     manifest = read_manifest(result.manifest_path)
     assert manifest.file("b.ome.zarr").ome_zarr_path is None
     assert manifest.file("a.tif").ome_zarr_path == "ome_zarr/a.ome.zarr"
+    # A converted image keeps the position identifier of its source.
+    assert {r.position_id for r in read_plane_histograms(result.csv_path)} == {"a", "b"}
+    assert manifest.file("a.tif").position_id == "a"
 
 
 def test_sample_planes_cover_both_formats(tmp_path):
