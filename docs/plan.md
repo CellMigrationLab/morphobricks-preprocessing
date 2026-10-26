@@ -312,6 +312,11 @@ API, CLI). The notebook and CLI only call the API.
   entry carries the image's `position_id`, so `condition`, `biological_repeat`,
   `technical_repeat` and `position_id` identify a position in every brick; images in one
   leaf folder with the same identifier are refused. *Implemented, see question 20.*
+- **Input support for MorphoRelate milestone M3 (unreleased):** a folder named `single`
+  read as a one-member level, physical sizes with a unit per axis in the image header
+  (TIFF and OME-Zarr, from the OME-NGFF scale), and steps 1 and 2 of the notebook
+  embeddable by another brick. Outputs are unchanged. *Implemented, see questions 21 to
+  24.*
 
 ## 11. Tests and acceptance criteria
 

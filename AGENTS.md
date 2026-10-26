@@ -610,6 +610,11 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   v0.1.0 with deprecated re-exports, its version in the manifest, Step 0 checking for it,
   and contract §3–§7 moved to the normalization contract (PRs #16 and #17, question 19),
   and `position_id` filled per cross-brick decision D02 (question 20).
+- **Unreleased (for MorphoRelate milestone M3):** folders named `single` read as a
+  one-member level (question 21), a unit per axis in `PhysicalSizes` and physical sizes in
+  `inspect_image` (question 22), OME-Zarr physical sizes from the OME-NGFF scale (question
+  23), and notebook steps 1 and 2 embeddable with their own words (question 24). No
+  version bump or tag.
 - **Next (not started):** follow-ups P2–P5 of the normalization plan (modality,
   references, colour statistics, previews).
 - **Not yet verified:**
