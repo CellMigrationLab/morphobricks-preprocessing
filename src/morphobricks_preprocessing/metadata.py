@@ -25,6 +25,7 @@ import tifffile
 from morphobricks_normalization.dtypes import UnsupportedDtypeError, check_supported
 
 from .discovery import DiscoveryResult
+from .physical_sizes import PhysicalSizes, _tiff_sizes
 from .validation import ValidationIssue, error, has_errors, plural, warning
 from .zarr_input import NgffError, ZarrUnavailableError, is_zarr_name, open_ngff
 
@@ -70,6 +71,11 @@ class TiffMetadata:
         files), from OME metadata; None when not given. For information only.
     kind
         ``"tiff"`` or ``"ome-zarr"``.
+    physical_sizes
+        Pixel sizes, z-step and time step with their units, from OME or ImageJ
+        metadata (TIFF) or the OME-NGFF scale (OME-Zarr), as
+        :func:`.physical_sizes.read_physical_sizes` gives them; all None when
+        not given or the image does not open. For information only.
     """
 
     relative_path: str
@@ -83,6 +89,7 @@ class TiffMetadata:
     channel_names: tuple[str | None, ...] = ()
     significant_bits: int | None = None
     kind: str = TIFF
+    physical_sizes: PhysicalSizes = PhysicalSizes()
 
     @property
     def ndim(self) -> int:
@@ -170,6 +177,7 @@ def inspect_tiff(path: str | os.PathLike, relative_path: str | None = None) -> T
                 series_count=len(series),
                 page_count=len(tif.pages),
                 **_ome_details(tif),
+                physical_sizes=_tiff_sizes(tif),
             )
     except Exception as exc:  # any failure to parse means the file cannot be used
         logger.debug("Cannot read the TIFF header of %s", path, exc_info=True)

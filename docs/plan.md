@@ -535,3 +535,17 @@ Raised during review; to be decided before the milestones that need them:
     would be a label different from the `single` written for missing levels), and a
     `single` folder with other folders beside it (the level would have several members,
     one called `single`). The CSV, the manifest and their versions are unchanged.*
+22. Physical pixel sizes: `read_physical_sizes` applied the X unit to Y and Z, and callers
+    (MorphoRelate milestone M3's `inspect`) had to open each file a second time to get
+    them. Should each axis keep its own unit, and should the header inspection carry them?
+    *Decided (October 2026): yes to both. `PhysicalSizes` gains `x_unit`, `y_unit` and
+    `z_unit`; `unit(role)` returns each axis's own unit, from OME `PhysicalSizeYUnit` and
+    `PhysicalSizeZUnit` (the OME default, micrometres, when left out, as for X) or ImageJ
+    `yunit` and `zunit` (the X unit when left out, as ImageJ writes them). `space_unit`
+    stays the unit of X, and sizes made with `space_unit` alone keep it for every space
+    axis, so existing callers are unchanged. `inspect_image` (`TiffMetadata`) gains the
+    field `physical_sizes`, read from the header already open, for information only; the
+    existing fields are unchanged. OME-Zarr copies of images whose Y or Z unit differs
+    from X now write that axis's own unit. `PhysicalSizes` and `read_physical_sizes` moved
+    to the module `physical_sizes` and stay importable from `zarr_export` and the package.
+    The CSV, the manifest and their versions are unchanged.*

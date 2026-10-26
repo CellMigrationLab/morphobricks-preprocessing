@@ -60,7 +60,9 @@ src/morphobricks_preprocessing/
   discovery.py      folder walk, leaf folders, labels (condition / biological_repeat / technical_repeat),
                     position_id per image and the duplicate check
   metadata.py       TIFF header inspection (tifffile, no pixel reads), dtype/dimension/series checks,
-                    OME channel names + significant bits
+                    OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes)
+  physical_sizes.py PhysicalSizes (pixel sizes, z-step, time step, a unit per axis) and
+                    read_physical_sizes (OME / ImageJ TIFF metadata); also importable from zarr_export
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)

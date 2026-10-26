@@ -193,8 +193,17 @@ def test_physical_sizes_from_ome(tmp_path):
             "TimeIncrementUnit": "s",
         },
     )
+    # PhysicalSizeZUnit is left out, so Z is in the OME default, micrometres.
     assert read_physical_sizes(path) == PhysicalSizes(
-        x=120.0, y=120.0, z=500.0, t=30.0, space_unit="nanometer", time_unit="second"
+        x=120.0,
+        y=120.0,
+        z=500.0,
+        t=30.0,
+        space_unit="nanometer",
+        time_unit="second",
+        x_unit="nanometer",
+        y_unit="nanometer",
+        z_unit="micrometer",
     )
 
 
@@ -302,6 +311,31 @@ def test_every_dtype_is_copied_unchanged(tmp_path, dtype):
     write_data(tmp_path / "exp/a.tif", data, axes="ZYX")
     result = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True)
     np.testing.assert_array_equal(open_copy(result.output_folder, "a.tif")["0"][:], data)
+
+
+@needs_zarr
+def test_copies_give_each_axis_its_own_unit(tmp_path):
+    path = tmp_path / "exp/a.ome.tif"
+    path.parent.mkdir(parents=True)
+    tifffile.imwrite(
+        path,
+        random_data((2, 8, 8), "uint16"),
+        ome=True,
+        photometric="minisblack",
+        metadata={
+            "axes": "ZYX",
+            "PhysicalSizeX": 120.0,
+            "PhysicalSizeXUnit": "nm",
+            "PhysicalSizeY": 0.25,
+            "PhysicalSizeYUnit": "µm",
+            "PhysicalSizeZ": 2.0,
+            "PhysicalSizeZUnit": "mm",
+        },
+    )
+    result = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True)
+    meta = multiscale(open_copy(result.output_folder, "a.ome.tif"))
+    assert [axis["unit"] for axis in meta["axes"]] == ["millimeter", "micrometer", "nanometer"]
+    assert meta["datasets"][0]["coordinateTransformations"][0]["scale"] == [2.0, 0.25, 120.0]
 
 
 @needs_zarr

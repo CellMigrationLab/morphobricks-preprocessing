@@ -50,6 +50,7 @@ from .metadata import (
     inspect_ome_zarr,
     inspect_tiff,
 )
+from .physical_sizes import PhysicalSizes, read_physical_sizes
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
     Block,
@@ -71,10 +72,8 @@ from .zarr_export import (
     ConversionEstimate,
     ConversionSettings,
     OmeZarrWriter,
-    PhysicalSizes,
     estimate_conversion,
     ome_zarr_relative_path,
-    read_physical_sizes,
 )
 from .zarr_input import (
     NgffError,
