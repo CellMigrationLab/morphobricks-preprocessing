@@ -564,3 +564,14 @@ Raised during review; to be decided before the milestones that need them:
     without a unit is kept, since only the caller can tell a real calibration from a
     placeholder (this brick's own copies write 1 without a unit when the size is not
     known). Information only: the CSV, the manifest and their versions are unchanged.*
+24. Can another brick's notebook reuse steps 1 and 2 (folder check and axis review)?
+    MorphoRelate milestone M3's "your data" notebook needs them, but their title, purpose
+    and intro speak of this brick's histograms, step 1 has the card for this brick's output
+    folder, and step 2's "What next?" box sends the user to compute the histograms.
+    *Decided (October 2026): yes. `PreprocessingNotebook.folder_step` and `axis_step` take
+    an optional `title` and `purpose` (the sentence under the title), a keyword `intro`
+    (the blue box; an empty string leaves it out) and `show_next` (False hides the "What
+    next?" box), and `folder_step` takes `show_output` (False leaves out the "Output
+    folder (optional)" card; the check then uses the default output folder, as with the
+    box left empty). The defaults give the pages as before, and this notebook calls them
+    without arguments; the widgets, the checks and the gating are the same either way.*

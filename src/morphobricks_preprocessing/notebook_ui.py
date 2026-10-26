@@ -189,20 +189,63 @@ class PreprocessingNotebook:
             ],
         )
 
-    def folder_step(self) -> widgets.Widget:
-        """Step 1: choose and check the experiment folder, confirm the labels."""
+    def folder_step(
+        self,
+        title: str | None = None,
+        purpose: str | None = None,
+        *,
+        intro: str | None = None,
+        show_output: bool = True,
+        show_next: bool = True,
+    ) -> widgets.Widget:
+        """Step 1: choose and check the experiment folder, confirm the labels.
+
+        The defaults give this notebook's step. Another brick embedding the step
+        (it checks the folder and the image headers, nothing more) can give its
+        own words and leave out the output folder of this brick's histograms.
+
+        Parameters
+        ----------
+        title
+            Page title; None gives "Step 1 · Check the experiment folder".
+        purpose
+            One-sentence purpose under the title (HTML); None gives this
+            notebook's.
+        intro
+            Text of the blue "what happens here" box (HTML); None gives this
+            notebook's, an empty string leaves the box out.
+        show_output
+            False leaves out the "Output folder (optional)" card, which sets where
+            this brick writes its histogram table. The check then uses the default
+            output folder, as it does when the box is left empty.
+        show_next
+            False hides the "What next?" box, which names this notebook's next
+            steps.
+
+        Returns
+        -------
+        ipywidgets.Widget
+            The page.
+        """
+        ui.set_visible(self.folder_next, show_next)
+        if intro is None:
+            intro = (
+                "<b>What happens here:</b> the folders are scanned, the labels are taken "
+                "from the folder names (condition / biological repeat / technical repeat) "
+                "and every image header is checked. Problems are listed with what to do."
+            )
         return ui.page(
-            "Step 1 · Check the experiment folder",
-            "Choose the folder with your images. It is checked without reading any pixels "
-            "and without changing anything.",
+            "Step 1 · Check the experiment folder" if title is None else title,
+            (
+                "Choose the folder with your images. It is checked without reading any pixels "
+                "and without changing anything."
+            )
+            if purpose is None
+            else purpose,
             [
-                ui.intro(
-                    "<b>What happens here:</b> the folders are scanned, the labels are taken "
-                    "from the folder names (condition / biological repeat / technical repeat) "
-                    "and every image header is checked. Problems are listed with what to do."
-                ),
+                *([ui.intro(intro)] if intro else []),
                 self.folder_card,
-                self.output_card,
+                *([self.output_card] if show_output else []),
                 self.exclude_box,
                 self.check_button,
                 self.folder_status,
@@ -213,20 +256,53 @@ class PreprocessingNotebook:
             ],
         )
 
-    def axis_step(self) -> widgets.Widget:
-        """Step 2: axis roles, preview and confirmation."""
+    def axis_step(
+        self,
+        title: str | None = None,
+        purpose: str | None = None,
+        *,
+        intro: str | None = None,
+        show_next: bool = True,
+    ) -> widgets.Widget:
+        """Step 2: axis roles, preview and confirmation.
+
+        The defaults give this notebook's step; another brick embedding it can give
+        its own words, since this notebook's explain the roles by the planes its
+        histograms are computed on.
+
+        Parameters
+        ----------
+        title
+            Page title; None gives "Step 2 · Review the axis roles".
+        purpose
+            One-sentence purpose under the title (HTML); None gives this
+            notebook's.
+        intro
+            Text of the blue "why this matters" box (HTML); None gives this
+            notebook's, an empty string leaves the box out.
+        show_next
+            False hides the "What next?" box, which sends the user to this
+            notebook's step 3 to compute the histograms.
+
+        Returns
+        -------
+        ipywidgets.Widget
+            The page.
+        """
+        ui.set_visible(self.axis_next, show_next)
+        if intro is None:
+            intro = (
+                "<b>Why this matters:</b> every image is cut into flat 2D planes, one per "
+                "depth slice, channel and time point. The roles below are suggested from "
+                "the image metadata, which is not always right, so check them with the "
+                "preview before confirming."
+            )
         return ui.page(
-            "Step 2 · Review the axis roles",
-            "Tell the brick which image dimension is width, height, depth, channel and time.",
-            [
-                ui.intro(
-                    "<b>Why this matters:</b> every image is cut into flat 2D planes, one per "
-                    "depth slice, channel and time point. The roles below are suggested from "
-                    "the image metadata, which is not always right, so check them with the "
-                    "preview before confirming."
-                ),
-                self.axis_box,
-            ],
+            "Step 2 · Review the axis roles" if title is None else title,
+            "Tell the brick which image dimension is width, height, depth, channel and time."
+            if purpose is None
+            else purpose,
+            [*([ui.intro(intro)] if intro else []), self.axis_box],
         )
 
     def run_step(self) -> widgets.Widget:

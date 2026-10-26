@@ -87,7 +87,9 @@ src/morphobricks_preprocessing/
                     block by block),
                     ConversionSettings (chunk size, compression, pyramid levels), estimate_conversion
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
-  notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra)
+  notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra);
+                    folder_step/axis_step take title, purpose, intro and show_next (and
+                    show_output for step 1) so other bricks can embed them (plan §12 Q24)
 notebooks/MorphoBricks_Preprocessing.ipynb   thin notebook: every code cell calls notebook_ui only
 tests/              pytest with simulated TIFFs (tests/tiff_tree.py, tests/simulation.py)
 experiments/binning_study/      the study behind the binning decisions (not part of the package)
@@ -448,6 +450,11 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
 
 ### Page layout (`notebook_style`)
 
+- **Embedding steps 1 and 2 (Q24):** `folder_step` and `axis_step` keep this notebook's
+  words by default; another brick (MorphoRelate) passes its own `title`, `purpose` and
+  `intro` (HTML; `""` leaves the box out), `show_output=False` to leave out the output
+  folder card, and `show_next=False` to hide the "What next?" box naming this notebook's
+  steps. The widgets and their behaviour are the same either way.
 - **Page and cards:** `ui.page(title, subtitle, children)` wraps a step in a grey page
   (`mb-root`) with a title and a one-sentence purpose. `ui.card(header, children)` gives a
   white card with an upper-case header. `ui.intro(html)` adds a blue "what happens here"
