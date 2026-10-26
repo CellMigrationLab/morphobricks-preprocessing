@@ -29,6 +29,7 @@ or 3.x; OME-NGFF 0.5 (Zarr format 3) needs zarr 3, which needs Python 3.11 or ne
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +38,8 @@ from typing import Any
 import numpy as np
 
 from .physical_sizes import PhysicalSizes, ngff_physical_sizes
+
+logger = logging.getLogger(__name__)
 
 ZARR_SUFFIX = ".zarr"
 
@@ -282,8 +285,21 @@ def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:
         image_count=image_count,
         channel_names=labels if any(labels) else (),
         dataset_path=f"{prefix}{dataset_path}",
-        physical_sizes=ngff_physical_sizes(first, axes),
+        physical_sizes=_physical_sizes(first, axes, dataset_path),
     )
+
+
+def _physical_sizes(multiscale: dict, axes: str, where: str) -> PhysicalSizes:
+    """Return the image's physical sizes; empty when its scale metadata cannot be used.
+
+    The sizes are for information only, so metadata that cannot be understood
+    never makes the image unreadable.
+    """
+    try:
+        return ngff_physical_sizes(multiscale, axes)
+    except Exception:  # sizes are optional; never block an image over them
+        logger.debug("Cannot read the physical sizes of %s", where, exc_info=True)
+        return PhysicalSizes()
 
 
 def _labels_group(group):

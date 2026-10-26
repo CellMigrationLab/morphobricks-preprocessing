@@ -759,3 +759,31 @@ def test_tiff_reading_is_unchanged_next_to_stores(tmp_path):
     path = write_data(tmp_path / "a.tif", random_data((2, 8, 8)), axes="ZYX")
     assert tifffile.imread(path).shape == (2, 8, 8)
     assert len(list(iter_planes(path, prefill_mapping("ZYX")))) == 2
+
+
+# Physical sizes never block an image -----------------------------------------------------
+
+
+def test_scale_too_large_for_a_float_is_unknown_and_does_not_block(tmp_path):
+    root = tmp_path / "exp"
+    path = write_ngff(
+        root / "ctrl/a.ome.zarr",
+        np.zeros((2, 8, 8), np.uint8),
+        "zyx",
+        scale=[10**400, 0.5, 0.25],
+        units={"z": "micrometer", "y": "micrometer", "x": "micrometer"},
+    )
+    sizes = open_ngff(path).physical_sizes
+    assert (sizes.z, sizes.y, sizes.x) == (None, 0.5, 0.25)
+    assert preflight(root, tmp_path / "out").ok
+
+
+def test_unexpected_scale_metadata_does_not_block_the_image(tmp_path, monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuntimeError("not understood")
+
+    monkeypatch.setattr(zarr_input, "ngff_physical_sizes", broken)
+    root = tmp_path / "exp"
+    path = write_ngff(root / "ctrl/a.ome.zarr", np.zeros((2, 8, 8), np.uint8), "zyx")
+    assert open_ngff(path).physical_sizes == PhysicalSizes()
+    assert preflight(root, tmp_path / "out").ok

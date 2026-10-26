@@ -235,11 +235,18 @@ def _ngff_scale(entry: dict, ndim: int) -> list[float | None] | None:
         values = transform.get("scale")
         if not isinstance(values, Sequence) or isinstance(values, str) or len(values) != ndim:
             raise ValueError("the scale is not given as one number per axis")
-        return [
-            float(v) if isinstance(v, int | float) and not isinstance(v, bool) else None
-            for v in values
-        ]
+        return [_scale_value(v) for v in values]
     return None
+
+
+def _scale_value(value) -> float | None:
+    """Return one scale value as a float; None when it is not a usable number."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    try:
+        return float(value)
+    except OverflowError:  # an integer too large for a float is not a pixel size
+        return None
 
 
 def _tiff_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
