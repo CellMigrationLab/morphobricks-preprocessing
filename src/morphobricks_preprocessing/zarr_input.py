@@ -15,6 +15,9 @@ A store that holds several images (several ``multiscales`` entries, a
 several fields) is described by its first image and reports how many images it
 holds, so that the preflight can block it like a multi-series TIFF.
 
+The physical size of a pixel along each axis, with its unit, comes from the
+OME-NGFF scale of level 0 (:attr:`NgffImage.physical_sizes`).
+
 The label images of an image (segmentations in its OME-NGFF ``labels`` group,
 such as ``cells`` or ``nuclei``) can be listed with :func:`ngff_label_names`
 and opened with :func:`open_ngff_labels`, for later bricks that use them as
@@ -32,6 +35,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+from .physical_sizes import PhysicalSizes, ngff_physical_sizes
 
 ZARR_SUFFIX = ".zarr"
 
@@ -92,6 +97,12 @@ class NgffImage:
         Channel labels from the ``omero`` metadata; empty when not given.
     dataset_path
         Path of the level-0 array inside the store, e.g. ``"0"`` or ``"0/0"``.
+    physical_sizes
+        Level-0 size of one step along X, Y, Z and T with each axis's unit, from
+        the OME-NGFF ``coordinateTransformations`` scale and axis units
+        (:func:`.physical_sizes.ngff_physical_sizes`), in the form
+        :func:`.physical_sizes.read_physical_sizes` gives for TIFF files; None
+        where the metadata does not give them.
     """
 
     array: Any
@@ -100,6 +111,7 @@ class NgffImage:
     image_count: int
     channel_names: tuple[str | None, ...] = ()
     dataset_path: str = ""
+    physical_sizes: PhysicalSizes = PhysicalSizes()
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -270,6 +282,7 @@ def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:
         image_count=image_count,
         channel_names=labels if any(labels) else (),
         dataset_path=f"{prefix}{dataset_path}",
+        physical_sizes=ngff_physical_sizes(first, axes),
     )
 
 

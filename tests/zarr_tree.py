@@ -25,11 +25,19 @@ def write_ngff(
     channel_names=None,
     axis_types=None,
     extra_multiscales=0,
+    scale=None,
+    units=None,
+    dataset_transforms=None,
+    multiscale_transforms=None,
 ):
     """Write ``data`` as a one-level OME-Zarr image (OME-NGFF 0.4 or 0.5) at ``path``.
 
     ``axes`` gives one OME-NGFF axis name per dimension; ``axis_types`` overrides
-    their types. Returns the path.
+    their types. ``scale`` is the level-0 scale (1 per axis by default),
+    ``dataset_transforms`` replaces the level-0 ``coordinateTransformations``
+    whole (``[]`` leaves them out), ``units`` maps axis names to their ``unit``,
+    and ``multiscale_transforms`` adds ``coordinateTransformations`` to the
+    multiscales entry. Returns the path.
     """
     zarr = pytest.importorskip("zarr")
     if version == "0.5" and zarr_major() < 3:
@@ -41,15 +49,21 @@ def write_ngff(
     chunks = chunks or (*(1,) * (data.ndim - 2), *data.shape[-2:])
     _array(group, "0", data, chunks)
     types = axis_types or [AXIS_TYPES.get(a, "space") for a in axes]
+    units = units or {}
+    if dataset_transforms is None:
+        dataset_transforms = [{"type": "scale", "scale": scale or [1.0] * data.ndim}]
+    dataset = {"path": "0"}
+    if dataset_transforms:
+        dataset["coordinateTransformations"] = dataset_transforms
     multiscale = {
-        "axes": [{"name": a, "type": t} for a, t in zip(axes, types, strict=True)],
-        "datasets": [
-            {
-                "path": "0",
-                "coordinateTransformations": [{"type": "scale", "scale": [1.0] * data.ndim}],
-            }
+        "axes": [
+            {"name": a, "type": t, **({"unit": units[a]} if a in units else {})}
+            for a, t in zip(axes, types, strict=True)
         ],
+        "datasets": [dataset],
     }
+    if multiscale_transforms is not None:
+        multiscale["coordinateTransformations"] = multiscale_transforms
     attrs: dict = {"multiscales": [multiscale] * (1 + extra_multiscales)}
     if channel_names:
         attrs["omero"] = {"channels": [{"label": name} for name in channel_names]}

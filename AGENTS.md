@@ -61,8 +61,9 @@ src/morphobricks_preprocessing/
                     position_id per image and the duplicate check
   metadata.py       TIFF header inspection (tifffile, no pixel reads), dtype/dimension/series checks,
                     OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes)
-  physical_sizes.py PhysicalSizes (pixel sizes, z-step, time step, a unit per axis) and
-                    read_physical_sizes (OME / ImageJ TIFF metadata); also importable from zarr_export
+  physical_sizes.py PhysicalSizes (pixel sizes, z-step, time step, a unit per axis),
+                    read_physical_sizes (OME / ImageJ TIFF metadata; also importable from
+                    zarr_export) and ngff_physical_sizes (OME-NGFF scale and axis units)
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
@@ -78,8 +79,9 @@ src/morphobricks_preprocessing/
   run.py            preflight(), run_experiment() (incremental), sample_planes() for previews
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
   cli.py, __main__  `morphobricks-preprocessing check|run` (also `python -m morphobricks_preprocessing`)
-  zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array and axis
-                    letters), ngff_label_names/open_ngff_labels (label images, for later bricks),
+  zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis
+                    letters and physical sizes from the scale and axis units),
+                    ngff_label_names/open_ngff_labels (label images, for later bricks),
                     zarr 2/3 helpers, canonical_dtype; needs the `zarr` extra
   zarr_export.py    TIFF -> OME-Zarr conversion (OmeZarrWriter, OME-NGFF 0.4, plane by plane or
                     block by block),

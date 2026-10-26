@@ -6,9 +6,13 @@ such as ``"micrometer"`` and ``"second"``, one per axis, so that an image whose
 Y pixels are measured in another unit than its X pixels is described as it is.
 Sizes are never guessed: what the metadata does not give is None.
 
+OME-Zarr images give the same sizes in their OME-NGFF metadata (0.4 and 0.5):
+the ``scale`` of the level-0 dataset's ``coordinateTransformations``, times the
+``scale`` of the image's own ``coordinateTransformations`` when it has them, with
+each axis's ``unit`` (:func:`ngff_physical_sizes`, used by :mod:`.zarr_input`).
+
 They are recorded with an image's header (:func:`.metadata.inspect_image`) and
-written as the scale of OME-Zarr copies (``docs/contract.md`` §10). The sizes of
-OME-Zarr images are read from their OME-NGFF metadata by :mod:`.zarr_input`.
+written as the scale of OME-Zarr copies (``docs/contract.md`` §2 and §10).
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from xml.etree import ElementTree
 
@@ -142,6 +147,99 @@ def read_physical_sizes(path: str | os.PathLike) -> PhysicalSizes:
     except Exception:  # metadata is optional; a damaged header is reported elsewhere
         logger.debug("Cannot read physical sizes of %s", path, exc_info=True)
     return PhysicalSizes()
+
+
+def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
+    """Return the level-0 physical sizes of an OME-NGFF image (0.4 or 0.5).
+
+    The size of one step along each axis is the ``scale`` of the first dataset's
+    ``coordinateTransformations`` (level 0), multiplied by the ``scale`` of the
+    multiscales entry's own ``coordinateTransformations`` when it has them, as
+    OME-NGFF applies them in turn; translations do not change sizes. Units are
+    each axis's ``unit``, as written (OME-NGFF uses UDUNITS-2 names such as
+    ``"micrometer"``, the names :func:`read_physical_sizes` gives).
+
+    Nothing is guessed: without a level-0 scale (OME-NGFF 0.1 to 0.3, or a scale
+    stored in a separate file through ``path``) or with a malformed one, every
+    size is None; an axis without a ``unit`` has the unit None, and a scale that
+    is not a positive finite number is None. A scale given without a unit is
+    kept: it may be a placeholder (some writers, this brick's OME-Zarr copies
+    included, write 1 when the size is not known).
+
+    Parameters
+    ----------
+    multiscale
+        One entry of the image's ``multiscales`` metadata.
+    axes
+        One letter per dimension, as :func:`.zarr_input.ngff_axes` gives them;
+        X, Y, Z and T are read, the others (C, Q) ignored.
+
+    Returns
+    -------
+    PhysicalSizes
+        Sizes and units of X, Y, Z and T.
+    """
+    datasets = multiscale.get("datasets") or []
+    first = datasets[0] if isinstance(datasets, list) and datasets else {}
+    try:
+        scale = _ngff_scale(first, len(axes))
+        overall = _ngff_scale(multiscale, len(axes))
+    except ValueError:
+        return PhysicalSizes()
+    if scale is None:
+        return PhysicalSizes()
+    if overall is not None:
+        scale = [
+            a * b if a is not None and b is not None else None
+            for a, b in zip(scale, overall, strict=True)
+        ]
+    declared = multiscale.get("axes")
+    units: list[str | None] = [None] * len(axes)
+    if isinstance(declared, list) and len(declared) == len(axes):
+        units = [
+            axis["unit"]
+            if isinstance(axis, dict) and isinstance(axis.get("unit"), str) and axis["unit"]
+            else None
+            for axis in declared
+        ]
+    found: dict[str, tuple[float | None, str | None]] = {}
+    for letter, size, unit in zip(axes, scale, units, strict=True):
+        if letter in "XYZT":
+            found.setdefault(letter, (_number(size), unit))
+    sizes = {letter: found.get(letter, (None, None)) for letter in "XYZT"}
+    return PhysicalSizes(
+        x=sizes["X"][0],
+        y=sizes["Y"][0],
+        z=sizes["Z"][0],
+        t=sizes["T"][0],
+        space_unit=sizes["X"][1],
+        time_unit=sizes["T"][1],
+        x_unit=sizes["X"][1],
+        y_unit=sizes["Y"][1],
+        z_unit=sizes["Z"][1],
+    )
+
+
+def _ngff_scale(entry: dict, ndim: int) -> list[float | None] | None:
+    """Return the ``scale`` in an entry's ``coordinateTransformations``.
+
+    None when the entry has no scale transformation; raises ValueError when it
+    has one that cannot be used (stored in a file, or not one number per axis).
+    """
+    transforms = entry.get("coordinateTransformations") if isinstance(entry, dict) else None
+    if not isinstance(transforms, list):
+        return None
+    for transform in transforms:
+        if not isinstance(transform, dict) or transform.get("type") != "scale":
+            continue
+        values = transform.get("scale")
+        if not isinstance(values, Sequence) or isinstance(values, str) or len(values) != ndim:
+            raise ValueError("the scale is not given as one number per axis")
+        return [
+            float(v) if isinstance(v, int | float) and not isinstance(v, bool) else None
+            for v in values
+        ]
+    return None
 
 
 def _tiff_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:

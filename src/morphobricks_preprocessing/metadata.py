@@ -210,6 +210,7 @@ def inspect_ome_zarr(path: str | os.PathLike, relative_path: str | None = None) 
             page_count=0,
             channel_names=image.channel_names,
             kind=OME_ZARR,
+            physical_sizes=image.physical_sizes,
         )
     except (NgffError, ZarrUnavailableError) as exc:
         logger.debug("Cannot read the OME-Zarr image %s", path, exc_info=True)

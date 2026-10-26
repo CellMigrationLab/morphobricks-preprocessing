@@ -549,3 +549,18 @@ Raised during review; to be decided before the milestones that need them:
     from X now write that axis's own unit. `PhysicalSizes` and `read_physical_sizes` moved
     to the module `physical_sizes` and stay importable from `zarr_export` and the package.
     The CSV, the manifest and their versions are unchanged.*
+23. OME-Zarr physical sizes: `open_ngff` read the axes but not the OME-NGFF scale, so the
+    physical size of an OME-Zarr image's pixels was not available (MorphoRelate milestone
+    M3 reads OME-Zarr input). Should it be?
+    *Decided (October 2026): yes, in the form of question 22. `NgffImage` gains
+    `physical_sizes`: the `scale` of level 0's `coordinateTransformations`, multiplied by
+    the multiscales entry's own `coordinateTransformations` scale when it has one (OME-NGFF
+    applies them in turn; translations are ignored), for X, Y, Z and T, with each axis's
+    `unit` as written (OME-NGFF 0.4 and 0.5). `inspect_image` records them for OME-Zarr
+    images as for TIFF files, and label images opened with `open_ngff_labels` carry their
+    own. Nothing is guessed: without a level-0 scale, with a scale stored in a separate
+    file (`path`) or not one number per axis, every size is None; an axis without a unit
+    has the unit None, and a scale that is not a positive number is None. A scale given
+    without a unit is kept, since only the caller can tell a real calibration from a
+    placeholder (this brick's own copies write 1 without a unit when the size is not
+    known). Information only: the CSV, the manifest and their versions are unchanged.*
