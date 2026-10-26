@@ -356,7 +356,8 @@ class PreprocessingNotebook:
             [
                 ui.help_text(
                     "Each row is a folder of images and the labels its images get. "
-                    "<i>single</i> means the folder level is missing. To change a label, "
+                    "<i>single</i> means the level has one member: the folder level is "
+                    "missing, or the folder is named single. To change a label, "
                     "rename the folder and press <b>Check folder</b> again."
                 ),
                 self.labels_table,

@@ -74,8 +74,12 @@ experiment/
   it where you would put a TIFF file. TIFF and OME-Zarr images can be mixed.
 - Only images in folders **without subfolders** are analysed. Images next to subfolders
   are reported and skipped.
-- Do not name a folder `single`, and do not use two neighbouring folder names that differ
-  only in upper/lower case (`Control` and `control`). Both are errors.
+- A folder may be named `single` (in lower case) when it is the only folder in its place:
+  like a missing level, it means the level has one member, so `treated/single/img_01.tif`
+  has the biological repeat `single`. A folder named `Single` or `SINGLE`, or a `single`
+  folder next to other folders, is an error.
+- Do not use two neighbouring folder names that differ only in upper/lower case
+  (`Control` and `control`). This is an error.
 - Each image is one position (field of view), named after its file without the extension:
   `img_01.tif` and `img_01.ome.zarr` are both position `img_01`. The same name may be used
   in different folders (`tech_rep1/img_01.tif` and `tech_rep2/img_01.tif` are two
@@ -312,7 +316,7 @@ continues.
 |---|---|---|
 | `experiment_not_found` | Error | The folder does not exist. Select an existing folder. |
 | `unreadable_folder` | Error | A folder could not be opened. Check permissions. |
-| `reserved_folder_name` | Error | A folder is named `single`. Rename it. |
+| `reserved_folder_name` | Error | A folder is named `single` in another case (`Single`), or a folder named `single` has other folders beside it. Rename it to `single` in lower case, or give it a name of its own. |
 | `case_conflict` | Error | Neighbouring folders differ only in case. Rename or merge them. |
 | `duplicate_position_id` | Error | Two images in one folder have the same name apart from the extension or upper/lower case (`img_01.tif` and `img_01.ome.zarr`), so their positions cannot be told apart. Rename one, or move it out of the experiment. |
 | `folder_too_deep` | Error | Folders below the technical repeat. Move the images up, or select a lower folder as the experiment. |

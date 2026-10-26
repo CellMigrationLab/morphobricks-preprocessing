@@ -65,7 +65,9 @@ inside leaf folders are analysed. If the experiment root itself contains images 
 subfolders, it is the leaf folder and every label is `single`.
 
 During preflight, show a tree/summary of the inferred labels and ask the user to confirm
-or correct it. The folder name `single` is reserved; report it as an error. Report
+or correct it. A folder may be named `single` (lower case) when it is the only folder in
+its place: it is then a level with one member, labelled `single` like a missing level
+(question 21). Spelled in another case, or beside other folders, it is an error. Report
 warnings for files that are not images, empty folders and images outside leaf folders, and
 explain that they will not be analysed.
 
@@ -213,7 +215,8 @@ Block processing for: mixed dtypes; unreadable TIFF files or OME-Zarr folders in
 folders (or OME-Zarr images without the `zarr` extra); OME-Zarr images whose declared axes
 do not fit the experiment's roles; unsupported sample
 formats or axes; missing/duplicate X or Y, duplicate roles or inconsistent mapping; a plane
-that cannot be read within the memory limit, not even in blocks; a folder named `single`; sibling folders whose names differ only in
+that cannot be read within the memory limit, not even in blocks; a folder named `single`
+in another case or beside other folders; sibling folders whose names differ only in
 case; a folder below the technical-repeat level; an output folder inside the experiment;
 no usable planes. System files (dot-files, `Thumbs.db`, `desktop.ini`, `__MACOSX`) are
 ignored silently.
@@ -519,3 +522,16 @@ Raised during review; to be decided before the milestones that need them:
     table with blank `position_id` is filled on the next run from the paths, without
     reading pixels. The normalization contract's note "never inferred from file names"
     (§8.2) predates D02 and is to be aligned in that repository.*
+21. A folder named `single` was an error, but in the MorphoBricks convention (CellPatcher's
+    trees, MorphoRelate's data such as `<condition>/single/<images>`) a level written
+    `single` means "this level exists with one member". Can such a folder be read?
+    *Decided (October 2026, for MorphoRelate milestone M3): yes. A folder named `single` in
+    lower case is accepted as its level's value `single` when it is the only folder in its
+    place (system folders such as `.ipynb_checkpoints` and `__MACOSX` aside), so
+    `<condition>/single/<images>` gives `biological_repeat` and `technical_repeat`
+    `single`, the labels of `<condition>/<images>`. The reservation had no recorded reason
+    beyond keeping `single` for missing levels; what it protects is that `single` keeps one
+    meaning, so two cases stay errors (`reserved_folder_name`): another spelling (`Single`
+    would be a label different from the `single` written for missing levels), and a
+    `single` folder with other folders beside it (the level would have several members,
+    one called `single`). The CSV, the manifest and their versions are unchanged.*

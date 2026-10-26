@@ -148,8 +148,10 @@ functions the tests use.
 - **Hierarchy:** `<experiment>/<condition>/<biological repeat>/<technical repeat>/<image>.tif`.
 - **Leaf folders:** a leaf folder has images and no subfolders. Only TIFFs directly in
   leaf folders are analysed.
-- **Missing levels:** a branch may stop early; missing labels are the reserved value
-  `single`. A folder *named* `single` (any case) is an error.
+- **Missing levels:** a branch may stop early; missing labels are the value `single`. A
+  folder *named* `single` (lower case) that is the only folder in its place is that level's
+  value `single` (a level with one member, plan §12 question 21); spelled in another case,
+  or beside other folders, it is the error `reserved_folder_name`.
 - **Uniqueness:** labels are unique only among siblings, compared case-insensitively;
   siblings differing only in case are an error. Groups are identified by the full label
   path.
@@ -313,6 +315,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
+| Folders named `single` (Q21) | Accepted as the level's value `single` when lower case and the only folder in its place (MorphoBricks one-member level, MorphoRelate M3); another case or other folders beside it stay `reserved_folder_name` |
 | Channel names (Q1) | Manifest only (from OME), warning `channel_names_differ`; CSV stays at schema 1 |
 | Plane coordinates (Q17) | `z`, `c`, `t` always written (0 for absent axes), `plane_id` always `::z=…,c=…,t=…`; CSV schema 2, version-1 tables recomputed on the next run |
 | OME-NGFF labels (Q18) | Read-only helpers `ngff_label_names`/`open_ngff_labels` for later bricks (CellPatcher masks); label images are never analysed and the outputs do not change |
