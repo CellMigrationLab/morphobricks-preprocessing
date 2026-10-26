@@ -2,7 +2,7 @@
 
 ## Environment
 
-- Python 3.10 or newer.
+- Python 3.11 or newer.
 - Core dependencies: `numpy`, `tifffile` and `morphobricks-normalization` (installed from
   its GitHub release tag; it holds the histogram, CSV, pooling and normalization code).
   Notebook dependencies (`ipywidgets`,

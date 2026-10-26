@@ -23,7 +23,7 @@ import tempfile
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from morphobricks_normalization.csv_io import (
@@ -490,7 +490,7 @@ def run_experiment(
             ),
             csv_sha256=file_sha256(csv_path),
             versions=package_versions(),
-            written_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            written_at=datetime.now(UTC).isoformat(timespec="seconds"),
         )
         write_manifest(manifest, staged / MANIFEST_FILENAME)
     logger.info(

@@ -12,7 +12,7 @@ its own output folder, which is never inside the experiment folder.
 
 ## 1. Installation
 
-You need Python 3.10 or newer and JupyterLab (or Jupyter Notebook). Download
+You need Python 3.11 or newer and JupyterLab (or Jupyter Notebook). Download
 [`notebooks/MorphoBricks_Preprocessing.ipynb`](../notebooks/MorphoBricks_Preprocessing.ipynb), open it in Jupyter and
 run **Step 0**. It detects local Jupyter or Google Colab and checks these options:
 

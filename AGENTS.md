@@ -128,7 +128,7 @@ functions the tests use.
    *Summary* (by module), *Decisions*, *Notes for review* (limitations, what was not
    verified), *Tests* (exact counts, e.g. "455 passed, 2 skipped").
 5. **Done means:** `ruff check .`, `ruff format --check .` and `pytest` all pass (CI runs
-   lint on Ubuntu and tests on Ubuntu, Windows and macOS with Python 3.10 and 3.13), docs
+   lint on Ubuntu and tests on Ubuntu, Windows and macOS with Python 3.11 and 3.13), docs
    updated, and local changes ready for review. Open a PR only when the user requests it.
 6. **Be honest in reports.** Say what was verified and what was not (for example: "widgets
    tested headless; not looked at in a real JupyterLab").
@@ -335,7 +335,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 
 ## 6. Programming style
 
-- **Python 3.10+.** Put `from __future__ import annotations` in every module, and type
+- **Python 3.11+** (MorphoBricks decision D01). Put `from __future__ import annotations` in every module, and type
   hints on all public functions.
 - **Ruff is the authority.** Line length 100. Rules E, W, F, I, B, UP, NPY and D, with
   numpy docstring convention; D105 and D107 ignored; tests are exempt from D.
@@ -397,7 +397,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 - **Notebook widgets are tested headless:** build the pages, drive them with
   `button.click()` and `.value = …`, and assert on `.value` of HTML widgets. Tests skip
   if ipywidgets/matplotlib are missing; CI installs `.[dev,notebook,zarr]`. OME-Zarr
-  tests skip without zarr; CI's Python 3.10 jobs get zarr 2.18 and 3.13 jobs zarr 3.
+  tests skip without zarr; CI's Python 3.11 jobs pin zarr 2.18 and 3.13 jobs get zarr 3.
 - **The notebook file is tested too:**
   - valid nbformat 4, with no outputs;
   - code cells hidden and titled `# @markdown ### Run to …`;
