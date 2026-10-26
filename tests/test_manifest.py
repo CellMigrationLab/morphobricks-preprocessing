@@ -132,11 +132,23 @@ def test_read_in_blocks_round_trips_and_defaults_to_false(tmp_path):
     assert not read_manifest(path).files[0].read_in_blocks
 
 
+def test_position_id_round_trips_and_is_none_when_absent(tmp_path):
+    original = manifest(files=(entry(position_id="a"), entry("cond/rep/b.tif", position_id="b")))
+    path = write_manifest(original, tmp_path / "m.json")
+    assert read_manifest(path) == original
+    data = json.loads(path.read_bytes())
+    assert [f["position_id"] for f in data["files"]] == ["a", "b"]
+    del data["files"][0]["position_id"]  # written before position identifiers were recorded
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert read_manifest(path).files[0].position_id is None
+
+
 def test_file_entry_for_reads_size_and_time(tmp_path):
     path = write_tiff(tmp_path / "a.tif")
     found = file_entry_for(tmp_path, "a.tif", ("single",) * 3, prefill_mapping("YX"))
     stat = os.stat(path)
     assert (found.size, found.mtime_ns, found.axes) == (stat.st_size, stat.st_mtime_ns, "YX")
+    assert found.position_id == "a"
 
 
 def test_file_sha256(tmp_path):

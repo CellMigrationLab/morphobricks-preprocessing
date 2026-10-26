@@ -57,7 +57,8 @@ Pipeline:
 
 ```
 src/morphobricks_preprocessing/
-  discovery.py      folder walk, leaf folders, labels (condition / biological_repeat / technical_repeat)
+  discovery.py      folder walk, leaf folders, labels (condition / biological_repeat / technical_repeat),
+                    position_id per image and the duplicate check
   metadata.py       TIFF header inspection (tifffile, no pixel reads), dtype/dimension/series checks,
                     OME channel names + significant bits
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
@@ -127,7 +128,7 @@ functions the tests use.
    *Summary* (by module), *Decisions*, *Notes for review* (limitations, what was not
    verified), *Tests* (exact counts, e.g. "455 passed, 2 skipped").
 5. **Done means:** `ruff check .`, `ruff format --check .` and `pytest` all pass (CI runs
-   lint on Ubuntu and tests on Ubuntu, Windows and macOS with Python 3.10 and 3.13), docs
+   lint on Ubuntu and tests on Ubuntu, Windows and macOS with Python 3.11 and 3.13), docs
    updated, and local changes ready for review. Open a PR only when the user requests it.
 6. **Be honest in reports.** Say what was verified and what was not (for example: "widgets
    tested headless; not looked at in a real JupyterLab").
@@ -154,6 +155,11 @@ functions the tests use.
   path.
 - **Depth:** a folder below the technical-repeat level is an **error** (so a layer of images
   is never dropped silently).
+- **Positions (cross-brick decision D02):** one image is one position. Its `position_id`
+  (`discovery.position_id`) is the name without `.tif`/`.tiff`/`.zarr` and a preceding
+  `.ome`. The position key is `condition` + `biological_repeat` + `technical_repeat` +
+  `position_id`. Two images in one leaf folder with the same identifier, ignoring case,
+  are the error `duplicate_position_id`: never guess.
 - **System files:** dot-files and dot-folders, `Thumbs.db`, `desktop.ini` and `__MACOSX` are
   ignored **without** a warning.
 - **Warnings:** non-TIFF files, empty folders, TIFFs outside leaf folders.
@@ -229,6 +235,8 @@ functions the tests use.
 - **`plane_id`** = relative path plus `::z=…,c=…,t=…`, always all three
   (`img.tif::z=0,c=0,t=0` for a 2D image). It is the row key.
 - **Rows** are sorted by path, then z, c, t.
+- **`position_id`** is filled in every row (D02, plan §12 question 20). Earlier tables with
+  it blank are filled on the next run without reading pixels.
 - **Reading:** labels are always read back as text (`NA`, `001`, `TRUE` stay as typed).
   Floats are written with `repr`.
 
@@ -236,7 +244,8 @@ functions the tests use.
 
 - **Manifest contents:**
   - settings, the confirmed labels per leaf, and the axis mapping;
-  - per-file size, `mtime_ns`, axes, `singleton_roles` and plane count;
+  - per-file size, `mtime_ns`, axes, `singleton_roles`, plane count and `position_id`
+    (optional key, null when absent; manifest version stays 1);
   - channel names and significant bits (OME only, information only);
   - the CSV's SHA-256 and package versions (including `morphobricks-normalization`).
 - **A file is unchanged** when its size, mtime, labels and axis layout match and the table
@@ -315,6 +324,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--memory-limit 2GiB`, `--missing-as-singleton`, `--force-rebuild`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata. Exit 1 on errors |
 | Large planes (Q15) | Planes over the memory limit are read in blocks automatically, announced by the warning `planes_read_in_blocks` and `read_in_blocks` in the manifest. Block size derived from the limit (whole strips/tiles/chunks, uncompressed pieces and chunks also by rows). Compressed single-strip/tile planes keep the `plane_over_memory_limit` error. Two-pass histograms identical to whole planes. OME-Zarr copies written block by block, smaller levels built from the stored level above. Axis preview reduced (every n-th pixel) with a caption saying so |
 | Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Their public names stay importable from `morphobricks_preprocessing` and from the old submodules for one version: module `__getattr__` stand-ins (`_moved.py`), one `DeprecationWarning` per old path naming `morphobricks_normalization.<module>.<name>`, same objects. The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, §8.2) |
+| Position identity (Q20, D02) | `position_id` = image name without extension, in every CSV row and manifest file entry; FOV key = labels + `position_id`; duplicates in one leaf folder are the error `duplicate_position_id`. CSV columns and schema 2 unchanged; manifest version 1 with an optional key |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
 | Paths and filenames in widget HTML and notebook text | **`<b>…</b>` / `**…**`, never `<code>` or inline code** |
@@ -325,7 +335,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 
 ## 6. Programming style
 
-- **Python 3.10+.** Put `from __future__ import annotations` in every module, and type
+- **Python 3.11+** (MorphoBricks decision D01). Put `from __future__ import annotations` in every module, and type
   hints on all public functions.
 - **Ruff is the authority.** Line length 100. Rules E, W, F, I, B, UP, NPY and D, with
   numpy docstring convention; D105 and D107 ignored; tests are exempt from D.
@@ -387,7 +397,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 - **Notebook widgets are tested headless:** build the pages, drive them with
   `button.click()` and `.value = …`, and assert on `.value` of HTML widgets. Tests skip
   if ipywidgets/matplotlib are missing; CI installs `.[dev,notebook,zarr]`. OME-Zarr
-  tests skip without zarr; CI's Python 3.10 jobs get zarr 2.18 and 3.13 jobs zarr 3.
+  tests skip without zarr; CI's Python 3.11 jobs pin zarr 2.18 and 3.13 jobs get zarr 3.
 - **The notebook file is tested too:**
   - valid nbformat 4, with no outputs;
   - code cells hidden and titled `# @markdown ### Run to …`;
@@ -584,7 +594,8 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   written (PR #14, question 17), OME-NGFF label readers (PR #15, question 18), and
   follow-up P1 of the normalization plan: the dependency on `morphobricks-normalization`
   v0.1.0 with deprecated re-exports, its version in the manifest, Step 0 checking for it,
-  and contract §3–§7 moved to the normalization contract (PRs #16 and #17, question 19).
+  and contract §3–§7 moved to the normalization contract (PRs #16 and #17, question 19),
+  and `position_id` filled per cross-brick decision D02 (question 20).
 - **Next (not started):** follow-ups P2–P5 of the normalization plan (modality,
   references, colour statistics, previews).
 - **Not yet verified:**

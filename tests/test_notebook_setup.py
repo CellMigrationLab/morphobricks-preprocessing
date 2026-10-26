@@ -172,8 +172,8 @@ def test_setup_reports_colab_without_importing_or_mounting_drive(
 
 
 def test_setup_rejects_old_python_before_installing(setup_environment, monkeypatch):
-    monkeypatch.setattr(sys, "version_info", (3, 9, 0))
-    with pytest.raises(RuntimeError, match="Python 3.10 or newer"):
+    monkeypatch.setattr(sys, "version_info", (3, 10, 0))
+    with pytest.raises(RuntimeError, match="Python 3.11 or newer"):
         setup_environment.start()
     assert setup_environment.installs == setup_environment.imports == []
 

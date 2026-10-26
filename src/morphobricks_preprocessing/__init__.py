@@ -28,6 +28,7 @@ from .discovery import (
     check_output_folder,
     default_output_folder,
     discover_experiment,
+    position_id,
 )
 from .manifest import (
     MANIFEST_FILENAME,
@@ -179,6 +180,7 @@ __all__ = [
     "percentile_range",
     "plane_layout",
     "pooled_statistics",
+    "position_id",
     "prefill_experiment_mapping",
     "prefill_mapping",
     "preflight",

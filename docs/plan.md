@@ -168,6 +168,7 @@ Columns, in order: `position_id, image_file, z, c, t, condition, biological_repe
 technical_repeat, source_relative_path, plane_id, dtype, bit_depth, pixel_min, pixel_max,
 total_pixel_count, valid_pixel_count, binning_min, binning_max, bin_count,
 schema_version`, then `histogram_bin_00000` onwards. Details in contract §5.
+`position_id` is the image name without its extension (question 20).
 
 The wide CSV is for computational use; spreadsheet programs may not open all columns. The
 package provides `read_plane_histograms()`, which keeps labels as text. Alongside the CSV,
@@ -304,6 +305,10 @@ API, CLI). The notebook and CLI only call the API.
   and normalization modules come from `morphobricks-normalization` v0.1.0, a required
   dependency; the old names stay importable here with a `DeprecationWarning` for one
   version. Outputs are unchanged. *Implemented, see question 19.*
+- **Position identity (cross-brick decision D02):** every row and every manifest file
+  entry carries the image's `position_id`, so `condition`, `biological_repeat`,
+  `technical_repeat` and `position_id` identify a position in every brick; images in one
+  leaf folder with the same identifier are refused. *Implemented, see question 20.*
 
 ## 11. Tests and acceptance criteria
 
@@ -495,3 +500,22 @@ Raised during review; to be decided before the milestones that need them:
     the notebook's Step 0 installs the new dependency into environments set up before it;
     and the text of contract §3–§7 moved to the normalization brick's contract (§1.2 and
     §8.2), leaving short pointers here.*
+20. The CSV has a `position_id` column that this brick left blank, and the run manifest
+    had no position per file. How are positions identified across bricks (cross-brick
+    audit finding X02)?
+    *Decided (October 2026, cross-brick decision D02 of 26 October 2026): a position
+    (field of view) is identified in every brick by `condition`, `biological_repeat`,
+    `technical_repeat` and `position_id`; `position_id` falls back to the image file name
+    without its extension only when one file is exactly one position. Here it always is
+    (several series and position-like axes are errors: question 2 and contract §2), so
+    every row's `position_id` is the image name without `.tif`, `.tiff` or `.zarr` (and a
+    preceding `.ome`): `img_01.ome.tif` gives `img_01`. Equal names in two technical
+    repeats are two positions. Two images in one leaf folder with the same identifier,
+    ignoring case (`img_01.tif` and `img_01.ome.zarr`), are the error
+    `duplicate_position_id` rather than a guess; excluding one of them does not resolve
+    it, renaming or moving one does. The manifest gains the optional per-file key
+    `position_id` (null when absent) and stays at version 1, like the optional keys of
+    questions 12 and 15. The CSV columns and schema version 2 are unchanged; an earlier
+    table with blank `position_id` is filled on the next run from the paths, without
+    reading pixels. The normalization contract's note "never inferred from file names"
+    (§8.2) predates D02 and is to be aligned in that repository.*

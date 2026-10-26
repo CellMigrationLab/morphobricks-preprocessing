@@ -1,10 +1,13 @@
+import hashlib
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import pytest
 import tifffile
+from morphobricks_normalization.csv_io import write_plane_histograms
 
 from morphobricks_preprocessing import (
     MANIFEST_FILENAME,
@@ -188,6 +191,79 @@ def test_manifest_records_channel_names_and_significant_bits(tmp_path):
     manifest = read_manifest(result.manifest_path)
     assert manifest.file("img_1.ome.tif").channel_names == ("DAPI", "RFP")
     assert manifest.file("img_0.ome.tif").significant_bits == 12
+
+
+# Positions (cross-brick decision D02) -------------------------------------------------
+
+
+def test_every_row_has_its_position_id(experiment):
+    result = run_experiment(experiment, ZYX)
+    records = read_plane_histograms(result.csv_path)
+    assert {r.position_id for r in records} == {"img_01", "img_02"}
+    # The same file name in two technical repeats gives two distinct positions.
+    keys = {
+        (r.condition, r.biological_repeat, r.technical_repeat, r.position_id)
+        for r in records
+        if r.image_file == "img_01.tif"
+    }
+    assert keys == {
+        ("control", "bio_rep1", "tech_rep1", "img_01"),
+        ("control", "bio_rep1", "tech_rep2", "img_01"),
+        ("treated", "bio_rep1", SINGLE, "img_01"),
+        ("treated", "bio_rep2", "tech_rep1", "img_01"),
+    }
+    # Position key plus plane coordinates identifies every row.
+    rows = [
+        (r.condition, r.biological_repeat, r.technical_repeat, r.position_id, r.z, r.c, r.t)
+        for r in records
+    ]
+    assert len(set(rows)) == len(rows) == 2 * len(IMAGES)
+    manifest = read_manifest(result.manifest_path)
+    assert {f.relative_path: f.position_id for f in manifest.files} == {
+        rel: rel.rsplit("/", 1)[-1].removesuffix(".tif") for rel in IMAGES
+    }
+    data = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert data["manifest_version"] == "1" and data["schema_version"] == "2"
+    assert all("position_id" in f for f in data["files"])
+
+
+def test_position_ids_that_are_text_stay_text(tmp_path):
+    root = tmp_path / "exp"
+    for seed, rel in enumerate(["ctrl/001.tif", "ctrl/NA.tif", "drug/TRUE.tif"]):
+        write_data(root / rel, stack(seed), "ZYX")
+    result = run_experiment(root, ZYX)
+    records = read_plane_histograms(result.csv_path)
+    assert sorted({r.position_id for r in records}) == ["001", "NA", "TRUE"]
+
+
+def test_images_with_the_same_position_id_are_refused(experiment):
+    write_data(experiment / "control/bio_rep1/tech_rep1/img_01.ome.tif", stack(9), "ZYX")
+    result = run_experiment(experiment, ZYX)
+    assert not result.written and not result.output_folder.exists()
+    assert issue(result.issues, "duplicate_position_id").paths == (
+        "control/bio_rep1/tech_rep1/img_01.ome.tif",
+        "control/bio_rep1/tech_rep1/img_01.tif",
+    )
+    assert not preflight(experiment).ok
+
+
+def test_table_without_position_ids_is_filled_without_reading(experiment, reads):
+    first = run_experiment(experiment, ZYX)
+    table = csv_bytes(first)
+    # A table and manifest written before position identifiers were recorded.
+    blank = [replace(r, position_id=None) for r in read_plane_histograms(first.csv_path)]
+    write_plane_histograms(blank, first.csv_path)
+    data = json.loads(first.manifest_path.read_text(encoding="utf-8"))
+    for f in data["files"]:
+        del f["position_id"]
+    data["csv_sha256"] = hashlib.sha256(first.csv_path.read_bytes()).hexdigest()
+    first.manifest_path.write_text(json.dumps(data), encoding="utf-8")
+    reads.clear()
+    result = run_experiment(experiment, ZYX)
+    assert result.written and result.rebuild_reason is None
+    assert result.unchanged == tuple(sorted(IMAGES)) and reads == []
+    assert csv_bytes(result) == table
+    assert all(f.position_id for f in read_manifest(result.manifest_path).files)
 
 
 def test_custom_output_folder(experiment, tmp_path):

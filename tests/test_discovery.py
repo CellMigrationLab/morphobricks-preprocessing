@@ -8,6 +8,7 @@ from morphobricks_preprocessing import (
     check_output_folder,
     default_output_folder,
     discover_experiment,
+    position_id,
 )
 from morphobricks_preprocessing.discovery import is_system_name, is_tiff_name
 from tiff_tree import make_tree
@@ -266,6 +267,54 @@ def test_folders_below_technical_repeat_are_an_error(tmp_path):
     assert found.severity is Severity.ERROR
     assert found.paths == ("cond/bio/tech/extra",)
     assert result.images == ("cond/bio/tech2/a.tif",)
+
+
+# Positions (cross-brick decision D02) -------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("image", "expected"),
+    [
+        ("a.tif", "a"),
+        ("ctrl/rep1/tech1/img_01.tiff", "img_01"),
+        ("ctrl/img_01.ome.tif", "img_01"),
+        ("IMG_01.OME.TIFF", "IMG_01"),
+        ("ctrl/img_01.ome.zarr", "img_01"),
+        ("ctrl/img_01.zarr", "img_01"),
+        ("ctrl\\001.tif", "001"),
+        ("a.b.tif", "a.b"),
+        ("ome.tif", "ome"),
+    ],
+)
+def test_position_id_is_the_image_name_without_extension(image, expected):
+    assert position_id(image) == expected
+
+
+def test_equal_names_in_different_technical_repeats_are_fine(tmp_path):
+    make_tree(tmp_path, ["ctrl/bio1/tech1/img_01.tif", "ctrl/bio1/tech2/img_01.tif"])
+    result = discover_experiment(tmp_path)
+    assert result.issues == ()
+    keys = {(*leaf.labels, position_id(image)) for leaf in result.leaves for image in leaf.images}
+    assert keys == {("ctrl", "bio1", "tech1", "img_01"), ("ctrl", "bio1", "tech2", "img_01")}
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        ("img_01.tif", "img_01.ome.zarr/"),
+        ("img_01.tif", "img_01.tiff"),
+        ("img_01.ome.tif", "img_01.tif"),
+        ("IMG_01.tiff", "img_01.tif"),
+    ],
+)
+def test_images_with_the_same_position_id_in_one_folder_are_an_error(tmp_path, names):
+    make_tree(tmp_path, [f"ctrl/tech1/{name}" for name in names] + ["ctrl/tech2/img_01.tif"])
+    result = discover_experiment(tmp_path)
+    assert not result.ok
+    found = issue(result, "duplicate_position_id")
+    assert found.severity is Severity.ERROR
+    assert found.paths == tuple(sorted(f"ctrl/tech1/{name.rstrip('/')}" for name in names))
+    assert found.action
 
 
 def test_output_folder_inside_experiment_is_an_error(tmp_path):
