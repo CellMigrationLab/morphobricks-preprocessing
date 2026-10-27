@@ -568,7 +568,8 @@ Raised during review; to be decided before the milestones that need them:
     `physical_sizes`: the `scale` of level 0's `coordinateTransformations`, multiplied by
     the multiscales entry's own `coordinateTransformations` scale when it has one (OME-NGFF
     applies them in turn; translations are ignored), for X, Y, Z and T, with each axis's
-    `unit` as written (OME-NGFF 0.4 and 0.5). `inspect_image` records them for OME-Zarr
+    `unit` (OME-NGFF 0.4 and 0.5), common spellings (`µm`, `um`, `micron`, `s`) given as
+    the UDUNITS-2 names TIFF units get, other units as written. `inspect_image` records them for OME-Zarr
     images as for TIFF files, and label images opened with `open_ngff_labels` carry their
     own. Nothing is guessed: without a level-0 scale, with a scale stored in a separate
     file (`path`) or not one number per axis, every size is None; an axis without a unit

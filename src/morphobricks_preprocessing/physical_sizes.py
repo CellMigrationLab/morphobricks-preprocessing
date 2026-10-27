@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from xml.etree import ElementTree
@@ -31,6 +32,10 @@ logger = logging.getLogger(__name__)
 # Units in OME and ImageJ metadata, and their OME-NGFF (UDUNITS-2) names.
 _SPACE_UNITS = {
     "pm": "picometer",
+    "Å": "angstrom",  # the OME symbol, LATIN CAPITAL LETTER A WITH RING ABOVE
+    "\u212b": "angstrom",  # ANGSTROM SIGN
+    "å": "angstrom",  # ImageJ units are compared in lower case
+    "angstrom": "angstrom",
     "nm": "nanometer",
     "µm": "micrometer",
     "μm": "micrometer",
@@ -184,8 +189,9 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
     ``coordinateTransformations`` (level 0), multiplied by the ``scale`` of the
     multiscales entry's own ``coordinateTransformations`` when it has them, as
     OME-NGFF applies them in turn; translations do not change sizes. Units are
-    each axis's ``unit``, as written (OME-NGFF uses UDUNITS-2 names such as
-    ``"micrometer"``, the names :func:`read_physical_sizes` gives).
+    each axis's ``unit`` as UDUNITS-2 names, the names OME-NGFF uses and
+    :func:`read_physical_sizes` gives: common spellings such as ``"µm"``, ``"um"``
+    or ``"micron"`` become ``"micrometer"``, other units are kept as written.
 
     Nothing is guessed: without a level-0 scale (OME-NGFF 0.1 to 0.3, or a scale
     stored in a separate file through ``path``) or with a malformed one, every
@@ -224,16 +230,12 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
     declared = multiscale.get("axes")
     units: list[str | None] = [None] * len(axes)
     if isinstance(declared, list) and len(declared) == len(axes):
-        units = [
-            axis["unit"]
-            if isinstance(axis, dict) and isinstance(axis.get("unit"), str) and axis["unit"]
-            else None
-            for axis in declared
-        ]
+        units = [axis.get("unit") if isinstance(axis, dict) else None for axis in declared]
     found: dict[str, tuple[float | None, str | None]] = {}
     for letter, size, unit in zip(axes, scale, units, strict=True):
         if letter in "XYZT":
-            found.setdefault(letter, (_number(size), unit))
+            table = _TIME_UNITS if letter == "T" else _SPACE_UNITS
+            found.setdefault(letter, (_number(size), _ngff_unit(unit, table)))
     sizes = {letter: found.get(letter, (None, None)) for letter in "XYZT"}
     return _sizes(
         sizes["X"][0],
@@ -313,7 +315,7 @@ def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
     y_unit = _imagej_unit(meta["yunit"]) if "yunit" in meta else unit
     z_unit = _imagej_unit(meta["zunit"]) if "zunit" in meta else unit
     page = tif.pages.first
-    time_unit = _TIME_UNITS.get(str(meta.get("tunit", "sec")).strip().lower())
+    time_unit = _TIME_UNITS.get(_imagej_text(meta.get("tunit", "sec")))
     # Without a unit the resolution tags are a default (often 1 pixel per inch).
     return _sizes(
         _resolution(page.tags.get("XResolution")) if unit else None,
@@ -325,8 +327,32 @@ def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
     )
 
 
+def _ngff_unit(value, table: dict[str, str]) -> str | None:
+    """Return an OME-NGFF axis unit with common spellings as UDUNITS-2 names.
+
+    ``"µm"``, ``"um"`` and ``"micron"`` become ``"micrometer"``, ``"s"``
+    becomes ``"second"``; other units are kept as written, and spellings of two
+    letters or fewer are matched exactly (``"Mm"`` is not ``"mm"``).
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    known = table.get(text) or (table.get(text.lower()) if len(text) > 2 else None)
+    return known or text
+
+
 def _imagej_unit(value) -> str | None:
-    return _SPACE_UNITS.get(str(value or "").strip().lower())
+    return _SPACE_UNITS.get(_imagej_text(value))
+
+
+def _imagej_text(value) -> str:
+    r"""Return an ImageJ unit in lower case, with its ``\uXXXX`` escapes decoded.
+
+    ImageJ writes non-ASCII characters as ``\u00B5`` in the TIFF description, and
+    tifffile returns them as written, so ``\u00B5m`` is a micrometre.
+    """
+    text = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), str(value or ""))
+    return text.strip().lower()
 
 
 def _resolution(tag) -> float | None:

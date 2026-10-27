@@ -2,6 +2,7 @@ import pickle
 from dataclasses import replace
 
 import numpy as np
+import pytest
 import tifffile
 
 from morphobricks_preprocessing import PhysicalSizes, read_physical_sizes, zarr_export
@@ -153,3 +154,62 @@ def test_units_of_unknown_sizes_and_channels_are_none():
 def test_still_importable_from_zarr_export():
     assert zarr_export.PhysicalSizes is physical_sizes_module.PhysicalSizes is PhysicalSizes
     assert zarr_export.read_physical_sizes is read_physical_sizes
+
+
+# Unit spellings ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("symbol", ["Å", "Å"])
+def test_ome_angstroms(tmp_path, symbol):
+    path = write_ome(
+        tmp_path / "a.ome.tif",
+        PhysicalSizeX=5.0,
+        PhysicalSizeXUnit=symbol,
+        PhysicalSizeY=5.0,
+        PhysicalSizeYUnit=symbol,
+    )
+    sizes = read_physical_sizes(path)
+    assert (sizes.unit("X"), sizes.unit("Y")) == ("angstrom", "angstrom")
+
+
+def test_imagej_escaped_micro_sign(tmp_path):
+    # ImageJ writes the micro sign as µ in the description; tifffile keeps the text.
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(
+        path,
+        np.zeros((3, 8, 8), np.uint16),
+        imagej=True,
+        resolution=(1 / 0.25, 1 / 0.5),
+        metadata={
+            "axes": "ZYX",
+            "unit": "\\u00B5m",
+            "yunit": "\\u00B5m",
+            "zunit": "\\u00B5m",
+            "spacing": 1.5,
+        },
+    )
+    assert tifffile.TiffFile(path).imagej_metadata["unit"] == "\\u00B5m"
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.y, sizes.z) == (0.25, 0.5, 1.5)
+    assert [sizes.unit(role) for role in "XYZ"] == ["micrometer"] * 3
+
+
+def test_ngff_unit_spellings_become_udunits_names():
+    multiscale = {
+        "axes": [
+            {"name": "t", "type": "time", "unit": "s"},
+            {"name": "z", "type": "space", "unit": "µm"},
+            {"name": "y", "type": "space", "unit": "Micron"},
+            {"name": "x", "type": "space", "unit": "um"},
+        ],
+        "datasets": [
+            {"path": "0", "coordinateTransformations": [{"type": "scale", "scale": [1, 2, 3, 4]}]}
+        ],
+    }
+    sizes = physical_sizes_module.ngff_physical_sizes(multiscale, "TZYX")
+    assert [sizes.unit(role) for role in "TZYX"] == ["second"] + ["micrometer"] * 3
+    # Other units are kept as written; short spellings are matched exactly.
+    multiscale["axes"][1]["unit"] = "kilometer"
+    multiscale["axes"][2]["unit"] = "Mm"
+    sizes = physical_sizes_module.ngff_physical_sizes(multiscale, "TZYX")
+    assert (sizes.unit("Z"), sizes.unit("Y")) == ("kilometer", "Mm")
