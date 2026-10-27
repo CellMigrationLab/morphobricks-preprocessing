@@ -36,6 +36,9 @@ Pre-alpha. Implemented and tested:
   confirmed by the user and recorded in the run manifest (`image_type`)
 - Running an experiment end to end and updating earlier output incrementally, with a
   run manifest (`run`, `manifest`)
+- Intensity checks of the written table: images far from the others of their biological
+  repeat, shifted biological repeats, saturated images and images without spread, with
+  plots per channel in the notebook (`intensity`)
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
   and a command line (`morphobricks-preprocessing check` / `run`)
 
@@ -96,7 +99,8 @@ conditions, and that they are comparable) and write `experiment_design.csv`; in 
 pass it with `design=` (see the [user guide](docs/user_guide.md) §9). Later bricks read it
 with `read_experiment_design`. They also ask for the image type, `fluorescence` or `rgb`
 (suggested by `review_image_type`), and record it in the manifest; in Python, pass it with
-`image_type=`.
+`image_type=`. After writing, the run checks the images' intensities from the table
+(`result.intensity`); `check_table(path)` checks any table.
 
 ## Example
 
