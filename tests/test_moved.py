@@ -134,6 +134,13 @@ def test_the_package_itself_never_warns(tmp_path, capsys):
     for rel in ["ctrl/rep1/a.tif", "drug/rep1/b.tif"]:
         write_data(root / rel, rng.integers(0, 200, (2, 8, 8), dtype=np.uint8), axes="ZYX")
     assert main(["check", str(root)]) == 0
+    # The first run writes the experiment design for the user to confirm.
+    assert main(["run", str(root), "--axes", "ZYX"]) == 1
+    path = mbp.default_output_folder(root) / mbp.DESIGN_FILENAME
+    design = mbp.read_experiment_design(path)
+    for group in design.groups:
+        design = design.with_confirmed(group, True, "2026-10-26")
+    mbp.write_experiment_design(design, path)
     assert main(["run", str(root), "--axes", "ZYX"]) == 0
     capsys.readouterr()
     assert _moved._warned == set()

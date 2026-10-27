@@ -93,7 +93,7 @@ method is an offset and a scale, `(pixels − offset) / scale`.
 
 | Severity | Situations | Effect |
 |---|---|---|
-| Error | Mixed dtypes; unreadable TIFF (header or pixel data) or OME-Zarr folder in a leaf folder that is not excluded; OME-Zarr images, or converting TIFF images to OME-Zarr, without the `zarr` extra; OME-Zarr images whose declared axes do not fit the experiment's roles; every image excluded; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane that cannot be read within the memory limit, not even in blocks (for example a plane stored compressed in one piece); folder named `single`; sibling folders differing only in case; images in one leaf folder with the same position identifier (§1); folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
+| Error | Experiment design not confirmed (`design_not_confirmed`) or a repeat group holding two folders of one condition (`repeat_group_conflict`), when a design is used (§12); mixed dtypes; unreadable TIFF (header or pixel data) or OME-Zarr folder in a leaf folder that is not excluded; OME-Zarr images, or converting TIFF images to OME-Zarr, without the `zarr` extra; OME-Zarr images whose declared axes do not fit the experiment's roles; every image excluded; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane that cannot be read within the memory limit, not even in blocks (for example a plane stored compressed in one piece); folder named `single`; sibling folders differing only in case; images in one leaf folder with the same position identifier (§1); folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
 | Warning | Files that are not images; empty folders; images outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image widths or heights; different numbers of channels, depth slices, time points or other planes; physical pixel sizes that differ or are known for only some images; unbalanced numbers of images; biological repeats missing from some conditions (§11); planes without finite pixels while others remain; planes over the memory limit that are read in blocks | Processing continues; the item is reported |
 
 Every message states what happened in plain language, lists the affected paths, and
@@ -135,6 +135,7 @@ file's schema or statistical interpretation.
 | `labels` | One entry per leaf folder: `folder` (relative path, `.` for the root) and its three labels. |
 | `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count`, `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata), `ome_zarr_path` (for a TIFF converted to OME-Zarr, the copy relative to the output folder; null otherwise or when the key is absent), `read_in_blocks` (true when the image's planes are over the memory limit and are read in blocks; information only, false when absent), `position_id` (the image's position identifier, §1; null when absent, in manifests written before it). For an OME-Zarr image, `size` is the total size of its files and `mtime_ns` the time of its newest file. |
 | `csv_sha256` | SHA-256 of the table written with this manifest. |
+| `experiment_design_sha256` | SHA-256 of the `experiment_design.csv` written with this run (§12), so later bricks can check that the design they read is the one used; null when the run had no design, or absent in manifests written before it. Optional key: the manifest stays version 1. |
 | `versions` | Versions of `morphobricks-preprocessing`, `morphobricks-normalization` (which computes the histograms and writes the CSV; absent in manifests written before it), `numpy`, `tifffile` and Python. Information only: a different version never causes a rebuild. |
 
 Channel names and significant bits come from OME metadata and are for information only.
@@ -177,7 +178,7 @@ they never block processing, and each names the affected images or folders and w
 | Code | Severity | Rule |
 |---|---|---|
 | `unbalanced_images` | Warning | Images are counted per condition and biological repeat, technical repeats added up. A count below half or above twice the median of all counts (exactly half or twice is balanced) is reported, with the biological-repeat folders. |
-| `repeat_missing_conditions` | Warning | With more than one condition, a biological repeat not found in every condition is reported, with its folders. Repeats are matched across conditions by folder name. It is still used. |
+| `repeat_missing_conditions` | Warning | With more than one condition, a biological repeat not found in every condition is reported, with its folders. Repeats are matched across conditions by their repeat group (§12; by default the folder name). It is still used. |
 | `different_pixel_sizes` | Warning | The physical pixel size (X by Y) differs between images, or the z-step differs between images with more than one depth slice. Sizes are compared in micrometres, rounded to four significant digits. |
 | `missing_pixel_size` | Warning | The pixel size (or the z-step of images with more than one depth slice) is known for some images and not for others. Nothing is reported when no image has it. |
 | `different_plane_counts` | Warning | The number of channels (the `C` dimension, or the RGB samples `S` when there is no `C`), depth slices (`Z`), time points (`T`) or planes along any other dimension except X and Y differs between images. A missing dimension counts as 1. |
@@ -186,7 +187,37 @@ they never block processing, and each names the affected images or folders and w
 | Rule | Detail |
 |---|---|
 | Counts | Only images to analyse count: excluded images are left out, and a folder whose images are all excluded is not a biological repeat. A biological repeat with images directly in its folder has no technical-repeat folders (count 0). |
-| Balance table | Conditions as columns, biological repeats as rows (by folder name; `single` when there are no biological-repeat folders); each cell holds the number of images and of technical-repeat folders. |
+| Balance table | Conditions as columns, repeat groups as rows (§12; by default the biological-repeat folder name, `single` when there are no biological-repeat folders); each cell holds the number of images and of technical-repeat folders. |
 | Pixel sizes | TIFF: OME `PhysicalSizeX`, `PhysicalSizeY`, `PhysicalSizeZ` with their units (micrometres when not given), or ImageJ resolution tags and `spacing` with the ImageJ unit (unknown without a unit). OME-Zarr: the level-0 scale (`coordinateTransformations` of the first dataset, times the image's own scale when given) with the axis units; a scale without a unit is unknown. Sizes are never guessed. |
 | Panel | The notebook shows the balance table with the issues `mixed_dtypes`, `inconsistent_dimensions`, `missing_axes`, `inconsistent_mapping`, `different_sizes`, `different_plane_counts`, `channel_names_differ`, `different_pixel_sizes`, `missing_pixel_size`, `unbalanced_images` and `repeat_missing_conditions`. The command line `check` prints the balance table and every issue; `run` reports the same warnings. |
 | Outputs | Unchanged: the checks write nothing, and `plane_histograms.csv` and `run_manifest.json` do not change. |
+
+## 12. Experiment design (`experiment_design.csv`, schema version 1)
+
+A **repeat group** is one biological repeat across all conditions (normalization plan
+N30): later bricks pool it over the conditions. Before processing, the user pairs the
+biological repeats, confirms that each repeat group is comparable (N35), and may mark
+control conditions (N36). The answers are written to `experiment_design.csv` in the output
+folder.
+
+| Column | Meaning |
+|---|---|
+| `condition`, `biological_repeat` | Folder labels, as in `plane_histograms.csv` (`single` when absent) |
+| `repeat_group` | Label of the repeat group the folder belongs to (default: `biological_repeat`) |
+| `control` | `true` when the condition is marked as a control |
+| `image_count`, `technical_repeat_count` | Images (technical repeats added up) and technical-repeat folders (0 when the images are directly in the biological-repeat folder), at the time of confirmation; the current counts while unconfirmed |
+| `confirmed` | `true` once the repeat group is confirmed |
+| `confirmed_on` | Date of the confirmation (ISO 8601), empty while unconfirmed |
+| `schema_version` | `1` |
+
+| Rule | Detail |
+|---|---|
+| Rows | One per condition and biological-repeat folder with images to analyse, sorted by condition, then biological repeat. UTF-8, LF line endings, header row, the columns in the order above; booleans written `true`/`false`. The same design gives the same bytes. |
+| Pairing | By default repeats with the same folder name in different conditions are one group, named after the folder. The user may move a folder into another group. A group holds at most one folder per condition (`repeat_group_conflict`, an error). A group not found in every condition is used as it is, with the warning `repeat_missing_conditions` (§11). |
+| Confirmation | Per repeat group: "Were these images prepared and acquired under the same circumstances, so they are comparable with each other?". A group is confirmed when all its rows are. Without biological-repeat folders (every condition `single`), the whole experiment is one group and the question is asked once (N31). Missing technical-repeat folders need no question. |
+| Controls | None, one or several conditions; every row of a condition has the same value. Recorded only. |
+| Reruns | The file in the output folder is read and brought up to date with the folders found: folders in it keep their group, control mark and confirmation (added or removed images within a folder keep it too, with the counts recorded at confirmation); a new folder joins the group named after it and inherits its condition's control mark, and that group is asked again; folders no longer found are dropped without asking again. |
+| Reading | `read_experiment_design` reads labels as text; `control` and `confirmed` accept `true`/`false` in any case, also `yes`/`no` and `1`/`0`, and empty as false; an empty `repeat_group` means the folder name; a byte-order mark is ignored. A missing column, an invalid value, a folder listed twice, rows of one condition disagreeing on `control` or another `schema_version` raise `DesignFormatError`. `ExperimentDesign.repeat_groups()` gives the `{(condition, biological_repeat): repeat_group}` mapping the normalization brick takes. |
+| Notebook | Step 1 asks once the labels are confirmed and writes the file after every answer (unconfirmed groups with `confirmed=false`). A design confirmed for the same folders is loaded with the questions folded away behind **Change the experiment design**. Step 3 runs only once every group is confirmed. |
+| Command line | `run` reads the file from the output folder, or `--design FILE`. Without a fully confirmed design it writes the design brought up to date with the folders (a template with `confirmed=false` for the groups still to confirm, keeping the answers already given) to the output folder, explains the columns, and stops with status 1. Confirmed rows without a date get the date of the run. |
+| Run | `run_experiment(..., design=...)` brings the design up to date with the folders and stops with `design_not_confirmed` or `repeat_group_conflict` if it is not fully confirmed. Otherwise the file is written with the table and published before the manifest, which records its SHA-256 (§9). Without a design the run is unchanged: no file is written, an existing one is left as it is, and `experiment_design_sha256` is null. `plane_histograms.csv` does not depend on the design. |

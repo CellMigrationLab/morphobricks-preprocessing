@@ -315,6 +315,11 @@ API, CLI). The notebook and CLI only call the API.
   physical pixel sizes (`metadata`, `pixel_sizes`); the notebook shows them, with the
   earlier consistency issues, in step 1's "Dataset consistency" panel. *Implemented, see
   question 21.*
+- **Experiment design (follow-up P3):** after the labels, step 1 pairs biological repeats
+  into repeat groups across conditions, asks for each group whether it is comparable, and
+  records control conditions, in `experiment_design.csv` (`design`); reruns with the same
+  folders skip the questions, the command line uses the file or writes a template, and
+  the manifest records its hash. *Implemented, see question 22.*
 
 ## 11. Tests and acceptance criteria
 
@@ -545,3 +550,25 @@ Raised during review; to be decided before the milestones that need them:
     Messages card keeps the folder, file and readability problems; the tiles still count
     everything. The command line `check` prints the balance table and every warning, and
     `run` reports them too. Outputs do not change.*
+22. How are biological repeats paired and confirmed, and controls recorded (normalization
+    plan N30, N31, N35, N36, follow-up P3)?
+    *Decided (October 2026): after the labels are confirmed, step 1 asks three things and
+    writes the answers to `experiment_design.csv` in the output folder (contract §12, schema
+    version 1). Repeats with the same folder name form one repeat group by default; a
+    dropdown moves a folder into another group. Each group gets a yellow question with a
+    **Yes, they are comparable** button (one question for the whole experiment when there
+    are no biological-repeat folders), and step 3 stays locked until every group is
+    confirmed. Control conditions are checkboxes, recorded only. Reruns with the same
+    folders load the file and fold the questions away behind a **Change** button; a new
+    folder reopens only the group it joins; added or removed images keep the confirmation.
+    The command line reads the file (or `--design FILE`) and, without a fully confirmed
+    design, writes it with `confirmed=false` for the groups still to confirm and stops. The
+    manifest gains the optional key `experiment_design_sha256` (version 1). Agreed in
+    review: the notebook writes the file after every answer, so nothing is lost if it is
+    closed; `run_experiment` takes an optional `design` (without one it works as before and
+    writes none; an unconfirmed one is the error `design_not_confirmed`), while the notebook
+    and the command line always use one; a repeat group with two folders of one condition
+    cannot be confirmed (`repeat_group_conflict`). `read_experiment_design` and
+    `ExperimentDesign.repeat_groups()` give later bricks the
+    `{(condition, biological_repeat): repeat_group}` mapping. `plane_histograms.csv` does
+    not change.*

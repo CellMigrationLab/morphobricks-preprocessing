@@ -5,7 +5,8 @@ without reading pixels, and suggests an axis mapping for the user to confirm.
 :func:`run_experiment` is pass 2: with the confirmed mapping it checks
 everything again, reads only the images that are new or changed since the last
 run, and writes ``plane_histograms.csv`` and ``run_manifest.json`` to the output
-folder (``docs/plan.md`` §5–§7).
+folder (``docs/plan.md`` §5–§7). Given the confirmed experiment design, it also
+writes ``experiment_design.csv`` and records its hash in the manifest.
 
 Each row depends only on its own plane, so rows of unchanged files are kept as
 they are. Everything is recomputed when there is no usable earlier output, when
@@ -38,6 +39,13 @@ from morphobricks_normalization.records import PlaneRecord
 
 from .axes import AxisMapping, file_mapping_for, prefill_experiment_mapping, review_axes
 from .dataset import DatasetReport, check_dataset
+from .design import (
+    DESIGN_FILENAME,
+    ExperimentDesign,
+    design_issues,
+    reconcile_design,
+    write_experiment_design,
+)
 from .discovery import DiscoveryResult, default_output_folder, discover_experiment
 from .manifest import (
     MANIFEST_FILENAME,
@@ -146,6 +154,9 @@ class RunResult:
         Number of rows in the written table.
     converted
         Files whose OME-Zarr copy was written in this run.
+    design
+        The experiment design written with the table, or None when the run was
+        given none.
     """
 
     output_folder: Path
@@ -160,11 +171,17 @@ class RunResult:
     rebuild_reason: str | None = None
     plane_count: int = 0
     converted: tuple[str, ...] = ()
+    design: ExperimentDesign | None = None
 
     @property
     def ok(self) -> bool:
         """True if no issue blocks processing."""
         return not has_errors(self.issues)
+
+    @property
+    def design_path(self) -> Path | None:
+        """Location of ``experiment_design.csv``, or None when the run had no design."""
+        return self.output_folder / DESIGN_FILENAME if self.design is not None else None
 
     @property
     def csv_path(self) -> Path:
@@ -285,6 +302,7 @@ def run_experiment(
     progress: Callable[[int, int, str], None] | None = None,
     convert_tiffs: bool = False,
     conversion: ConversionSettings | None = None,
+    design: ExperimentDesign | None = None,
 ) -> RunResult:
     """Pass 2: write or update the histogram table and the run manifest.
 
@@ -321,6 +339,15 @@ def run_experiment(
         How converted copies are written (chunk size, compression, smaller
         levels); defaults to :class:`ConversionSettings`. Changing it rewrites
         the copies of every TIFF image.
+    design
+        The experiment design the user confirmed: how biological repeats pair
+        across conditions, and the controls. It is brought up to date with the
+        folders (:func:`.design.reconcile_design`); the run stops with
+        ``design_not_confirmed`` while a repeat group is not confirmed, or with
+        ``repeat_group_conflict``. It is written to ``experiment_design.csv``
+        with the table, and its SHA-256 recorded in the manifest. Without a
+        design nothing is asked, the manifest records none, and an existing
+        ``experiment_design.csv`` is left as it is.
 
     Returns
     -------
@@ -331,11 +358,19 @@ def run_experiment(
     output = default_output_folder(root) if output_folder is None else Path(output_folder).resolve()
     pre = preflight(root, output, exclude=exclude)
     review = review_axes(pre.metadata, mapping, missing_as_singleton=missing_as_singleton)
+    dataset = pre.dataset
+    design_problems: list[ValidationIssue] = []
+    if design is not None:
+        design, _ = reconcile_design(design, pre.dataset.repeats)
+        design = design.dated(datetime.now().date().isoformat())
+        design_problems = design_issues(design)
+        dataset = check_dataset(pre.discovery, design.repeat_groups(), excluded=pre.excluded)
     issues = [
         *pre.discovery.issues,
         *pre.exclusion_issues,
         *review.combined_issues(pre.metadata),
-        *pre.dataset.issues,
+        *design_problems,
+        *dataset.issues,
     ]
     dtype = pre.metadata.dtype
     bins = None
@@ -494,8 +529,12 @@ def run_experiment(
         staging.root if staging is not None else None,
         copies=[ome_zarr_relative_path(rel) for rel in to_convert],
         removed_copies=removed_copies,
+        with_design=design is not None,
     ) as staged:
         csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME)
+        design_sha256 = None
+        if design is not None:
+            design_sha256 = file_sha256(write_experiment_design(design, staged / DESIGN_FILENAME))
         manifest = RunManifest(
             experiment_root=root.as_posix(),
             dtype=dtype.name,
@@ -507,6 +546,7 @@ def run_experiment(
             csv_sha256=file_sha256(csv_path),
             versions=package_versions(),
             written_at=datetime.now(UTC).isoformat(timespec="seconds"),
+            experiment_design_sha256=design_sha256,
         )
         write_manifest(manifest, staged / MANIFEST_FILENAME)
     logger.info(
@@ -524,6 +564,7 @@ def run_experiment(
         excluded=pre.excluded,
         plane_count=len(records),
         converted=tuple(to_convert),
+        design=design,
         **counts,
     )
 
@@ -539,17 +580,19 @@ def _staged_outputs(
     *,
     copies: Sequence[str] = (),
     removed_copies: Sequence[str] = (),
+    with_design: bool = False,
 ) -> Iterator[Path]:
     """Prepare all outputs before publishing, and retain backups if recovery fails.
 
     ``staged`` is a temporary folder inside ``output`` that may already hold the
     OME-Zarr ``copies`` written while reading; one is created if None.
+    ``with_design`` publishes ``experiment_design.csv`` too.
     """
     staged = staged or Path(tempfile.mkdtemp(prefix=".run-", dir=output))
     keep_backups = False
     try:
         yield staged
-        _publish_outputs(output, staged, copies, removed_copies)
+        _publish_outputs(output, staged, copies, removed_copies, with_design)
     except _OutputRollbackError:
         keep_backups = True
         raise
@@ -567,14 +610,15 @@ def _publish_outputs(
     staged: Path,
     copies: Sequence[str] = (),
     removed_copies: Sequence[str] = (),
+    with_design: bool = False,
 ) -> None:
     """Replace the outputs, restoring their previous state on a publication failure.
 
     OME-Zarr copies are published first and the manifest last, so a manifest never
-    names a copy that is not in place. Earlier copies are moved into the backup
-    folder rather than copied, because they can be large.
+    names a copy or design that is not in place. Earlier copies are moved into the
+    backup folder rather than copied, because they can be large.
     """
-    filenames = (OUTPUT_FILENAME, MANIFEST_FILENAME)
+    filenames = (OUTPUT_FILENAME, *((DESIGN_FILENAME,) if with_design else ()), MANIFEST_FILENAME)
     backup = staged / "previous"
     backup.mkdir()
     # Copy before replacing either file, so even a backup failure leaves the

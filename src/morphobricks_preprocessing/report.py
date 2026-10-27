@@ -15,6 +15,7 @@ from morphobricks_normalization.records import LEVELS, PlaneRecord, group_record
 
 from .axes import AxisMapping, axis_length_ranges, axis_name
 from .dataset import BalanceTable
+from .design import ExperimentDesign
 from .discovery import DiscoveryResult
 from .run import Preflight, RunResult
 from .validation import Severity, ValidationIssue, plural
@@ -108,6 +109,26 @@ def balance_summary(balance: BalanceTable) -> str:
         + (f" of {balance.median:g} images:" if balance.median is not None else ":"),
         format_table(balance_rows(balance)),
     ]
+    return "\n".join(lines)
+
+
+def design_summary(design: ExperimentDesign) -> str:
+    """Describe the repeat groups, their folders and confirmation, and the controls."""
+    lines = []
+    for group in design.groups:
+        folders = ", ".join(
+            f"{row.condition}/{row.biological_repeat}" for row in design.members(group)
+        )
+        if group in design.conflicts:
+            state = "more than one folder of " + ", ".join(design.conflicts[group])
+        elif design.group_confirmed(group):
+            on = design.confirmed_on(group)
+            state = f"confirmed{f' on {on}' if on else ''}"
+        else:
+            state = "not confirmed"
+        lines.append(f"  {group}: {folders} ({state})")
+    controls = ", ".join(design.controls) or "none marked"
+    lines.append(f"  Controls: {controls}")
     return "\n".join(lines)
 
 
