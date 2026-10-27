@@ -32,6 +32,8 @@ Pre-alpha. Implemented and tested:
   blocks with identical results (`planes`)
 - The experiment design: pairing biological repeats across conditions, confirming they
   are comparable, and marking controls, in `experiment_design.csv` (`design`)
+- The image type, fluorescence or RGB: suggested from the metadata (RGB colour samples),
+  confirmed by the user and recorded in the run manifest (`image_type`)
 - Running an experiment end to end and updating earlier output incrementally, with a
   run manifest (`run`, `manifest`)
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
@@ -70,7 +72,7 @@ From a terminal:
 
 ```bash
 morphobricks-preprocessing check /data/exp1
-morphobricks-preprocessing run /data/exp1 --axes ZCYX
+morphobricks-preprocessing run /data/exp1 --axes ZCYX --image-type fluorescence
 ```
 
 ## Running an experiment
@@ -92,7 +94,9 @@ recomputes everything, and `exclude=[...]` leaves out damaged files. The noteboo
 command line also ask for the experiment design (which biological repeats pair across
 conditions, and that they are comparable) and write `experiment_design.csv`; in Python,
 pass it with `design=` (see the [user guide](docs/user_guide.md) §9). Later bricks read it
-with `read_experiment_design`.
+with `read_experiment_design`. They also ask for the image type, `fluorescence` or `rgb`
+(suggested by `review_image_type`), and record it in the manifest; in Python, pass it with
+`image_type=`.
 
 ## Example
 

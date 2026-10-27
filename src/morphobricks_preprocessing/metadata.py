@@ -78,6 +78,11 @@ class TiffMetadata:
         metadata (TIFF) or the OME-NGFF scale (OME-Zarr), as
         :func:`.physical_sizes.read_physical_sizes` gives them; all None when
         not given or the image does not open. For information only.
+    rgb_samples
+        True for a TIFF file stored as RGB colour: photometric interpretation
+        RGB with three samples per pixel, which ``tifffile`` labels ``S``. It is
+        the metadata the image type suggestion uses (:mod:`.image_type`). False
+        for other TIFF files (also RGB with an alpha sample) and OME-Zarr images.
     """
 
     relative_path: str
@@ -92,6 +97,7 @@ class TiffMetadata:
     significant_bits: int | None = None
     kind: str = TIFF
     physical_sizes: PhysicalSizes = PhysicalSizes()
+    rgb_samples: bool = False
 
     def length(self, axis: str) -> int:
         """Return the length of the dimension labelled ``axis``, 1 if there is none."""
@@ -184,6 +190,7 @@ def inspect_tiff(path: str | os.PathLike, relative_path: str | None = None) -> T
                 page_count=len(tif.pages),
                 **_ome_details(tif),
                 physical_sizes=_tiff_sizes(tif),
+                rgb_samples=_rgb_samples(first),
             )
     except Exception as exc:  # any failure to parse means the file cannot be used
         logger.debug("Cannot read the TIFF header of %s", path, exc_info=True)
@@ -424,6 +431,16 @@ def _ome_details(tif: tifffile.TiffFile) -> dict:
         "channel_names": names if any(names) else (),
         "significant_bits": int(bits) if bits and bits.isdigit() else None,
     }
+
+
+def _rgb_samples(series: tifffile.TiffPageSeries) -> bool:
+    """Return True if the series stores RGB colour: photometric RGB, three samples per pixel."""
+    keyframe = series.keyframe
+    return (
+        "S" in series.axes
+        and keyframe.photometric == tifffile.PHOTOMETRIC.RGB
+        and keyframe.samplesperpixel == 3
+    )
 
 
 def _local_name(tag: str) -> str:
