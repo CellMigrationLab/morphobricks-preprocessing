@@ -6,11 +6,16 @@ the experiment, one subfolder per mask type, each mirroring the experiment's fol
     <masks folder>/<mask type>/<condition>/<biological repeat>/<technical repeat>/<image>.tif
 
 A mask belongs to the image with the same position (same leaf folder, same ``position_id``,
-contract §1); its file may be a TIFF (``.tif``, ``.tiff``, any case, with an optional
-``.ome``). The label images of an OME-Zarr image (its OME-NGFF ``labels`` group) are masks too,
-of the type named by the label image, when the ``zarr`` extra is installed.
+contract §1). The type may also follow the image name instead of being a folder::
 
-Any number of mask types is accepted; each is named by its folder (or label image), and two
+    <masks folder>/<condition>/<biological repeat>/<technical repeat>/<image>_<mask type>.tif
+
+and the two layouts may be mixed. Its file may be a TIFF (``.tif``, ``.tiff``, any case, with
+an optional ``.ome``). The label images of an OME-Zarr image (its OME-NGFF ``labels`` group)
+are masks too, of the type named by the label image, when the ``zarr`` extra is installed.
+
+Any number of mask types is accepted; each is named by its folder, by the suffix after the
+image name, or by its label image, and two
 names may not differ only in case. Only headers are read here, never pixels: a mask must be
 2D (length-1 axes aside) with the image's Y and X sizes, and its pixels integers or booleans.
 Reading the pixels and relating the masks to each other is :mod:`.mask_scan`.
@@ -218,39 +223,77 @@ def _folder_issues(folder: Path, experiment_root: Path) -> list[ValidationIssue]
 def _folder_masks(
     folder: Path, discovery: DiscoveryResult, images: Mapping[str, TiffMetadata]
 ) -> tuple[list[MaskFile], list[ValidationIssue]]:
-    """Pair the TIFF files of every mask-type folder with the images."""
-    wanted = {}
+    """Pair the TIFF files of the masks folder with the images, in either layout.
+
+    A file is a mask of an image when its path is ``<type>/<image's folders>/<image name>`` (one
+    folder per mask type) or ``<image's folders>/<image name>_<type>`` (the type after the
+    image name, as segmentation tools often write it). Each file is read the way that matches
+    an analysed image; a file matching two images or both layouts is refused, never guessed.
+    """
+    by_key, by_leaf = {}, {}
     for leaf in discovery.leaves:
+        prefix = "" if leaf.relative_path == "." else leaf.relative_path + "/"
         for image in leaf.images:
             if image in images:
-                prefix = "" if leaf.relative_path == "." else leaf.relative_path + "/"
-                wanted[(prefix + position_id(image.rsplit("/", 1)[-1])).casefold()] = image
-    files, unpaired, loose = [], [], []
-    for entry in sorted(folder.iterdir()):
-        if is_system_name(entry.name):
+                stem = position_id(image.rsplit("/", 1)[-1])
+                by_key[(prefix + stem).casefold()] = image
+                by_leaf.setdefault(prefix.casefold(), []).append((stem, image))
+    files, unpaired, loose, ambiguous = [], [], [], []
+    for path in sorted(folder.rglob("*")):
+        relative = path.relative_to(folder)
+        if any(is_system_name(part) for part in relative.parts) or not path.is_file():
             continue
-        if not entry.is_dir():
-            loose.append(entry.name)
+        mask_path = relative.as_posix()
+        if not is_tiff_name(path.name):
+            (loose if len(relative.parts) == 1 else unpaired).append(mask_path)
             continue
-        for path in sorted(entry.rglob("*")):
-            relative = path.relative_to(entry)
-            if any(is_system_name(part) for part in relative.parts) or not path.is_file():
-                continue
-            key = relative.with_name(position_id(path.name)).as_posix().casefold()
-            mask_path = path.relative_to(folder).as_posix()
-            if is_tiff_name(path.name) and key in wanted:
-                files.append(MaskFile(wanted[key], entry.name, mask_path, FOLDER))
-            else:
-                unpaired.append(mask_path)
+        found = _suffix_matches(relative, by_leaf)
+        if len(relative.parts) > 1:
+            key = Path(*relative.parts[1:]).with_name(position_id(path.name)).as_posix()
+            if key.casefold() in by_key:
+                found.append((by_key[key.casefold()], relative.parts[0]))
+        if len(found) == 1:
+            files.append(MaskFile(found[0][0], found[0][1], mask_path, FOLDER))
+        else:
+            (ambiguous if found else unpaired).append(mask_path)
+    issues = _layout_issues(loose, unpaired)
+    if ambiguous:
+        issues.append(
+            error(
+                "ambiguous_mask",
+                f"{plural(len(ambiguous), 'mask')} could belong to more than one image or mask "
+                "type (an image name that starts another image's name, or a path that fits both "
+                "layouts), so they cannot be paired.",
+                ambiguous,
+                "Rename the masks (or the images) so that each mask names one image and one type.",
+            )
+        )
+    return files, issues
+
+
+def _suffix_matches(relative: Path, by_leaf: Mapping[str, list]) -> list[tuple[str, str]]:
+    """Return ``(image, mask type)`` for every image whose name, then ``_``, starts the file's."""
+    prefix = "" if len(relative.parts) == 1 else relative.parent.as_posix() + "/"
+    stem = position_id(relative.name)
+    found = []
+    for image_stem, image in by_leaf.get(prefix.casefold(), []):
+        head = image_stem + "_"
+        if len(stem) > len(head) and stem.casefold().startswith(head.casefold()):
+            found.append((image, stem[len(head) :]))
+    return found
+
+
+def _layout_issues(loose: list[str], unpaired: list[str]) -> list[ValidationIssue]:
     issues = []
     if loose:
         issues.append(
             warning(
                 "mask_outside_type_folder",
-                f"{plural(len(loose), 'file')} in the masks folder {_are(loose)} not in a "
-                "mask-type folder and will not be used.",
+                f"{plural(len(loose), 'file')} in the masks folder {_are(loose)} not masks "
+                "and will not be used.",
                 loose,
-                "Put each mask in the folder of its type, e.g. Nuclei/<condition>/<image>.tif.",
+                "Keep only masks there: Nuclei/<condition>/.../<image>.tif, or "
+                "<condition>/.../<image>_Nuclei.tif.",
             )
         )
     if unpaired:
@@ -264,7 +307,7 @@ def _folder_masks(
                 "masks of excluded images.",
             )
         )
-    return files, issues
+    return issues
 
 
 def _label_masks(root: Path, images: Mapping[str, TiffMetadata]) -> list[MaskFile]:

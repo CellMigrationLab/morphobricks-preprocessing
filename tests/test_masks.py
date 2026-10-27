@@ -111,6 +111,57 @@ def test_masks_of_excluded_images_are_not_used(experiment, masks):
     assert codes(found.issues) == ["mask_without_image"]
 
 
+# The type after the image name -------------------------------------------------------
+
+
+def test_masks_named_image_then_type_are_paired(experiment, tmp_path, no_pixel_reads):
+    folder = tmp_path / "masks"
+    for seed, rel in enumerate(IMAGES):
+        leaf, name = rel.rsplit("/", 1)
+        stem = name.rsplit(".", 1)[0]
+        write_data(folder / leaf / f"{stem}_cells.tif", label_image(seed))
+        write_data(folder / leaf / f"{stem}_nuclei.tif", label_image(seed))
+    found = inventory(experiment, folder)
+    assert found.ok and found.issues == ()
+    assert found.types == ("cells", "nuclei")
+    by_type = found.for_image("ctrl/rep1/b.tif")
+    assert by_type["nuclei"].path == "ctrl/rep1/b_nuclei.tif"
+
+
+def test_the_two_layouts_may_be_mixed(experiment, tmp_path):
+    folder = tmp_path / "masks"
+    for seed, rel in enumerate(IMAGES):
+        write_data(folder / "Cells" / rel, label_image(seed))
+        leaf, name = rel.rsplit("/", 1)
+        write_data(folder / leaf / f"{name.rsplit('.', 1)[0]}_Nuclei.tif", label_image(seed))
+    found = inventory(experiment, folder)
+    assert found.ok and found.types == ("Cells", "Nuclei")
+    assert len(found.files) == 2 * len(IMAGES)
+
+
+def test_images_in_the_experiment_folder_itself(tmp_path):
+    root = tmp_path / "exp"
+    write_data(root / "img_01.tif", np.zeros((16, 20), dtype=np.uint8))
+    write_data(tmp_path / "masks" / "img_01_cells.tiff", label_image(0))
+    write_data(tmp_path / "masks" / "img_02_cells.tif", label_image(0))
+    found = inventory(root, tmp_path / "masks")
+    assert [(f.image, f.mask_type) for f in found.files] == [("img_01.tif", "cells")]
+    assert codes(found.issues) == ["mask_without_image"]
+
+
+def test_a_mask_that_could_name_two_images_is_refused(tmp_path):
+    root = tmp_path / "exp"
+    for name in ("a.tif", "a_b.tif"):
+        write_data(root / "ctrl" / name, np.zeros((16, 20), dtype=np.uint8))
+    write_data(tmp_path / "masks" / "ctrl" / "a_b_cells.tif", label_image(0))  # a + b_cells?
+    write_data(tmp_path / "masks" / "ctrl" / "a_nuclei.tif", label_image(0))  # a only
+    found = inventory(root, tmp_path / "masks")
+    ambiguous = next(issue for issue in found.issues if issue.code == "ambiguous_mask")
+    assert ambiguous.paths == ("ctrl/a_b_cells.tif",)
+    assert not found.ok
+    assert [(f.image, f.mask_type) for f in found.files] == [("ctrl/a.tif", "nuclei")]
+
+
 # Errors -------------------------------------------------------------------------------
 
 

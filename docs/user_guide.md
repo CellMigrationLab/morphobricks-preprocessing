@@ -109,11 +109,17 @@ masks/
         control/bio_rep1/tech_rep1/img_02.tif
 ```
 
+- Or keep the masks in the same folders as the experiment, each named after its image
+  followed by `_` and its kind (`img_01_cells.tif`, `img_01_nuclei.tif`), as many
+  segmentation tools write them; the kind is the part after the image name. Both ways may be
+  mixed in one masks folder.
 - A mask is a 2D TIFF label image with the width and height of its image: background 0,
   each object its own whole number (or a true/false mask). The extension may differ from
   the image's (`img_01.tiff` for `img_01.ome.tif`).
-- You may have any number of kinds of mask. Their folder names are their names: they must
-  differ by more than upper/lower case.
+- You may have any number of kinds of mask. Their folder names (or the part after the image
+  name) are their names: they must differ by more than upper/lower case. If one image's name
+  starts another's (`a.tif` and `a_b.tif`), a mask named `a_b_cells.tif` could belong to
+  either and is refused: rename the masks or the images.
 - The label images stored inside an OME-Zarr image (its `labels` group) are used as masks
   too, named after the label image.
 - An image without a mask of one kind is reported; its objects of that kind cannot be
@@ -491,7 +497,8 @@ continues.
 | `mask_size_mismatch` | Error | A mask does not have the width and height of its image. Check that it was made from that image at full resolution. |
 | `mask_pixel_type` | Error | A mask's pixels are not whole numbers (for example decimals). Save it as an integer label image. |
 | `mask_missing` | Warning | Some images have no mask of a kind that other images have; their objects of that kind cannot be measured. Add the masks, or exclude the images. |
-| `mask_without_image`, `mask_outside_type_folder` | Warning | Files in the masks folder that match no analysed image (check the folder and file names), or that are not in a folder of their kind. They are not used. |
+| `ambiguous_mask` | Error | A mask's name could belong to two images (one image name starts another's) or fit both layouts. Rename the masks or the images so each names one image and one kind. |
+| `mask_without_image`, `mask_outside_type_folder` | Warning | Files in the masks folder that match no analysed image (check the folder and file names), or other files directly in the masks folder. They are not used. |
 | `zarr_not_installed` | Error | OME-Zarr images, or converting TIFF images, need the `zarr` extra. Install it, exclude the OME-Zarr images, or read the TIFF images directly. |
 
 ## 9. Python interface

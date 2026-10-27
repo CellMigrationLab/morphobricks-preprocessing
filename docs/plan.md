@@ -725,4 +725,10 @@ Raised during review; to be decided before the milestones that need them:
     this is merged, so the other bricks can pin it (the follow-ups P4 and P5 then go to
     v0.3.0). Next, in their own changes: a notebook step for the masks (name each mask,
     say what it contains, confirm or correct the relationships) and a file saving those
-    answers for the other bricks, as `experiment_design.csv` does for the repeats.*
+    answers for the other bricks, as `experiment_design.csv` does for the repeats.
+    Also decided (owner, 27 October 2026, after MorphoFeature's end-to-end trial on
+    MorphoRelate's JUMP-Target-2 conversion, which writes `<image>_<type>.tif` beside the
+    images' folders): the masks folder may instead mirror the experiment with the type after
+    the image name, `<condition>/.../<image>_<type>.tif`, and the two layouts may be mixed. A
+    file that could name two images or fit both layouts is the error `ambiguous_mask`, never
+    guessed. On the four JUMP smoke fields, both layouts give the same report.*

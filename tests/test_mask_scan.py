@@ -301,3 +301,19 @@ def test_invalid_thresholds_stop_before_any_mask_is_read(tmp_path):
             thresholds={"inside_pixel_share": 2},
         )
     assert calls == []
+
+
+def test_both_layouts_give_the_same_report(tmp_path):
+    masks = hierarchy_masks()
+    by_folder = scan(tmp_path / "folders", masks)
+    root = tmp_path / "suffix" / "exp"
+    folder = tmp_path / "suffix" / "masks"
+    for rel in ("ctrl/a.tif", "drug/a.tif"):
+        write_data(root / rel, np.zeros(SHAPE, dtype=np.uint8))
+        for name, mask in masks.items():
+            write_data(folder / rel.replace("a.tif", f"a_{name}.tif"), mask)
+    inventory = preflight(root, masks_folder=folder).masks
+    assert inventory.ok, inventory.issues
+    by_suffix = scan_masks(inventory, root)
+    assert by_suffix.to_dict()["pairs"] == by_folder.to_dict()["pairs"]
+    assert dict(by_suffix.hierarchy) == dict(by_folder.hierarchy)
