@@ -136,8 +136,26 @@ results or comparing another grouping.
    - The **Labels from the folder names** table shows every image folder with its condition,
      biological repeat and technical repeat (*single* where a level is missing). If they
      are right, press **Yes, the labels are correct** in the yellow box under the table.
+   - Once the labels are confirmed, **Experiment design** asks about the biological
+     repeats. Later bricks normalise each biological repeat over all conditions together,
+     so they need to know which folders are the same repeat:
+     - **Pair the biological repeats across conditions.** Folders with the same name in
+       different conditions are one *repeat group*. If a repeat has another folder name in
+       some condition (acquired a day later, for example), choose its group in the
+       **Repeat group** dropdown. A group can hold only one folder of each condition.
+     - **Confirm that they are comparable.** For each repeat group, a yellow box asks
+       whether its images were prepared and acquired under the same circumstances. Press
+       **Yes, they are comparable** if they were. Without biological-repeat folders, one
+       question covers the whole experiment. Step 3 runs only once every group is
+       confirmed; if images are not comparable, process them as separate experiments.
+     - **Controls (optional).** Tick the control conditions. This is recorded for later
+       bricks; nothing uses it yet.
+     - The answers are saved in **experiment_design.csv** in the output folder (§6) after
+       every answer. Next time, if the folders are the same, they are loaded and the
+       questions are folded away; **Change the experiment design** shows them again. A new
+       biological-repeat folder asks again only for the group it joins.
    - **Dataset consistency** shows how many images each condition (columns) and
-     biological repeat (rows) has, with the number of technical-repeat folders. A cell is
+     biological repeat (rows; the repeat groups once paired) has, with the number of technical-repeat folders. A cell is
      amber when it has fewer than half or more than twice the median number of images, or
      when a condition does not have that biological repeat. Expand **Show consistency
      warnings** to see the checks that compare the images with each other: pixel type,
@@ -243,7 +261,15 @@ morphobricks-preprocessing run /data/exp1 --axes ZCYX
 
 `--axes` gives one role per dimension of the images, in their order: `X`, `Y`, `Z`, `C`,
 `T`, or `-` for a length-1 dimension without a role. Roles are never taken from metadata
-without being stated. Other options:
+without being stated.
+
+`run` also needs the experiment design (§4, step 1). It reads `experiment_design.csv` from
+the output folder (or the file given with `--design`). The first time, or when folders were
+added, it writes that file and stops, so you can fill it in with a spreadsheet program or a
+text editor: give rows the same `repeat_group` to pair biological repeats named differently,
+set `confirmed` to `true` in every row of a repeat group whose images are comparable, and
+optionally `control` to `true` for control conditions. Then run again. `check` says whether
+the design is confirmed. Other options:
 
 | Option | Meaning |
 |---|---|
@@ -252,6 +278,7 @@ without being stated. Other options:
 | `--bins N` | Bins per plane |
 | `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` |
 | `--missing-as-singleton` | Confirm that images lacking some dimensions have one plane along them |
+| `--design FILE` | The confirmed experiment design (default: `experiment_design.csv` in the output folder); it is copied to the output folder |
 | `--force-rebuild` | Recompute every row |
 | `--convert-tiff` | Convert the TIFF images to OME-Zarr first and process the copies (needs the `zarr` extra); prints the disk space needed |
 | `--chunk-size PX` | With `--convert-tiff`: tile size of the copies (16 to 8192, default 1024) |
@@ -274,9 +301,14 @@ The default output folder is next to the experiment folder:
   The table is very wide (one column per bin), so spreadsheet programs may not open it
   completely; read it in Python with `read_plane_histograms()`. The columns are defined in
   the [normalization brick's contract](https://github.com/CellMigrationLab/morphobricks-normalization/blob/main/docs/contract.md) §6.2.
+- **`experiment_design.csv`:** one row per biological-repeat folder of each condition: its
+  repeat group, whether its condition is a control, its image and technical-repeat counts,
+  and whether and when the repeat group was confirmed. Written in step 1 and by every run.
+  Later bricks read the pairing from it (`read_experiment_design`). Format in
+  [contract.md](contract.md) §12.
 - **`run_manifest.json`:** what the run read and with which settings: labels, axis roles,
-  bin count, memory limit, excluded images, package versions, and each image's position,
-  size and modification time. Channel names and significant bits are recorded when the metadata
+  bin count, memory limit, excluded images, package versions, the fingerprint of the
+  experiment design, and each image's position, size and modification time. Channel names and significant bits are recorded when the metadata
   provides them, and whether the image's planes were too large to read whole and are read
   in blocks. Format in [contract.md](contract.md) §9.
 - **`ome_zarr/`** (only when TIFF images are converted): one `.ome.zarr` folder per TIFF
@@ -352,7 +384,9 @@ continues.
 | `different_pixel_sizes` | Warning | The physical pixel size or z-step in the metadata differs between images (for example different objectives). Check the microscope settings if this is not intended. |
 | `missing_pixel_size` | Warning | Some images give their pixel size in the metadata and others do not, so it cannot be checked. Export them again with metadata if needed. |
 | `unbalanced_images` | Warning | A condition and biological repeat has fewer than half or more than twice the median number of images. Check for missing, misplaced or duplicated images. |
-| `repeat_missing_conditions` | Warning | A biological repeat is not found in every condition. It is still used. If it has another folder name in some condition, rename the folders so that they match. |
+| `repeat_missing_conditions` | Warning | A biological repeat is not found in every condition. It is still used. If it has another folder name in some condition, pair it in the experiment design (step 1). |
+| `design_not_confirmed` | Error | Some repeat groups are not confirmed as comparable. Confirm them in step 1, or set `confirmed` to `true` in `experiment_design.csv`. |
+| `repeat_group_conflict` | Error | A repeat group holds two folders of the same condition. Move one into another group. |
 | `channel_names_differ` | Warning | Channel names differ between images at the same position. Check the channel order. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
 | `no_finite_pixels` | Warning | Some planes have no finite pixels; they are left out of group statistics. |
@@ -373,6 +407,22 @@ mapping = check.suggested_mapping  # AxisMapping; edit with mapping.with_role(..
 result = run_experiment("/data/exp1", mapping)
 records = read_plane_histograms(result.csv_path)
 ```
+
+The experiment design is optional in Python: without `design=`, the run neither asks for
+nor writes one. To record it as the notebook does:
+
+```python
+from morphobricks_preprocessing import load_design
+
+design, changes, problem = load_design(result.output_folder, check.dataset.repeats)
+design = design.with_group(("treated", "rep2_day2"), "rep2")  # pair a repeat
+for group in design.groups:
+    design = design.with_confirmed(group, True, "2026-10-26")
+result = run_experiment("/data/exp1", mapping, design=design)
+pairing = design.repeat_groups()  # {(condition, biological_repeat): repeat_group}
+```
+
+Later bricks read the file with `read_experiment_design(path)`.
 
 Reading the table, group statistics and normalisation parameters come from the
 normalization brick (`morphobricks_normalization`, installed with this package):

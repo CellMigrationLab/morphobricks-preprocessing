@@ -13,11 +13,13 @@ pytest.importorskip("matplotlib")
 from morphobricks_preprocessing import (  # noqa: E402
     Plane,
     notebook_ui,
+    read_experiment_design,
     read_manifest,
     read_plane_histograms,
 )
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.axes import AxisMapping  # noqa: E402
+from morphobricks_preprocessing.manifest import file_sha256  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import (  # noqa: E402
     PreprocessingNotebook,
     display_range,
@@ -53,9 +55,17 @@ def checked(experiment, **kwargs):
     return nb
 
 
+def confirm_repeats(nb):
+    """Answer every experiment-design question of step 1 with yes."""
+    for toggle in nb.group_confirmations.values():
+        if not toggle.value:
+            toggle.button.click()
+
+
 def confirmed(experiment, **kwargs):
     nb = checked(experiment, **kwargs)
     nb.labels_confirmed.button.click()
+    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
@@ -186,6 +196,8 @@ def test_next_steps_follow_confirmation_and_folder_changes(experiment):
     assert "Check the labels in Step 1" in nb.folder_next.value
     assert "Go to Step 2" not in nb.folder_next.value
     nb.labels_confirmed.button.click()
+    assert "Confirm the biological repeats in Step 1" in nb.folder_next.value
+    confirm_repeats(nb)
     assert "Go to Step 2" in nb.folder_next.value
     assert "Continue" not in nb.labels_confirmed.message.value
     nb.labels_confirmed.button.click()
@@ -216,10 +228,162 @@ def test_unreadable_image_can_be_excluded(experiment):
     assert nb.exclude.value == "ctrl/rep1/bad.tif"
     assert nb.preflight.ok and not ui.is_visible(nb.exclude_button)
     nb.labels_confirmed.button.click()
+    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
     assert nb.run().excluded == ("ctrl/rep1/bad.tif",)
+
+
+# Experiment design (follow-up P3) ------------------------------------------------------
+
+
+def design_tree(root, folders):
+    rng = np.random.default_rng(2)
+    for folder in folders:
+        data = rng.integers(0, 200, (3, 2, 16, 16), dtype=np.uint8)
+        write_data(root / folder / "a.tif", data, axes="ZCYX")
+    return root
+
+
+def labelled(root, tmp_path):
+    nb = checked(root, output_folder=str(tmp_path / "out"))
+    nb.labels_confirmed.button.click()
+    return nb
+
+
+def test_design_is_asked_after_the_labels_and_saved(tmp_path):
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/rep2b"])
+    nb = checked(root, output_folder=str(tmp_path / "out"))
+    assert not ui.is_visible(nb.design_card)
+    nb.labels_confirmed.button.click()
+    assert ui.is_visible(nb.design_card) and ui.is_visible(nb.design_editor)
+    assert ui.is_visible(nb.pairing_box)
+    assert sorted(nb.group_confirmations) == ["rep1", "rep2", "rep2b"]
+    toggle = nb.group_confirmations["rep1"]
+    assert "Repeat group rep1: were these images prepared and acquired" in toggle.prompt.value
+    assert toggle.button.description.strip() == "Yes, they are comparable"
+    assert "Not found in drug" in nb.group_confirmations["rep2"].prompt.value
+    assert "Still to confirm: 3 repeat groups" in nb.design_status.value
+    assert "Confirm the biological repeats in Step 1" in nb.folder_next.value
+    assert "Still to do: confirm the biological repeats" in nb.readiness.value
+    # Saved straight away, unconfirmed, like the command-line template.
+    path = tmp_path / "out" / "experiment_design.csv"
+    assert not read_experiment_design(path).confirmed
+
+
+def test_pairing_a_repeat_updates_the_groups_and_the_balance(tmp_path):
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/rep2b"])
+    nb = labelled(root, tmp_path)
+    assert "repeat missing conditions" in nb.consistency_issues.value
+    nb.group_confirmations["rep1"].button.click()
+    (dropdown,) = [
+        box.children[2]
+        for box in nb.pairing_grid.children[1:]
+        if "rep2b" in box.children[1].value and "drug" in box.children[0].value
+    ]
+    dropdown.value = "rep2"
+    assert sorted(nb.group_confirmations) == ["rep1", "rep2"]
+    assert nb.group_confirmations["rep1"].value and not nb.group_confirmations["rep2"].value
+    assert "repeat missing conditions" not in nb.consistency_issues.value
+    assert "<th>Biological repeat</th>" in nb.balance_table.value
+    assert "rep2b" not in nb.balance_table.value.split("<tbody>")[1].split("</td>")[0]
+    saved = read_experiment_design(tmp_path / "out" / "experiment_design.csv")
+    assert saved.repeat_groups()[("drug", "rep2b")] == "rep2"
+    nb.group_confirmations["rep2"].button.click()
+    assert "The biological repeats are confirmed on" in nb.design_status.value
+    assert "Go to Step 2" in nb.folder_next.value
+    assert read_experiment_design(tmp_path / "out" / "experiment_design.csv").confirmed
+
+
+def test_two_folders_of_a_condition_cannot_be_confirmed(tmp_path):
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "ctrl/rep2", "drug/rep1"])
+    nb = labelled(root, tmp_path)
+    (dropdown,) = [
+        box.children[2] for box in nb.pairing_grid.children[1:] if "rep2" in box.children[1].value
+    ]
+    dropdown.value = "rep1"
+    toggle = nb.group_confirmations["rep1"]
+    assert toggle.disabled and "more than one folder of ctrl" in toggle.prompt.value
+    assert "holds more than one folder of a condition" in nb.design_status.value
+    assert nb.run_button.disabled
+
+
+def test_without_repeat_folders_one_question_is_asked(tmp_path):
+    root = design_tree(tmp_path / "exp", ["ctrl", "drug"])
+    nb = labelled(root, tmp_path)
+    assert not ui.is_visible(nb.pairing_box)
+    (toggle,) = nb.group_confirmations.values()
+    assert "All images of every condition come from one biological repeat" in toggle.prompt.value
+    toggle.button.click()
+    assert nb.design.confirmed
+
+
+def test_controls_are_saved(tmp_path):
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
+    nb = labelled(root, tmp_path)
+    nb.control_checks["ctrl"].value = True
+    assert "Controls: ctrl" not in nb.design_status.value  # shown once confirmed
+    confirm_repeats(nb)
+    assert "Controls: ctrl" in nb.design_status.value
+    assert read_experiment_design(tmp_path / "out" / "experiment_design.csv").controls == ("ctrl",)
+
+
+def test_a_confirmed_design_is_not_asked_again(tmp_path):
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
+    nb = labelled(root, tmp_path)
+    nb.control_checks["drug"].value = True
+    confirm_repeats(nb)
+    again = labelled(root, tmp_path)
+    assert again.design.confirmed and again.design.controls == ("drug",)
+    assert not ui.is_visible(again.design_editor) and ui.is_visible(again.design_change)
+    assert "The biological repeats are confirmed on" in again.design_status.value
+    assert "Go to Step 2" in again.folder_next.value
+    again.design_change.click()
+    assert ui.is_visible(again.design_editor) and not ui.is_visible(again.design_change)
+    assert again.group_confirmations["rep1"].value
+
+
+def test_a_new_repeat_asks_only_for_its_group(tmp_path):
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
+    confirm_repeats(labelled(root, tmp_path))
+    design_tree(root, ["ctrl/rep2", "drug/rep2"])
+    nb = labelled(root, tmp_path)
+    assert ui.is_visible(nb.design_editor)
+    assert "The folders changed since the design was saved" in nb.design_status.value
+    assert nb.group_confirmations["rep1"].value
+    assert not nb.group_confirmations["rep2"].value
+    assert "Still to confirm: 1 repeat group (rep2)" in nb.design_status.value
+
+
+def test_an_unreadable_design_is_asked_again(tmp_path):
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
+    (tmp_path / "out").mkdir()
+    (tmp_path / "out" / "experiment_design.csv").write_bytes(b"not a design")
+    nb = labelled(root, tmp_path)
+    assert "could not be read" in nb.design_status.value
+    confirm_repeats(nb)
+    assert read_experiment_design(tmp_path / "out" / "experiment_design.csv").confirmed
+
+
+def test_undoing_the_labels_closes_the_design(tmp_path):
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
+    nb = labelled(root, tmp_path)
+    confirm_repeats(nb)
+    nb.labels_confirmed.button.click()
+    assert nb.design is None and not ui.is_visible(nb.design_card)
+    assert "Still to do: confirm the labels" in nb.readiness.value
+
+
+def test_the_run_writes_the_design(tmp_path):
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
+    nb = confirmed(root, output_folder=str(tmp_path / "out"))
+    nb.run_button.click()
+    assert nb.result.written
+    path = tmp_path / "out" / "experiment_design.csv"
+    assert "Experiment design: " in nb.run_status.value
+    manifest = read_manifest(tmp_path / "out" / "run_manifest.json")
+    assert manifest.experiment_design_sha256 == file_sha256(path)
 
 
 def test_changing_the_folder_resets_later_steps(experiment):
@@ -296,6 +460,8 @@ def test_confirmations_are_buttons_that_can_be_undone(experiment):
     assert toggle.value and "Labels confirmed" in toggle.message.value
     assert toggle.button.description.strip() == "Undo: the labels are not right"
     assert "mb-confirmed" in toggle.widget._dom_classes
+    assert "Still to do: confirm the biological repeats" in nb.readiness.value
+    confirm_repeats(nb)
     assert "Still to do: confirm the axis roles" in nb.readiness.value
     toggle.button.click()
     assert not toggle.value and toggle.message.value == ""
@@ -401,6 +567,7 @@ def test_confirmed_missing_axes_allow_running_unless_other_errors_remain(tmp_pat
         write_file(root / "bad.tif", b"garbage")
     nb = checked(root)
     nb.labels_confirmed.button.click()
+    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     assert nb.run_button.disabled
@@ -424,6 +591,7 @@ def test_undoing_missing_axes_confirmation_blocks_running_again(tmp_path):
     write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
     nb = checked(root)
     nb.labels_confirmed.button.click()
+    confirm_repeats(nb)
     nb.missing_as_singleton.button.click()
     nb.preview_button.click()
     nb.preview_checked.button.click()
@@ -453,6 +621,7 @@ def test_readiness_checklist(experiment):
     assert "Still to do: confirm the labels" in nb.readiness.value
     assert "✅ Check the experiment folder" in nb.readiness.value
     nb.labels_confirmed.button.click()
+    confirm_repeats(nb)
     assert "Still to do: confirm the axis roles" in nb.readiness.value
     nb.preview_button.click()
     nb.preview_checked.button.click()
@@ -517,6 +686,7 @@ def test_plan_names_images_read_in_blocks(tmp_path, monkeypatch):
         raise AssertionError("pixel data was read")
 
     nb.labels_confirmed.button.click()
+    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     for cls in (tifffile.TiffFile, tifffile.TiffPage, tifffile.TiffFrame, tifffile.TiffPageSeries):
@@ -565,6 +735,7 @@ def test_plan_layouts_are_cached_until_their_inputs_change(tmp_path, monkeypatch
     nb.recommended.value = False
     assert calls == []  # nothing is opened before the axis roles are confirmed
     nb.labels_confirmed.button.click()
+    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
@@ -590,6 +761,7 @@ def test_plan_layouts_are_cached_until_their_inputs_change(tmp_path, monkeypatch
     assert recomputed() == 0  # the same roles and settings as before
     nb.check_button.click()
     nb.labels_confirmed.button.click()
+    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
@@ -871,6 +1043,7 @@ def test_statistics_need_a_table_and_valid_percentiles(experiment):
     nb.show_statistics()
     assert "does not exist" in nb.stats_status.value
     nb.labels_confirmed.button.click()
+    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()

@@ -26,7 +26,8 @@ brick**.
 - **Input:** one experiment folder of TIFF images and/or OME-Zarr images (OME-NGFF 0.4/0.5,
   `zarr` extra).
 - **Output:** one intensity histogram per 2D plane in `plane_histograms.csv`, plus
-  `run_manifest.json`, both in an output folder outside the experiment.
+  `experiment_design.csv` (repeat groups, confirmation, controls) and `run_manifest.json`,
+  all in an output folder outside the experiment.
 - **Statistics code (from the normalization brick):** the per-plane histogram, the CSV
   reader and writer, pooling (`PooledHistogram`) and normalization parameters (`min_max`,
   `percentile_range`, `z_score`, `robust_z_score`) live in the required dependency
@@ -46,7 +47,8 @@ Pipeline:
 
 1. **Pass 1 (preflight):** folder discovery, then TIFF header inspection without reading
    pixels, then a suggested axis mapping.
-2. **The user confirms** the labels and the axis roles.
+2. **The user confirms** the labels, the experiment design (repeat groups comparable) and
+   the axis roles.
 3. **Pass 2:** read one 2D plane at a time (in blocks when it is over the memory limit),
    compute exact extrema and the histogram, write the CSV and the manifest. Reruns only
    read new or changed files.
@@ -66,6 +68,8 @@ src/morphobricks_preprocessing/
                     sizes in micrometres for comparing (read_physical_sizes re-exported by zarr_export)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
+  design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
+                    the folders on reruns, design_issues, read/write experiment_design.csv, load_design
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
@@ -311,6 +315,23 @@ functions the tests use.
   "Dataset consistency" panel with the balance table; the Messages card keeps the rest.
   The CLI `check` prints the balance table; `run` reports the same warnings.
 
+### Experiment design (contract §12, follow-up P3)
+
+- **Repeat group** = one biological repeat across conditions; same folder name pairs by
+  default; one folder per condition per group (`repeat_group_conflict` otherwise).
+- **Confirmation** per group (`design_not_confirmed` until then); all-`single` experiments
+  get one whole-experiment question. Controls are recorded only.
+- **`experiment_design.csv`** (schema 1): one row per condition x biological-repeat folder,
+  sorted; counts at confirmation; `confirmed_on` ISO date. Lenient reader (any-case
+  booleans, BOM, empty group = folder name); `DesignFormatError` otherwise.
+- **Reruns:** `reconcile_design` keeps answers for known folders, reopens only groups that
+  gain a folder, drops removed folders.
+- **Notebook** writes the file after every answer once the labels are confirmed; a
+  confirmed design for the same folders is folded away behind **Change the experiment
+  design**; step 3 is gated on it. **CLI** `run` reads it (or `--design`), else writes the
+  reconciled template and exits 1. **API** `run_experiment(design=None)` is optional; with
+  a design it is written with the table and `experiment_design_sha256` goes in the manifest.
+
 ### Validation messages (contract §8)
 
 Every expected problem is a `ValidationIssue` with:
@@ -347,6 +368,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Large planes (Q15) | Planes over the memory limit are read in blocks automatically, announced by the warning `planes_read_in_blocks` and `read_in_blocks` in the manifest. Block size derived from the limit (whole strips/tiles/chunks, uncompressed pieces and chunks also by rows). Compressed single-strip/tile planes keep the `plane_over_memory_limit` error. Two-pass histograms identical to whole planes. OME-Zarr copies written block by block, smaller levels built from the stored level above. Axis preview reduced (every n-th pixel) with a caption saying so |
 | Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Their public names stay importable from `morphobricks_preprocessing` and from the old submodules for one version: module `__getattr__` stand-ins (`_moved.py`), one `DeprecationWarning` per old path naming `morphobricks_normalization.<module>.<name>`, same objects. The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, now §6.2 for the CSV) |
 | Dataset consistency (Q21, P2) | Step 1 "Dataset consistency" panel: balance table (images and technical-repeat folders per condition x biological repeat), `unbalanced_images` (< 0.5 or > 2 x median), `repeat_missing_conditions`, `different_pixel_sizes`, `missing_pixel_size` (OME-Zarr scale included), `different_plane_counts`; `different_sizes` narrowed to width/height; consistency issues shown only in that panel, not in Messages. Warnings only; outputs unchanged |
+| Experiment design (Q22, P3) | Step 1 after the labels: pairing dropdowns, one yellow "Yes, they are comparable" question per repeat group (single whole-experiment question without biological-repeat folders), control checkboxes; `experiment_design.csv` written after every answer; reruns load it and fold the questions behind a Change button; step 3 gated. CLI `run` reads it or `--design`, else writes a template and exits 1. `run_experiment(design=...)` optional; manifest `experiment_design_sha256` (optional key, version 1). Two folders of one condition in a group block that group |
 | Position identity (Q20, D02) | `position_id` = image name without extension, in every CSV row and manifest file entry; FOV key = labels + `position_id`; duplicates in one leaf folder are the error `duplicate_position_id`. CSV columns and schema 2 unchanged; manifest version 1 with an optional key |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
@@ -618,10 +640,10 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   follow-up P1 of the normalization plan: the dependency on `morphobricks-normalization`
   v0.1.0 with deprecated re-exports, its version in the manifest, Step 0 checking for it,
   and contract §3–§7 moved to the normalization contract (PRs #16 and #17, question 19),
-  and `position_id` filled per cross-brick decision D02 (question 20), and follow-up
-  P2: dataset consistency warnings in the folder check (question 21).
-- **Next (not started):** follow-ups P3–P5 of the normalization plan (experiment design,
-  image type, intensity checks and plots).
+  and `position_id` filled per cross-brick decision D02 (question 20), and follow-ups
+  P2 (dataset consistency warnings, question 21) and P3 (experiment design, question 22).
+- **Next (not started):** follow-ups P4–P5 of the normalization plan (image type,
+  intensity checks and plots).
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;
   - the optional `jl-hidecode` JupyterLab extension, which keeps code cells collapsed. It

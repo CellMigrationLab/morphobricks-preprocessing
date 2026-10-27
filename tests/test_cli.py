@@ -5,7 +5,14 @@ import sys
 import numpy as np
 import pytest
 
-from morphobricks_preprocessing import read_manifest, read_plane_histograms
+from morphobricks_preprocessing import (
+    default_design,
+    default_output_folder,
+    preflight,
+    read_manifest,
+    read_plane_histograms,
+    write_experiment_design,
+)
 from morphobricks_preprocessing.cli import main, parse_size
 from tiff_tree import write_data, write_file
 
@@ -17,6 +24,15 @@ def experiment(tmp_path):
     for rel in ["ctrl/rep1/a.tif", "ctrl/rep1/b.tif", "drug/rep1/a.tif"]:
         write_data(root / rel, rng.integers(0, 200, (2, 3, 8, 8), dtype=np.uint8), axes="ZCYX")
     return root
+
+
+def confirm_design(root, output=None):
+    """Write a design with every repeat group confirmed to the output folder."""
+    design = default_design(preflight(root).dataset.repeats)
+    for group in design.groups:
+        design = design.with_confirmed(group, True, "2026-10-26")
+    folder = output or default_output_folder(root)
+    return write_experiment_design(design, folder / "experiment_design.csv")
 
 
 @pytest.mark.parametrize(
@@ -51,6 +67,7 @@ def test_check_exits_with_1_on_errors(experiment, capsys):
 
 
 def test_run_writes_the_table(experiment, capsys):
+    confirm_design(experiment)
     assert main(["run", str(experiment), "--axes", "ZCYX"]) == 0
     out = capsys.readouterr().out
     assert "[1/3] ctrl/rep1/a.tif" in out
@@ -66,6 +83,7 @@ def test_run_options_reach_the_run(experiment, tmp_path, capsys):
     args = ["run", str(experiment), "--axes", "TCYX", "--output", str(out_dir)]
     args += ["--bins", "16", "--memory-limit", "256MiB", "--exclude", "drug/rep1/a.tif"]
     args += ["--log", str(log)]
+    confirm_design(experiment, out_dir)
     assert main(args) == 0
     manifest = read_manifest(out_dir / "run_manifest.json")
     assert manifest.settings.bin_count == 16
@@ -86,6 +104,7 @@ def test_run_rejects_axes_of_the_wrong_length(experiment, capsys):
 
 
 def test_run_reports_blocking_errors(experiment, capsys):
+    confirm_design(experiment)
     assert main(["run", str(experiment), "--axes", "Z-YX"]) == 1
     out = capsys.readouterr().out
     assert "No role is chosen for the axis C (channel)" in out
@@ -102,6 +121,7 @@ def test_missing_axes_option(tmp_path, capsys):
     root = tmp_path / "exp"
     write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZCYX")
     write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
+    confirm_design(root)
     assert main(["run", str(root), "--axes", "ZCYX"]) == 1
     assert main(["run", str(root), "--axes", "ZCYX", "--missing-as-singleton"]) == 0
 
@@ -148,6 +168,7 @@ def test_conversion_options(experiment, tmp_path, capsys):
     args = ["run", str(experiment), "--axes", "ZCYX", "--output", str(out_dir), "--convert-tiff"]
     args += ["--chunk-size", "64", "--compression", "zstd", "--compression-level", "7"]
     args += ["--pyramid-levels", "none"]
+    confirm_design(experiment, out_dir)
     assert main(args) == 0
     out = capsys.readouterr().out
     assert "Conversion (chunks of 64 x 64 px, Blosc Zstandard level 7, no smaller levels)" in out
