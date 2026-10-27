@@ -883,6 +883,94 @@ def test_hidden_output_card_comes_back_when_its_folder_is_inside_the_experiment(
     assert ui.is_visible(nb.output_card)
 
 
+def files_under(folder):
+    return sorted(str(path.relative_to(folder)) for path in folder.rglob("*"))
+
+
+def page_text(found, *paths):
+    """Return the text of every HTML widget of a page, with the given paths left out."""
+    text = " ".join(w.value for w in found if isinstance(w, notebook_ui.widgets.HTML))
+    for path in paths:
+        text = text.replace(str(path), "")
+    return text
+
+
+def test_folder_step_shows_the_design_by_default(tmp_path):
+    for name, kwargs in [("default", {}), ("explicit", {"show_design": True})]:
+        root = design_tree(tmp_path / name / "exp", ["ctrl/rep1", "drug/rep1"])
+        nb = PreprocessingNotebook(str(root))
+        page = nb.folder_step(**kwargs)
+        assert page.children[1].children[3:] == (
+            nb.folder_card,
+            nb.output_card,
+            nb.exclude_box,
+            nb.check_button,
+            nb.folder_status,
+            nb.folder_tiles,
+            nb.labels_card,
+            nb.design_card,
+            nb.consistency_card,
+            nb.issues_card,
+            nb.folder_next,
+        )
+        assert "Step 3 can only run once the labels are confirmed." in (
+            nb.labels_confirmed.prompt.value
+        )
+        nb.check_button.click()
+        nb.labels_confirmed.button.click()
+        assert ui.is_visible(nb.design_card) and nb.design is not None
+        assert "Step 3 runs once every group is confirmed." in nb.design_status.value
+        assert "Confirm the biological repeats in Step 1" in nb.folder_next.value
+        assert "Still to do: confirm the biological repeats" in nb.readiness.value
+        path = tmp_path / name / "exp_MorphoBricks_Preprocessing" / "experiment_design.csv"
+        assert f"Saved in <b>{path}</b>" in nb.design_status.value
+        assert not read_experiment_design(path).confirmed
+
+
+def test_folder_step_without_the_design_writes_nothing(tmp_path):
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
+    before = files_under(tmp_path)
+    nb = PreprocessingNotebook(str(root))
+    nb.folder_step(show_output=False, show_next=False, show_design=False)
+    nb.axis_step(show_next=False)
+    nb.check_button.click()
+    nb.labels_confirmed.button.click()
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    nb.confirm_button.click()
+    assert nb.labels_confirmed.value and nb.confirmed_mapping is not None
+    assert nb.design is None
+    assert files_under(tmp_path) == before
+    assert not (tmp_path / "exp_MorphoBricks_Preprocessing").exists()
+
+
+def test_folder_step_without_the_design_card_or_its_words(experiment):
+    nb = PreprocessingNotebook(str(experiment))
+    page = nb.folder_step(show_design=False)
+    nb.axis_step()
+    nb.run_step()
+    assert nb.design_card not in page_parts(page)[2]
+    nb.check_button.click()
+    nb.labels_confirmed.button.click()
+    found = page_parts(page)[2]
+    assert nb.design_card not in found and not ui.is_visible(nb.design_card)
+    text = page_text(found, experiment.parent)
+    assert "Step 3" not in text and "design" not in text.lower()
+    assert "biological repeats" not in nb.folder_next.value
+    assert "Go to Step 2" in nb.folder_next.value
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    nb.confirm_button.click()
+    nb.image_type_checked.button.click()
+    assert "Experiment design" not in nb.axis_next.value
+    # This notebook's own step 3 then runs without a design.
+    assert "biological repeats" not in nb.readiness.value and not nb.run_button.disabled
+    # Building the default page again asks for the design of the confirmed labels.
+    nb.folder_step()
+    assert ui.is_visible(nb.design_card) and nb.design is not None
+    assert "Step 3 can only run" in nb.labels_confirmed.prompt.value
+
+
 def test_steps_without_an_intro_box():
     nb = PreprocessingNotebook()
     assert intros(page_parts(nb.folder_step(intro=""))[2]) == []
