@@ -334,13 +334,25 @@ API, CLI). The notebook and CLI only call the API.
   (TIFF and OME-Zarr, from the OME-NGFF scale), and steps 1 and 2 of the notebook
   embeddable by another brick. Outputs are unchanged. *Implemented, see questions 23 to
   26.* After v0.1.0 (not released yet), step 1 embeds without the experiment design
-  (`show_design=False`). *Implemented, see question 29.*
+  (`show_design=False`). *Implemented, see question 31.*
 - **Channels across columns (follow-up P3b of the normalization plan):**
   `plane_histograms.csv` schema version 3, written with the normalization brick's
   Milestone 2b (now pinned to its v0.2.0, question 28): one row per XYC plane with each channel in its own
   columns; its channels read one at a time (`planes.iter_xyc_planes`); images with
   different numbers of channels are an error before any image is read; earlier tables are
   recomputed on the next run. *Implemented, see question 27.*
+- **Image type (follow-up P4 of the normalization plan):** after the axis roles, step 2
+  asks whether the images are fluorescence or RGB, suggesting RGB for TIFF images stored as
+  RGB colour on the channel axis (`image_type`, `metadata.TiffMetadata.rgb_samples`); RGB
+  needs three channels of an integer type. The manifest records the type; the command line
+  takes `--image-type` or prints the suggestion. Outputs are otherwise unchanged.
+  *Implemented, see question 29.*
+- **Intensity checks (follow-up P5 of the normalization plan):** after every successful
+  run, and in step 4 for any table, the normalization brick's `image_summaries` and
+  `intensity_checks` give the four intensity warnings from the table alone (`intensity`);
+  the notebook shows them with adjustable limits and per-channel box plots and
+  distributions, the command line prints them, and the manifest records the limits.
+  *Implemented, see question 30.*
 
 ## 11. Tests and acceptance criteria
 
@@ -658,7 +670,7 @@ Raised during review; to be decided before the milestones that need them:
     and the card is shown again when the check finds that folder inside the experiment,
     so the box to fix it is never hidden). The defaults give the pages as before, and this notebook calls them
     without arguments; the widgets, the checks and the gating are the same either way.
-    Later, `show_design` leaves out the experiment design (question 29).*
+    Later, `show_design` leaves out the experiment design (question 31).*
 27. How does this brick follow the channels moving into columns (normalization plan
     N41–N44, its Milestone 2b, follow-up P3b)?
     *Decided (October 2026): `plane_histograms.csv` is written in schema version 3 with
@@ -693,7 +705,52 @@ Raised during review; to be decided before the milestones that need them:
     depends on the normalization brick's release v0.2.0 (tag, not commit) instead of the
     Milestone 2b merge commit `0e53e67`; v0.2.0 adds only RGB and intensity checks, which
     this brick does not call yet. The next tag, v0.2.0, follows follow-ups P4 and P5.*
-29. Since follow-up P3 (question 22), step 1 asks for the experiment design once the labels
+29. How is the image type, fluorescence or RGB, chosen and recorded (normalization plan
+    N33, N34, its contract §5, follow-up P4)?
+    *Decided (27 October 2026): after the axis roles are confirmed, step 2 shows an
+    "Image type" card with the two types, the suggestion preselected and the yellow question
+    "Is this the right image type for your images?" answered with **Yes, this is the right
+    image type** (Undo to change it); nothing is used until it is confirmed, and step 3 stays
+    locked until then. RGB is suggested when every analysed image is a TIFF stored as RGB
+    colour (photometric RGB, three samples per pixel, read from the header as
+    `TiffMetadata.rgb_samples`), the confirmed C role is on its samples axis, and RGB is
+    possible; fluorescence otherwise (OME-Zarr images, grey samples, RGB with alpha). RGB
+    needs exactly three channels of an integer pixel type, the rule of the normalization
+    brick's `check_rgb`; otherwise the choice stays at fluorescence with the reason shown
+    (ipywidgets cannot disable one radio button, so the whole choice is disabled), and
+    `run_experiment(image_type="rgb")` is the error `rgb_not_possible`. Changing the axis
+    roles or the folder asks again; the card is the same when step 2 is embedded by another
+    brick (question 26). Agreed with the owner: the manifest gains two optional top-level
+    keys, `image_type` (null when the run was given none, as `run_experiment` takes it
+    optionally like the design of question 22) and `channels_from_rgb_samples`; it stays
+    version 1. Changing only the type recomputes nothing. The command line takes
+    `--image-type fluorescence|rgb`, or uses the suggestion and prints it with the reason;
+    `check` prints the suggestion. `plane_histograms.csv` and `experiment_design.csv` do not
+    change.*
+30. How are the intensity checks shown (normalization plan N38, N50–N53, its contract §7,
+    follow-up P5)?
+    *Decided (27 October 2026): `run_experiment` checks the rows it wrote, in memory, with
+    the normalization brick's `image_summaries` and `intensity_checks`
+    (`intensity.check_intensities`, `RunResult.intensity`), and `check_table` checks any
+    table; no image is read. The four warnings are kept apart from the run's issues and
+    never block. Agreed with the owner: the warnings and the plots are shown both in step 3,
+    automatically after every successful run, and in step 4 for the chosen table; the
+    manifest records the limits used (optional key `intensity_checks`,
+    `IntensityCheckSettings.to_dict()`; version 1), changing them afterwards only updates
+    the warnings on screen and is recorded by the next run; the distributions are
+    cumulative curves, like step 4's existing plot. Each panel has a status line, tiles per
+    kind, a table (check, channel `C<i>`, image or repeat, what was found) with what to do
+    per kind, a collapsed **Check settings** panel (`outlier_limit` 3.0, `saturation_limit`
+    1 %, `min_images` 5, and **Restore the defaults**), channel buttons, box plots of the
+    image medians and high percentiles per condition and biological repeat (images with a
+    warning in that channel, from `Issue.channel`, as red diamonds; shifted repeats as amber
+    boxes), and the cumulative distribution of each biological repeat, one panel per
+    condition (shifted repeats dashed; at most 12 conditions). Plots are drawn in the
+    notebook only and nothing is written. The command line prints the warnings grouped by
+    kind with the action once per kind, takes `--outlier-limit`, `--saturation-limit` and
+    `--min-images`, and draws no plots. Comparisons stay within a condition, as the brick
+    does. `plane_histograms.csv` and `experiment_design.csv` do not change.*
+31. Since follow-up P3 (question 22), step 1 asks for the experiment design once the labels
     are confirmed: an "Experiment design" card, `experiment_design.csv` written in the
     output folder (`<images>_MorphoBricks_Preprocessing/` by default, created beside the
     image folder), and texts saying that step 3 runs once every group is confirmed.

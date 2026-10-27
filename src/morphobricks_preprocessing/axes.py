@@ -574,7 +574,7 @@ def review_axes(
     issues.extend(
         channel_count_issues(
             {
-                f.relative_path: _channel_count(f, file_mappings[f.relative_path])
+                f.relative_path: channel_count(f, file_mappings[f.relative_path])
                 for f in readable
                 if f.relative_path in file_mappings
             }
@@ -583,8 +583,11 @@ def review_axes(
     return AxisReview(mapping=mapping, file_mappings=file_mappings, issues=tuple(issues))
 
 
-def _channel_count(f: TiffMetadata, mapping: AxisMapping) -> int:
-    """Return the number of channels of ``f`` under its own mapping; 1 without a C axis."""
+def channel_count(f: TiffMetadata, mapping: AxisMapping) -> int:
+    """Return the number of channels of ``f`` under its own mapping; 1 without a C axis.
+
+    ``mapping`` is the file's own mapping (:attr:`AxisReview.file_mappings`).
+    """
     c = mapping.index_of("C")
     return 1 if c is None else f.shape[c]
 

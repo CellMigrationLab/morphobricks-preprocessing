@@ -6,7 +6,10 @@ without reading pixels, and suggests an axis mapping for the user to confirm.
 everything again, reads only the images that are new or changed since the last
 run, and writes ``plane_histograms.csv`` and ``run_manifest.json`` to the output
 folder (``docs/plan.md`` §5–§7). Given the confirmed experiment design, it also
-writes ``experiment_design.csv`` and records its hash in the manifest.
+writes ``experiment_design.csv`` and records its hash in the manifest; given the
+confirmed image type, it records it there too. After writing, it checks the
+images' intensities from the table's rows (:mod:`.intensity`) and records the
+limits used.
 
 Each row depends only on its own plane, so rows of unchanged files are kept as
 they are. Everything is recomputed when there is no usable earlier output, when
@@ -27,6 +30,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from morphobricks_normalization.checks import IntensityCheckSettings
 from morphobricks_normalization.csv_io import (
     OUTPUT_FILENAME,
     SCHEMA_VERSION,
@@ -47,6 +51,8 @@ from .design import (
     write_experiment_design,
 )
 from .discovery import DiscoveryResult, default_output_folder, discover_experiment
+from .image_type import check_image_type, image_type_issues, review_image_type
+from .intensity import IntensityReport, check_intensities
 from .manifest import (
     MANIFEST_FILENAME,
     FileEntry,
@@ -159,6 +165,12 @@ class RunResult:
     design
         The experiment design written with the table, or None when the run was
         given none.
+    image_type
+        The image type recorded in the manifest, or None when the run was given
+        none.
+    intensity
+        The intensity checks of the written table (warnings, never errors), or
+        None when nothing was written.
     """
 
     output_folder: Path
@@ -174,6 +186,8 @@ class RunResult:
     plane_count: int = 0
     converted: tuple[str, ...] = ()
     design: ExperimentDesign | None = None
+    image_type: str | None = None
+    intensity: IntensityReport | None = None
 
     @property
     def ok(self) -> bool:
@@ -305,6 +319,8 @@ def run_experiment(
     convert_tiffs: bool = False,
     conversion: ConversionSettings | None = None,
     design: ExperimentDesign | None = None,
+    image_type: str | None = None,
+    intensity_settings: IntensityCheckSettings | None = None,
 ) -> RunResult:
     """Pass 2: write or update the histogram table and the run manifest.
 
@@ -350,16 +366,34 @@ def run_experiment(
         with the table, and its SHA-256 recorded in the manifest. Without a
         design nothing is asked, the manifest records none, and an existing
         ``experiment_design.csv`` is left as it is.
+    image_type
+        The image type the user confirmed, ``"fluorescence"`` or ``"rgb"``
+        (:mod:`.image_type`), recorded in the manifest. ``"rgb"`` for images that
+        are not three channels of an integer type is the error
+        ``rgb_not_possible``. It changes no row, so changing it recomputes
+        nothing. Without it the manifest records none.
+    intensity_settings
+        Limits of the intensity checks run on the written table
+        (:func:`.intensity.check_intensities`); None uses the defaults. They are
+        recorded in the manifest and change no row.
 
     Returns
     -------
     RunResult
         If any error is found, nothing is written and ``written`` is False.
+
+    Raises
+    ------
+    ValueError
+        For an image type other than ``"fluorescence"`` and ``"rgb"``.
     """
+    if image_type is not None:
+        check_image_type(image_type)
     root = Path(experiment_root).resolve()
     output = default_output_folder(root) if output_folder is None else Path(output_folder).resolve()
     pre = preflight(root, output, exclude=exclude)
     review = review_axes(pre.metadata, mapping, missing_as_singleton=missing_as_singleton)
+    type_review = review_image_type(pre.metadata, review)
     dataset = pre.dataset
     design_problems: list[ValidationIssue] = []
     if design is not None:
@@ -371,6 +405,7 @@ def run_experiment(
         *pre.discovery.issues,
         *pre.exclusion_issues,
         *review.combined_issues(pre.metadata),
+        *image_type_issues(image_type, type_review),
         *design_problems,
         *dataset.issues,
     ]
@@ -520,6 +555,8 @@ def run_experiment(
         return stop(read=tuple(to_read), **counts)
 
     records.sort(key=_row_order)
+    # From the rows in memory: no image is read again.
+    intensity = check_intensities(records, intensity_settings)
     per_file: dict[str, int] = {}
     for record in records:
         per_file[record.source_relative_path] = per_file.get(record.source_relative_path, 0) + 1
@@ -557,6 +594,9 @@ def run_experiment(
             versions=package_versions(),
             written_at=datetime.now(UTC).isoformat(timespec="seconds"),
             experiment_design_sha256=design_sha256,
+            image_type=image_type,
+            channels_from_rgb_samples=type_review.channels_from_rgb_samples,
+            intensity_checks=intensity.settings,
         )
         write_manifest(manifest, staged / MANIFEST_FILENAME)
     logger.info(
@@ -575,6 +615,8 @@ def run_experiment(
         plane_count=len(records),
         converted=tuple(to_convert),
         design=design,
+        image_type=image_type,
+        intensity=intensity,
         **counts,
     )
 

@@ -192,10 +192,25 @@ results or comparing another grouping.
      lists them; press **Yes, they have a single plane there** if that is the case.
      Once you confirm the axis roles, this resolves the missing-axis error for step 3.
      Any other errors still need to be fixed before running.
+   - Once the axis roles are confirmed, **Image type** asks whether the images are
+     **Fluorescence** (each channel is a separate stain or marker) or **RGB** (colour
+     images, such as brightfield or histology stains). Later bricks normalise the two types
+     differently: fluorescence channel by channel, RGB with the red, green and blue channels
+     together (StarDist's method), so the colours are kept. The histograms are the same for
+     both types.
+     - RGB is suggested when the images are stored as RGB colour (three colour samples per
+       pixel) and those samples are the channels; fluorescence otherwise. The suggestion is
+       only preselected: press **Yes, this is the right image type** to confirm it, or choose
+       the other type first. An amber line reminds you when you choose against the
+       suggestion. Step 3 runs only once the type is confirmed.
+     - RGB needs exactly three channels of a whole-number pixel type (8- or 16-bit colour).
+       For other images the choice is greyed out at Fluorescence, with the reason.
+     - Changing the axis roles asks for the image type again. The type is recorded in
+       **run_manifest.json** (§6); changing it on a later run reads no image again.
 3. **Compute the histograms.**
    - **Before you run** lists anything still to do.
-   - **What will happen** names the output folder and files, and says whether an earlier
-     run was found and what will be read. Once the axis roles are confirmed it also names
+   - **What will happen** names the output folder and files and the image type, and says
+     whether an earlier run was found and what will be read. Once the axis roles are confirmed it also names
      the images whose planes are too large for the memory limit and will be read in
      blocks, and, in a red box, any image that cannot be read within the limit at all
      (the run would stop; raise the limit or exclude the image).
@@ -235,6 +250,28 @@ results or comparing another grouping.
      then summarise planes written, images read, kept, new, changed, removed and excluded.
      Nothing is written unless the whole run succeeds. **Technical details (log)** holds
      the log for troubleshooting.
+   - **Intensity checks** then compares the images, using only the table just written (no
+     image is read again, and nothing else is written). Each image is compared with the
+     other images of its condition and biological repeat, and each biological repeat with
+     the other repeats of its condition, so differences between conditions (treatment
+     effects) are never reported:
+     - Tiles count the images checked and each kind of warning; a table lists every
+       warning with the check, the channel (**C0**, **C1**, …), the image or biological
+       repeat, and what was found (the values compared and the limit), followed by what to
+       do about each kind. The four kinds are images far from the others of their
+       biological repeat, biological repeats shifted from the others of their condition,
+       saturated images, and images without intensity spread (see §8).
+     - **Check settings** (collapsed) holds the limits: how many robust deviations count as
+       far (default 3), the share of saturated pixels (default 1 %), and the fewest images a
+       comparison needs (default 5). Changing them updates the warnings and plots at once;
+       the run records the limits in **run_manifest.json**, so the next run records the
+       new ones. **Restore the defaults** sets them back.
+     - Plots, one channel at a time (choose it above the plots): box plots of the image
+       medians and high percentiles for each condition and biological repeat, one point per
+       image, with images that have a warning in that channel as red diamonds and shifted
+       repeats as amber boxes; and one panel per condition with the intensity distribution
+       of each biological repeat (comparable repeats lie close together; a shifted one is
+       dashed). The plots are only shown here, never saved.
 4. **Calculate the statistics (optional).** The table from step 3 is all that later bricks
    need; this step only reads it to compare groups and writes no files.
    - **Histogram table** is filled in with the table from step 3. To look at another
@@ -249,6 +286,9 @@ results or comparing another grouping.
      before; its **planes** column counts each channel of a plane as one plane.
    - The plot compares the groups' intensity distributions: curves further right are
      brighter.
+   - **Intensity checks** shows the same warnings, settings and plots as step 3 for the
+     chosen table, so tables of other experiments can be checked too. It needs only the
+     table, not the images.
 
 In JupyterLab, the optional `jl-hidecode` extension keeps the code cells collapsed and adds
 a run button to each; without it, click the "…" of a cell to see its code.
@@ -273,6 +313,12 @@ morphobricks-preprocessing run /data/exp1 --axes ZCYX
 `T`, or `-` for a length-1 dimension without a role. Roles are never taken from metadata
 without being stated.
 
+`--image-type fluorescence` or `--image-type rgb` gives the image type (§4, step 2).
+Without it, `run` uses the type suggested from the image headers and prints it, with why it
+was suggested and how to choose the other one; `check` prints the suggestion too. `rgb`
+for images that are not three channels of a whole-number pixel type stops the run
+(`rgb_not_possible`).
+
 `run` also needs the experiment design (§4, step 1). It reads `experiment_design.csv` from
 the output folder (or the file given with `--design`). The first time, or when folders were
 added, it writes that file and stops, so you can fill it in with a spreadsheet program or a
@@ -288,15 +334,20 @@ the design is confirmed. Other options:
 | `--bins N` | Bins per plane |
 | `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` |
 | `--missing-as-singleton` | Confirm that images lacking some dimensions have one plane along them |
+| `--image-type fluorescence\|rgb` | The image type (default: the suggested one, printed) |
 | `--design FILE` | The confirmed experiment design (default: `experiment_design.csv` in the output folder); it is copied to the output folder |
 | `--force-rebuild` | Recompute every row |
 | `--convert-tiff` | Convert the TIFF images to OME-Zarr first and process the copies (needs the `zarr` extra); prints the disk space needed |
 | `--chunk-size PX` | With `--convert-tiff`: tile size of the copies (16 to 8192, default 1024) |
 | `--compression lz4\|zstd\|none`, `--compression-level N` | With `--convert-tiff`: lossless compression (default lz4, level 5) |
 | `--pyramid-levels auto\|none\|N` | With `--convert-tiff`: smaller levels for viewing (default auto) |
+| `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
 | `--log FILE` | Write technical details to a file |
 
-Both commands exit with status 1 when an error blocks processing.
+After writing, `run` prints the intensity checks of the table, grouped by kind, each with
+the channel, the image or biological repeat and the values compared, and what to do once
+per kind; it draws no plots (the notebook does). Both commands exit with status 1 when an
+error blocks processing; intensity warnings never do.
 `python -m morphobricks_preprocessing` works the same way.
 
 ## 6. Output files
@@ -322,8 +373,9 @@ The default output folder is next to the experiment folder:
   Later bricks read the pairing from it (`read_experiment_design`). Format in
   [contract.md](contract.md) §12.
 - **`run_manifest.json`:** what the run read and with which settings: labels, axis roles,
-  bin count, memory limit, excluded images, package versions, the fingerprint of the
-  experiment design, and each image's position, size and modification time. Channel names and significant bits are recorded when the metadata
+  the image type (and whether the channels are RGB colour samples), bin count, memory
+  limit, excluded images, the limits of the intensity checks, package versions, the
+  fingerprint of the experiment design, and each image's position, size and modification time. Channel names and significant bits are recorded when the metadata
   provides them, and whether the image's planes were too large to read whole and are read
   in blocks. Format in [contract.md](contract.md) §9.
 - **`ome_zarr/`** (only when TIFF images are converted): one `.ome.zarr` folder per TIFF
@@ -356,7 +408,9 @@ Run the notebook or `run` again after adding, changing or removing images:
   added);
 - everything is recomputed when the bin count, the axis roles or the pixel type changed,
   when the table was edited by hand or written by an earlier version of the brick, or when
-  you ask for it.
+  you ask for it;
+- changing only the image type reads nothing again: the histograms are the same for both
+  types, and only the manifest records the new type.
 
 To leave out images, for example a damaged file, list them under *Exclude images* (one per
 line) or pass `--exclude`. Excluded images are not read, are listed in the messages and the
@@ -405,7 +459,12 @@ continues.
 | `unbalanced_images` | Warning | A condition and biological repeat has fewer than half or more than twice the median number of images. Check for missing, misplaced or duplicated images. |
 | `repeat_missing_conditions` | Warning | A biological repeat is not found in every condition. It is still used. If it has another folder name in some condition, pair it in the experiment design (step 1). |
 | `design_not_confirmed` | Error | Some repeat groups are not confirmed as comparable. Confirm them in step 1, or set `confirmed` to `true` in `experiment_design.csv`. |
+| `rgb_not_possible` | Error | The image type RGB was chosen, but the images are not three channels of a whole-number pixel type. Choose fluorescence, or check the axis roles: the RGB samples must have the role C. |
 | `repeat_group_conflict` | Error | A repeat group holds two folders of the same condition. Move one into another group. |
+| `image_intensity_outlier` | Warning (intensity check) | An image's median or high percentile in a channel is far from the other images of its condition and biological repeat. Look at it: it may be out of focus, contain debris or bubbles, or have been acquired differently. Exclude it if it is faulty. |
+| `repeat_intensity_shift` | Warning (intensity check) | A biological repeat is brighter or darker than the other repeats of its condition. Check whether it was prepared or acquired differently; normalising per biological repeat in later bricks removes such differences. |
+| `saturated_image` | Warning (intensity check) | More than the limit (default 1 %) of an image's pixels in a channel are at the largest value of its pixel type, so their true intensity is lost. Check the exposure, gain or laser power. |
+| `no_intensity_spread` | Warning (intensity check) | An image's channel has the same 1st and 99.8th percentile (empty or blank), so it cannot be normalised on its own. Check the channel, or exclude the image. |
 | `channel_names_differ` | Warning | Channel names differ between images at the same position. Check the channel order. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
 | `no_finite_pixels` | Warning | Some planes have a channel without finite pixels; those channels are left out of group statistics. |
@@ -442,6 +501,34 @@ pairing = design.repeat_groups()  # {(condition, biological_repeat): repeat_grou
 ```
 
 Later bricks read the file with `read_experiment_design(path)`.
+
+The intensity checks of a written table are in `result.intensity` (summaries and the
+normalization brick's warnings, each with its channel); `check_table(path)` checks any
+table:
+
+```python
+from morphobricks_normalization import IntensityCheckSettings
+from morphobricks_preprocessing import check_table, repeat_boxes
+
+limits = IntensityCheckSettings(outlier_limit=4)
+result = run_experiment("/data/exp1", mapping, intensity_settings=limits)
+for issue in result.intensity.issues:
+    print(issue.code, issue.channel, issue.items, issue.message)
+records, report = check_table(result.csv_path, limits)
+boxes = repeat_boxes(report, channel=0)  # what the notebook's box plots show
+```
+
+The image type is optional too: `run_experiment(..., image_type="rgb")` records it in the
+manifest, and without it the manifest records none. `review_image_type` gives the
+suggestion and whether RGB is possible, from the headers and the axis roles:
+
+```python
+from morphobricks_preprocessing import review_axes, review_image_type
+
+suggestion = review_image_type(check.metadata, review_axes(check.metadata, mapping))
+print(suggestion.suggested, suggestion.reason, suggestion.rgb_problem)
+result = run_experiment("/data/exp1", mapping, image_type=suggestion.suggested)
+```
 
 Reading the table, group statistics and normalisation parameters come from the
 normalization brick (`morphobricks_normalization`, installed with this package):

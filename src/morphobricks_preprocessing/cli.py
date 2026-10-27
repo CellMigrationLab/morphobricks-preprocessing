@@ -6,6 +6,10 @@ what will be analysed, the problems found and the suggested axis roles.
 are never taken from metadata without being stated. It also needs the
 experiment design confirmed in ``experiment_design.csv``: without it, ``run``
 writes a template to the output folder for the user to fill in, and stops.
+The image type (fluorescence or RGB) is given with ``--image-type``, or the
+suggestion from the image headers is used and printed. After writing, ``run``
+prints the intensity checks of the table (warnings only; plots are drawn in the
+notebook only).
 Both exit with status 1 when an error blocks processing.
 """
 
@@ -19,7 +23,9 @@ from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
-from .axes import AxisMapping, reference_axes
+from morphobricks_normalization.checks import IntensityCheckSettings
+
+from .axes import AxisMapping, reference_axes, review_axes
 from .design import (
     DESIGN_FILENAME,
     DesignFormatError,
@@ -31,6 +37,8 @@ from .design import (
     write_experiment_design,
 )
 from .discovery import check_output_folder, default_output_folder
+from .image_type import IMAGE_TYPES, RGB, ImageTypeReview, review_image_type
+from .intensity import intensity_text
 from .planes import DEFAULT_MEMORY_LIMIT, format_bytes
 from .report import (
     balance_summary,
@@ -132,6 +140,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="the confirmed experiment design (default: experiment_design.csv in the output "
         "folder); without a confirmed design, run writes a template there and stops",
     )
+    run.add_argument(
+        "--image-type",
+        choices=IMAGE_TYPES,
+        help="fluorescence (each channel a separate stain) or rgb (colour images with "
+        "three channels); default: the type suggested from the image headers, printed",
+    )
     run.add_argument("--bins", type=int, help="bins per plane (default: depends on pixel type)")
     run.add_argument(
         "--memory-limit",
@@ -186,6 +200,30 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="auto|none|N",
         help="smaller levels for viewing: auto (default, halve until a plane fits 512 px), "
         f"none, or a number from 1 to {MAX_LEVELS - 1}",
+    )
+    checks = run.add_argument_group(
+        "intensity checks", "limits of the warnings printed after the run; the defaults suit most"
+    )
+    checks.add_argument(
+        "--outlier-limit",
+        type=float,
+        default=3.0,
+        metavar="N",
+        help="robust deviations beyond which an image or biological repeat is reported (default 3)",
+    )
+    checks.add_argument(
+        "--saturation-limit",
+        type=float,
+        default=0.01,
+        metavar="FRACTION",
+        help="fraction of saturated pixels above which an image is reported (default 0.01, 1 %%)",
+    )
+    checks.add_argument(
+        "--min-images",
+        type=int,
+        default=5,
+        metavar="N",
+        help="fewest images a comparison needs (default 5)",
     )
     run.add_argument("--log", metavar="FILE", help="write technical details to this file")
     return parser
@@ -252,6 +290,13 @@ def _check(args: argparse.Namespace) -> int:
             f"Suggested option for 'run': --axes {pre.suggested_mapping.roles_string} "
             f"(axes in the files: {pre.suggested_mapping.axes})"
         )
+        type_review = review_image_type(
+            pre.metadata, review_axes(pre.metadata, pre.suggested_mapping)
+        )
+        print(
+            f"Suggested image type: {type_review.suggested}, because {type_review.reason}. "
+            "'run' uses it unless you give --image-type."
+        )
     return 0 if pre.ok else 1
 
 
@@ -280,6 +325,15 @@ def _run(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(exc)
         return 1
+    try:
+        intensity_settings = IntensityCheckSettings(
+            outlier_limit=args.outlier_limit,
+            saturation_limit=args.saturation_limit,
+            min_images=args.min_images,
+        )
+    except ValueError as exc:
+        print(exc)
+        return 1
     design = None
     # Folder problems are reported by the run itself; the design is only asked about
     # once the folders can be processed.
@@ -290,6 +344,12 @@ def _run(args: argparse.Namespace) -> int:
             return 1
     print("Axis roles:")
     print(mapping_summary(mapping, pre.metadata.files))
+    print()
+    review = review_axes(pre.metadata, mapping, missing_as_singleton=args.missing_as_singleton)
+    type_review = review_image_type(pre.metadata, review)
+    image_type = args.image_type or type_review.suggested
+    print(f"Image type: {image_type}")
+    print(_image_type_note(type_review, args.image_type))
     print()
     if design is not None:
         print("Experiment design:")
@@ -316,11 +376,16 @@ def _run(args: argparse.Namespace) -> int:
         convert_tiffs=args.convert_tiff,
         conversion=conversion,
         design=design,
+        image_type=image_type,
+        intensity_settings=intensity_settings,
     )
     if result.issues:
         print(format_issues(result.issues))
         print()
     print(run_summary(result))
+    if result.intensity is not None:
+        print()
+        print(intensity_text(result.intensity))
     return 0 if result.written else 1
 
 
@@ -369,6 +434,19 @@ def _design_for_run(pre, args: argparse.Namespace) -> tuple[ExperimentDesign | N
         "Then run again.",
     ]
     return None, "\n".join(lines)
+
+
+def _image_type_note(review: ImageTypeReview, given: str | None) -> str:
+    """Say where the image type comes from and how to choose the other one."""
+    if given is not None:
+        return "  given with --image-type"
+    other = "fluorescence" if review.suggested == RGB else RGB
+    lines = [f"  suggested, because {review.reason}"]
+    if other == RGB and not review.rgb_allowed:
+        lines.append(f"  rgb is not possible: {review.rgb_problem}")
+    else:
+        lines.append(f"  Give --image-type {other} if these are {other} images.")
+    return "\n".join(lines)
 
 
 def _conversion_note(pre, conversion: ConversionSettings, output) -> str:

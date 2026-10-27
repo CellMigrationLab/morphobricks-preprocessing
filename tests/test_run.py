@@ -109,6 +109,38 @@ def csv_bytes(result):
 # First run ----------------------------------------------------------------------------
 
 
+def test_the_run_checks_the_intensities_of_its_table(tmp_path, reads):
+    from morphobricks_normalization.checks import IntensityCheckSettings
+
+    from morphobricks_preprocessing import check_table
+
+    root = tmp_path / "exp"
+    rng = np.random.default_rng(5)
+    for i, level in enumerate([100, 101, 99, 102, 98, 190]):
+        image = np.clip(rng.normal(level, 8, (2, 16, 16)), 0, 254).astype(np.uint8)
+        write_data(root / f"ctrl/rep1/img_{i}.tif", image, axes="ZYX")
+    result = run_experiment(root, ZYX)
+    assert result.written and result.intensity is not None
+    _, from_table = check_table(result.csv_path)
+    assert result.intensity.issues == from_table.issues
+    assert {i.items for i in result.intensity.issues} == {("ctrl/rep1/img_5.tif",)}
+    # The checks are warnings about the table, not issues of the run.
+    assert "image_intensity_outlier" not in codes(result.issues)
+    manifest = read_manifest(result.manifest_path)
+    assert manifest.intensity_checks == IntensityCheckSettings()
+    # New limits change the warnings and the manifest, and read no image again.
+    reads.clear()
+    loose = IntensityCheckSettings(outlier_limit=100)
+    again = run_experiment(root, ZYX, intensity_settings=loose)
+    assert reads == [] and again.intensity.issues == ()
+    assert read_manifest(again.manifest_path).intensity_checks == loose
+
+
+def test_a_failed_run_has_no_intensity_checks(experiment):
+    result = run_experiment(experiment, prefill_mapping("YX"))
+    assert not result.written and result.intensity is None
+
+
 def test_first_run_writes_table_and_manifest(experiment):
     result = run_experiment(experiment, ZYX)
     assert result.written and result.ok
