@@ -278,8 +278,10 @@ The default output folder is next to the experiment folder:
   `ome_zarr/control/bio_rep1/tech_rep1/img_01.ome.zarr`. The full-resolution level holds
   exactly the source pixel values; smaller levels are averages for fast viewing (for
   example in napari with the `napari-ome-zarr` plugin). Pixel sizes and channel names are
-  copied from the metadata when present. Copies of unchanged images are kept on later
-  runs, copies of deleted or excluded images are removed. Switching back to reading the
+  copied from the metadata when present, each axis with its own unit. Copies of unchanged
+  images are kept on later runs, copies of deleted or excluded images are removed. Copies
+  written by an earlier version with the X unit on every axis are converted again once,
+  with their own units; the table does not change. Switching back to reading the
   TIFF images directly removes the copies and recomputes their rows. Details in
   [contract.md](contract.md) §10.
 

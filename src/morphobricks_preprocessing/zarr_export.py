@@ -21,6 +21,7 @@ which OME-NGFF 0.4 uses.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
@@ -496,6 +497,30 @@ def is_copy_path(output_folder: str | os.PathLike, relative_path: str) -> bool:
     base = (output / OME_ZARR_FOLDER).resolve()
     target = (output / relative_path).resolve()
     return base in target.parents and target.name.endswith(OME_ZARR_SUFFIX)
+
+
+def copy_units_current(copy: str | os.PathLike, sizes: PhysicalSizes) -> bool:
+    """Return True if a copy's axis units are those its source's sizes give now.
+
+    Copies written before each axis had its own unit (plan §12 question 22) may
+    carry X's unit on Y or Z; such copies are written again on the next run. Only
+    the copy's metadata file is read. A copy whose metadata cannot be read counts
+    as out of date, so it is written again rather than trusted.
+
+    Parameters
+    ----------
+    copy
+        The copy's folder (``<output>/ome_zarr/....ome.zarr``).
+    sizes
+        The source image's physical sizes, as :func:`read_physical_sizes` gives them.
+    """
+    try:
+        attrs = json.loads((Path(copy) / ".zattrs").read_text(encoding="utf-8"))
+        axes = attrs["multiscales"][0]["axes"]
+        return all(axis.get("unit") == sizes.unit(str(axis["name"]).upper()) for axis in axes)
+    except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError):
+        logger.debug("Cannot read the axis units of the copy %s", copy, exc_info=True)
+        return False
 
 
 # zarr 2 / 3 ---------------------------------------------------------------------------

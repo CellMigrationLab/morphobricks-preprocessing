@@ -555,7 +555,10 @@ Raised during review; to be decided before the milestones that need them:
     unchanged. `inspect_image` (`TiffMetadata`) gains the
     field `physical_sizes`, read from the header already open, for information only; the
     existing fields are unchanged. OME-Zarr copies of images whose Y or Z unit differs
-    from X now write that axis's own unit. `PhysicalSizes` and `read_physical_sizes` moved
+    from X now write that axis's own unit; on the next run, a copy written before with
+    other axis units (read from its `.zattrs`) counts as changed and is converted again
+    through the usual staged publication, so one output folder never mixes the two (its
+    rows do not change). `PhysicalSizes` and `read_physical_sizes` moved
     to the module `physical_sizes` and stay importable from `zarr_export` and the package.
     The CSV, the manifest and their versions are unchanged.*
 23. OME-Zarr physical sizes: `open_ngff` read the axes but not the OME-NGFF scale, so the

@@ -164,4 +164,5 @@ presentation does not change the conversion rules below.
 | Updates | Copies of unchanged images are kept, of new or changed images rewritten, and of images no longer analysed removed; a failed run leaves the earlier copies as they were (see §9 for publication) |
 | Switching | Turning conversion on or off recomputes every TIFF row; turning it off removes the copies the manifest recorded |
 | Missing copy | A converted TIFF whose copy was deleted counts as changed and is converted again |
+| Outdated units | A copy whose axis units differ from those its TIFF's metadata gives now (copies written before each axis had its own unit, plan §12 question 22) counts as changed and is converted again; its rows do not change. Only the copy's `.zattrs` is read to tell |
 | Settings change | Copies written with other conversion settings (recorded in the manifest) are written again; their rows do not change |
