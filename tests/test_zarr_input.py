@@ -34,6 +34,7 @@ from morphobricks_preprocessing import (
 from morphobricks_preprocessing import run as run_module
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.histogram import compute_plane_histogram
+from morphobricks_preprocessing.zarr_export import ConversionSettings
 from morphobricks_preprocessing.zarr_input import ngff_axes
 from tiff_tree import write_data, write_file
 from zarr_tree import write_bioformats2raw, write_ngff, write_plate, zarr_major
@@ -787,3 +788,39 @@ def test_unexpected_scale_metadata_does_not_block_the_image(tmp_path, monkeypatc
     path = write_ngff(root / "ctrl/a.ome.zarr", np.zeros((2, 8, 8), np.uint8), "zyx")
     assert open_ngff(path).physical_sizes == PhysicalSizes()
     assert preflight(root, tmp_path / "out").ok
+
+
+@pytest.mark.parametrize("where", ["dataset", "multiscale"])
+def test_transformations_that_are_not_a_list_give_no_sizes(tmp_path, where):
+    malformed = {"type": "scale", "scale": [2.0, 0.5, 0.25]}
+    kwargs = (
+        {"dataset_transforms": malformed}
+        if where == "dataset"
+        else {"scale": [2.0, 0.5, 0.25], "multiscale_transforms": malformed}
+    )
+    path = write_ngff(tmp_path / "a.ome.zarr", np.zeros((3, 8, 8), np.uint8), "zyx", **kwargs)
+    assert open_ngff(path).physical_sizes == PhysicalSizes()
+
+
+def test_sizes_come_from_level_0_of_a_pyramid(tmp_path):
+    # The brick's own copy has three levels with scales 0.5, 1 and 2 along X and Y.
+    source = tmp_path / "exp/a.ome.tif"
+    source.parent.mkdir(parents=True)
+    tifffile.imwrite(
+        source,
+        np.zeros((2, 64, 64), np.uint16),
+        ome=True,
+        photometric="minisblack",
+        metadata={"axes": "ZYX", "PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5, "PhysicalSizeZ": 2},
+    )
+    result = run_experiment(
+        tmp_path / "exp",
+        prefill_mapping("ZYX"),
+        convert_tiffs=True,
+        conversion=ConversionSettings(chunk_size=16, pyramid_levels=2),
+    )
+    copy = result.output_folder / ome_zarr_relative_path("a.ome.tif")
+    image = open_ngff(copy)
+    assert image.dataset_path == "0" and image.shape == (2, 64, 64)
+    sizes = image.physical_sizes
+    assert (sizes.x, sizes.y, sizes.z) == (0.5, 0.5, 2.0)

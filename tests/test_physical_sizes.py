@@ -213,3 +213,29 @@ def test_ngff_unit_spellings_become_udunits_names():
     multiscale["axes"][2]["unit"] = "Mm"
     sizes = physical_sizes_module.ngff_physical_sizes(multiscale, "TZYX")
     assert (sizes.unit("Z"), sizes.unit("Y")) == ("kilometer", "Mm")
+
+
+def test_imagej_boolean_values_are_not_sizes(tmp_path):
+    # tifffile reads "spacing=true" as True, which float() would turn into 1.
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(
+        path,
+        np.zeros((3, 8, 8), np.uint16),
+        imagej=True,
+        resolution=(1 / 0.25, 1 / 0.25),
+        metadata={"axes": "ZYX", "unit": "um", "spacing": True, "finterval": True},
+    )
+    assert tifffile.TiffFile(path).imagej_metadata["spacing"] is True
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.z, sizes.t) == (0.25, None, None)
+
+
+def test_ngff_boolean_scales_are_not_sizes():
+    multiscale = {
+        "axes": [{"name": "y", "type": "space"}, {"name": "x", "type": "space"}],
+        "datasets": [
+            {"path": "0", "coordinateTransformations": [{"type": "scale", "scale": [True, 0.5]}]}
+        ],
+    }
+    sizes = physical_sizes_module.ngff_physical_sizes(multiscale, "YX")
+    assert (sizes.y, sizes.x) == (None, 0.5)

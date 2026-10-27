@@ -250,12 +250,15 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
 def _ngff_scale(entry: dict, ndim: int) -> list[float | None] | None:
     """Return the ``scale`` in an entry's ``coordinateTransformations``.
 
-    None when the entry has no scale transformation; raises ValueError when it
-    has one that cannot be used (stored in a file, or not one number per axis).
+    None when the entry has no scale transformation; raises ValueError when its
+    transformations are not a list, or its scale cannot be used (stored in a
+    file, or not one number per axis).
     """
     transforms = entry.get("coordinateTransformations") if isinstance(entry, dict) else None
-    if not isinstance(transforms, list):
+    if transforms is None:
         return None
+    if not isinstance(transforms, list):
+        raise ValueError("the coordinate transformations are not a list")
     for transform in transforms:
         if not isinstance(transform, dict) or transform.get("type") != "scale":
             continue
@@ -366,6 +369,8 @@ def _resolution(tag) -> float | None:
 
 
 def _number(value) -> float | None:
+    if isinstance(value, bool):  # True would otherwise read as a size of 1
+        return None
     try:
         number = float(value)
     except (TypeError, ValueError):
