@@ -1,4 +1,4 @@
-"""Find the masks of every image and check them from their headers (``docs/contract.md`` §13).
+"""Find the masks of every image and check them from their headers (``docs/contract.md`` §15).
 
 Masks (segmentations: label images of cells, nuclei, ...) are kept in a masks folder outside
 the experiment, one subfolder per mask type, each mirroring the experiment's folders::
@@ -135,7 +135,7 @@ def find_masks(
     Parameters
     ----------
     masks_folder
-        The masks folder (contract §13), or None to use only the OME-Zarr images' own label
+        The masks folder (contract §15), or None to use only the OME-Zarr images' own label
         images.
     discovery
         The experiment's folders, which say where each image is.

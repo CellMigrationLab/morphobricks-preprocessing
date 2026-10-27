@@ -340,6 +340,18 @@ API, CLI). The notebook and CLI only call the API.
   columns; its channels read one at a time (`planes.iter_xyc_planes`); images with
   different numbers of channels are an error before any image is read; earlier tables are
   recomputed on the next run. *Implemented, see question 27.*
+- **Image type (follow-up P4 of the normalization plan):** after the axis roles, step 2
+  asks whether the images are fluorescence or RGB, suggesting RGB for TIFF images stored as
+  RGB colour on the channel axis (`image_type`, `metadata.TiffMetadata.rgb_samples`); RGB
+  needs three channels of an integer type. The manifest records the type; the command line
+  takes `--image-type` or prints the suggestion. Outputs are otherwise unchanged.
+  *Implemented, see question 29.*
+- **Intensity checks (follow-up P5 of the normalization plan):** after every successful
+  run, and in step 4 for any table, the normalization brick's `image_summaries` and
+  `intensity_checks` give the four intensity warnings from the table alone (`intensity`);
+  the notebook shows them with adjustable limits and per-channel box plots and
+  distributions, the command line prints them, and the manifest records the limits.
+  *Implemented, see question 30.*
 
 ## 11. Tests and acceptance criteria
 
@@ -691,14 +703,59 @@ Raised during review; to be decided before the milestones that need them:
     depends on the normalization brick's release v0.2.0 (tag, not commit) instead of the
     Milestone 2b merge commit `0e53e67`; v0.2.0 adds only RGB and intensity checks, which
     this brick does not call yet. The next tag, v0.2.0, follows follow-ups P4 and P5.*
-29. Can this brick find each image's masks and tell how they relate, so that a user who is
+29. How is the image type, fluorescence or RGB, chosen and recorded (normalization plan
+    N33, N34, its contract §5, follow-up P4)?
+    *Decided (27 October 2026): after the axis roles are confirmed, step 2 shows an
+    "Image type" card with the two types, the suggestion preselected and the yellow question
+    "Is this the right image type for your images?" answered with **Yes, this is the right
+    image type** (Undo to change it); nothing is used until it is confirmed, and step 3 stays
+    locked until then. RGB is suggested when every analysed image is a TIFF stored as RGB
+    colour (photometric RGB, three samples per pixel, read from the header as
+    `TiffMetadata.rgb_samples`), the confirmed C role is on its samples axis, and RGB is
+    possible; fluorescence otherwise (OME-Zarr images, grey samples, RGB with alpha). RGB
+    needs exactly three channels of an integer pixel type, the rule of the normalization
+    brick's `check_rgb`; otherwise the choice stays at fluorescence with the reason shown
+    (ipywidgets cannot disable one radio button, so the whole choice is disabled), and
+    `run_experiment(image_type="rgb")` is the error `rgb_not_possible`. Changing the axis
+    roles or the folder asks again; the card is the same when step 2 is embedded by another
+    brick (question 26). Agreed with the owner: the manifest gains two optional top-level
+    keys, `image_type` (null when the run was given none, as `run_experiment` takes it
+    optionally like the design of question 22) and `channels_from_rgb_samples`; it stays
+    version 1. Changing only the type recomputes nothing. The command line takes
+    `--image-type fluorescence|rgb`, or uses the suggestion and prints it with the reason;
+    `check` prints the suggestion. `plane_histograms.csv` and `experiment_design.csv` do not
+    change.*
+30. How are the intensity checks shown (normalization plan N38, N50–N53, its contract §7,
+    follow-up P5)?
+    *Decided (27 October 2026): `run_experiment` checks the rows it wrote, in memory, with
+    the normalization brick's `image_summaries` and `intensity_checks`
+    (`intensity.check_intensities`, `RunResult.intensity`), and `check_table` checks any
+    table; no image is read. The four warnings are kept apart from the run's issues and
+    never block. Agreed with the owner: the warnings and the plots are shown both in step 3,
+    automatically after every successful run, and in step 4 for the chosen table; the
+    manifest records the limits used (optional key `intensity_checks`,
+    `IntensityCheckSettings.to_dict()`; version 1), changing them afterwards only updates
+    the warnings on screen and is recorded by the next run; the distributions are
+    cumulative curves, like step 4's existing plot. Each panel has a status line, tiles per
+    kind, a table (check, channel `C<i>`, image or repeat, what was found) with what to do
+    per kind, a collapsed **Check settings** panel (`outlier_limit` 3.0, `saturation_limit`
+    1 %, `min_images` 5, and **Restore the defaults**), channel buttons, box plots of the
+    image medians and high percentiles per condition and biological repeat (images with a
+    warning in that channel, from `Issue.channel`, as red diamonds; shifted repeats as amber
+    boxes), and the cumulative distribution of each biological repeat, one panel per
+    condition (shifted repeats dashed; at most 12 conditions). Plots are drawn in the
+    notebook only and nothing is written. The command line prints the warnings grouped by
+    kind with the action once per kind, takes `--outlier-limit`, `--saturation-limit` and
+    `--min-images`, and draws no plots. Comparisons stay within a condition, as the brick
+    does. `plane_histograms.csv` and `experiment_design.csv` do not change.*
+31. Can this brick find each image's masks and tell how they relate, so that a user who is
     not a programmer only has to name the masks (MorphoFeature decision D78)? Bricks that
     measure objects (MorphoObjects, MorphoRelate, CellPatcher, MorphoFeature's workflows)
     need every image paired with its masks and the parent-child relationships between mask
     types (two nuclei in one cell, nucleoli inside nuclei inside cells, mitochondria grouped
     by cell), and today each asks the user again.
     *Decided (October 2026), by the MorphoBricks owner: yes, for any number of mask types
-    (contract §13). Masks are in a separate masks folder, outside the experiment, one
+    (contract §15). Masks are in a separate masks folder, outside the experiment, one
     subfolder per mask type mirroring the experiment's folders, paired with the images by
     leaf folder and `position_id`; the label images of OME-Zarr images are masks too. The
     checks of `check` and `run` read headers only; reading the pixels is an optional mask
@@ -722,8 +779,8 @@ Raised during review; to be decided before the milestones that need them:
     `mask_thresholds` checks them (shares and the intersection over union above 0 and at
     most 1, the median number of pieces at least 1) before any mask is read, and the values
     used are written in every report. Proposed to the brick's maintainer: tag v0.2.0 once
-    this is merged, so the other bricks can pin it (the follow-ups P4 and P5 then go to
-    v0.3.0). Next, in their own changes: a notebook step for the masks (name each mask,
+    this is merged, so the other bricks can pin it (with the follow-ups P4 and P5, merged
+    before it). Next, in their own changes: a notebook step for the masks (name each mask,
     say what it contains, confirm or correct the relationships) and a file saving those
     answers for the other bricks, as `experiment_design.csv` does for the repeats.
     Also decided (owner, 27 October 2026, after MorphoFeature's end-to-end trial on

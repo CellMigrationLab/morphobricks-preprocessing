@@ -73,6 +73,12 @@ src/morphobricks_preprocessing/
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
   design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
                     the folders on reruns, design_issues, read/write experiment_design.csv, load_design
+  image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
+                    TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
+                    brick's check_rgb), image_type_issues (rgb_not_possible)
+  intensity.py      intensity checks (P5): check_intensities/check_table (the brick's image_summaries
+                    and intensity_checks, IntensityReport), repeat_boxes and repeat_distributions for
+                    the notebook's plots, intensity_text for the CLI
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
@@ -90,11 +96,11 @@ src/morphobricks_preprocessing/
   run.py            preflight(), run_experiment() (incremental), sample_planes() for previews
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
   cli.py, __main__  `morphobricks-preprocessing check|run|masks` (also `python -m morphobricks_preprocessing`)
-  masks.py          masks (Q29): find_masks pairs every image with its masks (masks folder with one
+  masks.py          masks (Q31): find_masks pairs every image with its masks (masks folder with one
                     folder per type mirroring the experiment, or <image>_<type>.tif in the
                     experiment's folders, mixed; OME-Zarr label images), header-only
                     checks (2D, image YX, integer/bool), MaskInventory (to_manifest), read_mask
-  mask_scan.py      the optional mask step (Q29): piece_counts (scipy.ndimage), pair_counts,
+  mask_scan.py      the optional mask step (Q31): piece_counts (scipy.ndimage), pair_counts,
                     scan_masks -> MaskReport (kinds, relations, direct-parent hierarchy, evidence),
                     write_mask_report (mask_relationships.json); DEFAULT_THRESHOLDS,
                     mask_thresholds (checked changes)
@@ -376,6 +382,33 @@ functions the tests use.
   reconciled template and exits 1. **API** `run_experiment(design=None)` is optional; with
   a design it is written with the table and `experiment_design_sha256` goes in the manifest.
 
+### Image type (contract §13, follow-up P4)
+
+- **Types:** `fluorescence` and `rgb`; RGB needs three channels of an integer type
+  (the normalization brick's `check_rgb`), else `rgb_not_possible` in a run.
+- **Suggestion:** `rgb` only when every analysed image is a TIFF stored as RGB colour
+  (`TiffMetadata.rgb_samples`: photometric RGB, three samples per pixel, axis `S`), the
+  confirmed C role is on `S`, and RGB is possible. Never applied without confirmation.
+- **Notebook:** step 2's "Image type" card appears once the axis roles are confirmed
+  (also when embedded); radio buttons with the suggestion preselected, disabled at
+  fluorescence when RGB is impossible; `ConfirmToggle` **Yes, this is the right image
+  type**; changing roles or folder resets it; step 3 gated on `confirmed_image_type`.
+- **CLI:** `--image-type`, else the suggestion, printed with its reason.
+- **Manifest:** optional top-level `image_type` (null without one) and
+  `channels_from_rgb_samples`; changing the type recomputes nothing.
+
+### Intensity checks (contract §14, follow-up P5)
+
+- **From the table only:** `run_experiment` checks its rows in memory (`RunResult.intensity`,
+  apart from `RunResult.issues`, never blocking); `check_table` reads any table. The four
+  codes are the normalization brick's; comparisons stay within a condition.
+- **Limits:** `IntensityCheckSettings` (3.0, 0.01, 5), recorded in the manifest
+  (`intensity_checks`, optional); changing them recomputes nothing.
+- **Notebook:** `IntensityPanel` in step 3 (after a successful run, `run_checks`) and step 4
+  (`table_checks`): status, tiles, warnings table with actions, collapsed **Check
+  settings**, channel buttons, box plots (`Issue.channel` marks images) and cumulative
+  distributions per biological repeat. Nothing written. CLI prints them, no plots.
+
 ### Validation messages (contract §8)
 
 Every expected problem is a `ValidationIssue` with:
@@ -396,7 +429,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Topic | Decision |
 |---|---|
 | Binning | Per-plane min–max, same bin count per experiment, pooled counts for groups (binning study) |
-| Core dependencies | `numpy`, `tifffile`, `scipy` (the mask step's piece counts, Q29) and `morphobricks-normalization` (git dependency pinned to its release tag v0.2.0; `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
+| Core dependencies | `numpy`, `tifffile`, `scipy` (the mask step's piece counts, Q31) and `morphobricks-normalization` (git dependency pinned to its release tag v0.2.0; `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
 | OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
@@ -415,8 +448,10 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Their public names stay importable from `morphobricks_preprocessing` and from the old submodules for one version: module `__getattr__` stand-ins (`_moved.py`), one `DeprecationWarning` per old path naming `morphobricks_normalization.<module>.<name>`, same objects. The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, now §6.2 for the CSV) |
 | Dataset consistency (Q21, P2) | Step 1 "Dataset consistency" panel: balance table (images and technical-repeat folders per condition x biological repeat), `unbalanced_images` (< 0.5 or > 2 x median), `repeat_missing_conditions`, `different_pixel_sizes`, `missing_pixel_size` (OME-Zarr scale included), `different_plane_counts`; `different_sizes` narrowed to width/height; consistency issues shown only in that panel, not in Messages. Warnings only; outputs unchanged |
 | Experiment design (Q22, P3) | Step 1 after the labels: pairing dropdowns, one yellow "Yes, they are comparable" question per repeat group (single whole-experiment question without biological-repeat folders), control checkboxes; `experiment_design.csv` written after every answer; reruns load it and fold the questions behind a Change button; step 3 gated. CLI `run` reads it or `--design`, else writes a template and exits 1. `run_experiment(design=...)` optional; manifest `experiment_design_sha256` (optional key, version 1). Two folders of one condition in a group block that group |
+| Image type (Q29, P4) | Step 2 card after the axis roles: Fluorescence or RGB, suggestion preselected, confirmed with **Yes, this is the right image type**; RGB suggested for TIFF photometric RGB with three samples on the C axis; RGB needs three integer channels (`check_rgb`), else disabled with the reason and `rgb_not_possible` in a run. Manifest keys `image_type`, `channels_from_rgb_samples` (optional, version 1); type changes recompute nothing. CLI `--image-type`, default the printed suggestion |
+| Intensity checks (Q30, P5) | Warnings from the table alone with the brick's `image_summaries`/`intensity_checks`, shown automatically after step 3 and in step 4 for any table; limits under a collapsed **Check settings** panel, recorded in the manifest (`intensity_checks`); per-channel box plots with flagged images and cumulative distributions per biological repeat, notebook only; the CLI prints the warnings (`--outlier-limit`, `--saturation-limit`, `--min-images`) |
 | Position identity (Q20, D02) | `position_id` = image name without extension, in every CSV row and manifest file entry; FOV key = labels + `position_id`; duplicates in one leaf folder are the error `duplicate_position_id`. CSV columns and schema 2 unchanged; manifest version 1 with an optional key |
-| Masks (Q29) | Optional masks folder outside the experiment, one subfolder per mask type mirroring the experiment's folders, or the experiment's folders with `<image>_<type>.tif` (both may be mixed; `ambiguous_mask` when a name could fit two images or both layouts), paired by leaf folder + `position_id`; OME-Zarr label images are masks too. Header-only errors (`masks_folder_not_found`, `masks_inside_experiment`, `mask_names_differ_in_case`, `duplicate_mask`, `ambiguous_mask`, `unreadable_mask`, `mask_not_2d`, `mask_size_mismatch`, `mask_pixel_type`) and warnings (`mask_missing`, `mask_without_image`, `mask_outside_type_folder`) in `check`/`run`; manifest key `masks` (optional, version 1). Optional mask step (`masks` command, `scan_masks`): kinds, relations with evidence, direct-parent hierarchy, `mask_relationships.json` (report version 1); default thresholds the user may change (`thresholds=` keyword, one CLI option each, checked by `mask_thresholds`, written in the report); suggestions only, the user names and confirms. SciPy core dependency. Confirmed by the owner: 2D masks at the image's YX, integer/bool pixels, masks folder outside the experiment. Next: notebook step and a file of the user's answers; 3D/time-lapse masks later; tag v0.2.0 proposed after merge |
+| Masks (Q31) | Optional masks folder outside the experiment, one subfolder per mask type mirroring the experiment's folders, or the experiment's folders with `<image>_<type>.tif` (both may be mixed; `ambiguous_mask` when a name could fit two images or both layouts), paired by leaf folder + `position_id`; OME-Zarr label images are masks too. Header-only errors (`masks_folder_not_found`, `masks_inside_experiment`, `mask_names_differ_in_case`, `duplicate_mask`, `ambiguous_mask`, `unreadable_mask`, `mask_not_2d`, `mask_size_mismatch`, `mask_pixel_type`) and warnings (`mask_missing`, `mask_without_image`, `mask_outside_type_folder`) in `check`/`run`; manifest key `masks` (optional, version 1). Optional mask step (`masks` command, `scan_masks`): kinds, relations with evidence, direct-parent hierarchy, `mask_relationships.json` (report version 1); default thresholds the user may change (`thresholds=` keyword, one CLI option each, checked by `mask_thresholds`, written in the report); suggestions only, the user names and confirms. SciPy core dependency. Confirmed by the owner: 2D masks at the image's YX, integer/bool pixels, masks folder outside the experiment. Next: notebook step and a file of the user's answers; 3D/time-lapse masks later; tag v0.2.0 proposed after merge |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
 | Paths and filenames in widget HTML and notebook text | **`<b>…</b>` / `**…**`, never `<code>` or inline code** |
@@ -705,11 +740,11 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 - **Released as v0.1.0** (27 October 2026), with everything above; the normalization brick
   is pinned to its v0.2.0 (question 28). The next tag, v0.2.0, follows follow-ups P4 and
   P5.
-- **Masks (question 29, in review):** pairing every image with its masks, header checks,
+- **Since v0.1.0:** follow-ups P4 (the image type, question 29) and P5 (intensity checks
+  and plots, question 30) of the normalization plan. The owner tags v0.2.0 next.
+- **Masks (question 31, in review):** pairing every image with its masks, header checks,
   the manifest's `masks` key, and the mask step with `mask_relationships.json`; library,
   command line and documentation (the notebook step later).
-- **Next (not started):** follow-ups P4–P5 of the normalization plan (image type,
-  intensity checks and plots).
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;
   - the optional `jl-hidecode` JupyterLab extension, which keeps code cells collapsed. It

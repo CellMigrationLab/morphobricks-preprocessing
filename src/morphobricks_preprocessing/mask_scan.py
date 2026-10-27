@@ -1,4 +1,4 @@
-"""Describe every mask type and how the masks relate to each other (``docs/contract.md`` §13).
+"""Describe every mask type and how the masks relate to each other (``docs/contract.md`` §15).
 
 The optional mask step: it reads the masks found by :func:`.masks.find_masks`, one image at a
 time, and summarises each mask type and every ordered pair of types over the whole
@@ -71,7 +71,7 @@ DEFAULT_THRESHOLDS = MappingProxyType(
         "grouped_median_pieces": 2.0,
     }
 )
-"""Default thresholds of the kinds and relationships (contract §13.1); each may be changed
+"""Default thresholds of the kinds and relationships (contract §15.1); each may be changed
 (:func:`mask_thresholds`), and the values used are written in every report."""
 
 _SHARES = frozenset(DEFAULT_THRESHOLDS) - {"grouped_median_pieces"}
@@ -188,7 +188,7 @@ class MaskReport:
         return tuple(sorted(found))
 
     def to_dict(self) -> dict:
-        """Return the report as JSON-compatible data (contract §13)."""
+        """Return the report as JSON-compatible data (contract §15)."""
         return {
             "report_version": MASK_REPORT_VERSION,
             "thresholds": dict(self.thresholds),

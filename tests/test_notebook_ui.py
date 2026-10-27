@@ -63,12 +63,14 @@ def confirm_repeats(nb):
 
 
 def confirmed(experiment, **kwargs):
+    """Check the folder and confirm everything step 3 needs: labels, design, roles, type."""
     nb = checked(experiment, **kwargs)
     nb.labels_confirmed.button.click()
     confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
+    nb.image_type_checked.button.click()
     return nb
 
 
@@ -227,6 +229,8 @@ def test_next_steps_follow_confirmation_and_folder_changes(experiment):
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
+    assert "Confirm the image type in Step 2" in nb.axis_next.value
+    nb.image_type_checked.button.click()
     assert "Go to Step 3" in nb.axis_next.value
     assert "Continue" not in nb.confirmed_status.value
     nb.labels_confirmed.button.click()
@@ -253,6 +257,7 @@ def test_unreadable_image_can_be_excluded(experiment):
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
+    nb.image_type_checked.button.click()
     assert nb.run().excluded == ("ctrl/rep1/bad.tif",)
 
 
@@ -594,6 +599,7 @@ def test_confirmed_missing_axes_allow_running_unless_other_errors_remain(tmp_pat
     assert nb.run_button.disabled
     nb.missing_as_singleton.button.click()
     nb.confirm_button.click()
+    nb.image_type_checked.button.click()
     assert nb.confirmed_mapping is not None
     assert nb.run_button.disabled == blocking_file
     if blocking_file:
@@ -617,11 +623,180 @@ def test_undoing_missing_axes_confirmation_blocks_running_again(tmp_path):
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
+    nb.image_type_checked.button.click()
     assert not nb.run_button.disabled
     nb.confirm_button.click()  # unlock the roles before undoing singleton confirmation
     nb.missing_as_singleton.button.click()
     assert nb.run_button.disabled and nb.confirm_button.disabled
     assert nb.run() is None
+
+
+# Image type (follow-up P4) ----------------------------------------------------------------
+
+
+def roles_confirmed(root, **kwargs):
+    """Check the folder and confirm the labels, the design and the axis roles, not the type."""
+    nb = checked(root, **kwargs)
+    nb.labels_confirmed.button.click()
+    confirm_repeats(nb)
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    nb.confirm_button.click()
+    return nb
+
+
+def rgb_tree(root, dtype=np.uint8):
+    rng = np.random.default_rng(0)
+    for rel in ["ctrl/rep1/a.tif", "drug/rep1/a.tif"]:
+        data = rng.integers(0, 200, (2, 8, 8, 3)).astype(dtype)
+        write_data(root / rel, data, axes="ZYXS", photometric="rgb")
+    return root
+
+
+def test_image_type_is_asked_after_the_axis_roles(experiment):
+    nb = checked(experiment)
+    assert not ui.is_visible(nb.image_type_card)
+    nb.labels_confirmed.button.click()
+    confirm_repeats(nb)
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    nb.confirm_button.click()
+    assert ui.is_visible(nb.image_type_card)
+    assert nb.image_type.value == "fluorescence" and nb.confirmed_image_type is None
+    assert "Suggested: <b>Fluorescence</b>" in nb.image_type_note.value
+    # Two channels cannot be RGB: the choice is fixed and the reason shown.
+    assert nb.image_type.disabled
+    assert "RGB cannot be chosen" in nb.image_type_note.value
+    assert "2 channels of type uint8" in nb.image_type_note.value
+    assert nb.run_button.disabled and "Confirm the image type in Step 2" in nb.axis_next.value
+    nb.image_type_checked.button.click()
+    assert nb.confirmed_image_type == "fluorescence"
+    assert "Image type confirmed: Fluorescence." in nb.image_type_checked.message.value
+    assert not nb.run_button.disabled and "Go to Step 3" in nb.axis_next.value
+    assert "Image type: <b>Fluorescence</b>" in nb.plan.value
+    assert read_manifest(nb.run().manifest_path).image_type == "fluorescence"
+
+
+def test_rgb_is_suggested_but_only_used_once_confirmed(tmp_path):
+    nb = roles_confirmed(rgb_tree(tmp_path / "exp"))
+    assert nb.image_type.value == "rgb" and not nb.image_type.disabled
+    assert "Suggested: <b>RGB</b>" in nb.image_type_note.value
+    assert nb.confirmed_image_type is None and nb.run_button.disabled
+    assert nb.run() is None
+    # Choosing the other type is possible, with a reminder of the suggestion.
+    nb.image_type.value = "fluorescence"
+    assert "mb-warn" in nb.image_type_note.value and "not the suggested type" in (
+        nb.image_type_note.value
+    )
+    nb.image_type.value = "rgb"
+    nb.image_type_checked.button.click()
+    assert nb.confirmed_image_type == "rgb" and nb.image_type.disabled
+    manifest = read_manifest(nb.run().manifest_path)
+    assert manifest.image_type == "rgb" and manifest.channels_from_rgb_samples
+    nb.image_type_checked.button.click()  # undo
+    assert nb.confirmed_image_type is None and not nb.image_type.disabled
+    assert nb.run_button.disabled
+
+
+def test_float_rgb_images_cannot_be_rgb(tmp_path):
+    nb = roles_confirmed(rgb_tree(tmp_path / "exp", np.float32))
+    assert nb.image_type.value == "fluorescence" and nb.image_type.disabled
+    assert "stored as RGB colour, but cannot be of type RGB" in nb.image_type_note.value
+    assert "3 channels of type float32" in nb.image_type_note.value
+
+
+def test_changing_the_axis_roles_asks_for_the_image_type_again(experiment):
+    nb = confirmed(experiment)
+    assert nb.confirmed_image_type == "fluorescence"
+    nb.confirm_button.click()  # change the axis roles
+    assert nb.confirmed_image_type is None and not ui.is_visible(nb.image_type_card)
+    assert not nb.image_type_checked.value and nb.run_button.disabled
+    nb.confirm_button.click()
+    assert ui.is_visible(nb.image_type_card) and nb.confirmed_image_type is None
+    nb.image_type_checked.button.click()
+    nb.folder.value = str(experiment) + "_other"
+    assert nb.confirmed_image_type is None and not ui.is_visible(nb.image_type_card)
+
+
+# Intensity checks (follow-up P5) ----------------------------------------------------------
+
+
+def bright_tree(root):
+    """Six 2-channel images in ctrl/rep1, one far brighter in C0, and drug/rep1 brighter."""
+    rng = np.random.default_rng(3)
+    second = np.clip(rng.normal(60, 10, (16, 16)), 0, 254).astype(np.uint8)
+    levels = {"ctrl/rep1": [100, 102, 98, 101, 99, 180], "drug/rep1": [200, 202, 198]}
+    for folder, values in levels.items():
+        for i, level in enumerate(values):
+            first = np.clip(rng.normal(level, 10, (16, 16)), 0, 254).astype(np.uint8)
+            write_data(root / folder / f"img_{i}.tif", np.stack([first, second]), axes="CYX")
+    return root
+
+
+def test_intensity_checks_follow_a_successful_run(tmp_path):
+    out = tmp_path / "out"
+    nb = confirmed(bright_tree(tmp_path / "exp"), output_folder=str(out))
+    assert not ui.is_visible(nb.run_checks.card)
+    nb.run()
+    # The checks and plots write no file.
+    assert sorted(p.name for p in out.iterdir()) == [
+        "experiment_design.csv",
+        "plane_histograms.csv",
+        "run_manifest.json",
+    ]
+    panel = nb.run_checks
+    assert ui.is_visible(panel.card) and "intensity warning" in panel.status.value
+    assert "9 images checked" in panel.status.value
+    assert "ctrl/rep1/img_5.tif" in panel.findings.value and "C0" in panel.findings.value
+    assert "What to do" in panel.findings.value
+    assert "drug/rep1" not in panel.findings.value  # conditions are never compared
+    assert bytes(panel.boxes.value).startswith(b"\x89PNG")
+    assert bytes(panel.curves.value).startswith(b"\x89PNG")
+    assert ui.is_visible(panel.channel_row) and [o[1] for o in panel.channel.options] == [0, 1]
+    assert "Read the intensity checks above" in nb.run_next.value
+    assert panel.report.issues == nb.result.intensity.issues
+    # Channel C1 has no warning; its plots are drawn too.
+    first = bytes(panel.boxes.value)
+    panel.channel.value = 1
+    assert bytes(panel.boxes.value) != first
+    # Changing a limit updates the warnings at once, without writing anything.
+    stamp = (out / "run_manifest.json").stat().st_mtime_ns
+    panel.outlier_limit.value = 100
+    assert "No intensity warnings" in panel.status.value and panel.findings.value == ""
+    assert (out / "run_manifest.json").stat().st_mtime_ns == stamp
+    panel.defaults_button.click()
+    assert panel.outlier_limit.value == 3 and "intensity warning" in panel.status.value
+    # The next run records the limits shown.
+    panel.min_images.value = 3
+    nb.run()
+    assert read_manifest(out / "run_manifest.json").intensity_checks.min_images == 3
+
+
+def test_step_4_checks_any_table_without_its_images(tmp_path):
+    root = bright_tree(tmp_path / "exp")
+    table = confirmed(root, output_folder=str(tmp_path / "out")).run().csv_path
+    for image in root.rglob("*.tif"):  # the checks and plots need only the table
+        image.unlink()
+    nb = PreprocessingNotebook()
+    nb.results_step()
+    nb.csv_file.value = str(table)
+    nb.show_statistics()
+    panel = nb.table_checks
+    assert ui.is_visible(panel.card) and "ctrl/rep1/img_5.tif" in panel.findings.value
+    assert bytes(panel.curves.value).startswith(b"\x89PNG")
+    assert "intensity checks" in nb.stats_next.value
+    nb.csv_file.value = ""  # another table: the checks of this one go
+    assert not ui.is_visible(panel.card) and panel.report is None
+
+
+def test_intensity_plots_mark_flagged_images_and_skip_empty_input():
+    from morphobricks_preprocessing.intensity import RepeatBox
+    from morphobricks_preprocessing.notebook_ui import intensity_boxes_png, repeat_curves_png
+
+    box = RepeatBox("a", "r", ("x", "y"), (1.0, 5.0), (2.0, 9.0), ((), ("saturated_image",)), True)
+    assert intensity_boxes_png([box], 99.8, 0).startswith(b"\x89PNG")
+    assert intensity_boxes_png([], 99.8, 0) is None
+    assert repeat_curves_png({}, set(), 0) is None
 
 
 def test_conflicting_axes_explain_why_no_roles_are_offered(tmp_path):
@@ -731,6 +906,10 @@ def test_axis_step_with_its_own_words(experiment):
     nb.preview_checked.button.click()
     nb.confirm_button.click()
     assert nb.confirmed_mapping is not None
+    # The embedded step asks for the image type too, with the same gating (P4).
+    assert ui.is_visible(nb.image_type_card) and nb.run_button.disabled
+    nb.image_type_checked.button.click()
+    assert nb.confirmed_image_type == "fluorescence" and not nb.run_button.disabled
     assert "compute the histograms" in nb.axis_next.value and not ui.is_visible(nb.axis_next)
     # Building the default page again shows the box again.
     nb.axis_step()
@@ -751,6 +930,8 @@ def test_readiness_checklist(experiment):
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
+    assert "Still to do: confirm the image type" in nb.readiness.value and nb.run_button.disabled
+    nb.image_type_checked.button.click()
     assert "Ready to run" in nb.readiness.value and not nb.run_button.disabled
 
 
@@ -817,6 +998,7 @@ def test_plan_names_images_read_in_blocks(tmp_path, monkeypatch):
     for cls in (tifffile.TiffFile, tifffile.TiffPage, tifffile.TiffFrame, tifffile.TiffPageSeries):
         monkeypatch.setattr(cls, "asarray", fail)
     nb.confirm_button.click()
+    nb.image_type_checked.button.click()
     plan = nb.plan.value
     assert "<b>1 image</b> has planes too large to read whole" in plan
     assert "will be read in blocks" in plan and "exactly the same" in plan
@@ -1182,6 +1364,7 @@ def test_statistics_need_a_table_and_valid_percentiles(experiment):
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
+    nb.image_type_checked.button.click()
     nb.run()
     nb.percentiles.value = "1, 120"
     nb.show_statistics()
@@ -1362,6 +1545,7 @@ def test_notebook_names_buttons_that_exist():
         nb.preview_checked.button,
         nb.missing_as_singleton.button,
         nb.confirm_button,
+        nb.image_type_checked.button,
         nb.run_button,
         nb.statistics_button,
     ):

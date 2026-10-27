@@ -1,4 +1,4 @@
-"""The mask step: kinds of masks, relationships with their evidence, hierarchy (contract §13)."""
+"""The mask step: kinds of masks, relationships with their evidence, hierarchy (contract §15)."""
 
 import json
 from collections import deque

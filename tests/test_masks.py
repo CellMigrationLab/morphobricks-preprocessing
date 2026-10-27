@@ -1,4 +1,4 @@
-"""Masks: pairing every image with its masks and checking them from their headers (contract §13)."""
+"""Masks: pairing every image with its masks and checking them from their headers (contract §15)."""
 
 import json
 

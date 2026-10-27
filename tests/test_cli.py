@@ -77,6 +77,98 @@ def test_run_writes_the_table(experiment, capsys):
     assert {(r.z, r.channel_count) for r in records} == {(0, 3), (1, 3)}
 
 
+def rgb_experiment(root):
+    rng = np.random.default_rng(0)
+    for rel in ["ctrl/rep1/a.tif", "drug/rep1/a.tif"]:
+        data = rng.integers(0, 200, (2, 8, 8, 3), dtype=np.uint8)
+        write_data(root / rel, data, axes="ZYXS", photometric="rgb")
+    return root
+
+
+def test_check_suggests_the_image_type(experiment, tmp_path, capsys):
+    assert main(["check", str(experiment)]) == 0
+    out = capsys.readouterr().out
+    assert "Suggested image type: fluorescence, because the images are not stored as RGB" in out
+    assert main(["check", str(rgb_experiment(tmp_path / "rgb"))]) == 0
+    assert "Suggested image type: rgb, because the images are stored as RGB colour" in (
+        capsys.readouterr().out
+    )
+
+
+def test_run_uses_and_prints_the_suggested_image_type(tmp_path, capsys):
+    root = rgb_experiment(tmp_path / "exp")
+    confirm_design(root)
+    assert main(["run", str(root), "--axes", "ZYXC"]) == 0
+    out = capsys.readouterr().out
+    assert "Image type: rgb\n  suggested, because the images are stored as RGB colour" in out
+    assert "Give --image-type fluorescence if these are fluorescence images." in out
+    manifest = read_manifest(default_output_folder(root) / "run_manifest.json")
+    assert manifest.image_type == "rgb" and manifest.channels_from_rgb_samples
+    assert main(["run", str(root), "--axes", "ZYXC", "--image-type", "fluorescence"]) == 0
+    out = capsys.readouterr().out
+    assert "Image type: fluorescence\n  given with --image-type" in out
+    assert "Read: " not in out  # changing the type reads nothing again
+    manifest = read_manifest(default_output_folder(root) / "run_manifest.json")
+    assert manifest.image_type == "fluorescence"
+
+
+def test_rgb_is_refused_for_images_that_cannot_be_rgb(experiment, capsys):
+    confirm_design(experiment)
+    assert main(["run", str(experiment), "--axes", "ZCYX"]) == 0
+    out = capsys.readouterr().out
+    assert "Image type: fluorescence" in out
+    assert "Give --image-type rgb if these are rgb images." in out
+    assert main(["run", str(experiment), "--axes", "TCYX", "--image-type", "rgb"]) == 0
+    capsys.readouterr()
+    assert main(["run", str(experiment), "--axes", "ZYCX", "--image-type", "rgb"]) == 1
+    out = capsys.readouterr().out
+    assert "RGB images need exactly three colour channels" in out
+    assert "8 channels of type uint8" in out and "Nothing was written" in out
+
+
+def test_image_type_must_be_known(experiment):
+    with pytest.raises(SystemExit) as excinfo:
+        main(["run", str(experiment), "--axes", "ZCYX", "--image-type", "brightfield"])
+    assert excinfo.value.code == 2
+
+
+def bright_tree(root):
+    """Six 2-channel images in ctrl/rep1, one far brighter in C0, and drug/rep1 brighter."""
+    rng = np.random.default_rng(3)
+    second = np.clip(rng.normal(60, 10, (16, 16)), 0, 254).astype(np.uint8)
+    levels = {"ctrl/rep1": [100, 102, 98, 101, 99, 180], "drug/rep1": [200, 202, 198]}
+    for folder, values in levels.items():
+        for i, level in enumerate(values):
+            first = np.clip(rng.normal(level, 10, (16, 16)), 0, 254).astype(np.uint8)
+            write_data(root / folder / f"img_{i}.tif", np.stack([first, second]), axes="CYX")
+    return root
+
+
+def test_run_prints_the_intensity_checks(tmp_path, capsys):
+    root = bright_tree(tmp_path / "exp")
+    confirm_design(root)
+    assert main(["run", str(root), "--axes", "CYX"]) == 0
+    out = capsys.readouterr().out
+    assert "Intensity checks: 9 images checked: " in out
+    assert "Limits: more than 3 robust deviations from the others, more than 1 % saturated" in out
+    assert "Images far from the others of their biological repeat (image_intensity_outlier" in out
+    assert "  - Image ctrl/rep1/img_5.tif, channel C0: its " in out
+    assert out.count("What to do: Look at the image") == 1
+    # drug is brighter than ctrl, but conditions are never compared.
+    assert "drug/rep1" not in out.split("Intensity checks:")[1]
+    args = ["run", str(root), "--axes", "CYX", "--outlier-limit", "50"]
+    args += ["--saturation-limit", "0.2", "--min-images", "3"]
+    assert main(args) == 0
+    assert "no intensity warnings" in capsys.readouterr().out
+    limits = read_manifest(default_output_folder(root) / "run_manifest.json").intensity_checks
+    assert (limits.outlier_limit, limits.saturation_limit, limits.min_images) == (50, 0.2, 3)
+
+
+def test_invalid_check_limits_are_refused(experiment, capsys):
+    assert main(["run", str(experiment), "--axes", "ZCYX", "--min-images", "1"]) == 1
+    assert "min_images must be at least 2" in capsys.readouterr().out
+
+
 def test_run_options_reach_the_run(experiment, tmp_path, capsys):
     out_dir = tmp_path / "results"
     log = tmp_path / "run.log"
