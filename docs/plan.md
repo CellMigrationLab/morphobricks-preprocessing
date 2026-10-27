@@ -56,16 +56,19 @@ Images are TIFF files (`.tif`, `.tiff`) or OME-Zarr images: folders whose names 
 TIFF and OME-Zarr images may be mixed in one experiment.
 
 Folder names are arbitrary labels and need only be unique among siblings. Each branch may
-stop at any level; omitted levels receive the reserved value `single`. Levels cannot be
-skipped. Labels are scoped to their parents: `bio_rep1` under two conditions are two
-different samples, so groups are always identified by the full label path.
+stop at any level; omitted levels receive the value `single` (a level with one member,
+question 23). Levels cannot be skipped. Labels are scoped to their parents: `bio_rep1`
+under two conditions are two different samples, so groups are always identified by the
+full label path.
 
 A folder containing images and no subfolders is a leaf folder. Only images directly
 inside leaf folders are analysed. If the experiment root itself contains images and has no
 subfolders, it is the leaf folder and every label is `single`.
 
 During preflight, show a tree/summary of the inferred labels and ask the user to confirm
-or correct it. The folder name `single` is reserved; report it as an error. Report
+or correct it. A folder may be named `single` (lower case) when it is the only folder in
+its place: it is then a level with one member, labelled `single` like a missing level
+(question 23). Spelled in another case, or beside other folders, it is an error. Report
 warnings for files that are not images, empty folders and images outside leaf folders, and
 explain that they will not be analysed.
 
@@ -213,7 +216,8 @@ Block processing for: mixed dtypes; unreadable TIFF files or OME-Zarr folders in
 folders (or OME-Zarr images without the `zarr` extra); OME-Zarr images whose declared axes
 do not fit the experiment's roles; unsupported sample
 formats or axes; missing/duplicate X or Y, duplicate roles or inconsistent mapping; a plane
-that cannot be read within the memory limit, not even in blocks; a folder named `single`; sibling folders whose names differ only in
+that cannot be read within the memory limit, not even in blocks; a folder named `single`
+in another case or beside other folders; sibling folders whose names differ only in
 case; a folder below the technical-repeat level; an output folder inside the experiment;
 no usable planes. System files (dot-files, `Thumbs.db`, `desktop.ini`, `__MACOSX`) are
 ignored silently.
@@ -312,7 +316,7 @@ API, CLI). The notebook and CLI only call the API.
 - **Dataset consistency (follow-up P2 of the normalization plan):** the folder check counts
   images per condition and biological repeat, warns about unbalanced counts and repeats
   missing from some conditions (`dataset`), and compares the headers' plane counts and
-  physical pixel sizes (`metadata`, `pixel_sizes`); the notebook shows them, with the
+  physical pixel sizes (`metadata`, `physical_sizes`); the notebook shows them, with the
   earlier consistency issues, in step 1's "Dataset consistency" panel. *Implemented, see
   question 21.*
 - **Experiment design (follow-up P3):** after the labels, step 1 pairs biological repeats
@@ -320,6 +324,11 @@ API, CLI). The notebook and CLI only call the API.
   records control conditions, in `experiment_design.csv` (`design`); reruns with the same
   folders skip the questions, the command line uses the file or writes a template, and
   the manifest records its hash. *Implemented, see question 22.*
+- **Input support for MorphoRelate milestone M3 (unreleased):** a folder named `single`
+  read as a one-member level, physical sizes with a unit per axis in the image header
+  (TIFF and OME-Zarr, from the OME-NGFF scale), and steps 1 and 2 of the notebook
+  embeddable by another brick. Outputs are unchanged. *Implemented, see questions 23 to
+  26.*
 
 ## 11. Tests and acceptance criteria
 
@@ -572,3 +581,65 @@ Raised during review; to be decided before the milestones that need them:
     `ExperimentDesign.repeat_groups()` give later bricks the
     `{(condition, biological_repeat): repeat_group}` mapping. `plane_histograms.csv` does
     not change.*
+23. A folder named `single` was an error, but in the MorphoBricks convention (CellPatcher's
+    trees, MorphoRelate's data such as `<condition>/single/<images>`) a level written
+    `single` means "this level exists with one member". Can such a folder be read?
+    *Decided (October 2026, for MorphoRelate milestone M3): yes. A folder named `single` in
+    lower case is accepted as its level's value `single` when it is the only folder in its
+    place (system folders such as `.ipynb_checkpoints` and `__MACOSX` aside), so
+    `<condition>/single/<images>` gives `biological_repeat` and `technical_repeat`
+    `single`, the labels of `<condition>/<images>`. The reservation had no recorded reason
+    beyond keeping `single` for missing levels; what it protects is that `single` keeps one
+    meaning, so two cases stay errors (`reserved_folder_name`): another spelling (`Single`
+    would be a label different from the `single` written for missing levels), and a
+    `single` folder with other folders beside it (the level would have several members,
+    one called `single`). The CSV, the manifest and their versions are unchanged.*
+24. Physical pixel sizes: `read_physical_sizes` applied the X unit to Y and Z, and callers
+    (MorphoRelate milestone M3's `inspect`) had to open each file a second time to get
+    them. Should each axis keep its own unit, and should the header inspection carry them?
+    *Decided (October 2026): yes to both. `PhysicalSizes` gains `x_unit`, `y_unit` and
+    `z_unit`; `unit(role)` returns each axis's own unit, from OME `PhysicalSizeYUnit` and
+    `PhysicalSizeZUnit` (the OME default, micrometres, when left out, as for X) or ImageJ
+    `yunit` and `zunit` (the X unit when left out, as ImageJ writes them). The per-axis
+    units are kept as given and resolved when read: an axis without its own unit has
+    `space_unit`, so sizes made with `space_unit` alone keep it for every space axis and
+    stay consistent under `dataclasses.replace` and pickles written before; the readers
+    give `space_unit` the unit of X, as before (None when a space axis with a size has no
+    unit). Equality and hashing compare the resolved units, so existing callers are
+    unchanged. `inspect_image` (`TiffMetadata`) gains the
+    field `physical_sizes`, read from the header already open, for information only; the
+    existing fields are unchanged. OME-Zarr copies of images whose Y or Z unit differs
+    from X now write that axis's own unit; on the next run, a copy written before with
+    other axis units (read from its `.zattrs`) counts as changed and is converted again
+    through the usual staged publication, so one output folder never mixes the two (its
+    rows do not change). `PhysicalSizes` and `read_physical_sizes` moved
+    to the module `physical_sizes` and stay importable from `zarr_export` and the package.
+    The CSV, the manifest and their versions are unchanged.*
+25. OME-Zarr physical sizes: `open_ngff` read the axes but not the OME-NGFF scale, so the
+    physical size of an OME-Zarr image's pixels was not available (MorphoRelate milestone
+    M3 reads OME-Zarr input). Should it be?
+    *Decided (October 2026): yes, in the form of question 24. `NgffImage` gains
+    `physical_sizes`: the `scale` of level 0's `coordinateTransformations`, multiplied by
+    the multiscales entry's own `coordinateTransformations` scale when it has one (OME-NGFF
+    applies them in turn; translations are ignored), for X, Y, Z and T, with each axis's
+    `unit` (OME-NGFF 0.4 and 0.5), common spellings (`µm`, `um`, `micron`, `s`) given as
+    the UDUNITS-2 names TIFF units get, other units as written. `inspect_image` records them for OME-Zarr
+    images as for TIFF files, and label images opened with `open_ngff_labels` carry their
+    own. Nothing is guessed: without a level-0 scale, with a scale stored in a separate
+    file (`path`) or not one number per axis, every size is None; an axis without a unit
+    has the unit None, and a scale that is not a positive number is None. A scale given
+    without a unit is kept, since only the caller can tell a real calibration from a
+    placeholder (this brick's own copies write 1 without a unit when the size is not
+    known). Information only: the CSV, the manifest and their versions are unchanged.*
+26. Can another brick's notebook reuse steps 1 and 2 (folder check and axis review)?
+    MorphoRelate milestone M3's "your data" notebook needs them, but their title, purpose
+    and intro speak of this brick's histograms, step 1 has the card for this brick's output
+    folder, and step 2's "What next?" box sends the user to compute the histograms.
+    *Decided (October 2026): yes. `PreprocessingNotebook.folder_step` and `axis_step` take
+    an optional `title` and `purpose` (the sentence under the title), a keyword `intro`
+    (the blue box; an empty string leaves it out) and `show_next` (False hides the "What
+    next?" box), and `folder_step` takes `show_output` (False hides the "Output folder
+    (optional)" card; the check then uses the folder in its box, the default when empty,
+    and the card is shown again when the check finds that folder inside the experiment,
+    so the box to fix it is never hidden). The defaults give the pages as before, and this notebook calls them
+    without arguments; the widgets, the checks and the gating are the same either way.*

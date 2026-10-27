@@ -7,6 +7,7 @@ import tifffile
 from morphobricks_preprocessing import (
     AxisMapping,
     NgffError,
+    PhysicalSizes,
     Severity,
     TiffMetadata,
     declared_mapping,
@@ -15,11 +16,13 @@ from morphobricks_preprocessing import (
     inspect_image,
     inspect_images,
     iter_planes,
+    ome_zarr_relative_path,
     open_ngff,
     plane_layout,
     prefill_mapping,
     preflight,
     read_manifest,
+    read_physical_sizes,
     read_plane,
     read_plane_histograms,
     read_sample_plane,
@@ -31,6 +34,7 @@ from morphobricks_preprocessing import (
 from morphobricks_preprocessing import run as run_module
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.histogram import compute_plane_histogram
+from morphobricks_preprocessing.zarr_export import ConversionSettings
 from morphobricks_preprocessing.zarr_input import ngff_axes
 from tiff_tree import write_data, write_file
 from zarr_tree import write_bioformats2raw, write_ngff, write_plate, zarr_major
@@ -106,6 +110,167 @@ def test_open_ngff(tmp_path, version):
     assert image.image_count == 1 and image.dataset_path == "0"
     assert image.channel_names == ("DAPI", "GFP")
     assert image.chunks == (1, 1, 8, 9)
+
+
+# Physical sizes (OME-NGFF coordinateTransformations and axis units) --------------------
+
+MICRONS = {"z": "micrometer", "y": "micrometer", "x": "micrometer"}
+
+
+@pytest.mark.parametrize("version", ["0.4", "0.5"])
+def test_physical_sizes_with_units(tmp_path, version):
+    path = write_ngff(
+        tmp_path / "a.ome.zarr",
+        np.zeros((2, 3, 8, 8), np.uint8),
+        "czyx",
+        version=version,
+        scale=[1.0, 2.0, 0.5, 0.25],
+        units={**MICRONS, "y": "nanometer"},
+    )
+    sizes = open_ngff(path).physical_sizes
+    assert sizes == PhysicalSizes(
+        x=0.25,
+        y=0.5,
+        z=2.0,
+        space_unit="micrometer",
+        x_unit="micrometer",
+        y_unit="nanometer",
+        z_unit="micrometer",
+    )
+    assert [sizes.unit(role) for role in "XYZCT"] == [
+        "micrometer",
+        "nanometer",
+        "micrometer",
+        None,
+        None,
+    ]
+
+
+@pytest.mark.parametrize("version", ["0.4", "0.5"])
+def test_physical_sizes_without_units(tmp_path, version):
+    path = write_ngff(
+        tmp_path / "a.ome.zarr",
+        np.zeros((3, 8, 8), np.uint8),
+        "zyx",
+        version=version,
+        scale=[2.0, 0.5, 0.25],
+    )
+    sizes = open_ngff(path).physical_sizes
+    assert (sizes.x, sizes.y, sizes.z, sizes.t) == (0.25, 0.5, 2.0, None)
+    assert [sizes.unit(role) for role in "XYZ"] == [None, None, None]
+    assert sizes.space_unit is None
+
+
+@pytest.mark.parametrize("version", ["0.4", "0.5"])
+def test_physical_sizes_with_a_multiscale_level_scale(tmp_path, version):
+    # OME-NGFF applies the multiscales entry's transformations after the dataset's.
+    path = write_ngff(
+        tmp_path / "a.ome.zarr",
+        np.zeros((4, 3, 8, 8), np.uint8),
+        "tzyx",
+        version=version,
+        scale=[1.0, 1.5, 0.2, 0.25],
+        units={**MICRONS, "t": "second"},
+        multiscale_transforms=[{"type": "scale", "scale": [30.0, 2.0, 3.0, 4.0]}],
+    )
+    sizes = open_ngff(path).physical_sizes
+    assert (sizes.t, sizes.z, sizes.y, sizes.x) == pytest.approx((30.0, 3.0, 0.6, 1.0))
+    assert (sizes.unit("T"), sizes.unit("X")) == ("second", "micrometer")
+
+
+def test_multiscale_level_translation_does_not_change_sizes(tmp_path):
+    path = write_ngff(
+        tmp_path / "a.ome.zarr",
+        np.zeros((8, 8), np.uint8),
+        "yx",
+        scale=[0.5, 0.25],
+        multiscale_transforms=[{"type": "translation", "translation": [10.0, 20.0]}],
+    )
+    sizes = open_ngff(path).physical_sizes
+    assert (sizes.x, sizes.y) == (0.25, 0.5)
+
+
+@pytest.mark.parametrize(
+    "transforms",
+    [
+        [],  # no coordinateTransformations at all (OME-NGFF before 0.4)
+        [{"type": "scale", "path": "scale.bin"}],  # stored in a file: not read
+        [{"type": "scale", "scale": [0.5, 0.25]}],  # not one number per axis
+        [{"type": "translation", "translation": [0.0, 0.0, 0.0]}],
+    ],
+)
+def test_physical_sizes_absent_when_not_given(tmp_path, transforms):
+    path = write_ngff(
+        tmp_path / "a.ome.zarr",
+        np.zeros((3, 8, 8), np.uint8),
+        "zyx",
+        dataset_transforms=transforms,
+        units=MICRONS,
+    )
+    assert open_ngff(path).physical_sizes == PhysicalSizes()
+
+
+def test_unusable_multiscale_level_scale_makes_sizes_unknown(tmp_path):
+    path = write_ngff(
+        tmp_path / "a.ome.zarr",
+        np.zeros((8, 8), np.uint8),
+        "yx",
+        scale=[0.5, 0.25],
+        multiscale_transforms=[{"type": "scale", "path": "scale.bin"}],
+    )
+    assert open_ngff(path).physical_sizes == PhysicalSizes()
+
+
+def test_scales_that_are_not_positive_numbers_are_unknown(tmp_path):
+    path = write_ngff(
+        tmp_path / "a.ome.zarr",
+        np.zeros((3, 8, 8), np.uint8),
+        "zyx",
+        scale=[0.0, -1.0, 0.25],
+        units=MICRONS,
+    )
+    sizes = open_ngff(path).physical_sizes
+    assert (sizes.x, sizes.y, sizes.z) == (0.25, None, None)
+    assert (sizes.unit("X"), sizes.unit("Y")) == ("micrometer", None)
+
+
+@pytest.mark.parametrize("version", ["0.4", "0.5"])
+def test_header_of_a_store_carries_its_physical_sizes(tmp_path, version):
+    path = write_ngff(
+        tmp_path / "a.ome.zarr",
+        np.zeros((3, 8, 8), np.uint8),
+        "zyx",
+        version=version,
+        scale=[2.0, 0.5, 0.25],
+        units=MICRONS,
+    )
+    info = inspect_image(path)
+    assert info.is_ome_zarr and info.physical_sizes == open_ngff(path).physical_sizes
+    assert (info.physical_sizes.x, info.physical_sizes.unit("Z")) == (0.25, "micrometer")
+
+
+def test_converted_copies_give_the_sizes_of_their_tiff(tmp_path):
+    source = tmp_path / "exp/a.ome.tif"
+    source.parent.mkdir(parents=True)
+    tifffile.imwrite(
+        source,
+        np.zeros((2, 3, 8, 8), np.uint16),
+        ome=True,
+        photometric="minisblack",
+        metadata={
+            "axes": "TZYX",
+            "PhysicalSizeX": 120.0,
+            "PhysicalSizeXUnit": "nm",
+            "PhysicalSizeY": 0.25,
+            "PhysicalSizeYUnit": "µm",
+            "PhysicalSizeZ": 2.0,
+            "TimeIncrement": 30.0,
+            "TimeIncrementUnit": "s",
+        },
+    )
+    result = run_experiment(tmp_path / "exp", prefill_mapping("TZYX"), convert_tiffs=True)
+    copy = result.output_folder / ome_zarr_relative_path("a.ome.tif")
+    assert open_ngff(copy).physical_sizes == read_physical_sizes(source)
 
 
 def test_bioformats2raw_layout(tmp_path):
@@ -597,6 +762,73 @@ def test_tiff_reading_is_unchanged_next_to_stores(tmp_path):
     assert len(list(iter_planes(path, prefill_mapping("ZYX")))) == 2
 
 
+# Physical sizes never block an image -----------------------------------------------------
+
+
+def test_scale_too_large_for_a_float_is_unknown_and_does_not_block(tmp_path):
+    root = tmp_path / "exp"
+    path = write_ngff(
+        root / "ctrl/a.ome.zarr",
+        np.zeros((2, 8, 8), np.uint8),
+        "zyx",
+        scale=[10**400, 0.5, 0.25],
+        units={"z": "micrometer", "y": "micrometer", "x": "micrometer"},
+    )
+    sizes = open_ngff(path).physical_sizes
+    assert (sizes.z, sizes.y, sizes.x) == (None, 0.5, 0.25)
+    assert preflight(root, tmp_path / "out").ok
+
+
+def test_unexpected_scale_metadata_does_not_block_the_image(tmp_path, monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuntimeError("not understood")
+
+    monkeypatch.setattr(zarr_input, "ngff_physical_sizes", broken)
+    root = tmp_path / "exp"
+    path = write_ngff(root / "ctrl/a.ome.zarr", np.zeros((2, 8, 8), np.uint8), "zyx")
+    assert open_ngff(path).physical_sizes == PhysicalSizes()
+    assert preflight(root, tmp_path / "out").ok
+
+
+@pytest.mark.parametrize("where", ["dataset", "multiscale"])
+def test_transformations_that_are_not_a_list_give_no_sizes(tmp_path, where):
+    malformed = {"type": "scale", "scale": [2.0, 0.5, 0.25]}
+    kwargs = (
+        {"dataset_transforms": malformed}
+        if where == "dataset"
+        else {"scale": [2.0, 0.5, 0.25], "multiscale_transforms": malformed}
+    )
+    path = write_ngff(tmp_path / "a.ome.zarr", np.zeros((3, 8, 8), np.uint8), "zyx", **kwargs)
+    assert open_ngff(path).physical_sizes == PhysicalSizes()
+
+
+def test_sizes_come_from_level_0_of_a_pyramid(tmp_path):
+    # The brick's own copy has three levels with scales 0.5, 1 and 2 along X and Y.
+    source = tmp_path / "exp/a.ome.tif"
+    source.parent.mkdir(parents=True)
+    tifffile.imwrite(
+        source,
+        np.zeros((2, 64, 64), np.uint16),
+        ome=True,
+        photometric="minisblack",
+        metadata={"axes": "ZYX", "PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5, "PhysicalSizeZ": 2},
+    )
+    result = run_experiment(
+        tmp_path / "exp",
+        prefill_mapping("ZYX"),
+        convert_tiffs=True,
+        conversion=ConversionSettings(chunk_size=16, pyramid_levels=2),
+    )
+    copy = result.output_folder / ome_zarr_relative_path("a.ome.tif")
+    image = open_ngff(copy)
+    assert image.dataset_path == "0" and image.shape == (2, 64, 64)
+    sizes = image.physical_sizes
+    assert (sizes.x, sizes.y, sizes.z) == (0.5, 0.5, 2.0)
+
+
+# Pixel sizes compared in the folder check -------------------------------------------------
+
+
 def with_scale(path, scale, units, image_scale=None):
     """Give the OME-Zarr image at ``path`` a level-0 scale and axis units."""
     import zarr
@@ -615,9 +847,7 @@ def with_scale(path, scale, units, image_scale=None):
 def test_ome_zarr_pixel_sizes_come_from_the_scale(tmp_path):
     path = write_ngff(tmp_path / "a.ome.zarr", np.zeros((3, 8, 8), np.uint8), "zyx")
     with_scale(path, [2.0, 0.25, 0.25], ["micrometer", "micrometer", "micrometer"])
-    image = open_ngff(path)
-    assert image.scale == (2.0, 0.25, 0.25)
-    assert image.units == ("micrometer",) * 3
+    assert open_ngff(path).physical_sizes == inspect_image(path, "a.ome.zarr").physical_sizes
     sizes = inspect_image(path, "a.ome.zarr").physical_sizes
     assert (sizes.x, sizes.y, sizes.z, sizes.space_unit) == (0.25, 0.25, 2.0, "micrometer")
     # A scale for the whole image multiplies the level's scale.
@@ -625,10 +855,12 @@ def test_ome_zarr_pixel_sizes_come_from_the_scale(tmp_path):
     assert inspect_image(path, "a.ome.zarr").physical_sizes.micrometers("X") == 0.5
 
 
-def test_ome_zarr_scale_without_units_is_unknown(tmp_path):
+def test_ome_zarr_scale_without_units_cannot_be_compared(tmp_path):
+    # A unitless scale is kept (PR #20) but has no unit, so it is never compared.
     path = write_ngff(tmp_path / "a.ome.zarr", np.zeros((8, 8), np.uint8), "yx")
-    assert open_ngff(path).scale == (1.0, 1.0)
-    assert inspect_image(path, "a.ome.zarr").physical_sizes.x is None
+    sizes = inspect_image(path, "a.ome.zarr").physical_sizes
+    assert sizes.unit("X") is None
+    assert sizes.micrometers("X") is None
 
 
 def test_pixel_sizes_are_compared_across_tiff_and_ome_zarr(tmp_path):

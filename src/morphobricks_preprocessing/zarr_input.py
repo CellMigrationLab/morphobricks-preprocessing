@@ -15,6 +15,9 @@ A store that holds several images (several ``multiscales`` entries, a
 several fields) is described by its first image and reports how many images it
 holds, so that the preflight can block it like a multi-series TIFF.
 
+The physical size of a pixel along each axis, with its unit, comes from the
+OME-NGFF scale of level 0 (:attr:`NgffImage.physical_sizes`).
+
 The label images of an image (segmentations in its OME-NGFF ``labels`` group,
 such as ``cells`` or ``nuclei``) can be listed with :func:`ngff_label_names`
 and opened with :func:`open_ngff_labels`, for later bricks that use them as
@@ -26,12 +29,17 @@ or 3.x; OME-NGFF 0.5 (Zarr format 3) needs zarr 3, which needs Python 3.11 or ne
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+from .physical_sizes import PhysicalSizes, ngff_physical_sizes
+
+logger = logging.getLogger(__name__)
 
 ZARR_SUFFIX = ".zarr"
 
@@ -92,12 +100,12 @@ class NgffImage:
         Channel labels from the ``omero`` metadata; empty when not given.
     dataset_path
         Path of the level-0 array inside the store, e.g. ``"0"`` or ``"0/0"``.
-    scale
-        Size of one step along each dimension at level 0, from the
-        ``coordinateTransformations``; empty when not given.
-    units
-        Unit of each dimension from the axes metadata (None where not given);
-        empty when the axes are not described.
+    physical_sizes
+        Level-0 size of one step along X, Y, Z and T with each axis's unit, from
+        the OME-NGFF ``coordinateTransformations`` scale and axis units
+        (:func:`.physical_sizes.ngff_physical_sizes`), in the form
+        :func:`.physical_sizes.read_physical_sizes` gives for TIFF files; None
+        where the metadata does not give them.
     """
 
     array: Any
@@ -106,8 +114,7 @@ class NgffImage:
     image_count: int
     channel_names: tuple[str | None, ...] = ()
     dataset_path: str = ""
-    scale: tuple[float | None, ...] = ()
-    units: tuple[str | None, ...] = ()
+    physical_sizes: PhysicalSizes = PhysicalSizes()
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -278,50 +285,21 @@ def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:
         image_count=image_count,
         channel_names=labels if any(labels) else (),
         dataset_path=f"{prefix}{dataset_path}",
-        scale=_level0_scale(first, datasets[0], len(axes)),
-        units=tuple(
-            (str(axis["unit"]) if axis.get("unit") else None) if isinstance(axis, dict) else None
-            for axis in first.get("axes") or []
-        ),
+        physical_sizes=_physical_sizes(first, axes, dataset_path),
     )
 
 
-def _level0_scale(multiscale: dict, dataset: dict, ndim: int) -> tuple[float | None, ...]:
-    """Return the step size along each dimension at level 0, or ``()`` when not given.
+def _physical_sizes(multiscale: dict, axes: str, where: str) -> PhysicalSizes:
+    """Return the image's physical sizes; empty when its scale metadata cannot be used.
 
-    The dataset's scale may be followed by a scale for the whole image
-    (OME-NGFF 0.4 and 0.5); both apply.
+    The sizes are for information only, so metadata that cannot be understood
+    never makes the image unreadable.
     """
-    scale: list[float | None] | None = None
-    for transforms in (
-        dataset.get("coordinateTransformations"),
-        multiscale.get("coordinateTransformations"),
-    ):
-        for transform in transforms if isinstance(transforms, list) else []:
-            if not isinstance(transform, dict) or transform.get("type") != "scale":
-                continue
-            values = transform.get("scale")
-            if not isinstance(values, list):
-                continue
-            if len(values) != ndim:
-                return ()
-            numbers = [_float(v) for v in values]
-            scale = (
-                numbers
-                if scale is None
-                else [
-                    None if a is None or b is None else a * b
-                    for a, b in zip(scale, numbers, strict=True)
-                ]
-            )
-    return () if scale is None else tuple(scale)
-
-
-def _float(value: Any) -> float | None:
     try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+        return ngff_physical_sizes(multiscale, axes)
+    except Exception:  # sizes are optional; never block an image over them
+        logger.debug("Cannot read the physical sizes of %s", where, exc_info=True)
+        return PhysicalSizes()
 
 
 def _labels_group(group):

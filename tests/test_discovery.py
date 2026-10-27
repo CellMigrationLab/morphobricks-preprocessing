@@ -220,18 +220,92 @@ def test_is_tiff_name(name, expected):
     assert is_tiff_name(name) is expected
 
 
+# Folders named single (the MorphoBricks one-member level) -----------------------------
+
+
+def test_folder_named_single_is_a_level_with_one_member(tmp_path):
+    # Shaped like an experiment whose conditions have one biological repeat, written
+    # as a folder named single: <condition>/single/<images>.
+    make_tree(
+        tmp_path,
+        [
+            "control/single/img_01.tif",
+            "control/single/img_02.tif",
+            "treated/single/img_01.tif",
+            "treated/single/img_02.tif",
+        ],
+    )
+    result = discover_experiment(tmp_path)
+    assert result.ok and result.issues == ()
+    assert leaf_labels(result) == {
+        "control/single": ("control", SINGLE, SINGLE),
+        "treated/single": ("treated", SINGLE, SINGLE),
+    }
+    assert result.labels_for("treated/single/img_02.tif") == ("treated", SINGLE, SINGLE)
+
+
+def test_folder_named_single_gives_the_labels_of_a_missing_level(tmp_path):
+    # The same labels as images placed directly in the condition folder.
+    named = discover_experiment(make_tree(tmp_path / "named", ["control/single/a.tif"]))
+    missing = discover_experiment(make_tree(tmp_path / "missing", ["control/a.tif"]))
+    assert named.ok and missing.ok
+    assert named.leaves[0].labels == missing.leaves[0].labels == ("control", SINGLE, SINGLE)
+
+
+@pytest.mark.parametrize(
+    ("tree", "labels"),
+    [
+        (["single/rep1/a.tif"], ("single", "rep1", SINGLE)),
+        (["control/single/tech_1/a.tif"], ("control", SINGLE, "tech_1")),
+        (["control/rep1/single/a.tif"], ("control", "rep1", SINGLE)),
+        (["single/single/single/a.tif"], (SINGLE, SINGLE, SINGLE)),
+    ],
+)
+def test_folder_named_single_at_any_level(tmp_path, tree, labels):
+    result = discover_experiment(make_tree(tmp_path, tree))
+    assert result.ok and result.issues == ()
+    assert [leaf.labels for leaf in result.leaves] == [labels]
+
+
+def test_folder_named_single_ignores_system_folders_beside_it(tmp_path):
+    make_tree(tmp_path, ["control/single/a.tif", "control/.ipynb_checkpoints/x.txt"])
+    (tmp_path / "control" / "__MACOSX").mkdir()
+    result = discover_experiment(tmp_path)
+    assert result.ok and result.issues == ()
+    assert leaf_labels(result) == {"control/single": ("control", SINGLE, SINGLE)}
+
+
 # Errors -------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["single", "Single", "SINGLE"])
-def test_folder_named_single_is_an_error(tmp_path, name):
+@pytest.mark.parametrize("name", ["Single", "SINGLE"])
+def test_folder_named_single_in_another_case_is_an_error(tmp_path, name):
+    # "Single" would be a different label from the "single" written for one-member
+    # levels, so only the lower-case spelling stands for that value.
     make_tree(tmp_path, [f"control/{name}/a.tif", "treated/a.tif"])
     result = discover_experiment(tmp_path)
     assert not result.ok
     found = issue(result, "reserved_folder_name")
     assert found.severity is Severity.ERROR
     assert found.paths == (f"control/{name}",)
-    assert found.action
+    assert "lower case" in found.action
+
+
+def test_folder_named_single_beside_other_folders_is_an_error(tmp_path):
+    # "single" says the level has one member; beside rep2 it would have two.
+    make_tree(tmp_path, ["control/single/a.tif", "control/rep2/a.tif", "treated/a.tif"])
+    result = discover_experiment(tmp_path)
+    assert not result.ok
+    found = issue(result, "reserved_folder_name")
+    assert found.severity is Severity.ERROR
+    assert found.paths == ("control/single",)
+    assert "only folder" in found.message
+
+
+def test_folder_named_single_with_an_empty_sibling_is_an_error(tmp_path):
+    make_tree(tmp_path, ["control/single/a.tif", "control/rep2/"])
+    result = discover_experiment(tmp_path)
+    assert issue(result, "reserved_folder_name").paths == ("control/single",)
 
 
 def test_folders_differing_only_in_case_are_an_error(tmp_path):

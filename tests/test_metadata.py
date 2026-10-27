@@ -5,13 +5,16 @@ import pytest
 import tifffile
 
 from morphobricks_preprocessing import (
+    PhysicalSizes,
     Severity,
     TiffMetadata,
     check_metadata,
     discover_experiment,
     inspect_experiment,
+    inspect_image,
     inspect_images,
     inspect_tiff,
+    read_physical_sizes,
 )
 from tiff_tree import make_tree, write_file, write_tiff
 
@@ -122,6 +125,44 @@ def test_ome_channel_names_and_significant_bits(tmp_path, no_pixel_reads):
     info = inspect_tiff(path)
     assert info.channel_names == ("DAPI", "GFP")
     assert info.significant_bits == 12
+
+
+def test_header_carries_the_physical_sizes(tmp_path, no_pixel_reads):
+    ome = tmp_path / "a.ome.tif"
+    tifffile.imwrite(
+        ome,
+        np.zeros((3, 8, 8), np.uint16),
+        ome=True,
+        photometric="minisblack",
+        metadata={
+            "axes": "ZYX",
+            "PhysicalSizeX": 0.2,
+            "PhysicalSizeXUnit": "µm",
+            "PhysicalSizeY": 0.3,
+            "PhysicalSizeYUnit": "nm",
+            "PhysicalSizeZ": 1.5,
+        },
+    )
+    info = inspect_image(ome)
+    assert info.physical_sizes == read_physical_sizes(ome)
+    assert (info.physical_sizes.x, info.physical_sizes.y, info.physical_sizes.z) == (0.2, 0.3, 1.5)
+    assert info.physical_sizes.unit("Y") == "nanometer"
+    imagej = tmp_path / "b.tif"
+    tifffile.imwrite(
+        imagej,
+        np.zeros((8, 8), np.uint16),
+        imagej=True,
+        resolution=(1 / 0.25, 1 / 0.25),
+        metadata={"unit": "um"},
+    )
+    sizes = inspect_image(imagej).physical_sizes
+    assert (sizes.x, sizes.y, sizes.unit("X")) == (0.25, 0.25, "micrometer")
+
+
+def test_header_without_sizes_has_empty_physical_sizes(tmp_path):
+    assert inspect_tiff(write_tiff(tmp_path / "a.tif")).physical_sizes == PhysicalSizes()
+    bad = inspect_tiff(write_file(tmp_path / "bad.tif", b"not a tiff"))
+    assert not bad.readable and bad.physical_sizes == PhysicalSizes()
 
 
 def test_no_channel_names_without_ome_metadata(tmp_path):

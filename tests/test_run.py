@@ -236,6 +236,27 @@ def test_every_row_has_its_position_id(experiment):
     assert all("position_id" in f for f in data["files"])
 
 
+def test_folder_named_single_runs_as_a_one_member_level(tmp_path):
+    # <condition>/single/<images>: the repeat level exists with one member.
+    root = tmp_path / "exp"
+    for seed, rel in enumerate(["ctrl/single/a.tif", "ctrl/single/b.tif", "drug/single/a.tif"]):
+        write_data(root / rel, stack(seed), "ZYX")
+    assert preflight(root).ok
+    records = read_plane_histograms(run_experiment(root, ZYX).csv_path)
+    assert {
+        (r.condition, r.biological_repeat, r.technical_repeat, r.position_id) for r in records
+    } == {
+        ("ctrl", SINGLE, SINGLE, "a"),
+        ("ctrl", SINGLE, SINGLE, "b"),
+        ("drug", SINGLE, SINGLE, "a"),
+    }
+    assert {r.source_relative_path for r in records} == {
+        "ctrl/single/a.tif",
+        "ctrl/single/b.tif",
+        "drug/single/a.tif",
+    }
+
+
 def test_position_ids_that_are_text_stay_text(tmp_path):
     root = tmp_path / "exp"
     for seed, rel in enumerate(["ctrl/001.tif", "ctrl/NA.tif", "drug/TRUE.tif"]):

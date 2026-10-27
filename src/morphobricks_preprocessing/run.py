@@ -73,6 +73,7 @@ from .validation import ValidationIssue, error, has_errors, plural, warning
 from .zarr_export import (
     ConversionSettings,
     OmeZarrWriter,
+    copy_units_current,
     is_copy_path,
     ome_zarr_relative_path,
     read_physical_sizes,
@@ -431,8 +432,16 @@ def run_experiment(
             # During a rebuild there are no rows to check; otherwise the rows must be complete.
             and (reason is not None or len(previous_records.get(rel, ())) == before.plane_count)
             # Rows of a converted TIFF are only kept while its copy is still there, as
-            # written with the same settings.
-            and (copy is None or ((output / copy).is_dir() and same_conversion))
+            # written with the same settings and with the axis units read now (copies
+            # written before each axis had its own unit are written again).
+            and (
+                copy is None
+                or (
+                    (output / copy).is_dir()
+                    and same_conversion
+                    and copy_units_current(output / copy, header.physical_sizes)
+                )
+            )
         ):
             unchanged.append(rel)
         else:

@@ -3,7 +3,10 @@
 The experiment root holds up to three levels of folders (condition, biological
 repeat, technical repeat). A folder with images and no subfolders is a leaf;
 its labels are the folder names on the way down, with ``single`` for the levels
-the branch does not have. The rules are in ``docs/contract.md`` §1.
+the branch does not have. A folder may itself be named ``single`` (in lower
+case) when it is the only folder in its place: like a missing level, it is a
+level with one member (the MorphoBricks convention). The rules are in
+``docs/contract.md`` §1.
 
 Images are TIFF files (``.tif``, ``.tiff``) and OME-Zarr images, which are
 folders whose names end in ``.zarr`` (usually ``.ome.zarr``). An OME-Zarr folder
@@ -116,7 +119,8 @@ class LeafFolder:
         Path relative to the experiment root with ``/`` separators; ``"."`` when
         the experiment root itself is the leaf.
     condition, biological_repeat, technical_repeat
-        Labels from the folder names; ``"single"`` for missing levels.
+        Labels from the folder names; ``"single"`` for missing levels and for
+        folders named ``single``.
     images
         Relative paths of the images (TIFF files and OME-Zarr folders) directly in
         this folder, sorted.
@@ -247,6 +251,7 @@ class _Walker:
         self.leaves: list[LeafFolder] = []
         self.issues: list[ValidationIssue] = []
         self.reserved: list[str] = []
+        self.single_with_siblings: list[str] = []
         self.case_conflicts: list[str] = []
         self.too_deep: list[str] = []
         self.unreadable: list[str] = []
@@ -307,8 +312,17 @@ class _Walker:
         by_key: dict[str, list[Path]] = {}
         for path in subfolders:
             by_key.setdefault(path.name.casefold(), []).append(path)
-            if path.name.casefold() == SINGLE:
+            if path.name.casefold() != SINGLE:
+                continue
+            # A folder named "single" gives its level the value a missing level gets:
+            # one member. Two cases would make "single" ambiguous, so they stay errors:
+            # another spelling ("Single" would be a different label from the "single"
+            # written for missing levels), and other folders beside it (the level
+            # would then have several members, one of them called "single").
+            if path.name != SINGLE:
                 self.reserved.append(self.relative(path))
+            elif len(subfolders) > 1:
+                self.single_with_siblings.append(self.relative(path))
         for paths in by_key.values():
             if len(paths) > 1:
                 self.case_conflicts.extend(self.relative(path) for path in paths)
@@ -340,10 +354,24 @@ class _Walker:
             issues.append(
                 error(
                     "reserved_folder_name",
-                    f'"{SINGLE}" is reserved for missing hierarchy levels and cannot be '
-                    "used as a folder name.",
+                    f'A folder named "{SINGLE}" marks a level with one member, and its label '
+                    f'is always written "{SINGLE}" in lower case. Written in another case it '
+                    "would be a different label.",
                     self.reserved,
-                    f'Rename these folders to something other than "{SINGLE}".',
+                    f'Rename these folders to "{SINGLE}" in lower case, or give them a name of '
+                    "their own.",
+                )
+            )
+        if self.single_with_siblings:
+            issues.append(
+                error(
+                    "reserved_folder_name",
+                    f'A folder named "{SINGLE}" marks a level with one member, so it must be '
+                    "the only folder in its place. These folders have other folders beside "
+                    "them.",
+                    self.single_with_siblings,
+                    "Give these folders a name of their own (for example rep1), or move the "
+                    "other folders out.",
                 )
             )
         if self.case_conflicts:

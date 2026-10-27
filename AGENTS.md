@@ -62,10 +62,11 @@ src/morphobricks_preprocessing/
   discovery.py      folder walk, leaf folders, labels (condition / biological_repeat / technical_repeat),
                     position_id per image and the duplicate check
   metadata.py       TIFF header inspection (tifffile, no pixel reads), dtype/dimension/series checks,
-                    OME channel names + significant bits, physical pixel sizes; header consistency
-                    warnings (width/height, plane counts, pixel sizes)
-  pixel_sizes.py    PhysicalSizes from OME/ImageJ TIFF metadata and the OME-Zarr level-0 scale,
-                    sizes in micrometres for comparing (read_physical_sizes re-exported by zarr_export)
+                    OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes);
+                    header consistency warnings (width/height, plane counts, pixel sizes)
+  physical_sizes.py PhysicalSizes (pixel sizes, z-step, time step, a unit per axis, micrometers()
+                    for comparing), read_physical_sizes (OME / ImageJ TIFF metadata; also importable
+                    from zarr_export) and ngff_physical_sizes (OME-NGFF scale and axis units)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
   design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
@@ -85,14 +86,17 @@ src/morphobricks_preprocessing/
   run.py            preflight(), run_experiment() (incremental), sample_planes() for previews
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
   cli.py, __main__  `morphobricks-preprocessing check|run` (also `python -m morphobricks_preprocessing`)
-  zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array and axis
-                    letters), ngff_label_names/open_ngff_labels (label images, for later bricks),
+  zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis
+                    letters and physical sizes from the scale and axis units),
+                    ngff_label_names/open_ngff_labels (label images, for later bricks),
                     zarr 2/3 helpers, canonical_dtype; needs the `zarr` extra
   zarr_export.py    TIFF -> OME-Zarr conversion (OmeZarrWriter, OME-NGFF 0.4, plane by plane or
                     block by block),
                     ConversionSettings (chunk size, compression, pyramid levels), estimate_conversion
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
-  notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra)
+  notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra);
+                    folder_step/axis_step take title, purpose, intro and show_next (and
+                    show_output for step 1) so other bricks can embed them (plan §12 Q26)
 notebooks/MorphoBricks_Preprocessing.ipynb   thin notebook: every code cell calls notebook_ui only
 tests/              pytest with simulated TIFFs (tests/tiff_tree.py, tests/simulation.py)
 experiments/binning_study/      the study behind the binning decisions (not part of the package)
@@ -157,8 +161,10 @@ functions the tests use.
 - **Hierarchy:** `<experiment>/<condition>/<biological repeat>/<technical repeat>/<image>.tif`.
 - **Leaf folders:** a leaf folder has images and no subfolders. Only TIFFs directly in
   leaf folders are analysed.
-- **Missing levels:** a branch may stop early; missing labels are the reserved value
-  `single`. A folder *named* `single` (any case) is an error.
+- **Missing levels:** a branch may stop early; missing labels are the value `single`. A
+  folder *named* `single` (lower case) that is the only folder in its place is that level's
+  value `single` (a level with one member, plan §12 question 23); spelled in another case,
+  or beside other folders, it is the error `reserved_folder_name`.
 - **Uniqueness:** labels are unique only among siblings, compared case-insensitively;
   siblings differing only in case are an error. Groups are identified by the full label
   path.
@@ -356,6 +362,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
+| Folders named `single` (Q23) | Accepted as the level's value `single` when lower case and the only folder in its place (MorphoBricks one-member level, MorphoRelate M3); another case or other folders beside it stay `reserved_folder_name` |
 | Channel names (Q1) | Manifest only (from OME), warning `channel_names_differ`; CSV stays at schema 1 |
 | Plane coordinates (Q17) | `z`, `c`, `t` always written (0 for absent axes), `plane_id` always `::z=…,c=…,t=…`; CSV schema 2, version-1 tables recomputed on the next run |
 | OME-NGFF labels (Q18) | Read-only helpers `ngff_label_names`/`open_ngff_labels` for later bricks (CellPatcher masks); label images are never analysed and the outputs do not change |
@@ -486,6 +493,11 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
 
 ### Page layout (`notebook_style`)
 
+- **Embedding steps 1 and 2 (Q26):** `folder_step` and `axis_step` keep this notebook's
+  words by default; another brick (MorphoRelate) passes its own `title`, `purpose` and
+  `intro` (HTML; `""` leaves the box out), `show_output=False` to hide the output folder
+  card (shown again when the check reports `output_inside_experiment`), and `show_next=False` to hide the "What next?" box naming this notebook's
+  steps. The widgets and their behaviour are the same either way.
 - **Page and cards:** `ui.page(title, subtitle, children)` wraps a step in a grey page
   (`mb-root`) with a title and a one-sentence purpose. `ui.card(header, children)` gives a
   white card with an upper-case header. `ui.intro(html)` adds a blue "what happens here"
@@ -642,6 +654,11 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   and contract §3–§7 moved to the normalization contract (PRs #16 and #17, question 19),
   and `position_id` filled per cross-brick decision D02 (question 20), and follow-ups
   P2 (dataset consistency warnings, question 21) and P3 (experiment design, question 22).
+- **Unreleased (for MorphoRelate milestone M3):** folders named `single` read as a
+  one-member level (question 23), a unit per axis in `PhysicalSizes` and physical sizes in
+  `inspect_image` (question 24), OME-Zarr physical sizes from the OME-NGFF scale (question
+  25), and notebook steps 1 and 2 embeddable with their own words (question 26). No
+  version bump or tag.
 - **Next (not started):** follow-ups P4–P5 of the normalization plan (image type,
   intensity checks and plots).
 - **Not yet verified:**

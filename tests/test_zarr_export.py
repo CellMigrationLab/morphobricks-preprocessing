@@ -196,8 +196,17 @@ def test_physical_sizes_from_ome(tmp_path):
             "TimeIncrementUnit": "s",
         },
     )
+    # PhysicalSizeZUnit is left out, so Z is in the OME default, micrometres.
     assert read_physical_sizes(path) == PhysicalSizes(
-        x=120.0, y=120.0, z=500.0, t=30.0, space_unit="nanometer", time_unit="second"
+        x=120.0,
+        y=120.0,
+        z=500.0,
+        t=30.0,
+        space_unit="nanometer",
+        time_unit="second",
+        x_unit="nanometer",
+        y_unit="nanometer",
+        z_unit="micrometer",
     )
 
 
@@ -305,6 +314,31 @@ def test_every_dtype_is_copied_unchanged(tmp_path, dtype):
     write_data(tmp_path / "exp/a.tif", data, axes="ZYX")
     result = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True)
     np.testing.assert_array_equal(open_copy(result.output_folder, "a.tif")["0"][:], data)
+
+
+@needs_zarr
+def test_copies_give_each_axis_its_own_unit(tmp_path):
+    path = tmp_path / "exp/a.ome.tif"
+    path.parent.mkdir(parents=True)
+    tifffile.imwrite(
+        path,
+        random_data((2, 8, 8), "uint16"),
+        ome=True,
+        photometric="minisblack",
+        metadata={
+            "axes": "ZYX",
+            "PhysicalSizeX": 120.0,
+            "PhysicalSizeXUnit": "nm",
+            "PhysicalSizeY": 0.25,
+            "PhysicalSizeYUnit": "µm",
+            "PhysicalSizeZ": 2.0,
+            "PhysicalSizeZUnit": "mm",
+        },
+    )
+    result = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True)
+    meta = multiscale(open_copy(result.output_folder, "a.ome.tif"))
+    assert [axis["unit"] for axis in meta["axes"]] == ["millimeter", "micrometer", "nanometer"]
+    assert meta["datasets"][0]["coordinateTransformations"][0]["scale"] == [2.0, 0.25, 120.0]
 
 
 @needs_zarr
@@ -701,6 +735,44 @@ def test_copies_follow_the_conversion_settings(tmp_path, settings, compressor):
     else:
         assert {k: zarray["compressor"][k] for k in compressor} == compressor
     assert read_manifest(result.manifest_path).settings.conversion == custom
+
+
+@needs_zarr
+def test_copies_with_outdated_axis_units_are_written_again(tmp_path):
+    root = tmp_path / "exp"
+    for name in ("a.ome.tif", "b.ome.tif"):
+        (root / "ctrl").mkdir(parents=True, exist_ok=True)
+        tifffile.imwrite(
+            root / "ctrl" / name,
+            random_data((2, 8, 8), "uint8"),
+            ome=True,
+            photometric="minisblack",
+            metadata={
+                "axes": "ZYX",
+                "PhysicalSizeX": 120.0,
+                "PhysicalSizeXUnit": "nm",
+                "PhysicalSizeY": 0.25,
+                "PhysicalSizeYUnit": "µm",
+                "PhysicalSizeZ": 2.0,
+            },
+        )
+    first = run_experiment(root, ZYX, convert_tiffs=True)
+    table = first.csv_path.read_bytes()
+    # Make a.ome.tif's copy look like one written before per-axis units: X's unit
+    # on every space axis.
+    attrs_path = first.output_folder / ome_zarr_relative_path("ctrl/a.ome.tif") / ".zattrs"
+    attrs = json.loads(attrs_path.read_text(encoding="utf-8"))
+    for axis in attrs["multiscales"][0]["axes"]:
+        axis["unit"] = "nanometer"
+    attrs_path.write_text(json.dumps(attrs), encoding="utf-8")
+    second = run_experiment(root, ZYX, convert_tiffs=True)
+    assert second.converted == ("ctrl/a.ome.tif",)
+    assert second.csv_path.read_bytes() == table  # same pixels, same rows
+    units = [
+        a["unit"] for a in multiscale(open_copy(second.output_folder, "ctrl/a.ome.tif"))["axes"]
+    ]
+    assert units == ["micrometer", "micrometer", "nanometer"]
+    assert run_experiment(root, ZYX, convert_tiffs=True).converted == ()
 
 
 @needs_zarr

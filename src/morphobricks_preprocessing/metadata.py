@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Hashable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -27,7 +27,7 @@ import tifffile
 from morphobricks_normalization.dtypes import UnsupportedDtypeError, check_supported
 
 from .discovery import DiscoveryResult
-from .pixel_sizes import PhysicalSizes, ngff_physical_sizes, tiff_physical_sizes
+from .physical_sizes import PhysicalSizes, _tiff_sizes
 from .validation import ValidationIssue, error, has_errors, plural, warning
 from .zarr_input import NgffError, ZarrUnavailableError, is_zarr_name, open_ngff
 
@@ -74,8 +74,10 @@ class TiffMetadata:
     kind
         ``"tiff"`` or ``"ome-zarr"``.
     physical_sizes
-        Pixel sizes and z-step from the metadata (OME or ImageJ for TIFF files,
-        the level-0 scale for OME-Zarr images); None where unknown.
+        Pixel sizes, z-step and time step with their units, from OME or ImageJ
+        metadata (TIFF) or the OME-NGFF scale (OME-Zarr), as
+        :func:`.physical_sizes.read_physical_sizes` gives them; all None when
+        not given or the image does not open. For information only.
     """
 
     relative_path: str
@@ -89,7 +91,7 @@ class TiffMetadata:
     channel_names: tuple[str | None, ...] = ()
     significant_bits: int | None = None
     kind: str = TIFF
-    physical_sizes: PhysicalSizes = field(default_factory=PhysicalSizes)
+    physical_sizes: PhysicalSizes = PhysicalSizes()
 
     def length(self, axis: str) -> int:
         """Return the length of the dimension labelled ``axis``, 1 if there is none."""
@@ -180,8 +182,8 @@ def inspect_tiff(path: str | os.PathLike, relative_path: str | None = None) -> T
                 axes=str(first.axes),
                 series_count=len(series),
                 page_count=len(tif.pages),
-                physical_sizes=tiff_physical_sizes(tif),
                 **_ome_details(tif),
+                physical_sizes=_tiff_sizes(tif),
             )
     except Exception as exc:  # any failure to parse means the file cannot be used
         logger.debug("Cannot read the TIFF header of %s", path, exc_info=True)
@@ -214,7 +216,7 @@ def inspect_ome_zarr(path: str | os.PathLike, relative_path: str | None = None) 
             page_count=0,
             channel_names=image.channel_names,
             kind=OME_ZARR,
-            physical_sizes=ngff_physical_sizes(image.axes, image.scale, image.units),
+            physical_sizes=image.physical_sizes,
         )
     except (NgffError, ZarrUnavailableError) as exc:
         logger.debug("Cannot read the OME-Zarr image %s", path, exc_info=True)
