@@ -357,6 +357,12 @@ pixels, not decisions: you name each kind of mask and check the relationships in
 that use them. The report is written to `mask_relationships.json` in the output folder
 (§6). The command takes `--output`, `--exclude` and `--log` like the others, and exits with
 status 1 when an error blocks it or when no masks are found.
+
+The rules behind each suggestion use thresholds you can change, for example
+`--inside-object-share 0.8` to call a kind of mask "inside" another when 80% of its objects
+(not 90%) lie inside, or `--same-objects-iou 0.7` to ask for a closer match before two
+kinds of mask count as the same objects. `morphobricks-preprocessing masks --help` lists
+all seven with their defaults; the values used are printed and written in the report.
 `python -m morphobricks_preprocessing` works the same way.
 
 ## 6. Output files
@@ -532,9 +538,11 @@ report.hierarchy  # {"Nuclei": ("Cells",), "Cells": (), ...}: direct parents
 write_mask_report(report, "/data/exp1_MorphoBricks_Preprocessing/mask_relationships.json")
 ```
 
-`preflight(..., ome_zarr_labels=True)` uses the label images of OME-Zarr images without a
-masks folder; `read_mask` reads one mask's pixels; `pair_counts` and `piece_counts` give the
-counts behind the report for one pair of masks or one mask.
+`scan_masks(..., thresholds={"inside_object_share": 0.8})` changes a threshold (the others
+keep their defaults, `DEFAULT_THRESHOLDS`). `preflight(..., ome_zarr_labels=True)` uses the
+label images of OME-Zarr images without a masks folder; `read_mask` reads one mask's pixels;
+`pair_counts` and `piece_counts` give the counts behind the report for one pair of masks or
+one mask.
 
 Reading the table, group statistics and normalisation parameters come from the
 normalization brick (`morphobricks_normalization`, installed with this package):

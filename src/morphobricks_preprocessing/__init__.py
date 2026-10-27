@@ -67,10 +67,12 @@ from .manifest import (
     write_manifest,
 )
 from .mask_scan import (
+    DEFAULT_THRESHOLDS,
     MASK_REPORT_FILENAME,
     MaskReport,
     MaskTypeSummary,
     PairRelation,
+    mask_thresholds,
     pair_counts,
     piece_counts,
     scan_masks,
@@ -148,6 +150,7 @@ except PackageNotFoundError:  # running from a source checkout without installin
 __all__ = [
     "CONSISTENCY_CODES",
     "DEFAULT_MEMORY_LIMIT",
+    "DEFAULT_THRESHOLDS",
     "DESIGN_COLUMNS",
     "DESIGN_FILENAME",
     "DESIGN_SCHEMA_VERSION",
@@ -239,6 +242,7 @@ __all__ = [
     "iter_xyc_planes",
     "load_design",
     "make_plane_id",
+    "mask_thresholds",
     "min_max",
     "ngff_label_names",
     "ome_zarr_relative_path",

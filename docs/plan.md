@@ -713,7 +713,16 @@ Raised during review; to be decided before the milestones that need them:
     line and documentation first; the notebook step follows in a later change. SciPy
     becomes a core dependency (the owner's agreement: "can use scipy if good reasons"):
     counting the connected pieces of every label of one 2048 x 2048 HPMEC cell mask took
-    about 5 s with a NumPy union-find, and 0.3 to 0.9 s per HPMEC mask with `scipy.ndimage`. Proposed defaults, to confirm in
-    review: masks are 2D with the Y and X sizes of their image (3D masks later), their
-    pixels integers or booleans, and the thresholds fixed (written in every report), not
-    settings.*
+    about 5 s with a NumPy union-find, and 0.3 to 0.9 s per HPMEC mask with
+    `scipy.ndimage`. Confirmed by the owner (27 October 2026): masks are 2D with the Y and
+    X sizes of their image (3D and time-lapse masks are a later follow-up), their pixels
+    integers or booleans, and the masks folder outside the experiment. The thresholds are
+    defaults the user may change, `scan_masks(..., thresholds=...)` in Python and one
+    option per threshold on the `masks` command (`--inside-object-share 0.8`, ...);
+    `mask_thresholds` checks them (shares and the intersection over union above 0 and at
+    most 1, the median number of pieces at least 1) before any mask is read, and the values
+    used are written in every report. Proposed to the brick's maintainer: tag v0.2.0 once
+    this is merged, so the other bricks can pin it (the follow-ups P4 and P5 then go to
+    v0.3.0). Next, in their own changes: a notebook step for the masks (name each mask,
+    say what it contains, confirm or correct the relationships) and a file saving those
+    answers for the other bricks, as `experiment_design.csv` does for the repeats.*

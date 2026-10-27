@@ -283,7 +283,7 @@ the user names the masks and confirms or corrects the relationships.
 For a child type and a parent type, the counts are summed over the images with both masks.
 Each child object's parent is the parent object sharing most of its pixels.
 
-| Relation of child to parent | Rule (fixed thresholds, written in the report) |
+| Relation of child to parent | Rule (default thresholds; the values used are written in the report) |
 |---|---|
 | `same_objects` | At least 90% of the children and 90% of the parents are matched one to one at an intersection over union of at least 0.5: two segmentations of the same objects. |
 | `grouped_by` | The child is `grouped`, at least 90% of its objects are inside as below, and at least 99% of its pixels carry the label of the parent object under them. |
@@ -299,6 +299,14 @@ Each child object's parent is the parent object sharing most of its pixels.
 | `child_pixels`, `child_pixels_with_parent_label` | Child pixels; those whose label equals the parent label under them. |
 | `children_matched_one_to_one`, `parents_matched_one_to_one` | Objects with a partner at an intersection over union of at least 0.5. |
 
+**Thresholds.** The numbers above are defaults (`DEFAULT_THRESHOLDS`), and each may be
+changed: `inside_pixel_share` (0.5), `inside_object_share` (0.9), `parent_larger_share`
+(0.9), `same_objects_iou` (0.5), `same_objects_share` (0.9), `grouped_label_share` (0.99)
+and `grouped_median_pieces` (2). Shares and the intersection over union must be above 0
+and at most 1, the median number of pieces at least 1; an unknown name or another value
+raises `ValueError` before any mask is read (`mask_thresholds`). The command line takes
+one option per threshold (`--inside-object-share 0.8`, ...).
+
 **Hierarchy.** A relation `inside` or `grouped_by` is **direct** unless another type lies
 between: nucleoli inside nuclei inside cells have the direct parent nuclei, and the
 relation nucleoli inside cells is kept in the report but not in the hierarchy. A type may
@@ -310,7 +318,7 @@ The report is UTF-8 JSON (two-space indent, LF), written atomically to the outpu
 | Key | Meaning |
 |---|---|
 | `report_version` | `1`. |
-| `thresholds` | The thresholds above. |
+| `thresholds` | The thresholds used, all seven. |
 | `images` | Images scanned (every image with at least one mask). |
 | `masks` | Per mask type: `kind`, `images`, `objects` (labels over all images) and `median_pieces_per_label`. |
 | `hierarchy` | Per mask type, its direct parents (sorted; empty for none). |

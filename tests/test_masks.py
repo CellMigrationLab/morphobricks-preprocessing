@@ -241,3 +241,15 @@ def test_masks_command_stops_on_mask_errors_or_without_masks(experiment, masks, 
     write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", np.zeros((3, 3), dtype=np.uint8))
     assert main(["masks", str(experiment), "--masks", str(masks)]) == 1
     assert "do not have the size" in capsys.readouterr().out
+
+
+def test_masks_command_takes_thresholds(experiment, masks, tmp_path, capsys):
+    out = tmp_path / "out"
+    args = ["masks", str(experiment), "--masks", str(masks), "--output", str(out)]
+    assert main([*args, "--same-objects-iou", "0.8", "--inside-object-share", "0.7"]) == 0
+    printed = capsys.readouterr().out
+    assert "Thresholds: inside_object_share 0.7, same_objects_iou 0.8; the others" in printed
+    report = json.loads((out / "mask_relationships.json").read_text(encoding="utf-8"))
+    assert report["thresholds"]["same_objects_iou"] == 0.8
+    assert main([*args, "--grouped-label-share", "1.5"]) == 1
+    assert "must be above 0 and at most 1" in capsys.readouterr().out

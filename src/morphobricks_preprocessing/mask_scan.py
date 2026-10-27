@@ -26,6 +26,10 @@ experiment, with the evidence (counts) behind each conclusion:
   nuclei). A type may have several direct parents (cells inside an organoid and inside a
   region of the slide).
 
+The numbers above are the default thresholds (:data:`DEFAULT_THRESHOLDS`); each can be changed
+(``scan_masks(..., thresholds=...)``, or the ``masks`` command's options), and the values used
+are written in the report.
+
 Nothing is decided for the user: the report is a suggestion with its evidence; the user names
 the masks and confirms or corrects the relationships. Pieces are counted with 4-connectivity
 (``scipy.ndimage.label``).
@@ -56,7 +60,7 @@ MASK_REPORT_FILENAME = "mask_relationships.json"
 MASK_REPORT_VERSION = "1"
 """Version of the report's format."""
 
-THRESHOLDS = MappingProxyType(
+DEFAULT_THRESHOLDS = MappingProxyType(
     {
         "inside_pixel_share": 0.5,
         "inside_object_share": 0.9,
@@ -64,10 +68,13 @@ THRESHOLDS = MappingProxyType(
         "same_objects_iou": 0.5,
         "same_objects_share": 0.9,
         "grouped_label_share": 0.99,
-        "grouped_median_pieces": 2,
+        "grouped_median_pieces": 2.0,
     }
 )
-"""Fixed thresholds of the relationships (contract §13); written in every report."""
+"""Default thresholds of the kinds and relationships (contract §13.1); each may be changed
+(:func:`mask_thresholds`), and the values used are written in every report."""
+
+_SHARES = frozenset(DEFAULT_THRESHOLDS) - {"grouped_median_pieces"}
 
 _COUNTS = (
     "children",
@@ -147,11 +154,14 @@ class MaskReport:
         One summary per mask type, by name.
     pairs
         Every ordered pair of types seen together in at least one image, sorted.
+    thresholds
+        The thresholds the kinds and relations were decided with.
     """
 
     images: int
     types: Mapping[str, MaskTypeSummary] = field(default_factory=lambda: MappingProxyType({}))
     pairs: tuple[PairRelation, ...] = ()
+    thresholds: Mapping[str, float] = field(default_factory=lambda: DEFAULT_THRESHOLDS)
 
     @property
     def relationships(self) -> tuple[PairRelation, ...]:
@@ -181,7 +191,7 @@ class MaskReport:
         """Return the report as JSON-compatible data (contract §13)."""
         return {
             "report_version": MASK_REPORT_VERSION,
-            "thresholds": dict(THRESHOLDS),
+            "thresholds": dict(self.thresholds),
             "images": self.images,
             "masks": {
                 name: {
@@ -198,6 +208,34 @@ class MaskReport:
             "pairs": [_pair_dict(pair) for pair in self.pairs],
             "versions": package_versions(),
         }
+
+
+def mask_thresholds(changes: Mapping[str, float] | None = None) -> Mapping[str, float]:
+    """Return the default thresholds with some replaced, after checking them.
+
+    Parameters
+    ----------
+    changes
+        New values by name (:data:`DEFAULT_THRESHOLDS`); the others keep their default.
+
+    Raises
+    ------
+    ValueError
+        For an unknown name, a share or intersection over union outside (0, 1], or a median
+        number of pieces below 1.
+    """
+    thresholds = dict(DEFAULT_THRESHOLDS)
+    for name, value in (changes or {}).items():
+        if name not in thresholds:
+            known = ", ".join(DEFAULT_THRESHOLDS)
+            raise ValueError(f"Unknown mask threshold {name!r}; the thresholds are {known}.")
+        value = float(value)
+        if name in _SHARES and not 0 < value <= 1:
+            raise ValueError(f"The mask threshold {name} must be above 0 and at most 1.")
+        if name not in _SHARES and not value >= 1:
+            raise ValueError(f"The mask threshold {name} must be at least 1.")
+        thresholds[name] = value
+    return MappingProxyType(thresholds)
 
 
 def piece_counts(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -223,11 +261,15 @@ def piece_counts(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return values, counts
 
 
-def pair_counts(child: np.ndarray, parent: np.ndarray) -> dict[str, int]:
+def pair_counts(
+    child: np.ndarray, parent: np.ndarray, *, thresholds: Mapping[str, float] | None = None
+) -> dict[str, int]:
     """Return the counts relating the objects of one mask (child) to another (parent).
 
-    Both are 2D label images of one position; label 0 is background.
+    Both are 2D label images of one position; label 0 is background. ``thresholds`` changes
+    the default ``inside_pixel_share`` and ``same_objects_iou`` (:func:`mask_thresholds`).
     """
+    limits = mask_thresholds(thresholds)
     counts = dict.fromkeys(_COUNTS, 0)
     on = child != 0
     child_labels, child_of = np.unique(child[on], return_inverse=True)
@@ -252,13 +294,13 @@ def pair_counts(child: np.ndarray, parent: np.ndarray) -> dict[str, int]:
         counts["parents_with_0_children"] = slots
         return counts
     union = child_sizes[kid] + parent_sizes[host] - shared
-    matched = shared / union >= THRESHOLDS["same_objects_iou"]
+    matched = shared / union >= limits["same_objects_iou"]
     counts["children_matched_one_to_one"] = int(np.unique(kid[matched]).size)
     counts["parents_matched_one_to_one"] = int(np.unique(host[matched]).size)
     best = np.lexsort((-shared, kid))
     lead = np.r_[True, kid[best][1:] != kid[best][:-1]]
     best_kid, best_host, best_shared = kid[best][lead], host[best][lead], shared[best][lead]
-    inside = best_shared / child_sizes[best_kid] >= THRESHOLDS["inside_pixel_share"]
+    inside = best_shared / child_sizes[best_kid] >= limits["inside_pixel_share"]
     counts["inside"] = int(inside.sum())
     counts["inside_parent_larger"] = int(
         np.count_nonzero(parent_sizes[best_host[inside]] > child_sizes[best_kid[inside]])
@@ -278,6 +320,7 @@ def scan_masks(
     experiment_root: str | os.PathLike,
     *,
     progress: Callable[[int, int, str], None] | None = None,
+    thresholds: Mapping[str, float] | None = None,
 ) -> MaskReport:
     """Read every image's masks and describe the mask types and their relationships.
 
@@ -289,11 +332,19 @@ def scan_masks(
         The experiment folder (for OME-Zarr label images).
     progress
         Called as ``progress(done, total, image)`` before each image is read.
+    thresholds
+        Thresholds to change from their defaults, by name (:func:`mask_thresholds`).
 
     Returns
     -------
     MaskReport
+
+    Raises
+    ------
+    ValueError
+        For an invalid threshold, before any mask is read.
     """
+    limits = mask_thresholds(thresholds)
     root = Path(experiment_root).resolve()
     images = inventory.images
     pieces: dict[str, list[np.ndarray]] = {name: [] for name in inventory.types}
@@ -313,17 +364,18 @@ def scan_masks(
         for child in masks:
             for parent in masks:
                 if child != parent:
-                    found = pair_counts(masks[child], masks[parent])
+                    found = pair_counts(masks[child], masks[parent], thresholds=limits)
                     total = totals.setdefault((child, parent), dict.fromkeys(_COUNTS, 0))
                     for key, value in found.items():
                         total[key] += value
     if progress is not None:
         progress(len(images), len(images), "")
-    types = {name: _summary(name, pieces[name], single[name]) for name in inventory.types}
+    types = {name: _summary(name, pieces[name], single[name], limits) for name in inventory.types}
     return MaskReport(
         images=len(images),
         types=MappingProxyType(types),
-        pairs=_relations(types, totals),
+        pairs=_relations(types, totals, limits),
+        thresholds=limits,
     )
 
 
@@ -343,7 +395,9 @@ def write_mask_report(report: MaskReport, path: str | os.PathLike) -> Path:
     return target
 
 
-def _summary(name: str, pieces: list[np.ndarray], single: list[bool]) -> MaskTypeSummary:
+def _summary(
+    name: str, pieces: list[np.ndarray], single: list[bool], limits: Mapping[str, float]
+) -> MaskTypeSummary:
     """Return a mask type's summary from its pieces per label in every image."""
     every = np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.int64)
     median = float(np.median(every)) if every.size else 0.0
@@ -351,42 +405,46 @@ def _summary(name: str, pieces: list[np.ndarray], single: list[bool]) -> MaskTyp
         kind = "empty"
     elif all(single):
         kind = "one_value"
-    elif median > THRESHOLDS["grouped_median_pieces"]:
+    elif median > limits["grouped_median_pieces"]:
         kind = "grouped"
     else:
         kind = "instances"
     return MaskTypeSummary(name, kind, len(pieces), int(every.size), median)
 
 
-def _relation(child: MaskTypeSummary, counts: Mapping[str, int]) -> str:
+def _relation(
+    child: MaskTypeSummary, counts: Mapping[str, int], limits: Mapping[str, float]
+) -> str:
     """Return the relation of a child type to a parent type from their counts."""
     children, parents = counts["children"], counts["parents"]
     if not children or not parents:
         return "none"
-    share = THRESHOLDS["same_objects_share"]
+    share = limits["same_objects_share"]
     if (
         counts["children_matched_one_to_one"] >= share * children
         and counts["parents_matched_one_to_one"] >= share * parents
     ):
         return "same_objects"
-    inside = counts["inside"] >= THRESHOLDS["inside_object_share"] * children
+    inside = counts["inside"] >= limits["inside_object_share"] * children
     if (
         child.kind == "grouped"
         and inside
         and counts["child_pixels_with_parent_label"]
-        >= THRESHOLDS["grouped_label_share"] * counts["child_pixels"]
+        >= limits["grouped_label_share"] * counts["child_pixels"]
     ):
         return "grouped_by"
-    larger = counts["inside_parent_larger"] >= THRESHOLDS["parent_larger_share"] * counts["inside"]
+    larger = counts["inside_parent_larger"] >= limits["parent_larger_share"] * counts["inside"]
     return "inside" if inside and larger else "none"
 
 
 def _relations(
-    types: Mapping[str, MaskTypeSummary], totals: Mapping[tuple[str, str], Mapping[str, int]]
+    types: Mapping[str, MaskTypeSummary],
+    totals: Mapping[tuple[str, str], Mapping[str, int]],
+    limits: Mapping[str, float],
 ) -> tuple[PairRelation, ...]:
     """Return every pair's relation, marking the direct ones (module docstring)."""
     found = {
-        (child, parent): _relation(types[child], counts)
+        (child, parent): _relation(types[child], counts, limits)
         for (child, parent), counts in totals.items()
     }
     nested = {pair for pair, relation in found.items() if relation in ("inside", "grouped_by")}

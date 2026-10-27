@@ -18,7 +18,7 @@ from .axes import AxisMapping, axis_length_ranges, axis_name
 from .dataset import BalanceTable
 from .design import ExperimentDesign
 from .discovery import DiscoveryResult
-from .mask_scan import MaskReport, PairRelation
+from .mask_scan import DEFAULT_THRESHOLDS, MaskReport, PairRelation
 from .masks import MaskInventory
 from .run import Preflight, RunResult
 from .validation import Severity, ValidationIssue, plural
@@ -380,6 +380,13 @@ def mask_report_summary(report: MaskReport) -> str:
         lines += [f"  {first} and {second}" for first, second in report.same_objects]
     lines += ["", "Hierarchy (direct parents only):"]
     lines += _hierarchy_lines(report.hierarchy)
+    changed = [
+        f"{name} {value:g}"
+        for name, value in report.thresholds.items()
+        if value != DEFAULT_THRESHOLDS[name]
+    ]
+    used = ", ".join(changed) + "; the others the defaults" if changed else "the defaults"
+    lines += ["", f"Thresholds: {used}"]
     lines += [
         "",
         "These are suggestions from the masks' pixels: name each mask, then check the "

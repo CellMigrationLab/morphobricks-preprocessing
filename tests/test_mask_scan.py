@@ -4,8 +4,11 @@ import json
 from collections import deque
 
 import numpy as np
+import pytest
 
 from morphobricks_preprocessing import (
+    DEFAULT_THRESHOLDS,
+    mask_thresholds,
     pair_counts,
     piece_counts,
     preflight,
@@ -245,3 +248,56 @@ def test_progress_is_reported_per_image(tmp_path):
         preflight(root, masks_folder=folder).masks, root, progress=lambda *a: calls.append(a)
     )
     assert calls == [(0, 2, "ctrl/a.tif"), (1, 2, "drug/a.tif"), (2, 2, "")]
+
+
+# Thresholds ---------------------------------------------------------------------------
+
+
+def test_thresholds_can_be_changed_and_are_checked():
+    assert dict(mask_thresholds()) == dict(DEFAULT_THRESHOLDS)
+    changed = mask_thresholds({"inside_object_share": 0.75, "grouped_median_pieces": 3})
+    assert changed["inside_object_share"] == 0.75 and changed["grouped_median_pieces"] == 3
+    assert changed["same_objects_iou"] == DEFAULT_THRESHOLDS["same_objects_iou"]
+    for bad in (
+        {"inside_share": 0.5},
+        {"same_objects_iou": 0},
+        {"inside_object_share": 1.2},
+        {"same_objects_share": float("nan")},
+        {"grouped_median_pieces": 0.5},
+    ):
+        with pytest.raises(ValueError):
+            mask_thresholds(bad)
+
+
+def test_changed_thresholds_change_the_relations_and_are_reported(tmp_path):
+    # Half of the dots lie inside the region: not inside at 90%, inside at 50%.
+    region = np.zeros(SHAPE, np.uint8)
+    region[:, :32] = 1
+    dots = boxes({1: (5, 7, 5, 7), 2: (20, 22, 10, 12), 3: (5, 7, 40, 42), 4: (20, 22, 50, 52)})
+    root, folder = write_experiment(tmp_path, {"Region": region, "Dots": dots})
+    inventory = preflight(root, masks_folder=folder).masks
+    assert by_pair(scan_masks(inventory, root))[("Dots", "Region")].relation == "none"
+    report = scan_masks(inventory, root, thresholds={"inside_object_share": 0.5})
+    assert by_pair(report)[("Dots", "Region")].relation == "inside"
+    assert report.to_dict()["thresholds"]["inside_object_share"] == 0.5
+    # A stricter one-to-one match makes the two nuclei segmentations different objects.
+    pairs = by_pair(scan(tmp_path / "strict", hierarchy_masks()))
+    assert pairs[("Nuclei", "NucleiAlt")].relation == "same_objects"
+    root, folder = write_experiment(tmp_path / "iou", hierarchy_masks())
+    strict = scan_masks(
+        preflight(root, masks_folder=folder).masks, root, thresholds={"same_objects_iou": 0.9}
+    )
+    assert by_pair(strict)[("Nuclei", "NucleiAlt")].relation != "same_objects"
+
+
+def test_invalid_thresholds_stop_before_any_mask_is_read(tmp_path):
+    root, folder = write_experiment(tmp_path, {"Cells": boxes(CELLS)})
+    calls = []
+    with pytest.raises(ValueError, match="at most 1"):
+        scan_masks(
+            preflight(root, masks_folder=folder).masks,
+            root,
+            progress=lambda *a: calls.append(a),
+            thresholds={"inside_pixel_share": 2},
+        )
+    assert calls == []

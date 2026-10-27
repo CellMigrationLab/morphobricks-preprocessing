@@ -34,7 +34,13 @@ from .design import (
     write_experiment_design,
 )
 from .discovery import check_output_folder, default_output_folder
-from .mask_scan import MASK_REPORT_FILENAME, scan_masks, write_mask_report
+from .mask_scan import (
+    DEFAULT_THRESHOLDS,
+    MASK_REPORT_FILENAME,
+    mask_thresholds,
+    scan_masks,
+    write_mask_report,
+)
 from .planes import DEFAULT_MEMORY_LIMIT, format_bytes
 from .report import (
     balance_summary,
@@ -201,7 +207,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _common(masks)
     masks.add_argument("--log", metavar="FILE", help="write technical details to this file")
+    limits = masks.add_argument_group(
+        "relationship thresholds", "change the defaults (contract §13.1); shares are 0 to 1"
+    )
+    for name, text in _THRESHOLD_HELP.items():
+        limits.add_argument(
+            "--" + name.replace("_", "-"),
+            dest=name,
+            type=float,
+            metavar="X",
+            help=f"{text} (default {DEFAULT_THRESHOLDS[name]:g})",
+        )
     return parser
+
+
+_THRESHOLD_HELP = {
+    "inside_pixel_share": "share of a child's pixels in one parent for it to be inside",
+    "inside_object_share": "share of the children inside for a mask to be inside another",
+    "parent_larger_share": "share of the inside children whose parent is larger",
+    "same_objects_iou": "intersection over union for two objects to match one to one",
+    "same_objects_share": "share of the objects of both masks matched for the same objects",
+    "grouped_label_share": "share of a grouped mask's pixels carrying the parent's label",
+    "grouped_median_pieces": "median pieces per label above which a mask is grouped",
+}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -278,6 +306,12 @@ def _check(args: argparse.Namespace) -> int:
 
 
 def _masks(args: argparse.Namespace) -> int:
+    changes = {name: getattr(args, name) for name in _THRESHOLD_HELP}
+    try:
+        thresholds = mask_thresholds({k: v for k, v in changes.items() if v is not None})
+    except ValueError as exc:
+        print(exc)
+        return 1
     pre = preflight(
         args.experiment,
         args.output,
@@ -301,7 +335,7 @@ def _masks(args: argparse.Namespace) -> int:
             print(f"[{done + 1}/{total}] {path}", flush=True)
 
     print()
-    report = scan_masks(pre.masks, pre.discovery.root, progress=progress)
+    report = scan_masks(pre.masks, pre.discovery.root, progress=progress, thresholds=thresholds)
     output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
     path = write_mask_report(report, output / MASK_REPORT_FILENAME)
     print()
