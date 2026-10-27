@@ -273,7 +273,7 @@ def test_missing_axes_with_two_longest_arrangements_is_inconsistent():
         meta("b.tif", (3, 2, 6, 7), axes="CZYX"),
         meta("c.tif", (6, 7), axes="YX"),
     ]
-    assert codes(check_metadata(files)) == ["inconsistent_dimensions"]
+    assert codes(check_metadata(files)) == ["inconsistent_dimensions", "different_plane_counts"]
 
 
 def test_different_sizes_are_a_warning(tmp_path):
@@ -285,7 +285,10 @@ def test_different_sizes_are_a_warning(tmp_path):
     found = issue(report.issues, "different_sizes")
     assert found.severity is Severity.WARNING
     assert found.paths == ("c.tif",)
-    assert "3 x 6 x 7 (2 images), 5 x 8 x 9 (1 image)" in found.message
+    # Width and height only; the depth is reported as a different number of planes.
+    assert "6 x 7 (2 images), 8 x 9 (1 image)" in found.message
+    planes = issue(report.issues, "different_plane_counts")
+    assert "depth slices (Z): 3 (2 images), 5 (1 image)" in planes.message
 
 
 def test_check_metadata_errors_before_warnings():
@@ -307,3 +310,121 @@ def test_inspection_follows_discovery_labels(tmp_path):
     report = inspect_experiment(discovery)
     # Files outside leaf folders are not inspected.
     assert [f.relative_path for f in report.files] == ["cond/bio/a.tif"]
+
+
+# Dataset consistency of the headers (follow-up P2) -------------------------------------
+
+
+def write_ome(path, shape=(8, 8), axes="YX", **sizes):
+    """Write an OME-TIFF with the given OME pixel-size attributes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tifffile.imwrite(
+        path,
+        np.zeros(shape, np.uint16),
+        ome=True,
+        photometric="minisblack",
+        metadata={"axes": axes, **sizes},
+    )
+    return path
+
+
+def test_consistent_images_give_no_warnings(tmp_path, no_pixel_reads):
+    for name in ("a", "b"):
+        write_ome(
+            tmp_path / f"{name}.ome.tif",
+            (3, 8, 8),
+            "ZYX",
+            PhysicalSizeX=0.5,
+            PhysicalSizeY=0.5,
+            PhysicalSizeZ=2.0,
+        )
+    report = inspect_images(tmp_path, ["a.ome.tif", "b.ome.tif"])
+    assert report.issues == ()
+    assert report.files[0].physical_sizes.micrometers("Z") == 2.0
+
+
+def test_different_pixel_sizes(tmp_path):
+    write_ome(tmp_path / "a.ome.tif", PhysicalSizeX=0.1625, PhysicalSizeY=0.1625)
+    write_ome(tmp_path / "b.ome.tif", PhysicalSizeX=0.1625, PhysicalSizeY=0.1625)
+    # The same size in another unit, with rounding noise, is the same size.
+    write_ome(
+        tmp_path / "c.ome.tif",
+        PhysicalSizeX=162.50001,
+        PhysicalSizeXUnit="nm",
+        PhysicalSizeY=162.5,
+        PhysicalSizeYUnit="nm",
+    )
+    write_ome(tmp_path / "d.ome.tif", PhysicalSizeX=0.325, PhysicalSizeY=0.325)
+    report = inspect_images(tmp_path, ["a.ome.tif", "b.ome.tif", "c.ome.tif", "d.ome.tif"])
+    found = issue(report.issues, "different_pixel_sizes")
+    assert found.severity is Severity.WARNING and found.paths == ("d.ome.tif",)
+    assert "0.1625 x 0.1625 micrometres (3 images)" in found.message
+    assert "0.325 x 0.325 micrometres (1 image)" in found.message
+    assert found.message.isascii()
+
+
+def test_z_steps_are_compared_for_stacks_only(tmp_path):
+    write_ome(
+        tmp_path / "a.ome.tif", (3, 8, 8), "ZYX", PhysicalSizeX=1, PhysicalSizeY=1, PhysicalSizeZ=2
+    )
+    write_ome(
+        tmp_path / "b.ome.tif", (3, 8, 8), "ZYX", PhysicalSizeX=1, PhysicalSizeY=1, PhysicalSizeZ=5
+    )
+    # A single slice has no z-step to compare, whatever its metadata says.
+    write_ome(tmp_path / "c.ome.tif", PhysicalSizeX=1, PhysicalSizeY=1, PhysicalSizeZ=9)
+    report = inspect_images(tmp_path, ["a.ome.tif", "b.ome.tif", "c.ome.tif"])
+    found = issue(report.issues, "different_pixel_sizes")
+    assert "z-step: 2 micrometres (1 image), 5 micrometres (1 image)" in found.message
+    assert "pixel size (x by y)" not in found.message
+    assert found.paths == ("b.ome.tif",)
+
+
+def test_pixel_size_missing_for_some_images(tmp_path):
+    write_ome(tmp_path / "a.ome.tif", PhysicalSizeX=0.5, PhysicalSizeY=0.5)
+    write_tiff(tmp_path / "b.tif", (8, 8), axes="YX")
+    report = inspect_images(tmp_path, ["a.ome.tif", "b.tif"])
+    found = issue(report.issues, "missing_pixel_size")
+    assert found.severity is Severity.WARNING and found.paths == ("b.tif",)
+    assert "different_pixel_sizes" not in codes(report.issues)
+    # No sizes at all: nothing to compare, nothing reported.
+    write_tiff(tmp_path / "c.tif", (8, 8), axes="YX")
+    assert inspect_images(tmp_path, ["b.tif", "c.tif"]).issues == ()
+
+
+def test_imagej_pixel_sizes_are_compared(tmp_path):
+    for name, size in (("a", 0.25), ("b", 0.5)):
+        tifffile.imwrite(
+            tmp_path / f"{name}.tif",
+            np.zeros((8, 8), np.uint16),
+            imagej=True,
+            resolution=(1 / size, 1 / size),
+            metadata={"unit": "um"},
+        )
+    found = issue(inspect_images(tmp_path, ["a.tif", "b.tif"]).issues, "different_pixel_sizes")
+    assert "0.25 x 0.25 micrometres" in found.message
+
+
+def test_different_plane_counts(tmp_path):
+    write_tiff(tmp_path / "a.tif", (2, 3, 8, 8), axes="TCYX")
+    write_tiff(tmp_path / "b.tif", (2, 3, 8, 8), axes="TCYX")
+    write_tiff(tmp_path / "c.tif", (5, 2, 8, 8), axes="TCYX")
+    report = inspect_images(tmp_path, ["a.tif", "b.tif", "c.tif"])
+    assert "different_sizes" not in codes(report.issues)
+    found = issue(report.issues, "different_plane_counts")
+    assert found.severity is Severity.WARNING and found.paths == ("c.tif",)
+    assert "channels: 3 (2 images), 2 (1 image)" in found.message
+    assert "time points: 2 (2 images), 5 (1 image)" in found.message
+    assert found.message.index("channels") < found.message.index("time points")
+
+
+def test_plane_counts_compare_rgb_samples_and_unlabelled_dimensions():
+    files = [
+        meta("rgb.tif", (8, 8, 3), axes="YXS"),
+        meta("two.tif", (2, 8, 8), axes="CYX"),
+        meta("q3.tif", (3, 8, 8), axes="QYX"),
+    ]
+    found = issue(check_metadata(files), "different_plane_counts")
+    assert "channels: 1 (1 image), 2 (1 image), 3 (1 image)" in found.message
+    assert "planes along Q: 1 (2 images), 3 (1 image)" in found.message
+    same = [meta("a.tif", (3, 8, 8), axes="ZYX"), meta("b.tif", (3, 8, 8), axes="ZYX")]
+    assert check_metadata(same) == []

@@ -136,7 +136,16 @@ results or comparing another grouping.
    - The **Labels from the folder names** table shows every image folder with its condition,
      biological repeat and technical repeat (*single* where a level is missing). If they
      are right, press **Yes, the labels are correct** in the yellow box under the table.
-   - **Messages** keeps the warning count visible in orange and the error count in red.
+   - **Dataset consistency** shows how many images each condition (columns) and
+     biological repeat (rows) has, with the number of technical-repeat folders. A cell is
+     amber when it has fewer than half or more than twice the median number of images, or
+     when a condition does not have that biological repeat. Expand **Show consistency
+     warnings** to see the checks that compare the images with each other: pixel type,
+     dimensions, width and height, numbers of channels, slices and time points, channel
+     names and physical pixel sizes (see §8). Warnings never stop you; they say what to
+     check.
+   - **Messages** lists the other problems (folders, files that are not images, unreadable
+     images), with the warning count visible in orange and the error count in red.
      Expand **Show warnings and errors** to see each problem, the affected files and what
      to do. The details start collapsed after each check. If some images cannot be read,
      **Exclude these images and check again** inside the dropdown leaves them out (see §7).
@@ -224,8 +233,9 @@ The same checks and computations are available from a terminal:
 morphobricks-preprocessing check /data/exp1
 ```
 
-prints what will be analysed, the problems found, the label tree and the suggested axis
-roles, for example `--axes ZCYX`. Then:
+prints what will be analysed, the label tree, the number of images per condition and
+biological repeat (with `!` marking unbalanced ones), the problems found and the
+suggested axis roles, for example `--axes ZCYX`. Then:
 
 ```bash
 morphobricks-preprocessing run /data/exp1 --axes ZCYX
@@ -263,7 +273,7 @@ The default output folder is next to the experiment folder:
   labels, the pixel type, the exact minimum and maximum, pixel counts and the histogram.
   The table is very wide (one column per bin), so spreadsheet programs may not open it
   completely; read it in Python with `read_plane_histograms()`. The columns are defined in
-  the [normalization brick's contract](https://github.com/CellMigrationLab/morphobricks-normalization/blob/main/docs/contract.md) §8.2.
+  the [normalization brick's contract](https://github.com/CellMigrationLab/morphobricks-normalization/blob/main/docs/contract.md) §6.2.
 - **`run_manifest.json`:** what the run read and with which settings: labels, axis roles,
   bin count, memory limit, excluded images, package versions, and each image's position,
   size and modification time. Channel names and significant bits are recorded when the metadata
@@ -337,7 +347,12 @@ continues.
 | `no_usable_planes` | Error | No plane has finite pixel values. Check the images. |
 | `non_tiff_file`, `empty_folder`, `tiff_outside_leaf` | Warning | Files or folders that are skipped. |
 | `planes_read_in_blocks` | Warning | Planes too large for the memory limit are read in blocks. The results are the same; nothing to do. Raise the limit to read them whole, which is faster. |
-| `different_sizes` | Warning | Images have different dimension lengths. Usually expected. |
+| `different_sizes` | Warning | Images have different widths or heights. Usually expected; otherwise check the camera settings. |
+| `different_plane_counts` | Warning | Images have different numbers of channels, depth slices, time points or other planes. Images with more planes weigh more in pooled statistics. Check the acquisition if this is not expected. |
+| `different_pixel_sizes` | Warning | The physical pixel size or z-step in the metadata differs between images (for example different objectives). Check the microscope settings if this is not intended. |
+| `missing_pixel_size` | Warning | Some images give their pixel size in the metadata and others do not, so it cannot be checked. Export them again with metadata if needed. |
+| `unbalanced_images` | Warning | A condition and biological repeat has fewer than half or more than twice the median number of images. Check for missing, misplaced or duplicated images. |
+| `repeat_missing_conditions` | Warning | A biological repeat is not found in every condition. It is still used. If it has another folder name in some condition, rename the folders so that they match. |
 | `channel_names_differ` | Warning | Channel names differ between images at the same position. Check the channel order. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
 | `no_finite_pixels` | Warning | Some planes have no finite pixels; they are left out of group statistics. |

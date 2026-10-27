@@ -18,7 +18,14 @@ from collections.abc import Sequence
 from .axes import AxisMapping, reference_axes
 from .discovery import default_output_folder
 from .planes import DEFAULT_MEMORY_LIMIT, format_bytes
-from .report import format_issues, label_tree, mapping_summary, preflight_summary, run_summary
+from .report import (
+    balance_summary,
+    format_issues,
+    label_tree,
+    mapping_summary,
+    preflight_summary,
+    run_summary,
+)
 from .run import preflight, run_experiment
 from .validation import plural
 from .zarr_export import (
@@ -198,6 +205,9 @@ def _check(args: argparse.Namespace) -> int:
     if pre.discovery.leaves:
         print()
         print(label_tree(pre.discovery))
+    if pre.dataset.balance.cells:
+        print()
+        print(balance_summary(pre.dataset.balance))
     if pre.issues:
         print()
         print(format_issues(pre.issues))

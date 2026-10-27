@@ -22,6 +22,17 @@ from .axes import (
     reference_axes,
     review_axes,
 )
+from .dataset import (
+    CONSISTENCY_CODES,
+    BalanceCell,
+    BalanceTable,
+    BiologicalRepeat,
+    DatasetReport,
+    balance_table,
+    biological_repeats,
+    check_dataset,
+    default_repeat_groups,
+)
 from .discovery import (
     DiscoveryResult,
     LeafFolder,
@@ -107,16 +118,21 @@ except PackageNotFoundError:  # running from a source checkout without installin
     __version__ = "0.0.0+unknown"
 
 __all__ = [
+    "CONSISTENCY_CODES",
     "DEFAULT_MEMORY_LIMIT",
     "MANIFEST_FILENAME",
     "OUTPUT_FILENAME",
     "SINGLE",
     "AxisMapping",
     "AxisReview",
+    "BalanceCell",
+    "BalanceTable",
+    "BiologicalRepeat",
     "Block",
     "BlockReader",
     "ConversionEstimate",
     "ConversionSettings",
+    "DatasetReport",
     "DiscoveryResult",
     "FileEntry",
     "GroupSummary",
@@ -149,6 +165,9 @@ __all__ = [
     "ValidationIssue",
     "ZarrUnavailableError",
     "axis_length_ranges",
+    "balance_table",
+    "biological_repeats",
+    "check_dataset",
     "check_mapping",
     "check_metadata",
     "check_output_folder",
@@ -158,6 +177,7 @@ __all__ = [
     "declared_mapping",
     "default_bin_count",
     "default_output_folder",
+    "default_repeat_groups",
     "discover_experiment",
     "estimate_conversion",
     "file_mapping_for",

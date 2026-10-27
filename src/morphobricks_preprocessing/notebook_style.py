@@ -64,6 +64,8 @@ STYLE_CSS = """
 .mb-table td { padding: 5px 10px; border-bottom: 1px solid #E2E8F0; }
 .mb-table td.mb-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mb-root .mb-table.mb-labels th, .mb-root .mb-table.mb-labels td { text-align: center; }
+.mb-root .mb-table td.mb-cell-warn { background: #FFFBEB; color: #92400E;
+  box-shadow: inset 3px 0 0 #D97706; }
 .mb-pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px;
   background: #E2E8F0; color: #475569; }
 .mb-pill-single { background: #F1F5F9; color: #64748B; font-style: italic; }

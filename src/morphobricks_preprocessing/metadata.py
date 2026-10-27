@@ -5,7 +5,9 @@ candidate image this records whether it opens, its shape, pixel type, axis
 labels and series/page counts. Across the experiment it checks the rules
 that must hold before any pixel is read (``docs/contract.md`` §3 and §8): one
 supported pixel type, and the same arrangement of dimensions in every file.
-Different dimension lengths are allowed with a warning.
+Images that differ in width or height, in their numbers of channels, depth
+slices or time points, or in their physical pixel sizes are allowed with a
+warning (contract §11).
 
 Axis roles are not assigned here; the axis labels are the ones ``tifffile``
 reports from the file's metadata, used to prefill the axis review.
@@ -16,7 +18,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Hashable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -25,6 +27,7 @@ import tifffile
 from morphobricks_normalization.dtypes import UnsupportedDtypeError, check_supported
 
 from .discovery import DiscoveryResult
+from .pixel_sizes import PhysicalSizes, ngff_physical_sizes, tiff_physical_sizes
 from .validation import ValidationIssue, error, has_errors, plural, warning
 from .zarr_input import NgffError, ZarrUnavailableError, is_zarr_name, open_ngff
 
@@ -70,6 +73,9 @@ class TiffMetadata:
         files), from OME metadata; None when not given. For information only.
     kind
         ``"tiff"`` or ``"ome-zarr"``.
+    physical_sizes
+        Pixel sizes and z-step from the metadata (OME or ImageJ for TIFF files,
+        the level-0 scale for OME-Zarr images); None where unknown.
     """
 
     relative_path: str
@@ -83,6 +89,11 @@ class TiffMetadata:
     channel_names: tuple[str | None, ...] = ()
     significant_bits: int | None = None
     kind: str = TIFF
+    physical_sizes: PhysicalSizes = field(default_factory=PhysicalSizes)
+
+    def length(self, axis: str) -> int:
+        """Return the length of the dimension labelled ``axis``, 1 if there is none."""
+        return self.shape[self.axes.index(axis)] if axis in self.axes else 1
 
     @property
     def ndim(self) -> int:
@@ -169,6 +180,7 @@ def inspect_tiff(path: str | os.PathLike, relative_path: str | None = None) -> T
                 axes=str(first.axes),
                 series_count=len(series),
                 page_count=len(tif.pages),
+                physical_sizes=tiff_physical_sizes(tif),
                 **_ome_details(tif),
             )
     except Exception as exc:  # any failure to parse means the file cannot be used
@@ -202,6 +214,7 @@ def inspect_ome_zarr(path: str | os.PathLike, relative_path: str | None = None) 
             page_count=0,
             channel_names=image.channel_names,
             kind=OME_ZARR,
+            physical_sizes=ngff_physical_sizes(image.axes, image.scale, image.units),
         )
     except (NgffError, ZarrUnavailableError) as exc:
         logger.debug("Cannot read the OME-Zarr image %s", path, exc_info=True)
@@ -263,10 +276,15 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     ``unreadable_ome_zarr``, or ``zarr_not_installed`` for OME-Zarr images
     without the ``zarr`` package), files or stores with more than one image,
     unsupported pixel types, more than one pixel type, and TIFF files whose
-    dimensions are arranged differently. Reports, as a warning: TIFF files with
-    the same arrangement but different dimension lengths. OME-Zarr images
-    declare their axes, so their arrangement is checked by role during the
-    axis review instead.
+    dimensions are arranged differently. OME-Zarr images declare their axes,
+    so their arrangement is checked by role during the axis review instead.
+
+    Reports, as warnings: images of different widths or heights
+    (``different_sizes``), channel names that differ at the same channel
+    (``channel_names_differ``), different numbers of channels, depth slices,
+    time points or planes along another dimension (``different_plane_counts``),
+    and physical pixel sizes that differ (``different_pixel_sizes``) or are
+    known for only some images (``missing_pixel_size``).
 
     Parameters
     ----------
@@ -374,7 +392,10 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
         )
 
     issues.extend(_check_dimensions([f for f in readable if not f.is_ome_zarr]))
+    issues.extend(_check_image_sizes(readable))
     issues.extend(_check_channel_names(readable))
+    issues.extend(_check_plane_counts(readable))
+    issues.extend(_check_pixel_sizes(readable))
     return issues
 
 
@@ -462,21 +483,133 @@ def _check_dimensions(files: list[TiffMetadata]) -> list[ValidationIssue]:
                 "differently arranged images as a separate experiment.",
             )
         ]
-
-    if len({f.shape for f in files}) > 1:
-        axes = files[0].axes
-        summary, minority = _breakdown(files, lambda f: f.shape, _format_shape)
-        return [
-            warning(
-                "different_sizes",
-                f"The images have different dimension lengths ({axes}): {summary}. They "
-                "can still be processed with one axis mapping.",
-                minority,
-                "No action needed if the sizes are expected, for example different numbers "
-                "of time points or z-slices.",
-            )
-        ]
     return []
+
+
+def _check_image_sizes(files: list[TiffMetadata]) -> list[ValidationIssue]:
+    # Width and height only: the other dimensions are compared by _check_plane_counts.
+    sized = [f for f in files if "X" in f.axes and "Y" in f.axes]
+    if len({(f.length("Y"), f.length("X")) for f in sized}) < 2:
+        return []
+    summary, minority = _breakdown(sized, lambda f: (f.length("Y"), f.length("X")), _format_shape)
+    return [
+        warning(
+            "different_sizes",
+            "The images have different widths or heights (height x width in pixels): "
+            f"{summary}. They can still be processed together.",
+            minority,
+            "No action needed if the sizes are expected, for example images cropped "
+            "differently. Otherwise check that these images were acquired with the same "
+            "camera settings.",
+        )
+    ]
+
+
+# What the planes along each dimension are called in messages.
+_PLANE_NAMES = {"C": "channels", "Z": "depth slices (Z)", "T": "time points"}
+# Dimensions that do not hold planes: the image itself, and RGB samples, which are
+# counted as channels when the image has no channel dimension.
+_NOT_PLANES = frozenset("XYSC")
+
+
+def _plane_counts(f: TiffMetadata) -> dict[str, int]:
+    counts = {"C": f.length("C") if "C" in f.axes else f.length("S"), "Z": 1, "T": 1}
+    counts.update({axis: f.length(axis) for axis in f.axes if axis not in _NOT_PLANES})
+    return counts
+
+
+def _check_plane_counts(files: list[TiffMetadata]) -> list[ValidationIssue]:
+    counts = {f.relative_path: _plane_counts(f) for f in files}
+    axes = sorted({axis for c in counts.values() for axis in c}, key=lambda a: ("CZT".find(a), a))
+    descriptions: list[str] = []
+    differing: list[str] = []
+    for axis in axes:
+        if len({c.get(axis, 1) for c in counts.values()}) < 2:
+            continue
+        summary, minority = _breakdown(
+            files, lambda f, a=axis: counts[f.relative_path].get(a, 1), str
+        )
+        descriptions.append(f"{_PLANE_NAMES.get(axis, f'planes along {axis}')}: {summary}")
+        differing.extend(minority)
+    if not differing:
+        return []
+    return [
+        warning(
+            "different_plane_counts",
+            "The images have different numbers of planes ("
+            + "; ".join(descriptions)
+            + "). Every plane is still analysed, but images with more planes weigh more "
+            "in pooled statistics.",
+            sorted(set(differing)),
+            "No action needed if this is expected, for example time series of different "
+            "lengths. Otherwise check that these images were acquired with the same "
+            "channels, depth range and time points.",
+        )
+    ]
+
+
+def _check_pixel_sizes(files: list[TiffMetadata]) -> list[ValidationIssue]:
+    # The z-step only matters for images with more than one depth slice.
+    checks = (
+        ("pixel size (x by y)", files, ("X", "Y")),
+        ("z-step", [f for f in files if f.length("Z") > 1], ("Z",)),
+    )
+    descriptions: list[str] = []
+    differing: list[str] = []
+    missing: dict[str, list[str]] = {}
+    for name, members, roles in checks:
+        sizes = {f.relative_path: _micrometers(f, roles) for f in members}
+        known = [f for f in members if sizes[f.relative_path] is not None]
+        unknown = [f.relative_path for f in members if sizes[f.relative_path] is None]
+        if known and unknown:
+            missing[name] = unknown
+        if len({sizes[f.relative_path] for f in known}) > 1:
+            summary, minority = _breakdown(
+                known, lambda f, s=sizes: s[f.relative_path], _format_micrometers
+            )
+            descriptions.append(f"{name}: {summary}")
+            differing.extend(minority)
+    issues: list[ValidationIssue] = []
+    if differing:
+        issues.append(
+            warning(
+                "different_pixel_sizes",
+                "The physical pixel sizes in the image metadata differ ("
+                + "; ".join(descriptions)
+                + "). Objects then look larger or smaller in some images than in others.",
+                sorted(set(differing)),
+                "No action needed if the images were acquired with different objectives on "
+                "purpose. Otherwise check the microscope settings or the metadata of these "
+                "images.",
+            )
+        )
+    if missing:
+        issues.append(
+            warning(
+                "missing_pixel_size",
+                "The image metadata give the "
+                + " and the ".join(missing)
+                + " for some images but not for others, so it cannot be checked that they "
+                "match.",
+                sorted({path for paths in missing.values() for path in paths}),
+                "No action needed if the sizes are known to be the same. Otherwise export "
+                "these images again with their metadata.",
+            )
+        )
+    return issues
+
+
+def _micrometers(f: TiffMetadata, roles: tuple[str, ...]) -> tuple[float, ...] | None:
+    values = [f.physical_sizes.micrometers(role) for role in roles]
+    if any(v is None for v in values):
+        return None
+    # Metadata store sizes with rounding noise (0.1625 and 0.16250001); four
+    # significant digits still tell different objectives apart.
+    return tuple(float(f"{v:.4g}") for v in values)
+
+
+def _format_micrometers(sizes: Hashable) -> str:
+    return " x ".join(f"{v:g}" for v in sizes) + " micrometres"
 
 
 def _breakdown(

@@ -309,6 +309,12 @@ API, CLI). The notebook and CLI only call the API.
   entry carries the image's `position_id`, so `condition`, `biological_repeat`,
   `technical_repeat` and `position_id` identify a position in every brick; images in one
   leaf folder with the same identifier are refused. *Implemented, see question 20.*
+- **Dataset consistency (follow-up P2 of the normalization plan):** the folder check counts
+  images per condition and biological repeat, warns about unbalanced counts and repeats
+  missing from some conditions (`dataset`), and compares the headers' plane counts and
+  physical pixel sizes (`metadata`, `pixel_sizes`); the notebook shows them, with the
+  earlier consistency issues, in step 1's "Dataset consistency" panel. *Implemented, see
+  question 21.*
 
 ## 11. Tests and acceptance criteria
 
@@ -519,3 +525,23 @@ Raised during review; to be decided before the milestones that need them:
     table with blank `position_id` is filled on the next run from the paths, without
     reading pixels. The normalization contract's note "never inferred from file names"
     (§8.2) predates D02 and is to be aligned in that repository.*
+21. Which dataset warnings does the folder check give (normalization plan N37, follow-up P2),
+    and how are they shown?
+    *Decided (October 2026): step 1 gathers every consistency issue in a "Dataset
+    consistency" panel; warnings never block. A balance table counts images per condition
+    (columns) and biological repeat (rows, matched by folder name), technical repeats added
+    up, with the number of technical-repeat folders; a count below half or above twice the
+    median of the non-empty cells is `unbalanced_images`, and a biological repeat not found
+    in every condition is `repeat_missing_conditions`. From the headers: physical pixel
+    sizes that differ (`different_pixel_sizes`, X by Y, and the z-step of images with more
+    than one slice, compared in micrometres to four significant digits) or are known for
+    only some images (`missing_pixel_size`), read from OME or ImageJ metadata for TIFF files
+    and, agreed in review, from the level-0 scale with axis units for OME-Zarr images (no
+    unit: unknown); and different numbers of channels, slices, time points or other planes
+    (`different_plane_counts`). Agreed in review: `different_sizes` now covers only width
+    and height, for TIFF and OME-Zarr images, so a dimension is never reported twice; and
+    the consistency issues (also `mixed_dtypes`, `inconsistent_dimensions`, `missing_axes`,
+    `inconsistent_mapping`, `channel_names_differ`) appear only in the new panel, while the
+    Messages card keeps the folder, file and readability problems; the tiles still count
+    everything. The command line `check` prints the balance table and every warning, and
+    `run` reports them too. Outputs do not change.*

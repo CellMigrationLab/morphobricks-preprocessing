@@ -88,6 +88,15 @@ def codes(issues):
     return [issue.code for issue in issues]
 
 
+# The experiment fixture has 3 images in control/bio_rep1 and 1 in each other
+# folder, and bio_rep2 only in treated: tests about other problems leave these out.
+BALANCE_CODES = ("unbalanced_images", "repeat_missing_conditions")
+
+
+def other_codes(issues):
+    return [code for code in codes(issues) if code not in BALANCE_CODES]
+
+
 def issue(issues, code):
     (found,) = [i for i in issues if i.code == code]
     return found
@@ -575,7 +584,7 @@ def test_output_inside_experiment_is_refused(experiment):
 
 def test_unconfirmed_mapping_errors_block(experiment):
     result = run_experiment(experiment, AxisMapping("ZYX", "-YX"))
-    assert codes(result.issues) == ["unassigned_axis"] and not result.written
+    assert other_codes(result.issues) == ["unassigned_axis"] and not result.written
 
 
 def test_invalid_bin_count_blocks(experiment):
@@ -586,7 +595,7 @@ def test_invalid_bin_count_blocks(experiment):
 
 def test_plane_over_memory_limit_blocks(experiment, reads):
     result = run_experiment(experiment, ZYX, memory_limit=1000)
-    assert codes(result.issues) == ["plane_over_memory_limit"]
+    assert other_codes(result.issues) == ["plane_over_memory_limit"]
     assert not result.written and reads == []
 
 
@@ -594,7 +603,7 @@ def test_planes_over_the_memory_limit_are_read_in_blocks(experiment, tmp_path, r
     whole = run_experiment(experiment, ZYX, output_folder=tmp_path / "whole")
     limit = plane_layout(experiment / IMAGES[0], ZYX, memory_limit=1).block_memory_estimate
     blocks = run_experiment(experiment, ZYX, output_folder=tmp_path / "blocks", memory_limit=limit)
-    assert blocks.written and codes(blocks.issues) == ["planes_read_in_blocks"]
+    assert blocks.written and other_codes(blocks.issues) == ["planes_read_in_blocks"]
     found = issue(blocks.issues, "planes_read_in_blocks")
     assert found.severity is Severity.WARNING and found.paths == tuple(sorted(IMAGES))
     assert csv_bytes(blocks) == csv_bytes(whole)
@@ -629,7 +638,7 @@ def test_missing_axes_need_confirmation(tmp_path):
     write_data(root / "b.tif", stack(1, n_z=2), axes="ZYX")
     mapping = prefill_mapping("ZCYX")
     blocked = run_experiment(root, mapping)
-    assert codes(blocked.issues) == ["missing_axes"]
+    assert codes(blocked.issues) == ["missing_axes", "different_plane_counts"]
     result = run_experiment(root, mapping, missing_as_singleton=True)
     assert result.written
     rows = [r for r in read_plane_histograms(result.csv_path) if r.source_relative_path == "b.tif"]
@@ -732,7 +741,7 @@ def test_preflight_leaves_excluded_files_out(experiment):
     write_file(experiment / "control/bio_rep1/tech_rep1/bad.tif", b"garbage")
     assert "unreadable_tiff" in codes(preflight(experiment).issues)
     result = preflight(experiment, exclude=["control/bio_rep1/tech_rep1/bad.tif"])
-    assert result.ok and codes(result.issues) == ["excluded_images"]
+    assert result.ok and other_codes(result.issues) == ["excluded_images"]
 
 
 # Progress and preview -----------------------------------------------------------------

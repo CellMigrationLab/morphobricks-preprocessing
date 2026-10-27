@@ -14,7 +14,7 @@ do not say: how we work, why things are the way they are, and the traps we alrea
 | `docs/contract.md` | Rules other bricks rely on: folders, axes, dtypes, binning, CSV schema, statistics, normalization, validation severities, manifest format. Changing it may need a new `schema_version` |
 | `docs/development.md` | Coding conventions |
 | `docs/user_guide.md` | Biologist-facing guide: notebook, CLI, outputs, every message code |
-| [morphobricks-normalization](https://github.com/CellMigrationLab/morphobricks-normalization) `docs/contract.md` | Pixel types, binning, group statistics and normalization parameters (§1.2) and the `plane_histograms.csv` columns (§8.2); this repo's contract §3–§7 only point there |
+| [morphobricks-normalization](https://github.com/CellMigrationLab/morphobricks-normalization) `docs/contract.md` | Pixel types, binning, group statistics and normalization parameters (§1.2) and the `plane_histograms.csv` columns (§6.2); this repo's contract §3–§7 only point there |
 
 ---
 
@@ -60,7 +60,12 @@ src/morphobricks_preprocessing/
   discovery.py      folder walk, leaf folders, labels (condition / biological_repeat / technical_repeat),
                     position_id per image and the duplicate check
   metadata.py       TIFF header inspection (tifffile, no pixel reads), dtype/dimension/series checks,
-                    OME channel names + significant bits
+                    OME channel names + significant bits, physical pixel sizes; header consistency
+                    warnings (width/height, plane counts, pixel sizes)
+  pixel_sizes.py    PhysicalSizes from OME/ImageJ TIFF metadata and the OME-Zarr level-0 scale,
+                    sizes in micrometres for comparing (read_physical_sizes re-exported by zarr_export)
+  dataset.py        dataset consistency from the folders: biological repeats per condition, balance
+                    table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
@@ -226,7 +231,7 @@ functions the tests use.
   Percentile range defaults to 1–99.8. Robust z-score uses MAD × 1.4826. A zero or
   non-finite scale is an error.
 
-### CSV (normalization contract §8.2, schema version 2)
+### CSV (normalization contract §6.2, schema version 2)
 
 - **Columns:**
   `position_id, image_file, z, c, t, condition, biological_repeat, technical_repeat,
@@ -289,6 +294,23 @@ functions the tests use.
   - Wide integers (32/64-bit) reserve up to 512 MiB for the per-value count table in
     `estimate_histogram_memory`, so they need a limit above about 520 MiB even in blocks.
 
+### Dataset consistency (contract §11, follow-up P2)
+
+- **Warnings only**, from folder names and headers; never block.
+- **Balance:** images per condition (columns) and biological repeat (rows, matched by
+  folder name), technical repeats added up; below half or above twice the median of the
+  non-empty cells is `unbalanced_images`. Excluded images are not counted.
+- **`repeat_missing_conditions`:** a biological repeat not in every condition (only with
+  more than one condition).
+- **Pixel sizes:** `different_pixel_sizes` (X by Y; z-step only for images with Z > 1;
+  micrometres, 4 significant digits) and `missing_pixel_size` (known for some only).
+  OME-Zarr sizes come from the level-0 scale with axis units; no unit means unknown.
+- **`different_plane_counts`:** C (or S without C), Z, T or any other non-XY dimension;
+  `different_sizes` is width/height only, so no dimension is reported twice.
+- **Notebook:** the consistency codes (`dataset.CONSISTENCY_CODES`) appear only in step 1's
+  "Dataset consistency" panel with the balance table; the Messages card keeps the rest.
+  The CLI `check` prints the balance table; `run` reports the same warnings.
+
 ### Validation messages (contract §8)
 
 Every expected problem is a `ValidationIssue` with:
@@ -323,7 +345,8 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Notebook target | Local Jupyter (not Colab-first) |
 | CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--memory-limit 2GiB`, `--missing-as-singleton`, `--force-rebuild`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata. Exit 1 on errors |
 | Large planes (Q15) | Planes over the memory limit are read in blocks automatically, announced by the warning `planes_read_in_blocks` and `read_in_blocks` in the manifest. Block size derived from the limit (whole strips/tiles/chunks, uncompressed pieces and chunks also by rows). Compressed single-strip/tile planes keep the `plane_over_memory_limit` error. Two-pass histograms identical to whole planes. OME-Zarr copies written block by block, smaller levels built from the stored level above. Axis preview reduced (every n-th pixel) with a caption saying so |
-| Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Their public names stay importable from `morphobricks_preprocessing` and from the old submodules for one version: module `__getattr__` stand-ins (`_moved.py`), one `DeprecationWarning` per old path naming `morphobricks_normalization.<module>.<name>`, same objects. The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, §8.2) |
+| Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Their public names stay importable from `morphobricks_preprocessing` and from the old submodules for one version: module `__getattr__` stand-ins (`_moved.py`), one `DeprecationWarning` per old path naming `morphobricks_normalization.<module>.<name>`, same objects. The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, now §6.2 for the CSV) |
+| Dataset consistency (Q21, P2) | Step 1 "Dataset consistency" panel: balance table (images and technical-repeat folders per condition x biological repeat), `unbalanced_images` (< 0.5 or > 2 x median), `repeat_missing_conditions`, `different_pixel_sizes`, `missing_pixel_size` (OME-Zarr scale included), `different_plane_counts`; `different_sizes` narrowed to width/height; consistency issues shown only in that panel, not in Messages. Warnings only; outputs unchanged |
 | Position identity (Q20, D02) | `position_id` = image name without extension, in every CSV row and manifest file entry; FOV key = labels + `position_id`; duplicates in one leaf folder are the error `duplicate_position_id`. CSV columns and schema 2 unchanged; manifest version 1 with an optional key |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
@@ -595,9 +618,10 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   follow-up P1 of the normalization plan: the dependency on `morphobricks-normalization`
   v0.1.0 with deprecated re-exports, its version in the manifest, Step 0 checking for it,
   and contract §3–§7 moved to the normalization contract (PRs #16 and #17, question 19),
-  and `position_id` filled per cross-brick decision D02 (question 20).
-- **Next (not started):** follow-ups P2–P5 of the normalization plan (modality,
-  references, colour statistics, previews).
+  and `position_id` filled per cross-brick decision D02 (question 20), and follow-up
+  P2: dataset consistency warnings in the folder check (question 21).
+- **Next (not started):** follow-ups P3–P5 of the normalization plan (experiment design,
+  image type, intensity checks and plots).
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;
   - the optional `jl-hidecode` JupyterLab extension, which keeps code cells collapsed. It
