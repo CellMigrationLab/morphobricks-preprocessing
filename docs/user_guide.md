@@ -92,6 +92,42 @@ experiment/
 
 To change a label, rename the folder and check again.
 
+### Masks (optional)
+
+If you already have masks (segmentations of cells, nuclei, nucleoli, ...), keep them in a
+**masks folder** next to the experiment folder, not inside it. Make one folder per kind of
+mask, named as you like (`Cells`, `Nuclei`, ...), and inside each the same folders as the
+experiment, with one mask per image under the image's name:
+
+```
+masks/
+    Cells/
+        control/bio_rep1/tech_rep1/img_01.tif
+        control/bio_rep1/tech_rep1/img_02.tif
+    Nuclei/
+        control/bio_rep1/tech_rep1/img_01.tif
+        control/bio_rep1/tech_rep1/img_02.tif
+```
+
+- Or keep the masks in the same folders as the experiment, each named after its image
+  followed by `_` and its kind (`img_01_cells.tif`, `img_01_nuclei.tif`), as many
+  segmentation tools write them; the kind is the part after the image name. Both ways may be
+  mixed in one masks folder.
+- A mask is a 2D TIFF label image with the width and height of its image: background 0,
+  each object its own whole number (or a true/false mask). The extension may differ from
+  the image's (`img_01.tiff` for `img_01.ome.tif`).
+- You may have any number of kinds of mask. Their folder names (or the part after the image
+  name) are their names: they must differ by more than upper/lower case. If one image's name
+  starts another's (`a.tif` and `a_b.tif`), a mask named `a_b_cells.tif` could belong to
+  either and is refused: rename the masks or the images.
+- The label images stored inside an OME-Zarr image (its `labels` group) are used as masks
+  too, named after the label image.
+- An image without a mask of one kind is reported; its objects of that kind cannot be
+  measured.
+
+Masks do not change `plane_histograms.csv`. They are checked and recorded for the bricks
+that measure objects; the optional `masks` command (§5) also tells how they relate.
+
 ## 3. Supported images
 
 - **TIFF files:** `.tif` and `.tiff` (any case), including OME-TIFF and ImageJ hyperstacks.
@@ -343,11 +379,47 @@ the design is confirmed. Other options:
 | `--pyramid-levels auto\|none\|N` | With `--convert-tiff`: smaller levels for viewing (default auto) |
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
 | `--log FILE` | Write technical details to a file |
+| `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json` |
 
 After writing, `run` prints the intensity checks of the table, grouped by kind, each with
 the channel, the image or biological repeat and the values compared, and what to do once
 per kind; it draws no plots (the notebook does). Both commands exit with status 1 when an
 error blocks processing; intensity warnings never do.
+
+The optional `masks` command reads the masks and tells how they relate:
+
+```bash
+morphobricks-preprocessing masks /data/exp1 --masks /data/exp1_masks
+```
+
+It reads every image's masks, one image at a time, and prints for each kind of mask
+whether its labels are separate objects (`instances`), labels spread over many pieces
+(`grouped`, such as mitochondria labelled with their cell's number), a single value per
+image (a true/false mask or one object) or empty; then which kinds lie inside which, with
+the counts behind it, for example how many cells hold 0, 1, 2 or 3 or more nuclei; and the
+hierarchy of direct parents, for example:
+
+```
+Hierarchy (direct parents only):
+    Organoid
+        Cells
+            Nuclei
+                Nucleoli
+            Vesicles
+```
+
+Nucleoli inside nuclei inside cells have the nuclei as their direct parent; two kinds of
+mask that segment the same objects are reported as such. These are suggestions from the
+pixels, not decisions: you name each kind of mask and check the relationships in the bricks
+that use them. The report is written to `mask_relationships.json` in the output folder
+(§6). The command takes `--output`, `--exclude` and `--log` like the others, and exits with
+status 1 when an error blocks it or when no masks are found.
+
+The rules behind each suggestion use thresholds you can change, for example
+`--inside-object-share 0.8` to call a kind of mask "inside" another when 80% of its objects
+(not 90%) lie inside, or `--same-objects-iou 0.7` to ask for a closer match before two
+kinds of mask count as the same objects. `morphobricks-preprocessing masks --help` lists
+all seven with their defaults; the values used are printed and written in the report.
 `python -m morphobricks_preprocessing` works the same way.
 
 ## 6. Output files
@@ -389,6 +461,12 @@ The default output folder is next to the experiment folder:
   with their own units; the table does not change. Switching back to reading the
   TIFF images directly removes the copies and recomputes their rows. Details in
   [contract.md](contract.md) §10.
+
+- **`mask_relationships.json`** (only from the `masks` command): each kind of mask, the
+  relationship between every two kinds with its counts, and the hierarchy. The rules and
+  thresholds are in [contract.md](contract.md) §15.
+
+When masks are given, `run_manifest.json` also lists every image's masks (`masks`).
 
 The table and manifest are both prepared before the earlier files are replaced. If a
 replacement fails, the earlier files are restored. This needs temporary disk space for
@@ -469,6 +547,17 @@ continues.
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
 | `no_finite_pixels` | Warning | Some planes have a channel without finite pixels; those channels are left out of group statistics. |
 | `excluded_images`, `excluded_path_not_found` | Warning | Images excluded as requested, or an excluded path that matches no image. |
+| `masks_folder_not_found` | Error | The masks folder does not exist. Select the folder that holds one folder per kind of mask. |
+| `masks_inside_experiment` | Error | The masks folder is inside the experiment folder, where its folders would be read as conditions and repeats. Move it next to the experiment folder. |
+| `mask_names_differ_in_case` | Error | Two kinds of mask have names that differ only in upper/lower case. Rename one. |
+| `duplicate_mask` | Error | An image has two masks of one kind (two extensions, or a file and an OME-Zarr label image of the same name). Keep one. |
+| `unreadable_mask` | Error | A mask cannot be opened, or holds several images. Save it again as a TIFF label image. |
+| `mask_not_2d` | Error | A mask has more than one plane. Save one 2D label image per position. |
+| `mask_size_mismatch` | Error | A mask does not have the width and height of its image. Check that it was made from that image at full resolution. |
+| `mask_pixel_type` | Error | A mask's pixels are not whole numbers (for example decimals). Save it as an integer label image. |
+| `mask_missing` | Warning | Some images have no mask of a kind that other images have; their objects of that kind cannot be measured. Add the masks, or exclude the images. |
+| `ambiguous_mask` | Error | A mask's name could belong to two images (one image name starts another's) or fit both layouts. Rename the masks or the images so each names one image and one kind. |
+| `mask_without_image`, `mask_outside_type_folder` | Warning | Files in the masks folder that match no analysed image (check the folder and file names), or other files directly in the masks folder. They are not used. |
 | `zarr_not_installed` | Error | OME-Zarr images, or converting TIFF images, need the `zarr` extra. Install it, exclude the OME-Zarr images, or read the TIFF images directly. |
 
 ## 9. Python interface
@@ -529,6 +618,25 @@ suggestion = review_image_type(check.metadata, review_axes(check.metadata, mappi
 print(suggestion.suggested, suggestion.reason, suggestion.rgb_problem)
 result = run_experiment("/data/exp1", mapping, image_type=suggestion.suggested)
 ```
+
+Masks are found from their headers by `preflight` and read by `scan_masks`:
+
+```python
+from morphobricks_preprocessing import preflight, scan_masks, write_mask_report
+
+check = preflight("/data/exp1", masks_folder="/data/exp1_masks")
+masks = check.masks  # MaskInventory: types, files, issues
+cells = masks.for_image("control/bio_rep1/tech_rep1/img_01.tif")["Cells"]  # MaskFile
+report = scan_masks(masks, "/data/exp1")  # reads the pixels, one image at a time
+report.hierarchy  # {"Nuclei": ("Cells",), "Cells": (), ...}: direct parents
+write_mask_report(report, "/data/exp1_MorphoBricks_Preprocessing/mask_relationships.json")
+```
+
+`scan_masks(..., thresholds={"inside_object_share": 0.8})` changes a threshold (the others
+keep their defaults, `DEFAULT_THRESHOLDS`). `preflight(..., ome_zarr_labels=True)` uses the
+label images of OME-Zarr images without a masks folder; `read_mask` reads one mask's pixels;
+`pair_counts` and `piece_counts` give the counts behind the report for one pair of masks or
+one mask.
 
 Reading the table, group statistics and normalisation parameters come from the
 normalization brick (`morphobricks_normalization`, installed with this package):

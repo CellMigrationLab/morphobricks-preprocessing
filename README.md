@@ -39,8 +39,14 @@ Pre-alpha. Implemented and tested:
 - Intensity checks of the written table: images far from the others of their biological
   repeat, shifted biological repeats, saturated images and images without spread, with
   plots per channel in the notebook (`intensity`)
+- Masks (optional): pairing every image with its masks of any number of kinds (a masks
+  folder with one folder per kind, and OME-Zarr label images), checking them from their
+  headers and recording them in the run manifest (`masks`); and a mask step that reads them
+  and tells how the kinds relate (inside, grouped by, same objects, with the counts behind
+  it, such as cells with two nuclei) and their hierarchy, in `mask_relationships.json`
+  (`mask_scan`, command `masks`)
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
-  and a command line (`morphobricks-preprocessing check` / `run`)
+  and a command line (`morphobricks-preprocessing check` / `run` / `masks`)
 
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
 to its release v0.2.0): per-plane histograms

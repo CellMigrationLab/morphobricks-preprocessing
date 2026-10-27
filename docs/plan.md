@@ -772,3 +772,44 @@ Raised during review; to be decided before the milestones that need them:
     before. Nothing else in step 1 writes files: the folder check and the header
     inspection only read, and with `show_output=False` the output folder is only named.
     The CSV, the manifest and their versions are unchanged.*
+32. Can this brick find each image's masks and tell how they relate, so that a user who is
+    not a programmer only has to name the masks (MorphoFeature decision D78)? Bricks that
+    measure objects (MorphoObjects, MorphoRelate, CellPatcher, MorphoFeature's workflows)
+    need every image paired with its masks and the parent-child relationships between mask
+    types (two nuclei in one cell, nucleoli inside nuclei inside cells, mitochondria grouped
+    by cell), and today each asks the user again.
+    *Decided (October 2026), by the MorphoBricks owner: yes, for any number of mask types
+    (contract §15). Masks are in a separate masks folder, outside the experiment, one
+    subfolder per mask type mirroring the experiment's folders, paired with the images by
+    leaf folder and `position_id`; the label images of OME-Zarr images are masks too. The
+    checks of `check` and `run` read headers only; reading the pixels is an optional mask
+    step (`masks` command, `scan_masks`), which writes `mask_relationships.json` to the
+    output folder: each mask type's kind (`instances`, `grouped`, `one_value`, `empty`),
+    each ordered pair's relation (`same_objects`, `grouped_by`, `inside`, `none`) with the
+    counts behind it (including parents with 0, 1, 2 and 3 or more children), and the
+    hierarchy of direct parents. A run given masks records them in the manifest's optional
+    `masks` key (manifest version 1); the table never depends on them. The report suggests;
+    it decides nothing: users name the masks (by default the folder name, names unique)
+    and confirm or correct the relationships in the bricks that use them. Library, command
+    line and documentation first; the notebook step follows in a later change. SciPy
+    becomes a core dependency (the owner's agreement: "can use scipy if good reasons"):
+    counting the connected pieces of every label of one 2048 x 2048 HPMEC cell mask took
+    about 5 s with a NumPy union-find, and 0.3 to 0.9 s per HPMEC mask with
+    `scipy.ndimage`. Confirmed by the owner (27 October 2026): masks are 2D with the Y and
+    X sizes of their image (3D and time-lapse masks are a later follow-up), their pixels
+    integers or booleans, and the masks folder outside the experiment. The thresholds are
+    defaults the user may change, `scan_masks(..., thresholds=...)` in Python and one
+    option per threshold on the `masks` command (`--inside-object-share 0.8`, ...);
+    `mask_thresholds` checks them (shares and the intersection over union above 0 and at
+    most 1, the median number of pieces at least 1) before any mask is read, and the values
+    used are written in every report. Proposed to the brick's maintainer: tag v0.2.0 once
+    this is merged, so the other bricks can pin it (with the follow-ups P4 and P5, merged
+    before it). Next, in their own changes: a notebook step for the masks (name each mask,
+    say what it contains, confirm or correct the relationships) and a file saving those
+    answers for the other bricks, as `experiment_design.csv` does for the repeats.
+    Also decided (owner, 27 October 2026, after MorphoFeature's end-to-end trial on
+    MorphoRelate's JUMP-Target-2 conversion, which writes `<image>_<type>.tif` beside the
+    images' folders): the masks folder may instead mirror the experiment with the type after
+    the image name, `<condition>/.../<image>_<type>.tif`, and the two layouts may be mixed. A
+    file that could name two images or fit both layouts is the error `ambiguous_mask`, never
+    guessed. On the four JUMP smoke fields, both layouts give the same report.*

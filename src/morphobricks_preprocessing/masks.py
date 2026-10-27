@@ -1,0 +1,471 @@
+"""Find the masks of every image and check them from their headers (``docs/contract.md`` §15).
+
+Masks (segmentations: label images of cells, nuclei, ...) are kept in a masks folder outside
+the experiment, one subfolder per mask type, each mirroring the experiment's folders::
+
+    <masks folder>/<mask type>/<condition>/<biological repeat>/<technical repeat>/<image>.tif
+
+A mask belongs to the image with the same position (same leaf folder, same ``position_id``,
+contract §1). The type may also follow the image name instead of being a folder::
+
+    <masks folder>/<condition>/<biological repeat>/<technical repeat>/<image>_<mask type>.tif
+
+and the two layouts may be mixed. Its file may be a TIFF (``.tif``, ``.tiff``, any case, with
+an optional ``.ome``). The label images of an OME-Zarr image (its OME-NGFF ``labels`` group)
+are masks too, of the type named by the label image, when the ``zarr`` extra is installed.
+
+Any number of mask types is accepted; each is named by its folder, by the suffix after the
+image name, or by its label image, and two
+names may not differ only in case. Only headers are read here, never pixels: a mask must be
+2D (length-1 axes aside) with the image's Y and X sizes, and its pixels integers or booleans.
+Reading the pixels and relating the masks to each other is :mod:`.mask_scan`.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from types import MappingProxyType
+
+import numpy as np
+import tifffile
+
+from .discovery import DiscoveryResult, is_system_name, is_tiff_name, position_id
+from .metadata import TiffMetadata
+from .validation import ValidationIssue, error, has_errors, plural, warning
+from .zarr_input import NgffError, ZarrUnavailableError, ngff_label_names, open_ngff_labels
+
+logger = logging.getLogger(__name__)
+
+FOLDER = "folder"
+"""Source of a mask kept as a TIFF file in the masks folder."""
+
+OME_ZARR = "ome-zarr"
+"""Source of a mask kept as a label image inside an OME-Zarr image."""
+
+
+@dataclass(frozen=True)
+class MaskFile:
+    """One mask of one image.
+
+    Attributes
+    ----------
+    image
+        The image's path relative to the experiment root.
+    mask_type
+        The mask type: its folder name in the masks folder, or the label image's name.
+    path
+        The mask's path: relative to the masks folder for a TIFF mask; for a label image of
+        an OME-Zarr image, ``<image>/labels/<name>`` relative to the experiment root.
+    source
+        :data:`FOLDER` or :data:`OME_ZARR`.
+    shape
+        Shape of the mask without its length-1 axes, ``(Y, X)`` when it is valid.
+    dtype
+        Pixel type, or None when the header could not be read.
+    """
+
+    image: str
+    mask_type: str
+    path: str
+    source: str
+    shape: tuple[int, ...] = ()
+    dtype: np.dtype | None = None
+
+
+@dataclass(frozen=True)
+class MaskInventory:
+    """Every mask found for the images of an experiment.
+
+    Attributes
+    ----------
+    folder
+        The masks folder, as an absolute path; None when only OME-Zarr label images were used.
+    types
+        The mask types found, sorted.
+    files
+        One entry per mask, sorted by image then type.
+    issues
+        Errors and warnings about the masks.
+    """
+
+    folder: Path | None
+    types: tuple[str, ...] = ()
+    files: tuple[MaskFile, ...] = ()
+    issues: tuple[ValidationIssue, ...] = ()
+
+    @property
+    def ok(self) -> bool:
+        """True if no issue blocks using the masks."""
+        return not has_errors(self.issues)
+
+    @property
+    def images(self) -> tuple[str, ...]:
+        """Images with at least one mask, sorted."""
+        return tuple(sorted({f.image for f in self.files}))
+
+    def for_image(self, image: str) -> Mapping[str, MaskFile]:
+        """Return the masks of one image, by type (empty when it has none)."""
+        return MappingProxyType({f.mask_type: f for f in self.files if f.image == image})
+
+    def to_manifest(self) -> dict:
+        """Return the inventory as recorded in the run manifest (contract §9)."""
+        return {
+            "folder": None if self.folder is None else self.folder.as_posix(),
+            "types": list(self.types),
+            "files": [
+                {"image": f.image, "type": f.mask_type, "path": f.path, "source": f.source}
+                for f in self.files
+            ],
+        }
+
+
+def find_masks(
+    masks_folder: str | os.PathLike | None,
+    discovery: DiscoveryResult,
+    images: Iterable[TiffMetadata],
+    *,
+    ome_zarr_labels: bool = True,
+) -> MaskInventory:
+    """Pair every image with its masks and check them from their headers, without pixels.
+
+    Parameters
+    ----------
+    masks_folder
+        The masks folder (contract §15), or None to use only the OME-Zarr images' own label
+        images.
+    discovery
+        The experiment's folders, which say where each image is.
+    images
+        Header information of the analysed images (excluded images left out); their Y and X
+        sizes are what each mask must match.
+    ome_zarr_labels
+        Also use the label images of OME-Zarr images (needs the ``zarr`` extra; skipped
+        silently without it).
+
+    Returns
+    -------
+    MaskInventory
+        The masks found and every issue about them.
+    """
+    images = {meta.relative_path: meta for meta in images}
+    issues: list[ValidationIssue] = []
+    files: list[MaskFile] = []
+    folder = None
+    if masks_folder is not None:
+        folder = Path(masks_folder).resolve()
+        issues.extend(_folder_issues(folder, discovery.root))
+        if not has_errors(issues):
+            found, extra = _folder_masks(folder, discovery, images)
+            files.extend(found)
+            issues.extend(extra)
+    if ome_zarr_labels:
+        files.extend(_label_masks(discovery.root, images))
+    issues.extend(_name_issues(files))
+    files.sort(key=lambda f: (f.image, f.mask_type))
+    issues.extend(_duplicate_issues(files))
+    issues.extend(_header_issues(files, images, folder, discovery.root))
+    types = tuple(sorted({f.mask_type for f in files}))
+    issues.extend(_missing_issues(types, files, images))
+    return MaskInventory(
+        folder=folder,
+        types=types,
+        files=tuple(files),
+        issues=tuple(sorted(issues, key=lambda issue: (not issue.is_error, issue.code))),
+    )
+
+
+def read_mask(mask: MaskFile, masks_folder: Path | None, experiment_root: Path) -> np.ndarray:
+    """Read one mask's pixels as a 2D array (its length-1 axes removed).
+
+    Raises
+    ------
+    ValueError
+        If the mask is not 2D once its length-1 axes are removed.
+    """
+    if mask.source == FOLDER:
+        pixels = tifffile.imread(Path(masks_folder) / mask.path)
+    else:
+        name = mask.path.rsplit("/labels/", 1)[1]
+        image = experiment_root / mask.path.rsplit("/labels/", 1)[0]
+        pixels = np.asarray(open_ngff_labels(image, name).array)
+    pixels = np.squeeze(pixels)
+    if pixels.ndim != 2:
+        raise ValueError(f"the mask {mask.path} is not 2D ({pixels.shape})")
+    return pixels
+
+
+def _folder_issues(folder: Path, experiment_root: Path) -> list[ValidationIssue]:
+    if not folder.is_dir():
+        return [
+            error(
+                "masks_folder_not_found",
+                f"The masks folder {folder} does not exist or is not a folder.",
+                action="Select the folder that holds one subfolder per mask type.",
+            )
+        ]
+    if folder == experiment_root or experiment_root in folder.parents:
+        return [
+            error(
+                "masks_inside_experiment",
+                "The masks folder is inside the experiment folder, where its folders would be "
+                "read as conditions and repeats.",
+                [folder.relative_to(experiment_root).as_posix() or "."],
+                "Move the masks folder next to the experiment folder and select it there.",
+            )
+        ]
+    return []
+
+
+def _folder_masks(
+    folder: Path, discovery: DiscoveryResult, images: Mapping[str, TiffMetadata]
+) -> tuple[list[MaskFile], list[ValidationIssue]]:
+    """Pair the TIFF files of the masks folder with the images, in either layout.
+
+    A file is a mask of an image when its path is ``<type>/<image's folders>/<image name>`` (one
+    folder per mask type) or ``<image's folders>/<image name>_<type>`` (the type after the
+    image name, as segmentation tools often write it). Each file is read the way that matches
+    an analysed image; a file matching two images or both layouts is refused, never guessed.
+    """
+    by_key, by_leaf = {}, {}
+    for leaf in discovery.leaves:
+        prefix = "" if leaf.relative_path == "." else leaf.relative_path + "/"
+        for image in leaf.images:
+            if image in images:
+                stem = position_id(image.rsplit("/", 1)[-1])
+                by_key[(prefix + stem).casefold()] = image
+                by_leaf.setdefault(prefix.casefold(), []).append((stem, image))
+    files, unpaired, loose, ambiguous = [], [], [], []
+    for path in sorted(folder.rglob("*")):
+        relative = path.relative_to(folder)
+        if any(is_system_name(part) for part in relative.parts) or not path.is_file():
+            continue
+        mask_path = relative.as_posix()
+        if not is_tiff_name(path.name):
+            (loose if len(relative.parts) == 1 else unpaired).append(mask_path)
+            continue
+        found = _suffix_matches(relative, by_leaf)
+        if len(relative.parts) > 1:
+            key = Path(*relative.parts[1:]).with_name(position_id(path.name)).as_posix()
+            if key.casefold() in by_key:
+                found.append((by_key[key.casefold()], relative.parts[0]))
+        if len(found) == 1:
+            files.append(MaskFile(found[0][0], found[0][1], mask_path, FOLDER))
+        else:
+            (ambiguous if found else unpaired).append(mask_path)
+    issues = _layout_issues(loose, unpaired)
+    if ambiguous:
+        issues.append(
+            error(
+                "ambiguous_mask",
+                f"{plural(len(ambiguous), 'mask')} could belong to more than one image or mask "
+                "type (an image name that starts another image's name, or a path that fits both "
+                "layouts), so they cannot be paired.",
+                ambiguous,
+                "Rename the masks (or the images) so that each mask names one image and one type.",
+            )
+        )
+    return files, issues
+
+
+def _suffix_matches(relative: Path, by_leaf: Mapping[str, list]) -> list[tuple[str, str]]:
+    """Return ``(image, mask type)`` for every image whose name, then ``_``, starts the file's."""
+    prefix = "" if len(relative.parts) == 1 else relative.parent.as_posix() + "/"
+    stem = position_id(relative.name)
+    found = []
+    for image_stem, image in by_leaf.get(prefix.casefold(), []):
+        head = image_stem + "_"
+        if len(stem) > len(head) and stem.casefold().startswith(head.casefold()):
+            found.append((image, stem[len(head) :]))
+    return found
+
+
+def _layout_issues(loose: list[str], unpaired: list[str]) -> list[ValidationIssue]:
+    issues = []
+    if loose:
+        issues.append(
+            warning(
+                "mask_outside_type_folder",
+                f"{plural(len(loose), 'file')} in the masks folder {_are(loose)} not masks "
+                "and will not be used.",
+                loose,
+                "Keep only masks there: Nuclei/<condition>/.../<image>.tif, or "
+                "<condition>/.../<image>_Nuclei.tif.",
+            )
+        )
+    if unpaired:
+        issues.append(
+            warning(
+                "mask_without_image",
+                f"{plural(len(unpaired), 'file')} in the masks folder {_match(unpaired)} no "
+                "analysed image (same folders and image name) and will not be used.",
+                unpaired,
+                "Check the folder names and file names against the experiment, or remove "
+                "masks of excluded images.",
+            )
+        )
+    return issues
+
+
+def _label_masks(root: Path, images: Mapping[str, TiffMetadata]) -> list[MaskFile]:
+    """Return the label images of every OME-Zarr image, as masks."""
+    files = []
+    for image, meta in images.items():
+        if meta.kind != "ome-zarr" or not meta.readable:
+            continue
+        try:
+            names = ngff_label_names(root / image)
+        except (ZarrUnavailableError, NgffError) as exc:
+            logger.info("No label images read from %s: %s", image, exc)
+            continue
+        files.extend(MaskFile(image, name, f"{image}/labels/{name}", OME_ZARR) for name in names)
+    return files
+
+
+def _name_issues(files: list[MaskFile]) -> list[ValidationIssue]:
+    by_folded: dict[str, set[str]] = {}
+    for f in files:
+        by_folded.setdefault(f.mask_type.casefold(), set()).add(f.mask_type)
+    clashes = sorted(name for names in by_folded.values() if len(names) > 1 for name in names)
+    if not clashes:
+        return []
+    return [
+        error(
+            "mask_names_differ_in_case",
+            "Some mask types have names that differ only in upper and lower case, so they "
+            "cannot be told apart: " + ", ".join(clashes) + ".",
+            clashes,
+            "Give every mask type its own name.",
+        )
+    ]
+
+
+def _duplicate_issues(files: list[MaskFile]) -> list[ValidationIssue]:
+    seen: dict[tuple[str, str], MaskFile] = {}
+    duplicates = []
+    for f in files:
+        key = (f.image, f.mask_type.casefold())
+        if key in seen:
+            duplicates += [seen[key].path, f.path]
+        seen[key] = f
+    if not duplicates:
+        return []
+    return [
+        error(
+            "duplicate_mask",
+            "Some images have two masks of the same type (for example a file in the masks "
+            "folder and a label image of the same name, or two files with the same name and "
+            "different extensions).",
+            sorted(set(duplicates)),
+            "Keep one mask per image and type.",
+        )
+    ]
+
+
+def _header_issues(
+    files: list[MaskFile], images: Mapping[str, TiffMetadata], folder: Path | None, root: Path
+) -> list[ValidationIssue]:
+    """Read each mask's header (shape, pixel type) and check it against its image."""
+    problems: dict[str, list[str]] = {}
+    for index, mask in enumerate(files):
+        try:
+            shape, dtype = _mask_header(mask, folder, root)
+        except (
+            OSError,
+            ValueError,
+            tifffile.TiffFileError,
+            NgffError,
+            ZarrUnavailableError,
+        ) as exc:
+            logger.info("Mask %s could not be opened: %s", mask.path, exc)
+            problems.setdefault("unreadable_mask", []).append(mask.path)
+            continue
+        files[index] = MaskFile(mask.image, mask.mask_type, mask.path, mask.source, shape, dtype)
+        if len(shape) != 2:
+            problems.setdefault("mask_not_2d", []).append(mask.path)
+        elif shape != _image_yx(images[mask.image]):
+            problems.setdefault("mask_size_mismatch", []).append(mask.path)
+        if dtype.kind not in "biu":
+            problems.setdefault("mask_pixel_type", []).append(mask.path)
+    return [
+        error(code, _TEXTS[code][0], paths, _TEXTS[code][1])
+        for code, paths in sorted(problems.items())
+    ]
+
+
+_TEXTS = {
+    "unreadable_mask": (
+        "Some masks could not be opened.",
+        "Check that they are TIFF files (or OME-Zarr label images) with one image each and "
+        "not damaged; the technical details are in the log.",
+    ),
+    "mask_not_2d": (
+        "Some masks are not 2D: a mask must be one label image per position.",
+        "Save each mask as a single 2D label image.",
+    ),
+    "mask_size_mismatch": (
+        "Some masks do not have the size (Y and X) of their image.",
+        "Check that each mask was made from its image, at full resolution.",
+    ),
+    "mask_pixel_type": (
+        "Some masks do not hold whole numbers: mask pixels must be integers (labels) or "
+        "true/false.",
+        "Save the masks as integer label images.",
+    ),
+}
+
+
+def _mask_header(mask: MaskFile, folder: Path | None, root: Path) -> tuple:
+    """Return a mask's shape without its length-1 axes, and its pixel type; no pixels read."""
+    if mask.source == FOLDER:
+        with tifffile.TiffFile(Path(folder) / mask.path) as tif:
+            if len(tif.series) != 1:
+                raise ValueError(f"{len(tif.series)} image series")
+            shape, dtype = tif.series[0].shape, tif.series[0].dtype
+    else:
+        image, name = mask.path.rsplit("/labels/", 1)
+        array = open_ngff_labels(root / image, name).array
+        shape, dtype = array.shape, np.dtype(array.dtype)
+    return tuple(int(n) for n in shape if n != 1), dtype.newbyteorder("=")
+
+
+def _image_yx(meta: TiffMetadata) -> tuple[int, int] | None:
+    """Return the image's Y and X sizes from its header, or None when they are not known."""
+    if not meta.readable or "Y" not in meta.axes or "X" not in meta.axes:
+        return None
+    return (meta.shape[meta.axes.index("Y")], meta.shape[meta.axes.index("X")])
+
+
+def _missing_issues(
+    types: tuple[str, ...], files: list[MaskFile], images: Mapping[str, TiffMetadata]
+) -> list[ValidationIssue]:
+    have = {(f.image, f.mask_type) for f in files}
+    issues = []
+    for mask_type in types:
+        missing = sorted(image for image in images if (image, mask_type) not in have)
+        if missing:
+            issues.append(
+                warning(
+                    "mask_missing",
+                    f"{plural(len(missing), 'image')} {_have(missing)} no {mask_type} mask; "
+                    f"their {mask_type} objects cannot be measured.",
+                    missing,
+                    f"Add the {mask_type} masks of these images, or exclude the images.",
+                )
+            )
+    return issues
+
+
+def _are(items: list) -> str:
+    return "is" if len(items) == 1 else "are"
+
+
+def _match(items: list) -> str:
+    return "matches" if len(items) == 1 else "match"
+
+
+def _have(items: list) -> str:
+    return "has" if len(items) == 1 else "have"

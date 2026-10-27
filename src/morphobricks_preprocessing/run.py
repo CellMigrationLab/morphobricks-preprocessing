@@ -65,6 +65,7 @@ from .manifest import (
     read_manifest,
     write_manifest,
 )
+from .masks import MaskInventory, find_masks
 from .metadata import MetadataReport, TiffMetadata, inspect_images
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
@@ -110,6 +111,9 @@ class Preflight:
     dataset
         Images per condition and biological repeat, and the warnings about
         their balance.
+    masks
+        The masks of the images (contract §15), found from their headers, when
+        masks were asked for; None otherwise.
     """
 
     discovery: DiscoveryResult
@@ -118,6 +122,7 @@ class Preflight:
     exclusion_issues: tuple[ValidationIssue, ...] = ()
     suggested_mapping: AxisMapping | None = None
     dataset: DatasetReport = field(default_factory=DatasetReport)
+    masks: MaskInventory | None = None
 
     @property
     def issues(self) -> tuple[ValidationIssue, ...]:
@@ -127,6 +132,7 @@ class Preflight:
             *self.exclusion_issues,
             *self.metadata.issues,
             *self.dataset.issues,
+            *(self.masks.issues if self.masks is not None else ()),
         ]
         return tuple(sorted(merged, key=lambda issue: not issue.is_error))
 
@@ -272,6 +278,8 @@ def preflight(
     output_folder: str | os.PathLike | None = None,
     *,
     exclude: Iterable[str] = (),
+    masks_folder: str | os.PathLike | None = None,
+    ome_zarr_labels: bool = False,
 ) -> Preflight:
     """Pass 1: check the folder and the image headers without reading pixels.
 
@@ -284,6 +292,14 @@ def preflight(
     exclude
         Relative paths of images to leave out (``/`` or backslash separators),
         for example damaged files.
+    masks_folder
+        The masks folder (contract §15): one subfolder per mask type, each
+        mirroring the experiment's folders. The masks are paired with the images
+        and checked from their headers; the label images of OME-Zarr images are
+        included.
+    ome_zarr_labels
+        Use the label images of OME-Zarr images as masks, also without a masks
+        folder.
 
     Returns
     -------
@@ -295,6 +311,9 @@ def preflight(
     excluded = tuple(sorted({_normalise(path) for path in exclude}))
     images = [path for path in discovery.images if path not in excluded]
     metadata = inspect_images(root, images)
+    masks = None
+    if masks_folder is not None or ome_zarr_labels:
+        masks = find_masks(masks_folder, discovery, metadata.files)
     return Preflight(
         discovery=discovery,
         metadata=metadata,
@@ -302,6 +321,7 @@ def preflight(
         exclusion_issues=tuple(_exclusion_issues(discovery, excluded)),
         suggested_mapping=prefill_experiment_mapping(metadata),
         dataset=check_dataset(discovery, excluded=excluded),
+        masks=masks,
     )
 
 
@@ -319,6 +339,8 @@ def run_experiment(
     convert_tiffs: bool = False,
     conversion: ConversionSettings | None = None,
     design: ExperimentDesign | None = None,
+    masks_folder: str | os.PathLike | None = None,
+    ome_zarr_labels: bool = False,
     image_type: str | None = None,
     intensity_settings: IntensityCheckSettings | None = None,
 ) -> RunResult:
@@ -366,6 +388,10 @@ def run_experiment(
         with the table, and its SHA-256 recorded in the manifest. Without a
         design nothing is asked, the manifest records none, and an existing
         ``experiment_design.csv`` is left as it is.
+    masks_folder, ome_zarr_labels
+        As :func:`preflight`. The masks are recorded in the manifest (``masks``,
+        contract §9); an error about them stops the run. Their pixels are not
+        read: the mask step (:func:`.mask_scan.scan_masks`) does that.
     image_type
         The image type the user confirmed, ``"fluorescence"`` or ``"rgb"``
         (:mod:`.image_type`), recorded in the manifest. ``"rgb"`` for images that
@@ -391,7 +417,9 @@ def run_experiment(
         check_image_type(image_type)
     root = Path(experiment_root).resolve()
     output = default_output_folder(root) if output_folder is None else Path(output_folder).resolve()
-    pre = preflight(root, output, exclude=exclude)
+    pre = preflight(
+        root, output, exclude=exclude, masks_folder=masks_folder, ome_zarr_labels=ome_zarr_labels
+    )
     review = review_axes(pre.metadata, mapping, missing_as_singleton=missing_as_singleton)
     type_review = review_image_type(pre.metadata, review)
     dataset = pre.dataset
@@ -408,6 +436,7 @@ def run_experiment(
         *image_type_issues(image_type, type_review),
         *design_problems,
         *dataset.issues,
+        *(pre.masks.issues if pre.masks is not None else ()),
     ]
     dtype = pre.metadata.dtype
     bins = None
@@ -594,6 +623,7 @@ def run_experiment(
             versions=package_versions(),
             written_at=datetime.now(UTC).isoformat(timespec="seconds"),
             experiment_design_sha256=design_sha256,
+            masks=None if pre.masks is None else pre.masks.to_manifest(),
             image_type=image_type,
             channels_from_rgb_samples=type_review.channels_from_rgb_samples,
             intensity_checks=intensity.settings,

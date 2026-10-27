@@ -168,6 +168,10 @@ class RunManifest:
         SHA-256 of the ``experiment_design.csv`` written with this run, or None
         when the run had no experiment design (or in manifests written before it
         was recorded).
+    masks
+        The masks of the images when masks were given (contract §15): the masks
+        folder, the mask types and one entry per mask (image, type, path,
+        source); None otherwise. The key is left out of the file when None.
     image_type
         ``"fluorescence"`` or ``"rgb"``, as the user confirmed it
         (:mod:`.image_type`); None when the run was not given one (or in
@@ -193,6 +197,7 @@ class RunManifest:
     versions: dict[str, str] = field(default_factory=dict)
     written_at: str = ""
     experiment_design_sha256: str | None = None
+    masks: dict | None = None
     image_type: str | None = None
     channels_from_rgb_samples: bool | None = None
     intensity_checks: IntensityCheckSettings | None = None
@@ -213,7 +218,7 @@ class RunManifest:
 
     def to_dict(self) -> dict:
         """Return the manifest as JSON-compatible data."""
-        return {
+        data = {
             "manifest_version": self.manifest_version,
             "schema_version": self.schema_version,
             "written_at": self.written_at,
@@ -247,6 +252,9 @@ class RunManifest:
             ),
             "versions": dict(self.versions),
         }
+        if self.masks is not None:
+            data["masks"] = self.masks
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> RunManifest:
@@ -286,6 +294,7 @@ class RunManifest:
                     if data.get("experiment_design_sha256") is None
                     else str(data["experiment_design_sha256"])
                 ),
+                masks=_masks(data.get("masks")),
                 image_type=None if data.get("image_type") is None else str(data["image_type"]),
                 channels_from_rgb_samples=(
                     None
@@ -410,6 +419,15 @@ def read_manifest(path: str | os.PathLike) -> RunManifest:
     if not isinstance(data, dict):
         raise ManifestFormatError(f"{path} is not a valid manifest.")
     return RunManifest.from_dict(data)
+
+
+def _masks(data: object) -> dict | None:
+    """Check the optional ``masks`` entry of a manifest (absent in older manifests)."""
+    if data is None:
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("files"), list):
+        raise ValueError("its masks entry is not a mask list")
+    return data
 
 
 def _file_dict(entry: FileEntry) -> dict:

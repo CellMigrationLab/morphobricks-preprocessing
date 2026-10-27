@@ -107,8 +107,8 @@ method is an offset and a scale, `(pixels − offset) / scale`.
 
 | Severity | Situations | Effect |
 |---|---|---|
-| Error | Experiment design not confirmed (`design_not_confirmed`) or a repeat group holding two folders of one condition (`repeat_group_conflict`), when a design is used (§12); image type RGB for images that are not three channels of an integer type (`rgb_not_possible`, §13); mixed dtypes; images with different numbers of channels (`different_channel_counts`, §2); unreadable TIFF (header or pixel data) or OME-Zarr folder in a leaf folder that is not excluded; OME-Zarr images, or converting TIFF images to OME-Zarr, without the `zarr` extra; OME-Zarr images whose declared axes do not fit the experiment's roles; every image excluded; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane that cannot be read within the memory limit, not even in blocks (for example a plane stored compressed in one piece); folder named `single` in another case, or beside other folders (§1); sibling folders differing only in case; images in one leaf folder with the same position identifier (§1); folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
-| Warning | Intensity checks of the written table (`image_intensity_outlier`, `repeat_intensity_shift`, `saturated_image`, `no_intensity_spread`, §14), reported apart from the run's issues; files that are not images; empty folders; images outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image widths or heights; different numbers of depth slices, time points or other planes; physical pixel sizes that differ or are known for only some images; unbalanced numbers of images; biological repeats missing from some conditions (§11); planes without finite pixels while others remain; planes over the memory limit that are read in blocks | Processing continues; the item is reported |
+| Error | Experiment design not confirmed (`design_not_confirmed`) or a repeat group holding two folders of one condition (`repeat_group_conflict`), when a design is used (§12); image type RGB for images that are not three channels of an integer type (`rgb_not_possible`, §13); mixed dtypes; images with different numbers of channels (`different_channel_counts`, §2); unreadable TIFF (header or pixel data) or OME-Zarr folder in a leaf folder that is not excluded; OME-Zarr images, or converting TIFF images to OME-Zarr, without the `zarr` extra; OME-Zarr images whose declared axes do not fit the experiment's roles; every image excluded; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane that cannot be read within the memory limit, not even in blocks (for example a plane stored compressed in one piece); folder named `single` in another case, or beside other folders (§1); sibling folders differing only in case; images in one leaf folder with the same position identifier (§1); folder below the technical-repeat level; output folder inside the experiment; no usable planes; when masks are given, a masks folder missing or inside the experiment, mask names differing only in case, two masks of one type for an image, a mask whose name could belong to two images or types, or a mask that is unreadable, not 2D, of another size than its image or not of integers or booleans (§15) | Processing is blocked |
+| Warning | Intensity checks of the written table (`image_intensity_outlier`, `repeat_intensity_shift`, `saturated_image`, `no_intensity_spread`, §14), reported apart from the run's issues; files that are not images; empty folders; images outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image widths or heights; different numbers of depth slices, time points or other planes; physical pixel sizes that differ or are known for only some images; unbalanced numbers of images; biological repeats missing from some conditions (§11); planes without finite pixels while others remain; planes over the memory limit that are read in blocks; images without a mask of a type other images have, masks matching no analysed image, files outside the mask-type folders (§15) | Processing continues; the item is reported |
 
 Every message states what happened in plain language, lists the affected paths, and
 suggests an action. Technical details go to the diagnostic log.
@@ -150,6 +150,7 @@ file's schema or statistical interpretation.
 | `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count` (its rows in the table: XYC planes), `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata), `ome_zarr_path` (for a TIFF converted to OME-Zarr, the copy relative to the output folder; null otherwise or when the key is absent), `read_in_blocks` (true when the image's planes are over the memory limit and are read in blocks; information only, false when absent), `position_id` (the image's position identifier, §1; null when absent, in manifests written before it). For an OME-Zarr image, `size` is the total size of its files and `mtime_ns` the time of its newest file. |
 | `csv_sha256` | SHA-256 of the table written with this manifest. |
 | `experiment_design_sha256` | SHA-256 of the `experiment_design.csv` written with this run (§12), so later bricks can check that the design they read is the one used; null when the run had no design, or absent in manifests written before it. Optional key: the manifest stays version 1. |
+| `masks` | The masks paired with the images (§15), when the run was given a masks folder: `folder` (absolute path of the masks folder, null when only OME-Zarr label images were used), `types` (sorted mask-type names) and `files` (one entry per image and mask type, sorted by image then type: `image`, `type`, `path`, `source` `folder` or `ome-zarr`). Absent when the run had no masks. Optional key: the manifest stays version 1, and the table does not depend on the masks. |
 | `image_type` | `fluorescence` or `rgb`, the image type the user confirmed (§13); null when the run was given none, or absent in manifests written before it. Optional key: the manifest stays version 1. Changing it recomputes nothing. |
 | `channels_from_rgb_samples` | `true` when the C role is the RGB samples axis of images stored as RGB colour (§13), `false` otherwise; absent in manifests written before it. Optional key. |
 | `intensity_checks` | The limits of the intensity checks run on the table (§14): `IntensityCheckSettings.to_dict()` of the normalization brick (`library_version`, `outlier_limit`, `saturation_limit`, `min_images`); absent in manifests written before it. Optional key. Changing the limits recomputes nothing. |
@@ -274,3 +275,93 @@ apart from the limits in the manifest.
 | Run | `RunResult.intensity` holds the summaries and warnings (`IntensityReport`) of a written table, None otherwise. The warnings never block and are kept apart from `RunResult.issues`. |
 | Notebook | Step 3 shows the checks of the table just written after every successful run, step 4 those of any chosen table: a status line with the limits, counts per kind, a table of the warnings (check, channel, image or repeat, what was found) and what to do about each kind, a collapsed **Check settings** panel (changing a limit updates the warnings at once; in step 3 the next run records it), and per channel (chosen with buttons) box plots of the image medians and high percentiles per condition and biological repeat, with images that have a warning in that channel (`Issue.channel`, N52) as red diamonds and shifted repeats as amber boxes, and the cumulative intensity distribution of each biological repeat, one panel per condition (shifted repeats dashed; at most 12 conditions). The plots are drawn in the notebook only; no file is written. |
 | Command line | `run` prints the warnings after the run, grouped by kind with what to do once per kind, and draws no plots; `--outlier-limit`, `--saturation-limit` (a fraction) and `--min-images` set the limits. |
+
+## 15. Masks (optional)
+
+Masks are segmentations made elsewhere: label images of cells, nuclei, nucleoli, vesicles or
+any other object, one per image and mask type. This brick finds them, checks them and
+describes how they relate, for the bricks that measure objects. It never changes a mask, and
+`plane_histograms.csv` does not depend on the masks.
+
+```
+masks/                         masks folder, outside the experiment folder
+    Cells/                     one folder per mask type, named by the user
+        control/bio_rep1/tech_rep1/img_01.tif
+    Nuclei/
+        control/bio_rep1/tech_rep1/img_01.tif
+```
+
+| Rule | Detail |
+|---|---|
+| Layout | Either one subfolder per mask type, each mirroring the experiment's folders (`<type>/<condition>/.../<image>.tif`), or the experiment's folders with the type after the image name (`<condition>/.../<image>_<type>.tif`, as segmentation tools often write it, e.g. MorphoRelate's JUMP-Target-2 conversion); the two may be mixed. Any number of mask types. The label images of an OME-Zarr image (its OME-NGFF `labels` group, with the `zarr` extra) are masks too, of the type named by the label image; they are used whenever masks are asked for, with or without a masks folder. |
+| Pairing | A mask belongs to the image in the same leaf folder with the same `position_id` (§1), ignoring upper/lower case; its file is a TIFF (`.tif`, `.tiff`, optionally `.ome`, any case). Excluded images have no masks. |
+| Names | A mask type is named by its folder, by the suffix after the image name, or by its label image. A file that could belong to two images (an image name that starts another's, `a_b_cells.tif` beside images `a` and `a_b`) or fit both layouts is the error `ambiguous_mask`. Two names differing only in case are the error `mask_names_differ_in_case`; one image with two masks of one type (two extensions, or a file and a label image) is the error `duplicate_mask`. |
+| Header checks | From the headers only, no pixels read (`check`, `run`, `preflight`): a mask is 2D once its length-1 axes are removed (`mask_not_2d`), has the Y and X sizes of its image (`mask_size_mismatch`), and integer or boolean pixels (`mask_pixel_type`); a mask that cannot be opened, or holds several series, is `unreadable_mask`. All four are errors. |
+| Folder | The masks folder must exist (`masks_folder_not_found`) and be outside the experiment folder (`masks_inside_experiment`), where its folders would be read as labels. Both errors. |
+| Warnings | `mask_missing` (images without a mask of a type that other images have: their objects of that type cannot be measured), `mask_without_image` (files matching no analysed image), `mask_outside_type_folder` (files directly in the masks folder that are not TIFF masks). |
+| Run | `run_experiment(..., masks_folder=...)` stops on a mask error and records the masks in the manifest's `masks` key (§9). Without masks, the run and its outputs are unchanged. |
+
+### 15.1 The mask step (`mask_relationships.json`, report version 1)
+
+The optional mask step reads every image's masks, one image at a time, and describes each
+mask type and every ordered pair of types over the whole experiment. Pieces are counted with
+4-connectivity; label 0 is background. Every conclusion is a suggestion with its evidence:
+the user names the masks and confirms or corrects the relationships.
+
+| Kind of mask | Rule |
+|---|---|
+| `empty` | No foreground in any image. |
+| `one_value` | Every image's mask has at most one foreground value: a binary mask, or a single object (only the user can tell which). |
+| `grouped` | The median number of pieces per label, over every label of every image, is more than 2: each label is spread over many pieces, as in a mask of mitochondria whose pixels carry their cell's label. |
+| `instances` | Otherwise: each label is one object. |
+
+For a child type and a parent type, the counts are summed over the images with both masks.
+Each child object's parent is the parent object sharing most of its pixels.
+
+| Relation of child to parent | Rule (default thresholds; the values used are written in the report) |
+|---|---|
+| `same_objects` | At least 90% of the children and 90% of the parents are matched one to one at an intersection over union of at least 0.5: two segmentations of the same objects. |
+| `grouped_by` | The child is `grouped`, at least 90% of its objects are inside as below, and at least 99% of its pixels carry the label of the parent object under them. |
+| `inside` | At least 90% of the child objects have at least half of their pixels in one parent object, and that parent is larger than the child for at least 90% of them. |
+| `none` | Otherwise. |
+
+| Evidence (per pair) | Meaning |
+|---|---|
+| `children`, `parents` | Objects of each type. |
+| `inside`, `inside_parent_larger` | Children with at least half of their pixels in one parent; of those, children whose parent is larger. |
+| `split_between_parents`, `outside_parents` | Children touching parents but with less than half of their pixels in any one; children touching no parent. |
+| `parents_with_0_children`, `parents_with_1_child`, `parents_with_2_children`, `parents_with_3_or_more_children` | How many children each parent holds (two nuclei in one cell counts as 2). |
+| `child_pixels`, `child_pixels_with_parent_label` | Child pixels; those whose label equals the parent label under them. |
+| `children_matched_one_to_one`, `parents_matched_one_to_one` | Objects with a partner at an intersection over union of at least 0.5. |
+
+**Thresholds.** The numbers above are defaults (`DEFAULT_THRESHOLDS`), and each may be
+changed: `inside_pixel_share` (0.5), `inside_object_share` (0.9), `parent_larger_share`
+(0.9), `same_objects_iou` (0.5), `same_objects_share` (0.9), `grouped_label_share` (0.99)
+and `grouped_median_pieces` (2). Shares and the intersection over union must be above 0
+and at most 1, the median number of pieces at least 1; an unknown name or another value
+raises `ValueError` before any mask is read (`mask_thresholds`). The command line takes
+one option per threshold (`--inside-object-share 0.8`, ...).
+
+**Hierarchy.** A relation `inside` or `grouped_by` is **direct** unless another type lies
+between: nucleoli inside nuclei inside cells have the direct parent nuclei, and the
+relation nucleoli inside cells is kept in the report but not in the hierarchy. A type may
+have several direct parents (cells inside an organoid and inside a region of the slide), and
+two types that are the same objects are both kept.
+
+The report is UTF-8 JSON (two-space indent, LF), written atomically to the output folder:
+
+| Key | Meaning |
+|---|---|
+| `report_version` | `1`. |
+| `thresholds` | The thresholds used, all seven. |
+| `images` | Images scanned (every image with at least one mask). |
+| `masks` | Per mask type: `kind`, `images`, `objects` (labels over all images) and `median_pieces_per_label`. |
+| `hierarchy` | Per mask type, its direct parents (sorted; empty for none). |
+| `same_objects` | Pairs of types that are the same objects, each pair sorted. |
+| `relationships` | Every ordered pair with a relation other than `none`: `child`, `parent`, `relation`, `direct` and `evidence`. |
+| `pairs` | Every ordered pair of types found together in at least one image, `none` included, in the same form. |
+| `versions` | As in the manifest (§9); information only. |
+
+The step is the command `masks` and the functions `find_masks` and `scan_masks`; it reads
+each image's masks once and holds only one image's masks in memory. A mask that is not 2D
+when its pixels are read raises an error.
