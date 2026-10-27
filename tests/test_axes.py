@@ -3,9 +3,11 @@ import pytest
 
 from morphobricks_preprocessing import (
     AxisMapping,
+    MetadataReport,
     Severity,
     TiffMetadata,
     check_mapping,
+    check_metadata,
     inspect_images,
     prefill_experiment_mapping,
     prefill_mapping,
@@ -230,12 +232,36 @@ def test_missing_axis_blocks_until_confirmed():
 
 
 def test_confirmed_missing_axis_is_read_as_singleton():
-    files = [meta("a.tif", (2, 3, 8, 8), "ZCYX"), meta("b.tif", (2, 8, 8), "ZYX")]
-    review = review_axes(files, prefill_mapping("ZCYX"), missing_as_singleton=True)
+    files = [meta("a.tif", (2, 3, 8, 8), "ZTYX"), meta("b.tif", (2, 8, 8), "ZYX")]
+    review = review_axes(files, prefill_mapping("ZTYX"), missing_as_singleton=True)
     assert review.ok
     b = review.file_mappings["b.tif"]
-    assert b == AxisMapping("ZYX", "ZYX", singleton_roles=("C",))
-    assert b.plane_roles == ("Z", "C")
+    assert b == AxisMapping("ZYX", "ZYX", singleton_roles=("T",))
+    assert b.plane_roles == ("Z", "T")
+
+
+def test_confirmed_missing_channel_axis_counts_as_one_channel():
+    # Read as one channel, b.tif differs from the three channels of a.tif (N43).
+    files = [meta("a.tif", (2, 3, 8, 8), "ZCYX"), meta("b.tif", (2, 8, 8), "ZYX")]
+    review = review_axes(files, prefill_mapping("ZCYX"), missing_as_singleton=True)
+    assert review.file_mappings["b.tif"].singleton_roles == ("C",)
+    assert codes(review.issues) == ["different_channel_counts"]
+    found = issue(review.issues, "different_channel_counts")
+    assert found.severity is Severity.ERROR and found.paths == ("a.tif",)
+
+
+def test_channel_count_follows_the_confirmed_channel_axis():
+    # The header suggests one channel for an unlabelled axis; the confirmed role decides.
+    files = [meta("a.tif", (2, 8, 8), "IYX"), meta("b.tif", (3, 8, 8), "IYX")]
+    report = MetadataReport(tuple(files), tuple(check_metadata(files)))
+    assert "different_channel_counts" not in codes(report.issues)
+    as_time = review_axes(report, prefill_mapping("IYX").with_role(0, "T"))
+    assert as_time.ok
+    as_channel = review_axes(report, prefill_mapping("IYX").with_role(0, "C"))
+    assert codes(as_channel.combined_issues(report)) == [
+        "different_channel_counts",
+        "different_plane_counts",
+    ]
 
 
 def test_several_missing_axes_are_resolved():
@@ -286,20 +312,24 @@ def test_review_from_metadata_report_replaces_missing_axes(tmp_path):
     write_tiff(tmp_path / "b.tif", (2, 6, 7), axes="ZYX")
     write_file(tmp_path / "bad.tif", b"garbage")
     report = inspect_images(tmp_path, ["a.tif", "b.tif", "bad.tif"])
-    # One image has 3 channels and the other 1, which is also worth a warning.
-    assert codes(report.issues) == ["unreadable_tiff", "missing_axes", "different_plane_counts"]
+    # One image has 3 channels and the other 1: an error until the axes say otherwise.
+    assert codes(report.issues) == [
+        "unreadable_tiff",
+        "missing_axes",
+        "different_channel_counts",
+    ]
     mapping = prefill_experiment_mapping(report)
 
     unconfirmed = review_axes(report, mapping)
-    assert codes(unconfirmed.combined_issues(report)) == [
-        "unreadable_tiff",
-        "missing_axes",
-        "different_plane_counts",
-    ]
+    assert codes(unconfirmed.combined_issues(report)) == ["unreadable_tiff", "missing_axes"]
 
     confirmed = review_axes(report, mapping, missing_as_singleton=True)
-    assert confirmed.ok
-    assert codes(confirmed.combined_issues(report)) == ["unreadable_tiff", "different_plane_counts"]
+    assert codes(confirmed.combined_issues(report)) == [
+        "unreadable_tiff",
+        "different_channel_counts",
+    ]
+    as_time = review_axes(report, mapping.with_role(1, "T"), missing_as_singleton=True)
+    assert codes(as_time.combined_issues(report)) == ["unreadable_tiff"]
 
 
 def test_combined_issues_put_errors_first(tmp_path):

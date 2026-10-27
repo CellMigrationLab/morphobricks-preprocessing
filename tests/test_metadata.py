@@ -314,7 +314,11 @@ def test_missing_axes_with_two_longest_arrangements_is_inconsistent():
         meta("b.tif", (3, 2, 6, 7), axes="CZYX"),
         meta("c.tif", (6, 7), axes="YX"),
     ]
-    assert codes(check_metadata(files)) == ["inconsistent_dimensions", "different_plane_counts"]
+    assert codes(check_metadata(files)) == [
+        "inconsistent_dimensions",
+        "different_channel_counts",
+        "different_plane_counts",
+    ]
 
 
 def test_different_sizes_are_a_warning(tmp_path):
@@ -453,9 +457,13 @@ def test_different_plane_counts(tmp_path):
     assert "different_sizes" not in codes(report.issues)
     found = issue(report.issues, "different_plane_counts")
     assert found.severity is Severity.WARNING and found.paths == ("c.tif",)
-    assert "channels: 3 (2 images), 2 (1 image)" in found.message
     assert "time points: 2 (2 images), 5 (1 image)" in found.message
-    assert found.message.index("channels") < found.message.index("time points")
+    # Channels are compared on their own, as an error (N43).
+    assert "channels" not in found.message
+    channels = issue(report.issues, "different_channel_counts")
+    assert channels.severity is Severity.ERROR and channels.paths == ("c.tif",)
+    assert "3 channels (2 images), 2 channels (1 image)" in channels.message
+    assert "separate experiment" in channels.action
 
 
 def test_plane_counts_compare_rgb_samples_and_unlabelled_dimensions():
@@ -465,7 +473,10 @@ def test_plane_counts_compare_rgb_samples_and_unlabelled_dimensions():
         meta("q3.tif", (3, 8, 8), axes="QYX"),
     ]
     found = issue(check_metadata(files), "different_plane_counts")
-    assert "channels: 1 (1 image), 2 (1 image), 3 (1 image)" in found.message
     assert "planes along Q: 1 (2 images), 3 (1 image)" in found.message
+    # RGB samples count as channels when the image has no channel axis.
+    channels = issue(check_metadata(files), "different_channel_counts")
+    assert "1 channel (1 image), 2 channels (1 image), 3 channels (1 image)" in channels.message
+    assert channels.paths == ("rgb.tif", "two.tif")
     same = [meta("a.tif", (3, 8, 8), axes="ZYX"), meta("b.tif", (3, 8, 8), axes="ZYX")]
     assert check_metadata(same) == []

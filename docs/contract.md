@@ -34,9 +34,11 @@ whole experiment; any change to them goes through the normalization brick.
 ## 2. Axes
 
 Roles X, Y, Z, C, T. Exactly one X and one Y; each role at most once. Non-singleton axes
-must have a supported role. One confirmed mapping per experiment. Plane coordinates `z`,
-`c`, `t` are zero-based and always written: an axis the image does not have, or has with
-length 1 and no role, has coordinate 0.
+must have a supported role. One confirmed mapping per experiment. A row of the table is
+an XYC plane: every channel of an image at one Z and T position (§5). Plane coordinates
+`z` and `t` are zero-based and always written: an axis the image does not have, or has
+with length 1 and no role, has coordinate 0. Channels are numbered from 0 in the image's
+channel order; an image without a C axis has one channel.
 
 | Rule | Detail |
 |---|---|
@@ -52,7 +54,8 @@ length 1 and no role, has coordinate 0.
 | Experiment mapping | Defined on the TIFF arrangement when the experiment has TIFF files; in an experiment of OME-Zarr images only, on their arrangement with the most axes. |
 | Channel names, significant bits | Recorded in the run manifest when metadata provides them; not part of the CSV. Channel names that differ at the same channel index are a warning. |
 | Physical sizes | Read with the header, not part of the CSV or the manifest, and compared between images in the folder check (§11, in micrometres with each axis's own unit; a size without a known unit cannot be compared): `PhysicalSizes` with the size of one step along X, Y, Z and T and each axis's unit (OME-NGFF unit names). TIFF: OME `PhysicalSize{X,Y,Z}` with their own units (micrometres when left out) and `TimeIncrement`, or ImageJ resolution, `spacing` and `finterval` with `unit`, `yunit`, `zunit`. OME-Zarr (0.4 and 0.5): the `scale` of level 0's `coordinateTransformations`, times the multiscales entry's own `scale` when given, with each axis's `unit` (common spellings such as `µm`, `um`, `micron` and `s` given as UDUNITS-2 names, others as written). Ångström (`Å`) and ImageJ's escaped micro sign (`\u00B5m`) are recognised. Nothing is guessed: what the metadata does not give is None; a scale in a separate file (`path`) or not one number per axis gives no sizes; an OME-Zarr scale without a unit is kept with the unit None. |
-| Plane counts | Images may have different numbers of channels, depth slices, time points or planes along an unassigned dimension; this is a warning (§11). |
+| Plane counts | Images may have different numbers of depth slices, time points or planes along an unassigned dimension; this is a warning (§11). |
+| Channel counts | Every image of an experiment has the same number of channels (normalization plan N43): along the C axis, 1 without one (also when a missing C axis is confirmed as length 1). A different number is the error `different_channel_counts`, found before any image is read: in the folder check from the headers (the `C` dimension, or the RGB samples `S` when there is no `C`), and again with the confirmed axis roles, which decide (§11). |
 
 ## 3. Pixel types
 
@@ -68,17 +71,27 @@ is binned over its own exact range; integer bins have whole-number limits, float
 equal widths; every pixel is within half a bin of its representative; a plane read in
 blocks gives exactly the row of the whole plane.
 
-## 5. CSV schema (`plane_histograms.csv`, schema version 2)
+## 5. CSV schema (`plane_histograms.csv`, schema version 3)
 
 Defined by the [normalization brick's contract][normalization contract] §6.2 (columns) and
-§6.1 (shared columns). This brick writes it next to `run_manifest.json` (§9), with plane
-coordinates and labels as in §1–§2.
+§6.1 (shared and per-channel columns). This brick writes it with that brick's writer next
+to `run_manifest.json` (§9), with plane coordinates and labels as in §1–§2: one row per
+XYC plane (an image at one Z and T position), each channel's extrema, pixel counts and
+bins in its own columns (`Intensity_MinIntensity_C0`, `Histogram_Count_C1_00042`, …),
+`plane_id` = `<source_relative_path>::z=…,t=…`, rows sorted by path, then `z`, then `t`
+(follow-up P3b, plan §12 question 27).
+
+| Rule | Detail |
+|---|---|
+| Reading | The channels of a plane are read and binned one at a time; only one channel's pixels are in memory, next to the finished histograms of the plane's other channels. The memory estimate of a plane (plan §5) includes those histograms' bin counts, and one decision, whole or in blocks, covers every channel of every plane of an image. |
+| Histograms | Each channel's histogram is the one schema version 2 held in that channel's row, whole or in blocks (tested against a table written by version 2). |
+| Earlier versions | A table of schema version 1 or 2 (one row per plane and channel, with a `c` column) is recomputed completely on the next run, like any change of version (§9). |
 
 This brick fills `position_id` in every row, with the image's position identifier (§1).
 The file-name fallback follows cross-brick decision D02 (one file is exactly one position
 here); the normalization contract's note that `position_id` is never inferred from file
-names predates D02. The columns and `schema_version` are unchanged. A table written before
-this rule, with `position_id` blank, is filled on the next run without reading pixels.
+names predates D02. A table written before this rule, with `position_id` blank, is filled
+on the next run without reading pixels.
 
 ## 6. Group statistics
 
@@ -94,8 +107,8 @@ method is an offset and a scale, `(pixels − offset) / scale`.
 
 | Severity | Situations | Effect |
 |---|---|---|
-| Error | Experiment design not confirmed (`design_not_confirmed`) or a repeat group holding two folders of one condition (`repeat_group_conflict`), when a design is used (§12); mixed dtypes; unreadable TIFF (header or pixel data) or OME-Zarr folder in a leaf folder that is not excluded; OME-Zarr images, or converting TIFF images to OME-Zarr, without the `zarr` extra; OME-Zarr images whose declared axes do not fit the experiment's roles; every image excluded; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane that cannot be read within the memory limit, not even in blocks (for example a plane stored compressed in one piece); folder named `single` in another case, or beside other folders (§1); sibling folders differing only in case; images in one leaf folder with the same position identifier (§1); folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
-| Warning | Files that are not images; empty folders; images outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image widths or heights; different numbers of channels, depth slices, time points or other planes; physical pixel sizes that differ or are known for only some images; unbalanced numbers of images; biological repeats missing from some conditions (§11); planes without finite pixels while others remain; planes over the memory limit that are read in blocks | Processing continues; the item is reported |
+| Error | Experiment design not confirmed (`design_not_confirmed`) or a repeat group holding two folders of one condition (`repeat_group_conflict`), when a design is used (§12); mixed dtypes; images with different numbers of channels (`different_channel_counts`, §2); unreadable TIFF (header or pixel data) or OME-Zarr folder in a leaf folder that is not excluded; OME-Zarr images, or converting TIFF images to OME-Zarr, without the `zarr` extra; OME-Zarr images whose declared axes do not fit the experiment's roles; every image excluded; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane that cannot be read within the memory limit, not even in blocks (for example a plane stored compressed in one piece); folder named `single` in another case, or beside other folders (§1); sibling folders differing only in case; images in one leaf folder with the same position identifier (§1); folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
+| Warning | Files that are not images; empty folders; images outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image widths or heights; different numbers of depth slices, time points or other planes; physical pixel sizes that differ or are known for only some images; unbalanced numbers of images; biological repeats missing from some conditions (§11); planes without finite pixels while others remain; planes over the memory limit that are read in blocks | Processing continues; the item is reported |
 
 Every message states what happened in plain language, lists the affected paths, and
 suggests an action. Technical details go to the diagnostic log.
@@ -127,14 +140,14 @@ file's schema or statistical interpretation.
 
 | Key | Meaning |
 |---|---|
-| `manifest_version`, `schema_version` | Manifest format (`1`) and CSV format (`2`). |
+| `manifest_version`, `schema_version` | Manifest format (`1`) and CSV format (`3`). A manifest whose `schema_version` is not the current one makes the next run recompute every row. |
 | `written_at` | UTC time of writing, ISO 8601. |
 | `experiment_root` | Absolute path of the experiment folder, for information. |
 | `dtype` | Pixel type of the experiment. |
 | `settings` | `bin_count`, `memory_limit` (bytes), `missing_as_singleton`, `exclude` (sorted relative paths), `convert_tiffs` (whether TIFF images are converted to OME-Zarr and processed from the copies; false when absent), `conversion` (`chunk_size`, `compression`, `compression_level`, `pyramid_levels` — null for automatic; defaults when absent). |
 | `axis_mapping` | `axes` (file axis labels) and `roles` (`X`, `Y`, `Z`, `C`, `T` or null per axis). |
 | `labels` | One entry per leaf folder: `folder` (relative path, `.` for the root) and its three labels. |
-| `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count`, `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata), `ome_zarr_path` (for a TIFF converted to OME-Zarr, the copy relative to the output folder; null otherwise or when the key is absent), `read_in_blocks` (true when the image's planes are over the memory limit and are read in blocks; information only, false when absent), `position_id` (the image's position identifier, §1; null when absent, in manifests written before it). For an OME-Zarr image, `size` is the total size of its files and `mtime_ns` the time of its newest file. |
+| `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count` (its rows in the table: XYC planes), `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata), `ome_zarr_path` (for a TIFF converted to OME-Zarr, the copy relative to the output folder; null otherwise or when the key is absent), `read_in_blocks` (true when the image's planes are over the memory limit and are read in blocks; information only, false when absent), `position_id` (the image's position identifier, §1; null when absent, in manifests written before it). For an OME-Zarr image, `size` is the total size of its files and `mtime_ns` the time of its newest file. |
 | `csv_sha256` | SHA-256 of the table written with this manifest. |
 | `experiment_design_sha256` | SHA-256 of the `experiment_design.csv` written with this run (§12), so later bricks can check that the design they read is the one used; null when the run had no design, or absent in manifests written before it. Optional key: the manifest stays version 1. |
 | `versions` | Versions of `morphobricks-preprocessing`, `morphobricks-normalization` (which computes the histograms and writes the CSV; absent in manifests written before it), `numpy`, `tifffile` and Python. Information only: a different version never causes a rebuild. |
@@ -176,6 +189,8 @@ presentation does not change the conversion rules below.
 The folder check reads only folder names and image headers. It gathers every consistency
 issue of an experiment in one place (normalization plan N37). The new checks are warnings:
 they never block processing, and each names the affected images or folders and what to check.
+The exception is the number of channels, an error since the channels are columns of one
+row (follow-up P3b, normalization plan N43).
 
 | Code | Severity | Rule |
 |---|---|---|
@@ -183,7 +198,8 @@ they never block processing, and each names the affected images or folders and w
 | `repeat_missing_conditions` | Warning | With more than one condition, a biological repeat not found in every condition is reported, with its folders. Repeats are matched across conditions by their repeat group (§12; by default the folder name). It is still used. |
 | `different_pixel_sizes` | Warning | The physical pixel size (X by Y) differs between images, or the z-step differs between images with more than one depth slice. Sizes are compared in micrometres, rounded to four significant digits. |
 | `missing_pixel_size` | Warning | The pixel size (or the z-step of images with more than one depth slice) is known for some images and not for others. Nothing is reported when no image has it. |
-| `different_plane_counts` | Warning | The number of channels (the `C` dimension, or the RGB samples `S` when there is no `C`), depth slices (`Z`), time points (`T`) or planes along any other dimension except X and Y differs between images. A missing dimension counts as 1. |
+| `different_channel_counts` | Error | The number of channels differs between images: the `C` dimension, or the RGB samples `S` when there is no `C`; once the axis roles are confirmed, the length of the C axis (1 without one), which replaces the header's count. The images not having the most common number are listed, with each number's image count. Every image of an experiment must have the same channels: split the others into another experiment or exclude them. |
+| `different_plane_counts` | Warning | The number of depth slices (`Z`), time points (`T`) or planes along any other dimension except X, Y, C and S differs between images. A missing dimension counts as 1. Channels are compared by `different_channel_counts`. |
 | `different_sizes` | Warning | The image width or height differs between images (TIFF and OME-Zarr). The other dimensions are compared by `different_plane_counts`. |
 
 | Rule | Detail |
@@ -191,7 +207,7 @@ they never block processing, and each names the affected images or folders and w
 | Counts | Only images to analyse count: excluded images are left out, and a folder whose images are all excluded is not a biological repeat. A biological repeat with images directly in its folder has no technical-repeat folders (count 0). |
 | Balance table | Conditions as columns, repeat groups as rows (§12; by default the biological-repeat folder name, `single` when there are no biological-repeat folders); each cell holds the number of images and of technical-repeat folders. |
 | Pixel sizes | TIFF: OME `PhysicalSizeX`, `PhysicalSizeY`, `PhysicalSizeZ` with their units (micrometres when not given), or ImageJ resolution tags and `spacing` with the ImageJ unit (unknown without a unit). OME-Zarr: the level-0 scale (`coordinateTransformations` of the first dataset, times the image's own scale when given) with the axis units; a scale without a unit is unknown. Sizes are never guessed. |
-| Panel | The notebook shows the balance table with the issues `mixed_dtypes`, `inconsistent_dimensions`, `missing_axes`, `inconsistent_mapping`, `different_sizes`, `different_plane_counts`, `channel_names_differ`, `different_pixel_sizes`, `missing_pixel_size`, `unbalanced_images` and `repeat_missing_conditions`. The command line `check` prints the balance table and every issue; `run` reports the same warnings. |
+| Panel | The notebook shows the balance table with the issues `mixed_dtypes`, `inconsistent_dimensions`, `missing_axes`, `inconsistent_mapping`, `different_sizes`, `different_channel_counts`, `different_plane_counts`, `channel_names_differ`, `different_pixel_sizes`, `missing_pixel_size`, `unbalanced_images` and `repeat_missing_conditions`. The command line `check` prints the balance table and every issue; `run` reports the same warnings, and stops on `different_channel_counts`. |
 | Outputs | Unchanged: the checks write nothing, and `plane_histograms.csv` and `run_manifest.json` do not change. |
 
 ## 12. Experiment design (`experiment_design.csv`, schema version 1)

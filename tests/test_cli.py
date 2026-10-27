@@ -71,10 +71,10 @@ def test_run_writes_the_table(experiment, capsys):
     assert main(["run", str(experiment), "--axes", "ZCYX"]) == 0
     out = capsys.readouterr().out
     assert "[1/3] ctrl/rep1/a.tif" in out
-    assert "Wrote 18 planes" in out
+    assert "Wrote 6 planes" in out
     output = experiment.parent / "exp_MorphoBricks_Preprocessing"
     records = read_plane_histograms(output / "plane_histograms.csv")
-    assert {(r.z, r.c) for r in records} == {(z, c) for z in range(2) for c in range(3)}
+    assert {(r.z, r.channel_count) for r in records} == {(0, 3), (1, 3)}
 
 
 def test_run_options_reach_the_run(experiment, tmp_path, capsys):
@@ -119,11 +119,26 @@ def test_run_without_readable_images(tmp_path, capsys):
 
 def test_missing_axes_option(tmp_path, capsys):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZCYX")
+    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZTYX")
     write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
     confirm_design(root)
+    assert main(["run", str(root), "--axes", "ZTYX"]) == 1
+    assert main(["run", str(root), "--axes", "ZTYX", "--missing-as-singleton"]) == 0
+
+
+def test_different_channel_counts_stop_check_and_run(tmp_path, capsys):
+    root = tmp_path / "exp"
+    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZCYX")
+    write_data(root / "b.tif", np.zeros((2, 2, 8, 8), np.uint8), axes="ZCYX")
+    write_data(root / "c.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZCYX")
+    assert main(["check", str(root)]) == 1
+    out = capsys.readouterr().out
+    assert "different numbers of channels: 3 channels (2 images), 2 channels (1 image)" in out
+    confirm_design(root)
     assert main(["run", str(root), "--axes", "ZCYX"]) == 1
-    assert main(["run", str(root), "--axes", "ZCYX", "--missing-as-singleton"]) == 0
+    out = capsys.readouterr().out
+    assert "different numbers of channels" in out and "b.tif" in out
+    assert "Nothing was written" in out
 
 
 def test_axes_are_required_for_run(experiment):

@@ -74,13 +74,13 @@ class Reads(list):
 def reads(monkeypatch):
     """Record which files have their pixels read."""
     paths = Reads()
-    original = run_module.iter_planes
+    original = run_module.iter_xyc_planes
 
     def spy(path, *args, **kwargs):
         paths.append(path)
         return original(path, *args, **kwargs)
 
-    monkeypatch.setattr(run_module, "iter_planes", spy)
+    monkeypatch.setattr(run_module, "iter_xyc_planes", spy)
     return paths
 
 
@@ -125,7 +125,7 @@ def test_labels_and_coordinates_in_the_table(experiment):
     result = run_experiment(experiment, ZYX)
     records = read_plane_histograms(result.csv_path)
     assert [r.plane_id for r in records] == [
-        f"{rel}::z={z},c=0,t=0" for rel in sorted(IMAGES) for z in (0, 1)
+        f"{rel}::z={z},t=0" for rel in sorted(IMAGES) for z in (0, 1)
     ]
     by_path = {r.source_relative_path: r for r in records}
     short = by_path["treated/bio_rep1/img_01.tif"]
@@ -135,7 +135,7 @@ def test_labels_and_coordinates_in_the_table(experiment):
         SINGLE,
     )
     assert {r.z for r in records} == {0, 1}
-    assert all(r.c == 0 and r.t == 0 for r in records)
+    assert all(r.t == 0 and r.channel_count == 1 for r in records)
 
 
 def test_table_matches_the_pixels(experiment):
@@ -144,11 +144,14 @@ def test_table_matches_the_pixels(experiment):
     pixels = {rel: tifffile.imread(experiment / rel) for rel in IMAGES}
     for record in records:
         plane = pixels[record.source_relative_path][record.z]
-        assert record.histogram.pixel_min == plane.min()
-        assert record.histogram.pixel_max == plane.max()
-        assert record.histogram.total_pixel_count == plane.size
-        assert record.histogram.counts.sum() == record.histogram.valid_pixel_count
-        assert record.histogram.is_exact
+        assert record.channel_histogram(0).pixel_min == plane.min()
+        assert record.channel_histogram(0).pixel_max == plane.max()
+        assert record.channel_histogram(0).total_pixel_count == plane.size
+        assert (
+            record.channel_histogram(0).counts.sum()
+            == record.channel_histogram(0).valid_pixel_count
+        )
+        assert record.channel_histogram(0).is_exact
     # Pooled counts reproduce the pooled-pixel statistics exactly at every level.
     for level in ("condition", "biological_repeat", "technical_repeat", "image"):
         for members in group_records(records, level).values():
@@ -223,7 +226,7 @@ def test_every_row_has_its_position_id(experiment):
     }
     # Position key plus plane coordinates identifies every row.
     rows = [
-        (r.condition, r.biological_repeat, r.technical_repeat, r.position_id, r.z, r.c, r.t)
+        (r.condition, r.biological_repeat, r.technical_repeat, r.position_id, r.z, r.t)
         for r in records
     ]
     assert len(set(rows)) == len(rows) == 2 * len(IMAGES)
@@ -232,7 +235,7 @@ def test_every_row_has_its_position_id(experiment):
         rel: rel.rsplit("/", 1)[-1].removesuffix(".tif") for rel in IMAGES
     }
     data = json.loads(result.manifest_path.read_text(encoding="utf-8"))
-    assert data["manifest_version"] == "1" and data["schema_version"] == "2"
+    assert data["manifest_version"] == "1" and data["schema_version"] == "3"
     assert all("position_id" in f for f in data["files"])
 
 
@@ -329,7 +332,9 @@ def test_only_changed_file_is_read(experiment, reads):
     after = {r.plane_id: r for r in read_plane_histograms(result.csv_path)}
     assert after.keys() == before.keys()
     for plane_id, record in after.items():
-        same = np.array_equal(record.histogram.counts, before[plane_id].histogram.counts)
+        same = np.array_equal(
+            record.channel_histogram(0).counts, before[plane_id].channel_histogram(0).counts
+        )
         assert same == (not plane_id.startswith(changed))
 
 
@@ -382,7 +387,9 @@ def test_changed_bin_count_rebuilds(experiment, reads):
     result = run_experiment(experiment, ZYX, bin_count=100)
     assert result.rebuild_reason == "the bin count changed from 256 to 100"
     assert len(reads) == len(IMAGES)
-    assert {r.histogram.bin_count for r in read_plane_histograms(result.csv_path)} == {100}
+    assert {r.channel_histogram(0).bin_count for r in read_plane_histograms(result.csv_path)} == {
+        100
+    }
 
 
 def test_changed_axis_mapping_rebuilds(experiment):
@@ -655,16 +662,52 @@ def test_pixel_data_that_cannot_be_decoded_blocks(experiment, monkeypatch):
 
 def test_missing_axes_need_confirmation(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", stack(0, n_z=2)[:, None].repeat(2, axis=1), axes="ZCYX")
+    write_data(root / "a.tif", stack(0, n_z=2)[None].repeat(2, axis=0), axes="TZYX")
     write_data(root / "b.tif", stack(1, n_z=2), axes="ZYX")
-    mapping = prefill_mapping("ZCYX")
+    mapping = prefill_mapping("TZYX")
     blocked = run_experiment(root, mapping)
     assert codes(blocked.issues) == ["missing_axes", "different_plane_counts"]
     result = run_experiment(root, mapping, missing_as_singleton=True)
     assert result.written
     rows = [r for r in read_plane_histograms(result.csv_path) if r.source_relative_path == "b.tif"]
-    assert [(r.z, r.c) for r in rows] == [(0, 0), (1, 0)]
-    assert read_manifest(result.manifest_path).file("b.tif").singleton_roles == ("C",)
+    assert [(r.z, r.t) for r in rows] == [(0, 0), (1, 0)]
+    assert read_manifest(result.manifest_path).file("b.tif").singleton_roles == ("T",)
+
+
+def test_missing_channel_axis_next_to_several_channels_is_an_error(tmp_path, reads):
+    # A file without a C axis has one channel; the others have two (N43).
+    root = tmp_path / "exp"
+    write_data(root / "a.tif", stack(0, n_z=2)[:, None].repeat(2, axis=1), axes="ZCYX")
+    write_data(root / "b.tif", stack(1, n_z=2), axes="ZYX")
+    write_data(root / "c.tif", stack(2, n_z=2), axes="ZYX")
+    pre = preflight(root)
+    assert issue(pre.issues, "different_channel_counts").paths == ("a.tif",)
+    result = run_experiment(root, prefill_mapping("ZCYX"), missing_as_singleton=True)
+    found = issue(result.issues, "different_channel_counts")
+    assert found.severity is Severity.ERROR and found.paths == ("a.tif",)
+    assert "1 channel (2 images), 2 channels (1 image)" in found.message
+    assert "separate experiment" in found.action
+    assert not result.written and reads == []
+
+
+def test_one_row_per_xyc_plane_with_every_channel(tmp_path):
+    root = tmp_path / "exp"
+    data = np.stack([stack(seed, n_z=3) for seed in range(2)], axis=1)  # Z, C, Y, X
+    write_data(root / "a.tif", data, axes="ZCYX")
+    result = run_experiment(root, prefill_mapping("ZCYX"))
+    assert result.written and result.plane_count == 3
+    rows = read_plane_histograms(result.csv_path)
+    assert [r.plane_id for r in rows] == [f"a.tif::z={z},t=0" for z in range(3)]
+    for row in rows:
+        assert row.channel_count == 2
+        for c in range(2):
+            plane = data[row.z, c]
+            hist = row.channel_histogram(c)
+            assert (hist.pixel_min, hist.pixel_max) == (plane.min(), plane.max())
+            np.testing.assert_array_equal(
+                hist.counts, np.bincount(plane.ravel() - plane.min(), minlength=256)[:256]
+            )
+    assert read_manifest(result.manifest_path).file("a.tif").plane_count == 3
 
 
 # Exclusions (open question 6) ---------------------------------------------------------
@@ -712,7 +755,10 @@ def test_non_finite_pixels_are_a_warning(tmp_path):
     found = issue(result.issues, "non_finite_pixels")
     assert "4 pixels" in found.message and found.paths == ("a.tif",)
     first = read_plane_histograms(result.csv_path)[0]
-    assert first.histogram.total_pixel_count - first.histogram.valid_pixel_count == 4
+    assert (
+        first.channel_histogram(0).total_pixel_count - first.channel_histogram(0).valid_pixel_count
+        == 4
+    )
 
 
 def test_empty_plane_is_a_warning(tmp_path):
@@ -724,7 +770,7 @@ def test_empty_plane_is_a_warning(tmp_path):
     assert result.written
     assert issue(result.issues, "no_finite_pixels").paths == ("a.tif",)
     rows = read_plane_histograms(result.csv_path)
-    assert rows[1].histogram.is_empty and rows[1].histogram.pixel_min is None
+    assert rows[1].channel_histogram(0).is_empty and rows[1].channel_histogram(0).pixel_min is None
 
 
 def test_no_usable_planes_is_an_error(tmp_path):
@@ -745,7 +791,7 @@ def test_every_integer_dtype_runs(tmp_path, dtype):
     result = run_experiment(root, ZYX)
     assert result.written
     rows = read_plane_histograms(result.csv_path)
-    assert [r.histogram.pixel_max for r in rows] == [data[0].max(), data[1].max()]
+    assert [r.channel_histogram(0).pixel_max for r in rows] == [data[0].max(), data[1].max()]
 
 
 # Preflight ----------------------------------------------------------------------------

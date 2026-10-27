@@ -144,10 +144,11 @@ read every pixel (the axis preview reads one sample plane per distinct layout).
 
 **Pass 2, histograms:** after confirmation, read one 2D plane at a time; compute its exact
 finite extrema, pixel counts and histogram in a single read. Never load a full Z/C/T volume
-when only a plane is needed.
+when only a plane is needed. A row of the table is an XYC plane: its channels are read one
+after another, and their histograms make the row (question 27).
 
-Estimate each plane's working memory before loading it, including the decoded I/O unit and
-temporary arrays. Use a configurable limit (default 1 GiB). A plane whose estimate is over
+Estimate each plane's working memory before loading it, including the decoded I/O unit,
+temporary arrays and the finished histograms of the other channels of its XYC plane. Use a configurable limit (default 1 GiB). A plane whose estimate is over
 the limit is read in blocks instead (question 15): rectangles of the pieces the image is
 stored in (TIFF strips or tiles, OME-Zarr chunks), as large as the limit allows, so the
 memory limit keeps its meaning as the most one step may use. Uncompressed TIFF pieces and
@@ -163,15 +164,19 @@ convert source values.
 
 ## 6. Output CSV contract
 
-Write one row per 2D plane to `plane_histograms.csv`. The default output folder is a
+Write one row per XYC plane (every channel of an image at one Z and T position) to
+`plane_histograms.csv`, schema version 3 (question 27). The default output folder is a
 sibling of the experiment folder named `<experiment>_MorphoBricks_Preprocessing`; the user
 may choose another, but never one inside the experiment folder or a raw image folder.
 
-Columns, in order: `position_id, image_file, z, c, t, condition, biological_repeat,
-technical_repeat, source_relative_path, plane_id, dtype, bit_depth, pixel_min, pixel_max,
-total_pixel_count, valid_pixel_count, binning_min, binning_max, bin_count,
-schema_version`, then `histogram_bin_00000` onwards. Details in contract §5.
-`position_id` is the image name without its extension (question 20).
+Columns, in order: `position_id, image_file, z, t, condition, biological_repeat,
+technical_repeat, source_relative_path, plane_id, dtype, bit_depth, channel_count,
+total_pixel_count, bin_count, schema_version`, then for each channel `i`
+`Intensity_MinIntensity_C<i>, Intensity_MaxIntensity_C<i>,
+Histogram_ValidPixelCount_C<i>, Histogram_BinningMin_C<i>, Histogram_BinningMax_C<i>`
+and `Histogram_Count_C<i>_00000` onwards. Details in contract §5 and the normalization
+brick's contract §6.2. `position_id` is the image name without its extension (question
+20).
 
 The wide CSV is for computational use; spreadsheet programs may not open all columns. The
 package provides `read_plane_histograms()`, which keeps labels as text. Alongside the CSV,
@@ -329,6 +334,12 @@ API, CLI). The notebook and CLI only call the API.
   (TIFF and OME-Zarr, from the OME-NGFF scale), and steps 1 and 2 of the notebook
   embeddable by another brick. Outputs are unchanged. *Implemented, see questions 23 to
   26.*
+- **Channels across columns (follow-up P3b of the normalization plan):**
+  `plane_histograms.csv` schema version 3, written with the normalization brick's
+  Milestone 2b (pinned by commit): one row per XYC plane with each channel in its own
+  columns; its channels read one at a time (`planes.iter_xyc_planes`); images with
+  different numbers of channels are an error before any image is read; earlier tables are
+  recomputed on the next run. *Implemented, see question 27.*
 
 ## 11. Tests and acceptance criteria
 
@@ -350,6 +361,9 @@ Acceptance checks:
 - Reruns are idempotent and only new or changed files are read.
 - Planes read in blocks give the same rows (and OME-Zarr copies) as planes read whole, for
   every pixel type and for constant, non-finite and empty planes.
+- Each channel of a schema-version-3 row has the histogram that version 2 wrote in that
+  channel's row, read whole and in blocks (committed version-2 fixture); step 4's
+  statistics are those of the version-2 rows.
 - The CSV round-trips through `read_plane_histograms()` with labels unchanged, and the
   notebook shows understandable summaries and validation messages.
 
@@ -643,3 +657,31 @@ Raised during review; to be decided before the milestones that need them:
     and the card is shown again when the check finds that folder inside the experiment,
     so the box to fix it is never hidden). The defaults give the pages as before, and this notebook calls them
     without arguments; the widgets, the checks and the gating are the same either way.*
+27. How does this brick follow the channels moving into columns (normalization plan
+    N41–N44, its Milestone 2b, follow-up P3b)?
+    *Decided (October 2026): `plane_histograms.csv` is written in schema version 3 with
+    the normalization brick's writer and `PlaneRecord`: one row per XYC plane (an image at
+    one Z and T position), each channel's extrema, pixel counts and bins in its own
+    CellProfiler-style columns (`Intensity_MinIntensity_C0`, `Histogram_Count_C1_00042`,
+    …), `plane_id` `<path>::z=…,t=…`, rows sorted by path, z and t. The brick is pinned by
+    commit (`0e53e67`, the merge of its Milestone 2b), not by tag, because the owner wants
+    no tags before its v0.2.0. Asked of the owner: the channels of a plane are read and
+    binned one at a time (`iter_xyc_planes`), so only one channel's pixels are in memory
+    next to the finished histograms of the others; the memory estimate adds those bin
+    counts (8 bytes per bin and channel), and one decision, whole or in blocks, covers
+    every channel of every plane of an image. Each channel's histogram is the one version
+    2 wrote, whole and in blocks, which a committed version-2 fixture checks. Images with
+    different numbers of channels are the error `different_channel_counts` (N43), before
+    any image is read: in step 1 from the headers (the C axis, or the RGB samples without
+    one) and in the axis review with the confirmed roles, which replace the header's count
+    (a confirmed missing C axis is one channel); the notebook shows it in step 1's
+    "Dataset consistency" panel and step 2's messages, the command line in `check` and
+    `run`. `different_plane_counts` compares depth, time and other planes only. A table of
+    schema version 1 or 2 is recomputed completely on the next run; the manifest stays
+    version 1, records schema version 3, and a file's `plane_count` counts its XYC planes.
+    Step 4 reads the new layout and, as before, pools every channel of a group together,
+    so its table (whose "planes" still counts channel planes) and plot do not change. The
+    warning `no_finite_pixels` counts the planes with a channel without finite pixels. The
+    deprecated re-exports of the moved names (question 19) keep pointing at the brick's
+    current objects, now with its Milestone 2b signatures; names it added later are not
+    re-exported. `experiment_design.csv` and the OME-Zarr copies do not change.*

@@ -18,7 +18,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
-from .metadata import MetadataReport, TiffMetadata
+from .metadata import MetadataReport, TiffMetadata, channel_count_issues
 from .validation import ValidationIssue, error, has_errors, plural
 
 ROLES = ("X", "Y", "Z", "C", "T")
@@ -54,7 +54,9 @@ _AXIS_NAMES = {
 }
 
 # Metadata issues that the axis review checks again against the confirmed mapping.
-_SUPERSEDED_METADATA_CODES = frozenset({"missing_axes", "inconsistent_dimensions"})
+_SUPERSEDED_METADATA_CODES = frozenset(
+    {"missing_axes", "inconsistent_dimensions", "different_channel_counts"}
+)
 
 
 @dataclass(frozen=True)
@@ -204,9 +206,10 @@ class AxisReview:
     def combined_issues(self, metadata: MetadataReport) -> tuple[ValidationIssue, ...]:
         """Merge the metadata issues with this review's, errors first.
 
-        The review checks the arrangement of dimensions again against the
-        confirmed mapping, so the metadata's ``missing_axes`` and
-        ``inconsistent_dimensions`` issues are replaced by the review's own.
+        The review checks the arrangement of dimensions and the numbers of
+        channels again against the confirmed mapping, so the metadata's
+        ``missing_axes``, ``inconsistent_dimensions`` and
+        ``different_channel_counts`` issues are replaced by the review's own.
         """
         kept = [i for i in metadata.issues if i.code not in _SUPERSEDED_METADATA_CODES]
         merged = [*kept, *self.issues]
@@ -476,8 +479,9 @@ def review_axes(
         Per-file mappings for the files that fit and the issues found: those
         from :func:`check_mapping`, files that lack dimensions without
         confirmation (``missing_axes``) or in an ambiguous way
-        (``ambiguous_missing_axes``), and files the mapping does not fit
-        (``inconsistent_mapping``).
+        (``ambiguous_missing_axes``), files the mapping does not fit
+        (``inconsistent_mapping``), and files with different numbers of channels
+        along the C axis (``different_channel_counts``; 1 without one).
     """
     if isinstance(files, MetadataReport):
         files = files.files
@@ -567,7 +571,22 @@ def review_axes(
                 "differently arranged images as a separate experiment.",
             )
         )
+    issues.extend(
+        channel_count_issues(
+            {
+                f.relative_path: _channel_count(f, file_mappings[f.relative_path])
+                for f in readable
+                if f.relative_path in file_mappings
+            }
+        )
+    )
     return AxisReview(mapping=mapping, file_mappings=file_mappings, issues=tuple(issues))
+
+
+def _channel_count(f: TiffMetadata, mapping: AxisMapping) -> int:
+    """Return the number of channels of ``f`` under its own mapping; 1 without a C axis."""
+    c = mapping.index_of("C")
+    return 1 if c is None else f.shape[c]
 
 
 def _embeddings(short: str, long: str) -> list[tuple[int, ...]]:

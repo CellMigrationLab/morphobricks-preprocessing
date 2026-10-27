@@ -25,13 +25,15 @@ brick**.
 
 - **Input:** one experiment folder of TIFF images and/or OME-Zarr images (OME-NGFF 0.4/0.5,
   `zarr` extra).
-- **Output:** one intensity histogram per 2D plane in `plane_histograms.csv`, plus
+- **Output:** `plane_histograms.csv` (schema version 3): one row per XYC plane (an image at
+  one Z and T), with one intensity histogram per channel in its own columns, plus
   `experiment_design.csv` (repeat groups, confirmation, controls) and `run_manifest.json`,
   all in an output folder outside the experiment.
 - **Statistics code (from the normalization brick):** the per-plane histogram, the CSV
   reader and writer, pooling (`PooledHistogram`) and normalization parameters (`min_max`,
   `percentile_range`, `z_score`, `robust_z_score`) live in the required dependency
-  `morphobricks_normalization` (pinned to its release v0.1.0). This brick runs them over
+  `morphobricks_normalization` (pinned by commit to its Milestone 2b merge `0e53e67`; no
+  tags until its v0.2.0, plan §12 question 27). This brick runs them over
   the experiment. Later bricks such as patch extraction use them to normalise any group of
   planes without rereading pixels. The old names stay importable from here, deprecated,
   for one version (follow-up P1, normalization plan N6).
@@ -74,7 +76,9 @@ src/morphobricks_preprocessing/
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
-  planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), memory estimate,
+  planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), table rows as
+                    XYC planes whose channels are read one at a time (iter_xyc_planes, XycPlane),
+                    memory estimate,
                     check_planes (preflight memory / layout errors); planes over the limit read in
                     blocks of TIFF strips/tiles or zarr chunks (Plane.blocks, BlockReader), reduced
                     previews
@@ -98,7 +102,8 @@ src/morphobricks_preprocessing/
                     folder_step/axis_step take title, purpose, intro and show_next (and
                     show_output for step 1) so other bricks can embed them (plan §12 Q26)
 notebooks/MorphoBricks_Preprocessing.ipynb   thin notebook: every code cell calls notebook_ui only
-tests/              pytest with simulated TIFFs (tests/tiff_tree.py, tests/simulation.py)
+tests/              pytest with simulated TIFFs (tests/tiff_tree.py, tests/simulation.py); the
+                    schema-version-2 fixture (tests/v2_fixture.py, tests/data)
 experiments/binning_study/      the study behind the binning decisions (not part of the package)
 ```
 
@@ -109,7 +114,8 @@ Moved to [morphobricks-normalization](https://github.com/CellMigrationLab/morpho
   dtypes.py         supported dtypes, default and allowed bin counts
   histogram.py      per-plane histogram (PlaneHistogram, compute_plane_histogram, and
                     compute_block_histogram: two passes over blocks, identical result), memory estimate
-  records.py        PlaneRecord (one CSV row), plane_id, group_records
+  records.py        PlaneRecord (one CSV row: an XYC plane, one histogram per channel),
+                    make_plane_id, group_records
   csv_io.py         write/read plane_histograms.csv (atomic write, labels always text)
   pooling.py        PooledHistogram: pooled counts, never mean-of-means
   normalization.py  NormalizationParameters (offset, scale) and the four methods
@@ -196,9 +202,15 @@ functions the tests use.
 - **Series and pyramids:** only the first image series, at full-resolution level 0. A file
   with more than one series is an error (`multiple_series`). OME pyramids are one series;
   non-OME SubIFD pyramids appear as two series in tifffile and are therefore blocked.
-- **Coordinates:** plane coordinates `z, c, t` are zero-based and always written: 0 when
-  the image has no such axis (question 17). `PlaneRecord` stores None as 0; `Plane`
-  coordinates stay None for axes the file lacks.
+- **Coordinates:** a row is an XYC plane; its coordinates `z, t` are zero-based and always
+  written: 0 when the image has no such axis (question 17). Channels are columns,
+  numbered from 0 (question 27). `PlaneRecord` stores None as 0; `Plane` (2D, with
+  `z, c, t`) and `XycPlane` coordinates stay None for axes the file lacks.
+- **Channel counts (N43, question 27):** every image has the same number of channels (the
+  C axis, 1 without one, also for a confirmed missing C), else the error
+  `different_channel_counts`: from the headers in `metadata.check_metadata` (C, or S
+  without C) and from the confirmed roles in `review_axes`, which supersedes it
+  (`axes._SUPERSEDED_METADATA_CODES`). Shared builder `metadata.channel_count_issues`.
 - **OME-Zarr axes:** translated from OME-NGFF metadata (`zarr_input.ngff_axes`: time -> T,
   channel -> C, space z/y/x -> Z/Y/X, anything else -> Q). The experiment mapping is
   defined on the TIFF arrangement if there are TIFFs; OME-Zarr images with another order
@@ -241,15 +253,26 @@ functions the tests use.
   Percentile range defaults to 1–99.8. Robust z-score uses MAD × 1.4826. A zero or
   non-finite scale is an error.
 
-### CSV (normalization contract §6.2, schema version 2)
+### CSV (normalization contract §6.2, schema version 3, follow-up P3b)
 
+- **Rows:** one per XYC plane (image, Z, T), written with the brick's writer from
+  `PlaneRecord(path, *labels, histograms=…, z=, t=, position_id=)`.
 - **Columns:**
-  `position_id, image_file, z, c, t, condition, biological_repeat, technical_repeat,
-  source_relative_path, plane_id, dtype, bit_depth, pixel_min, pixel_max, total_pixel_count,
-  valid_pixel_count, binning_min, binning_max, bin_count, schema_version, histogram_bin_00000…`.
-- **`plane_id`** = relative path plus `::z=…,c=…,t=…`, always all three
-  (`img.tif::z=0,c=0,t=0` for a 2D image). It is the row key.
-- **Rows** are sorted by path, then z, c, t.
+  `position_id, image_file, z, t, condition, biological_repeat, technical_repeat,
+  source_relative_path, plane_id, dtype, bit_depth, channel_count, total_pixel_count,
+  bin_count, schema_version`, then per channel `i`: `Intensity_MinIntensity_C<i>`,
+  `Intensity_MaxIntensity_C<i>`, `Histogram_ValidPixelCount_C<i>`,
+  `Histogram_BinningMin_C<i>`, `Histogram_BinningMax_C<i>`, `Histogram_Count_C<i>_00000…`.
+- **`plane_id`** = relative path plus `::z=…,t=…`, always both (`img.tif::z=0,t=0` for a
+  2D image). It is the row key.
+- **Rows** are sorted by path, then z, t.
+- **Earlier versions:** the reader refuses schema 1 and 2 (`CsvFormatError`); a run
+  recomputes them completely (manifest `schema_version` differs). Each channel's
+  histogram equals the version-2 row's, whole and in blocks
+  (`tests/test_schema_v2_equivalence.py` with the committed fixture in `tests/data`,
+  written by `tests/data/make_v2_fixture.py` with the pre-P3b code).
+- **Step 4** pools every channel of a group together, as with version 2
+  (`report.channel_histograms`), so its table and plot are unchanged.
 - **`position_id`** is filled in every row (D02, plan §12 question 20). Earlier tables with
   it blank are filled on the next run without reading pixels.
 - **Reading:** labels are always read back as text (`NA`, `001`, `TRUE` stay as typed).
@@ -280,9 +303,15 @@ functions the tests use.
 
 - **Unit of reading:** read one TIFF page at a time and yield the planes inside it. Never
   load a full Z/C/T volume unless the file stores it as a single page.
+- **Channels of a row (question 27, the owner's choice):** `iter_xyc_planes` reads and bins
+  them one at a time (`XycPlane.histograms`), keeping only the finished histograms; the
+  last decoded page is kept, so a page holding several channels (RGB) is decoded once.
+  When C is a page axis and pages hold several Z/T planes (volumetric), pages are decoded
+  again per XYC plane: time, never memory.
 - **Estimate per plane, from the header:** decoded page + encoded bytes + plane copy +
-  histogram temporaries (`histogram.estimate_histogram_memory`). It is deliberately an
-  upper estimate.
+  histogram temporaries (`histogram.estimate_histogram_memory`) + the finished bin counts
+  of every channel of the XYC plane (`8 × bins × channel_count`). It is deliberately an
+  upper estimate, and one whole/blocks decision covers every channel.
 - **Limit:** default 1 GiB. A plane over the limit is read in blocks (question 15):
   - Blocks are whole TIFF strips or tiles, or OME-Zarr chunks, in full-width bands first,
     as many as fit the limit (`planes._choose_block`, estimate `planes._block_memory`).
@@ -315,7 +344,8 @@ functions the tests use.
 - **Pixel sizes:** `different_pixel_sizes` (X by Y; z-step only for images with Z > 1;
   micrometres, 4 significant digits) and `missing_pixel_size` (known for some only).
   OME-Zarr sizes come from the level-0 scale with axis units; no unit means unknown.
-- **`different_plane_counts`:** C (or S without C), Z, T or any other non-XY dimension;
+- **`different_plane_counts`:** Z, T or any other dimension except X, Y, C and S;
+  channels are the error `different_channel_counts` (question 27), also in this panel;
   `different_sizes` is width/height only, so no dimension is reported twice.
 - **Notebook:** the consistency codes (`dataset.CONSISTENCY_CODES`) appear only in step 1's
   "Dataset consistency" panel with the balance table; the Messages card keeps the rest.
@@ -358,13 +388,14 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Topic | Decision |
 |---|---|
 | Binning | Per-plane min–max, same bin count per experiment, pooled counts for groups (binning study) |
-| Core dependencies | `numpy`, `tifffile` and `morphobricks-normalization` (git dependency pinned to a release tag; `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
+| Core dependencies | `numpy`, `tifffile` and `morphobricks-normalization` (git dependency pinned by commit until its v0.2.0, the owner wants no tags for now; `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
 | OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
 | Folders named `single` (Q23) | Accepted as the level's value `single` when lower case and the only folder in its place (MorphoBricks one-member level, MorphoRelate M3); another case or other folders beside it stay `reserved_folder_name` |
 | Channel names (Q1) | Manifest only (from OME), warning `channel_names_differ`; CSV stays at schema 1 |
-| Plane coordinates (Q17) | `z`, `c`, `t` always written (0 for absent axes), `plane_id` always `::z=…,c=…,t=…`; CSV schema 2, version-1 tables recomputed on the next run |
+| Plane coordinates (Q17) | `z`, `c`, `t` always written (0 for absent axes), `plane_id` always `::z=…,c=…,t=…`; CSV schema 2, version-1 tables recomputed on the next run. Superseded for the CSV by Q27: rows have `z`, `t` and channels in columns |
+| Channels across columns (Q27, P3b) | CSV schema 3 with the brick's writer: one row per XYC plane, per-channel CellProfiler-style columns, `plane_id` `::z=…,t=…`. Channels read one at a time (owner's choice); memory estimate adds the plane's finished bin counts. `different_channel_counts` error before any read (headers in step 1, confirmed roles in step 2); `different_plane_counts` without channels. Schema 1/2 tables recomputed; manifest version 1 records schema 3; step 4 output unchanged. Brick pinned by commit `0e53e67` |
 | OME-NGFF labels (Q18) | Read-only helpers `ngff_label_names`/`open_ngff_labels` for later bricks (CellPatcher masks); label images are never analysed and the outputs do not change |
 | Multi-series / pyramids (Q2) | Level 0 only; more than one series is an error |
 | RGB `S` axis (Q3) | Prefilled as C, confirmed like any role |
@@ -435,12 +466,13 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
   `write_plate`) writes stores with zarr directly, independent of `zarr_export`; 0.5 tests
   skip with zarr 2.18.
 - **Proving "one page at a time":** spy on `planes._read_page`. To prove "only changed
-  files are read", spy on `run.iter_planes`. For planes in blocks, spy on
+  files are read", spy on `run.iter_xyc_planes` (`run.iter_planes` only converts TIFF
+  images to OME-Zarr). For planes in blocks, spy on
   `planes._read_segment` and make `asarray` of every tifffile class fail.
 - **Planes in blocks with small test images:** the memory limit
   `plane_layout(path, mapping, memory_limit=1).block_memory_estimate` gives the smallest
-  blocks a file can be read in. Consume each lazy plane before the next one (the file
-  closes when `iter_planes` ends). The histogram tests, with an independent copy of the
+  blocks a file can be read in. Consume each lazy plane (and each `XycPlane`'s channels)
+  before the next one (the file closes when `iter_planes`/`iter_xyc_planes` ends). The histogram tests, with an independent copy of the
   original whole-plane formulas (`reference_histogram`), are in the normalization brick.
 - **Speed:** rerun tests use 8-bit images (256 bins). Wide 65,536-bin CSVs make every run
   about 1 s.
@@ -653,7 +685,9 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   v0.1.0 with deprecated re-exports, its version in the manifest, Step 0 checking for it,
   and contract §3–§7 moved to the normalization contract (PRs #16 and #17, question 19),
   and `position_id` filled per cross-brick decision D02 (question 20), and follow-ups
-  P2 (dataset consistency warnings, question 21) and P3 (experiment design, question 22).
+  P2 (dataset consistency warnings, question 21) and P3 (experiment design, question 22),
+  and P3b (`plane_histograms.csv` schema version 3 with the channels in columns, question
+  27).
 - **Unreleased (for MorphoRelate milestone M3):** folders named `single` read as a
   one-member level (question 23), a unit per axis in `PhysicalSizes` and physical sizes in
   `inspect_image` (question 24), OME-Zarr physical sizes from the OME-NGFF scale (question

@@ -101,7 +101,8 @@ def test_preflight_summary_with_conflicting_axes(tmp_path):
     write_tiff(tmp_path / "b.tif", (3, 6, 7), axes="CYX")
     text = preflight_summary(preflight(tmp_path))
     assert "No axis mapping can be suggested" in text
-    assert "1 error" in text
+    # The arrangement differs, and so does the number of channels (3 against 1).
+    assert "2 errors" in text
 
 
 def test_run_summaries(experiment):

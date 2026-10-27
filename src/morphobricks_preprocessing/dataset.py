@@ -2,8 +2,8 @@
 
 The folder check (pass 1) gathers every consistency warning in one place
 (``docs/contract.md`` §11, normalization plan N37). The image headers are
-compared in :mod:`.metadata` (pixel types, axes, sizes, plane counts, channel
-names, pixel sizes); this module looks at the folders: how many images each
+compared in :mod:`.metadata` (pixel types, axes, sizes, channel and plane
+counts, channel names, pixel sizes); this module looks at the folders: how many images each
 condition and biological repeat has, and whether every biological repeat is
 found in every condition. Biological repeats are matched across conditions by
 their repeat group, by default their folder name. Warnings never block
@@ -28,6 +28,7 @@ CONSISTENCY_CODES = (
     "missing_axes",
     "inconsistent_mapping",
     "different_sizes",
+    "different_channel_counts",
     "different_plane_counts",
     "channel_names_differ",
     "different_pixel_sizes",

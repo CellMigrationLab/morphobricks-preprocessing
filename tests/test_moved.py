@@ -29,8 +29,10 @@ def new_object(module, name):
 
 
 @pytest.mark.parametrize("module", MOVED_MODULES)
-def test_moved_modules_match_the_normalization_contract(module):
-    # Every public name of the new module is forwarded, and nothing else.
+def test_moved_names_still_exist_in_the_normalization_brick(module):
+    # Every name that moved (normalization contract §1.1) is forwarded to the brick's
+    # current object. Names the brick added later (Milestone 2b: channel_column,
+    # WeightedHistogram, ...) were never here, so they are not forwarded.
     new = importlib.import_module(f"morphobricks_normalization.{module}")
     defined = {
         name
@@ -39,7 +41,7 @@ def test_moved_modules_match_the_normalization_contract(module):
         and not isinstance(value, type(np))
         and getattr(value, "__module__", new.__name__) == new.__name__
     }
-    assert set(_moved.MOVED_NAMES[module]) == defined
+    assert set(_moved.MOVED_NAMES[module]) <= defined
 
 
 def test_top_level_names_are_the_ones_the_package_exported():
@@ -88,7 +90,7 @@ def test_from_imports_keep_working():
         from morphobricks_preprocessing.csv_io import SCHEMA_VERSION
     with pytest.warns(DeprecationWarning, match="morphobricks_preprocessing.PlaneRecord"):
         from morphobricks_preprocessing import PlaneRecord
-    assert SCHEMA_VERSION == "2"
+    assert SCHEMA_VERSION == "3"  # the brick's current value (Milestone 2b)
     from morphobricks_normalization import PlaneRecord as new_record
 
     assert PlaneRecord is new_record
