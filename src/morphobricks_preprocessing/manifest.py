@@ -10,7 +10,8 @@ images are never read again (``docs/plan.md`` §7). The format is described in
 The manifest also records, for information only, each file's channel names and
 significant bits when its metadata provides them, the SHA-256 of the
 experiment design used, so later bricks can check that it was not changed, and
-the image type the user confirmed, which later bricks normalize by.
+the image type the user confirmed, which later bricks normalize by, and the
+limits of the intensity checks run on the table.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from pathlib import Path
 import morphobricks_normalization
 import numpy as np
 import tifffile
+from morphobricks_normalization.checks import IntensityCheckSettings
 from morphobricks_normalization.csv_io import SCHEMA_VERSION
 
 from .axes import AxisMapping
@@ -173,6 +175,9 @@ class RunManifest:
     channels_from_rgb_samples
         True when the channel axis is the RGB samples axis of images stored as
         RGB colour; None in manifests written before it was recorded.
+    intensity_checks
+        The limits of the intensity checks run on the table (:mod:`.intensity`);
+        None in manifests written before they were recorded.
     schema_version
         Version of the CSV format.
     manifest_version
@@ -190,6 +195,7 @@ class RunManifest:
     experiment_design_sha256: str | None = None
     image_type: str | None = None
     channels_from_rgb_samples: bool | None = None
+    intensity_checks: IntensityCheckSettings | None = None
     schema_version: str = SCHEMA_VERSION
     manifest_version: str = MANIFEST_VERSION
 
@@ -236,6 +242,9 @@ class RunManifest:
             "experiment_design_sha256": self.experiment_design_sha256,
             "image_type": self.image_type,
             "channels_from_rgb_samples": self.channels_from_rgb_samples,
+            "intensity_checks": (
+                None if self.intensity_checks is None else self.intensity_checks.to_dict()
+            ),
             "versions": dict(self.versions),
         }
 
@@ -282,6 +291,11 @@ class RunManifest:
                     None
                     if data.get("channels_from_rgb_samples") is None
                     else bool(data["channels_from_rgb_samples"])
+                ),
+                intensity_checks=(
+                    None
+                    if data.get("intensity_checks") is None
+                    else IntensityCheckSettings.from_dict(data["intensity_checks"])
                 ),
                 schema_version=str(data["schema_version"]),
             )

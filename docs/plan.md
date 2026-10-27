@@ -346,6 +346,12 @@ API, CLI). The notebook and CLI only call the API.
   needs three channels of an integer type. The manifest records the type; the command line
   takes `--image-type` or prints the suggestion. Outputs are otherwise unchanged.
   *Implemented, see question 29.*
+- **Intensity checks (follow-up P5 of the normalization plan):** after every successful
+  run, and in step 4 for any table, the normalization brick's `image_summaries` and
+  `intensity_checks` give the four intensity warnings from the table alone (`intensity`);
+  the notebook shows them with adjustable limits and per-channel box plots and
+  distributions, the command line prints them, and the manifest records the limits.
+  *Implemented, see question 30.*
 
 ## 11. Tests and acceptance criteria
 
@@ -719,3 +725,26 @@ Raised during review; to be decided before the milestones that need them:
     `--image-type fluorescence|rgb`, or uses the suggestion and prints it with the reason;
     `check` prints the suggestion. `plane_histograms.csv` and `experiment_design.csv` do not
     change.*
+30. How are the intensity checks shown (normalization plan N38, N50–N53, its contract §7,
+    follow-up P5)?
+    *Decided (27 October 2026): `run_experiment` checks the rows it wrote, in memory, with
+    the normalization brick's `image_summaries` and `intensity_checks`
+    (`intensity.check_intensities`, `RunResult.intensity`), and `check_table` checks any
+    table; no image is read. The four warnings are kept apart from the run's issues and
+    never block. Agreed with the owner: the warnings and the plots are shown both in step 3,
+    automatically after every successful run, and in step 4 for the chosen table; the
+    manifest records the limits used (optional key `intensity_checks`,
+    `IntensityCheckSettings.to_dict()`; version 1), changing them afterwards only updates
+    the warnings on screen and is recorded by the next run; the distributions are
+    cumulative curves, like step 4's existing plot. Each panel has a status line, tiles per
+    kind, a table (check, channel `C<i>`, image or repeat, what was found) with what to do
+    per kind, a collapsed **Check settings** panel (`outlier_limit` 3.0, `saturation_limit`
+    1 %, `min_images` 5, and **Restore the defaults**), channel buttons, box plots of the
+    image medians and high percentiles per condition and biological repeat (images with a
+    warning in that channel, from `Issue.channel`, as red diamonds; shifted repeats as amber
+    boxes), and the cumulative distribution of each biological repeat, one panel per
+    condition (shifted repeats dashed; at most 12 conditions). Plots are drawn in the
+    notebook only and nothing is written. The command line prints the warnings grouped by
+    kind with the action once per kind, takes `--outlier-limit`, `--saturation-limit` and
+    `--min-images`, and draws no plots. Comparisons stay within a condition, as the brick
+    does. `plane_histograms.csv` and `experiment_design.csv` do not change.*

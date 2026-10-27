@@ -250,6 +250,28 @@ results or comparing another grouping.
      then summarise planes written, images read, kept, new, changed, removed and excluded.
      Nothing is written unless the whole run succeeds. **Technical details (log)** holds
      the log for troubleshooting.
+   - **Intensity checks** then compares the images, using only the table just written (no
+     image is read again, and nothing else is written). Each image is compared with the
+     other images of its condition and biological repeat, and each biological repeat with
+     the other repeats of its condition, so differences between conditions (treatment
+     effects) are never reported:
+     - Tiles count the images checked and each kind of warning; a table lists every
+       warning with the check, the channel (**C0**, **C1**, …), the image or biological
+       repeat, and what was found (the values compared and the limit), followed by what to
+       do about each kind. The four kinds are images far from the others of their
+       biological repeat, biological repeats shifted from the others of their condition,
+       saturated images, and images without intensity spread (see §8).
+     - **Check settings** (collapsed) holds the limits: how many robust deviations count as
+       far (default 3), the share of saturated pixels (default 1 %), and the fewest images a
+       comparison needs (default 5). Changing them updates the warnings and plots at once;
+       the run records the limits in **run_manifest.json**, so the next run records the
+       new ones. **Restore the defaults** sets them back.
+     - Plots, one channel at a time (choose it above the plots): box plots of the image
+       medians and high percentiles for each condition and biological repeat, one point per
+       image, with images that have a warning in that channel as red diamonds and shifted
+       repeats as amber boxes; and one panel per condition with the intensity distribution
+       of each biological repeat (comparable repeats lie close together; a shifted one is
+       dashed). The plots are only shown here, never saved.
 4. **Calculate the statistics (optional).** The table from step 3 is all that later bricks
    need; this step only reads it to compare groups and writes no files.
    - **Histogram table** is filled in with the table from step 3. To look at another
@@ -264,6 +286,9 @@ results or comparing another grouping.
      before; its **planes** column counts each channel of a plane as one plane.
    - The plot compares the groups' intensity distributions: curves further right are
      brighter.
+   - **Intensity checks** shows the same warnings, settings and plots as step 3 for the
+     chosen table, so tables of other experiments can be checked too. It needs only the
+     table, not the images.
 
 In JupyterLab, the optional `jl-hidecode` extension keeps the code cells collapsed and adds
 a run button to each; without it, click the "…" of a cell to see its code.
@@ -316,9 +341,13 @@ the design is confirmed. Other options:
 | `--chunk-size PX` | With `--convert-tiff`: tile size of the copies (16 to 8192, default 1024) |
 | `--compression lz4\|zstd\|none`, `--compression-level N` | With `--convert-tiff`: lossless compression (default lz4, level 5) |
 | `--pyramid-levels auto\|none\|N` | With `--convert-tiff`: smaller levels for viewing (default auto) |
+| `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
 | `--log FILE` | Write technical details to a file |
 
-Both commands exit with status 1 when an error blocks processing.
+After writing, `run` prints the intensity checks of the table, grouped by kind, each with
+the channel, the image or biological repeat and the values compared, and what to do once
+per kind; it draws no plots (the notebook does). Both commands exit with status 1 when an
+error blocks processing; intensity warnings never do.
 `python -m morphobricks_preprocessing` works the same way.
 
 ## 6. Output files
@@ -345,8 +374,8 @@ The default output folder is next to the experiment folder:
   [contract.md](contract.md) §12.
 - **`run_manifest.json`:** what the run read and with which settings: labels, axis roles,
   the image type (and whether the channels are RGB colour samples), bin count, memory
-  limit, excluded images, package versions, the fingerprint of the experiment design, and
-  each image's position, size and modification time. Channel names and significant bits are recorded when the metadata
+  limit, excluded images, the limits of the intensity checks, package versions, the
+  fingerprint of the experiment design, and each image's position, size and modification time. Channel names and significant bits are recorded when the metadata
   provides them, and whether the image's planes were too large to read whole and are read
   in blocks. Format in [contract.md](contract.md) §9.
 - **`ome_zarr/`** (only when TIFF images are converted): one `.ome.zarr` folder per TIFF
@@ -432,6 +461,10 @@ continues.
 | `design_not_confirmed` | Error | Some repeat groups are not confirmed as comparable. Confirm them in step 1, or set `confirmed` to `true` in `experiment_design.csv`. |
 | `rgb_not_possible` | Error | The image type RGB was chosen, but the images are not three channels of a whole-number pixel type. Choose fluorescence, or check the axis roles: the RGB samples must have the role C. |
 | `repeat_group_conflict` | Error | A repeat group holds two folders of the same condition. Move one into another group. |
+| `image_intensity_outlier` | Warning (intensity check) | An image's median or high percentile in a channel is far from the other images of its condition and biological repeat. Look at it: it may be out of focus, contain debris or bubbles, or have been acquired differently. Exclude it if it is faulty. |
+| `repeat_intensity_shift` | Warning (intensity check) | A biological repeat is brighter or darker than the other repeats of its condition. Check whether it was prepared or acquired differently; normalising per biological repeat in later bricks removes such differences. |
+| `saturated_image` | Warning (intensity check) | More than the limit (default 1 %) of an image's pixels in a channel are at the largest value of its pixel type, so their true intensity is lost. Check the exposure, gain or laser power. |
+| `no_intensity_spread` | Warning (intensity check) | An image's channel has the same 1st and 99.8th percentile (empty or blank), so it cannot be normalised on its own. Check the channel, or exclude the image. |
 | `channel_names_differ` | Warning | Channel names differ between images at the same position. Check the channel order. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
 | `no_finite_pixels` | Warning | Some planes have a channel without finite pixels; those channels are left out of group statistics. |
@@ -468,6 +501,22 @@ pairing = design.repeat_groups()  # {(condition, biological_repeat): repeat_grou
 ```
 
 Later bricks read the file with `read_experiment_design(path)`.
+
+The intensity checks of a written table are in `result.intensity` (summaries and the
+normalization brick's warnings, each with its channel); `check_table(path)` checks any
+table:
+
+```python
+from morphobricks_normalization import IntensityCheckSettings
+from morphobricks_preprocessing import check_table, repeat_boxes
+
+limits = IntensityCheckSettings(outlier_limit=4)
+result = run_experiment("/data/exp1", mapping, intensity_settings=limits)
+for issue in result.intensity.issues:
+    print(issue.code, issue.channel, issue.items, issue.message)
+records, report = check_table(result.csv_path, limits)
+boxes = repeat_boxes(report, channel=0)  # what the notebook's box plots show
+```
 
 The image type is optional too: `run_experiment(..., image_type="rgb")` records it in the
 manifest, and without it the manifest records none. `review_image_type` gives the

@@ -718,6 +718,87 @@ def test_changing_the_axis_roles_asks_for_the_image_type_again(experiment):
     assert nb.confirmed_image_type is None and not ui.is_visible(nb.image_type_card)
 
 
+# Intensity checks (follow-up P5) ----------------------------------------------------------
+
+
+def bright_tree(root):
+    """Six 2-channel images in ctrl/rep1, one far brighter in C0, and drug/rep1 brighter."""
+    rng = np.random.default_rng(3)
+    second = np.clip(rng.normal(60, 10, (16, 16)), 0, 254).astype(np.uint8)
+    levels = {"ctrl/rep1": [100, 102, 98, 101, 99, 180], "drug/rep1": [200, 202, 198]}
+    for folder, values in levels.items():
+        for i, level in enumerate(values):
+            first = np.clip(rng.normal(level, 10, (16, 16)), 0, 254).astype(np.uint8)
+            write_data(root / folder / f"img_{i}.tif", np.stack([first, second]), axes="CYX")
+    return root
+
+
+def test_intensity_checks_follow_a_successful_run(tmp_path):
+    out = tmp_path / "out"
+    nb = confirmed(bright_tree(tmp_path / "exp"), output_folder=str(out))
+    assert not ui.is_visible(nb.run_checks.card)
+    nb.run()
+    # The checks and plots write no file.
+    assert sorted(p.name for p in out.iterdir()) == [
+        "experiment_design.csv",
+        "plane_histograms.csv",
+        "run_manifest.json",
+    ]
+    panel = nb.run_checks
+    assert ui.is_visible(panel.card) and "intensity warning" in panel.status.value
+    assert "9 images checked" in panel.status.value
+    assert "ctrl/rep1/img_5.tif" in panel.findings.value and "C0" in panel.findings.value
+    assert "What to do" in panel.findings.value
+    assert "drug/rep1" not in panel.findings.value  # conditions are never compared
+    assert bytes(panel.boxes.value).startswith(b"\x89PNG")
+    assert bytes(panel.curves.value).startswith(b"\x89PNG")
+    assert ui.is_visible(panel.channel_row) and [o[1] for o in panel.channel.options] == [0, 1]
+    assert "Read the intensity checks above" in nb.run_next.value
+    assert panel.report.issues == nb.result.intensity.issues
+    # Channel C1 has no warning; its plots are drawn too.
+    first = bytes(panel.boxes.value)
+    panel.channel.value = 1
+    assert bytes(panel.boxes.value) != first
+    # Changing a limit updates the warnings at once, without writing anything.
+    stamp = (out / "run_manifest.json").stat().st_mtime_ns
+    panel.outlier_limit.value = 100
+    assert "No intensity warnings" in panel.status.value and panel.findings.value == ""
+    assert (out / "run_manifest.json").stat().st_mtime_ns == stamp
+    panel.defaults_button.click()
+    assert panel.outlier_limit.value == 3 and "intensity warning" in panel.status.value
+    # The next run records the limits shown.
+    panel.min_images.value = 3
+    nb.run()
+    assert read_manifest(out / "run_manifest.json").intensity_checks.min_images == 3
+
+
+def test_step_4_checks_any_table_without_its_images(tmp_path):
+    root = bright_tree(tmp_path / "exp")
+    table = confirmed(root, output_folder=str(tmp_path / "out")).run().csv_path
+    for image in root.rglob("*.tif"):  # the checks and plots need only the table
+        image.unlink()
+    nb = PreprocessingNotebook()
+    nb.results_step()
+    nb.csv_file.value = str(table)
+    nb.show_statistics()
+    panel = nb.table_checks
+    assert ui.is_visible(panel.card) and "ctrl/rep1/img_5.tif" in panel.findings.value
+    assert bytes(panel.curves.value).startswith(b"\x89PNG")
+    assert "intensity checks" in nb.stats_next.value
+    nb.csv_file.value = ""  # another table: the checks of this one go
+    assert not ui.is_visible(panel.card) and panel.report is None
+
+
+def test_intensity_plots_mark_flagged_images_and_skip_empty_input():
+    from morphobricks_preprocessing.intensity import RepeatBox
+    from morphobricks_preprocessing.notebook_ui import intensity_boxes_png, repeat_curves_png
+
+    box = RepeatBox("a", "r", ("x", "y"), (1.0, 5.0), (2.0, 9.0), ((), ("saturated_image",)), True)
+    assert intensity_boxes_png([box], 99.8, 0).startswith(b"\x89PNG")
+    assert intensity_boxes_png([], 99.8, 0) is None
+    assert repeat_curves_png({}, set(), 0) is None
+
+
 def test_conflicting_axes_explain_why_no_roles_are_offered(tmp_path):
     write_data(tmp_path / "exp/a.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
     write_data(tmp_path / "exp/b.tif", np.zeros((2, 8, 8), np.uint8), axes="CYX")

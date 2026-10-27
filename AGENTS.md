@@ -76,6 +76,9 @@ src/morphobricks_preprocessing/
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)
+  intensity.py      intensity checks (P5): check_intensities/check_table (the brick's image_summaries
+                    and intensity_checks, IntensityReport), repeat_boxes and repeat_distributions for
+                    the notebook's plots, intensity_text for the CLI
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
@@ -386,6 +389,18 @@ functions the tests use.
 - **Manifest:** optional top-level `image_type` (null without one) and
   `channels_from_rgb_samples`; changing the type recomputes nothing.
 
+### Intensity checks (contract §14, follow-up P5)
+
+- **From the table only:** `run_experiment` checks its rows in memory (`RunResult.intensity`,
+  apart from `RunResult.issues`, never blocking); `check_table` reads any table. The four
+  codes are the normalization brick's; comparisons stay within a condition.
+- **Limits:** `IntensityCheckSettings` (3.0, 0.01, 5), recorded in the manifest
+  (`intensity_checks`, optional); changing them recomputes nothing.
+- **Notebook:** `IntensityPanel` in step 3 (after a successful run, `run_checks`) and step 4
+  (`table_checks`): status, tiles, warnings table with actions, collapsed **Check
+  settings**, channel buttons, box plots (`Issue.channel` marks images) and cumulative
+  distributions per biological repeat. Nothing written. CLI prints them, no plots.
+
 ### Validation messages (contract §8)
 
 Every expected problem is a `ValidationIssue` with:
@@ -426,6 +441,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Dataset consistency (Q21, P2) | Step 1 "Dataset consistency" panel: balance table (images and technical-repeat folders per condition x biological repeat), `unbalanced_images` (< 0.5 or > 2 x median), `repeat_missing_conditions`, `different_pixel_sizes`, `missing_pixel_size` (OME-Zarr scale included), `different_plane_counts`; `different_sizes` narrowed to width/height; consistency issues shown only in that panel, not in Messages. Warnings only; outputs unchanged |
 | Experiment design (Q22, P3) | Step 1 after the labels: pairing dropdowns, one yellow "Yes, they are comparable" question per repeat group (single whole-experiment question without biological-repeat folders), control checkboxes; `experiment_design.csv` written after every answer; reruns load it and fold the questions behind a Change button; step 3 gated. CLI `run` reads it or `--design`, else writes a template and exits 1. `run_experiment(design=...)` optional; manifest `experiment_design_sha256` (optional key, version 1). Two folders of one condition in a group block that group |
 | Image type (Q29, P4) | Step 2 card after the axis roles: Fluorescence or RGB, suggestion preselected, confirmed with **Yes, this is the right image type**; RGB suggested for TIFF photometric RGB with three samples on the C axis; RGB needs three integer channels (`check_rgb`), else disabled with the reason and `rgb_not_possible` in a run. Manifest keys `image_type`, `channels_from_rgb_samples` (optional, version 1); type changes recompute nothing. CLI `--image-type`, default the printed suggestion |
+| Intensity checks (Q30, P5) | Warnings from the table alone with the brick's `image_summaries`/`intensity_checks`, shown automatically after step 3 and in step 4 for any table; limits under a collapsed **Check settings** panel, recorded in the manifest (`intensity_checks`); per-channel box plots with flagged images and cumulative distributions per biological repeat, notebook only; the CLI prints the warnings (`--outlier-limit`, `--saturation-limit`, `--min-images`) |
 | Position identity (Q20, D02) | `position_id` = image name without extension, in every CSV row and manifest file entry; FOV key = labels + `position_id`; duplicates in one leaf folder are the error `duplicate_position_id`. CSV columns and schema 2 unchanged; manifest version 1 with an optional key |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
@@ -714,9 +730,8 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 - **Released as v0.1.0** (27 October 2026), with everything above; the normalization brick
   is pinned to its v0.2.0 (question 28). The next tag, v0.2.0, follows follow-ups P4 and
   P5.
-- **Since v0.1.0:** follow-up P4 of the normalization plan, the image type
-  (question 29).
-- **Next:** follow-up P5 of the normalization plan (intensity checks and plots).
+- **Since v0.1.0:** follow-ups P4 (the image type, question 29) and P5 (intensity checks
+  and plots, question 30) of the normalization plan. The owner tags v0.2.0 next.
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;
   - the optional `jl-hidecode` JupyterLab extension, which keeps code cells collapsed. It
