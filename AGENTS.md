@@ -106,7 +106,8 @@ src/morphobricks_preprocessing/
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
   notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra);
                     folder_step/axis_step take title, purpose, intro and show_next (and
-                    show_output for step 1) so other bricks can embed them (plan §12 Q26)
+                    show_output and show_design for step 1) so other bricks can embed them
+                    (plan §12 Q26, Q31)
 notebooks/MorphoBricks_Preprocessing.ipynb   thin notebook: every code cell calls notebook_ui only
 tests/              pytest with simulated TIFFs (tests/tiff_tree.py, tests/simulation.py); the
                     schema-version-2 fixture (tests/v2_fixture.py, tests/data)
@@ -370,7 +371,8 @@ functions the tests use.
   gain a folder, drops removed folders.
 - **Notebook** writes the file after every answer once the labels are confirmed; a
   confirmed design for the same folders is folded away behind **Change the experiment
-  design**; step 3 is gated on it. **CLI** `run` reads it (or `--design`), else writes the
+  design**; step 3 is gated on it. `folder_step(show_design=False)` (embedding, Q31) asks
+  and writes nothing, and step 3 runs without a design. **CLI** `run` reads it (or `--design`), else writes the
   reconciled template and exits 1. **API** `run_experiment(design=None)` is optional; with
   a design it is written with the table and `experiment_design_sha256` goes in the manifest.
 
@@ -560,11 +562,14 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
 
 ### Page layout (`notebook_style`)
 
-- **Embedding steps 1 and 2 (Q26):** `folder_step` and `axis_step` keep this notebook's
+- **Embedding steps 1 and 2 (Q26, Q31):** `folder_step` and `axis_step` keep this notebook's
   words by default; another brick (MorphoRelate) passes its own `title`, `purpose` and
   `intro` (HTML; `""` leaves the box out), `show_output=False` to hide the output folder
   card (shown again when the check reports `output_inside_experiment`), and `show_next=False` to hide the "What next?" box naming this notebook's
-  steps. The widgets and their behaviour are the same either way.
+  steps. The widgets and their behaviour are the same either way. `show_design=False`
+  leaves out the "Experiment design" card: confirming the labels then writes nothing
+  (no `experiment_design.csv`, no output folder), the step's texts name neither the design
+  nor step 3, and step 3 runs without a design.
 - **Page and cards:** `ui.page(title, subtitle, children)` wraps a step in a grey page
   (`mb-root`) with a title and a one-sentence purpose. `ui.card(header, children)` gives a
   white card with an upper-case header. `ui.intro(html)` adds a blue "what happens here"
@@ -731,7 +736,9 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   is pinned to its v0.2.0 (question 28). The next tag, v0.2.0, follows follow-ups P4 and
   P5.
 - **Since v0.1.0:** follow-ups P4 (the image type, question 29) and P5 (intensity checks
-  and plots, question 30) of the normalization plan. The owner tags v0.2.0 next.
+  and plots, question 30) of the normalization plan, and step 1 embeddable without the
+  experiment design, `folder_step(show_design=False)` (question 31). The owner tags v0.2.0
+  next.
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;
   - the optional `jl-hidecode` JupyterLab extension, which keeps code cells collapsed. It

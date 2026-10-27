@@ -333,7 +333,8 @@ API, CLI). The notebook and CLI only call the API.
   read as a one-member level, physical sizes with a unit per axis in the image header
   (TIFF and OME-Zarr, from the OME-NGFF scale), and steps 1 and 2 of the notebook
   embeddable by another brick. Outputs are unchanged. *Implemented, see questions 23 to
-  26.*
+  26.* After v0.1.0 (not released yet), step 1 embeds without the experiment design
+  (`show_design=False`). *Implemented, see question 31.*
 - **Channels across columns (follow-up P3b of the normalization plan):**
   `plane_histograms.csv` schema version 3, written with the normalization brick's
   Milestone 2b (now pinned to its v0.2.0, question 28): one row per XYC plane with each channel in its own
@@ -668,7 +669,8 @@ Raised during review; to be decided before the milestones that need them:
     (optional)" card; the check then uses the folder in its box, the default when empty,
     and the card is shown again when the check finds that folder inside the experiment,
     so the box to fix it is never hidden). The defaults give the pages as before, and this notebook calls them
-    without arguments; the widgets, the checks and the gating are the same either way.*
+    without arguments; the widgets, the checks and the gating are the same either way.
+    Later, `show_design` leaves out the experiment design (question 31).*
 27. How does this brick follow the channels moving into columns (normalization plan
     N41–N44, its Milestone 2b, follow-up P3b)?
     *Decided (October 2026): `plane_histograms.csv` is written in schema version 3 with
@@ -748,3 +750,25 @@ Raised during review; to be decided before the milestones that need them:
     kind with the action once per kind, takes `--outlier-limit`, `--saturation-limit` and
     `--min-images`, and draws no plots. Comparisons stay within a condition, as the brick
     does. `plane_histograms.csv` and `experiment_design.csv` do not change.*
+31. Since follow-up P3 (question 22), step 1 asks for the experiment design once the labels
+    are confirmed: an "Experiment design" card, `experiment_design.csv` written in the
+    output folder (`<images>_MorphoBricks_Preprocessing/` by default, created beside the
+    image folder), and texts saying that step 3 runs once every group is confirmed.
+    MorphoRelate milestone M3's "your data" notebook embeds `folder_step` (question 26)
+    from tag v0.1.0; it does not use the file, and its step 3 is another step. Can a
+    brick embedding step 1 leave the design out?
+    *Decided (27 October 2026, the owner's choice of an option here rather than a
+    workaround in MorphoRelate): yes. `folder_step` takes `show_design` (default True).
+    With False the "Experiment design" card is left out of the page; confirming the
+    labels asks nothing, `design` stays None and nothing is written, so neither
+    `experiment_design.csv` nor the output folder is created; the texts of the step no
+    longer name the design or step 3 (the labels question drops "Step 3 can only run once
+    the labels are confirmed", and the "What next?" box goes from the labels to step 2).
+    The rest of the notebook follows: step 2's "What next?" box does not send the user
+    back to the design, and step 3, if shown, does not wait for it and runs without a
+    design, as `run_experiment(design=None)` does (no file written, an existing one left as
+    it is). Building the page again with the other value opens or closes the design for
+    labels already confirmed. With the default the page, its texts and its files are as
+    before. Nothing else in step 1 writes files: the folder check and the header
+    inspection only read, and with `show_output=False` the output folder is only named.
+    The CSV, the manifest and their versions are unchanged.*
