@@ -149,6 +149,10 @@ def test_unreadable_masks_are_errors(experiment, masks):
 
 
 def test_mask_names_must_differ_by_more_than_case(experiment, masks):
+    try:
+        (masks / "cells").mkdir()
+    except FileExistsError:
+        pytest.skip("the file system does not distinguish upper and lower case")
     write_data(masks / "cells" / "ctrl" / "rep1" / "a.tif", label_image(0))
     found = inventory(experiment, masks)
     assert "mask_names_differ_in_case" in codes(found.issues)
