@@ -294,10 +294,9 @@ class ConfirmToggle:
         self._confirmed_text = confirmed_text
         self._value = False
         self._callbacks: list = []
-        self.prompt = widgets.HTML(
-            f"<div class='mb-question'><b>❓ {html.escape(question)}</b>"
-            f"<div class='mb-help' style='margin-bottom:0'>{explanation}</div></div>"
-        )
+        self._question = question
+        self.prompt = widgets.HTML()
+        self.explain(explanation)
         self.button = button(f" {confirm_label}", style="success", icon="check", main=True)
         self.message = widgets.HTML()
         self.widget = widgets.VBox([self.prompt, self.button, self.message])
@@ -317,6 +316,13 @@ class ConfirmToggle:
     @disabled.setter
     def disabled(self, disabled: bool) -> None:
         self.button.disabled = disabled
+
+    def explain(self, explanation: str) -> None:
+        """Replace the text under the question (HTML), keeping the answer."""
+        self.prompt.value = (
+            f"<div class='mb-question'><b>❓ {html.escape(self._question)}</b>"
+            f"<div class='mb-help' style='margin-bottom:0'>{explanation}</div></div>"
+        )
 
     def observe(self, callback) -> None:
         """Call ``callback(value)`` whenever the answer changes."""

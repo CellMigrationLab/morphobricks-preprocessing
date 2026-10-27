@@ -188,6 +188,7 @@ class PreprocessingNotebook:
         self._checked_folder = ""
         self._preview_shown = False
         self._show_output = True
+        self._show_design = True
         self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None
         self._build_folder_step(str(experiment_folder), str(output_folder))
         self._build_axis_step()
@@ -229,12 +230,14 @@ class PreprocessingNotebook:
         intro: str | None = None,
         show_output: bool = True,
         show_next: bool = True,
+        show_design: bool = True,
     ) -> widgets.Widget:
         """Step 1: choose and check the experiment folder, confirm the labels.
 
         The defaults give this notebook's step. Another brick embedding the step
         (it checks the folder and the image headers, nothing more) can give its
-        own words and leave out the output folder of this brick's histograms.
+        own words and leave out the output folder of this brick's histograms and
+        its experiment design.
 
         Parameters
         ----------
@@ -254,6 +257,11 @@ class PreprocessingNotebook:
         show_next
             False hides the "What next?" box, which names this notebook's next
             steps.
+        show_design
+            False leaves out the "Experiment design" card: once the labels are
+            confirmed nothing is asked and no ``experiment_design.csv`` (nor its
+            output folder) is written, the step's texts no longer name the design
+            or this notebook's step 3, and step 3 runs without a design.
 
         Returns
         -------
@@ -263,6 +271,11 @@ class PreprocessingNotebook:
         ui.set_visible(self.folder_next, show_next)
         self._show_output = show_output
         ui.set_visible(self.output_card, show_output)
+        self.labels_confirmed.explain(_labels_explanation(show_design))
+        if show_design != self._show_design:
+            self._show_design = show_design
+            # Labels confirmed on an earlier page open or close the design to match.
+            self._labels_changed()
         if intro is None:
             intro = (
                 "<b>What happens here:</b> the folders are scanned, the labels are taken "
@@ -286,7 +299,7 @@ class PreprocessingNotebook:
                 self.folder_status,
                 self.folder_tiles,
                 self.labels_card,
-                self.design_card,
+                *([self.design_card] if show_design else []),
                 self.consistency_card,
                 self.issues_card,
                 self.folder_next,
@@ -456,9 +469,7 @@ class PreprocessingNotebook:
         self.labels_table = widgets.HTML()
         self.labels_confirmed = ui.ConfirmToggle(
             "Do the labels in the table match your experiment?",
-            "Check that every image folder has the right condition, biological repeat and "
-            "technical repeat. If a label is wrong, rename the folder and click <b>Check "
-            "folder</b> again. Step 3 can only run once the labels are confirmed.",
+            _labels_explanation(show_design=True),
             "Yes, the labels are correct",
             "Labels confirmed.",
             "Undo: the labels are not right",
@@ -685,7 +696,7 @@ class PreprocessingNotebook:
         self._refresh_folder_next()
 
     def _labels_changed(self) -> None:
-        if self.labels_confirmed.value and self.preflight is not None:
+        if self.labels_confirmed.value and self.preflight is not None and self._show_design:
             self._open_design()
         else:
             self._close_design()
@@ -934,11 +945,15 @@ class PreprocessingNotebook:
     def _design_confirmed(self) -> bool:
         return self.design is not None and self.design.confirmed
 
+    def _design_pending(self) -> bool:
+        """Return True while the design shown in step 1 still has questions to answer."""
+        return self._show_design and not self._design_confirmed()
+
     def _refresh_folder_next(self) -> None:
         self.folder_next.value = ""
         if self.preflight is None or not self.preflight.ok:
             return
-        if self.labels_confirmed.value and not self._design_confirmed():
+        if self.labels_confirmed.value and self._design_pending():
             self.folder_next.value = ui.next_steps(
                 "Confirm the biological repeats in Step 1.",
                 "Under Experiment design, pair the repeats if needed and answer each yellow "
@@ -1400,7 +1415,7 @@ class PreprocessingNotebook:
                 "Go to Step 1 and confirm the folder labels.",
                 "Review the labels and click Yes, the labels are correct before running Step 3.",
             )
-        elif not self._design_confirmed():
+        elif self._design_pending():
             self.axis_next.value = ui.next_steps(
                 "Go to Step 1 and confirm the biological repeats.",
                 "Under Experiment design, answer each yellow question before running Step 3.",
@@ -1760,7 +1775,11 @@ class PreprocessingNotebook:
         items = [
             (folder_ok, "Check the experiment folder and fix any errors (step 1)"),
             (pre is not None and self.labels_confirmed.value, "Confirm the labels (step 1)"),
-            (self._design_confirmed(), "Confirm the biological repeats (step 1)"),
+            *(
+                [(self._design_confirmed(), "Confirm the biological repeats (step 1)")]
+                if self._show_design
+                else []
+            ),
             (self.confirmed_mapping is not None, "Confirm the axis roles (step 2)"),
         ]
         missing = [text for done, text in items if not done]
@@ -2505,6 +2524,16 @@ class _Attached:
         self.logger.removeHandler(self.handler)
         self.logger.setLevel(self.level)
         return False
+
+
+def _labels_explanation(show_design: bool) -> str:
+    """Return what to check before confirming the labels; step 3 is named only with the design."""
+    text = (
+        "Check that every image folder has the right condition, biological repeat and "
+        "technical repeat. If a label is wrong, rename the folder and click <b>Check "
+        "folder</b> again."
+    )
+    return (text + " Step 3 can only run once the labels are confirmed.") if show_design else text
 
 
 def _group_question(design: ExperimentDesign, group: str) -> str:
