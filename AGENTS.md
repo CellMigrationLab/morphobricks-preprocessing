@@ -14,7 +14,7 @@ do not say: how we work, why things are the way they are, and the traps we alrea
 | `docs/contract.md` | Rules other bricks rely on: folders, axes, dtypes, binning, CSV schema, statistics, normalization, validation severities, manifest format. Changing it may need a new `schema_version` |
 | `docs/development.md` | Coding conventions |
 | `docs/user_guide.md` | Biologist-facing guide: notebook, CLI, outputs, every message code |
-| [morphobricks-normalization](https://github.com/CellMigrationLab/morphobricks-normalization) `docs/contract.md` | Pixel types, binning, group statistics and normalization parameters (§1.2) and the `plane_histograms.csv` columns (§8.2); this repo's contract §3–§7 only point there |
+| [morphobricks-normalization](https://github.com/CellMigrationLab/morphobricks-normalization) `docs/contract.md` | Pixel types, binning, group statistics and normalization parameters (§1.2) and the `plane_histograms.csv` columns (§6.2); this repo's contract §3–§7 only point there |
 
 ---
 
@@ -26,7 +26,8 @@ brick**.
 - **Input:** one experiment folder of TIFF images and/or OME-Zarr images (OME-NGFF 0.4/0.5,
   `zarr` extra).
 - **Output:** one intensity histogram per 2D plane in `plane_histograms.csv`, plus
-  `run_manifest.json`, both in an output folder outside the experiment.
+  `experiment_design.csv` (repeat groups, confirmation, controls) and `run_manifest.json`,
+  all in an output folder outside the experiment.
 - **Statistics code (from the normalization brick):** the per-plane histogram, the CSV
   reader and writer, pooling (`PooledHistogram`) and normalization parameters (`min_max`,
   `percentile_range`, `z_score`, `robust_z_score`) live in the required dependency
@@ -46,7 +47,8 @@ Pipeline:
 
 1. **Pass 1 (preflight):** folder discovery, then TIFF header inspection without reading
    pixels, then a suggested axis mapping.
-2. **The user confirms** the labels and the axis roles.
+2. **The user confirms** the labels, the experiment design (repeat groups comparable) and
+   the axis roles.
 3. **Pass 2:** read one 2D plane at a time (in blocks when it is over the memory limit),
    compute exact extrema and the histogram, write the CSV and the manifest. Reruns only
    read new or changed files.
@@ -60,10 +62,15 @@ src/morphobricks_preprocessing/
   discovery.py      folder walk, leaf folders, labels (condition / biological_repeat / technical_repeat),
                     position_id per image and the duplicate check
   metadata.py       TIFF header inspection (tifffile, no pixel reads), dtype/dimension/series checks,
-                    OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes)
-  physical_sizes.py PhysicalSizes (pixel sizes, z-step, time step, a unit per axis),
-                    read_physical_sizes (OME / ImageJ TIFF metadata; also importable from
-                    zarr_export) and ngff_physical_sizes (OME-NGFF scale and axis units)
+                    OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes);
+                    header consistency warnings (width/height, plane counts, pixel sizes)
+  physical_sizes.py PhysicalSizes (pixel sizes, z-step, time step, a unit per axis, micrometers()
+                    for comparing), read_physical_sizes (OME / ImageJ TIFF metadata; also importable
+                    from zarr_export) and ngff_physical_sizes (OME-NGFF scale and axis units)
+  dataset.py        dataset consistency from the folders: biological repeats per condition, balance
+                    table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
+  design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
+                    the folders on reruns, design_issues, read/write experiment_design.csv, load_design
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
@@ -89,7 +96,7 @@ src/morphobricks_preprocessing/
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
   notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra);
                     folder_step/axis_step take title, purpose, intro and show_next (and
-                    show_output for step 1) so other bricks can embed them (plan §12 Q24)
+                    show_output for step 1) so other bricks can embed them (plan §12 Q26)
 notebooks/MorphoBricks_Preprocessing.ipynb   thin notebook: every code cell calls notebook_ui only
 tests/              pytest with simulated TIFFs (tests/tiff_tree.py, tests/simulation.py)
 experiments/binning_study/      the study behind the binning decisions (not part of the package)
@@ -156,7 +163,7 @@ functions the tests use.
   leaf folders are analysed.
 - **Missing levels:** a branch may stop early; missing labels are the value `single`. A
   folder *named* `single` (lower case) that is the only folder in its place is that level's
-  value `single` (a level with one member, plan §12 question 21); spelled in another case,
+  value `single` (a level with one member, plan §12 question 23); spelled in another case,
   or beside other folders, it is the error `reserved_folder_name`.
 - **Uniqueness:** labels are unique only among siblings, compared case-insensitively;
   siblings differing only in case are an error. Groups are identified by the full label
@@ -234,7 +241,7 @@ functions the tests use.
   Percentile range defaults to 1–99.8. Robust z-score uses MAD × 1.4826. A zero or
   non-finite scale is an error.
 
-### CSV (normalization contract §8.2, schema version 2)
+### CSV (normalization contract §6.2, schema version 2)
 
 - **Columns:**
   `position_id, image_file, z, c, t, condition, biological_repeat, technical_repeat,
@@ -297,6 +304,40 @@ functions the tests use.
   - Wide integers (32/64-bit) reserve up to 512 MiB for the per-value count table in
     `estimate_histogram_memory`, so they need a limit above about 520 MiB even in blocks.
 
+### Dataset consistency (contract §11, follow-up P2)
+
+- **Warnings only**, from folder names and headers; never block.
+- **Balance:** images per condition (columns) and biological repeat (rows, matched by
+  folder name), technical repeats added up; below half or above twice the median of the
+  non-empty cells is `unbalanced_images`. Excluded images are not counted.
+- **`repeat_missing_conditions`:** a biological repeat not in every condition (only with
+  more than one condition).
+- **Pixel sizes:** `different_pixel_sizes` (X by Y; z-step only for images with Z > 1;
+  micrometres, 4 significant digits) and `missing_pixel_size` (known for some only).
+  OME-Zarr sizes come from the level-0 scale with axis units; no unit means unknown.
+- **`different_plane_counts`:** C (or S without C), Z, T or any other non-XY dimension;
+  `different_sizes` is width/height only, so no dimension is reported twice.
+- **Notebook:** the consistency codes (`dataset.CONSISTENCY_CODES`) appear only in step 1's
+  "Dataset consistency" panel with the balance table; the Messages card keeps the rest.
+  The CLI `check` prints the balance table; `run` reports the same warnings.
+
+### Experiment design (contract §12, follow-up P3)
+
+- **Repeat group** = one biological repeat across conditions; same folder name pairs by
+  default; one folder per condition per group (`repeat_group_conflict` otherwise).
+- **Confirmation** per group (`design_not_confirmed` until then); all-`single` experiments
+  get one whole-experiment question. Controls are recorded only.
+- **`experiment_design.csv`** (schema 1): one row per condition x biological-repeat folder,
+  sorted; counts at confirmation; `confirmed_on` ISO date. Lenient reader (any-case
+  booleans, BOM, empty group = folder name); `DesignFormatError` otherwise.
+- **Reruns:** `reconcile_design` keeps answers for known folders, reopens only groups that
+  gain a folder, drops removed folders.
+- **Notebook** writes the file after every answer once the labels are confirmed; a
+  confirmed design for the same folders is folded away behind **Change the experiment
+  design**; step 3 is gated on it. **CLI** `run` reads it (or `--design`), else writes the
+  reconciled template and exits 1. **API** `run_experiment(design=None)` is optional; with
+  a design it is written with the table and `experiment_design_sha256` goes in the manifest.
+
 ### Validation messages (contract §8)
 
 Every expected problem is a `ValidationIssue` with:
@@ -321,7 +362,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
-| Folders named `single` (Q21) | Accepted as the level's value `single` when lower case and the only folder in its place (MorphoBricks one-member level, MorphoRelate M3); another case or other folders beside it stay `reserved_folder_name` |
+| Folders named `single` (Q23) | Accepted as the level's value `single` when lower case and the only folder in its place (MorphoBricks one-member level, MorphoRelate M3); another case or other folders beside it stay `reserved_folder_name` |
 | Channel names (Q1) | Manifest only (from OME), warning `channel_names_differ`; CSV stays at schema 1 |
 | Plane coordinates (Q17) | `z`, `c`, `t` always written (0 for absent axes), `plane_id` always `::z=…,c=…,t=…`; CSV schema 2, version-1 tables recomputed on the next run |
 | OME-NGFF labels (Q18) | Read-only helpers `ngff_label_names`/`open_ngff_labels` for later bricks (CellPatcher masks); label images are never analysed and the outputs do not change |
@@ -332,7 +373,9 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Notebook target | Local Jupyter (not Colab-first) |
 | CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--memory-limit 2GiB`, `--missing-as-singleton`, `--force-rebuild`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata. Exit 1 on errors |
 | Large planes (Q15) | Planes over the memory limit are read in blocks automatically, announced by the warning `planes_read_in_blocks` and `read_in_blocks` in the manifest. Block size derived from the limit (whole strips/tiles/chunks, uncompressed pieces and chunks also by rows). Compressed single-strip/tile planes keep the `plane_over_memory_limit` error. Two-pass histograms identical to whole planes. OME-Zarr copies written block by block, smaller levels built from the stored level above. Axis preview reduced (every n-th pixel) with a caption saying so |
-| Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Their public names stay importable from `morphobricks_preprocessing` and from the old submodules for one version: module `__getattr__` stand-ins (`_moved.py`), one `DeprecationWarning` per old path naming `morphobricks_normalization.<module>.<name>`, same objects. The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, §8.2) |
+| Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Their public names stay importable from `morphobricks_preprocessing` and from the old submodules for one version: module `__getattr__` stand-ins (`_moved.py`), one `DeprecationWarning` per old path naming `morphobricks_normalization.<module>.<name>`, same objects. The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, now §6.2 for the CSV) |
+| Dataset consistency (Q21, P2) | Step 1 "Dataset consistency" panel: balance table (images and technical-repeat folders per condition x biological repeat), `unbalanced_images` (< 0.5 or > 2 x median), `repeat_missing_conditions`, `different_pixel_sizes`, `missing_pixel_size` (OME-Zarr scale included), `different_plane_counts`; `different_sizes` narrowed to width/height; consistency issues shown only in that panel, not in Messages. Warnings only; outputs unchanged |
+| Experiment design (Q22, P3) | Step 1 after the labels: pairing dropdowns, one yellow "Yes, they are comparable" question per repeat group (single whole-experiment question without biological-repeat folders), control checkboxes; `experiment_design.csv` written after every answer; reruns load it and fold the questions behind a Change button; step 3 gated. CLI `run` reads it or `--design`, else writes a template and exits 1. `run_experiment(design=...)` optional; manifest `experiment_design_sha256` (optional key, version 1). Two folders of one condition in a group block that group |
 | Position identity (Q20, D02) | `position_id` = image name without extension, in every CSV row and manifest file entry; FOV key = labels + `position_id`; duplicates in one leaf folder are the error `duplicate_position_id`. CSV columns and schema 2 unchanged; manifest version 1 with an optional key |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
@@ -450,7 +493,7 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
 
 ### Page layout (`notebook_style`)
 
-- **Embedding steps 1 and 2 (Q24):** `folder_step` and `axis_step` keep this notebook's
+- **Embedding steps 1 and 2 (Q26):** `folder_step` and `axis_step` keep this notebook's
   words by default; another brick (MorphoRelate) passes its own `title`, `purpose` and
   `intro` (HTML; `""` leaves the box out), `show_output=False` to hide the output folder
   card (shown again when the check reports `output_inside_experiment`), and `show_next=False` to hide the "What next?" box naming this notebook's
@@ -609,14 +652,15 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   follow-up P1 of the normalization plan: the dependency on `morphobricks-normalization`
   v0.1.0 with deprecated re-exports, its version in the manifest, Step 0 checking for it,
   and contract §3–§7 moved to the normalization contract (PRs #16 and #17, question 19),
-  and `position_id` filled per cross-brick decision D02 (question 20).
+  and `position_id` filled per cross-brick decision D02 (question 20), and follow-ups
+  P2 (dataset consistency warnings, question 21) and P3 (experiment design, question 22).
 - **Unreleased (for MorphoRelate milestone M3):** folders named `single` read as a
-  one-member level (question 21), a unit per axis in `PhysicalSizes` and physical sizes in
-  `inspect_image` (question 22), OME-Zarr physical sizes from the OME-NGFF scale (question
-  23), and notebook steps 1 and 2 embeddable with their own words (question 24). No
+  one-member level (question 23), a unit per axis in `PhysicalSizes` and physical sizes in
+  `inspect_image` (question 24), OME-Zarr physical sizes from the OME-NGFF scale (question
+  25), and notebook steps 1 and 2 embeddable with their own words (question 26). No
   version bump or tag.
-- **Next (not started):** follow-ups P2–P5 of the normalization plan (modality,
-  references, colour statistics, previews).
+- **Next (not started):** follow-ups P4–P5 of the normalization plan (image type,
+  intensity checks and plots).
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;
   - the optional `jl-hidecode` JupyterLab extension, which keeps code cells collapsed. It

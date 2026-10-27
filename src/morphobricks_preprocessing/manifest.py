@@ -8,7 +8,8 @@ images are never read again (``docs/plan.md`` §7). The format is described in
 ``docs/contract.md`` §9.
 
 The manifest also records, for information only, each file's channel names and
-significant bits when its metadata provides them.
+significant bits when its metadata provides them, and the SHA-256 of the
+experiment design used, so later bricks can check that it was not changed.
 """
 
 from __future__ import annotations
@@ -160,6 +161,10 @@ class RunManifest:
         Versions of this package, NumPy, tifffile and Python.
     written_at
         When the manifest was written (UTC, ISO 8601).
+    experiment_design_sha256
+        SHA-256 of the ``experiment_design.csv`` written with this run, or None
+        when the run had no experiment design (or in manifests written before it
+        was recorded).
     schema_version
         Version of the CSV format.
     manifest_version
@@ -174,6 +179,7 @@ class RunManifest:
     csv_sha256: str
     versions: dict[str, str] = field(default_factory=dict)
     written_at: str = ""
+    experiment_design_sha256: str | None = None
     schema_version: str = SCHEMA_VERSION
     manifest_version: str = MANIFEST_VERSION
 
@@ -217,6 +223,7 @@ class RunManifest:
             ],
             "files": [_file_dict(f) for f in self.files],
             "csv_sha256": self.csv_sha256,
+            "experiment_design_sha256": self.experiment_design_sha256,
             "versions": dict(self.versions),
         }
 
@@ -253,6 +260,11 @@ class RunManifest:
                 csv_sha256=str(data["csv_sha256"]),
                 versions={str(k): str(v) for k, v in data.get("versions", {}).items()},
                 written_at=str(data.get("written_at", "")),
+                experiment_design_sha256=(
+                    None
+                    if data.get("experiment_design_sha256") is None
+                    else str(data["experiment_design_sha256"])
+                ),
                 schema_version=str(data["schema_version"]),
             )
         except ManifestFormatError:

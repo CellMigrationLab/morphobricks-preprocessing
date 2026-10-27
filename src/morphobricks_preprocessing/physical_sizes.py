@@ -11,8 +11,9 @@ the ``scale`` of the level-0 dataset's ``coordinateTransformations``, times the
 ``scale`` of the image's own ``coordinateTransformations`` when it has them, with
 each axis's ``unit`` (:func:`ngff_physical_sizes`, used by :mod:`.zarr_input`).
 
-They are recorded with an image's header (:func:`.metadata.inspect_image`) and
-written as the scale of OME-Zarr copies (``docs/contract.md`` §2 and §10).
+They are recorded with an image's header (:func:`.metadata.inspect_image`),
+written as the scale of OME-Zarr copies (``docs/contract.md`` §2 and §10), and
+compared between the images of an experiment in the folder check (§11).
 """
 
 from __future__ import annotations
@@ -57,6 +58,17 @@ _TIME_UNITS = {
     "sec": "second",
     "min": "minute",
     "h": "hour",
+}
+
+# Micrometres per OME-NGFF space unit, to compare sizes given in different units.
+_MICROMETERS = {
+    "angstrom": 1e-4,
+    "picometer": 1e-6,
+    "nanometer": 1e-3,
+    "micrometer": 1.0,
+    "millimeter": 1e3,
+    "centimeter": 1e4,
+    "meter": 1e6,
 }
 
 # The OME schema's unit when a PhysicalSize*Unit attribute is left out.
@@ -132,6 +144,19 @@ class PhysicalSizes:
         index = "XYZ".index(role)
         size = (self.x, self.y, self.z)[index]
         return self._space_units()[index] if size is not None else None
+
+    def micrometers(self, role: str) -> float | None:
+        """Return the size along ``"X"``, ``"Y"`` or ``"Z"`` in micrometres.
+
+        Uses the axis's own unit. None when the size or its unit is unknown, so
+        that sizes in different units can be compared and an unknown unit is
+        never taken for another.
+        """
+        value = {"X": self.x, "Y": self.y, "Z": self.z}[role]
+        factor = _MICROMETERS.get(self.unit(role) or "")
+        if value is None or factor is None:
+            return None
+        return value * factor
 
 
 def _sizes(

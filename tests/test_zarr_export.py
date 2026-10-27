@@ -11,13 +11,16 @@ from morphobricks_preprocessing import (
     AxisMapping,
     PhysicalSizes,
     PlaneReadError,
+    default_output_folder,
     ome_zarr_relative_path,
     plane_layout,
     prefill_mapping,
+    read_experiment_design,
     read_manifest,
     read_physical_sizes,
     read_plane_histograms,
     run_experiment,
+    write_experiment_design,
 )
 from morphobricks_preprocessing import planes as planes_module
 from morphobricks_preprocessing import run as run_module
@@ -555,6 +558,13 @@ def test_table_is_the_same_with_or_without_copies(experiment, tmp_path):
 
 @needs_zarr
 def test_cli_option(experiment, capsys):
+    # The first run asks for the experiment design; confirm it as a user would.
+    assert main(["run", str(experiment), "--axes", "ZYX", "--convert-tiff"]) == 1
+    path = default_output_folder(experiment) / "experiment_design.csv"
+    design = read_experiment_design(path)
+    for group in design.groups:
+        design = design.with_confirmed(group, True, "2026-10-26")
+    write_experiment_design(design, path)
     assert main(["run", str(experiment), "--axes", "ZYX", "--convert-tiff"]) == 0
     assert "TIFF images converted to OME-Zarr: 3 images" in capsys.readouterr().out
 

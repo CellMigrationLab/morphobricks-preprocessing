@@ -502,7 +502,7 @@ def is_copy_path(output_folder: str | os.PathLike, relative_path: str) -> bool:
 def copy_units_current(copy: str | os.PathLike, sizes: PhysicalSizes) -> bool:
     """Return True if a copy's axis units are those its source's sizes give now.
 
-    Copies written before each axis had its own unit (plan §12 question 22) may
+    Copies written before each axis had its own unit (plan §12 question 24) may
     carry X's unit on Y or Z; such copies are written again on the next run. Only
     the copy's metadata file is read. A copy whose metadata cannot be read counts
     as out of date, so it is written again rather than trusted.

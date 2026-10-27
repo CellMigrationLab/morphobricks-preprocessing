@@ -3,8 +3,10 @@
 The notebook ``notebooks/MorphoBricks_Preprocessing.ipynb`` shows the four steps of
 :class:`PreprocessingNotebook`, one per cell:
 
-1. **Folder** - choose the experiment folder, check it, and confirm the labels
-   taken from the folder names.
+1. **Folder** - choose the experiment folder, check it, confirm the labels
+   taken from the folder names, and confirm the experiment design: which
+   biological repeats belong together across conditions, that they are
+   comparable, and which conditions are controls.
 2. **Axes** - review the role of every image axis, look at planes with the
    preview, and confirm.
 3. **Run** - check that everything is ready, see what will happen, and compute
@@ -28,6 +30,7 @@ import logging
 import math
 import traceback
 from collections.abc import Iterable, Sequence
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -59,6 +62,15 @@ from .axes import (
     axis_name,
     file_mapping_for,
     review_axes,
+)
+from .dataset import CONSISTENCY_CODES, BalanceTable, DatasetReport, check_dataset
+from .design import (
+    DESIGN_FILENAME,
+    DesignChanges,
+    ExperimentDesign,
+    default_design,
+    load_design,
+    write_experiment_design,
 )
 from .discovery import check_output_folder, default_output_folder
 from .manifest import MANIFEST_FILENAME, ManifestFormatError, read_manifest
@@ -124,6 +136,11 @@ PYRAMID_OPTIONS = [
 _MAX_PLOTTED_GROUPS = 12
 _PACKAGE_LOGGER = "morphobricks_preprocessing"
 _WIDE = {"width": "99%"}
+_PAIRING_COLUMNS = widgets.Layout(
+    grid_template_columns="minmax(120px, 1fr) minmax(120px, 1fr) minmax(160px, 2fr)",
+    grid_gap="4px 12px",
+    width="99%",
+)
 
 
 class PreprocessingNotebook:
@@ -144,12 +161,20 @@ class PreprocessingNotebook:
         The axis roles as currently edited in step 2.
     confirmed_mapping
         The axis roles the user confirmed, or None.
+    design
+        The experiment design as answered in step 1, or None until the labels
+        are confirmed.
+    dataset
+        Images per condition and repeat group with the current pairing, and the
+        warnings about them.
     result
         Result of the last run, or None.
     """
 
     def __init__(self, experiment_folder: str = "", output_folder: str = ""):
         self.preflight: Preflight | None = None
+        self.design: ExperimentDesign | None = None
+        self.dataset = DatasetReport()
         self.mapping: AxisMapping | None = None
         self.confirmed_mapping: AxisMapping | None = None
         self.result: RunResult | None = None
@@ -255,6 +280,8 @@ class PreprocessingNotebook:
                 self.folder_status,
                 self.folder_tiles,
                 self.labels_card,
+                self.design_card,
+                self.consistency_card,
                 self.issues_card,
                 self.folder_next,
             ],
@@ -445,6 +472,32 @@ class PreprocessingNotebook:
             ],
             visible=False,
         )
+        self.balance_table = widgets.HTML()
+        self.consistency_counts = widgets.HTML()
+        self.consistency_issues = widgets.HTML()
+        self.consistency_details = widgets.Accordion(
+            children=[self.consistency_issues],
+            titles=("Show consistency warnings",),
+            selected_index=None,
+        )
+        self.consistency_card = ui.card(
+            "Dataset consistency",
+            [
+                ui.help_text(
+                    "How many images each condition (column) and biological repeat (row) has, "
+                    "over all its technical repeats. Amber cells are far from the others "
+                    "(fewer than half or more than twice the median), or a biological repeat "
+                    "the condition does not have. Below, the checks that "
+                    "compare the images with each other: pixel type, dimensions, sizes, "
+                    "numbers of planes, channel names and pixel sizes. Warnings do not stop "
+                    "processing; they say what to check."
+                ),
+                self.balance_table,
+                self.consistency_counts,
+                self.consistency_details,
+            ],
+            visible=False,
+        )
         self.folder_issues = widgets.HTML()
         self.exclude_button = ui.button(
             " Exclude these images and check again",
@@ -470,7 +523,63 @@ class PreprocessingNotebook:
         self.folder.observe(lambda _: self._folder_edited(), names="value")
         self.output.observe(lambda _: self._output_edited(), names="value")
         self.labels_confirmed.observe(lambda _: self._labels_changed())
+        self._build_design_card()
         self._update_output_hint()
+
+    def _build_design_card(self) -> None:
+        self.design_status = widgets.HTML()
+        self.design_change = ui.button(
+            " Change the experiment design",
+            style="warning",
+            icon="pencil",
+            tooltip="Show the pairing, the confirmations and the controls again",
+        )
+        ui.set_visible(self.design_change, False)
+        self.pairing_grid = widgets.VBox()
+        self.pairing_box = widgets.VBox(
+            [
+                widgets.HTML("<b>1. Pair the biological repeats across conditions</b>"),
+                ui.help_text(
+                    "A repeat group is one biological repeat in every condition: the same "
+                    "preparation, imaged for each condition. Folders with the same name are "
+                    "paired by default. If a repeat has another folder name in some "
+                    "condition (acquired a day later, for example), choose its group in "
+                    "the dropdown. Each group may hold one folder per condition."
+                ),
+                self.pairing_grid,
+            ]
+        )
+        self.groups_box = widgets.VBox()
+        self.control_checks: dict[str, widgets.Checkbox] = {}
+        self.controls_grid = widgets.VBox()
+        self.controls_box = widgets.VBox(
+            [
+                widgets.HTML("<b>Controls (optional)</b>"),
+                ui.help_text(
+                    "Tick the control conditions, if any: none, one or several. This is "
+                    "recorded for later bricks; nothing uses it yet."
+                ),
+                self.controls_grid,
+            ]
+        )
+        self.design_editor = widgets.VBox([self.pairing_box, self.groups_box, self.controls_box])
+        self.design_card = ui.card(
+            "Experiment design",
+            [
+                ui.help_text(
+                    "Later bricks normalise each biological repeat over all conditions "
+                    "together, so the brick needs to know which folders are the same "
+                    "biological repeat, and that their images are comparable. The answers "
+                    f"are saved in <b>{DESIGN_FILENAME}</b> in the output folder, so they are "
+                    "not asked again while the folders stay the same."
+                ),
+                self.design_status,
+                self.design_change,
+                self.design_editor,
+            ],
+            visible=False,
+        )
+        self.design_change.on_click(lambda _: self._reopen_design())
 
     def check_folder(self) -> Preflight | None:
         """Run the folder and header check (pass 1) and show its results."""
@@ -502,8 +611,33 @@ class PreprocessingNotebook:
         return pre
 
     def _show_folder_results(self, pre: Preflight) -> None:
-        errors = [i for i in pre.issues if i.is_error]
-        warnings = [i for i in pre.issues if not i.is_error]
+        self.design = None
+        self.dataset = pre.dataset
+        ui.set_visible(self.design_card, False)
+        self.labels_table.value = labels_html(pre)
+        self.labels_confirmed.set(False, notify=False)
+        self.labels_confirmed.disabled = not pre.discovery.leaves
+        ui.set_visible(self.labels_card, bool(pre.discovery.leaves))
+        self.consistency_details.selected_index = None
+        self.issue_details.selected_index = None
+        self._show_issue_summary()
+
+    def _step1_issues(self) -> list[ValidationIssue]:
+        """Return the folder-check issues, with the balance warnings of the current pairing."""
+        pre = self.preflight
+        merged = [
+            *pre.discovery.issues,
+            *pre.exclusion_issues,
+            *pre.metadata.issues,
+            *self.dataset.issues,
+        ]
+        return sorted(merged, key=lambda issue: not issue.is_error)
+
+    def _show_issue_summary(self) -> None:
+        pre = self.preflight
+        issues = self._step1_issues()
+        errors = [i for i in issues if i.is_error]
+        warnings = [i for i in issues if not i.is_error]
         if errors:
             self.folder_status.value = ui.status(
                 "error",
@@ -520,39 +654,291 @@ class PreprocessingNotebook:
                 "ok",
                 "The folder looks good.",
             )
-        self.folder_tiles.value = ui.tiles(_folder_tiles(pre))
-        self.labels_table.value = labels_html(pre)
-        self.labels_confirmed.set(False, notify=False)
-        self.labels_confirmed.disabled = not pre.discovery.leaves
-        ui.set_visible(self.labels_card, bool(pre.discovery.leaves))
-        self.folder_issues.value = issues_html(pre.issues)
-        self.issue_counts.value = "".join(
-            f"<span class='mb-issue-count mb-{kind}'>{plural(len(items), name)}</span>"
-            for kind, items, name in (("error", errors, "error"), ("warn", warnings, "warning"))
-            if items
+        self.folder_tiles.value = ui.tiles(_folder_tiles(pre, issues))
+        # Consistency issues have their own card next to the balance table; the
+        # messages card keeps the folder, file and readability problems.
+        consistency = [i for i in issues if i.code in CONSISTENCY_CODES]
+        others = [i for i in issues if i.code not in CONSISTENCY_CODES]
+        self.balance_table.value = balance_html(self.dataset.balance)
+        self.consistency_counts.value = issue_count_chips(consistency) or ui.status(
+            "ok", "The images are consistent with each other."
         )
-        self.issue_details.selected_index = None
-        ui.set_visible(self.issues_card, bool(pre.issues))
+        self.consistency_issues.value = issues_html(consistency)
+        ui.set_visible(self.consistency_details, bool(consistency))
+        ui.set_visible(self.consistency_card, bool(pre.discovery.leaves))
+        self.folder_issues.value = issues_html(others)
+        self.issue_counts.value = issue_count_chips(others)
+        ui.set_visible(self.issues_card, bool(others))
         # A hidden output card comes back when its folder is the problem to fix.
         ui.set_visible(
             self.output_card,
-            self._show_output or any(i.code == "output_inside_experiment" for i in pre.issues),
+            self._show_output or any(i.code == "output_inside_experiment" for i in issues),
         )
-        blocking = any(i.code in EXCLUDABLE_CODES for i in pre.issues)
+        blocking = any(i.code in EXCLUDABLE_CODES for i in issues)
         ui.set_visible(self.exclude_button, blocking)
         self._refresh_folder_next()
 
     def _labels_changed(self) -> None:
+        if self.labels_confirmed.value and self.preflight is not None:
+            self._open_design()
+        else:
+            self._close_design()
         self._refresh_folder_next()
         if self.confirmed_mapping is not None:
             self._refresh_axis_next()
         self._refresh_run_step()
 
+    # Experiment design (step 1) -------------------------------------------------------------
+
+    def _design_folder(self) -> Path | None:
+        """Return the output folder the design is saved in, or None if it may not be written."""
+        folder = ui.clean_path(self.folder.value)
+        if not folder:
+            return None
+        output = Path(self._output_folder() or default_output_folder(folder))
+        return None if check_output_folder(folder, output) else output
+
+    def _open_design(self) -> None:
+        """Load the saved design, or start a new one, once the labels are confirmed."""
+        repeats = self.preflight.dataset.repeats
+        output = self._design_folder()
+        changes, problem, saved = DesignChanges(), None, False
+        if output is None:
+            design = default_design(repeats)
+        else:
+            design, changes, problem = load_design(output, repeats)
+            saved = problem is None and (output / DESIGN_FILENAME).exists()
+        self.design = design
+        self._build_design_editor()
+        # A design confirmed earlier for the same folders is not asked again.
+        reopen = not (saved and design.confirmed and not changes.any)
+        ui.set_visible(self.design_editor, reopen)
+        ui.set_visible(self.design_change, not reopen)
+        self._design_note = self._design_load_note(design, changes, problem, saved)
+        ui.set_visible(self.design_card, True)
+        self._save_design()
+        self._design_changed()
+
+    def _design_load_note(
+        self, design: ExperimentDesign, changes: DesignChanges, problem: str | None, saved: bool
+    ) -> str:
+        if problem:
+            return ui.status(
+                "warn",
+                f"The saved {DESIGN_FILENAME} could not be read, so the questions are asked again.",
+                [problem, "Answering replaces the file."],
+            )
+        if saved and changes.any:
+            lines = []
+            if changes.added:
+                lines.append(
+                    "New biological-repeat folders: "
+                    + ", ".join(f"{c}/{b}" for c, b in changes.added)
+                    + ". Only the repeat groups they join are asked again."
+                )
+            if changes.removed:
+                lines.append(
+                    "No longer found: " + ", ".join(f"{c}/{b}" for c, b in changes.removed) + "."
+                )
+            return ui.status("info", "The folders changed since the design was saved.", lines)
+        return ""
+
+    def _close_design(self) -> None:
+        self.design = None
+        ui.set_visible(self.design_card, False)
+        if self.preflight is not None:
+            self.dataset = self.preflight.dataset
+            self._show_issue_summary()
+
+    def _reopen_design(self) -> None:
+        ui.set_visible(self.design_editor, True)
+        ui.set_visible(self.design_change, False)
+        self._refresh_design_status()
+
+    def _build_design_editor(self) -> None:
+        design = self.design
+        pairing = len(design.conditions) > 1 and not design.single_repeat
+        ui.set_visible(self.pairing_box, pairing)
+        options = sorted({row.biological_repeat for row in design.rows} | set(design.groups))
+        rows = [
+            widgets.GridBox(
+                [widgets.HTML(f"<b>{h}</b>") for h in ("Condition", "Folder", "Repeat group")],
+                layout=_PAIRING_COLUMNS,
+            )
+        ]
+        for row in design.rows if pairing else ():
+            dropdown = widgets.Dropdown(
+                options=options, value=row.repeat_group, layout=widgets.Layout(width="99%")
+            )
+            dropdown.observe(
+                lambda change, key=row.key: self._pair(key, change["new"]), names="value"
+            )
+            rows.append(
+                widgets.GridBox(
+                    [
+                        widgets.HTML(html.escape(row.condition)),
+                        widgets.HTML(f"<b>{html.escape(row.biological_repeat)}</b>"),
+                        dropdown,
+                    ],
+                    layout=_PAIRING_COLUMNS,
+                )
+            )
+        self.pairing_grid.children = rows
+        self.control_checks = {}
+        for condition in design.conditions:
+            check = widgets.Checkbox(
+                value=condition in design.controls,
+                description=condition,
+                indent=False,
+                layout=widgets.Layout(width="auto"),
+            )
+            check.observe(
+                lambda change, c=condition: self._set_control(c, change["new"]), names="value"
+            )
+            self.control_checks[condition] = check
+        self.controls_grid.children = [
+            widgets.HBox(
+                list(self.control_checks.values()), layout=widgets.Layout(flex_flow="wrap")
+            )
+        ]
+        self._build_group_questions()
+
+    def _build_group_questions(self) -> None:
+        """One yellow question per repeat group; rebuilt when the pairing changes."""
+        design = self.design
+        self.group_confirmations: dict[str, ui.ConfirmToggle] = {}
+        boxes = [
+            widgets.HTML(
+                "<b>2. Confirm that the biological repeats are comparable</b>"
+                if len(design.conditions) > 1 and not design.single_repeat
+                else "<b>Confirm that the images are comparable</b>"
+            )
+        ]
+        for group in design.groups:
+            toggle = ui.ConfirmToggle(
+                _group_question(design, group),
+                _group_explanation(design, group),
+                "Yes, they are comparable",
+                "Confirmed: these images are comparable.",
+                "Undo: they are not comparable",
+            )
+            toggle.set(design.group_confirmed(group), notify=False)
+            toggle.disabled = group in design.conflicts
+            toggle.observe(lambda value, g=group: self._confirm_group(g, value))
+            self.group_confirmations[group] = toggle
+            boxes.append(toggle.widget)
+        self.groups_box.children = boxes
+
+    def _pair(self, key: tuple[str, str], group: str) -> None:
+        if self.design is None:
+            return
+        self.design = self.design.with_group(key, group)
+        self._build_group_questions()
+        self._save_design()
+        self._design_changed()
+
+    def _confirm_group(self, group: str, confirmed: bool) -> None:
+        if self.design is None:
+            return
+        self.design = self.design.with_confirmed(
+            group, confirmed, date.today().isoformat(), self.preflight.dataset.repeats
+        )
+        self._save_design()
+        self._design_changed()
+
+    def _set_control(self, condition: str, control: bool) -> None:
+        if self.design is None:
+            return
+        self.design = self.design.with_control(condition, control)
+        self._save_design()
+        self._refresh_design_status()
+
+    def _save_design(self) -> None:
+        output = self._design_folder()
+        self._design_saved = False
+        if output is None or self.design is None:
+            return
+        try:
+            write_experiment_design(self.design, output / DESIGN_FILENAME)
+        except OSError:
+            logging.getLogger(__name__).warning("Cannot save the design", exc_info=True)
+            return
+        self._design_saved = True
+
+    def _design_changed(self) -> None:
+        """Update the balance, the messages, the status and the later steps after an answer."""
+        self.dataset = check_dataset(
+            self.preflight.discovery,
+            self.design.repeat_groups() if self.design is not None else None,
+            excluded=self.preflight.excluded,
+        )
+        self._show_issue_summary()
+        self._refresh_design_status()
+        if self.confirmed_mapping is not None:
+            self._refresh_axis_next()
+        self._refresh_run_step()
+
+    def _refresh_design_status(self) -> None:
+        design = self.design
+        if design is None:
+            self.design_status.value = ""
+            return
+        note = getattr(self, "_design_note", "")
+        saved = getattr(self, "_design_saved", False)
+        where = (
+            f"Saved in <b>{html.escape(str(self._design_folder() / DESIGN_FILENAME))}</b>."
+            if saved
+            else "Not saved: the output folder is not set or cannot be written; the answers "
+            "are kept while the notebook is open and saved with the run."
+        )
+        controls = ", ".join(html.escape(c) for c in design.controls) or "none"
+        if design.confirmed:
+            dates = sorted({design.confirmed_on(g) for g in design.groups} - {""})
+            when = f" on {', '.join(dates)}" if dates else ""
+            status = ui.status(
+                "ok",
+                f"The biological repeats are confirmed{when}.",
+                [
+                    f"{plural(len(design.groups), 'repeat group')}: "
+                    + ", ".join(html.escape(g) for g in design.groups),
+                    f"Controls: {controls}",
+                    where,
+                ],
+                raw=True,
+            )
+        else:
+            waiting = [g for g in design.unconfirmed_groups if g not in design.conflicts]
+            lines = []
+            if design.conflicts:
+                lines.append(
+                    "A repeat group holds more than one folder of a condition: "
+                    + ", ".join(html.escape(g) for g in design.conflicts)
+                    + ". Move one of the folders into another group."
+                )
+            if waiting:
+                lines.append(
+                    f"Still to confirm: {plural(len(waiting), 'repeat group')} ("
+                    + ", ".join(html.escape(g) for g in waiting)
+                    + "). Step 3 runs once every group is confirmed."
+                )
+            lines.append(where)
+            status = ui.status("warn", "Please answer the questions below.", lines, raw=True)
+        self.design_status.value = note + status
+
+    def _design_confirmed(self) -> bool:
+        return self.design is not None and self.design.confirmed
+
     def _refresh_folder_next(self) -> None:
         self.folder_next.value = ""
         if self.preflight is None or not self.preflight.ok:
             return
-        if self.labels_confirmed.value:
+        if self.labels_confirmed.value and not self._design_confirmed():
+            self.folder_next.value = ui.next_steps(
+                "Confirm the biological repeats in Step 1.",
+                "Under Experiment design, pair the repeats if needed and answer each yellow "
+                "question with Yes, they are comparable.",
+            )
+        elif self.labels_confirmed.value:
             self.folder_next.value = ui.next_steps(
                 "Go to Step 2 and review the axis roles.",
                 "Run its cell, check the preview, then click Confirm axis roles.",
@@ -577,7 +963,10 @@ class PreprocessingNotebook:
         self.folder_tiles.value = ""
         self.folder_next.value = ""
         self.labels_confirmed.set(False, notify=False)
+        self.design = None
+        ui.set_visible(self.design_card, False)
         ui.set_visible(self.labels_card, False)
+        ui.set_visible(self.consistency_card, False)
         ui.set_visible(self.issues_card, False)
         self._refresh_axis_step()
         self._refresh_run_step()
@@ -1005,6 +1394,11 @@ class PreprocessingNotebook:
                 "Go to Step 1 and confirm the folder labels.",
                 "Review the labels and click Yes, the labels are correct before running Step 3.",
             )
+        elif not self._design_confirmed():
+            self.axis_next.value = ui.next_steps(
+                "Go to Step 1 and confirm the biological repeats.",
+                "Under Experiment design, answer each yellow question before running Step 3.",
+            )
         else:
             self.axis_next.value = ui.next_steps(
                 "Go to Step 3 and compute the histograms.",
@@ -1360,6 +1754,7 @@ class PreprocessingNotebook:
         items = [
             (folder_ok, "Check the experiment folder and fix any errors (step 1)"),
             (pre is not None and self.labels_confirmed.value, "Confirm the labels (step 1)"),
+            (self._design_confirmed(), "Confirm the biological repeats (step 1)"),
             (self.confirmed_mapping is not None, "Confirm the axis roles (step 2)"),
         ]
         missing = [text for done, text in items if not done]
@@ -1525,6 +1920,7 @@ class PreprocessingNotebook:
                     progress=self._progress,
                     convert_tiffs=self._convert_tiffs(),
                     conversion=self._conversion_settings(),
+                    design=self.design,
                 )
         except Exception as exc:  # unexpected failures still get a readable message
             self.log.lines.append(traceback.format_exc())
@@ -1564,6 +1960,8 @@ class PreprocessingNotebook:
             )
             return
         lines = [f"Table: {result.csv_path}", f"Manifest: {result.manifest_path}"]
+        if result.design_path is not None:
+            lines.append(f"Experiment design: {result.design_path}")
         if result.converted or self._convert_tiffs():
             lines.append(
                 f"Converted TIFF images: {result.output_folder / OME_ZARR_FOLDER} "
@@ -1868,6 +2266,55 @@ def issues_html(issues: Iterable[ValidationIssue]) -> str:
     return "".join(parts)
 
 
+def issue_count_chips(issues: Sequence[ValidationIssue]) -> str:
+    """Red error and orange warning counts, shown outside a folded list of issues."""
+    errors = [i for i in issues if i.is_error]
+    warnings = [i for i in issues if not i.is_error]
+    return "".join(
+        f"<span class='mb-issue-count mb-{kind}'>{plural(len(items), name)}</span>"
+        for kind, items, name in (("error", errors, "error"), ("warn", warnings, "warning"))
+        if items
+    )
+
+
+def balance_html(balance: BalanceTable) -> str:
+    """Render images per condition and biological repeat; unbalanced or missing cells in amber."""
+    if not balance.cells:
+        return ""
+    header = "".join(
+        f"<th>{html.escape(h)}</th>" for h in ("Biological repeat", *balance.conditions)
+    )
+    rows = []
+    for group in balance.repeat_groups:
+        cells = [f"<td><b>{html.escape(group)}</b></td>"]
+        for condition in balance.conditions:
+            cell = balance.cell(group, condition)
+            if cell is None:
+                cells.append("<td class='mb-cell-warn'>not found</td>")
+                continue
+            technical = (
+                plural(cell.technical_repeat_count, "technical repeat")
+                if cell.technical_repeat_count
+                else "no technical-repeat folders"
+            )
+            css = " class='mb-cell-warn'" if cell.unbalanced else ""
+            cells.append(
+                f"<td{css}><b>{plural(cell.image_count, 'image')}</b>"
+                f"<div class='mb-help' style='margin:0'>{technical}</div></td>"
+            )
+        rows.append(f"<tr>{''.join(cells)}</tr>")
+    median = (
+        f"<div class='mb-help'>Median: {balance.median:g} images per condition and "
+        "biological repeat.</div>"
+        if balance.median is not None
+        else ""
+    )
+    return (
+        "<div class='mb-table-wrap'><table class='mb-table mb-labels'>"
+        f"<thead><tr>{header}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>" + median
+    )
+
+
 def labels_html(pre: Preflight) -> str:
     """Render the leaf folders and their labels as a table, ``single`` greyed out."""
     rows = []
@@ -2053,12 +2500,49 @@ class _Attached:
         return False
 
 
-def _folder_tiles(pre: Preflight) -> list[tuple[str, str, str]]:
+def _group_question(design: ExperimentDesign, group: str) -> str:
+    """Return the question asked for a repeat group, or for the whole experiment."""
+    if design.single_repeat:
+        return (
+            "All images of every condition come from one biological repeat: were they "
+            "prepared and acquired under the same circumstances?"
+        )
+    return (
+        f"Repeat group {group}: were these images prepared and acquired under the same "
+        "circumstances, so they are comparable with each other?"
+    )
+
+
+def _group_explanation(design: ExperimentDesign, group: str) -> str:
+    """Describe the folders of a repeat group and anything unusual about it (HTML)."""
+    items = [
+        f"<b>{html.escape(row.condition)}</b>: {html.escape(row.biological_repeat)} "
+        f"({plural(row.image_count, 'image')})"
+        for row in design.members(group)
+    ]
+    text = "Folders: " + "; ".join(items) + "."
+    missing = design.missing_conditions(group)
+    if missing and not design.single_repeat:
+        text += (
+            "<br><span style='color:#92400E'>Not found in "
+            + ", ".join(html.escape(c) for c in missing)
+            + ": it is still used, with the conditions that have it.</span>"
+        )
+    if group in design.conflicts:
+        text += (
+            "<br><span style='color:#991B1B'>This group holds more than one folder of "
+            + ", ".join(html.escape(c) for c in design.conflicts[group])
+            + ". Move one of them into another group above before confirming.</span>"
+        )
+    return text + " If they are not comparable, process them as separate experiments."
+
+
+def _folder_tiles(pre: Preflight, issues: Sequence[ValidationIssue]) -> list[tuple[str, str, str]]:
     skipped = sum(len(i.paths) for i in pre.discovery.issues if i.code in _SKIPPED_CODES)
     conditions = {leaf.condition for leaf in pre.discovery.leaves}
     dtype = pre.metadata.dtype
-    errors = sum(i.is_error for i in pre.issues)
-    warnings = len(pre.issues) - errors
+    errors = sum(i.is_error for i in issues)
+    warnings = len(issues) - errors
     return [
         ("🖼️", f"{len(pre.metadata.files):,}", "images to analyse"),
         ("📂", f"{len(pre.discovery.leaves):,}", "image folders"),

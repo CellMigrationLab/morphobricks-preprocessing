@@ -20,10 +20,15 @@ Pre-alpha. Implemented and tested:
 
 - Folder discovery and validation (`discovery`, `validation`)
 - TIFF header inspection without reading pixels (`metadata`)
+- Dataset consistency warnings in the folder check: images per condition and biological
+  repeat, repeats missing from some conditions, differing plane counts and pixel sizes
+  (`dataset`, `physical_sizes`)
 - Axis mapping: prefill from metadata, validation, applying one mapping to every
   file (`axes`)
 - Reading TIFFs one 2D plane at a time, with a memory limit and a preview plane;
   planes too large for the limit are read in blocks with identical results (`planes`)
+- The experiment design: pairing biological repeats across conditions, confirming they
+  are comparable, and marking controls, in `experiment_design.csv` (`design`)
 - Running an experiment end to end and updating earlier output incrementally, with a
   run manifest (`run`, `manifest`)
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
@@ -79,7 +84,11 @@ print(result.written, result.read, result.unchanged)
 ```
 
 Rerunning only reads images that are new or changed; `force_rebuild=True`
-recomputes everything, and `exclude=[...]` leaves out damaged files.
+recomputes everything, and `exclude=[...]` leaves out damaged files. The notebook and the
+command line also ask for the experiment design (which biological repeats pair across
+conditions, and that they are comparable) and write `experiment_design.csv`; in Python,
+pass it with `design=` (see the [user guide](docs/user_guide.md) §9). Later bricks read it
+with `read_experiment_design`.
 
 ## Example
 

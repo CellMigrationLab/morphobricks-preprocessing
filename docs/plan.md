@@ -57,7 +57,7 @@ TIFF and OME-Zarr images may be mixed in one experiment.
 
 Folder names are arbitrary labels and need only be unique among siblings. Each branch may
 stop at any level; omitted levels receive the value `single` (a level with one member,
-question 21). Levels cannot be skipped. Labels are scoped to their parents: `bio_rep1`
+question 23). Levels cannot be skipped. Labels are scoped to their parents: `bio_rep1`
 under two conditions are two different samples, so groups are always identified by the
 full label path.
 
@@ -68,7 +68,7 @@ subfolders, it is the leaf folder and every label is `single`.
 During preflight, show a tree/summary of the inferred labels and ask the user to confirm
 or correct it. A folder may be named `single` (lower case) when it is the only folder in
 its place: it is then a level with one member, labelled `single` like a missing level
-(question 21). Spelled in another case, or beside other folders, it is an error. Report
+(question 23). Spelled in another case, or beside other folders, it is an error. Report
 warnings for files that are not images, empty folders and images outside leaf folders, and
 explain that they will not be analysed.
 
@@ -313,11 +313,22 @@ API, CLI). The notebook and CLI only call the API.
   entry carries the image's `position_id`, so `condition`, `biological_repeat`,
   `technical_repeat` and `position_id` identify a position in every brick; images in one
   leaf folder with the same identifier are refused. *Implemented, see question 20.*
+- **Dataset consistency (follow-up P2 of the normalization plan):** the folder check counts
+  images per condition and biological repeat, warns about unbalanced counts and repeats
+  missing from some conditions (`dataset`), and compares the headers' plane counts and
+  physical pixel sizes (`metadata`, `physical_sizes`); the notebook shows them, with the
+  earlier consistency issues, in step 1's "Dataset consistency" panel. *Implemented, see
+  question 21.*
+- **Experiment design (follow-up P3):** after the labels, step 1 pairs biological repeats
+  into repeat groups across conditions, asks for each group whether it is comparable, and
+  records control conditions, in `experiment_design.csv` (`design`); reruns with the same
+  folders skip the questions, the command line uses the file or writes a template, and
+  the manifest records its hash. *Implemented, see question 22.*
 - **Input support for MorphoRelate milestone M3 (unreleased):** a folder named `single`
   read as a one-member level, physical sizes with a unit per axis in the image header
   (TIFF and OME-Zarr, from the OME-NGFF scale), and steps 1 and 2 of the notebook
-  embeddable by another brick. Outputs are unchanged. *Implemented, see questions 21 to
-  24.*
+  embeddable by another brick. Outputs are unchanged. *Implemented, see questions 23 to
+  26.*
 
 ## 11. Tests and acceptance criteria
 
@@ -528,7 +539,49 @@ Raised during review; to be decided before the milestones that need them:
     table with blank `position_id` is filled on the next run from the paths, without
     reading pixels. The normalization contract's note "never inferred from file names"
     (§8.2) predates D02 and is to be aligned in that repository.*
-21. A folder named `single` was an error, but in the MorphoBricks convention (CellPatcher's
+21. Which dataset warnings does the folder check give (normalization plan N37, follow-up P2),
+    and how are they shown?
+    *Decided (October 2026): step 1 gathers every consistency issue in a "Dataset
+    consistency" panel; warnings never block. A balance table counts images per condition
+    (columns) and biological repeat (rows, matched by folder name), technical repeats added
+    up, with the number of technical-repeat folders; a count below half or above twice the
+    median of the non-empty cells is `unbalanced_images`, and a biological repeat not found
+    in every condition is `repeat_missing_conditions`. From the headers: physical pixel
+    sizes that differ (`different_pixel_sizes`, X by Y, and the z-step of images with more
+    than one slice, compared in micrometres to four significant digits) or are known for
+    only some images (`missing_pixel_size`), read from OME or ImageJ metadata for TIFF files
+    and, agreed in review, from the level-0 scale with axis units for OME-Zarr images (no
+    unit: unknown); and different numbers of channels, slices, time points or other planes
+    (`different_plane_counts`). Agreed in review: `different_sizes` now covers only width
+    and height, for TIFF and OME-Zarr images, so a dimension is never reported twice; and
+    the consistency issues (also `mixed_dtypes`, `inconsistent_dimensions`, `missing_axes`,
+    `inconsistent_mapping`, `channel_names_differ`) appear only in the new panel, while the
+    Messages card keeps the folder, file and readability problems; the tiles still count
+    everything. The command line `check` prints the balance table and every warning, and
+    `run` reports them too. Outputs do not change.*
+22. How are biological repeats paired and confirmed, and controls recorded (normalization
+    plan N30, N31, N35, N36, follow-up P3)?
+    *Decided (October 2026): after the labels are confirmed, step 1 asks three things and
+    writes the answers to `experiment_design.csv` in the output folder (contract §12, schema
+    version 1). Repeats with the same folder name form one repeat group by default; a
+    dropdown moves a folder into another group. Each group gets a yellow question with a
+    **Yes, they are comparable** button (one question for the whole experiment when there
+    are no biological-repeat folders), and step 3 stays locked until every group is
+    confirmed. Control conditions are checkboxes, recorded only. Reruns with the same
+    folders load the file and fold the questions away behind a **Change** button; a new
+    folder reopens only the group it joins; added or removed images keep the confirmation.
+    The command line reads the file (or `--design FILE`) and, without a fully confirmed
+    design, writes it with `confirmed=false` for the groups still to confirm and stops. The
+    manifest gains the optional key `experiment_design_sha256` (version 1). Agreed in
+    review: the notebook writes the file after every answer, so nothing is lost if it is
+    closed; `run_experiment` takes an optional `design` (without one it works as before and
+    writes none; an unconfirmed one is the error `design_not_confirmed`), while the notebook
+    and the command line always use one; a repeat group with two folders of one condition
+    cannot be confirmed (`repeat_group_conflict`). `read_experiment_design` and
+    `ExperimentDesign.repeat_groups()` give later bricks the
+    `{(condition, biological_repeat): repeat_group}` mapping. `plane_histograms.csv` does
+    not change.*
+23. A folder named `single` was an error, but in the MorphoBricks convention (CellPatcher's
     trees, MorphoRelate's data such as `<condition>/single/<images>`) a level written
     `single` means "this level exists with one member". Can such a folder be read?
     *Decided (October 2026, for MorphoRelate milestone M3): yes. A folder named `single` in
@@ -541,7 +594,7 @@ Raised during review; to be decided before the milestones that need them:
     would be a label different from the `single` written for missing levels), and a
     `single` folder with other folders beside it (the level would have several members,
     one called `single`). The CSV, the manifest and their versions are unchanged.*
-22. Physical pixel sizes: `read_physical_sizes` applied the X unit to Y and Z, and callers
+24. Physical pixel sizes: `read_physical_sizes` applied the X unit to Y and Z, and callers
     (MorphoRelate milestone M3's `inspect`) had to open each file a second time to get
     them. Should each axis keep its own unit, and should the header inspection carry them?
     *Decided (October 2026): yes to both. `PhysicalSizes` gains `x_unit`, `y_unit` and
@@ -562,10 +615,10 @@ Raised during review; to be decided before the milestones that need them:
     rows do not change). `PhysicalSizes` and `read_physical_sizes` moved
     to the module `physical_sizes` and stay importable from `zarr_export` and the package.
     The CSV, the manifest and their versions are unchanged.*
-23. OME-Zarr physical sizes: `open_ngff` read the axes but not the OME-NGFF scale, so the
+25. OME-Zarr physical sizes: `open_ngff` read the axes but not the OME-NGFF scale, so the
     physical size of an OME-Zarr image's pixels was not available (MorphoRelate milestone
     M3 reads OME-Zarr input). Should it be?
-    *Decided (October 2026): yes, in the form of question 22. `NgffImage` gains
+    *Decided (October 2026): yes, in the form of question 24. `NgffImage` gains
     `physical_sizes`: the `scale` of level 0's `coordinateTransformations`, multiplied by
     the multiscales entry's own `coordinateTransformations` scale when it has one (OME-NGFF
     applies them in turn; translations are ignored), for X, Y, Z and T, with each axis's
@@ -578,7 +631,7 @@ Raised during review; to be decided before the milestones that need them:
     without a unit is kept, since only the caller can tell a real calibration from a
     placeholder (this brick's own copies write 1 without a unit when the size is not
     known). Information only: the CSV, the manifest and their versions are unchanged.*
-24. Can another brick's notebook reuse steps 1 and 2 (folder check and axis review)?
+26. Can another brick's notebook reuse steps 1 and 2 (folder check and axis review)?
     MorphoRelate milestone M3's "your data" notebook needs them, but their title, purpose
     and intro speak of this brick's histograms, step 1 has the card for this brick's output
     folder, and step 2's "What next?" box sends the user to compute the histograms.

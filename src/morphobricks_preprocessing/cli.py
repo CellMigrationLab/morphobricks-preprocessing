@@ -3,8 +3,10 @@
 ``check`` runs the preflight (folders and image headers, no pixels) and prints
 what will be analysed, the problems found and the suggested axis roles.
 ``run`` processes the experiment with the axis roles given in ``--axes``; roles
-are never taken from metadata without being stated. Both exit with status 1
-when an error blocks processing.
+are never taken from metadata without being stated. It also needs the
+experiment design confirmed in ``experiment_design.csv``: without it, ``run``
+writes a template to the output folder for the user to fill in, and stops.
+Both exit with status 1 when an error blocks processing.
 """
 
 from __future__ import annotations
@@ -14,13 +16,33 @@ import logging
 import re
 import sys
 from collections.abc import Sequence
+from datetime import date
+from pathlib import Path
 
 from .axes import AxisMapping, reference_axes
-from .discovery import default_output_folder
+from .design import (
+    DESIGN_FILENAME,
+    DesignFormatError,
+    ExperimentDesign,
+    design_issues,
+    load_design,
+    read_experiment_design,
+    reconcile_design,
+    write_experiment_design,
+)
+from .discovery import check_output_folder, default_output_folder
 from .planes import DEFAULT_MEMORY_LIMIT, format_bytes
-from .report import format_issues, label_tree, mapping_summary, preflight_summary, run_summary
+from .report import (
+    balance_summary,
+    design_summary,
+    format_issues,
+    label_tree,
+    mapping_summary,
+    preflight_summary,
+    run_summary,
+)
 from .run import preflight, run_experiment
-from .validation import plural
+from .validation import has_errors, plural
 from .zarr_export import (
     CHUNK_SIDE,
     COMPRESSIONS,
@@ -103,6 +125,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="ROLES",
         help="role of each axis of the images, in the order of their axes: X, Y, Z, C, T, or "
         "- for none (for example ZCYX). 'check' prints the suggested value.",
+    )
+    run.add_argument(
+        "--design",
+        metavar="FILE",
+        help="the confirmed experiment design (default: experiment_design.csv in the output "
+        "folder); without a confirmed design, run writes a template there and stops",
     )
     run.add_argument("--bins", type=int, help="bins per plane (default: depends on pixel type)")
     run.add_argument(
@@ -198,9 +226,26 @@ def _check(args: argparse.Namespace) -> int:
     if pre.discovery.leaves:
         print()
         print(label_tree(pre.discovery))
+    if pre.dataset.balance.cells:
+        print()
+        print(balance_summary(pre.dataset.balance))
     if pre.issues:
         print()
         print(format_issues(pre.issues))
+    if pre.dataset.repeats:
+        output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
+        design, _, problem = load_design(output, pre.dataset.repeats)
+        print()
+        if problem:
+            print(f"Experiment design: {problem}")
+        elif (output / DESIGN_FILENAME).exists():
+            print(f"Experiment design ({output / DESIGN_FILENAME}):")
+            print(design_summary(design))
+        else:
+            print(
+                "Experiment design: not confirmed yet. 'run' writes experiment_design.csv to "
+                "the output folder for you to confirm."
+            )
     if pre.suggested_mapping is not None:
         print()
         print(
@@ -235,9 +280,21 @@ def _run(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(exc)
         return 1
+    design = None
+    # Folder problems are reported by the run itself; the design is only asked about
+    # once the folders can be processed.
+    if not has_errors([*pre.discovery.issues, *pre.exclusion_issues]):
+        design, message = _design_for_run(pre, args)
+        if design is None:
+            print(message)
+            return 1
     print("Axis roles:")
     print(mapping_summary(mapping, pre.metadata.files))
     print()
+    if design is not None:
+        print("Experiment design:")
+        print(design_summary(design))
+        print()
     if args.convert_tiff:
         print(_conversion_note(pre, conversion, args.output))
         print()
@@ -258,12 +315,60 @@ def _run(args: argparse.Namespace) -> int:
         progress=progress,
         convert_tiffs=args.convert_tiff,
         conversion=conversion,
+        design=design,
     )
     if result.issues:
         print(format_issues(result.issues))
         print()
     print(run_summary(result))
     return 0 if result.written else 1
+
+
+def _design_for_run(pre, args: argparse.Namespace) -> tuple[ExperimentDesign | None, str]:
+    """Return the confirmed experiment design, or None and what the user has to do.
+
+    Without a fully confirmed design, a template (keeping every answer already
+    given) is written to the output folder for the user to fill in.
+    """
+    root = pre.discovery.root
+    output = Path(args.output) if args.output else default_output_folder(root)
+    source = Path(args.design) if args.design else output / DESIGN_FILENAME
+    previous = None
+    if source.exists():
+        try:
+            previous = read_experiment_design(source)
+        except DesignFormatError as exc:
+            return None, (
+                f"The experiment design cannot be read: {exc}\n"
+                f"Correct the file, or delete it to get a new template."
+            )
+    elif args.design:
+        return None, f"The experiment design {source} does not exist."
+    design, _ = reconcile_design(previous, pre.dataset.repeats)
+    # Rows confirmed by hand in the file get today's date.
+    design = design.dated(date.today().isoformat())
+    problems = design_issues(design)
+    if not problems:
+        return design, ""
+    if check_output_folder(root, output):
+        # The run reports the output folder; nothing is written inside the experiment.
+        return design, ""
+    target = write_experiment_design(design, output / DESIGN_FILENAME)
+    lines = [
+        format_issues(problems),
+        "",
+        f"The experiment design was written to {target}. Open it in a spreadsheet program "
+        "or a text editor, one row per biological-repeat folder of each condition:",
+        "  - repeat_group: rows with the same value are the same biological repeat across "
+        "conditions (by default the folder name). Change it to pair repeats whose folders "
+        "are named differently; each group may hold one folder per condition.",
+        "  - confirmed: set it to true in every row of a repeat group once you are sure its "
+        "images were prepared and acquired under the same circumstances, so they are "
+        "comparable.",
+        "  - control: set it to true in the rows of control conditions (optional; recorded only).",
+        "Then run again.",
+    ]
+    return None, "\n".join(lines)
 
 
 def _conversion_note(pre, conversion: ConversionSettings, output) -> str:
