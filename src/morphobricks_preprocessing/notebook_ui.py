@@ -156,6 +156,7 @@ class PreprocessingNotebook:
         self.log = _LogCapture()
         self._checked_folder = ""
         self._preview_shown = False
+        self._show_output = True
         self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None
         self._build_folder_step(str(experiment_folder), str(output_folder))
         self._build_axis_step()
@@ -215,9 +216,10 @@ class PreprocessingNotebook:
             Text of the blue "what happens here" box (HTML); None gives this
             notebook's, an empty string leaves the box out.
         show_output
-            False leaves out the "Output folder (optional)" card, which sets where
-            this brick writes its histogram table. The check then uses the default
-            output folder, as it does when the box is left empty.
+            False hides the "Output folder (optional)" card, which sets where this
+            brick writes its histogram table; the check then uses the folder in its
+            box (the default when empty). The card is shown again when the check
+            finds that folder inside the experiment, so it can be fixed.
         show_next
             False hides the "What next?" box, which names this notebook's next
             steps.
@@ -228,6 +230,8 @@ class PreprocessingNotebook:
             The page.
         """
         ui.set_visible(self.folder_next, show_next)
+        self._show_output = show_output
+        ui.set_visible(self.output_card, show_output)
         if intro is None:
             intro = (
                 "<b>What happens here:</b> the folders are scanned, the labels are taken "
@@ -245,7 +249,7 @@ class PreprocessingNotebook:
             [
                 *([ui.intro(intro)] if intro else []),
                 self.folder_card,
-                *([self.output_card] if show_output else []),
+                self.output_card,
                 self.exclude_box,
                 self.check_button,
                 self.folder_status,
@@ -529,6 +533,11 @@ class PreprocessingNotebook:
         )
         self.issue_details.selected_index = None
         ui.set_visible(self.issues_card, bool(pre.issues))
+        # A hidden output card comes back when its folder is the problem to fix.
+        ui.set_visible(
+            self.output_card,
+            self._show_output or any(i.code == "output_inside_experiment" for i in pre.issues),
+        )
         blocking = any(i.code in EXCLUDABLE_CODES for i in pre.issues)
         ui.set_visible(self.exclude_button, blocking)
         self._refresh_folder_next()

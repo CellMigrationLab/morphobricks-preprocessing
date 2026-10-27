@@ -452,8 +452,8 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
 
 - **Embedding steps 1 and 2 (Q24):** `folder_step` and `axis_step` keep this notebook's
   words by default; another brick (MorphoRelate) passes its own `title`, `purpose` and
-  `intro` (HTML; `""` leaves the box out), `show_output=False` to leave out the output
-  folder card, and `show_next=False` to hide the "What next?" box naming this notebook's
+  `intro` (HTML; `""` leaves the box out), `show_output=False` to hide the output folder
+  card (shown again when the check reports `output_inside_experiment`), and `show_next=False` to hide the "What next?" box naming this notebook's
   steps. The widgets and their behaviour are the same either way.
 - **Page and cards:** `ui.page(title, subtitle, children)` wraps a step in a grey page
   (`mb-root`) with a title and a one-sentence purpose. `ui.card(header, children)` gives a

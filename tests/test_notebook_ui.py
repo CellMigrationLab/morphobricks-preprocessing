@@ -453,13 +453,27 @@ def test_folder_step_with_its_own_words_and_no_output_card(experiment):
     assert "Step 1 · Your data" in title and "Step 1 · Check" not in title
     assert purpose == "<div class='mb-subtitle'>Choose the folder with your <b>images</b>.</div>"
     assert intros(found) == ["<div class='mb-intro'><b>Here</b> your folders are read.</div>"]
-    assert nb.output_card not in found and nb.output not in found
+    assert not ui.is_visible(nb.output_card)
     assert nb.folder_card in found and nb.check_button in found and nb.labels_card in found
     # The check works without the card, with the default output folder.
     nb.check_button.click()
     assert nb.preflight is not None and nb.preflight.ok
     nb.labels_confirmed.button.click()
     assert "Go to Step 2" in nb.folder_next.value and not ui.is_visible(nb.folder_next)
+
+
+def test_hidden_output_card_comes_back_when_its_folder_is_inside_the_experiment(experiment):
+    nb = PreprocessingNotebook(str(experiment), output_folder=str(experiment / "out"))
+    page = nb.folder_step(show_output=False)
+    assert nb.output_card in page_parts(page)[2] and not ui.is_visible(nb.output_card)
+    pre = nb.check_folder()
+    assert "output_inside_experiment" in [i.code for i in pre.issues]
+    assert ui.is_visible(nb.output_card)  # the box to fix it is shown
+    nb.output.value = ""
+    assert nb.check_folder().ok
+    assert not ui.is_visible(nb.output_card)
+    nb.folder_step()  # the default page shows it again
+    assert ui.is_visible(nb.output_card)
 
 
 def test_steps_without_an_intro_box():
