@@ -8,8 +8,9 @@ images are never read again (``docs/plan.md`` §7). The format is described in
 ``docs/contract.md`` §9.
 
 The manifest also records, for information only, each file's channel names and
-significant bits when its metadata provides them, and the SHA-256 of the
-experiment design used, so later bricks can check that it was not changed.
+significant bits when its metadata provides them, the SHA-256 of the
+experiment design used, so later bricks can check that it was not changed, and
+the image type the user confirmed, which later bricks normalize by.
 """
 
 from __future__ import annotations
@@ -165,6 +166,13 @@ class RunManifest:
         SHA-256 of the ``experiment_design.csv`` written with this run, or None
         when the run had no experiment design (or in manifests written before it
         was recorded).
+    image_type
+        ``"fluorescence"`` or ``"rgb"``, as the user confirmed it
+        (:mod:`.image_type`); None when the run was not given one (or in
+        manifests written before it was recorded).
+    channels_from_rgb_samples
+        True when the channel axis is the RGB samples axis of images stored as
+        RGB colour; None in manifests written before it was recorded.
     schema_version
         Version of the CSV format.
     manifest_version
@@ -180,6 +188,8 @@ class RunManifest:
     versions: dict[str, str] = field(default_factory=dict)
     written_at: str = ""
     experiment_design_sha256: str | None = None
+    image_type: str | None = None
+    channels_from_rgb_samples: bool | None = None
     schema_version: str = SCHEMA_VERSION
     manifest_version: str = MANIFEST_VERSION
 
@@ -224,6 +234,8 @@ class RunManifest:
             "files": [_file_dict(f) for f in self.files],
             "csv_sha256": self.csv_sha256,
             "experiment_design_sha256": self.experiment_design_sha256,
+            "image_type": self.image_type,
+            "channels_from_rgb_samples": self.channels_from_rgb_samples,
             "versions": dict(self.versions),
         }
 
@@ -264,6 +276,12 @@ class RunManifest:
                     None
                     if data.get("experiment_design_sha256") is None
                     else str(data["experiment_design_sha256"])
+                ),
+                image_type=None if data.get("image_type") is None else str(data["image_type"]),
+                channels_from_rgb_samples=(
+                    None
+                    if data.get("channels_from_rgb_samples") is None
+                    else bool(data["channels_from_rgb_samples"])
                 ),
                 schema_version=str(data["schema_version"]),
             )

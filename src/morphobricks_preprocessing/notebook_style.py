@@ -310,6 +310,18 @@ class ConfirmToggle:
         return self._value
 
     @property
+    def confirmed_text(self) -> str:
+        """Message shown once confirmed."""
+        return self._confirmed_text
+
+    @confirmed_text.setter
+    def confirmed_text(self, text: str) -> None:
+        # The message may name the answer, e.g. the image type chosen.
+        self._confirmed_text = text
+        if self._value:
+            self.message.value = status("ok", text)
+
+    @property
     def disabled(self) -> bool:
         """True while the question cannot be answered yet."""
         return self.button.disabled

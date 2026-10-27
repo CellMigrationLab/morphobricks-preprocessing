@@ -143,6 +143,19 @@ def test_position_id_round_trips_and_is_none_when_absent(tmp_path):
     assert read_manifest(path).files[0].position_id is None
 
 
+def test_image_type_round_trips_and_is_none_when_absent(tmp_path):
+    original = manifest(image_type="rgb", channels_from_rgb_samples=True)
+    path = write_manifest(original, tmp_path / "m.json")
+    assert read_manifest(path) == original
+    data = json.loads(path.read_bytes())
+    assert (data["image_type"], data["channels_from_rgb_samples"]) == ("rgb", True)
+    assert data["manifest_version"] == "1"
+    del data["image_type"], data["channels_from_rgb_samples"]  # written before P4
+    path.write_text(json.dumps(data), encoding="utf-8")
+    read = read_manifest(path)
+    assert read.image_type is None and read.channels_from_rgb_samples is None
+
+
 def test_file_entry_for_reads_size_and_time(tmp_path):
     path = write_tiff(tmp_path / "a.tif")
     found = file_entry_for(tmp_path, "a.tif", ("single",) * 3, prefill_mapping("YX"))

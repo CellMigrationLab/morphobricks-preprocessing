@@ -191,6 +191,8 @@ def run_summary(result: RunResult) -> str:
         f"Wrote {plural(result.plane_count, 'plane')} to {result.csv_path}",
         f"Run manifest: {result.manifest_path}",
     ]
+    if result.image_type is not None:
+        lines.append(f"Image type: {result.image_type}")
     if result.rebuild_reason:
         lines.append(f"All rows were computed because {result.rebuild_reason}.")
     for label, files in (

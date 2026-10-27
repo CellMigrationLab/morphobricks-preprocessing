@@ -73,6 +73,9 @@ src/morphobricks_preprocessing/
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
   design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
                     the folders on reruns, design_issues, read/write experiment_design.csv, load_design
+  image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
+                    TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
+                    brick's check_rgb), image_type_issues (rgb_not_possible)
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
@@ -368,6 +371,21 @@ functions the tests use.
   reconciled template and exits 1. **API** `run_experiment(design=None)` is optional; with
   a design it is written with the table and `experiment_design_sha256` goes in the manifest.
 
+### Image type (contract §13, follow-up P4)
+
+- **Types:** `fluorescence` and `rgb`; RGB needs three channels of an integer type
+  (the normalization brick's `check_rgb`), else `rgb_not_possible` in a run.
+- **Suggestion:** `rgb` only when every analysed image is a TIFF stored as RGB colour
+  (`TiffMetadata.rgb_samples`: photometric RGB, three samples per pixel, axis `S`), the
+  confirmed C role is on `S`, and RGB is possible. Never applied without confirmation.
+- **Notebook:** step 2's "Image type" card appears once the axis roles are confirmed
+  (also when embedded); radio buttons with the suggestion preselected, disabled at
+  fluorescence when RGB is impossible; `ConfirmToggle` **Yes, this is the right image
+  type**; changing roles or folder resets it; step 3 gated on `confirmed_image_type`.
+- **CLI:** `--image-type`, else the suggestion, printed with its reason.
+- **Manifest:** optional top-level `image_type` (null without one) and
+  `channels_from_rgb_samples`; changing the type recomputes nothing.
+
 ### Validation messages (contract §8)
 
 Every expected problem is a `ValidationIssue` with:
@@ -407,6 +425,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Their public names stay importable from `morphobricks_preprocessing` and from the old submodules for one version: module `__getattr__` stand-ins (`_moved.py`), one `DeprecationWarning` per old path naming `morphobricks_normalization.<module>.<name>`, same objects. The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, now §6.2 for the CSV) |
 | Dataset consistency (Q21, P2) | Step 1 "Dataset consistency" panel: balance table (images and technical-repeat folders per condition x biological repeat), `unbalanced_images` (< 0.5 or > 2 x median), `repeat_missing_conditions`, `different_pixel_sizes`, `missing_pixel_size` (OME-Zarr scale included), `different_plane_counts`; `different_sizes` narrowed to width/height; consistency issues shown only in that panel, not in Messages. Warnings only; outputs unchanged |
 | Experiment design (Q22, P3) | Step 1 after the labels: pairing dropdowns, one yellow "Yes, they are comparable" question per repeat group (single whole-experiment question without biological-repeat folders), control checkboxes; `experiment_design.csv` written after every answer; reruns load it and fold the questions behind a Change button; step 3 gated. CLI `run` reads it or `--design`, else writes a template and exits 1. `run_experiment(design=...)` optional; manifest `experiment_design_sha256` (optional key, version 1). Two folders of one condition in a group block that group |
+| Image type (Q29, P4) | Step 2 card after the axis roles: Fluorescence or RGB, suggestion preselected, confirmed with **Yes, this is the right image type**; RGB suggested for TIFF photometric RGB with three samples on the C axis; RGB needs three integer channels (`check_rgb`), else disabled with the reason and `rgb_not_possible` in a run. Manifest keys `image_type`, `channels_from_rgb_samples` (optional, version 1); type changes recompute nothing. CLI `--image-type`, default the printed suggestion |
 | Position identity (Q20, D02) | `position_id` = image name without extension, in every CSV row and manifest file entry; FOV key = labels + `position_id`; duplicates in one leaf folder are the error `duplicate_position_id`. CSV columns and schema 2 unchanged; manifest version 1 with an optional key |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
@@ -695,8 +714,9 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 - **Released as v0.1.0** (27 October 2026), with everything above; the normalization brick
   is pinned to its v0.2.0 (question 28). The next tag, v0.2.0, follows follow-ups P4 and
   P5.
-- **Next (not started):** follow-ups P4–P5 of the normalization plan (image type,
-  intensity checks and plots).
+- **Since v0.1.0:** follow-up P4 of the normalization plan, the image type
+  (question 29).
+- **Next:** follow-up P5 of the normalization plan (intensity checks and plots).
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;
   - the optional `jl-hidecode` JupyterLab extension, which keeps code cells collapsed. It

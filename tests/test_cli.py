@@ -77,6 +77,61 @@ def test_run_writes_the_table(experiment, capsys):
     assert {(r.z, r.channel_count) for r in records} == {(0, 3), (1, 3)}
 
 
+def rgb_experiment(root):
+    rng = np.random.default_rng(0)
+    for rel in ["ctrl/rep1/a.tif", "drug/rep1/a.tif"]:
+        data = rng.integers(0, 200, (2, 8, 8, 3), dtype=np.uint8)
+        write_data(root / rel, data, axes="ZYXS", photometric="rgb")
+    return root
+
+
+def test_check_suggests_the_image_type(experiment, tmp_path, capsys):
+    assert main(["check", str(experiment)]) == 0
+    out = capsys.readouterr().out
+    assert "Suggested image type: fluorescence, because the images are not stored as RGB" in out
+    assert main(["check", str(rgb_experiment(tmp_path / "rgb"))]) == 0
+    assert "Suggested image type: rgb, because the images are stored as RGB colour" in (
+        capsys.readouterr().out
+    )
+
+
+def test_run_uses_and_prints_the_suggested_image_type(tmp_path, capsys):
+    root = rgb_experiment(tmp_path / "exp")
+    confirm_design(root)
+    assert main(["run", str(root), "--axes", "ZYXC"]) == 0
+    out = capsys.readouterr().out
+    assert "Image type: rgb\n  suggested, because the images are stored as RGB colour" in out
+    assert "Give --image-type fluorescence if these are fluorescence images." in out
+    manifest = read_manifest(default_output_folder(root) / "run_manifest.json")
+    assert manifest.image_type == "rgb" and manifest.channels_from_rgb_samples
+    assert main(["run", str(root), "--axes", "ZYXC", "--image-type", "fluorescence"]) == 0
+    out = capsys.readouterr().out
+    assert "Image type: fluorescence\n  given with --image-type" in out
+    assert "Read: " not in out  # changing the type reads nothing again
+    manifest = read_manifest(default_output_folder(root) / "run_manifest.json")
+    assert manifest.image_type == "fluorescence"
+
+
+def test_rgb_is_refused_for_images_that_cannot_be_rgb(experiment, capsys):
+    confirm_design(experiment)
+    assert main(["run", str(experiment), "--axes", "ZCYX"]) == 0
+    out = capsys.readouterr().out
+    assert "Image type: fluorescence" in out
+    assert "Give --image-type rgb if these are rgb images." in out
+    assert main(["run", str(experiment), "--axes", "TCYX", "--image-type", "rgb"]) == 0
+    capsys.readouterr()
+    assert main(["run", str(experiment), "--axes", "ZYCX", "--image-type", "rgb"]) == 1
+    out = capsys.readouterr().out
+    assert "RGB images need exactly three colour channels" in out
+    assert "8 channels of type uint8" in out and "Nothing was written" in out
+
+
+def test_image_type_must_be_known(experiment):
+    with pytest.raises(SystemExit) as excinfo:
+        main(["run", str(experiment), "--axes", "ZCYX", "--image-type", "brightfield"])
+    assert excinfo.value.code == 2
+
+
 def test_run_options_reach_the_run(experiment, tmp_path, capsys):
     out_dir = tmp_path / "results"
     log = tmp_path / "run.log"

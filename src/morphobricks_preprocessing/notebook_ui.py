@@ -8,7 +8,7 @@ The notebook ``notebooks/MorphoBricks_Preprocessing.ipynb`` shows the four steps
    biological repeats belong together across conditions, that they are
    comparable, and which conditions are controls.
 2. **Axes** - review the role of every image axis, look at planes with the
-   preview, and confirm.
+   preview, and confirm; then confirm the image type (fluorescence or RGB).
 3. **Run** - check that everything is ready, see what will happen, and compute
    or update the histogram table.
 4. **Results** - pooled statistics and intensity distributions per group.
@@ -73,6 +73,7 @@ from .design import (
     write_experiment_design,
 )
 from .discovery import check_output_folder, default_output_folder
+from .image_type import FLUORESCENCE, RGB, ImageTypeReview, review_image_type
 from .manifest import MANIFEST_FILENAME, ManifestFormatError, read_manifest
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
@@ -113,6 +114,12 @@ ROLE_OPTIONS = [
     ("X - width (image columns)", "X"),
     ("No role (only for length 1)", "-"),
 ]
+
+IMAGE_TYPE_OPTIONS = [
+    ("Fluorescence - each channel is a separate stain or marker", FLUORESCENCE),
+    ("RGB - colour images (red, green, blue), e.g. brightfield or histology stains", RGB),
+]
+IMAGE_TYPE_NAMES = {FLUORESCENCE: "Fluorescence", RGB: "RGB"}
 
 LEVEL_OPTIONS = [
     ("Condition", "condition"),
@@ -167,6 +174,9 @@ class PreprocessingNotebook:
         The axis roles as currently edited in step 2.
     confirmed_mapping
         The axis roles the user confirmed, or None.
+    confirmed_image_type
+        ``"fluorescence"`` or ``"rgb"`` once the user confirmed the image type
+        in step 2, or None.
     design
         The experiment design as answered in step 1, or None until the labels
         are confirmed.
@@ -183,6 +193,8 @@ class PreprocessingNotebook:
         self.dataset = DatasetReport()
         self.mapping: AxisMapping | None = None
         self.confirmed_mapping: AxisMapping | None = None
+        self.confirmed_image_type: str | None = None
+        self._image_type_review: ImageTypeReview | None = None
         self.result: RunResult | None = None
         self.log = _LogCapture()
         self._checked_folder = ""
@@ -301,11 +313,12 @@ class PreprocessingNotebook:
         intro: str | None = None,
         show_next: bool = True,
     ) -> widgets.Widget:
-        """Step 2: axis roles, preview and confirmation.
+        """Step 2: axis roles, preview and confirmation, then the image type.
 
         The defaults give this notebook's step; another brick embedding it can give
         its own words, since this notebook's explain the roles by the planes its
-        histograms are computed on.
+        histograms are computed on. The image type question follows the confirmed
+        axis roles either way.
 
         Parameters
         ----------
@@ -332,7 +345,8 @@ class PreprocessingNotebook:
                 "<b>Why this matters:</b> every image is cut into flat 2D planes, one per "
                 "depth slice, channel and time point. The roles below are suggested from "
                 "the image metadata, which is not always right, so check them with the "
-                "preview before confirming."
+                "preview before confirming. Then confirm whether the images are fluorescence "
+                "or RGB colour images."
             )
         return ui.page(
             "Step 2 · Review the axis roles" if title is None else title,
@@ -1108,11 +1122,45 @@ class PreprocessingNotebook:
             slider.observe(lambda _: self._render_preview_if_shown(), names="value")
         self.preview_checked.observe(lambda _: self._update_confirm_button())
         self.confirm_button.on_click(lambda _: self._toggle_confirmation())
+        self._build_image_type_card()
+
+    def _build_image_type_card(self) -> None:
+        self.image_type = widgets.RadioButtons(
+            options=IMAGE_TYPE_OPTIONS, value=FLUORESCENCE, layout=widgets.Layout(width="99%")
+        )
+        self.image_type_note = widgets.HTML()
+        self.image_type_checked = ui.ConfirmToggle(
+            "Is this the right image type for your images?",
+            "Fluorescence images have one stain or marker per channel, and later bricks "
+            "normalise each channel on its own. RGB images are colour pictures whose red, "
+            "green and blue channels are normalised together, so their colours are kept. "
+            "The type does not change the histograms.",
+            "Yes, this is the right image type",
+            "Image type confirmed.",
+            "Undo: choose another image type",
+        )
+        self.image_type_card = ui.card(
+            "Image type",
+            [
+                ui.help_text(
+                    "Suggested from the image metadata once the axis roles are confirmed: RGB "
+                    "when the images are stored as RGB colour, fluorescence otherwise. It is "
+                    "recorded in <b>run_manifest.json</b> for later bricks."
+                ),
+                self.image_type,
+                self.image_type_note,
+                self.image_type_checked.widget,
+            ],
+            visible=False,
+        )
+        self.image_type.observe(lambda _: self._show_image_type_note(), names="value")
+        self.image_type_checked.observe(self._image_type_answered)
 
     def _refresh_axis_step(self) -> None:
         pre = self.preflight
         self.axis_next.value = ""
         self._preview_shown = False
+        self._close_image_type()
         if pre is None:
             self.axis_box.children = [
                 widgets.HTML(
@@ -1194,6 +1242,7 @@ class PreprocessingNotebook:
             self.preview_card,
             self.confirm_button,
             self.confirmed_status,
+            self.image_type_card,
             self.axis_next,
         ]
         self._fill_preview_files()
@@ -1387,15 +1436,81 @@ class PreprocessingNotebook:
                 if r is not None
             ]
             self.confirmed_status.value = ui.status("ok", "Axis roles confirmed.", roles)
+            self._open_image_type()
             self._refresh_axis_next()
         else:
             self.confirmed_status.value = ""
+            # The image type depends on the channels the roles give.
+            self._close_image_type()
             self._mapping_changed()
         self._update_confirm_button()
         self._refresh_run_step()
 
+    def _open_image_type(self) -> None:
+        """Suggest the image type for the confirmed roles and ask the user to confirm it."""
+        review = review_axes(
+            self.preflight.metadata,
+            self.confirmed_mapping,
+            missing_as_singleton=self.missing_as_singleton.value,
+        )
+        self._image_type_review = review_image_type(self.preflight.metadata, review)
+        self.image_type_checked.set(False, notify=False)
+        self.confirmed_image_type = None
+        # The suggestion is only preselected; nothing is used until it is confirmed.
+        self.image_type.value = self._image_type_review.suggested
+        self.image_type.disabled = not self._image_type_review.rgb_allowed
+        self.image_type_checked.disabled = False
+        self._show_image_type_note()
+        ui.set_visible(self.image_type_card, True)
+
+    def _close_image_type(self) -> None:
+        self._image_type_review = None
+        self.confirmed_image_type = None
+        self.image_type_checked.set(False, notify=False)
+        self.image_type_note.value = ""
+        ui.set_visible(self.image_type_card, False)
+
+    def _show_image_type_note(self) -> None:
+        review = self._image_type_review
+        if review is None:
+            return
+        lines = [
+            f"Suggested: <b>{IMAGE_TYPE_NAMES[review.suggested]}</b>, because "
+            f"{html.escape(review.reason)}."
+        ]
+        if not review.rgb_allowed:
+            lines.append(f"RGB cannot be chosen: {html.escape(review.rgb_problem)}")
+        kind = "info"
+        if self.image_type.value != review.suggested:
+            kind = "warn"
+            lines.append(
+                f"You chose {IMAGE_TYPE_NAMES[self.image_type.value]}, not the suggested type. "
+                "Confirm only if you are sure."
+            )
+        self.image_type_note.value = ui.status(
+            kind, f"Image type: {IMAGE_TYPE_NAMES[self.image_type.value]}", lines, raw=True
+        )
+
+    def _image_type_answered(self, confirmed: bool) -> None:
+        self.confirmed_image_type = self.image_type.value if confirmed else None
+        review = self._image_type_review
+        self.image_type.disabled = confirmed or review is None or not review.rgb_allowed
+        if confirmed:
+            self.image_type_checked.confirmed_text = (
+                f"Image type confirmed: {IMAGE_TYPE_NAMES[self.confirmed_image_type]}."
+            )
+        if self.confirmed_mapping is not None:
+            self._refresh_axis_next()
+        self._refresh_run_step()
+
     def _refresh_axis_next(self) -> None:
-        if not self.labels_confirmed.value:
+        if self.confirmed_image_type is None:
+            self.axis_next.value = ui.next_steps(
+                "Confirm the image type in Step 2.",
+                "Check the suggested type under Image type, then click Yes, this is the right "
+                "image type.",
+            )
+        elif not self.labels_confirmed.value:
             self.axis_next.value = ui.next_steps(
                 "Go to Step 1 and confirm the folder labels.",
                 "Review the labels and click Yes, the labels are correct before running Step 3.",
@@ -1762,6 +1877,7 @@ class PreprocessingNotebook:
             (pre is not None and self.labels_confirmed.value, "Confirm the labels (step 1)"),
             (self._design_confirmed(), "Confirm the biological repeats (step 1)"),
             (self.confirmed_mapping is not None, "Confirm the axis roles (step 2)"),
+            (self.confirmed_image_type is not None, "Confirm the image type (step 2)"),
         ]
         missing = [text for done, text in items if not done]
         if missing:
@@ -1862,6 +1978,11 @@ class PreprocessingNotebook:
             "columns) and "
             f"<b>{MANIFEST_FILENAME}</b> (what was read, with which settings).",
         ]
+        if self.confirmed_image_type is not None:
+            lines.append(
+                f"Image type: <b>{IMAGE_TYPE_NAMES[self.confirmed_image_type]}</b>, recorded in "
+                "the manifest for later bricks (the histograms are the same for either type)."
+            )
         files = self.preflight.metadata.files
         tiffs = sum(not f.is_ome_zarr for f in files)
         zarrs = len(files) - tiffs
@@ -1928,6 +2049,7 @@ class PreprocessingNotebook:
                     convert_tiffs=self._convert_tiffs(),
                     conversion=self._conversion_settings(),
                     design=self.design,
+                    image_type=self.confirmed_image_type,
                 )
         except Exception as exc:  # unexpected failures still get a readable message
             self.log.lines.append(traceback.format_exc())

@@ -192,10 +192,25 @@ results or comparing another grouping.
      lists them; press **Yes, they have a single plane there** if that is the case.
      Once you confirm the axis roles, this resolves the missing-axis error for step 3.
      Any other errors still need to be fixed before running.
+   - Once the axis roles are confirmed, **Image type** asks whether the images are
+     **Fluorescence** (each channel is a separate stain or marker) or **RGB** (colour
+     images, such as brightfield or histology stains). Later bricks normalise the two types
+     differently: fluorescence channel by channel, RGB with the red, green and blue channels
+     together (StarDist's method), so the colours are kept. The histograms are the same for
+     both types.
+     - RGB is suggested when the images are stored as RGB colour (three colour samples per
+       pixel) and those samples are the channels; fluorescence otherwise. The suggestion is
+       only preselected: press **Yes, this is the right image type** to confirm it, or choose
+       the other type first. An amber line reminds you when you choose against the
+       suggestion. Step 3 runs only once the type is confirmed.
+     - RGB needs exactly three channels of a whole-number pixel type (8- or 16-bit colour).
+       For other images the choice is greyed out at Fluorescence, with the reason.
+     - Changing the axis roles asks for the image type again. The type is recorded in
+       **run_manifest.json** (§6); changing it on a later run reads no image again.
 3. **Compute the histograms.**
    - **Before you run** lists anything still to do.
-   - **What will happen** names the output folder and files, and says whether an earlier
-     run was found and what will be read. Once the axis roles are confirmed it also names
+   - **What will happen** names the output folder and files and the image type, and says
+     whether an earlier run was found and what will be read. Once the axis roles are confirmed it also names
      the images whose planes are too large for the memory limit and will be read in
      blocks, and, in a red box, any image that cannot be read within the limit at all
      (the run would stop; raise the limit or exclude the image).
@@ -273,6 +288,12 @@ morphobricks-preprocessing run /data/exp1 --axes ZCYX
 `T`, or `-` for a length-1 dimension without a role. Roles are never taken from metadata
 without being stated.
 
+`--image-type fluorescence` or `--image-type rgb` gives the image type (§4, step 2).
+Without it, `run` uses the type suggested from the image headers and prints it, with why it
+was suggested and how to choose the other one; `check` prints the suggestion too. `rgb`
+for images that are not three channels of a whole-number pixel type stops the run
+(`rgb_not_possible`).
+
 `run` also needs the experiment design (§4, step 1). It reads `experiment_design.csv` from
 the output folder (or the file given with `--design`). The first time, or when folders were
 added, it writes that file and stops, so you can fill it in with a spreadsheet program or a
@@ -288,6 +309,7 @@ the design is confirmed. Other options:
 | `--bins N` | Bins per plane |
 | `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` |
 | `--missing-as-singleton` | Confirm that images lacking some dimensions have one plane along them |
+| `--image-type fluorescence\|rgb` | The image type (default: the suggested one, printed) |
 | `--design FILE` | The confirmed experiment design (default: `experiment_design.csv` in the output folder); it is copied to the output folder |
 | `--force-rebuild` | Recompute every row |
 | `--convert-tiff` | Convert the TIFF images to OME-Zarr first and process the copies (needs the `zarr` extra); prints the disk space needed |
@@ -322,8 +344,9 @@ The default output folder is next to the experiment folder:
   Later bricks read the pairing from it (`read_experiment_design`). Format in
   [contract.md](contract.md) §12.
 - **`run_manifest.json`:** what the run read and with which settings: labels, axis roles,
-  bin count, memory limit, excluded images, package versions, the fingerprint of the
-  experiment design, and each image's position, size and modification time. Channel names and significant bits are recorded when the metadata
+  the image type (and whether the channels are RGB colour samples), bin count, memory
+  limit, excluded images, package versions, the fingerprint of the experiment design, and
+  each image's position, size and modification time. Channel names and significant bits are recorded when the metadata
   provides them, and whether the image's planes were too large to read whole and are read
   in blocks. Format in [contract.md](contract.md) §9.
 - **`ome_zarr/`** (only when TIFF images are converted): one `.ome.zarr` folder per TIFF
@@ -356,7 +379,9 @@ Run the notebook or `run` again after adding, changing or removing images:
   added);
 - everything is recomputed when the bin count, the axis roles or the pixel type changed,
   when the table was edited by hand or written by an earlier version of the brick, or when
-  you ask for it.
+  you ask for it;
+- changing only the image type reads nothing again: the histograms are the same for both
+  types, and only the manifest records the new type.
 
 To leave out images, for example a damaged file, list them under *Exclude images* (one per
 line) or pass `--exclude`. Excluded images are not read, are listed in the messages and the
@@ -405,6 +430,7 @@ continues.
 | `unbalanced_images` | Warning | A condition and biological repeat has fewer than half or more than twice the median number of images. Check for missing, misplaced or duplicated images. |
 | `repeat_missing_conditions` | Warning | A biological repeat is not found in every condition. It is still used. If it has another folder name in some condition, pair it in the experiment design (step 1). |
 | `design_not_confirmed` | Error | Some repeat groups are not confirmed as comparable. Confirm them in step 1, or set `confirmed` to `true` in `experiment_design.csv`. |
+| `rgb_not_possible` | Error | The image type RGB was chosen, but the images are not three channels of a whole-number pixel type. Choose fluorescence, or check the axis roles: the RGB samples must have the role C. |
 | `repeat_group_conflict` | Error | A repeat group holds two folders of the same condition. Move one into another group. |
 | `channel_names_differ` | Warning | Channel names differ between images at the same position. Check the channel order. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
@@ -442,6 +468,18 @@ pairing = design.repeat_groups()  # {(condition, biological_repeat): repeat_grou
 ```
 
 Later bricks read the file with `read_experiment_design(path)`.
+
+The image type is optional too: `run_experiment(..., image_type="rgb")` records it in the
+manifest, and without it the manifest records none. `review_image_type` gives the
+suggestion and whether RGB is possible, from the headers and the axis roles:
+
+```python
+from morphobricks_preprocessing import review_axes, review_image_type
+
+suggestion = review_image_type(check.metadata, review_axes(check.metadata, mapping))
+print(suggestion.suggested, suggestion.reason, suggestion.rgb_problem)
+result = run_experiment("/data/exp1", mapping, image_type=suggestion.suggested)
+```
 
 Reading the table, group statistics and normalisation parameters come from the
 normalization brick (`morphobricks_normalization`, installed with this package):

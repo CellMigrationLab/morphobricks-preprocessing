@@ -340,6 +340,12 @@ API, CLI). The notebook and CLI only call the API.
   columns; its channels read one at a time (`planes.iter_xyc_planes`); images with
   different numbers of channels are an error before any image is read; earlier tables are
   recomputed on the next run. *Implemented, see question 27.*
+- **Image type (follow-up P4 of the normalization plan):** after the axis roles, step 2
+  asks whether the images are fluorescence or RGB, suggesting RGB for TIFF images stored as
+  RGB colour on the channel axis (`image_type`, `metadata.TiffMetadata.rgb_samples`); RGB
+  needs three channels of an integer type. The manifest records the type; the command line
+  takes `--image-type` or prints the suggestion. Outputs are otherwise unchanged.
+  *Implemented, see question 29.*
 
 ## 11. Tests and acceptance criteria
 
@@ -691,3 +697,25 @@ Raised during review; to be decided before the milestones that need them:
     depends on the normalization brick's release v0.2.0 (tag, not commit) instead of the
     Milestone 2b merge commit `0e53e67`; v0.2.0 adds only RGB and intensity checks, which
     this brick does not call yet. The next tag, v0.2.0, follows follow-ups P4 and P5.*
+29. How is the image type, fluorescence or RGB, chosen and recorded (normalization plan
+    N33, N34, its contract §5, follow-up P4)?
+    *Decided (27 October 2026): after the axis roles are confirmed, step 2 shows an
+    "Image type" card with the two types, the suggestion preselected and the yellow question
+    "Is this the right image type for your images?" answered with **Yes, this is the right
+    image type** (Undo to change it); nothing is used until it is confirmed, and step 3 stays
+    locked until then. RGB is suggested when every analysed image is a TIFF stored as RGB
+    colour (photometric RGB, three samples per pixel, read from the header as
+    `TiffMetadata.rgb_samples`), the confirmed C role is on its samples axis, and RGB is
+    possible; fluorescence otherwise (OME-Zarr images, grey samples, RGB with alpha). RGB
+    needs exactly three channels of an integer pixel type, the rule of the normalization
+    brick's `check_rgb`; otherwise the choice stays at fluorescence with the reason shown
+    (ipywidgets cannot disable one radio button, so the whole choice is disabled), and
+    `run_experiment(image_type="rgb")` is the error `rgb_not_possible`. Changing the axis
+    roles or the folder asks again; the card is the same when step 2 is embedded by another
+    brick (question 26). Agreed with the owner: the manifest gains two optional top-level
+    keys, `image_type` (null when the run was given none, as `run_experiment` takes it
+    optionally like the design of question 22) and `channels_from_rgb_samples`; it stays
+    version 1. Changing only the type recomputes nothing. The command line takes
+    `--image-type fluorescence|rgb`, or uses the suggestion and prints it with the reason;
+    `check` prints the suggestion. `plane_histograms.csv` and `experiment_design.csv` do not
+    change.*
