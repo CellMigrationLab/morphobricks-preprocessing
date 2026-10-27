@@ -16,6 +16,7 @@ from morphobricks_preprocessing import (
     inspect_images,
     inspect_tiff,
     iter_planes,
+    iter_xyc_planes,
     plane_layout,
     prefill_mapping,
     read_plane,
@@ -176,17 +177,29 @@ def test_rgb_samples_are_read_as_channels(tmp_path, page_reads, kwargs):
 
 
 def test_confirmed_missing_axis_gets_coordinate_zero(tmp_path):
-    full = write_data(tmp_path / "a.tif", random_data((2, 3, 6, 7), "uint8"), axes="ZCYX")
+    full = write_data(tmp_path / "a.tif", random_data((2, 3, 6, 7), "uint8"), axes="ZTYX")
     data = random_data((2, 6, 7), "uint8", seed=1)
     part = write_data(tmp_path / "b.tif", data, axes="ZYX")
     report = inspect_images(tmp_path, ["a.tif", "b.tif"])
-    review = review_axes(report, prefill_mapping("ZCYX"), missing_as_singleton=True)
+    review = review_axes(report, prefill_mapping("ZTYX"), missing_as_singleton=True)
     assert review.ok
 
     planes = list(iter_planes(part, review.file_mappings["b.tif"]))
-    assert [p.coordinates for p in planes] == [{"z": z, "c": 0, "t": None} for z in range(2)]
+    assert [p.coordinates for p in planes] == [{"z": z, "c": None, "t": 0} for z in range(2)]
     np.testing.assert_array_equal(planes[1].pixels, data[1])
     assert len(list(iter_planes(full, review.file_mappings["a.tif"]))) == 6
+    rows = list(iter_xyc_planes(part, review.file_mappings["b.tif"]))
+    assert [(p.z, p.t, p.channel_count) for p in rows] == [(0, 0, 1), (1, 0, 1)]
+
+
+def test_missing_channel_axis_gives_one_channel(tmp_path):
+    data = random_data((2, 6, 7), "uint8")
+    path = write_data(tmp_path / "b.tif", data, axes="ZYX")
+    mapping = AxisMapping("ZYX", "ZYX", singleton_roles=("C",))
+    rows = list(iter_xyc_planes(path, mapping))
+    assert [(p.z, p.t, p.channel_count) for p in rows] == [(0, None, 1), (1, None, 1)]
+    plane = rows[0].channel(0)
+    assert plane.coordinates == {"z": 0, "c": 0, "t": None}
 
 
 def test_pyramidal_file_is_read_at_full_resolution(tmp_path):
@@ -306,9 +319,24 @@ def test_memory_estimate_covers_page_plane_and_histogram(tmp_path):
     assert layout.page_shape == (60, 70, 3)
     assert layout.page_nbytes == 60 * 70 * 3
     histogram = estimate_histogram_memory(60 * 70, np.dtype("uint8"))
+    # The finished bin counts of the plane's three channels are kept for its row.
+    assert layout.channel_count == 3
+    finished = 3 * 8 * 256
     assert layout.memory_estimate == (
-        layout.page_nbytes + layout.encoded_nbytes + 60 * 70 + histogram
+        layout.page_nbytes + layout.encoded_nbytes + 60 * 70 + histogram + finished
     )
+
+
+def test_memory_estimate_covers_every_channel_of_a_plane(tmp_path):
+    path = write_data(tmp_path / "a.tif", random_data((4, 400, 500), "uint16"), axes="CYX")
+    channels = plane_layout(path, AxisMapping("CYX", "CYX"))
+    times = plane_layout(path, AxisMapping("CYX", "TYX"))
+    assert (channels.channel_count, times.channel_count) == (4, 1)
+    assert channels.memory_estimate - times.memory_estimate == 3 * 8 * 65_536
+    # One decision for every channel: a limit between the two reads the channels in blocks.
+    limit = times.memory_estimate
+    assert plane_layout(path, AxisMapping("CYX", "CYX"), memory_limit=limit).in_blocks
+    assert not plane_layout(path, AxisMapping("CYX", "TYX"), memory_limit=limit).in_blocks
 
 
 def test_memory_estimate_counts_the_whole_page_of_a_volume(tmp_path):
@@ -364,7 +392,8 @@ def test_memory_estimate_depends_on_bin_count(tmp_path):
     mapping = prefill_mapping("YX")
     small = plane_layout(path, mapping, bin_count=2).memory_estimate
     large = plane_layout(path, mapping, bin_count=65_536).memory_estimate
-    assert large - small == 4 * 8 * (65_536 - 2)
+    # Temporary arrays of the histogram, and the finished counts of its one channel.
+    assert large - small == (4 * 8 + 8) * (65_536 - 2)
 
 
 def test_check_planes_reports_planes_over_the_limit(tmp_path):
@@ -518,6 +547,78 @@ def test_planes_in_blocks_match_the_source(tmp_path, segment_reads, shape, axes,
         assert (in_blocks.binning_min, in_blocks.binning_max) == (whole.pixel_min, whole.pixel_max)
         np.testing.assert_array_equal(in_blocks.counts, whole.counts)
     assert segment_reads  # read piece by piece, never as whole pages
+
+
+# XYC planes: one row of the table each (follow-up P3b) ---------------------------------
+
+
+def expected_xyc(data, roles):
+    """Reference: the channel planes of every (z, t) position, in channel order."""
+    planes = {}
+    for coords, pixels in expected_planes(data, roles):
+        planes.setdefault((coords["z"], coords["t"]), []).append(pixels)
+    return planes
+
+
+def assert_xyc_planes_match(planes, expected, bins=None):
+    """Every XYC plane's histograms equal those of its channel planes read whole."""
+    seen = []
+    for plane in planes:
+        channels = expected[(plane.z, plane.t)]
+        assert plane.channel_count == len(channels)
+        histograms = plane.histograms(bins)
+        assert len(histograms) == len(channels)
+        for hist, pixels in zip(histograms, channels, strict=True):
+            whole = compute_plane_histogram(pixels.astype(pixels.dtype.newbyteorder("=")), bins)
+            assert (hist.pixel_min, hist.pixel_max) == (whole.pixel_min, whole.pixel_max)
+            assert hist.total_pixel_count == whole.total_pixel_count
+            np.testing.assert_array_equal(hist.counts, whole.counts)
+        seen.append((plane.z, plane.t))
+    assert sorted(seen, key=str) == sorted(expected, key=str)
+
+
+@pytest.mark.parametrize(("shape", "axes", "kwargs", "roles"), LAYOUTS)
+def test_xyc_planes_hold_every_channel(tmp_path, page_reads, shape, axes, kwargs, roles):
+    data = random_data(shape, "uint16")
+    path = write_data(tmp_path / "a.tif", data, axes=axes, **kwargs)
+    info = inspect_tiff(path)
+    mapping = AxisMapping(info.axes, roles) if roles else prefill_mapping(info.axes)
+    assert_xyc_planes_match(iter_xyc_planes(path, mapping), expected_xyc(data, mapping.roles))
+    # Every page is decoded once, also when the channels lie in different pages.
+    with tifffile.TiffFile(path) as tif:
+        page_count = len(tif.series[0].pages)
+    assert sorted(page_reads) == list(range(page_count))
+
+
+def test_rgb_page_is_decoded_once_for_its_three_channels(tmp_path, page_reads):
+    data = random_data((2, 6, 7, 3), "uint8")
+    path = write_data(tmp_path / "a.tif", data, axes="ZYXS", photometric="rgb")
+    mapping = prefill_mapping("ZYXS")
+    seen = []
+    for plane in iter_xyc_planes(path, mapping):
+        seen.append((plane.z, plane.channel_count))
+        for c in range(3):
+            np.testing.assert_array_equal(plane.channel(c).pixels, data[plane.z, :, :, c])
+        with pytest.raises(IndexError, match="3 channel"):
+            plane.channel(3)
+    assert seen == [(0, 3), (1, 3)]
+    assert page_reads == [0, 1]
+
+
+@pytest.mark.parametrize(("shape", "axes", "kwargs", "roles"), BLOCK_LAYOUTS)
+def test_xyc_planes_in_blocks_give_the_histograms_read_whole(
+    tmp_path, segment_reads, shape, axes, kwargs, roles
+):
+    dtype = "uint8" if "photometric" in kwargs else "uint16"
+    data = random_data(shape, dtype)
+    path = write_data(tmp_path / "a.tif", data, axes=axes, **kwargs)
+    info = inspect_tiff(path)
+    mapping = AxisMapping(info.axes, roles) if roles else prefill_mapping(info.axes)
+    limit = smallest_limit(path, mapping)
+    assert plane_layout(path, mapping, memory_limit=limit).in_blocks
+    planes = iter_xyc_planes(path, mapping, memory_limit=limit)
+    assert_xyc_planes_match(planes, expected_xyc(data, mapping.roles))
+    assert segment_reads
 
 
 @pytest.mark.parametrize("dtype", DTYPES + [">u2", ">i4", ">f4", ">f8"])

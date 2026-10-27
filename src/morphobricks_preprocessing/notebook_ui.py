@@ -83,7 +83,13 @@ from .planes import (
     plane_layout,
     read_plane,
 )
-from .report import LEVEL_NAMES, group_summaries, group_table, issue_counts
+from .report import (
+    LEVEL_NAMES,
+    channel_histograms,
+    group_summaries,
+    group_table,
+    issue_counts,
+)
 from .run import Preflight, RunResult, preflight, run_experiment
 from .validation import ValidationIssue, has_errors, plural
 from .zarr_export import (
@@ -1852,7 +1858,8 @@ class PreprocessingNotebook:
                 f" ({len(self.preflight.excluded):,} excluded)." if self.preflight.excluded else "."
             ),
             f"Output folder: <b>{html.escape(str(output))}</b>",
-            f"Files written: <b>{OUTPUT_FILENAME}</b> (one row per plane) and "
+            f"Files written: <b>{OUTPUT_FILENAME}</b> (one row per plane, its channels in "
+            "columns) and "
             f"<b>{MANIFEST_FILENAME}</b> (what was read, with which settings).",
         ]
         files = self.preflight.metadata.files
@@ -2181,7 +2188,7 @@ class PreprocessingNotebook:
         summaries = group_summaries(records, level, percentiles)
         groups = group_records(records, level)
         images = {r.source_relative_path for r in records}
-        first = records[0].histogram if records else None
+        first = records[0].channel_histogram(0) if records else None
         self.stats_tiles.value = ui.tiles(
             [
                 ("🧪", f"{len(summaries):,}", f"{LEVEL_NAMES[level]} groups"),
@@ -2439,7 +2446,7 @@ def distribution_png(groups: dict[tuple[str, ...], list]) -> bytes | None:
     curves = []
     for key, members in list(groups.items())[:_MAX_PLOTTED_GROUPS]:
         try:
-            pooled = PooledHistogram(members)
+            pooled = PooledHistogram(channel_histograms(members))
         except NoValidPixelsError:
             continue
         cumulative = np.cumsum(pooled.counts) / pooled.pixel_count

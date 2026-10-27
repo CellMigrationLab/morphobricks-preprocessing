@@ -102,11 +102,14 @@ To change a label, rename the folder and check again.
   separately or exclude it.
 - **Pixel types:** 8-, 16-, 32- and 64-bit signed or unsigned integers, 32- and 64-bit
   floats. All images of an experiment must have the same pixel type.
-- **Dimensions:** every image is split into 2D planes along Z (depth), C (channel) and T
-  (time). All TIFF images must have their dimensions in the same order; the lengths
-  (number of slices, time points, size) may differ. OME-Zarr images may store them in
-  another order: they are matched by role, so z = 2, c = 1 means the same plane in every
-  image.
+- **Dimensions:** every image is split into planes along Z (depth) and T (time); a plane
+  holds every channel (C) of the image at that Z and T, one row of the table. All TIFF
+  images must have their dimensions in the same order; the number of slices, time points
+  and the size may differ. OME-Zarr images may store them in another order: they are
+  matched by role, so z = 2, c = 1 means the same slice and channel in every image.
+- **Channels:** all images of an experiment must have the same number of channels (an
+  image without a channel dimension has one). Split images with other channels into a
+  separate experiment, or exclude them.
 - **RGB images:** the three colour samples are treated as channels (C).
 - **Pyramidal images:** only the full-resolution level is read.
 - **Not supported yet:** files with several positions or scenes (several image series),
@@ -165,7 +168,8 @@ results or comparing another grouping.
      warnings** to see the checks that compare the images with each other: pixel type,
      dimensions, width and height, numbers of channels, slices and time points, channel
      names and physical pixel sizes (see §8). Warnings never stop you; they say what to
-     check.
+     check. Images with different numbers of channels, pixel types or dimension orders are
+     errors: fix them before going on.
    - **Messages** lists the other problems (folders, files that are not images, unreadable
      images), with the warning count visible in orange and the error count in red.
      Expand **Show warnings and errors** to see each problem, the affected files and what
@@ -177,7 +181,8 @@ results or comparing another grouping.
    - A line under each dropdown says what the choice means, for example *3 depth slices,
      numbered z = 0 to 2*. A blue line says how many planes each image will be split into.
    - Click **Show preview** and move the sliders to look at different slices, channels and
-     time points of any image. Each picture should be a normal image of your sample;
+     time points of any image. If the roles you choose give the images different numbers of
+     channels, a message says so and step 3 stays locked. Each picture should be a normal image of your sample;
      stripes or a smear mean X or Y is on the wrong dimension. Brightness is stretched for
      display only.
    - If the preview looks right, press **Yes, the preview looks right**, then click
@@ -240,7 +245,8 @@ results or comparing another grouping.
      are calculated and the plot is drawn. The button says **Calculating…** and stays
      disabled until the calculation finishes or an error is shown; you can then try again.
    - The table lists pooled statistics per group: minimum, maximum, mean, standard
-     deviation, median and percentiles.
+     deviation, median and percentiles. Every channel of a group is pooled together, as
+     before; its **planes** column counts each channel of a plane as one plane.
    - The plot compares the groups' intensity distributions: curves further right are
      brighter.
 
@@ -298,13 +304,18 @@ Both commands exit with status 1 when an error blocks processing.
 The default output folder is next to the experiment folder:
 `/data/exp1` → `/data/exp1_MorphoBricks_Preprocessing`.
 
-- **`plane_histograms.csv`:** one row per plane with the position (`position_id`, the file
-  name without its extension), the file name, the zero-based plane
-  coordinates `z`, `c`, `t` (0 when the image has no such dimension), the three
-  labels, the pixel type, the exact minimum and maximum, pixel counts and the histogram.
-  The table is very wide (one column per bin), so spreadsheet programs may not open it
-  completely; read it in Python with `read_plane_histograms()`. The columns are defined in
-  the [normalization brick's contract](https://github.com/CellMigrationLab/morphobricks-normalization/blob/main/docs/contract.md) §6.2.
+- **`plane_histograms.csv`:** one row per plane (every channel of an image at one depth
+  slice and time point) with the position (`position_id`, the file name without its
+  extension), the file name, the zero-based plane coordinates `z` and `t` (0 when the
+  image has no such dimension), the three labels, the pixel type and the number of
+  channels; then, for each channel, its exact minimum and maximum, pixel counts and
+  histogram, in columns ending in the channel number (`Intensity_MinIntensity_C0`,
+  `Histogram_Count_C1_00042`, …). The table is very wide (one column per bin and channel),
+  so spreadsheet programs may not open it completely; read it in Python with
+  `read_plane_histograms()`. The columns are defined in the [normalization brick's
+  contract](https://github.com/CellMigrationLab/morphobricks-normalization/blob/main/docs/contract.md)
+  §6.2 (schema version 3). A table written by an earlier version, with one row per channel,
+  is recomputed on the next run; later bricks ask you to run this brick again on it.
 - **`experiment_design.csv`:** one row per biological-repeat folder of each condition: its
   repeat group, whether its condition is a control, its image and technical-repeat counts,
   and whether and when the repeat group was confirmed. Written in step 1 and by every run.
@@ -344,7 +355,8 @@ Run the notebook or `run` again after adding, changing or removing images:
 - rows of deleted or renamed images are removed (a renamed image counts as removed and
   added);
 - everything is recomputed when the bin count, the axis roles or the pixel type changed,
-  when the table was edited by hand, or when you ask for it.
+  when the table was edited by hand or written by an earlier version of the brick, or when
+  you ask for it.
 
 To leave out images, for example a damaged file, list them under *Exclude images* (one per
 line) or pass `--exclude`. Excluded images are not read, are listed in the messages and the
@@ -372,6 +384,7 @@ continues.
 | `multiple_series` | Error | A file or OME-Zarr folder holds several images (positions, scenes, series, wells or fields). Export them separately, or exclude it. |
 | `unsupported_dtype` | Error | Unsupported pixel type (e.g. float16). Convert, or exclude it. |
 | `mixed_dtypes` | Error | Images have different pixel types. Process them separately or convert. |
+| `different_channel_counts` | Error | Images have different numbers of channels (an image without a channel dimension has one). Every image of an experiment must have the same channels: split the others into a separate experiment, or exclude them. If a dimension got the channel role by mistake, correct the axis roles. |
 | `inconsistent_dimensions`, `inconsistent_mapping` | Error | Images have their dimensions in a different order. Export them the same way or process separately. |
 | `missing_axes` | Error | Some images lack a dimension. Confirm they have one plane along it (step 2), or export them again. |
 | `ambiguous_missing_axes` | Error | It is unclear which dimension an image lacks. Export it again. |
@@ -386,7 +399,7 @@ continues.
 | `non_tiff_file`, `empty_folder`, `tiff_outside_leaf` | Warning | Files or folders that are skipped. |
 | `planes_read_in_blocks` | Warning | Planes too large for the memory limit are read in blocks. The results are the same; nothing to do. Raise the limit to read them whole, which is faster. |
 | `different_sizes` | Warning | Images have different widths or heights. Usually expected; otherwise check the camera settings. |
-| `different_plane_counts` | Warning | Images have different numbers of channels, depth slices, time points or other planes. Images with more planes weigh more in pooled statistics. Check the acquisition if this is not expected. |
+| `different_plane_counts` | Warning | Images have different numbers of depth slices, time points or other planes. Images with more planes weigh more in pooled statistics. Check the acquisition if this is not expected. |
 | `different_pixel_sizes` | Warning | The physical pixel size or z-step in the metadata differs between images (for example different objectives). Check the microscope settings if this is not intended. |
 | `missing_pixel_size` | Warning | Some images give their pixel size in the metadata and others do not, so it cannot be checked. Export them again with metadata if needed. |
 | `unbalanced_images` | Warning | A condition and biological repeat has fewer than half or more than twice the median number of images. Check for missing, misplaced or duplicated images. |
@@ -395,7 +408,7 @@ continues.
 | `repeat_group_conflict` | Error | A repeat group holds two folders of the same condition. Move one into another group. |
 | `channel_names_differ` | Warning | Channel names differ between images at the same position. Check the channel order. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
-| `no_finite_pixels` | Warning | Some planes have no finite pixels; they are left out of group statistics. |
+| `no_finite_pixels` | Warning | Some planes have a channel without finite pixels; those channels are left out of group statistics. |
 | `excluded_images`, `excluded_path_not_found` | Warning | Images excluded as requested, or an excluded path that matches no image. |
 | `zarr_not_installed` | Error | OME-Zarr images, or converting TIFF images, need the `zarr` extra. Install it, exclude the OME-Zarr images, or read the TIFF images directly. |
 

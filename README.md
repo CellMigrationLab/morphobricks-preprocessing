@@ -3,8 +3,9 @@
 [![CI](https://github.com/CellMigrationLab/morphobricks-preprocessing/actions/workflows/ci.yml/badge.svg)](https://github.com/CellMigrationLab/morphobricks-preprocessing/actions/workflows/ci.yml)
 
 The preprocessing brick of MorphoBricks. It reads an experiment folder of
-microscopy TIFFs, computes one intensity histogram per 2D plane, and writes them,
-with each plane's experimental labels, to `plane_histograms.csv`. Later bricks
+microscopy TIFFs, computes one intensity histogram per channel of every plane, and writes
+them, with each plane's experimental labels, to `plane_histograms.csv`: one row per plane
+(an image at one depth slice and time point), each channel in its own columns. Later bricks
 (for example patch extraction) use that table to calculate normalization
 parameters for any group of images without rereading the pixels.
 
@@ -21,12 +22,14 @@ Pre-alpha. Implemented and tested:
 - Folder discovery and validation (`discovery`, `validation`)
 - TIFF header inspection without reading pixels (`metadata`)
 - Dataset consistency warnings in the folder check: images per condition and biological
-  repeat, repeats missing from some conditions, differing plane counts and pixel sizes
-  (`dataset`, `physical_sizes`)
+  repeat, repeats missing from some conditions, differing plane counts and pixel sizes,
+  and an error for differing numbers of channels (`dataset`, `metadata`,
+  `physical_sizes`)
 - Axis mapping: prefill from metadata, validation, applying one mapping to every
   file (`axes`)
-- Reading TIFFs one 2D plane at a time, with a memory limit and a preview plane;
-  planes too large for the limit are read in blocks with identical results (`planes`)
+- Reading TIFFs one 2D plane at a time, with a memory limit and a preview plane, and the
+  channels of a table row one after another; planes too large for the limit are read in
+  blocks with identical results (`planes`)
 - The experiment design: pairing biological repeats across conditions, confirming they
   are comparable, and marking controls, in `experiment_design.csv` (`design`)
 - Running an experiment end to end and updating earlier output incrementally, with a
@@ -34,9 +37,10 @@ Pre-alpha. Implemented and tested:
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
   and a command line (`morphobricks-preprocessing check` / `run`)
 
-From the normalization brick (`morphobricks_normalization`, a required dependency):
-per-plane histograms (`histogram`), the histogram table (`csv_io`), pooled group
-statistics (`pooling`) and normalization parameters (`normalization`). Importing these
+From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
+to the commit of its Milestone 2b until its v0.2.0 release): per-plane histograms
+(`histogram`), the histogram table (`csv_io`, schema version 3), pooled group statistics
+(`pooling`) and normalization parameters (`normalization`). Importing these
 names from `morphobricks_preprocessing` still works for one version, with a
 `DeprecationWarning`.
 
@@ -110,22 +114,22 @@ record = PlaneRecord(
     condition="control",
     biological_repeat="bio_rep1",
     technical_repeat="tech_rep1",
-    histogram=compute_plane_histogram(plane),
+    histograms=[compute_plane_histogram(plane)],  # one per channel
 )
 write_plane_histograms([record], "plane_histograms.csv")
 
-# In a later brick: pool any group and derive normalization parameters
+# In a later brick: pool one channel of any group and derive normalization parameters
 records = read_plane_histograms("plane_histograms.csv")
 for key, members in group_records(records, "condition").items():
-    pooled = PooledHistogram(members)
+    pooled = PooledHistogram(members, channel=0)
     params = percentile_range(pooled, low=1, high=99.8)
     normalized = params.apply(plane, clip=(0, 1))
 ```
 
 ## How the statistics work
 
-- Every plane is binned over **its own minimum to maximum**, with the same number
-  of bins for every plane. Adding images never changes existing rows.
+- Every channel of every plane is binned over **its own minimum to maximum**, with
+  the same number of bins for every plane. Adding images never changes existing rows.
 - Integer bins have **whole-number limits**. When a plane's range fits within
   the bin count (always the case for 8- and 16-bit images with the default
   65,536 bins), the histogram is exact.

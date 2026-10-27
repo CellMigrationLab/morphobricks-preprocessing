@@ -13,9 +13,19 @@ For OME-Zarr images, each plane is read on its own from the level-0 array; zarr
 decodes only the chunks the plane touches. A chunk that spans several planes is
 decoded again for each of them, which costs time but never memory.
 
+A row of the histogram table is an XYC plane: every channel of an image at one
+Z and T position (normalization contract §6.2). :func:`iter_xyc_planes` yields
+them; their channels are read and binned one after another, so only one
+channel's pixels are in memory at a time, next to the histograms of the channels
+already done. A page that holds several channels is decoded once for all of
+them; a page that holds planes of several Z or T positions is decoded again for
+each XYC plane when the channels are stored in different pages.
+
 Before anything is decoded, each plane's working memory is estimated from the
 header: the decoded page (for OME-Zarr, every chunk the plane touches), its
-encoded bytes, a copy of the plane and the temporary arrays of the histogram.
+encoded bytes, a copy of the plane, the temporary arrays of the histogram and
+the finished histograms of every channel of the XYC plane. One decision, whole
+or in blocks, applies to every channel of every plane of a file.
 
 Planes above the memory limit (default 1 GiB) are read in blocks instead
 (``docs/plan.md`` §5): rectangles made of the pieces the image is stored in
@@ -43,6 +53,7 @@ from pathlib import Path
 
 import numpy as np
 import tifffile
+from morphobricks_normalization.dtypes import default_bin_count
 from morphobricks_normalization.histogram import (
     PlaneHistogram,
     compute_block_histogram,
@@ -192,6 +203,42 @@ class Plane:
 
 
 @dataclass(frozen=True)
+class XycPlane:
+    """Every channel of one image at one Z and T position: one row of the table.
+
+    The channels are read on request, one at a time, from the open file. Use
+    the plane before asking :func:`iter_xyc_planes` for the next one.
+
+    Attributes
+    ----------
+    z, t
+        Zero-based coordinates; None when the experiment mapping has no such axis.
+    channel_count
+        Number of channels; 1 for an image without a channel axis.
+    read
+        Called as ``read(c)`` to read channel ``c`` as a :class:`Plane`.
+    """
+
+    z: int | None
+    t: int | None
+    channel_count: int
+    read: Callable[[int], Plane] = field(repr=False, compare=False)
+
+    def channel(self, c: int) -> Plane:
+        """Read channel ``c`` (zero-based)."""
+        if not 0 <= c < self.channel_count:
+            raise IndexError(f"The plane has {self.channel_count} channel(s); got c={c}.")
+        return self.read(c)
+
+    def histograms(self, bin_count: int | None = None) -> tuple[PlaneHistogram, ...]:
+        """Compute the histogram of every channel, reading one channel at a time.
+
+        Each histogram is identical to that of the channel's plane read whole.
+        """
+        return tuple(self.channel(c).histogram(bin_count) for c in range(self.channel_count))
+
+
+@dataclass(frozen=True)
 class _Blocking:
     """How a plane can be split into blocks, in the order of its stored axes.
 
@@ -226,7 +273,9 @@ class PlaneLayout:
     plane_shape
         (Y, X) shape of each plane.
     plane_count
-        Number of planes in the file.
+        Number of 2D planes in the file.
+    channel_count
+        Number of channels of each XYC plane; 1 without a channel axis.
     page_shape
         Shape of the unit decoded at once: one TIFF page, as a part of ``shape``,
         or the chunk shape of an OME-Zarr array.
@@ -238,7 +287,8 @@ class PlaneLayout:
         for OME-Zarr, whose compressed chunk sizes are not known in advance.
     memory_estimate
         Estimated working memory to read one whole plane and compute its
-        histogram, in bytes.
+        histogram, holding the finished histograms of every channel of its XYC
+        plane, in bytes.
     memory_limit
         The memory limit the layout was worked out for, in bytes.
     block_shape
@@ -259,6 +309,7 @@ class PlaneLayout:
     encoded_nbytes: int
     memory_estimate: int
     memory_limit: int = DEFAULT_MEMORY_LIMIT
+    channel_count: int = 1
     block_shape: tuple[int, int] | None = None
     block_memory_estimate: int | None = None
     blocking: _Blocking | None = field(default=None, repr=False, compare=False)
@@ -367,18 +418,62 @@ def iter_planes(
         series = tif.series[0]
         layout = _layout(series, mapping, path, bin_count, memory_limit)
         _check_limit(layout, path)
-        if layout.in_blocks:
-            for position in _positions(layout, mapping):
-                yield _tiff_block_plane(series, layout, mapping, position, path)
-            return
-        current, page = -1, None
+        read = _tiff_reader(series, layout, mapping, path)
         for position in _positions(layout, mapping):
-            page_index = _page_index(layout, position)
-            if page_index != current:
-                page = None  # let the previous page go before decoding the next
-                page = _read_page(series, page_index, layout, path)
-                current = page_index
-            yield _plane(page, layout, mapping, position)
+            yield read(position)
+
+
+def iter_xyc_planes(
+    path: str | os.PathLike,
+    mapping: AxisMapping,
+    *,
+    memory_limit: int = DEFAULT_MEMORY_LIMIT,
+    bin_count: int | None = None,
+) -> Iterator[XycPlane]:
+    """Yield every XYC plane of a file: all channels at each Z and T position.
+
+    Planes come in the file's storage order of the axes other than C. Their
+    channels are read on request, one at a time (see :meth:`XycPlane.channel`),
+    with the same memory check and block reading as :func:`iter_planes`; use
+    each plane before asking for the next one, while the file is still open.
+
+    Parameters
+    ----------
+    path
+        The TIFF file or OME-Zarr folder.
+    mapping
+        The axis mapping for this file (see :attr:`AxisReview.file_mappings`).
+    memory_limit
+        Largest working memory allowed for one plane or block, in bytes.
+    bin_count
+        Histogram bin count, for the memory estimate; the dtype's default if None.
+
+    Yields
+    ------
+    XycPlane
+
+    Raises
+    ------
+    PlaneMemoryError
+        If a plane cannot be read within ``memory_limit``, not even in blocks.
+    PlaneReadError
+        If the file cannot be read plane by plane under ``mapping``.
+    """
+    if is_zarr_store(path):
+        image = _open_zarr(path)
+        layout = _zarr_layout(image, mapping, path, bin_count, memory_limit)
+        _check_limit(layout, path)
+        yield from _xyc_planes(
+            layout,
+            mapping,
+            lambda position: _zarr_plane(image, layout, mapping, position, path),
+        )
+        return
+    with _open(path) as tif:
+        series = tif.series[0]
+        layout = _layout(series, mapping, path, bin_count, memory_limit)
+        _check_limit(layout, path)
+        yield from _xyc_planes(layout, mapping, _tiff_reader(series, layout, mapping, path))
 
 
 def read_plane(
@@ -619,11 +714,13 @@ def _layout(
     plane_pixels = shape[y] * shape[x]
     page_nbytes = page_size * dtype.itemsize
     encoded_nbytes = int(sum(keyframe.databytecounts))
+    channels = _channel_count(shape, mapping)
     memory = (
         page_nbytes
         + encoded_nbytes
         + plane_pixels * dtype.itemsize
         + estimate_histogram_memory(plane_pixels, dtype, bin_count)
+        + _finished_histograms_nbytes(dtype, bin_count, channels)
     )
     layout = PlaneLayout(
         shape=shape,
@@ -635,10 +732,21 @@ def _layout(
         encoded_nbytes=encoded_nbytes,
         memory_estimate=memory,
         memory_limit=memory_limit,
+        channel_count=channels,
     )
     if memory <= memory_limit:
         return layout
     return _with_blocks(layout, _tiff_blocking(keyframe, shape, split, y, x), bin_count)
+
+
+def _channel_count(shape: tuple[int, ...], mapping: AxisMapping) -> int:
+    c = mapping.index_of("C")
+    return 1 if c is None else shape[c]
+
+
+def _finished_histograms_nbytes(dtype: np.dtype, bin_count: int | None, channels: int) -> int:
+    """Memory of the bin counts of every channel of an XYC plane, kept until its row is made."""
+    return channels * 8 * (default_bin_count(dtype) if bin_count is None else bin_count)
 
 
 def _check_limit(layout: PlaneLayout, path) -> None:
@@ -652,12 +760,56 @@ def _check_limit(layout: PlaneLayout, path) -> None:
         )
 
 
-def _positions(layout: PlaneLayout, mapping: AxisMapping) -> Iterator[dict[int, int]]:
-    """Index per non-XY dimension of every plane, in storage order."""
-    y, x = mapping.index_of("Y"), mapping.index_of("X")
-    others = [d for d in range(len(layout.shape)) if d not in (y, x)]
+def _positions(
+    layout: PlaneLayout, mapping: AxisMapping, roles: str = "XY"
+) -> Iterator[dict[int, int]]:
+    """Index per dimension other than those of ``roles``, for every plane in storage order."""
+    skipped = {mapping.index_of(role) for role in roles}
+    others = [d for d in range(len(layout.shape)) if d not in skipped]
     for index in np.ndindex(*(layout.shape[d] for d in others)):
         yield dict(zip(others, index, strict=True))
+
+
+def _xyc_planes(
+    layout: PlaneLayout, mapping: AxisMapping, read: Callable[[dict[int, int]], Plane]
+) -> Iterator[XycPlane]:
+    """Yield the XYC planes of a file, each reading its channels with ``read(position)``."""
+    c = mapping.index_of("C")
+
+    def at(position: dict[int, int], channel: int) -> dict[int, int]:
+        return position if c is None else {**position, c: channel}
+
+    for position in _positions(layout, mapping, "XYC"):
+        coordinates = _coordinates(mapping, at(position, 0))
+        yield XycPlane(
+            coordinates["z"],
+            coordinates["t"],
+            layout.channel_count,
+            lambda channel, p=position: read(at(p, channel)),
+        )
+
+
+def _tiff_reader(
+    series: tifffile.TiffPageSeries, layout: PlaneLayout, mapping: AxisMapping, path
+) -> Callable[[dict[int, int]], Plane]:
+    """Return a function reading the plane at a position, keeping the last page decoded.
+
+    Consecutive planes of one page decode it once; the previous page is let go
+    before the next is decoded, so at most one page is in memory.
+    """
+    if layout.in_blocks:
+        return lambda position: _tiff_block_plane(series, layout, mapping, position, path)
+    current: dict[str, object] = {"index": -1, "page": None}
+
+    def read(position: dict[int, int]) -> Plane:
+        index = _page_index(layout, position)
+        if index != current["index"]:
+            current["page"] = None  # let the previous page go before decoding the next
+            current["page"] = _read_page(series, index, layout, path)
+            current["index"] = index
+        return _plane(current["page"], layout, mapping, position)
+
+    return read
 
 
 def _read_one(
@@ -823,8 +975,10 @@ def _block_memory(
 ) -> int:
     """Estimated working memory to read one block and add it to the histogram."""
     pixels = rows * cols
-    memory = pixels * layout.dtype.itemsize + estimate_histogram_memory(
-        pixels, layout.dtype, bin_count
+    memory = (
+        pixels * layout.dtype.itemsize
+        + estimate_histogram_memory(pixels, layout.dtype, bin_count)
+        + _finished_histograms_nbytes(layout.dtype, bin_count, layout.channel_count)
     )
     unit_rows, unit_cols = blocking.unit
     if blocking.kind == "zarr":
@@ -1109,10 +1263,12 @@ def _zarr_layout(
     chunk_nbytes = math.prod(chunks) * dtype.itemsize
     page_nbytes = chunk_nbytes * chunks_per_plane
     plane_pixels = shape[y] * shape[x]
+    channels = _channel_count(shape, mapping)
     memory = (
         page_nbytes
         + plane_pixels * dtype.itemsize
         + estimate_histogram_memory(plane_pixels, dtype, bin_count)
+        + _finished_histograms_nbytes(dtype, bin_count, channels)
     )
     layout = PlaneLayout(
         shape=shape,
@@ -1124,6 +1280,7 @@ def _zarr_layout(
         encoded_nbytes=0,
         memory_estimate=memory,
         memory_limit=memory_limit,
+        channel_count=channels,
     )
     if memory <= memory_limit:
         return layout

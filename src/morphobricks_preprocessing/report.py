@@ -10,6 +10,7 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from morphobricks_normalization.histogram import PlaneHistogram
 from morphobricks_normalization.pooling import NoValidPixelsError, PooledHistogram
 from morphobricks_normalization.records import LEVELS, PlaneRecord, group_records
 
@@ -216,7 +217,8 @@ class GroupSummary:
     labels
         The group's labels, from condition down to the chosen level.
     plane_count
-        Planes in the group, including planes without finite pixels.
+        Planes in the group, each channel of an XYC plane counted as one plane,
+        including planes without finite pixels.
     pixel_count
         Finite pixels pooled.
     minimum, maximum, mean, std, median
@@ -255,15 +257,16 @@ def group_summaries(
     """
     summaries = []
     for key, members in group_records(list(records), level).items():
+        histograms = channel_histograms(members)
         try:
-            pooled = PooledHistogram(members)
+            pooled = PooledHistogram(histograms)
         except NoValidPixelsError:
-            summaries.append(GroupSummary(key, len(members), 0))
+            summaries.append(GroupSummary(key, len(histograms), 0))
             continue
         summaries.append(
             GroupSummary(
                 labels=key,
-                plane_count=len(members),
+                plane_count=len(histograms),
                 pixel_count=pooled.pixel_count,
                 minimum=pooled.minimum,
                 maximum=pooled.maximum,
@@ -274,6 +277,16 @@ def group_summaries(
             )
         )
     return summaries
+
+
+def channel_histograms(records: Iterable[PlaneRecord]) -> list[PlaneHistogram]:
+    """Return the histogram of every channel of every row, rows first.
+
+    The group statistics pool every channel of a group together, as they did
+    when the table had one row per channel (schema version 2), so the table and
+    plot of step 4 are unchanged.
+    """
+    return [histogram for record in records for histogram in record.histograms]
 
 
 def group_table(summaries: Sequence[GroupSummary], level: str) -> list[list[str]]:

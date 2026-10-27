@@ -191,6 +191,27 @@ def test_consistency_warnings_are_in_their_own_panel(experiment):
     assert not ui.is_visible(nb.consistency_card)
 
 
+def test_different_channel_counts_are_an_error_in_the_consistency_panel(experiment):
+    rng = np.random.default_rng(1)
+    three = rng.integers(0, 9, (3, 3, 16, 16), dtype=np.uint8)
+    write_data(experiment / "drug/rep1/b.tif", three, "ZCYX")
+    nb = checked(experiment)
+    assert "mb-error'>1 error" in nb.consistency_counts.value
+    assert "different channel counts" in nb.consistency_issues.value
+    assert "2 channels (3 images), 3 channels (1 image)" in nb.consistency_issues.value
+    assert "drug/rep1/b.tif" in nb.consistency_issues.value
+    assert "different channel counts" not in nb.folder_issues.value
+    assert "Action required" in nb.folder_status.value
+    # Confirming the axis roles does not lift it: the run stays locked.
+    nb.labels_confirmed.button.click()
+    confirm_repeats(nb)
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    nb.confirm_button.click()
+    assert nb.run_button.disabled and nb.run() is None
+    assert "fix any errors" in nb.readiness.value
+
+
 def test_next_steps_follow_confirmation_and_folder_changes(experiment):
     nb = checked(experiment)
     assert "Check the labels in Step 1" in nb.folder_next.value
@@ -546,11 +567,11 @@ def test_preview_and_roles_with_an_ome_zarr_image(tmp_path):
 
 def test_missing_axes_card(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZCYX")
+    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZTYX")
     write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
     nb = checked(root)
     assert ui.is_visible(nb.missing_card)
-    assert "1 image with axes <b>ZYX</b> lack C (channel)" in nb.missing_note.value
+    assert "1 image with axes <b>ZYX</b> lack T (time)" in nb.missing_note.value
     nb.preview_button.click()
     nb.preview_checked.button.click()
     assert nb.confirm_button.disabled
@@ -561,7 +582,7 @@ def test_missing_axes_card(tmp_path):
 @pytest.mark.parametrize("blocking_file", [False, True])
 def test_confirmed_missing_axes_allow_running_unless_other_errors_remain(tmp_path, blocking_file):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZCYX")
+    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZTYX")
     write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
     if blocking_file:
         write_file(root / "bad.tif", b"garbage")
@@ -582,12 +603,12 @@ def test_confirmed_missing_axes_allow_running_unless_other_errors_remain(tmp_pat
         result = nb.run()
         assert result.written
         rows = read_plane_histograms(result.csv_path)
-        assert [(r.z, r.c) for r in rows if r.source_relative_path == "b.tif"] == [(0, 0), (1, 0)]
+        assert [(r.z, r.t) for r in rows if r.source_relative_path == "b.tif"] == [(0, 0), (1, 0)]
 
 
 def test_undoing_missing_axes_confirmation_blocks_running_again(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZCYX")
+    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZTYX")
     write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
     nb = checked(root)
     nb.labels_confirmed.button.click()
@@ -1011,7 +1032,7 @@ def test_full_run_and_statistics(experiment, tmp_path):
     nb.bins.value = 64
     nb.run_button.click()
     assert nb.result.written
-    assert "Done: 18 planes in the table" in nb.run_status.value
+    assert "Done: 9 planes in the table" in nb.run_status.value
     assert "Step 4 (optional)" in nb.run_next.value
     assert "What next?" in nb.run_next.value
     assert "Calculate statistics" in nb.run_next.value
@@ -1019,7 +1040,7 @@ def test_full_run_and_statistics(experiment, tmp_path):
     assert nb.progress.value == nb.progress.max == 3
     assert nb.progress.bar_style == "success"
     assert nb.run_button.description == " Compute histograms" and not nb.run_button.disabled
-    assert "Wrote 18 planes" in nb.details.value  # the log reaches "Technical details"
+    assert "Wrote 9 planes" in nb.details.value  # the log reaches "Technical details"
     assert read_manifest(tmp_path / "out" / "run_manifest.json").settings.bin_count == 64
     # Step 4 is optional: the new table is selected but nothing is calculated yet.
     assert nb.csv_file.value == str(tmp_path / "out" / "plane_histograms.csv")
@@ -1136,6 +1157,16 @@ def test_statistics_by_level_and_percentiles(experiment):
     nb.percentiles.value = "50"
     nb.statistics_button.click()
     assert "<th>p50</th>" in nb.statistics.value
+
+
+def test_statistics_explain_a_table_of_an_earlier_version(experiment, tmp_path):
+    nb = checked(experiment)
+    nb.csv_file.value = str(Path(__file__).parent / "data" / "v2_float32.csv")
+    nb.statistics_button.click()
+    assert "The table cannot be read" in nb.stats_status.value
+    assert "schema version 2" in nb.stats_status.value
+    assert "Run the preprocessing brick again" in nb.stats_status.value
+    assert not ui.is_visible(nb.statistics_card)
 
 
 def test_statistics_need_a_table_and_valid_percentiles(experiment):

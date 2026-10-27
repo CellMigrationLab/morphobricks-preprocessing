@@ -54,7 +54,7 @@ def simulate_experiment(
 
 def make_records(planes, bin_count=None):
     return [
-        PlaneRecord(path, *labels, histogram=compute_plane_histogram(pixels, bin_count))
+        PlaneRecord(path, *labels, histograms=compute_plane_histogram(pixels, bin_count))
         for labels, path, pixels in planes
     ]
 

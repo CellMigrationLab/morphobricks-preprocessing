@@ -23,7 +23,10 @@ dependencies = [
     "numpy>=1.24",
     "tifffile>=2023.7.10",
     # Per-plane histograms, the CSV table, pooling and normalization (moved there in P1).
-    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.1.0",
+    # Pinned by commit, not by tag: the owner wants no tags until the brick's v0.2.0
+    # release. 0e53e67 is the merge of its Milestone 2b (PR #8), which writes
+    # plane_histograms.csv schema version 3 with the channels in columns (follow-up P3b).
+    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@0e53e6762617e4297df0593c6977fdfb7b405522",
 ]
 
 [project.optional-dependencies]

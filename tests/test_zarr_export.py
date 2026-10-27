@@ -386,11 +386,11 @@ def test_channel_names_and_display_ranges(tmp_path):
 
 @needs_zarr
 def test_missing_axis_becomes_length_one(tmp_path):
-    write_data(tmp_path / "exp/a.tif", random_data((2, 3, 8, 8)), axes="ZCYX")
+    write_data(tmp_path / "exp/a.tif", random_data((2, 3, 8, 8)), axes="ZTYX")
     data = random_data((2, 8, 8), seed=1)
     write_data(tmp_path / "exp/b.tif", data, axes="ZYX")
     result = run_experiment(
-        tmp_path / "exp", prefill_mapping("ZCYX"), convert_tiffs=True, missing_as_singleton=True
+        tmp_path / "exp", prefill_mapping("ZTYX"), convert_tiffs=True, missing_as_singleton=True
     )
     group = open_copy(result.output_folder, "b.tif")
     assert group["0"].shape == (1, 2, 8, 8)
@@ -482,13 +482,18 @@ def test_switching_to_conversion_recomputes_the_tiff_rows_from_copies(experiment
 @needs_zarr
 def test_histograms_are_computed_from_the_converted_copies(experiment, monkeypatch):
     read_paths = []
-    original = run_module.iter_planes
 
-    def spy(path, *args, **kwargs):
-        read_paths.append(Path(path))
-        return original(path, *args, **kwargs)
+    def spy(name):
+        original = getattr(run_module, name)
 
-    monkeypatch.setattr(run_module, "iter_planes", spy)
+        def reading(path, *args, **kwargs):
+            read_paths.append(Path(path))
+            return original(path, *args, **kwargs)
+
+        monkeypatch.setattr(run_module, name, reading)
+
+    spy("iter_planes")  # conversion
+    spy("iter_xyc_planes")  # histograms
     run_experiment(experiment, ZYX, convert_tiffs=True)
     copies = [p for p in read_paths if p.name.endswith(".ome.zarr")]
     sources = [p for p in read_paths if p.suffix == ".tif"]
@@ -552,7 +557,8 @@ def test_table_is_the_same_with_or_without_copies(experiment, tmp_path):
     b = read_plane_histograms(without.csv_path)
     assert [r.plane_id for r in a] == [r.plane_id for r in b]
     assert all(
-        np.array_equal(x.histogram.counts, y.histogram.counts) for x, y in zip(a, b, strict=True)
+        np.array_equal(x.channel_histogram(0).counts, y.channel_histogram(0).counts)
+        for x, y in zip(a, b, strict=True)
     )
 
 

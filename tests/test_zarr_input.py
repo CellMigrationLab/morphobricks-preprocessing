@@ -450,7 +450,10 @@ def test_review_of_a_mixed_experiment():
     found = issue(review.issues, "ome_zarr_axes_mismatch")
     assert found.severity is Severity.ERROR and found.paths == ("d.ome.zarr",)
     confirmed = review_axes(files[:3], EXPERIMENT, missing_as_singleton=True)
-    assert confirmed.ok and confirmed.file_mappings["c.ome.zarr"].singleton_roles == ("C",)
+    assert confirmed.file_mappings["c.ome.zarr"].singleton_roles == ("C",)
+    # Read as one channel, c.ome.zarr differs from the two channels of the others (N43).
+    assert issue(confirmed.issues, "different_channel_counts").paths == ("c.ome.zarr",)
+    assert len(confirmed.issues) == 1
 
 
 # Reading planes ------------------------------------------------------------------------
@@ -634,16 +637,16 @@ def test_ome_zarr_experiment_end_to_end(zarr_experiment):
     result = run_experiment(zarr_experiment, pre.suggested_mapping)
     assert result.written and result.converted == ()
     records = read_plane_histograms(result.csv_path)
-    assert len(records) == 18
+    assert len(records) == 9  # 3 stores x 3 depth slices, each row with 2 channels
     import zarr
 
     for record in records:
         data = zarr.open_group(str(zarr_experiment / record.source_relative_path), mode="r")["0"]
-        plane = np.asarray(data[record.c, record.z])
-        expected = compute_plane_histogram(plane)
-        np.testing.assert_array_equal(record.histogram.counts, expected.counts)
-        assert record.t == 0
-    assert records[0].plane_id == "ctrl/rep1/a.ome.zarr::z=0,c=0,t=0"
+        assert record.channel_count == 2 and record.t == 0
+        for c in range(2):
+            expected = compute_plane_histogram(np.asarray(data[c, record.z]))
+            np.testing.assert_array_equal(record.channel_histogram(c).counts, expected.counts)
+    assert records[0].plane_id == "ctrl/rep1/a.ome.zarr::z=0,t=0"
     assert {(r.condition, r.position_id) for r in records} == {
         ("ctrl", "a"),
         ("ctrl", "b"),
@@ -682,24 +685,26 @@ def test_mixed_tiff_and_ome_zarr_experiment(tmp_path):
     pre = preflight(root)
     assert pre.suggested_mapping == prefill_mapping("ZCYX")
     blocked = run_experiment(root, pre.suggested_mapping)
-    assert codes(blocked.issues)[:2] == ["missing_axes", "different_plane_counts"]
-    result = run_experiment(root, pre.suggested_mapping, missing_as_singleton=True)
+    assert codes(blocked.issues)[0] == "missing_axes"
+    # Its missing channel axis is read as one channel, but the others have two (N43).
+    one_channel = run_experiment(root, pre.suggested_mapping, missing_as_singleton=True)
+    assert issue(one_channel.issues, "different_channel_counts").paths == ("drug/c.ome.zarr",)
+    write_ngff(root / "drug/d.ome.zarr", random_data((3, 2, 8, 8), "uint8", seed=3), "zcyx")
+    result = run_experiment(
+        root, pre.suggested_mapping, missing_as_singleton=True, exclude=["drug/c.ome.zarr"]
+    )
     assert result.written
     rows = {r.plane_id: r for r in read_plane_histograms(result.csv_path)}
     # The same coordinates mean the same plane, whatever the storage order.
-    b = rows["ctrl/b.ome.zarr::z=2,c=1,t=0"]
+    b = rows["ctrl/b.ome.zarr::z=2,t=0"]
     np.testing.assert_array_equal(
-        b.histogram.counts, compute_plane_histogram(zarr_data[1, 2]).counts
+        b.channel_histogram(1).counts, compute_plane_histogram(zarr_data[1, 2]).counts
     )
-    a = rows["ctrl/a.tif::z=2,c=1,t=0"]
+    a = rows["ctrl/a.tif::z=2,t=0"]
     np.testing.assert_array_equal(
-        a.histogram.counts, compute_plane_histogram(tiff_data[2, 1]).counts
+        a.channel_histogram(1).counts, compute_plane_histogram(tiff_data[2, 1]).counts
     )
-    assert {(r.z, r.c) for r in rows.values() if r.source_relative_path == "drug/c.ome.zarr"} == {
-        (0, 0),
-        (1, 0),
-        (2, 0),
-    }
+    assert {r.z for r in rows.values() if r.source_relative_path == "drug/d.ome.zarr"} == {0, 1, 2}
 
 
 def test_conversion_leaves_ome_zarr_images_alone(tmp_path):
@@ -733,7 +738,7 @@ def test_ome_ngff_0_5_experiment(tmp_path):
     root = tmp_path / "exp"
     write_ngff(root / "a.ome.zarr", random_data((2, 3, 8, 8), "uint8"), "czyx", version="0.5")
     result = run_experiment(root, prefill_mapping("CZYX"))
-    assert result.written and result.plane_count == 6
+    assert result.written and result.plane_count == 3
 
 
 def test_cli_check_names_the_formats(tmp_path, capsys):

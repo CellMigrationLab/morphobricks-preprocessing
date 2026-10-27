@@ -4,10 +4,10 @@ Images are TIFF files or OME-Zarr folders (:mod:`.zarr_input`). For each
 candidate image this records whether it opens, its shape, pixel type, axis
 labels and series/page counts. Across the experiment it checks the rules
 that must hold before any pixel is read (``docs/contract.md`` §3 and §8): one
-supported pixel type, and the same arrangement of dimensions in every file.
-Images that differ in width or height, in their numbers of channels, depth
-slices or time points, or in their physical pixel sizes are allowed with a
-warning (contract §11).
+supported pixel type, the same arrangement of dimensions and the same number
+of channels in every file. Images that differ in width or height, in their
+numbers of depth slices or time points, or in their physical pixel sizes are
+allowed with a warning (contract §11).
 
 Axis roles are not assigned here; the axis labels are the ones ``tifffile``
 reports from the file's metadata, used to prefill the axis review.
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable, Hashable, Iterable
+from collections.abc import Callable, Hashable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree
@@ -277,14 +277,16 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     Reports, as errors: images that do not open (``unreadable_tiff``,
     ``unreadable_ome_zarr``, or ``zarr_not_installed`` for OME-Zarr images
     without the ``zarr`` package), files or stores with more than one image,
-    unsupported pixel types, more than one pixel type, and TIFF files whose
-    dimensions are arranged differently. OME-Zarr images declare their axes,
+    unsupported pixel types, more than one pixel type, TIFF files whose
+    dimensions are arranged differently, and images with different numbers of
+    channels (``different_channel_counts``; the C axis, or the RGB samples
+    without one, until the axis roles are confirmed). OME-Zarr images declare their axes,
     so their arrangement is checked by role during the axis review instead.
 
     Reports, as warnings: images of different widths or heights
     (``different_sizes``), channel names that differ at the same channel
-    (``channel_names_differ``), different numbers of channels, depth slices,
-    time points or planes along another dimension (``different_plane_counts``),
+    (``channel_names_differ``), different numbers of depth slices, time points
+    or planes along another dimension (``different_plane_counts``),
     and physical pixel sizes that differ (``different_pixel_sizes``) or are
     known for only some images (``missing_pixel_size``).
 
@@ -396,6 +398,7 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     issues.extend(_check_dimensions([f for f in readable if not f.is_ome_zarr]))
     issues.extend(_check_image_sizes(readable))
     issues.extend(_check_channel_names(readable))
+    issues.extend(_check_channel_counts(readable))
     issues.extend(_check_plane_counts(readable))
     issues.extend(_check_pixel_sizes(readable))
     return issues
@@ -508,21 +511,70 @@ def _check_image_sizes(files: list[TiffMetadata]) -> list[ValidationIssue]:
 
 
 # What the planes along each dimension are called in messages.
-_PLANE_NAMES = {"C": "channels", "Z": "depth slices (Z)", "T": "time points"}
-# Dimensions that do not hold planes: the image itself, and RGB samples, which are
-# counted as channels when the image has no channel dimension.
+_PLANE_NAMES = {"Z": "depth slices (Z)", "T": "time points"}
+# Dimensions that do not hold planes: the image itself, and channels (or RGB samples),
+# which are compared by _check_channel_counts.
 _NOT_PLANES = frozenset("XYSC")
 
 
+def header_channel_count(f: TiffMetadata) -> int:
+    """Return the channel count the header suggests: the C axis, else the RGB samples."""
+    return f.length("C") if "C" in f.axes else f.length("S")
+
+
+def channel_count_issues(counts: Mapping[str, int]) -> list[ValidationIssue]:
+    """Report images with different numbers of channels (normalization plan N43).
+
+    Each row of ``plane_histograms.csv`` holds every channel of a plane, so all
+    images of an experiment must have the same number of channels.
+
+    Parameters
+    ----------
+    counts
+        Number of channels of each image, by relative path.
+
+    Returns
+    -------
+    list of ValidationIssue
+        The error ``different_channel_counts`` naming the images not having the
+        most common number, or nothing.
+    """
+    groups: dict[int, list[str]] = {}
+    for path, count in sorted(counts.items()):
+        groups.setdefault(count, []).append(path)
+    if len(groups) < 2:
+        return []
+    ordered = sorted(groups.items(), key=lambda item: (-len(item[1]), item[0]))
+    summary = ", ".join(
+        f"{plural(count, 'channel')} ({plural(len(paths), 'image')})" for count, paths in ordered
+    )
+    return [
+        error(
+            "different_channel_counts",
+            f"The images have different numbers of channels: {summary}. Each row of the "
+            "histogram table holds every channel of a plane, so every image of an experiment "
+            "must have the same channels. The images listed are those without the most "
+            "common number of channels.",
+            sorted(path for _, paths in ordered[1:] for path in paths),
+            "Split the images with other channels into a separate experiment, or exclude "
+            "them. If a channel axis was assigned the wrong role, correct the axis roles.",
+        )
+    ]
+
+
+def _check_channel_counts(files: list[TiffMetadata]) -> list[ValidationIssue]:
+    return channel_count_issues({f.relative_path: header_channel_count(f) for f in files})
+
+
 def _plane_counts(f: TiffMetadata) -> dict[str, int]:
-    counts = {"C": f.length("C") if "C" in f.axes else f.length("S"), "Z": 1, "T": 1}
+    counts = {"Z": 1, "T": 1}
     counts.update({axis: f.length(axis) for axis in f.axes if axis not in _NOT_PLANES})
     return counts
 
 
 def _check_plane_counts(files: list[TiffMetadata]) -> list[ValidationIssue]:
     counts = {f.relative_path: _plane_counts(f) for f in files}
-    axes = sorted({axis for c in counts.values() for axis in c}, key=lambda a: ("CZT".find(a), a))
+    axes = sorted({axis for c in counts.values() for axis in c}, key=lambda a: ("ZT".find(a), a))
     descriptions: list[str] = []
     differing: list[str] = []
     for axis in axes:
@@ -545,7 +597,7 @@ def _check_plane_counts(files: list[TiffMetadata]) -> list[ValidationIssue]:
             sorted(set(differing)),
             "No action needed if this is expected, for example time series of different "
             "lengths. Otherwise check that these images were acquired with the same "
-            "channels, depth range and time points.",
+            "depth range and time points.",
         )
     ]
 

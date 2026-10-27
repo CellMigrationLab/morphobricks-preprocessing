@@ -62,7 +62,7 @@ def test_written_json_is_readable_and_stable(tmp_path):
     raw = path.read_bytes()
     assert b"\r\n" not in raw and raw.endswith(b"\n")
     data = json.loads(raw)
-    assert data["manifest_version"] == "1" and data["schema_version"] == "2"
+    assert data["manifest_version"] == "1" and data["schema_version"] == "3"
     assert data["axis_mapping"] == {"axes": "ZYX", "roles": ["Z", "Y", "X"]}
     assert data["settings"]["exclude"] == ["a.tif", "b.tif"]
     assert data["labels"] == [

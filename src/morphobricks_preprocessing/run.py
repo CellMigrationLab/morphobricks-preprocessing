@@ -66,6 +66,7 @@ from .planes import (
     PlaneReadError,
     check_planes,
     iter_planes,
+    iter_xyc_planes,
     plane_layout,
     read_sample_plane,
 )
@@ -681,18 +682,20 @@ def _read_file(
     settings: RunSettings,
     position: str | None,
 ) -> list[PlaneRecord]:
-    """Histogram every plane of ``path``, recording the rows under the source ``rel``."""
+    """Histogram every XYC plane of ``path``, recording the rows under the source ``rel``.
+
+    One row per plane holds the histograms of all its channels (schema version 3).
+    """
     records = []
-    for plane in iter_planes(
+    for plane in iter_xyc_planes(
         path, mapping, memory_limit=settings.memory_limit, bin_count=settings.bin_count
     ):
         records.append(
             PlaneRecord(
                 rel,
                 *labels,
-                histogram=plane.histogram(settings.bin_count),
+                histograms=plane.histograms(settings.bin_count),
                 z=plane.z,
-                c=plane.c,
                 t=plane.t,
                 position_id=position,
             )
@@ -817,12 +820,12 @@ def _bin_count(dtype, bin_count: int | None) -> tuple[int | None, list[Validatio
 
 
 def _pixel_issues(records: list[PlaneRecord]) -> list[ValidationIssue]:
+    # Every channel of every row is checked.
+    channels = [(r.source_relative_path, h) for r in records for h in r.histograms]
     issues = []
-    with_non_finite = sorted(
-        {r.source_relative_path for r in records if r.histogram.non_finite_pixel_count}
-    )
+    with_non_finite = sorted({rel for rel, h in channels if h.non_finite_pixel_count})
     if with_non_finite:
-        total = sum(r.histogram.non_finite_pixel_count for r in records)
+        total = sum(h.non_finite_pixel_count for _, h in channels)
         issues.append(
             warning(
                 "non_finite_pixels",
@@ -833,23 +836,25 @@ def _pixel_issues(records: list[PlaneRecord]) -> list[ValidationIssue]:
                 "No action needed if these values mark missing data.",
             )
         )
-    empty = [r for r in records if r.histogram.is_empty]
-    if empty and len(empty) == len(records):
+    empty = [rel for rel, h in channels if h.is_empty]
+    if empty and len(empty) == len(channels):
         issues.append(
             error(
                 "no_usable_planes",
                 "No plane has any finite pixel value, so no statistics can be calculated.",
-                sorted({r.source_relative_path for r in empty}),
+                sorted(set(empty)),
                 "Check that these are the right images and that they were exported correctly.",
             )
         )
     elif empty:
+        planes = {r.plane_id for r in records if any(h.is_empty for h in r.histograms)}
         issues.append(
             warning(
                 "no_finite_pixels",
-                f"{plural(len(empty), 'plane')} have no finite pixel values. They are kept in "
-                "the table with zero counts and left out of group statistics.",
-                sorted({r.source_relative_path for r in empty}),
+                f"{plural(len(planes), 'plane')} have no finite pixel values in at least one "
+                "channel. These channels are kept in the table with zero counts and left out "
+                "of group statistics.",
+                sorted(set(empty)),
                 "No action needed if these planes are expected to be empty.",
             )
         )
@@ -901,7 +906,7 @@ def _normalise(path: str) -> str:
 
 
 def _row_order(record: PlaneRecord) -> tuple:
-    return (record.source_relative_path, record.z, record.c, record.t)
+    return (record.source_relative_path, record.z, record.t)
 
 
 def _sorted(issues: list[ValidationIssue]) -> tuple[ValidationIssue, ...]:

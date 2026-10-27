@@ -1,7 +1,8 @@
 """MorphoBricks preprocessing brick.
 
-Builds one intensity histogram per 2D plane and stores them, with each plane's
-experimental labels, in a CSV table. Later bricks pool these histograms to get
+Builds one intensity histogram per channel of every plane and stores them, with
+each plane's experimental labels, in a CSV table: one row per plane (an image at
+one Z and T position), the channels in columns. Later bricks pool these histograms to get
 group statistics and normalization parameters without rereading the images.
 """
 
@@ -85,8 +86,10 @@ from .planes import (
     PlaneLayout,
     PlaneMemoryError,
     PlaneReadError,
+    XycPlane,
     check_planes,
     iter_planes,
+    iter_xyc_planes,
     plane_layout,
     read_plane,
     read_sample_plane,
@@ -184,6 +187,7 @@ __all__ = [
     "TiffMetadata",
     "UnsupportedDtypeError",
     "ValidationIssue",
+    "XycPlane",
     "ZarrUnavailableError",
     "axis_length_ranges",
     "balance_table",
@@ -214,6 +218,7 @@ __all__ = [
     "inspect_tiff",
     "is_zarr_store",
     "iter_planes",
+    "iter_xyc_planes",
     "load_design",
     "make_plane_id",
     "min_max",
