@@ -38,7 +38,7 @@ Pre-alpha. Implemented and tested:
   and a command line (`morphobricks-preprocessing check` / `run`)
 
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
-to the commit of its Milestone 2b until its v0.2.0 release): per-plane histograms
+to its release v0.2.0): per-plane histograms
 (`histogram`), the histogram table (`csv_io`, schema version 3), pooled group statistics
 (`pooling`) and normalization parameters (`normalization`). Importing these
 names from `morphobricks_preprocessing` still works for one version, with a

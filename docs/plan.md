@@ -329,14 +329,14 @@ API, CLI). The notebook and CLI only call the API.
   records control conditions, in `experiment_design.csv` (`design`); reruns with the same
   folders skip the questions, the command line uses the file or writes a template, and
   the manifest records its hash. *Implemented, see question 22.*
-- **Input support for MorphoRelate milestone M3 (unreleased):** a folder named `single`
+- **Input support for MorphoRelate milestone M3 (released in v0.1.0):** a folder named `single`
   read as a one-member level, physical sizes with a unit per axis in the image header
   (TIFF and OME-Zarr, from the OME-NGFF scale), and steps 1 and 2 of the notebook
   embeddable by another brick. Outputs are unchanged. *Implemented, see questions 23 to
   26.*
 - **Channels across columns (follow-up P3b of the normalization plan):**
   `plane_histograms.csv` schema version 3, written with the normalization brick's
-  Milestone 2b (pinned by commit): one row per XYC plane with each channel in its own
+  Milestone 2b (now pinned to its v0.2.0, question 28): one row per XYC plane with each channel in its own
   columns; its channels read one at a time (`planes.iter_xyc_planes`); images with
   different numbers of channels are an error before any image is read; earlier tables are
   recomputed on the next run. *Implemented, see question 27.*
@@ -685,3 +685,9 @@ Raised during review; to be decided before the milestones that need them:
     deprecated re-exports of the moved names (question 19) keep pointing at the brick's
     current objects, now with its Milestone 2b signatures; names it added later are not
     re-exported. `experiment_design.csv` and the OME-Zarr copies do not change.*
+28. When is this brick tagged, and which normalization brick does the tag install?
+    *Decided (27 October 2026): this brick's first tag, v0.1.0, holds everything up to
+    follow-up P3b and the input support for MorphoRelate milestone M3, which pins it. It
+    depends on the normalization brick's release v0.2.0 (tag, not commit) instead of the
+    Milestone 2b merge commit `0e53e67`; v0.2.0 adds only RGB and intensity checks, which
+    this brick does not call yet. The next tag, v0.2.0, follows follow-ups P4 and P5.*
