@@ -691,3 +691,29 @@ Raised during review; to be decided before the milestones that need them:
     depends on the normalization brick's release v0.2.0 (tag, not commit) instead of the
     Milestone 2b merge commit `0e53e67`; v0.2.0 adds only RGB and intensity checks, which
     this brick does not call yet. The next tag, v0.2.0, follows follow-ups P4 and P5.*
+29. Can this brick find each image's masks and tell how they relate, so that a user who is
+    not a programmer only has to name the masks (MorphoFeature decision D78)? Bricks that
+    measure objects (MorphoObjects, MorphoRelate, CellPatcher, MorphoFeature's workflows)
+    need every image paired with its masks and the parent-child relationships between mask
+    types (two nuclei in one cell, nucleoli inside nuclei inside cells, mitochondria grouped
+    by cell), and today each asks the user again.
+    *Decided (October 2026), by the MorphoBricks owner: yes, for any number of mask types
+    (contract §13). Masks are in a separate masks folder, outside the experiment, one
+    subfolder per mask type mirroring the experiment's folders, paired with the images by
+    leaf folder and `position_id`; the label images of OME-Zarr images are masks too. The
+    checks of `check` and `run` read headers only; reading the pixels is an optional mask
+    step (`masks` command, `scan_masks`), which writes `mask_relationships.json` to the
+    output folder: each mask type's kind (`instances`, `grouped`, `one_value`, `empty`),
+    each ordered pair's relation (`same_objects`, `grouped_by`, `inside`, `none`) with the
+    counts behind it (including parents with 0, 1, 2 and 3 or more children), and the
+    hierarchy of direct parents. A run given masks records them in the manifest's optional
+    `masks` key (manifest version 1); the table never depends on them. The report suggests;
+    it decides nothing: users name the masks (by default the folder name, names unique)
+    and confirm or correct the relationships in the bricks that use them. Library, command
+    line and documentation first; the notebook step follows in a later change. SciPy
+    becomes a core dependency (the owner's agreement: "can use scipy if good reasons"):
+    counting the connected pieces of every label of one 2048 x 2048 HPMEC cell mask took
+    about 5 s with a NumPy union-find, and 0.3 to 0.9 s per HPMEC mask with `scipy.ndimage`. Proposed defaults, to confirm in
+    review: masks are 2D with the Y and X sizes of their image (3D masks later), their
+    pixels integers or booleans, and the thresholds fixed (written in every report), not
+    settings.*

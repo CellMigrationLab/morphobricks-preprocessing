@@ -22,6 +22,8 @@ classifiers = [
 dependencies = [
     "numpy>=1.24",
     "tifffile>=2023.7.10",
+    # Counting the connected pieces of each mask label in the optional mask step.
+    "scipy>=1.10",
     # Per-plane histograms, the CSV table, pooling and normalization (moved there in P1).
     # Pinned to the brick's release v0.2.0, which writes plane_histograms.csv schema
     # version 3 with the channels in columns (follow-up P3b; P3b first pinned its

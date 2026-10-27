@@ -1,4 +1,4 @@
-"""Command-line interface: ``morphobricks-preprocessing check`` and ``run``.
+"""Command-line interface: ``morphobricks-preprocessing check``, ``run`` and ``masks``.
 
 ``check`` runs the preflight (folders and image headers, no pixels) and prints
 what will be analysed, the problems found and the suggested axis roles.
@@ -6,7 +6,10 @@ what will be analysed, the problems found and the suggested axis roles.
 are never taken from metadata without being stated. It also needs the
 experiment design confirmed in ``experiment_design.csv``: without it, ``run``
 writes a template to the output folder for the user to fill in, and stops.
-Both exit with status 1 when an error blocks processing.
+``masks`` is the optional mask step: it pairs every image with its masks (``--masks``, and the
+label images of OME-Zarr images), reads them, and writes ``mask_relationships.json`` with each
+mask type and the relationships between them (contract §13). All three exit with status 1 when
+an error blocks processing.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ from .design import (
     write_experiment_design,
 )
 from .discovery import check_output_folder, default_output_folder
+from .mask_scan import MASK_REPORT_FILENAME, scan_masks, write_mask_report
 from .planes import DEFAULT_MEMORY_LIMIT, format_bytes
 from .report import (
     balance_summary,
@@ -38,6 +42,8 @@ from .report import (
     format_issues,
     label_tree,
     mapping_summary,
+    mask_report_summary,
+    mask_summary,
     preflight_summary,
     run_summary,
 )
@@ -188,6 +194,13 @@ def build_parser() -> argparse.ArgumentParser:
         f"none, or a number from 1 to {MAX_LEVELS - 1}",
     )
     run.add_argument("--log", metavar="FILE", help="write technical details to this file")
+
+    masks = commands.add_parser(
+        "masks",
+        help="find every image's masks, describe them and how they relate (reads the masks)",
+    )
+    _common(masks)
+    masks.add_argument("--log", metavar="FILE", help="write technical details to this file")
     return parser
 
 
@@ -197,7 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     handler = _attach_log(args.log) if getattr(args, "log", None) else None
     try:
-        return _check(args) if args.command == "check" else _run(args)
+        return {"check": _check, "run": _run, "masks": _masks}[args.command](args)
     finally:
         if handler is not None:
             logging.getLogger("morphobricks_preprocessing").removeHandler(handler)
@@ -218,14 +231,23 @@ def _common(parser: argparse.ArgumentParser) -> None:
         metavar="PATH",
         help="image to leave out, relative to the experiment folder (repeatable)",
     )
+    parser.add_argument(
+        "--masks",
+        metavar="FOLDER",
+        help="masks folder: one subfolder per mask type, each mirroring the experiment's "
+        "folders, outside the experiment; the label images of OME-Zarr images are added",
+    )
 
 
 def _check(args: argparse.Namespace) -> int:
-    pre = preflight(args.experiment, args.output, exclude=args.exclude)
+    pre = preflight(args.experiment, args.output, exclude=args.exclude, masks_folder=args.masks)
     print(preflight_summary(pre))
     if pre.discovery.leaves:
         print()
         print(label_tree(pre.discovery))
+    if pre.masks is not None:
+        print()
+        print(mask_summary(pre.masks))
     if pre.dataset.balance.cells:
         print()
         print(balance_summary(pre.dataset.balance))
@@ -255,8 +277,42 @@ def _check(args: argparse.Namespace) -> int:
     return 0 if pre.ok else 1
 
 
+def _masks(args: argparse.Namespace) -> int:
+    pre = preflight(
+        args.experiment,
+        args.output,
+        exclude=args.exclude,
+        masks_folder=args.masks,
+        ome_zarr_labels=True,
+    )
+    print(mask_summary(pre.masks))
+    blocking = [*pre.discovery.issues, *pre.exclusion_issues, *pre.masks.issues]
+    if blocking:
+        print()
+        print(format_issues(blocking))
+    if has_errors(blocking):
+        return 1
+    if not pre.masks.types:
+        print("Give the masks folder with --masks, or use OME-Zarr images with label images.")
+        return 1
+
+    def progress(done: int, total: int, path: str) -> None:
+        if path:
+            print(f"[{done + 1}/{total}] {path}", flush=True)
+
+    print()
+    report = scan_masks(pre.masks, pre.discovery.root, progress=progress)
+    output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
+    path = write_mask_report(report, output / MASK_REPORT_FILENAME)
+    print()
+    print(mask_report_summary(report))
+    print()
+    print(f"Report written to {path}")
+    return 0
+
+
 def _run(args: argparse.Namespace) -> int:
-    pre = preflight(args.experiment, args.output, exclude=args.exclude)
+    pre = preflight(args.experiment, args.output, exclude=args.exclude, masks_folder=args.masks)
     axes = reference_axes(pre.metadata.files)
     if axes is None:
         print(format_issues(pre.issues) or "No readable images were found.")
@@ -316,6 +372,7 @@ def _run(args: argparse.Namespace) -> int:
         convert_tiffs=args.convert_tiff,
         conversion=conversion,
         design=design,
+        masks_folder=args.masks,
     )
     if result.issues:
         print(format_issues(result.issues))

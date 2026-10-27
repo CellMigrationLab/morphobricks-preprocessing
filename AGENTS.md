@@ -89,7 +89,13 @@ src/morphobricks_preprocessing/
   manifest.py       RunManifest / RunSettings / FileEntry, JSON read/write, SHA-256 of the CSV
   run.py            preflight(), run_experiment() (incremental), sample_planes() for previews
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
-  cli.py, __main__  `morphobricks-preprocessing check|run` (also `python -m morphobricks_preprocessing`)
+  cli.py, __main__  `morphobricks-preprocessing check|run|masks` (also `python -m morphobricks_preprocessing`)
+  masks.py          masks (Q29): find_masks pairs every image with its masks (masks folder with one
+                    folder per type mirroring the experiment, OME-Zarr label images), header-only
+                    checks (2D, image YX, integer/bool), MaskInventory (to_manifest), read_mask
+  mask_scan.py      the optional mask step (Q29): piece_counts (scipy.ndimage), pair_counts,
+                    scan_masks -> MaskReport (kinds, relations, direct-parent hierarchy, evidence),
+                    write_mask_report (mask_relationships.json); fixed THRESHOLDS
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis
                     letters and physical sizes from the scale and axis units),
                     ngff_label_names/open_ngff_labels (label images, for later bricks),
@@ -388,7 +394,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Topic | Decision |
 |---|---|
 | Binning | Per-plane min–max, same bin count per experiment, pooled counts for groups (binning study) |
-| Core dependencies | `numpy`, `tifffile` and `morphobricks-normalization` (git dependency pinned to its release tag v0.2.0; `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
+| Core dependencies | `numpy`, `tifffile`, `scipy` (the mask step's piece counts, Q29) and `morphobricks-normalization` (git dependency pinned to its release tag v0.2.0; `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
 | OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
@@ -408,6 +414,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Dataset consistency (Q21, P2) | Step 1 "Dataset consistency" panel: balance table (images and technical-repeat folders per condition x biological repeat), `unbalanced_images` (< 0.5 or > 2 x median), `repeat_missing_conditions`, `different_pixel_sizes`, `missing_pixel_size` (OME-Zarr scale included), `different_plane_counts`; `different_sizes` narrowed to width/height; consistency issues shown only in that panel, not in Messages. Warnings only; outputs unchanged |
 | Experiment design (Q22, P3) | Step 1 after the labels: pairing dropdowns, one yellow "Yes, they are comparable" question per repeat group (single whole-experiment question without biological-repeat folders), control checkboxes; `experiment_design.csv` written after every answer; reruns load it and fold the questions behind a Change button; step 3 gated. CLI `run` reads it or `--design`, else writes a template and exits 1. `run_experiment(design=...)` optional; manifest `experiment_design_sha256` (optional key, version 1). Two folders of one condition in a group block that group |
 | Position identity (Q20, D02) | `position_id` = image name without extension, in every CSV row and manifest file entry; FOV key = labels + `position_id`; duplicates in one leaf folder are the error `duplicate_position_id`. CSV columns and schema 2 unchanged; manifest version 1 with an optional key |
+| Masks (Q29) | Optional masks folder outside the experiment, one subfolder per mask type mirroring the experiment's folders, paired by leaf folder + `position_id`; OME-Zarr label images are masks too. Header-only errors (`masks_folder_not_found`, `masks_inside_experiment`, `mask_names_differ_in_case`, `duplicate_mask`, `unreadable_mask`, `mask_not_2d`, `mask_size_mismatch`, `mask_pixel_type`) and warnings (`mask_missing`, `mask_without_image`, `mask_outside_type_folder`) in `check`/`run`; manifest key `masks` (optional, version 1). Optional mask step (`masks` command, `scan_masks`): kinds, relations with evidence, direct-parent hierarchy, `mask_relationships.json` (report version 1); fixed thresholds; suggestions only, the user names and confirms. SciPy core dependency. Notebook step later. To confirm: 2D masks, integer/bool pixels, fixed thresholds |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
 | Paths and filenames in widget HTML and notebook text | **`<b>…</b>` / `**…**`, never `<code>` or inline code** |
@@ -668,6 +675,7 @@ ruff format --check .
 pytest
 morphobricks-preprocessing check /data/exp1
 morphobricks-preprocessing run /data/exp1 --axes ZCYX
+morphobricks-preprocessing masks /data/exp1 --masks /data/exp1_masks
 jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 ```
 
@@ -695,6 +703,9 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 - **Released as v0.1.0** (27 October 2026), with everything above; the normalization brick
   is pinned to its v0.2.0 (question 28). The next tag, v0.2.0, follows follow-ups P4 and
   P5.
+- **Masks (question 29, in review):** pairing every image with its masks, header checks,
+  the manifest's `masks` key, and the mask step with `mask_relationships.json`; library,
+  command line and documentation (the notebook step later).
 - **Next (not started):** follow-ups P4–P5 of the normalization plan (image type,
   intensity checks and plots).
 - **Not yet verified:**
