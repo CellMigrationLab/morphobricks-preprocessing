@@ -517,7 +517,7 @@ def test_mixed_tiff_and_ome_zarr_experiment(tmp_path):
     pre = preflight(root)
     assert pre.suggested_mapping == prefill_mapping("ZCYX")
     blocked = run_experiment(root, pre.suggested_mapping)
-    assert codes(blocked.issues) == ["missing_axes"]
+    assert codes(blocked.issues)[:2] == ["missing_axes", "different_plane_counts"]
     result = run_experiment(root, pre.suggested_mapping, missing_as_singleton=True)
     assert result.written
     rows = {r.plane_id: r for r in read_plane_histograms(result.csv_path)}
@@ -595,3 +595,55 @@ def test_tiff_reading_is_unchanged_next_to_stores(tmp_path):
     path = write_data(tmp_path / "a.tif", random_data((2, 8, 8)), axes="ZYX")
     assert tifffile.imread(path).shape == (2, 8, 8)
     assert len(list(iter_planes(path, prefill_mapping("ZYX")))) == 2
+
+
+def with_scale(path, scale, units, image_scale=None):
+    """Give the OME-Zarr image at ``path`` a level-0 scale and axis units."""
+    import zarr
+
+    group = zarr.open_group(str(path), mode="r+")
+    multiscales = group.attrs["multiscales"]
+    for axis, unit in zip(multiscales[0]["axes"], units, strict=True):
+        if unit:
+            axis["unit"] = unit
+    multiscales[0]["datasets"][0]["coordinateTransformations"] = [{"type": "scale", "scale": scale}]
+    if image_scale:
+        multiscales[0]["coordinateTransformations"] = [{"type": "scale", "scale": image_scale}]
+    group.attrs["multiscales"] = multiscales
+
+
+def test_ome_zarr_pixel_sizes_come_from_the_scale(tmp_path):
+    path = write_ngff(tmp_path / "a.ome.zarr", np.zeros((3, 8, 8), np.uint8), "zyx")
+    with_scale(path, [2.0, 0.25, 0.25], ["micrometer", "micrometer", "micrometer"])
+    image = open_ngff(path)
+    assert image.scale == (2.0, 0.25, 0.25)
+    assert image.units == ("micrometer",) * 3
+    sizes = inspect_image(path, "a.ome.zarr").physical_sizes
+    assert (sizes.x, sizes.y, sizes.z, sizes.space_unit) == (0.25, 0.25, 2.0, "micrometer")
+    # A scale for the whole image multiplies the level's scale.
+    with_scale(path, [1.0, 250.0, 250.0], ["nanometer"] * 3, image_scale=[1.0, 2.0, 2.0])
+    assert inspect_image(path, "a.ome.zarr").physical_sizes.micrometers("X") == 0.5
+
+
+def test_ome_zarr_scale_without_units_is_unknown(tmp_path):
+    path = write_ngff(tmp_path / "a.ome.zarr", np.zeros((8, 8), np.uint8), "yx")
+    assert open_ngff(path).scale == (1.0, 1.0)
+    assert inspect_image(path, "a.ome.zarr").physical_sizes.x is None
+
+
+def test_pixel_sizes_are_compared_across_tiff_and_ome_zarr(tmp_path):
+    tifffile.imwrite(
+        tmp_path / "a.ome.tif",
+        np.zeros((8, 8), np.uint8),
+        ome=True,
+        metadata={"axes": "YX", "PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5},
+    )
+    same = write_ngff(tmp_path / "b.ome.zarr", np.zeros((8, 8), np.uint8), "yx")
+    with_scale(same, [500.0, 500.0], ["nanometer", "nanometer"])
+    other = write_ngff(tmp_path / "c.ome.zarr", np.zeros((8, 8), np.uint8), "yx")
+    with_scale(other, [1.0, 1.0], ["micrometer", "micrometer"])
+    plain = write_ngff(tmp_path / "d.ome.zarr", np.zeros((8, 8), np.uint8), "yx")
+    report = inspect_images(tmp_path, ["a.ome.tif", "b.ome.zarr", "c.ome.zarr", "d.ome.zarr"])
+    assert codes(report.issues) == ["different_pixel_sizes", "missing_pixel_size"]
+    assert report.issues[0].paths == ("c.ome.zarr",)
+    assert report.issues[1].paths == (plain.name,)

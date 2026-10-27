@@ -5,7 +5,7 @@ new `schema_version`.
 
 Sections 3–7 (pixel types, histograms, the CSV, group statistics, normalization
 parameters) are defined by the [normalization brick's contract][normalization contract]
-(§1.2 and §8), whose code computes them (`morphobricks_normalization`, plan §12 question
+(§1.2 and §6), whose code computes them (`morphobricks_normalization`, plan §12 question
 19). They keep their numbers here as short pointers, with the rules this brick adds for a
 whole experiment; any change to them goes through the normalization brick.
 
@@ -51,6 +51,7 @@ length 1 and no role, has coordinate 0.
 | OME-Zarr labels | The label images of an image's OME-NGFF `labels` group (0.4 and 0.5) are listed with `ngff_label_names` and opened, level 0, with `open_ngff_labels` (by name; the name may be left out when there is one). They are never analysed; later bricks such as patch extraction use them as masks. |
 | Experiment mapping | Defined on the TIFF arrangement when the experiment has TIFF files; in an experiment of OME-Zarr images only, on their arrangement with the most axes. |
 | Channel names, significant bits | Recorded in the run manifest when metadata provides them; not part of the CSV. Channel names that differ at the same channel index are a warning. |
+| Plane counts | Images may have different numbers of channels, depth slices, time points or planes along an unassigned dimension; this is a warning (§11). |
 
 ## 3. Pixel types
 
@@ -68,8 +69,8 @@ blocks gives exactly the row of the whole plane.
 
 ## 5. CSV schema (`plane_histograms.csv`, schema version 2)
 
-Defined by the [normalization brick's contract][normalization contract] §8.2 (columns) and
-§8.1 (shared format). This brick writes it next to `run_manifest.json` (§9), with plane
+Defined by the [normalization brick's contract][normalization contract] §6.2 (columns) and
+§6.1 (shared columns). This brick writes it next to `run_manifest.json` (§9), with plane
 coordinates and labels as in §1–§2.
 
 This brick fills `position_id` in every row, with the image's position identifier (§1).
@@ -93,14 +94,16 @@ method is an offset and a scale, `(pixels − offset) / scale`.
 | Severity | Situations | Effect |
 |---|---|---|
 | Error | Mixed dtypes; unreadable TIFF (header or pixel data) or OME-Zarr folder in a leaf folder that is not excluded; OME-Zarr images, or converting TIFF images to OME-Zarr, without the `zarr` extra; OME-Zarr images whose declared axes do not fit the experiment's roles; every image excluded; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane that cannot be read within the memory limit, not even in blocks (for example a plane stored compressed in one piece); folder named `single`; sibling folders differing only in case; images in one leaf folder with the same position identifier (§1); folder below the technical-repeat level; output folder inside the experiment; no usable planes | Processing is blocked |
-| Warning | Files that are not images; empty folders; images outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image sizes with a valid mapping; planes without finite pixels while others remain; planes over the memory limit that are read in blocks | Processing continues; the item is reported |
+| Warning | Files that are not images; empty folders; images outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image widths or heights; different numbers of channels, depth slices, time points or other planes; physical pixel sizes that differ or are known for only some images; unbalanced numbers of images; biological repeats missing from some conditions (§11); planes without finite pixels while others remain; planes over the memory limit that are read in blocks | Processing continues; the item is reported |
 
 Every message states what happened in plain language, lists the affected paths, and
 suggests an action. Technical details go to the diagnostic log.
 
 In notebook step 1, message details start collapsed with orange warning and red error
 counts visible outside the dropdown. Collapsing details does not change severity or
-whether processing is blocked.
+whether processing is blocked. The consistency issues of §11 are shown in their own
+**Dataset consistency** panel, next to the balance table, and not repeated under the
+other messages.
 
 ## 9. Run manifest (`run_manifest.json`, manifest version 1)
 
@@ -164,3 +167,26 @@ presentation does not change the conversion rules below.
 | Switching | Turning conversion on or off recomputes every TIFF row; turning it off removes the copies the manifest recorded |
 | Missing copy | A converted TIFF whose copy was deleted counts as changed and is converted again |
 | Settings change | Copies written with other conversion settings (recorded in the manifest) are written again; their rows do not change |
+
+## 11. Dataset consistency (folder check)
+
+The folder check reads only folder names and image headers. It gathers every consistency
+issue of an experiment in one place (normalization plan N37). The new checks are warnings:
+they never block processing, and each names the affected images or folders and what to check.
+
+| Code | Severity | Rule |
+|---|---|---|
+| `unbalanced_images` | Warning | Images are counted per condition and biological repeat, technical repeats added up. A count below half or above twice the median of all counts (exactly half or twice is balanced) is reported, with the biological-repeat folders. |
+| `repeat_missing_conditions` | Warning | With more than one condition, a biological repeat not found in every condition is reported, with its folders. Repeats are matched across conditions by folder name. It is still used. |
+| `different_pixel_sizes` | Warning | The physical pixel size (X by Y) differs between images, or the z-step differs between images with more than one depth slice. Sizes are compared in micrometres, rounded to four significant digits. |
+| `missing_pixel_size` | Warning | The pixel size (or the z-step of images with more than one depth slice) is known for some images and not for others. Nothing is reported when no image has it. |
+| `different_plane_counts` | Warning | The number of channels (the `C` dimension, or the RGB samples `S` when there is no `C`), depth slices (`Z`), time points (`T`) or planes along any other dimension except X and Y differs between images. A missing dimension counts as 1. |
+| `different_sizes` | Warning | The image width or height differs between images (TIFF and OME-Zarr). The other dimensions are compared by `different_plane_counts`. |
+
+| Rule | Detail |
+|---|---|
+| Counts | Only images to analyse count: excluded images are left out, and a folder whose images are all excluded is not a biological repeat. A biological repeat with images directly in its folder has no technical-repeat folders (count 0). |
+| Balance table | Conditions as columns, biological repeats as rows (by folder name; `single` when there are no biological-repeat folders); each cell holds the number of images and of technical-repeat folders. |
+| Pixel sizes | TIFF: OME `PhysicalSizeX`, `PhysicalSizeY`, `PhysicalSizeZ` with their units (micrometres when not given), or ImageJ resolution tags and `spacing` with the ImageJ unit (unknown without a unit). OME-Zarr: the level-0 scale (`coordinateTransformations` of the first dataset, times the image's own scale when given) with the axis units; a scale without a unit is unknown. Sizes are never guessed. |
+| Panel | The notebook shows the balance table with the issues `mixed_dtypes`, `inconsistent_dimensions`, `missing_axes`, `inconsistent_mapping`, `different_sizes`, `different_plane_counts`, `channel_names_differ`, `different_pixel_sizes`, `missing_pixel_size`, `unbalanced_images` and `repeat_missing_conditions`. The command line `check` prints the balance table and every issue; `run` reports the same warnings. |
+| Outputs | Unchanged: the checks write nothing, and `plane_histograms.csv` and `run_manifest.json` do not change. |

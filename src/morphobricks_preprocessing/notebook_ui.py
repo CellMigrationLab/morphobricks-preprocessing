@@ -60,6 +60,7 @@ from .axes import (
     file_mapping_for,
     review_axes,
 )
+from .dataset import CONSISTENCY_CODES, BalanceTable
 from .discovery import check_output_folder, default_output_folder
 from .manifest import MANIFEST_FILENAME, ManifestFormatError, read_manifest
 from .planes import (
@@ -208,6 +209,7 @@ class PreprocessingNotebook:
                 self.folder_status,
                 self.folder_tiles,
                 self.labels_card,
+                self.consistency_card,
                 self.issues_card,
                 self.folder_next,
             ],
@@ -364,6 +366,32 @@ class PreprocessingNotebook:
             ],
             visible=False,
         )
+        self.balance_table = widgets.HTML()
+        self.consistency_counts = widgets.HTML()
+        self.consistency_issues = widgets.HTML()
+        self.consistency_details = widgets.Accordion(
+            children=[self.consistency_issues],
+            titles=("Show consistency warnings",),
+            selected_index=None,
+        )
+        self.consistency_card = ui.card(
+            "Dataset consistency",
+            [
+                ui.help_text(
+                    "How many images each condition (column) and biological repeat (row) has, "
+                    "over all its technical repeats. Amber cells are far from the others "
+                    "(fewer than half or more than twice the median), or a biological repeat "
+                    "the condition does not have. Below, the checks that "
+                    "compare the images with each other: pixel type, dimensions, sizes, "
+                    "numbers of planes, channel names and pixel sizes. Warnings do not stop "
+                    "processing; they say what to check."
+                ),
+                self.balance_table,
+                self.consistency_counts,
+                self.consistency_details,
+            ],
+            visible=False,
+        )
         self.folder_issues = widgets.HTML()
         self.exclude_button = ui.button(
             " Exclude these images and check again",
@@ -444,14 +472,22 @@ class PreprocessingNotebook:
         self.labels_confirmed.set(False, notify=False)
         self.labels_confirmed.disabled = not pre.discovery.leaves
         ui.set_visible(self.labels_card, bool(pre.discovery.leaves))
-        self.folder_issues.value = issues_html(pre.issues)
-        self.issue_counts.value = "".join(
-            f"<span class='mb-issue-count mb-{kind}'>{plural(len(items), name)}</span>"
-            for kind, items, name in (("error", errors, "error"), ("warn", warnings, "warning"))
-            if items
+        # Consistency issues have their own card next to the balance table; the
+        # messages card keeps the folder, file and readability problems.
+        consistency = [i for i in pre.issues if i.code in CONSISTENCY_CODES]
+        others = [i for i in pre.issues if i.code not in CONSISTENCY_CODES]
+        self.balance_table.value = balance_html(pre.dataset.balance)
+        self.consistency_counts.value = issue_count_chips(consistency) or ui.status(
+            "ok", "The images are consistent with each other."
         )
+        self.consistency_issues.value = issues_html(consistency)
+        self.consistency_details.selected_index = None
+        ui.set_visible(self.consistency_details, bool(consistency))
+        ui.set_visible(self.consistency_card, bool(pre.discovery.leaves))
+        self.folder_issues.value = issues_html(others)
+        self.issue_counts.value = issue_count_chips(others)
         self.issue_details.selected_index = None
-        ui.set_visible(self.issues_card, bool(pre.issues))
+        ui.set_visible(self.issues_card, bool(others))
         blocking = any(i.code in EXCLUDABLE_CODES for i in pre.issues)
         ui.set_visible(self.exclude_button, blocking)
         self._refresh_folder_next()
@@ -492,6 +528,7 @@ class PreprocessingNotebook:
         self.folder_next.value = ""
         self.labels_confirmed.set(False, notify=False)
         ui.set_visible(self.labels_card, False)
+        ui.set_visible(self.consistency_card, False)
         ui.set_visible(self.issues_card, False)
         self._refresh_axis_step()
         self._refresh_run_step()
@@ -1780,6 +1817,55 @@ def issues_html(issues: Iterable[ValidationIssue]) -> str:
             ui.status("error", "Processing is blocked until the errors below are resolved."),
         )
     return "".join(parts)
+
+
+def issue_count_chips(issues: Sequence[ValidationIssue]) -> str:
+    """Red error and orange warning counts, shown outside a folded list of issues."""
+    errors = [i for i in issues if i.is_error]
+    warnings = [i for i in issues if not i.is_error]
+    return "".join(
+        f"<span class='mb-issue-count mb-{kind}'>{plural(len(items), name)}</span>"
+        for kind, items, name in (("error", errors, "error"), ("warn", warnings, "warning"))
+        if items
+    )
+
+
+def balance_html(balance: BalanceTable) -> str:
+    """Render images per condition and biological repeat; unbalanced or missing cells in amber."""
+    if not balance.cells:
+        return ""
+    header = "".join(
+        f"<th>{html.escape(h)}</th>" for h in ("Biological repeat", *balance.conditions)
+    )
+    rows = []
+    for group in balance.repeat_groups:
+        cells = [f"<td><b>{html.escape(group)}</b></td>"]
+        for condition in balance.conditions:
+            cell = balance.cell(group, condition)
+            if cell is None:
+                cells.append("<td class='mb-cell-warn'>not found</td>")
+                continue
+            technical = (
+                plural(cell.technical_repeat_count, "technical repeat")
+                if cell.technical_repeat_count
+                else "no technical-repeat folders"
+            )
+            css = " class='mb-cell-warn'" if cell.unbalanced else ""
+            cells.append(
+                f"<td{css}><b>{plural(cell.image_count, 'image')}</b>"
+                f"<div class='mb-help' style='margin:0'>{technical}</div></td>"
+            )
+        rows.append(f"<tr>{''.join(cells)}</tr>")
+    median = (
+        f"<div class='mb-help'>Median: {balance.median:g} images per condition and "
+        "biological repeat.</div>"
+        if balance.median is not None
+        else ""
+    )
+    return (
+        "<div class='mb-table-wrap'><table class='mb-table mb-labels'>"
+        f"<thead><tr>{header}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>" + median
+    )
 
 
 def labels_html(pre: Preflight) -> str:

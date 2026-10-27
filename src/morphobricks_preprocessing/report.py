@@ -14,6 +14,7 @@ from morphobricks_normalization.pooling import NoValidPixelsError, PooledHistogr
 from morphobricks_normalization.records import LEVELS, PlaneRecord, group_records
 
 from .axes import AxisMapping, axis_length_ranges, axis_name
+from .dataset import BalanceTable
 from .discovery import DiscoveryResult
 from .run import Preflight, RunResult
 from .validation import Severity, ValidationIssue, plural
@@ -73,6 +74,40 @@ def label_tree(discovery: DiscoveryResult) -> str:
         missing = [LEVEL_NAMES[level] for level in LEVELS[len(parts) :]]
         note = f"{images}; {' and '.join(missing)}: single" if missing else images
         lines.append(f"{'    ' * len(parts)}{parts[-1]}/  ({note})")
+    return "\n".join(lines)
+
+
+def balance_rows(balance: BalanceTable) -> list[list[str]]:
+    """Turn the balance table into rows of text, with a header row.
+
+    Each cell gives the number of images and, in brackets, of technical-repeat
+    folders; ``!`` marks an unbalanced cell and ``-`` a repeat group the
+    condition does not have.
+    """
+    rows = [["biological repeat", *balance.conditions]]
+    for group in balance.repeat_groups:
+        row = [group]
+        for condition in balance.conditions:
+            cell = balance.cell(group, condition)
+            if cell is None:
+                row.append("-")
+                continue
+            text = f"{cell.image_count:,} ({cell.technical_repeat_count:,})"
+            row.append(f"{text} !" if cell.unbalanced else text)
+        rows.append(row)
+    return rows
+
+
+def balance_summary(balance: BalanceTable) -> str:
+    """Show the images per condition and biological repeat as an aligned table."""
+    if not balance.cells:
+        return ""
+    lines = [
+        "Images per condition (columns) and biological repeat (rows), with technical-repeat "
+        "folders in brackets; ! marks a number far from the median"
+        + (f" of {balance.median:g} images:" if balance.median is not None else ":"),
+        format_table(balance_rows(balance)),
+    ]
     return "\n".join(lines)
 
 

@@ -139,6 +139,48 @@ def test_errors_and_warnings_remain_counted_when_messages_are_collapsed(experime
     assert nb.issue_details.selected_index is None
 
 
+def test_dataset_consistency_panel_shows_the_balance(experiment):
+    nb = checked(experiment)
+    assert ui.is_visible(nb.consistency_card)
+    table = nb.balance_table.value
+    assert "<th>ctrl</th>" in table and "<th>drug</th>" in table
+    assert "<b>2 images</b>" in table and "<b>1 image</b>" in table
+    assert "no technical-repeat folders" in table
+    assert "Median: 1.5 images" in table and "mb-cell-warn" not in table
+    assert "consistent with each other" in nb.consistency_counts.value
+    assert not ui.is_visible(nb.consistency_details)
+
+
+def test_consistency_warnings_are_in_their_own_panel(experiment):
+    rng = np.random.default_rng(1)
+    for name in ("b", "c", "d", "e"):
+        write_data(
+            experiment / f"drug/rep1/{name}.tif",
+            rng.integers(0, 9, (3, 2, 16, 16), dtype=np.uint8),
+            "ZCYX",
+        )
+    write_data(
+        experiment / "drug/rep2/a.tif", rng.integers(0, 9, (3, 2, 20, 16), dtype=np.uint8), "ZCYX"
+    )
+    write_file(experiment / "ctrl/notes.txt")
+    nb = checked(experiment)
+    # drug/rep1 has 5 images against a median of 2, and rep2 is missing from ctrl.
+    assert "mb-cell-warn'><b>5 images" in nb.balance_table.value
+    assert "mb-cell-warn'>not found" in nb.balance_table.value
+    assert "mb-warn'>3 warnings" in nb.consistency_counts.value
+    assert ui.is_visible(nb.consistency_details)
+    assert nb.consistency_details.selected_index is None
+    for code in ("unbalanced images", "repeat missing conditions", "different sizes"):
+        assert code in nb.consistency_issues.value
+        assert code not in nb.folder_issues.value
+    # The messages card keeps the other problems, and the tiles count everything.
+    assert "non tiff file" in nb.folder_issues.value
+    assert "mb-warn'>1 warning" in nb.issue_counts.value
+    assert "0 / 4" in nb.folder_tiles.value
+    nb.folder.value = str(experiment / "ctrl")
+    assert not ui.is_visible(nb.consistency_card)
+
+
 def test_next_steps_follow_confirmation_and_folder_changes(experiment):
     nb = checked(experiment)
     assert "Check the labels in Step 1" in nb.folder_next.value

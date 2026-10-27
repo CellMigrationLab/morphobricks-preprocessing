@@ -20,6 +20,9 @@ Pre-alpha. Implemented and tested:
 
 - Folder discovery and validation (`discovery`, `validation`)
 - TIFF header inspection without reading pixels (`metadata`)
+- Dataset consistency warnings in the folder check: images per condition and biological
+  repeat, repeats missing from some conditions, differing plane counts and pixel sizes
+  (`dataset`, `pixel_sizes`)
 - Axis mapping: prefill from metadata, validation, applying one mapping to every
   file (`axes`)
 - Reading TIFFs one 2D plane at a time, with a memory limit and a preview plane;

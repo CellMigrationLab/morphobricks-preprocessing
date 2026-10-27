@@ -28,13 +28,15 @@ import shutil
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from xml.etree import ElementTree
 
 import numpy as np
-import tifffile
 from morphobricks_normalization.dtypes import is_integer
 
 from .axes import AxisMapping
+from .pixel_sizes import (  # noqa: F401 - re-exported for callers of this module
+    PhysicalSizes,
+    read_physical_sizes,
+)
 from .planes import DEFAULT_MEMORY_LIMIT, Plane, PlaneLayout
 from .zarr_input import (  # noqa: F401 - re-exported for callers of this module
     ZarrUnavailableError,
@@ -59,32 +61,6 @@ PYRAMID_TARGET = 512
 MAX_LEVELS = 8
 CHUNK_SIDE = 1024
 
-# Units in OME and ImageJ metadata, and their OME-NGFF (UDUNITS-2) names.
-_SPACE_UNITS = {
-    "pm": "picometer",
-    "nm": "nanometer",
-    "µm": "micrometer",
-    "μm": "micrometer",
-    "um": "micrometer",
-    "micron": "micrometer",
-    "microns": "micrometer",
-    "micrometer": "micrometer",
-    "mm": "millimeter",
-    "cm": "centimeter",
-    "m": "meter",
-}
-_TIME_UNITS = {
-    "ns": "nanosecond",
-    "µs": "microsecond",
-    "μs": "microsecond",
-    "us": "microsecond",
-    "ms": "millisecond",
-    "s": "second",
-    "sec": "second",
-    "min": "minute",
-    "h": "hour",
-}
-
 
 def ome_zarr_relative_path(source_relative_path: str) -> str:
     """Return where the copy of an image goes, relative to the output folder.
@@ -99,59 +75,6 @@ def ome_zarr_relative_path(source_relative_path: str) -> str:
             name = name[: -len(suffix)]
             break
     return (PurePosixPath(OME_ZARR_FOLDER) / path.parent / (name + OME_ZARR_SUFFIX)).as_posix()
-
-
-@dataclass(frozen=True)
-class PhysicalSizes:
-    """Pixel sizes from metadata; None where unknown.
-
-    Attributes
-    ----------
-    x, y, z
-        Pixel size and z-step in ``space_unit``.
-    t
-        Time between frames in ``time_unit``.
-    space_unit, time_unit
-        OME-NGFF unit names, e.g. ``"micrometer"`` and ``"second"``.
-    """
-
-    x: float | None = None
-    y: float | None = None
-    z: float | None = None
-    t: float | None = None
-    space_unit: str | None = None
-    time_unit: str | None = None
-
-    def scale(self, role: str) -> float:
-        """Return the size of one step along ``role`` (1 when unknown)."""
-        value = {"X": self.x, "Y": self.y, "Z": self.z, "T": self.t}.get(role)
-        return 1.0 if value is None or not value > 0 else float(value)
-
-    def unit(self, role: str) -> str | None:
-        """Return the unit of ``role``, or None when unknown or for channels."""
-        if role == "T":
-            return self.time_unit if self.t is not None else None
-        if role == "C":
-            return None
-        sizes = {"X": self.x, "Y": self.y, "Z": self.z}
-        return self.space_unit if sizes[role] is not None else None
-
-
-def read_physical_sizes(path: str | os.PathLike) -> PhysicalSizes:
-    """Read pixel sizes from OME or ImageJ metadata, without reading pixels.
-
-    Returns all-None sizes when the file has no such metadata or it cannot be
-    parsed; sizes are never guessed.
-    """
-    try:
-        with tifffile.TiffFile(path) as tif:
-            if tif.is_ome and tif.ome_metadata:
-                return _ome_sizes(tif.ome_metadata)
-            if tif.is_imagej:
-                return _imagej_sizes(tif)
-    except Exception:  # metadata is optional; a damaged header is reported elsewhere
-        logger.debug("Cannot read physical sizes of %s", path, exc_info=True)
-    return PhysicalSizes()
 
 
 COMPRESSIONS = {
@@ -618,61 +541,3 @@ def _create_array(group, name: str, shape, chunks, dtype, compressor):
         compressor=compressor,
         dimension_separator="/",
     )
-
-
-# Metadata -----------------------------------------------------------------------------
-
-
-def _ome_sizes(xml: str) -> PhysicalSizes:
-    root = ElementTree.fromstring(xml)
-    pixels = next((e for e in root.iter() if e.tag.rsplit("}", 1)[-1] == "Pixels"), None)
-    if pixels is None:
-        return PhysicalSizes()
-    unit = _SPACE_UNITS.get(pixels.get("PhysicalSizeXUnit", "µm"))
-    time_unit = _TIME_UNITS.get(pixels.get("TimeIncrementUnit", "s"))
-    return PhysicalSizes(
-        x=_number(pixels.get("PhysicalSizeX")),
-        y=_number(pixels.get("PhysicalSizeY")),
-        z=_number(pixels.get("PhysicalSizeZ")),
-        t=_number(pixels.get("TimeIncrement")) if time_unit else None,
-        space_unit=unit,
-        time_unit=time_unit,
-    )
-
-
-def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
-    meta = tif.imagej_metadata or {}
-    unit = _SPACE_UNITS.get(str(meta.get("unit", "")).strip().lower())
-    page = tif.pages.first
-    x = _resolution(page.tags.get("XResolution"))
-    y = _resolution(page.tags.get("YResolution"))
-    time_unit = _TIME_UNITS.get(str(meta.get("tunit", "sec")).strip().lower())
-    if unit is None:
-        # Without a unit the resolution tags are a default (often 1 pixel per inch).
-        x = y = None
-    return PhysicalSizes(
-        x=x,
-        y=y,
-        z=_number(meta.get("spacing")) if unit else None,
-        t=_number(meta.get("finterval")) if time_unit else None,
-        space_unit=unit,
-        time_unit=time_unit,
-    )
-
-
-def _resolution(tag) -> float | None:
-    if tag is None:
-        return None
-    try:
-        numerator, denominator = tag.value
-        return denominator / numerator if numerator else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _number(value) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if math.isfinite(number) and number > 0 else None

@@ -92,6 +92,12 @@ class NgffImage:
         Channel labels from the ``omero`` metadata; empty when not given.
     dataset_path
         Path of the level-0 array inside the store, e.g. ``"0"`` or ``"0/0"``.
+    scale
+        Size of one step along each dimension at level 0, from the
+        ``coordinateTransformations``; empty when not given.
+    units
+        Unit of each dimension from the axes metadata (None where not given);
+        empty when the axes are not described.
     """
 
     array: Any
@@ -100,6 +106,8 @@ class NgffImage:
     image_count: int
     channel_names: tuple[str | None, ...] = ()
     dataset_path: str = ""
+    scale: tuple[float | None, ...] = ()
+    units: tuple[str | None, ...] = ()
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -270,7 +278,50 @@ def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:
         image_count=image_count,
         channel_names=labels if any(labels) else (),
         dataset_path=f"{prefix}{dataset_path}",
+        scale=_level0_scale(first, datasets[0], len(axes)),
+        units=tuple(
+            (str(axis["unit"]) if axis.get("unit") else None) if isinstance(axis, dict) else None
+            for axis in first.get("axes") or []
+        ),
     )
+
+
+def _level0_scale(multiscale: dict, dataset: dict, ndim: int) -> tuple[float | None, ...]:
+    """Return the step size along each dimension at level 0, or ``()`` when not given.
+
+    The dataset's scale may be followed by a scale for the whole image
+    (OME-NGFF 0.4 and 0.5); both apply.
+    """
+    scale: list[float | None] | None = None
+    for transforms in (
+        dataset.get("coordinateTransformations"),
+        multiscale.get("coordinateTransformations"),
+    ):
+        for transform in transforms if isinstance(transforms, list) else []:
+            if not isinstance(transform, dict) or transform.get("type") != "scale":
+                continue
+            values = transform.get("scale")
+            if not isinstance(values, list):
+                continue
+            if len(values) != ndim:
+                return ()
+            numbers = [_float(v) for v in values]
+            scale = (
+                numbers
+                if scale is None
+                else [
+                    None if a is None or b is None else a * b
+                    for a, b in zip(scale, numbers, strict=True)
+                ]
+            )
+    return () if scale is None else tuple(scale)
+
+
+def _float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _labels_group(group):

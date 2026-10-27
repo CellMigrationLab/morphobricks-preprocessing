@@ -286,15 +286,20 @@ def test_review_from_metadata_report_replaces_missing_axes(tmp_path):
     write_tiff(tmp_path / "b.tif", (2, 6, 7), axes="ZYX")
     write_file(tmp_path / "bad.tif", b"garbage")
     report = inspect_images(tmp_path, ["a.tif", "b.tif", "bad.tif"])
-    assert codes(report.issues) == ["unreadable_tiff", "missing_axes"]
+    # One image has 3 channels and the other 1, which is also worth a warning.
+    assert codes(report.issues) == ["unreadable_tiff", "missing_axes", "different_plane_counts"]
     mapping = prefill_experiment_mapping(report)
 
     unconfirmed = review_axes(report, mapping)
-    assert codes(unconfirmed.combined_issues(report)) == ["unreadable_tiff", "missing_axes"]
+    assert codes(unconfirmed.combined_issues(report)) == [
+        "unreadable_tiff",
+        "missing_axes",
+        "different_plane_counts",
+    ]
 
     confirmed = review_axes(report, mapping, missing_as_singleton=True)
     assert confirmed.ok
-    assert codes(confirmed.combined_issues(report)) == ["unreadable_tiff"]
+    assert codes(confirmed.combined_issues(report)) == ["unreadable_tiff", "different_plane_counts"]
 
 
 def test_combined_issues_put_errors_first(tmp_path):

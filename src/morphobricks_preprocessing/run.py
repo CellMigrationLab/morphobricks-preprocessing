@@ -22,7 +22,7 @@ import shutil
 import tempfile
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -37,6 +37,7 @@ from morphobricks_normalization.dtypes import default_bin_count, validate_bin_co
 from morphobricks_normalization.records import PlaneRecord
 
 from .axes import AxisMapping, file_mapping_for, prefill_experiment_mapping, review_axes
+from .dataset import DatasetReport, check_dataset
 from .discovery import DiscoveryResult, default_output_folder, discover_experiment
 from .manifest import (
     MANIFEST_FILENAME,
@@ -90,6 +91,9 @@ class Preflight:
     suggested_mapping
         Axis mapping prefilled from the headers, or None if the images'
         dimensions conflict.
+    dataset
+        Images per condition and biological repeat, and the warnings about
+        their balance.
     """
 
     discovery: DiscoveryResult
@@ -97,11 +101,17 @@ class Preflight:
     excluded: tuple[str, ...] = ()
     exclusion_issues: tuple[ValidationIssue, ...] = ()
     suggested_mapping: AxisMapping | None = None
+    dataset: DatasetReport = field(default_factory=DatasetReport)
 
     @property
     def issues(self) -> tuple[ValidationIssue, ...]:
         """All issues found so far, errors first."""
-        merged = [*self.discovery.issues, *self.exclusion_issues, *self.metadata.issues]
+        merged = [
+            *self.discovery.issues,
+            *self.exclusion_issues,
+            *self.metadata.issues,
+            *self.dataset.issues,
+        ]
         return tuple(sorted(merged, key=lambda issue: not issue.is_error))
 
     @property
@@ -258,6 +268,7 @@ def preflight(
         excluded=excluded,
         exclusion_issues=tuple(_exclusion_issues(discovery, excluded)),
         suggested_mapping=prefill_experiment_mapping(metadata),
+        dataset=check_dataset(discovery, excluded=excluded),
     )
 
 
@@ -320,7 +331,12 @@ def run_experiment(
     output = default_output_folder(root) if output_folder is None else Path(output_folder).resolve()
     pre = preflight(root, output, exclude=exclude)
     review = review_axes(pre.metadata, mapping, missing_as_singleton=missing_as_singleton)
-    issues = [*pre.discovery.issues, *pre.exclusion_issues, *review.combined_issues(pre.metadata)]
+    issues = [
+        *pre.discovery.issues,
+        *pre.exclusion_issues,
+        *review.combined_issues(pre.metadata),
+        *pre.dataset.issues,
+    ]
     dtype = pre.metadata.dtype
     bins = None
     if dtype is not None and not has_errors(issues):
