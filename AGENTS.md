@@ -32,8 +32,8 @@ brick**.
 - **Statistics code (from the normalization brick):** the per-plane histogram, the CSV
   reader and writer, pooling (`PooledHistogram`) and normalization parameters (`min_max`,
   `percentile_range`, `z_score`, `robust_z_score`) live in the required dependency
-  `morphobricks_normalization` (pinned by commit to its Milestone 2b merge `0e53e67`; no
-  tags until its v0.2.0, plan §12 question 27). This brick runs them over
+  `morphobricks_normalization` (pinned to its release v0.2.0, plan §12 questions 27 and
+  28). This brick runs them over
   the experiment. Later bricks such as patch extraction use them to normalise any group of
   planes without rereading pixels. The old names stay importable from here, deprecated,
   for one version (follow-up P1, normalization plan N6).
@@ -388,14 +388,14 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Topic | Decision |
 |---|---|
 | Binning | Per-plane min–max, same bin count per experiment, pooled counts for groups (binning study) |
-| Core dependencies | `numpy`, `tifffile` and `morphobricks-normalization` (git dependency pinned by commit until its v0.2.0, the owner wants no tags for now; `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
+| Core dependencies | `numpy`, `tifffile` and `morphobricks-normalization` (git dependency pinned to its release tag v0.2.0; `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
 | OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
 | Folders named `single` (Q23) | Accepted as the level's value `single` when lower case and the only folder in its place (MorphoBricks one-member level, MorphoRelate M3); another case or other folders beside it stay `reserved_folder_name` |
 | Channel names (Q1) | Manifest only (from OME), warning `channel_names_differ`; CSV stays at schema 1 |
 | Plane coordinates (Q17) | `z`, `c`, `t` always written (0 for absent axes), `plane_id` always `::z=…,c=…,t=…`; CSV schema 2, version-1 tables recomputed on the next run. Superseded for the CSV by Q27: rows have `z`, `t` and channels in columns |
-| Channels across columns (Q27, P3b) | CSV schema 3 with the brick's writer: one row per XYC plane, per-channel CellProfiler-style columns, `plane_id` `::z=…,t=…`. Channels read one at a time (owner's choice); memory estimate adds the plane's finished bin counts. `different_channel_counts` error before any read (headers in step 1, confirmed roles in step 2); `different_plane_counts` without channels. Schema 1/2 tables recomputed; manifest version 1 records schema 3; step 4 output unchanged. Brick pinned by commit `0e53e67` |
+| Channels across columns (Q27, P3b) | CSV schema 3 with the brick's writer: one row per XYC plane, per-channel CellProfiler-style columns, `plane_id` `::z=…,t=…`. Channels read one at a time (owner's choice); memory estimate adds the plane's finished bin counts. `different_channel_counts` error before any read (headers in step 1, confirmed roles in step 2); `different_plane_counts` without channels. Schema 1/2 tables recomputed; manifest version 1 records schema 3; step 4 output unchanged. Brick first pinned by commit `0e53e67`, now by its tag v0.2.0 (Q28) |
 | OME-NGFF labels (Q18) | Read-only helpers `ngff_label_names`/`open_ngff_labels` for later bricks (CellPatcher masks); label images are never analysed and the outputs do not change |
 | Multi-series / pyramids (Q2) | Level 0 only; more than one series is an error |
 | RGB `S` axis (Q3) | Prefilled as C, confirmed like any role |
@@ -688,11 +688,13 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   P2 (dataset consistency warnings, question 21) and P3 (experiment design, question 22),
   and P3b (`plane_histograms.csv` schema version 3 with the channels in columns, question
   27).
-- **Unreleased (for MorphoRelate milestone M3):** folders named `single` read as a
+- **Input support for MorphoRelate milestone M3:** folders named `single` read as a
   one-member level (question 23), a unit per axis in `PhysicalSizes` and physical sizes in
   `inspect_image` (question 24), OME-Zarr physical sizes from the OME-NGFF scale (question
-  25), and notebook steps 1 and 2 embeddable with their own words (question 26). No
-  version bump or tag.
+  25), and notebook steps 1 and 2 embeddable with their own words (question 26).
+- **Released as v0.1.0** (27 October 2026), with everything above; the normalization brick
+  is pinned to its v0.2.0 (question 28). The next tag, v0.2.0, follows follow-ups P4 and
+  P5.
 - **Next (not started):** follow-ups P4–P5 of the normalization plan (image type,
   intensity checks and plots).
 - **Not yet verified:**

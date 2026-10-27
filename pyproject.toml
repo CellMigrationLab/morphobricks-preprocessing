@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "morphobricks-preprocessing"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "MorphoBricks preprocessing brick: per-plane intensity histograms and normalization methods for microscopy TIFFs."
 readme = "README.md"
 license = "MIT"
@@ -23,10 +23,10 @@ dependencies = [
     "numpy>=1.24",
     "tifffile>=2023.7.10",
     # Per-plane histograms, the CSV table, pooling and normalization (moved there in P1).
-    # Pinned by commit, not by tag: the owner wants no tags until the brick's v0.2.0
-    # release. 0e53e67 is the merge of its Milestone 2b (PR #8), which writes
-    # plane_histograms.csv schema version 3 with the channels in columns (follow-up P3b).
-    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@0e53e6762617e4297df0593c6977fdfb7b405522",
+    # Pinned to the brick's release v0.2.0, which writes plane_histograms.csv schema
+    # version 3 with the channels in columns (follow-up P3b; P3b first pinned its
+    # Milestone 2b merge commit 0e53e67, before the tag existed).
+    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.2.0",
 ]
 
 [project.optional-dependencies]
