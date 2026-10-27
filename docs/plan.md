@@ -748,7 +748,7 @@ Raised during review; to be decided before the milestones that need them:
     kind with the action once per kind, takes `--outlier-limit`, `--saturation-limit` and
     `--min-images`, and draws no plots. Comparisons stay within a condition, as the brick
     does. `plane_histograms.csv` and `experiment_design.csv` do not change.*
-31. Can this brick find each image's masks and tell how they relate, so that a user who is
+32. Can this brick find each image's masks and tell how they relate, so that a user who is
     not a programmer only has to name the masks (MorphoFeature decision D78)? Bricks that
     measure objects (MorphoObjects, MorphoRelate, CellPatcher, MorphoFeature's workflows)
     need every image paired with its masks and the parent-child relationships between mask
