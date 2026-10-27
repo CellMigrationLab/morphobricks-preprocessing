@@ -743,15 +743,17 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   `inspect_image` (question 24), OME-Zarr physical sizes from the OME-NGFF scale (question
   25), and notebook steps 1 and 2 embeddable with their own words (question 26).
 - **Released as v0.1.0** (27 October 2026), with everything above; the normalization brick
-  is pinned to its v0.2.0 (question 28). The next tag, v0.2.0, follows follow-ups P4 and
-  P5.
-- **Since v0.1.0:** follow-ups P4 (the image type, question 29) and P5 (intensity checks
-  and plots, question 30) of the normalization plan, and step 1 embeddable without the
-  experiment design, `folder_step(show_design=False)` (question 31). The owner tags v0.2.0
-  next.
-- **Masks (question 32, in review):** pairing every image with its masks, header checks,
-  the manifest's `masks` key, and the mask step with `mask_relationships.json`; library,
-  command line and documentation (the notebook step later).
+  is pinned to its v0.2.0 (question 28).
+- **Released as v0.2.0** (27 October 2026, question 33): follow-ups P4 (the image type,
+  question 29) and P5 (intensity checks and plots, question 30) of the normalization plan
+  (PRs #28 and #29), step 1 embeddable without the experiment design,
+  `folder_step(show_design=False)` (question 31, PR #27), and masks: pairing every image
+  with its masks, header checks, the manifest's `masks` key, and the mask step with
+  `mask_relationships.json`, as library, command line and documentation (question 32,
+  PR #26). The normalization brick stays pinned to its v0.2.0.
+- **Next (not started):** the notebook step for the masks (name each mask, confirm or
+  correct the relationships) and a file saving those answers for the other bricks
+  (question 32); 3D and time-lapse masks later.
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;
   - the optional `jl-hidecode` JupyterLab extension, which keeps code cells collapsed. It

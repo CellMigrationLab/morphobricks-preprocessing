@@ -333,7 +333,7 @@ API, CLI). The notebook and CLI only call the API.
   read as a one-member level, physical sizes with a unit per axis in the image header
   (TIFF and OME-Zarr, from the OME-NGFF scale), and steps 1 and 2 of the notebook
   embeddable by another brick. Outputs are unchanged. *Implemented, see questions 23 to
-  26.* After v0.1.0 (not released yet), step 1 embeds without the experiment design
+  26.* In v0.2.0, step 1 also embeds without the experiment design
   (`show_design=False`). *Implemented, see question 31.*
 - **Channels across columns (follow-up P3b of the normalization plan):**
   `plane_histograms.csv` schema version 3, written with the normalization brick's
@@ -353,6 +353,14 @@ API, CLI). The notebook and CLI only call the API.
   the notebook shows them with adjustable limits and per-channel box plots and
   distributions, the command line prints them, and the manifest records the limits.
   *Implemented, see question 30.*
+- **Masks (MorphoFeature decision D78):** every image paired with its masks from a masks
+  folder outside the experiment (or the label images of OME-Zarr images), checked from the
+  headers (`masks`); an optional mask step reads them and suggests each mask type's kind
+  and the relationships between types in `mask_relationships.json` (`mask_scan`); the
+  manifest records the masks. Library, command line and documentation; the notebook step
+  follows. *Implemented, see question 32.*
+- **Release v0.2.0:** P4, P5, step 1 without the experiment design and the masks.
+  *Released, see question 33.*
 
 ## 11. Tests and acceptance criteria
 
@@ -813,3 +821,15 @@ Raised during review; to be decided before the milestones that need them:
     the image name, `<condition>/.../<image>_<type>.tif`, and the two layouts may be mixed. A
     file that could name two images or fit both layouts is the error `ambiguous_mask`, never
     guessed. On the four JUMP smoke fields, both layouts give the same report.*
+33. What does this brick's second tag, v0.2.0, hold?
+    *Decided (27 October 2026): v0.2.0 holds everything merged after v0.1.0: the image type
+    (follow-up P4, question 29), the intensity checks and plots (follow-up P5, question
+    30), step 1 embeddable without the experiment design (question 31, for MorphoRelate)
+    and the masks (question 32, for the bricks that measure objects, MorphoFeature decision
+    D79: every brick pins one preprocessing tag). The masks' proposal to tag v0.2.0 with
+    them and move P4 and P5 to v0.3.0 no longer applied, since P4 and P5 were merged first,
+    so one tag holds all four. The normalization brick stays pinned to its v0.2.0, its
+    latest release, whose RGB and intensity-check code P4 and P5 use. Outputs:
+    `plane_histograms.csv` schema version 3, `experiment_design.csv` schema version 1 and
+    manifest version 1, with the optional keys `image_type`, `channels_from_rgb_samples`,
+    `intensity_checks` and `masks`.*
