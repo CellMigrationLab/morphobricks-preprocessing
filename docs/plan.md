@@ -366,6 +366,8 @@ API, CLI). The notebook and CLI only call the API.
   every plane is binned with its range check, and a `narrow_histogram_range` warning names
   the channels whose central range covers too few bins; `plane_histograms.csv` schema
   version 4. *Implemented, see question 34.*
+- **Release v0.3.0:** P6, with the normalization brick's v0.3.1. *Released, see question
+  35.*
 
 ## 11. Tests and acceptance criteria
 
@@ -855,3 +857,13 @@ Raised during review; to be decided before the milestones that need them:
     in the manifest (`narrow_histogram_ranges`, an optional key of manifest version 1), so
     a later run that keeps their rows reports them again without reading the images; only
     narrow checks are kept, which is all the warnings use.*
+35. What does this brick's third tag, v0.3.0, hold?
+    *Decided (28 October 2026): v0.3.0 holds everything merged after v0.2.0, follow-up P6
+    (question 34, PR #31), with the normalization brick pinned to its v0.3.1 (Milestone 5;
+    its tag v0.3.0 holds the same code but reports version 0.2.0). The version in
+    `pyproject.toml` is set to 0.3.0 before tagging, so the installed package reports the
+    tag's version. Outputs: `plane_histograms.csv` schema version 4 (version 3 and earlier
+    are recomputed on the next run), `experiment_design.csv` schema version 1 and manifest
+    version 1, with the optional keys of v0.2.0 and `narrow_histogram_ranges`, and
+    `settings.histogram`. The other bricks pin this tag to read schema version 4
+    (MorphoFeature decision D79); CellPatcher's follow-up C1 raises its pin to it.*

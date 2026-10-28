@@ -757,7 +757,8 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   with its masks, header checks, the manifest's `masks` key, and the mask step with
   `mask_relationships.json`, as library, command line and documentation (question 32,
   PR #26). The normalization brick stays pinned to its v0.2.0.
-- **Follow-up P6 (question 34, not yet released):** the histogram range in step 3 and the
+- **Released as v0.3.0** (28 October 2026, question 35): follow-up P6 of the
+  normalization plan (question 34, PR #31): the histogram range in step 3 and the
   `narrow_histogram_range` warning, `plane_histograms.csv` schema version 4, the
   normalization brick pinned to its v0.3.1.
 - **Next (not started):** the notebook step for the masks (name each mask, confirm or
