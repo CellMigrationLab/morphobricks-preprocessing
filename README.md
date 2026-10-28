@@ -49,8 +49,8 @@ Pre-alpha. Implemented and tested:
   and a command line (`morphobricks-preprocessing check` / `run` / `masks`)
 
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
-to its release v0.2.0): per-plane histograms
-(`histogram`), the histogram table (`csv_io`, schema version 3), pooled group statistics
+to its release v0.3.0): per-plane histograms with the robust range and the range check
+(`histogram`, `ranges`), the histogram table (`csv_io`, schema version 4), pooled group statistics
 (`pooling`) and normalization parameters (`normalization`). Importing these
 names from `morphobricks_preprocessing` still works for one version, with a
 `DeprecationWarning`.

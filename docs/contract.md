@@ -66,12 +66,21 @@ planes of an experiment use the same bin count.
 
 ## 4. Histogram semantics
 
-Defined by the [normalization brick's contract][normalization contract] §1.2.2: each plane
-is binned over its own exact range; integer bins have whole-number limits, float bins
-equal widths; every pixel is within half a bin of its representative; a plane read in
-blocks gives exactly the row of the whole plane.
+Defined by the [normalization brick's contract][normalization contract] §1.2.2 and §1.4:
+each plane is binned over its own exact range by default; integer bins have whole-number
+limits, float bins equal widths; every pixel is within half a bin of its representative; a
+plane read in blocks gives exactly the row of the whole plane.
 
-## 5. CSV schema (`plane_histograms.csv`, schema version 3)
+The histogram range and its check (follow-up P6, normalization brick N54–N60):
+
+| Rule | Detail |
+|---|---|
+| Range | `HistogramSettings.histogram_range` of the normalization brick: `minmax` (default, each plane's minimum to maximum) or `robust` (bins between the plane's `robust_quantiles`, default 0.01 % and 99.99 %, the pixels outside counted as underflow and overflow). It applies to histograms that are not exact (float planes, and integer planes with more values than bins); exact 8- and 16-bit histograms are the same either way. One setting per run, recorded in the manifest (`settings.histogram`, §9); changing it, or any other `HistogramSettings` value, recomputes every row. |
+| Range check | Every plane is binned with the brick's `histogram_with_range_check`, which returns the histogram and its `RangeCheck` in the same passes over the pixels (whole or in blocks, with the same result). The memory estimate of a plane includes the check (`estimate_histogram_memory(..., settings, range_check=True)`). |
+| Warning | `narrow_histogram_range`, one per channel, from the brick's `range_check_issues`: in the named planes the central range (1st to 99.8th percentile) covers fewer than `min_central_bins` (100) bins. With the default range it says how many bins the robust range would give and suggests computing the statistics again with it. Only this brick reports it (N57). The narrow planes are recorded in the manifest (`narrow_histogram_ranges`, §9), so a later run that keeps their rows reports them again without reading the images. |
+| Run and command line | `run_experiment(..., histogram_settings=...)`; `run --histogram-range minmax|robust` and `--robust-quantiles LOW HIGH`. The notebook offers the range in step 3's **Settings** (the recommended settings use `minmax`). |
+
+## 5. CSV schema (`plane_histograms.csv`, schema version 4)
 
 Defined by the [normalization brick's contract][normalization contract] §6.2 (columns) and
 §6.1 (shared and per-channel columns). This brick writes it with that brick's writer next
@@ -79,13 +88,15 @@ to `run_manifest.json` (§9), with plane coordinates and labels as in §1–§2:
 XYC plane (an image at one Z and T position), each channel's extrema, pixel counts and
 bins in its own columns (`Intensity_MinIntensity_C0`, `Histogram_Count_C1_00042`, …),
 `plane_id` = `<source_relative_path>::z=…,t=…`, rows sorted by path, then `z`, then `t`
-(follow-up P3b, plan §12 question 27).
+(follow-up P3b, plan §12 question 27). Version 4 adds each channel's underflow and overflow
+(`Histogram_{Underflow,Overflow}{Count,Sum,SumOfSquares}_C<i>`, normalization brick N56),
+zero with the default range (§4, follow-up P6).
 
 | Rule | Detail |
 |---|---|
 | Reading | The channels of a plane are read and binned one at a time; only one channel's pixels are in memory, next to the finished histograms of the plane's other channels. The memory estimate of a plane (plan §5) includes those histograms' bin counts, and one decision, whole or in blocks, covers every channel of every plane of an image. |
 | Histograms | Each channel's histogram is the one schema version 2 held in that channel's row, whole or in blocks (tested against a table written by version 2). |
-| Earlier versions | A table of schema version 1 or 2 (one row per plane and channel, with a `c` column) is recomputed completely on the next run, like any change of version (§9). |
+| Earlier versions | A table of schema version 1 or 2 (one row per plane and channel, with a `c` column), or 3 (without the underflow and overflow columns), is recomputed completely on the next run, like any change of version (§9). |
 
 This brick fills `position_id` in every row, with the image's position identifier (§1).
 The file-name fallback follows cross-brick decision D02 (one file is exactly one position
@@ -108,7 +119,7 @@ method is an offset and a scale, `(pixels − offset) / scale`.
 | Severity | Situations | Effect |
 |---|---|---|
 | Error | Experiment design not confirmed (`design_not_confirmed`) or a repeat group holding two folders of one condition (`repeat_group_conflict`), when a design is used (§12); image type RGB for images that are not three channels of an integer type (`rgb_not_possible`, §13); mixed dtypes; images with different numbers of channels (`different_channel_counts`, §2); unreadable TIFF (header or pixel data) or OME-Zarr folder in a leaf folder that is not excluded; OME-Zarr images, or converting TIFF images to OME-Zarr, without the `zarr` extra; OME-Zarr images whose declared axes do not fit the experiment's roles; every image excluded; more than one image series in a file; unsupported sample format or axis; missing/duplicate X or Y, duplicate roles, unassigned non-singleton axis, inconsistent mapping; plane that cannot be read within the memory limit, not even in blocks (for example a plane stored compressed in one piece); folder named `single` in another case, or beside other folders (§1); sibling folders differing only in case; images in one leaf folder with the same position identifier (§1); folder below the technical-repeat level; output folder inside the experiment; no usable planes; when masks are given, a masks folder missing or inside the experiment, mask names differing only in case, two masks of one type for an image, a mask whose name could belong to two images or types, or a mask that is unreadable, not 2D, of another size than its image or not of integers or booleans (§15) | Processing is blocked |
-| Warning | Intensity checks of the written table (`image_intensity_outlier`, `repeat_intensity_shift`, `saturated_image`, `no_intensity_spread`, §14), reported apart from the run's issues; files that are not images; empty folders; images outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image widths or heights; different numbers of depth slices, time points or other planes; physical pixel sizes that differ or are known for only some images; unbalanced numbers of images; biological repeats missing from some conditions (§11); planes without finite pixels while others remain; planes over the memory limit that are read in blocks; images without a mask of a type other images have, masks matching no analysed image, files outside the mask-type folders (§15) | Processing continues; the item is reported |
+| Warning | Intensity checks of the written table (`image_intensity_outlier`, `repeat_intensity_shift`, `saturated_image`, `no_intensity_spread`, §14), reported apart from the run's issues; files that are not images; empty folders; images outside leaf folders; images excluded by the user, or excluded paths that match no image; channel names differing between files; non-finite pixels; different image widths or heights; different numbers of depth slices, time points or other planes; physical pixel sizes that differ or are known for only some images; unbalanced numbers of images; biological repeats missing from some conditions (§11); planes without finite pixels while others remain; channels whose central intensity range covers too few histogram bins (`narrow_histogram_range`, §4); planes over the memory limit that are read in blocks; images without a mask of a type other images have, masks matching no analysed image, files outside the mask-type folders (§15) | Processing continues; the item is reported |
 
 Every message states what happened in plain language, lists the affected paths, and
 suggests an action. Technical details go to the diagnostic log.
@@ -140,11 +151,11 @@ file's schema or statistical interpretation.
 
 | Key | Meaning |
 |---|---|
-| `manifest_version`, `schema_version` | Manifest format (`1`) and CSV format (`3`). A manifest whose `schema_version` is not the current one makes the next run recompute every row. |
+| `manifest_version`, `schema_version` | Manifest format (`1`) and CSV format (`4`). A manifest whose `schema_version` is not the current one makes the next run recompute every row. |
 | `written_at` | UTC time of writing, ISO 8601. |
 | `experiment_root` | Absolute path of the experiment folder, for information. |
 | `dtype` | Pixel type of the experiment. |
-| `settings` | `bin_count`, `memory_limit` (bytes), `missing_as_singleton`, `exclude` (sorted relative paths), `convert_tiffs` (whether TIFF images are converted to OME-Zarr and processed from the copies; false when absent), `conversion` (`chunk_size`, `compression`, `compression_level`, `pyramid_levels` — null for automatic; defaults when absent). |
+| `settings` | `bin_count`, `memory_limit` (bytes), `missing_as_singleton`, `exclude` (sorted relative paths), `convert_tiffs` (whether TIFF images are converted to OME-Zarr and processed from the copies; false when absent), `conversion` (`chunk_size`, `compression`, `compression_level`, `pyramid_levels` — null for automatic; defaults when absent), `histogram` (`HistogramSettings.to_dict()` of the normalization brick: `library_version`, `histogram_range`, `robust_quantiles`, `min_central_bins`, §4; the default `minmax` range when absent, in manifests written before follow-up P6). |
 | `axis_mapping` | `axes` (file axis labels) and `roles` (`X`, `Y`, `Z`, `C`, `T` or null per axis). |
 | `labels` | One entry per leaf folder: `folder` (relative path, `.` for the root) and its three labels. |
 | `files` | One entry per analysed file, sorted by path: `relative_path`, `size` (bytes), `mtime_ns`, the three labels, `axes`, `singleton_roles`, `plane_count` (its rows in the table: XYC planes), `channel_names` (list, null for unnamed channels; empty if none in metadata), `significant_bits` (null if not in metadata), `ome_zarr_path` (for a TIFF converted to OME-Zarr, the copy relative to the output folder; null otherwise or when the key is absent), `read_in_blocks` (true when the image's planes are over the memory limit and are read in blocks; information only, false when absent), `position_id` (the image's position identifier, §1; null when absent, in manifests written before it). For an OME-Zarr image, `size` is the total size of its files and `mtime_ns` the time of its newest file. |
@@ -154,6 +165,7 @@ file's schema or statistical interpretation.
 | `image_type` | `fluorescence` or `rgb`, the image type the user confirmed (§13); null when the run was given none, or absent in manifests written before it. Optional key: the manifest stays version 1. Changing it recomputes nothing. |
 | `channels_from_rgb_samples` | `true` when the C role is the RGB samples axis of images stored as RGB colour (§13), `false` otherwise; absent in manifests written before it. Optional key. |
 | `intensity_checks` | The limits of the intensity checks run on the table (§14): `IntensityCheckSettings.to_dict()` of the normalization brick (`library_version`, `outlier_limit`, `saturation_limit`, `min_images`); absent in manifests written before it. Optional key. Changing the limits recomputes nothing. |
+| `narrow_histogram_ranges` | The channel planes whose range check found the central range too narrow (§4), sorted by plane and channel: `relative_path`, `plane_id`, `channel` and the fields of the normalization brick's `RangeCheck` (`histogram_range`, `central_percentiles`, `central_bins`, `robust_quantiles`, `robust_limits`, `outside_robust_count`, `robust_central_bins`, `min_central_bins`). Empty when there are none; absent in manifests written before follow-up P6. Optional key: the manifest stays version 1. |
 | `versions` | Versions of `morphobricks-preprocessing`, `morphobricks-normalization` (which computes the histograms and writes the CSV; absent in manifests written before it), `numpy`, `tifffile` and Python. Information only: a different version never causes a rebuild. |
 
 Channel names and significant bits come from OME metadata and are for information only.

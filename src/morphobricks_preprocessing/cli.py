@@ -27,6 +27,11 @@ from datetime import date
 from pathlib import Path
 
 from morphobricks_normalization.checks import IntensityCheckSettings
+from morphobricks_normalization.ranges import (
+    DEFAULT_ROBUST_QUANTILES,
+    HISTOGRAM_RANGES,
+    HistogramSettings,
+)
 
 from .axes import AxisMapping, reference_axes, review_axes
 from .design import (
@@ -159,6 +164,24 @@ def build_parser() -> argparse.ArgumentParser:
         "three channels); default: the type suggested from the image headers, printed",
     )
     run.add_argument("--bins", type=int, help="bins per plane (default: depends on pixel type)")
+    run.add_argument(
+        "--histogram-range",
+        choices=HISTOGRAM_RANGES,
+        default="minmax",
+        help="range of histograms that are not exact (float images, and integer images with "
+        "more values than bins): minmax (default, each plane's minimum to maximum) or robust "
+        "(between the --robust-quantiles, the pixels outside counted separately); 8- and "
+        "16-bit histograms are the same either way",
+    )
+    run.add_argument(
+        "--robust-quantiles",
+        type=float,
+        nargs=2,
+        default=list(DEFAULT_ROBUST_QUANTILES),
+        metavar=("LOW", "HIGH"),
+        help="quantiles in percent of the robust range, also used by the range check "
+        "(default 0.01 99.99)",
+    )
     run.add_argument(
         "--memory-limit",
         type=parse_size,
@@ -424,6 +447,13 @@ def _run(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(exc)
         return 1
+    try:
+        histogram_settings = HistogramSettings(
+            histogram_range=args.histogram_range, robust_quantiles=tuple(args.robust_quantiles)
+        )
+    except ValueError as exc:
+        print(exc)
+        return 1
     design = None
     # Folder problems are reported by the run itself; the design is only asked about
     # once the folders can be processed.
@@ -469,6 +499,7 @@ def _run(args: argparse.Namespace) -> int:
         masks_folder=args.masks,
         image_type=image_type,
         intensity_settings=intensity_settings,
+        histogram_settings=histogram_settings,
     )
     if result.issues:
         print(format_issues(result.issues))

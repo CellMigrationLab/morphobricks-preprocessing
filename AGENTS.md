@@ -25,7 +25,7 @@ brick**.
 
 - **Input:** one experiment folder of TIFF images and/or OME-Zarr images (OME-NGFF 0.4/0.5,
   `zarr` extra).
-- **Output:** `plane_histograms.csv` (schema version 3): one row per XYC plane (an image at
+- **Output:** `plane_histograms.csv` (schema version 4): one row per XYC plane (an image at
   one Z and T), with one intensity histogram per channel in its own columns, plus
   `experiment_design.csv` (repeat groups, confirmation, controls) and `run_manifest.json`,
   all in an output folder outside the experiment.
@@ -241,7 +241,11 @@ functions the tests use.
 - **Every plane is binned over its own min–max range**, with the same bin count for all
   planes of an experiment. The binning study showed per-plane ranges cut percentile errors
   5–30× compared with binning over the whole dtype range, and adding images never changes
-  existing rows.
+  existing rows. Optionally (follow-up P6, question 34) histograms that are not exact use
+  the brick's robust range instead: bins between the plane's 0.01 % and 99.99 % quantiles,
+  the pixels outside counted as underflow and overflow. Every plane is binned with the
+  brick's `histogram_with_range_check`; channels whose central range (1st to 99.8th
+  percentile) covers fewer than 100 bins give the warning `narrow_histogram_range`.
 - **Integer planes:** whole-number bin limits whose widths differ by at most one value.
   Exact when the range fits the bin count.
   - Default bins: 256 for 8-bit and 65,536 for 16-bit (one per value, so exact), 65,536 for
@@ -268,7 +272,7 @@ functions the tests use.
   Percentile range defaults to 1–99.8. Robust z-score uses MAD × 1.4826. A zero or
   non-finite scale is an error.
 
-### CSV (normalization contract §6.2, schema version 3, follow-up P3b)
+### CSV (normalization contract §6.2, schema version 4, follow-ups P3b and P6)
 
 - **Rows:** one per XYC plane (image, Z, T), written with the brick's writer from
   `PlaneRecord(path, *labels, histograms=…, z=, t=, position_id=)`.
@@ -305,7 +309,8 @@ functions the tests use.
   still holds all its rows. Unchanged rows are reused; new and changed files are read;
   deleted, renamed or excluded files lose their rows.
 - **Full rebuild** happens on `force_rebuild`, when there is no readable manifest, when
-  the dtype, bin count or axis mapping changed, or when the CSV's hash no longer matches.
+  the dtype, bin count, histogram settings (`RunSettings.histogram`) or axis mapping
+  changed, or when the CSV's hash no longer matches.
   Changing only the memory limit or the exclusions recomputes nothing.
 - **Writes:** the CSV is written first, then the manifest, each via a temporary file and
   replace. Nothing is written if any error is found. An interrupted run is caught next
@@ -431,7 +436,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Topic | Decision |
 |---|---|
 | Binning | Per-plane min–max, same bin count per experiment, pooled counts for groups (binning study) |
-| Core dependencies | `numpy`, `tifffile`, `scipy` (the mask step's piece counts, Q32) and `morphobricks-normalization` (git dependency pinned to its release tag v0.2.0; `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
+| Core dependencies | `numpy`, `tifffile`, `scipy` (the mask step's piece counts, Q32) and `morphobricks-normalization` (git dependency pinned to its release tag v0.3.0; `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
 | OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
@@ -445,13 +450,14 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Significant bits (Q4) | Manifest only, information only; `bit_depth` and binning unchanged |
 | Corrupt files (Q6) | Explicit exclusion list, recorded in manifest, rows removed |
 | Notebook target | Local Jupyter (not Colab-first) |
-| CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--memory-limit 2GiB`, `--missing-as-singleton`, `--force-rebuild`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata. Exit 1 on errors |
+| CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--histogram-range`, `--robust-quantiles`, `--memory-limit 2GiB`, `--missing-as-singleton`, `--force-rebuild`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata. Exit 1 on errors |
 | Large planes (Q15) | Planes over the memory limit are read in blocks automatically, announced by the warning `planes_read_in_blocks` and `read_in_blocks` in the manifest. Block size derived from the limit (whole strips/tiles/chunks, uncompressed pieces and chunks also by rows). Compressed single-strip/tile planes keep the `plane_over_memory_limit` error. Two-pass histograms identical to whole planes. OME-Zarr copies written block by block, smaller levels built from the stored level above. Axis preview reduced (every n-th pixel) with a caption saying so |
 | Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Their public names stay importable from `morphobricks_preprocessing` and from the old submodules for one version: module `__getattr__` stand-ins (`_moved.py`), one `DeprecationWarning` per old path naming `morphobricks_normalization.<module>.<name>`, same objects. The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, now §6.2 for the CSV) |
 | Dataset consistency (Q21, P2) | Step 1 "Dataset consistency" panel: balance table (images and technical-repeat folders per condition x biological repeat), `unbalanced_images` (< 0.5 or > 2 x median), `repeat_missing_conditions`, `different_pixel_sizes`, `missing_pixel_size` (OME-Zarr scale included), `different_plane_counts`; `different_sizes` narrowed to width/height; consistency issues shown only in that panel, not in Messages. Warnings only; outputs unchanged |
 | Experiment design (Q22, P3) | Step 1 after the labels: pairing dropdowns, one yellow "Yes, they are comparable" question per repeat group (single whole-experiment question without biological-repeat folders), control checkboxes; `experiment_design.csv` written after every answer; reruns load it and fold the questions behind a Change button; step 3 gated. CLI `run` reads it or `--design`, else writes a template and exits 1. `run_experiment(design=...)` optional; manifest `experiment_design_sha256` (optional key, version 1). Two folders of one condition in a group block that group |
 | Image type (Q29, P4) | Step 2 card after the axis roles: Fluorescence or RGB, suggestion preselected, confirmed with **Yes, this is the right image type**; RGB suggested for TIFF photometric RGB with three samples on the C axis; RGB needs three integer channels (`check_rgb`), else disabled with the reason and `rgb_not_possible` in a run. Manifest keys `image_type`, `channels_from_rgb_samples` (optional, version 1); type changes recompute nothing. CLI `--image-type`, default the printed suggestion |
 | Intensity checks (Q30, P5) | Warnings from the table alone with the brick's `image_summaries`/`intensity_checks`, shown automatically after step 3 and in step 4 for any table; limits under a collapsed **Check settings** panel, recorded in the manifest (`intensity_checks`); per-channel box plots with flagged images and cumulative distributions per biological repeat, notebook only; the CLI prints the warnings (`--outlier-limit`, `--saturation-limit`, `--min-images`) |
+| Histogram range (Q34, P6) | Step 3 **Settings**: the brick's `HistogramSettings` (`minmax` default, or `robust` with adjustable quantiles); recorded in the manifest's `settings.histogram`, any change recomputes every row. Every plane binned with `histogram_with_range_check` (memory estimate with `range_check=True`, through `planes._Binning`); `narrow_histogram_range` warnings from `range_check_issues`, one per channel, with the narrow planes recorded in the manifest's `narrow_histogram_ranges` so kept rows still report them. CSV schema 4 (underflow and overflow columns, zero with `minmax`); schema 3 tables recomputed. CLI `--histogram-range`, `--robust-quantiles`. Normalization brick pinned to v0.3.0 |
 | Position identity (Q20, D02) | `position_id` = image name without extension, in every CSV row and manifest file entry; FOV key = labels + `position_id`; duplicates in one leaf folder are the error `duplicate_position_id`. CSV columns and schema 2 unchanged; manifest version 1 with an optional key |
 | Masks (Q32) | Optional masks folder outside the experiment, one subfolder per mask type mirroring the experiment's folders, or the experiment's folders with `<image>_<type>.tif` (both may be mixed; `ambiguous_mask` when a name could fit two images or both layouts), paired by leaf folder + `position_id`; OME-Zarr label images are masks too. Header-only errors (`masks_folder_not_found`, `masks_inside_experiment`, `mask_names_differ_in_case`, `duplicate_mask`, `ambiguous_mask`, `unreadable_mask`, `mask_not_2d`, `mask_size_mismatch`, `mask_pixel_type`) and warnings (`mask_missing`, `mask_without_image`, `mask_outside_type_folder`) in `check`/`run`; manifest key `masks` (optional, version 1). Optional mask step (`masks` command, `scan_masks`): kinds, relations with evidence, direct-parent hierarchy, `mask_relationships.json` (report version 1); default thresholds the user may change (`thresholds=` keyword, one CLI option each, checked by `mask_thresholds`, written in the report); suggestions only, the user names and confirms. SciPy core dependency. Confirmed by the owner: 2D masks at the image's YX, integer/bool pixels, masks folder outside the experiment. Next: notebook step and a file of the user's answers; 3D/time-lapse masks later; tag v0.2.0 proposed after merge |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
@@ -751,6 +757,9 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   with its masks, header checks, the manifest's `masks` key, and the mask step with
   `mask_relationships.json`, as library, command line and documentation (question 32,
   PR #26). The normalization brick stays pinned to its v0.2.0.
+- **Follow-up P6 (question 34, not yet released):** the histogram range in step 3 and the
+  `narrow_histogram_range` warning, `plane_histograms.csv` schema version 4, the
+  normalization brick pinned to its v0.3.0.
 - **Next (not started):** the notebook step for the masks (name each mask, confirm or
   correct the relationships) and a file saving those answers for the other bricks
   (question 32); 3D and time-lapse masks later.

@@ -1,11 +1,13 @@
-"""Schema version 3 holds exactly what version 2 held, channel by channel (follow-up P3b).
+"""The table holds exactly what version 2 held, channel by channel (follow-ups P3b, P6).
 
 The fixture in ``tests/data`` was written by the code before P3b (commit
 ``55f1074`` with morphobricks-normalization v0.1.0, ``make_v2_fixture.py``):
 simulated pixels and the version-2 ``plane_histograms.csv`` its ``run_experiment``
 wrote for them, one row per plane and channel. Here the same images go through
 the current code, read whole and in blocks; every value of every channel must be
-the same text as in the version-2 row of that channel.
+the same text as in the version-2 row of that channel. Version 4 (follow-up P6) adds
+underflow and overflow columns, which the default minimum-to-maximum range leaves
+at zero.
 """
 
 import csv
@@ -102,8 +104,10 @@ def test_histograms_equal_those_of_version_2(tmp_path, pixels, dtype, blocks):
     new = read_rows(result.csv_path)
     matched = 0
     for row in new:
-        assert row["schema_version"] == "3"
+        assert row["schema_version"] == "4"
         for c in range(int(row["channel_count"])):
+            for tail in ("Underflow", "Overflow"):
+                assert float(row[f"Histogram_{tail}Count_C{c}"]) == 0
             before = old[(row["plane_id"], c)]
             for column in SHARED_COLUMNS:
                 assert row[column] == before[column], (row["plane_id"], column)
@@ -175,7 +179,7 @@ def test_a_version_2_table_is_recomputed_on_the_next_run(tmp_path, pixels):
     assert second.read == tuple(sorted(rel for rel, _, _ in EXPERIMENTS["float32"][2]))
     assert second.csv_path.read_bytes() == table
     data = json.loads(second.manifest_path.read_text(encoding="utf-8"))
-    assert (data["manifest_version"], data["schema_version"]) == ("1", "3")
+    assert (data["manifest_version"], data["schema_version"]) == ("1", "4")
     assert read_manifest(second.manifest_path).csv_sha256 == file_sha256(second.csv_path)
 
 

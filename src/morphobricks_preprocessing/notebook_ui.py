@@ -57,6 +57,7 @@ from morphobricks_normalization.dtypes import (
     is_integer,
 )
 from morphobricks_normalization.pooling import NoValidPixelsError, PooledHistogram
+from morphobricks_normalization.ranges import DEFAULT_ROBUST_QUANTILES, HistogramSettings
 from morphobricks_normalization.records import PlaneRecord, group_records
 
 from . import notebook_style as ui
@@ -156,6 +157,12 @@ _PLAN_PATHS = 5
 CONVERSION_OPTIONS = [
     ("Read the images directly (recommended; nothing extra is saved)", "read"),
     ("Convert the TIFF images to OME-Zarr, then process the converted copies", "convert"),
+]
+
+# Step 3's histogram range (follow-up P6, normalization contract §1.4).
+HISTOGRAM_RANGE_OPTIONS = [
+    ("Minimum to maximum of each plane (recommended)", "minmax"),
+    ("Robust: between two quantiles, the pixels outside counted separately", "robust"),
 ]
 
 PYRAMID_OPTIONS = [
@@ -1593,6 +1600,27 @@ class PreprocessingNotebook:
             value=65_536, min=1, max=MAX_BIN_COUNT, description="Bins per plane", style=_label()
         )
         self.bins_hint = ui.help_text("")
+        self.histogram_range = widgets.RadioButtons(
+            options=HISTOGRAM_RANGE_OPTIONS, value="minmax", layout=widgets.Layout(width="99%")
+        )
+        self.robust_low = widgets.BoundedFloatText(
+            value=DEFAULT_ROBUST_QUANTILES[0],
+            min=0,
+            max=100,
+            step=0.01,
+            description="Lower quantile (%)",
+            style=_label(),
+        )
+        self.robust_high = widgets.BoundedFloatText(
+            value=DEFAULT_ROBUST_QUANTILES[1],
+            min=0,
+            max=100,
+            step=0.01,
+            description="Upper quantile (%)",
+            style=_label(),
+        )
+        self.robust_box = widgets.VBox([self.robust_low, self.robust_high])
+        ui.set_visible(self.robust_box, False)
         self.memory_gib = widgets.BoundedFloatText(
             value=DEFAULT_MEMORY_LIMIT / 2**30,
             min=0.01,
@@ -1608,6 +1636,17 @@ class PreprocessingNotebook:
             [
                 self.bins,
                 self.bins_hint,
+                widgets.HTML("<b>Histogram range</b>"),
+                self.histogram_range,
+                self.robust_box,
+                ui.help_text(
+                    "For histograms that are not exact (float images, and integer images with "
+                    "more values than bins). A few extreme pixels, such as hot pixels, can "
+                    "squeeze every other pixel into a few bins of the minimum-to-maximum range; "
+                    "the run then warns about a narrow range. The robust range bins between "
+                    "the two quantiles and counts the pixels outside separately. 8- and 16-bit "
+                    "histograms are the same either way. Changing it reads every image again."
+                ),
                 self.memory_gib,
                 ui.help_text(
                     "The most working memory one plane may use. A larger plane is read in "
@@ -1658,8 +1697,18 @@ class PreprocessingNotebook:
             "plots at once and is recorded by the next run.",
         )
         self.recommended.observe(lambda _: self._recommended_changed(), names="value")
-        for control in (self.bins, self.memory_gib, self.force_rebuild):
+        for control in (
+            self.bins,
+            self.histogram_range,
+            self.robust_low,
+            self.robust_high,
+            self.memory_gib,
+            self.force_rebuild,
+        ):
             control.observe(lambda _: self._refresh_run_step(), names="value")
+        self.histogram_range.observe(
+            lambda change: ui.set_visible(self.robust_box, change["new"] == "robust"), names="value"
+        )
         self.run_button.on_click(lambda _: self.run())
 
     def _build_conversion_card(self) -> None:
@@ -1890,13 +1939,16 @@ class PreprocessingNotebook:
         if recommended:
             if getattr(self, "_default_bins", None):
                 self.bins.value = self._default_bins
+            self.histogram_range.value = "minmax"
+            self.robust_low.value, self.robust_high.value = DEFAULT_ROBUST_QUANTILES
             self.memory_gib.value = DEFAULT_MEMORY_LIMIT / 2**30
             self.force_rebuild.value = False
         bins = getattr(self, "_default_bins", None)
         bins_text = f"{bins:,} bins per plane" if bins else "the default bin count"
         self.recommended_hint.value = (
-            f"<div class='mb-help'>Recommended: {bins_text}, a memory limit of 1 GiB per plane, "
-            "and only new or changed images are read. Untick to change them.</div>"
+            f"<div class='mb-help'>Recommended: {bins_text}, each plane's minimum to maximum as "
+            "the histogram range, a memory limit of 1 GiB per plane, and only new or changed "
+            "images are read. Untick to change them.</div>"
         )
         self._refresh_run_step()
 
@@ -1953,11 +2005,13 @@ class PreprocessingNotebook:
         axis roles, the memory limit or the bin count change.
         """
         bins = self.bins.value or None
+        histogram = self._histogram_settings_or_none()
         key = (
             self.confirmed_mapping,
             self.missing_as_singleton.value,
             self._memory_limit(),
             bins,
+            histogram,
         )
         cached = self._layouts_cache
         # A new check of the folder gives a new Preflight, even for the same folder.
@@ -1968,7 +2022,11 @@ class PreprocessingNotebook:
         for rel, mapping in sorted(review.file_mappings.items()):
             try:
                 layouts[rel] = plane_layout(
-                    root / rel, mapping, memory_limit=self._memory_limit(), bin_count=bins
+                    root / rel,
+                    mapping,
+                    memory_limit=self._memory_limit(),
+                    bin_count=bins,
+                    histogram_settings=histogram,
                 )
             except PlaneReadError:
                 continue  # the run reports these images as unsupported_layout
@@ -2066,8 +2124,8 @@ class PreprocessingNotebook:
                 lines.append(
                     f"An earlier run was found ({plural(len(earlier.files), 'image')}, "
                     f"{html.escape(earlier.written_at or 'unknown date')}). Only new or "
-                    "changed images will be read; if the bin count or axis roles changed, "
-                    "every image is read again."
+                    "changed images will be read; if the bin count, histogram range or axis "
+                    "roles changed, every image is read again."
                 )
             except ManifestFormatError:
                 lines.append("An earlier run was found but cannot be read; it will be replaced.")
@@ -2080,6 +2138,15 @@ class PreprocessingNotebook:
         """Compute or update the histogram table (pass 2) and show what happened."""
         self._refresh_run_step()
         if self.run_button.disabled:
+            return None
+        try:
+            histogram_settings = self._histogram_settings()
+        except ValueError as exc:
+            self.run_status.value = ui.status(
+                "error",
+                "The histogram range cannot be used.",
+                [str(exc), "Correct the quantiles in Settings above."],
+            )
             return None
         self._busy(self.run_button, "Computing…")
         self.run_next.value = ""
@@ -2105,6 +2172,7 @@ class PreprocessingNotebook:
                     design=self.design,
                     image_type=self.confirmed_image_type,
                     intensity_settings=self.run_checks.settings(),
+                    histogram_settings=histogram_settings,
                 )
         except Exception as exc:  # unexpected failures still get a readable message
             self.log.lines.append(traceback.format_exc())
@@ -2449,6 +2517,20 @@ class PreprocessingNotebook:
 
     def _memory_limit(self) -> int:
         return int(self.memory_gib.value * 2**30)
+
+    def _histogram_settings(self) -> HistogramSettings:
+        """Return the histogram range chosen in step 3; raise ValueError for unusable quantiles."""
+        return HistogramSettings(
+            histogram_range=self.histogram_range.value,
+            robust_quantiles=(self.robust_low.value, self.robust_high.value),
+        )
+
+    def _histogram_settings_or_none(self) -> HistogramSettings | None:
+        """Return :meth:`_histogram_settings`, or None while the quantiles are unusable."""
+        try:
+            return self._histogram_settings()
+        except ValueError:
+            return None
 
     def _show_log(self) -> None:
         self.details.value = "\n".join(self.log.lines[-500:])

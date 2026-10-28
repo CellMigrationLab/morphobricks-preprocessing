@@ -58,7 +58,9 @@ from morphobricks_normalization.histogram import (
     PlaneHistogram,
     compute_block_histogram,
     estimate_histogram_memory,
+    histogram_with_range_check,
 )
+from morphobricks_normalization.ranges import HistogramSettings, RangeCheck
 
 from .axes import PLANE_ROLES, AxisMapping, AxisReview
 from .validation import ValidationIssue, error, plural, warning
@@ -195,10 +197,35 @@ class Plane:
         else:
             yield from self.reader.read()
 
-    def histogram(self, bin_count: int | None = None) -> PlaneHistogram:
-        """Compute the plane's histogram; identical whether or not it is read in blocks."""
+    def histogram(
+        self, bin_count: int | None = None, settings: HistogramSettings | None = None
+    ) -> PlaneHistogram:
+        """Compute the plane's histogram; identical whether or not it is read in blocks.
+
+        ``settings`` chooses the histogram range of histograms that are not
+        exact (normalization contract §1.4); None uses the minimum to maximum.
+        """
         return compute_block_histogram(
-            lambda: (block.pixels for block in self.blocks()), self.dtype, bin_count
+            lambda: (block.pixels for block in self.blocks()),
+            self.dtype,
+            bin_count,
+            settings=settings,
+        )
+
+    def histogram_with_check(
+        self, bin_count: int | None = None, settings: HistogramSettings | None = None
+    ) -> tuple[PlaneHistogram, RangeCheck | None]:
+        """Compute the plane's histogram and its range check, in the same passes over the plane.
+
+        The check is None for an exact histogram (normalization brick
+        ``histogram_with_range_check``). Both are identical whether or not the
+        plane is read in blocks.
+        """
+        return histogram_with_range_check(
+            lambda: (block.pixels for block in self.blocks()),
+            self.dtype,
+            bin_count,
+            settings=settings,
         )
 
 
@@ -230,12 +257,25 @@ class XycPlane:
             raise IndexError(f"The plane has {self.channel_count} channel(s); got c={c}.")
         return self.read(c)
 
-    def histograms(self, bin_count: int | None = None) -> tuple[PlaneHistogram, ...]:
+    def histograms(
+        self, bin_count: int | None = None, settings: HistogramSettings | None = None
+    ) -> tuple[PlaneHistogram, ...]:
         """Compute the histogram of every channel, reading one channel at a time.
 
         Each histogram is identical to that of the channel's plane read whole.
         """
-        return tuple(self.channel(c).histogram(bin_count) for c in range(self.channel_count))
+        return tuple(
+            self.channel(c).histogram(bin_count, settings) for c in range(self.channel_count)
+        )
+
+    def histograms_with_checks(
+        self, bin_count: int | None = None, settings: HistogramSettings | None = None
+    ) -> tuple[tuple[PlaneHistogram, RangeCheck | None], ...]:
+        """Compute every channel's histogram and range check, reading one channel at a time."""
+        return tuple(
+            self.channel(c).histogram_with_check(bin_count, settings)
+            for c in range(self.channel_count)
+        )
 
 
 @dataclass(frozen=True)
@@ -343,6 +383,7 @@ def plane_layout(
     *,
     bin_count: int | None = None,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
+    histogram_settings: HistogramSettings | None = None,
 ) -> PlaneLayout:
     """Work out from the header how the planes of a file are read.
 
@@ -354,6 +395,9 @@ def plane_layout(
         The axis mapping for this file (see :attr:`AxisReview.file_mappings`).
     bin_count
         Histogram bin count, for the memory estimate; the dtype's default if None.
+    histogram_settings
+        Histogram range of the run, for the memory estimate, which always
+        includes the range check; the minimum to maximum if None.
     memory_limit
         Largest working memory allowed for one plane, in bytes; planes above it
         are read in blocks when possible.
@@ -365,9 +409,13 @@ def plane_layout(
         cannot be read one at a time.
     """
     if is_zarr_store(path):
-        return _zarr_layout(_open_zarr(path), mapping, path, bin_count, memory_limit)
+        return _zarr_layout(
+            _open_zarr(path), mapping, path, _Binning(bin_count, histogram_settings), memory_limit
+        )
     with _open(path) as tif:
-        return _layout(tif.series[0], mapping, path, bin_count, memory_limit)
+        return _layout(
+            tif.series[0], mapping, path, _Binning(bin_count, histogram_settings), memory_limit
+        )
 
 
 def iter_planes(
@@ -376,6 +424,7 @@ def iter_planes(
     *,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
     bin_count: int | None = None,
+    histogram_settings: HistogramSettings | None = None,
 ) -> Iterator[Plane]:
     """Yield every 2D plane of a file, one page read at a time.
 
@@ -395,6 +444,9 @@ def iter_planes(
         Largest working memory allowed for one plane or block, in bytes.
     bin_count
         Histogram bin count, for the memory estimate; the dtype's default if None.
+    histogram_settings
+        Histogram range of the run, for the memory estimate, which always
+        includes the range check; the minimum to maximum if None.
 
     Yields
     ------
@@ -409,14 +461,18 @@ def iter_planes(
     """
     if is_zarr_store(path):
         image = _open_zarr(path)
-        layout = _zarr_layout(image, mapping, path, bin_count, memory_limit)
+        layout = _zarr_layout(
+            image, mapping, path, _Binning(bin_count, histogram_settings), memory_limit
+        )
         _check_limit(layout, path)
         for position in _positions(layout, mapping):
             yield _zarr_plane(image, layout, mapping, position, path)
         return
     with _open(path) as tif:
         series = tif.series[0]
-        layout = _layout(series, mapping, path, bin_count, memory_limit)
+        layout = _layout(
+            series, mapping, path, _Binning(bin_count, histogram_settings), memory_limit
+        )
         _check_limit(layout, path)
         read = _tiff_reader(series, layout, mapping, path)
         for position in _positions(layout, mapping):
@@ -429,6 +485,7 @@ def iter_xyc_planes(
     *,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
     bin_count: int | None = None,
+    histogram_settings: HistogramSettings | None = None,
 ) -> Iterator[XycPlane]:
     """Yield every XYC plane of a file: all channels at each Z and T position.
 
@@ -447,6 +504,9 @@ def iter_xyc_planes(
         Largest working memory allowed for one plane or block, in bytes.
     bin_count
         Histogram bin count, for the memory estimate; the dtype's default if None.
+    histogram_settings
+        Histogram range of the run, for the memory estimate, which always
+        includes the range check; the minimum to maximum if None.
 
     Yields
     ------
@@ -461,7 +521,9 @@ def iter_xyc_planes(
     """
     if is_zarr_store(path):
         image = _open_zarr(path)
-        layout = _zarr_layout(image, mapping, path, bin_count, memory_limit)
+        layout = _zarr_layout(
+            image, mapping, path, _Binning(bin_count, histogram_settings), memory_limit
+        )
         _check_limit(layout, path)
         yield from _xyc_planes(
             layout,
@@ -471,7 +533,9 @@ def iter_xyc_planes(
         return
     with _open(path) as tif:
         series = tif.series[0]
-        layout = _layout(series, mapping, path, bin_count, memory_limit)
+        layout = _layout(
+            series, mapping, path, _Binning(bin_count, histogram_settings), memory_limit
+        )
         _check_limit(layout, path)
         yield from _xyc_planes(layout, mapping, _tiff_reader(series, layout, mapping, path))
 
@@ -510,13 +574,13 @@ def read_plane(
     wanted = {"Z": z, "C": c, "T": t}
     if is_zarr_store(path):
         image = _open_zarr(path)
-        layout = _zarr_layout(image, mapping, path, None, memory_limit)
+        layout = _zarr_layout(image, mapping, path, _Binning(), memory_limit)
         layout = _whole_or_preview(layout, path, preview, _zarr_reblock(image, mapping, path))
         position = _position(layout, mapping, wanted)
         return _whole_or_reduced(_zarr_plane(image, layout, mapping, position, path), layout)
     with _open(path) as tif:
         series = tif.series[0]
-        layout = _layout(series, mapping, path, None, memory_limit)
+        layout = _layout(series, mapping, path, _Binning(), memory_limit)
         layout = _whole_or_preview(layout, path, preview, _tiff_reblock(series, mapping, path))
         return _whole_or_reduced(_read_one(series, layout, mapping, path, wanted), layout)
 
@@ -538,7 +602,7 @@ def read_sample_plane(
         return read_plane(path, mapping, z=z, memory_limit=memory_limit, preview=True)
     with _open(path) as tif:
         series = tif.series[0]
-        layout = _layout(series, mapping, path, None, memory_limit)
+        layout = _layout(series, mapping, path, _Binning(), memory_limit)
         layout = _whole_or_preview(layout, path, True, _tiff_reblock(series, mapping, path))
         dim = mapping.index_of("Z")
         z = None if dim is None else layout.shape[dim] // 2
@@ -552,6 +616,7 @@ def check_planes(
     *,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
     bin_count: int | None = None,
+    histogram_settings: HistogramSettings | None = None,
 ) -> list[ValidationIssue]:
     """Check from the headers that every file can be read plane by plane.
 
@@ -565,6 +630,9 @@ def check_planes(
         Largest working memory allowed for one plane, in bytes.
     bin_count
         Histogram bin count, for the memory estimate; the dtype's default if None.
+    histogram_settings
+        Histogram range of the run, for the memory estimate, which always
+        includes the range check; the minimum to maximum if None.
 
     Returns
     -------
@@ -582,7 +650,11 @@ def check_planes(
     for rel in sorted(mappings):
         try:
             layout = plane_layout(
-                root / rel, mappings[rel], bin_count=bin_count, memory_limit=memory_limit
+                root / rel,
+                mappings[rel],
+                bin_count=bin_count,
+                memory_limit=memory_limit,
+                histogram_settings=histogram_settings,
             )
         except PlaneReadError:
             logger.debug("Cannot read %s plane by plane", rel, exc_info=True)
@@ -685,7 +757,7 @@ def _layout(
     series: tifffile.TiffPageSeries,
     mapping: AxisMapping,
     path,
-    bin_count: int | None,
+    binning: _Binning,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> PlaneLayout:
     shape = tuple(int(n) for n in series.shape)
@@ -719,8 +791,8 @@ def _layout(
         page_nbytes
         + encoded_nbytes
         + plane_pixels * dtype.itemsize
-        + estimate_histogram_memory(plane_pixels, dtype, bin_count)
-        + _finished_histograms_nbytes(dtype, bin_count, channels)
+        + binning.memory(plane_pixels, dtype)
+        + binning.finished(dtype, channels)
     )
     layout = PlaneLayout(
         shape=shape,
@@ -736,12 +808,30 @@ def _layout(
     )
     if memory <= memory_limit:
         return layout
-    return _with_blocks(layout, _tiff_blocking(keyframe, shape, split, y, x), bin_count)
+    return _with_blocks(layout, _tiff_blocking(keyframe, shape, split, y, x), binning)
 
 
 def _channel_count(shape: tuple[int, ...], mapping: AxisMapping) -> int:
     c = mapping.index_of("C")
     return 1 if c is None else shape[c]
+
+
+@dataclass(frozen=True)
+class _Binning:
+    """What a plane's histogram costs in memory: its bin count and histogram range."""
+
+    bin_count: int | None = None
+    settings: HistogramSettings | None = None
+
+    def memory(self, pixels: int, dtype: np.dtype) -> int:
+        """Temporary memory of binning ``pixels`` pixels, with the range check every run does."""
+        return estimate_histogram_memory(
+            pixels, dtype, self.bin_count, settings=self.settings, range_check=True
+        )
+
+    def finished(self, dtype: np.dtype, channels: int) -> int:
+        """Memory of the finished histograms of an XYC plane's channels."""
+        return _finished_histograms_nbytes(dtype, self.bin_count, channels)
 
 
 def _finished_histograms_nbytes(dtype: np.dtype, bin_count: int | None, channels: int) -> int:
@@ -904,9 +994,7 @@ def _coordinates(mapping: AxisMapping, position: Mapping[int, int]) -> dict[str,
 # Blocks --------------------------------------------------------------------------------
 
 
-def _with_blocks(
-    layout: PlaneLayout, blocking: _Blocking | None, bin_count: int | None
-) -> PlaneLayout:
+def _with_blocks(layout: PlaneLayout, blocking: _Blocking | None, binning: _Binning) -> PlaneLayout:
     """Add the block size that fits the memory limit to a layout over the limit."""
     if blocking is None:
         return layout
@@ -916,7 +1004,7 @@ def _with_blocks(
         return layout  # a single piece holds the whole plane: it cannot be split
 
     def cost(block_rows: int, block_cols: int) -> int:
-        return _block_memory(layout, blocking, block_rows, block_cols, bin_count)
+        return _block_memory(layout, blocking, block_rows, block_cols, binning)
 
     size = _choose_block(
         rows, cols, unit_rows, unit_cols, blocking.partial_rows, cost, layout.memory_limit
@@ -971,14 +1059,14 @@ def _choose_block(
 
 
 def _block_memory(
-    layout: PlaneLayout, blocking: _Blocking, rows: int, cols: int, bin_count: int | None
+    layout: PlaneLayout, blocking: _Blocking, rows: int, cols: int, binning: _Binning
 ) -> int:
     """Estimated working memory to read one block and add it to the histogram."""
     pixels = rows * cols
     memory = (
         pixels * layout.dtype.itemsize
-        + estimate_histogram_memory(pixels, layout.dtype, bin_count)
-        + _finished_histograms_nbytes(layout.dtype, bin_count, layout.channel_count)
+        + binning.memory(pixels, layout.dtype)
+        + binning.finished(layout.dtype, layout.channel_count)
     )
     unit_rows, unit_cols = blocking.unit
     if blocking.kind == "zarr":
@@ -1140,7 +1228,7 @@ def _tiff_blocking(
 
 
 def _tiff_reblock(series, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:
-    return lambda limit: _layout(series, mapping, path, None, limit)
+    return lambda limit: _layout(series, mapping, path, _Binning(), limit)
 
 
 def _tiff_block_plane(
@@ -1251,7 +1339,7 @@ def _zarr_layout(
     image: NgffImage,
     mapping: AxisMapping,
     path,
-    bin_count: int | None,
+    binning: _Binning,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> PlaneLayout:
     shape = image.shape
@@ -1267,8 +1355,8 @@ def _zarr_layout(
     memory = (
         page_nbytes
         + plane_pixels * dtype.itemsize
-        + estimate_histogram_memory(plane_pixels, dtype, bin_count)
-        + _finished_histograms_nbytes(dtype, bin_count, channels)
+        + binning.memory(plane_pixels, dtype)
+        + binning.finished(dtype, channels)
     )
     layout = PlaneLayout(
         shape=shape,
@@ -1294,11 +1382,11 @@ def _zarr_layout(
         partial_rows=True,
         piece_nbytes=chunk_nbytes,
     )
-    return _with_blocks(layout, blocking, bin_count)
+    return _with_blocks(layout, blocking, binning)
 
 
 def _zarr_reblock(image: NgffImage, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:
-    return lambda limit: _zarr_layout(image, mapping, path, None, limit)
+    return lambda limit: _zarr_layout(image, mapping, path, _Binning(), limit)
 
 
 def _zarr_plane(

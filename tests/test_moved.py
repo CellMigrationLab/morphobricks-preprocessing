@@ -90,7 +90,7 @@ def test_from_imports_keep_working():
         from morphobricks_preprocessing.csv_io import SCHEMA_VERSION
     with pytest.warns(DeprecationWarning, match="morphobricks_preprocessing.PlaneRecord"):
         from morphobricks_preprocessing import PlaneRecord
-    assert SCHEMA_VERSION == "3"  # the brick's current value (Milestone 2b)
+    assert SCHEMA_VERSION == "4"  # the brick's current value (Milestone 5)
     from morphobricks_normalization import PlaneRecord as new_record
 
     assert PlaneRecord is new_record
