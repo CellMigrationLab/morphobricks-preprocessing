@@ -841,7 +841,7 @@ Raised during review; to be decided before the milestones that need them:
 34. How does step 3 handle a plane whose histogram range is stretched by a few extreme
     pixels (normalization plan N54–N60, its Milestone 5 and follow-up P6)?
     *Decided (28 October 2026): as P6 specifies. The normalization brick is pinned to its
-    v0.3.0 and `plane_histograms.csv` is schema version 4 (each channel's underflow and
+    v0.3.1 and `plane_histograms.csv` is schema version 4 (each channel's underflow and
     overflow, zero with the default range); schema 3 tables are recomputed. Step 3's
     **Settings** offer the histogram range, **Minimum to maximum of each plane**
     (recommended) or **Robust** with its two quantiles (0.01 % and 99.99 % by default);
