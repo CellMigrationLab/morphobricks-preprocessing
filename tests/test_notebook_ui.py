@@ -1037,6 +1037,24 @@ def test_recommended_settings_hide_and_reset_the_advanced_ones(experiment):
     assert nb.bins.value == 256 and not nb.force_rebuild.value
 
 
+def test_the_histogram_range_is_chosen_in_step_3_and_recorded(experiment):
+    from morphobricks_normalization.ranges import HistogramSettings
+
+    nb = confirmed(experiment)
+    nb.recommended.value = False
+    assert nb.histogram_range.value == "minmax" and not ui.is_visible(nb.robust_box)
+    nb.histogram_range.value = "robust"
+    assert ui.is_visible(nb.robust_box)
+    nb.robust_low.value, nb.robust_high.value = 0.5, 99.5
+    manifest = read_manifest(nb.run().manifest_path)
+    assert manifest.settings.histogram == HistogramSettings("robust", (0.5, 99.5))
+    # Quantiles that cannot be used stop before anything is read.
+    nb.robust_low.value = 99.9
+    assert nb.run() is None and "0 &lt;= low &lt; high" in nb.run_status.value
+    nb.recommended.value = True
+    assert nb.histogram_range.value == "minmax" and not ui.is_visible(nb.robust_box)
+
+
 def test_plan_describes_the_run(experiment):
     nb = confirmed(experiment)
     assert "<b>3 images</b> will be analysed" in nb.plan.value

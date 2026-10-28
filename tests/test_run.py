@@ -267,7 +267,7 @@ def test_every_row_has_its_position_id(experiment):
         rel: rel.rsplit("/", 1)[-1].removesuffix(".tif") for rel in IMAGES
     }
     data = json.loads(result.manifest_path.read_text(encoding="utf-8"))
-    assert data["manifest_version"] == "1" and data["schema_version"] == "3"
+    assert data["manifest_version"] == "1" and data["schema_version"] == "4"
     assert all("position_id" in f for f in data["files"])
 
 

@@ -11,7 +11,10 @@ The manifest also records, for information only, each file's channel names and
 significant bits when its metadata provides them, the SHA-256 of the
 experiment design used, so later bricks can check that it was not changed, and
 the image type the user confirmed, which later bricks normalize by, and the
-limits of the intensity checks run on the table.
+limits of the intensity checks run on the table. It also records the histogram
+range the table was binned with, and the planes whose central intensity range
+was too narrow (follow-up P6), so a later run that keeps their rows still
+reports them.
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ import json
 import os
 import platform
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -30,6 +33,7 @@ import numpy as np
 import tifffile
 from morphobricks_normalization.checks import IntensityCheckSettings
 from morphobricks_normalization.csv_io import SCHEMA_VERSION
+from morphobricks_normalization.ranges import HistogramSettings, RangeCheck
 
 from .axes import AxisMapping
 from .discovery import position_id
@@ -64,6 +68,11 @@ class RunSettings:
     conversion
         How the copies are written (chunk size, compression, smaller levels);
         only used when ``convert_tiffs`` is on. It does not change any row.
+    histogram
+        The histogram range of histograms that are not exact, with the limits of
+        the range check (the normalization brick's ``HistogramSettings``).
+        Manifests written before it was recorded read as the default, the
+        minimum to maximum.
     """
 
     bin_count: int
@@ -72,6 +81,7 @@ class RunSettings:
     exclude: tuple[str, ...] = ()
     convert_tiffs: bool = False
     conversion: ConversionSettings = field(default_factory=ConversionSettings)
+    histogram: HistogramSettings = field(default_factory=HistogramSettings)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "exclude", tuple(sorted(set(self.exclude))))
@@ -142,6 +152,57 @@ class FileEntry:
 
 
 @dataclass(frozen=True)
+class NarrowRange:
+    """A channel plane whose central intensity range covers too few histogram bins.
+
+    Attributes
+    ----------
+    relative_path
+        The image the plane belongs to.
+    plane_id
+        The plane's ``plane_id`` in the table.
+    channel
+        The zero-based channel.
+    check
+        The normalization brick's ``RangeCheck`` of the plane's channel.
+    """
+
+    relative_path: str
+    plane_id: str
+    channel: int
+    check: RangeCheck
+
+    def to_dict(self) -> dict:
+        """Return the entry as JSON-compatible data."""
+        check = {name: _plain(value) for name, value in asdict(self.check).items()}
+        return {
+            "relative_path": self.relative_path,
+            "plane_id": self.plane_id,
+            "channel": self.channel,
+            **check,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> NarrowRange:
+        """Read an entry written by :meth:`to_dict`."""
+        return cls(
+            relative_path=str(data["relative_path"]),
+            plane_id=str(data["plane_id"]),
+            channel=int(data["channel"]),
+            check=RangeCheck(
+                histogram_range=str(data["histogram_range"]),
+                central_percentiles=tuple(float(v) for v in data["central_percentiles"]),
+                central_bins=int(data["central_bins"]),
+                robust_quantiles=tuple(float(v) for v in data["robust_quantiles"]),
+                robust_limits=tuple(data["robust_limits"]),
+                outside_robust_count=int(data["outside_robust_count"]),
+                robust_central_bins=int(data["robust_central_bins"]),
+                min_central_bins=int(data["min_central_bins"]),
+            ),
+        )
+
+
+@dataclass(frozen=True)
 class RunManifest:
     """Everything a run records about its inputs and output.
 
@@ -182,6 +243,11 @@ class RunManifest:
     intensity_checks
         The limits of the intensity checks run on the table (:mod:`.intensity`);
         None in manifests written before they were recorded.
+    narrow_ranges
+        The channel planes whose central intensity range covered fewer bins
+        than the range check's limit (``narrow_histogram_range``), sorted by
+        plane and channel; empty when there were none (and in manifests
+        written before they were recorded).
     schema_version
         Version of the CSV format.
     manifest_version
@@ -201,6 +267,7 @@ class RunManifest:
     image_type: str | None = None
     channels_from_rgb_samples: bool | None = None
     intensity_checks: IntensityCheckSettings | None = None
+    narrow_ranges: tuple[NarrowRange, ...] = ()
     schema_version: str = SCHEMA_VERSION
     manifest_version: str = MANIFEST_VERSION
 
@@ -231,6 +298,7 @@ class RunManifest:
                 "exclude": list(self.settings.exclude),
                 "convert_tiffs": self.settings.convert_tiffs,
                 "conversion": self.settings.conversion.to_dict(),
+                "histogram": self.settings.histogram.to_dict(),
             },
             "axis_mapping": {"axes": self.mapping.axes, "roles": list(self.mapping.roles)},
             "labels": [
@@ -250,6 +318,7 @@ class RunManifest:
             "intensity_checks": (
                 None if self.intensity_checks is None else self.intensity_checks.to_dict()
             ),
+            "narrow_histogram_ranges": [entry.to_dict() for entry in self.narrow_ranges],
             "versions": dict(self.versions),
         }
         if self.masks is not None:
@@ -283,6 +352,11 @@ class RunManifest:
                     exclude=tuple(str(p) for p in settings["exclude"]),
                     convert_tiffs=bool(settings.get("convert_tiffs", False)),
                     conversion=ConversionSettings.from_dict(settings.get("conversion")),
+                    histogram=(
+                        HistogramSettings()
+                        if settings.get("histogram") is None
+                        else HistogramSettings.from_dict(settings["histogram"])
+                    ),
                 ),
                 mapping=AxisMapping(str(mapping["axes"]), tuple(mapping["roles"])),
                 files=tuple(_file_entry(f) for f in data["files"]),
@@ -305,6 +379,10 @@ class RunManifest:
                     None
                     if data.get("intensity_checks") is None
                     else IntensityCheckSettings.from_dict(data["intensity_checks"])
+                ),
+                narrow_ranges=tuple(
+                    NarrowRange.from_dict(entry)
+                    for entry in data.get("narrow_histogram_ranges") or ()
                 ),
                 schema_version=str(data["schema_version"]),
             )
@@ -469,6 +547,15 @@ def _file_entry(data: dict) -> FileEntry:
         read_in_blocks=bool(data.get("read_in_blocks", False)),
         position_id=None if data.get("position_id") is None else str(data["position_id"]),
     )
+
+
+def _plain(value):
+    """Return a range check value as JSON data: Python numbers, lists for tuples."""
+    if isinstance(value, tuple):
+        return [_plain(item) for item in value]
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
 
 
 def _parent(relative_path: str) -> str:

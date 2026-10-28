@@ -62,7 +62,7 @@ def test_written_json_is_readable_and_stable(tmp_path):
     raw = path.read_bytes()
     assert b"\r\n" not in raw and raw.endswith(b"\n")
     data = json.loads(raw)
-    assert data["manifest_version"] == "1" and data["schema_version"] == "3"
+    assert data["manifest_version"] == "1" and data["schema_version"] == "4"
     assert data["axis_mapping"] == {"axes": "ZYX", "roles": ["Z", "Y", "X"]}
     assert data["settings"]["exclude"] == ["a.tif", "b.tif"]
     assert data["labels"] == [
@@ -168,6 +168,38 @@ def test_intensity_check_limits_round_trip_and_are_none_when_absent(tmp_path):
     del data["intensity_checks"]  # written before P5
     path.write_text(json.dumps(data), encoding="utf-8")
     assert read_manifest(path).intensity_checks is None
+
+
+def test_histogram_settings_and_narrow_ranges_round_trip_and_default_when_absent(tmp_path):
+    import numpy as np
+    from morphobricks_normalization.ranges import HistogramSettings, RangeCheck
+
+    from morphobricks_preprocessing.manifest import NarrowRange
+
+    settings = RunSettings(
+        4096, 2**30, histogram=HistogramSettings("robust", (0.1, 99.9), min_central_bins=50)
+    )
+    check = RangeCheck(
+        histogram_range="minmax",
+        central_percentiles=(1.0, 99.8),
+        central_bins=np.int64(1),
+        robust_quantiles=(0.01, 99.99),
+        robust_limits=(np.float32(61.5), np.float32(140.25)),
+        outside_robust_count=np.int64(2),
+        robust_central_bins=6971,
+        min_central_bins=100,
+    )
+    narrow = (NarrowRange("cond/rep/a.tif", "cond/rep/a.tif::z=0,t=0", 0, check),)
+    path = write_manifest(manifest(settings=settings, narrow_ranges=narrow), tmp_path / "m.json")
+    read = read_manifest(path)
+    assert read.settings.histogram == settings.histogram and read.narrow_ranges == narrow
+    data = json.loads(path.read_bytes())
+    assert data["settings"]["histogram"]["histogram_range"] == "robust"
+    assert data["narrow_histogram_ranges"][0]["robust_limits"] == [61.5, 140.25]
+    del data["settings"]["histogram"], data["narrow_histogram_ranges"]  # written before P6
+    path.write_text(json.dumps(data), encoding="utf-8")
+    read = read_manifest(path)
+    assert read.settings.histogram == HistogramSettings() and read.narrow_ranges == ()
 
 
 def test_file_entry_for_reads_size_and_time(tmp_path):

@@ -361,6 +361,11 @@ API, CLI). The notebook and CLI only call the API.
   follows. *Implemented, see question 32.*
 - **Release v0.2.0:** P4, P5, step 1 without the experiment design and the masks.
   *Released, see question 33.*
+- **Histogram range (follow-up P6 of the normalization plan):** step 3 offers the
+  normalization brick's robust histogram range besides each plane's minimum to maximum,
+  every plane is binned with its range check, and a `narrow_histogram_range` warning names
+  the channels whose central range covers too few bins; `plane_histograms.csv` schema
+  version 4. *Implemented, see question 34.*
 
 ## 11. Tests and acceptance criteria
 
@@ -833,3 +838,20 @@ Raised during review; to be decided before the milestones that need them:
     `plane_histograms.csv` schema version 3, `experiment_design.csv` schema version 1 and
     manifest version 1, with the optional keys `image_type`, `channels_from_rgb_samples`,
     `intensity_checks` and `masks`.*
+34. How does step 3 handle a plane whose histogram range is stretched by a few extreme
+    pixels (normalization plan N54–N60, its Milestone 5 and follow-up P6)?
+    *Decided (28 October 2026): as P6 specifies. The normalization brick is pinned to its
+    v0.3.1 and `plane_histograms.csv` is schema version 4 (each channel's underflow and
+    overflow, zero with the default range); schema 3 tables are recomputed. Step 3's
+    **Settings** offer the histogram range, **Minimum to maximum of each plane**
+    (recommended) or **Robust** with its two quantiles (0.01 % and 99.99 % by default);
+    `run_experiment(histogram_settings=...)`, and `--histogram-range` and
+    `--robust-quantiles` on the command line. The manifest records the brick's
+    `HistogramSettings.to_dict()` as `settings.histogram`; any change of it recomputes every
+    row, also of the range check's limit alone, so the recorded checks always match it.
+    Every plane is binned with `histogram_with_range_check`, whose memory the estimate
+    includes, and the brick's `range_check_issues` gives one `narrow_histogram_range`
+    warning per channel among the run's warnings. Beyond P6: the narrow planes are recorded
+    in the manifest (`narrow_histogram_ranges`, an optional key of manifest version 1), so
+    a later run that keeps their rows reports them again without reading the images; only
+    narrow checks are kept, which is all the warnings use.*

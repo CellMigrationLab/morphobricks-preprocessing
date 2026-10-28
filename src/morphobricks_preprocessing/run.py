@@ -9,12 +9,14 @@ folder (``docs/plan.md`` §5–§7). Given the confirmed experiment design, it a
 writes ``experiment_design.csv`` and records its hash in the manifest; given the
 confirmed image type, it records it there too. After writing, it checks the
 images' intensities from the table's rows (:mod:`.intensity`) and records the
-limits used.
+limits used. Every plane is binned with the chosen histogram range, and its
+range check reports channels whose central intensity range covers too few bins
+(``narrow_histogram_range``, follow-up P6).
 
 Each row depends only on its own plane, so rows of unchanged files are kept as
 they are. Everything is recomputed when there is no usable earlier output, when
 a rebuild is requested, or when a setting that affects every row (pixel type,
-bin count, axis mapping) changed. Nothing is written unless the whole run
+bin count, histogram range, axis mapping) changed. Nothing is written unless the whole run
 succeeds; the earlier output is then replaced.
 """
 
@@ -39,6 +41,7 @@ from morphobricks_normalization.csv_io import (
     write_plane_histograms,
 )
 from morphobricks_normalization.dtypes import default_bin_count, validate_bin_count
+from morphobricks_normalization.ranges import HistogramSettings, range_check_issues
 from morphobricks_normalization.records import PlaneRecord
 
 from .axes import AxisMapping, file_mapping_for, prefill_experiment_mapping, review_axes
@@ -57,6 +60,7 @@ from .manifest import (
     MANIFEST_FILENAME,
     FileEntry,
     ManifestFormatError,
+    NarrowRange,
     RunManifest,
     RunSettings,
     file_entry_for,
@@ -343,6 +347,7 @@ def run_experiment(
     ome_zarr_labels: bool = False,
     image_type: str | None = None,
     intensity_settings: IntensityCheckSettings | None = None,
+    histogram_settings: HistogramSettings | None = None,
 ) -> RunResult:
     """Pass 2: write or update the histogram table and the run manifest.
 
@@ -402,6 +407,14 @@ def run_experiment(
         Limits of the intensity checks run on the written table
         (:func:`.intensity.check_intensities`); None uses the defaults. They are
         recorded in the manifest and change no row.
+    histogram_settings
+        How histograms that are not exact are binned: the minimum to maximum
+        (default) or the robust range, and the limits of the range check
+        (normalization contract §1.4). Exact 8- and 16-bit histograms are the
+        same either way. Recorded in the manifest; changing it recomputes every
+        row. After the histograms, a ``narrow_histogram_range`` warning names
+        each channel whose central range (1st to 99.8th percentile) covers too
+        few bins in some planes.
 
     Returns
     -------
@@ -444,7 +457,15 @@ def run_experiment(
         bins, bin_issue = _bin_count(dtype, bin_count)
         issues.extend(bin_issue)
     if not has_errors(issues):
-        issues.extend(check_planes(root, review, memory_limit=memory_limit, bin_count=bins))
+        issues.extend(
+            check_planes(
+                root,
+                review,
+                memory_limit=memory_limit,
+                bin_count=bins,
+                histogram_settings=histogram_settings,
+            )
+        )
     if convert_tiffs and not zarr_available():
         issues.append(
             error(
@@ -464,7 +485,13 @@ def run_experiment(
 
     conversion = conversion or ConversionSettings()
     settings = RunSettings(
-        bins, memory_limit, missing_as_singleton, pre.excluded, convert_tiffs, conversion
+        bins,
+        memory_limit,
+        missing_as_singleton,
+        pre.excluded,
+        convert_tiffs,
+        conversion,
+        histogram=histogram_settings or HistogramSettings(),
     )
     previous, previous_records, reason = _load_previous(
         output, settings, mapping, dtype.name, force_rebuild
@@ -529,6 +556,7 @@ def run_experiment(
     staging = _CopyStaging(output, root, conversion) if to_convert else None
 
     records: list[PlaneRecord] = []
+    narrow: list[NarrowRange] = []
     for rel in unchanged if not reason else ():
         # Tables written before position identifiers were recorded have them blank;
         # the identifier depends only on the path, so it is filled without reading.
@@ -536,6 +564,8 @@ def run_experiment(
             replace(record, position_id=entries[rel].position_id)
             for record in previous_records[rel]
         )
+        # Kept rows keep the range checks they were written with.
+        narrow.extend(entry for entry in previous.narrow_ranges if entry.relative_path == rel)
     failed: list[str] = []
     try:
         for done, rel in enumerate(to_read):
@@ -547,13 +577,15 @@ def run_experiment(
                 if rel in to_convert:
                     # Convert first, then read the copy like any other OME-Zarr image.
                     copy, copy_mapping = staging.convert(rel, file_mapping, headers[rel], settings)
-                    records.extend(
-                        _read_file(copy, rel, labels[rel], copy_mapping, settings, position)
+                    rows, ranges = _read_file(
+                        copy, rel, labels[rel], copy_mapping, settings, position
                     )
                 else:
-                    records.extend(
-                        _read_file(root / rel, rel, labels[rel], file_mapping, settings, position)
+                    rows, ranges = _read_file(
+                        root / rel, rel, labels[rel], file_mapping, settings, position
                     )
+                records.extend(rows)
+                narrow.extend(ranges)
             except PlaneReadError:
                 logger.warning("Cannot read the planes of %s", rel, exc_info=True)
                 failed.append(rel)
@@ -578,6 +610,8 @@ def run_experiment(
         return stop(read=tuple(to_read), **counts)
 
     issues.extend(_pixel_issues(records))
+    narrow.sort(key=lambda entry: (entry.plane_id, entry.channel))
+    issues.extend(_range_issues(narrow))
     if has_errors(issues):
         if staging is not None:
             staging.discard()
@@ -627,6 +661,7 @@ def run_experiment(
             image_type=image_type,
             channels_from_rgb_samples=type_review.channels_from_rgb_samples,
             intensity_checks=intensity.settings,
+            narrow_ranges=tuple(narrow),
         )
         write_manifest(manifest, staged / MANIFEST_FILENAME)
     logger.info(
@@ -753,26 +788,37 @@ def _read_file(
     mapping: AxisMapping,
     settings: RunSettings,
     position: str | None,
-) -> list[PlaneRecord]:
+) -> tuple[list[PlaneRecord], list[NarrowRange]]:
     """Histogram every XYC plane of ``path``, recording the rows under the source ``rel``.
 
-    One row per plane holds the histograms of all its channels (schema version 3).
+    One row per plane holds the histograms of all its channels (schema version 4),
+    binned with the run's histogram range. Also returns the channel planes whose
+    range check found the central range too narrow.
     """
-    records = []
+    records, narrow = [], []
     for plane in iter_xyc_planes(
-        path, mapping, memory_limit=settings.memory_limit, bin_count=settings.bin_count
+        path,
+        mapping,
+        memory_limit=settings.memory_limit,
+        bin_count=settings.bin_count,
+        histogram_settings=settings.histogram,
     ):
-        records.append(
-            PlaneRecord(
-                rel,
-                *labels,
-                histograms=plane.histograms(settings.bin_count),
-                z=plane.z,
-                t=plane.t,
-                position_id=position,
-            )
+        measured = plane.histograms_with_checks(settings.bin_count, settings.histogram)
+        record = PlaneRecord(
+            rel,
+            *labels,
+            histograms=tuple(histogram for histogram, _ in measured),
+            z=plane.z,
+            t=plane.t,
+            position_id=position,
         )
-    return records
+        records.append(record)
+        narrow.extend(
+            NarrowRange(rel, record.plane_id, channel, check)
+            for channel, (_, check) in enumerate(measured)
+            if check is not None and check.narrow
+        )
+    return records, narrow
 
 
 def _move(source: Path, destination: Path) -> None:
@@ -861,6 +907,12 @@ def _load_previous(
             {},
             f"the bin count changed from {manifest.settings.bin_count:,} to {settings.bin_count:,}",
         )
+    if manifest.settings.histogram != settings.histogram:
+        before = _describe_histogram(manifest.settings.histogram)
+        now = _describe_histogram(settings.histogram)
+        if before == now:
+            return manifest, {}, "the limit of the histogram range check changed"
+        return manifest, {}, f"the histogram range changed from {before} to {now}"
     if (manifest.mapping.axes, manifest.mapping.roles) != (mapping.axes, mapping.roles):
         return manifest, {}, "the axis mapping changed"
     if not csv_path.exists() or file_sha256(csv_path) != manifest.csv_sha256:
@@ -889,6 +941,20 @@ def _bin_count(dtype, bin_count: int | None) -> tuple[int | None, list[Validatio
                 action="Choose a bin count in the allowed range, or use the default.",
             )
         ]
+
+
+def _describe_histogram(settings: HistogramSettings) -> str:
+    """Describe the histogram range in words, e.g. ``"robust (0.01-99.99 %)"``."""
+    if settings.robust:
+        low, high = settings.robust_quantiles
+        return f"robust ({low:g}-{high:g} %)"
+    return "minimum to maximum"
+
+
+def _range_issues(narrow: list[NarrowRange]) -> list[ValidationIssue]:
+    """Return the brick's ``narrow_histogram_range`` warnings, one per channel (N60)."""
+    found = range_check_issues((entry.plane_id, entry.channel, entry.check) for entry in narrow)
+    return [warning(issue.code, issue.message, issue.items, issue.action) for issue in found]
 
 
 def _pixel_issues(records: list[PlaneRecord]) -> list[ValidationIssue]:

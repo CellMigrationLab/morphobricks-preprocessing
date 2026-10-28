@@ -254,6 +254,15 @@ results or comparing another grouping.
      settings** to change them:
      - *Bins per plane:* one bin per possible value for 8- and 16-bit images (exact
        histograms); 65,536 bins for wider integers and 10,000 for floats.
+     - *Histogram range:* **Minimum to maximum of each plane** (recommended) or
+       **Robust**, which bins between two quantiles of each plane (0.01 % and 99.99 % by
+       default) and counts the pixels outside separately. It matters only for histograms
+       that are not exact (float images, and integer images with more values than bins).
+       A few extreme pixels, such as hot pixels, can squeeze every other pixel into a few
+       bins of the minimum-to-maximum range; the run then warns
+       (`narrow_histogram_range`), names the planes, and says how many bins the robust
+       range would give. Run again with the robust range to fix it. Changing the range
+       reads every image again.
      - *Memory limit:* the most working memory one plane may need (default 1 GiB). A
        plane that needs more (roughly above 5,000 x 5,000 pixels) is read in blocks
        instead, and the run reports this as a warning: the histograms are exactly the
@@ -368,6 +377,7 @@ the design is confirmed. Other options:
 | `--output FOLDER` | Output folder (default: next to the experiment folder) |
 | `--exclude PATH` | Leave out an image, relative to the experiment folder; repeat for several |
 | `--bins N` | Bins per plane |
+| `--histogram-range minmax\|robust`, `--robust-quantiles LOW HIGH` | Histogram range of histograms that are not exact (default minmax; robust quantiles 0.01 99.99) |
 | `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` |
 | `--missing-as-singleton` | Confirm that images lacking some dimensions have one plane along them |
 | `--image-type fluorescence\|rgb` | The image type (default: the suggested one, printed) |
@@ -437,16 +447,18 @@ The default output folder is next to the experiment folder:
   so spreadsheet programs may not open it completely; read it in Python with
   `read_plane_histograms()`. The columns are defined in the [normalization brick's
   contract](https://github.com/CellMigrationLab/morphobricks-normalization/blob/main/docs/contract.md)
-  §6.2 (schema version 3). A table written by an earlier version, with one row per channel,
-  is recomputed on the next run; later bricks ask you to run this brick again on it.
+  §6.2 (schema version 4: each channel also has its underflow and overflow, zero unless the
+  robust range is used). A table written by an earlier version is recomputed on the next
+  run; later bricks ask you to run this brick again on it.
 - **`experiment_design.csv`:** one row per biological-repeat folder of each condition: its
   repeat group, whether its condition is a control, its image and technical-repeat counts,
   and whether and when the repeat group was confirmed. Written in step 1 and by every run.
   Later bricks read the pairing from it (`read_experiment_design`). Format in
   [contract.md](contract.md) §12.
 - **`run_manifest.json`:** what the run read and with which settings: labels, axis roles,
-  the image type (and whether the channels are RGB colour samples), bin count, memory
-  limit, excluded images, the limits of the intensity checks, package versions, the
+  the image type (and whether the channels are RGB colour samples), bin count, histogram
+  range, memory limit, excluded images, the limits of the intensity checks, the planes with a
+  narrow histogram range, package versions, the
   fingerprint of the experiment design, and each image's position, size and modification time. Channel names and significant bits are recorded when the metadata
   provides them, and whether the image's planes were too large to read whole and are read
   in blocks. Format in [contract.md](contract.md) §9.
@@ -484,7 +496,8 @@ Run the notebook or `run` again after adding, changing or removing images:
 - only new and changed images are read; rows of unchanged images are kept;
 - rows of deleted or renamed images are removed (a renamed image counts as removed and
   added);
-- everything is recomputed when the bin count, the axis roles or the pixel type changed,
+- everything is recomputed when the bin count, the histogram range, the axis roles or the
+  pixel type changed,
   when the table was edited by hand or written by an earlier version of the brick, or when
   you ask for it;
 - changing only the image type reads nothing again: the histograms are the same for both
