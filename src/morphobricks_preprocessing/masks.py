@@ -184,7 +184,8 @@ def read_mask(mask: MaskFile, masks_folder: Path | None, experiment_root: Path) 
     Raises
     ------
     ValueError
-        If the mask is not 2D once its length-1 axes are removed.
+        If the mask is not 2D once its length-1 axes are removed, or holds a label above
+        2**63 - 1, which later bricks cannot store as an int64 ``label_id``.
     """
     if mask.source == FOLDER:
         pixels = tifffile.imread(Path(masks_folder) / mask.path)
@@ -195,7 +196,15 @@ def read_mask(mask: MaskFile, masks_folder: Path | None, experiment_root: Path) 
     pixels = np.squeeze(pixels)
     if pixels.ndim != 2:
         raise ValueError(f"the mask {mask.path} is not 2D ({pixels.shape})")
+    if pixels.dtype == np.uint64 and pixels.size and pixels.max() > _LARGEST_LABEL:
+        raise ValueError(
+            f"the mask {mask.path} holds labels above {_LARGEST_LABEL} (largest "
+            f"{pixels.max()}), which cannot be stored as a 64-bit signed label number."
+        )
     return pixels
+
+
+_LARGEST_LABEL = np.iinfo(np.int64).max
 
 
 def _folder_issues(folder: Path, experiment_root: Path) -> list[ValidationIssue]:

@@ -35,6 +35,7 @@ from morphobricks_normalization.dtypes import is_integer
 
 from .axes import AxisMapping
 from .physical_sizes import (  # noqa: F401 - moved there, still importable from here
+    UNKNOWN_SCALE_KEY,
     PhysicalSizes,
     read_physical_sizes,
 )
@@ -435,6 +436,11 @@ class OmeZarrWriter:
             "type": "mean",
             "metadata": {"description": "2 x 2 block mean; level 0 holds the source values"},
         }
+        # OME-NGFF 0.4 requires a scale for every axis, so an unknown size is written as 1;
+        # say which, so that 1 is never read as a real size (issue #39).
+        unknown = _unknown_scale(self.roles, self.sizes)
+        if unknown:
+            multiscale["metadata"][UNKNOWN_SCALE_KEY] = unknown
         if self.name:
             multiscale["name"] = self.name
         attrs = {"multiscales": [multiscale]}
@@ -499,11 +505,18 @@ def is_copy_path(output_folder: str | os.PathLike, relative_path: str) -> bool:
     return base in target.parents and target.name.endswith(OME_ZARR_SUFFIX)
 
 
+def _unknown_scale(roles: Iterable[str], sizes: PhysicalSizes) -> list[str]:
+    """Return the axes (``"x"``, ...) whose size is not known, so their scale 1 is a placeholder."""
+    return [role.lower() for role in roles if role in "XYZT" and not sizes.known(role)]
+
+
 def copy_units_current(copy: str | os.PathLike, sizes: PhysicalSizes) -> bool:
     """Return True if a copy's axis units are those its source's sizes give now.
 
     Copies written before each axis had its own unit (plan §12 question 24) may
-    carry X's unit on Y or Z; such copies are written again on the next run. Only
+    carry X's unit on Y or Z, and copies written before the unknown sizes were marked
+    (``unknown_scale``, issue #39) read as size 1; such copies are written again on the next
+    run. Only
     the copy's metadata file is read. A copy whose metadata cannot be read counts
     as out of date, so it is written again rather than trusted.
 
@@ -517,7 +530,11 @@ def copy_units_current(copy: str | os.PathLike, sizes: PhysicalSizes) -> bool:
     try:
         attrs = json.loads((Path(copy) / ".zattrs").read_text(encoding="utf-8"))
         axes = attrs["multiscales"][0]["axes"]
-        return all(axis.get("unit") == sizes.unit(str(axis["name"]).upper()) for axis in axes)
+        roles = [str(axis["name"]).upper() for axis in axes]
+        marked = attrs["multiscales"][0].get("metadata", {}).get(UNKNOWN_SCALE_KEY, [])
+        return marked == _unknown_scale(roles, sizes) and all(
+            axis.get("unit") == sizes.unit(role) for axis, role in zip(axes, roles, strict=True)
+        )
     except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError):
         logger.debug("Cannot read the axis units of the copy %s", copy, exc_info=True)
         return False

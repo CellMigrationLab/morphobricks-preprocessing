@@ -30,6 +30,10 @@ import tifffile
 
 logger = logging.getLogger(__name__)
 
+UNKNOWN_SCALE_KEY = "unknown_scale"
+"""Key, in an OME-NGFF multiscales entry's ``metadata``, listing the axes (``"x"``, ...)
+whose ``scale`` is a placeholder 1 because their size is not known (this brick's copies)."""
+
 # Units in OME and ImageJ metadata, and their OME-NGFF (UDUNITS-2) names.
 _SPACE_UNITS = {
     "pm": "picometer",
@@ -131,9 +135,14 @@ class PhysicalSizes:
         return hash(self._key())
 
     def scale(self, role: str) -> float:
-        """Return the size of one step along ``role`` (1 when unknown)."""
+        """Return the size of one step along ``role`` (1 when unknown, see :meth:`known`)."""
         value = {"X": self.x, "Y": self.y, "Z": self.z, "T": self.t}.get(role)
         return 1.0 if value is None or not value > 0 else float(value)
+
+    def known(self, role: str) -> bool:
+        """Return True if the size of one step along ``role`` (X, Y, Z or T) is known."""
+        value = {"X": self.x, "Y": self.y, "Z": self.z, "T": self.t}.get(role)
+        return value is not None and value > 0
 
     def unit(self, role: str) -> str | None:
         """Return the unit of ``role``, or None when unknown or for channels."""
@@ -222,8 +231,9 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
     stored in a separate file through ``path``) or with a malformed one, every
     size is None; an axis without a ``unit`` has the unit None, and a scale that
     is not a positive finite number is None. A scale given without a unit is
-    kept: it may be a placeholder (some writers, this brick's OME-Zarr copies
-    included, write 1 when the size is not known).
+    kept: it may be a placeholder (some writers write 1 when the size is not
+    known). This brick's OME-Zarr copies name such axes in the multiscales
+    entry's ``metadata`` (``"unknown_scale": ["x", "y"]``); their sizes are None.
 
     Parameters
     ----------
@@ -256,8 +266,13 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
     units: list[str | None] = [None] * len(axes)
     if isinstance(declared, list) and len(declared) == len(axes):
         units = [axis.get("unit") if isinstance(axis, dict) else None for axis in declared]
+    meta = multiscale.get("metadata")
+    unknown = meta.get(UNKNOWN_SCALE_KEY) if isinstance(meta, dict) else None
+    unknown = {str(a).upper() for a in unknown} if isinstance(unknown, list) else set()
     found: dict[str, tuple[float | None, str | None]] = {}
     for letter, size, unit in zip(axes, scale, units, strict=True):
+        if letter in unknown:
+            size = None
         if letter in "XYZT":
             table = _TIME_UNITS if letter == "T" else _SPACE_UNITS
             found.setdefault(letter, (_number(size), _ngff_unit(unit, table)))

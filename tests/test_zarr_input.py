@@ -392,6 +392,18 @@ def test_mixed_formats_with_different_axis_orders_are_not_a_dimension_conflict(t
     assert report.issues == ()
 
 
+def test_the_manifest_records_each_files_own_axis_roles(tmp_path):
+    # Issue #39: an OME-Zarr image in another order than the experiment mapping has its own
+    # roles; a consumer must not rebuild them from the experiment mapping.
+    write_data(tmp_path / "exp" / "a.tif", random_data((3, 2, 8, 8)), axes="ZCYX", imagej=True)
+    write_ngff(tmp_path / "exp" / "b.ome.zarr", random_data((2, 3, 8, 8)), "czyx")
+    result = run_experiment(tmp_path / "exp", prefill_mapping("ZCYX"), output_folder=tmp_path / "o")
+    assert result.written, result.issues
+    manifest = read_manifest(result.manifest_path)
+    assert manifest.file("a.tif").roles == ("Z", "C", "Y", "X")
+    assert manifest.file("b.ome.zarr").roles == ("C", "Z", "Y", "X")
+
+
 # Axes ------------------------------------------------------------------------------------
 
 

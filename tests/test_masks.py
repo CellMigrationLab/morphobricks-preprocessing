@@ -304,3 +304,25 @@ def test_masks_command_takes_thresholds(experiment, masks, tmp_path, capsys):
     assert report["thresholds"]["same_objects_iou"] == 0.8
     assert main([*args, "--grouped-label-share", "1.5"]) == 1
     assert "must be above 0 and at most 1" in capsys.readouterr().out
+
+
+def test_uint64_labels_above_the_int64_range_are_refused(experiment, masks, tmp_path, capsys):
+    # Issue #39: later bricks store labels as int64 label_id.
+    from morphobricks_preprocessing import read_mask
+
+    huge = label_image(0).astype(np.uint64)
+    huge[0, 0] = 2**63
+    write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", huge)
+    found = inventory(experiment, masks)
+    assert found.ok  # headers only
+    cells = found.for_image("ctrl/rep1/a.tif")["Cells"]
+    with pytest.raises(ValueError, match="labels above 9223372036854775807"):
+        read_mask(cells, found.folder, experiment)
+    fits = huge.copy()
+    fits[0, 0] = 2**63 - 1
+    write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", fits)
+    assert read_mask(cells, found.folder, experiment)[0, 0] == 2**63 - 1
+    write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", huge)
+    out = tmp_path / "out"
+    assert main(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 1
+    assert "cannot be stored as a 64-bit signed label number" in capsys.readouterr().out
