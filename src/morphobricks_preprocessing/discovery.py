@@ -99,11 +99,22 @@ def position_id(image: str) -> str:
     -------
     str
         For example ``"img_01"`` for ``"ctrl/rep1/img_01.ome.tif"``.
+
+    Raises
+    ------
+    ValueError
+        If the name is only an extension (``".tif"``, ``".ome.zarr"``): it has
+        no name to identify a position by. The longest extension decides, so
+        ``".ome.tif"`` is refused rather than read as ``".ome"``.
     """
     name = image.replace("\\", "/").rsplit("/", 1)[-1]
     lowered = name.lower()
     for suffix in NAME_SUFFIXES:
-        if lowered.endswith(suffix) and len(name) > len(suffix):
+        if lowered.endswith(suffix):
+            if len(name) == len(suffix):
+                raise ValueError(
+                    f"{image!r} is only an extension: it has no name to identify a position by"
+                )
             return name[: -len(suffix)]
     return name
 

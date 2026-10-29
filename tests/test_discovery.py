@@ -372,6 +372,15 @@ def test_position_id_is_the_image_name_without_extension(image, expected):
     assert position_id(image) == expected
 
 
+@pytest.mark.parametrize(
+    "image", [".tif", ".png", ".ome.tif", ".OME.TIFF", "ctrl/.ome.zarr", ".npy"]
+)
+def test_a_name_that_is_only_an_extension_is_refused(image):
+    """The longest extension decides once: ``.ome.tif`` is not read as the position ``.ome``."""
+    with pytest.raises(ValueError, match="only an extension"):
+        position_id(image)
+
+
 def test_equal_names_in_different_technical_repeats_are_fine(tmp_path):
     make_tree(tmp_path, ["ctrl/bio1/tech1/img_01.tif", "ctrl/bio1/tech2/img_01.tif"])
     result = discover_experiment(tmp_path)
