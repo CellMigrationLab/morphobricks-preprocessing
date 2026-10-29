@@ -48,6 +48,11 @@ ROOT = "."
 # Image name endings removed to give the position identifier, longest first, so
 # that "img_01.ome.tif" and "img_01.ome.zarr" both give "img_01".
 IMAGE_SUFFIXES = (".ome.tiff", ".ome.tif", ".ome.zarr", ".tiff", ".tif", ".zarr")
+# The extensions position_id removes: the images this brick reads, then the other formats
+# MorphoBricks bricks read (CellPatcher: PNG, JPEG, BMP, GIF, NumPy), so every brick names a
+# position by this one function (MorphoBricks decision D85, 2026-10-29). Naming only: the
+# images discovery accepts are still IMAGE_SUFFIXES.
+NAME_SUFFIXES = (*IMAGE_SUFFIXES, ".png", ".jpeg", ".jpg", ".bmp", ".gif", ".npy")
 
 
 def is_system_name(name: str) -> bool:
@@ -80,7 +85,10 @@ def position_id(image: str) -> str:
     position within its technical repeat. The full position (field of view) key
     is ``condition``, ``biological_repeat``, ``technical_repeat`` and this
     identifier (contract §1). The extension is ``.tif``, ``.tiff`` or ``.zarr``
-    (any case), together with a preceding ``.ome``.
+    (any case), together with a preceding ``.ome``, or one of the other image
+    formats MorphoBricks bricks read (``.png``, ``.jpg``, ``.jpeg``, ``.bmp``,
+    ``.gif``, ``.npy``; :data:`NAME_SUFFIXES`), so every brick names a position
+    with this one function (MorphoBricks D85).
 
     Parameters
     ----------
@@ -94,7 +102,7 @@ def position_id(image: str) -> str:
     """
     name = image.replace("\\", "/").rsplit("/", 1)[-1]
     lowered = name.lower()
-    for suffix in IMAGE_SUFFIXES:
+    for suffix in NAME_SUFFIXES:
         if lowered.endswith(suffix) and len(name) > len(suffix):
             return name[: -len(suffix)]
     return name

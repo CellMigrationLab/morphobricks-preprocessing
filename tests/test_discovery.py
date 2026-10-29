@@ -358,6 +358,14 @@ def test_folders_below_technical_repeat_are_an_error(tmp_path):
         ("ctrl\\001.tif", "001"),
         ("a.b.tif", "a.b"),
         ("ome.tif", "ome"),
+        # The other formats MorphoBricks bricks read (D85), any case; naming only.
+        ("a.npy", "a"),
+        ("ctrl/b.PNG", "b"),
+        ("c.jpeg", "c"),
+        ("d.jpg", "d"),
+        ("e.bmp", "e"),
+        ("f.gif", "f"),
+        ("g.json", "g.json"),
     ],
 )
 def test_position_id_is_the_image_name_without_extension(image, expected):
@@ -494,3 +502,14 @@ def test_issue_text_lists_paths_and_action(tmp_path):
     )
     assert "  - cond/notes.txt" in text
     assert "Suggested action:" in text
+
+
+def test_naming_other_formats_does_not_make_them_images(tmp_path):
+    """NAME_SUFFIXES only names positions: discovery still accepts TIFF and Zarr images only."""
+    from morphobricks_preprocessing.discovery import IMAGE_SUFFIXES, NAME_SUFFIXES
+
+    assert set(IMAGE_SUFFIXES) < set(NAME_SUFFIXES) and ".npy" not in IMAGE_SUFFIXES
+    make_tree(tmp_path, ["ctrl/bio1/img_01.tif", "ctrl/bio1/img_02.png"])
+    result = discover_experiment(tmp_path)
+    names = [image for leaf in result.leaves for image in leaf.images]
+    assert [position_id(image) for image in names] == ["img_01"]
