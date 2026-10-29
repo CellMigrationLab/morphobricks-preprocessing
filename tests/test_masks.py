@@ -304,3 +304,13 @@ def test_masks_command_takes_thresholds(experiment, masks, tmp_path, capsys):
     assert report["thresholds"]["same_objects_iou"] == 0.8
     assert main([*args, "--grouped-label-share", "1.5"]) == 1
     assert "must be above 0 and at most 1" in capsys.readouterr().out
+
+
+def test_masks_command_refuses_negative_labels(experiment, masks, tmp_path, capsys):
+    signed = label_image(0).astype(np.int32)
+    signed[0, 0] = -5
+    write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", signed)
+    out = tmp_path / "out"
+    assert main(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 1
+    assert "Cells/ctrl/rep1/a.tif holds negative labels (smallest -5)" in capsys.readouterr().out
+    assert not (out / "mask_relationships.json").exists()

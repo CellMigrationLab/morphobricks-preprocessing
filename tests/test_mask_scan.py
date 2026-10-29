@@ -317,3 +317,26 @@ def test_both_layouts_give_the_same_report(tmp_path):
     by_suffix = scan_masks(inventory, root)
     assert by_suffix.to_dict()["pairs"] == by_folder.to_dict()["pairs"]
     assert dict(by_suffix.hierarchy) == dict(by_folder.hierarchy)
+
+
+# Negative labels (issue #35) ----------------------------------------------------------
+
+
+def test_negative_labels_are_refused_never_read_as_objects(tmp_path):
+    signed = np.zeros(SHAPE, dtype=np.int16)
+    signed[2:8, 2:8] = -1
+    signed[20:30, 20:30] = 3
+    with pytest.raises(ValueError, match="negative labels"):
+        piece_counts(signed)
+    with pytest.raises(ValueError, match="negative labels"):
+        pair_counts(signed, boxes(CELLS))
+    with pytest.raises(ValueError, match="negative labels"):
+        pair_counts(boxes(NUCLEI), signed)
+    # Signed masks without negative labels keep 0 as the background.
+    labels, _ = piece_counts(np.abs(signed))
+    assert labels.tolist() == [1, 3]
+    root, folder = write_experiment(tmp_path, {"Cells": boxes(CELLS), "Signed": signed})
+    inventory = preflight(root, masks_folder=folder).masks
+    assert inventory.ok  # headers only: an int16 mask is fine
+    with pytest.raises(ValueError, match="Signed/ctrl/a.tif holds negative labels"):
+        scan_masks(inventory, root)

@@ -50,7 +50,7 @@ import numpy as np
 from scipy import ndimage
 
 from .manifest import package_versions
-from .masks import MaskInventory, read_mask
+from .masks import MaskInventory, check_labels, read_mask
 
 logger = logging.getLogger(__name__)
 
@@ -242,15 +242,22 @@ def piece_counts(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Return the labels of a 2D mask and the number of 4-connected pieces of each.
 
     Two pixels are in one piece when they carry the same label and touch along an edge.
+    Label 0 is the background.
 
     Returns
     -------
     tuple of numpy.ndarray
         The sorted nonzero labels, and the number of pieces of each.
+
+    Raises
+    ------
+    ValueError
+        If the mask holds negative labels (:func:`.masks.check_labels`).
     """
+    check_labels(mask)
     values, dense = np.unique(mask, return_inverse=True)
     dense = dense.reshape(mask.shape)
-    if values.size and values[0] == 0:
+    if values.size and values[0] == 0:  # labels are never negative, so 0 comes first
         values = values[1:]
     else:
         dense = dense + 1  # no background: every value is a label
@@ -268,8 +275,15 @@ def pair_counts(
 
     Both are 2D label images of one position; label 0 is background. ``thresholds`` changes
     the default ``inside_pixel_share`` and ``same_objects_iou`` (:func:`mask_thresholds`).
+
+    Raises
+    ------
+    ValueError
+        If either mask holds negative labels (:func:`.masks.check_labels`).
     """
     limits = mask_thresholds(thresholds)
+    check_labels(child, "the child mask")
+    check_labels(parent, "the parent mask")
     counts = dict.fromkeys(_COUNTS, 0)
     on = child != 0
     child_labels, child_of = np.unique(child[on], return_inverse=True)
@@ -342,7 +356,8 @@ def scan_masks(
     Raises
     ------
     ValueError
-        For an invalid threshold, before any mask is read.
+        For an invalid threshold, before any mask is read; for a mask that is not 2D or holds
+        negative labels (:func:`.masks.read_mask`).
     """
     limits = mask_thresholds(thresholds)
     root = Path(experiment_root).resolve()

@@ -184,7 +184,8 @@ def read_mask(mask: MaskFile, masks_folder: Path | None, experiment_root: Path) 
     Raises
     ------
     ValueError
-        If the mask is not 2D once its length-1 axes are removed.
+        If the mask is not 2D once its length-1 axes are removed, or holds negative labels
+        (label 0 is the background and objects are positive, contract §15).
     """
     if mask.source == FOLDER:
         pixels = tifffile.imread(Path(masks_folder) / mask.path)
@@ -195,7 +196,27 @@ def read_mask(mask: MaskFile, masks_folder: Path | None, experiment_root: Path) 
     pixels = np.squeeze(pixels)
     if pixels.ndim != 2:
         raise ValueError(f"the mask {mask.path} is not 2D ({pixels.shape})")
+    check_labels(pixels, mask.path)
     return pixels
+
+
+def check_labels(pixels: np.ndarray, name: str = "the mask") -> None:
+    """Refuse a mask holding negative labels.
+
+    Label 0 is the background and every object has a positive label (contract §15). A
+    negative value is neither, so it is refused rather than read as an object (which would
+    also make the background one).
+
+    Raises
+    ------
+    ValueError
+        If any pixel is below 0.
+    """
+    if pixels.dtype.kind == "i" and pixels.size and pixels.min() < 0:
+        raise ValueError(
+            f"{name} holds negative labels (smallest {pixels.min()}); label 0 is the "
+            "background and objects must have positive labels."
+        )
 
 
 def _folder_issues(folder: Path, experiment_root: Path) -> list[ValidationIssue]:
