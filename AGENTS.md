@@ -761,6 +761,10 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   normalization plan (question 34, PR #31): the histogram range in step 3 and the
   `narrow_histogram_range` warning, `plane_histograms.csv` schema version 4, the
   normalization brick pinned to its v0.3.1.
+- **v0.3.1** (to be tagged, question 36): `discovery.position_id`, the one function every
+  MorphoBricks brick names positions with (D85), also removes `.png`, `.jpg`, `.jpeg`,
+  `.bmp`, `.gif` and `.npy` (naming only) and refuses a name that is only an extension
+  (PR #33). Outputs unchanged.
 - **Next (not started):** the notebook step for the masks (name each mask, confirm or
   correct the relationships) and a file saving those answers for the other bricks
   (question 32); 3D and time-lapse masks later.
