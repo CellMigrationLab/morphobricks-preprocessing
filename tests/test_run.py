@@ -220,7 +220,7 @@ def test_manifest_records_labels_mapping_settings_and_files(experiment):
 def test_manifest_records_channel_names_and_significant_bits(tmp_path):
     root = tmp_path / "exp"
     root.mkdir()
-    for i, names in enumerate([["DAPI", "GFP"], ["DAPI", "RFP"]]):
+    for i, names in enumerate([["DAPI", "GFP"], ["DAPI", "GFP"]]):
         tifffile.imwrite(
             root / f"img_{i}.ome.tif",
             stack(i, n_z=2),
@@ -230,11 +230,29 @@ def test_manifest_records_channel_names_and_significant_bits(tmp_path):
         )
     result = run_experiment(root, prefill_mapping("CYX"))
     assert result.written
-    found = issue(result.issues, "channel_names_differ")
-    assert found.severity is Severity.WARNING
+    assert "channel_names_differ" not in codes(result.issues)
     manifest = read_manifest(result.manifest_path)
-    assert manifest.file("img_1.ome.tif").channel_names == ("DAPI", "RFP")
+    assert manifest.file("img_1.ome.tif").channel_names == ("DAPI", "GFP")
     assert manifest.file("img_0.ome.tif").significant_bits == 12
+
+
+def test_differing_channel_names_stop_the_run(tmp_path):
+    root = tmp_path / "exp"
+    root.mkdir()
+    for i, names in enumerate([["DAPI", "GFP"], ["Actin", "GFP"]]):
+        tifffile.imwrite(
+            root / f"img_{i}.ome.tif",
+            stack(i, n_z=2),
+            ome=True,
+            photometric="minisblack",
+            metadata={"axes": "CYX", "Channel": {"Name": names}},
+        )
+    result = run_experiment(root, prefill_mapping("CYX"), output_folder=tmp_path / "out")
+    assert not result.written
+    found = issue(result.issues, "channel_names_differ")
+    assert found.severity is Severity.ERROR
+    assert "channel 0: Actin (1 image), DAPI (1 image)" in found.message
+    assert not (tmp_path / "out" / "plane_histograms.csv").exists()
 
 
 # Positions (cross-brick decision D02) -------------------------------------------------

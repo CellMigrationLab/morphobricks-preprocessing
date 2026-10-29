@@ -556,7 +556,7 @@ continues.
 | `repeat_intensity_shift` | Warning (intensity check) | A biological repeat is brighter or darker than the other repeats of its condition. Check whether it was prepared or acquired differently; normalising per biological repeat in later bricks removes such differences. |
 | `saturated_image` | Warning (intensity check) | More than the limit (default 1 %) of an image's pixels in a channel are at the largest value of its pixel type, so their true intensity is lost. Check the exposure, gain or laser power. |
 | `no_intensity_spread` | Warning (intensity check) | An image's channel has the same 1st and 99.8th percentile (empty or blank), so it cannot be normalised on its own. Check the channel, or exclude the image. |
-| `channel_names_differ` | Warning | Channel names differ between images at the same position. Check the channel order. |
+| `channel_names_differ` | Error | Channel names differ between images at the same channel number, so different stains would be pooled as one channel. Check the channel order; export the images again with the same channel order and names, or exclude the images whose channels differ. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
 | `no_finite_pixels` | Warning | Some planes have a channel without finite pixels; those channels are left out of group statistics. |
 | `excluded_images`, `excluded_path_not_found` | Warning | Images excluded as requested, or an excluded path that matches no image. |

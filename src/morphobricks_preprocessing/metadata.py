@@ -287,12 +287,12 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     unsupported pixel types, more than one pixel type, TIFF files whose
     dimensions are arranged differently, and images with different numbers of
     channels (``different_channel_counts``; the C axis, or the RGB samples
-    without one, until the axis roles are confirmed). OME-Zarr images declare their axes,
+    without one, until the axis roles are confirmed), and channel names that differ at the
+    same channel (``channel_names_differ``). OME-Zarr images declare their axes,
     so their arrangement is checked by role during the axis review instead.
 
     Reports, as warnings: images of different widths or heights
-    (``different_sizes``), channel names that differ at the same channel
-    (``channel_names_differ``), different numbers of depth slices, time points
+    (``different_sizes``), different numbers of depth slices, time points
     or planes along another dimension (``different_plane_counts``),
     and physical pixel sizes that differ (``different_pixel_sizes``) or are
     known for only some images (``missing_pixel_size``).
@@ -461,15 +461,18 @@ def _check_channel_names(files: list[TiffMetadata]) -> list[ValidationIssue]:
             differing.extend(minority)
     if not differing:
         return []
+    # An error (issue #37): channels are matched by number, so a different stain at the
+    # same number would be pooled and scaled as one channel.
     return [
-        warning(
+        error(
             "channel_names_differ",
             "The images name their channels differently at the same channel position ("
             + "; ".join(descriptions)
-            + "). Planes with the same channel number may show different stains.",
+            + "). Channels are matched by their number, so different stains would be pooled "
+            "as one channel.",
             sorted(set(differing)),
-            "No action needed if the names only differ in spelling. Otherwise check the "
-            "channel order of these images before comparing channels.",
+            "Check the channel order of these images. Export them again with the same channel "
+            "order and names, or exclude the images whose channels differ.",
         )
     ]
 

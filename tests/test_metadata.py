@@ -175,7 +175,7 @@ def test_unnamed_ome_channels_are_empty(tmp_path):
     assert info.channel_names == ()
 
 
-def test_differing_channel_names_are_a_warning():
+def test_differing_channel_names_are_an_error():
     base = meta("a.tif", (2, 8, 8), axes="CYX")
     files = [
         replace(base, channel_names=("DAPI", "GFP")),
@@ -184,7 +184,7 @@ def test_differing_channel_names_are_a_warning():
         replace(base, relative_path="d.tif", channel_names=(None, None)),
     ]
     found = issue(check_metadata(files), "channel_names_differ")
-    assert found.severity is Severity.WARNING
+    assert found.severity is Severity.ERROR  # issue #37: channels are matched by number
     assert found.paths == ("c.tif",)
     assert "channel 1: GFP (2 images), RFP (1 image)" in found.message
 
