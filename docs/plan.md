@@ -368,6 +368,8 @@ API, CLI). The notebook and CLI only call the API.
   version 4. *Implemented, see question 34.*
 - **Release v0.3.0:** P6, with the normalization brick's v0.3.1. *Released, see question
   35.*
+- **Release v0.3.1:** `position_id` names an image with the other image extensions bricks
+  read (MorphoBricks D85, PR #33). *To be tagged, see question 36.*
 
 ## 11. Tests and acceptance criteria
 
@@ -867,3 +869,10 @@ Raised during review; to be decided before the milestones that need them:
     version 1, with the optional keys of v0.2.0 and `narrow_histogram_ranges`, and
     `settings.histogram`. The other bricks pin this tag to read schema version 4
     (MorphoFeature decision D79); CellPatcher's follow-up C1 raises its pin to it.*
+36. What does v0.3.1 hold?
+    *Decided (29 October 2026): v0.3.0 and PR #33, MorphoBricks decision D85's naming:
+    `discovery.position_id` also removes `.png`, `.jpg`, `.jpeg`, `.bmp`, `.gif` and `.npy`
+    (`NAME_SUFFIXES`; naming only, the brick still reads TIFF and Zarr) and refuses a name
+    that is only an extension. Outputs and their schema versions are those of v0.3.0, with
+    the normalization brick's v0.3.1. The version in `pyproject.toml` is 0.3.1 before
+    tagging. Every brick pins this tag (D79), CellPatcher's core dependency included.*
