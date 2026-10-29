@@ -304,3 +304,29 @@ def test_masks_command_takes_thresholds(experiment, masks, tmp_path, capsys):
     assert report["thresholds"]["same_objects_iou"] == 0.8
     assert main([*args, "--grouped-label-share", "1.5"]) == 1
     assert "must be above 0 and at most 1" in capsys.readouterr().out
+
+
+def test_a_malformed_labels_group_is_an_error_not_a_vanished_mask_type(tmp_path):
+    zarr = pytest.importorskip("zarr")
+    from zarr_tree import write_labels, write_ngff
+
+    paths = []
+    for rel in ("ctrl/a.ome.zarr", "drug/a.ome.zarr"):
+        path = write_ngff(tmp_path / "exp" / rel, np.zeros((16, 20), np.uint8), "yx")
+        write_labels(path, {"cells": label_image(0)}, "yx")
+        paths.append(path)
+    # Both images' labels groups no longer list their label images: every cells mask is lost.
+    for path in paths:
+        group = zarr.open_group(str(path / "labels"), mode="a")
+        group.attrs.update({"labels": "cells"})
+    found = preflight(tmp_path / "exp", ome_zarr_labels=True).masks
+    assert not found.ok
+    assert codes(found.issues) == ["unreadable_mask"]
+    assert found.issues[0].paths == ("ctrl/a.ome.zarr/labels", "drug/a.ome.zarr/labels")
+    result = run_experiment(
+        tmp_path / "exp",
+        prefill_mapping("YX"),
+        output_folder=tmp_path / "out",
+        ome_zarr_labels=True,
+    )
+    assert not result.written and "unreadable_mask" in codes(result.issues)

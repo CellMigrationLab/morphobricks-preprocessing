@@ -564,7 +564,7 @@ continues.
 | `masks_inside_experiment` | Error | The masks folder is inside the experiment folder, where its folders would be read as conditions and repeats. Move it next to the experiment folder. |
 | `mask_names_differ_in_case` | Error | Two kinds of mask have names that differ only in upper/lower case. Rename one. |
 | `duplicate_mask` | Error | An image has two masks of one kind (two extensions, or a file and an OME-Zarr label image of the same name). Keep one. |
-| `unreadable_mask` | Error | A mask cannot be opened, or holds several images. Save it again as a TIFF label image. |
+| `unreadable_mask` | Error | A mask cannot be opened, or holds several images, or the `labels` group of an OME-Zarr image cannot be read (it must list its label images). Save the mask again as a TIFF label image, or repair the OME-Zarr labels. |
 | `mask_not_2d` | Error | A mask has more than one plane. Save one 2D label image per position. |
 | `mask_size_mismatch` | Error | A mask does not have the width and height of its image. Check that it was made from that image at full resolution. |
 | `mask_pixel_type` | Error | A mask's pixels are not whole numbers (for example decimals). Save it as an integer label image. |

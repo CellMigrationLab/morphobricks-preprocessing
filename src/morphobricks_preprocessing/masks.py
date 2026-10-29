@@ -162,12 +162,14 @@ def find_masks(
             found, extra = _folder_masks(folder, discovery, images)
             files.extend(found)
             issues.extend(extra)
+    unreadable: list[str] = []
     if ome_zarr_labels:
-        files.extend(_label_masks(discovery.root, images))
+        found, unreadable = _label_masks(discovery.root, images)
+        files.extend(found)
     issues.extend(_name_issues(files))
     files.sort(key=lambda f: (f.image, f.mask_type))
     issues.extend(_duplicate_issues(files))
-    issues.extend(_header_issues(files, images, folder, discovery.root))
+    issues.extend(_header_issues(files, images, folder, discovery.root, unreadable))
     types = tuple(sorted({f.mask_type for f in files}))
     issues.extend(_missing_issues(types, files, images))
     return MaskInventory(
@@ -310,19 +312,30 @@ def _layout_issues(loose: list[str], unpaired: list[str]) -> list[ValidationIssu
     return issues
 
 
-def _label_masks(root: Path, images: Mapping[str, TiffMetadata]) -> list[MaskFile]:
-    """Return the label images of every OME-Zarr image, as masks."""
-    files = []
+def _label_masks(
+    root: Path, images: Mapping[str, TiffMetadata]
+) -> tuple[list[MaskFile], list[str]]:
+    """Return the label images of every OME-Zarr image, as masks.
+
+    Also return the ``<image>/labels`` groups that could not be read: their masks would
+    otherwise vanish without a word (and with them the ``mask_missing`` warning), so they
+    are reported as ``unreadable_mask``.
+    """
+    files, unreadable = [], []
     for image, meta in images.items():
         if meta.kind != "ome-zarr" or not meta.readable:
             continue
         try:
             names = ngff_label_names(root / image)
-        except (ZarrUnavailableError, NgffError) as exc:
+        except ZarrUnavailableError as exc:  # documented: label images need the zarr extra
             logger.info("No label images read from %s: %s", image, exc)
             continue
+        except NgffError as exc:
+            logger.info("The label images of %s could not be read: %s", image, exc)
+            unreadable.append(f"{image}/labels")
+            continue
         files.extend(MaskFile(image, name, f"{image}/labels/{name}", OME_ZARR) for name in names)
-    return files
+    return files, unreadable
 
 
 def _name_issues(files: list[MaskFile]) -> list[ValidationIssue]:
@@ -366,10 +379,19 @@ def _duplicate_issues(files: list[MaskFile]) -> list[ValidationIssue]:
 
 
 def _header_issues(
-    files: list[MaskFile], images: Mapping[str, TiffMetadata], folder: Path | None, root: Path
+    files: list[MaskFile],
+    images: Mapping[str, TiffMetadata],
+    folder: Path | None,
+    root: Path,
+    unreadable: Iterable[str] = (),
 ) -> list[ValidationIssue]:
-    """Read each mask's header (shape, pixel type) and check it against its image."""
+    """Read each mask's header (shape, pixel type) and check it against its image.
+
+    ``unreadable`` are paths already known not to open (OME-Zarr ``labels`` groups).
+    """
     problems: dict[str, list[str]] = {}
+    if unreadable:
+        problems["unreadable_mask"] = list(unreadable)
     for index, mask in enumerate(files):
         try:
             shape, dtype = _mask_header(mask, folder, root)
@@ -399,8 +421,9 @@ def _header_issues(
 _TEXTS = {
     "unreadable_mask": (
         "Some masks could not be opened.",
-        "Check that they are TIFF files (or OME-Zarr label images) with one image each and "
-        "not damaged; the technical details are in the log.",
+        "Check that they are TIFF files (or OME-Zarr label images, listed in the image's "
+        "labels group) with one image each and not damaged; the technical details are in the "
+        "log.",
     ),
     "mask_not_2d": (
         "Some masks are not 2D: a mask must be one label image per position.",
