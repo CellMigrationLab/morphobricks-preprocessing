@@ -236,6 +236,44 @@ def test_manifest_records_channel_names_and_significant_bits(tmp_path):
     assert manifest.file("img_0.ome.tif").significant_bits == 12
 
 
+def write_named(root, names_per_image):
+    root.mkdir()
+    for i, names in enumerate(names_per_image):
+        tifffile.imwrite(
+            root / f"img_{i}.ome.tif",
+            stack(i, n_z=2),
+            ome=True,
+            photometric="minisblack",
+            metadata={"axes": "CYX", "Channel": {"Name": names}},
+        )
+
+
+def test_leading_and_trailing_whitespace_of_channel_names_is_removed(tmp_path):
+    # Owner decision on #42: names are trimmed at read time, for every image, and the
+    # manifest records that it was done; "DAPI " and "DAPI" are then one name.
+    root = tmp_path / "exp"
+    write_named(root, [["DAPI", "GFP"], ["DAPI ", " GFP"]])
+    result = run_experiment(root, prefill_mapping("CYX"), output_folder=tmp_path / "out")
+    assert result.written
+    assert "channel_names_differ" not in codes(result.issues)
+    manifest = read_manifest(result.manifest_path)
+    assert manifest.file("img_1.ome.tif").channel_names == ("DAPI", "GFP")
+    assert manifest.file("img_1.ome.tif").channel_names_trimmed
+    assert not manifest.file("img_0.ome.tif").channel_names_trimmed
+    raw = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert [f["channel_names_trimmed"] for f in raw["files"]] == [False, True]
+
+
+def test_inner_whitespace_of_channel_names_still_differs(tmp_path):
+    root = tmp_path / "exp"
+    write_named(root, [["DAPI", "GFP"], ["DA PI", "GFP"]])
+    result = run_experiment(root, prefill_mapping("CYX"), output_folder=tmp_path / "out")
+    assert not result.written
+    found = issue(result.issues, "channel_names_differ")
+    assert found.severity is Severity.ERROR
+    assert "channel 0: DA PI (1 image), DAPI (1 image)" in found.message
+
+
 def test_differing_channel_names_stop_the_run(tmp_path):
     root = tmp_path / "exp"
     root.mkdir()

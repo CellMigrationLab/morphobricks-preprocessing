@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,27 @@ class ZarrUnavailableError(ImportError):
 
 class NgffError(ValueError):
     """Raised when a folder is not an OME-Zarr image this brick can read."""
+
+
+def read_channel_names(raw: Iterable[Any]) -> tuple[tuple[str | None, ...], bool]:
+    """Return channel names as read from metadata, and whether any was trimmed.
+
+    Leading and trailing whitespace is removed from every name, for every image (TIFF,
+    OME-Zarr, and this brick's own copies), so ``"DAPI "`` and ``"DAPI"`` are one name.
+    Whitespace inside a name is kept: names are otherwise compared exactly. A name that
+    is empty, only whitespace or not text is unnamed (None). The names are empty when
+    none is given. The flag is recorded in the run manifest (``channel_names_trimmed``).
+    """
+    names: list[str | None] = []
+    trimmed = False
+    for value in raw:
+        if not isinstance(value, str):
+            names.append(None)
+            continue
+        name = value.strip()
+        trimmed = trimmed or name != value
+        names.append(name or None)
+    return (tuple(names) if any(names) else ()), trimmed
 
 
 def is_zarr_name(name: str) -> bool:
@@ -97,7 +119,10 @@ class NgffImage:
     image_count
         Number of images in the store; more than one blocks processing.
     channel_names
-        Channel labels from the ``omero`` metadata; empty when not given.
+        Channel labels from the ``omero`` metadata, without leading or trailing
+        whitespace (:func:`read_channel_names`); empty when not given.
+    channel_names_trimmed
+        True when leading or trailing whitespace was removed from a label.
     dataset_path
         Path of the level-0 array inside the store, e.g. ``"0"`` or ``"0/0"``.
     physical_sizes
@@ -114,6 +139,7 @@ class NgffImage:
     image_count: int
     channel_names: tuple[str | None, ...] = ()
     dataset_path: str = ""
+    channel_names_trimmed: bool = False
     physical_sizes: PhysicalSizes = PhysicalSizes()
 
     @property
@@ -274,8 +300,8 @@ def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:
     if len(axes) != len(array.shape):
         raise NgffError(f"its metadata names {len(axes)} axes but the array has {len(array.shape)}")
     omero = meta.get("omero") if isinstance(meta.get("omero"), dict) else {}
-    labels = tuple(
-        (channel.get("label") or None) if isinstance(channel, dict) else None
+    labels, trimmed = read_channel_names(
+        channel.get("label") if isinstance(channel, dict) else None
         for channel in omero.get("channels") or []
     )
     return NgffImage(
@@ -283,7 +309,8 @@ def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:
         axes=axes,
         version=str(meta.get("version") or first.get("version") or ""),
         image_count=image_count,
-        channel_names=labels if any(labels) else (),
+        channel_names=labels,
+        channel_names_trimmed=trimmed,
         dataset_path=f"{prefix}{dataset_path}",
         physical_sizes=_physical_sizes(first, axes, dataset_path),
     )

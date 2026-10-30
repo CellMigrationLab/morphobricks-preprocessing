@@ -516,7 +516,12 @@ def run_experiment(
             significant_bits=header.significant_bits,
             ome_zarr_path=copy,
             read_in_blocks=rel in in_blocks,
+            channel_names_trimmed=header.channel_names_trimmed,
         )
+        if header.channel_names_trimmed:
+            logger.info(
+                "Leading or trailing whitespace was removed from the channel names of %s", rel
+            )
         before = previous.file(rel) if previous is not None else None
         if before is None:
             new.append(rel)

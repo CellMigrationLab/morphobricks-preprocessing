@@ -112,6 +112,29 @@ def test_open_ngff(tmp_path, version):
     assert image.chunks == (1, 1, 8, 9)
 
 
+@pytest.mark.parametrize("version", VERSIONS)
+def test_channel_labels_are_trimmed_but_inner_whitespace_kept(tmp_path, version):
+    # Owner decision on #42: the same trimming as for TIFF names, for every image.
+    path = write_ngff(
+        tmp_path / "a.ome.zarr",
+        random_data((3, 8, 9)),
+        "cyx",
+        version=version,
+        channel_names=[" DAPI ", "GFP  1", "   "],
+    )
+    image = open_ngff(path)
+    assert image.channel_names == ("DAPI", "GFP  1", None)
+    assert image.channel_names_trimmed
+    plain = write_ngff(
+        tmp_path / "b.ome.zarr",
+        random_data((1, 8, 9)),
+        "cyx",
+        version=version,
+        channel_names=["DAPI"],
+    )
+    assert not open_ngff(plain).channel_names_trimmed
+
+
 # Physical sizes (OME-NGFF coordinateTransformations and axis units) --------------------
 
 MICRONS = {"z": "micrometer", "y": "micrometer", "x": "micrometer"}
