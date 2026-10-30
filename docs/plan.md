@@ -920,8 +920,9 @@ Raised during review; to be decided before the milestones that need them:
     name are trusted, placeholders (`I`, `Q`) never (`header_axes`); a declaration may only
     name what the header leaves open (`check_declared_axes`); `read_mask_file` reads a mask
     by its own header. Identity (D-e): `FOV_KEY`; labels and `position_id` without outer
-    whitespace and never `NA`, `nan`, `none` or empty (`check_identity_text`, discovery's
-    `invalid_name`); plane indices are Python ints of at least 0 (`check_plane_index`);
+    whitespace and never `NA`, `nan`, `none`, `null`, `n/a`, `<NA>` or empty
+    (`check_identity_text`, discovery's `invalid_name`); plane indices are integers of at
+    least 0, NumPy integers returned as plain ints (`check_plane_index`);
     names of one level differing only in case clash anywhere in the experiment
     (`case_conflict`, widened from siblings). Sources of a run: `check_sources` checks
     images against a run's manifest (in it, unchanged, same identity, same axis roles).
