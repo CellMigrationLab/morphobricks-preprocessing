@@ -395,8 +395,8 @@ def check_labels(pixels: np.ndarray, name: str = "the mask") -> None:
     pixels = np.asarray(pixels)
     if pixels.dtype.kind not in "biu":
         raise ValueError(
-            f"{name} does not hold whole-number labels (pixel type {pixels.dtype}); a mask "
-            "holds integer labels or true/false."
+            f"{name} does not hold whole-number labels (pixel type {pixels.dtype}); save the "
+            "mask as integers (labels) or true/false."
         )
     if pixels.dtype.kind == "b" or not pixels.size:
         return
