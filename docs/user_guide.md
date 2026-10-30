@@ -427,7 +427,9 @@ mask that segment the same objects are reported as such. These are suggestions f
 pixels, not decisions: you name each kind of mask and check the relationships in the bricks
 that use them. The report is written to `mask_relationships.json` in the output folder
 (§6). The command takes `--output`, `--exclude` and `--log` like the others, and exits with
-status 1 when an error blocks it or when no masks are found.
+status 1 when an error blocks it or when no masks are found. Label 0 is the background and
+objects have positive labels: a mask with a negative value stops the command with a message
+naming the mask, and no report is written.
 
 The rules behind each suggestion use thresholds you can change, for example
 `--inside-object-share 0.8` to call a kind of mask "inside" another when 80% of its objects
@@ -654,7 +656,8 @@ write_mask_report(report, "/data/exp1_MorphoBricks_Preprocessing/mask_relationsh
 
 `scan_masks(..., thresholds={"inside_object_share": 0.8})` changes a threshold (the others
 keep their defaults, `DEFAULT_THRESHOLDS`). `preflight(..., ome_zarr_labels=True)` uses the
-label images of OME-Zarr images without a masks folder; `read_mask` reads one mask's pixels;
+label images of OME-Zarr images without a masks folder; `read_mask` reads one mask's pixels
+(a `ValueError` for negative labels, as in `piece_counts`, `pair_counts` and `scan_masks`);
 `pair_counts` and `piece_counts` give the counts behind the report for one pair of masks or
 one mask.
 

@@ -321,7 +321,10 @@ masks/                         masks folder, outside the experiment folder
 
 The optional mask step reads every image's masks, one image at a time, and describes each
 mask type and every ordered pair of types over the whole experiment. Pieces are counted with
-4-connectivity; label 0 is background. Every conclusion is a suggestion with its evidence:
+4-connectivity; label 0 is background and every object has a positive label: a mask holding
+a negative value (possible in a signed integer type, which the header check accepts) raises
+an error when its pixels are read, and no report is written, so the background or a negative
+value is never counted as an object. Every conclusion is a suggestion with its evidence:
 the user names the masks and confirms or corrects the relationships.
 
 | Kind of mask | Rule |
@@ -384,5 +387,6 @@ The report is UTF-8 JSON (two-space indent, LF), written atomically to the outpu
 | `versions` | As in the manifest (§9); information only. |
 
 The step is the command `masks` and the functions `find_masks` and `scan_masks`; it reads
-each image's masks once and holds only one image's masks in memory. A mask that is not 2D
-when its pixels are read raises an error.
+each image's masks once and holds only one image's masks in memory. A mask that cannot be read
+as the planes its header gave, or holds negative labels, when its pixels are read raises an
+error.

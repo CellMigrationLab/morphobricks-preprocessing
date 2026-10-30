@@ -350,3 +350,41 @@ def test_masks_with_time_points_are_scanned_plane_by_plane(tmp_path):
     assert [(p.child, p.parent, dict(p.evidence)) for p in report.pairs] == [
         (p.child, p.parent, dict(p.evidence)) for p in flat.pairs
     ]
+
+
+# Negative labels (issue #35) ----------------------------------------------------------
+
+
+def test_negative_labels_are_refused_never_read_as_objects(tmp_path):
+    signed = np.zeros(SHAPE, dtype=np.int16)
+    signed[2:8, 2:8] = -1
+    signed[20:30, 20:30] = 3
+    with pytest.raises(ValueError, match="negative labels"):
+        piece_counts(signed)
+    with pytest.raises(ValueError, match="negative labels"):
+        pair_counts(signed, boxes(CELLS))
+    with pytest.raises(ValueError, match="negative labels"):
+        pair_counts(boxes(NUCLEI), signed)
+    # Signed masks without negative labels keep 0 as the background.
+    labels, _ = piece_counts(np.abs(signed))
+    assert labels.tolist() == [1, 3]
+    root, folder = write_experiment(tmp_path, {"Cells": boxes(CELLS), "Signed": signed})
+    inventory = preflight(root, masks_folder=folder).masks
+    assert inventory.ok  # headers only: an int16 mask is fine
+    with pytest.raises(ValueError, match="Signed/ctrl/a.tif holds negative labels"):
+        scan_masks(inventory, root)
+
+
+def test_negative_labels_in_a_later_time_point_are_refused(tmp_path):
+    # #36 reads masks plane by plane; #35's check must cover every plane, not only the first.
+    frames = hierarchy_masks()
+    signed = np.stack([frames["Cells"].astype(np.int16)] * 3)
+    signed[2, 0, 0] = -1
+    root, folder = tmp_path / "exp", tmp_path / "masks"
+    write_data(root / "ctrl" / "a.tif", np.zeros((3, *SHAPE), dtype=np.uint8), "TYX")
+    write_data(folder / "Cells" / "ctrl" / "a.tif", signed, "TYX")
+    write_data(folder / "Nuclei" / "ctrl" / "a.tif", np.stack([frames["Nuclei"]] * 3), "TYX")
+    inventory = preflight(root, masks_folder=folder).masks
+    assert inventory.ok, inventory.issues
+    with pytest.raises(ValueError, match="Cells/ctrl/a.tif holds negative labels"):
+        scan_masks(inventory, root)

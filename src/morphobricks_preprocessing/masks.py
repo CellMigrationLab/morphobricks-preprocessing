@@ -233,7 +233,8 @@ def read_mask(
     ------
     ValueError
         If the mask's dimensions are not the ones its header gave (``mask.axes``), or ``z``
-        or ``t`` is missing or outside the mask.
+        or ``t`` is missing or outside the mask, or the plane holds negative labels
+        (label 0 is the background and objects are positive, contract §15).
     """
     wanted = {"Z": z, "T": t}
     for axis, index in wanted.items():
@@ -258,6 +259,7 @@ def read_mask(
         axes = "".join(a for a, s in zip(labels.axes, selection, strict=True) if s == slice(None))
     if axes != "YX" or (mask.axes and pixels.shape != tuple(_yx(mask.axes, mask.shape))):
         raise ValueError(f"the mask {mask.path} is not the 2D plane its header gave ({axes})")
+    check_labels(pixels, mask.path)
     return pixels
 
 
@@ -296,6 +298,25 @@ def _read_tiff_plane(path: Path, wanted: Mapping[str, int | None]) -> tuple[np.n
 
 def _yx(axes: str, shape: tuple[int, ...]) -> tuple[int, int]:
     return shape[axes.index("Y")], shape[axes.index("X")]
+
+
+def check_labels(pixels: np.ndarray, name: str = "the mask") -> None:
+    """Refuse a mask holding negative labels.
+
+    Label 0 is the background and every object has a positive label (contract §15). A
+    negative value is neither, so it is refused rather than read as an object (which would
+    also make the background one).
+
+    Raises
+    ------
+    ValueError
+        If any pixel is below 0.
+    """
+    if pixels.dtype.kind == "i" and pixels.size and pixels.min() < 0:
+        raise ValueError(
+            f"{name} holds negative labels (smallest {pixels.min()}); label 0 is the "
+            "background and objects must have positive labels."
+        )
 
 
 def _folder_issues(folder: Path, experiment_root: Path) -> list[ValidationIssue]:

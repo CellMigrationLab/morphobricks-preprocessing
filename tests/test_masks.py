@@ -435,3 +435,13 @@ def test_label_images_with_time_points(tmp_path):
         ome_zarr_labels=True,
     )
     assert result.written, result.issues
+
+
+def test_masks_command_refuses_negative_labels(experiment, masks, tmp_path, capsys):
+    signed = label_image(0).astype(np.int32)
+    signed[0, 0] = -5
+    write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", signed)
+    out = tmp_path / "out"
+    assert main(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 1
+    assert "Cells/ctrl/rep1/a.tif holds negative labels (smallest -5)" in capsys.readouterr().out
+    assert not (out / "mask_relationships.json").exists()
