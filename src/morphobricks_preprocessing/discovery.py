@@ -453,13 +453,18 @@ class _Walker:
             )
         if self.outside_leaf:
             issues.append(
-                warning(
+                # An error, not a warning (owner decision, October 2026): a folder holding
+                # both images and subfolders has no level for its images, and every brick
+                # refuses it, so they are never dropped silently.
+                error(
                     "tiff_outside_leaf",
                     f"{plural(len(self.outside_leaf), 'image')} {_are(self.outside_leaf)} "
-                    "in folders that also contain subfolders and will not be analysed. Only "
-                    "images in folders without subfolders are used.",
+                    "in folders that also contain subfolders. A folder holds either images "
+                    "or subfolders, never both, so these images have no place in the "
+                    "experiment's levels.",
                     self.outside_leaf,
-                    "Move these images into a folder of their own if they should be analysed.",
+                    "Move these images into a folder of their own, or out of the experiment "
+                    "folder.",
                 )
             )
         if not self.leaves:

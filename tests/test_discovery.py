@@ -1,17 +1,20 @@
 import os
 
+import numpy as np
 import pytest
 
 from morphobricks_preprocessing import (
     SINGLE,
+    AxisMapping,
     Severity,
     check_output_folder,
     default_output_folder,
     discover_experiment,
     position_id,
+    run_experiment,
 )
 from morphobricks_preprocessing.discovery import is_system_name, is_tiff_name
-from tiff_tree import make_tree
+from tiff_tree import make_tree, write_data
 
 
 def codes(result):
@@ -158,14 +161,27 @@ def test_empty_folders_are_warned(tmp_path):
     assert result.images == ("cond/a.tif",)
 
 
-def test_tiffs_outside_leaf_folders_are_warned_and_skipped(tmp_path):
+def test_images_beside_subfolders_are_an_error(tmp_path):
+    # Owner decision (October 2026): a folder holding both images and subfolders is refused,
+    # as by every other brick; its images are never skipped with only a warning.
     make_tree(tmp_path, ["stray.tif", "cond/bio/b.tif", "cond/bio/tech/a.tif"])
     result = discover_experiment(tmp_path)
-    assert result.ok
+    assert not result.ok
     found = issue(result, "tiff_outside_leaf")
-    assert found.severity is Severity.WARNING
+    assert found.severity is Severity.ERROR
     assert found.paths == ("cond/bio/b.tif", "stray.tif")
+    assert "never both" in found.message and "folder of their own" in found.action
     assert result.images == ("cond/bio/tech/a.tif",)
+
+
+def test_a_run_with_images_beside_subfolders_writes_nothing(tmp_path):
+    root, output = tmp_path / "exp", tmp_path / "out"
+    write_data(root / "cond" / "stray.tif", np.zeros((8, 9), dtype=np.uint8))
+    write_data(root / "cond" / "bio" / "a.tif", np.zeros((8, 9), dtype=np.uint8))
+    result = run_experiment(root, AxisMapping("YX", "YX"), output_folder=output)
+    assert not result.written
+    assert "tiff_outside_leaf" in [i.code for i in result.issues if i.is_error]
+    assert not output.exists()
 
 
 def test_system_files_are_ignored_silently(tmp_path):
