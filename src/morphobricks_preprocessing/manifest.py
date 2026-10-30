@@ -116,6 +116,9 @@ class FileEntry:
     ome_zarr_path
         For a TIFF converted to OME-Zarr, the converted copy relative to the
         output folder (its rows are computed from it); otherwise None.
+    channel_names_trimmed
+        True when leading or trailing whitespace was removed from the image's
+        channel names as they were read (names are recorded trimmed).
     read_in_blocks
         True when the image's planes are too large for the memory limit and are
         read in blocks. For information only: the rows are the same either way.
@@ -137,6 +140,7 @@ class FileEntry:
     ome_zarr_path: str | None = None
     read_in_blocks: bool = False
     position_id: str | None = None
+    channel_names_trimmed: bool = False
 
     def same_source(self, other: FileEntry) -> bool:
         """Return True if ``other`` describes the same unchanged file, read the same way."""
@@ -403,6 +407,7 @@ def file_entry_for(
     significant_bits: int | None = None,
     ome_zarr_path: str | None = None,
     read_in_blocks: bool = False,
+    channel_names_trimmed: bool = False,
 ) -> FileEntry:
     """Describe a source image as it is on disk now, with its position identifier."""
     size, mtime_ns = source_fingerprint(Path(root) / relative_path)
@@ -419,6 +424,7 @@ def file_entry_for(
         ome_zarr_path=ome_zarr_path,
         read_in_blocks=read_in_blocks,
         position_id=position_id(relative_path),
+        channel_names_trimmed=channel_names_trimmed,
     )
 
 
@@ -524,6 +530,7 @@ def _file_dict(entry: FileEntry) -> dict:
         "ome_zarr_path": entry.ome_zarr_path,
         "read_in_blocks": entry.read_in_blocks,
         "position_id": entry.position_id,
+        "channel_names_trimmed": entry.channel_names_trimmed,
     }
 
 
@@ -546,6 +553,7 @@ def _file_entry(data: dict) -> FileEntry:
         ome_zarr_path=None if data.get("ome_zarr_path") is None else str(data["ome_zarr_path"]),
         read_in_blocks=bool(data.get("read_in_blocks", False)),
         position_id=None if data.get("position_id") is None else str(data["position_id"]),
+        channel_names_trimmed=bool(data.get("channel_names_trimmed", False)),
     )
 
 

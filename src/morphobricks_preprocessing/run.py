@@ -85,6 +85,7 @@ from .validation import ValidationIssue, error, has_errors, plural, warning
 from .zarr_export import (
     ConversionSettings,
     OmeZarrWriter,
+    copy_channels_current,
     copy_units_current,
     is_copy_path,
     ome_zarr_relative_path,
@@ -515,7 +516,12 @@ def run_experiment(
             significant_bits=header.significant_bits,
             ome_zarr_path=copy,
             read_in_blocks=rel in in_blocks,
+            channel_names_trimmed=header.channel_names_trimmed,
         )
+        if header.channel_names_trimmed:
+            logger.info(
+                "Leading or trailing whitespace was removed from the channel names of %s", rel
+            )
         before = previous.file(rel) if previous is not None else None
         if before is None:
             new.append(rel)
@@ -532,6 +538,7 @@ def run_experiment(
                     (output / copy).is_dir()
                     and same_conversion
                     and copy_units_current(output / copy, header.physical_sizes)
+                    and copy_channels_current(output / copy, header.channel_names)
                 )
             )
         ):

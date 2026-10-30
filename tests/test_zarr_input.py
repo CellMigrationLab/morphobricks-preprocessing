@@ -112,6 +112,42 @@ def test_open_ngff(tmp_path, version):
     assert image.chunks == (1, 1, 8, 9)
 
 
+@pytest.mark.parametrize("version", VERSIONS)
+def test_channel_labels_are_trimmed_but_inner_whitespace_kept(tmp_path, version):
+    # Owner decision on #42: the same trimming as for TIFF names, for every image.
+    path = write_ngff(
+        tmp_path / "a.ome.zarr",
+        random_data((3, 8, 9)),
+        "cyx",
+        version=version,
+        channel_names=[" DAPI ", "GFP  1", "   "],
+    )
+    image = open_ngff(path)
+    assert image.channel_names == ("DAPI", "GFP  1", None)
+    assert image.channel_names_trimmed
+    plain = write_ngff(
+        tmp_path / "b.ome.zarr",
+        random_data((1, 8, 9)),
+        "cyx",
+        version=version,
+        channel_names=["DAPI"],
+    )
+    assert not open_ngff(plain).channel_names_trimmed
+
+
+@pytest.mark.parametrize("label", [1, ["DAPI"], {"name": "DAPI"}, True])
+def test_channel_label_that_is_not_text_is_refused(tmp_path, label):
+    # Review of #42: a non-text label was read as an unnamed channel, silently skipping
+    # the channel-name check; it is malformed metadata and refused instead.
+    path = write_ngff(
+        tmp_path / "a.ome.zarr", random_data((2, 8, 9)), "cyx", channel_names=["DAPI", label]
+    )
+    with pytest.raises(NgffError, match="channel 1"):
+        open_ngff(path)
+    header = inspect_image(path, "a.ome.zarr")
+    assert not header.readable
+
+
 # Physical sizes (OME-NGFF coordinateTransformations and axis units) --------------------
 
 MICRONS = {"z": "micrometer", "y": "micrometer", "x": "micrometer"}
