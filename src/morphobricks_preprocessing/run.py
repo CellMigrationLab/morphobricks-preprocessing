@@ -424,10 +424,19 @@ def run_experiment(
     Raises
     ------
     ValueError
-        For an image type other than ``"fluorescence"`` and ``"rgb"``.
+        For an image type other than ``"fluorescence"`` and ``"rgb"``, or for
+        ``missing_as_singleton`` or ``convert_tiffs`` that is not True or False
+        (the manifest records them as JSON booleans, contract §9).
     """
     if image_type is not None:
         check_image_type(image_type)
+    for name, value in (
+        ("missing_as_singleton", missing_as_singleton),
+        ("convert_tiffs", convert_tiffs),
+    ):
+        # Refused before anything is read rather than when the manifest is written.
+        if not isinstance(value, bool):
+            raise ValueError(f"{name} must be True or False, found {value!r}")
     root = Path(experiment_root).resolve()
     output = default_output_folder(root) if output_folder is None else Path(output_folder).resolve()
     pre = preflight(
