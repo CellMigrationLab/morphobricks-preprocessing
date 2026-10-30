@@ -25,11 +25,13 @@ dependencies = [
     # Counting the connected pieces of each mask label in the optional mask step.
     "scipy>=1.10",
     # Per-plane histograms, the CSV table, pooling and normalization (moved there in P1).
-    # Pinned to the brick's release v0.3.1, which writes plane_histograms.csv schema
+    # Pinned to the brick's release v0.3.2, which writes plane_histograms.csv schema
     # version 4 (underflow and overflow columns, the robust histogram range and the
-    # range check; follow-up P6). Its tag v0.3.0 holds the same code but reports version
-    # 0.2.0. Schema version 3 with the channels in columns came with v0.2.0 (P3b).
-    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.3.1",
+    # range check; follow-up P6, since v0.3.1) and, when reading it, checks each row's
+    # stored plane_id, image_file and bit_depth against its other columns (data-flow
+    # audit, issue #39, normalization#19). Its tag v0.3.0 holds v0.3.1's code but reports
+    # version 0.2.0. Schema version 3 with the channels in columns came with v0.2.0 (P3b).
+    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.3.2",
 ]
 
 [project.optional-dependencies]
