@@ -65,7 +65,8 @@ src/morphobricks_preprocessing/
                     position_id per image and the duplicate check
   metadata.py       TIFF header inspection (tifffile, no pixel reads), dtype/dimension/series checks,
                     OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes);
-                    header consistency warnings (width/height, plane counts, pixel sizes)
+                    header consistency warnings (width/height, plane counts, pixel sizes);
+                    header_axes (the axes the metadata names, contract §16)
   physical_sizes.py PhysicalSizes (pixel sizes, z-step, time step, a unit per axis, micrometers()
                     for comparing), space_unit/to_micrometers (the shared unit rule, contract §16),
                     read_physical_sizes (OME / ImageJ TIFF metadata; also importable
@@ -82,7 +83,8 @@ src/morphobricks_preprocessing/
                     the notebook's plots, intensity_text for the CLI
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
-                    applied to every file, missing axes as singletons only when confirmed)
+                    applied to every file, missing axes as singletons only when confirmed),
+                    check_declared_axes (a brick's declared axes against the header, contract §16)
   planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), table rows as
                     XYC planes whose channels are read one at a time (iter_xyc_planes, XycPlane),
                     memory estimate,
@@ -100,7 +102,8 @@ src/morphobricks_preprocessing/
   masks.py          masks (Q32): find_masks pairs every image with its masks (masks folder with one
                     folder per type mirroring the experiment, or <image>_<type>.tif in the
                     experiment's folders, mixed; OME-Zarr label images), header-only
-                    checks (2D, image YX, integer/bool), MaskInventory (to_manifest), read_mask
+                    checks (2D, image YX, integer/bool), MaskInventory (to_manifest), read_mask,
+                    read_mask_file (a mask by its path), check_labels (int32 labels, contract §16)
   mask_scan.py      the optional mask step (Q32): piece_counts (scipy.ndimage), pair_counts,
                     scan_masks -> MaskReport (kinds, relations, direct-parent hierarchy, evidence),
                     write_mask_report (mask_relationships.json); DEFAULT_THRESHOLDS,

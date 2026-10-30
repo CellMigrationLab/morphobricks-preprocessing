@@ -42,7 +42,13 @@ from .axes import AxisMapping
 from .discovery import DiscoveryResult, is_system_name, is_tiff_name, position_id
 from .metadata import TiffMetadata
 from .validation import ValidationIssue, error, has_errors, plural, warning
-from .zarr_input import NgffError, ZarrUnavailableError, ngff_label_names, open_ngff_labels
+from .zarr_input import (
+    NgffError,
+    ZarrUnavailableError,
+    is_zarr_name,
+    ngff_label_names,
+    open_ngff_labels,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -263,6 +269,61 @@ def read_mask(
         raise ValueError(f"the mask {mask.path} is not the 2D plane its header gave ({axes})")
     check_labels(pixels, f"the mask {mask.path}")
     return pixels
+
+
+def read_mask_file(
+    path: str | os.PathLike, *, z: int | None = None, t: int | None = None
+) -> np.ndarray:
+    """Read one plane of a mask file by its own header, without :func:`find_masks`.
+
+    For bricks given a mask path directly (MorphoBricks D86): the mask is read as
+    :func:`read_mask` reads it, with the same rules. Its axes are those its metadata names
+    (length-1 axes aside): Y and X, plus at most a depth axis Z and a time axis T; a
+    dimension the metadata does not name (a plain stack, ``IYX``) is refused, never taken
+    for depth, time or a channel. ``z`` and ``t`` select the plane and are required for a
+    mask with that axis. The labels are checked with :func:`check_labels`.
+
+    Parameters
+    ----------
+    path
+        A TIFF mask, or a label image of an OME-Zarr image, ``<image>.zarr/labels/<name>``
+        (needs the ``zarr`` extra).
+    z, t
+        The depth slice and time point to read, zero-based.
+
+    Returns
+    -------
+    numpy.ndarray
+        The 2D plane, in the mask's own pixel type.
+
+    Raises
+    ------
+    ValueError
+        If the mask cannot be opened or holds several series, has a dimension its metadata
+        does not name as Z or T, is not of integers or booleans, ``z`` or ``t`` is missing
+        or outside the mask, or a label is outside 0 to :data:`LARGEST_LABEL`.
+    """
+    path = Path(path).absolute()  # the reader joins the mask's path to its folder
+    label_image = path.parent.name == "labels" and is_zarr_name(path.parent.parent.name)
+    mask = MaskFile("", "", path.as_posix(), OME_ZARR if label_image else FOLDER)
+    try:
+        axes, shape, dtype = _mask_header(mask, path.parent, path.parent)
+    except (OSError, ValueError, tifffile.TiffFileError, NgffError, ZarrUnavailableError) as exc:
+        raise ValueError(f"the mask {path} could not be opened: {exc}") from exc
+    if not _known_axes(axes):
+        raise ValueError(
+            f"the mask {path} has axes {axes!r}: dimensions other than Y and X must be named "
+            "depth (Z) or time (T) in its metadata"
+        )
+    if dtype.kind not in "biu":
+        raise ValueError(f"the mask {path} is of {dtype}, not integer labels or true/false")
+    return read_mask(
+        MaskFile("", "", mask.path, mask.source, shape, dtype, axes),
+        path.parent,
+        path.parent,
+        z=z,
+        t=t,
+    )
 
 
 def _read_tiff_plane(path: Path, wanted: Mapping[str, int | None]) -> tuple[np.ndarray, str]:

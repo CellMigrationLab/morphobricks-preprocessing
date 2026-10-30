@@ -541,6 +541,7 @@ continues.
 | `inconsistent_dimensions`, `inconsistent_mapping` | Error | Images have their dimensions in a different order. Export them the same way or process separately. |
 | `missing_axes` | Error | Some images lack a dimension. Confirm they have one plane along it (step 2), or export them again. |
 | `ambiguous_missing_axes` | Error | It is unclear which dimension an image lacks. Export it again. |
+| `declared_axes_mismatch` | Error (other bricks) | The axes a brick was told for an image or mask contradict the axes in its metadata (for example a depth stack declared as channels). Declare the axes the metadata gives, or export the image again with the right axes. |
 | `missing_xy_axis`, `duplicate_axis_role` | Error | X/Y missing or a role used twice. Correct the axis roles. |
 | `unassigned_axis` | Error | A dimension with several planes has no role. Choose Z, C or T. |
 | `unsupported_axis` | Error | A position or tile dimension. Export each position separately. |

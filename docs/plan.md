@@ -915,4 +915,7 @@ Raised during review; to be decided before the milestones that need them:
     brick's readers use the same table, so British spellings are now calibrated. A plain
     TIFF's resolution tags are never a calibration (D-c, unchanged). Labels (D-b): int32,
     0 to 2,147,483,647 (`check_labels`, `LARGEST_LABEL`), narrowing this brick's earlier
-    int64 limit.*
+    int64 limit. Header axes (D-d): the axes OME, ImageJ and tifffile "shaped" metadata
+    name are trusted, placeholders (`I`, `Q`) never (`header_axes`); a declaration may only
+    name what the header leaves open (`check_declared_axes`); `read_mask_file` reads a mask
+    by its own header.*
