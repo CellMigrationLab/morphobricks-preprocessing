@@ -301,9 +301,11 @@ class RunManifest:
             "settings": {
                 "bin_count": self.settings.bin_count,
                 "memory_limit": self.settings.memory_limit,
-                "missing_as_singleton": self.settings.missing_as_singleton,
+                "missing_as_singleton": _flag(
+                    self.settings.missing_as_singleton, "missing_as_singleton"
+                ),
                 "exclude": list(self.settings.exclude),
-                "convert_tiffs": self.settings.convert_tiffs,
+                "convert_tiffs": _flag(self.settings.convert_tiffs, "convert_tiffs"),
                 "conversion": self.settings.conversion.to_dict(),
                 "histogram": self.settings.histogram.to_dict(),
             },
@@ -321,7 +323,11 @@ class RunManifest:
             "csv_sha256": self.csv_sha256,
             "experiment_design_sha256": self.experiment_design_sha256,
             "image_type": self.image_type,
-            "channels_from_rgb_samples": self.channels_from_rgb_samples,
+            "channels_from_rgb_samples": (
+                None
+                if self.channels_from_rgb_samples is None
+                else _flag(self.channels_from_rgb_samples, "channels_from_rgb_samples")
+            ),
             "intensity_checks": (
                 None if self.intensity_checks is None else self.intensity_checks.to_dict()
             ),
@@ -530,7 +536,7 @@ def _file_dict(entry: FileEntry) -> dict:
         "channel_names": list(entry.channel_names),
         "significant_bits": entry.significant_bits,
         "ome_zarr_path": entry.ome_zarr_path,
-        "read_in_blocks": entry.read_in_blocks,
+        "read_in_blocks": _flag(entry.read_in_blocks, "read_in_blocks"),
         "position_id": entry.position_id,
         "roles": None if entry.roles is None else list(entry.roles),
     }
@@ -570,10 +576,15 @@ def _roles(value: object, axes: str) -> tuple[str | None, ...] | None:
     return roles
 
 
-def _flag(value: object) -> bool:
-    """Return a JSON boolean; anything else (``"false"``, 0, null) is malformed, not guessed."""
+def _flag(value: object, key: str | None = None) -> bool:
+    """Return a boolean; anything else (``"false"``, 0, null) is malformed, not guessed.
+
+    Used both when reading and when writing a manifest, so a manifest is never written
+    with a flag its reader would refuse (or that ``bool()`` would turn around).
+    """
     if not isinstance(value, bool):
-        raise ValueError(f"expected true or false, found {value!r}")
+        where = f" for {key}" if key else ""
+        raise ValueError(f"expected true or false{where}, found {value!r}")
     return value
 
 
