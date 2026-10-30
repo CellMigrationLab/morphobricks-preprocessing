@@ -447,26 +447,45 @@ def test_masks_command_refuses_negative_labels(experiment, masks, tmp_path, caps
     assert not (out / "mask_relationships.json").exists()
 
 
-def test_uint64_labels_above_the_int64_range_are_refused(experiment, masks, tmp_path, capsys):
-    # Issue #39: later bricks store labels as int64 label_id.
+def test_labels_above_the_int32_range_are_refused(experiment, masks, tmp_path, capsys):
+    # Issue #39, narrowed by decision D-b (MorphoBricks D86): every brick stores labels as
+    # int32, so a label above 2**31 - 1 is refused when the pixels are read (it was accepted
+    # up to 2**63 - 1 before).
     from morphobricks_preprocessing import read_mask
 
-    huge = label_image(0).astype(np.uint64)
-    huge[0, 0] = 2**63
+    huge = label_image(0).astype(np.uint32)
+    huge[0, 0] = 3_000_000_000
     write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", huge)
     found = inventory(experiment, masks)
     assert found.ok  # headers only
     cells = found.for_image("ctrl/rep1/a.tif")["Cells"]
-    with pytest.raises(ValueError, match="labels above 9223372036854775807"):
+    with pytest.raises(
+        ValueError, match="Cells/ctrl/rep1/a.tif holds labels above 2147483647 .largest 3000000000"
+    ):
         read_mask(cells, found.folder, experiment)
     fits = huge.copy()
-    fits[0, 0] = 2**63 - 1
+    fits[0, 0] = 2**31 - 1
     write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", fits)
-    assert read_mask(cells, found.folder, experiment)[0, 0] == 2**63 - 1
+    assert read_mask(cells, found.folder, experiment)[0, 0] == 2**31 - 1
     write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", huge)
     out = tmp_path / "out"
     assert main(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 1
-    assert "cannot be stored as a 64-bit signed label number" in capsys.readouterr().out
+    assert "32-bit signed numbers (int32)" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("dtype", [np.uint64, np.int64])
+def test_uint64_and_int64_labels_above_the_int32_range_are_refused(
+    experiment, masks, tmp_path, dtype
+):
+    from morphobricks_preprocessing import read_mask
+
+    huge = label_image(0).astype(dtype)
+    huge[0, 0] = 2**31
+    write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", huge)
+    found = inventory(experiment, masks)
+    cells = found.for_image("ctrl/rep1/a.tif")["Cells"]
+    with pytest.raises(ValueError, match="labels above 2147483647 .largest 2147483648"):
+        read_mask(cells, found.folder, experiment)
 
 
 def test_a_malformed_labels_group_is_an_error_not_a_vanished_mask_type(tmp_path):
@@ -493,3 +512,60 @@ def test_a_malformed_labels_group_is_an_error_not_a_vanished_mask_type(tmp_path)
         ome_zarr_labels=True,
     )
     assert not result.written and "unreadable_mask" in codes(result.issues)
+
+
+# The shared label check (MorphoBricks D86, decision D-b) ------------------------------------
+
+
+def test_largest_label_is_the_int32_maximum():
+    from morphobricks_preprocessing import LARGEST_LABEL
+
+    assert LARGEST_LABEL == 2_147_483_647 == np.iinfo(np.int32).max
+
+
+@pytest.mark.parametrize(
+    "pixels",
+    [
+        np.array([[0, 1], [2, 2_147_483_647]], dtype=np.int64),
+        np.array([[0, 1], [2, 2_147_483_647]], dtype=np.uint32),
+        np.array([[0, 1], [2, 3]], dtype=np.uint8),
+        np.array([[True, False]]),
+        np.zeros((0, 4), dtype=np.uint16),
+    ],
+)
+def test_check_labels_accepts_labels_from_0_to_the_int32_maximum(pixels):
+    from morphobricks_preprocessing import check_labels
+
+    check_labels(pixels, "the mask m.tif")
+
+
+@pytest.mark.parametrize(
+    ("pixels", "message"),
+    [
+        # The report's divergences: a uint32 mask with label 3e9 (accepted by this brick and
+        # MorphoObjects, refused by CellPatcher) and an int16 mask with label -1 (returned as
+        # a label by fiberfeatures).
+        (np.array([[0, 3_000_000_000]], dtype=np.uint32), "labels above 2147483647"),
+        (np.array([[0, -1]], dtype=np.int16), "negative labels .smallest -1"),
+        (np.array([[0, 2**31]], dtype=np.int64), "labels above 2147483647 .largest 2147483648"),
+        (np.array([[0, 2**63]], dtype=np.uint64), "labels above 2147483647"),
+        # Integral floats are not labels: never converted (fiberfeatures did).
+        (np.array([[0.0, 1.0]], dtype=np.float32), "does not hold whole-number labels"),
+        (np.array([[0.0, np.nan]]), "does not hold whole-number labels"),
+    ],
+)
+def test_check_labels_refuses_other_values_by_name(pixels, message):
+    from morphobricks_preprocessing import check_labels
+
+    with pytest.raises(ValueError, match="the mask m.tif (holds )?" + message):
+        check_labels(pixels, "the mask m.tif")
+
+
+def test_mask_scan_counts_refuse_labels_above_the_int32_range():
+    from morphobricks_preprocessing import pair_counts, piece_counts
+
+    big = np.array([[0, 2**31]], dtype=np.int64)
+    with pytest.raises(ValueError, match="labels above 2147483647"):
+        piece_counts(big)
+    with pytest.raises(ValueError, match="the parent mask holds labels above"):
+        pair_counts(np.zeros_like(big), big)

@@ -235,9 +235,8 @@ def read_mask(
     ------
     ValueError
         If the mask's dimensions are not the ones its header gave (``mask.axes``), or ``z``
-        or ``t`` is missing or outside the mask, or the plane holds negative labels
-        (label 0 is the background and objects are positive, contract §15) or a label
-        above 2**63 - 1, which later bricks cannot store as an int64 ``label_id``.
+        or ``t`` is missing or outside the mask, or the plane holds a label outside 0 to
+        :data:`LARGEST_LABEL` (:func:`check_labels`).
     """
     wanted = {"Z": z, "T": t}
     for axis, index in wanted.items():
@@ -262,16 +261,8 @@ def read_mask(
         axes = "".join(a for a, s in zip(labels.axes, selection, strict=True) if s == slice(None))
     if axes != "YX" or (mask.axes and pixels.shape != tuple(_yx(mask.axes, mask.shape))):
         raise ValueError(f"the mask {mask.path} is not the 2D plane its header gave ({axes})")
-    check_labels(pixels, mask.path)
-    if pixels.dtype == np.uint64 and pixels.size and pixels.max() > _LARGEST_LABEL:
-        raise ValueError(
-            f"the mask {mask.path} holds labels above {_LARGEST_LABEL} (largest "
-            f"{pixels.max()}), which cannot be stored as a 64-bit signed label number."
-        )
+    check_labels(pixels, f"the mask {mask.path}")
     return pixels
-
-
-_LARGEST_LABEL = np.iinfo(np.int64).max
 
 
 def _read_tiff_plane(path: Path, wanted: Mapping[str, int | None]) -> tuple[np.ndarray, str]:
@@ -311,22 +302,54 @@ def _yx(axes: str, shape: tuple[int, ...]) -> tuple[int, int]:
     return shape[axes.index("Y")], shape[axes.index("X")]
 
 
+LARGEST_LABEL = int(np.iinfo(np.int32).max)
+"""The largest label a mask may hold, 2,147,483,647: MorphoBricks labels are int32
+(decision D-b, 30 October 2026), so every brick stores a label the same way."""
+
+
 def check_labels(pixels: np.ndarray, name: str = "the mask") -> None:
-    """Refuse a mask holding negative labels.
+    """Refuse a mask whose pixels are not labels from 0 to :data:`LARGEST_LABEL`.
 
     Label 0 is the background and every object has a positive label (contract §15). A
     negative value is neither, so it is refused rather than read as an object (which would
-    also make the background one).
+    also make the background one). A label above :data:`LARGEST_LABEL` cannot be stored as
+    an int32 label, the one label type of every MorphoBricks brick (decision D-b), so it is
+    refused rather than wrapped or widened. Pixels that are not whole numbers (floats) are
+    not labels. Boolean masks are labels 0 and 1. This is the one label check every brick
+    calls (MorphoBricks D86).
+
+    Parameters
+    ----------
+    pixels
+        The mask, or one plane of it.
+    name
+        The mask as the message names it, for example ``"the mask Cells/ctrl/a.tif"``.
 
     Raises
     ------
     ValueError
-        If any pixel is below 0.
+        Naming the mask and the offending value: a pixel below 0, a pixel above
+        :data:`LARGEST_LABEL`, or a pixel type other than integer or boolean.
     """
-    if pixels.dtype.kind == "i" and pixels.size and pixels.min() < 0:
+    pixels = np.asarray(pixels)
+    if pixels.dtype.kind not in "biu":
         raise ValueError(
-            f"{name} holds negative labels (smallest {pixels.min()}); label 0 is the "
+            f"{name} does not hold whole-number labels (pixel type {pixels.dtype}); a mask "
+            "holds integer labels or true/false."
+        )
+    if pixels.dtype.kind == "b" or not pixels.size:
+        return
+    smallest = pixels.min()
+    if smallest < 0:
+        raise ValueError(
+            f"{name} holds negative labels (smallest {smallest}); label 0 is the "
             "background and objects must have positive labels."
+        )
+    largest = pixels.max()
+    if largest > LARGEST_LABEL:
+        raise ValueError(
+            f"{name} holds labels above {LARGEST_LABEL} (largest {largest}); MorphoBricks "
+            "stores labels as 32-bit signed numbers (int32), so relabel the objects from 1."
         )
 
 
