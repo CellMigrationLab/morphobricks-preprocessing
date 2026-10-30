@@ -184,7 +184,7 @@ a run manifest (`run_manifest.json`) records the confirmed labels and axis mappi
 settings, package versions and each source file's size and modification time. It also
 records each file's channel names and significant bits when metadata provides them, for
 information only; channel names that differ between files at the same channel index are
-reported as a warning.
+an error (question 1, revised after the data-flow audit, issue #37).
 
 ## 7. Incremental updates
 
@@ -406,6 +406,17 @@ Raised during review; to be decided before the milestones that need them:
    *Decided (October 2026): record channel names per file in the run manifest, not in the
    CSV, and warn when the names at the same channel index differ between files. The CSV
    stays at schema version 1.*
+   *Revised (October 2026, data-flow audit, issue #37): names that differ at the same
+   channel index are the error `channel_names_differ`, because channels are matched by
+   number and a different stain would be pooled and scaled as the same channel. Only named
+   channels are compared; there is no override, so such images are exported again or
+   excluded. Owner decision (October 2026, review of #42): leading and trailing whitespace
+   is removed from channel names at read time, for every image (sources and this brick's
+   copies), and recorded in the manifest (`channel_names_trimmed`); whitespace inside a
+   name is still compared exactly (`DA PI` and `DAPI` differ, and the message quotes names
+   that differ only in whitespace). OME-Zarr copies
+   leave unnamed channels without a label instead of the placeholder `Channel <i>`, so a
+   copy never names a channel its source does not.*
 2. Multi-series and pyramidal TIFFs: use only full-resolution level 0, and block files
    with several positions?
    *Decided (October 2026): yes. Pyramidal files are read at full-resolution level 0 only;
