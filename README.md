@@ -46,7 +46,8 @@ Pre-alpha. Implemented and tested:
   it, such as cells with two nuclei) and their hierarchy, in `mask_relationships.json`
   (`mask_scan`, command `masks`). A mask is 2D, or has depth (Z) and/or time (T) planes
   named in its own metadata, one per image plane; a 2D mask of a Z-stack or time-lapse is
-  refused, projections included (`mask_planes_mismatch`), and the manifest records each mask's `axes` and `shape`
+  refused, projections included (`mask_planes_mismatch`), and the manifest records each
+  mask's `axes` and `shape`
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
   and a command line (`morphobricks-preprocessing check` / `run` / `masks`)
 
