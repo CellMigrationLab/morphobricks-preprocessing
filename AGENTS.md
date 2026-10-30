@@ -301,8 +301,9 @@ functions the tests use.
 
 - **Manifest contents:**
   - settings, the confirmed labels per leaf, and the axis mapping;
-  - per-file size, `mtime_ns`, axes, `singleton_roles`, plane count and `position_id`
-    (optional key, null when absent; manifest version stays 1);
+  - per-file size, `mtime_ns`, axes, `singleton_roles`, plane count, `position_id` and
+    `roles` (the file's own axis roles; optional keys, null when absent; manifest version
+    stays 1); flags are JSON booleans only and the versions are strings (`"1"`, `"4"`);
   - channel names and significant bits (OME only, information only);
   - the CSV's SHA-256 and package versions (including `morphobricks-normalization`).
 - **A file is unchanged** when its size, mtime, labels and axis layout match and the table

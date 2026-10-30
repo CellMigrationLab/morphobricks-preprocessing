@@ -1,7 +1,9 @@
 import hashlib
 import json
 import os
+from dataclasses import replace
 
+import numpy as np
 import pytest
 
 from morphobricks_preprocessing import (
@@ -245,3 +247,76 @@ def test_bad_role_in_manifest_is_refused():
     data["axis_mapping"]["roles"] = ["W", "Y", "X"]
     with pytest.raises(ManifestFormatError):
         RunManifest.from_dict(data)
+
+
+# Data-flow audit, issue #39 -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("where", "key"),
+    [
+        ("settings", "missing_as_singleton"),
+        ("settings", "convert_tiffs"),
+        ("file", "read_in_blocks"),
+        ("top", "channels_from_rgb_samples"),
+    ],
+)
+@pytest.mark.parametrize("value", ["false", "true", 0, 1])
+def test_flags_must_be_json_booleans(where, key, value):
+    data = manifest(channels_from_rgb_samples=False).to_dict()
+    target = {"settings": data["settings"], "file": data["files"][0], "top": data}[where]
+    target[key] = value  # "false" was read as True with bool()
+    with pytest.raises(ManifestFormatError, match="expected true or false"):
+        RunManifest.from_dict(data)
+
+
+def _with_flag(key, value):
+    if key == "read_in_blocks":
+        return manifest(files=(entry(read_in_blocks=value),))
+    if key == "channels_from_rgb_samples":
+        return manifest(channels_from_rgb_samples=value)
+    return manifest(settings=replace(RunSettings(65_536, 2**30, False, ()), **{key: value}))
+
+
+@pytest.mark.parametrize(
+    "key", ["missing_as_singleton", "convert_tiffs", "read_in_blocks", "channels_from_rgb_samples"]
+)
+@pytest.mark.parametrize("value", ["false", 0, 1, np.bool_(True)])
+def test_the_writer_refuses_flags_that_are_not_booleans(tmp_path, key, value):
+    # Review of #44: the writer is as strict as the reader. It used to write "false" or 0
+    # as given, leaving a manifest the reader refuses (or that bool() turned around).
+    path = tmp_path / "m.json"
+    with pytest.raises(ValueError, match=f"expected true or false for {key}"):
+        write_manifest(_with_flag(key, value), path)
+    assert not path.exists()
+
+
+def test_the_writer_keeps_null_for_an_unknown_rgb_flag(tmp_path):
+    path = write_manifest(manifest(channels_from_rgb_samples=None), tmp_path / "m.json")
+    assert json.loads(path.read_bytes())["channels_from_rgb_samples"] is None
+
+
+def test_each_files_axis_roles_round_trip_and_are_none_when_absent(tmp_path):
+    original = manifest(
+        files=(
+            entry(roles=("Z", "Y", "X")),
+            entry("cond/rep/b.zarr", axes="CYX", roles=(None,) * 3),
+        )
+    )
+    path = write_manifest(original, tmp_path / "m.json")
+    assert read_manifest(path) == original
+    data = json.loads(path.read_bytes())
+    assert [f["roles"] for f in data["files"]] == [["Z", "Y", "X"], [None, None, None]]
+    del data["files"][0]["roles"]  # written before the roles were recorded
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert read_manifest(path).files[0].roles is None
+    data["files"][1]["roles"] = ["Z", "Y"]  # not one role per axis
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ManifestFormatError):
+        read_manifest(path)
+
+
+def test_file_entry_for_records_the_files_own_roles(tmp_path):
+    write_tiff(tmp_path / "a.tif")
+    mapping = prefill_mapping("ZYX").with_role(0, None)
+    assert file_entry_for(tmp_path, "a.tif", ("c", "b", "t"), mapping).roles == (None, "Y", "X")

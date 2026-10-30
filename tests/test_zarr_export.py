@@ -935,3 +935,42 @@ def test_writer_builds_smaller_levels_of_planes_in_blocks(tmp_path, memory_limit
         tmp_path / "tiny.ome.zarr", mapping, layout, settings=settings, memory_limit=1
     )
     assert tiny._region_side() == 2  # the smallest region that halves exactly
+
+
+@needs_zarr
+def test_unknown_pixel_sizes_are_marked_not_read_as_1(tmp_path):
+    # Issue #39: OME-NGFF 0.4 needs a scale per axis, so an unknown size is written as 1;
+    # the copy says which axes those are, and reading the copy gives no size for them.
+    from morphobricks_preprocessing import open_ngff
+
+    write_data(tmp_path / "exp" / "a.tif", random_data((2, 8, 8), "uint8"), axes="ZYX")
+    result = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True)
+    copy = result.output_folder / ome_zarr_relative_path("a.tif")
+    meta = multiscale(open_copy(result.output_folder, "a.tif"))
+    assert meta["datasets"][0]["coordinateTransformations"][0]["scale"] == [1.0, 1.0, 1.0]
+    assert meta["metadata"]["unknown_scale"] == ["z", "y", "x"]
+    assert open_ngff(copy).physical_sizes == PhysicalSizes()
+    # A copy written before the marker counts as out of date and is written again.
+    attrs_path = copy / ".zattrs"
+    attrs = json.loads(attrs_path.read_text(encoding="utf-8"))
+    del attrs["multiscales"][0]["metadata"]["unknown_scale"]
+    attrs_path.write_text(json.dumps(attrs), encoding="utf-8")
+    again = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True)
+    assert again.converted == ("a.tif",)
+    assert run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True).converted == ()
+
+
+@needs_zarr
+def test_known_pixel_sizes_are_not_marked(tmp_path):
+    path = tmp_path / "exp/a.ome.tif"
+    path.parent.mkdir(parents=True)
+    tifffile.imwrite(
+        path,
+        random_data((2, 8, 8), "uint8"),
+        ome=True,
+        photometric="minisblack",
+        metadata={"axes": "ZYX", "PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5},
+    )
+    result = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True)
+    meta = multiscale(open_copy(result.output_folder, "a.ome.tif"))
+    assert meta["metadata"]["unknown_scale"] == ["z"]  # no z-step in the metadata

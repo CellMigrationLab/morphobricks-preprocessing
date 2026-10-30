@@ -234,7 +234,8 @@ def read_mask(
     ValueError
         If the mask's dimensions are not the ones its header gave (``mask.axes``), or ``z``
         or ``t`` is missing or outside the mask, or the plane holds negative labels
-        (label 0 is the background and objects are positive, contract §15).
+        (label 0 is the background and objects are positive, contract §15) or a label
+        above 2**63 - 1, which later bricks cannot store as an int64 ``label_id``.
     """
     wanted = {"Z": z, "T": t}
     for axis, index in wanted.items():
@@ -260,7 +261,15 @@ def read_mask(
     if axes != "YX" or (mask.axes and pixels.shape != tuple(_yx(mask.axes, mask.shape))):
         raise ValueError(f"the mask {mask.path} is not the 2D plane its header gave ({axes})")
     check_labels(pixels, mask.path)
+    if pixels.dtype == np.uint64 and pixels.size and pixels.max() > _LARGEST_LABEL:
+        raise ValueError(
+            f"the mask {mask.path} holds labels above {_LARGEST_LABEL} (largest "
+            f"{pixels.max()}), which cannot be stored as a 64-bit signed label number."
+        )
     return pixels
+
+
+_LARGEST_LABEL = np.iinfo(np.int64).max
 
 
 def _read_tiff_plane(path: Path, wanted: Mapping[str, int | None]) -> tuple[np.ndarray, str]:
