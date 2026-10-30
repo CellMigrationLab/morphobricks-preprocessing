@@ -113,9 +113,13 @@ masks/
   followed by `_` and its kind (`img_01_cells.tif`, `img_01_nuclei.tif`), as many
   segmentation tools write them; the kind is the part after the image name. Both ways may be
   mixed in one masks folder.
-- A mask is a 2D TIFF label image with the width and height of its image: background 0,
+- A mask is a TIFF label image with the width and height of its image: background 0,
   each object its own whole number (or a true/false mask). The extension may differ from
   the image's (`img_01.tiff` for `img_01.ome.tif`).
+- A 2D mask belongs to an image with one plane. For a Z-stack or a time-lapse, the mask needs
+  one plane per depth slice or time point, with its axes named in its metadata (an ImageJ
+  hyperstack or OME-TIFF with axes `ZYX` or `TYX`); a 2D mask for such an image, or a plain
+  stack whose axis could be depth or time, is refused by `run`/`check`.
 - You may have any number of kinds of mask. Their folder names (or the part after the image
   name) are their names: they must differ by more than upper/lower case. If one image's name
   starts another's (`a.tif` and `a_b.tif`), a mask named `a_b_cells.tif` could belong to
@@ -478,7 +482,8 @@ The default output folder is next to the experiment folder:
   relationship between every two kinds with its counts, and the hierarchy. The rules and
   thresholds are in [contract.md](contract.md) §15.
 
-When masks are given, `run_manifest.json` also lists every image's masks (`masks`).
+When masks are given, `run_manifest.json` also lists every image's masks (`masks`), with
+each mask's axes and size (for example `TYX` and 50 x 512 x 512 for a mask per time point).
 
 The table and manifest are both prepared before the earlier files are replaced. If a
 replacement fails, the earlier files are restored. This needs temporary disk space for
@@ -565,7 +570,9 @@ continues.
 | `mask_names_differ_in_case` | Error | Two kinds of mask have names that differ only in upper/lower case. Rename one. |
 | `duplicate_mask` | Error | An image has two masks of one kind (two extensions, or a file and an OME-Zarr label image of the same name). Keep one. |
 | `unreadable_mask` | Error | A mask cannot be opened, or holds several images. Save it again as a TIFF label image. |
-| `mask_not_2d` | Error | A mask has more than one plane. Save one 2D label image per position. |
+| `mask_not_2d` | Error | A mask has dimensions other than Y and X that its metadata does not name as depth (Z) or time (T), for example a plain stack. Save it as a 2D label image, or with its axes named (an ImageJ hyperstack or OME-TIFF with axes TYX or ZYX). |
+| `mask_planes_differ` | Error | The masks of one image have different numbers of depth slices or time points. Make every mask of an image with the image's planes. |
+| `mask_planes_mismatch` | Error (`run`) | A mask does not have the depth slices and time points of its image under the confirmed axis roles: a 2D mask fits only an image with one plane (not a Z-stack or time-lapse), and a mask with Z or T needs as many slices or time points as its image. Save one mask plane per image plane, with the axes named, or check the axis roles. |
 | `mask_size_mismatch` | Error | A mask does not have the width and height of its image. Check that it was made from that image at full resolution. |
 | `mask_pixel_type` | Error | A mask's pixels are not whole numbers (for example decimals). Save it as an integer label image. |
 | `mask_missing` | Warning | Some images have no mask of a kind that other images have; their objects of that kind cannot be measured. Add the masks, or exclude the images. |

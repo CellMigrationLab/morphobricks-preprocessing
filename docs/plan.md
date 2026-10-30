@@ -841,6 +841,15 @@ Raised during review; to be decided before the milestones that need them:
     the image name, `<condition>/.../<image>_<type>.tif`, and the two layouts may be mixed. A
     file that could name two images or fit both layouts is the error `ambiguous_mask`, never
     guessed. On the four JUMP smoke fields, both layouts give the same report.*
+    *Follow-up (October 2026, data-flow audit, issue #36): masks get a plane identity. A
+    mask may have a depth axis Z and/or a time axis T, named in its own metadata (never
+    guessed: an unnamed stack axis is `mask_not_2d`); the masks of one image share their
+    planes (`mask_planes_differ`), and `run` checks them against the image's confirmed
+    roles (`mask_planes_mismatch`). A 2D mask is therefore refused for a Z-stack or a
+    time-lapse; whether a 2D mask may stand for a projection of such an image is left to
+    the owner, so it is refused for now. The manifest's mask entries gain `axes` and
+    `shape` (optional keys, manifest version 1); `read_mask(z=, t=)` reads one plane and
+    `scan_masks` scans plane by plane.*
 33. What does this brick's second tag, v0.2.0, hold?
     *Decided (27 October 2026): v0.2.0 holds everything merged after v0.1.0: the image type
     (follow-up P4, question 29), the intensity checks and plots (follow-up P5, question
