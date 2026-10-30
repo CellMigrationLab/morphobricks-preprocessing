@@ -73,7 +73,8 @@ experiment/
   in `.zarr` (usually `.ome.zarr`); it counts as one image, not as a folder level, so put
   it where you would put a TIFF file. TIFF and OME-Zarr images can be mixed.
 - Only images in folders **without subfolders** are analysed. Images next to subfolders
-  are reported and skipped.
+  are an error (`tiff_outside_leaf`): a folder holds either images or subfolders, never
+  both, so move them into a folder of their own.
 - A folder may be named `single` (in lower case) when it is the only folder in its place:
   like a missing level, it means the level has one member, so `treated/single/img_01.tif`
   has the biological repeat `single`. A folder named `Single` or `SINGLE`, or a `single`
