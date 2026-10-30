@@ -300,10 +300,16 @@ def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:
     if len(axes) != len(array.shape):
         raise NgffError(f"its metadata names {len(axes)} axes but the array has {len(array.shape)}")
     omero = meta.get("omero") if isinstance(meta.get("omero"), dict) else {}
-    labels, trimmed = read_channel_names(
+    raw_labels = [
         channel.get("label") if isinstance(channel, dict) else None
         for channel in omero.get("channels") or []
-    )
+    ]
+    for index, label in enumerate(raw_labels):
+        # A label that is not text is malformed metadata: refuse rather than read the
+        # channel as unnamed, which would hide it from the channel-name check (#37).
+        if label is not None and not isinstance(label, str):
+            raise NgffError(f"the label of channel {index} in its omero metadata is not text")
+    labels, trimmed = read_channel_names(raw_labels)
     return NgffImage(
         array=array,
         axes=axes,
