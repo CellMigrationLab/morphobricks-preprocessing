@@ -319,6 +319,39 @@ def test_both_layouts_give_the_same_report(tmp_path):
     assert dict(by_suffix.hierarchy) == dict(by_folder.hierarchy)
 
 
+# Masks with time points (issue #36) ---------------------------------------------------
+
+
+def test_masks_with_time_points_are_scanned_plane_by_plane(tmp_path):
+    frames = hierarchy_masks()
+    # Three time points: the same masks, then the nuclei moved, then no nuclei at all.
+    moved = np.roll(frames["Nuclei"], 30, axis=1)
+    series = {
+        "Cells": np.stack([frames["Cells"]] * 3),
+        "Nuclei": np.stack([frames["Nuclei"], moved, np.zeros_like(moved)]),
+    }
+    root, folder = tmp_path / "exp", tmp_path / "masks"
+    write_data(root / "ctrl" / "a.tif", np.zeros((3, *SHAPE), dtype=np.uint8), "TYX")
+    for name, data in series.items():
+        write_data(folder / name / "ctrl" / "a.tif", data, "TYX")
+    inventory = preflight(root, masks_folder=folder).masks
+    assert inventory.ok, inventory.issues
+    report = scan_masks(inventory, root)
+    # The same as three single-plane images, one per time point.
+    flat_root, flat_folder = tmp_path / "flat", tmp_path / "flat_masks"
+    for t in range(3):
+        write_data(flat_root / "ctrl" / f"a{t}.tif", np.zeros(SHAPE, dtype=np.uint8))
+        for name, data in series.items():
+            write_data(flat_folder / name / "ctrl" / f"a{t}.tif", data[t])
+    flat = scan_masks(preflight(flat_root, masks_folder=flat_folder).masks, flat_root)
+    assert report.images == 1 and flat.images == 3
+    assert report.types["Nuclei"].objects == flat.types["Nuclei"].objects == 8
+    assert report.types["Cells"].images == 1
+    assert [(p.child, p.parent, dict(p.evidence)) for p in report.pairs] == [
+        (p.child, p.parent, dict(p.evidence)) for p in flat.pairs
+    ]
+
+
 # Negative labels (issue #35) ----------------------------------------------------------
 
 
@@ -339,4 +372,19 @@ def test_negative_labels_are_refused_never_read_as_objects(tmp_path):
     inventory = preflight(root, masks_folder=folder).masks
     assert inventory.ok  # headers only: an int16 mask is fine
     with pytest.raises(ValueError, match="Signed/ctrl/a.tif holds negative labels"):
+        scan_masks(inventory, root)
+
+
+def test_negative_labels_in_a_later_time_point_are_refused(tmp_path):
+    # #36 reads masks plane by plane; #35's check must cover every plane, not only the first.
+    frames = hierarchy_masks()
+    signed = np.stack([frames["Cells"].astype(np.int16)] * 3)
+    signed[2, 0, 0] = -1
+    root, folder = tmp_path / "exp", tmp_path / "masks"
+    write_data(root / "ctrl" / "a.tif", np.zeros((3, *SHAPE), dtype=np.uint8), "TYX")
+    write_data(folder / "Cells" / "ctrl" / "a.tif", signed, "TYX")
+    write_data(folder / "Nuclei" / "ctrl" / "a.tif", np.stack([frames["Nuclei"]] * 3), "TYX")
+    inventory = preflight(root, masks_folder=folder).masks
+    assert inventory.ok, inventory.issues
+    with pytest.raises(ValueError, match="Cells/ctrl/a.tif holds negative labels"):
         scan_masks(inventory, root)

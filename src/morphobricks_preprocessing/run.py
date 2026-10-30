@@ -69,7 +69,7 @@ from .manifest import (
     read_manifest,
     write_manifest,
 )
-from .masks import MaskInventory, find_masks
+from .masks import MaskInventory, find_masks, mask_plane_issues
 from .metadata import MetadataReport, TiffMetadata, inspect_images
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
@@ -85,6 +85,7 @@ from .validation import ValidationIssue, error, has_errors, plural, warning
 from .zarr_export import (
     ConversionSettings,
     OmeZarrWriter,
+    copy_channels_current,
     copy_units_current,
     is_copy_path,
     ome_zarr_relative_path,
@@ -395,8 +396,10 @@ def run_experiment(
         ``experiment_design.csv`` is left as it is.
     masks_folder, ome_zarr_labels
         As :func:`preflight`. The masks are recorded in the manifest (``masks``,
-        contract §9); an error about them stops the run. Their pixels are not
-        read: the mask step (:func:`.mask_scan.scan_masks`) does that.
+        contract §9); an error about them stops the run, including a mask whose
+        depth slices and time points are not its image's under the confirmed
+        roles (``mask_planes_mismatch``). Their pixels are not read: the mask
+        step (:func:`.mask_scan.scan_masks`) does that.
     image_type
         The image type the user confirmed, ``"fluorescence"`` or ``"rgb"``
         (:mod:`.image_type`), recorded in the manifest. ``"rgb"`` for images that
@@ -450,6 +453,11 @@ def run_experiment(
         *design_problems,
         *dataset.issues,
         *(pre.masks.issues if pre.masks is not None else ()),
+        *(
+            mask_plane_issues(pre.masks, pre.metadata.files, review.file_mappings)
+            if pre.masks is not None
+            else ()
+        ),
     ]
     dtype = pre.metadata.dtype
     bins = None
@@ -515,7 +523,12 @@ def run_experiment(
             significant_bits=header.significant_bits,
             ome_zarr_path=copy,
             read_in_blocks=rel in in_blocks,
+            channel_names_trimmed=header.channel_names_trimmed,
         )
+        if header.channel_names_trimmed:
+            logger.info(
+                "Leading or trailing whitespace was removed from the channel names of %s", rel
+            )
         before = previous.file(rel) if previous is not None else None
         if before is None:
             new.append(rel)
@@ -532,6 +545,7 @@ def run_experiment(
                     (output / copy).is_dir()
                     and same_conversion
                     and copy_units_current(output / copy, header.physical_sizes)
+                    and copy_channels_current(output / copy, header.channel_names)
                 )
             )
         ):

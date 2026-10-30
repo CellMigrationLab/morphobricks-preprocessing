@@ -29,7 +29,13 @@ from morphobricks_normalization.dtypes import UnsupportedDtypeError, check_suppo
 from .discovery import DiscoveryResult
 from .physical_sizes import PhysicalSizes, _tiff_sizes
 from .validation import ValidationIssue, error, has_errors, plural, warning
-from .zarr_input import NgffError, ZarrUnavailableError, is_zarr_name, open_ngff
+from .zarr_input import (
+    NgffError,
+    ZarrUnavailableError,
+    is_zarr_name,
+    open_ngff,
+    read_channel_names,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +74,11 @@ class TiffMetadata:
     channel_names
         Channel names from OME metadata, by channel index; None for a channel
         without a name. Empty when the file has no OME channel information.
+        Leading and trailing whitespace is removed from every name; whitespace
+        inside a name is kept and compared exactly.
+    channel_names_trimmed
+        True when leading or trailing whitespace was removed from a channel name
+        (recorded in the run manifest).
     significant_bits
         Bits per pixel that carry data (e.g. 12 for a 12-bit camera in 16-bit
         files), from OME metadata; None when not given. For information only.
@@ -98,6 +109,7 @@ class TiffMetadata:
     kind: str = TIFF
     physical_sizes: PhysicalSizes = PhysicalSizes()
     rgb_samples: bool = False
+    channel_names_trimmed: bool = False
 
     def length(self, axis: str) -> int:
         """Return the length of the dimension labelled ``axis``, 1 if there is none."""
@@ -222,6 +234,7 @@ def inspect_ome_zarr(path: str | os.PathLike, relative_path: str | None = None) 
             series_count=image.image_count,
             page_count=0,
             channel_names=image.channel_names,
+            channel_names_trimmed=image.channel_names_trimmed,
             kind=OME_ZARR,
             physical_sizes=image.physical_sizes,
         )
@@ -287,12 +300,12 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     unsupported pixel types, more than one pixel type, TIFF files whose
     dimensions are arranged differently, and images with different numbers of
     channels (``different_channel_counts``; the C axis, or the RGB samples
-    without one, until the axis roles are confirmed). OME-Zarr images declare their axes,
+    without one, until the axis roles are confirmed), and channel names that differ at the
+    same channel (``channel_names_differ``). OME-Zarr images declare their axes,
     so their arrangement is checked by role during the axis review instead.
 
     Reports, as warnings: images of different widths or heights
-    (``different_sizes``), channel names that differ at the same channel
-    (``channel_names_differ``), different numbers of depth slices, time points
+    (``different_sizes``), different numbers of depth slices, time points
     or planes along another dimension (``different_plane_counts``),
     and physical pixel sizes that differ (``different_pixel_sizes``) or are
     known for only some images (``missing_pixel_size``).
@@ -423,12 +436,13 @@ def _ome_details(tif: tifffile.TiffFile) -> dict:
     pixels = next((e for e in root.iter() if _local_name(e.tag) == "Pixels"), None)
     if pixels is None:
         return {}
-    names = tuple(
-        channel.get("Name") or None for channel in pixels if _local_name(channel.tag) == "Channel"
+    names, trimmed = read_channel_names(
+        channel.get("Name") for channel in pixels if _local_name(channel.tag) == "Channel"
     )
     bits = pixels.get("SignificantBits")
     return {
-        "channel_names": names if any(names) else (),
+        "channel_names": names,
+        "channel_names_trimmed": trimmed,
         "significant_bits": int(bits) if bits and bits.isdigit() else None,
     }
 
@@ -455,21 +469,33 @@ def _check_channel_names(files: list[TiffMetadata]) -> list[ValidationIssue]:
     descriptions: list[str] = []
     for index in range(max(len(f.channel_names) for f in named)):
         at_index = [f for f in named if index < len(f.channel_names) and f.channel_names[index]]
-        if len({f.channel_names[index] for f in at_index}) > 1:
-            summary, minority = _breakdown(at_index, lambda f, i=index: f.channel_names[i], str)
-            descriptions.append(f"channel {index}: {summary}")
+        names = {f.channel_names[index] for f in at_index}
+        if len(names) > 1:
+            # Names are compared exactly. When they differ only in whitespace, quote them
+            # and say so: the difference would otherwise be invisible in the message.
+            only_spaces = len({" ".join(name.split()) for name in names}) == 1
+            summary, minority = _breakdown(
+                at_index,
+                lambda f, i=index: f.channel_names[i],
+                (lambda name: f'"{name}"') if only_spaces else str,
+            )
+            note = " (the names differ only in spaces or other whitespace)" if only_spaces else ""
+            descriptions.append(f"channel {index}: {summary}{note}")
             differing.extend(minority)
     if not differing:
         return []
+    # An error (issue #37): channels are matched by number, so a different stain at the
+    # same number would be pooled and scaled as one channel.
     return [
-        warning(
+        error(
             "channel_names_differ",
             "The images name their channels differently at the same channel position ("
             + "; ".join(descriptions)
-            + "). Planes with the same channel number may show different stains.",
+            + "). Channels are matched by their number, so different stains would be pooled "
+            "as one channel.",
             sorted(set(differing)),
-            "No action needed if the names only differ in spelling. Otherwise check the "
-            "channel order of these images before comparing channels.",
+            "Check the channel order of these images. Export them again with the same channel "
+            "order and names, or exclude the images whose channels differ.",
         )
     ]
 

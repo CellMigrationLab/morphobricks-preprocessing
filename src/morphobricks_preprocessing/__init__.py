@@ -96,7 +96,7 @@ from .mask_scan import (
     scan_masks,
     write_mask_report,
 )
-from .masks import MaskFile, MaskInventory, find_masks, read_mask
+from .masks import MaskFile, MaskInventory, find_masks, mask_plane_issues, read_mask
 from .metadata import (
     ImageMetadata,
     MetadataReport,
@@ -271,6 +271,7 @@ __all__ = [
     "iter_xyc_planes",
     "load_design",
     "make_plane_id",
+    "mask_plane_issues",
     "mask_thresholds",
     "min_max",
     "ngff_label_names",

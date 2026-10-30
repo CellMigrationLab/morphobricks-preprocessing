@@ -16,14 +16,19 @@ are masks too, of the type named by the label image, when the ``zarr`` extra is 
 
 Any number of mask types is accepted; each is named by its folder, by the suffix after the
 image name, or by its label image, and two
-names may not differ only in case. Only headers are read here, never pixels: a mask must be
-2D (length-1 axes aside) with the image's Y and X sizes, and its pixels integers or booleans.
-Reading the pixels and relating the masks to each other is :mod:`.mask_scan`.
+names may not differ only in case. Only headers are read here, never pixels: a mask has the
+image's Y and X sizes and integer or boolean pixels. Its other dimensions (length-1 axes
+aside) must be labelled depth (Z) or time (T) in its own metadata, never guessed, and every
+mask of one image has the same depth slices and time points. Whether those are the image's
+planes needs the confirmed axis roles: :func:`mask_plane_issues`, run by
+:func:`.run.run_experiment` (issue #36). Reading the pixels and relating the masks to each
+other is :mod:`.mask_scan`.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -33,6 +38,7 @@ from types import MappingProxyType
 import numpy as np
 import tifffile
 
+from .axes import AxisMapping
 from .discovery import DiscoveryResult, is_system_name, is_tiff_name, position_id
 from .metadata import TiffMetadata
 from .validation import ValidationIssue, error, has_errors, plural, warning
@@ -45,6 +51,9 @@ FOLDER = "folder"
 
 OME_ZARR = "ome-zarr"
 """Source of a mask kept as a label image inside an OME-Zarr image."""
+
+PLANE_AXES = ("Z", "T")
+"""The dimensions a mask may have besides Y and X: depth slices and time points."""
 
 
 @dataclass(frozen=True)
@@ -63,9 +72,13 @@ class MaskFile:
     source
         :data:`FOLDER` or :data:`OME_ZARR`.
     shape
-        Shape of the mask without its length-1 axes, ``(Y, X)`` when it is valid.
+        Shape of the mask without its length-1 axes, ``(Y, X)`` for a 2D mask.
     dtype
         Pixel type, or None when the header could not be read.
+    axes
+        One letter per entry of ``shape``, from the mask's own metadata: ``"YX"`` for a 2D
+        mask, with ``Z`` and/or ``T`` for a mask with several depth slices or time points
+        (e.g. ``"TYX"``). Empty when the header could not be read.
     """
 
     image: str
@@ -74,6 +87,15 @@ class MaskFile:
     source: str
     shape: tuple[int, ...] = ()
     dtype: np.dtype | None = None
+    axes: str = ""
+
+    @property
+    def planes(self) -> dict[str, int]:
+        """Number of depth slices (``"Z"``) and time points (``"T"``); 1 for an axis it lacks."""
+        return {
+            axis: self.shape[self.axes.index(axis)] if axis in self.axes else 1
+            for axis in PLANE_AXES
+        }
 
 
 @dataclass(frozen=True)
@@ -117,7 +139,14 @@ class MaskInventory:
             "folder": None if self.folder is None else self.folder.as_posix(),
             "types": list(self.types),
             "files": [
-                {"image": f.image, "type": f.mask_type, "path": f.path, "source": f.source}
+                {
+                    "image": f.image,
+                    "type": f.mask_type,
+                    "path": f.path,
+                    "source": f.source,
+                    "axes": f.axes,
+                    "shape": list(f.shape),
+                }
                 for f in self.files
             ],
         }
@@ -178,26 +207,97 @@ def find_masks(
     )
 
 
-def read_mask(mask: MaskFile, masks_folder: Path | None, experiment_root: Path) -> np.ndarray:
-    """Read one mask's pixels as a 2D array (its length-1 axes removed).
+def read_mask(
+    mask: MaskFile,
+    masks_folder: Path | None,
+    experiment_root: Path,
+    *,
+    z: int | None = None,
+    t: int | None = None,
+) -> np.ndarray:
+    """Read one plane of a mask as a 2D array.
+
+    Parameters
+    ----------
+    mask
+        The mask, as found by :func:`find_masks`.
+    masks_folder, experiment_root
+        Where its file is (:attr:`MaskInventory.folder` for a TIFF mask, the experiment for
+        a label image).
+    z, t
+        The depth slice and time point to read, zero-based, the image's ``z`` and ``t``. Each
+        is required when the mask has that axis (``mask.axes``), and may only be None or 0
+        otherwise: a mask's planes are never guessed (issue #36).
 
     Raises
     ------
     ValueError
-        If the mask is not 2D once its length-1 axes are removed, or holds negative labels
+        If the mask's dimensions are not the ones its header gave (``mask.axes``), or ``z``
+        or ``t`` is missing or outside the mask, or the plane holds negative labels
         (label 0 is the background and objects are positive, contract §15).
     """
+    wanted = {"Z": z, "T": t}
+    for axis, index in wanted.items():
+        length = mask.planes[axis] if mask.axes else 1
+        if index is None and length > 1:
+            raise ValueError(
+                f"the mask {mask.path} has {length} planes along {axis}; say which one to read"
+            )
+        if index is not None and not 0 <= index < length:
+            raise ValueError(f"the mask {mask.path} has no plane {axis}={index}")
     if mask.source == FOLDER:
-        pixels = tifffile.imread(Path(masks_folder) / mask.path)
+        pixels, axes = _read_tiff_plane(Path(masks_folder) / mask.path, wanted)
     else:
         name = mask.path.rsplit("/labels/", 1)[1]
         image = experiment_root / mask.path.rsplit("/labels/", 1)[0]
-        pixels = np.asarray(open_ngff_labels(image, name).array)
-    pixels = np.squeeze(pixels)
-    if pixels.ndim != 2:
-        raise ValueError(f"the mask {mask.path} is not 2D ({pixels.shape})")
+        labels = open_ngff_labels(image, name)
+        selection = tuple(
+            (wanted[a] or 0) if a in wanted and n > 1 else (0 if n == 1 else slice(None))
+            for a, n in zip(labels.axes, labels.array.shape, strict=True)
+        )
+        pixels = np.asarray(labels.array[selection])
+        axes = "".join(a for a, s in zip(labels.axes, selection, strict=True) if s == slice(None))
+    if axes != "YX" or (mask.axes and pixels.shape != tuple(_yx(mask.axes, mask.shape))):
+        raise ValueError(f"the mask {mask.path} is not the 2D plane its header gave ({axes})")
     check_labels(pixels, mask.path)
     return pixels
+
+
+def _read_tiff_plane(path: Path, wanted: Mapping[str, int | None]) -> tuple[np.ndarray, str]:
+    """Read the plane at ``wanted`` Z and T of a TIFF mask; return it and its axes.
+
+    One page is read when the planes are stored one per page (the usual layout); otherwise
+    the whole mask is read and the plane taken from it.
+    """
+    with tifffile.TiffFile(path) as tif:
+        series = tif.series[0]
+        axes, shape = series.axes, tuple(series.shape)
+        index = tuple(
+            (wanted.get(a) or 0) if n > 1 and a in wanted else (0 if n == 1 else slice(None))
+            for a, n in zip(axes, shape, strict=True)
+        )
+        kept = "".join(a for a, i in zip(axes, index, strict=True) if i == slice(None))
+        pages = len(series.pages)
+        split = next(
+            (k for k in range(len(shape) + 1) if math.prod(shape[:k]) == pages),
+            None,
+        )
+        if (
+            split is not None
+            and all(isinstance(i, int) for i in index[:split])
+            and all(n == 1 or a in "YX" for a, n in zip(axes[split:], shape[split:], strict=True))
+            and pages > 1
+        ):
+            key = int(np.ravel_multi_index(index[:split], shape[:split]))
+            pixels = tif.asarray(key=key, series=0).reshape(shape[split:])
+            pixels = pixels[index[split:]]
+        else:
+            pixels = series.asarray()[index]
+    return pixels, kept
+
+
+def _yx(axes: str, shape: tuple[int, ...]) -> tuple[int, int]:
+    return shape[axes.index("Y")], shape[axes.index("X")]
 
 
 def check_labels(pixels: np.ndarray, name: str = "the mask") -> None:
@@ -389,11 +489,14 @@ def _duplicate_issues(files: list[MaskFile]) -> list[ValidationIssue]:
 def _header_issues(
     files: list[MaskFile], images: Mapping[str, TiffMetadata], folder: Path | None, root: Path
 ) -> list[ValidationIssue]:
-    """Read each mask's header (shape, pixel type) and check it against its image."""
+    """Read each mask's header (axes, shape, pixel type) and check it against its image.
+
+    Also check that the masks of one image have the same depth slices and time points.
+    """
     problems: dict[str, list[str]] = {}
     for index, mask in enumerate(files):
         try:
-            shape, dtype = _mask_header(mask, folder, root)
+            axes, shape, dtype = _mask_header(mask, folder, root)
         except (
             OSError,
             ValueError,
@@ -404,13 +507,23 @@ def _header_issues(
             logger.info("Mask %s could not be opened: %s", mask.path, exc)
             problems.setdefault("unreadable_mask", []).append(mask.path)
             continue
-        files[index] = MaskFile(mask.image, mask.mask_type, mask.path, mask.source, shape, dtype)
-        if len(shape) != 2:
+        if not _known_axes(axes):
             problems.setdefault("mask_not_2d", []).append(mask.path)
-        elif shape != _image_yx(images[mask.image]):
+            continue
+        files[index] = MaskFile(
+            mask.image, mask.mask_type, mask.path, mask.source, shape, dtype, axes
+        )
+        if _yx(axes, shape) != _image_yx(images[mask.image]):
             problems.setdefault("mask_size_mismatch", []).append(mask.path)
         if dtype.kind not in "biu":
             problems.setdefault("mask_pixel_type", []).append(mask.path)
+    by_image: dict[str, list[MaskFile]] = {}
+    for mask in files:
+        if mask.axes:
+            by_image.setdefault(mask.image, []).append(mask)
+    for masks in by_image.values():
+        if len({tuple(m.planes.items()) for m in masks}) > 1:
+            problems.setdefault("mask_planes_differ", []).extend(m.path for m in masks)
     return [
         error(code, _TEXTS[code][0], paths, _TEXTS[code][1])
         for code, paths in sorted(problems.items())
@@ -424,8 +537,15 @@ _TEXTS = {
         "not damaged; the technical details are in the log.",
     ),
     "mask_not_2d": (
-        "Some masks are not 2D: a mask must be one label image per position.",
-        "Save each mask as a single 2D label image.",
+        "Some masks have dimensions other than Y and X that their metadata does not name as "
+        "depth (Z) or time (T), so their planes cannot be matched to the image's.",
+        "Save each mask as a 2D label image, or with its depth and time axes named in its "
+        "metadata (for example an ImageJ hyperstack or OME-TIFF with axes TYX or ZYX).",
+    ),
+    "mask_planes_differ": (
+        "The masks of some images have different numbers of depth slices or time points, so "
+        "they cannot all belong to the same planes of their image.",
+        "Make every mask of an image with the image's depth slices and time points.",
     ),
     "mask_size_mismatch": (
         "Some masks do not have the size (Y and X) of their image.",
@@ -440,17 +560,91 @@ _TEXTS = {
 
 
 def _mask_header(mask: MaskFile, folder: Path | None, root: Path) -> tuple:
-    """Return a mask's shape without its length-1 axes, and its pixel type; no pixels read."""
+    """Return a mask's axes and shape without its length-1 axes, and its pixel type.
+
+    The axes are the mask's own metadata (``tifffile``'s series axes, or the OME-NGFF axes of
+    the label image); no pixels are read.
+    """
     if mask.source == FOLDER:
         with tifffile.TiffFile(Path(folder) / mask.path) as tif:
             if len(tif.series) != 1:
                 raise ValueError(f"{len(tif.series)} image series")
-            shape, dtype = tif.series[0].shape, tif.series[0].dtype
+            axes, shape, dtype = tif.series[0].axes, tif.series[0].shape, tif.series[0].dtype
     else:
         image, name = mask.path.rsplit("/labels/", 1)
-        array = open_ngff_labels(root / image, name).array
-        shape, dtype = array.shape, np.dtype(array.dtype)
-    return tuple(int(n) for n in shape if n != 1), dtype.newbyteorder("=")
+        labels = open_ngff_labels(root / image, name)
+        axes, shape, dtype = labels.axes, labels.array.shape, np.dtype(labels.array.dtype)
+    kept = [(a, int(n)) for a, n in zip(axes, shape, strict=True) if n != 1]
+    return (
+        "".join(a for a, _ in kept),
+        tuple(n for _, n in kept),
+        dtype.newbyteorder("="),
+    )
+
+
+def _known_axes(axes: str) -> bool:
+    """Return True if the axes are Y and X, each once, plus at most one Z and one T."""
+    return (
+        axes.count("Y") == 1
+        and axes.count("X") == 1
+        and all(axes.count(a) <= 1 for a in PLANE_AXES)
+        and set(axes) <= {"Y", "X", *PLANE_AXES}
+    )
+
+
+def mask_plane_issues(
+    inventory: MaskInventory,
+    images: Iterable[TiffMetadata],
+    file_mappings: Mapping[str, AxisMapping],
+) -> list[ValidationIssue]:
+    """Check that every mask has the depth slices and time points of its image (issue #36).
+
+    An image's depth slices and time points come from its confirmed axis roles; a mask's
+    from its own metadata (:attr:`MaskFile.planes`). They must be equal: a 2D mask belongs
+    to an image with one plane, never to every plane of a Z-stack or time-lapse.
+
+    Parameters
+    ----------
+    inventory
+        The masks found by :func:`find_masks`.
+    images
+        Header information of the analysed images.
+    file_mappings
+        Each image's own axis mapping (:attr:`.axes.AxisReview.file_mappings`); images
+        without one are left to the axis review's errors.
+
+    Returns
+    -------
+    list of ValidationIssue
+        The error ``mask_planes_mismatch`` naming the masks that do not fit, or nothing.
+    """
+    headers = {meta.relative_path: meta for meta in images}
+    mismatched = []
+    for mask in inventory.files:
+        mapping = file_mappings.get(mask.image)
+        if not mask.axes or mapping is None or mask.image not in headers:
+            continue
+        shape = headers[mask.image].shape
+        planes = {}
+        for axis in PLANE_AXES:
+            index = mapping.index_of(axis)
+            planes[axis] = 1 if index is None else int(shape[index])
+        if planes != mask.planes:
+            mismatched.append(mask.path)
+    if not mismatched:
+        return []
+    return [
+        error(
+            "mask_planes_mismatch",
+            f"{plural(len(mismatched), 'mask')} {_do(mismatched)} not have the depth slices "
+            f"and time points of {_their(mismatched)} image: a 2D mask fits only an image with "
+            "one plane, and a mask with depth (Z) or time (T) needs the same number of slices "
+            "or time points as its image.",
+            mismatched,
+            "Save one mask plane for every depth slice and time point of the image, with the "
+            "axes named in the mask's metadata, or check the image's axis roles.",
+        )
+    ]
 
 
 def _image_yx(meta: TiffMetadata) -> tuple[int, int] | None:
@@ -478,6 +672,14 @@ def _missing_issues(
                 )
             )
     return issues
+
+
+def _do(items: list) -> str:
+    return "does" if len(items) == 1 else "do"
+
+
+def _their(items: list) -> str:
+    return "its" if len(items) == 1 else "their"
 
 
 def _are(items: list) -> str:
