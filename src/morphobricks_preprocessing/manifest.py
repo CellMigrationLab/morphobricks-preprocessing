@@ -116,6 +116,9 @@ class FileEntry:
     ome_zarr_path
         For a TIFF converted to OME-Zarr, the converted copy relative to the
         output folder (its rows are computed from it); otherwise None.
+    channel_names_trimmed
+        True when leading or trailing whitespace was removed from the image's
+        channel names as they were read (names are recorded trimmed).
     read_in_blocks
         True when the image's planes are too large for the memory limit and are
         read in blocks. For information only: the rows are the same either way.
@@ -123,6 +126,12 @@ class FileEntry:
         The image's position identifier, its name without the extension
         (:func:`~morphobricks_preprocessing.discovery.position_id`); None in
         manifests written before it was recorded.
+    roles
+        The role of each of the file's axes (``"X"``, ``"Y"``, ``"Z"``, ``"C"``,
+        ``"T"`` or None), from its own mapping: for an OME-Zarr image whose
+        declared order differs from the experiment mapping's, these are its
+        roles, not the experiment's. None in manifests written before they were
+        recorded.
     """
 
     relative_path: str
@@ -137,6 +146,8 @@ class FileEntry:
     ome_zarr_path: str | None = None
     read_in_blocks: bool = False
     position_id: str | None = None
+    channel_names_trimmed: bool = False
+    roles: tuple[str | None, ...] | None = None
 
     def same_source(self, other: FileEntry) -> bool:
         """Return True if ``other`` describes the same unchanged file, read the same way."""
@@ -294,9 +305,11 @@ class RunManifest:
             "settings": {
                 "bin_count": self.settings.bin_count,
                 "memory_limit": self.settings.memory_limit,
-                "missing_as_singleton": self.settings.missing_as_singleton,
+                "missing_as_singleton": _flag(
+                    self.settings.missing_as_singleton, "missing_as_singleton"
+                ),
                 "exclude": list(self.settings.exclude),
-                "convert_tiffs": self.settings.convert_tiffs,
+                "convert_tiffs": _flag(self.settings.convert_tiffs, "convert_tiffs"),
                 "conversion": self.settings.conversion.to_dict(),
                 "histogram": self.settings.histogram.to_dict(),
             },
@@ -314,7 +327,11 @@ class RunManifest:
             "csv_sha256": self.csv_sha256,
             "experiment_design_sha256": self.experiment_design_sha256,
             "image_type": self.image_type,
-            "channels_from_rgb_samples": self.channels_from_rgb_samples,
+            "channels_from_rgb_samples": (
+                None
+                if self.channels_from_rgb_samples is None
+                else _flag(self.channels_from_rgb_samples, "channels_from_rgb_samples")
+            ),
             "intensity_checks": (
                 None if self.intensity_checks is None else self.intensity_checks.to_dict()
             ),
@@ -348,9 +365,9 @@ class RunManifest:
                 settings=RunSettings(
                     bin_count=int(settings["bin_count"]),
                     memory_limit=int(settings["memory_limit"]),
-                    missing_as_singleton=bool(settings["missing_as_singleton"]),
+                    missing_as_singleton=_flag(settings["missing_as_singleton"]),
                     exclude=tuple(str(p) for p in settings["exclude"]),
-                    convert_tiffs=bool(settings.get("convert_tiffs", False)),
+                    convert_tiffs=_flag(settings.get("convert_tiffs", False)),
                     conversion=ConversionSettings.from_dict(settings.get("conversion")),
                     histogram=(
                         HistogramSettings()
@@ -373,7 +390,7 @@ class RunManifest:
                 channels_from_rgb_samples=(
                     None
                     if data.get("channels_from_rgb_samples") is None
-                    else bool(data["channels_from_rgb_samples"])
+                    else _flag(data["channels_from_rgb_samples"])
                 ),
                 intensity_checks=(
                     None
@@ -403,6 +420,7 @@ def file_entry_for(
     significant_bits: int | None = None,
     ome_zarr_path: str | None = None,
     read_in_blocks: bool = False,
+    channel_names_trimmed: bool = False,
 ) -> FileEntry:
     """Describe a source image as it is on disk now, with its position identifier."""
     size, mtime_ns = source_fingerprint(Path(root) / relative_path)
@@ -419,6 +437,8 @@ def file_entry_for(
         ome_zarr_path=ome_zarr_path,
         read_in_blocks=read_in_blocks,
         position_id=position_id(relative_path),
+        channel_names_trimmed=channel_names_trimmed,
+        roles=tuple(mapping.roles),
     )
 
 
@@ -522,8 +542,10 @@ def _file_dict(entry: FileEntry) -> dict:
         "channel_names": list(entry.channel_names),
         "significant_bits": entry.significant_bits,
         "ome_zarr_path": entry.ome_zarr_path,
-        "read_in_blocks": entry.read_in_blocks,
+        "read_in_blocks": _flag(entry.read_in_blocks, "read_in_blocks"),
         "position_id": entry.position_id,
+        "channel_names_trimmed": entry.channel_names_trimmed,
+        "roles": None if entry.roles is None else list(entry.roles),
     }
 
 
@@ -544,9 +566,34 @@ def _file_entry(data: dict) -> FileEntry:
         channel_names=tuple(None if n is None else str(n) for n in data.get("channel_names", [])),
         significant_bits=None if bits is None else int(bits),
         ome_zarr_path=None if data.get("ome_zarr_path") is None else str(data["ome_zarr_path"]),
-        read_in_blocks=bool(data.get("read_in_blocks", False)),
+        read_in_blocks=_flag(data.get("read_in_blocks", False)),
         position_id=None if data.get("position_id") is None else str(data["position_id"]),
+        channel_names_trimmed=bool(data.get("channel_names_trimmed", False)),
+        roles=_roles(data.get("roles"), str(data["axes"])),
     )
+
+
+def _roles(value: object, axes: str) -> tuple[str | None, ...] | None:
+    """Check a file's recorded axis roles: one role or null per axis (absent in older manifests)."""
+    if value is None:
+        return None
+    if not isinstance(value, list) or len(value) != len(axes):
+        raise ValueError(f"the roles {value!r} do not fit the axes {axes!r}")
+    roles = tuple(None if r is None else str(r) for r in value)
+    AxisMapping(axes, roles)  # raises ValueError for an unknown role
+    return roles
+
+
+def _flag(value: object, key: str | None = None) -> bool:
+    """Return a boolean; anything else (``"false"``, 0, null) is malformed, not guessed.
+
+    Used both when reading and when writing a manifest, so a manifest is never written
+    with a flag its reader would refuse (or that ``bool()`` would turn around).
+    """
+    if not isinstance(value, bool):
+        where = f" for {key}" if key else ""
+        raise ValueError(f"expected true or false{where}, found {value!r}")
+    return value
 
 
 def _plain(value):

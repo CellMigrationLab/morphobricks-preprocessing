@@ -251,6 +251,8 @@ def test_the_run_records_the_masks_in_the_manifest(experiment, masks, tmp_path):
         "type": "Cells",
         "path": "Cells/ctrl/rep1/a.tif",
         "source": "folder",
+        "axes": "YX",
+        "shape": [16, 20],
     }
     # Without masks the manifest has no masks key, as before.
     run_experiment(experiment, prefill_mapping("CYX"), output_folder=out)
@@ -304,6 +306,167 @@ def test_masks_command_takes_thresholds(experiment, masks, tmp_path, capsys):
     assert report["thresholds"]["same_objects_iou"] == 0.8
     assert main([*args, "--grouped-label-share", "1.5"]) == 1
     assert "must be above 0 and at most 1" in capsys.readouterr().out
+
+
+# Planes: depth slices and time points (issue #36) -------------------------------------
+
+
+def time_lapse(tmp_path, n_t=3, image_axes="TYX"):
+    """An experiment of one time-lapse image (T, Y, X) and a masks folder."""
+    root = tmp_path / "exp"
+    write_data(root / "ctrl" / "a.tif", np.zeros((n_t, 16, 20), dtype=np.uint8), image_axes)
+    return root, tmp_path / "masks"
+
+
+def run_with_masks(root, masks, roles, tmp_path):
+    return run_experiment(
+        root, prefill_mapping(roles), output_folder=tmp_path / "out", masks_folder=masks
+    )
+
+
+def test_a_2d_mask_of_a_time_lapse_or_z_stack_is_refused(tmp_path):
+    for roles in ("TYX", "ZYX"):
+        root, masks = time_lapse(tmp_path / roles, image_axes=roles)
+        write_data(masks / "Cells" / "ctrl" / "a.tif", label_image(0))
+        assert preflight(root, masks_folder=masks).masks.ok  # the roles are not confirmed yet
+        result = run_with_masks(root, masks, roles, tmp_path / roles)
+        assert not result.written
+        mismatch = next(i for i in result.issues if i.code == "mask_planes_mismatch")
+        assert mismatch.paths == ("Cells/ctrl/a.tif",)
+        assert "a 2D mask fits only an image with one plane" in mismatch.message
+
+
+def test_a_mask_with_the_images_time_points_is_accepted_and_recorded(tmp_path, no_pixel_reads):
+    root, masks = time_lapse(tmp_path)
+    data = np.stack([label_image(t) for t in range(3)])
+    write_data(masks / "Cells" / "ctrl" / "a.tif", data, "TYX")
+    found = preflight(root, masks_folder=masks).masks
+    assert found.ok
+    cells = found.for_image("ctrl/a.tif")["Cells"]
+    assert (cells.axes, cells.shape, cells.planes) == ("TYX", (3, 16, 20), {"Z": 1, "T": 3})
+    assert found.to_manifest()["files"][0]["axes"] == "TYX"
+    assert found.to_manifest()["files"][0]["shape"] == [3, 16, 20]
+
+
+def test_the_run_records_each_masks_planes(tmp_path):
+    root, masks = time_lapse(tmp_path)
+    write_data(masks / "Cells" / "ctrl" / "a.tif", np.stack([label_image(0)] * 3), "TYX")
+    result = run_with_masks(root, masks, "TYX", tmp_path)
+    assert result.written, result.issues
+    entry = read_manifest(tmp_path / "out" / "run_manifest.json").masks["files"][0]
+    assert (entry["axes"], entry["shape"]) == ("TYX", [3, 16, 20])
+
+
+def test_a_mask_with_other_planes_than_its_image_is_refused(tmp_path):
+    root, masks = time_lapse(tmp_path)
+    write_data(masks / "Cells" / "ctrl" / "a.tif", np.stack([label_image(0)] * 2), "TYX")
+    write_data(masks / "Nuclei" / "ctrl" / "a.tif", np.stack([label_image(0)] * 3), "ZYX")
+    result = run_with_masks(root, masks, "TYX", tmp_path)
+    assert not result.written
+    found = {i.code: i.paths for i in result.issues}
+    assert found["mask_planes_mismatch"] == ("Cells/ctrl/a.tif", "Nuclei/ctrl/a.tif")
+    # The two masks of one image do not even agree with each other: found from the headers.
+    assert found["mask_planes_differ"] == ("Cells/ctrl/a.tif", "Nuclei/ctrl/a.tif")
+
+
+def test_a_mask_whose_extra_axis_is_not_named_is_refused(tmp_path):
+    root, masks = time_lapse(tmp_path)
+    # No axes in the metadata: tifffile calls the stack Q, which could be depth or time.
+    write_data(masks / "Cells" / "ctrl" / "a.tif", np.stack([label_image(0)] * 3))
+    found = preflight(root, masks_folder=masks).masks
+    assert codes(found.issues) == ["mask_not_2d"]
+    assert "does not name as depth (Z) or time (T)" in found.issues[0].message
+
+
+def test_read_mask_reads_one_plane_and_never_guesses_which(tmp_path):
+    from morphobricks_preprocessing import read_mask
+
+    root, masks = time_lapse(tmp_path)
+    data = np.stack([label_image(t) for t in range(3)])
+    write_data(masks / "Cells" / "ctrl" / "a.tif", data, "TYX")
+    found = preflight(root, masks_folder=masks).masks
+    cells = found.for_image("ctrl/a.tif")["Cells"]
+    for t in range(3):
+        np.testing.assert_array_equal(read_mask(cells, found.folder, root, t=t), data[t])
+    with pytest.raises(ValueError, match="3 planes along T"):
+        read_mask(cells, found.folder, root)
+    with pytest.raises(ValueError, match="no plane T=3"):
+        read_mask(cells, found.folder, root, t=3)
+    with pytest.raises(ValueError, match="no plane Z=1"):
+        read_mask(cells, found.folder, root, z=1, t=0)
+
+
+def test_read_mask_of_a_volume_stored_in_one_page(tmp_path):
+    from morphobricks_preprocessing import read_mask
+
+    root = tmp_path / "exp"
+    write_data(root / "ctrl" / "a.tif", np.zeros((3, 16, 20), dtype=np.uint8), "ZYX")
+    data = np.stack([label_image(z) for z in range(3)])
+    write_data(
+        tmp_path / "masks" / "Cells" / "ctrl" / "a.tif",
+        data,
+        "ZYX",
+        volumetric=True,
+        tile=(3, 16, 16),
+    )
+    found = preflight(root, masks_folder=tmp_path / "masks").masks
+    cells = found.for_image("ctrl/a.tif")["Cells"]
+    assert cells.planes == {"Z": 3, "T": 1}
+    np.testing.assert_array_equal(read_mask(cells, found.folder, root, z=2), data[2])
+
+
+def test_label_images_with_time_points(tmp_path):
+    pytest.importorskip("zarr")
+    from morphobricks_preprocessing import read_mask
+    from zarr_tree import write_labels, write_ngff
+
+    path = write_ngff(tmp_path / "exp" / "a.ome.zarr", np.zeros((3, 16, 20), np.uint8), "tyx")
+    data = np.stack([label_image(t) for t in range(3)])
+    write_labels(path, {"cells": data}, "tyx")
+    found = preflight(tmp_path / "exp", ome_zarr_labels=True).masks
+    assert found.ok
+    cells = found.for_image("a.ome.zarr")["cells"]
+    assert (cells.axes, cells.planes) == ("TYX", {"Z": 1, "T": 3})
+    np.testing.assert_array_equal(read_mask(cells, None, tmp_path / "exp", t=1), data[1])
+    result = run_experiment(
+        tmp_path / "exp",
+        prefill_mapping("TYX"),
+        output_folder=tmp_path / "out",
+        ome_zarr_labels=True,
+    )
+    assert result.written, result.issues
+
+
+def test_masks_command_refuses_negative_labels(experiment, masks, tmp_path, capsys):
+    signed = label_image(0).astype(np.int32)
+    signed[0, 0] = -5
+    write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", signed)
+    out = tmp_path / "out"
+    assert main(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 1
+    assert "Cells/ctrl/rep1/a.tif holds negative labels (smallest -5)" in capsys.readouterr().out
+    assert not (out / "mask_relationships.json").exists()
+
+
+def test_uint64_labels_above_the_int64_range_are_refused(experiment, masks, tmp_path, capsys):
+    # Issue #39: later bricks store labels as int64 label_id.
+    from morphobricks_preprocessing import read_mask
+
+    huge = label_image(0).astype(np.uint64)
+    huge[0, 0] = 2**63
+    write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", huge)
+    found = inventory(experiment, masks)
+    assert found.ok  # headers only
+    cells = found.for_image("ctrl/rep1/a.tif")["Cells"]
+    with pytest.raises(ValueError, match="labels above 9223372036854775807"):
+        read_mask(cells, found.folder, experiment)
+    fits = huge.copy()
+    fits[0, 0] = 2**63 - 1
+    write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", fits)
+    assert read_mask(cells, found.folder, experiment)[0, 0] == 2**63 - 1
+    write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", huge)
+    out = tmp_path / "out"
+    assert main(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 1
+    assert "cannot be stored as a 64-bit signed label number" in capsys.readouterr().out
 
 
 def test_a_malformed_labels_group_is_an_error_not_a_vanished_mask_type(tmp_path):

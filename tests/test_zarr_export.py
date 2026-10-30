@@ -11,7 +11,9 @@ from morphobricks_preprocessing import (
     AxisMapping,
     PhysicalSizes,
     PlaneReadError,
+    check_metadata,
     default_output_folder,
+    inspect_ome_zarr,
     ome_zarr_relative_path,
     plane_layout,
     prefill_mapping,
@@ -382,6 +384,51 @@ def test_channel_names_and_display_ranges(tmp_path):
     assert [c["label"] for c in omero["channels"]] == ["DAPI", "GFP"]
     window = omero["channels"][1]["window"]
     assert (window["min"], window["max"]) == (float(data[1].min()), float(data[1].max()))
+
+
+@needs_zarr
+def test_copies_of_unnamed_channels_read_back_unnamed(tmp_path):
+    # Issue #37 review: channel names are compared exactly, so a copy must not name a
+    # channel its source leaves unnamed (it used to write the placeholder "Channel <i>").
+    root = tmp_path / "exp"
+    root.mkdir()
+    tifffile.imwrite(
+        root / "a.ome.tif",
+        random_data((2, 8, 8)),
+        ome=True,
+        photometric="minisblack",
+        metadata={"axes": "CYX", "Channel": {"Name": ["DAPI", "GFP"]}},
+    )
+    write_data(root / "b.tif", random_data((2, 8, 8), seed=1), axes="CYX")
+    result = run_experiment(root, prefill_mapping("CYX"), convert_tiffs=True)
+    assert result.written
+    omero = dict(open_copy(result.output_folder, "b.tif").attrs)["omero"]
+    assert all("label" not in channel for channel in omero["channels"])
+    copies = result.output_folder / "ome_zarr"
+    headers = [inspect_ome_zarr(copies / name, name) for name in ("a.ome.zarr", "b.ome.zarr")]
+    assert [h.channel_names for h in headers] == [("DAPI", "GFP"), ()]
+    assert "channel_names_differ" not in {i.code for i in check_metadata(headers)}
+
+
+@needs_zarr
+def test_copies_with_placeholder_channel_names_are_written_again(tmp_path):
+    root = tmp_path / "exp"
+    root.mkdir()
+    write_data(root / "a.tif", random_data((2, 8, 8)), axes="CYX")
+    first = run_experiment(root, prefill_mapping("CYX"), convert_tiffs=True)
+    table = first.csv_path.read_bytes()
+    # Make the copy look like one written with placeholder names.
+    attrs_path = first.output_folder / ome_zarr_relative_path("a.tif") / ".zattrs"
+    attrs = json.loads(attrs_path.read_text(encoding="utf-8"))
+    for c, channel in enumerate(attrs["omero"]["channels"]):
+        channel["label"] = f"Channel {c}"
+    attrs_path.write_text(json.dumps(attrs), encoding="utf-8")
+    second = run_experiment(root, prefill_mapping("CYX"), convert_tiffs=True)
+    assert second.converted == ("a.tif",)
+    assert second.csv_path.read_bytes() == table  # same pixels, same rows
+    omero = dict(open_copy(second.output_folder, "a.tif").attrs)["omero"]
+    assert all("label" not in channel for channel in omero["channels"])
+    assert run_experiment(root, prefill_mapping("CYX"), convert_tiffs=True).converted == ()
 
 
 @needs_zarr
@@ -888,3 +935,42 @@ def test_writer_builds_smaller_levels_of_planes_in_blocks(tmp_path, memory_limit
         tmp_path / "tiny.ome.zarr", mapping, layout, settings=settings, memory_limit=1
     )
     assert tiny._region_side() == 2  # the smallest region that halves exactly
+
+
+@needs_zarr
+def test_unknown_pixel_sizes_are_marked_not_read_as_1(tmp_path):
+    # Issue #39: OME-NGFF 0.4 needs a scale per axis, so an unknown size is written as 1;
+    # the copy says which axes those are, and reading the copy gives no size for them.
+    from morphobricks_preprocessing import open_ngff
+
+    write_data(tmp_path / "exp" / "a.tif", random_data((2, 8, 8), "uint8"), axes="ZYX")
+    result = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True)
+    copy = result.output_folder / ome_zarr_relative_path("a.tif")
+    meta = multiscale(open_copy(result.output_folder, "a.tif"))
+    assert meta["datasets"][0]["coordinateTransformations"][0]["scale"] == [1.0, 1.0, 1.0]
+    assert meta["metadata"]["unknown_scale"] == ["z", "y", "x"]
+    assert open_ngff(copy).physical_sizes == PhysicalSizes()
+    # A copy written before the marker counts as out of date and is written again.
+    attrs_path = copy / ".zattrs"
+    attrs = json.loads(attrs_path.read_text(encoding="utf-8"))
+    del attrs["multiscales"][0]["metadata"]["unknown_scale"]
+    attrs_path.write_text(json.dumps(attrs), encoding="utf-8")
+    again = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True)
+    assert again.converted == ("a.tif",)
+    assert run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True).converted == ()
+
+
+@needs_zarr
+def test_known_pixel_sizes_are_not_marked(tmp_path):
+    path = tmp_path / "exp/a.ome.tif"
+    path.parent.mkdir(parents=True)
+    tifffile.imwrite(
+        path,
+        random_data((2, 8, 8), "uint8"),
+        ome=True,
+        photometric="minisblack",
+        metadata={"axes": "ZYX", "PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5},
+    )
+    result = run_experiment(tmp_path / "exp", ZYX, convert_tiffs=True)
+    meta = multiscale(open_copy(result.output_folder, "a.ome.tif"))
+    assert meta["metadata"]["unknown_scale"] == ["z"]  # no z-step in the metadata

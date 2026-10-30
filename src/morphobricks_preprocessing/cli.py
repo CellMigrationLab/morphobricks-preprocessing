@@ -403,7 +403,11 @@ def _masks(args: argparse.Namespace) -> int:
             print(f"[{done + 1}/{total}] {path}", flush=True)
 
     print()
-    report = scan_masks(pre.masks, pre.discovery.root, progress=progress, thresholds=thresholds)
+    try:
+        report = scan_masks(pre.masks, pre.discovery.root, progress=progress, thresholds=thresholds)
+    except ValueError as exc:  # masks whose pixels cannot be used (planes, labels)
+        print(f"The masks cannot be used: {exc}")
+        return 1
     output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
     path = write_mask_report(report, output / MASK_REPORT_FILENAME)
     print()

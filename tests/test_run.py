@@ -220,7 +220,7 @@ def test_manifest_records_labels_mapping_settings_and_files(experiment):
 def test_manifest_records_channel_names_and_significant_bits(tmp_path):
     root = tmp_path / "exp"
     root.mkdir()
-    for i, names in enumerate([["DAPI", "GFP"], ["DAPI", "RFP"]]):
+    for i, names in enumerate([["DAPI", "GFP"], ["DAPI", "GFP"]]):
         tifffile.imwrite(
             root / f"img_{i}.ome.tif",
             stack(i, n_z=2),
@@ -230,11 +230,67 @@ def test_manifest_records_channel_names_and_significant_bits(tmp_path):
         )
     result = run_experiment(root, prefill_mapping("CYX"))
     assert result.written
-    found = issue(result.issues, "channel_names_differ")
-    assert found.severity is Severity.WARNING
+    assert "channel_names_differ" not in codes(result.issues)
     manifest = read_manifest(result.manifest_path)
-    assert manifest.file("img_1.ome.tif").channel_names == ("DAPI", "RFP")
+    assert manifest.file("img_1.ome.tif").channel_names == ("DAPI", "GFP")
     assert manifest.file("img_0.ome.tif").significant_bits == 12
+
+
+def write_named(root, names_per_image):
+    root.mkdir()
+    for i, names in enumerate(names_per_image):
+        tifffile.imwrite(
+            root / f"img_{i}.ome.tif",
+            stack(i, n_z=2),
+            ome=True,
+            photometric="minisblack",
+            metadata={"axes": "CYX", "Channel": {"Name": names}},
+        )
+
+
+def test_leading_and_trailing_whitespace_of_channel_names_is_removed(tmp_path):
+    # Owner decision on #42: names are trimmed at read time, for every image, and the
+    # manifest records that it was done; "DAPI " and "DAPI" are then one name.
+    root = tmp_path / "exp"
+    write_named(root, [["DAPI", "GFP"], ["DAPI ", " GFP"]])
+    result = run_experiment(root, prefill_mapping("CYX"), output_folder=tmp_path / "out")
+    assert result.written
+    assert "channel_names_differ" not in codes(result.issues)
+    manifest = read_manifest(result.manifest_path)
+    assert manifest.file("img_1.ome.tif").channel_names == ("DAPI", "GFP")
+    assert manifest.file("img_1.ome.tif").channel_names_trimmed
+    assert not manifest.file("img_0.ome.tif").channel_names_trimmed
+    raw = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert [f["channel_names_trimmed"] for f in raw["files"]] == [False, True]
+
+
+def test_inner_whitespace_of_channel_names_still_differs(tmp_path):
+    root = tmp_path / "exp"
+    write_named(root, [["DAPI", "GFP"], ["DA PI", "GFP"]])
+    result = run_experiment(root, prefill_mapping("CYX"), output_folder=tmp_path / "out")
+    assert not result.written
+    found = issue(result.issues, "channel_names_differ")
+    assert found.severity is Severity.ERROR
+    assert "channel 0: DA PI (1 image), DAPI (1 image)" in found.message
+
+
+def test_differing_channel_names_stop_the_run(tmp_path):
+    root = tmp_path / "exp"
+    root.mkdir()
+    for i, names in enumerate([["DAPI", "GFP"], ["Actin", "GFP"]]):
+        tifffile.imwrite(
+            root / f"img_{i}.ome.tif",
+            stack(i, n_z=2),
+            ome=True,
+            photometric="minisblack",
+            metadata={"axes": "CYX", "Channel": {"Name": names}},
+        )
+    result = run_experiment(root, prefill_mapping("CYX"), output_folder=tmp_path / "out")
+    assert not result.written
+    found = issue(result.issues, "channel_names_differ")
+    assert found.severity is Severity.ERROR
+    assert "channel 0: Actin (1 image), DAPI (1 image)" in found.message
+    assert not (tmp_path / "out" / "plane_histograms.csv").exists()
 
 
 # Positions (cross-brick decision D02) -------------------------------------------------
@@ -879,3 +935,14 @@ def test_sample_planes_report_problems(tmp_path):
     assert misfit.relative_path == "b.tif" and "does not fit" in misfit.error
     too_big = run_module.sample_planes(pre, ZYX, memory_limit=100)
     assert "limit" in too_big[0].error and too_big[0].plane is None
+
+
+@pytest.mark.parametrize("flag", ["missing_as_singleton", "convert_tiffs"])
+@pytest.mark.parametrize("value", [1, "false", np.bool_(True)])
+def test_run_refuses_flags_that_are_not_booleans_before_reading(experiment, tmp_path, flag, value):
+    # Review of #44: the manifest writer refuses such flags; the run refuses them up
+    # front instead of after every image has been read.
+    output = tmp_path / "out"
+    with pytest.raises(ValueError, match=f"{flag} must be True or False"):
+        run_experiment(experiment, ZYX, output_folder=output, **{flag: value})
+    assert not output.exists()

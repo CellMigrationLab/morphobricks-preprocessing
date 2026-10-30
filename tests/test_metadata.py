@@ -175,7 +175,7 @@ def test_unnamed_ome_channels_are_empty(tmp_path):
     assert info.channel_names == ()
 
 
-def test_differing_channel_names_are_a_warning():
+def test_differing_channel_names_are_an_error():
     base = meta("a.tif", (2, 8, 8), axes="CYX")
     files = [
         replace(base, channel_names=("DAPI", "GFP")),
@@ -184,9 +184,27 @@ def test_differing_channel_names_are_a_warning():
         replace(base, relative_path="d.tif", channel_names=(None, None)),
     ]
     found = issue(check_metadata(files), "channel_names_differ")
-    assert found.severity is Severity.WARNING
+    assert found.severity is Severity.ERROR  # issue #37: channels are matched by number
     assert found.paths == ("c.tif",)
     assert "channel 1: GFP (2 images), RFP (1 image)" in found.message
+
+
+def test_channel_names_differing_only_in_inner_whitespace_are_named_as_such():
+    # Inner whitespace is compared exactly (owner decision on #42); the message quotes the
+    # names and says the difference is whitespace, which would otherwise be invisible.
+    base = meta("a.tif", (2, 8, 8), axes="CYX")
+    files = [
+        replace(base, channel_names=("DAPI", "GFP 1")),
+        replace(base, relative_path="b.tif", channel_names=("DAPI", "GFP 1")),
+        replace(base, relative_path="c.tif", channel_names=("DAPI", "GFP  1")),
+    ]
+    found = issue(check_metadata(files), "channel_names_differ")
+    assert found.severity is Severity.ERROR
+    assert found.paths == ("c.tif",)
+    assert (
+        'channel 1: "GFP 1" (2 images), "GFP  1" (1 image) '
+        "(the names differ only in spaces or other whitespace)"
+    ) in found.message
 
 
 def test_matching_or_missing_channel_names_give_no_warning():

@@ -33,6 +33,10 @@ are written in the report.
 Nothing is decided for the user: the report is a suggestion with its evidence; the user names
 the masks and confirms or corrects the relationships. Pieces are counted with 4-connectivity
 (``scipy.ndimage.label``).
+
+Masks with depth slices or time points (``Z``/``T`` in :attr:`.masks.MaskFile.axes`) are
+scanned one plane at a time, each plane counted like an image of its own: objects are never
+matched across planes, and the masks of one image must have the same planes.
 """
 
 from __future__ import annotations
@@ -50,7 +54,7 @@ import numpy as np
 from scipy import ndimage
 
 from .manifest import package_versions
-from .masks import MaskInventory, read_mask
+from .masks import MaskInventory, check_labels, read_mask
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +111,8 @@ class MaskTypeSummary:
     images
         Images with a mask of this type.
     objects
-        Distinct labels, summed over the images.
+        Distinct labels, summed over the images (and over the planes of masks with depth
+        slices or time points: a label present in 5 time points counts 5 times).
     median_pieces_per_label
         Median number of 4-connected pieces per label over all objects; 0 when empty.
     """
@@ -242,15 +247,22 @@ def piece_counts(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Return the labels of a 2D mask and the number of 4-connected pieces of each.
 
     Two pixels are in one piece when they carry the same label and touch along an edge.
+    Label 0 is the background.
 
     Returns
     -------
     tuple of numpy.ndarray
         The sorted nonzero labels, and the number of pieces of each.
+
+    Raises
+    ------
+    ValueError
+        If the mask holds negative labels (:func:`.masks.check_labels`).
     """
+    check_labels(mask)
     values, dense = np.unique(mask, return_inverse=True)
     dense = dense.reshape(mask.shape)
-    if values.size and values[0] == 0:
+    if values.size and values[0] == 0:  # labels are never negative, so 0 comes first
         values = values[1:]
     else:
         dense = dense + 1  # no background: every value is a label
@@ -268,8 +280,15 @@ def pair_counts(
 
     Both are 2D label images of one position; label 0 is background. ``thresholds`` changes
     the default ``inside_pixel_share`` and ``same_objects_iou`` (:func:`mask_thresholds`).
+
+    Raises
+    ------
+    ValueError
+        If either mask holds negative labels (:func:`.masks.check_labels`).
     """
     limits = mask_thresholds(thresholds)
+    check_labels(child, "the child mask")
+    check_labels(parent, "the parent mask")
     counts = dict.fromkeys(_COUNTS, 0)
     on = child != 0
     child_labels, child_of = np.unique(child[on], return_inverse=True)
@@ -342,35 +361,51 @@ def scan_masks(
     Raises
     ------
     ValueError
-        For an invalid threshold, before any mask is read.
+        For an invalid threshold, before any mask is read; for an image whose masks have
+        different depth slices or time points; for a mask that cannot be read as the planes
+        its header gave, or holds negative labels (:func:`.masks.read_mask`).
     """
     limits = mask_thresholds(thresholds)
     root = Path(experiment_root).resolve()
     images = inventory.images
     pieces: dict[str, list[np.ndarray]] = {name: [] for name in inventory.types}
     single: dict[str, list[bool]] = {name: [] for name in inventory.types}
+    seen: dict[str, int] = dict.fromkeys(inventory.types, 0)
     totals: dict[tuple[str, str], dict[str, int]] = {}
     for done, image in enumerate(images):
         if progress is not None:
             progress(done, len(images), image)
-        masks = {
-            name: read_mask(mask, inventory.folder, root)
-            for name, mask in inventory.for_image(image).items()
-        }
-        for name, pixels in masks.items():
-            labels, counts = piece_counts(pixels)
-            pieces[name].append(counts)
-            single[name].append(labels.size <= 1)
-        for child in masks:
-            for parent in masks:
-                if child != parent:
-                    found = pair_counts(masks[child], masks[parent], thresholds=limits)
-                    total = totals.setdefault((child, parent), dict.fromkeys(_COUNTS, 0))
-                    for key, value in found.items():
-                        total[key] += value
+        found_masks = inventory.for_image(image)
+        planes = {tuple(mask.planes.items()) for mask in found_masks.values()}
+        if len(planes) != 1:
+            raise ValueError(
+                f"the masks of {image} have different depth slices or time points "
+                "(mask_planes_differ)"
+            )
+        counts_of = dict(next(iter(planes)))
+        for name in found_masks:
+            seen[name] += 1
+        # A mask with depth slices or time points is scanned one plane at a time, as if
+        # each plane were an image: objects are never matched across planes.
+        for z in range(counts_of["Z"]):
+            for t in range(counts_of["T"]):
+                masks = {
+                    name: read_mask(
+                        mask,
+                        inventory.folder,
+                        root,
+                        z=z if "Z" in mask.axes else None,
+                        t=t if "T" in mask.axes else None,
+                    )
+                    for name, mask in found_masks.items()
+                }
+                _scan_plane(masks, pieces, single, totals, limits)
     if progress is not None:
         progress(len(images), len(images), "")
-    types = {name: _summary(name, pieces[name], single[name], limits) for name in inventory.types}
+    types = {
+        name: _summary(name, seen[name], pieces[name], single[name], limits)
+        for name in inventory.types
+    }
     return MaskReport(
         images=len(images),
         types=MappingProxyType(types),
@@ -395,10 +430,35 @@ def write_mask_report(report: MaskReport, path: str | os.PathLike) -> Path:
     return target
 
 
+def _scan_plane(
+    masks: Mapping[str, np.ndarray],
+    pieces: dict[str, list[np.ndarray]],
+    single: dict[str, list[bool]],
+    totals: dict[tuple[str, str], dict[str, int]],
+    limits: Mapping[str, float],
+) -> None:
+    """Add the pieces of every mask of one plane, and the counts of every pair, to the totals."""
+    for name, pixels in masks.items():
+        labels, counts = piece_counts(pixels)
+        pieces[name].append(counts)
+        single[name].append(labels.size <= 1)
+    for child in masks:
+        for parent in masks:
+            if child != parent:
+                found = pair_counts(masks[child], masks[parent], thresholds=limits)
+                total = totals.setdefault((child, parent), dict.fromkeys(_COUNTS, 0))
+                for key, value in found.items():
+                    total[key] += value
+
+
 def _summary(
-    name: str, pieces: list[np.ndarray], single: list[bool], limits: Mapping[str, float]
+    name: str,
+    images: int,
+    pieces: list[np.ndarray],
+    single: list[bool],
+    limits: Mapping[str, float],
 ) -> MaskTypeSummary:
-    """Return a mask type's summary from its pieces per label in every image."""
+    """Return a mask type's summary from its pieces per label in every image plane."""
     every = np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.int64)
     median = float(np.median(every)) if every.size else 0.0
     if every.size == 0:
@@ -409,7 +469,7 @@ def _summary(
         kind = "grouped"
     else:
         kind = "instances"
-    return MaskTypeSummary(name, kind, len(pieces), int(every.size), median)
+    return MaskTypeSummary(name, kind, images, int(every.size), median)
 
 
 def _relation(
