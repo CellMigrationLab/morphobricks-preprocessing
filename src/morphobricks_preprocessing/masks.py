@@ -316,7 +316,10 @@ def read_mask_file(
             "depth (Z) or time (T) in its metadata"
         )
     if dtype.kind not in "biu":
-        raise ValueError(f"the mask {path} is of {dtype}, not integer labels or true/false")
+        raise ValueError(
+            f"the mask {path} is of {dtype}, not integer labels or true/false; save the mask "
+            "as integers"
+        )
     return read_mask(
         MaskFile("", "", mask.path, mask.source, shape, dtype, axes),
         path.parent,
