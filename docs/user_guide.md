@@ -85,6 +85,9 @@ experiment/
 - Folder and image names must not start or end with a space, and must not be `NA`, `nan`
   or `none` (in any case): tables read those as a missing value. This is an error
   (`invalid_name`).
+- Keep masks out of the experiment folder (see Masks below). Images named like a mask of
+  another image (`f1_mask.tif` beside `f1.tif`), or a folder named like a masks folder
+  holding such files, give a warning (`image_named_as_mask`, `mask_folder_in_experiment`).
 - Each image is one position (field of view), named after its file without the extension:
   `img_01.tif` and `img_01.ome.zarr` are both position `img_01`. The same name may be used
   in different folders (`tech_rep1/img_01.tif` and `tech_rep2/img_01.tif` are two
@@ -557,6 +560,8 @@ continues.
 | `no_usable_planes` | Error | No plane has finite pixel values. Check the images. |
 | `tiff_outside_leaf` | Error | Images sit in a folder that also holds subfolders, so they have no condition or repeat of their own. A folder holds either images or subfolders, never both. Move the images into a folder of their own, or out of the experiment folder. |
 | `non_tiff_file`, `empty_folder` | Warning | Files or folders that are skipped. |
+| `image_named_as_mask` | Warning | An image is named like a mask of another image (`f1_mask.tif` beside `f1.tif`; the endings `_mask`, `_labels`, `_label`, `_seg`, `_segmentation`), so a mask would be analysed as an image. If it is a mask, move it into a masks folder outside the experiment; if it is an image, nothing to do. |
+| `mask_folder_in_experiment` | Warning | A folder inside the experiment is named like a masks folder (`masks`, `ctrl_masks`, `CellLabels`) and holds files named like masks of the images; they would be analysed as images. Move it out of the experiment and give it as the masks folder, or rename it if these are images. |
 | `planes_read_in_blocks` | Warning | Planes too large for the memory limit are read in blocks. The results are the same; nothing to do. Raise the limit to read them whole, which is faster. |
 | `different_sizes` | Warning | Images have different widths or heights. Usually expected; otherwise check the camera settings. |
 | `different_plane_counts` | Warning | Images have different numbers of depth slices, time points or other planes. Images with more planes weigh more in pooled statistics. Check the acquisition if this is not expected. |
