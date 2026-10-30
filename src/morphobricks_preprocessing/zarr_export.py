@@ -481,16 +481,24 @@ class OmeZarrWriter:
         channels = []
         for c in range(self.shape[self.roles.index("C")]):
             low, high = self._channel_ranges.get(c, (0.0, 1.0))
-            label = self.channel_names[c] if c < len(self.channel_names) else None
-            channels.append(
-                {
-                    "label": label or f"Channel {c}",
-                    "active": True,
-                    "color": "FFFFFF",
-                    "window": {"min": low, "max": high, "start": low, "end": high},
-                }
-            )
+            channel = {
+                "active": True,
+                "color": "FFFFFF",
+                "window": {"min": low, "max": high, "start": low, "end": high},
+            }
+            # Only names from the source's metadata are written. An unnamed channel gets
+            # no label rather than a made-up one, so the copy reads back unnamed, like its
+            # source, and never fails the exact channel-name check (issue #37).
+            label = _channel_label(self.channel_names, c)
+            if label is not None:
+                channel["label"] = label
+            channels.append(channel)
         return {"version": NGFF_VERSION, "channels": channels}
+
+
+def _channel_label(names: Sequence[str | None], channel: int) -> str | None:
+    """Return the name of ``channel`` in ``names``; None when it is unnamed."""
+    return (names[channel] if channel < len(names) else None) or None
 
 
 def is_copy_path(output_folder: str | os.PathLike, relative_path: str) -> bool:
@@ -537,6 +545,35 @@ def copy_units_current(copy: str | os.PathLike, sizes: PhysicalSizes) -> bool:
         )
     except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError):
         logger.debug("Cannot read the axis units of the copy %s", copy, exc_info=True)
+        return False
+
+
+def copy_channels_current(copy: str | os.PathLike, channel_names: Sequence[str | None]) -> bool:
+    """Return True if a copy's channel labels are exactly the names its source gives now.
+
+    Copies written before unnamed channels were left without a label carry the
+    placeholder ``Channel <i>``; such copies are written again on the next run, so the
+    copy never names a channel its source does not. Only the copy's metadata file is
+    read. A copy whose metadata cannot be read counts as out of date.
+
+    Parameters
+    ----------
+    copy
+        The copy's folder (``<output>/ome_zarr/....ome.zarr``).
+    channel_names
+        The source image's channel names, as its header gives them (None when unnamed).
+    """
+    try:
+        attrs = json.loads((Path(copy) / ".zattrs").read_text(encoding="utf-8"))
+        if "omero" not in attrs:
+            return True
+        channels = attrs["omero"]["channels"]
+        return all(
+            channel.get("label") == _channel_label(channel_names, c)
+            for c, channel in enumerate(channels)
+        )
+    except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError):
+        logger.debug("Cannot read the channel labels of the copy %s", copy, exc_info=True)
         return False
 
 

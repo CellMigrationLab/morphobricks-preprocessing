@@ -184,7 +184,7 @@ a run manifest (`run_manifest.json`) records the confirmed labels and axis mappi
 settings, package versions and each source file's size and modification time. It also
 records each file's channel names and significant bits when metadata provides them, for
 information only; channel names that differ between files at the same channel index are
-reported as a warning.
+an error (question 1, revised after the data-flow audit, issue #37).
 
 ## 7. Incremental updates
 
@@ -406,6 +406,17 @@ Raised during review; to be decided before the milestones that need them:
    *Decided (October 2026): record channel names per file in the run manifest, not in the
    CSV, and warn when the names at the same channel index differ between files. The CSV
    stays at schema version 1.*
+   *Revised (October 2026, data-flow audit, issue #37): names that differ at the same
+   channel index are the error `channel_names_differ`, because channels are matched by
+   number and a different stain would be pooled and scaled as the same channel. Only named
+   channels are compared; there is no override, so such images are exported again or
+   excluded. Owner decision (October 2026, review of #42): leading and trailing whitespace
+   is removed from channel names at read time, for every image (sources and this brick's
+   copies), and recorded in the manifest (`channel_names_trimmed`); whitespace inside a
+   name is still compared exactly (`DA PI` and `DAPI` differ, and the message quotes names
+   that differ only in whitespace). OME-Zarr copies
+   leave unnamed channels without a label instead of the placeholder `Channel <i>`, so a
+   copy never names a channel its source does not.*
 2. Multi-series and pyramidal TIFFs: use only full-resolution level 0, and block files
    with several positions?
    *Decided (October 2026): yes. Pyramidal files are read at full-resolution level 0 only;
@@ -830,6 +841,15 @@ Raised during review; to be decided before the milestones that need them:
     the image name, `<condition>/.../<image>_<type>.tif`, and the two layouts may be mixed. A
     file that could name two images or fit both layouts is the error `ambiguous_mask`, never
     guessed. On the four JUMP smoke fields, both layouts give the same report.*
+    *Follow-up (October 2026, data-flow audit, issue #36): masks get a plane identity. A
+    mask may have a depth axis Z and/or a time axis T, named in its own metadata (never
+    guessed: an unnamed stack axis is `mask_not_2d`); the masks of one image share their
+    planes (`mask_planes_differ`), and `run` checks them against the image's confirmed
+    roles (`mask_planes_mismatch`). A 2D mask is therefore refused for a Z-stack or a
+    time-lapse; whether a 2D mask may stand for a projection of such an image is left to
+    the owner, so it is refused for now. The manifest's mask entries gain `axes` and
+    `shape` (optional keys, manifest version 1); `read_mask(z=, t=)` reads one plane and
+    `scan_masks` scans plane by plane.*
 33. What does this brick's second tag, v0.2.0, hold?
     *Decided (27 October 2026): v0.2.0 holds everything merged after v0.1.0: the image type
     (follow-up P4, question 29), the intensity checks and plots (follow-up P5, question
