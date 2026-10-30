@@ -67,7 +67,8 @@ src/morphobricks_preprocessing/
                     OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes);
                     header consistency warnings (width/height, plane counts, pixel sizes)
   physical_sizes.py PhysicalSizes (pixel sizes, z-step, time step, a unit per axis, micrometers()
-                    for comparing), read_physical_sizes (OME / ImageJ TIFF metadata; also importable
+                    for comparing), space_unit/to_micrometers (the shared unit rule, contract §16),
+                    read_physical_sizes (OME / ImageJ TIFF metadata; also importable
                     from zarr_export) and ngff_physical_sizes (OME-NGFF scale and axis units)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)

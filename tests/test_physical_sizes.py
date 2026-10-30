@@ -239,3 +239,137 @@ def test_ngff_boolean_scales_are_not_sizes():
     }
     sizes = physical_sizes_module.ngff_physical_sizes(multiscale, "YX")
     assert (sizes.y, sizes.x) == (None, 0.5)
+
+
+# The shared unit rule (MorphoBricks D86, decision D-a2) ---------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "name"),
+    [
+        ("pm", "picometer"),
+        ("picometre", "picometer"),
+        ("Å", "angstrom"),
+        ("Å", "angstrom"),
+        ("angstrom", "angstrom"),
+        ("Angstroms", "angstrom"),
+        ("nm", "nanometer"),
+        ("nanometre", "nanometer"),
+        ("µm", "micrometer"),
+        ("μm", "micrometer"),
+        ("um", "micrometer"),
+        ("\\u00B5m", "micrometer"),
+        ("micron", "micrometer"),
+        ("microns", "micrometer"),
+        ("micrometer", "micrometer"),
+        ("micrometers", "micrometer"),
+        ("micrometre", "micrometer"),
+        ("Micrometres", "micrometer"),
+        (" µm ", "micrometer"),
+        ("mm", "millimeter"),
+        ("millimetre", "millimeter"),
+        ("cm", "centimeter"),
+        ("centimeter", "centimeter"),
+        ("m", "meter"),
+        ("metre", "meter"),
+        ("meters", "meter"),
+    ],
+)
+def test_space_unit_reads_the_microscopy_units(text, name):
+    from morphobricks_preprocessing import space_unit
+
+    assert space_unit(text) == name
+
+
+@pytest.mark.parametrize(
+    "text",
+    # Units MorphoRelate and fiberfeatures converted before D86 (UDUNITS lengths, inches),
+    # and short spellings in the wrong case: refused by name, never converted or guessed.
+    ["inch", "in", "decimeter", "dm", "km", "kilometer", "parsec", "foot", "pixel", "Mm", "UM"],
+)
+def test_space_unit_refuses_other_units_by_name(text):
+    from morphobricks_preprocessing import UnsupportedUnitError, space_unit
+
+    with pytest.raises(UnsupportedUnitError, match=repr(text).replace("\\", "\\\\")):
+        space_unit(text)
+
+
+def test_space_unit_none_when_no_unit_is_given():
+    from morphobricks_preprocessing import space_unit
+
+    assert space_unit(None) is None
+    assert space_unit("  ") is None
+
+
+def test_to_micrometers():
+    from morphobricks_preprocessing import UnsupportedUnitError, to_micrometers
+
+    assert to_micrometers(0.1625, "µm") == 0.1625
+    assert to_micrometers(162.5, "nanometre") == pytest.approx(0.1625)
+    assert to_micrometers(5.0, "Å") == pytest.approx(5e-4)
+    assert to_micrometers(1, "mm") == 1000.0
+    assert to_micrometers(None, "µm") is None
+    assert to_micrometers(0.5, None) is None
+    with pytest.raises(UnsupportedUnitError, match="'inch'"):
+        to_micrometers(1 / 300, "inch")
+    for bad in (0, -1.0, float("nan"), float("inf"), True, "0.5"):
+        with pytest.raises(ValueError):
+            to_micrometers(bad, "µm")
+
+
+def test_space_units_are_the_converted_ones():
+    from morphobricks_preprocessing import SPACE_UNITS
+
+    assert set(SPACE_UNITS) == set(physical_sizes_module._MICROMETERS)
+
+
+@pytest.mark.parametrize("unit", ["micrometre", "nanometre", "Micrometres"])
+def test_imagej_british_spellings_are_calibrated(tmp_path, unit):
+    # Before D86 these left the image uncalibrated (unit None).
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(
+        path,
+        np.zeros((8, 8), np.uint16),
+        imagej=True,
+        resolution=(1 / 0.25, 1 / 0.25),
+        metadata={"unit": unit},
+    )
+    sizes = read_physical_sizes(path)
+    assert sizes.x == 0.25
+    assert sizes.unit("X") == ("micrometer" if "micro" in unit.lower() else "nanometer")
+
+
+def test_ngff_british_spelling_is_converted():
+    multiscale = {
+        "axes": [
+            {"name": "y", "type": "space", "unit": "micrometre"},
+            {"name": "x", "type": "space", "unit": "nanometres"},
+        ],
+        "datasets": [
+            {"path": "0", "coordinateTransformations": [{"type": "scale", "scale": [0.5, 500]}]}
+        ],
+    }
+    sizes = physical_sizes_module.ngff_physical_sizes(multiscale, "YX")
+    assert (sizes.micrometers("Y"), sizes.micrometers("X")) == (0.5, 0.5)
+
+
+@pytest.mark.parametrize(("unit", "dpi"), [(2, 300.0), (3, 300.0 / 2.54)])
+def test_plain_tiff_resolution_is_never_a_calibration(tmp_path, unit, dpi):
+    # Decision D-c: a plain TIFF's resolution tags (here 300 dpi, ResolutionUnit inch or
+    # centimetre, as scanners and Photoshop write them) are not a pixel size: without OME or
+    # ImageJ metadata the image is uncalibrated, never 84.67 micrometres per pixel.
+    path = tmp_path / "scan.tif"
+    tifffile.imwrite(
+        path,
+        np.zeros((8, 8), np.uint8),
+        photometric="minisblack",
+        resolution=(dpi, dpi),
+        resolutionunit=unit,
+        metadata=None,
+    )
+    with tifffile.TiffFile(path) as tif:
+        assert not tif.is_ome and not tif.is_imagej
+        assert tif.pages.first.tags["ResolutionUnit"].value == unit
+    sizes = read_physical_sizes(path)
+    assert sizes == PhysicalSizes()
+    assert sizes.micrometers("X") is None and sizes.micrometers("Y") is None

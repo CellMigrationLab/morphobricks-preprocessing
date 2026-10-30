@@ -906,3 +906,12 @@ Raised during review; to be decided before the milestones that need them:
     each row's `plane_id`, `image_file` and `bit_depth`. Inputs that passed before may now be
     refused. The version in `pyproject.toml` is 0.3.2 before
     tagging. Every brick pins this tag (D79).*
+38. Which rules do the other bricks take from this brick instead of copying them
+    (MorphoBricks D86)?
+    *Decided (30 October 2026, the owner's decisions D-a to D-k on the D86 de-duplication
+    audit): this brick exports them as public functions, listed in contract §16, for a
+    v0.3.3. Length units (D-a2): the microscopy units only, `pm` to `m` with US and British
+    spellings, any other unit refused by name (`space_unit`, `to_micrometers`); this
+    brick's readers use the same table, so British spellings are now calibrated. A plain
+    TIFF's resolution tags are never a calibration (D-c, unchanged).*
+

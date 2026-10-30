@@ -108,7 +108,14 @@ from .metadata import (
     inspect_ome_zarr,
     inspect_tiff,
 )
-from .physical_sizes import PhysicalSizes, read_physical_sizes
+from .physical_sizes import (
+    SPACE_UNITS,
+    PhysicalSizes,
+    UnsupportedUnitError,
+    read_physical_sizes,
+    space_unit,
+    to_micrometers,
+)
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
     Block,
@@ -180,6 +187,7 @@ __all__ = [
     "OUTPUT_FILENAME",
     "RGB",
     "SINGLE",
+    "SPACE_UNITS",
     "AxisMapping",
     "AxisReview",
     "BalanceCell",
@@ -231,6 +239,7 @@ __all__ = [
     "Severity",
     "TiffMetadata",
     "UnsupportedDtypeError",
+    "UnsupportedUnitError",
     "ValidationIssue",
     "XycPlane",
     "ZarrUnavailableError",
@@ -304,6 +313,8 @@ __all__ = [
     "run_experiment",
     "sample_planes",
     "scan_masks",
+    "space_unit",
+    "to_micrometers",
     "write_experiment_design",
     "write_manifest",
     "write_mask_report",
