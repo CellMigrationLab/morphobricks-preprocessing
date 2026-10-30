@@ -946,3 +946,33 @@ def test_run_refuses_flags_that_are_not_booleans_before_reading(experiment, tmp_
     with pytest.raises(ValueError, match=f"{flag} must be True or False"):
         run_experiment(experiment, ZYX, output_folder=output, **{flag: value})
     assert not output.exists()
+
+
+def _tamper_plane_id(csv_path):
+    """Change the stored plane_id of the first row, leaving its other columns as they are."""
+    lines = csv_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    header = lines[0].rstrip("\r\n").split(",")
+    column = header.index("plane_id")
+    values = lines[1].rstrip("\r\n").split(",")
+    values[column] = values[column] + "_x"
+    lines[1] = ",".join(values) + "\n"
+    csv_path.write_text("".join(lines), encoding="utf-8")
+
+
+def test_a_row_whose_plane_id_disagrees_with_its_columns_is_refused(experiment):
+    # normalization v0.3.2 (normalization#19, issue #39): the reader checks the stored
+    # plane_id, image_file and bit_depth against the row's other columns.
+    from morphobricks_normalization.csv_io import CsvFormatError
+
+    result = run_experiment(experiment, ZYX)
+    _tamper_plane_id(result.csv_path)
+    with pytest.raises(CsvFormatError, match="plane_id"):
+        read_plane_histograms(result.csv_path)
+    # A rerun that finds such a table (its checksum updated, so it is read) recomputes it.
+    manifest_path = result.output_folder / "run_manifest.json"
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data["csv_sha256"] = hashlib.sha256(result.csv_path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(data), encoding="utf-8")
+    rerun = run_experiment(experiment, ZYX)
+    assert rerun.rebuild_reason == "the earlier histogram table could not be read"
+    assert rerun.written and read_plane_histograms(rerun.csv_path)
