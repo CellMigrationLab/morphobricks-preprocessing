@@ -896,3 +896,13 @@ Raised during review; to be decided before the milestones that need them:
     that is only an extension. Outputs and their schema versions are those of v0.3.0, with
     the normalization brick's v0.3.1. The version in `pyproject.toml` is 0.3.1 before
     tagging. Every brick pins this tag (D79), CellPatcher's core dependency included.*
+37. What does v0.3.2 hold?
+    *Decided (30 October 2026): v0.3.1 and the fixes of the data-flow audit of 29 October
+    2026 (issues #35–#39), PRs #40–#47: negative mask labels refused; malformed OME-Zarr
+    labels reported as `unreadable_mask`; differing channel names an error (exact after
+    trimming leading and trailing whitespace, recorded per file); mask Z/T plane identity,
+    with a 2D mask for a multi-plane image refused; strict manifest flags; a folder holding
+    images and subfolders an error; the normalization brick's v0.3.2, whose reader checks
+    each row's `plane_id`, `image_file` and `bit_depth`. Inputs that passed before may now be
+    refused. The version in `pyproject.toml` is 0.3.2 before
+    tagging. Every brick pins this tag (D79).*

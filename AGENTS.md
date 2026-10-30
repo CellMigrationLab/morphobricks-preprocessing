@@ -767,7 +767,15 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 - **v0.3.1** (to be tagged, question 36): `discovery.position_id`, the one function every
   MorphoBricks brick names positions with (D85), also removes `.png`, `.jpg`, `.jpeg`,
   `.bmp`, `.gif` and `.npy` (naming only) and refuses a name that is only an extension
-  (PR #33). Outputs unchanged.
+  (PR #33). Outputs unchanged. Released 29 October 2026.
+- **v0.3.2** (to be tagged, question 37): the fixes from the data-flow audit of
+  29 October 2026 (#35–#39): negative mask labels refused (PR #40); a malformed OME-Zarr
+  labels group is `unreadable_mask` (PR #41); differing channel names are an error,
+  compared exactly after trimming leading and trailing whitespace, recorded as
+  `channel_names_trimmed` (PRs #42, #45); masks get Z/T plane identity and a 2D mask for a
+  multi-plane image is refused (PR #43); strict manifest flags, per-file roles and uint64
+  labels (PR #44); a folder holding images and subfolders is an error (PR #46); the
+  normalization brick pinned to v0.3.2 (PR #47).
 - **Next (not started):** the notebook step for the masks (name each mask, confirm or
   correct the relationships) and a file saving those answers for the other bricks
   (question 32); 3D and time-lapse masks later.
