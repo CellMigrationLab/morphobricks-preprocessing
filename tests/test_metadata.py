@@ -189,6 +189,24 @@ def test_differing_channel_names_are_an_error():
     assert "channel 1: GFP (2 images), RFP (1 image)" in found.message
 
 
+def test_channel_names_differing_only_in_whitespace_are_named_as_such():
+    # Names are compared exactly (no override, no normalization); the message quotes them
+    # and says the difference is whitespace, which would otherwise be invisible.
+    base = meta("a.tif", (2, 8, 8), axes="CYX")
+    files = [
+        replace(base, channel_names=("DAPI", "GFP")),
+        replace(base, relative_path="b.tif", channel_names=("DAPI", "GFP")),
+        replace(base, relative_path="c.tif", channel_names=("DAPI", "GFP ")),
+    ]
+    found = issue(check_metadata(files), "channel_names_differ")
+    assert found.severity is Severity.ERROR
+    assert found.paths == ("c.tif",)
+    assert (
+        'channel 1: "GFP" (2 images), "GFP " (1 image) '
+        "(the names differ only in spaces or other whitespace)"
+    ) in found.message
+
+
 def test_matching_or_missing_channel_names_give_no_warning():
     unnamed = meta("b.tif", (2, 8, 8), axes="CYX")
     named = replace(unnamed, relative_path="a.tif", channel_names=("A",))

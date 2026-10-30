@@ -455,9 +455,18 @@ def _check_channel_names(files: list[TiffMetadata]) -> list[ValidationIssue]:
     descriptions: list[str] = []
     for index in range(max(len(f.channel_names) for f in named)):
         at_index = [f for f in named if index < len(f.channel_names) and f.channel_names[index]]
-        if len({f.channel_names[index] for f in at_index}) > 1:
-            summary, minority = _breakdown(at_index, lambda f, i=index: f.channel_names[i], str)
-            descriptions.append(f"channel {index}: {summary}")
+        names = {f.channel_names[index] for f in at_index}
+        if len(names) > 1:
+            # Names are compared exactly. When they differ only in whitespace, quote them
+            # and say so: the difference would otherwise be invisible in the message.
+            only_spaces = len({" ".join(name.split()) for name in names}) == 1
+            summary, minority = _breakdown(
+                at_index,
+                lambda f, i=index: f.channel_names[i],
+                (lambda name: f'"{name}"') if only_spaces else str,
+            )
+            note = " (the names differ only in spaces or other whitespace)" if only_spaces else ""
+            descriptions.append(f"channel {index}: {summary}{note}")
             differing.extend(minority)
     if not differing:
         return []

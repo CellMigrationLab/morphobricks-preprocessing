@@ -85,6 +85,7 @@ from .validation import ValidationIssue, error, has_errors, plural, warning
 from .zarr_export import (
     ConversionSettings,
     OmeZarrWriter,
+    copy_channels_current,
     copy_units_current,
     is_copy_path,
     ome_zarr_relative_path,
@@ -532,6 +533,7 @@ def run_experiment(
                     (output / copy).is_dir()
                     and same_conversion
                     and copy_units_current(output / copy, header.physical_sizes)
+                    and copy_channels_current(output / copy, header.channel_names)
                 )
             )
         ):

@@ -410,7 +410,10 @@ Raised during review; to be decided before the milestones that need them:
    channel index are the error `channel_names_differ`, because channels are matched by
    number and a different stain would be pooled and scaled as the same channel. Only named
    channels are compared; there is no override, so such images are exported again or
-   excluded.*
+   excluded. Names are compared exactly, also in whitespace (`GFP` and `GFP ` differ; the
+   message quotes such names and says they differ only in whitespace). OME-Zarr copies
+   leave unnamed channels without a label instead of the placeholder `Channel <i>`, so a
+   copy never names a channel its source does not.*
 2. Multi-series and pyramidal TIFFs: use only full-resolution level 0, and block files
    with several positions?
    *Decided (October 2026): yes. Pyramidal files are read at full-resolution level 0 only;

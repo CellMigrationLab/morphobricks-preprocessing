@@ -196,7 +196,7 @@ presentation does not change the conversion rules below.
 | Further levels | 2 x 2 block means rounded to the pixel type; automatic (default: until a plane fits in 512 x 512, at most 8 levels in all), none, or 1 to 7 levels; for viewing only |
 | Large planes | A plane read in blocks is written block by block; its further levels are then built from the stored level above, in regions of even size, and equal those of a plane written whole |
 | Scale | Physical pixel sizes, z-step and time step from OME or ImageJ metadata, with OME-NGFF units, each axis with its own unit (OME `PhysicalSizeXUnit`, `PhysicalSizeYUnit`, `PhysicalSizeZUnit`, micrometres when left out; ImageJ `unit`, `yunit`, `zunit`); 1 when unknown |
-| Channels | `omero` block with channel names from metadata (or `Channel <i>`) and each channel's observed minimum and maximum as display window |
+| Channels | `omero` block with each channel's observed minimum and maximum as display window, and its name from metadata as `label`, exactly as the source gives it; an unnamed channel has no `label` (copies written earlier with the placeholder `Channel <i>` count as changed and are converted again), so a copy reads back with its source's channel names (§2) |
 | Updates | Copies of unchanged images are kept, of new or changed images rewritten, and of images no longer analysed removed; a failed run leaves the earlier copies as they were (see §9 for publication) |
 | Switching | Turning conversion on or off recomputes every TIFF row; turning it off removes the copies the manifest recorded |
 | Missing copy | A converted TIFF whose copy was deleted counts as changed and is converted again |
