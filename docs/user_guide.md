@@ -565,7 +565,7 @@ continues.
 | `planes_read_in_blocks` | Warning | Planes too large for the memory limit are read in blocks. The results are the same; nothing to do. Raise the limit to read them whole, which is faster. |
 | `different_sizes` | Warning | Images have different widths or heights. Usually expected; otherwise check the camera settings. |
 | `different_plane_counts` | Warning | Images have different numbers of depth slices, time points or other planes. Images with more planes weigh more in pooled statistics. Check the acquisition if this is not expected. |
-| `different_pixel_sizes` | Warning | The physical pixel size or z-step in the metadata differs between images (for example different objectives). Check the microscope settings if this is not intended. |
+| `different_pixel_sizes` | Warning | The physical pixel size or z-step in the metadata differs between images by more than 0.1 % (for example different objectives). Images outside the largest group of matching sizes are listed; when sizes only change by small steps from image to image, none is listed. Check the microscope settings if this is not intended. |
 | `missing_pixel_size` | Warning | Some images give their pixel size in the metadata and others do not, so it cannot be checked. Export them again with metadata if needed. |
 | `unbalanced_images` | Warning | A condition and biological repeat has fewer than half or more than twice the median number of images. Check for missing, misplaced or duplicated images. |
 | `repeat_missing_conditions` | Warning | A biological repeat is not found in every condition. It is still used. If it has another folder name in some condition, pair it in the experiment design (step 1). |
