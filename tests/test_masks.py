@@ -552,6 +552,10 @@ def test_check_labels_accepts_labels_from_0_to_the_int32_maximum(pixels):
         # Integral floats are not labels: never converted (fiberfeatures did).
         (np.array([[0.0, 1.0]], dtype=np.float32), "does not hold whole-number labels"),
         (np.array([[0.0, np.nan]]), "does not hold whole-number labels"),
+        (
+            np.array([[0.0, 2.0]]),
+            r"does not hold whole-number labels \(pixel type float64\); save the mask as integers",
+        ),
     ],
 )
 def test_check_labels_refuses_other_values_by_name(pixels, message):

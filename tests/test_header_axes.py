@@ -194,7 +194,7 @@ def test_read_mask_file_checks_labels_and_pixel_type(tmp_path):
     negative[0, 0] = -1
     with pytest.raises(ValueError, match="negative labels"):
         read_mask_file(write_data(tmp_path / "negative.tif", negative))
-    with pytest.raises(ValueError, match="float32, not integer labels"):
+    with pytest.raises(ValueError, match="float32, not integer labels.*save the mask as integers"):
         read_mask_file(write_data(tmp_path / "float.tif", np.ones((8, 8), np.float32)))
 
 
