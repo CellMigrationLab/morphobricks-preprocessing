@@ -903,6 +903,6 @@ Raised during review; to be decided before the milestones that need them:
     trimming leading and trailing whitespace, recorded per file); mask Z/T plane identity,
     with a 2D mask for a multi-plane image refused; strict manifest flags; a folder holding
     images and subfolders an error; the normalization brick's v0.3.2, whose reader checks
-    each row's `plane_id`, `image_file` and `bit_depth`. Runs that passed before may now be
-    refused; none gives different numbers. The version in `pyproject.toml` is 0.3.2 before
+    each row's `plane_id`, `image_file` and `bit_depth`. Inputs that passed before may now be
+    refused. The version in `pyproject.toml` is 0.3.2 before
     tagging. Every brick pins this tag (D79).*
