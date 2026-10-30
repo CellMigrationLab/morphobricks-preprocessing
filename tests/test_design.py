@@ -167,16 +167,18 @@ def test_manual_pairing_survives_a_rerun(tmp_path):
 
 
 def test_file_round_trip_is_byte_identical(tmp_path):
-    root = tree(tmp_path / "exp", {"NA/001/t1": 1, "NA/TRUE": 2})
-    design = confirm_all(default_design(repeats_of(root)).with_control("NA", True))
+    # Labels a table reader could mistake for other values stay text ("NA" itself is
+    # refused by discovery since decision D-e).
+    root = tree(tmp_path / "exp", {"null/001/t1": 1, "null/TRUE": 2})
+    design = confirm_all(default_design(repeats_of(root)).with_control("null", True))
     path = write_experiment_design(design, tmp_path / DESIGN_FILENAME)
     data = path.read_bytes()
     assert b"\r\n" not in data
     assert data.decode("utf-8").splitlines() == [
         "condition,biological_repeat,repeat_group,control,image_count,technical_repeat_count,"
         "confirmed,confirmed_on,schema_version",
-        "NA,001,001,true,1,1,true,2026-10-26,1",
-        "NA,TRUE,TRUE,true,2,0,true,2026-10-26,1",
+        "null,001,001,true,1,1,true,2026-10-26,1",
+        "null,TRUE,TRUE,true,2,0,true,2026-10-26,1",
     ]
     read = read_experiment_design(path)
     assert read == design

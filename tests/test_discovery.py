@@ -338,8 +338,122 @@ def test_folders_differing_only_in_case_are_an_error(tmp_path):
 
 
 def test_same_names_under_different_parents_are_fine(tmp_path):
-    make_tree(tmp_path, ["a/Rep1/x.tif", "b/rep1/x.tif"])
+    make_tree(tmp_path, ["a/Rep1/x.tif", "b/Rep1/x.tif"])
     assert discover_experiment(tmp_path).issues == ()
+
+
+@pytest.mark.parametrize(
+    ("paths", "clashing"),
+    [
+        # Decision D-e: one spelling per name anywhere in the run, at every level. Before
+        # D86 only siblings were compared, so these were accepted.
+        (["a/Rep1/x.tif", "b/rep1/x.tif"], ["a/Rep1", "b/rep1"]),
+        # The report's MF-5 example: technical repeats Well1 and well1 under two conditions
+        # (MorphoFeature #97 refused it, this brick accepted it).
+        (
+            ["ctrl/rep1/Well1/a.tif", "treated/rep1/well1/b.tif"],
+            ["ctrl/rep1/Well1", "treated/rep1/well1"],
+        ),
+    ],
+)
+def test_names_differing_only_in_case_clash_anywhere_in_the_run(tmp_path, paths, clashing):
+    make_tree(tmp_path, paths)
+    result = discover_experiment(tmp_path)
+    assert not result.ok
+    assert list(issue(result, "case_conflict").paths) == clashing
+
+
+def test_the_case_rule_compares_names_of_one_level(tmp_path):
+    # A condition and a technical repeat may share a name in other cases.
+    make_tree(tmp_path, ["ctrl/rep1/A/x.tif", "a/rep1/b/x.tif"])
+    assert discover_experiment(tmp_path).issues == ()
+
+
+@pytest.mark.parametrize(
+    ("path", "bad"),
+    [
+        ("NA/rep1/x.tif", "NA"),
+        ("ctrl/nan/x.tif", "ctrl/nan"),
+        ("ctrl/rep1/None/x.tif", "ctrl/rep1/None"),
+        ("ctrl /x.tif", "ctrl "),
+        ("ctrl/ rep1/x.tif", "ctrl/ rep1"),
+        ("ctrl/NA.tif", "ctrl/NA.tif"),
+        ("ctrl/img .tif", "ctrl/img .tif"),
+        ("ctrl/ img.ome.tif", "ctrl/ img.ome.tif"),
+        ("ctrl/none.ome.zarr/.zattrs", "ctrl/none.ome.zarr"),
+    ],
+)
+def test_names_that_read_as_missing_or_have_outer_spaces_are_refused(tmp_path, path, bad):
+    # Decision D-e: such names are refused, in any case, as labels and as position_id.
+    make_tree(tmp_path, [path])
+    found = issue(discover_experiment(tmp_path), "invalid_name")
+    assert found.is_error
+    assert found.paths == (bad,)
+
+
+def test_names_with_inner_spaces_and_text_values_are_fine(tmp_path):
+    make_tree(tmp_path, ["ctrl A/rep 1/img 01.tif", "TRUE/001/null.tif", "nana/rep1/x.tif"])
+    assert discover_experiment(tmp_path).issues == ()
+
+
+# The shared identity rules (MorphoBricks D86, decision D-e) ---------------------------------
+
+
+def test_fov_key():
+    from morphobricks_preprocessing import FOV_KEY
+
+    assert FOV_KEY == ("condition", "biological_repeat", "technical_repeat", "position_id")
+
+
+@pytest.mark.parametrize("value", ["ctrl", "rep 1", "001", "TRUE", "single", "null", "NAN1"])
+def test_check_identity_text_accepts(value):
+    from morphobricks_preprocessing import check_identity_text
+
+    assert check_identity_text(value, "condition") == value
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("", "missing value"),
+        ("NA", "missing value"),
+        ("na", "missing value"),
+        ("nan", "missing value"),
+        ("NaN", "missing value"),
+        ("none", "missing value"),
+        ("None", "missing value"),
+        (" ctrl", "whitespace"),
+        ("ctrl ", "whitespace"),
+        ("ctrl\t", "whitespace"),
+        ("\u00a0ctrl", "whitespace"),
+        (None, "must be text"),
+        (1, "must be text"),
+        (float("nan"), "must be text"),
+    ],
+)
+def test_check_identity_text_refuses_by_name(value, message):
+    from morphobricks_preprocessing import IdentityError, check_identity_text
+
+    with pytest.raises(IdentityError, match=f"position_id .*{message}"):
+        check_identity_text(value, "position_id")
+    assert issubclass(IdentityError, ValueError)
+
+
+@pytest.mark.parametrize("value", [None, 0, 3])
+def test_check_plane_index_accepts(value):
+    from morphobricks_preprocessing import check_plane_index
+
+    assert check_plane_index(value, "z") is value
+
+
+@pytest.mark.parametrize("value", [-1, True, False, 1.0, "1", np.int64(1), np.uint8(0)])
+def test_check_plane_index_refuses_what_is_not_an_index(value):
+    # The report's MF-5 example: numpy.int64(1) and "1" (accepted by CellPatcher's
+    # plane_index) are refused, never converted.
+    from morphobricks_preprocessing import IdentityError, check_plane_index
+
+    with pytest.raises(IdentityError, match="^t must be an int"):
+        check_plane_index(value, "t")
 
 
 def test_folders_below_technical_repeat_are_an_error(tmp_path):

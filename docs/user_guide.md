@@ -79,8 +79,12 @@ experiment/
   like a missing level, it means the level has one member, so `treated/single/img_01.tif`
   has the biological repeat `single`. A folder named `Single` or `SINGLE`, or a `single`
   folder next to other folders, is an error.
-- Do not use two neighbouring folder names that differ only in upper/lower case
-  (`Control` and `control`). This is an error.
+- Spell each name one way everywhere: two folder names of one level that differ only in
+  upper/lower case are an error, next to each other (`Control` and `control`) or anywhere
+  in the experiment (`control/Rep1` and `treated/rep1`).
+- Folder and image names must not start or end with a space, and must not be `NA`, `nan`
+  or `none` (in any case): tables read those as a missing value. This is an error
+  (`invalid_name`).
 - Each image is one position (field of view), named after its file without the extension:
   `img_01.tif` and `img_01.ome.zarr` are both position `img_01`. The same name may be used
   in different folders (`tech_rep1/img_01.tif` and `tech_rep2/img_01.tif` are two
@@ -526,7 +530,8 @@ continues.
 | `experiment_not_found` | Error | The folder does not exist. Select an existing folder. |
 | `unreadable_folder` | Error | A folder could not be opened. Check permissions. |
 | `reserved_folder_name` | Error | A folder is named `single` in another case (`Single`), or a folder named `single` has other folders beside it. Rename it to `single` in lower case, or give it a name of its own. |
-| `case_conflict` | Error | Neighbouring folders differ only in case. Rename or merge them. |
+| `case_conflict` | Error | Folders of one level have names that differ only in case, next to each other or anywhere in the experiment (`control/Rep1` and `treated/rep1`). Spell each name one way, or rename or merge them. |
+| `invalid_name` | Error | A folder or image name starts or ends with a space, or is `NA`, `nan` or `none` (any case), which tables read as a missing value. Rename it. |
 | `duplicate_position_id` | Error | Two images in one folder have the same name apart from the extension or upper/lower case (`img_01.tif` and `img_01.ome.zarr`), so their positions cannot be told apart. Rename one, or move it out of the experiment. |
 | `folder_too_deep` | Error | Folders below the technical repeat. Move the images up, or select a lower folder as the experiment. |
 | `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. |
