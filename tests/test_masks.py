@@ -467,3 +467,29 @@ def test_uint64_labels_above_the_int64_range_are_refused(experiment, masks, tmp_
     out = tmp_path / "out"
     assert main(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 1
     assert "cannot be stored as a 64-bit signed label number" in capsys.readouterr().out
+
+
+def test_a_malformed_labels_group_is_an_error_not_a_vanished_mask_type(tmp_path):
+    zarr = pytest.importorskip("zarr")
+    from zarr_tree import write_labels, write_ngff
+
+    paths = []
+    for rel in ("ctrl/a.ome.zarr", "drug/a.ome.zarr"):
+        path = write_ngff(tmp_path / "exp" / rel, np.zeros((16, 20), np.uint8), "yx")
+        write_labels(path, {"cells": label_image(0)}, "yx")
+        paths.append(path)
+    # Both images' labels groups no longer list their label images: every cells mask is lost.
+    for path in paths:
+        group = zarr.open_group(str(path / "labels"), mode="a")
+        group.attrs.update({"labels": "cells"})
+    found = preflight(tmp_path / "exp", ome_zarr_labels=True).masks
+    assert not found.ok
+    assert codes(found.issues) == ["unreadable_mask"]
+    assert found.issues[0].paths == ("ctrl/a.ome.zarr/labels", "drug/a.ome.zarr/labels")
+    result = run_experiment(
+        tmp_path / "exp",
+        prefill_mapping("YX"),
+        output_folder=tmp_path / "out",
+        ome_zarr_labels=True,
+    )
+    assert not result.written and "unreadable_mask" in codes(result.issues)
