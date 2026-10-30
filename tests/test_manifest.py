@@ -258,6 +258,7 @@ def test_bad_role_in_manifest_is_refused():
         ("settings", "missing_as_singleton"),
         ("settings", "convert_tiffs"),
         ("file", "read_in_blocks"),
+        ("file", "channel_names_trimmed"),
         ("top", "channels_from_rgb_samples"),
     ],
 )
@@ -271,15 +272,22 @@ def test_flags_must_be_json_booleans(where, key, value):
 
 
 def _with_flag(key, value):
-    if key == "read_in_blocks":
-        return manifest(files=(entry(read_in_blocks=value),))
+    if key in ("read_in_blocks", "channel_names_trimmed"):
+        return manifest(files=(entry(**{key: value}),))
     if key == "channels_from_rgb_samples":
         return manifest(channels_from_rgb_samples=value)
     return manifest(settings=replace(RunSettings(65_536, 2**30, False, ()), **{key: value}))
 
 
 @pytest.mark.parametrize(
-    "key", ["missing_as_singleton", "convert_tiffs", "read_in_blocks", "channels_from_rgb_samples"]
+    "key",
+    [
+        "missing_as_singleton",
+        "convert_tiffs",
+        "read_in_blocks",
+        "channel_names_trimmed",
+        "channels_from_rgb_samples",
+    ],
 )
 @pytest.mark.parametrize("value", ["false", 0, 1, np.bool_(True)])
 def test_the_writer_refuses_flags_that_are_not_booleans(tmp_path, key, value):

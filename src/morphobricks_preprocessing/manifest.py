@@ -544,7 +544,7 @@ def _file_dict(entry: FileEntry) -> dict:
         "ome_zarr_path": entry.ome_zarr_path,
         "read_in_blocks": _flag(entry.read_in_blocks, "read_in_blocks"),
         "position_id": entry.position_id,
-        "channel_names_trimmed": entry.channel_names_trimmed,
+        "channel_names_trimmed": _flag(entry.channel_names_trimmed, "channel_names_trimmed"),
         "roles": None if entry.roles is None else list(entry.roles),
     }
 
@@ -568,7 +568,7 @@ def _file_entry(data: dict) -> FileEntry:
         ome_zarr_path=None if data.get("ome_zarr_path") is None else str(data["ome_zarr_path"]),
         read_in_blocks=_flag(data.get("read_in_blocks", False)),
         position_id=None if data.get("position_id") is None else str(data["position_id"]),
-        channel_names_trimmed=bool(data.get("channel_names_trimmed", False)),
+        channel_names_trimmed=_flag(data.get("channel_names_trimmed", False)),
         roles=_roles(data.get("roles"), str(data["axes"])),
     )
 
