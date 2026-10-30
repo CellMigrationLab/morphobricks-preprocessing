@@ -82,8 +82,8 @@ experiment/
 - Spell each name one way everywhere: two folder names of one level that differ only in
   upper/lower case are an error, next to each other (`Control` and `control`) or anywhere
   in the experiment (`control/Rep1` and `treated/rep1`).
-- Folder and image names must not start or end with a space, and must not be `NA`, `nan`
-  or `none` (in any case): tables read those as a missing value. This is an error
+- Folder and image names must not start or end with a space, and must not be `NA`, `nan`,
+  `none`, `null` or `<NA>` (in any case): tables read those as a missing value. This is an error
   (`invalid_name`).
 - Each image is one position (field of view), named after its file without the extension:
   `img_01.tif` and `img_01.ome.zarr` are both position `img_01`. The same name may be used
@@ -531,7 +531,7 @@ continues.
 | `unreadable_folder` | Error | A folder could not be opened. Check permissions. |
 | `reserved_folder_name` | Error | A folder is named `single` in another case (`Single`), or a folder named `single` has other folders beside it. Rename it to `single` in lower case, or give it a name of its own. |
 | `case_conflict` | Error | Folders of one level have names that differ only in case, next to each other or anywhere in the experiment (`control/Rep1` and `treated/rep1`). Spell each name one way, or rename or merge them. |
-| `invalid_name` | Error | A folder or image name starts or ends with a space, or is `NA`, `nan` or `none` (any case), which tables read as a missing value. Rename it. |
+| `invalid_name` | Error | A folder or image name starts or ends with a space, or is `NA`, `nan`, `none`, `null`, `n/a` or `<NA>` (any case), which tables read as a missing value. Rename it. |
 | `duplicate_position_id` | Error | Two images in one folder have the same name apart from the extension or upper/lower case (`img_01.tif` and `img_01.ome.zarr`), so their positions cannot be told apart. Rename one, or move it out of the experiment. |
 | `folder_too_deep` | Error | Folders below the technical repeat. Move the images up, or select a lower folder as the experiment. |
 | `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. |

@@ -196,7 +196,8 @@ functions the tests use.
   (`case_conflict`, decision D-e; siblings only before D86). Groups are identified by the
   full label path.
 - **Names (D-e):** labels and `position_id` pass `discovery.check_identity_text`: no
-  leading/trailing whitespace, not `""`/`NA`/`nan`/`none` in any case (`invalid_name`).
+  leading/trailing whitespace, not `""`/`NA`/`nan`/`none`/`null`/`n/a`/`<NA>` in any case
+  (`invalid_name`).
 - **Depth:** a folder below the technical-repeat level is an **error** (so a layer of images
   is never dropped silently).
 - **Positions (cross-brick decision D02):** one image is one position. Its `position_id`

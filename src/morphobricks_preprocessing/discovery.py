@@ -27,6 +27,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 from morphobricks_normalization.records import LEVELS, SINGLE
 
 from .validation import ValidationIssue, error, has_errors, plural, warning
@@ -59,7 +60,7 @@ FOV_KEY = (*LEVELS, "position_id")
 ``condition``, ``biological_repeat``, ``technical_repeat`` and ``position_id``
 (cross-brick decisions D02 and D86)."""
 
-MISSING_TEXT = frozenset({"", "na", "nan", "none"})
+MISSING_TEXT = frozenset({"", "na", "nan", "none", "null", "n/a", "<na>"})
 """Names refused as labels and position identifiers, in any case: table readers read them
 as a missing value (MorphoBricks decision D-e)."""
 
@@ -73,8 +74,9 @@ def check_identity_text(value: object, field: str) -> str:
 
     One rule for the labels (``condition``, ``biological_repeat``, ``technical_repeat``) and
     ``position_id`` in every MorphoBricks brick (decision D-e, 30 October 2026): the value is
-    text, has no leading or trailing whitespace, and is not ``""``, ``"NA"``, ``"nan"`` or
-    ``"none"`` in any case, which table readers turn into a missing value. Discovery applies
+    text, has no leading or trailing whitespace, and is not ``""``, ``"NA"``, ``"nan"``,
+    ``"none"``, ``"null"``, ``"n/a"`` or ``"<NA>"`` in any case (:data:`MISSING_TEXT`), which
+    table readers turn into a missing value. Discovery applies
     it to every folder and image name; names that differ only in case are refused by
     :func:`discover_experiment` (``case_conflict``).
 
@@ -101,7 +103,8 @@ def check_identity_text(value: object, field: str) -> str:
         raise IdentityError(f"{field} {value!r} starts or ends with whitespace")
     if value.casefold() in MISSING_TEXT:
         raise IdentityError(
-            f"{field} {value!r} reads as a missing value in tables (empty, NA, nan or none)"
+            f"{field} {value!r} reads as a missing value in tables (empty, NA, nan, none, null, "
+            "n/a or <NA>)"
         )
     return value
 
@@ -110,9 +113,10 @@ def check_plane_index(value: object, axis: str) -> int | None:
     """Return a depth slice or time point index if it is one, else raise.
 
     The rule of every MorphoBricks brick (decision D-e): None (the image has no such axis) or
-    a Python ``int`` of at least 0. Nothing is converted: a bool, a float, text such as
-    ``"1"`` and NumPy integers are refused, so a value that was never an index is not read
-    as one.
+    an integer of at least 0, a Python ``int`` or a NumPy integer (returned as a plain
+    ``int``, so ``numpy.int64(1)`` from a table is index 1). Nothing else is converted: a
+    bool, a float (also ``1.0``) and text such as ``"1"`` are refused, so a value that was
+    never an index is not read as one.
 
     Parameters
     ----------
@@ -124,7 +128,7 @@ def check_plane_index(value: object, axis: str) -> int | None:
     Returns
     -------
     int or None
-        The unchanged index.
+        The index as a plain ``int``, or None.
 
     Raises
     ------
@@ -133,6 +137,8 @@ def check_plane_index(value: object, axis: str) -> int | None:
     """
     if value is None:
         return None
+    if isinstance(value, np.integer):
+        value = int(value)
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise IdentityError(
             f"{axis} must be an int of at least 0, or None; got {type(value).__name__} {value!r}"
@@ -517,11 +523,12 @@ class _Walker:
                     "invalid_name",
                     f"{plural(len(self.invalid_names), 'folder or image name')} cannot be "
                     "used as labels or position identifiers: they start or end with a "
-                    "space, or are NA, nan or none (in any case), which tables read as a "
+                    "space, or are NA, nan, none, null, n/a or <NA> (in any case), which "
+                    "tables read as a "
                     "missing value.",
                     sorted(self.invalid_names),
                     "Rename these folders or images, without spaces at the start or end, and "
-                    "not NA, nan or none.",
+                    "not NA, nan, none, null, n/a or <NA>.",
                 )
             )
         if self.too_deep:

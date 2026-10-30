@@ -381,6 +381,8 @@ def test_the_case_rule_compares_names_of_one_level(tmp_path):
         ("ctrl/img .tif", "ctrl/img .tif"),
         ("ctrl/ img.ome.tif", "ctrl/ img.ome.tif"),
         ("ctrl/none.ome.zarr/.zattrs", "ctrl/none.ome.zarr"),
+        ("ctrl/NULL/x.tif", "ctrl/NULL"),
+        ("ctrl/null.tif", "ctrl/null.tif"),
     ],
 )
 def test_names_that_read_as_missing_or_have_outer_spaces_are_refused(tmp_path, path, bad):
@@ -395,7 +397,7 @@ def test_names_that_read_as_missing_or_have_outer_spaces_are_refused(tmp_path, p
 
 
 def test_names_with_inner_spaces_and_text_values_are_fine(tmp_path):
-    make_tree(tmp_path, ["ctrl A/rep 1/img 01.tif", "TRUE/001/null.tif", "nana/rep1/x.tif"])
+    make_tree(tmp_path, ["ctrl A/rep 1/img 01.tif", "TRUE/001/FALSE.tif", "nana/rep1/x.tif"])
     assert discover_experiment(tmp_path).issues == ()
 
 
@@ -408,7 +410,9 @@ def test_fov_key():
     assert FOV_KEY == ("condition", "biological_repeat", "technical_repeat", "position_id")
 
 
-@pytest.mark.parametrize("value", ["ctrl", "rep 1", "001", "TRUE", "single", "null", "NAN1"])
+@pytest.mark.parametrize(
+    "value", ["ctrl", "rep 1", "001", "TRUE", "single", "nullify", "NAN1", "n-a", "na1"]
+)
 def test_check_identity_text_accepts(value):
     from morphobricks_preprocessing import check_identity_text
 
@@ -425,6 +429,12 @@ def test_check_identity_text_accepts(value):
         ("NaN", "missing value"),
         ("none", "missing value"),
         ("None", "missing value"),
+        ("null", "missing value"),
+        ("NULL", "missing value"),
+        ("n/a", "missing value"),
+        ("N/A", "missing value"),
+        ("<NA>", "missing value"),
+        ("<na>", "missing value"),
         (" ctrl", "whitespace"),
         ("ctrl ", "whitespace"),
         ("ctrl\t", "whitespace"),
@@ -442,17 +452,24 @@ def test_check_identity_text_refuses_by_name(value, message):
     assert issubclass(IdentityError, ValueError)
 
 
-@pytest.mark.parametrize("value", [None, 0, 3])
-def test_check_plane_index_accepts(value):
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(None, None), (0, 0), (3, 3), (np.int64(1), 1), (np.uint8(0), 0), (np.int32(7), 7)],
+)
+def test_check_plane_index_accepts(value, expected):
+    # NumPy integers (from a table column) are indices, returned as plain ints.
     from morphobricks_preprocessing import check_plane_index
 
-    assert check_plane_index(value, "z") is value
+    found = check_plane_index(value, "z")
+    assert found == expected and type(found) is type(expected)
 
 
-@pytest.mark.parametrize("value", [-1, True, False, 1.0, "1", np.int64(1), np.uint8(0)])
+@pytest.mark.parametrize(
+    "value", [-1, True, False, 1.0, "1", np.int64(-1), np.float64(1.0), np.bool_(True)]
+)
 def test_check_plane_index_refuses_what_is_not_an_index(value):
-    # The report's MF-5 example: numpy.int64(1) and "1" (accepted by CellPatcher's
-    # plane_index) are refused, never converted.
+    # The report's MF-5 example: "1" (accepted by CellPatcher's plane_index) is refused,
+    # never converted; so are floats, bools and negative NumPy integers.
     from morphobricks_preprocessing import IdentityError, check_plane_index
 
     with pytest.raises(IdentityError, match="^t must be an int"):

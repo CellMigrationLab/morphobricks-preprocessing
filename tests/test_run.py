@@ -350,12 +350,12 @@ def test_folder_named_single_runs_as_a_one_member_level(tmp_path):
 
 def test_position_ids_that_are_text_stay_text(tmp_path):
     root = tmp_path / "exp"
-    # "NA" itself is refused by discovery since decision D-e; "null" and "1e3" stay text.
-    for seed, rel in enumerate(["ctrl/001.tif", "ctrl/null.tif", "ctrl/1e3.tif", "drug/TRUE.tif"]):
+    # "NA" and "null" are refused by discovery since decision D-e; "FALSE" and "1e3" stay text.
+    for seed, rel in enumerate(["ctrl/001.tif", "ctrl/FALSE.tif", "ctrl/1e3.tif", "drug/TRUE.tif"]):
         write_data(root / rel, stack(seed), "ZYX")
     result = run_experiment(root, ZYX)
     records = read_plane_histograms(result.csv_path)
-    assert sorted({r.position_id for r in records}) == ["001", "1e3", "TRUE", "null"]
+    assert sorted({r.position_id for r in records}) == ["001", "1e3", "FALSE", "TRUE"]
 
 
 def test_images_with_the_same_position_id_are_refused(experiment):
