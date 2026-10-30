@@ -386,6 +386,9 @@ def test_the_case_rule_compares_names_of_one_level(tmp_path):
 def test_names_that_read_as_missing_or_have_outer_spaces_are_refused(tmp_path, path, bad):
     # Decision D-e: such names are refused, in any case, as labels and as position_id.
     make_tree(tmp_path, [path])
+    parent, _, name = bad.rpartition("/")
+    if name not in os.listdir(tmp_path / parent):
+        pytest.skip("the file system drops trailing spaces from folder names (Windows)")
     found = issue(discover_experiment(tmp_path), "invalid_name")
     assert found.is_error
     assert found.paths == (bad,)
