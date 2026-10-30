@@ -73,7 +73,8 @@ experiment/
   in `.zarr` (usually `.ome.zarr`); it counts as one image, not as a folder level, so put
   it where you would put a TIFF file. TIFF and OME-Zarr images can be mixed.
 - Only images in folders **without subfolders** are analysed. Images next to subfolders
-  are reported and skipped.
+  are an error (`tiff_outside_leaf`): a folder holds either images or subfolders, never
+  both, so move them into a folder of their own.
 - A folder may be named `single` (in lower case) when it is the only folder in its place:
   like a missing level, it means the level has one member, so `treated/single/img_01.tif`
   has the biological repeat `single`. A folder named `Single` or `SINGLE`, or a `single`
@@ -548,7 +549,8 @@ continues.
 | `unreadable_planes` | Error | Pixel data cannot be decoded. Export again, or exclude the image. |
 | `invalid_bin_count` | Error | Bin count outside the allowed range. Use the default or a value in range. |
 | `no_usable_planes` | Error | No plane has finite pixel values. Check the images. |
-| `non_tiff_file`, `empty_folder`, `tiff_outside_leaf` | Warning | Files or folders that are skipped. |
+| `tiff_outside_leaf` | Error | Images sit in a folder that also holds subfolders, so they have no condition or repeat of their own. A folder holds either images or subfolders, never both. Move the images into a folder of their own, or out of the experiment folder. |
+| `non_tiff_file`, `empty_folder` | Warning | Files or folders that are skipped. |
 | `planes_read_in_blocks` | Warning | Planes too large for the memory limit are read in blocks. The results are the same; nothing to do. Raise the limit to read them whole, which is faster. |
 | `different_sizes` | Warning | Images have different widths or heights. Usually expected; otherwise check the camera settings. |
 | `different_plane_counts` | Warning | Images have different numbers of depth slices, time points or other planes. Images with more planes weigh more in pooled statistics. Check the acquisition if this is not expected. |

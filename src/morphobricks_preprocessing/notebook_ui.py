@@ -149,7 +149,7 @@ LEVEL_OPTIONS = [
 # Problems a user can get past by leaving the affected images out (open question 6).
 EXCLUDABLE_CODES = ("unreadable_tiff", "multiple_series", "unsupported_dtype")
 
-_SKIPPED_CODES = ("non_tiff_file", "tiff_outside_leaf", "empty_folder")
+_SKIPPED_CODES = ("non_tiff_file", "empty_folder")
 
 # "What will happen" is a short summary, so its lists of images fold early.
 _PLAN_PATHS = 5

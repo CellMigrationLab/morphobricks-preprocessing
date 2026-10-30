@@ -69,8 +69,9 @@ During preflight, show a tree/summary of the inferred labels and ask the user to
 or correct it. A folder may be named `single` (lower case) when it is the only folder in
 its place: it is then a level with one member, labelled `single` like a missing level
 (question 23). Spelled in another case, or beside other folders, it is an error. Report
-warnings for files that are not images, empty folders and images outside leaf folders, and
-explain that they will not be analysed.
+warnings for files that are not images and empty folders, and explain that they will not be
+analysed. Images in a folder that also holds subfolders are an error (`tiff_outside_leaf`;
+owner decision, October 2026: every brick refuses such a folder).
 
 ## 3. Image metadata and axis review
 
@@ -223,12 +224,11 @@ do not fit the experiment's roles; unsupported sample
 formats or axes; missing/duplicate X or Y, duplicate roles or inconsistent mapping; a plane
 that cannot be read within the memory limit, not even in blocks; a folder named `single`
 in another case or beside other folders; sibling folders whose names differ only in
-case; a folder below the technical-repeat level; an output folder inside the experiment;
-no usable planes. System files (dot-files, `Thumbs.db`, `desktop.ini`, `__MACOSX`) are
+case; a folder below the technical-repeat level; images in a folder that also holds
+subfolders; an output folder inside the experiment; no usable planes. System files (dot-files, `Thumbs.db`, `desktop.ini`, `__MACOSX`) are
 ignored silently.
 
-Continue with warnings for: files that are not images; empty folders; images outside leaf
-folders;
+Continue with warnings for: files that are not images; empty folders;
 non-finite pixels (ignored and counted); different image sizes with a valid axis
 interpretation; planes with no finite values while others remain usable; planes over the
 memory limit that are read in blocks.

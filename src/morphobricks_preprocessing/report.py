@@ -33,7 +33,6 @@ LEVEL_NAMES = {
 # Warnings whose paths are files or folders that will not be analysed.
 _SKIPPED_CODES = {
     "non_tiff_file": ("file that is not an image", "files that are not images"),
-    "tiff_outside_leaf": ("image outside leaf folders", "images outside leaf folders"),
     "empty_folder": ("empty folder", "empty folders"),
 }
 

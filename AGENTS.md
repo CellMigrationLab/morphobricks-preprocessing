@@ -198,7 +198,9 @@ functions the tests use.
   are the error `duplicate_position_id`: never guess.
 - **System files:** dot-files and dot-folders, `Thumbs.db`, `desktop.ini` and `__MACOSX` are
   ignored **without** a warning.
-- **Warnings:** non-TIFF files, empty folders, TIFFs outside leaf folders.
+- **Mixed folders:** images in a folder that also holds subfolders are the error
+  `tiff_outside_leaf` (owner decision, October 2026; every brick refuses such a folder).
+- **Warnings:** non-TIFF files, empty folders.
 - **Paths:** paths in outputs are relative to the experiment root, with `/`.
 
 ### Axes (contract §2)
