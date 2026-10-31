@@ -55,7 +55,8 @@ Images are TIFF files (`.tif`, `.tiff`) or OME-Zarr images: folders whose names 
 `.zarr` (usually `.ome.zarr`). An OME-Zarr folder counts as one image, not as a subfolder.
 TIFF and OME-Zarr images may be mixed in one experiment.
 
-Folder names are arbitrary labels and need only be unique among siblings. Each branch may
+Folder names are arbitrary labels and need only be unique among siblings; since D86 (question
+38) a name is spelled one way, in one case, at its level across the experiment. Each branch may
 stop at any level; omitted levels receive the value `single` (a level with one member,
 question 23). Levels cannot be skipped. Labels are scoped to their parents: `bio_rep1`
 under two conditions are two different samples, so groups are always identified by the
@@ -918,4 +919,9 @@ Raised during review; to be decided before the milestones that need them:
     int64 limit. Header axes (D-d): the axes OME, ImageJ and tifffile "shaped" metadata
     name are trusted, placeholders (`I`, `Q`) never (`header_axes`); a declaration may only
     name what the header leaves open (`check_declared_axes`); `read_mask_file` reads a mask
-    by its own header.*
+    by its own header. Identity (D-e): `FOV_KEY`; labels and `position_id` without outer
+    whitespace and never `NA`, `nan`, `none`, `null`, `n/a`, `<NA>` or empty
+    (`check_identity_text`, discovery's `invalid_name`); plane indices are integers of at
+    least 0, NumPy integers returned as plain ints (`check_plane_index`);
+    names of one level differing only in case clash anywhere in the experiment
+    (`case_conflict`, widened from siblings).*

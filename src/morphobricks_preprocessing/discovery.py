@@ -24,9 +24,11 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 from morphobricks_normalization.records import LEVELS, SINGLE
 
 from .validation import ValidationIssue, error, has_errors, plural, warning
@@ -53,6 +55,142 @@ IMAGE_SUFFIXES = (".ome.tiff", ".ome.tif", ".ome.zarr", ".tiff", ".tif", ".zarr"
 # position by this one function (MorphoBricks decision D85, 2026-10-29). Naming only: the
 # images discovery accepts are still IMAGE_SUFFIXES.
 NAME_SUFFIXES = (*IMAGE_SUFFIXES, ".png", ".jpeg", ".jpg", ".bmp", ".gif", ".npy")
+
+FOV_KEY = (*LEVELS, "position_id")
+"""The columns that identify one position (field of view) in every MorphoBricks table:
+``condition``, ``biological_repeat``, ``technical_repeat`` and ``position_id``
+(cross-brick decisions D02 and D86)."""
+
+MISSING_TEXT = frozenset({"", "na", "nan", "none", "null", "n/a", "<na>"})
+"""Names refused as labels and position identifiers, in any case: table readers read them
+as a missing value (MorphoBricks decision D-e)."""
+
+
+class IdentityError(ValueError):
+    """Raised for a label, position identifier or plane index that cannot identify anything."""
+
+
+def check_identity_text(value: object, field: str) -> str:
+    """Return a label or ``position_id`` if every brick can use it as an identity, else raise.
+
+    One rule for the labels (``condition``, ``biological_repeat``, ``technical_repeat``) and
+    ``position_id`` in every MorphoBricks brick (decision D-e, 30 October 2026): the value is
+    text, has no leading or trailing whitespace, and is not ``""``, ``"NA"``, ``"nan"``,
+    ``"none"``, ``"null"``, ``"n/a"`` or ``"<NA>"`` in any case (:data:`MISSING_TEXT`), which
+    table readers turn into a missing value. Discovery applies
+    it to every folder and image name; names that differ only in case are refused by
+    :func:`discover_experiment` (``case_conflict``).
+
+    Parameters
+    ----------
+    value
+        The label or identifier.
+    field
+        What it is, for the message (``"condition"``, ``"position_id"``, ...).
+
+    Returns
+    -------
+    str
+        The unchanged value.
+
+    Raises
+    ------
+    IdentityError
+        Naming the field and the value.
+    """
+    if not isinstance(value, str):
+        raise IdentityError(f"{field} must be text, got {type(value).__name__} {value!r}")
+    if value != value.strip():
+        raise IdentityError(f"{field} {value!r} starts or ends with whitespace")
+    if value.casefold() in MISSING_TEXT:
+        raise IdentityError(
+            f"{field} {value!r} reads as a missing value in tables (empty, NA, nan, none, null, "
+            "n/a or <NA>)"
+        )
+    return value
+
+
+def check_plane_index(value: object, axis: str) -> int | None:
+    """Return a depth slice or time point index if it is one, else raise.
+
+    The rule of every MorphoBricks brick (decision D-e): None (the image has no such axis) or
+    an integer of at least 0, a Python ``int`` or a NumPy integer (returned as a plain
+    ``int``, so ``numpy.int64(1)`` from a table is index 1). Nothing else is converted: a
+    bool, a float (also ``1.0``) and text such as ``"1"`` are refused, so a value that was
+    never an index is not read as one.
+
+    Parameters
+    ----------
+    value
+        The index.
+    axis
+        ``"z"`` or ``"t"``, for the message.
+
+    Returns
+    -------
+    int or None
+        The index as a plain ``int``, or None.
+
+    Raises
+    ------
+    IdentityError
+        Naming the axis and the value.
+    """
+    if value is None:
+        return None
+    if isinstance(value, np.integer):
+        value = int(value)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise IdentityError(
+            f"{axis} must be an int of at least 0, or None; got {type(value).__name__} {value!r}"
+        )
+    return value
+
+
+def check_identity_case(keys: Iterable[Sequence[str]]) -> None:
+    """Refuse identities of one run whose names differ only in upper/lower case.
+
+    The case rule of decision D-e for bricks that read identities from tables rather than
+    from folders (discovery applies the same rule to folder names, ``case_conflict``): a
+    ``condition``, ``biological_repeat`` or ``technical_repeat`` is spelled one way in the
+    whole run, so ``Rep1`` in one condition and ``rep1`` in another clash. ``position_id``
+    keeps its own scope (D85): unique within its technical repeat ignoring case, so ``Img``
+    and ``img`` clash in one technical repeat and not across two. The same key may occur
+    any number of times (several planes of one position).
+
+    Parameters
+    ----------
+    keys
+        One key per row: the labels (:data:`morphobricks_normalization.records.LEVELS`
+        order), optionally followed by the ``position_id`` (:data:`FOV_KEY` order).
+
+    Raises
+    ------
+    IdentityError
+        Naming the field and both spellings, at the first clash.
+    ValueError
+        If a key does not have three or four values.
+    """
+    labels: list[dict[str, str]] = [{} for _ in LEVELS]
+    positions: dict[tuple[str, ...], dict[str, str]] = {}
+    for key in keys:
+        values = tuple(key)
+        if len(values) not in (len(LEVELS), len(FOV_KEY)):
+            raise ValueError(f"the key {values!r} does not have the values of {FOV_KEY}")
+        for level, value in enumerate(values[: len(LEVELS)]):
+            _same_spelling(labels[level], value, LEVELS[level], "in one run")
+        if len(values) == len(FOV_KEY):
+            seen = positions.setdefault(values[: len(LEVELS)], {})
+            _same_spelling(seen, values[-1], "position_id", "within one technical repeat")
+
+
+def _same_spelling(seen: dict[str, str], value: str, field: str, scope: str) -> None:
+    first = seen.setdefault(str(value).casefold(), value)
+    if first != value:
+        raise IdentityError(
+            f"{field} {first!r} and {value!r} differ only in upper/lower case {scope}; "
+            "spell each name one way"
+        )
 
 
 def is_system_name(name: str) -> bool:
@@ -271,7 +409,10 @@ class _Walker:
         self.issues: list[ValidationIssue] = []
         self.reserved: list[str] = []
         self.single_with_siblings: list[str] = []
-        self.case_conflicts: list[str] = []
+        # Every spelling of each level's folder names, by its case-folded name: names that
+        # differ only in case clash anywhere in the experiment (decision D-e).
+        self.spellings: list[dict[str, dict[str, list[str]]]] = [{} for _ in LEVELS]
+        self.invalid_names: list[str] = []
         self.too_deep: list[str] = []
         self.unreadable: list[str] = []
         self.non_tiff: list[str] = []
@@ -316,7 +457,7 @@ class _Walker:
             return
 
         self.outside_leaf.extend(tiffs)
-        self._check_names(subfolders)
+        self._check_names(subfolders, len(names))
         if len(names) == len(LEVELS):
             # Stop here: the folders below a technical repeat have no level to map
             # to, and listing them is enough for the error message.
@@ -325,12 +466,19 @@ class _Walker:
         for path in subfolders:
             self.visit(path, (*names, path.name))
 
-    def _check_names(self, subfolders: list[Path]) -> None:
-        # Names are compared ignoring case because Windows and macOS do too:
-        # "Ctrl" and "ctrl" would collide when the experiment is copied there.
-        by_key: dict[str, list[Path]] = {}
+    def _check_names(self, subfolders: list[Path], level: int) -> None:
+        # Names are compared ignoring case, across the whole experiment (decision D-e):
+        # Windows and macOS would merge "Ctrl" and "ctrl" when the experiment is copied
+        # there, and later bricks would key "Rep1" and "rep1" as two biological repeats
+        # where design pairing and other tools take them as one.
         for path in subfolders:
-            by_key.setdefault(path.name.casefold(), []).append(path)
+            if level < len(LEVELS):
+                spellings = self.spellings[level].setdefault(path.name.casefold(), {})
+                spellings.setdefault(path.name, []).append(self.relative(path))
+                try:
+                    check_identity_text(path.name, LEVELS[level])
+                except IdentityError:
+                    self.invalid_names.append(self.relative(path))
             if path.name.casefold() != SINGLE:
                 continue
             # A folder named "single" gives its level the value a missing level gets:
@@ -342,9 +490,6 @@ class _Walker:
                 self.reserved.append(self.relative(path))
             elif len(subfolders) > 1:
                 self.single_with_siblings.append(self.relative(path))
-        for paths in by_key.values():
-            if len(paths) > 1:
-                self.case_conflicts.extend(self.relative(path) for path in paths)
 
     def _check_positions(self, images: list[str]) -> None:
         # Two images of one technical repeat with the same position identifier would
@@ -353,6 +498,10 @@ class _Walker:
         by_key: dict[str, list[str]] = {}
         for image in images:
             by_key.setdefault(position_id(image).casefold(), []).append(image)
+            try:
+                check_identity_text(position_id(image), "position_id")
+            except IdentityError:
+                self.invalid_names.append(image)
         for paths in by_key.values():
             if len(paths) > 1:
                 self.same_position.extend(paths)
@@ -393,15 +542,40 @@ class _Walker:
                     "other folders out.",
                 )
             )
-        if self.case_conflicts:
+        case_conflicts = sorted(
+            path
+            for level in self.spellings
+            for spellings in level.values()
+            if len(spellings) > 1
+            for paths in spellings.values()
+            for path in paths
+        )
+        if case_conflicts:
             issues.append(
                 error(
                     "case_conflict",
-                    "Some folders in the same place have names that differ only in "
-                    "upper/lower case. They would be confused on Windows and macOS.",
-                    self.case_conflicts,
-                    "Rename the folders so that their names differ by more than case, or "
-                    "merge them.",
+                    "Some folders of one level (condition, biological repeat or technical "
+                    "repeat) have names that differ only in upper/lower case, in the same "
+                    "place or anywhere else in the experiment (for example Rep1 in one "
+                    "condition and rep1 in another). They would be confused on Windows and "
+                    "macOS, and taken for two different labels by the other bricks.",
+                    case_conflicts,
+                    "Rename the folders so that each name is spelled one way everywhere, or "
+                    "so that the names differ by more than case.",
+                )
+            )
+        if self.invalid_names:
+            issues.append(
+                error(
+                    "invalid_name",
+                    f"{plural(len(self.invalid_names), 'folder or image name')} cannot be "
+                    "used as labels or position identifiers: they start or end with a "
+                    "space, or are NA, nan, none, null, n/a or <NA> (in any case), which "
+                    "tables read as a "
+                    "missing value.",
+                    sorted(self.invalid_names),
+                    "Rename these folders or images, without spaces at the start or end, and "
+                    "not NA, nan, none, null, n/a or <NA>.",
                 )
             )
         if self.too_deep:

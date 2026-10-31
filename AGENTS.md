@@ -62,7 +62,8 @@ Pipeline:
 ```
 src/morphobricks_preprocessing/
   discovery.py      folder walk, leaf folders, labels (condition / biological_repeat / technical_repeat),
-                    position_id per image and the duplicate check
+                    position_id per image and the duplicate check; FOV_KEY, check_identity_text,
+                    check_plane_index, check_identity_case (the shared identity rules, contract §16)
   metadata.py       TIFF header inspection (tifffile, no pixel reads), dtype/dimension/series checks,
                     OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes);
                     header consistency warnings (width/height, plane counts, pixel sizes);
@@ -190,9 +191,14 @@ functions the tests use.
   folder *named* `single` (lower case) that is the only folder in its place is that level's
   value `single` (a level with one member, plan §12 question 23); spelled in another case,
   or beside other folders, it is the error `reserved_folder_name`.
-- **Uniqueness:** labels are unique only among siblings, compared case-insensitively;
-  siblings differing only in case are an error. Groups are identified by the full label
-  path.
+- **Uniqueness:** labels are unique only among siblings, compared case-insensitively.
+  Names of one level differing only in case are an error anywhere in the experiment
+  (`case_conflict`, decision D-e; siblings only before D86). Groups are identified by the
+  full label path.
+- **Names (D-e):** labels and `position_id` pass `discovery.check_identity_text`: no
+  leading/trailing whitespace, not `""`/`NA`/`nan`/`none`/`null`/`n/a`/`<NA>` in any case
+  (`invalid_name`). Bricks that read identities from tables apply the case rule with
+  `discovery.check_identity_case` (labels run-wide per level, `position_id` per technical repeat).
 - **Depth:** a folder below the technical-repeat level is an **error** (so a layer of images
   is never dropped silently).
 - **Positions (cross-brick decision D02):** one image is one position. Its `position_id`
