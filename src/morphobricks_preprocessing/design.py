@@ -10,23 +10,29 @@ group that its images were prepared and acquired under the same circumstances
 
 The answers are kept in ``experiment_design.csv`` in the output folder
 (``docs/contract.md`` §12), so a rerun with the same folders does not ask
-again. Later bricks read the pairing with :func:`read_experiment_design`.
-Nothing here reads images.
+again. Later bricks read the pairing with :func:`read_confirmed_design`, the one
+strict reader every brick uses (contract §16); :func:`read_experiment_design` is
+this brick's lenient reader of a file the user may still be editing. Nothing here
+reads images.
 """
 
 from __future__ import annotations
 
 import csv
+import datetime
+import hashlib
 import io
 import os
 import tempfile
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import MappingProxyType
 
 from morphobricks_normalization.records import SINGLE
 
 from .dataset import BiologicalRepeat
+from .discovery import IdentityError, check_identity_case, check_identity_text
 from .validation import ValidationIssue, error, plural
 
 DESIGN_FILENAME = "experiment_design.csv"
@@ -43,12 +49,32 @@ DESIGN_COLUMNS = (
     "schema_version",
 )
 
+DATE_FORMAT = "YYYY-MM-DD"
+"""The form of ``confirmed_on``: an ISO 8601 calendar date, e.g. ``2026-10-26``."""
+
 _TRUE = frozenset({"true", "yes", "1"})
 _FALSE = frozenset({"false", "no", "0", ""})
 
 
 class DesignFormatError(ValueError):
     """Raised when a file is not an experiment design this version can read."""
+
+
+class DesignCheckError(ValueError):
+    """Raised by :func:`read_confirmed_design` when a design cannot be used.
+
+    Attributes
+    ----------
+    issues
+        The errors, each with its code (``missing_experiment_design``,
+        ``unreadable_experiment_design``, ``repeat_group_conflict``,
+        ``design_not_confirmed`` or ``changed_experiment_design``), message, path and
+        suggested action. The exception's text joins their messages.
+    """
+
+    def __init__(self, issues: Iterable[ValidationIssue]) -> None:
+        self.issues = tuple(issues)
+        super().__init__(" ".join(f"{issue.code}: {issue.message}" for issue in self.issues))
 
 
 @dataclass(frozen=True)
@@ -280,6 +306,64 @@ class ExperimentDesign:
         )
 
 
+@dataclass(frozen=True)
+class ConfirmedDesign:
+    """An ``experiment_design.csv`` checked for use by another brick.
+
+    Build it with :func:`read_confirmed_design`. Every repeat group is confirmed and holds
+    at most one folder per condition.
+
+    Attributes
+    ----------
+    path
+        The file that was read.
+    sha256
+        SHA-256 of exactly the bytes that were parsed (the manifest's
+        ``experiment_design_sha256``).
+    design
+        The design itself.
+    repeat_groups
+        Read-only ``{(condition, biological_repeat): repeat_group}``, the pairing the
+        normalization brick's ``biological_repeat`` scope takes.
+    """
+
+    path: Path
+    sha256: str
+    design: ExperimentDesign
+    repeat_groups: Mapping[tuple[str, str], str]
+
+    @property
+    def conditions(self) -> tuple[str, ...]:
+        """Condition labels, sorted."""
+        return self.design.conditions
+
+    @property
+    def controls(self) -> tuple[str, ...]:
+        """Conditions marked as controls, sorted (recorded only, contract §12)."""
+        return self.design.controls
+
+    @property
+    def groups(self) -> tuple[str, ...]:
+        """Repeat-group labels, sorted."""
+        return self.design.groups
+
+    def group_members(self) -> Mapping[str, Mapping[str, str]]:
+        """Return ``{repeat_group: {condition: biological_repeat}}``, read-only.
+
+        One biological-repeat folder per condition and group, which the design's checks
+        guarantee.
+        """
+        members: dict[str, dict[str, str]] = {}
+        for (condition, repeat), group in self.repeat_groups.items():
+            members.setdefault(group, {})[condition] = repeat
+        return MappingProxyType(
+            {
+                group: MappingProxyType(dict(sorted(m.items())))
+                for group, m in sorted(members.items())
+            }
+        )
+
+
 def default_design(repeats: Iterable[BiologicalRepeat]) -> ExperimentDesign:
     """Build the design before any answer: repeats with the same folder name are one group.
 
@@ -349,11 +433,27 @@ def design_issues(design: ExperimentDesign) -> list[ValidationIssue]:
     Returns
     -------
     list of ValidationIssue
-        ``repeat_group_conflict`` for a group with two folders of one
-        condition and ``design_not_confirmed`` for groups not confirmed yet;
-        both are errors.
+        ``invalid_experiment_design`` for a repeat-group name that is not an identity
+        (decision D-e: NA-like, empty, or with outer whitespace) or a ``confirmed_on`` that
+        is not empty or a date in :data:`DATE_FORMAT`; ``repeat_group_conflict`` for a
+        group with two folders of one condition; ``design_not_confirmed`` for groups not
+        confirmed yet. All are errors.
     """
     issues = []
+    invalid = _design_problems(design)
+    if invalid:
+        issues.append(
+            error(
+                "invalid_experiment_design",
+                "The experiment design has values that cannot be used: "
+                + "; ".join(f"{_folder(row)}: {problem}" for row, problem in invalid)
+                + ".",
+                sorted({_folder(row) for row, _ in invalid}),
+                "Give every repeat group a name (not NA, nan, none, null, n/a or empty, "
+                "without spaces around it, spelled the same way in every row) and every "
+                f"confirmation date as {DATE_FORMAT}.",
+            )
+        )
     if design.conflicts:
         described = "; ".join(
             f"{group} has more than one folder of {', '.join(conditions)}"
@@ -396,15 +496,19 @@ def read_experiment_design(path: str | os.PathLike) -> ExperimentDesign:
 
     Labels are read as text. ``control`` and ``confirmed`` accept ``true`` or
     ``false`` in any case (also ``yes``/``no``, ``1``/``0``; empty is false), so
-    a file saved by a spreadsheet program still reads. An empty
-    ``repeat_group`` means the group named after the folder.
+    a file saved by a spreadsheet program still reads. The user's own edits are
+    checked (owner decision, 31 October 2026): ``repeat_group`` follows the identity
+    rules of decision D-e (not empty, ``NA``, ``nan``, ``none``, ``null``, ``n/a`` or
+    ``<NA>`` in any case, no leading or trailing whitespace), and ``confirmed_on`` is
+    empty or a date in :data:`DATE_FORMAT`; the error names the line and column.
 
     Raises
     ------
     DesignFormatError
-        If the file cannot be read, a column is missing, a value is not valid,
-        a folder is listed twice, the rows of a condition disagree about
-        ``control``, or the schema version is not 1.
+        If the file cannot be read, a column is missing, a value is not valid
+        (including a repeat-group name or confirmation date as above), a folder is
+        listed twice, the rows of a condition disagree about ``control``, or the
+        schema version is not 1.
     """
     path = Path(path)
     try:
@@ -419,10 +523,13 @@ def read_experiment_design(path: str | os.PathLike) -> ExperimentDesign:
             "are missing."
         )
     rows: list[DesignRow] = []
+    numbers: list[int] = []
     for number, record in enumerate(reader, start=2):
         if not any((value or "").strip() for value in record.values() if isinstance(value, str)):
             continue
         rows.append(_parse_row(record, f"{path.name}, line {number}"))
+        numbers.append(number)
+    _check_group_case(zip(numbers, rows, strict=True), path.name)
     keys = [row.key for row in rows]
     twice = sorted({key for key in keys if keys.count(key) > 1})
     if twice:
@@ -438,13 +545,136 @@ def read_experiment_design(path: str | os.PathLike) -> ExperimentDesign:
     return ExperimentDesign(tuple(rows))
 
 
+def read_confirmed_design(
+    path: str | os.PathLike, *, expected_sha256: str | None = None
+) -> ConfirmedDesign:
+    """Read ``experiment_design.csv`` for use by another brick, refusing anything doubtful.
+
+    The one reader of the experiment design for every MorphoBricks brick (contract §16),
+    replacing CellPatcher's ``load_experiment_design`` and MorphoFeature's
+    ``ExperimentDesign.read``. It takes the file as this brick writes it
+    (:func:`write_experiment_design`) and fills nothing in, where
+    :func:`read_experiment_design`, for the user's own edits in step 1, is lenient about
+    the file's form:
+
+    - the file is UTF-8 without a byte-order mark, its header is exactly
+      :data:`DESIGN_COLUMNS` in that order, and every row has one value per column
+      (an unclosed quote, a missing or extra value, or a blank line is refused);
+    - no value has leading or trailing whitespace; ``control`` and ``confirmed`` are
+      ``true`` or ``false``; ``image_count`` and ``technical_repeat_count`` are whole
+      numbers of at least 0 written as such; ``confirmed_on`` is empty or a date in
+      :data:`DATE_FORMAT` (as :func:`read_experiment_design` requires too);
+      ``schema_version`` is ``1``;
+    - ``condition``, ``biological_repeat`` and ``repeat_group`` pass
+      :func:`.discovery.check_identity_text` (the repeat group as
+      :func:`read_experiment_design` requires too), and labels of one level differing
+      only in case are refused (:func:`.discovery.check_identity_case`);
+    - a folder listed twice, rows of a condition disagreeing on ``control``, or a file
+      without rows are refused;
+    - every repeat group is confirmed and holds one folder per condition
+      (:func:`design_issues`);
+    - with ``expected_sha256`` (a run manifest's ``experiment_design_sha256``), the file
+      must be that one.
+
+    The SHA-256 is of the bytes that were parsed, so the file cannot change between the
+    two.
+
+    Parameters
+    ----------
+    path
+        The ``experiment_design.csv`` file.
+    expected_sha256
+        The SHA-256 the preprocessing run that wrote the statistics recorded, if any.
+
+    Returns
+    -------
+    ConfirmedDesign
+
+    Raises
+    ------
+    DesignCheckError
+        With the errors ``missing_experiment_design`` (no such file),
+        ``unreadable_experiment_design`` (not a design this version reads strictly),
+        ``repeat_group_conflict`` and ``design_not_confirmed`` (:func:`design_issues`), or
+        ``changed_experiment_design`` (not the file the run recorded).
+    """
+    path = Path(path)
+    rerun = (
+        "Run step 1 of the preprocessing brick on this experiment (it pairs and confirms the "
+        "biological repeats), then run the preprocessing brick again."
+    )
+    if not path.is_file():
+        raise DesignCheckError(
+            [
+                error(
+                    "missing_experiment_design",
+                    f"The experiment design {path} does not exist.",
+                    [str(path)],
+                    rerun,
+                )
+            ]
+        )
+    try:
+        data = path.read_bytes()
+        design = _parse_strict(data, path.name)
+    except (OSError, DesignFormatError) as exc:
+        raise DesignCheckError(
+            [
+                error(
+                    "unreadable_experiment_design",
+                    f"The experiment design cannot be read: {exc}",
+                    [str(path)],
+                    rerun,
+                )
+            ]
+        ) from exc
+    issues = design_issues(design)
+    if issues:
+        raise DesignCheckError(issues)
+    sha256 = hashlib.sha256(data).hexdigest()
+    if expected_sha256 is not None and sha256 != expected_sha256:
+        raise DesignCheckError(
+            [
+                error(
+                    "changed_experiment_design",
+                    f"{path.name} is not the experiment design the preprocessing run used: its "
+                    "SHA-256 differs from the one in the run manifest, so the repeat groups may "
+                    "not be the ones the statistics were checked with.",
+                    [str(path)],
+                    "Give the experiment design of that run, or run the preprocessing brick "
+                    "again on this experiment.",
+                )
+            ]
+        )
+    return ConfirmedDesign(
+        path=path,
+        sha256=sha256,
+        design=design,
+        repeat_groups=MappingProxyType(design.repeat_groups()),
+    )
+
+
 def write_experiment_design(design: ExperimentDesign, path: str | os.PathLike) -> Path:
     """Write ``experiment_design.csv``, replacing the file only once writing succeeded.
 
     The file is UTF-8 with LF line endings; the same design always gives the
-    same bytes.
+    same bytes. Every ``confirmed_on`` it writes is empty or a date in
+    :data:`DATE_FORMAT`, and every repeat group a valid name.
+
+    Raises
+    ------
+    DesignFormatError
+        If a row has a repeat-group name or confirmation date the readers refuse
+        (:func:`design_issues`, ``invalid_experiment_design``); nothing is written.
     """
     path = Path(path)
+    invalid = _design_problems(design)
+    if invalid:
+        raise DesignFormatError(
+            "The experiment design cannot be written: "
+            + "; ".join(f"{_folder(row)}: {problem}" for row, problem in invalid)
+            + "."
+        )
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow(DESIGN_COLUMNS)
@@ -497,6 +727,82 @@ def load_design(
     return design, changes, problem
 
 
+def _parse_strict(data: bytes, name: str) -> ExperimentDesign:
+    """Parse a design as :func:`write_experiment_design` writes it, refusing anything else."""
+    if data.startswith(b"\xef\xbb\xbf"):
+        raise DesignFormatError(
+            f"{name} starts with a byte-order mark: it was saved by another program, not "
+            "written by the preprocessing brick."
+        )
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise DesignFormatError(f"{name} is not UTF-8 text: {exc}") from None
+    try:
+        lines = list(csv.reader(io.StringIO(text, newline=""), strict=True))
+    except csv.Error as exc:
+        raise DesignFormatError(f"{name} is not a well-formed CSV file: {exc}") from None
+    if not lines or tuple(lines[0]) != DESIGN_COLUMNS:
+        found = ", ".join(lines[0]) if lines else "nothing"
+        raise DesignFormatError(
+            f"{name} must have the columns {', '.join(DESIGN_COLUMNS)} in this order, not {found}."
+        )
+    rows: list[DesignRow] = []
+    numbers: list[int] = []
+    for number, values in enumerate(lines[1:], start=2):
+        where = f"{name}, line {number}"
+        if len(values) != len(DESIGN_COLUMNS):
+            raise DesignFormatError(
+                f"{where} has {plural(len(values), 'value')} for "
+                f"{plural(len(DESIGN_COLUMNS), 'column')}."
+            )
+        record = dict(zip(DESIGN_COLUMNS, values, strict=True))
+        _check_strict_values(record, where)
+        rows.append(_parse_row(record, where))
+        numbers.append(number)
+    if not rows:
+        raise DesignFormatError(f"{name} lists no folder.")
+    keys = [row.key for row in rows]
+    twice = sorted({key for key in keys if keys.count(key) > 1})
+    if twice:
+        raise DesignFormatError(
+            f"{name} lists a folder more than once: " + "; ".join(f"{c} / {b}" for c, b in twice)
+        )
+    for condition in sorted({row.condition for row in rows}):
+        if len({row.control for row in rows if row.condition == condition}) > 1:
+            raise DesignFormatError(
+                f"{name}: control must be the same in every row of condition {condition}."
+            )
+    try:
+        check_identity_case((row.condition, row.biological_repeat, SINGLE) for row in rows)
+    except IdentityError as exc:
+        raise DesignFormatError(f"{name}: {exc}") from None
+    _check_group_case(zip(numbers, rows, strict=True), name)
+    return ExperimentDesign(tuple(rows))
+
+
+def _check_strict_values(record: Mapping[str, str], where: str) -> None:
+    for column, value in record.items():
+        if value != value.strip():
+            raise DesignFormatError(f"{where}: {column} {value!r} starts or ends with whitespace.")
+    for column in ("condition", "biological_repeat"):
+        try:
+            check_identity_text(record[column], column)
+        except IdentityError as exc:
+            raise DesignFormatError(f"{where}: {exc}.") from None
+    for column in ("control", "confirmed"):
+        if record[column] not in ("true", "false"):
+            raise DesignFormatError(
+                f"{where}: {column} must be true or false, not {record[column]!r}."
+            )
+    for column in ("image_count", "technical_repeat_count"):
+        value = record[column]
+        if not (value.isascii() and value.isdigit() and str(int(value)) == value):
+            raise DesignFormatError(
+                f"{where}: {column} must be a whole number of at least 0, not {value!r}."
+            )
+
+
 def _new_row(repeat: BiologicalRepeat, group: str) -> DesignRow:
     return DesignRow(
         repeat.condition,
@@ -519,18 +825,87 @@ def _parse_row(record: Mapping[str, str | None], where: str) -> DesignRow:
     condition, repeat = text("condition"), text("biological_repeat")
     if not condition or not repeat:
         raise DesignFormatError(f"{where}: condition and biological_repeat must not be empty.")
+    group = record.get("repeat_group") or ""
+    try:
+        check_identity_text(group, "repeat_group")
+    except IdentityError as exc:
+        raise DesignFormatError(
+            f"{where}, column repeat_group: {exc}. Give the repeat group a name, for example "
+            f"the folder name {repeat!r}."
+        ) from None
+    on = text("confirmed_on")
+    if on and not _is_date(on):
+        raise DesignFormatError(
+            f"{where}, column confirmed_on: {on!r} is not a date in the form {DATE_FORMAT} "
+            "(for example 2026-10-26)."
+        )
     return DesignRow(
         condition=condition,
         biological_repeat=repeat,
-        repeat_group=text("repeat_group") or repeat,
+        repeat_group=group,
         control=_bool(text("control"), "control", where),
         image_count=_count(text("image_count"), "image_count", where),
         technical_repeat_count=_count(
             text("technical_repeat_count"), "technical_repeat_count", where
         ),
         confirmed=_bool(text("confirmed"), "confirmed", where),
-        confirmed_on=text("confirmed_on"),
+        confirmed_on=on,
     )
+
+
+def _is_date(value: str) -> bool:
+    if len(value) != len(DATE_FORMAT) or value[4] != "-" or value[7] != "-":
+        return False
+    try:
+        datetime.date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _design_problems(design: ExperimentDesign) -> list[tuple[DesignRow, str]]:
+    """Return the rows whose repeat group or date the readers refuse, with the reason.
+
+    Each row's own values (:func:`_row_problems`), and a repeat group spelled differently
+    from an earlier row's only in case (decision D-e: one spelling per name).
+    """
+    problems = [(row, problem) for row in design.rows for problem in _row_problems(row)]
+    spellings: dict[str, str] = {}
+    for row in design.rows:
+        first = spellings.setdefault(row.repeat_group.casefold(), row.repeat_group)
+        if first != row.repeat_group:
+            problems.append(
+                (row, f"repeat_group {row.repeat_group!r} differs from {first!r} only in case")
+            )
+    return problems
+
+
+def _check_group_case(numbered: Iterable[tuple[int, DesignRow]], name: str) -> None:
+    """Refuse repeat groups whose names differ only in case (decision D-e), naming lines."""
+    spellings: dict[str, tuple[int, str]] = {}
+    for number, row in numbered:
+        first_line, first = spellings.setdefault(
+            row.repeat_group.casefold(), (number, row.repeat_group)
+        )
+        if first != row.repeat_group:
+            raise DesignFormatError(
+                f"{name}, line {number}, column repeat_group: {row.repeat_group!r} differs "
+                f"only in case from {first!r} on line {first_line}. Spell a repeat group the "
+                "same way in every row."
+            )
+
+
+def _row_problems(row: DesignRow) -> list[str]:
+    problems = []
+    try:
+        check_identity_text(row.repeat_group, "repeat_group")
+    except IdentityError as exc:
+        problems.append(str(exc))
+    if row.confirmed_on and not _is_date(row.confirmed_on):
+        problems.append(
+            f"confirmed_on {row.confirmed_on!r} is not a date in the form {DATE_FORMAT}"
+        )
+    return problems
 
 
 def _bool(value: str, column: str, where: str) -> bool:

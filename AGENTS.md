@@ -75,7 +75,8 @@ src/morphobricks_preprocessing/
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
   design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
-                    the folders on reruns, design_issues, read/write experiment_design.csv, load_design
+                    the folders on reruns, design_issues, read/write experiment_design.csv, load_design;
+                    read_confirmed_design/ConfirmedDesign (the strict reader other bricks use, §16)
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)
@@ -398,7 +399,10 @@ functions the tests use.
   get one whole-experiment question. Controls are recorded only.
 - **`experiment_design.csv`** (schema 1): one row per condition x biological-repeat folder,
   sorted; counts at confirmation; `confirmed_on` ISO date. Lenient reader (any-case
-  booleans, BOM, empty group = folder name); `DesignFormatError` otherwise.
+  booleans, BOM); `DesignFormatError` otherwise, also for a repeat group that is not a
+  D-e identity or a `confirmed_on` that is not `YYYY-MM-DD` (naming line and column).
+  Other bricks read it with the strict `read_confirmed_design` (contract §16,
+  question 40): nothing filled in, every group confirmed, SHA-256 of the bytes parsed.
 - **Reruns:** `reconcile_design` keeps answers for known folders, reopens only groups that
   gain a folder, drops removed folders.
 - **Notebook** writes the file after every answer once the labels are confirmed; a

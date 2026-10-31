@@ -958,3 +958,24 @@ Raised during review; to be decided before the milestones that need them:
     names differing only in case anywhere in the experiment; pixel sizes are compared
     within 0.1 % instead of after rounding. The normalization brick stays at v0.3.2. The
     version in `pyproject.toml` is 0.3.3 before tagging. Every brick pins this tag (D79).*
+40. Which experiment-design reader do the other bricks use (core fixes for v0.3.4)?
+    *Decided (31 October 2026): one strict reader here, `read_confirmed_design(path,
+    expected_sha256=)` returning `ConfirmedDesign` (contract §16), replacing CellPatcher's
+    `load_experiment_design` and MorphoFeature's `ExperimentDesign.read`. Both copies ran
+    this brick's lenient `read_experiment_design` and `design_issues` and compared the
+    file's SHA-256 with the manifest's; where they differed, the stricter behaviour is
+    kept: CellPatcher's error codes and its separate `missing_experiment_design`, and the
+    read-only repeat groups of MorphoFeature. Beyond both, nothing is filled in or
+    converted (no outer whitespace trimmed, `true`/`false` only, no empty repeat group or
+    count, no blank line), the CSV structure is checked (exact header, one value per
+    column, quotes closed), labels follow D-e, an empty design is refused, and the SHA-256
+    is of the bytes parsed. Every file this brick writes is read; a file edited in a
+    spreadsheet is read once a preprocessing run has written it back.
+    `read_experiment_design` stays lenient about the form of the user's own edits in step
+    1 and the CLI, but (owner decision, 31 October 2026) repeat-group names follow D-e
+    (no NA-like or empty value, no outer whitespace, no two names differing only in case;
+    an empty group no longer means the folder name) and `confirmed_on` is empty or
+    `YYYY-MM-DD`, in both readers; a bad edit is refused naming the line and column.
+    `design_issues` reports such values in a design built in code
+    (`invalid_experiment_design`), and the writer refuses them, so the brick only ever
+    writes ISO dates.*
