@@ -498,3 +498,44 @@ def test_plane_counts_compare_rgb_samples_and_unlabelled_dimensions():
     assert channels.paths == ("rgb.tif", "two.tif")
     same = [meta("a.tif", (3, 8, 8), axes="ZYX"), meta("b.tif", (3, 8, 8), axes="ZYX")]
     assert check_metadata(same) == []
+
+
+# The shared pixel-size rule (MorphoBricks D86, decision D-a) ------------------------------
+
+
+def _sized(tmp_path, sizes):
+    for name, size in sizes.items():
+        write_ome(tmp_path / f"{name}.ome.tif", PhysicalSizeX=size, PhysicalSizeY=size)
+    return inspect_images(tmp_path, [f"{name}.ome.tif" for name in sizes])
+
+
+@pytest.mark.parametrize("pair", [(1.0004, 1.0006), (0.16245, 0.16254)])
+def test_sizes_within_a_thousandth_are_the_same(tmp_path, pair):
+    # The old four-significant-digit rounding warned for 1.0004 and 1.0006 (1 and 1.001).
+    report = _sized(tmp_path, {"a": pair[0], "b": pair[1]})
+    assert "different_pixel_sizes" not in codes(report.issues)
+
+
+def test_sizes_drifting_by_small_steps_warn_without_listing_images(tmp_path):
+    # 1.0 ~ 1.0009 ~ 1.0018: the smallest and largest differ, but every image matches a
+    # neighbour, so no image stands out.
+    report = _sized(tmp_path, {"a": 1.0, "b": 1.0009, "c": 1.0018})
+    found = issue(report.issues, "different_pixel_sizes")
+    assert found.paths == ()
+    assert "from 1 x 1 to 1.0018 x 1.0018 micrometres" in found.message
+    assert "no image stands out and none is listed" in found.message
+    assert found.message.isascii()
+
+
+def test_images_outside_the_largest_linked_group_are_listed(tmp_path):
+    report = _sized(tmp_path, {"a": 1.0, "b": 1.0009, "c": 1.0018, "d": 1.5})
+    found = issue(report.issues, "different_pixel_sizes")
+    assert found.paths == ("d.ome.tif",)
+    assert "1 to 1.0018 x 1 to 1.0018 micrometres (3 images)" in found.message
+    assert "1.5 x 1.5 micrometres (1 image)" in found.message
+    assert "none is listed" not in found.message
+
+
+def test_two_sizes_apart_are_two_groups(tmp_path):
+    found = issue(_sized(tmp_path, {"a": 1.0, "b": 1.0018}).issues, "different_pixel_sizes")
+    assert found.paths == ("b.ome.tif",)

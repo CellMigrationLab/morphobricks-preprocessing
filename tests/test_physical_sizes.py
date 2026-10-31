@@ -373,3 +373,83 @@ def test_plain_tiff_resolution_is_never_a_calibration(tmp_path, unit, dpi):
     sizes = read_physical_sizes(path)
     assert sizes == PhysicalSizes()
     assert sizes.micrometers("X") is None and sizes.micrometers("Y") is None
+
+
+# The shared pixel-size rule (MorphoBricks D86, decision D-a) -----------------------------
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "same"),
+    [
+        # The old four-significant-digit rounding said these differ (1 and 1.001) ...
+        (1.0004, 1.0006, True),
+        # ... and these were the same only by rounding (both 0.1625).
+        (0.16245, 0.16254, True),
+        (1.0, 1.001, True),  # exactly 0.1 % of the larger
+        (1.0, 1.0011, False),
+        (1.0, 1.0018, False),
+        (0.1625, 0.325, False),
+    ],
+)
+def test_same_pixel_size_is_relative_1e3(a, b, same):
+    from morphobricks_preprocessing import same_pixel_size
+
+    assert same_pixel_size((a, a), (b, b)) is same
+    assert same_pixel_size((b,), (a,), roles=("Z",)) is same
+
+
+def test_same_pixel_size_compares_every_axis_in_micrometres():
+    from morphobricks_preprocessing import PIXEL_SIZE_TOLERANCE, same_pixel_size
+
+    assert PIXEL_SIZE_TOLERANCE == 1e-3
+    nm = PhysicalSizes(x=162.5, y=162.5, space_unit="nanometer")
+    um = PhysicalSizes(x=0.1625, y=0.16251, space_unit="micrometer")
+    assert same_pixel_size(nm, um) is True
+    assert same_pixel_size(um, PhysicalSizes(x=0.1625, y=0.2, space_unit="micrometer")) is False
+
+
+def test_same_pixel_size_is_none_when_a_size_is_unknown():
+    from morphobricks_preprocessing import same_pixel_size
+
+    assert same_pixel_size((1.0, None), (1.0, 1.0)) is None
+    assert same_pixel_size(PhysicalSizes(), (1.0, 1.0)) is None
+    # a size in a unit that cannot be converted is unknown, never equal
+    inch = PhysicalSizes(x=1.0, y=1.0, space_unit="inch")
+    assert same_pixel_size(inch, inch) is None
+
+
+@pytest.mark.parametrize(("a", "b"), [((1.0,), (1.0, 1.0)), ((0.0, 1.0), (1.0, 1.0))])
+def test_same_pixel_size_refuses_malformed_sizes(a, b):
+    from morphobricks_preprocessing import same_pixel_size
+
+    with pytest.raises(ValueError):
+        same_pixel_size(a, b)
+
+
+def test_pixel_size_groups_link_a_chain():
+    # 1.0 ~ 1.0009 ~ 1.0018, but 1.0 and 1.0018 differ: one linked group (single linkage).
+    from morphobricks_preprocessing import pixel_size_groups, same_pixel_size
+
+    sizes = {"a": (1.0, 1.0), "b": (1.0009, 1.0009), "c": (1.0018, 1.0018)}
+    assert same_pixel_size(sizes["a"], sizes["b"]) and same_pixel_size(sizes["b"], sizes["c"])
+    assert not same_pixel_size(sizes["a"], sizes["c"])
+    assert pixel_size_groups(sizes) == [("a", "b", "c")]
+    del sizes["b"]
+    assert pixel_size_groups(sizes) == [("a",), ("c",)]
+
+
+def test_pixel_size_groups_order_and_unknown_sizes():
+    from morphobricks_preprocessing import pixel_size_groups
+
+    sizes = {
+        "d": (0.325, 0.325),
+        "a": (0.1625, 0.1625),
+        "b": PhysicalSizes(x=162.5, y=162.5, space_unit="nanometer"),
+        "c": (0.16251, 0.1625),
+        "e": None,
+        "f": PhysicalSizes(),
+    }
+    assert pixel_size_groups(sizes) == [("a", "b", "c"), ("d",)]
+    # every axis must link: same X, different Y are two groups
+    assert pixel_size_groups({"a": (1.0, 1.0), "b": (1.0, 2.0)}) == [("a",), ("b",)]
+    assert pixel_size_groups({}) == []

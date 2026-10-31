@@ -134,10 +134,13 @@ from .metadata import (
     inspect_tiff,
 )
 from .physical_sizes import (
+    PIXEL_SIZE_TOLERANCE,
     SPACE_UNITS,
     PhysicalSizes,
     UnsupportedUnitError,
+    pixel_size_groups,
     read_physical_sizes,
+    same_pixel_size,
     space_unit,
     to_micrometers,
 )
@@ -215,6 +218,7 @@ __all__ = [
     "MASK_REPORT_FILENAME",
     "MISSING_TEXT",
     "OUTPUT_FILENAME",
+    "PIXEL_SIZE_TOLERANCE",
     "PLACEHOLDER_AXES",
     "RGB",
     "SINGLE",
@@ -332,6 +336,7 @@ __all__ = [
     "pair_counts",
     "percentile_range",
     "piece_counts",
+    "pixel_size_groups",
     "plane_layout",
     "pooled_statistics",
     "position_id",
@@ -354,6 +359,7 @@ __all__ = [
     "review_image_type",
     "robust_z_score",
     "run_experiment",
+    "same_pixel_size",
     "sample_planes",
     "scan_masks",
     "source_fingerprint",

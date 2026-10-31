@@ -22,7 +22,7 @@ import logging
 import math
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from xml.etree import ElementTree
 
@@ -270,6 +270,130 @@ def to_micrometers(value: float | None, unit: str | None) -> float | None:
     if name is None:
         return None
     return float(value) * _MICROMETERS[name]
+
+
+PIXEL_SIZE_TOLERANCE = 1e-3
+"""Relative tolerance of :func:`same_pixel_size`: two sizes are the same when they differ by
+at most 0.1 % of the larger (MorphoBricks decision D-a)."""
+
+
+def same_pixel_size(
+    a: PhysicalSizes | Sequence[float | None],
+    b: PhysicalSizes | Sequence[float | None],
+    *,
+    roles: Sequence[str] = ("X", "Y"),
+) -> bool | None:
+    """Return whether two images have the same pixel size, by the rule every brick shares.
+
+    Decision D-a (30 October 2026): sizes are compared in micrometres, axis by axis, and are
+    the same when ``|a - b| <= 1e-3 * max(a, b)`` (:data:`PIXEL_SIZE_TOLERANCE`) on every
+    axis of ``roles``. One rule for a declared size against a header and for two headers.
+    The relation is not transitive (1.0 and 1.0009 are the same, 1.0009 and 1.0018 are the
+    same, 1.0 and 1.0018 are not): group images with :func:`pixel_size_groups`.
+
+    Parameters
+    ----------
+    a, b
+        :class:`PhysicalSizes` (converted with :meth:`PhysicalSizes.micrometers`), or sizes
+        already in micrometres, one per role (None when unknown).
+    roles
+        The axes to compare: ``("X", "Y")`` for the pixel size, ``("Z",)`` for the z-step.
+
+    Returns
+    -------
+    bool or None
+        None when either size is unknown on any of the axes (no size, or a unit that cannot
+        be converted): it cannot be compared, and is never taken as equal.
+
+    Raises
+    ------
+    ValueError
+        If sizes given as numbers do not have one value per role, or a size is not a
+        positive finite number.
+    """
+    first, second = _micrometer_values(a, roles), _micrometer_values(b, roles)
+    if first is None or second is None:
+        return None
+    return all(_same_length(x, y) for x, y in zip(first, second, strict=True))
+
+
+def pixel_size_groups(
+    sizes: Mapping[Hashable, PhysicalSizes | Sequence[float | None] | None],
+    *,
+    roles: Sequence[str] = ("X", "Y"),
+) -> list[tuple[Hashable, ...]]:
+    """Group images whose pixel sizes are linked by :func:`same_pixel_size`.
+
+    Single linkage: two images are in one group when a chain of images joins them, each the
+    same size as the next. So images in two groups always differ, while the first and last
+    image of one group may differ when their sizes drift by small steps (1.0, 1.0009,
+    1.0018). Images whose size is unknown are left out.
+
+    Parameters
+    ----------
+    sizes
+        Each image's sizes (as :func:`same_pixel_size` takes them), by key, for example by
+        relative path.
+    roles
+        The axes compared.
+
+    Returns
+    -------
+    list of tuple
+        The keys of each group, in the mapping's order; the largest group first, then by
+        their smallest sizes.
+    """
+    values: dict[Hashable, tuple[float, ...]] = {}
+    for key, size in sizes.items():
+        found = _micrometer_values(size, roles) if size is not None else None
+        if found is not None:
+            values[key] = found
+    # Most images share exactly the same sizes: link the distinct sizes only.
+    distinct = sorted(set(values.values()))
+    parent = list(range(len(distinct)))
+
+    def root(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i, first in enumerate(distinct):
+        for j in range(i + 1, len(distinct)):
+            second = distinct[j]
+            if not _same_length(first[0], second[0]):
+                break  # sorted by the first axis: no later size can match on it
+            if all(_same_length(x, y) for x, y in zip(first, second, strict=True)):
+                parent[root(j)] = root(i)
+    index = {size: root(i) for i, size in enumerate(distinct)}
+    groups: dict[int, list[Hashable]] = {}
+    for key, size in values.items():
+        groups.setdefault(index[size], []).append(key)
+    smallest = {g: min(values[k] for k in keys) for g, keys in groups.items()}
+    order = sorted(groups, key=lambda g: (-len(groups[g]), smallest[g]))
+    return [tuple(groups[g]) for g in order]
+
+
+def _same_length(a: float, b: float) -> bool:
+    return abs(a - b) <= PIXEL_SIZE_TOLERANCE * max(a, b)
+
+
+def _micrometer_values(
+    sizes: PhysicalSizes | Sequence[float | None], roles: Sequence[str]
+) -> tuple[float, ...] | None:
+    """Return the sizes along ``roles`` in micrometres; None when any is unknown."""
+    if isinstance(sizes, PhysicalSizes):
+        values = [sizes.micrometers(role) for role in roles]
+    else:
+        values = list(sizes)
+        if len(values) != len(roles):
+            raise ValueError(f"{len(values)} sizes given for the axes {''.join(roles)}")
+    if any(v is None for v in values):
+        return None
+    for v in values:
+        if isinstance(v, bool) or not isinstance(v, int | float) or not math.isfinite(v) or v <= 0:
+            raise ValueError(f"the pixel size {v!r} is not a positive finite number")
+    return tuple(float(v) for v in values)
 
 
 def _sizes(

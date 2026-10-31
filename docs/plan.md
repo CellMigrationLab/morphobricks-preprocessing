@@ -604,7 +604,8 @@ Raised during review; to be decided before the milestones that need them:
     median of the non-empty cells is `unbalanced_images`, and a biological repeat not found
     in every condition is `repeat_missing_conditions`. From the headers: physical pixel
     sizes that differ (`different_pixel_sizes`, X by Y, and the z-step of images with more
-    than one slice, compared in micrometres to four significant digits) or are known for
+    than one slice, compared in micrometres; since D86 by the shared 0.1 % rule of question 38,
+    before it to four significant digits) or are known for
     only some images (`missing_pixel_size`), read from OME or ImageJ metadata for TIFF files
     and, agreed in review, from the level-0 scale with axis units for OME-Zarr images (no
     unit: unknown); and different numbers of channels, slices, time points or other planes
@@ -929,6 +930,11 @@ Raised during review; to be decided before the milestones that need them:
     Masks named as images (D-i): discovery warns about images named as masks of other
     images and folders named like a masks folder inside the experiment
     (`image_named_as_mask`, `mask_folder_in_experiment`), MorphoRelate's former screen.
-    Pixel sizes (D-a, `same_pixel_size`) wait for an owner decision: a relative tolerance is
-    not transitive, so it cannot group images the way the folder check's
-    `different_pixel_sizes` does.*
+    Pixel sizes (D-a): two sizes are the same within 0.1 % of the larger, per axis, in
+    micrometres (`same_pixel_size`, None when either is unknown). The tolerance is not
+    transitive, so there is no per-image key: `pixel_size_groups` links images by single
+    linkage. `different_pixel_sizes` is given exactly when some axis's smallest and largest
+    sizes differ, lists the images outside the largest group, and says so when the sizes
+    only drift and no image stands out; it replaces the four-significant-digit rounding.
+    Owner's follow-up decisions: `null`, `n/a` and `<NA>` are refused as names too, and
+    `check_plane_index` returns NumPy integers as plain ints.*
