@@ -18,7 +18,8 @@ Any number of mask types is accepted; each is named by its folder, by the suffix
 image name, or by its label image, and two
 names may not differ only in case. Only headers are read here, never pixels: a mask has the
 image's Y and X sizes and integer or boolean pixels. Its other dimensions (length-1 axes
-aside) must be labelled depth (Z) or time (T) in its own metadata, never guessed, and every
+aside; Y and X are kept whatever their length, so a mask one pixel high is a 2D ``YX`` mask)
+must be labelled depth (Z) or time (T) in its own metadata, never guessed, and every
 mask of one image has the same depth slices and time points. Whether those are the image's
 planes needs the confirmed axis roles: :func:`mask_plane_issues`, run by
 :func:`.run.run_experiment` (issue #36). Reading the pixels and relating the masks to each
@@ -61,6 +62,9 @@ OME_ZARR = "ome-zarr"
 PLANE_AXES = ("Z", "T")
 """The dimensions a mask may have besides Y and X: depth slices and time points."""
 
+_YX = frozenset("YX")
+"""The axes of a mask plane, kept by the header and the readers even when of length 1."""
+
 
 @dataclass(frozen=True)
 class MaskFile:
@@ -78,7 +82,8 @@ class MaskFile:
     source
         :data:`FOLDER` or :data:`OME_ZARR`.
     shape
-        Shape of the mask without its length-1 axes, ``(Y, X)`` for a 2D mask.
+        Shape of the mask without its length-1 axes other than Y and X, ``(Y, X)`` for a 2D
+        mask (``(1, 512)`` for a mask one pixel high).
     dtype
         Pixel type, or None when the header could not be read.
     axes
@@ -259,10 +264,7 @@ def read_mask(
         name = mask.path.rsplit("/labels/", 1)[1]
         image = experiment_root / mask.path.rsplit("/labels/", 1)[0]
         labels = open_ngff_labels(image, name)
-        selection = tuple(
-            (wanted[a] or 0) if a in wanted and n > 1 else (0 if n == 1 else slice(None))
-            for a, n in zip(labels.axes, labels.array.shape, strict=True)
-        )
+        selection = _plane_index(labels.axes, labels.array.shape, wanted)
         pixels = np.asarray(labels.array[selection])
         axes = "".join(a for a, s in zip(labels.axes, selection, strict=True) if s == slice(None))
     if axes != "YX" or (mask.axes and pixels.shape != tuple(_yx(mask.axes, mask.shape))):
@@ -278,7 +280,8 @@ def read_mask_file(
 
     For bricks given a mask path directly (MorphoBricks D86): the mask is read as
     :func:`read_mask` reads it, with the same rules. Its axes are those its metadata names
-    (length-1 axes aside): Y and X, plus at most a depth axis Z and a time axis T; a
+    (length-1 axes aside, except Y and X: a mask one pixel high or wide is read as a 2D
+    array): Y and X, plus at most a depth axis Z and a time axis T; a
     dimension the metadata does not name (a plain stack, ``IYX``) is refused, never taken
     for depth, time or a channel. ``z`` and ``t`` select the plane and are required for a
     mask with that axis. The labels are checked with :func:`check_labels`.
@@ -312,8 +315,7 @@ def read_mask_file(
         raise ValueError(f"the mask {path} could not be opened: {exc}") from exc
     if not _known_axes(axes):
         raise ValueError(
-            f"the mask {path} has axes {axes!r}: dimensions other than Y and X must be named "
-            "depth (Z) or time (T) in its metadata"
+            f"the mask {path} has axes {axes!r} (shape {shape}): {_axes_problem(axes, shape)}"
         )
     if dtype.kind not in "biu":
         raise ValueError(
@@ -338,10 +340,7 @@ def _read_tiff_plane(path: Path, wanted: Mapping[str, int | None]) -> tuple[np.n
     with tifffile.TiffFile(path) as tif:
         series = tif.series[0]
         axes, shape = series.axes, tuple(series.shape)
-        index = tuple(
-            (wanted.get(a) or 0) if n > 1 and a in wanted else (0 if n == 1 else slice(None))
-            for a, n in zip(axes, shape, strict=True)
-        )
+        index = _plane_index(axes, shape, wanted)
         kept = "".join(a for a, i in zip(axes, index, strict=True) if i == slice(None))
         pages = len(series.pages)
         split = next(
@@ -360,6 +359,26 @@ def _read_tiff_plane(path: Path, wanted: Mapping[str, int | None]) -> tuple[np.n
         else:
             pixels = series.asarray()[index]
     return pixels, kept
+
+
+def _plane_index(
+    axes: str, shape: tuple[int, ...], wanted: Mapping[str, int | None]
+) -> tuple[int | slice, ...]:
+    """Return the index of the plane at ``wanted`` Z and T: whole Y and X, 0 on other axes.
+
+    Y and X are kept whatever their length, so a mask one pixel high (or wide) stays 2D;
+    every other length-1 axis is dropped (index 0). The header check (:func:`_mask_header`,
+    :func:`_known_axes`) has already refused any other axis longer than 1.
+    """
+    index: list[int | slice] = []
+    for a, n in zip(axes, shape, strict=True):
+        if a in _YX:
+            index.append(slice(None))
+        elif a in wanted and n > 1:
+            index.append(wanted.get(a) or 0)
+        else:
+            index.append(0 if n == 1 else slice(None))
+    return tuple(index)
 
 
 def _yx(axes: str, shape: tuple[int, ...]) -> tuple[int, int]:
@@ -677,10 +696,12 @@ _TEXTS = {
 
 
 def _mask_header(mask: MaskFile, folder: Path | None, root: Path) -> tuple:
-    """Return a mask's axes and shape without its length-1 axes, and its pixel type.
+    """Return a mask's axes and shape without length-1 axes other than Y and X, and its dtype.
 
     The axes are the mask's own metadata (``tifffile``'s series axes, or the OME-NGFF axes of
-    the label image); no pixels are read.
+    the label image); no pixels are read. Y and X are kept whatever their length: a mask one
+    pixel high is ``YX`` with shape ``(1, N)``, never the 1D ``X`` (``tifffile`` and OME-NGFF
+    give both axes, so nothing is guessed). Only the other length-1 axes are dropped.
     """
     if mask.source == FOLDER:
         with tifffile.TiffFile(Path(folder) / mask.path) as tif:
@@ -691,11 +712,38 @@ def _mask_header(mask: MaskFile, folder: Path | None, root: Path) -> tuple:
         image, name = mask.path.rsplit("/labels/", 1)
         labels = open_ngff_labels(root / image, name)
         axes, shape, dtype = labels.axes, labels.array.shape, np.dtype(labels.array.dtype)
-    kept = [(a, int(n)) for a, n in zip(axes, shape, strict=True) if n != 1]
+    kept = [(a, int(n)) for a, n in zip(axes, shape, strict=True) if n != 1 or a in _YX]
     return (
         "".join(a for a, _ in kept),
         tuple(n for _, n in kept),
         dtype.newbyteorder("="),
+    )
+
+
+def _axes_problem(axes: str, shape: tuple[int, ...]) -> str:
+    """Say why axes that :func:`_known_axes` refuses are not a mask's.
+
+    The axes are :func:`_mask_header`'s: length-1 axes other than Y and X already left out.
+    """
+    missing = [a for a in "YX" if a not in axes]
+    if missing:
+        return (
+            f"its header gives no {' or '.join(missing)} axis, so its rows and columns are not "
+            "known"
+        )
+    repeated = sorted({a for a in axes if axes.count(a) > 1})
+    if repeated:
+        return f"its header gives {', '.join(repeated)} more than once"
+    other = [
+        f"{a} (length {n})"
+        for a, n in zip(axes, shape, strict=True)
+        if a not in _YX and a not in PLANE_AXES
+    ]
+    several = len(other) > 1
+    return (
+        f"the dimension{'s' if several else ''} {', '.join(other)} {'are' if several else 'is'} "
+        f"neither Y nor X, and its metadata does not name {'them' if several else 'it'} depth "
+        "(Z) or time (T)"
     )
 
 
