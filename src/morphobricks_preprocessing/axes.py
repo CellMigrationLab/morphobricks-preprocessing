@@ -250,7 +250,10 @@ def check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | 
     (:func:`.metadata.named_axes`, the same rule as :func:`.metadata.header_axes`).
     Position by position:
 
-    - an axis the metadata names (X, Y, Z, C, T) must be declared with that letter;
+    - an axis the metadata names (X, Y, Z, C, T) must be declared with that letter, except
+      that the named Y and X may be declared swapped (header ``CYX`` declared ``CXY``): the
+      image is then read transposed, which :func:`declared_axes_transposed` reports so the
+      caller can record it (owner decision, 31 October 2026);
     - a dimension it leaves open may be declared any role: a placeholder axis (``I``,
       ``Q``), and in a plain stack of pages without axis metadata (``IYX``, ``QYX``,
       ``QQYX``) the ``Y`` and ``X`` too, which only say where the pages' rows and columns
@@ -298,6 +301,40 @@ def check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | 
     )
 
 
+def declared_axes_transposed(meta: TiffMetadata, declared: str) -> bool:
+    """Return True when a declaration fits the header only with its named Y and X swapped.
+
+    :func:`check_declared_axes` accepts a declaration that differs from the axes the
+    metadata names only by swapping Y and X (header ``CYX`` declared ``CXY``): the image is
+    read transposed. A brick that accepts such a declaration records it with this function.
+    A plain stack's Y and X are not named (:func:`.metadata.named_axes`), so declaring them
+    the other way round is never a swap.
+
+    Parameters
+    ----------
+    meta
+        The image's header (:func:`.metadata.inspect_image`).
+    declared
+        The declared axes, one letter per dimension (any case).
+
+    Returns
+    -------
+    bool
+        True when the named Y is declared X (and the named X declared Y).
+
+    Raises
+    ------
+    ValueError
+        When the declaration does not fit the header at all (:func:`check_declared_axes`
+        gives an error), with that error's message.
+    """
+    issue = check_declared_axes(meta, declared)
+    if issue is not None:
+        raise ValueError(issue.message)
+    named = named_axes(meta)
+    return "Y" in named and declared.upper()[named.index("Y")] == "X"
+
+
 def _declared_axes_problem(header: str, named: str, declared: str) -> str | None:
     if not declared or len(declared) != len(header):
         return f"{len(declared)} declared for {len(header)} dimensions"
@@ -309,6 +346,10 @@ def _declared_axes_problem(header: str, named: str, declared: str) -> str | None
         return f"{', '.join(repeated)} declared more than once"
     for index, (have, said) in enumerate(zip(named, declared, strict=True)):
         if have in (said, OPEN_AXIS):
+            continue
+        # The named Y and X swapped: with one letter per role, the other position must then
+        # be swapped too, so this accepts a swap of the two and nothing else.
+        if have in "YX" and said in "YX":
             continue
         if have == "S" and said == "C" and "C" not in header:
             continue

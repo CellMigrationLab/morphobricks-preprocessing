@@ -12,6 +12,7 @@ from morphobricks_preprocessing import (
     PLACEHOLDER_AXES,
     TiffMetadata,
     check_declared_axes,
+    declared_axes_transposed,
     header_axes,
     inspect_image,
     named_axes,
@@ -268,8 +269,61 @@ def test_header_axes_are_exactly_what_check_declared_axes_binds(tmp_path, write)
         # Something is left open, so more than one declaration fits.
         assert len(accepted) > 1
     else:
-        # Every axis is named, so only the header's own axes fit.
-        assert accepted == {named}
+        # Every axis is named, so only the header's own axes fit, or them with Y and X
+        # swapped (read transposed, and reported as such).
+        swapped = named.translate(str.maketrans("XY", "YX"))
+        assert accepted == {named, swapped}
+        assert [declared_axes_transposed(meta, d) for d in (named, swapped)] == [False, True]
+
+
+def ome(path, data, axes):
+    tifffile.imwrite(path, data, ome=True, metadata={"axes": axes})
+    return path
+
+
+@pytest.mark.parametrize(
+    ("write", "header", "declared"),
+    [
+        (lambda p: imagej(p, np.zeros((3, 8, 6), np.uint8), "CYX"), "CYX", "CXY"),
+        (lambda p: imagej(p, np.zeros((3, 8, 6), np.uint8), "ZYX"), "ZYX", "ZXY"),
+        (lambda p: ome(p, np.zeros((3, 8, 6), np.uint8), "CYX"), "CYX", "cxy"),
+        (lambda p: write_data(p, np.zeros((3, 8, 6), np.uint8), "CYX"), "CYX", "CXY"),
+        (lambda p: plain(p, np.zeros((8, 6), np.uint8)), "YX", "XY"),
+    ],
+)
+def test_named_y_and_x_declared_swapped_are_read_transposed(tmp_path, write, header, declared):
+    # Owner decision (31 October 2026): only a swap of the named Y and X is accepted, and
+    # the caller is told so it can record that the image is read transposed.
+    path = tmp_path / "a.tif"
+    write(path)
+    meta = inspect_image(path, "a.tif")
+    assert meta.axes == header
+    assert check_declared_axes(meta, declared) is None
+    assert declared_axes_transposed(meta, declared) is True
+    assert declared_axes_transposed(meta, header) is False
+
+
+@pytest.mark.parametrize(
+    ("header", "declared"),
+    [
+        ("CYX", "YXC"),  # the named C moved: not a swap of Y and X
+        ("ZYX", "CYX"),
+        ("ZYX", "CXY"),  # a swap together with another change
+        ("ZYX", "XZY"),
+    ],
+)
+def test_any_other_disagreement_stays_refused(tmp_path, header, declared):
+    meta = inspect_image(imagej(tmp_path / "a.tif", np.zeros((3, 8, 6), np.uint8), header))
+    assert check_declared_axes(meta, declared).code == "declared_axes_mismatch"
+    with pytest.raises(ValueError, match="do not fit"):
+        declared_axes_transposed(meta, declared)
+
+
+def test_a_plain_stack_is_never_reported_transposed(tmp_path):
+    # Its Y and X are open, not named: there is nothing to swap.
+    meta = inspect_image(plain(tmp_path / "a.tif", np.zeros((3, 8, 6), np.uint8)), "a.tif")
+    assert declared_axes_transposed(meta, "CXY") is False
+    assert declared_axes_transposed(meta, "YXC") is False
 
 
 def test_rgb_samples_may_be_declared_channels(tmp_path):

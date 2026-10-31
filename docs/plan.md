@@ -945,7 +945,11 @@ Raised during review; to be decided before the milestones that need them:
     declared `YXC` or `CYX`. `named_axes` is the one rule behind `header_axes` and
     `check_declared_axes`; a declaration the metadata contradicts (ImageJ `ZYX` as `CYX`,
     OME or shaped `CYX` as `YXC`) is still refused. MorphoRelate's workaround (checking only
-    when `header_axes` names every axis) is no longer needed.*
+    when `header_axes` names every axis) is no longer needed. A declaration that differs
+    from the named axes only by swapping Y and X (`CYX` declared `CXY`) is accepted: the
+    image is read transposed, and `declared_axes_transposed` tells the caller so it can
+    record it (as CellPatcher and MorphoFeature allowed). Any other disagreement stays
+    refused.*
 39. What does v0.3.3 hold?
     *Decided (31 October 2026): v0.3.2 and the shared rules of question 38 (PRs #49–#55),
     with the warning `unsupported_pixel_size_unit` naming an image, axis and unit outside
