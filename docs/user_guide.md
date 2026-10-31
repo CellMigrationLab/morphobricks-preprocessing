@@ -83,8 +83,8 @@ experiment/
   upper/lower case are an error, next to each other (`Control` and `control`) or anywhere
   in the experiment (`control/Rep1` and `treated/rep1`).
 - Folder and image names must not start or end with a space, and must not be `NA`, `nan`,
-  `none`, `null` or `<NA>` (in any case): tables read those as a missing value. This is an error
-  (`invalid_name`).
+  `none`, `null`, `n/a` or `<NA>` (in any case): tables read those as a missing value. This is
+  an error (`invalid_name`).
 - Keep masks out of the experiment folder (see Masks below). Images named like a mask of
   another image (`f1_mask.tif` beside `f1.tif`), or a folder named like a masks folder
   holding such files, give a warning (`image_named_as_mask`, `mask_folder_in_experiment`).

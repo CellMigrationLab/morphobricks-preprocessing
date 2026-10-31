@@ -476,6 +476,49 @@ def test_check_plane_index_refuses_what_is_not_an_index(value):
         check_plane_index(value, "t")
 
 
+@pytest.mark.parametrize(
+    ("keys", "message"),
+    [
+        # A label of any level clashes with another spelling anywhere in the run (D-e) ...
+        ([("ctrl", "Rep1", "single"), ("treated", "rep1", "single")], "biological_repeat 'Rep1'"),
+        ([("ctrl", "r1", "A"), ("treated", "r2", "a")], "technical_repeat 'A'"),
+        ([("Ctrl", "r1", "single", "f1"), ("ctrl", "r2", "single", "f2")], "condition 'Ctrl'"),
+        # ... and position_id within its technical repeat (D85).
+        ([("c", "r", "t", "Img"), ("c", "r", "t", "img")], "position_id 'Img'"),
+    ],
+)
+def test_check_identity_case_refuses_names_differing_only_in_case(keys, message):
+    # The run-wide case rule for bricks that read identities from tables (MorphoFeature,
+    # MorphoObjects, CellPatcher), the rule discovery applies to folder names.
+    from morphobricks_preprocessing import IdentityError, check_identity_case
+
+    with pytest.raises(IdentityError, match=f"^{message} and .* differ only in upper/lower case"):
+        check_identity_case(keys)
+
+
+def test_check_identity_case_accepts_one_spelling_and_position_scope():
+    from morphobricks_preprocessing import check_identity_case
+
+    check_identity_case(
+        [
+            ("ctrl", "rep1", "single", "f1"),
+            ("ctrl", "rep1", "single", "f1"),  # several planes of one position
+            ("treated", "rep1", "single", "f1"),
+            ("ctrl", "rep2", "single", "F1"),  # another technical repeat: no clash (D85)
+            ("ctrl", "rep1", "A", "x"),  # one level may share a name with another
+            ("a", "rep1", "single", "y"),
+        ]
+    )
+    check_identity_case([])
+
+
+def test_check_identity_case_refuses_keys_of_another_length():
+    from morphobricks_preprocessing import check_identity_case
+
+    with pytest.raises(ValueError, match="does not have the values"):
+        check_identity_case([("ctrl", "rep1")])
+
+
 def test_folders_below_technical_repeat_are_an_error(tmp_path):
     make_tree(
         tmp_path,
@@ -755,6 +798,30 @@ def test_mask_names_the_caller_expects(tmp_path):
     assert result.issues == ()  # "cells" is not a default mask name
     issues = mask_name_issues(result.leaves, ["cells"])
     assert [(i.code, i.paths) for i in issues] == [("image_named_as_mask", ("c/r/f1_Cells.tif",))]
+
+
+def test_images_named_as_masks_with_the_callers_suffixes_only(tmp_path):
+    # MorphoRelate leaves out of its images those named with a mask name the user declared,
+    # and only those: the detection is public so it keeps no copy (D-i).
+    from morphobricks_preprocessing import images_named_as_masks
+
+    make_tree(
+        tmp_path,
+        [
+            "c/r/f1.tif",
+            "c/r/f1_mask.tif",
+            "c/r/f1_Cells.tif",
+            "d/r/f1_cells.tif",
+            "masks/c/r/f1_cells.tif",
+        ],
+    )
+    leaves = discover_experiment(tmp_path).leaves
+    assert images_named_as_masks(leaves, ["_cells"]) == [
+        ("c/r/f1_Cells.tif", "c/r/f1.tif"),
+        ("d/r/f1_cells.tif", "c/r/f1.tif"),
+    ]
+    assert images_named_as_masks(leaves) == [("c/r/f1_mask.tif", "c/r/f1.tif")]
+    assert images_named_as_masks(leaves, []) == []
 
 
 def test_the_default_mask_names_are_cellpatchers_former_defaults():
