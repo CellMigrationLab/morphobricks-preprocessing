@@ -10,23 +10,28 @@ group that its images were prepared and acquired under the same circumstances
 
 The answers are kept in ``experiment_design.csv`` in the output folder
 (``docs/contract.md`` §12), so a rerun with the same folders does not ask
-again. Later bricks read the pairing with :func:`read_experiment_design`.
-Nothing here reads images.
+again. Later bricks read the pairing with :func:`read_confirmed_design`, the one
+strict reader every brick uses (contract §16); :func:`read_experiment_design` is
+this brick's lenient reader of a file the user may still be editing. Nothing here
+reads images.
 """
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import os
 import tempfile
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import MappingProxyType
 
 from morphobricks_normalization.records import SINGLE
 
 from .dataset import BiologicalRepeat
+from .discovery import IdentityError, check_identity_case, check_identity_text
 from .validation import ValidationIssue, error, plural
 
 DESIGN_FILENAME = "experiment_design.csv"
@@ -49,6 +54,23 @@ _FALSE = frozenset({"false", "no", "0", ""})
 
 class DesignFormatError(ValueError):
     """Raised when a file is not an experiment design this version can read."""
+
+
+class DesignCheckError(ValueError):
+    """Raised by :func:`read_confirmed_design` when a design cannot be used.
+
+    Attributes
+    ----------
+    issues
+        The errors, each with its code (``missing_experiment_design``,
+        ``unreadable_experiment_design``, ``repeat_group_conflict``,
+        ``design_not_confirmed`` or ``changed_experiment_design``), message, path and
+        suggested action. The exception's text joins their messages.
+    """
+
+    def __init__(self, issues: Iterable[ValidationIssue]) -> None:
+        self.issues = tuple(issues)
+        super().__init__(" ".join(f"{issue.code}: {issue.message}" for issue in self.issues))
 
 
 @dataclass(frozen=True)
@@ -280,6 +302,64 @@ class ExperimentDesign:
         )
 
 
+@dataclass(frozen=True)
+class ConfirmedDesign:
+    """An ``experiment_design.csv`` checked for use by another brick.
+
+    Build it with :func:`read_confirmed_design`. Every repeat group is confirmed and holds
+    at most one folder per condition.
+
+    Attributes
+    ----------
+    path
+        The file that was read.
+    sha256
+        SHA-256 of exactly the bytes that were parsed (the manifest's
+        ``experiment_design_sha256``).
+    design
+        The design itself.
+    repeat_groups
+        Read-only ``{(condition, biological_repeat): repeat_group}``, the pairing the
+        normalization brick's ``biological_repeat`` scope takes.
+    """
+
+    path: Path
+    sha256: str
+    design: ExperimentDesign
+    repeat_groups: Mapping[tuple[str, str], str]
+
+    @property
+    def conditions(self) -> tuple[str, ...]:
+        """Condition labels, sorted."""
+        return self.design.conditions
+
+    @property
+    def controls(self) -> tuple[str, ...]:
+        """Conditions marked as controls, sorted (recorded only, contract §12)."""
+        return self.design.controls
+
+    @property
+    def groups(self) -> tuple[str, ...]:
+        """Repeat-group labels, sorted."""
+        return self.design.groups
+
+    def group_members(self) -> Mapping[str, Mapping[str, str]]:
+        """Return ``{repeat_group: {condition: biological_repeat}}``, read-only.
+
+        One biological-repeat folder per condition and group, which the design's checks
+        guarantee.
+        """
+        members: dict[str, dict[str, str]] = {}
+        for (condition, repeat), group in self.repeat_groups.items():
+            members.setdefault(group, {})[condition] = repeat
+        return MappingProxyType(
+            {
+                group: MappingProxyType(dict(sorted(m.items())))
+                for group, m in sorted(members.items())
+            }
+        )
+
+
 def default_design(repeats: Iterable[BiologicalRepeat]) -> ExperimentDesign:
     """Build the design before any answer: repeats with the same folder name are one group.
 
@@ -438,6 +518,112 @@ def read_experiment_design(path: str | os.PathLike) -> ExperimentDesign:
     return ExperimentDesign(tuple(rows))
 
 
+def read_confirmed_design(
+    path: str | os.PathLike, *, expected_sha256: str | None = None
+) -> ConfirmedDesign:
+    """Read ``experiment_design.csv`` for use by another brick, refusing anything doubtful.
+
+    The one reader of the experiment design for every MorphoBricks brick (contract §16),
+    replacing CellPatcher's ``load_experiment_design`` and MorphoFeature's
+    ``ExperimentDesign.read``. It takes the file as this brick writes it
+    (:func:`write_experiment_design`) and fills nothing in, where
+    :func:`read_experiment_design`, for the user's own edits in step 1, is lenient:
+
+    - the file is UTF-8 without a byte-order mark, its header is exactly
+      :data:`DESIGN_COLUMNS` in that order, and every row has one value per column
+      (an unclosed quote, a missing or extra value, or a blank line is refused);
+    - no value has leading or trailing whitespace; ``control`` and ``confirmed`` are
+      ``true`` or ``false``; ``repeat_group`` is given; ``image_count`` and
+      ``technical_repeat_count`` are whole numbers of at least 0 written as such;
+      ``schema_version`` is ``1``;
+    - ``condition`` and ``biological_repeat`` pass :func:`.discovery.check_identity_text`
+      (they are folder names discovery accepted), and labels of one level differing only
+      in case are refused (:func:`.discovery.check_identity_case`);
+    - a folder listed twice, rows of a condition disagreeing on ``control``, or a file
+      without rows are refused;
+    - every repeat group is confirmed and holds one folder per condition
+      (:func:`design_issues`);
+    - with ``expected_sha256`` (a run manifest's ``experiment_design_sha256``), the file
+      must be that one.
+
+    The SHA-256 is of the bytes that were parsed, so the file cannot change between the
+    two.
+
+    Parameters
+    ----------
+    path
+        The ``experiment_design.csv`` file.
+    expected_sha256
+        The SHA-256 the preprocessing run that wrote the statistics recorded, if any.
+
+    Returns
+    -------
+    ConfirmedDesign
+
+    Raises
+    ------
+    DesignCheckError
+        With the errors ``missing_experiment_design`` (no such file),
+        ``unreadable_experiment_design`` (not a design this version reads strictly),
+        ``repeat_group_conflict`` and ``design_not_confirmed`` (:func:`design_issues`), or
+        ``changed_experiment_design`` (not the file the run recorded).
+    """
+    path = Path(path)
+    rerun = (
+        "Run step 1 of the preprocessing brick on this experiment (it pairs and confirms the "
+        "biological repeats), then run the preprocessing brick again."
+    )
+    if not path.is_file():
+        raise DesignCheckError(
+            [
+                error(
+                    "missing_experiment_design",
+                    f"The experiment design {path} does not exist.",
+                    [str(path)],
+                    rerun,
+                )
+            ]
+        )
+    try:
+        data = path.read_bytes()
+        design = _parse_strict(data, path.name)
+    except (OSError, DesignFormatError) as exc:
+        raise DesignCheckError(
+            [
+                error(
+                    "unreadable_experiment_design",
+                    f"The experiment design cannot be read: {exc}",
+                    [str(path)],
+                    rerun,
+                )
+            ]
+        ) from exc
+    issues = design_issues(design)
+    if issues:
+        raise DesignCheckError(issues)
+    sha256 = hashlib.sha256(data).hexdigest()
+    if expected_sha256 is not None and sha256 != expected_sha256:
+        raise DesignCheckError(
+            [
+                error(
+                    "changed_experiment_design",
+                    f"{path.name} is not the experiment design the preprocessing run used: its "
+                    "SHA-256 differs from the one in the run manifest, so the repeat groups may "
+                    "not be the ones the statistics were checked with.",
+                    [str(path)],
+                    "Give the experiment design of that run, or run the preprocessing brick "
+                    "again on this experiment.",
+                )
+            ]
+        )
+    return ConfirmedDesign(
+        path=path,
+        sha256=sha256,
+        design=design,
+        repeat_groups=MappingProxyType(design.repeat_groups()),
+    )
+
+
 def write_experiment_design(design: ExperimentDesign, path: str | os.PathLike) -> Path:
     """Write ``experiment_design.csv``, replacing the file only once writing succeeded.
 
@@ -495,6 +681,81 @@ def load_design(
             problem = str(exc)
     design, changes = reconcile_design(previous, repeats)
     return design, changes, problem
+
+
+def _parse_strict(data: bytes, name: str) -> ExperimentDesign:
+    """Parse a design as :func:`write_experiment_design` writes it, refusing anything else."""
+    if data.startswith(b"\xef\xbb\xbf"):
+        raise DesignFormatError(
+            f"{name} starts with a byte-order mark: it was saved by another program, not "
+            "written by the preprocessing brick."
+        )
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise DesignFormatError(f"{name} is not UTF-8 text: {exc}") from None
+    try:
+        lines = list(csv.reader(io.StringIO(text, newline=""), strict=True))
+    except csv.Error as exc:
+        raise DesignFormatError(f"{name} is not a well-formed CSV file: {exc}") from None
+    if not lines or tuple(lines[0]) != DESIGN_COLUMNS:
+        found = ", ".join(lines[0]) if lines else "nothing"
+        raise DesignFormatError(
+            f"{name} must have the columns {', '.join(DESIGN_COLUMNS)} in this order, not {found}."
+        )
+    rows: list[DesignRow] = []
+    for number, values in enumerate(lines[1:], start=2):
+        where = f"{name}, line {number}"
+        if len(values) != len(DESIGN_COLUMNS):
+            raise DesignFormatError(
+                f"{where} has {plural(len(values), 'value')} for "
+                f"{plural(len(DESIGN_COLUMNS), 'column')}."
+            )
+        record = dict(zip(DESIGN_COLUMNS, values, strict=True))
+        _check_strict_values(record, where)
+        rows.append(_parse_row(record, where))
+    if not rows:
+        raise DesignFormatError(f"{name} lists no folder.")
+    keys = [row.key for row in rows]
+    twice = sorted({key for key in keys if keys.count(key) > 1})
+    if twice:
+        raise DesignFormatError(
+            f"{name} lists a folder more than once: " + "; ".join(f"{c} / {b}" for c, b in twice)
+        )
+    for condition in sorted({row.condition for row in rows}):
+        if len({row.control for row in rows if row.condition == condition}) > 1:
+            raise DesignFormatError(
+                f"{name}: control must be the same in every row of condition {condition}."
+            )
+    try:
+        check_identity_case((row.condition, row.biological_repeat, SINGLE) for row in rows)
+    except IdentityError as exc:
+        raise DesignFormatError(f"{name}: {exc}") from None
+    return ExperimentDesign(tuple(rows))
+
+
+def _check_strict_values(record: Mapping[str, str], where: str) -> None:
+    for column, value in record.items():
+        if value != value.strip():
+            raise DesignFormatError(f"{where}: {column} {value!r} starts or ends with whitespace.")
+    if not record["repeat_group"]:
+        raise DesignFormatError(f"{where}: repeat_group is empty.")
+    for column in ("condition", "biological_repeat"):
+        try:
+            check_identity_text(record[column], column)
+        except IdentityError as exc:
+            raise DesignFormatError(f"{where}: {exc}.") from None
+    for column in ("control", "confirmed"):
+        if record[column] not in ("true", "false"):
+            raise DesignFormatError(
+                f"{where}: {column} must be true or false, not {record[column]!r}."
+            )
+    for column in ("image_count", "technical_repeat_count"):
+        value = record[column]
+        if not (value.isascii() and value.isdigit() and str(int(value)) == value):
+            raise DesignFormatError(
+                f"{where}: {column} must be a whole number of at least 0, not {value!r}."
+            )
 
 
 def _new_row(repeat: BiologicalRepeat, group: str) -> DesignRow:
