@@ -1013,3 +1013,25 @@ Raised during review; to be decided before the milestones that need them:
     default design: no file is the first run, not an unreadable one. The notebook keeps the
     behaviour of question 42 (file untouched, refusal shown, an answer replaces it), and
     `check` prints the refusal and writes nothing. Breaking change for the next release.*
+44. How is a mask one pixel high or wide read (reported by the fiberfeatures brick)? A valid
+    2D label mask of 1 x N, N x 1 or 1 x 1 pixels was refused: `read_mask_file` said it had
+    the axes `X` (or `Y`, or none) and `find_masks` gave `mask_not_2d`. `tifffile` (and
+    OME-NGFF) give such a mask the axes `YX`, with or without axis metadata; this brick's
+    own mask header dropped every length-1 axis, Y and X included, and the plane readers did
+    the same. Images were not affected: their axes are `tifffile`'s, which keep Y and X.
+    *Decided (31 October 2026, a fix within the existing rules): a mask's length-1 axes are
+    left out except Y and X, in the header (`MaskFile.axes`/`shape`, the manifest's `masks`
+    entries) and in `read_mask`/`read_mask_file`, which return the 2D (1, N), (N, 1) or
+    (1, 1) plane; a named Z or T stack of such planes keeps its planes. `tifffile` gives the
+    axes `X` alone only for a 1D array saved with its default metadata (`{"shape": [N]}`);
+    such a file is one TIFF page of 1 row and N columns, and a mask series without Y or X
+    stored in one 2D page is read as that page (`YX`, (1, N)), as any plain 2D page is
+    (decision D-d). Nothing is guessed: Y and X are the ones the file's header gives, and a
+    dimension it does not name (a plain stack `IYX`) is still refused, the message now
+    giving the header's axes and shape and the dimension that is not named instead of the
+    axes left after dropping Y or X. Masks
+    accepted before are recorded as before. Ships in the next release (v0.3.5), with the
+    fixes of questions 42 and 43. Open for the owner: an image (not a mask) saved as such a
+    1D array keeps the header axes `X` (`header_axes`, `check_declared_axes`), so the folder
+    check suggests a mapping without Y and the run refuses it with `missing_xy_axis`;
+    reading it as one row too would change the shared header-axes rule (§16).*

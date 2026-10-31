@@ -424,3 +424,87 @@ def test_read_mask_file_reads_an_ome_zarr_label_image(tmp_path):
     data = np.stack([labels((8, 8), start=t + 1) for t in range(2)])
     write_labels(image, {"cells": data}, "tyx")
     np.testing.assert_array_equal(read_mask_file(image / "labels" / "cells", t=1), data[1])
+
+
+# Masks one pixel high or wide (the fiberfeatures report, plan §12 question 44) -----------------
+
+
+ONE_PIXEL_SHAPES = [(1, 9), (9, 1), (1, 1)]
+WRITERS = {
+    "plain": lambda path, data: plain(path, data),
+    "shaped YX": lambda path, data: write_data(path, data, "YX"),
+    "imagej": lambda path, data: imagej(path, data, "YX"),
+    "ome": lambda path, data: ome(path, data, "YX"),
+}
+
+
+@pytest.mark.parametrize("shape", ONE_PIXEL_SHAPES)
+@pytest.mark.parametrize("writer", WRITERS)
+def test_read_mask_file_reads_a_mask_one_pixel_high_or_wide(tmp_path, shape, writer):
+    # tifffile gives these masks the axes YX; the length-1 Y (or X) used to be dropped with
+    # the other length-1 axes, so the mask was refused as having the axes 'X' (or 'Y', '').
+    data = labels(shape)
+    path = WRITERS[writer](tmp_path / "m.tif", data)
+    assert inspect_image(path, "m.tif").axes == "YX"
+    pixels = read_mask_file(path)
+    assert pixels.shape == shape
+    np.testing.assert_array_equal(pixels, data)
+
+
+@pytest.mark.parametrize(
+    ("shape", "axis", "writer"),
+    [
+        ((3, 1, 9), "Z", imagej),
+        ((3, 1, 9), "Z", ome),
+        # tifffile's ImageJ writer cannot store a trailing length-1 X (it writes one page),
+        # so these are OME-TIFF only.
+        ((3, 9, 1), "T", ome),
+        ((3, 1, 1), "Z", ome),
+    ],
+)
+def test_read_mask_file_reads_one_pixel_planes_of_a_named_stack(tmp_path, shape, axis, writer):
+    data = np.stack([labels(shape[1:], start=10 * i + 1) for i in range(shape[0])])
+    path = writer(tmp_path / "m.tif", data, f"{axis}YX")
+    np.testing.assert_array_equal(read_mask_file(path, **{axis.lower(): 2}), data[2])
+
+
+def test_read_mask_file_reads_one_pixel_planes_of_an_ome_zarr_label_image(tmp_path):
+    pytest.importorskip("zarr")
+    from zarr_tree import write_labels, write_ngff
+
+    image = write_ngff(tmp_path / "a.ome.zarr", np.zeros((2, 1, 9), np.uint8), "zyx")
+    data = np.stack([labels((1, 9), start=z + 1) for z in range(2)])
+    write_labels(image, {"cells": data}, "zyx")
+    np.testing.assert_array_equal(read_mask_file(image / "labels" / "cells", z=1), data[1])
+
+
+def test_an_unnamed_stack_of_one_pixel_planes_is_refused_by_its_real_axes(tmp_path):
+    # Still never guessed, and the message names the header's axes, not 'IX'.
+    path = plain(tmp_path / "m.tif", np.stack([labels((1, 9))] * 3))
+    with pytest.raises(
+        ValueError, match=r"'IYX' \(shape \(3, 1, 9\)\): the dimension I \(length 3\)"
+    ):
+        read_mask_file(path, z=0)
+
+
+@pytest.mark.parametrize("shape", ONE_PIXEL_SHAPES)
+def test_header_axes_of_an_image_one_pixel_high_or_wide(tmp_path, shape):
+    # Guard: the image side keeps Y and X of length 1 (tifffile never drops them).
+    for writer in WRITERS.values():
+        meta = inspect_image(writer(tmp_path / "a.tif", labels(shape)), "a.tif")
+        assert (meta.axes, meta.shape) == ("YX", shape)
+        assert named_axes(meta) == header_axes(meta) == "YX"
+        assert check_declared_axes(meta, "YX") is None
+        assert check_declared_axes(meta, "ZX").code == "declared_axes_mismatch"
+
+
+def test_read_mask_file_reads_a_1d_array_saved_as_one_row(tmp_path):
+    # tifffile's default metadata saves a 1D array as {"shape": [9]}, which it reads back with
+    # the axes 'X' and no Y; the file is one TIFF page of 1 row and 9 columns, so the mask
+    # is that page: YX, (1, 9).
+    data = labels((9,))
+    path = tmp_path / "m.tif"
+    tifffile.imwrite(path, data)
+    with tifffile.TiffFile(path) as tif:
+        assert tif.series[0].axes == "X"
+    np.testing.assert_array_equal(read_mask_file(path), data.reshape(1, 9))

@@ -10,7 +10,9 @@ from morphobricks_preprocessing import (
     prefill_mapping,
     preflight,
     read_manifest,
+    read_mask,
     run_experiment,
+    scan_masks,
 )
 from morphobricks_preprocessing.cli import main
 from tiff_tree import write_data, write_file
@@ -192,6 +194,47 @@ def test_a_length_one_axis_and_boolean_masks_are_accepted(experiment, masks):
     write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", np.zeros((1, 16, 20), dtype=np.uint8))
     write_data(masks / "Nuclei" / "ctrl" / "rep1" / "a.tif", np.zeros((16, 20), dtype=bool))
     assert inventory(experiment, masks).ok
+
+
+@pytest.mark.parametrize("shape", [(1, 9), (9, 1), (1, 1)])
+def test_masks_one_pixel_high_or_wide_are_2d_masks(tmp_path, shape):
+    # A 1 x N mask is a 2D YX mask (tifffile gives YX); its length-1 Y was dropped and the
+    # mask refused as mask_not_2d.
+    root, folder = tmp_path / "exp", tmp_path / "masks"
+    write_data(
+        root / "ctrl" / "rep1" / "a.tif", np.arange(np.prod(shape), dtype=np.uint8).reshape(shape)
+    )
+    mask = (np.arange(np.prod(shape)).reshape(shape) % 3).astype(np.uint16)
+    write_data(folder / "Cells" / "ctrl" / "rep1" / "a.tif", mask)
+    found = inventory(root, folder)
+    assert found.ok, codes(found.issues)
+    assert [(f.axes, f.shape) for f in found.files] == [("YX", shape)]
+    np.testing.assert_array_equal(read_mask(found.files[0], folder, root), mask)
+    assert scan_masks(found, root).types["Cells"]
+
+
+def test_a_1d_array_saved_as_one_row_is_a_mask_one_pixel_high(tmp_path):
+    root, folder = tmp_path / "exp", tmp_path / "masks"
+    write_data(root / "ctrl" / "rep1" / "a.tif", np.zeros((1, 9), np.uint8))
+    mask = np.arange(9, dtype=np.uint16) % 3
+    path = folder / "Cells" / "ctrl" / "rep1" / "a.tif"
+    path.parent.mkdir(parents=True)
+    tifffile.imwrite(path, mask)  # {"shape": [9]}: tifffile's axes 'X'
+    found = inventory(root, folder)
+    assert found.ok, codes(found.issues)
+    assert [(f.axes, f.shape) for f in found.files] == [("YX", (1, 9))]
+    np.testing.assert_array_equal(read_mask(found.files[0], folder, root), mask.reshape(1, 9))
+
+
+def test_a_named_stack_of_one_pixel_high_masks_keeps_its_planes(tmp_path):
+    root, folder = tmp_path / "exp", tmp_path / "masks"
+    write_data(root / "ctrl" / "rep1" / "a.tif", np.zeros((3, 1, 9), np.uint8), "TYX")
+    data = np.stack([np.full((1, 9), t + 1, np.uint16) for t in range(3)])
+    write_data(folder / "Cells" / "ctrl" / "rep1" / "a.tif", data, "TYX")
+    found = inventory(root, folder)
+    assert found.ok, codes(found.issues)
+    assert [(f.axes, f.shape) for f in found.files] == [("TYX", (3, 1, 9))]
+    np.testing.assert_array_equal(read_mask(found.files[0], folder, root, t=2), data[2])
 
 
 def test_unreadable_masks_are_errors(experiment, masks):
