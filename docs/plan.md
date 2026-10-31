@@ -924,4 +924,5 @@ Raised during review; to be decided before the milestones that need them:
     (`check_identity_text`, discovery's `invalid_name`); plane indices are integers of at
     least 0, NumPy integers returned as plain ints (`check_plane_index`);
     names of one level differing only in case clash anywhere in the experiment
-    (`case_conflict`, widened from siblings).*
+    (`case_conflict`, widened from siblings). Sources of a run: `check_sources` checks
+    images against a run's manifest (in it, unchanged, same identity, same axis roles).*

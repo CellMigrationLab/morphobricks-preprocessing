@@ -96,7 +96,8 @@ src/morphobricks_preprocessing/
                     names, warn-once DeprecationWarning, __getattr__ helpers
   dtypes.py, histogram.py, records.py, csv_io.py, pooling.py, normalization.py
                     deprecated stand-ins (module __getattr__ only, no code) for one version
-  manifest.py       RunManifest / RunSettings / FileEntry, JSON read/write, SHA-256 of the CSV
+  manifest.py       RunManifest / RunSettings / FileEntry, JSON read/write, SHA-256 of the CSV,
+                    check_sources (images against a run, for other bricks, contract §16)
   run.py            preflight(), run_experiment() (incremental), sample_planes() for previews
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
   cli.py, __main__  `morphobricks-preprocessing check|run|masks` (also `python -m morphobricks_preprocessing`)

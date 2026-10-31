@@ -588,6 +588,7 @@ continues.
 | `mask_missing` | Warning | Some images have no mask of a kind that other images have; their objects of that kind cannot be measured. Add the masks, or exclude the images. |
 | `ambiguous_mask` | Error | A mask's name could belong to two images (one image name starts another's) or fit both layouts. Rename the masks or the images so each names one image and one kind. |
 | `mask_without_image`, `mask_outside_type_folder` | Warning | Files in the masks folder that match no analysed image (check the folder and file names), or other files directly in the masks folder. They are not used. |
+| `images_not_in_manifest`, `images_missing`, `images_changed`, `position_id_not_recorded`, `identity_differs`, `axis_mapping_mismatch` | Error (other bricks) | A later brick checked its images against this brick's run (`check_sources`): an image the run did not analyse, no longer there, changed since, recorded with other labels or position (or by a version that did not record positions), or read with axes the run gave other roles. Run this brick again on the experiment as it is, or use the run's labels and axis roles. |
 | `zarr_not_installed` | Error | OME-Zarr images, or converting TIFF images, need the `zarr` extra. Install it, exclude the OME-Zarr images, or read the TIFF images directly. |
 
 ## 9. Python interface
