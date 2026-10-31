@@ -83,8 +83,8 @@ experiment/
   upper/lower case are an error, next to each other (`Control` and `control`) or anywhere
   in the experiment (`control/Rep1` and `treated/rep1`).
 - Folder and image names must not start or end with a space, and must not be `NA`, `nan`,
-  `none`, `null` or `<NA>` (in any case): tables read those as a missing value. This is an error
-  (`invalid_name`).
+  `none`, `null`, `n/a` or `<NA>` (in any case): tables read those as a missing value. This is
+  an error (`invalid_name`).
 - Each image is one position (field of view), named after its file without the extension:
   `img_01.tif` and `img_01.ome.zarr` are both position `img_01`. The same name may be used
   in different folders (`tech_rep1/img_01.tif` and `tech_rep2/img_01.tif` are two
