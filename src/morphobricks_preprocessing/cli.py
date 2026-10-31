@@ -36,6 +36,7 @@ from morphobricks_normalization.ranges import (
 from .axes import AxisMapping, reference_axes, review_axes
 from .design import (
     DESIGN_FILENAME,
+    DesignCheckError,
     DesignFormatError,
     ExperimentDesign,
     design_issues,
@@ -345,10 +346,15 @@ def _check(args: argparse.Namespace) -> int:
         print(format_issues(pre.issues))
     if pre.dataset.repeats:
         output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
-        design, _, problem = load_design(output, pre.dataset.repeats)
+        try:
+            design, _ = load_design(output, pre.dataset.repeats)
+        except DesignCheckError as exc:
+            # Refused and left as it is: 'check' never writes the design.
+            design, refusal = None, exc.issues[0]
         print()
-        if problem:
-            print(f"Experiment design: {problem}")
+        if design is None:
+            print(f"Experiment design: {refusal.message}")
+            print(f"  Suggested action: {refusal.action}")
         elif (output / DESIGN_FILENAME).exists():
             print(f"Experiment design ({output / DESIGN_FILENAME}):")
             print(design_summary(design))

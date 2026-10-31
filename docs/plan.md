@@ -1001,3 +1001,15 @@ Raised during review; to be decided before the milestones that need them:
     again, which replaces the file. No silent fallback to a default design; step 3 runs
     only once every group is confirmed again. The command line already refused such a file
     without writing it.*
+43. What does the public `load_design()` do with a saved `experiment_design.csv` it cannot
+    read (PR #61 follow-up)? Until now it returned the default design together with the
+    reason as a `problem` string, so a caller that ignored the string worked on a design
+    nobody confirmed.
+    *Decided (31 October 2026): it raises `DesignCheckError` with the one error
+    `unreadable_experiment_design` (the code and the message "The experiment design cannot
+    be read: …" of `read_confirmed_design`, followed by the lenient reader's refusal naming
+    the line and column; the `DesignFormatError` is its `__cause__`), and returns no
+    default design. It now returns `(design, changes)`. Without a file it still returns the
+    default design: no file is the first run, not an unreadable one. The notebook keeps the
+    behaviour of question 42 (file untouched, refusal shown, an answer replaces it), and
+    `check` prints the refusal and writes nothing. Breaking change for the next release.*

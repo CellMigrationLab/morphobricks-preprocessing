@@ -2,12 +2,14 @@ import pytest
 
 from morphobricks_preprocessing import (
     DESIGN_FILENAME,
+    DesignCheckError,
     DesignFormatError,
     biological_repeats,
     default_design,
     default_output_folder,
     design_issues,
     discover_experiment,
+    load_design,
     preflight,
     read_experiment_design,
     read_manifest,
@@ -447,6 +449,77 @@ def test_cli_check_reports_the_design(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "rep1: control/rep1, treated/rep1 (confirmed on 2026-10-26)" in out
     assert "Controls: none marked" in out
+
+
+def test_cli_check_refuses_an_unreadable_design_without_writing(tmp_path, capsys):
+    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
+    path = default_output_folder(root) / DESIGN_FILENAME
+    write_experiment_design(confirm_all(default_design(repeats_of(root))), path)
+    path.write_text(path.read_text(encoding="utf-8").replace(TODAY, "26/10/2026"), "utf-8")
+    unreadable = path.read_bytes()
+    assert main(["check", str(root)]) == 0
+    out = capsys.readouterr().out
+    assert "Experiment design: The experiment design cannot be read" in out
+    assert "line 2, column confirmed_on" in out
+    assert path.read_bytes() == unreadable
+
+
+# load_design (owner decision of 31 October 2026, plan §12 question 43) ------------------
+
+
+def test_load_design_without_a_file_gives_the_default_design(tmp_path):
+    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
+    design, changes = load_design(tmp_path / "out", repeats_of(root))
+    assert design == default_design(repeats_of(root))
+    assert not changes.any
+    assert not (tmp_path / "out").exists()
+
+
+def test_load_design_reads_and_reconciles_a_saved_design(tmp_path):
+    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
+    saved = confirm_all(default_design(repeats_of(root))).with_control("control", True)
+    write_experiment_design(saved, tmp_path / "out" / DESIGN_FILENAME)
+    make_tree(root, ["treated/rep2/img_00.tif"])
+    design, changes = load_design(tmp_path / "out", repeats_of(root))
+    assert design.group_confirmed("rep1") and design.controls == ("control",)
+    assert changes.added == (("treated", "rep2"),)
+
+
+@pytest.mark.parametrize(
+    ("edit", "where"),
+    [
+        (lambda text: text.replace(TODAY, "26/10/2026"), "line 2, column confirmed_on"),
+        (lambda text: text.replace("rep1,rep1,", "rep1,NA,", 1), "line 2, column repeat_group"),
+        (lambda text: "not a design", "column(s)"),
+    ],
+)
+def test_load_design_raises_for_an_unreadable_file(tmp_path, edit, where):
+    # Owner decision of 31 October 2026: no default design and no problem string; the
+    # refusal names the line and column, and the file is left as it is.
+    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
+    path = tmp_path / "out" / DESIGN_FILENAME
+    write_experiment_design(confirm_all(default_design(repeats_of(root))), path)
+    path.write_text(edit(path.read_text(encoding="utf-8")), encoding="utf-8")
+    unreadable = path.read_bytes()
+    with pytest.raises(DesignCheckError) as caught:
+        load_design(tmp_path / "out", repeats_of(root))
+    (issue,) = caught.value.issues
+    assert issue.code == "unreadable_experiment_design"
+    assert issue.is_error
+    assert issue.message.startswith("The experiment design cannot be read: ")
+    assert where in issue.message
+    assert issue.paths == (str(path),)
+    assert issue.action
+    assert isinstance(caught.value.__cause__, DesignFormatError)
+    assert isinstance(caught.value, ValueError)
+    assert path.read_bytes() == unreadable
+
+
+def test_load_design_raises_when_the_design_path_is_a_folder(tmp_path):
+    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
+    (tmp_path / "out" / DESIGN_FILENAME).mkdir(parents=True)
+    with pytest.raises(DesignCheckError, match="unreadable_experiment_design"):
+        load_design(tmp_path / "out", repeats_of(root))
 
 
 def test_preflight_repeats_feed_the_design(tmp_path):
