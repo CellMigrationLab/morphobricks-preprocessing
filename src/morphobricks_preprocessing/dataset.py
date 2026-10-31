@@ -33,6 +33,7 @@ CONSISTENCY_CODES = (
     "channel_names_differ",
     "different_pixel_sizes",
     "missing_pixel_size",
+    "unsupported_pixel_size_unit",
     "unbalanced_images",
     "repeat_missing_conditions",
 )

@@ -379,7 +379,9 @@ functions the tests use.
   more than one condition).
 - **Pixel sizes:** `different_pixel_sizes` (X by Y; z-step only for images with Z > 1;
   micrometres, the shared 0.1 % rule `same_pixel_size` with single-linkage
-  `pixel_size_groups`, D-a) and `missing_pixel_size` (known for some only).
+  `pixel_size_groups`, D-a), `missing_pixel_size` (known for some only) and
+  `unsupported_pixel_size_unit` (a size in a unit outside D-a2: not converted, the image
+  uncalibrated on that axis, the image, axis and unit named).
   OME-Zarr sizes come from the level-0 scale with axis units; no unit means unknown.
 - **`different_plane_counts`:** Z, T or any other dimension except X, Y, C and S;
   channels are the error `different_channel_counts` (question 27), also in this panel;
