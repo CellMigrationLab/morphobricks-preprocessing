@@ -56,6 +56,7 @@ def test_inspect_2d(tmp_path, no_pixel_reads):
         axes="YX",
         series_count=1,
         page_count=1,
+        axes_from_metadata=False,  # written without axes
     )
     assert info.ndim == 2 and info.dtype_supported
 

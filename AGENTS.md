@@ -67,7 +67,7 @@ src/morphobricks_preprocessing/
   metadata.py       TIFF header inspection (tifffile, no pixel reads), dtype/dimension/series checks,
                     OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes);
                     header consistency warnings (width/height, plane counts, pixel sizes);
-                    header_axes (the axes the metadata names, contract §16)
+                    header_axes and named_axes (the axes the metadata names, contract §16)
   physical_sizes.py PhysicalSizes (pixel sizes, z-step, time step, a unit per axis, micrometers()
                     for comparing), space_unit/to_micrometers (the shared unit rule, contract §16),
                     read_physical_sizes (OME / ImageJ TIFF metadata; also importable
