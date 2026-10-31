@@ -209,6 +209,11 @@ results or comparing another grouping.
        every answer. Next time, if the folders are the same, they are loaded and the
        questions are folded away; **Change the experiment design** shows them again. A new
        biological-repeat folder asks again only for the group it joins.
+     - If the saved **experiment_design.csv** cannot be read (for example a spreadsheet
+       program rewrote a date such as 2026-10-26 as 26/10/2026), a red box shows why,
+       naming the line and column, and the file is left as it is. Correct the file and
+       undo and confirm the labels again to read it, or answer the questions again: the
+       first answer replaces the file.
    - **Dataset consistency** shows how many images each condition (columns) and
      biological repeat (rows; the repeat groups once paired) has, with the number of technical-repeat folders. A cell is
      amber when it has fewer than half or more than twice the median number of images, or
@@ -622,6 +627,8 @@ nor writes one. To record it as the notebook does:
 from morphobricks_preprocessing import load_design
 
 design, changes, problem = load_design(result.output_folder, check.dataset.repeats)
+if problem:  # an existing file that cannot be read: correct it, do not overwrite it
+    raise SystemExit(problem)
 design = design.with_group(("treated", "rep2_day2"), "rep2")  # pair a repeat
 for group in design.groups:
     design = design.with_confirmed(group, True, "2026-10-26")
