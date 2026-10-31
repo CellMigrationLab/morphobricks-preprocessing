@@ -938,3 +938,11 @@ Raised during review; to be decided before the milestones that need them:
     only drift and no image stands out; it replaces the four-significant-digit rounding.
     Owner's follow-up decisions: `null`, `n/a` and `<NA>` are refused as names too, and
     `check_plane_index` returns NumPy integers as plain ints.*
+39. What does v0.3.3 hold?
+    *Decided (31 October 2026): v0.3.2 and the shared rules of question 38 (PRs #49–#55),
+    with the warning `unsupported_pixel_size_unit` naming an image, axis and unit outside
+    the supported list (PR #56). Inputs that passed before may now be refused or warned:
+    labels above int32, float masks, names that are NA-like or have outer whitespace,
+    names differing only in case anywhere in the experiment; pixel sizes are compared
+    within 0.1 % instead of after rounding. The normalization brick stays at v0.3.2. The
+    version in `pyproject.toml` is 0.3.3 before tagging. Every brick pins this tag (D79).*

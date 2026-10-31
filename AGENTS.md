@@ -791,7 +791,12 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   `channel_names_trimmed` (PRs #42, #45); masks get Z/T plane identity and a 2D mask for a
   multi-plane image is refused (PR #43); strict manifest flags, per-file roles and uint64
   labels (PR #44); a folder holding images and subfolders is an error (PR #46); the
-  normalization brick pinned to v0.3.2 (PR #47).
+  normalization brick pinned to v0.3.2 (PR #47). Released 30 October 2026.
+- **v0.3.3** (to be tagged, question 39): the shared rules other bricks call instead of
+  copying them (MorphoBricks D86, question 38, contract §16), PRs #49–#55: length units,
+  int32 labels, header axes, identity text and case, source checks against a run's
+  manifest, masks named as images, pixel sizes within 0.1 %; and the
+  `unsupported_pixel_size_unit` warning (PR #56).
 - **Next (not started):** the notebook step for the masks (name each mask, confirm or
   correct the relationships) and a file saving those answers for the other bricks
   (question 32); 3D and time-lapse masks later.
