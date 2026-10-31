@@ -63,7 +63,7 @@ Pipeline:
 src/morphobricks_preprocessing/
   discovery.py      folder walk, leaf folders, labels (condition / biological_repeat / technical_repeat),
                     position_id per image and the duplicate check; FOV_KEY, check_identity_text,
-                    check_plane_index (the shared identity rules, contract §16)
+                    check_plane_index, check_identity_case (the shared identity rules, contract §16)
   metadata.py       TIFF header inspection (tifffile, no pixel reads), dtype/dimension/series checks,
                     OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes);
                     header consistency warnings (width/height, plane counts, pixel sizes);
@@ -198,7 +198,8 @@ functions the tests use.
   full label path.
 - **Names (D-e):** labels and `position_id` pass `discovery.check_identity_text`: no
   leading/trailing whitespace, not `""`/`NA`/`nan`/`none`/`null`/`n/a`/`<NA>` in any case
-  (`invalid_name`).
+  (`invalid_name`). Bricks that read identities from tables apply the case rule with
+  `discovery.check_identity_case` (labels run-wide per level, `position_id` per technical repeat).
 - **Depth:** a folder below the technical-repeat level is an **error** (so a layer of images
   is never dropped silently).
 - **Positions (cross-brick decision D02):** one image is one position. Its `position_id`

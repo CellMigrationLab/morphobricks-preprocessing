@@ -476,6 +476,49 @@ def test_check_plane_index_refuses_what_is_not_an_index(value):
         check_plane_index(value, "t")
 
 
+@pytest.mark.parametrize(
+    ("keys", "message"),
+    [
+        # A label of any level clashes with another spelling anywhere in the run (D-e) ...
+        ([("ctrl", "Rep1", "single"), ("treated", "rep1", "single")], "biological_repeat 'Rep1'"),
+        ([("ctrl", "r1", "A"), ("treated", "r2", "a")], "technical_repeat 'A'"),
+        ([("Ctrl", "r1", "single", "f1"), ("ctrl", "r2", "single", "f2")], "condition 'Ctrl'"),
+        # ... and position_id within its technical repeat (D85).
+        ([("c", "r", "t", "Img"), ("c", "r", "t", "img")], "position_id 'Img'"),
+    ],
+)
+def test_check_identity_case_refuses_names_differing_only_in_case(keys, message):
+    # The run-wide case rule for bricks that read identities from tables (MorphoFeature,
+    # MorphoObjects, CellPatcher), the rule discovery applies to folder names.
+    from morphobricks_preprocessing import IdentityError, check_identity_case
+
+    with pytest.raises(IdentityError, match=f"^{message} and .* differ only in upper/lower case"):
+        check_identity_case(keys)
+
+
+def test_check_identity_case_accepts_one_spelling_and_position_scope():
+    from morphobricks_preprocessing import check_identity_case
+
+    check_identity_case(
+        [
+            ("ctrl", "rep1", "single", "f1"),
+            ("ctrl", "rep1", "single", "f1"),  # several planes of one position
+            ("treated", "rep1", "single", "f1"),
+            ("ctrl", "rep2", "single", "F1"),  # another technical repeat: no clash (D85)
+            ("ctrl", "rep1", "A", "x"),  # one level may share a name with another
+            ("a", "rep1", "single", "y"),
+        ]
+    )
+    check_identity_case([])
+
+
+def test_check_identity_case_refuses_keys_of_another_length():
+    from morphobricks_preprocessing import check_identity_case
+
+    with pytest.raises(ValueError, match="does not have the values"):
+        check_identity_case([("ctrl", "rep1")])
+
+
 def test_folders_below_technical_repeat_are_an_error(tmp_path):
     make_tree(
         tmp_path,
