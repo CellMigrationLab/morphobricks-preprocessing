@@ -63,6 +63,9 @@ class DesignFormatError(ValueError):
 class DesignCheckError(ValueError):
     """Raised by :func:`read_confirmed_design` when a design cannot be used.
 
+    Also raised by :func:`load_design`, with the one error
+    ``unreadable_experiment_design``, when a saved file cannot be read.
+
     Attributes
     ----------
     issues
@@ -618,16 +621,7 @@ def read_confirmed_design(
         data = path.read_bytes()
         design = _parse_strict(data, path.name)
     except (OSError, DesignFormatError) as exc:
-        raise DesignCheckError(
-            [
-                error(
-                    "unreadable_experiment_design",
-                    f"The experiment design cannot be read: {exc}",
-                    [str(path)],
-                    rerun,
-                )
-            ]
-        ) from exc
+        raise _unreadable(path, exc, rerun) from exc
     issues = design_issues(design)
     if issues:
         raise DesignCheckError(issues)
@@ -706,25 +700,64 @@ def write_experiment_design(design: ExperimentDesign, path: str | os.PathLike) -
 
 def load_design(
     output_folder: str | os.PathLike, repeats: Iterable[BiologicalRepeat]
-) -> tuple[ExperimentDesign, DesignChanges, str | None]:
+) -> tuple[ExperimentDesign, DesignChanges]:
     """Read the design in an output folder, if any, and bring it up to date with the folders.
+
+    The file is read with the lenient :func:`read_experiment_design`. A file that
+    cannot be read is refused, never replaced by the default design (owner decision of
+    31 October 2026, plan §12 question 43): the file is left as it is.
+
+    Parameters
+    ----------
+    output_folder
+        The output folder that holds ``experiment_design.csv``, if it was written.
+    repeats
+        The biological-repeat folders found now
+        (:func:`.dataset.biological_repeats`).
 
     Returns
     -------
-    tuple
-        The design (the default one when there is no readable file), how the
-        folders changed since it was written, and why an existing file could
-        not be read (None when it could, or when there is none).
+    tuple of ExperimentDesign and DesignChanges
+        The saved design brought up to date with the folders (:func:`reconcile_design`),
+        or the default design when there is no file yet, and how the folders changed
+        since it was written.
+
+    Raises
+    ------
+    DesignCheckError
+        With the one error ``unreadable_experiment_design`` when a saved file cannot be
+        read; its message is :func:`read_experiment_design`'s refusal, naming the line and
+        column where it can. The :class:`DesignFormatError` is its ``__cause__``.
     """
     path = Path(output_folder) / DESIGN_FILENAME
-    previous, problem = None, None
+    previous = None
     if path.exists():
         try:
             previous = read_experiment_design(path)
         except DesignFormatError as exc:
-            problem = str(exc)
-    design, changes = reconcile_design(previous, repeats)
-    return design, changes, problem
+            raise _unreadable(
+                path,
+                exc,
+                "Correct the file where the message says (a spreadsheet program may have "
+                f"rewritten a date such as 2026-10-26 as 26/10/2026; dates are {DATE_FORMAT}). "
+                "Answering the questions again in step 1 of the notebook also replaces it; "
+                "nothing replaces it without an answer.",
+            ) from exc
+    return reconcile_design(previous, repeats)
+
+
+def _unreadable(path: Path, exc: Exception, action: str) -> DesignCheckError:
+    """Return the refusal ``unreadable_experiment_design`` of a design file."""
+    return DesignCheckError(
+        [
+            error(
+                "unreadable_experiment_design",
+                f"The experiment design cannot be read: {exc}",
+                [str(path)],
+                action,
+            )
+        ]
+    )
 
 
 def _parse_strict(data: bytes, name: str) -> ExperimentDesign:

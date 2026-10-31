@@ -73,6 +73,7 @@ from .dataset import CONSISTENCY_CODES, BalanceTable, DatasetReport, check_datas
 from .design import (
     DESIGN_FILENAME,
     DesignChanges,
+    DesignCheckError,
     ExperimentDesign,
     default_design,
     load_design,
@@ -777,8 +778,12 @@ class PreprocessingNotebook:
         if output is None:
             design = default_design(repeats)
         else:
-            design, changes, problem = load_design(output, repeats)
-            saved = problem is None and (output / DESIGN_FILENAME).exists()
+            try:
+                design, changes = load_design(output, repeats)
+                saved = (output / DESIGN_FILENAME).exists()
+            except DesignCheckError as exc:
+                # Refused and left as it is; the questions start unanswered.
+                design, problem = default_design(repeats), exc.issues[0].message
         self.design = design
         self._design_unreadable = problem is not None
         self._build_design_editor()

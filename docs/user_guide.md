@@ -387,7 +387,8 @@ added, it writes that file and stops, so you can fill it in with a spreadsheet p
 text editor: give rows the same `repeat_group` to pair biological repeats named differently,
 set `confirmed` to `true` in every row of a repeat group whose images are comparable, and
 optionally `control` to `true` for control conditions. Then run again. `check` says whether
-the design is confirmed. Other options:
+the design is confirmed, or why a saved one cannot be read (naming the line and column); it
+never writes the file. Other options:
 
 | Option | Meaning |
 |---|---|
@@ -580,6 +581,7 @@ continues.
 | `repeat_group_conflict` | Error | A repeat group holds two folders of the same condition. Move one into another group. |
 | `invalid_experiment_design` | Error | A repeat group has no usable name (empty, `NA`, `nan`, `none`, `null`, `n/a`, `<NA>`, or spaces around it), two repeat groups are spelled the same apart from upper and lower case, or a confirmation date is not written `YYYY-MM-DD`. Correct `experiment_design.csv` (the message names the line and column). |
 | `missing_experiment_design`, `unreadable_experiment_design` | Error (other bricks) | A brick that pools biological repeats as `experiment_design.csv` pairs them found no such file, or one it cannot use as written by the preprocessing brick (another column order, a value with spaces around it, `TRUE` or `yes` for `true`, an empty repeat group, a byte-order mark from a spreadsheet program, ...). Run the preprocessing brick on the experiment again: its run writes the file as other bricks read it. |
+| `unreadable_experiment_design` | Error (`load_design`, notebook step 1, `check`) | The saved `experiment_design.csv` in the output folder cannot be read even leniently (for example a date a spreadsheet program rewrote as 26/10/2026, or a repeat group `NA`); the message names the line and column. The file is left as it is. Correct it, or answer the questions again in step 1, which replaces it. |
 | `changed_experiment_design` | Error (other bricks) | `experiment_design.csv` is not the file the preprocessing run that wrote the statistics used (its SHA-256 differs from the one in the run manifest). Give that run's design, or run the preprocessing brick again. |
 | `image_intensity_outlier` | Warning (intensity check) | An image's median or high percentile in a channel is far from the other images of its condition and biological repeat. Look at it: it may be out of focus, contain debris or bubbles, or have been acquired differently. Exclude it if it is faulty. |
 | `repeat_intensity_shift` | Warning (intensity check) | A biological repeat is brighter or darker than the other repeats of its condition. Check whether it was prepared or acquired differently; normalising per biological repeat in later bricks removes such differences. |
@@ -621,14 +623,18 @@ records = read_plane_histograms(result.csv_path)
 ```
 
 The experiment design is optional in Python: without `design=`, the run neither asks for
-nor writes one. To record it as the notebook does:
+nor writes one. To record it as the notebook does (`load_design` returns the saved design
+brought up to date with the folders, or the default design when there is no file yet; a
+saved file that cannot be read raises `DesignCheckError` instead, never a default design;
+breaking change for the next release, plan §12 question 43: until v0.3.4 it returned a
+third value, `problem`, with the default design):
 
 ```python
 from morphobricks_preprocessing import load_design
 
-design, changes, problem = load_design(result.output_folder, check.dataset.repeats)
-if problem:  # an existing file that cannot be read: correct it, do not overwrite it
-    raise SystemExit(problem)
+# An existing file that cannot be read raises DesignCheckError (unreadable_experiment_design,
+# naming the line and column) and is left as it is: correct it, do not overwrite it.
+design, changes = load_design(result.output_folder, check.dataset.repeats)
 design = design.with_group(("treated", "rep2_day2"), "rep2")  # pair a repeat
 for group in design.groups:
     design = design.with_confirmed(group, True, "2026-10-26")
