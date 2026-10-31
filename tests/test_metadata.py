@@ -10,6 +10,7 @@ from morphobricks_preprocessing import (
     TiffMetadata,
     check_metadata,
     discover_experiment,
+    has_errors,
     inspect_experiment,
     inspect_image,
     inspect_images,
@@ -539,3 +540,89 @@ def test_images_outside_the_largest_linked_group_are_listed(tmp_path):
 def test_two_sizes_apart_are_two_groups(tmp_path):
     found = issue(_sized(tmp_path, {"a": 1.0, "b": 1.0018}).issues, "different_pixel_sizes")
     assert found.paths == ("b.ome.tif",)
+
+
+# Pixel sizes in a unit that is not converted (decision D-a2) ------------------------------
+
+
+def test_ome_tiff_pixel_size_in_an_unsupported_unit_is_named(tmp_path):
+    write_ome(
+        tmp_path / "a.ome.tif",
+        (3, 8, 8),
+        "ZYX",
+        PhysicalSizeX=0.01,
+        PhysicalSizeXUnit="in",
+        PhysicalSizeY=0.01,
+        PhysicalSizeYUnit="in",
+        PhysicalSizeZ=2.0,
+    )
+    report = inspect_images(tmp_path, ["a.ome.tif"])
+    sizes = report.files[0].physical_sizes
+    # Never converted: X and Y are uncalibrated, Z (micrometres by default) is not.
+    assert sizes.micrometers("X") is None and sizes.micrometers("Y") is None
+    assert sizes.micrometers("Z") == 2.0
+    found = issue(report.issues, "unsupported_pixel_size_unit")
+    assert found.severity is Severity.WARNING and found.paths == ("a.ome.tif",)
+    assert "a.ome.tif (X and Y in 'in')" in found.message
+    assert "uncalibrated" in found.message
+    assert not has_errors(report.issues)
+
+
+def test_imagej_pixel_size_in_an_unsupported_unit_is_named(tmp_path):
+    tifffile.imwrite(
+        tmp_path / "a.tif",
+        np.zeros((3, 8, 8), np.uint16),
+        imagej=True,
+        resolution=(72.0, 72.0),
+        metadata={"axes": "ZYX", "unit": "inch", "zunit": "um", "spacing": 1.5},
+    )
+    write_ome(
+        tmp_path / "b.ome.tif",
+        (3, 8, 8),
+        "ZYX",
+        PhysicalSizeX=0.5,
+        PhysicalSizeY=0.5,
+        PhysicalSizeZ=1.5,
+    )
+    report = inspect_images(tmp_path, ["a.tif", "b.ome.tif"])
+    sizes = report.files[0].physical_sizes
+    assert (sizes.x, sizes.y) == (None, None) and sizes.micrometers("Z") == 1.5
+    found = issue(report.issues, "unsupported_pixel_size_unit")
+    assert found.paths == ("a.tif",)
+    assert "a.tif (X and Y in 'inch')" in found.message
+    # Still only uncalibrated, as before: the other warnings are unchanged.
+    assert issue(report.issues, "missing_pixel_size").paths == ("a.tif",)
+
+
+def test_ome_zarr_pixel_size_in_an_unsupported_unit_is_named(tmp_path):
+    from zarr_tree import write_ngff
+
+    write_ngff(
+        tmp_path / "a.zarr",
+        np.zeros((3, 8, 8), np.uint16),
+        "zyx",
+        scale=[2.0, 0.01, 0.01],
+        units={"z": "micrometer", "y": "inch", "x": "inch"},
+    )
+    report = inspect_images(tmp_path, ["a.zarr"])
+    sizes = report.files[0].physical_sizes
+    assert sizes.micrometers("X") is None and sizes.micrometers("Z") == 2.0
+    found = issue(report.issues, "unsupported_pixel_size_unit")
+    assert found.paths == ("a.zarr",)
+    assert "a.zarr (X and Y in 'inch')" in found.message
+
+
+def test_supported_or_absent_units_give_no_unit_warning(tmp_path):
+    write_ome(tmp_path / "a.ome.tif", PhysicalSizeX=120, PhysicalSizeXUnit="nm")
+    # A unit without a size, or a plain TIFF's dpi (decision D-c), is not a pixel size.
+    write_ome(tmp_path / "b.ome.tif", PhysicalSizeXUnit="in")
+    tifffile.imwrite(
+        tmp_path / "c.tif",
+        np.zeros((8, 8), np.uint8),
+        photometric="minisblack",
+        resolution=(300.0, 300.0),
+        resolutionunit=2,
+        metadata=None,
+    )
+    report = inspect_images(tmp_path, ["a.ome.tif", "b.ome.tif", "c.tif"])
+    assert "unsupported_pixel_size_unit" not in codes(report.issues)

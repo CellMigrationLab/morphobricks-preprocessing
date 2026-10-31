@@ -125,6 +125,13 @@ class PhysicalSizes:
         An axis's own unit, as an OME-NGFF unit name such as ``"micrometer"``;
         None means ``space_unit``. :meth:`unit` resolves them, so they stay
         consistent under :func:`dataclasses.replace` and pickling.
+    unsupported_units
+        The space axes whose size the metadata give in a length unit that is not one
+        of :data:`SPACE_UNITS` (decision D-a2), as ``(axis letter, unit as written)``
+        pairs, for example ``(("X", "inch"), ("Y", "inch"))``. Such a size is never
+        converted: the axis is uncalibrated (:meth:`micrometers` is None). Recorded so
+        that the unit can be named (``unsupported_pixel_size_unit``); for information
+        only, not part of equality.
 
     Two sizes are equal when their sizes, ``space_unit`` and resolved units are.
     """
@@ -138,6 +145,7 @@ class PhysicalSizes:
     x_unit: str | None = None
     y_unit: str | None = None
     z_unit: str | None = None
+    unsupported_units: tuple[tuple[str, str], ...] = ()
 
     def _space_units(self) -> tuple[str | None, str | None, str | None]:
         """Return the units of X, Y and Z, each falling back to ``space_unit``."""
@@ -403,6 +411,7 @@ def _sizes(
     t: float | None,
     units: dict[str, str | None],
     time_unit: str | None,
+    unsupported: Sequence[tuple[str, str]] = (),
 ) -> PhysicalSizes:
     """Build sizes from metadata with each space axis's own unit (``units`` by letter).
 
@@ -423,7 +432,23 @@ def _sizes(
         x_unit=units["X"],
         y_unit=units["Y"],
         z_unit=units["Z"],
+        unsupported_units=tuple(unsupported),
     )
+
+
+def _unsupported(
+    sizes: Mapping[str, float | None], written: Mapping[str, str | None]
+) -> list[tuple[str, str]]:
+    """Return ``(axis, unit)`` for the space axes with a size given in an unsupported unit.
+
+    ``written`` holds each axis's unit as the metadata give it, when it is not one of
+    :data:`SPACE_UNITS` (None otherwise).
+    """
+    return [
+        (axis, written[axis])
+        for axis in "XYZ"
+        if sizes.get(axis) is not None and written.get(axis) is not None
+    ]
 
 
 def read_physical_sizes(path: str | os.PathLike) -> PhysicalSizes:
@@ -505,6 +530,12 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
             table = _TIME_UNITS if letter == "T" else _SPACE_UNITS
             found.setdefault(letter, (_number(size), _ngff_unit(unit, table)))
     sizes = {letter: found.get(letter, (None, None)) for letter in "XYZT"}
+    # Units other than D-a2's are kept as written (never converted): name them.
+    written = {
+        letter: unit if unit is not None and unit not in _MICROMETERS else None
+        for letter, (_, unit) in sizes.items()
+        if letter in "XYZ"
+    }
     return _sizes(
         sizes["X"][0],
         sizes["Y"][0],
@@ -512,6 +543,7 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
         sizes["T"][0],
         {letter: sizes[letter][1] for letter in "XYZ"},
         sizes["T"][1],
+        _unsupported({letter: sizes[letter][0] for letter in "XYZ"}, written),
     )
 
 
@@ -564,37 +596,53 @@ def _ome_sizes(xml: str) -> PhysicalSizes:
     pixels = next((e for e in root.iter() if e.tag.rsplit("}", 1)[-1] == "Pixels"), None)
     if pixels is None:
         return PhysicalSizes()
-    units = {
-        axis: _SPACE_UNITS.get(pixels.get(f"PhysicalSize{axis}Unit", _OME_DEFAULT_SPACE_UNIT))
-        for axis in "XYZ"
-    }
+    given = {axis: pixels.get(f"PhysicalSize{axis}Unit", _OME_DEFAULT_SPACE_UNIT) for axis in "XYZ"}
+    units = {axis: _SPACE_UNITS.get(unit) for axis, unit in given.items()}
     time_unit = _TIME_UNITS.get(pixels.get("TimeIncrementUnit", _OME_DEFAULT_TIME_UNIT))
+    sizes = {axis: _number(pixels.get(f"PhysicalSize{axis}")) for axis in "XYZ"}
+    written = {
+        axis: _written(unit) if units[axis] is None else None for axis, unit in given.items()
+    }
     return _sizes(
-        _number(pixels.get("PhysicalSizeX")),
-        _number(pixels.get("PhysicalSizeY")),
-        _number(pixels.get("PhysicalSizeZ")),
+        sizes["X"],
+        sizes["Y"],
+        sizes["Z"],
         _number(pixels.get("TimeIncrement")) if time_unit else None,
         units,
         time_unit,
+        _unsupported(sizes, written),
     )
 
 
 def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
     meta = tif.imagej_metadata or {}
-    unit = _imagej_unit(meta.get("unit"))
     # ImageJ writes yunit and zunit only when they differ from the X unit.
-    y_unit = _imagej_unit(meta["yunit"]) if "yunit" in meta else unit
-    z_unit = _imagej_unit(meta["zunit"]) if "zunit" in meta else unit
+    given = {
+        "X": meta.get("unit"),
+        "Y": meta["yunit"] if "yunit" in meta else meta.get("unit"),
+        "Z": meta["zunit"] if "zunit" in meta else meta.get("unit"),
+    }
+    units = {axis: _imagej_unit(value) for axis, value in given.items()}
     page = tif.pages.first
     time_unit = _TIME_UNITS.get(_imagej_text(meta.get("tunit", "sec")))
+    given_sizes = {
+        "X": _resolution(page.tags.get("XResolution")),
+        "Y": _resolution(page.tags.get("YResolution")),
+        "Z": _number(meta.get("spacing")),
+    }
     # Without a unit the resolution tags are a default (often 1 pixel per inch).
+    sizes = {axis: size if units[axis] else None for axis, size in given_sizes.items()}
+    written = {
+        axis: _written(value) if units[axis] is None else None for axis, value in given.items()
+    }
     return _sizes(
-        _resolution(page.tags.get("XResolution")) if unit else None,
-        _resolution(page.tags.get("YResolution")) if y_unit else None,
-        _number(meta.get("spacing")) if z_unit else None,
+        sizes["X"],
+        sizes["Y"],
+        sizes["Z"],
         _number(meta.get("finterval")) if time_unit else None,
-        {"X": unit, "Y": y_unit, "Z": z_unit},
+        units,
         time_unit,
+        _unsupported(given_sizes, written),
     )
 
 
@@ -610,6 +658,14 @@ def _ngff_unit(value, table: dict[str, str]) -> str | None:
     text = value.strip()
     known = table.get(text) or (table.get(text.lower()) if len(text) > 2 else None)
     return known or text
+
+
+def _written(value) -> str | None:
+    """Return a unit as the metadata write it (escapes decoded); None when blank."""
+    if value is None:
+        return None
+    text = _decode_escapes(str(value)).strip()
+    return text or None
 
 
 def _imagej_unit(value) -> str | None:

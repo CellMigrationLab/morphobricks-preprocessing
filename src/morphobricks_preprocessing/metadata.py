@@ -346,8 +346,10 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     Reports, as warnings: images of different widths or heights
     (``different_sizes``), different numbers of depth slices, time points
     or planes along another dimension (``different_plane_counts``),
-    and physical pixel sizes that differ (``different_pixel_sizes``) or are
-    known for only some images (``missing_pixel_size``).
+    physical pixel sizes that differ (``different_pixel_sizes``) or are
+    known for only some images (``missing_pixel_size``), and pixel sizes given
+    in a length unit that is not converted (``unsupported_pixel_size_unit``,
+    decision D-a2): those images are uncalibrated, and the unit is named.
 
     Parameters
     ----------
@@ -460,6 +462,7 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     issues.extend(_check_channel_counts(readable))
     issues.extend(_check_plane_counts(readable))
     issues.extend(_check_pixel_sizes(readable))
+    issues.extend(_check_pixel_size_units(readable))
     return issues
 
 
@@ -765,6 +768,38 @@ def _check_pixel_sizes(files: list[TiffMetadata]) -> list[ValidationIssue]:
             )
         )
     return issues
+
+
+def _check_pixel_size_units(files: list[TiffMetadata]) -> list[ValidationIssue]:
+    """Warn about pixel sizes given in a length unit that is not converted (decision D-a2).
+
+    Such a size is never converted, so the axis is uncalibrated; without this warning
+    nothing would say which unit caused it. Every image is named with its axes and unit.
+    """
+    found = [f for f in files if f.physical_sizes.unsupported_units]
+    if not found:
+        return []
+    details = "; ".join(f"{f.relative_path} ({_describe_units(f)})" for f in found)
+    return [
+        warning(
+            "unsupported_pixel_size_unit",
+            f"{plural(len(found), 'image')} give a pixel size or z-step in a length unit "
+            f"that is not supported: {details}. Only pm, angstrom, nm, micrometre (um, "
+            "micron), mm, cm and m are converted. These sizes are not converted: the images "
+            "are treated as uncalibrated on those axes.",
+            [f.relative_path for f in found],
+            "No action needed if the physical size does not matter. Otherwise export these "
+            "images again with the pixel size in a supported unit.",
+        )
+    ]
+
+
+def _describe_units(f: TiffMetadata) -> str:
+    """Return e.g. ``"X and Y in 'inch'"`` for an image's unsupported units."""
+    by_unit: dict[str, list[str]] = {}
+    for axis, unit in f.physical_sizes.unsupported_units:
+        by_unit.setdefault(unit, []).append(axis)
+    return ", ".join(f"{' and '.join(axes)} in {unit!r}" for unit, axes in by_unit.items())
 
 
 def _micrometers(f: TiffMetadata, roles: tuple[str, ...]) -> tuple[float, ...] | None:

@@ -132,6 +132,7 @@ def test_consistency_codes_cover_the_new_warnings():
         "repeat_missing_conditions",
         "different_pixel_sizes",
         "missing_pixel_size",
+        "unsupported_pixel_size_unit",
         "different_plane_counts",
         "different_sizes",
         "mixed_dtypes",
