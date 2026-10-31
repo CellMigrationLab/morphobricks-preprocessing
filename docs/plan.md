@@ -979,3 +979,15 @@ Raised during review; to be decided before the milestones that need them:
     `design_issues` reports such values in a design built in code
     (`invalid_experiment_design`), and the writer refuses them, so the brick only ever
     writes ISO dates.*
+41. What does v0.3.4 hold?
+    *Decided (31 October 2026): v0.3.3 and the core fixes of the owner's answers of 31
+    October 2026 (PRs #58, #59). Declared axes (question 38, amended): a plain stack's
+    positional Y and X are left open, so a plain stack declared `YXC` is accepted; a
+    declaration that differs from the named axes only by swapping Y and X is accepted and
+    the image read transposed (`declared_axes_transposed`); any other disagreement is
+    refused. One strict experiment-design reader for every brick, `read_confirmed_design`
+    (question 40). Inputs that passed before may now be refused: design edits with an empty
+    or NA-like `repeat_group` (an empty group no longer means the folder name), repeat
+    groups differing only in case, or a `confirmed_on` that is not `YYYY-MM-DD`. The
+    normalization brick stays at v0.3.2. The version in `pyproject.toml` is 0.3.4 before
+    tagging. Every brick pins this tag (D79).*
