@@ -19,6 +19,7 @@ reads images.
 from __future__ import annotations
 
 import csv
+import datetime
 import hashlib
 import io
 import os
@@ -47,6 +48,9 @@ DESIGN_COLUMNS = (
     "confirmed_on",
     "schema_version",
 )
+
+DATE_FORMAT = "YYYY-MM-DD"
+"""The form of ``confirmed_on``: an ISO 8601 calendar date, e.g. ``2026-10-26``."""
 
 _TRUE = frozenset({"true", "yes", "1"})
 _FALSE = frozenset({"false", "no", "0", ""})
@@ -429,11 +433,26 @@ def design_issues(design: ExperimentDesign) -> list[ValidationIssue]:
     Returns
     -------
     list of ValidationIssue
-        ``repeat_group_conflict`` for a group with two folders of one
-        condition and ``design_not_confirmed`` for groups not confirmed yet;
-        both are errors.
+        ``invalid_experiment_design`` for a repeat-group name that is not an identity
+        (decision D-e: NA-like, empty, or with outer whitespace) or a ``confirmed_on`` that
+        is not empty or a date in :data:`DATE_FORMAT`; ``repeat_group_conflict`` for a
+        group with two folders of one condition; ``design_not_confirmed`` for groups not
+        confirmed yet. All are errors.
     """
     issues = []
+    invalid = [(row, problem) for row in design.rows for problem in _row_problems(row)]
+    if invalid:
+        issues.append(
+            error(
+                "invalid_experiment_design",
+                "The experiment design has values that cannot be used: "
+                + "; ".join(f"{_folder(row)}: {problem}" for row, problem in invalid)
+                + ".",
+                sorted({_folder(row) for row, _ in invalid}),
+                "Give every repeat group a name (not NA, nan, none, null, n/a or empty, "
+                f"without spaces around it) and every confirmation date as {DATE_FORMAT}.",
+            )
+        )
     if design.conflicts:
         described = "; ".join(
             f"{group} has more than one folder of {', '.join(conditions)}"
@@ -476,15 +495,19 @@ def read_experiment_design(path: str | os.PathLike) -> ExperimentDesign:
 
     Labels are read as text. ``control`` and ``confirmed`` accept ``true`` or
     ``false`` in any case (also ``yes``/``no``, ``1``/``0``; empty is false), so
-    a file saved by a spreadsheet program still reads. An empty
-    ``repeat_group`` means the group named after the folder.
+    a file saved by a spreadsheet program still reads. The user's own edits are
+    checked (owner decision, 31 October 2026): ``repeat_group`` follows the identity
+    rules of decision D-e (not empty, ``NA``, ``nan``, ``none``, ``null``, ``n/a`` or
+    ``<NA>`` in any case, no leading or trailing whitespace), and ``confirmed_on`` is
+    empty or a date in :data:`DATE_FORMAT`; the error names the line and column.
 
     Raises
     ------
     DesignFormatError
-        If the file cannot be read, a column is missing, a value is not valid,
-        a folder is listed twice, the rows of a condition disagree about
-        ``control``, or the schema version is not 1.
+        If the file cannot be read, a column is missing, a value is not valid
+        (including a repeat-group name or confirmation date as above), a folder is
+        listed twice, the rows of a condition disagree about ``control``, or the
+        schema version is not 1.
     """
     path = Path(path)
     try:
@@ -527,18 +550,21 @@ def read_confirmed_design(
     replacing CellPatcher's ``load_experiment_design`` and MorphoFeature's
     ``ExperimentDesign.read``. It takes the file as this brick writes it
     (:func:`write_experiment_design`) and fills nothing in, where
-    :func:`read_experiment_design`, for the user's own edits in step 1, is lenient:
+    :func:`read_experiment_design`, for the user's own edits in step 1, is lenient about
+    the file's form:
 
     - the file is UTF-8 without a byte-order mark, its header is exactly
       :data:`DESIGN_COLUMNS` in that order, and every row has one value per column
       (an unclosed quote, a missing or extra value, or a blank line is refused);
     - no value has leading or trailing whitespace; ``control`` and ``confirmed`` are
-      ``true`` or ``false``; ``repeat_group`` is given; ``image_count`` and
-      ``technical_repeat_count`` are whole numbers of at least 0 written as such;
+      ``true`` or ``false``; ``image_count`` and ``technical_repeat_count`` are whole
+      numbers of at least 0 written as such; ``confirmed_on`` is empty or a date in
+      :data:`DATE_FORMAT` (as :func:`read_experiment_design` requires too);
       ``schema_version`` is ``1``;
-    - ``condition`` and ``biological_repeat`` pass :func:`.discovery.check_identity_text`
-      (they are folder names discovery accepted), and labels of one level differing only
-      in case are refused (:func:`.discovery.check_identity_case`);
+    - ``condition``, ``biological_repeat`` and ``repeat_group`` pass
+      :func:`.discovery.check_identity_text` (the repeat group as
+      :func:`read_experiment_design` requires too), and labels of one level differing
+      only in case are refused (:func:`.discovery.check_identity_case`);
     - a folder listed twice, rows of a condition disagreeing on ``control``, or a file
       without rows are refused;
     - every repeat group is confirmed and holds one folder per condition
@@ -628,9 +654,23 @@ def write_experiment_design(design: ExperimentDesign, path: str | os.PathLike) -
     """Write ``experiment_design.csv``, replacing the file only once writing succeeded.
 
     The file is UTF-8 with LF line endings; the same design always gives the
-    same bytes.
+    same bytes. Every ``confirmed_on`` it writes is empty or a date in
+    :data:`DATE_FORMAT`, and every repeat group a valid name.
+
+    Raises
+    ------
+    DesignFormatError
+        If a row has a repeat-group name or confirmation date the readers refuse
+        (:func:`design_issues`, ``invalid_experiment_design``); nothing is written.
     """
     path = Path(path)
+    invalid = [(row, problem) for row in design.rows for problem in _row_problems(row)]
+    if invalid:
+        raise DesignFormatError(
+            "The experiment design cannot be written: "
+            + "; ".join(f"{_folder(row)}: {problem}" for row, problem in invalid)
+            + "."
+        )
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow(DESIGN_COLUMNS)
@@ -738,8 +778,6 @@ def _check_strict_values(record: Mapping[str, str], where: str) -> None:
     for column, value in record.items():
         if value != value.strip():
             raise DesignFormatError(f"{where}: {column} {value!r} starts or ends with whitespace.")
-    if not record["repeat_group"]:
-        raise DesignFormatError(f"{where}: repeat_group is empty.")
     for column in ("condition", "biological_repeat"):
         try:
             check_identity_text(record[column], column)
@@ -780,18 +818,55 @@ def _parse_row(record: Mapping[str, str | None], where: str) -> DesignRow:
     condition, repeat = text("condition"), text("biological_repeat")
     if not condition or not repeat:
         raise DesignFormatError(f"{where}: condition and biological_repeat must not be empty.")
+    group = record.get("repeat_group") or ""
+    try:
+        check_identity_text(group, "repeat_group")
+    except IdentityError as exc:
+        raise DesignFormatError(
+            f"{where}, column repeat_group: {exc}. Give the repeat group a name, for example "
+            f"the folder name {repeat!r}."
+        ) from None
+    on = text("confirmed_on")
+    if on and not _is_date(on):
+        raise DesignFormatError(
+            f"{where}, column confirmed_on: {on!r} is not a date in the form {DATE_FORMAT} "
+            "(for example 2026-10-26)."
+        )
     return DesignRow(
         condition=condition,
         biological_repeat=repeat,
-        repeat_group=text("repeat_group") or repeat,
+        repeat_group=group,
         control=_bool(text("control"), "control", where),
         image_count=_count(text("image_count"), "image_count", where),
         technical_repeat_count=_count(
             text("technical_repeat_count"), "technical_repeat_count", where
         ),
         confirmed=_bool(text("confirmed"), "confirmed", where),
-        confirmed_on=text("confirmed_on"),
+        confirmed_on=on,
     )
+
+
+def _is_date(value: str) -> bool:
+    if len(value) != len(DATE_FORMAT) or value[4] != "-" or value[7] != "-":
+        return False
+    try:
+        datetime.date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _row_problems(row: DesignRow) -> list[str]:
+    problems = []
+    try:
+        check_identity_text(row.repeat_group, "repeat_group")
+    except IdentityError as exc:
+        problems.append(str(exc))
+    if row.confirmed_on and not _is_date(row.confirmed_on):
+        problems.append(
+            f"confirmed_on {row.confirmed_on!r} is not a date in the form {DATE_FORMAT}"
+        )
+    return problems
 
 
 def _bool(value: str, column: str, where: str) -> bool:

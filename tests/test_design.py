@@ -21,6 +21,10 @@ from morphobricks_preprocessing.manifest import file_sha256
 from tiff_tree import make_tree
 
 TODAY = "2026-10-26"
+HEADER = (
+    "condition,biological_repeat,repeat_group,control,image_count,technical_repeat_count,"
+    "confirmed,confirmed_on,schema_version\n"
+)
 
 
 def codes(issues):
@@ -190,8 +194,8 @@ def test_files_edited_in_a_spreadsheet_still_read(tmp_path):
     text = (
         "﻿condition,biological_repeat,repeat_group,control,image_count,"
         "technical_repeat_count,confirmed,confirmed_on,schema_version\r\n"
-        "ctrl,rep1,,TRUE,2,0,Yes,,1\r\n"
-        "drug,rep1b,rep1,FALSE,2,0,1,26/10/2026,1\r\n"
+        "ctrl,rep1,rep1,TRUE,2,0,Yes,,1\r\n"
+        "drug,rep1b,rep1,FALSE,2,0,1,2026-10-25,1\r\n"
         ",,,,,,,,\r\n"
     )
     path.write_bytes(text.encode("utf-8"))
@@ -200,13 +204,86 @@ def test_files_edited_in_a_spreadsheet_still_read(tmp_path):
     assert design.controls == ("ctrl",) and design.confirmed
     # A confirmation without a date gets one when it is used.
     assert design.dated(TODAY).row(("ctrl", "rep1")).confirmed_on == TODAY
-    assert design.dated(TODAY).row(("drug", "rep1b")).confirmed_on == "26/10/2026"
+    assert design.dated(TODAY).row(("drug", "rep1b")).confirmed_on == "2026-10-25"
 
 
-HEADER = (
-    "condition,biological_repeat,repeat_group,control,image_count,technical_repeat_count,"
-    "confirmed,confirmed_on,schema_version\n"
-)
+# Typed edits (owner decision, 31 October 2026) --------------------------------------------
+
+
+@pytest.mark.parametrize("group", ["", "NA", "na", "NaN", "none", "NULL", "n/a", "<NA>", "<na>"])
+def test_a_repeat_group_that_reads_as_missing_is_refused(tmp_path, group):
+    path = tmp_path / DESIGN_FILENAME
+    path.write_bytes((HEADER + f"ctrl,rep1,{group},false,1,0,true,,1\n").encode("utf-8"))
+    with pytest.raises(DesignFormatError, match=r"line 2, column repeat_group: .*missing"):
+        read_experiment_design(path)
+
+
+@pytest.mark.parametrize("group", [" rep1", "rep1 ", "\trep1"])
+def test_a_repeat_group_with_outer_whitespace_is_refused(tmp_path, group):
+    path = tmp_path / DESIGN_FILENAME
+    path.write_bytes((HEADER + f'ctrl,rep1,"{group}",false,1,0,true,,1\n').encode("utf-8"))
+    with pytest.raises(DesignFormatError, match="line 2, column repeat_group: .*whitespace"):
+        read_experiment_design(path)
+
+
+def test_a_confirmation_date_in_another_form_is_refused(tmp_path):
+    path = tmp_path / DESIGN_FILENAME
+    path.write_bytes((HEADER + "ctrl,rep1,rep1,false,1,0,true,26/10/2026,1\n").encode("utf-8"))
+    with pytest.raises(DesignFormatError) as caught:
+        read_experiment_design(path)
+    assert str(caught.value) == (
+        "experiment_design.csv, line 2, column confirmed_on: '26/10/2026' is not a date in the "
+        "form YYYY-MM-DD (for example 2026-10-26)."
+    )
+
+
+@pytest.mark.parametrize("on", ["2026-10-1", "20261026", "2026-02-30", "2026/10/26", "today"])
+def test_only_iso_dates_are_confirmation_dates(tmp_path, on):
+    path = tmp_path / DESIGN_FILENAME
+    path.write_bytes((HEADER + f"ctrl,rep1,rep1,false,1,0,true,{on},1\n").encode("utf-8"))
+    with pytest.raises(DesignFormatError, match="column confirmed_on: .*YYYY-MM-DD"):
+        read_experiment_design(path)
+
+
+def test_the_writer_writes_only_iso_dates_and_valid_groups(tmp_path):
+    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
+    design = default_design(repeats_of(root))
+    path = tmp_path / DESIGN_FILENAME
+    for bad in (
+        design.with_confirmed("rep1", True, "26/10/2026"),
+        design.with_group(("treated", "rep1"), "NA"),
+        design.with_group(("treated", "rep1"), " rep2"),
+    ):
+        assert "invalid_experiment_design" in codes(design_issues(bad))
+        with pytest.raises(DesignFormatError, match="cannot be written"):
+            write_experiment_design(bad, path)
+        assert not path.exists()
+    dated = confirm_all(design).dated("2026-10-31")
+    assert read_experiment_design(write_experiment_design(dated, path)) == dated
+
+
+def test_a_run_with_an_invalid_date_stops_before_writing(tmp_path):
+    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
+    design = default_design(repeats_of(root)).with_confirmed("rep1", True, "26/10/2026")
+    result = run_experiment(root, prefill_mapping("YX"), design=design)
+    assert not result.written and "invalid_experiment_design" in codes(result.issues)
+    assert not result.output_folder.exists()
+
+
+def test_the_cli_dates_a_hand_confirmation_as_an_iso_date(tmp_path, capsys):
+    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
+    output = default_output_folder(root)
+    output.mkdir(parents=True)
+    (output / DESIGN_FILENAME).write_bytes(
+        (
+            HEADER + "control,rep1,rep1,false,1,0,true,,1\ntreated,rep1,rep1,false,1,0,true,,1\n"
+        ).encode("utf-8")
+    )
+    assert main(["run", str(root), "--axes", "YX"]) == 0
+    capsys.readouterr()
+    dates = {row.confirmed_on for row in read_experiment_design(output / DESIGN_FILENAME).rows}
+    (on,) = dates
+    assert len(on) == 10 and on[4] == on[7] == "-"
 
 
 @pytest.mark.parametrize(

@@ -97,7 +97,7 @@ def test_a_spreadsheet_edit_is_read_strictly_once_the_run_has_written_it(tmp_pat
     output.mkdir(parents=True)
     edited = write(
         output,
-        "﻿" + HEADER.replace("\n", "\r\n") + "control,rep1,,TRUE,1,0,Yes,26/10/2026,1\r\n"
+        "﻿" + HEADER.replace("\n", "\r\n") + "control ,rep1,rep1,TRUE,1,0,Yes,2026-10-26,1\r\n"
         "treated,rep1b,rep1,FALSE,1,0,1,,1\r\n",
     )
     with pytest.raises(DesignCheckError, match="byte-order mark"):
@@ -108,8 +108,9 @@ def test_a_spreadsheet_edit_is_read_strictly_once_the_run_has_written_it(tmp_pat
         edited, expected_sha256=read_manifest(output / "run_manifest.json").experiment_design_sha256
     )
     assert dict(read.repeat_groups) == {("control", "rep1"): "rep1", ("treated", "rep1b"): "rep1"}
-    # Hand-written text in confirmed_on is kept as the user wrote it, and still read.
-    assert read.design.row(("control", "rep1")).confirmed_on == "26/10/2026"
+    # A confirmation without a date got the run's date.
+    assert read.design.row(("treated", "rep1b")).confirmed_on != ""
+    assert read.design.row(("control", "rep1")).confirmed_on == "2026-10-26"
 
 
 def test_the_hash_is_of_the_bytes_read(tmp_path):
@@ -151,7 +152,13 @@ def test_a_missing_file_is_refused(tmp_path):
         (HEADER + "ctrl,rep1,rep1,TRUE,2,0,true,,1\n", "control must be true or false"),
         (HEADER + "ctrl,rep1,rep1,true,2,0,yes,,1\n", "confirmed must be true or false"),
         (HEADER + "ctrl,rep1,rep1,,2,0,true,,1\n", "control must be true or false"),
-        (HEADER + "ctrl,rep1,,true,2,0,true,,1\n", "repeat_group is empty"),
+        (HEADER + "ctrl,rep1,,true,2,0,true,,1\n", "column repeat_group: repeat_group '' reads"),
+        (HEADER + "ctrl,rep1,n/a,true,2,0,true,,1\n", "column repeat_group: repeat_group 'n/a'"),
+        (
+            HEADER + "ctrl,rep1,rep1,true,2,0,true,26/10/2026,1\n",
+            "line 2, column confirmed_on: '26/10/2026' is not a date in the form YYYY-MM-DD",
+        ),
+        (HEADER + "ctrl,rep1,rep1,true,2,0,true,2026-10-1,1\n", "column confirmed_on"),
         (HEADER + "ctrl,rep1,rep1,true,,0,true,,1\n", "image_count must be a whole number"),
         (HEADER + "ctrl,rep1,rep1,true,+2,0,true,,1\n", "image_count must be a whole number"),
         (HEADER + "ctrl,rep1,rep1,true,2,-1,true,,1\n", "technical_repeat_count must be"),
@@ -171,10 +178,10 @@ def test_anything_doubtful_is_refused(tmp_path, text, message):
     assert re.search(message, issue.message), issue.message
 
 
-def test_the_lenient_reader_fills_in_what_the_shared_reader_refuses(tmp_path):
-    # The copies in CellPatcher and MorphoFeature used the lenient reader: an empty
-    # repeat_group became the folder name and an empty "confirmed" read as false.
-    path = write(tmp_path, HEADER + "ctrl,rep1,,true,2,0,true,,1\n")
+def test_the_lenient_reader_takes_what_the_shared_reader_refuses(tmp_path):
+    # The copies in CellPatcher and MorphoFeature used the lenient reader: spreadsheet
+    # spellings of booleans and spaces around labels were read.
+    path = write(tmp_path, HEADER + "ctrl ,rep1,rep1,TRUE,2,0,yes,,1\n")
     assert read_experiment_design(path).repeat_groups() == {("ctrl", "rep1"): "rep1"}
     assert refusal(path).code == "unreadable_experiment_design"
     # A duplicated column: the lenient reader silently kept the last one.
