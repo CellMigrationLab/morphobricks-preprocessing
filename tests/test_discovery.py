@@ -800,6 +800,30 @@ def test_mask_names_the_caller_expects(tmp_path):
     assert [(i.code, i.paths) for i in issues] == [("image_named_as_mask", ("c/r/f1_Cells.tif",))]
 
 
+def test_images_named_as_masks_with_the_callers_suffixes_only(tmp_path):
+    # MorphoRelate leaves out of its images those named with a mask name the user declared,
+    # and only those: the detection is public so it keeps no copy (D-i).
+    from morphobricks_preprocessing import images_named_as_masks
+
+    make_tree(
+        tmp_path,
+        [
+            "c/r/f1.tif",
+            "c/r/f1_mask.tif",
+            "c/r/f1_Cells.tif",
+            "d/r/f1_cells.tif",
+            "masks/c/r/f1_cells.tif",
+        ],
+    )
+    leaves = discover_experiment(tmp_path).leaves
+    assert images_named_as_masks(leaves, ["_cells"]) == [
+        ("c/r/f1_Cells.tif", "c/r/f1.tif"),
+        ("d/r/f1_cells.tif", "c/r/f1.tif"),
+    ]
+    assert images_named_as_masks(leaves) == [("c/r/f1_mask.tif", "c/r/f1.tif")]
+    assert images_named_as_masks(leaves, []) == []
+
+
 def test_the_default_mask_names_are_cellpatchers_former_defaults():
     from morphobricks_preprocessing import MASK_FOLDER_WORDS, MASK_NAME_SUFFIXES
 

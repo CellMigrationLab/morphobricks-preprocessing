@@ -450,19 +450,12 @@ def mask_name_issues(
     list of ValidationIssue
         The warnings, or nothing.
     """
+    leaves = list(leaves)
     images = [path for leaf in leaves for path in leaf.images]
-    regular = [path for path in images if mask_folder_part(path) is None]
-    stems: dict[str, list[str]] = {}
-    for relative in regular:
-        stems.setdefault(position_id(relative).lower(), []).append(relative)
+    stems = _stems(images)
     suffixes = {suffix.lower() for suffix in MASK_NAME_SUFFIXES}
     suffixes |= {f"_{name.lower()}" for name in mask_names}
-    named = []
-    for relative in regular:
-        path = PurePosixPath(relative)
-        owner = _mask_owner(position_id(path.name).lower(), stems, str(path.parent), suffixes)
-        if owner is not None:
-            named.append((relative, owner))
+    named = images_named_as_masks(leaves, sorted(suffixes))
     by_folder: dict[str, list[tuple[str, str]]] = {}
     for relative in images:
         folder = mask_folder_part(relative)
@@ -504,6 +497,55 @@ def mask_name_issues(
             )
         )
     return issues
+
+
+def images_named_as_masks(
+    leaves: Iterable[LeafFolder], suffixes: Sequence[str] = MASK_NAME_SUFFIXES
+) -> list[tuple[str, str]]:
+    """Return the images named as a mask of another image, each with that image.
+
+    The detection of :func:`mask_name_issues`'s ``image_named_as_mask``, for a brick that acts
+    on the files itself (MorphoRelate leaves out of its images those named with a mask name
+    the user declared): an image is named as a mask of another when its ``position_id`` is
+    that image's ``position_id`` followed by one of ``suffixes``, compared in lower case,
+    anywhere in the experiment. The longest such position owns it, an image of the same
+    folder first. Images inside a folder named like a masks folder (:func:`mask_folder_part`)
+    are left out, as owners too.
+
+    Parameters
+    ----------
+    leaves
+        The experiment's leaf folders (:attr:`DiscoveryResult.leaves`); a caller leaves out
+        images it has already set aside by giving leaves without them.
+    suffixes
+        The name endings, each with its ``_`` (``"_mask"``, ``"_cells"``); by default
+        :data:`MASK_NAME_SUFFIXES`.
+
+    Returns
+    -------
+    list of tuple
+        ``(image, owner)`` relative paths, in the leaves' order.
+    """
+    images = [path for leaf in leaves for path in leaf.images]
+    regular = [path for path in images if mask_folder_part(path) is None]
+    stems = _stems(images)
+    wanted = {suffix.lower() for suffix in suffixes}
+    named = []
+    for relative in regular:
+        path = PurePosixPath(relative)
+        owner = _mask_owner(position_id(path.name).lower(), stems, str(path.parent), wanted)
+        if owner is not None:
+            named.append((relative, owner))
+    return named
+
+
+def _stems(images: Sequence[str]) -> dict[str, list[str]]:
+    """Return the images outside masks folders by their ``position_id`` in lower case."""
+    stems: dict[str, list[str]] = {}
+    for relative in images:
+        if mask_folder_part(relative) is None:
+            stems.setdefault(position_id(relative).lower(), []).append(relative)
+    return stems
 
 
 def mask_folder_part(relative: str) -> str | None:

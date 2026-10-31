@@ -64,6 +64,7 @@ from .discovery import (
     check_plane_index,
     default_output_folder,
     discover_experiment,
+    images_named_as_masks,
     mask_name_issues,
     position_id,
 )
@@ -319,6 +320,7 @@ __all__ = [
     "iter_xyc_planes",
     "load_design",
     "make_plane_id",
+    "images_named_as_masks",
     "mask_name_issues",
     "mask_plane_issues",
     "mask_thresholds",
