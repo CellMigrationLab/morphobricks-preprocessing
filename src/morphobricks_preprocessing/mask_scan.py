@@ -257,7 +257,8 @@ def piece_counts(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     Raises
     ------
     ValueError
-        If the mask holds negative labels (:func:`.masks.check_labels`).
+        If the mask holds a label outside 0 to 2,147,483,647, or pixels that are not
+        whole numbers (:func:`.masks.check_labels`).
     """
     check_labels(mask)
     values, dense = np.unique(mask, return_inverse=True)
@@ -284,7 +285,8 @@ def pair_counts(
     Raises
     ------
     ValueError
-        If either mask holds negative labels (:func:`.masks.check_labels`).
+        If either mask holds a label outside 0 to 2,147,483,647, or pixels that are not
+        whole numbers (:func:`.masks.check_labels`).
     """
     limits = mask_thresholds(thresholds)
     check_labels(child, "the child mask")
@@ -363,7 +365,7 @@ def scan_masks(
     ValueError
         For an invalid threshold, before any mask is read; for an image whose masks have
         different depth slices or time points; for a mask that cannot be read as the planes
-        its header gave, or holds negative labels (:func:`.masks.read_mask`).
+        its header gave, or holds a label outside 0 to 2,147,483,647 (:func:`.masks.read_mask`).
     """
     limits = mask_thresholds(thresholds)
     root = Path(experiment_root).resolve()

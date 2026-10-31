@@ -913,5 +913,6 @@ Raised during review; to be decided before the milestones that need them:
     v0.3.3. Length units (D-a2): the microscopy units only, `pm` to `m` with US and British
     spellings, any other unit refused by name (`space_unit`, `to_micrometers`); this
     brick's readers use the same table, so British spellings are now calibrated. A plain
-    TIFF's resolution tags are never a calibration (D-c, unchanged).*
-
+    TIFF's resolution tags are never a calibration (D-c, unchanged). Labels (D-b): int32,
+    0 to 2,147,483,647 (`check_labels`, `LARGEST_LABEL`), narrowing this brick's earlier
+    int64 limit.*

@@ -659,7 +659,9 @@ write_mask_report(report, "/data/exp1_MorphoBricks_Preprocessing/mask_relationsh
 `scan_masks(..., thresholds={"inside_object_share": 0.8})` changes a threshold (the others
 keep their defaults, `DEFAULT_THRESHOLDS`). `preflight(..., ome_zarr_labels=True)` uses the
 label images of OME-Zarr images without a masks folder; `read_mask` reads one mask's pixels
-(a `ValueError` for negative labels, as in `piece_counts`, `pair_counts` and `scan_masks`);
+(a `ValueError` for a negative label or a label above 2,147,483,647, the int32 limit of
+every MorphoBricks brick, as in `piece_counts`, `pair_counts` and `scan_masks`; `check_labels`
+is that check alone);
 `pair_counts` and `piece_counts` give the counts behind the report for one pair of masks or
 one mask.
 

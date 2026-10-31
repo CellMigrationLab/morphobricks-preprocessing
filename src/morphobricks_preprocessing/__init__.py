@@ -96,7 +96,15 @@ from .mask_scan import (
     scan_masks,
     write_mask_report,
 )
-from .masks import MaskFile, MaskInventory, find_masks, mask_plane_issues, read_mask
+from .masks import (
+    LARGEST_LABEL,
+    MaskFile,
+    MaskInventory,
+    check_labels,
+    find_masks,
+    mask_plane_issues,
+    read_mask,
+)
 from .metadata import (
     ImageMetadata,
     MetadataReport,
@@ -182,6 +190,7 @@ __all__ = [
     "FLUORESCENCE",
     "IMAGE_TYPES",
     "INTENSITY_CODES",
+    "LARGEST_LABEL",
     "MANIFEST_FILENAME",
     "MASK_REPORT_FILENAME",
     "OUTPUT_FILENAME",
@@ -249,6 +258,7 @@ __all__ = [
     "check_dataset",
     "check_image_type",
     "check_intensities",
+    "check_labels",
     "check_mapping",
     "check_metadata",
     "check_output_folder",
