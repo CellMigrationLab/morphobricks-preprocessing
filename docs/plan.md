@@ -958,6 +958,11 @@ Raised during review; to be decided before the milestones that need them:
     count, no blank line), the CSV structure is checked (exact header, one value per
     column, quotes closed), labels follow D-e, an empty design is refused, and the SHA-256
     is of the bytes parsed. Every file this brick writes is read; a file edited in a
-    spreadsheet is read once a preprocessing run has written it back. Not checked:
-    `confirmed_on` and repeat-group names, which a run writes back as the user typed
-    them. `read_experiment_design` stays lenient for the user's own edits in step 1.*
+    spreadsheet is read once a preprocessing run has written it back.
+    `read_experiment_design` stays lenient about the form of the user's own edits in step
+    1 and the CLI, but (owner decision, 31 October 2026) repeat-group names follow D-e
+    (no NA-like or empty value, no outer whitespace; an empty group no longer means the
+    folder name) and `confirmed_on` is empty or `YYYY-MM-DD`, in both readers; a bad edit
+    is refused naming the line and column. `design_issues` reports such values in a design
+    built in code (`invalid_experiment_design`), and the writer refuses them, so the brick
+    only ever writes ISO dates.*

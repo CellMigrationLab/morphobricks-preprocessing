@@ -399,7 +399,8 @@ functions the tests use.
   get one whole-experiment question. Controls are recorded only.
 - **`experiment_design.csv`** (schema 1): one row per condition x biological-repeat folder,
   sorted; counts at confirmation; `confirmed_on` ISO date. Lenient reader (any-case
-  booleans, BOM, empty group = folder name); `DesignFormatError` otherwise.
+  booleans, BOM); `DesignFormatError` otherwise, also for a repeat group that is not a
+  D-e identity or a `confirmed_on` that is not `YYYY-MM-DD` (naming line and column).
   Other bricks read it with the strict `read_confirmed_design` (contract §16,
   question 40): nothing filled in, every group confirmed, SHA-256 of the bytes parsed.
 - **Reruns:** `reconcile_design` keeps answers for known folders, reopens only groups that

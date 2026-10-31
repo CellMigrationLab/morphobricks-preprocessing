@@ -552,7 +552,10 @@ def _design_for_run(pre, args: argparse.Namespace) -> tuple[ExperimentDesign | N
         "or a text editor, one row per biological-repeat folder of each condition:",
         "  - repeat_group: rows with the same value are the same biological repeat across "
         "conditions (by default the folder name). Change it to pair repeats whose folders "
-        "are named differently; each group may hold one folder per condition.",
+        "are named differently; each group may hold one folder per condition. It must not "
+        "be empty or NA.",
+        "  - confirmed_on: the date of the confirmation as YYYY-MM-DD, or empty (the run "
+        "fills it in).",
         "  - confirmed: set it to true in every row of a repeat group once you are sure its "
         "images were prepared and acquired under the same circumstances, so they are "
         "comparable.",
