@@ -245,6 +245,25 @@ def test_only_iso_dates_are_confirmation_dates(tmp_path, on):
         read_experiment_design(path)
 
 
+def test_repeat_groups_differing_only_in_case_are_refused(tmp_path):
+    # Decision D-e: a name is spelled one way; Rep1 and rep1 are not two repeat groups.
+    path = tmp_path / DESIGN_FILENAME
+    path.write_bytes(
+        (HEADER + "ctrl,rep1,Rep1,false,1,0,true,,1\ndrug,rep1,rep1,false,1,0,true,,1\n").encode()
+    )
+    with pytest.raises(DesignFormatError) as caught:
+        read_experiment_design(path)
+    assert str(caught.value).startswith(
+        "experiment_design.csv, line 3, column repeat_group: 'rep1' differs only in case from "
+        "'Rep1' on line 2."
+    )
+    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
+    clash = default_design(repeats_of(root)).with_group(("treated", "rep1"), "REP1")
+    assert "invalid_experiment_design" in codes(design_issues(clash))
+    with pytest.raises(DesignFormatError, match="only in case"):
+        write_experiment_design(clash, tmp_path / "out.csv")
+
+
 def test_the_writer_writes_only_iso_dates_and_valid_groups(tmp_path):
     root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
     design = default_design(repeats_of(root))

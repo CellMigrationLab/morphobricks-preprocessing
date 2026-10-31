@@ -170,6 +170,10 @@ def test_a_missing_file_is_refused(tmp_path):
         (HEADER + "ctrl,rep1,rep1,true,2,0,true,,1\nctrl,rep2,rep2,false,2,0,true,,1\n", "control"),
         (HEADER + "ctrl,rep1,rep1,true,2,0,true,,1\nCtrl,rep2,rep2,true,2,0,true,,1\n", "case"),
         (HEADER + "a,Rep1,g1,true,2,0,true,,1\nb,rep1,g2,true,2,0,true,,1\n", "case"),
+        (
+            HEADER + "a,r1,Rep1,true,2,0,true,,1\nb,r1,rep1,true,2,0,true,,1\n",
+            "line 3, column repeat_group: 'rep1' differs only in case from 'Rep1' on line 2",
+        ),
     ],
 )
 def test_anything_doubtful_is_refused(tmp_path, text, message):

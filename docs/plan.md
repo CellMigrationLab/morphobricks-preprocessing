@@ -961,8 +961,9 @@ Raised during review; to be decided before the milestones that need them:
     spreadsheet is read once a preprocessing run has written it back.
     `read_experiment_design` stays lenient about the form of the user's own edits in step
     1 and the CLI, but (owner decision, 31 October 2026) repeat-group names follow D-e
-    (no NA-like or empty value, no outer whitespace; an empty group no longer means the
-    folder name) and `confirmed_on` is empty or `YYYY-MM-DD`, in both readers; a bad edit
-    is refused naming the line and column. `design_issues` reports such values in a design
-    built in code (`invalid_experiment_design`), and the writer refuses them, so the brick
-    only ever writes ISO dates.*
+    (no NA-like or empty value, no outer whitespace, no two names differing only in case;
+    an empty group no longer means the folder name) and `confirmed_on` is empty or
+    `YYYY-MM-DD`, in both readers; a bad edit is refused naming the line and column.
+    `design_issues` reports such values in a design built in code
+    (`invalid_experiment_design`), and the writer refuses them, so the brick only ever
+    writes ISO dates.*

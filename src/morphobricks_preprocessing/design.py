@@ -440,7 +440,7 @@ def design_issues(design: ExperimentDesign) -> list[ValidationIssue]:
         confirmed yet. All are errors.
     """
     issues = []
-    invalid = [(row, problem) for row in design.rows for problem in _row_problems(row)]
+    invalid = _design_problems(design)
     if invalid:
         issues.append(
             error(
@@ -450,7 +450,8 @@ def design_issues(design: ExperimentDesign) -> list[ValidationIssue]:
                 + ".",
                 sorted({_folder(row) for row, _ in invalid}),
                 "Give every repeat group a name (not NA, nan, none, null, n/a or empty, "
-                f"without spaces around it) and every confirmation date as {DATE_FORMAT}.",
+                "without spaces around it, spelled the same way in every row) and every "
+                f"confirmation date as {DATE_FORMAT}.",
             )
         )
     if design.conflicts:
@@ -522,10 +523,13 @@ def read_experiment_design(path: str | os.PathLike) -> ExperimentDesign:
             "are missing."
         )
     rows: list[DesignRow] = []
+    numbers: list[int] = []
     for number, record in enumerate(reader, start=2):
         if not any((value or "").strip() for value in record.values() if isinstance(value, str)):
             continue
         rows.append(_parse_row(record, f"{path.name}, line {number}"))
+        numbers.append(number)
+    _check_group_case(zip(numbers, rows, strict=True), path.name)
     keys = [row.key for row in rows]
     twice = sorted({key for key in keys if keys.count(key) > 1})
     if twice:
@@ -664,7 +668,7 @@ def write_experiment_design(design: ExperimentDesign, path: str | os.PathLike) -
         (:func:`design_issues`, ``invalid_experiment_design``); nothing is written.
     """
     path = Path(path)
-    invalid = [(row, problem) for row in design.rows for problem in _row_problems(row)]
+    invalid = _design_problems(design)
     if invalid:
         raise DesignFormatError(
             "The experiment design cannot be written: "
@@ -744,6 +748,7 @@ def _parse_strict(data: bytes, name: str) -> ExperimentDesign:
             f"{name} must have the columns {', '.join(DESIGN_COLUMNS)} in this order, not {found}."
         )
     rows: list[DesignRow] = []
+    numbers: list[int] = []
     for number, values in enumerate(lines[1:], start=2):
         where = f"{name}, line {number}"
         if len(values) != len(DESIGN_COLUMNS):
@@ -754,6 +759,7 @@ def _parse_strict(data: bytes, name: str) -> ExperimentDesign:
         record = dict(zip(DESIGN_COLUMNS, values, strict=True))
         _check_strict_values(record, where)
         rows.append(_parse_row(record, where))
+        numbers.append(number)
     if not rows:
         raise DesignFormatError(f"{name} lists no folder.")
     keys = [row.key for row in rows]
@@ -771,6 +777,7 @@ def _parse_strict(data: bytes, name: str) -> ExperimentDesign:
         check_identity_case((row.condition, row.biological_repeat, SINGLE) for row in rows)
     except IdentityError as exc:
         raise DesignFormatError(f"{name}: {exc}") from None
+    _check_group_case(zip(numbers, rows, strict=True), name)
     return ExperimentDesign(tuple(rows))
 
 
@@ -854,6 +861,38 @@ def _is_date(value: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _design_problems(design: ExperimentDesign) -> list[tuple[DesignRow, str]]:
+    """Return the rows whose repeat group or date the readers refuse, with the reason.
+
+    Each row's own values (:func:`_row_problems`), and a repeat group spelled differently
+    from an earlier row's only in case (decision D-e: one spelling per name).
+    """
+    problems = [(row, problem) for row in design.rows for problem in _row_problems(row)]
+    spellings: dict[str, str] = {}
+    for row in design.rows:
+        first = spellings.setdefault(row.repeat_group.casefold(), row.repeat_group)
+        if first != row.repeat_group:
+            problems.append(
+                (row, f"repeat_group {row.repeat_group!r} differs from {first!r} only in case")
+            )
+    return problems
+
+
+def _check_group_case(numbered: Iterable[tuple[int, DesignRow]], name: str) -> None:
+    """Refuse repeat groups whose names differ only in case (decision D-e), naming lines."""
+    spellings: dict[str, tuple[int, str]] = {}
+    for number, row in numbered:
+        first_line, first = spellings.setdefault(
+            row.repeat_group.casefold(), (number, row.repeat_group)
+        )
+        if first != row.repeat_group:
+            raise DesignFormatError(
+                f"{name}, line {number}, column repeat_group: {row.repeat_group!r} differs "
+                f"only in case from {first!r} on line {first_line}. Spell a repeat group the "
+                "same way in every row."
+            )
 
 
 def _row_problems(row: DesignRow) -> list[str]:
