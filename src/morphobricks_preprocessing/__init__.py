@@ -121,6 +121,7 @@ from .masks import (
     read_mask_file,
 )
 from .metadata import (
+    OPEN_AXIS,
     PLACEHOLDER_AXES,
     ImageMetadata,
     MetadataReport,
@@ -132,6 +133,7 @@ from .metadata import (
     inspect_images,
     inspect_ome_zarr,
     inspect_tiff,
+    named_axes,
 )
 from .physical_sizes import (
     PIXEL_SIZE_TOLERANCE,
@@ -217,6 +219,7 @@ __all__ = [
     "MASK_NAME_SUFFIXES",
     "MASK_REPORT_FILENAME",
     "MISSING_TEXT",
+    "OPEN_AXIS",
     "OUTPUT_FILENAME",
     "PIXEL_SIZE_TOLERANCE",
     "PLACEHOLDER_AXES",
@@ -329,6 +332,7 @@ __all__ = [
     "mask_plane_issues",
     "mask_thresholds",
     "min_max",
+    "named_axes",
     "ngff_label_names",
     "ome_zarr_relative_path",
     "open_ngff",

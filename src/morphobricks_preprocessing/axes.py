@@ -18,7 +18,13 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
-from .metadata import PLACEHOLDER_AXES, MetadataReport, TiffMetadata, channel_count_issues
+from .metadata import (
+    OPEN_AXIS,
+    MetadataReport,
+    TiffMetadata,
+    channel_count_issues,
+    named_axes,
+)
 from .validation import ValidationIssue, error, has_errors, plural
 
 ROLES = ("X", "Y", "Z", "C", "T")
@@ -240,12 +246,15 @@ def check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | 
 
     One rule for every brick that is told an image's (or mask's) axes, for example
     ``image_axes="CYX"`` (MorphoBricks D86): a declaration can name what the header leaves
-    open, never contradict it. Position by position:
+    open, never contradict it. Only what the metadata names binds
+    (:func:`.metadata.named_axes`, the same rule as :func:`.metadata.header_axes`).
+    Position by position:
 
-    - an axis the metadata names (:func:`.metadata.header_axes`: X, Y, Z, C, T) must be
-      declared with that letter;
-    - a placeholder axis (``I``, ``Q``: the file does not say) may be declared Z, C or T,
-      never X or Y;
+    - an axis the metadata names (X, Y, Z, C, T) must be declared with that letter;
+    - a dimension it leaves open may be declared any role: a placeholder axis (``I``,
+      ``Q``), and in a plain stack of pages without axis metadata (``IYX``, ``QYX``,
+      ``QQYX``) the ``Y`` and ``X`` too, which only say where the pages' rows and columns
+      are stored (a (Y, X, C) array written without metadata reads as ``QYX``);
     - the RGB samples axis ``S`` may be declared C when the header has no C (as the axis
       review's prefill does);
     - any other header axis (tile ``R``, angle ``A``, ...) has no role and cannot be
@@ -276,7 +285,7 @@ def check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | 
             "Export the image again, or leave it out.",
         )
     text = declared.upper() if isinstance(declared, str) else ""
-    problem = _declared_axes_problem(meta.axes, text)
+    problem = _declared_axes_problem(meta.axes, named_axes(meta), text)
     if problem is None:
         return None
     return error(
@@ -289,7 +298,7 @@ def check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | 
     )
 
 
-def _declared_axes_problem(header: str, declared: str) -> str | None:
+def _declared_axes_problem(header: str, named: str, declared: str) -> str | None:
     if not declared or len(declared) != len(header):
         return f"{len(declared)} declared for {len(header)} dimensions"
     unknown = sorted(set(declared) - set(ROLES))
@@ -298,10 +307,8 @@ def _declared_axes_problem(header: str, declared: str) -> str | None:
     repeated = sorted({axis for axis in declared if declared.count(axis) > 1})
     if repeated:
         return f"{', '.join(repeated)} declared more than once"
-    for index, (have, said) in enumerate(zip(header, declared, strict=True)):
-        if have == said:
-            continue
-        if have in PLACEHOLDER_AXES and said in PLANE_ROLES:
+    for index, (have, said) in enumerate(zip(named, declared, strict=True)):
+        if have in (said, OPEN_AXIS):
             continue
         if have == "S" and said == "C" and "C" not in header:
             continue

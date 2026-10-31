@@ -938,6 +938,14 @@ Raised during review; to be decided before the milestones that need them:
     only drift and no image stands out; it replaces the four-significant-digit rounding.
     Owner's follow-up decisions: `null`, `n/a` and `<NA>` are refused as names too, and
     `check_plane_index` returns NumPy integers as plain ints.*
+    *Amended (31 October 2026, for v0.3.4): only the axes the metadata names bind a
+    declaration. The `Y` and `X` `tifffile` reports for a plain stack of pages (`IYX`,
+    `QYX`, `QQYX`, no axis metadata) only say where each page's rows and columns are
+    stored, so like the placeholders they are left open: a plain `QYX` stack may be
+    declared `YXC` or `CYX`. `named_axes` is the one rule behind `header_axes` and
+    `check_declared_axes`; a declaration the metadata contradicts (ImageJ `ZYX` as `CYX`,
+    OME or shaped `CYX` as `YXC`) is still refused. MorphoRelate's workaround (checking only
+    when `header_axes` names every axis) is no longer needed.*
 39. What does v0.3.3 hold?
     *Decided (31 October 2026): v0.3.2 and the shared rules of question 38 (PRs #49–#55),
     with the warning `unsupported_pixel_size_unit` naming an image, axis and unit outside

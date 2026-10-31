@@ -100,6 +100,12 @@ class TiffMetadata:
         RGB with three samples per pixel, which ``tifffile`` labels ``S``. It is
         the metadata the image type suggestion uses (:mod:`.image_type`). False
         for other TIFF files (also RGB with an alpha sample) and OME-Zarr images.
+    axes_from_metadata
+        True when the axes come from metadata that names them: OME, ImageJ or other
+        microscope metadata ``tifffile`` reads, ``tifffile`` "shaped" metadata with axes
+        (decision D-d), or OME-NGFF. False for a plain TIFF (no axis metadata), whose
+        ``Y`` and ``X`` only say where each page's rows and columns are stored
+        (:func:`header_axes`, :func:`.axes.check_declared_axes`).
     """
 
     relative_path: str
@@ -116,6 +122,7 @@ class TiffMetadata:
     physical_sizes: PhysicalSizes = PhysicalSizes()
     rgb_samples: bool = False
     channel_names_trimmed: bool = False
+    axes_from_metadata: bool = True
 
     def length(self, axis: str) -> int:
         """Return the length of the dimension labelled ``axis``, 1 if there is none."""
@@ -179,6 +186,45 @@ PLACEHOLDER_AXES = frozenset("IQ")
 plain stack of pages) and ``Q`` (a "shaped" file without axes, or an OME-NGFF axis of
 another type). They are never metadata: the user gives such a dimension its role."""
 
+OPEN_AXIS = "?"
+"""Marks a dimension the metadata does not name in :func:`named_axes`."""
+
+
+def named_axes(meta: TiffMetadata) -> str:
+    """Return the image's axes with every dimension its metadata does not name as ``?``.
+
+    The one rule behind :func:`header_axes` and :func:`.axes.check_declared_axes`
+    (MorphoBricks D86): a dimension is named when ``tifffile`` (or OME-NGFF) gives it a
+    letter from the file's metadata. Left open (:data:`OPEN_AXIS`) are
+
+    - placeholder axes (:data:`PLACEHOLDER_AXES`: ``I``, ``Q``), and
+    - in a plain stack of pages (a placeholder axis and no axis metadata, e.g. ``QYX``,
+      ``QQYX`` or ``IYX``), the ``Y`` and ``X`` too: they are only where each page's
+      rows and columns are stored. A (Y, X, C) array written without metadata reads as
+      ``QYX`` with its channels as ``X``.
+
+    The ``Y`` and ``X`` of a single plain page (``YX``, RGB ``YXS``) are named (decision
+    D-d), as is ``S``, which comes from the samples-per-pixel tag.
+
+    Parameters
+    ----------
+    meta
+        The image's header (:func:`inspect_image`).
+
+    Returns
+    -------
+    str
+        One character per dimension, e.g. ``"CYX"``, ``"?YX"`` (shaped axes ``QYX``) or
+        ``"???"`` (a plain ``QYX`` stack); ``""`` for an unreadable image.
+    """
+    if not meta.readable:
+        return ""
+    plain_stack = not meta.axes_from_metadata and bool(PLACEHOLDER_AXES & set(meta.axes))
+    return "".join(
+        OPEN_AXIS if axis in PLACEHOLDER_AXES or (plain_stack and axis in "YX") else axis
+        for axis in meta.axes
+    )
+
 
 def header_axes(meta: TiffMetadata) -> str | None:
     """Return the axes an image's own metadata gives, or None when it does not name them all.
@@ -186,11 +232,12 @@ def header_axes(meta: TiffMetadata) -> str | None:
     These are the axes every MorphoBricks brick trusts (MorphoBricks D86, decision D-d):
     the series axes ``tifffile`` reads from OME, ImageJ and "shaped" metadata (the
     ``{"axes": ...}`` ``tifffile`` writes), a plain 2D ``YX`` image (or ``YXS`` RGB), and
-    the OME-NGFF axes of an OME-Zarr image. When any axis is a placeholder
-    (:data:`PLACEHOLDER_AXES`: a plain multi-page TIFF is ``IYX``, a shaped one without
-    axes ``QYX``), the file does not say which dimension is depth, time or channel, so
-    there are no header axes and nothing may be guessed. Length-1 axes are left out, as
-    ``tifffile`` reads them.
+    the OME-NGFF axes of an OME-Zarr image. When any dimension is left open
+    (:func:`named_axes`: a placeholder axis, so a plain multi-page TIFF ``IYX`` or a shaped
+    one without axes ``QYX``), the file does not say which dimension is depth, time or
+    channel, so there are no header axes and nothing may be guessed. Exactly when this
+    gives axes, :func:`.axes.check_declared_axes` accepts those axes and no others.
+    Length-1 axes are left out, as ``tifffile`` reads them.
 
     Parameters
     ----------
@@ -202,7 +249,8 @@ def header_axes(meta: TiffMetadata) -> str | None:
     str or None
         For example ``"ZYX"``; None for an unreadable image or one with a placeholder axis.
     """
-    if not meta.readable or not meta.axes or PLACEHOLDER_AXES & set(meta.axes):
+    named = named_axes(meta)
+    if not named or OPEN_AXIS in named:
         return None
     return meta.axes
 
@@ -242,6 +290,7 @@ def inspect_tiff(path: str | os.PathLike, relative_path: str | None = None) -> T
                 **_ome_details(tif),
                 physical_sizes=_tiff_sizes(tif),
                 rgb_samples=_rgb_samples(first),
+                axes_from_metadata=_axes_from_metadata(tif, first),
             )
     except Exception as exc:  # any failure to parse means the file cannot be used
         logger.debug("Cannot read the TIFF header of %s", path, exc_info=True)
@@ -497,6 +546,17 @@ def _rgb_samples(series: tifffile.TiffPageSeries) -> bool:
         and keyframe.photometric == tifffile.PHOTOMETRIC.RGB
         and keyframe.samplesperpixel == 3
     )
+
+
+def _axes_from_metadata(tif: tifffile.TiffFile, series: tifffile.TiffPageSeries) -> bool:
+    """Return False for a plain TIFF: a series whose axes no metadata names."""
+    kind = str(series.kind).lower()
+    if kind in ("generic", "uniform"):
+        return False
+    if kind == "shaped":
+        shaped = tif.shaped_metadata
+        return bool(shaped) and "axes" in shaped[0]
+    return True
 
 
 def _local_name(tag: str) -> str:

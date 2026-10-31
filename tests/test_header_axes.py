@@ -1,14 +1,18 @@
 """The shared header-axes rules (MorphoBricks D86, API A4, decision D-d)."""
 
+import itertools
+
 import numpy as np
 import pytest
 import tifffile
 
 from morphobricks_preprocessing import (
+    OPEN_AXIS,
     PLACEHOLDER_AXES,
     check_declared_axes,
     header_axes,
     inspect_image,
+    named_axes,
     read_mask_file,
 )
 from tiff_tree import write_data
@@ -66,6 +70,34 @@ def test_header_axes(tmp_path, write, expected):
     assert header_axes(inspect_image(path, "a.tif")) == expected
 
 
+@pytest.mark.parametrize(
+    ("write", "axes", "named"),
+    [
+        (lambda p: plain(p, np.zeros((3, 8, 8), np.uint8)), "IYX", "???"),
+        (lambda p: write_data(p, np.zeros((3, 8, 8), np.uint8)), "QYX", "???"),
+        (lambda p: write_data(p, np.zeros((2, 3, 8, 8), np.uint8)), "QQYX", "????"),
+        (lambda p: write_data(p, np.zeros((3, 8, 8), np.uint8), "QYX"), "QYX", "?YX"),
+        (lambda p: write_data(p, np.zeros((3, 8, 8), np.uint8), "CYX"), "CYX", "CYX"),
+        (lambda p: imagej(p, np.zeros((3, 8, 8), np.uint8), "ZYX"), "ZYX", "ZYX"),
+        (lambda p: plain(p, np.zeros((8, 8), np.uint8)), "YX", "YX"),
+        (lambda p: write_data(p, np.zeros((8, 8), np.uint8)), "YX", "YX"),
+        (
+            lambda p: tifffile.imwrite(
+                p, np.zeros((2, 8, 8, 3), np.uint8), photometric="rgb", metadata=None
+            ),
+            "IYXS",
+            "???S",
+        ),
+    ],
+)
+def test_named_axes(tmp_path, write, axes, named):
+    path = tmp_path / "a.tif"
+    write(path)
+    meta = inspect_image(path, "a.tif")
+    assert (meta.axes, named_axes(meta)) == (axes, named)
+    assert OPEN_AXIS == "?"
+
+
 def test_header_axes_of_an_unreadable_file(tmp_path):
     path = tmp_path / "a.tif"
     path.write_bytes(b"not a tiff")
@@ -120,9 +152,97 @@ def test_a_placeholder_axis_may_be_declared_depth_time_or_channel(tmp_path):
     assert meta.axes == "IYX"
     for declared in ("ZYX", "TYX", "CYX"):
         assert check_declared_axes(meta, declared) is None
-    # but never X or Y, and the header's Y and X stay where they are
-    assert check_declared_axes(meta, "XZY").code == "declared_axes_mismatch"
-    assert check_declared_axes(meta, "YXZ").code == "declared_axes_mismatch"
+
+
+def shaped_without_axes(path, data):
+    return write_data(path, data)
+
+
+@pytest.mark.parametrize("write", [plain, shaped_without_axes])
+@pytest.mark.parametrize("declared", ["YXC", "CYX", "ZYX", "TYX", "XYZ", "yxc"])
+def test_a_plain_stack_leaves_every_dimension_open(tmp_path, write, declared):
+    # The Y and X tifffile reports for a plain stack are only where each page's rows and
+    # columns are stored: a (Y, X, C) array written without metadata reads as QYX or IYX.
+    meta = inspect_image(write(tmp_path / "a.tif", np.zeros((8, 8, 3), np.uint8)), "a.tif")
+    assert meta.axes in ("QYX", "IYX")
+    assert check_declared_axes(meta, declared) is None
+
+
+def test_a_plain_stack_of_two_unnamed_dimensions_is_open(tmp_path):
+    meta = inspect_image(write_data(tmp_path / "a.tif", np.zeros((2, 3, 8, 8), np.uint8)))
+    assert meta.axes == "QQYX"
+    for declared in ("ZCYX", "TZYX", "YXZC", "CYXT"):
+        assert check_declared_axes(meta, declared) is None
+
+
+@pytest.mark.parametrize("declared", ["YX", "ZCYX", "ZZX", "ZYQ", "YXS", "", None])
+def test_a_plain_stack_still_needs_one_role_per_dimension(tmp_path, declared):
+    meta = inspect_image(plain(tmp_path / "a.tif", np.zeros((3, 8, 8), np.uint8)), "a.tif")
+    assert check_declared_axes(meta, declared).code == "declared_axes_mismatch"
+
+
+def test_named_axes_stay_binding_beside_a_placeholder(tmp_path):
+    # Axes metadata that names Y and X but leaves one dimension open: only that one is open.
+    path = write_data(tmp_path / "a.tif", np.zeros((3, 8, 8), np.uint8), "QYX")
+    meta = inspect_image(path, "a.tif")
+    assert check_declared_axes(meta, "CYX") is None
+    assert check_declared_axes(meta, "YXC").code == "declared_axes_mismatch"
+
+
+def test_rgb_samples_of_a_plain_stack_stay_binding(tmp_path):
+    # S comes from the SamplesPerPixel tag, not from where the pages are stored.
+    path = tmp_path / "rgb.tif"
+    tifffile.imwrite(path, np.zeros((2, 8, 8, 3), np.uint8), photometric="rgb", metadata=None)
+    meta = inspect_image(path, "rgb.tif")
+    assert meta.axes == "IYXS"
+    assert check_declared_axes(meta, "TYXC") is None
+    assert check_declared_axes(meta, "TYXZ").code == "declared_axes_mismatch"
+
+
+def test_an_ome_channel_stack_declared_samples_last_is_refused(tmp_path):
+    path = tmp_path / "a.ome.tif"
+    tifffile.imwrite(path, np.zeros((3, 8, 8), np.uint8), ome=True, metadata={"axes": "CYX"})
+    meta = inspect_image(path, "a.ome.tif")
+    assert meta.axes == "CYX"
+    assert check_declared_axes(meta, "CYX") is None
+    assert check_declared_axes(meta, "YXC").code == "declared_axes_mismatch"
+
+
+def test_shaped_axes_declared_in_another_order_are_refused(tmp_path):
+    # Decision D-d: tifffile "shaped" axes are header axes, so they bind like OME's.
+    meta = inspect_image(write_data(tmp_path / "a.tif", np.zeros((3, 8, 8), np.uint8), "CYX"))
+    assert check_declared_axes(meta, "YXC").code == "declared_axes_mismatch"
+
+
+@pytest.mark.parametrize(
+    "write",
+    [
+        lambda p: plain(p, np.zeros((3, 8, 8), np.uint8)),
+        lambda p: write_data(p, np.zeros((3, 8, 8), np.uint8)),
+        lambda p: write_data(p, np.zeros((3, 8, 8), np.uint8), "CYX"),
+        lambda p: write_data(p, np.zeros((3, 8, 8), np.uint8), "QYX"),
+        lambda p: imagej(p, np.zeros((3, 8, 8), np.uint8), "ZYX"),
+        lambda p: plain(p, np.zeros((8, 8), np.uint8)),
+        lambda p: write_data(p, np.zeros((8, 8), np.uint8)),
+    ],
+)
+def test_header_axes_are_exactly_what_check_declared_axes_binds(tmp_path, write):
+    path = tmp_path / "a.tif"
+    write(path)
+    meta = inspect_image(path, "a.tif")
+    roles = "XYZCT"
+    accepted = {
+        "".join(order)
+        for order in itertools.permutations(roles, len(meta.axes))
+        if check_declared_axes(meta, "".join(order)) is None
+    }
+    named = header_axes(meta)
+    if named is None:
+        # Something is left open, so more than one declaration fits.
+        assert len(accepted) > 1
+    else:
+        # Every axis is named, so only the header's own axes fit.
+        assert accepted == {named}
 
 
 def test_rgb_samples_may_be_declared_channels(tmp_path):
