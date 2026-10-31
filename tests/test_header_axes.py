@@ -496,3 +496,14 @@ def test_header_axes_of_an_image_one_pixel_high_or_wide(tmp_path, shape):
         assert named_axes(meta) == header_axes(meta) == "YX"
         assert check_declared_axes(meta, "YX") is None
         assert check_declared_axes(meta, "ZX").code == "declared_axes_mismatch"
+
+
+def test_read_mask_file_reads_a_1d_array_saved_as_one_row(tmp_path):
+    # tifffile's default metadata saves a 1D array as {"shape": [9]}, which it reads back with
+    # the axes 'X' and no Y; the file is one TIFF page of 1 row and 9 columns, so the mask
+    # is that page: YX, (1, 9).
+    data = labels((9,))
+    path = tmp_path / "m.tif"
+    tifffile.imwrite(path, data)
+    assert tifffile.TiffFile(path).series[0].axes == "X"
+    np.testing.assert_array_equal(read_mask_file(path), data.reshape(1, 9))

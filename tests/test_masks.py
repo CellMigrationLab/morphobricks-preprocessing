@@ -213,6 +213,19 @@ def test_masks_one_pixel_high_or_wide_are_2d_masks(tmp_path, shape):
     assert scan_masks(found, root).types["Cells"]
 
 
+def test_a_1d_array_saved_as_one_row_is_a_mask_one_pixel_high(tmp_path):
+    root, folder = tmp_path / "exp", tmp_path / "masks"
+    write_data(root / "ctrl" / "rep1" / "a.tif", np.zeros((1, 9), np.uint8))
+    mask = np.arange(9, dtype=np.uint16) % 3
+    path = folder / "Cells" / "ctrl" / "rep1" / "a.tif"
+    path.parent.mkdir(parents=True)
+    tifffile.imwrite(path, mask)  # {"shape": [9]}: tifffile's axes 'X'
+    found = inventory(root, folder)
+    assert found.ok, codes(found.issues)
+    assert [(f.axes, f.shape) for f in found.files] == [("YX", (1, 9))]
+    np.testing.assert_array_equal(read_mask(found.files[0], folder, root), mask.reshape(1, 9))
+
+
 def test_a_named_stack_of_one_pixel_high_masks_keeps_its_planes(tmp_path):
     root, folder = tmp_path / "exp", tmp_path / "masks"
     write_data(root / "ctrl" / "rep1" / "a.tif", np.zeros((3, 1, 9), np.uint8), "TYX")

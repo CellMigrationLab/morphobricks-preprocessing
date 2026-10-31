@@ -339,7 +339,7 @@ def _read_tiff_plane(path: Path, wanted: Mapping[str, int | None]) -> tuple[np.n
     """
     with tifffile.TiffFile(path) as tif:
         series = tif.series[0]
-        axes, shape = series.axes, tuple(series.shape)
+        axes, shape = _tiff_axes(series)
         index = _plane_index(axes, shape, wanted)
         kept = "".join(a for a, i in zip(axes, index, strict=True) if i == slice(None))
         pages = len(series.pages)
@@ -357,8 +357,26 @@ def _read_tiff_plane(path: Path, wanted: Mapping[str, int | None]) -> tuple[np.n
             pixels = tif.asarray(key=key, series=0).reshape(shape[split:])
             pixels = pixels[index[split:]]
         else:
-            pixels = series.asarray()[index]
+            pixels = series.asarray().reshape(shape)[index]
     return pixels, kept
+
+
+def _tiff_axes(series: tifffile.TiffPageSeries) -> tuple[str, tuple[int, ...]]:
+    """Return the axes and shape of a TIFF mask's series, as ``tifffile`` gives them.
+
+    One exception: a series without Y or X stored in one 2D page, for example a 1D array
+    written with ``tifffile``'s default metadata (``{"shape": [N]}``, axes ``X``), is that
+    page: ``YX`` with the page's shape, one row of N pixels. The page's rows and columns are
+    the TIFF's own (as for any plain 2D page, decision D-d), so nothing is guessed; any other
+    series without Y or X keeps its axes and is refused.
+    """
+    axes, shape = str(series.axes), tuple(int(n) for n in series.shape)
+    if "Y" in axes and "X" in axes:
+        return axes, shape
+    page = series.keyframe
+    if len(series.pages) == 1 and page.axes == "YX" and math.prod(page.shape) == math.prod(shape):
+        return "YX", tuple(int(n) for n in page.shape)
+    return axes, shape
 
 
 def _plane_index(
@@ -707,7 +725,8 @@ def _mask_header(mask: MaskFile, folder: Path | None, root: Path) -> tuple:
         with tifffile.TiffFile(Path(folder) / mask.path) as tif:
             if len(tif.series) != 1:
                 raise ValueError(f"{len(tif.series)} image series")
-            axes, shape, dtype = tif.series[0].axes, tif.series[0].shape, tif.series[0].dtype
+            axes, shape = _tiff_axes(tif.series[0])
+            dtype = tif.series[0].dtype
     else:
         image, name = mask.path.rsplit("/labels/", 1)
         labels = open_ngff_labels(root / image, name)
