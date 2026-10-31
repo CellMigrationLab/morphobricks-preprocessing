@@ -263,7 +263,8 @@ def check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | 
     - any other header axis (tile ``R``, angle ``A``, ...) has no role and cannot be
       declared.
 
-    The declaration must have one letter per header axis, each role at most once.
+    The declaration must have one letter per header axis, each role at most once, and
+    declare Y and X when the header has them (also where a plain stack leaves them open).
 
     Parameters
     ----------
@@ -344,6 +345,11 @@ def _declared_axes_problem(header: str, named: str, declared: str) -> str | None
     repeated = sorted({axis for axis in declared if declared.count(axis) > 1})
     if repeated:
         return f"{', '.join(repeated)} declared more than once"
+    # Even where a plain stack leaves its Y and X open, the image has rows and columns:
+    # a declaration without them would read no plane at all.
+    undeclared = [axis for axis in "YX" if axis in header and axis not in declared]
+    if undeclared:
+        return f"{' and '.join(undeclared)} {'is' if len(undeclared) == 1 else 'are'} not declared"
     for index, (have, said) in enumerate(zip(named, declared, strict=True)):
         if have in (said, OPEN_AXIS):
             continue

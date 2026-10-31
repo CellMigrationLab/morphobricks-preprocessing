@@ -209,6 +209,16 @@ def test_a_plain_stack_still_needs_one_role_per_dimension(tmp_path, declared):
     assert check_declared_axes(meta, declared).code == "declared_axes_mismatch"
 
 
+@pytest.mark.parametrize("declared", ["CTZ", "ZCX", "YCT"])
+def test_a_plain_stack_must_still_declare_y_and_x(tmp_path, declared):
+    # Its Y and X are open, but the image still has rows and columns: a declaration
+    # without them reads no plane at all.
+    meta = inspect_image(plain(tmp_path / "a.tif", np.zeros((3, 8, 8), np.uint8)), "a.tif")
+    issue = check_declared_axes(meta, declared)
+    assert issue.code == "declared_axes_mismatch"
+    assert "not declared" in issue.message
+
+
 def test_named_axes_stay_binding_beside_a_placeholder(tmp_path):
     # Axes metadata that names Y and X but leaves one dimension open: only that one is open.
     path = write_data(tmp_path / "a.tif", np.zeros((3, 8, 8), np.uint8), "QYX")

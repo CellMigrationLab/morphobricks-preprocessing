@@ -238,7 +238,9 @@ def header_axes(meta: TiffMetadata) -> str | None:
     (:func:`named_axes`: a placeholder axis, so a plain multi-page TIFF ``IYX`` or a shaped
     one without axes ``QYX``), the file does not say which dimension is depth, time or
     channel, so there are no header axes and nothing may be guessed. Exactly when this
-    gives axes, :func:`.axes.check_declared_axes` accepts those axes and no others.
+    gives axes, :func:`.axes.check_declared_axes` accepts those axes, them with Y and X
+    swapped (read transposed) and, without a C axis, the RGB samples ``S`` declared C;
+    nothing else.
     Length-1 axes are left out, as ``tifffile`` reads them.
 
     Parameters
