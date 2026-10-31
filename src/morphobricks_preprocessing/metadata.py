@@ -168,6 +168,39 @@ class MetadataReport:
         return dtypes.pop() if len(dtypes) == 1 else None
 
 
+PLACEHOLDER_AXES = frozenset("IQ")
+"""``tifffile``'s letters for a dimension whose meaning the file does not give: ``I`` (a
+plain stack of pages) and ``Q`` (a "shaped" file without axes, or an OME-NGFF axis of
+another type). They are never metadata: the user gives such a dimension its role."""
+
+
+def header_axes(meta: TiffMetadata) -> str | None:
+    """Return the axes an image's own metadata gives, or None when it does not name them all.
+
+    These are the axes every MorphoBricks brick trusts (MorphoBricks D86, decision D-d):
+    the series axes ``tifffile`` reads from OME, ImageJ and "shaped" metadata (the
+    ``{"axes": ...}`` ``tifffile`` writes), a plain 2D ``YX`` image (or ``YXS`` RGB), and
+    the OME-NGFF axes of an OME-Zarr image. When any axis is a placeholder
+    (:data:`PLACEHOLDER_AXES`: a plain multi-page TIFF is ``IYX``, a shaped one without
+    axes ``QYX``), the file does not say which dimension is depth, time or channel, so
+    there are no header axes and nothing may be guessed. Length-1 axes are left out, as
+    ``tifffile`` reads them.
+
+    Parameters
+    ----------
+    meta
+        The image's header (:func:`inspect_image`).
+
+    Returns
+    -------
+    str or None
+        For example ``"ZYX"``; None for an unreadable image or one with a placeholder axis.
+    """
+    if not meta.readable or not meta.axes or PLACEHOLDER_AXES & set(meta.axes):
+        return None
+    return meta.axes
+
+
 def inspect_tiff(path: str | os.PathLike, relative_path: str | None = None) -> TiffMetadata:
     """Read the header of one TIFF file without decoding its pixels.
 

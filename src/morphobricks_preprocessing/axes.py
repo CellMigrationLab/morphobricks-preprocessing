@@ -18,7 +18,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
-from .metadata import MetadataReport, TiffMetadata, channel_count_issues
+from .metadata import PLACEHOLDER_AXES, MetadataReport, TiffMetadata, channel_count_issues
 from .validation import ValidationIssue, error, has_errors, plural
 
 ROLES = ("X", "Y", "Z", "C", "T")
@@ -233,6 +233,80 @@ def prefill_mapping(axes: str) -> AxisMapping:
         else:
             roles.append(None)
     return AxisMapping(axes, tuple(roles))
+
+
+def check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | None:
+    """Check the axes a brick or user declares for an image against its header.
+
+    One rule for every brick that is told an image's (or mask's) axes, for example
+    ``image_axes="CYX"`` (MorphoBricks D86): a declaration can name what the header leaves
+    open, never contradict it. Position by position:
+
+    - an axis the metadata names (:func:`.metadata.header_axes`: X, Y, Z, C, T) must be
+      declared with that letter;
+    - a placeholder axis (``I``, ``Q``: the file does not say) may be declared Z, C or T,
+      never X or Y;
+    - the RGB samples axis ``S`` may be declared C when the header has no C (as the axis
+      review's prefill does);
+    - any other header axis (tile ``R``, angle ``A``, ...) has no role and cannot be
+      declared.
+
+    The declaration must have one letter per header axis, each role at most once.
+
+    Parameters
+    ----------
+    meta
+        The image's header (:func:`.metadata.inspect_image`).
+    declared
+        The declared axes, one letter per dimension (any case), e.g. ``"ZYX"``.
+
+    Returns
+    -------
+    ValidationIssue or None
+        The error ``declared_axes_mismatch`` naming the image, the declared and the header
+        axes (or ``unreadable_tiff`` / ``unreadable_ome_zarr`` when its header could not be
+        read); None when the declaration fits the header.
+    """
+    if not meta.readable:
+        code = "unreadable_ome_zarr" if meta.is_ome_zarr else "unreadable_tiff"
+        return error(
+            code,
+            "The image's header could not be read, so its axes cannot be checked.",
+            [meta.relative_path],
+            "Export the image again, or leave it out.",
+        )
+    text = declared.upper() if isinstance(declared, str) else ""
+    problem = _declared_axes_problem(meta.axes, text)
+    if problem is None:
+        return None
+    return error(
+        "declared_axes_mismatch",
+        f"The axes declared for {meta.relative_path} ({declared!r}) do not fit the axes in its "
+        f"header ({meta.axes!r}): {problem}. Planes would be read along the wrong dimension.",
+        [meta.relative_path],
+        "Declare the axes the image's metadata gives, or export the image again with the "
+        "right axes in its metadata.",
+    )
+
+
+def _declared_axes_problem(header: str, declared: str) -> str | None:
+    if not declared or len(declared) != len(header):
+        return f"{len(declared)} declared for {len(header)} dimensions"
+    unknown = sorted(set(declared) - set(ROLES))
+    if unknown:
+        return f"{', '.join(unknown)} {'is' if len(unknown) == 1 else 'are'} not an axis role"
+    repeated = sorted({axis for axis in declared if declared.count(axis) > 1})
+    if repeated:
+        return f"{', '.join(repeated)} declared more than once"
+    for index, (have, said) in enumerate(zip(header, declared, strict=True)):
+        if have == said:
+            continue
+        if have in PLACEHOLDER_AXES and said in PLANE_ROLES:
+            continue
+        if have == "S" and said == "C" and "C" not in header:
+            continue
+        return f"dimension {index} is {_axis_label(have)} in the header, declared {said}"
+    return None
 
 
 def reference_axes(files: Iterable[TiffMetadata]) -> str | None:
