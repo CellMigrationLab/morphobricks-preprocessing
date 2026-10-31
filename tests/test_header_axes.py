@@ -1,5 +1,6 @@
 """The shared header-axes rules (MorphoBricks D86, API A4, decision D-d)."""
 
+import dataclasses
 import itertools
 
 import numpy as np
@@ -9,11 +10,13 @@ import tifffile
 from morphobricks_preprocessing import (
     OPEN_AXIS,
     PLACEHOLDER_AXES,
+    TiffMetadata,
     check_declared_axes,
     header_axes,
     inspect_image,
     named_axes,
     read_mask_file,
+    series_axes_from_metadata,
 )
 from tiff_tree import write_data
 
@@ -96,6 +99,30 @@ def test_named_axes(tmp_path, write, axes, named):
     meta = inspect_image(path, "a.tif")
     assert (meta.axes, named_axes(meta)) == (axes, named)
     assert OPEN_AXIS == "?"
+
+
+def test_series_axes_from_metadata_reads_each_series(tmp_path):
+    # A brick building a TiffMetadata for another series passes the same flag.
+    path = tmp_path / "two.tif"
+    tifffile.imwrite(path, np.zeros((3, 8, 8), np.uint8), photometric="minisblack", metadata={})
+    tifffile.imwrite(
+        path,
+        np.zeros((2, 8, 8), np.uint8),
+        photometric="minisblack",
+        metadata={"axes": "CYX"},
+        append=True,
+    )
+    with tifffile.TiffFile(path) as tif:
+        assert [series_axes_from_metadata(series) for series in tif.series] == [False, True]
+
+
+def test_a_header_built_by_hand_reads_strictly():
+    # Without the flag, a placeholder stack's Y and X stay binding (refuse rather than guess).
+    meta = TiffMetadata("a.tif", True, (3, 8, 8), np.dtype("uint8"), "QYX", 1, 3)
+    assert named_axes(meta) == "?YX"
+    assert check_declared_axes(meta, "YXC").code == "declared_axes_mismatch"
+    plain_stack = dataclasses.replace(meta, axes_from_metadata=False)
+    assert check_declared_axes(plain_stack, "YXC") is None
 
 
 def test_header_axes_of_an_unreadable_file(tmp_path):

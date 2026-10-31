@@ -15,6 +15,7 @@ reports from the file's metadata, used to prefill the axis review.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from collections.abc import Callable, Hashable, Iterable, Mapping
@@ -105,7 +106,8 @@ class TiffMetadata:
         microscope metadata ``tifffile`` reads, ``tifffile`` "shaped" metadata with axes
         (decision D-d), or OME-NGFF. False for a plain TIFF (no axis metadata), whose
         ``Y`` and ``X`` only say where each page's rows and columns are stored
-        (:func:`header_axes`, :func:`.axes.check_declared_axes`).
+        (:func:`series_axes_from_metadata`, :func:`named_axes`). Defaults to True, the
+        strict reading, for a header built by hand.
     """
 
     relative_path: str
@@ -290,7 +292,7 @@ def inspect_tiff(path: str | os.PathLike, relative_path: str | None = None) -> T
                 **_ome_details(tif),
                 physical_sizes=_tiff_sizes(tif),
                 rgb_samples=_rgb_samples(first),
-                axes_from_metadata=_axes_from_metadata(tif, first),
+                axes_from_metadata=series_axes_from_metadata(first),
             )
     except Exception as exc:  # any failure to parse means the file cannot be used
         logger.debug("Cannot read the TIFF header of %s", path, exc_info=True)
@@ -548,14 +550,36 @@ def _rgb_samples(series: tifffile.TiffPageSeries) -> bool:
     )
 
 
-def _axes_from_metadata(tif: tifffile.TiffFile, series: tifffile.TiffPageSeries) -> bool:
-    """Return False for a plain TIFF: a series whose axes no metadata names."""
+def series_axes_from_metadata(series: tifffile.TiffPageSeries) -> bool:
+    """Return True when axis metadata names the axes of a ``tifffile`` series.
+
+    False for a plain TIFF: a series ``tifffile`` reads as ``generic`` or ``uniform`` pages,
+    or as "shaped" without axes (``{"shape": ...}`` only). True for OME, ImageJ, shaped
+    metadata with ``"axes"`` (decision D-d) and the other microscope formats ``tifffile``
+    reads axes from. :func:`inspect_tiff` records it for the first series as
+    :attr:`TiffMetadata.axes_from_metadata`; a brick that builds a :class:`TiffMetadata`
+    for another series passes it the same way.
+
+    Parameters
+    ----------
+    series
+        A series of an open ``tifffile.TiffFile``.
+
+    Returns
+    -------
+    bool
+        Whether the series' axes come from metadata rather than from where its pages are
+        stored.
+    """
     kind = str(series.kind).lower()
     if kind in ("generic", "uniform"):
         return False
     if kind == "shaped":
-        shaped = tif.shaped_metadata
-        return bool(shaped) and "axes" in shaped[0]
+        try:
+            shaped = json.loads(series.keyframe.shaped_description or "")
+        except (AttributeError, TypeError, ValueError):
+            return False
+        return isinstance(shaped, dict) and "axes" in shaped
     return True
 
 

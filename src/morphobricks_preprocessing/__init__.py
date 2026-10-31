@@ -134,6 +134,7 @@ from .metadata import (
     inspect_ome_zarr,
     inspect_tiff,
     named_axes,
+    series_axes_from_metadata,
 )
 from .physical_sizes import (
     PIXEL_SIZE_TOLERANCE,
@@ -366,6 +367,7 @@ __all__ = [
     "same_pixel_size",
     "sample_planes",
     "scan_masks",
+    "series_axes_from_metadata",
     "source_fingerprint",
     "space_unit",
     "to_micrometers",
