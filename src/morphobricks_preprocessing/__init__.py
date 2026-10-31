@@ -17,6 +17,7 @@ from .axes import (
     axis_length_ranges,
     check_declared_axes,
     check_mapping,
+    declared_axes_transposed,
     declared_mapping,
     file_mapping_for,
     prefill_experiment_mapping,
@@ -121,6 +122,7 @@ from .masks import (
     read_mask_file,
 )
 from .metadata import (
+    OPEN_AXIS,
     PLACEHOLDER_AXES,
     ImageMetadata,
     MetadataReport,
@@ -132,6 +134,8 @@ from .metadata import (
     inspect_images,
     inspect_ome_zarr,
     inspect_tiff,
+    named_axes,
+    series_axes_from_metadata,
 )
 from .physical_sizes import (
     PIXEL_SIZE_TOLERANCE,
@@ -217,6 +221,7 @@ __all__ = [
     "MASK_NAME_SUFFIXES",
     "MASK_REPORT_FILENAME",
     "MISSING_TEXT",
+    "OPEN_AXIS",
     "OUTPUT_FILENAME",
     "PIXEL_SIZE_TOLERANCE",
     "PLACEHOLDER_AXES",
@@ -298,6 +303,7 @@ __all__ = [
     "check_table",
     "compute_block_histogram",
     "compute_plane_histogram",
+    "declared_axes_transposed",
     "declared_mapping",
     "default_bin_count",
     "default_design",
@@ -329,6 +335,7 @@ __all__ = [
     "mask_plane_issues",
     "mask_thresholds",
     "min_max",
+    "named_axes",
     "ngff_label_names",
     "ome_zarr_relative_path",
     "open_ngff",
@@ -362,6 +369,7 @@ __all__ = [
     "same_pixel_size",
     "sample_planes",
     "scan_masks",
+    "series_axes_from_metadata",
     "source_fingerprint",
     "space_unit",
     "to_micrometers",
