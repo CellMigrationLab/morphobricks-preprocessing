@@ -505,5 +505,6 @@ def test_read_mask_file_reads_a_1d_array_saved_as_one_row(tmp_path):
     data = labels((9,))
     path = tmp_path / "m.tif"
     tifffile.imwrite(path, data)
-    assert tifffile.TiffFile(path).series[0].axes == "X"
+    with tifffile.TiffFile(path) as tif:
+        assert tif.series[0].axes == "X"
     np.testing.assert_array_equal(read_mask_file(path), data.reshape(1, 9))
