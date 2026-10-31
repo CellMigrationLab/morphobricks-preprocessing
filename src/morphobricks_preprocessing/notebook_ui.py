@@ -221,6 +221,8 @@ class PreprocessingNotebook:
     def __init__(self, experiment_folder: str = "", output_folder: str = ""):
         self.preflight: Preflight | None = None
         self.design: ExperimentDesign | None = None
+        # True while the saved design cannot be read and has not been replaced by an answer.
+        self._design_unreadable = False
         self.dataset = DatasetReport()
         self.mapping: AxisMapping | None = None
         self.confirmed_mapping: AxisMapping | None = None
@@ -763,7 +765,12 @@ class PreprocessingNotebook:
         return None if check_output_folder(folder, output) else output
 
     def _open_design(self) -> None:
-        """Load the saved design, or start a new one, once the labels are confirmed."""
+        """Load the saved design, or start a new one, once the labels are confirmed.
+
+        A saved file that cannot be read is left as it is (owner decision of 31 October
+        2026): nothing is written until the user corrects it or answers a question again,
+        and the questions start unanswered, so step 3 cannot run on a guessed design.
+        """
         repeats = self.preflight.dataset.repeats
         output = self._design_folder()
         changes, problem, saved = DesignChanges(), None, False
@@ -773,6 +780,7 @@ class PreprocessingNotebook:
             design, changes, problem = load_design(output, repeats)
             saved = problem is None and (output / DESIGN_FILENAME).exists()
         self.design = design
+        self._design_unreadable = problem is not None
         self._build_design_editor()
         # A design confirmed earlier for the same folders is not asked again.
         reopen = not (saved and design.confirmed and not changes.any)
@@ -780,7 +788,10 @@ class PreprocessingNotebook:
         ui.set_visible(self.design_change, not reopen)
         self._design_note = self._design_load_note(design, changes, problem, saved)
         ui.set_visible(self.design_card, True)
-        self._save_design()
+        if self._design_unreadable:
+            self._design_saved = False
+        else:
+            self._save_design()
         self._design_changed()
 
     def _design_load_note(
@@ -788,9 +799,16 @@ class PreprocessingNotebook:
     ) -> str:
         if problem:
             return ui.status(
-                "warn",
-                f"The saved {DESIGN_FILENAME} could not be read, so the questions are asked again.",
-                [problem, "Answering replaces the file."],
+                "error",
+                f"The saved {DESIGN_FILENAME} cannot be read. It was left unchanged.",
+                [
+                    problem,
+                    "Correct the file (a spreadsheet program may have rewritten a date such "
+                    "as 2026-10-26 as 26/10/2026; dates are written YYYY-MM-DD), then undo "
+                    "and confirm the labels again to read it.",
+                    "Or answer the questions below again: your first answer replaces the "
+                    "file with the answers shown here.",
+                ],
             )
         if saved and changes.any:
             lines = []
@@ -928,6 +946,11 @@ class PreprocessingNotebook:
             logging.getLogger(__name__).warning("Cannot save the design", exc_info=True)
             return
         self._design_saved = True
+        if self._design_unreadable:
+            self._design_unreadable = False
+            self._design_note = ui.status(
+                "info", f"Your answers replaced the unreadable {DESIGN_FILENAME}."
+            )
 
     def _design_changed(self) -> None:
         """Update the balance, the messages, the status and the later steps after an answer."""
@@ -949,12 +972,18 @@ class PreprocessingNotebook:
             return
         note = getattr(self, "_design_note", "")
         saved = getattr(self, "_design_saved", False)
-        where = (
-            f"Saved in <b>{html.escape(str(self._design_folder() / DESIGN_FILENAME))}</b>."
-            if saved
-            else "Not saved: the output folder is not set or cannot be written; the answers "
-            "are kept while the notebook is open and saved with the run."
-        )
+        if saved:
+            where = f"Saved in <b>{html.escape(str(self._design_folder() / DESIGN_FILENAME))}</b>."
+        elif self._design_unreadable:
+            where = (
+                f"Not saved: the unreadable {DESIGN_FILENAME} is kept as it is until you "
+                "correct it or answer a question."
+            )
+        else:
+            where = (
+                "Not saved: the output folder is not set or cannot be written; the answers "
+                "are kept while the notebook is open and saved with the run."
+            )
         controls = ", ".join(html.escape(c) for c in design.controls) or "none"
         if design.confirmed:
             dates = sorted({design.confirmed_on(g) for g in design.groups} - {""})

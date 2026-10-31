@@ -387,9 +387,66 @@ def test_an_unreadable_design_is_asked_again(tmp_path):
     (tmp_path / "out").mkdir()
     (tmp_path / "out" / "experiment_design.csv").write_bytes(b"not a design")
     nb = labelled(root, tmp_path)
-    assert "could not be read" in nb.design_status.value
+    assert "cannot be read" in nb.design_status.value
+    assert (tmp_path / "out" / "experiment_design.csv").read_bytes() == b"not a design"
     confirm_repeats(nb)
     assert read_experiment_design(tmp_path / "out" / "experiment_design.csv").confirmed
+
+
+def spreadsheet_saved(path):
+    """Rewrite the ISO dates of a saved design as a spreadsheet program may (26/10/2026)."""
+    text = path.read_text(encoding="utf-8")
+    for on in {row.confirmed_on for row in read_experiment_design(path).rows} - {""}:
+        year, month, day = on.split("-")
+        text = text.replace(on, f"{day}/{month}/{year}")
+    path.write_text(text, encoding="utf-8")
+    return path.read_bytes()
+
+
+def test_an_unreadable_design_is_left_untouched_until_answered(tmp_path):
+    # PR #59 follow-up, owner decision of 31 October 2026: the confirmed answers in a file
+    # that cannot be read are never replaced by the default design before the user answers.
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/rep2"])
+    nb = labelled(root, tmp_path)
+    nb.control_checks["ctrl"].value = True
+    confirm_repeats(nb)
+    path = tmp_path / "out" / "experiment_design.csv"
+    answers = path.read_bytes()
+    unreadable = spreadsheet_saved(path)
+
+    again = labelled(root, tmp_path)
+    assert path.read_bytes() == unreadable
+    status = again.design_status.value
+    assert "cannot be read" in status and "left unchanged" in status
+    assert "line 2, column confirmed_on" in status
+    assert "mb-error" in status
+    assert not again._design_confirmed()
+    assert ui.is_visible(again.design_editor)
+    # Undoing and confirming the labels again reads the file again: still nothing written.
+    again.labels_confirmed.button.click()
+    again.labels_confirmed.button.click()
+    assert path.read_bytes() == unreadable
+
+    # The corrected file is read with the answers it holds.
+    path.write_bytes(answers)
+    fixed = labelled(root, tmp_path)
+    assert path.read_bytes() == answers
+    assert fixed.design.controls == ("ctrl",)
+    assert fixed.design.confirmed and not ui.is_visible(fixed.design_editor)
+
+
+def test_answering_again_replaces_an_unreadable_design(tmp_path):
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
+    nb = labelled(root, tmp_path)
+    confirm_repeats(nb)
+    path = tmp_path / "out" / "experiment_design.csv"
+    spreadsheet_saved(path)
+    again = labelled(root, tmp_path)
+    again.control_checks["drug"].value = True
+    saved = read_experiment_design(path)
+    assert saved.controls == ("drug",) and not saved.confirmed
+    assert "replaced the unreadable" in again.design_status.value
+    assert "mb-error" not in again.design_status.value
 
 
 def test_undoing_the_labels_closes_the_design(tmp_path):

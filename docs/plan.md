@@ -991,3 +991,13 @@ Raised during review; to be decided before the milestones that need them:
     groups differing only in case, or a `confirmed_on` that is not `YYYY-MM-DD`. The
     normalization brick stays at v0.3.2. The version in `pyproject.toml` is 0.3.4 before
     tagging. Every brick pins this tag (D79).*
+42. What does step 1 do with a saved `experiment_design.csv` it cannot read (PR #59
+    follow-up)? Until now it fell back to the default design and wrote it at once, before
+    any answer, so the confirmed answers in a file a spreadsheet program had re-saved (a
+    `confirmed_on` of `26/10/2026`, refused since question 40) were lost.
+    *Decided (31 October 2026): the file is kept untouched and refused. Step 1 shows the
+    refusal, naming the line and column, starts the questions unanswered and writes nothing
+    until the user corrects the file (and confirms the labels again) or answers a question
+    again, which replaces the file. No silent fallback to a default design; step 3 runs
+    only once every group is confirmed again. The command line already refused such a file
+    without writing it.*
