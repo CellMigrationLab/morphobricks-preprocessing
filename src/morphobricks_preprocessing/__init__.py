@@ -52,6 +52,8 @@ from .design import (
 )
 from .discovery import (
     FOV_KEY,
+    MASK_FOLDER_WORDS,
+    MASK_NAME_SUFFIXES,
     MISSING_TEXT,
     DiscoveryResult,
     IdentityError,
@@ -62,6 +64,8 @@ from .discovery import (
     check_plane_index,
     default_output_folder,
     discover_experiment,
+    images_named_as_masks,
+    mask_name_issues,
     position_id,
 )
 from .image_type import (
@@ -206,6 +210,8 @@ __all__ = [
     "INTENSITY_CODES",
     "LARGEST_LABEL",
     "MANIFEST_FILENAME",
+    "MASK_FOLDER_WORDS",
+    "MASK_NAME_SUFFIXES",
     "MASK_REPORT_FILENAME",
     "MISSING_TEXT",
     "OUTPUT_FILENAME",
@@ -314,6 +320,8 @@ __all__ = [
     "iter_xyc_planes",
     "load_design",
     "make_plane_id",
+    "images_named_as_masks",
+    "mask_name_issues",
     "mask_plane_issues",
     "mask_thresholds",
     "min_max",

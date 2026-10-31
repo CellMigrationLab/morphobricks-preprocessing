@@ -715,3 +715,134 @@ def test_naming_other_formats_does_not_make_them_images(tmp_path):
     result = discover_experiment(tmp_path)
     names = [image for leaf in result.leaves for image in leaf.images]
     assert [position_id(image) for image in names] == ["img_01"]
+
+
+# Masks inside the experiment folder (MorphoBricks D86, decision D-i) ------------------------
+# Ported from MorphoRelate's init screen (project_image_names.py, tests/test_init_mask_names.py)
+# as warnings of discovery.
+
+
+def warned(paths, tmp_path):
+    make_tree(tmp_path, paths)
+    result = discover_experiment(tmp_path)
+    assert result.ok  # warnings only: such files may be images that look like masks
+    return {i.code: i for i in result.issues}
+
+
+def test_a_mask_tree_inside_the_experiment_is_warned(tmp_path):
+    found = warned(
+        [
+            "ctrl/rep1/f1.tif",
+            "ctrl/rep1/f2.tif",
+            "masks/ctrl/rep1/f1_cells.tif",
+            "masks/ctrl/rep1/f2_cells.tif",
+        ],
+        tmp_path,
+    )
+    issue_ = found["mask_folder_in_experiment"]
+    assert issue_.severity == Severity.WARNING and issue_.paths == ("masks",)
+    assert "masks/ctrl/rep1/f1_cells.tif (of ctrl/rep1/f1.tif)" in issue_.message
+    assert "image_named_as_mask" not in found
+
+
+def test_the_longest_position_owns_a_mask(tmp_path):
+    found = warned(
+        ["ctrl/rep1/f1.tif", "ctrl/rep1/f1_a.tif", "masks/ctrl/rep1/f1_a_cells.tif"], tmp_path
+    )
+    assert "f1_a_cells.tif (of ctrl/rep1/f1_a.tif)" in found["mask_folder_in_experiment"].message
+
+
+@pytest.mark.parametrize("folder", ["ctrl_masks", "CellLabels", "Seg1", "segmentations"])
+def test_folders_named_like_a_masks_folder(tmp_path, folder):
+    found = warned(["ctrl/rep1/f1.tif", f"{folder}/rep1/f1.tif"], tmp_path)
+    assert found["mask_folder_in_experiment"].paths == (folder,)
+
+
+def test_a_masks_folder_without_mask_names_is_not_warned(tmp_path):
+    # Labelled images that name no other image are images.
+    assert warned(["labels/rep1/g1.tif", "ctrl/rep1/f1.tif"], tmp_path) == {}
+
+
+def test_images_named_with_the_default_mask_suffixes_are_warned(tmp_path):
+    found = warned(
+        [
+            "ctrl/rep1/f1.tif",
+            "ctrl/rep1/f1_mask.tif",
+            "ctrl/rep1/f2.tif",
+            "ctrl/rep1/f2_Labels.tif",
+            "drug/rep1/f2_SEG.ome.tif",
+        ],
+        tmp_path,
+    )
+    issue_ = found["image_named_as_mask"]
+    assert issue_.paths == (
+        "ctrl/rep1/f1_mask.tif",
+        "ctrl/rep1/f2_Labels.tif",
+        "drug/rep1/f2_SEG.ome.tif",
+    )
+    assert "ctrl/rep1/f1_mask.tif (of ctrl/rep1/f1.tif)" in issue_.message
+    # across the whole experiment, an image of the same folder first otherwise
+    assert "drug/rep1/f2_SEG.ome.tif (of ctrl/rep1/f2.tif)" in issue_.message
+
+
+def test_numbered_and_channel_images_are_images(tmp_path):
+    names = ["A1.tif", "A1_2.tif", "f1.tif", "f1_DNA.tif", "f1_segmented.tif", "g_mask.tif"]
+    assert warned([f"ctrl/rep1/{name}" for name in names], tmp_path) == {}
+
+
+def test_mask_names_the_caller_expects(tmp_path):
+    from morphobricks_preprocessing.discovery import mask_name_issues
+
+    make_tree(tmp_path, ["c/r/f1.tif", "c/r/f1_Cells.tif", "c/r/f1_nuclei.tif"])
+    result = discover_experiment(tmp_path)
+    assert result.issues == ()  # "cells" is not a default mask name
+    issues = mask_name_issues(result.leaves, ["cells"])
+    assert [(i.code, i.paths) for i in issues] == [("image_named_as_mask", ("c/r/f1_Cells.tif",))]
+
+
+def test_images_named_as_masks_with_the_callers_suffixes_only(tmp_path):
+    # MorphoRelate leaves out of its images those named with a mask name the user declared,
+    # and only those: the detection is public so it keeps no copy (D-i).
+    from morphobricks_preprocessing import images_named_as_masks
+
+    make_tree(
+        tmp_path,
+        [
+            "c/r/f1.tif",
+            "c/r/f1_mask.tif",
+            "c/r/f1_Cells.tif",
+            "d/r/f1_cells.tif",
+            "masks/c/r/f1_cells.tif",
+        ],
+    )
+    leaves = discover_experiment(tmp_path).leaves
+    assert images_named_as_masks(leaves, ["_cells"]) == [
+        ("c/r/f1_Cells.tif", "c/r/f1.tif"),
+        ("d/r/f1_cells.tif", "c/r/f1.tif"),
+    ]
+    assert images_named_as_masks(leaves) == [("c/r/f1_mask.tif", "c/r/f1.tif")]
+    assert images_named_as_masks(leaves, []) == []
+
+
+def test_the_default_mask_names_are_cellpatchers_former_defaults():
+    from morphobricks_preprocessing import MASK_FOLDER_WORDS, MASK_NAME_SUFFIXES
+
+    assert MASK_NAME_SUFFIXES == ("_mask", "_labels", "_label", "_seg", "_segmentation")
+    assert {"mask", "masks", "label", "labels", "seg", "segmentation"} <= MASK_FOLDER_WORDS
+
+
+@pytest.mark.parametrize(
+    ("path", "folder"),
+    [
+        ("masks/ctrl/rep1/f1.tif", "masks"),
+        ("ctrl/ctrl_masks/f1.tif", "ctrl/ctrl_masks"),
+        ("ctrl/CellLabels/f1.tif", "ctrl/CellLabels"),
+        ("ctrl/rep1/f1_mask.tif", None),
+        ("Masking/rep1/f1.tif", None),
+        ("masks.tif", None),
+    ],
+)
+def test_mask_folder_part(path, folder):
+    from morphobricks_preprocessing.discovery import mask_folder_part
+
+    assert mask_folder_part(path) == folder

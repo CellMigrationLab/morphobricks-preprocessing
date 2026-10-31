@@ -925,4 +925,10 @@ Raised during review; to be decided before the milestones that need them:
     least 0, NumPy integers returned as plain ints (`check_plane_index`);
     names of one level differing only in case clash anywhere in the experiment
     (`case_conflict`, widened from siblings). Sources of a run: `check_sources` checks
-    images against a run's manifest (in it, unchanged, same identity, same axis roles).*
+    images against a run's manifest (in it, unchanged, same identity, same axis roles).
+    Masks named as images (D-i): discovery warns about images named as masks of other
+    images and folders named like a masks folder inside the experiment
+    (`image_named_as_mask`, `mask_folder_in_experiment`), MorphoRelate's former screen.
+    Pixel sizes (D-a, `same_pixel_size`) wait for an owner decision: a relative tolerance is
+    not transitive, so it cannot group images the way the folder check's
+    `different_pixel_sizes` does.*

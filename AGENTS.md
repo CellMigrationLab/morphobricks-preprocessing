@@ -211,7 +211,9 @@ functions the tests use.
   ignored **without** a warning.
 - **Mixed folders:** images in a folder that also holds subfolders are the error
   `tiff_outside_leaf` (owner decision, October 2026; every brick refuses such a folder).
-- **Warnings:** non-TIFF files, empty folders.
+- **Warnings:** non-TIFF files, empty folders; images named as masks of other images and
+  masks-like folders holding them (`image_named_as_mask`, `mask_folder_in_experiment`,
+  decision D-i).
 - **Paths:** paths in outputs are relative to the experiment root, with `/`.
 
 ### Axes (contract §2)
