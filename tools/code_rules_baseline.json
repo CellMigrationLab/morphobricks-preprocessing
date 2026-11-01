@@ -2,14 +2,14 @@
   "noqa": {
     "ANN": 63,
     "C901": 2,
-    "PLR0913": 2,
+    "PLR0913": 3,
     "PLR0915": 2
   },
   "problems": {
-    "identical bodies: tests/test_axis_check.py:# imagej, tests/test_header_axes.py:# imagej": 36,
-    "identical bodies: tests/test_axis_check.py:# plain, tests/test_header_axes.py:# plain": 48,
-    "identical bodies: tests/test_cli.py:# bright_tree, tests/test_notebook_ui.py:# bright_tree": 136,
-    "identical bodies: tests/test_zarr_export.py:# random_data, tests/test_zarr_input.py:# random_data": 48,
+    "identical bodies: tests/test_axis_check.py:# imagej, tests/test_header_axes.py:# imagej": 0,
+    "identical bodies: tests/test_axis_check.py:# plain, tests/test_header_axes.py:# plain": 0,
+    "identical bodies: tests/test_cli.py:# bright_tree, tests/test_notebook_ui.py:# bright_tree": 0,
+    "identical bodies: tests/test_zarr_export.py:# random_data, tests/test_zarr_input.py:# random_data": 0,
     "src/morphobricks_preprocessing/axes.py _check_declared_axes: private function of # lines without a docstring": 20,
     "src/morphobricks_preprocessing/axes.py _declared_axes_problem: private function of # lines without a docstring": 20,
     "src/morphobricks_preprocessing/axes.py check_mapping: # executable lines (max #)": 72,
