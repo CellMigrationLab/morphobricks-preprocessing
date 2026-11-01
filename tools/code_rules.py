@@ -418,7 +418,8 @@ def noqa_counts(sources: Iterable[tuple[str, str]]) -> dict[str, int]:
     """
     counts = dict.fromkeys(RATCHETED_NOQA, 0)
     for _, text in sources:
-        for comment in re.findall(r"#\s*noqa:\s*([A-Z0-9, ]+)", text):
+        # Line comments and file-level ones (``ruff: noqa: ANN001`` after the hash) count.
+        for comment in re.findall(r"#\s*(?:(?:ruff|flake8):\s*)?noqa:\s*([A-Z0-9, ]+)", text):
             for code in (part.strip() for part in comment.split(",")):
                 prefix = next((p for p in RATCHETED_NOQA if code.startswith(p)), None)
                 if prefix is not None:
@@ -430,7 +431,9 @@ def baseline_key(problem: str) -> tuple[str, int]:
     """Split a violation into a stable key and its size.
 
     Line numbers are dropped and the first remaining number (a length or count) becomes the
-    size, so a violation keeps its key while its code moves or shrinks.
+    size, so a violation keeps its key while its code moves or shrinks. A line number
+    (``path:12``) or a digit inside a name is never a size: a message without a length or
+    count, such as identical bodies or an import cycle, has size 0.
 
     Parameters
     ----------
@@ -443,7 +446,7 @@ def baseline_key(problem: str) -> tuple[str, int]:
         ``(key, size)``; the size is 0 when the message has no number.
     """
     text = re.sub(r"^([^:]+):\d+ ", r"\1 ", problem)
-    found = re.search(r"\d+", text.split(": ", 1)[-1])
+    found = re.search(r"(?<![\w.:])\d+(?![\w.])", text.split(": ", 1)[-1])
     size = int(found.group()) if found else 0
     key = re.sub(r"\d+", "#", text)
     return key, size

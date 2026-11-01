@@ -296,7 +296,8 @@ API, CLI). The notebook and CLI only call the API.
   expandable panel with separate storage, compression and preview-resolution cards.*
 - **OME-Zarr (optional `zarr` extra):** OME-Zarr images (OME-NGFF 0.4 and 0.5) are read
   as input next to TIFF files, plane by plane from level 0, with their declared axes
-  (`zarr_input`). For TIFF images the user chooses once per experiment: read them
+  (`zarr_input`). *TIFF to OME-Zarr conversion, described next, was removed in v0.4.0
+  (question 46); TIFF images are read directly.* For TIFF images the user chose once per experiment: read them
   directly, or convert each to `<output>/ome_zarr/<relative path>.ome.zarr` (OME-NGFF 0.4)
   and compute its histograms from the copy, like any OME-Zarr image (`zarr_export`). The
   copies keep the source values at level 0; smaller levels (2 x 2 means) are for viewers.
@@ -307,7 +308,7 @@ API, CLI). The notebook and CLI only call the API.
 - **Large planes in blocks:** planes over the memory limit are read in blocks of their
   stored strips, tiles or chunks, sized by the memory limit (`planes`), and their
   histograms are computed in two passes over the blocks with results identical to whole
-  planes (`histogram.compute_block_histogram`). OME-Zarr copies of such planes are written
+  planes (`histogram.compute_block_histogram`). Up to v0.3, OME-Zarr copies of such planes were written
   block by block, with their smaller levels built from the stored level above
   (`zarr_export`). The axis preview shows them reduced. Step 3's "What will happen" box
   names these images before the run. *Implemented, see questions 15 and 16.*

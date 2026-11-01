@@ -104,7 +104,7 @@ def test_named_headers(tmp_path, kind, header, roles, expected):
         assert review.axis_error_files == ("a.tif",)
 
 
-@pytest.mark.parametrize("roles", ["TYX", "ZYX", "CYX", "TXY"])
+@pytest.mark.parametrize("roles", ["TYX", "ZYX", "CYX"])
 @pytest.mark.parametrize("writer", ["plain-IYX", "shaped-QYX"])
 def test_plain_stacks_never_name_their_axes(tmp_path, writer, roles):
     path = tmp_path / "a.tif"
@@ -232,8 +232,8 @@ def test_the_likely_cause_of_tifffiles_cyx_default_is_named(tmp_path):
 
 
 def test_the_codes():
-    assert AXIS_ERROR_CODES == ("axes_yx_swapped", "axes_contradict_header")
-    assert AXIS_CHECK_CODES == ("axes_not_named", "axes_yx_swapped", "axes_contradict_header")
+    assert AXIS_ERROR_CODES == ("axes_yx_swapped", "axes_contradict_header", "axes_x_before_y")
+    assert AXIS_CHECK_CODES == ("axes_not_named", *AXIS_ERROR_CODES)
 
 
 def test_named_images_are_recorded_as_from_the_header(tmp_path):

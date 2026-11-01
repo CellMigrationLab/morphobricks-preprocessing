@@ -37,7 +37,11 @@ AXES_YX_SWAPPED = "axes_yx_swapped"
 AXES_CONTRADICT_HEADER = "axes_contradict_header"
 """An error: confirmed roles that give a named axis another role than the header's."""
 
-AXIS_ERROR_CODES = (AXES_YX_SWAPPED, AXES_CONTRADICT_HEADER)
+AXES_X_BEFORE_Y = "axes_x_before_y"
+"""An error: confirmed roles that put X before Y, for example a plain stack confirmed
+``TXY``. Reading it would transpose every plane, and nothing is ever read transposed."""
+
+AXIS_ERROR_CODES = (AXES_YX_SWAPPED, AXES_CONTRADICT_HEADER, AXES_X_BEFORE_Y)
 """The errors of an image whose confirmed roles disagree with the axes its header names
 (contract §2). Such an image is never read, not transposed and not under a contradicted
 declaration: the user corrects the roles, or saves the image as a named-axis copy."""
@@ -66,6 +70,8 @@ def header_axis_issue(meta: TiffMetadata, mapping: AxisMapping) -> str | None:
     - a named axis with its own letter as role, the RGB samples ``S`` as C when the header
       has no C, and a length-1 axis without a role agree;
     - the named Y given role X and the named X role Y: ``axes_yx_swapped``;
+    - roles that put X before Y (a plain stack confirmed ``TXY``, or a header that names
+      X before Y): ``axes_x_before_y``, as nothing is ever read transposed;
     - any other role for a named axis: ``axes_contradict_header``. That includes a Z read
       as T, and a named axis that is not a role (angle ``A``, lambda ``E``, ...) given one.
       A named axis longer than 1 without a role is :func:`check_mapping`'s
@@ -85,12 +91,13 @@ def header_axis_issue(meta: TiffMetadata, mapping: AxisMapping) -> str | None:
     Returns
     -------
     str or None
-        ``"axes_contradict_header"``, ``"axes_yx_swapped"`` or ``"axes_not_named"`` (the
-        first of these when several apply), or None when the roles agree with the header.
+        ``"axes_contradict_header"``, ``"axes_yx_swapped"``, ``"axes_x_before_y"`` or
+        ``"axes_not_named"`` (the first of these when several apply), or None when the roles
+        agree with the header.
     """
     found = set(axis_disagreements(meta, mapping).values())
     # Errors first (a contradiction is more than a swap); then the plain stack's warning.
-    for code in (AXES_CONTRADICT_HEADER, AXES_YX_SWAPPED, AXES_NOT_NAMED):
+    for code in (AXES_CONTRADICT_HEADER, AXES_YX_SWAPPED, AXES_X_BEFORE_Y, AXES_NOT_NAMED):
         if code in found:
             return code
     return None
@@ -112,9 +119,9 @@ def axis_disagreements(meta: TiffMetadata, mapping: AxisMapping) -> dict[int, st
     Returns
     -------
     dict
-        ``{dimension: code}``, with ``"axes_not_named"``, ``"axes_yx_swapped"`` or
-        ``"axes_contradict_header"``; empty for an OME-Zarr image, an unreadable one, or
-        roles that agree with the header.
+        ``{dimension: code}``, with ``"axes_not_named"``, ``"axes_yx_swapped"``,
+        ``"axes_x_before_y"`` or ``"axes_contradict_header"``; empty for an OME-Zarr
+        image, an unreadable one, or roles that agree with the header.
     """
     if not meta.readable or meta.is_ome_zarr or len(mapping.roles) != len(meta.axes):
         return {}
@@ -134,6 +141,23 @@ def axis_disagreements(meta: TiffMetadata, mapping: AxisMapping) -> dict[int, st
         found[index] = (
             AXES_YX_SWAPPED if letter in "YX" and role in "YX" else AXES_CONTRADICT_HEADER
         )
+    return _x_before_y(mapping.roles, found)
+
+
+def _x_before_y(roles: tuple[str | None, ...], found: dict[int, str]) -> dict[int, str]:
+    """Mark the Y and X a plain stack's roles put X before Y, unless already an error.
+
+    Only roles the user confirmed for axes the metadata does not name; a header that names
+    X before Y is read as it names them (unchanged in v0.4.0).
+    """
+    if "X" not in roles or "Y" not in roles or roles.index("X") > roles.index("Y"):
+        return found
+    yx = (roles.index("Y"), roles.index("X"))
+    if AXES_NOT_NAMED not in (found.get(index) for index in yx):
+        return found
+    for index in yx:
+        if found.get(index, AXES_NOT_NAMED) == AXES_NOT_NAMED:
+            found[index] = AXES_X_BEFORE_Y
     return found
 
 
@@ -186,6 +210,9 @@ def axis_check_issues(
                     "reads the same axes.",
                 )
             )
+            continue
+        if code == AXES_X_BEFORE_Y:
+            issues.append(error(code, _x_before_y_text(n, details), paths, _SAVE_Y_FIRST))
             continue
         if code == AXES_YX_SWAPPED:
             message = (
@@ -242,6 +269,20 @@ def likely_axis_cause(meta: TiffMetadata, mapping: AxisMapping, code: str) -> st
         return "an ImageJ stack of slices reads as depth (Z) even when it is a time-lapse"
     return "the tool that saved the file wrote a default or wrong axis order in its metadata"
 
+
+def _x_before_y_text(n: str, details: str) -> str:
+    """Say that the roles confirmed for ``n`` images put X before Y."""
+    return (
+        f"The axes confirmed for {n} put X before Y ({details}). Reading them would "
+        "transpose every plane, and nothing is ever read transposed."
+    )
+
+
+_SAVE_Y_FIRST = (
+    "Save these images again with Y before X (rows, then columns), or as named-axis copies "
+    "(OME-TIFF) with Y before X, then run preprocessing on them. If the roles are wrong, "
+    "correct them."
+)
 
 _TWO_FIXES = (
     "Two fixes. Correct the axes: if the header is right, choose its roles. Or convert: if "
