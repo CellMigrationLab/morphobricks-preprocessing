@@ -96,8 +96,9 @@ class MaskFile:
         The mask's axes as its header gives them (``tifffile``'s letters, length-1 axes
         other than Y and X left out), e.g. ``"QYX"`` for a plain stack; empty when unknown.
     axes_from
-        ``"header"`` when the metadata names every axis of the mask, ``"confirmed"`` when
-        some are named only by the user's statement for the mask type; empty when unknown.
+        ``"header"`` when the axes are those the mask's metadata names, ``"stated"`` when
+        the user stated the axes of its mask type (a plain stack, or a 2-D mask shared by
+        every plane of its image); empty when unknown.
     """
 
     image: str
@@ -109,6 +110,11 @@ class MaskFile:
     axes: str = ""
     header_axes: str = ""
     axes_from: str = ""
+
+    @property
+    def shared(self) -> bool:
+        """True for a 2-D mask stated for its type: one plane shared by every image plane."""
+        return self.axes == "YX" and self.axes_from == "stated"
 
     @property
     def planes(self) -> dict[str, int]:
@@ -283,6 +289,9 @@ def read_mask(
         :data:`LARGEST_LABEL` (:func:`check_labels`).
     """
     wanted = {"Z": z, "T": t}
+    if mask.shared:
+        # One plane, stated for the mask type as shared by every plane of the image.
+        wanted = {"Z": None, "T": None}
     for axis, index in wanted.items():
         length = mask.planes[axis] if mask.axes else 1
         if index is None and length > 1:
@@ -740,7 +749,7 @@ def _header_issues(
             dtype,
             roles,
             axes,
-            "confirmed" if "?" in named else "header",
+            "stated" if mask.mask_type in stated else "header",
         )
         expected = _image_yx(images[mask.image])
         if expected is not None and _yx(roles, shape) != expected:
@@ -750,7 +759,7 @@ def _header_issues(
             problems.setdefault("mask_pixel_type", []).append(mask.path)
     by_image: dict[str, list[MaskFile]] = {}
     for mask in files:
-        if mask.axes:
+        if mask.axes and not mask.shared:
             by_image.setdefault(mask.image, []).append(mask)
     for masks in by_image.values():
         if len({tuple(m.planes.items()) for m in masks}) > 1:
@@ -999,7 +1008,13 @@ def mask_plane_issues(
     mismatched = []
     for mask in inventory.files:
         mapping = file_mappings.get(mask.image)
-        if not mask.axes or mapping is None or mask.image not in headers or mask.image in skip:
+        if (
+            not mask.axes
+            or mask.shared
+            or mapping is None
+            or mask.image not in headers
+            or mask.image in skip
+        ):
             continue
         shape = headers[mask.image].shape
         planes = {}

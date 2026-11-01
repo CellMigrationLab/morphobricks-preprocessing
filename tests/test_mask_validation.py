@@ -67,7 +67,7 @@ def test_a_plain_stack_mask_needs_its_axes_stated(timelapse):
     stated = inventory(root, masks, mask_axes={"Cells": "TYX"})
     assert stated.ok
     (mask,) = stated.files
-    assert (mask.axes, mask.header_axes, mask.axes_from) == ("TYX", "IYX", "confirmed")
+    assert (mask.axes, mask.header_axes, mask.axes_from) == ("TYX", "IYX", "stated")
     # Read by the stated roles, as stored: frame 2 is the file's third page.
     plane = read_mask(mask, stated.folder, root, t=2)
     np.testing.assert_array_equal(plane, labels((3, 6, 8))[2])
@@ -197,3 +197,19 @@ def test_a_named_tyx_mask_keeps_its_own_axes(timelapse):
     write_data(masks / "Cells/ctrl/r1/a.tif", labels((3, 6, 8)), "TYX")
     result = run_experiment(root, AxisMapping("TYX", "TYX"), masks_folder=masks)
     assert result.written
+
+
+def test_a_2d_mask_on_a_stack_needs_a_shared_statement(timelapse):
+    root, masks = timelapse
+    write_data(masks / "Cells/ctrl/r1/a.tif", labels((6, 8)), "YX")
+    refused = run_experiment(root, prefill_mapping("TYX"), masks_folder=masks)
+    assert "mask_planes_mismatch" in codes(i for i in refused.issues if i.is_error)
+    # Stated YX for the type: one plane shared by every plane of the image.
+    shared = run_experiment(
+        root, prefill_mapping("TYX"), masks_folder=masks, mask_axes={"Cells": "YX"}
+    )
+    assert shared.written
+    pre = preflight(root, masks_folder=masks, mask_axes={"Cells": "YX"})
+    (mask,) = pre.masks.files
+    assert mask.shared and mask.axes_from == "stated"
+    np.testing.assert_array_equal(read_mask(mask, pre.masks.folder, root, t=2), labels((6, 8)))
