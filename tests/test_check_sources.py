@@ -160,3 +160,10 @@ def test_every_path_needs_its_axes_and_identity(run):
         check_sources(manifest, root, IMAGES, image_axes=dict.fromkeys(IMAGES[:2], "ZYX"))
     with pytest.raises(ValueError, match="identities has no entry"):
         check_sources(manifest, root, IMAGES, identities={})
+
+
+def test_a_version_1_manifest_fails_every_image(run):
+    root, manifest = run
+    issues = check_sources(replace(manifest, manifest_version="1"), root, IMAGES)
+    assert codes(issues) == {"manifest_before_v040": tuple(sorted(IMAGES))}
+    assert issues[0].is_error
