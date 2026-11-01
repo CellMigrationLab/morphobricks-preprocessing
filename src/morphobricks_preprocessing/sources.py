@@ -12,12 +12,12 @@ from pathlib import Path
 
 from .axes import file_mapping_for
 from .image_names import position_id
-from .manifest import RunManifest, source_fingerprint
+from .manifest import LEGACY_MANIFEST_VERSION, RunManifest, source_fingerprint
 from .metadata import inspect_image
 from .validation import ValidationIssue, error, plural
 
 
-def check_sources(  # noqa: C901
+def check_sources(
     manifest: RunManifest,
     experiment_root: str | os.PathLike,
     relative_paths: Iterable[str],
@@ -33,7 +33,9 @@ def check_sources(  # noqa: C901
     modification time :func:`source_fingerprint` gives (an OME-Zarr folder: its files' total
     size and newest time); its recorded ``position_id`` is the one its name gives; with
     ``identities``, its labels and ``position_id`` are the caller's; with ``image_axes``,
-    the caller's axes give every axis the role the run confirmed for that image.
+    the caller's axes give every axis the role the run confirmed for that image. A version 1
+    manifest (a run before v0.4.0, without the axis check) fails every image: such a run
+    must be redone (design v0.4 §6).
 
     Parameters
     ----------
@@ -56,7 +58,8 @@ def check_sources(  # noqa: C901
     Returns
     -------
     list of ValidationIssue
-        Errors, each naming its images: ``images_not_in_manifest``, ``images_missing``
+        Errors, each naming its images: ``manifest_before_v040`` (alone, for a version 1
+        manifest), ``images_not_in_manifest``, ``images_missing``
         (no longer on disk), ``images_changed``, ``position_id_not_recorded`` (a manifest
         from before ``position_id`` was recorded, when ``identities`` are checked),
         ``identity_differs`` and ``axis_mapping_mismatch``. Empty when all images pass.
@@ -72,6 +75,8 @@ def check_sources(  # noqa: C901
         absent = [path for path in paths if given is not None and path not in given]
         if absent:
             raise ValueError(f"{name} has no entry for {', '.join(absent)}")
+    if manifest.manifest_version == LEGACY_MANIFEST_VERSION:
+        return [_issue("manifest_before_v040", [(path, "") for path in paths])]
     found: dict[str, list[tuple[str, str]]] = {}
 
     def report(code: str, path: str, detail: str = "") -> None:
@@ -115,15 +120,17 @@ def check_sources(  # noqa: C901
             if not _roles_agree(axes, roles):
                 described = "none fit" if roles is None else "".join(r or "-" for r in roles)
                 report("axis_mapping_mismatch", path, f"given {axes}, preprocessing {described}")
-    issues = []
-    for code, items in found.items():
-        message, action = _SOURCE_TEXTS[code]
-        message = message.format(n=plural(len(items), "image"))
-        details = [f"{path}: {detail}" for path, detail in items if detail]
-        if details:
-            message += " " + "; ".join(details) + "."
-        issues.append(error(code, message, sorted(path for path, _ in items), action))
-    return issues
+    return [_issue(code, items) for code, items in found.items()]
+
+
+def _issue(code: str, items: list[tuple[str, str]]) -> ValidationIssue:
+    """Build the error of one code, naming its images and their details."""
+    message, action = _SOURCE_TEXTS[code]
+    message = message.format(n=plural(len(items), "image"))
+    details = [f"{path}: {detail}" for path, detail in items if detail]
+    if details:
+        message += " " + "; ".join(details) + "."
+    return error(code, message, sorted(path for path, _ in items), action)
 
 
 def _roles_agree(axes: str, roles: Sequence[str | None] | None) -> bool:
@@ -137,6 +144,11 @@ _RERUN = "Run the preprocessing brick again on this experiment, or use the table
 
 
 _SOURCE_TEXTS = {
+    "manifest_before_v040": (
+        "The manifest of {n} was written before v0.4.0, without the axis check, so its "
+        "results cannot be used.",
+        "Run the preprocessing brick again on this experiment.",
+    ),
     "images_not_in_manifest": (
         "{n} not analysed by the preprocessing run of this manifest: added after it ran, "
         "excluded, or from another experiment.",
