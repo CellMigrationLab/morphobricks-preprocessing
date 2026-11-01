@@ -22,8 +22,8 @@ from morphobricks_normalization.records import PlaneRecord
 
 from ..axes import (
     AxisMapping,
-    review_axes,
 )
+from ..axis_review import review_axes
 from ..dataset import check_dataset
 from ..design import (
     DESIGN_FILENAME,

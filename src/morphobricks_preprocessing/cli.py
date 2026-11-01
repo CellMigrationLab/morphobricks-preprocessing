@@ -33,7 +33,8 @@ from morphobricks_normalization.ranges import (
     HistogramSettings,
 )
 
-from .axes import AxisMapping, reference_axes, review_axes
+from .axes import AxisMapping, reference_axes
+from .axis_review import review_axes
 from .design import (
     DESIGN_FILENAME,
     DesignCheckError,
