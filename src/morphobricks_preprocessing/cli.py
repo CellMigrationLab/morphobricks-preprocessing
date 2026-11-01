@@ -432,7 +432,7 @@ def _masks(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run(args: argparse.Namespace) -> int:
+def _run(args: argparse.Namespace) -> int:  # noqa: PLR0915
     pre = preflight(args.experiment, args.output, exclude=args.exclude, masks_folder=args.masks)
     axes = reference_axes(pre.metadata.files)
     if axes is None:
@@ -532,7 +532,7 @@ def _run(args: argparse.Namespace) -> int:
     return 0 if result.written else 1
 
 
-def _design_for_run(pre, args: argparse.Namespace) -> tuple[ExperimentDesign | None, str]:
+def _design_for_run(pre, args: argparse.Namespace) -> tuple[ExperimentDesign | None, str]:  # noqa: ANN001
     """Return the confirmed experiment design, or None and what the user has to do.
 
     Without a fully confirmed design, a template (keeping every answer already
@@ -595,7 +595,7 @@ def _image_type_note(review: ImageTypeReview, given: str | None) -> str:
     return "\n".join(lines)
 
 
-def _conversion_note(pre, conversion: ConversionSettings, output) -> str:
+def _conversion_note(pre, conversion: ConversionSettings, output) -> str:  # noqa: ANN001
     estimate = estimate_conversion(pre.discovery.root, pre.metadata.files, conversion)
     if not estimate.image_count:
         return "Conversion: there are no TIFF images to convert."

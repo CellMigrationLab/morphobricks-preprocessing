@@ -6,6 +6,8 @@ one Z and T position), the channels in columns. Later bricks pool these histogra
 group statistics and normalization parameters without rereading the images.
 """
 
+from __future__ import annotations
+
 from importlib.metadata import PackageNotFoundError, version
 
 # The modules that moved to morphobricks_normalization stay importable as

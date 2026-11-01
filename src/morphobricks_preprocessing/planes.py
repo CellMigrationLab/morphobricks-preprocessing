@@ -733,7 +733,7 @@ def _open(path: str | os.PathLike) -> tifffile.TiffFile:
     return tif
 
 
-def _check_fit(shape: tuple[int, ...], axes: str, mapping: AxisMapping, path) -> tuple[int, int]:
+def _check_fit(shape: tuple[int, ...], axes: str, mapping: AxisMapping, path) -> tuple[int, int]:  # noqa: ANN001
     """Check that ``mapping`` fits an image; return the Y and X dimensions."""
     if axes != mapping.axes:
         raise PlaneReadError(
@@ -756,7 +756,7 @@ def _check_fit(shape: tuple[int, ...], axes: str, mapping: AxisMapping, path) ->
 def _layout(
     series: tifffile.TiffPageSeries,
     mapping: AxisMapping,
-    path,
+    path,  # noqa: ANN001
     binning: _Binning,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> PlaneLayout:
@@ -839,7 +839,7 @@ def _finished_histograms_nbytes(dtype: np.dtype, bin_count: int | None, channels
     return channels * 8 * (default_bin_count(dtype) if bin_count is None else bin_count)
 
 
-def _check_limit(layout: PlaneLayout, path) -> None:
+def _check_limit(layout: PlaneLayout, path) -> None:  # noqa: ANN001
     if not layout.fits:
         raise PlaneMemoryError(
             f"Reading one plane of {Path(path).name} needs about "
@@ -880,7 +880,10 @@ def _xyc_planes(
 
 
 def _tiff_reader(
-    series: tifffile.TiffPageSeries, layout: PlaneLayout, mapping: AxisMapping, path
+    series: tifffile.TiffPageSeries,
+    layout: PlaneLayout,
+    mapping: AxisMapping,
+    path,  # noqa: ANN001
 ) -> Callable[[dict[int, int]], Plane]:
     """Return a function reading the plane at a position, keeping the last page decoded.
 
@@ -906,7 +909,7 @@ def _read_one(
     series: tifffile.TiffPageSeries,
     layout: PlaneLayout,
     mapping: AxisMapping,
-    path,
+    path,  # noqa: ANN001
     wanted: Mapping[str, int | None],
 ) -> Plane:
     position = _position(layout, mapping, wanted)
@@ -949,7 +952,7 @@ def _page_index(layout: PlaneLayout, position: Mapping[int, int]) -> int:
     return int(np.ravel_multi_index([position[d] for d in range(k)], layout.shape[:k]))
 
 
-def _read_page(series: tifffile.TiffPageSeries, index: int, layout: PlaneLayout, path):
+def _read_page(series: tifffile.TiffPageSeries, index: int, layout: PlaneLayout, path):  # noqa: ANN001, ANN202
     page = series.pages[index]
     if page is None:
         raise PlaneReadError(f"Page {index} of {path} is missing from the file.")
@@ -1118,7 +1121,7 @@ def _block_plane(
 
 def _whole_or_preview(
     layout: PlaneLayout,
-    path,
+    path,  # noqa: ANN001
     preview: bool,
     reblock: Callable[[int], PlaneLayout],
 ) -> PlaneLayout:
@@ -1182,7 +1185,11 @@ def _whole_or_reduced(plane: Plane, layout: PlaneLayout) -> Plane:
 
 
 def _tiff_blocking(
-    keyframe, shape: tuple[int, ...], split: int, y: int, x: int
+    keyframe: tifffile.TiffPage,
+    shape: tuple[int, ...],
+    split: int,
+    y: int,
+    x: int,
 ) -> _Blocking | None:
     """Work out how the pages of a series are stored in strips or tiles, if they can be split.
 
@@ -1227,7 +1234,7 @@ def _tiff_blocking(
     )
 
 
-def _tiff_reblock(series, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:
+def _tiff_reblock(series, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:  # noqa: ANN001
     return lambda limit: _layout(series, mapping, path, _Binning(), limit)
 
 
@@ -1236,7 +1243,7 @@ def _tiff_block_plane(
     layout: PlaneLayout,
     mapping: AxisMapping,
     position: Mapping[int, int],
-    path,
+    path,  # noqa: ANN001
 ) -> Plane:
     index = _page_index(layout, position)
     page = series.pages[index]
@@ -1255,7 +1262,7 @@ def _tiff_block_plane(
     )
 
 
-def _read_tiff_block(page, layout: PlaneLayout, where: list[int], box, path) -> np.ndarray:
+def _read_tiff_block(page, layout: PlaneLayout, where: list[int], box, path) -> np.ndarray:  # noqa: ANN001
     """Read rows ``r0 .. r1`` and columns ``c0 .. c1`` of one plane of a page, piece by piece."""
     r0, r1, c0, c1 = box
     keyframe = page.keyframe
@@ -1289,7 +1296,7 @@ def _read_tiff_block(page, layout: PlaneLayout, where: list[int], box, path) -> 
     return out
 
 
-def _read_segment(page, index: int, z: int, rows: tuple[int, int], blocking: _Blocking, path):
+def _read_segment(page, index: int, z: int, rows: tuple[int, int], blocking: _Blocking, path):  # noqa: ANN001, ANN202
     """Read rows of one strip or tile as (rows, columns, contiguous samples), or None if empty.
 
     Uncompressed pieces are read straight from the file, only the rows wanted;
@@ -1328,7 +1335,7 @@ def _read_segment(page, index: int, z: int, rows: tuple[int, int], blocking: _Bl
 # OME-Zarr ------------------------------------------------------------------------------
 
 
-def _open_zarr(path) -> NgffImage:
+def _open_zarr(path) -> NgffImage:  # noqa: ANN001
     try:
         return open_ngff(path)
     except (NgffError, ZarrUnavailableError) as exc:
@@ -1338,7 +1345,7 @@ def _open_zarr(path) -> NgffImage:
 def _zarr_layout(
     image: NgffImage,
     mapping: AxisMapping,
-    path,
+    path,  # noqa: ANN001
     binning: _Binning,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> PlaneLayout:
@@ -1385,12 +1392,16 @@ def _zarr_layout(
     return _with_blocks(layout, blocking, binning)
 
 
-def _zarr_reblock(image: NgffImage, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:
+def _zarr_reblock(image: NgffImage, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:  # noqa: ANN001
     return lambda limit: _zarr_layout(image, mapping, path, _Binning(), limit)
 
 
 def _zarr_plane(
-    image: NgffImage, layout: PlaneLayout, mapping: AxisMapping, position: Mapping[int, int], path
+    image: NgffImage,
+    layout: PlaneLayout,
+    mapping: AxisMapping,
+    position: Mapping[int, int],
+    path,  # noqa: ANN001
 ) -> Plane:
     if layout.in_blocks:
         rows, cols = layout.blocking.rows, layout.blocking.cols
@@ -1404,7 +1415,7 @@ def _zarr_plane(
     return _finish(_zarr_read(image, selection, path), layout, mapping, position)
 
 
-def _zarr_read(image: NgffImage, selection: tuple, path) -> np.ndarray:
+def _zarr_read(image: NgffImage, selection: tuple, path) -> np.ndarray:  # noqa: ANN001
     try:
         return read_selection(image.array, selection)
     except Exception as exc:  # decoding errors come from many codecs and stores

@@ -42,7 +42,7 @@ import tifffile
 from .axes import AxisMapping
 from .discovery import DiscoveryResult, is_system_name, is_tiff_name, position_id
 from .metadata import TiffMetadata, named_axes
-from .validation import ValidationIssue, error, has_errors, plural, warning
+from .validation import ValidationIssue, agree, error, has_errors, plural, warning
 from .zarr_input import (
     NgffError,
     ZarrUnavailableError,
@@ -540,12 +540,14 @@ def _suffix_matches(relative: Path, by_leaf: Mapping[str, list]) -> list[tuple[s
 
 
 def _layout_issues(loose: list[str], unpaired: list[str]) -> list[ValidationIssue]:
+    """Warn about files that are not masks and masks that match no analysed image."""
     issues = []
     if loose:
         issues.append(
             warning(
                 "mask_outside_type_folder",
-                f"{plural(len(loose), 'file')} in the masks folder {_are(loose)} not masks "
+                f"{plural(len(loose), 'file')} in the masks folder "
+                f"{agree(loose, 'is', 'are')} not masks "
                 "and will not be used.",
                 loose,
                 "Keep only masks there: Nuclei/<condition>/.../<image>.tif, or "
@@ -556,7 +558,8 @@ def _layout_issues(loose: list[str], unpaired: list[str]) -> list[ValidationIssu
         issues.append(
             warning(
                 "mask_without_image",
-                f"{plural(len(unpaired), 'file')} in the masks folder {_match(unpaired)} no "
+                f"{plural(len(unpaired), 'file')} in the masks folder "
+                f"{agree(unpaired, 'matches', 'match')} no "
                 "analysed image (same folders and image name) and will not be used.",
                 unpaired,
                 "Check the folder names and file names against the experiment, or remove "
@@ -826,8 +829,10 @@ def mask_plane_issues(
     return [
         error(
             "mask_planes_mismatch",
-            f"{plural(len(mismatched), 'mask')} {_do(mismatched)} not have the depth slices "
-            f"and time points of {_their(mismatched)} image: a 2D mask fits only an image with "
+            f"{plural(len(mismatched), 'mask')} "
+            f"{agree(mismatched, 'does', 'do')} not have the depth slices "
+            f"and time points of "
+            f"{agree(mismatched, 'its', 'their')} image: a 2D mask fits only an image with "
             "one plane, and a mask with depth (Z) or time (T) needs the same number of slices "
             "or time points as its image.",
             mismatched,
@@ -854,6 +859,7 @@ def _image_yx(meta: TiffMetadata) -> tuple[int, int] | None:
 def _missing_issues(
     types: tuple[str, ...], files: list[MaskFile], images: Mapping[str, TiffMetadata]
 ) -> list[ValidationIssue]:
+    """Warn about images without a mask of a type that other images have."""
     have = {(f.image, f.mask_type) for f in files}
     issues = []
     for mask_type in types:
@@ -862,30 +868,11 @@ def _missing_issues(
             issues.append(
                 warning(
                     "mask_missing",
-                    f"{plural(len(missing), 'image')} {_have(missing)} no {mask_type} mask; "
+                    f"{plural(len(missing), 'image')} "
+                    f"{agree(missing, 'has', 'have')} no {mask_type} mask; "
                     f"their {mask_type} objects cannot be measured.",
                     missing,
                     f"Add the {mask_type} masks of these images, or exclude the images.",
                 )
             )
     return issues
-
-
-def _do(items: list) -> str:
-    return "does" if len(items) == 1 else "do"
-
-
-def _their(items: list) -> str:
-    return "its" if len(items) == 1 else "their"
-
-
-def _are(items: list) -> str:
-    return "is" if len(items) == 1 else "are"
-
-
-def _match(items: list) -> str:
-    return "matches" if len(items) == 1 else "match"
-
-
-def _have(items: list) -> str:
-    return "has" if len(items) == 1 else "have"

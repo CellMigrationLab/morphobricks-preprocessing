@@ -23,7 +23,6 @@ import hashlib
 import json
 import os
 import platform
-import tempfile
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from importlib.metadata import PackageNotFoundError, version
@@ -36,6 +35,7 @@ from morphobricks_normalization.checks import IntensityCheckSettings
 from morphobricks_normalization.csv_io import SCHEMA_VERSION
 from morphobricks_normalization.ranges import HistogramSettings, RangeCheck
 
+from ._io import write_text_atomic
 from .axes import AxisMapping, file_mapping_for
 from .discovery import position_id
 from .metadata import inspect_image
@@ -412,7 +412,7 @@ class RunManifest:
             raise ManifestFormatError(f"The manifest is incomplete or malformed: {exc}") from exc
 
 
-def file_entry_for(
+def file_entry_for(  # noqa: PLR0913
     root: str | os.PathLike,
     relative_path: str,
     labels: tuple[str, str, str],
@@ -465,7 +465,7 @@ def source_fingerprint(path: str | os.PathLike) -> tuple[int, int]:
     return size, newest
 
 
-def check_sources(
+def check_sources(  # noqa: C901
     manifest: RunManifest,
     experiment_root: str | os.PathLike,
     relative_paths: Iterable[str],
@@ -643,17 +643,8 @@ def file_sha256(path: str | os.PathLike) -> str:
 
 def write_manifest(manifest: RunManifest, path: str | os.PathLike) -> Path:
     """Write a manifest as JSON, replacing the file only once writing succeeded."""
-    path = Path(path)
     text = json.dumps(manifest.to_dict(), indent=2, ensure_ascii=False) + "\n"
-    handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(handle, "w", newline="\n", encoding="utf-8") as fh:
-            fh.write(text)
-        os.replace(temporary, path)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
-    return path
+    return write_text_atomic(path, text)
 
 
 def read_manifest(path: str | os.PathLike) -> RunManifest:
@@ -750,7 +741,7 @@ def _flag(value: object, key: str | None = None) -> bool:
     return value
 
 
-def _plain(value):
+def _plain(value):  # noqa: ANN001, ANN202
     """Return a range check value as JSON data: Python numbers, lists for tuples."""
     if isinstance(value, tuple):
         return [_plain(item) for item in value]

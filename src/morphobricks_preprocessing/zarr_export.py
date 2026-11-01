@@ -580,14 +580,14 @@ def copy_channels_current(copy: str | os.PathLike, channel_names: Sequence[str |
 # zarr 2 / 3 ---------------------------------------------------------------------------
 
 
-def _create_group(path: Path):
+def _create_group(path: Path):  # noqa: ANN202
     zarr = _zarr()
     if _zarr_major() >= 3:
         return zarr.open_group(str(path), mode="w", zarr_format=2)
     return zarr.open_group(str(path), mode="w")
 
 
-def _compressor(settings: ConversionSettings):
+def _compressor(settings: ConversionSettings):  # noqa: ANN202
     """Return the numcodecs compressor for ``settings``; None means no compression."""
     if settings.compression == "none":
         return None
@@ -600,7 +600,7 @@ def _compressor(settings: ConversionSettings):
     )
 
 
-def _create_array(group, name: str, shape, chunks, dtype, compressor):
+def _create_array(group, name: str, shape, chunks, dtype, compressor):  # noqa: ANN001, ANN202
     if _zarr_major() >= 3:
         return group.create_array(
             name,

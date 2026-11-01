@@ -271,7 +271,7 @@ def check_dataset(
     return DatasetReport(tuple(repeats), balance, tuple(issues))
 
 
-def _repeat_folder(leaf) -> str:
+def _repeat_folder(leaf) -> str:  # noqa: ANN001
     if leaf.condition == SINGLE:
         return ROOT
     parts = leaf.relative_path.split("/")

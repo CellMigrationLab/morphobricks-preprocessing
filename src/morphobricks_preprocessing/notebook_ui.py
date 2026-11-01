@@ -221,7 +221,7 @@ class PreprocessingNotebook:
         Result of the last run, or None.
     """
 
-    def __init__(self, experiment_folder: str = "", output_folder: str = ""):
+    def __init__(self, experiment_folder: str = "", output_folder: str = ""):  # noqa: ANN204
         self.preflight: Preflight | None = None
         self.design: ExperimentDesign | None = None
         # True while the saved design cannot be read and has not been replaced by an answer.
@@ -1505,7 +1505,7 @@ class PreprocessingNotebook:
         self.preview_caption.value = preview_caption(header.relative_path, plane)
         self._show_log()
 
-    def _preview_header(self):
+    def _preview_header(self):  # noqa: ANN202
         value = self.preview_file.value
         return next((f for f in self.preflight.metadata.files if f.relative_path == value), None)
 
@@ -2617,7 +2617,7 @@ class IntensityPanel:
         Help line under it (HTML).
     """
 
-    def __init__(self, title: str, explanation: str):
+    def __init__(self, title: str, explanation: str):  # noqa: ANN204
         self.records: list[PlaneRecord] = []
         self.report: IntensityReport | None = None
         defaults = IntensityCheckSettings()
@@ -3181,7 +3181,7 @@ def distribution_png(groups: dict[tuple[str, ...], list]) -> bytes | None:
 class _LogCapture(logging.Handler):
     """Collects the package's log messages for the "Technical details" panel."""
 
-    def __init__(self):
+    def __init__(self):  # noqa: ANN204
         super().__init__(logging.DEBUG)
         self.lines: list[str] = []
         self.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
@@ -3189,22 +3189,22 @@ class _LogCapture(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         self.lines.append(self.format(record))
 
-    def attached(self):
+    def attached(self):  # noqa: ANN202
         return _Attached(self)
 
 
 class _Attached:
-    def __init__(self, handler: logging.Handler):
+    def __init__(self, handler: logging.Handler):  # noqa: ANN204
         self.handler = handler
         self.logger = logging.getLogger(_PACKAGE_LOGGER)
 
-    def __enter__(self):
+    def __enter__(self):  # noqa: ANN204
         self.level = self.logger.level
         self.logger.addHandler(self.handler)
         self.logger.setLevel(logging.DEBUG)
         return self.handler
 
-    def __exit__(self, *exc):
+    def __exit__(self, *exc):  # noqa: ANN002, ANN204
         self.logger.removeHandler(self.handler)
         self.logger.setLevel(self.level)
         return False
@@ -3299,7 +3299,7 @@ def _conversion_help(available: bool) -> str:
     return "<ul>" + "".join(f"<li>{item}</li>" for item in items) + "</ul>"
 
 
-def _bins_help(dtype) -> str:
+def _bins_help(dtype) -> str:  # noqa: ANN001
     if is_integer(dtype):
         top = min(MAX_BIN_COUNT, 2 ** (dtype.itemsize * 8))
         exact = (

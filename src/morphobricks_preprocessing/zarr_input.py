@@ -281,7 +281,7 @@ def _image_group(path: str | os.PathLike) -> tuple[str, Any, dict, int]:
     return prefix, group, meta, image_count
 
 
-def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:
+def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:  # noqa: ANN001
     """Describe level 0 of the multiscales image in ``group``."""
     multiscales = meta.get("multiscales")
     if not multiscales:
@@ -335,7 +335,7 @@ def _physical_sizes(multiscale: dict, axes: str, where: str) -> PhysicalSizes:
         return PhysicalSizes()
 
 
-def _labels_group(group):
+def _labels_group(group):  # noqa: ANN001, ANN202
     """Return the ``labels`` group next to an image, or None when it has none."""
     try:
         labels = group["labels"]
@@ -344,7 +344,7 @@ def _labels_group(group):
     return labels if hasattr(labels, "group_keys") else None
 
 
-def ngff_axes(axes: Any, ndim: int) -> str:
+def ngff_axes(axes: Any, ndim: int) -> str:  # noqa: ANN401
     """Translate OME-NGFF axis metadata into one-letter codes.
 
     ``axes`` is the ``multiscales[0]["axes"]`` entry: a list of objects with
@@ -373,7 +373,7 @@ def ngff_axes(axes: Any, ndim: int) -> str:
     return "".join(letters)
 
 
-def read_selection(array: Any, selection: tuple) -> np.ndarray:
+def read_selection(array: Any, selection: tuple) -> np.ndarray:  # noqa: ANN401
     """Read part of a zarr array as a NumPy array in native byte order."""
     data = np.asarray(array[selection])
     return data.astype(canonical_dtype(data.dtype.newbyteorder("=")), copy=False)
@@ -382,7 +382,7 @@ def read_selection(array: Any, selection: tuple) -> np.ndarray:
 # zarr 2 / 3 ---------------------------------------------------------------------------
 
 
-def _zarr():
+def _zarr():  # noqa: ANN202
     try:
         import zarr
     except ImportError as exc:
@@ -397,14 +397,14 @@ def _zarr_major() -> int:
     return int(_zarr().__version__.split(".")[0])
 
 
-def _ome_attrs(group) -> dict:
+def _ome_attrs(group) -> dict:  # noqa: ANN001
     """Return the OME metadata of a group (nested under ``"ome"`` in OME-NGFF 0.5)."""
     attrs = dict(group.attrs)
     ome = attrs.get("ome")
     return dict(ome) if isinstance(ome, dict) else attrs
 
 
-def _descend(group, path: str):
+def _descend(group, path: str):  # noqa: ANN001, ANN202
     try:
         child = group[path]
     except KeyError as exc:

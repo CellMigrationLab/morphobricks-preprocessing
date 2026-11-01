@@ -336,7 +336,7 @@ def preflight(
     )
 
 
-def run_experiment(
+def run_experiment(  # noqa: C901, PLR0913, PLR0915
     experiment_root: str | os.PathLike,
     mapping: AxisMapping,
     *,
@@ -495,7 +495,7 @@ def run_experiment(
             )
         )
 
-    def stop(**counts) -> RunResult:
+    def stop(**counts) -> RunResult:  # noqa: ANN003
         return RunResult(output, False, _sorted(issues), excluded=pre.excluded, **counts)
 
     if has_errors(issues):
@@ -858,7 +858,7 @@ class _CopyStaging:
     which reuses this folder; :meth:`discard` removes it when the run stops early.
     """
 
-    def __init__(self, output: Path, experiment_root: Path, settings: ConversionSettings):
+    def __init__(self, output: Path, experiment_root: Path, settings: ConversionSettings):  # noqa: ANN204
         self.output = output
         self.experiment_root = experiment_root
         self.settings = settings
@@ -952,7 +952,7 @@ def _load_previous(
     return manifest, by_file, None
 
 
-def _bin_count(dtype, bin_count: int | None) -> tuple[int | None, list[ValidationIssue]]:
+def _bin_count(dtype, bin_count: int | None) -> tuple[int | None, list[ValidationIssue]]:  # noqa: ANN001
     if bin_count is None:
         return default_bin_count(dtype), []
     try:

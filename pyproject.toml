@@ -67,7 +67,8 @@ addopts = "-ra"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["src", "tests"]
+src = ["src", "tests", "tools"]
+extend-exclude = ["tests/guard_fixtures"]
 
 [tool.ruff.lint]
 select = [
@@ -79,6 +80,11 @@ select = [
     "UP",  # modern syntax for the target Python
     "NPY", # numpy-specific checks
     "D",   # docstrings
+    "C90", # complexity (spec §9: at most 15)
+    "PLR0913", # at most 8 parameters
+    "PLR0915", # at most 50 statements
+    "ANN", # complete annotations
+    "PGH004", # a noqa names its rules, so the noqa ratchet sees every one
 ]
 ignore = [
     "D105", # magic methods need no docstring
@@ -88,6 +94,62 @@ ignore = [
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.pylint]
+max-args = 8
+max-statements = 50
+
+[tool.ruff.lint.isort]
+known-first-party = ["morphobricks_preprocessing", "code_rules", "check"]
+# Spec §9: annotations come with postponed evaluation (I002 enforces it).
+required-imports = ["from __future__ import annotations"]
+
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["D"]
-"experiments/**" = ["D", "E501", "B905"]  # study scripts kept as they were run
+"tests/**" = ["D", "ANN", "I002"]
+"experiments/**" = ["D", "E501", "B905", "ANN", "C90", "PLR", "I002"]  # study scripts kept as they were run
+"notebooks/**" = ["I002"]  # notebook cells are not modules
+
+[tool.morphobricks.code-rules]
+# The shared tools/code_rules.py (spec §9), configured for this repository.
+owner = "preprocessing"
+package = "src/morphobricks_preprocessing"
+baseline = "tools/code_rules_baseline.json"
+
+[tool.morphobricks.code-rules.layers]
+# pure: no I/O, no UI; io: reads or writes files; ui: notebook and command line, no
+# computing; orchestration: ties the others together.
+"morphobricks_preprocessing" = "orchestration"
+"morphobricks_preprocessing.__main__" = "ui"
+"morphobricks_preprocessing._io" = "io"
+"morphobricks_preprocessing._moved" = "pure"
+"morphobricks_preprocessing.axes" = "pure"
+"morphobricks_preprocessing.axis_check" = "pure"
+"morphobricks_preprocessing.mask_checks" = "pure"
+"morphobricks_preprocessing.notebook_axes" = "ui"
+"morphobricks_preprocessing.cli" = "ui"
+"morphobricks_preprocessing.csv_io" = "pure"
+"morphobricks_preprocessing.dataset" = "pure"
+"morphobricks_preprocessing.design" = "io"
+"morphobricks_preprocessing.discovery" = "io"
+"morphobricks_preprocessing.dtypes" = "pure"
+"morphobricks_preprocessing.histogram" = "pure"
+"morphobricks_preprocessing.image_type" = "pure"
+"morphobricks_preprocessing.intensity" = "io"
+"morphobricks_preprocessing.manifest" = "io"
+"morphobricks_preprocessing.mask_scan" = "io"
+"morphobricks_preprocessing.masks" = "io"
+"morphobricks_preprocessing.metadata" = "io"
+"morphobricks_preprocessing.normalization" = "pure"
+"morphobricks_preprocessing.notebook_style" = "ui"
+"morphobricks_preprocessing.notebook_ui" = "ui"
+"morphobricks_preprocessing.physical_sizes" = "io"
+"morphobricks_preprocessing.planes" = "io"
+"morphobricks_preprocessing.pooling" = "pure"
+"morphobricks_preprocessing.records" = "pure"
+"morphobricks_preprocessing.report" = "pure"
+"morphobricks_preprocessing.run" = "orchestration"
+"morphobricks_preprocessing.validation" = "pure"
+"morphobricks_preprocessing.zarr_export" = "io"
+"morphobricks_preprocessing.zarr_input" = "io"
