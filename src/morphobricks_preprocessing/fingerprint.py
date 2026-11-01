@@ -17,8 +17,15 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from .axis_check import ConfirmedAxes
 from .manifest import FileEntry, RunSettings, source_fingerprint
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from .axes import AxisMapping
 
 
 @dataclass(frozen=True)
@@ -117,6 +124,71 @@ class RowKey:
             bin_count=settings.bin_count,
             histogram=tuple(sorted(_frozen(settings.histogram.to_dict()).items())),
         )
+
+
+def confirm_axes(
+    mapping: AxisMapping, experiment_root: str | os.PathLike, files: Iterable[str]
+) -> ConfirmedAxes:
+    """Record the user's confirmation of ``mapping`` for ``files`` as they are now.
+
+    Parameters
+    ----------
+    mapping
+        The experiment mapping the user confirmed.
+    experiment_root
+        The experiment folder.
+    files
+        The images the user confirmed it for, relative to the experiment root.
+
+    Returns
+    -------
+    ConfirmedAxes
+        The confirmation, with each file's :class:`Fingerprint`.
+
+    Raises
+    ------
+    FileNotFoundError
+        If a file does not exist.
+    """
+    root = Path(experiment_root)
+    return ConfirmedAxes(mapping, {rel: Fingerprint.of(root / rel) for rel in files})
+
+
+def unchanged_confirmation(
+    mapping: AxisMapping | ConfirmedAxes, experiment_root: str | os.PathLike
+) -> AxisMapping | ConfirmedAxes:
+    """Keep only the confirmed files that are unchanged since they were confirmed.
+
+    A file that changed or is gone is no longer covered, so a plain stack among them is
+    ``plain_stack_not_confirmed`` (design v0.4 §3, audit 2 B-1). A plain mapping is
+    returned as it is.
+
+    Parameters
+    ----------
+    mapping
+        The confirmation given to the run.
+    experiment_root
+        The experiment folder.
+
+    Returns
+    -------
+    AxisMapping or ConfirmedAxes
+    """
+    if not isinstance(mapping, ConfirmedAxes):
+        return mapping
+    root = Path(experiment_root)
+    kept = {
+        rel: recorded for rel, recorded in mapping.files.items() if _current(root / rel) == recorded
+    }
+    return ConfirmedAxes(mapping.mapping, kept)
+
+
+def _current(path: Path) -> Fingerprint | None:
+    """Return a file's fingerprint now, or None when it is gone."""
+    try:
+        return Fingerprint.of(path)
+    except FileNotFoundError:
+        return None
 
 
 def _frozen(value: object) -> object:

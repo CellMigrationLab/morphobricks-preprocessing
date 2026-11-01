@@ -87,7 +87,7 @@
     "src/morphobricks_preprocessing/planes.py _zarr_layout: private function of # lines without a docstring": 40,
     "src/morphobricks_preprocessing/planes.py check_planes: # executable lines (max #)": 65,
     "src/morphobricks_preprocessing/planes.py: # lines (max #)": 1422,
-    "src/morphobricks_preprocessing/run/pipeline.py run_experiment: # executable lines (max #)": 166,
+    "src/morphobricks_preprocessing/run/pipeline.py run_experiment: # executable lines (max #)": 161,
     "src/morphobricks_preprocessing/run/pipeline.py run_experiment: # parameters (max #)": 15,
     "src/morphobricks_preprocessing/run/preflight.py _exclusion_issues: private function of # lines without a docstring": 34,
     "src/morphobricks_preprocessing/run/rows.py _bin_count: private function of # lines without a docstring": 12,
