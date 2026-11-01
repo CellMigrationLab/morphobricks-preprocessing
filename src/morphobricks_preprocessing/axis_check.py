@@ -177,8 +177,7 @@ def axis_check_issues(
                 warning(
                     code,
                     f"{n} do not name their axes in their metadata ({details}). They are read "
-                    "with the roles you confirmed, recorded in the run manifest as confirmed "
-                    "by you.",
+                    "with the roles you confirmed, and recorded as confirmed by you.",
                     paths,
                     "Check the roles with the preview. Before segmenting these images in "
                     "other tools, consider saving named-axis copies (OME-TIFF), so every tool "
@@ -244,8 +243,8 @@ def likely_axis_cause(meta: TiffMetadata, mapping: AxisMapping, code: str) -> st
 
 _TWO_FIXES = (
     "Two fixes. Correct the axes: if the header is right, choose its roles. Or convert: if "
-    "your roles are right, save these images as named-axis copies (OME-TIFF) with them "
-    "(morphobricks-preprocessing convert), then run preprocessing on the copies."
+    "your roles are right, save these images as named-axis copies (OME-TIFF) with them, "
+    "then run preprocessing on the copies."
 )
 
 

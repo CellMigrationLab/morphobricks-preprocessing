@@ -121,6 +121,8 @@ def test_plain_stacks_never_name_their_axes(tmp_path, writer, roles):
     assert review.confirmed_files == ("a.tif",)
     assert f"header {meta.axes}, confirmed {roles}: a.tif" in found.message
     assert "read with the roles you confirmed" in found.message
+    # The run manifest (version 1) has no axes_from field: the message must not claim it.
+    assert "manifest" not in found.message
     assert "named-axis copies (OME-TIFF)" in found.action
 
 
@@ -210,6 +212,8 @@ def test_every_file_is_named_with_its_header_and_confirmed_axes(tmp_path):
         found.message
     )
     assert "Correct the axes" in found.action and "Or convert" in found.action
+    # There is no convert command yet (design v0.4 §5, PP-11): the fix must not name one.
+    assert "morphobricks-preprocessing convert" not in found.action
 
 
 def test_the_likely_cause_of_tifffiles_cyx_default_is_named(tmp_path):
