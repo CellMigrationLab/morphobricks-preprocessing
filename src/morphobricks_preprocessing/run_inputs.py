@@ -5,7 +5,8 @@ roles, pixel sizes, masks, histograms, design and image type, all as the run rec
 Nothing is parsed from names, guessed or transposed, and no file is read once it changed:
 
 - :meth:`RunInputs.open` refuses a version 1 manifest (a run before the axis check), a table
-  or design whose SHA-256 is not the manifest's, and an image changed or gone since the run;
+  or design whose SHA-256 is not the manifest's, and an image or mask changed or gone since
+  the run;
 - every read checks the file's fingerprint again (:class:`.fingerprint.Fingerprint`);
 - masks are read by the recorded pairing only, with preprocessing's reader and its label
   check (:func:`.masks.check_labels`); a stated shared 2-D mask serves every plane.
@@ -134,8 +135,8 @@ class RunInputs:
         Raises
         ------
         RunInputsError
-            For a run before v0.4.0, a table or design changed since the run, or an image
-            changed or gone.
+            For a run before v0.4.0, a table or design changed since the run, or an image or
+            mask changed or gone.
         """
         output = Path(output_folder).resolve()
         manifest = _manifest(output)
@@ -155,6 +156,10 @@ class RunInputs:
         changed = [e.relative_path for e in manifest.files if not inputs._unchanged(e)]
         if changed:
             raise RunInputsError(_changed_text(changed))
+        recorded = (manifest.masks or {}).get("files", ())
+        changed = [m["path"] for m in recorded if not inputs._mask_unchanged(m)]
+        if changed:
+            raise RunInputsError(_changed_text(changed, "mask"))
         return inputs
 
     def fovs(self) -> tuple[Fov, ...]:
@@ -236,13 +241,13 @@ class RunInputs:
         """
         entry = self._checked(fov)
         recorded = self._mask_entry(entry.relative_path, mask_type)
+        if not self._mask_unchanged(recorded):
+            raise RunInputsError(_changed_text([recorded["path"]], "mask"))
         mask = MaskFile(recorded["image"], recorded["type"], recorded["path"], recorded["source"])
         folder = self.masks_root if mask.source == FOLDER else None
-        where = (folder if folder is not None else self.experiment_root) / mask.path
-        if Fingerprint.of(where) != Fingerprint.recorded(recorded):
-            raise RunInputsError(_changed_text([mask.path], "mask"))
-        header_axes, shape, dtype = _mask_header(mask, folder, self.experiment_root)
-        if list(shape) != list(recorded["shape"]):
+        stored, shape, dtype = _mask_header(mask, folder, self.experiment_root)
+        # The mask is read through the axes it is stored with, as the run recorded them.
+        if stored != recorded["axes"] or list(shape) != list(recorded["shape"]):
             raise RunInputsError(_changed_text([mask.path], "mask"))
         mask = MaskFile(
             mask.image,
@@ -252,7 +257,7 @@ class RunInputs:
             tuple(shape),
             dtype,
             str(recorded["roles"]),
-            header_axes,
+            str(recorded["axes"]),
             str(recorded["axes_from"]),
         )
         return read_mask(mask, folder, self.experiment_root, z=z, t=t)
@@ -300,6 +305,19 @@ class RunInputs:
         except FileNotFoundError:
             return False
         return now == Fingerprint.recorded(entry)
+
+    def _mask_unchanged(self, recorded: Mapping) -> bool:
+        """Return True when a mask's fingerprint is the one the run recorded."""
+        if recorded["source"] == FOLDER:
+            if self.masks_root is None:
+                return False
+            where = self.masks_root / recorded["path"]
+        else:
+            where = self.experiment_root / recorded["path"]
+        try:
+            return Fingerprint.of(where) == Fingerprint.recorded(recorded)
+        except FileNotFoundError:
+            return False
 
     def _mask_entry(self, image: str, mask_type: str) -> Mapping:
         """Return the recorded mask of an image and type."""
@@ -369,9 +387,11 @@ def _check_sha(path: Path, expected: str, what: str) -> None:
 def _changed_text(paths: list[str], what: str = "image") -> str:
     """Say which files changed or went missing since the run."""
     shown = ", ".join(sorted(paths)[:5]) + (" and more" if len(paths) > 5 else "")
+    where = "experiment_root=" if what == "image" else "masks_root="
     return (
         f"{len(paths)} {what}{'' if len(paths) == 1 else 's'} changed or missing since the "
-        f"run: {shown}. Run preprocessing again on the experiment as it is."
+        f"run: {shown}. Run preprocessing again on the experiment as it is (or, if the "
+        f"{what}s were only moved, give {where} where they are now)."
     )
 
 

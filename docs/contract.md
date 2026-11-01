@@ -183,17 +183,27 @@ is not empty.
 Bricks read a run's files only through `RunInputs.open(output_folder, experiment_root=None,
 masks_root=None)` (design v0.4 §6). It refuses (`RunInputsError`) a version 1 manifest, a
 `plane_histograms.csv` or `experiment_design.csv` whose SHA-256 is not the manifest's, and an
-image changed or gone since the run; every read checks the file's fingerprint again. It
-gives `fovs()` (`Fov`: the FOV key, `plane_id`s, axes, roles, `axes_from`, channel names,
-dtype, `significant_bits`, and the Z, T and C counts, from the manifest and the table, never
-parsed), `pixel_sizes(fov)` (value, unit and source per role, or unknown),
-`read_plane(fov, z, t)` (a `(C, Y, X)` array of the stored values), `read_image(fov)` (a lazy
-`(T, Z, C, Y, X)` `LazyImage`), `mask_types()`, `read_mask(fov, type, z=None, t=None)` (the
-recorded pairing only, read by preprocessing's reader with `check_labels`; a mask changed
-since the run is refused; a stated shared 2-D mask serves every plane), `histograms()` (the
-table as read when opened), `design()` and `image_type()`. It is picklable.
+image or mask changed or gone since the run; every read checks the file's fingerprint again.
+It gives:
+
+- `fovs()`: `Fov` records with the FOV key, `plane_id`s, axes, roles, `axes_from`, channel
+  names, dtype, `significant_bits`, and the Z, T and C counts, from the manifest and the
+  table, never parsed;
+- `pixel_sizes(fov)`: value, unit and source per role, or unknown;
+- `read_plane(fov, z, t)`, a `(C, Y, X)` array of the stored values, and `read_image(fov)`, a
+  lazy `(T, Z, C, Y, X)` `LazyImage`. Both are in canonical order: an image whose own header
+  names X before Y (for example `ZXY`) is returned Y before X, as the run read it; nothing
+  else is reordered;
+- `mask_types()` and `read_mask(fov, type, z=None, t=None)`: the recorded pairing only, read
+  as stored through the recorded `axes` and `roles` by preprocessing's reader with
+  `check_labels`; a mask changed since the run is refused; a stated shared 2-D mask serves
+  every plane;
+- `histograms()` (the table as read when opened), `design()` and `image_type()`.
+
+A `RunInputs` is picklable, so worker processes can use it.
 `morphobricks_preprocessing.testing.make_clean_run(folder, ...)` writes a tiny experiment of
-named-axis OME-TIFFs (optionally with masks) and its clean run, for the bricks' tests.
+named-axis OME-TIFFs (optionally with masks and a confirmed design) and its clean run, for
+the bricks' tests.
 
 ## 10. Converting TIFF images to OME-Zarr (removed in v0.4.0)
 

@@ -15,6 +15,9 @@ import numpy as np
 import tifffile
 
 from .axes import prefill_mapping
+from .dataset import biological_repeats
+from .design import ExperimentDesign, default_design
+from .discovery import discover_experiment
 from .run import RunResult, run_experiment
 
 
@@ -47,6 +50,7 @@ def make_clean_run(
     shape: tuple[int, ...] = (2, 16, 20),
     mask_types: tuple[str, ...] = (),
     pixel_size: float | None = 0.5,
+    design: bool = False,
     seed: int = 0,
 ) -> CleanRun:
     """Write a two-condition experiment of named-axis TIFFs and run preprocessing on it.
@@ -65,6 +69,9 @@ def make_clean_run(
         Mask types to write (``("Cells",)``); 2-D masks need images with one plane.
     pixel_size
         The X and Y pixel size in micrometres written to the headers, or None for none.
+    design
+        Run with a confirmed experiment design (``ctrl`` the control, each ``rep1`` its own
+        repeat group), so the run writes ``experiment_design.csv``.
     seed
         The random seed of the pixels.
 
@@ -93,11 +100,23 @@ def make_clean_run(
                 _write_mask(masks / mask_type / condition / "rep1" / f"{name}.tif", shape[-2:])
     output = root / "output"
     result = run_experiment(
-        experiment, prefill_mapping(axes), output_folder=output, masks_folder=masks
+        experiment,
+        prefill_mapping(axes),
+        output_folder=output,
+        masks_folder=masks,
+        design=_confirmed_design(experiment) if design else None,
     )
     if not result.written:
         raise RuntimeError("The clean run was not written: " + "; ".join(map(str, result.issues)))
     return CleanRun(experiment, output, masks, result)
+
+
+def _confirmed_design(experiment: Path) -> ExperimentDesign:
+    """Confirm the default design of an experiment, with ``ctrl`` as the control."""
+    found = default_design(biological_repeats(discover_experiment(experiment)))
+    for group in found.groups:
+        found = found.with_confirmed(group, True, "2026-01-01")
+    return found.with_control("ctrl", True)
 
 
 def _write_mask(path: Path, yx: tuple[int, ...]) -> None:
