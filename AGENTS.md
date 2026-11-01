@@ -112,7 +112,8 @@ src/morphobricks_preprocessing/
                     pixel checks), publish.py (staged outputs, published together)
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
   cli.py, __main__  `morphobricks-preprocessing check|run|masks` (also `python -m morphobricks_preprocessing`)
-  masks.py          masks (Q32): find_masks pairs every image with its masks (masks folder with one
+  masks/           masks (Q32; a package since PP-5: model, files, header, layout, read,
+                    checks, labels): find_masks pairs every image with its masks (masks folder with one
                     folder per type mirroring the experiment, or <image>_<type>.tif in the
                     experiment's folders, mixed; OME-Zarr label images), header-only
                     checks (2D, image YX, integer/bool), MaskInventory (to_manifest), read_mask,

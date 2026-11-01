@@ -12,7 +12,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 
 from .axes import AxisMapping, AxisReview
-from .masks import _TEXTS, MaskInventory, _yx, mask_plane_issues
+from .masks import MaskInventory, mask_plane_issues
+from .masks.checks import _TEXTS
+from .masks.layout import _yx
 from .metadata import MetadataReport, TiffMetadata
 from .validation import ValidationIssue, error
 
