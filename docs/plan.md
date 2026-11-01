@@ -1035,3 +1035,27 @@ Raised during review; to be decided before the milestones that need them:
     1D array keeps the header axes `X` (`header_axes`, `check_declared_axes`), so the folder
     check suggests a mapping without Y and the run refuses it with `missing_xy_axis`;
     reading it as one row too would change the shared header-axes rule (§16).*
+45. How are the axes checked, now that every brick reads preprocessing's run (MorphoBricks
+    axes redesign, design note and audit of 1 November 2026)? Until now a confirmed
+    mapping was never compared with the axes the header names: a Y/X swap was read
+    transposed and a contradiction (header `ZYX` confirmed `TYX`) read under the
+    declaration, with no trace but the manifest's `roles`.
+    *Decided (1 November 2026, owner's final design after the audit): preprocessing is the
+    only place axes are checked. `review_axes` compares each TIFF's confirmed roles with
+    its header (`header_axis_issue`, built from the declared-axes rule). Roles that swap
+    the named Y and X (`axes_yx_swapped`) or otherwise contradict them
+    (`axes_contradict_header`) are errors naming the files with their header and
+    confirmed axes and the likely cause (tifffile's `CYX` default, an ImageJ slice stack),
+    with two fixes: correct the axes, or convert (named-axis copies). Nothing is read
+    transposed or under a contradicted declaration. A plain stack whose metadata does not
+    name its axes is read with the roles the user confirms, with the warning
+    `axes_not_named` recommending named copies, recorded per file as `axes_from:
+    "confirmed"`. The notebook shows the three codes as one card and marks each role that
+    disagrees with the header before confirmation; when the axes are correct, the notebook
+    and the CLI say so. Masks are compared with their image's Y and X by the confirmed
+    roles (they were compared with the header's letters; the role-based comparison still
+    matters for plain stacks, whose positional Y and X need not be the roles), and not at
+    all for an image with an axis error. `check_declared_axes` and
+    `declared_axes_transposed` are deprecated, to be removed before the v0.4.0 release
+    (design v0.4 §6, PP-2). Breaking for v0.4.0: experiments run with roles that swap or
+    contradict the header no longer run as they are.*

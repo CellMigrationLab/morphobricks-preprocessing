@@ -25,6 +25,13 @@ from .axes import (
     reference_axes,
     review_axes,
 )
+from .axis_check import (
+    AXIS_CHECK_CODES,
+    AXIS_ERROR_CODES,
+    axis_disagreements,
+    header_axis_issue,
+    likely_axis_cause,
+)
 from .dataset import (
     CONSISTENCY_CODES,
     BalanceCell,
@@ -102,6 +109,7 @@ from .manifest import (
     source_fingerprint,
     write_manifest,
 )
+from .mask_checks import mask_issues, mask_size_issues
 from .mask_scan import (
     DEFAULT_THRESHOLDS,
     MASK_REPORT_FILENAME,
@@ -208,6 +216,8 @@ except PackageNotFoundError:  # running from a source checkout without installin
     __version__ = "0.0.0+unknown"
 
 __all__ = [
+    "AXIS_CHECK_CODES",
+    "AXIS_ERROR_CODES",
     "CONSISTENCY_CODES",
     "DEFAULT_MEMORY_LIMIT",
     "DEFAULT_THRESHOLDS",
@@ -289,6 +299,7 @@ __all__ = [
     "ValidationIssue",
     "XycPlane",
     "ZarrUnavailableError",
+    "axis_disagreements",
     "axis_length_ranges",
     "balance_table",
     "biological_repeats",
@@ -324,6 +335,7 @@ __all__ = [
     "group_summaries",
     "has_errors",
     "header_axes",
+    "header_axis_issue",
     "image_type_issues",
     "inspect_experiment",
     "inspect_image",
@@ -333,11 +345,14 @@ __all__ = [
     "is_zarr_store",
     "iter_planes",
     "iter_xyc_planes",
+    "likely_axis_cause",
     "load_design",
     "make_plane_id",
     "images_named_as_masks",
+    "mask_issues",
     "mask_name_issues",
     "mask_plane_issues",
+    "mask_size_issues",
     "mask_thresholds",
     "min_max",
     "named_axes",

@@ -44,7 +44,12 @@ from morphobricks_normalization.dtypes import default_bin_count, validate_bin_co
 from morphobricks_normalization.ranges import HistogramSettings, range_check_issues
 from morphobricks_normalization.records import PlaneRecord
 
-from .axes import AxisMapping, file_mapping_for, prefill_experiment_mapping, review_axes
+from .axes import (
+    AxisMapping,
+    file_mapping_for,
+    prefill_experiment_mapping,
+    review_axes,
+)
 from .dataset import DatasetReport, check_dataset
 from .design import (
     DESIGN_FILENAME,
@@ -69,7 +74,8 @@ from .manifest import (
     read_manifest,
     write_manifest,
 )
-from .masks import MaskInventory, find_masks, mask_plane_issues
+from .mask_checks import mask_issues
+from .masks import MaskInventory, find_masks
 from .metadata import MetadataReport, TiffMetadata, inspect_images
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
@@ -461,12 +467,7 @@ def run_experiment(
         *image_type_issues(image_type, type_review),
         *design_problems,
         *dataset.issues,
-        *(pre.masks.issues if pre.masks is not None else ()),
-        *(
-            mask_plane_issues(pre.masks, pre.metadata.files, review.file_mappings)
-            if pre.masks is not None
-            else ()
-        ),
+        *(mask_issues(pre.masks, pre.metadata, review) if pre.masks is not None else ()),
     ]
     dtype = pre.metadata.dtype
     bins = None

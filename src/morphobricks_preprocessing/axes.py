@@ -5,7 +5,11 @@ The axis labels ``tifffile`` reports from a file's metadata prefill an
 experiment. :func:`review_axes` checks the confirmed mapping against the rules of
 ``docs/contract.md`` §2 and resolves it for every file, including files that lack
 a dimension the others have (the ``missing_axes`` case of
-:mod:`~morphobricks_preprocessing.metadata`).
+:mod:`~morphobricks_preprocessing.metadata`). It also checks every TIFF's confirmed roles
+against the axes its header names (:func:`header_axis_issue`): confirmed roles that swap or
+contradict the named axes are an error, and such an image is never read (the user corrects
+the roles, or saves named-axis copies); an image whose metadata does not name its axes (a
+plain stack) is read with the confirmed roles, with a warning, and recorded as confirmed.
 
 Nothing here reads pixels; the preview plane is read by
 :func:`~morphobricks_preprocessing.planes.read_sample_plane`.
@@ -13,11 +17,19 @@ Nothing here reads pixels; the preview plane is read by
 
 from __future__ import annotations
 
+import warnings
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
+from .axis_check import (
+    AXES_FROM_CONFIRMED,
+    AXIS_CHECK_CODES,
+    AXIS_ERROR_CODES,
+    POSITION_AXES,
+    check_header_axes,
+)
 from .metadata import (
     OPEN_AXIS,
     MetadataReport,
@@ -33,10 +45,6 @@ ROLES = ("X", "Y", "Z", "C", "T")
 PLANE_ROLES = ("Z", "C", "T")
 """Roles that index planes; X and Y span each plane."""
 
-# tifffile labels for positions in a sample (tile, mosaic, row, column). They
-# identify where an image was taken, not a dimension of one image, so they
-# cannot be given a role in this milestone.
-POSITION_AXES = frozenset("RMKJ")
 
 _AXIS_NAMES = {
     "X": "width",
@@ -194,20 +202,57 @@ class AxisReview:
         Mapping for each readable file that fits, keyed by relative path. Files
         lacking dimensions have :attr:`AxisMapping.singleton_roles`.
     issues
-        Errors about the mapping and about files it does not fit.
+        Errors about the mapping and about files it does not fit, and the axis check's
+        ``axes_not_named`` warning.
+    axes_from
+        For each file of ``file_mappings``, where its roles come from: ``"header"`` when its
+        metadata names every axis longer than 1 (and they agree), ``"confirmed"`` when
+        some axis is named only by the user's confirmation (a plain stack).
     """
 
     mapping: AxisMapping
     file_mappings: Mapping[str, AxisMapping] = field(default_factory=dict)
     issues: tuple[ValidationIssue, ...] = ()
+    axes_from: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "file_mappings", MappingProxyType(dict(self.file_mappings)))
+        object.__setattr__(self, "axes_from", MappingProxyType(dict(self.axes_from)))
 
     @property
     def ok(self) -> bool:
         """True if no issue blocks processing."""
         return not has_errors(self.issues)
+
+    @property
+    def axis_errors(self) -> tuple[ValidationIssue, ...]:
+        """The ``axes_yx_swapped`` and ``axes_contradict_header`` errors."""
+        return tuple(i for i in self.issues if i.code in AXIS_ERROR_CODES)
+
+    @property
+    def axis_check(self) -> tuple[ValidationIssue, ...]:
+        """Every issue of the axis check, the ``axes_not_named`` warning included."""
+        return tuple(i for i in self.issues if i.code in AXIS_CHECK_CODES)
+
+    @property
+    def confirmed_files(self) -> tuple[str, ...]:
+        """Images whose roles are named only by the user's confirmation, sorted."""
+        return tuple(sorted(p for p, how in self.axes_from.items() if how == AXES_FROM_CONFIRMED))
+
+    @property
+    def axis_error_files(self) -> tuple[str, ...]:
+        """Images with one of the three axis errors (:data:`AXIS_ERROR_CODES`), sorted."""
+        return tuple(sorted({path for issue in self.axis_errors for path in issue.paths}))
+
+    @property
+    def only_axis_errors(self) -> bool:
+        """True if there are axis errors and no other error.
+
+        The confirmed mapping then fits every file, so the images can be saved again as
+        named-axis copies with it.
+        """
+        errors = [i for i in self.issues if i.is_error]
+        return bool(errors) and all(i.code in AXIS_ERROR_CODES for i in errors)
 
     def combined_issues(self, metadata: MetadataReport) -> tuple[ValidationIssue, ...]:
         """Merge the metadata issues with this review's, errors first.
@@ -243,6 +288,11 @@ def prefill_mapping(axes: str) -> AxisMapping:
 
 def check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | None:
     """Check the axes a brick or user declares for an image against its header.
+
+    .. deprecated:: 0.4.0
+        Bricks no longer take axis declarations: they read the files of a preprocessing
+        run whose axes were checked (:func:`review_axes`, contract §2). This function is
+        removed before the v0.4.0 release.
 
     One rule for every brick that is told an image's (or mask's) axes, for example
     ``image_axes="CYX"`` (MorphoBricks D86): a declaration can name what the header leaves
@@ -280,6 +330,11 @@ def check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | 
         axes (or ``unreadable_tiff`` / ``unreadable_ome_zarr`` when its header could not be
         read); None when the declaration fits the header.
     """
+    _deprecated("check_declared_axes")
+    return _check_declared_axes(meta, declared)
+
+
+def _check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | None:
     if not meta.readable:
         code = "unreadable_ome_zarr" if meta.is_ome_zarr else "unreadable_tiff"
         return error(
@@ -305,6 +360,11 @@ def check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | 
 def declared_axes_transposed(meta: TiffMetadata, declared: str) -> bool:
     """Return True when a declaration fits the header only with its named Y and X swapped.
 
+    .. deprecated:: 0.4.0
+        Nothing is read transposed any more: a confirmed Y/X swap is the error
+        ``axes_yx_swapped`` (:func:`review_axes`). This function is removed before the
+        v0.4.0 release.
+
     :func:`check_declared_axes` accepts a declaration that differs from the axes the
     metadata names only by swapping Y and X (header ``CYX`` declared ``CXY``): the image is
     read transposed. A brick that accepts such a declaration records it with this function.
@@ -329,7 +389,8 @@ def declared_axes_transposed(meta: TiffMetadata, declared: str) -> bool:
         When the declaration does not fit the header at all (:func:`check_declared_axes`
         gives an error), with that error's message.
     """
-    issue = check_declared_axes(meta, declared)
+    _deprecated("declared_axes_transposed")
+    issue = _check_declared_axes(meta, declared)
     if issue is not None:
         raise ValueError(issue.message)
     named = named_axes(meta)
@@ -361,6 +422,16 @@ def _declared_axes_problem(header: str, named: str, declared: str) -> str | None
             continue
         return f"dimension {index} is {_axis_label(have)} in the header, declared {said}"
     return None
+
+
+def _deprecated(name: str) -> None:
+    warnings.warn(
+        f"morphobricks_preprocessing.{name} is deprecated and will be removed in v0.4.0: "
+        "bricks read the files of a preprocessing run whose axes were checked, and take no "
+        "axis declarations.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
 
 
 def reference_axes(files: Iterable[TiffMetadata]) -> str | None:
@@ -608,8 +679,14 @@ def review_axes(
         from :func:`check_mapping`, files that lack dimensions without
         confirmation (``missing_axes``) or in an ambiguous way
         (``ambiguous_missing_axes``), files the mapping does not fit
-        (``inconsistent_mapping``), and files with different numbers of channels
-        along the C axis (``different_channel_counts``; 1 without one).
+        (``inconsistent_mapping``), files with different numbers of channels
+        along the C axis (``different_channel_counts``; 1 without one), and the
+        axis check of every TIFF against its header (:func:`header_axis_issue`),
+        each naming its files with their header axes and confirmed roles: the
+        errors ``axes_yx_swapped`` and ``axes_contradict_header`` (with the likely
+        cause; such an image is never read transposed or under a contradicted
+        declaration) and the warning ``axes_not_named`` (a plain stack, read with
+        the confirmed roles; :attr:`AxisReview.axes_from` records it).
     """
     if isinstance(files, MetadataReport):
         files = files.files
@@ -708,7 +785,21 @@ def review_axes(
             }
         )
     )
-    return AxisReview(mapping=mapping, file_mappings=file_mappings, issues=tuple(issues))
+    # Each file's confirmed roles against the axes its own header names. Files the mapping
+    # does not fit already have their error; OME-Zarr images take their roles from their
+    # metadata.
+    checked = [
+        (f, file_mappings.get(f.relative_path) or mapping.for_axes(f.axes))
+        for f in readable
+        if f.relative_path in file_mappings or f.relative_path in unconfirmed
+    ]
+    axis_issues, axes_from = check_header_axes(
+        [(f, m) for f, m in checked if m is not None], analysed=file_mappings
+    )
+    issues.extend(axis_issues)
+    return AxisReview(
+        mapping=mapping, file_mappings=file_mappings, issues=tuple(issues), axes_from=axes_from
+    )
 
 
 def channel_count(f: TiffMetadata, mapping: AxisMapping) -> int:

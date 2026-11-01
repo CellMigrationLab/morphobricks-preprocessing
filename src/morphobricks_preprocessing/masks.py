@@ -41,7 +41,7 @@ import tifffile
 
 from .axes import AxisMapping
 from .discovery import DiscoveryResult, is_system_name, is_tiff_name, position_id
-from .metadata import TiffMetadata
+from .metadata import TiffMetadata, named_axes
 from .validation import ValidationIssue, error, has_errors, plural, warning
 from .zarr_input import (
     NgffError,
@@ -666,7 +666,8 @@ def _header_issues(
         files[index] = MaskFile(
             mask.image, mask.mask_type, mask.path, mask.source, shape, dtype, axes
         )
-        if _yx(axes, shape) != _image_yx(images[mask.image]):
+        expected = _image_yx(images[mask.image])
+        if expected is not None and _yx(axes, shape) != expected:
             problems.setdefault("mask_size_mismatch", []).append(mask.path)
         if dtype.kind not in "biu":
             problems.setdefault("mask_pixel_type", []).append(mask.path)
@@ -780,6 +781,8 @@ def mask_plane_issues(
     inventory: MaskInventory,
     images: Iterable[TiffMetadata],
     file_mappings: Mapping[str, AxisMapping],
+    *,
+    skip: Iterable[str] = (),
 ) -> list[ValidationIssue]:
     """Check that every mask has the depth slices and time points of its image (issue #36).
 
@@ -796,6 +799,8 @@ def mask_plane_issues(
     file_mappings
         Each image's own axis mapping (:attr:`.axes.AxisReview.file_mappings`); images
         without one are left to the axis review's errors.
+    skip
+        Images not to check: those with an axis error, as in :func:`mask_size_issues`.
 
     Returns
     -------
@@ -803,10 +808,11 @@ def mask_plane_issues(
         The error ``mask_planes_mismatch`` naming the masks that do not fit, or nothing.
     """
     headers = {meta.relative_path: meta for meta in images}
+    skip = set(skip)
     mismatched = []
     for mask in inventory.files:
         mapping = file_mappings.get(mask.image)
-        if not mask.axes or mapping is None or mask.image not in headers:
+        if not mask.axes or mapping is None or mask.image not in headers or mask.image in skip:
             continue
         shape = headers[mask.image].shape
         planes = {}
@@ -832,10 +838,17 @@ def mask_plane_issues(
 
 
 def _image_yx(meta: TiffMetadata) -> tuple[int, int] | None:
-    """Return the image's Y and X sizes from its header, or None when they are not known."""
-    if not meta.readable or "Y" not in meta.axes or "X" not in meta.axes:
+    """Return the Y and X sizes the image's header names, or None when it does not name them.
+
+    Used by :func:`find_masks`, before the axis roles are confirmed. A plain stack's ``Y``
+    and ``X`` are only where its pages' rows and columns are stored
+    (:func:`.metadata.named_axes`), so its masks are compared by the confirmed roles only
+    (:func:`mask_size_issues`).
+    """
+    named = named_axes(meta)
+    if "Y" not in named or "X" not in named:
         return None
-    return (meta.shape[meta.axes.index("Y")], meta.shape[meta.axes.index("X")])
+    return (meta.shape[named.index("Y")], meta.shape[named.index("X")])
 
 
 def _missing_issues(

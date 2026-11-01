@@ -86,7 +86,10 @@ src/morphobricks_preprocessing/
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed),
-                    check_declared_axes (a brick's declared axes against the header, contract §16)
+                    check_declared_axes and declared_axes_transposed (deprecated; removed
+                    before the v0.4.0 release)
+  axis_check.py     the axis check (contract §2): header_axis_issue, axis_disagreements,
+                    likely_axis_cause, check_header_axes; AXIS_ERROR_CODES, AXIS_CHECK_CODES
   planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), table rows as
                     XYC planes whose channels are read one at a time (iter_xyc_planes, XycPlane),
                     memory estimate,
@@ -107,6 +110,8 @@ src/morphobricks_preprocessing/
                     experiment's folders, mixed; OME-Zarr label images), header-only
                     checks (2D, image YX, integer/bool), MaskInventory (to_manifest), read_mask,
                     read_mask_file (a mask by its path), check_labels (int32 labels, contract §16)
+  mask_checks.py    mask checks with the confirmed roles: mask_size_issues (Y/X by role),
+                    mask_issues (a run's mask issues; images with axis errors skipped)
   mask_scan.py      the optional mask step (Q32): piece_counts (scipy.ndimage), pair_counts,
                     scan_masks -> MaskReport (kinds, relations, direct-parent hierarchy, evidence),
                     write_mask_report (mask_relationships.json); DEFAULT_THRESHOLDS,
@@ -119,6 +124,7 @@ src/morphobricks_preprocessing/
                     block by block),
                     ConversionSettings (chunk size, compression, pyramid levels), estimate_conversion
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
+  notebook_axes.py  the notebook's axis-check card and the marks under the role dropdowns
   notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra);
                     folder_step/axis_step take title, purpose, intro and show_next (and
                     show_output and show_design for step 1) so other bricks can embed them
@@ -225,6 +231,17 @@ functions the tests use.
   - X/Y/Z/C/T keep their role;
   - `S` (RGB samples) becomes C when there is no other C;
   - everything else (`I`, `Q`, …) is left unassigned: **never guess** depth vs time.
+- **Axis check (v0.4.0, plan §12 question 45):** every TIFF's confirmed roles must agree
+  with the axes its header names (`axes.header_axis_issue`, position by position, on
+  `metadata.named_axes`). Otherwise one of three errors naming the files with their header
+  and confirmed axes: the errors `axes_yx_swapped` and `axes_contradict_header` (with the
+  likely cause; such an image is **never read**, not transposed, not under a contradicted
+  declaration; fix: correct the axes, or named-axis copies) and the warning
+  `axes_not_named` (a plain stack, read with the confirmed roles, `axes_from:
+  "confirmed"`).
+  `AxisReview.axis_error_files` lists them; mask sizes and planes are checked by the
+  confirmed roles and skip those images (`run.mask_issues`). OME-Zarr images never have
+  these errors.
 - **Position-like axes** (`R` tile, `M` mosaic, `J` column, `K` row) cannot get a role. If
   they hold more than one plane: `unsupported_axis` error.
 - **Missing axes:** a file lacking some of the mapping's axes (e.g. `ZYX` next to `ZCYX`) is

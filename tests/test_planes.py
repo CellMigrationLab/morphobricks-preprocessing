@@ -110,7 +110,10 @@ def test_planes_match_the_source(tmp_path, page_reads, shape, axes, kwargs, role
     mapping = prefill_mapping(info.axes)
     if roles is not None:
         mapping = AxisMapping(info.axes, roles)
-    assert review_axes([info], mapping).ok
+    review = review_axes([info], mapping)
+    assert review.ok
+    # A plain stack is read with the confirmed roles, with the axes_not_named warning.
+    assert [i.code for i in review.issues] == (["axes_not_named"] if axes is None else [])
 
     planes = list(iter_planes(path, mapping))
     expected = expected_planes(data, mapping.roles)
