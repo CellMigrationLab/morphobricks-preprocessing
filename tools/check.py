@@ -42,7 +42,7 @@ LINTED = ("src", "tests", "tools")
 TESTS = "tests/"
 """Tests are exempt from the annotation and docstring rules (owner decision, 1 November
 2026): Ruff ignores ``ANN`` and ``D`` there (``pyproject.toml``), and the private-docstring
-rule and the ``# noqa`` ratchet leave them out here. Every other rule applies."""
+rule leaves them out here. Every other rule applies."""
 
 
 def config() -> dict:
@@ -83,8 +83,7 @@ def code_rule_problems() -> tuple[list[str], dict[str, int]]:
             problems += layer_problems(text, name, layers.get(_module_name(path, package_dir)))
     problems += duplicate_bodies(sources)
     problems += import_cycles(package_dir)
-    package_sources = [(n, t) for n, t in sources if not n.startswith(TESTS)]
-    return problems, noqa_counts(package_sources)
+    return problems, noqa_counts(sources)
 
 
 def baseline_problems() -> list[str]:

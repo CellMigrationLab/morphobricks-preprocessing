@@ -84,6 +84,7 @@ select = [
     "PLR0913", # at most 8 parameters
     "PLR0915", # at most 50 statements
     "ANN", # complete annotations
+    "PGH004", # a noqa names its rules, so the noqa ratchet sees every one
 ]
 ignore = [
     "D105", # magic methods need no docstring
@@ -102,10 +103,13 @@ max-statements = 50
 
 [tool.ruff.lint.isort]
 known-first-party = ["morphobricks_preprocessing", "code_rules", "check"]
+# Spec §9: annotations come with postponed evaluation (I002 enforces it).
+required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["D", "ANN"]
-"experiments/**" = ["D", "E501", "B905", "ANN", "C90", "PLR"]  # study scripts kept as they were run
+"tests/**" = ["D", "ANN", "I002"]
+"experiments/**" = ["D", "E501", "B905", "ANN", "C90", "PLR", "I002"]  # study scripts kept as they were run
+"notebooks/**" = ["I002"]  # notebook cells are not modules
 
 [tool.morphobricks.code-rules]
 # The shared tools/code_rules.py (spec §9), configured for this repository.
