@@ -242,16 +242,16 @@ def test_named_images_are_recorded_as_from_the_header(tmp_path):
 
 @pytest.fixture
 def reads(monkeypatch):
-    import morphobricks_preprocessing.run as run_module
+    import morphobricks_preprocessing.run.rows as rows_module
 
     seen = []
-    original = run_module.iter_xyc_planes
+    original = rows_module.iter_xyc_planes
 
     def spy(path, *args, **kwargs):
         seen.append(str(path))
         return original(path, *args, **kwargs)
 
-    monkeypatch.setattr(run_module, "iter_xyc_planes", spy)
+    monkeypatch.setattr(rows_module, "iter_xyc_planes", spy)
     return seen
 
 

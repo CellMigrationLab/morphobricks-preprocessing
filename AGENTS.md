@@ -97,7 +97,11 @@ src/morphobricks_preprocessing/
   _io.py            write_text_atomic (every file the brick writes) and free_space
   manifest.py       RunManifest / RunSettings / FileEntry, JSON read/write, SHA-256 of the CSV,
                     check_sources (images against a run, for other bricks, contract §16)
-  run.py            preflight(), run_experiment() (incremental), sample_planes() for previews
+  run/              the run (a package since PP-3; `morphobricks_preprocessing.run` re-exports
+                    its public names): preflight.py (Preflight, preflight, sample_planes),
+                    pipeline.py (run_experiment, incremental), result.py (RunResult),
+                    reuse.py (which earlier rows are reused), rows.py (a file's rows and their
+                    pixel checks), publish.py (staged outputs, published together)
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
   cli.py, __main__  `morphobricks-preprocessing check|run|masks` (also `python -m morphobricks_preprocessing`)
   masks.py          masks (Q32): find_masks pairs every image with its masks (masks folder with one
@@ -547,8 +551,9 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
   `write_plate`) writes stores with zarr directly; 0.5 tests
   skip with zarr 2.18.
 - **Proving "one page at a time":** spy on `planes._read_page`. To prove "only changed
-  files are read", spy on `run.iter_xyc_planes` (`run.iter_planes` only converts TIFF
-  images to OME-Zarr). For planes in blocks, spy on
+  files are read", spy on `run.rows.iter_xyc_planes` (patch the submodule that uses a
+  name: `run.pipeline.file_sha256`, `run.publish` for `os`/`shutil`). For planes in blocks,
+  spy on
   `planes._read_segment` and make `asarray` of every tifffile class fail.
 - **Planes in blocks with small test images:** the memory limit
   `plane_layout(path, mapping, memory_limit=1).block_memory_estimate` gives the smallest
