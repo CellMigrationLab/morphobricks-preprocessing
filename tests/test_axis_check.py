@@ -271,7 +271,9 @@ def test_run_stops_naming_every_file(tmp_path, reads, write, axes, roles, code):
     found = one(result.issues, code)
     assert found.paths == ("ctrl/r1/a.tif", "ctrl/r1/b.tif", "drug/r1/a.tif")
     assert [i.code for i in result.issues if i.is_error] == [code]
-    assert not default_output_folder(root).exists()
+    # Only the discovery report is written (discover, validate, report, then stop).
+    written = sorted(p.name for p in default_output_folder(root).iterdir())
+    assert written == ["discovery_report.json"]
 
 
 def test_a_plain_stack_runs_with_a_warning(tmp_path):
@@ -319,10 +321,11 @@ def test_mask_sizes_are_compared_by_the_confirmed_roles(tmp_path):
     files = pre.metadata.files
     review = review_axes(files, prefill_mapping("CYX"))
     assert mask_size_issues(pre.masks, files, review.file_mappings) == []
-    # By roles that swap Y and X the image is 8 x 6, so the 6 x 8 mask does not fit...
+    # By roles that swap Y and X the image is 8 x 6, so the 6 x 8 mask is stored the other
+    # way round (never transposed)...
     swapped = review_axes(files, AxisMapping("CYX", "CXY"))
     found = mask_size_issues(pre.masks, files, swapped.file_mappings)
-    assert codes(found) == ["mask_size_mismatch"]
+    assert codes(found) == ["mask_layout"]
     # ...but the image is never read, so the run leaves its masks to the conversion.
     assert mask_size_issues(pre.masks, files, swapped.file_mappings, skip=["ctrl/a.tif"]) == []
 

@@ -361,7 +361,8 @@ def test_position_ids_that_are_text_stay_text(tmp_path):
 def test_images_with_the_same_position_id_are_refused(experiment):
     write_data(experiment / "control/bio_rep1/tech_rep1/img_01.ome.tif", stack(9), "ZYX")
     result = run_experiment(experiment, ZYX)
-    assert not result.written and not result.output_folder.exists()
+    assert not result.written
+    assert sorted(p.name for p in result.output_folder.iterdir()) == ["discovery_report.json"]
     assert issue(result.issues, "duplicate_position_id").paths == (
         "control/bio_rep1/tech_rep1/img_01.ome.tif",
         "control/bio_rep1/tech_rep1/img_01.tif",
@@ -568,13 +569,14 @@ def test_first_run_with_errors_creates_no_output(experiment):
     write_file(experiment / "control/bio_rep1/tech_rep1/bad.tif", b"garbage")
     result = run_experiment(experiment, ZYX)
     assert not result.written
-    assert not result.output_folder.exists()
+    # Only the discovery report is written before the step stops on its errors.
+    assert sorted(p.name for p in result.output_folder.iterdir()) == ["discovery_report.json"]
 
 
 @pytest.mark.parametrize("failure", ["csv", "hash", "manifest", "backup"])
 def test_preparing_outputs_preserves_earlier_files_on_failure(experiment, monkeypatch, failure):
     first = run_experiment(experiment, ZYX)
-    before = {path.name: path.read_bytes() for path in (first.csv_path, first.manifest_path)}
+    before = {path.name: path.read_bytes() for path in first.output_folder.iterdir()}
     touch(experiment / IMAGES[0], stack(99))
     original_hash = run_module.file_sha256
 
@@ -749,7 +751,8 @@ def test_pixel_data_that_cannot_be_decoded_blocks(experiment, monkeypatch):
     found = issue(result.issues, "unreadable_planes")
     assert found.paths == ("control/bio_rep1/tech_rep1/img_02.tif",)
     assert "exclude" in found.action
-    assert not result.written and not result.output_folder.exists()
+    assert not result.written
+    assert sorted(p.name for p in result.output_folder.iterdir()) == ["discovery_report.json"]
 
 
 def test_missing_axes_need_confirmation(tmp_path):

@@ -181,7 +181,7 @@ def test_a_run_with_images_beside_subfolders_writes_nothing(tmp_path):
     result = run_experiment(root, AxisMapping("YX", "YX"), output_folder=output)
     assert not result.written
     assert "tiff_outside_leaf" in [i.code for i in result.issues if i.is_error]
-    assert not output.exists()
+    assert sorted(p.name for p in output.iterdir()) == ["discovery_report.json"]
 
 
 def test_system_files_are_ignored_silently(tmp_path):
@@ -725,7 +725,8 @@ def test_naming_other_formats_does_not_make_them_images(tmp_path):
 def warned(paths, tmp_path):
     make_tree(tmp_path, paths)
     result = discover_experiment(tmp_path)
-    assert result.ok  # warnings only: such files may be images that look like masks
+    # Only image_named_as_mask is an error (v0.4.0); the folder screen is a warning.
+    assert all(i.code == "image_named_as_mask" for i in result.issues if i.is_error)
     return {i.code: i for i in result.issues}
 
 
@@ -763,7 +764,7 @@ def test_a_masks_folder_without_mask_names_is_not_warned(tmp_path):
     assert warned(["labels/rep1/g1.tif", "ctrl/rep1/f1.tif"], tmp_path) == {}
 
 
-def test_images_named_with_the_default_mask_suffixes_are_warned(tmp_path):
+def test_images_named_with_the_default_mask_suffixes_are_blocked(tmp_path):
     found = warned(
         [
             "ctrl/rep1/f1.tif",
@@ -783,6 +784,8 @@ def test_images_named_with_the_default_mask_suffixes_are_warned(tmp_path):
     assert "ctrl/rep1/f1_mask.tif (of ctrl/rep1/f1.tif)" in issue_.message
     # across the whole experiment, an image of the same folder first otherwise
     assert "drug/rep1/f2_SEG.ome.tif (of ctrl/rep1/f2.tif)" in issue_.message
+    # Blocked as images since v0.4.0: a mask is never analysed as a position.
+    assert issue_.is_error and "not analysed as images" in issue_.message
 
 
 def test_numbered_and_channel_images_are_images(tmp_path):
@@ -827,7 +830,16 @@ def test_images_named_as_masks_with_the_callers_suffixes_only(tmp_path):
 def test_the_default_mask_names_are_cellpatchers_former_defaults():
     from morphobricks_preprocessing import MASK_FOLDER_WORDS, MASK_NAME_SUFFIXES
 
-    assert MASK_NAME_SUFFIXES == ("_mask", "_labels", "_label", "_seg", "_segmentation")
+    # CellPatcher's former defaults, with _masks and Cellpose's _cp_masks (v0.4.0, audit M-3).
+    assert MASK_NAME_SUFFIXES == (
+        "_mask",
+        "_masks",
+        "_cp_masks",
+        "_labels",
+        "_label",
+        "_seg",
+        "_segmentation",
+    )
     assert {"mask", "masks", "label", "labels", "seg", "segmentation"} <= MASK_FOLDER_WORDS
 
 

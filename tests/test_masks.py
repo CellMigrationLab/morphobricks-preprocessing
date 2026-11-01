@@ -94,14 +94,15 @@ def test_masks_match_images_by_position_whatever_their_extension(tmp_path):
     assert [(f.image, f.path) for f in found.files] == [("img_01.ome.tif", "Cells/IMG_01.TIFF")]
 
 
-def test_missing_and_unpaired_masks_are_warnings(experiment, masks):
+def test_missing_masks_are_warnings_and_unpaired_masks_errors(experiment, masks):
     (masks / "Nuclei" / "drug" / "rep1" / "a.tif").unlink()
     write_data(masks / "Nuclei" / "drug" / "rep2" / "c.tif", label_image(0))
     write_file(masks / "notes.txt")
     found = inventory(experiment, masks)
-    assert found.ok
-    assert codes(found.issues) == ["mask_missing", "mask_outside_type_folder", "mask_without_image"]
-    missing, loose, unpaired = found.issues
+    # Every mask must pair with exactly one image and type (v0.4.0): unpaired is an error.
+    assert not found.ok
+    assert codes(found.issues) == ["mask_without_image", "mask_missing", "mask_outside_type_folder"]
+    unpaired, missing, loose = found.issues
     assert missing.paths == ("drug/rep1/a.tif",) and "no Nuclei mask" in missing.message
     assert loose.paths == ("notes.txt",)
     assert unpaired.paths == ("Nuclei/drug/rep2/c.tif",)
@@ -110,7 +111,8 @@ def test_missing_and_unpaired_masks_are_warnings(experiment, masks):
 def test_masks_of_excluded_images_are_not_used(experiment, masks):
     found = inventory(experiment, masks, exclude=["drug/rep1/a.tif"])
     assert "drug/rep1/a.tif" not in found.images
-    assert codes(found.issues) == ["mask_without_image"]
+    # They pair with an image, which is excluded: reported apart from unpaired masks.
+    assert codes(found.issues) == ["mask_of_excluded_image"] and found.ok
 
 
 # The type after the image name -------------------------------------------------------
@@ -296,6 +298,8 @@ def test_the_run_records_the_masks_in_the_manifest(experiment, masks, tmp_path):
         "source": "folder",
         "axes": "YX",
         "shape": [16, 20],
+        "header_axes": "YX",
+        "axes_from": "header",
     }
     # Without masks the manifest has no masks key, as before.
     run_experiment(experiment, prefill_mapping("CYX"), output_folder=out)

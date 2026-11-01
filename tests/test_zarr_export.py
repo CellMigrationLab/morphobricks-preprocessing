@@ -571,7 +571,7 @@ def test_failed_run_writes_no_copies(experiment, monkeypatch):
     monkeypatch.setattr(planes_module, "_read_page", broken)
     result = run_experiment(experiment, ZYX, convert_tiffs=True)
     assert not result.written
-    assert not result.output_folder.exists()
+    assert sorted(p.name for p in result.output_folder.iterdir()) == ["discovery_report.json"]
 
 
 @needs_zarr
@@ -590,6 +590,7 @@ def test_failed_rerun_keeps_earlier_copies(experiment, monkeypatch):
     assert not run_experiment(experiment, ZYX, convert_tiffs=True).written
     assert copy_mtimes(first.output_folder) == before
     assert sorted(p.name for p in first.output_folder.iterdir()) == [
+        "discovery_report.json",
         "ome_zarr",
         "plane_histograms.csv",
         "run_manifest.json",

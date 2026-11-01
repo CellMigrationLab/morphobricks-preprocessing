@@ -26,7 +26,7 @@ import logging
 import os
 import shutil
 import tempfile
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -60,6 +60,16 @@ from .design import (
     write_experiment_design,
 )
 from .discovery import DiscoveryResult, default_output_folder, discover_experiment
+from .discovery_report import (
+    DISCOVERY_REPORT_FILENAME,
+    FULL,
+    MODES,
+    RESTART,
+    DiscoveryReport,
+    build_discovery_report,
+    normalization_version_issues,
+    write_discovery_report,
+)
 from .image_type import check_image_type, image_type_issues, review_image_type
 from .intensity import IntensityReport, check_intensities
 from .manifest import (
@@ -75,6 +85,7 @@ from .manifest import (
     read_manifest,
     write_manifest,
 )
+from .mask_scan import MASK_REPORT_FILENAME
 from .masks import MaskInventory, find_masks, mask_plane_issues, mask_size_issues
 from .metadata import MetadataReport, TiffMetadata, inspect_images
 from .planes import (
@@ -175,6 +186,15 @@ class RunResult:
         Images the user excluded.
     rebuild_reason
         Why every row was recomputed, or None when the earlier table was updated.
+    mode
+        ``"restart"`` (reuse the rows of unchanged images) or ``"full"`` (erase the
+        brick's earlier results and process everything).
+    erased
+        The brick's earlier output files erased by a ``full`` run (relative to the output
+        folder); empty in ``restart`` mode.
+    report
+        The discovery report of the step (:mod:`.discovery_report`), also written to
+        ``discovery_report.json``.
     plane_count
         Number of rows in the written table.
     converted
@@ -205,6 +225,19 @@ class RunResult:
     design: ExperimentDesign | None = None
     image_type: str | None = None
     intensity: IntensityReport | None = None
+    mode: str = RESTART
+    erased: tuple[str, ...] = ()
+    report: DiscoveryReport | None = None
+
+    @property
+    def reused(self) -> tuple[str, ...]:
+        """Images whose rows were kept from the earlier run, without reading them."""
+        return () if self.rebuild_reason else self.unchanged
+
+    @property
+    def report_path(self) -> Path:
+        """Location of ``discovery_report.json``."""
+        return self.output_folder / DISCOVERY_REPORT_FILENAME
 
     @property
     def ok(self) -> bool:
@@ -291,6 +324,7 @@ def preflight(
     exclude: Iterable[str] = (),
     masks_folder: str | os.PathLike | None = None,
     ome_zarr_labels: bool = False,
+    mask_axes: Mapping[str, str] | None = None,
 ) -> Preflight:
     """Pass 1: check the folder and the image headers without reading pixels.
 
@@ -311,6 +345,9 @@ def preflight(
     ome_zarr_labels
         Use the label images of OME-Zarr images as masks, also without a masks
         folder.
+    mask_axes
+        The axes stated per mask type for masks whose metadata does not name them
+        (:func:`.masks.find_masks`).
 
     Returns
     -------
@@ -320,11 +357,14 @@ def preflight(
     output = default_output_folder(root) if output_folder is None else Path(output_folder)
     discovery = discover_experiment(root, output)
     excluded = tuple(sorted({_normalise(path) for path in exclude}))
+    discovery = _without_excluded_masks(discovery, excluded)
     images = [path for path in discovery.images if path not in excluded]
     metadata = inspect_images(root, images)
     masks = None
     if masks_folder is not None or ome_zarr_labels:
-        masks = find_masks(masks_folder, discovery, metadata.files)
+        masks = find_masks(masks_folder, discovery, metadata.files, mask_axes=mask_axes)
+        if masks_folder is not None:
+            discovery = _with_output_check(discovery, output, Path(masks_folder).resolve())
     return Preflight(
         discovery=discovery,
         metadata=metadata,
@@ -352,6 +392,8 @@ def run_experiment(
     design: ExperimentDesign | None = None,
     masks_folder: str | os.PathLike | None = None,
     ome_zarr_labels: bool = False,
+    mask_axes: Mapping[str, str] | None = None,
+    mode: str = RESTART,
     image_type: str | None = None,
     intensity_settings: IntensityCheckSettings | None = None,
     histogram_settings: HistogramSettings | None = None,
@@ -377,7 +419,17 @@ def run_experiment(
         Relative paths of images to leave out. Their rows from earlier runs are
         removed.
     force_rebuild
-        Recompute every row even if the earlier output is up to date.
+        Recompute every row even if the earlier output is up to date, keeping the
+        other output files (``mode="full"`` also erases them).
+    mode
+        ``"restart"`` (default): reuse the rows of unchanged images and read only new or
+        changed ones. ``"full"``: erase the brick's earlier results in the output folder
+        (the table, manifest, discovery report, mask report and recorded OME-Zarr copies;
+        never the experiment design the user confirmed, a source image or a mask) and
+        process everything again. The erasing happens when the new results are written,
+        so a run that stops on an error leaves the earlier results as they were. Both
+        report what they reused, recomputed and erased (:attr:`RunResult.reused`,
+        :attr:`RunResult.read`, :attr:`RunResult.erased` and the discovery report).
     progress
         Called as ``progress(done, total, relative_path)`` before each file is
         read, and as ``progress(total, total, "")`` when reading is finished.
@@ -400,7 +452,7 @@ def run_experiment(
         with the table, and its SHA-256 recorded in the manifest. Without a
         design nothing is asked, the manifest records none, and an existing
         ``experiment_design.csv`` is left as it is.
-    masks_folder, ome_zarr_labels
+    masks_folder, ome_zarr_labels, mask_axes
         As :func:`preflight`. The masks are recorded in the manifest (``masks``,
         contract §9); an error about them stops the run, including a mask whose
         depth slices and time points are not its image's under the confirmed
@@ -446,10 +498,17 @@ def run_experiment(
         # Refused before anything is read rather than when the manifest is written.
         if not isinstance(value, bool):
             raise ValueError(f"{name} must be True or False, found {value!r}")
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {', '.join(MODES)}, found {mode!r}")
     root = Path(experiment_root).resolve()
     output = default_output_folder(root) if output_folder is None else Path(output_folder).resolve()
     pre = preflight(
-        root, output, exclude=exclude, masks_folder=masks_folder, ome_zarr_labels=ome_zarr_labels
+        root,
+        output,
+        exclude=exclude,
+        masks_folder=masks_folder,
+        ome_zarr_labels=ome_zarr_labels,
+        mask_axes=mask_axes,
     )
     review = review_axes(pre.metadata, mapping, missing_as_singleton=missing_as_singleton)
     type_review = review_image_type(pre.metadata, review)
@@ -468,6 +527,7 @@ def run_experiment(
         *design_problems,
         *dataset.issues,
         *(mask_issues(pre.masks, pre.metadata, review) if pre.masks is not None else ()),
+        *normalization_version_issues(),
     ]
     dtype = pre.metadata.dtype
     bins = None
@@ -495,8 +555,35 @@ def run_experiment(
             )
         )
 
+    def report(read=(), reused=(), erased=(), extra=(), write=True) -> DiscoveryReport:
+        found = build_discovery_report(
+            pre,
+            output_folder=output,
+            issues=[*issues, *extra],
+            review=review,
+            mode=mode,
+            reused=reused,
+            recomputed=read,
+            erased=erased,
+            versions=package_versions(),
+        )
+        # The report is written also when the run stops, unless the output folder is
+        # refused (inside the experiment or the masks folder): nothing is written there.
+        if write and not any(i.code in _BAD_OUTPUT for i in issues):
+            write_discovery_report(found, output / DISCOVERY_REPORT_FILENAME)
+        return found
+
     def stop(**counts) -> RunResult:
-        return RunResult(output, False, _sorted(issues), excluded=pre.excluded, **counts)
+        found = report(read=counts.get("read", ()))
+        return RunResult(
+            output,
+            False,
+            _sorted(issues),
+            excluded=pre.excluded,
+            mode=mode,
+            report=found,
+            **counts,
+        )
 
     if has_errors(issues):
         return stop()
@@ -512,8 +599,10 @@ def run_experiment(
         histogram=histogram_settings or HistogramSettings(),
     )
     previous, previous_records, reason = _load_previous(
-        output, settings, mapping, dtype.name, force_rebuild
+        output, settings, mapping, dtype.name, force_rebuild or mode == FULL
     )
+    if mode == FULL and previous is not None:
+        reason = "a full run was requested: the earlier results are erased"
     # Copies written with other conversion settings are rewritten (their rows are the same).
     same_conversion = previous is None or previous.settings.conversion == conversion
     labels = {image: leaf.labels for leaf in pre.discovery.leaves for image in leaf.images}
@@ -658,6 +747,31 @@ def run_experiment(
         and (f.relative_path not in entries or entries[f.relative_path].ome_zarr_path is None)
         and is_copy_path(output, f.ome_zarr_path)
     ]
+    erased: list[str] = []
+    if mode == FULL:
+        # Earlier copies are erased with the other results (written again if converting).
+        removed_copies = sorted(
+            {
+                *removed_copies,
+                *(
+                    f.ome_zarr_path
+                    for f in (previous.files if previous else ())
+                    if f.ome_zarr_path and is_copy_path(output, f.ome_zarr_path)
+                ),
+            }
+            - {ome_zarr_relative_path(rel) for rel in to_convert}
+        )
+        erased = _erased_results(output, removed_copies)
+    # The intensity checks stay apart from the run's issues (RunResult.intensity), as
+    # before; the report lists them with every other check. It is published with the
+    # table and manifest.
+    found = report(
+        read=tuple(to_read),
+        reused=() if reason else tuple(unchanged),
+        erased=erased,
+        extra=[warning(i.code, i.message, tuple(i.items), i.action) for i in intensity.issues],
+        write=False,
+    )
     with _staged_outputs(
         output,
         staging.root if staging is not None else None,
@@ -665,6 +779,7 @@ def run_experiment(
         removed_copies=removed_copies,
         with_design=design is not None,
     ) as staged:
+        write_discovery_report(found, staged / DISCOVERY_REPORT_FILENAME)
         csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME)
         design_sha256 = None
         if design is not None:
@@ -695,6 +810,9 @@ def run_experiment(
         len(records) - sum(per_file[rel] for rel in to_read),
         output,
     )
+    if MASK_REPORT_FILENAME in erased:
+        # Erased only once the new results are in place.
+        (output / MASK_REPORT_FILENAME).unlink(missing_ok=True)
     return RunResult(
         output,
         True,
@@ -706,8 +824,30 @@ def run_experiment(
         design=design,
         image_type=image_type,
         intensity=intensity,
+        mode=mode,
+        erased=tuple(erased),
+        report=found,
         **counts,
     )
+
+
+_BAD_OUTPUT = frozenset({"output_inside_experiment", "output_inside_masks"})
+
+
+def _erased_results(output: Path, copies: Sequence[str]) -> list[str]:
+    """List the brick's earlier results that a full run erases or replaces.
+
+    Only the brick's own files: the table, manifest and discovery report (replaced), the
+    mask report (erased once the new results are written), and the OME-Zarr copies
+    recorded in the earlier manifest (inside ``<output>/ome_zarr``,
+    :func:`.zarr_export.is_copy_path`). ``experiment_design.csv`` holds the user's answers
+    and is kept. Never a source image or a mask: the output folder is outside the
+    experiment and the masks folder. Relative to the output folder.
+    """
+    names = (OUTPUT_FILENAME, MANIFEST_FILENAME, DISCOVERY_REPORT_FILENAME, MASK_REPORT_FILENAME)
+    erased = [name for name in names if (output / name).is_file()]
+    erased.extend(copy for copy in copies if (output / copy).exists())
+    return sorted(erased)
 
 
 def mask_issues(
@@ -724,7 +864,7 @@ def mask_issues(
     """
     skip = review.axis_error_files
     return [
-        *(i for i in masks.issues if i.code != "mask_size_mismatch"),
+        *(i for i in masks.issues if i.code not in ("mask_size_mismatch", "mask_layout")),
         *mask_size_issues(masks, metadata.files, review.file_mappings, skip=skip),
         *mask_plane_issues(masks, metadata.files, review.file_mappings, skip=skip),
     ]
@@ -779,7 +919,12 @@ def _publish_outputs(
     names a copy or design that is not in place. Earlier copies are moved into the
     backup folder rather than copied, because they can be large.
     """
-    filenames = (OUTPUT_FILENAME, *((DESIGN_FILENAME,) if with_design else ()), MANIFEST_FILENAME)
+    filenames = (
+        OUTPUT_FILENAME,
+        *((DESIGN_FILENAME,) if with_design else ()),
+        DISCOVERY_REPORT_FILENAME,
+        MANIFEST_FILENAME,
+    )
     backup = staged / "previous"
     backup.mkdir()
     # Copy before replacing either file, so even a backup failure leaves the
@@ -1078,6 +1223,38 @@ def _exclusion_issues(discovery: DiscoveryResult, excluded: tuple[str, ...]) -> 
             )
         )
     return issues
+
+
+def _with_output_check(discovery: DiscoveryResult, output: Path, masks: Path) -> DiscoveryResult:
+    """Refuse an output folder in the masks folder: a full run erases files there."""
+    output = output.resolve()
+    if output != masks and masks not in output.parents:
+        return discovery
+    issue = error(
+        "output_inside_masks",
+        "The output folder is the masks folder or inside it. Results must be kept apart from "
+        "the masks, which the brick never changes.",
+        [output.as_posix()],
+        f"Choose an output folder outside the masks folder, for example "
+        f"{default_output_folder(discovery.root)}.",
+    )
+    return replace(discovery, issues=(*discovery.issues, issue))
+
+
+def _without_excluded_masks(
+    discovery: DiscoveryResult, excluded: tuple[str, ...]
+) -> DiscoveryResult:
+    """Leave excluded files out of ``image_named_as_mask``: an excluded file is not an image."""
+    issues = []
+    for issue in discovery.issues:
+        if issue.code == "image_named_as_mask":
+            paths = tuple(p for p in issue.paths if p not in excluded)
+            if not paths:
+                continue
+            if paths != issue.paths:
+                issue = replace(issue, paths=paths)
+        issues.append(issue)
+    return replace(discovery, issues=tuple(issues))
 
 
 def _normalise(path: str) -> str:

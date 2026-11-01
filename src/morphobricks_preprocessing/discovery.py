@@ -67,10 +67,19 @@ MISSING_TEXT = frozenset({"", "na", "nan", "none", "null", "n/a", "<na>"})
 as a missing value (MorphoBricks decision D-e)."""
 
 
-MASK_NAME_SUFFIXES = ("_mask", "_labels", "_label", "_seg", "_segmentation")
+MASK_NAME_SUFFIXES = (
+    "_mask",
+    "_masks",
+    "_cp_masks",
+    "_labels",
+    "_label",
+    "_seg",
+    "_segmentation",
+)
 """Image name endings that read as a mask of another image (``f1_mask.tif`` beside ``f1.tif``),
 compared in any case: CellPatcher's former default mask suffixes (MorphoBricks decision D-i
-moved this screen here from MorphoRelate)."""
+moved this screen here from MorphoRelate), and ``_masks`` and Cellpose's ``_cp_masks``
+(v0.4.0, design audit M-3)."""
 
 MASK_FOLDER_WORDS = frozenset(
     {"mask", "masks", "label", "labels", "seg", "segmentation", "segmentations"}
@@ -418,7 +427,7 @@ def discover_experiment(
 def mask_name_issues(
     leaves: Iterable[LeafFolder], mask_names: Sequence[str] = ()
 ) -> list[ValidationIssue]:
-    """Warn about masks in the experiment folder, which would be analysed as images.
+    """Report masks in the experiment folder, which would be analysed as images.
 
     A mask is never a position, and masks belong in a masks folder outside the experiment
     (contract §15). Two screens over every image of the experiment (all leaf folders
@@ -435,7 +444,10 @@ def mask_name_issues(
       holding images named as masks of the other images, with any name
       (``<position>`` or ``<position>_<anything>``).
 
-    Both are warnings: such files may be images that only look like masks.
+    ``image_named_as_mask`` is an error (v0.4.0, owner decision of 1 November 2026): such a
+    file is blocked as an image, so a mask (a Cellpose ``_cp_masks`` file next to its image)
+    is never analysed; an image that only looks like a mask is renamed, or excluded.
+    ``mask_folder_in_experiment`` stays a warning.
 
     Parameters
     ----------
@@ -448,7 +460,7 @@ def mask_name_issues(
     Returns
     -------
     list of ValidationIssue
-        The warnings, or nothing.
+        The issues, or nothing.
     """
     leaves = list(leaves)
     images = [path for leaf in leaves for path in leaf.images]
@@ -468,17 +480,17 @@ def mask_name_issues(
     issues = []
     if named:
         issues.append(
-            warning(
+            error(
                 "image_named_as_mask",
-                f"{plural(len(named), 'image')} {_are(named)} named as a mask of another "
+                f"{plural(len(named), 'file')} {_are(named)} named as a mask of another "
                 "image: that image's name followed by "
                 + ", ".join(sorted(suffixes))
                 + f" ({_few([f'{file} (of {owner})' for file, owner in named])}). A mask is "
-                "never a position, so these files are analysed as images.",
+                "never a position, so these files are not analysed as images.",
                 [file for file, _ in named],
                 "If they are masks, move them into a masks folder outside the experiment "
                 "folder, laid out like the experiment (<masks>/<the image's folders>/"
-                "<image>_<type>.tif). If they are images, nothing needs to change.",
+                "<image>_<type>.tif). If they are images, rename them, or exclude them.",
             )
         )
     if by_folder:
