@@ -15,6 +15,7 @@ from .axes import AxisMapping, AxisReview
 from .masks import MaskInventory, mask_plane_issues
 from .masks.checks import _TEXTS
 from .masks.layout import _yx
+from .masks.stated import size_code
 from .metadata import MetadataReport, TiffMetadata
 from .validation import ValidationIssue, error
 
@@ -49,11 +50,12 @@ def mask_size_issues(
     Returns
     -------
     list of ValidationIssue
-        The error ``mask_size_mismatch`` naming the masks that do not fit, or nothing.
+        The error ``mask_layout`` naming the masks stored with Y and X the other way round
+        (never transposed), and ``mask_size_mismatch`` naming the other masks that do not fit.
     """
     headers = {meta.relative_path: meta for meta in images}
     skip = set(skip)
-    mismatched = []
+    mismatched: dict[str, list[str]] = {}
     for mask in inventory.files:
         mapping = file_mappings.get(mask.image)
         meta = headers.get(mask.image)
@@ -62,12 +64,17 @@ def mask_size_issues(
         y, x = mapping.index_of("Y"), mapping.index_of("X")
         if y is None or x is None:
             continue
-        if _yx(mask.axes, mask.shape) != (meta.shape[y], meta.shape[x]):
-            mismatched.append(mask.path)
-    if not mismatched:
-        return []
-    message, action = _TEXTS["mask_size_mismatch"]
-    return [error("mask_size_mismatch", message, sorted(mismatched), action)]
+        mask_yx, image_yx = _yx(mask.axes, mask.shape), (meta.shape[y], meta.shape[x])
+        if mask_yx != image_yx:
+            mismatched.setdefault(size_code(mask_yx, image_yx), []).append(mask.path)
+    return [
+        error(code, _TEXTS[code][0], sorted(paths), _TEXTS[code][1])
+        for code, paths in sorted(mismatched.items())
+    ]
+
+
+SIZE_CODES = frozenset({"mask_size_mismatch", "mask_layout"})
+"""The codes of a mask whose Y and X are not its image's, which the roles decide."""
 
 
 def mask_issues(
@@ -98,7 +105,7 @@ def mask_issues(
     """
     skip = review.axis_error_files
     return [
-        *(i for i in masks.issues if i.code != "mask_size_mismatch"),
+        *(i for i in masks.issues if i.code not in SIZE_CODES),
         *mask_size_issues(masks, metadata.files, review.file_mappings, skip=skip),
         *mask_plane_issues(masks, metadata.files, review.file_mappings, skip=skip),
     ]

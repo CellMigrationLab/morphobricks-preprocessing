@@ -24,14 +24,15 @@ from __future__ import annotations
 
 import logging
 import os
-import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 import numpy as np
 from morphobricks_normalization.records import LEVELS, SINGLE
 
+from .image_names import position_id
+from .mask_names import mask_name_issues
 from .validation import ValidationIssue, agree, error, has_errors, plural, warning
 from .zarr_input import is_zarr_name
 
@@ -48,14 +49,6 @@ OUTPUT_FOLDER_SUFFIX = "_MorphoBricks_Preprocessing"
 
 ROOT = "."
 
-# Image name endings removed to give the position identifier, longest first, so
-# that "img_01.ome.tif" and "img_01.ome.zarr" both give "img_01".
-IMAGE_SUFFIXES = (".ome.tiff", ".ome.tif", ".ome.zarr", ".tiff", ".tif", ".zarr")
-# The extensions position_id removes: the images this brick reads, then the other formats
-# MorphoBricks bricks read (CellPatcher: PNG, JPEG, BMP, GIF, NumPy), so every brick names a
-# position by this one function (MorphoBricks decision D85, 2026-10-29). Naming only: the
-# images discovery accepts are still IMAGE_SUFFIXES.
-NAME_SUFFIXES = (*IMAGE_SUFFIXES, ".png", ".jpeg", ".jpg", ".bmp", ".gif", ".npy")
 
 FOV_KEY = (*LEVELS, "position_id")
 """The columns that identify one position (field of view) in every MorphoBricks table:
@@ -65,20 +58,6 @@ FOV_KEY = (*LEVELS, "position_id")
 MISSING_TEXT = frozenset({"", "na", "nan", "none", "null", "n/a", "<na>"})
 """Names refused as labels and position identifiers, in any case: table readers read them
 as a missing value (MorphoBricks decision D-e)."""
-
-
-MASK_NAME_SUFFIXES = ("_mask", "_labels", "_label", "_seg", "_segmentation")
-"""Image name endings that read as a mask of another image (``f1_mask.tif`` beside ``f1.tif``),
-compared in any case: CellPatcher's former default mask suffixes (MorphoBricks decision D-i
-moved this screen here from MorphoRelate)."""
-
-MASK_FOLDER_WORDS = frozenset(
-    {"mask", "masks", "label", "labels", "seg", "segmentation", "segmentations"}
-)
-"""Words that make a folder name read as a masks folder (``masks``, ``ctrl_masks``,
-``CellLabels``), compared in any case after splitting the name into words."""
-
-_WORDS = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
 
 
 class IdentityError(ValueError):
@@ -230,48 +209,6 @@ def is_ome_zarr_folder(entry: os.DirEntry) -> bool:
     return entry.is_dir() and is_zarr_name(entry.name)
 
 
-def position_id(image: str) -> str:
-    """Return the position identifier of an image: its name without the extension.
-
-    Every image is exactly one position, because files holding several
-    positions, scenes or tiles are refused, so the file name identifies the
-    position within its technical repeat. The full position (field of view) key
-    is ``condition``, ``biological_repeat``, ``technical_repeat`` and this
-    identifier (contract §1). The extension is ``.tif``, ``.tiff`` or ``.zarr``
-    (any case), together with a preceding ``.ome``, or one of the other image
-    formats MorphoBricks bricks read (``.png``, ``.jpg``, ``.jpeg``, ``.bmp``,
-    ``.gif``, ``.npy``; :data:`NAME_SUFFIXES`), so every brick names a position
-    with this one function (MorphoBricks D85).
-
-    Parameters
-    ----------
-    image
-        The image's path relative to the experiment root, or its name.
-
-    Returns
-    -------
-    str
-        For example ``"img_01"`` for ``"ctrl/rep1/img_01.ome.tif"``.
-
-    Raises
-    ------
-    ValueError
-        If the name is only an extension (``".tif"``, ``".ome.zarr"``): it has
-        no name to identify a position by. The longest extension decides, so
-        ``".ome.tif"`` is refused rather than read as ``".ome"``.
-    """
-    name = image.replace("\\", "/").rsplit("/", 1)[-1]
-    lowered = name.lower()
-    for suffix in NAME_SUFFIXES:
-        if lowered.endswith(suffix):
-            if len(name) == len(suffix):
-                raise ValueError(
-                    f"{image!r} is only an extension: it has no name to identify a position by"
-                )
-            return name[: -len(suffix)]
-    return name
-
-
 def default_output_folder(experiment_root: str | os.PathLike) -> Path:
     """Return the default output folder, a sibling of the experiment folder.
 
@@ -413,180 +350,6 @@ def discover_experiment(
     walker.visit(root, ())
     issues = (*walker.finish(), *mask_name_issues(walker.leaves))
     return DiscoveryResult(root=root, leaves=tuple(walker.leaves), issues=issues)
-
-
-def mask_name_issues(
-    leaves: Iterable[LeafFolder], mask_names: Sequence[str] = ()
-) -> list[ValidationIssue]:
-    """Warn about masks in the experiment folder, which would be analysed as images.
-
-    A mask is never a position, and masks belong in a masks folder outside the experiment
-    (contract §15). Two screens over every image of the experiment (all leaf folders
-    together), run by :func:`discover_experiment` (MorphoBricks decision D-i, moved from
-    MorphoRelate's ``project_image_names``):
-
-    - ``image_named_as_mask``: an image named after another image's ``position_id``, then
-      one of :data:`MASK_NAME_SUFFIXES` (or ``_`` and one of ``mask_names``), in any case:
-      ``f1_mask.tif`` beside ``f1.tif``. The longest such position owns it, an image of the
-      same folder first. Any other name is an image: ``A1_2.tif`` beside ``A1.tif``,
-      ``f1_DNA.tif`` beside ``f1.tif``.
-    - ``mask_folder_in_experiment``: a folder named like a masks folder (a word of
-      :data:`MASK_FOLDER_WORDS` in its name: ``masks``, ``ctrl_masks``, ``CellLabels``)
-      holding images named as masks of the other images, with any name
-      (``<position>`` or ``<position>_<anything>``).
-
-    Both are warnings: such files may be images that only look like masks.
-
-    Parameters
-    ----------
-    leaves
-        The experiment's leaf folders (:attr:`DiscoveryResult.leaves`).
-    mask_names
-        Mask names the caller expects (``"cells"`` for ``f1_cells.tif``), screened besides
-        :data:`MASK_NAME_SUFFIXES`; :func:`discover_experiment` gives none.
-
-    Returns
-    -------
-    list of ValidationIssue
-        The warnings, or nothing.
-    """
-    leaves = list(leaves)
-    images = [path for leaf in leaves for path in leaf.images]
-    stems = _stems(images)
-    suffixes = {suffix.lower() for suffix in MASK_NAME_SUFFIXES}
-    suffixes |= {f"_{name.lower()}" for name in mask_names}
-    named = images_named_as_masks(leaves, sorted(suffixes))
-    by_folder: dict[str, list[tuple[str, str]]] = {}
-    for relative in images:
-        folder = mask_folder_part(relative)
-        if folder is None:
-            continue
-        stem = position_id(relative).lower()
-        owner = stems[stem][0] if stem in stems else _mask_owner(stem, stems, "", None)
-        if owner is not None:
-            by_folder.setdefault(folder, []).append((relative, owner))
-    issues = []
-    if named:
-        issues.append(
-            warning(
-                "image_named_as_mask",
-                f"{plural(len(named), 'image')} "
-                f"{agree(named, 'is', 'are')} named as a mask of another "
-                "image: that image's name followed by "
-                + ", ".join(sorted(suffixes))
-                + f" ({_few([f'{file} (of {owner})' for file, owner in named])}). A mask is "
-                "never a position, so these files are analysed as images.",
-                [file for file, _ in named],
-                "If they are masks, move them into a masks folder outside the experiment "
-                "folder, laid out like the experiment (<masks>/<the image's folders>/"
-                "<image>_<type>.tif). If they are images, nothing needs to change.",
-            )
-        )
-    if by_folder:
-        found = [pair for pairs in by_folder.values() for pair in pairs]
-        issues.append(
-            warning(
-                "mask_folder_in_experiment",
-                f"{plural(len(by_folder), 'folder')} inside the experiment "
-                f"{'is' if len(by_folder) == 1 else 'are'} named like a masks folder and "
-                f"{'holds' if len(by_folder) == 1 else 'hold'} files named as masks of the "
-                f"images ({_few([f'{file} (of {owner})' for file, owner in found])}). They are "
-                "analysed as images, with the folder as a condition or repeat.",
-                sorted(by_folder),
-                "If they are masks, move the folder out of the experiment folder and give it as "
-                "the masks folder. If they are images, rename the folder.",
-            )
-        )
-    return issues
-
-
-def images_named_as_masks(
-    leaves: Iterable[LeafFolder], suffixes: Sequence[str] = MASK_NAME_SUFFIXES
-) -> list[tuple[str, str]]:
-    """Return the images named as a mask of another image, each with that image.
-
-    The detection of :func:`mask_name_issues`'s ``image_named_as_mask``, for a brick that acts
-    on the files itself (MorphoRelate leaves out of its images those named with a mask name
-    the user declared): an image is named as a mask of another when its ``position_id`` is
-    that image's ``position_id`` followed by one of ``suffixes``, compared in lower case,
-    anywhere in the experiment. The longest such position owns it, an image of the same
-    folder first. Images inside a folder named like a masks folder (:func:`mask_folder_part`)
-    are left out, as owners too.
-
-    Parameters
-    ----------
-    leaves
-        The experiment's leaf folders (:attr:`DiscoveryResult.leaves`); a caller leaves out
-        images it has already set aside by giving leaves without them.
-    suffixes
-        The name endings, each with its ``_`` (``"_mask"``, ``"_cells"``); by default
-        :data:`MASK_NAME_SUFFIXES`.
-
-    Returns
-    -------
-    list of tuple
-        ``(image, owner)`` relative paths, in the leaves' order.
-    """
-    images = [path for leaf in leaves for path in leaf.images]
-    regular = [path for path in images if mask_folder_part(path) is None]
-    stems = _stems(images)
-    wanted = {suffix.lower() for suffix in suffixes}
-    named = []
-    for relative in regular:
-        path = PurePosixPath(relative)
-        owner = _mask_owner(position_id(path.name).lower(), stems, str(path.parent), wanted)
-        if owner is not None:
-            named.append((relative, owner))
-    return named
-
-
-def _stems(images: Sequence[str]) -> dict[str, list[str]]:
-    """Return the images outside masks folders by their ``position_id`` in lower case."""
-    stems: dict[str, list[str]] = {}
-    for relative in images:
-        if mask_folder_part(relative) is None:
-            stems.setdefault(position_id(relative).lower(), []).append(relative)
-    return stems
-
-
-def mask_folder_part(relative: str) -> str | None:
-    """Return the first folder of an image's path named like a masks folder, or None.
-
-    For example ``"masks"`` for ``"masks/ctrl/rep1/f1.tif"``; a name counts when one of its
-    words (``CellLabels`` is ``Cell`` and ``Labels``) is in :data:`MASK_FOLDER_WORDS`.
-    """
-    parts = PurePosixPath(relative).parts[:-1]
-    for index, part in enumerate(parts):
-        if {word.lower() for word in _WORDS.findall(part)} & MASK_FOLDER_WORDS:
-            return "/".join(parts[: index + 1])
-    return None
-
-
-def _mask_owner(
-    stem: str, stems: Mapping[str, list[str]], folder: str, suffixes: set[str] | None
-) -> str | None:
-    """Return the image whose ``position_id`` is followed in ``stem`` by ``_`` and a suffix.
-
-    Any suffix when ``suffixes`` is None. ``stem`` and the keys of ``stems`` are lower case.
-    The longest such position wins, an image of ``folder`` first; None when there is none.
-    """
-    keys = [
-        key
-        for key in stems
-        if key != stem
-        and stem.startswith(key + "_")
-        and (suffixes is None or stem[len(key) :] in suffixes)
-    ]
-    if not keys:
-        return None
-    owners = stems[max(keys, key=len)]
-    near = [owner for owner in owners if str(PurePosixPath(owner).parent) == folder]
-    return (near or owners)[0]
-
-
-def _few(items: list[str], shown: int = 5) -> str:
-    more = f" and {len(items) - shown} more" if len(items) > shown else ""
-    return ", ".join(items[:shown]) + more
 
 
 class _Walker:

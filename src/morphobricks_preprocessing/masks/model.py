@@ -51,9 +51,18 @@ class MaskFile:
     dtype
         Pixel type, or None when the header could not be read.
     axes
-        One letter per entry of ``shape``, from the mask's own metadata: ``"YX"`` for a 2D
-        mask, with ``Z`` and/or ``T`` for a mask with several depth slices or time points
-        (e.g. ``"TYX"``). Empty when the header could not be read.
+        The role of each entry of ``shape``: ``"YX"`` for a 2D mask, with ``Z`` and/or ``T``
+        for a mask with several depth slices or time points (e.g. ``"TYX"``). They are the
+        axes the mask's own metadata names, or, for a mask whose metadata does not name them
+        (a plain stack), the axes the user stated for its mask type. Empty when the header
+        could not be read or the axes are not known.
+    header_axes
+        The mask's axes as its header gives them (``tifffile``'s letters, length-1 axes
+        other than Y and X left out), e.g. ``"QYX"`` for a plain stack; empty when unknown.
+    axes_from
+        ``"header"`` when the axes are those the mask's metadata names, ``"stated"`` when
+        the user stated the axes of its mask type (a plain stack, or a 2-D mask shared by
+        every plane of its image); empty when unknown.
     """
 
     image: str
@@ -63,6 +72,13 @@ class MaskFile:
     shape: tuple[int, ...] = ()
     dtype: np.dtype | None = None
     axes: str = ""
+    header_axes: str = ""
+    axes_from: str = ""
+
+    @property
+    def shared(self) -> bool:
+        """True for a 2-D mask stated for its type: one plane shared by every image plane."""
+        return self.axes == "YX" and self.axes_from == "stated"
 
     @property
     def planes(self) -> dict[str, int]:

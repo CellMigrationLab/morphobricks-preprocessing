@@ -25,6 +25,7 @@ from .axis_check import (
     header_axis_issue,
     likely_axis_cause,
 )
+from .axis_names import OPEN_AXIS, PLACEHOLDER_AXES
 from .axis_review import check_mapping, review_axes
 from .dataset import (
     CONSISTENCY_CODES,
@@ -57,8 +58,6 @@ from .design import (
 )
 from .discovery import (
     FOV_KEY,
-    MASK_FOLDER_WORDS,
-    MASK_NAME_SUFFIXES,
     MISSING_TEXT,
     DiscoveryResult,
     IdentityError,
@@ -69,10 +68,8 @@ from .discovery import (
     check_plane_index,
     default_output_folder,
     discover_experiment,
-    images_named_as_masks,
-    mask_name_issues,
-    position_id,
 )
+from .image_names import position_id
 from .image_type import (
     FLUORESCENCE,
     IMAGE_TYPES,
@@ -103,6 +100,12 @@ from .manifest import (
     write_manifest,
 )
 from .mask_checks import mask_issues, mask_size_issues
+from .mask_names import (
+    MASK_FOLDER_WORDS,
+    MASK_NAME_SUFFIXES,
+    images_named_as_masks,
+    mask_name_issues,
+)
 from .mask_scan import (
     DEFAULT_THRESHOLDS,
     MASK_REPORT_FILENAME,
@@ -121,13 +124,12 @@ from .masks import (
     MaskInventory,
     check_labels,
     find_masks,
+    mask_axes_option,
     mask_plane_issues,
     read_mask,
     read_mask_file,
 )
 from .metadata import (
-    OPEN_AXIS,
-    PLACEHOLDER_AXES,
     ImageMetadata,
     MetadataReport,
     TiffMetadata,
@@ -286,6 +288,7 @@ __all__ = [
     "file_mapping_for",
     "file_sha256",
     "find_masks",
+    "mask_axes_option",
     "group_summaries",
     "has_errors",
     "header_axes",

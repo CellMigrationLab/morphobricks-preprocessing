@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Mapping
+from dataclasses import replace
 from pathlib import Path
 
 import tifffile
@@ -18,9 +19,10 @@ from ..zarr_input import (
     NgffError,
     ZarrUnavailableError,
 )
-from .header import _known_axes, _mask_header
+from .header import _mask_header
 from .layout import _yx
-from .model import PLANE_AXES, MaskFile, MaskInventory
+from .model import FOLDER, PLANE_AXES, MaskFile, MaskInventory
+from .stated import mask_named_axes, mask_roles, size_code
 
 logger = logging.getLogger(__name__)
 
@@ -31,50 +33,81 @@ def _header_issues(
     folder: Path | None,
     root: Path,
     unreadable: Iterable[str] = (),
+    stated: Mapping[str, str] | None = None,
 ) -> list[ValidationIssue]:
     """Read each mask's header (axes, shape, pixel type) and check it against its image.
 
-    Also check that the masks of one image have the same depth slices and time points.
-    ``unreadable`` are paths already known not to open (OME-Zarr ``labels`` groups).
+    The mask's roles are the axes its metadata names, or those stated for its mask type
+    (``stated``) where the metadata names none (:func:`.stated.mask_roles`); ``files`` is
+    updated in place with them. Also check that the masks of one image have the same depth
+    slices and time points (a stated shared 2-D mask aside). ``unreadable`` are paths
+    already known not to open (OME-Zarr ``labels`` groups).
     """
-    problems: dict[str, list[str]] = {}
-    if unreadable:
-        problems["unreadable_mask"] = list(unreadable)
+    found: list[tuple[str, str, str]] = [("unreadable_mask", path, "") for path in unreadable]
     for index, mask in enumerate(files):
-        try:
-            axes, shape, dtype = _mask_header(mask, folder, root)
-        except (
-            OSError,
-            ValueError,
-            tifffile.TiffFileError,
-            NgffError,
-            ZarrUnavailableError,
-        ) as exc:
-            logger.info("Mask %s could not be opened: %s", mask.path, exc)
-            problems.setdefault("unreadable_mask", []).append(mask.path)
-            continue
-        if not _known_axes(axes):
-            problems.setdefault("mask_not_2d", []).append(mask.path)
-            continue
-        files[index] = MaskFile(
-            mask.image, mask.mask_type, mask.path, mask.source, shape, dtype, axes
-        )
-        expected = _image_yx(images[mask.image])
-        if expected is not None and _yx(axes, shape) != expected:
-            problems.setdefault("mask_size_mismatch", []).append(mask.path)
-        if dtype.kind not in "biu":
-            problems.setdefault("mask_pixel_type", []).append(mask.path)
+        checked, problems = _check_header(mask, images[mask.image], folder, root, stated or {})
+        found.extend(problems)
+        if checked is not None:
+            files[index] = checked
     by_image: dict[str, list[MaskFile]] = {}
     for mask in files:
-        if mask.axes:
+        if mask.axes and not mask.shared:
             by_image.setdefault(mask.image, []).append(mask)
     for masks in by_image.values():
         if len({tuple(m.planes.items()) for m in masks}) > 1:
-            problems.setdefault("mask_planes_differ", []).extend(m.path for m in masks)
-    return [
-        error(code, _TEXTS[code][0], paths, _TEXTS[code][1])
-        for code, paths in sorted(problems.items())
-    ]
+            found.extend(("mask_planes_differ", m.path, "") for m in masks)
+    return _grouped(found)
+
+
+def _check_header(
+    mask: MaskFile,
+    image: TiffMetadata,
+    folder: Path | None,
+    root: Path,
+    stated: Mapping[str, str],
+) -> tuple[MaskFile | None, list[tuple[str, str, str]]]:
+    """Check one mask's header: its roles, its size against the image's named Y/X, its type.
+
+    Returns the mask with its shape, pixel type and roles (None when its header cannot be
+    used), and its problems as ``(code, path, detail)``.
+    """
+    try:
+        axes, shape, dtype = _mask_header(mask, folder, root)
+        named = mask_named_axes(axes, Path(folder) / mask.path if mask.source == FOLDER else None)
+    except (OSError, ValueError, tifffile.TiffFileError, NgffError, ZarrUnavailableError) as exc:
+        logger.info("Mask %s could not be opened: %s", mask.path, exc)
+        return None, [("unreadable_mask", mask.path, "")]
+    roles, code, detail = mask_roles(axes, named, stated.get(mask.mask_type))
+    if code is not None:
+        return None, [(code, mask.path, detail)]
+    how = "stated" if mask.mask_type in stated else "header"
+    checked = replace(mask, shape=shape, dtype=dtype, axes=roles, header_axes=axes, axes_from=how)
+    problems = []
+    expected = _image_yx(image)
+    if expected is not None and _yx(roles, shape) != expected:
+        problems.append((size_code(_yx(roles, shape), expected), mask.path, ""))
+    if dtype.kind not in "biu":
+        problems.append(("mask_pixel_type", mask.path, ""))
+    return checked, problems
+
+
+def _grouped(found: Iterable[tuple[str, str, str]]) -> list[ValidationIssue]:
+    """Return one error per code, naming its masks and, where given, what is wrong."""
+    paths: dict[str, list[str]] = {}
+    details: dict[str, list[str]] = {}
+    for code, path, detail in found:
+        paths.setdefault(code, []).append(path)
+        if detail:
+            details.setdefault(code, []).append(f"{path}: {detail}")
+    issues = []
+    for code in sorted(paths):
+        message = _TEXTS[code][0]
+        listed = details.get(code, [])
+        if listed:
+            more = f"; and {len(listed) - 5} more" if len(listed) > 5 else ""
+            message += " " + "; ".join(listed[:5]) + more + "."
+        issues.append(error(code, message, paths[code], _TEXTS[code][1]))
+    return issues
 
 
 _TEXTS = {
@@ -87,8 +120,25 @@ _TEXTS = {
     "mask_not_2d": (
         "Some masks have dimensions other than Y and X that their metadata does not name as "
         "depth (Z) or time (T), so their planes cannot be matched to the image's.",
-        "Save each mask as a 2D label image, or with its depth and time axes named in its "
-        "metadata (for example an ImageJ hyperstack or OME-TIFF with axes TYX or ZYX).",
+        "State the axes of the mask type once (for example --mask-axes Cells=TYX): one role, "
+        "Y, X, Z or T, per axis of the mask. Or save each mask as a 2D label image, or with "
+        "its axes named in its metadata (an ImageJ hyperstack or OME-TIFF with axes TYX or "
+        "ZYX).",
+    ),
+    "invalid_mask_axes": (
+        "The axes stated for some masks do not fit them.",
+        "State one role per axis of the mask's header (length-1 axes left out): Y and X once "
+        "each, and at most one Z and one T. Masks have no channels.",
+    ),
+    "mask_axes_contradict_header": (
+        "The axes stated for some masks contradict the axes their metadata names.",
+        "State the axes only for masks whose metadata does not name them, or state the named ones.",
+    ),
+    "mask_layout": (
+        "Some masks are stored with their height and width (Y and X) the other way round from "
+        "their image as it is read. Masks are never transposed.",
+        "Save each such mask again with its last two axes swapped, for example "
+        "numpy.swapaxes(mask, -1, -2) before saving it, or segment the image as it is read.",
     ),
     "mask_planes_differ": (
         "The masks of some images have different numbers of depth slices or time points, so "
@@ -142,7 +192,8 @@ def mask_plane_issues(
     mismatched = []
     for mask in inventory.files:
         mapping = file_mappings.get(mask.image)
-        if not mask.axes or mapping is None or mask.image not in headers or mask.image in skip:
+        unchecked = not mask.axes or mask.shared or mask.image in skip
+        if unchecked or mapping is None or mask.image not in headers:
             continue
         shape = headers[mask.image].shape
         planes = {}

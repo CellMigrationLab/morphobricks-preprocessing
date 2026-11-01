@@ -22,7 +22,7 @@ from ..zarr_input import (
 from .header import _axes_problem, _known_axes, _mask_header
 from .labels import check_labels
 from .layout import _plane_index, _tiff_axes, _yx
-from .model import FOLDER, OME_ZARR, MaskFile
+from .model import _YX, FOLDER, OME_ZARR, MaskFile
 
 
 def read_mask(
@@ -54,7 +54,8 @@ def read_mask(
         or ``t`` is missing or outside the mask, or the plane holds a label outside 0 to
         :data:`LARGEST_LABEL` (:func:`check_labels`).
     """
-    wanted = {"Z": z, "T": t}
+    # A shared 2-D mask (stated for its type) is one plane for every plane of its image.
+    wanted = {"Z": None, "T": None} if mask.shared else {"Z": z, "T": t}
     for axis, index in wanted.items():
         length = mask.planes[axis] if mask.axes else 1
         if index is None and length > 1:
@@ -64,7 +65,9 @@ def read_mask(
         if index is not None and not 0 <= index < length:
             raise ValueError(f"the mask {mask.path} has no plane {axis}={index}")
     if mask.source == FOLDER:
-        pixels, axes = _read_tiff_plane(Path(masks_folder) / mask.path, wanted)
+        # A mask whose axes were stated (a plain stack) is read by those roles, as stored.
+        roles = mask.axes if mask.header_axes and mask.header_axes != mask.axes else None
+        pixels, axes = _read_tiff_plane(Path(masks_folder) / mask.path, wanted, roles)
     else:
         name = mask.path.rsplit("/labels/", 1)[1]
         image = experiment_root / mask.path.rsplit("/labels/", 1)[0]
@@ -136,15 +139,24 @@ def read_mask_file(
     )
 
 
-def _read_tiff_plane(path: Path, wanted: Mapping[str, int | None]) -> tuple[np.ndarray, str]:
+def _read_tiff_plane(
+    path: Path, wanted: Mapping[str, int | None], roles: str | None = None
+) -> tuple[np.ndarray, str]:
     """Read the plane at ``wanted`` Z and T of a TIFF mask; return it and its axes.
 
-    One page is read when the planes are stored one per page (the usual layout); otherwise
-    the whole mask is read and the plane taken from it.
+    ``roles`` gives the roles of the header's axes without their length-1 axes other than
+    Y and X (the axes stated for a plain stack); by default the header's own letters. One
+    page is read when the planes are stored one per page (the usual layout); otherwise the
+    whole mask is read and the plane taken from it.
     """
     with tifffile.TiffFile(path) as tif:
         series = tif.series[0]
         axes, shape = _tiff_axes(series)
+        if roles is not None:
+            given = iter(roles)
+            axes = "".join(
+                next(given) if n != 1 or a in _YX else "-" for a, n in zip(axes, shape, strict=True)
+            )
         index = _plane_index(axes, shape, wanted)
         kept = "".join(a for a, i in zip(axes, index, strict=True) if i == slice(None))
         pages = len(series.pages)

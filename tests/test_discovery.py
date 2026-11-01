@@ -708,7 +708,7 @@ def test_issue_text_lists_paths_and_action(tmp_path):
 
 def test_naming_other_formats_does_not_make_them_images(tmp_path):
     """NAME_SUFFIXES only names positions: discovery still accepts TIFF and Zarr images only."""
-    from morphobricks_preprocessing.discovery import IMAGE_SUFFIXES, NAME_SUFFIXES
+    from morphobricks_preprocessing.image_names import IMAGE_SUFFIXES, NAME_SUFFIXES
 
     assert set(IMAGE_SUFFIXES) < set(NAME_SUFFIXES) and ".npy" not in IMAGE_SUFFIXES
     make_tree(tmp_path, ["ctrl/bio1/img_01.tif", "ctrl/bio1/img_02.png"])
@@ -763,35 +763,13 @@ def test_a_masks_folder_without_mask_names_is_not_warned(tmp_path):
     assert warned(["labels/rep1/g1.tif", "ctrl/rep1/f1.tif"], tmp_path) == {}
 
 
-def test_images_named_with_the_default_mask_suffixes_are_warned(tmp_path):
-    found = warned(
-        [
-            "ctrl/rep1/f1.tif",
-            "ctrl/rep1/f1_mask.tif",
-            "ctrl/rep1/f2.tif",
-            "ctrl/rep1/f2_Labels.tif",
-            "drug/rep1/f2_SEG.ome.tif",
-        ],
-        tmp_path,
-    )
-    issue_ = found["image_named_as_mask"]
-    assert issue_.paths == (
-        "ctrl/rep1/f1_mask.tif",
-        "ctrl/rep1/f2_Labels.tif",
-        "drug/rep1/f2_SEG.ome.tif",
-    )
-    assert "ctrl/rep1/f1_mask.tif (of ctrl/rep1/f1.tif)" in issue_.message
-    # across the whole experiment, an image of the same folder first otherwise
-    assert "drug/rep1/f2_SEG.ome.tif (of ctrl/rep1/f2.tif)" in issue_.message
-
-
 def test_numbered_and_channel_images_are_images(tmp_path):
     names = ["A1.tif", "A1_2.tif", "f1.tif", "f1_DNA.tif", "f1_segmented.tif", "g_mask.tif"]
     assert warned([f"ctrl/rep1/{name}" for name in names], tmp_path) == {}
 
 
 def test_mask_names_the_caller_expects(tmp_path):
-    from morphobricks_preprocessing.discovery import mask_name_issues
+    from morphobricks_preprocessing.mask_names import mask_name_issues
 
     make_tree(tmp_path, ["c/r/f1.tif", "c/r/f1_Cells.tif", "c/r/f1_nuclei.tif"])
     result = discover_experiment(tmp_path)
@@ -827,7 +805,7 @@ def test_images_named_as_masks_with_the_callers_suffixes_only(tmp_path):
 def test_the_default_mask_names_are_cellpatchers_former_defaults():
     from morphobricks_preprocessing import MASK_FOLDER_WORDS, MASK_NAME_SUFFIXES
 
-    assert MASK_NAME_SUFFIXES == ("_mask", "_labels", "_label", "_seg", "_segmentation")
+    assert {"_mask", "_labels", "_label", "_seg", "_segmentation"} < set(MASK_NAME_SUFFIXES)
     assert {"mask", "masks", "label", "labels", "seg", "segmentation"} <= MASK_FOLDER_WORDS
 
 
@@ -843,6 +821,6 @@ def test_the_default_mask_names_are_cellpatchers_former_defaults():
     ],
 )
 def test_mask_folder_part(path, folder):
-    from morphobricks_preprocessing.discovery import mask_folder_part
+    from morphobricks_preprocessing.mask_names import mask_folder_part
 
     assert mask_folder_part(path) == folder

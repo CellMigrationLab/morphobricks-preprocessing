@@ -323,10 +323,10 @@ def test_mask_sizes_are_compared_by_the_confirmed_roles(tmp_path):
     files = pre.metadata.files
     review = review_axes(files, prefill_mapping("CYX"))
     assert mask_size_issues(pre.masks, files, review.file_mappings) == []
-    # By roles that swap Y and X the image is 8 x 6, so the 6 x 8 mask does not fit...
+    # By roles that swap Y and X the image is 8 x 6, so the 6 x 8 mask is refused...
     swapped = review_axes(files, AxisMapping("CYX", "CXY"))
     found = mask_size_issues(pre.masks, files, swapped.file_mappings)
-    assert codes(found) == ["mask_size_mismatch"]
+    assert codes(found) == ["mask_layout"]  # stored the other way round: never transposed
     # ...but the image is never read, so the run leaves its masks to the conversion.
     assert mask_size_issues(pre.masks, files, swapped.file_mappings, skip=["ctrl/a.tif"]) == []
 

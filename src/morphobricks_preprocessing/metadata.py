@@ -27,6 +27,7 @@ import numpy as np
 import tifffile
 from morphobricks_normalization.dtypes import UnsupportedDtypeError, check_supported
 
+from .axis_names import OPEN_AXIS, named_letters
 from .discovery import DiscoveryResult
 from .physical_sizes import (
     PIXEL_SIZE_TOLERANCE,
@@ -183,15 +184,6 @@ class MetadataReport:
         return dtypes.pop() if len(dtypes) == 1 else None
 
 
-PLACEHOLDER_AXES = frozenset("IQ")
-"""``tifffile``'s letters for a dimension whose meaning the file does not give: ``I`` (a
-plain stack of pages) and ``Q`` (a "shaped" file without axes, or an OME-NGFF axis of
-another type). They are never metadata: the user gives such a dimension its role."""
-
-OPEN_AXIS = "?"
-"""Marks a dimension the metadata does not name in :func:`named_axes`."""
-
-
 def named_axes(meta: TiffMetadata) -> str:
     """Return the image's axes with every dimension its metadata does not name as ``?``.
 
@@ -220,13 +212,7 @@ def named_axes(meta: TiffMetadata) -> str:
         One character per dimension, e.g. ``"CYX"``, ``"?YX"`` (shaped axes ``QYX``) or
         ``"???"`` (a plain ``QYX`` stack); ``""`` for an unreadable image.
     """
-    if not meta.readable:
-        return ""
-    plain_stack = not meta.axes_from_metadata and bool(PLACEHOLDER_AXES & set(meta.axes))
-    return "".join(
-        OPEN_AXIS if axis in PLACEHOLDER_AXES or (plain_stack and axis in "YX") else axis
-        for axis in meta.axes
-    )
+    return named_letters(meta.axes, meta.axes_from_metadata) if meta.readable else ""
 
 
 def header_axes(meta: TiffMetadata) -> str | None:
