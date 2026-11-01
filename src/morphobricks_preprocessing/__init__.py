@@ -174,6 +174,7 @@ from .planes import (
 )
 from .report import GroupSummary, group_summaries
 from .run import Preflight, RunResult, SamplePlane, preflight, run_experiment, sample_planes
+from .run_inputs import Fov, LazyImage, RunInputs, RunInputsError
 from .sources import check_sources
 from .validation import Severity, ValidationIssue, has_errors
 from .zarr_input import (
@@ -256,6 +257,10 @@ __all__ = [
     "RepeatBox",
     "RunManifest",
     "RunResult",
+    "RunInputs",
+    "RunInputsError",
+    "Fov",
+    "LazyImage",
     "RunSettings",
     "SamplePlane",
     "Severity",
