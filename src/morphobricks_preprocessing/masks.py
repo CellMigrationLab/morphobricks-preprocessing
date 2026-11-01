@@ -1053,62 +1053,6 @@ def _image_yx(meta: TiffMetadata) -> tuple[int, int] | None:
     return (meta.shape[named.index("Y")], meta.shape[named.index("X")])
 
 
-def mask_size_issues(
-    inventory: MaskInventory,
-    images: Iterable[TiffMetadata],
-    file_mappings: Mapping[str, AxisMapping],
-    *,
-    skip: Iterable[str] = (),
-) -> list[ValidationIssue]:
-    """Check that every mask has the Y and X sizes its image has under the confirmed roles.
-
-    The image's Y and X are the dimensions its confirmed roles call Y and X, not its
-    header's letters. :func:`.run.run_experiment` uses this in place of :func:`find_masks`'s
-    header comparison, which it supersedes.
-
-    Parameters
-    ----------
-    inventory
-        The masks found by :func:`find_masks`.
-    images
-        Header information of the analysed images.
-    file_mappings
-        Each image's own axis mapping (:attr:`.axes.AxisReview.file_mappings`); images
-        without one are left to the axis review's errors.
-    skip
-        Images not to check: those with an axis error (:attr:`.axes.AxisReview.axis_error_files`),
-        which are never read, so a mask size would only be a misleading second message. Their
-        masks are checked when the images are saved as OME-Zarr.
-
-    Returns
-    -------
-    list of ValidationIssue
-        The error ``mask_size_mismatch`` naming the masks that do not fit, and
-        ``mask_layout`` for those whose height and width are the image's swapped (masks
-        are never transposed), or nothing.
-    """
-    headers = {meta.relative_path: meta for meta in images}
-    skip = set(skip)
-    mismatched: dict[str, list[str]] = {}
-    for mask in inventory.files:
-        mapping = file_mappings.get(mask.image)
-        meta = headers.get(mask.image)
-        if not mask.axes or mapping is None or meta is None or mask.image in skip:
-            continue
-        y, x = mapping.index_of("Y"), mapping.index_of("X")
-        if y is None or x is None:
-            continue
-        image_yx = (meta.shape[y], meta.shape[x])
-        if _yx(mask.axes, mask.shape) != image_yx:
-            mismatched.setdefault(_size_code(_yx(mask.axes, mask.shape), image_yx), []).append(
-                mask.path
-            )
-    return [
-        error(code, _TEXTS[code][0], sorted(paths), _TEXTS[code][1])
-        for code, paths in sorted(mismatched.items())
-    ]
-
-
 def _missing_issues(
     types: tuple[str, ...], files: list[MaskFile], images: Mapping[str, TiffMetadata]
 ) -> list[ValidationIssue]:

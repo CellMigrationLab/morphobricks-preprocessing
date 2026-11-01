@@ -46,7 +46,6 @@ from morphobricks_normalization.records import PlaneRecord
 
 from .axes import (
     AxisMapping,
-    AxisReview,
     file_mapping_for,
     prefill_experiment_mapping,
     review_axes,
@@ -85,8 +84,9 @@ from .manifest import (
     read_manifest,
     write_manifest,
 )
+from .mask_checks import mask_issues
 from .mask_scan import MASK_REPORT_FILENAME
-from .masks import MaskInventory, find_masks, mask_plane_issues, mask_size_issues
+from .masks import MaskInventory, find_masks
 from .metadata import MetadataReport, TiffMetadata, inspect_images
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
@@ -848,26 +848,6 @@ def _erased_results(output: Path, copies: Sequence[str]) -> list[str]:
     erased = [name for name in names if (output / name).is_file()]
     erased.extend(copy for copy in copies if (output / copy).exists())
     return sorted(erased)
-
-
-def mask_issues(
-    masks: MaskInventory, metadata: MetadataReport, review: AxisReview
-) -> list[ValidationIssue]:
-    """Return the mask issues of a run, with the masks' sizes and planes by the confirmed roles.
-
-    :func:`.masks.find_masks` compares a mask's Y and X with those its image's header
-    names; with confirmed roles that comparison is replaced by
-    :func:`.masks.mask_size_issues`, and the planes are checked by
-    :func:`.masks.mask_plane_issues`. Images with an axis error are never read, so their
-    masks are left out of both: a size or plane message would only repeat the axis error
-    in another form.
-    """
-    skip = review.axis_error_files
-    return [
-        *(i for i in masks.issues if i.code not in ("mask_size_mismatch", "mask_layout")),
-        *mask_size_issues(masks, metadata.files, review.file_mappings, skip=skip),
-        *mask_plane_issues(masks, metadata.files, review.file_mappings, skip=skip),
-    ]
 
 
 class _OutputRollbackError(RuntimeError):

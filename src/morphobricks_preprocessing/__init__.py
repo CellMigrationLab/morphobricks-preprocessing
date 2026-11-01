@@ -12,8 +12,6 @@ from importlib.metadata import PackageNotFoundError, version
 # deprecated stand-ins for one version (see _moved).
 from . import _moved, csv_io, dtypes, histogram, normalization, pooling, records  # noqa: F401
 from .axes import (
-    AXIS_CHECK_CODES,
-    AXIS_ERROR_CODES,
     AxisMapping,
     AxisReview,
     axis_length_ranges,
@@ -22,11 +20,17 @@ from .axes import (
     declared_axes_transposed,
     declared_mapping,
     file_mapping_for,
-    header_axis_issue,
     prefill_experiment_mapping,
     prefill_mapping,
     reference_axes,
     review_axes,
+)
+from .axis_check import (
+    AXIS_CHECK_CODES,
+    AXIS_ERROR_CODES,
+    axis_disagreements,
+    header_axis_issue,
+    likely_axis_cause,
 )
 from .dataset import (
     CONSISTENCY_CODES,
@@ -105,6 +109,7 @@ from .manifest import (
     source_fingerprint,
     write_manifest,
 )
+from .mask_checks import mask_issues, mask_size_issues
 from .mask_scan import (
     DEFAULT_THRESHOLDS,
     MASK_REPORT_FILENAME,
@@ -124,7 +129,6 @@ from .masks import (
     check_labels,
     find_masks,
     mask_plane_issues,
-    mask_size_issues,
     read_mask,
     read_mask_file,
 )
@@ -295,6 +299,7 @@ __all__ = [
     "ValidationIssue",
     "XycPlane",
     "ZarrUnavailableError",
+    "axis_disagreements",
     "axis_length_ranges",
     "balance_table",
     "biological_repeats",
@@ -340,9 +345,11 @@ __all__ = [
     "is_zarr_store",
     "iter_planes",
     "iter_xyc_planes",
+    "likely_axis_cause",
     "load_design",
     "make_plane_id",
     "images_named_as_masks",
+    "mask_issues",
     "mask_name_issues",
     "mask_plane_issues",
     "mask_size_issues",
