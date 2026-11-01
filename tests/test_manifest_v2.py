@@ -22,7 +22,7 @@ from morphobricks_preprocessing import (
     run_experiment,
 )
 from morphobricks_preprocessing.axis_check import ConfirmedAxes
-from morphobricks_preprocessing.fingerprint import Fingerprint, RowKey
+from morphobricks_preprocessing.fingerprint import Fingerprint, RowKey, confirm_axes
 from morphobricks_preprocessing.manifest import (
     MANIFEST_VERSION,
     FileEntry,
@@ -195,12 +195,12 @@ def test_a_confirmation_covers_only_the_files_it_was_given_for(tmp_path):
     root = tmp_path / "exp"
     write_plain(root / "ctrl/a.tif", stack())
     write_plain(root / "ctrl/b.tif", stack(1))  # added after the roles were confirmed for a.tif
-    confirmed = ConfirmedAxes(AxisMapping("IYX", "TYX"), {"ctrl/a.tif"})
+    confirmed = confirm_axes(AxisMapping("IYX", "TYX"), root, ["ctrl/a.tif"])
     result = run_experiment(root, confirmed)
     assert codes(result.issues) == ["plain_stack_not_confirmed"]
     (issue,) = [i for i in result.issues if i.code == "plain_stack_not_confirmed"]
     assert issue.paths == ("ctrl/b.tif",) and "confirm them again" in issue.action
-    both = ConfirmedAxes(AxisMapping("IYX", "TYX"), {"ctrl/a.tif", "ctrl/b.tif"})
+    both = confirm_axes(AxisMapping("IYX", "TYX"), root, ["ctrl/a.tif", "ctrl/b.tif"])
     assert run_experiment(root, both).written
     # A plain mapping confirms every file the run finds, as before.
     assert run_experiment(root, AxisMapping("IYX", "TYX")).written
@@ -210,6 +210,26 @@ def test_named_images_need_no_confirmation(tmp_path):
     root = tmp_path / "exp"
     write_data(root / "ctrl/a.tif", stack(), "ZYX")
     write_data(root / "ctrl/b.tif", stack(1), "ZYX")
-    assert review_axes([], ConfirmedAxes(prefill_mapping("ZYX"), set())).ok
-    confirmed = ConfirmedAxes(prefill_mapping("ZYX"), {"ctrl/a.tif"})
+    assert review_axes([], ConfirmedAxes(prefill_mapping("ZYX"), {})).ok
+    confirmed = confirm_axes(prefill_mapping("ZYX"), root, ["ctrl/a.tif"])
     assert run_experiment(root, confirmed).written
+
+
+def test_a_plain_stack_changed_since_its_confirmation_is_not_covered(tmp_path):
+    root = tmp_path / "exp"
+    write_plain(root / "ctrl/a.tif", stack())
+    write_plain(root / "ctrl/b.tif", stack(1))
+    confirmed = confirm_axes(AxisMapping("IYX", "TYX"), root, ["ctrl/a.tif", "ctrl/b.tif"])
+    assert run_experiment(root, confirmed).written
+    write_plain(root / "ctrl/b.tif", np.ones((4, 6, 8), np.uint8))  # changed since
+    result = run_experiment(root, confirmed)
+    assert not result.written and result.read == ()
+    (issue,) = [i for i in result.issues if i.code == "plain_stack_not_confirmed"]
+    assert issue.paths == ("ctrl/b.tif",)
+    again = confirm_axes(AxisMapping("IYX", "TYX"), root, ["ctrl/a.tif", "ctrl/b.tif"])
+    assert run_experiment(root, again).read == ("ctrl/b.tif",)
+
+
+def test_a_confirmation_records_fingerprints():
+    with pytest.raises(TypeError, match="fingerprint"):
+        ConfirmedAxes(AxisMapping("IYX", "TYX"), {"ctrl/a.tif"})

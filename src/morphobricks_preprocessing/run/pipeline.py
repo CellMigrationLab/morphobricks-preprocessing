@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -34,6 +34,7 @@ from ..design import (
     write_experiment_design,
 )
 from ..discovery import default_output_folder
+from ..fingerprint import unchanged_confirmation
 from ..image_type import check_image_type, image_type_issues, review_image_type
 from ..intensity import check_intensities
 from ..manifest import (
@@ -164,6 +165,8 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
     root = Path(experiment_root).resolve()
     output = default_output_folder(root) if output_folder is None else Path(output_folder).resolve()
     pre = preflight(root, output, exclude=exclude, masks_folder=masks_folder, mask_axes=mask_axes)
+    # A plain stack changed since its roles were confirmed is not covered (audit 2 B-1).
+    mapping = unchanged_confirmation(mapping, root)
     review = review_axes(pre.metadata, mapping, missing_as_singleton=missing_as_singleton)
     type_review = review_image_type(pre.metadata, review)
     dataset = pre.dataset
@@ -220,15 +223,9 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
     found = compare_with_previous(
         entries, previous, previous_records, reason is not None, settings, root
     )
-    new, changed, unchanged, removed = found.new, found.changed, found.unchanged, found.removed
+    new, changed, unchanged = found.new, found.changed, found.unchanged
     to_read = sorted([*new, *changed, *(unchanged if reason else ())])
-    counts = {
-        "new": tuple(new),
-        "changed": tuple(changed),
-        "unchanged": tuple(unchanged),
-        "removed": tuple(removed),
-        "rebuild_reason": reason,
-    }
+    counts = {**asdict(found), "rebuild_reason": reason}
 
     records: list[PlaneRecord] = []
     narrow: list[NarrowRange] = []

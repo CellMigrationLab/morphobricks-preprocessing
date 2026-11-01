@@ -87,14 +87,15 @@ src/morphobricks_preprocessing/
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
   axis_review.py    review_axes and check_mapping (moved from axes.py in PP-4)
-  fingerprint.py    Fingerprint (size, mtime) and RowKey: when a file's rows are reused (D5)
+  fingerprint.py    Fingerprint (size, mtime) and RowKey: when a file's rows are reused (D5);
+                    confirm_axes/unchanged_confirmation (a confirmation of the files as they are)
   recorded_sizes.py RecordedSize: pixel sizes by role with unit and source (manifest v2)
   narrow_ranges.py  NarrowRange (moved from manifest.py)
   sources.py        check_sources (moved from manifest.py in PP-4)
   mask_record.py    the manifest's masks entry with fingerprints and roles (manifest v2)
   axis_check.py     the axis check (contract §2): header_axis_issue, axis_disagreements,
                     likely_axis_cause, check_header_axes, ConfirmedAxes (a confirmation covers
-                    only its files, plain_stack_not_confirmed); AXIS_ERROR_CODES, AXIS_CHECK_CODES
+                    only its files as fingerprinted, plain_stack_not_confirmed); AXIS_ERROR_CODES, AXIS_CHECK_CODES
   planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), table rows as
                     XYC planes whose channels are read one at a time (iter_xyc_planes, XycPlane),
                     memory estimate,

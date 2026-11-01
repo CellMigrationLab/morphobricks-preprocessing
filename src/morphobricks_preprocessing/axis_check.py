@@ -13,7 +13,7 @@ Nothing here reads pixels.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .axis_names import OPEN_AXIS
@@ -22,6 +22,7 @@ from .validation import ValidationIssue, error, plural, warning
 
 if TYPE_CHECKING:  # the mapping class lives in .axes, which imports this module
     from .axes import AxisMapping
+    from .fingerprint import Fingerprint
 
 POSITION_AXES = frozenset("RMKJ")
 """``tifffile`` letters for positions in a sample (tile, mosaic, row, column): they identify
@@ -70,8 +71,8 @@ def header_axis_issue(meta: TiffMetadata, mapping: AxisMapping) -> str | None:
     - a named axis with its own letter as role, the RGB samples ``S`` as C when the header
       has no C, and a length-1 axis without a role agree;
     - the named Y given role X and the named X role Y: ``axes_yx_swapped``;
-    - roles that put X before Y (a plain stack confirmed ``TXY``, or a header that names
-      X before Y): ``axes_x_before_y``, as nothing is ever read transposed;
+    - roles confirmed for a plain stack's unnamed axes that put X before Y (``TXY``):
+      ``axes_x_before_y``, as nothing is ever read transposed;
     - any other role for a named axis: ``axes_contradict_header``. That includes a Z read
       as T, and a named axis that is not a role (angle ``A``, lambda ``E``, ...) given one.
       A named axis longer than 1 without a role is :func:`check_mapping`'s
@@ -357,22 +358,30 @@ class ConfirmedAxes:
     """The user's confirmation of an axis mapping, for the files it was given for.
 
     A plain stack names no axes, so its roles are only the user's statement about the files
-    the user looked at (audit 2 B-1): a plain stack added or changed later is not covered,
-    and must be confirmed again, never read with roles confirmed for other files.
+    the user looked at, as they were then (audit 2 B-1): a plain stack added later, or
+    changed since (another :class:`.fingerprint.Fingerprint`), is not covered and must be
+    confirmed again, never read with roles confirmed for other files or other contents.
+    :func:`.fingerprint.confirm_axes` records the files with their fingerprints.
 
     Attributes
     ----------
     mapping
         The experiment mapping confirmed.
     files
-        The images it was confirmed for, relative to the experiment root.
+        ``{relative path: Fingerprint}``: the images it was confirmed for, relative to the
+        experiment root, each with its fingerprint when the user confirmed it.
     """
 
     mapping: AxisMapping
-    files: frozenset[str]
+    files: Mapping[str, Fingerprint] = field(hash=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "files", frozenset(self.files))
+        if not isinstance(self.files, Mapping):
+            raise TypeError(
+                "ConfirmedAxes.files maps each confirmed image to its fingerprint when it was "
+                "confirmed (fingerprint.confirm_axes), so a changed image is not covered"
+            )
+        object.__setattr__(self, "files", dict(sorted(self.files.items())))
 
 
 def confirmation_of(
@@ -392,7 +401,7 @@ def confirmation_of(
         ``(mapping, files)``.
     """
     if isinstance(mapping, ConfirmedAxes):
-        return mapping.mapping, mapping.files
+        return mapping.mapping, frozenset(mapping.files)
     return mapping, None
 
 
