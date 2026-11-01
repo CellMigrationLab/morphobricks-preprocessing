@@ -35,12 +35,12 @@ brick**.
   `morphobricks_normalization` (pinned to its release v0.3.2; first pinned at v0.2.0, plan §12 questions 27 and
   28). This brick runs them over
   the experiment. Later bricks such as patch extraction use them to normalise any group of
-  planes without rereading pixels. The old names stay importable from here, deprecated,
-  for one version (follow-up P1, normalization plan N6).
+  planes without rereading pixels. Import them from `morphobricks_normalization`; the
+  deprecated paths through this package were removed in v0.4.0.
 - **Never:** modifies source images, writes inside the experiment folder, or applies a
   normalization itself.
-- **Optional (`zarr` extra, plan §12 question 12):** OME-Zarr input, and converting TIFF
-  images to OME-Zarr in the output folder before processing them (contract §10).
+- **Optional (`zarr` extra, plan §12 question 12):** OME-Zarr input. (Converting TIFF images
+  to OME-Zarr in the output folder, `convert_tiffs`, was removed in v0.4.0.)
 - **Large planes (plan §12 question 15):** planes over the memory limit are read in blocks,
   automatically and announced, with identical rows.
 - **Out of scope:** spatial corrections (flat-field, BaSiC, CLAHE).
@@ -71,7 +71,7 @@ src/morphobricks_preprocessing/
   physical_sizes.py PhysicalSizes (pixel sizes, z-step, time step, a unit per axis, micrometers()
                     for comparing), space_unit/to_micrometers (the shared unit rule, contract §16),
                     read_physical_sizes (OME / ImageJ TIFF metadata; also importable
-                    from zarr_export) and ngff_physical_sizes (OME-NGFF scale and axis units)
+                    ) and ngff_physical_sizes (OME-NGFF scale and axis units)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
   design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
@@ -85,9 +85,7 @@ src/morphobricks_preprocessing/
                     the notebook's plots, intensity_text for the CLI
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
-                    applied to every file, missing axes as singletons only when confirmed),
-                    check_declared_axes and declared_axes_transposed (deprecated in v0.4.0,
-                    removed in v0.5.0)
+                    applied to every file, missing axes as singletons only when confirmed)
   axis_check.py     the axis check (contract §2): header_axis_issue, axis_disagreements,
                     likely_axis_cause, check_header_axes; AXIS_ERROR_CODES, AXIS_CHECK_CODES
   planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), table rows as
@@ -96,10 +94,7 @@ src/morphobricks_preprocessing/
                     check_planes (preflight memory / layout errors); planes over the limit read in
                     blocks of TIFF strips/tiles or zarr chunks (Plane.blocks, BlockReader), reduced
                     previews
-  _moved.py         deprecated access to the code moved to morphobricks_normalization: the moved
-                    names, warn-once DeprecationWarning, __getattr__ helpers
-  dtypes.py, histogram.py, records.py, csv_io.py, pooling.py, normalization.py
-                    deprecated stand-ins (module __getattr__ only, no code) for one version
+  _io.py            write_text_atomic (every file the brick writes) and free_space
   manifest.py       RunManifest / RunSettings / FileEntry, JSON read/write, SHA-256 of the CSV,
                     check_sources (images against a run, for other bricks, contract §16)
   run.py            preflight(), run_experiment() (incremental), sample_planes() for previews
@@ -120,9 +115,6 @@ src/morphobricks_preprocessing/
                     letters and physical sizes from the scale and axis units),
                     ngff_label_names/open_ngff_labels (label images, for later bricks),
                     zarr 2/3 helpers, canonical_dtype; needs the `zarr` extra
-  zarr_export.py    TIFF -> OME-Zarr conversion (OmeZarrWriter, OME-NGFF 0.4, plane by plane or
-                    block by block),
-                    ConversionSettings (chunk size, compression, pyramid levels), estimate_conversion
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
   notebook_axes.py  the notebook's axis-check card and the marks under the role dropdowns
   notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra);
@@ -150,8 +142,7 @@ Moved to [morphobricks-normalization](https://github.com/CellMigrationLab/morpho
 ```
 
 Their tests (`test_histogram.py`, `test_csv_io.py`, `test_pooling.py`,
-`test_normalization.py`) moved with them. `tests/test_moved.py` checks the deprecated
-names here.
+`test_normalization.py`) moved with them. The deprecated names here were removed in v0.4.0.
 
 The notebook and the CLI contain **no processing logic**. They call the same public
 functions the tests use.
@@ -539,12 +530,9 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 - **No new core dependencies** without asking. tkinter (for folder dialogs) is optional
   and imported lazily with a fallback.
 - **Public API** is re-exported in `__init__.py`. `__all__` is sorted: constants, then
-  classes, then functions. It still lists the deprecated names moved to the normalization
-  brick; they are served by `__getattr__` (see `_moved.py`), never imported in
-  `__init__.py`.
+  classes, then functions.
 - **Code from the normalization brick:** import it as
-  `from morphobricks_normalization.<module> import ...`, never through the deprecated
-  `morphobricks_preprocessing` paths (`tests/test_moved.py` checks this).
+  `from morphobricks_normalization.<module> import ...`.
 
 ### Tests
 
@@ -556,7 +544,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 - **Proving "no pixels are read":** monkeypatch `asarray` on `TiffFile`, `TiffPage`,
   `TiffFrame` and `TiffPageSeries` to raise.
 - **OME-Zarr test data:** `tests/zarr_tree.py` (`write_ngff`, `write_bioformats2raw`,
-  `write_plate`) writes stores with zarr directly, independent of `zarr_export`; 0.5 tests
+  `write_plate`) writes stores with zarr directly; 0.5 tests
   skip with zarr 2.18.
 - **Proving "one page at a time":** spy on `planes._read_page`. To prove "only changed
   files are read", spy on `run.iter_xyc_planes` (`run.iter_planes` only converts TIFF

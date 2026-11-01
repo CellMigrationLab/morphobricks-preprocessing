@@ -9,6 +9,7 @@ does it, so the rule is not copied per output file.
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -43,3 +44,26 @@ def write_text_atomic(path: str | os.PathLike, text: str, *, parents: bool = Fal
         Path(temporary).unlink(missing_ok=True)
         raise
     return path
+
+
+def free_space(path: str | os.PathLike) -> int | None:
+    """Return the free space on the drive holding ``path`` (or its nearest existing parent).
+
+    Parameters
+    ----------
+    path
+        A file or folder, which may not exist yet.
+
+    Returns
+    -------
+    int or None
+        Free bytes; None when it cannot be determined.
+    """
+    path = Path(path).resolve()
+    for candidate in (path, *path.parents):
+        if candidate.exists():
+            try:
+                return shutil.disk_usage(candidate).free
+            except OSError:
+                return None
+    return None

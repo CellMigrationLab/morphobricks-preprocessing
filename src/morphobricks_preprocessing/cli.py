@@ -55,7 +55,7 @@ from .mask_scan import (
     scan_masks,
     write_mask_report,
 )
-from .planes import DEFAULT_MEMORY_LIMIT, format_bytes
+from .planes import DEFAULT_MEMORY_LIMIT
 from .report import (
     axis_check_summary,
     balance_summary,
@@ -69,17 +69,7 @@ from .report import (
     run_summary,
 )
 from .run import preflight, run_experiment
-from .validation import has_errors, plural
-from .zarr_export import (
-    CHUNK_SIDE,
-    COMPRESSIONS,
-    MAX_CHUNK_SIZE,
-    MAX_LEVELS,
-    MIN_CHUNK_SIZE,
-    ConversionSettings,
-    estimate_conversion,
-    free_space,
-)
+from .validation import has_errors
 
 _UNITS = {
     "": 1,
@@ -108,26 +98,6 @@ def parse_size(text: str) -> int:
             f"{text!r} is not a memory size; use for example 1GiB, 512MiB or a number of bytes."
         )
     return int(float(match.group(1)) * _UNITS[unit])
-
-
-def parse_pyramid_levels(text: str) -> int | None:
-    """Parse ``--pyramid-levels``: ``auto`` (None), ``none`` (0) or a number of levels.
-
-    Raises
-    ------
-    argparse.ArgumentTypeError
-        If the text is none of these.
-    """
-    value = text.strip().lower()
-    if value == "auto":
-        return None
-    if value == "none":
-        return 0
-    if value.isdigit() and 0 <= int(value) < MAX_LEVELS:
-        return int(value)
-    raise argparse.ArgumentTypeError(
-        f"{text!r} is not a number of pyramid levels; use auto, none or 1 to {MAX_LEVELS - 1}."
-    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -198,45 +168,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument(
         "--force-rebuild", action="store_true", help="recompute every row of the table"
-    )
-    run.add_argument(
-        "--convert-tiff",
-        action="store_true",
-        help="convert every TIFF image to OME-Zarr in <output>/ome_zarr first and compute "
-        "its histograms from the copy (needs the zarr extra); OME-Zarr images are always "
-        "read directly",
-    )
-    conversion = run.add_argument_group(
-        "conversion settings", "used with --convert-tiff; the defaults suit most experiments"
-    )
-    conversion.add_argument(
-        "--chunk-size",
-        type=int,
-        default=CHUNK_SIDE,
-        metavar="PX",
-        help=f"side of the stored tiles in pixels ({MIN_CHUNK_SIZE} to {MAX_CHUNK_SIZE}; "
-        f"default {CHUNK_SIDE})",
-    )
-    conversion.add_argument(
-        "--compression",
-        choices=sorted(COMPRESSIONS),
-        default="lz4",
-        help="lossless compression: lz4 (default, fast), zstd (smaller, slower) or none",
-    )
-    conversion.add_argument(
-        "--compression-level",
-        type=int,
-        default=5,
-        metavar="N",
-        help="1 (fastest) to 9 (smallest files); default 5",
-    )
-    conversion.add_argument(
-        "--pyramid-levels",
-        type=parse_pyramid_levels,
-        default=None,
-        metavar="auto|none|N",
-        help="smaller levels for viewing: auto (default, halve until a plane fits 512 px), "
-        f"none, or a number from 1 to {MAX_LEVELS - 1}",
     )
     checks = run.add_argument_group(
         "intensity checks", "limits of the warnings printed after the run; the defaults suit most"
@@ -448,16 +379,6 @@ def _run(args: argparse.Namespace) -> int:  # noqa: PLR0915
         )
         return 1
     try:
-        conversion = ConversionSettings(
-            chunk_size=args.chunk_size,
-            compression=args.compression,
-            compression_level=args.compression_level,
-            pyramid_levels=args.pyramid_levels,
-        )
-    except ValueError as exc:
-        print(exc)
-        return 1
-    try:
         intensity_settings = IntensityCheckSettings(
             outlier_limit=args.outlier_limit,
             saturation_limit=args.saturation_limit,
@@ -496,9 +417,6 @@ def _run(args: argparse.Namespace) -> int:  # noqa: PLR0915
         print("Experiment design:")
         print(design_summary(design))
         print()
-    if args.convert_tiff:
-        print(_conversion_note(pre, conversion, args.output))
-        print()
 
     def progress(done: int, total: int, path: str) -> None:
         if path:
@@ -514,8 +432,6 @@ def _run(args: argparse.Namespace) -> int:  # noqa: PLR0915
         exclude=args.exclude,
         force_rebuild=args.force_rebuild,
         progress=progress,
-        convert_tiffs=args.convert_tiff,
-        conversion=conversion,
         design=design,
         masks_folder=args.masks,
         image_type=image_type,
@@ -592,24 +508,6 @@ def _image_type_note(review: ImageTypeReview, given: str | None) -> str:
         lines.append(f"  rgb is not possible: {review.rgb_problem}")
     else:
         lines.append(f"  Give --image-type {other} if these are {other} images.")
-    return "\n".join(lines)
-
-
-def _conversion_note(pre, conversion: ConversionSettings, output) -> str:  # noqa: ANN001
-    estimate = estimate_conversion(pre.discovery.root, pre.metadata.files, conversion)
-    if not estimate.image_count:
-        return "Conversion: there are no TIFF images to convert."
-    folder = output or default_output_folder(pre.discovery.root)
-    free = free_space(folder)
-    lines = [
-        f"Conversion ({conversion.describe()}): {plural(estimate.image_count, 'TIFF image')} "
-        "will be stored again in OME-Zarr format, so the space they take is duplicated.",
-        f"  TIFF images: {format_bytes(estimate.source_bytes)}; copies: up to about "
-        f"{format_bytes(estimate.copy_bytes)} before compression; free space on the output "
-        f"drive: {format_bytes(free) if free is not None else 'unknown'}.",
-    ]
-    if free is not None and estimate.copy_bytes > free:
-        lines.append("  Warning: this may not be enough space.")
     return "\n".join(lines)
 
 

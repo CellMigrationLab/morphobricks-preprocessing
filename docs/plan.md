@@ -1056,6 +1056,17 @@ Raised during review; to be decided before the milestones that need them:
     roles (they were compared with the header's letters; the role-based comparison still
     matters for plain stacks, whose positional Y and X need not be the roles), and not at
     all for an image with an axis error. `check_declared_axes` and
-    `declared_axes_transposed` are deprecated, to be removed in v0.5.0. Breaking for
+    `declared_axes_transposed` are removed in v0.4.0 (question 46). Breaking for
     v0.4.0: experiments run with roles that swap or contradict the header no longer run
     as they are.*
+46. What does v0.4.0 remove (spec revision 4, §8 PP-2)?
+    *Decided (1 November 2026, owner): `convert_tiffs` with `zarr_export` (OME-Zarr copies in
+    the output folder; the bricks never read them, and named-axis copies of images with axis
+    errors are a separate OME-TIFF step), the manifest's `convert_tiffs`, `conversion` and
+    `ome_zarr_path` (ignored when an older manifest holds them), the CLI `--convert-tiff`,
+    `--chunk-size`, `--compression`, `--compression-level` and `--pyramid-levels`, the
+    notebook's conversion card; the deprecated stand-ins of the code moved to the
+    normalization brick (`_moved` and the `csv_io`, `dtypes`, `histogram`, `normalization`,
+    `pooling` and `records` modules); and `check_declared_axes` with
+    `declared_axes_transposed`, removed rather than deprecated because they read a Y/X swap
+    transposed, which v0.4 forbids. Breaking for v0.4.0.*

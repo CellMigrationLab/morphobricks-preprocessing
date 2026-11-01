@@ -2,9 +2,9 @@ import os
 
 import numpy as np
 import pytest
+from morphobricks_normalization.records import SINGLE
 
 from morphobricks_preprocessing import (
-    SINGLE,
     AxisMapping,
     Severity,
     check_output_folder,

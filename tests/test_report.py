@@ -1,14 +1,14 @@
 import numpy as np
 import pytest
+from morphobricks_normalization.csv_io import read_plane_histograms
+from morphobricks_normalization.pooling import PooledHistogram
+from morphobricks_normalization.records import group_records
 
 from morphobricks_preprocessing import (
-    PooledHistogram,
     discover_experiment,
-    group_records,
     group_summaries,
     prefill_mapping,
     preflight,
-    read_plane_histograms,
     run_experiment,
 )
 from morphobricks_preprocessing.report import (

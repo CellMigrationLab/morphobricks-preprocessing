@@ -17,7 +17,6 @@ Nothing here reads pixels; the preview plane is read by
 
 from __future__ import annotations
 
-import warnings
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -31,11 +30,9 @@ from .axis_check import (
     check_header_axes,
 )
 from .metadata import (
-    OPEN_AXIS,
     MetadataReport,
     TiffMetadata,
     channel_count_issues,
-    named_axes,
 )
 from .validation import ValidationIssue, error, has_errors, plural
 
@@ -284,153 +281,6 @@ def prefill_mapping(axes: str) -> AxisMapping:
         else:
             roles.append(None)
     return AxisMapping(axes, tuple(roles))
-
-
-def check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | None:
-    """Check the axes a brick or user declares for an image against its header.
-
-    .. deprecated:: 0.4.0
-        Bricks no longer take axis declarations: they read the files of a preprocessing
-        run whose axes were checked (:func:`review_axes`, contract §2). This function will
-        be removed in v0.5.0.
-
-    One rule for every brick that is told an image's (or mask's) axes, for example
-    ``image_axes="CYX"`` (MorphoBricks D86): a declaration can name what the header leaves
-    open, never contradict it. Only what the metadata names binds
-    (:func:`.metadata.named_axes`, the same rule as :func:`.metadata.header_axes`).
-    Position by position:
-
-    - an axis the metadata names (X, Y, Z, C, T) must be declared with that letter, except
-      that the named Y and X may be declared swapped (header ``CYX`` declared ``CXY``): the
-      image is then read transposed, which :func:`declared_axes_transposed` reports so the
-      caller can record it (owner decision, 31 October 2026);
-    - a dimension it leaves open may be declared any role: a placeholder axis (``I``,
-      ``Q``), and in a plain stack of pages without axis metadata (``IYX``, ``QYX``,
-      ``QQYX``) the ``Y`` and ``X`` too, which only say where the pages' rows and columns
-      are stored (a (Y, X, C) array written without metadata reads as ``QYX``);
-    - the RGB samples axis ``S`` may be declared C when the header has no C (as the axis
-      review's prefill does);
-    - any other header axis (tile ``R``, angle ``A``, ...) has no role and cannot be
-      declared.
-
-    The declaration must have one letter per header axis, each role at most once, and
-    declare Y and X when the header has them (also where a plain stack leaves them open).
-
-    Parameters
-    ----------
-    meta
-        The image's header (:func:`.metadata.inspect_image`).
-    declared
-        The declared axes, one letter per dimension (any case), e.g. ``"ZYX"``.
-
-    Returns
-    -------
-    ValidationIssue or None
-        The error ``declared_axes_mismatch`` naming the image, the declared and the header
-        axes (or ``unreadable_tiff`` / ``unreadable_ome_zarr`` when its header could not be
-        read); None when the declaration fits the header.
-    """
-    _deprecated("check_declared_axes")
-    return _check_declared_axes(meta, declared)
-
-
-def _check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | None:
-    if not meta.readable:
-        code = "unreadable_ome_zarr" if meta.is_ome_zarr else "unreadable_tiff"
-        return error(
-            code,
-            "The image's header could not be read, so its axes cannot be checked.",
-            [meta.relative_path],
-            "Export the image again, or leave it out.",
-        )
-    text = declared.upper() if isinstance(declared, str) else ""
-    problem = _declared_axes_problem(meta.axes, named_axes(meta), text)
-    if problem is None:
-        return None
-    return error(
-        "declared_axes_mismatch",
-        f"The axes declared for {meta.relative_path} ({declared!r}) do not fit the axes in its "
-        f"header ({meta.axes!r}): {problem}. Planes would be read along the wrong dimension.",
-        [meta.relative_path],
-        "Declare the axes the image's metadata gives, or export the image again with the "
-        "right axes in its metadata.",
-    )
-
-
-def declared_axes_transposed(meta: TiffMetadata, declared: str) -> bool:
-    """Return True when a declaration fits the header only with its named Y and X swapped.
-
-    .. deprecated:: 0.4.0
-        Nothing is read transposed any more: a confirmed Y/X swap is the error
-        ``axes_yx_swapped`` (:func:`review_axes`). This function will be removed in v0.5.0.
-
-    :func:`check_declared_axes` accepts a declaration that differs from the axes the
-    metadata names only by swapping Y and X (header ``CYX`` declared ``CXY``): the image is
-    read transposed. A brick that accepts such a declaration records it with this function.
-    A plain stack's Y and X are not named (:func:`.metadata.named_axes`), so declaring them
-    the other way round is never a swap.
-
-    Parameters
-    ----------
-    meta
-        The image's header (:func:`.metadata.inspect_image`).
-    declared
-        The declared axes, one letter per dimension (any case).
-
-    Returns
-    -------
-    bool
-        True when the named Y is declared X (and the named X declared Y).
-
-    Raises
-    ------
-    ValueError
-        When the declaration does not fit the header at all (:func:`check_declared_axes`
-        gives an error), with that error's message.
-    """
-    _deprecated("declared_axes_transposed")
-    issue = _check_declared_axes(meta, declared)
-    if issue is not None:
-        raise ValueError(issue.message)
-    named = named_axes(meta)
-    return "Y" in named and declared.upper()[named.index("Y")] == "X"
-
-
-def _declared_axes_problem(header: str, named: str, declared: str) -> str | None:
-    if not declared or len(declared) != len(header):
-        return f"{len(declared)} declared for {len(header)} dimensions"
-    unknown = sorted(set(declared) - set(ROLES))
-    if unknown:
-        return f"{', '.join(unknown)} {'is' if len(unknown) == 1 else 'are'} not an axis role"
-    repeated = sorted({axis for axis in declared if declared.count(axis) > 1})
-    if repeated:
-        return f"{', '.join(repeated)} declared more than once"
-    # Even where a plain stack leaves its Y and X open, the image has rows and columns:
-    # a declaration without them would read no plane at all.
-    undeclared = [axis for axis in "YX" if axis in header and axis not in declared]
-    if undeclared:
-        return f"{' and '.join(undeclared)} {'is' if len(undeclared) == 1 else 'are'} not declared"
-    for index, (have, said) in enumerate(zip(named, declared, strict=True)):
-        if have in (said, OPEN_AXIS):
-            continue
-        # The named Y and X swapped: with one letter per role, the other position must then
-        # be swapped too, so this accepts a swap of the two and nothing else.
-        if have in "YX" and said in "YX":
-            continue
-        if have == "S" and said == "C" and "C" not in header:
-            continue
-        return f"dimension {index} is {_axis_label(have)} in the header, declared {said}"
-    return None
-
-
-def _deprecated(name: str) -> None:
-    warnings.warn(
-        f"morphobricks_preprocessing.{name} is deprecated and will be removed in v0.5.0: "
-        "bricks read the files of a preprocessing run whose axes were checked, and take no "
-        "axis declarations.",
-        DeprecationWarning,
-        stacklevel=3,
-    )
 
 
 def reference_axes(files: Iterable[TiffMetadata]) -> str | None:

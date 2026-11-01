@@ -9,8 +9,8 @@ in ``experiments/binning_study``.
 from __future__ import annotations
 
 import numpy as np
-
-from morphobricks_preprocessing import PlaneRecord, compute_plane_histogram
+from morphobricks_normalization.histogram import compute_plane_histogram
+from morphobricks_normalization.records import PlaneRecord
 
 
 def simulate_plane(rng, dtype, shape=(64, 64), brightness=1.0, n_cells=6):

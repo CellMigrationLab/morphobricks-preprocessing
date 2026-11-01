@@ -227,7 +227,6 @@ def run_summary(result: RunResult) -> str:
         ("Unchanged (rows kept)", () if result.rebuild_reason else result.unchanged),
         ("Removed from the table", result.removed),
         ("Excluded", result.excluded),
-        ("TIFF images converted to OME-Zarr", result.converted),
     ):
         if files:
             lines.append(f"{label}: {plural(len(files), 'image')}")

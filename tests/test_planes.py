@@ -4,6 +4,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 import tifffile
+from morphobricks_normalization.histogram import compute_plane_histogram, estimate_histogram_memory
 
 from morphobricks_preprocessing import (
     DEFAULT_MEMORY_LIMIT,
@@ -12,7 +13,6 @@ from morphobricks_preprocessing import (
     PlaneReadError,
     Severity,
     check_planes,
-    compute_plane_histogram,
     inspect_images,
     inspect_tiff,
     iter_planes,
@@ -24,7 +24,6 @@ from morphobricks_preprocessing import (
     review_axes,
 )
 from morphobricks_preprocessing import planes as planes_module
-from morphobricks_preprocessing.histogram import estimate_histogram_memory
 from tiff_tree import write_data, write_file
 
 DTYPES = ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
