@@ -86,8 +86,8 @@ src/morphobricks_preprocessing/
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed),
-                    check_declared_axes and declared_axes_transposed (deprecated in v0.4.0,
-                    removed in v0.5.0)
+                    check_declared_axes and declared_axes_transposed (deprecated; removed
+                    before the v0.4.0 release)
   axis_check.py     the axis check (contract §2): header_axis_issue, axis_disagreements,
                     likely_axis_cause, check_header_axes; AXIS_ERROR_CODES, AXIS_CHECK_CODES
   planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), table rows as

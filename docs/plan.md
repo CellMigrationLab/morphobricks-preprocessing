@@ -1056,6 +1056,6 @@ Raised during review; to be decided before the milestones that need them:
     roles (they were compared with the header's letters; the role-based comparison still
     matters for plain stacks, whose positional Y and X need not be the roles), and not at
     all for an image with an axis error. `check_declared_axes` and
-    `declared_axes_transposed` are deprecated, to be removed in v0.5.0. Breaking for
-    v0.4.0: experiments run with roles that swap or contradict the header no longer run
-    as they are.*
+    `declared_axes_transposed` are deprecated, to be removed before the v0.4.0 release
+    (design v0.4 §6, PP-2). Breaking for v0.4.0: experiments run with roles that swap or
+    contradict the header no longer run as they are.*
