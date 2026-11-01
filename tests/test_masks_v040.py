@@ -90,6 +90,8 @@ def test_the_run_checks_stated_mask_planes_against_the_image(timelapse):
         "stated",
         False,
     )
+    # The axes as stored, beside the roles they are read as: nothing is reordered.
+    assert (recorded["axes"], recorded["shape"]) == ("IYX", [3, 6, 8])
     # Stated as depth, the mask's planes are not the time-lapse's.
     wrong = run_experiment(
         root, prefill_mapping("TYX"), masks_folder=masks, mask_axes={"Cells": "ZYX"}

@@ -32,7 +32,9 @@ def mask_manifest(inventory: MaskInventory, experiment_root: str | os.PathLike) 
     -------
     dict
         :meth:`.masks.MaskInventory.to_manifest` with, per file, ``size``, ``mtime_ns``,
-        ``roles``, ``axes_from`` and ``shared``.
+        ``roles``, ``axes_from`` and ``shared``. ``axes`` are the mask's axes as stored
+        (its header's letters, ``"IYX"`` for a plain stack), ``roles`` what they are read as
+        (``"TYX"`` when stated), so a brick reads the mask as stored, never reordered.
     """
     data = inventory.to_manifest()
     by_path = {mask.path: mask for mask in inventory.files}
@@ -40,6 +42,7 @@ def mask_manifest(inventory: MaskInventory, experiment_root: str | os.PathLike) 
         mask = by_path[entry["path"]]
         fingerprint = Fingerprint.of(_mask_path(mask, inventory.folder, Path(experiment_root)))
         entry.update(
+            axes=mask.header_axes or mask.axes,
             size=fingerprint.size,
             mtime_ns=fingerprint.mtime_ns,
             roles=mask.axes,
