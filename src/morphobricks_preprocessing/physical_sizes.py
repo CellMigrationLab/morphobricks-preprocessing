@@ -569,7 +569,7 @@ def _ngff_scale(entry: dict, ndim: int) -> list[float | None] | None:
     return None
 
 
-def _scale_value(value) -> float | None:
+def _scale_value(value) -> float | None:  # noqa: ANN001
     """Return one scale value as a float; None when it is not a usable number."""
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
@@ -646,7 +646,7 @@ def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
     )
 
 
-def _ngff_unit(value, table: dict[str, str]) -> str | None:
+def _ngff_unit(value, table: dict[str, str]) -> str | None:  # noqa: ANN001
     """Return an OME-NGFF axis unit with common spellings as UDUNITS-2 names.
 
     ``"µm"``, ``"um"`` and ``"micron"`` become ``"micrometer"``, ``"s"``
@@ -660,7 +660,7 @@ def _ngff_unit(value, table: dict[str, str]) -> str | None:
     return known or text
 
 
-def _written(value) -> str | None:
+def _written(value) -> str | None:  # noqa: ANN001
     """Return a unit as the metadata write it (escapes decoded); None when blank."""
     if value is None:
         return None
@@ -668,11 +668,11 @@ def _written(value) -> str | None:
     return text or None
 
 
-def _imagej_unit(value) -> str | None:
+def _imagej_unit(value) -> str | None:  # noqa: ANN001
     return _SPACE_UNITS.get(_imagej_text(value))
 
 
-def _imagej_text(value) -> str:
+def _imagej_text(value) -> str:  # noqa: ANN001
     r"""Return an ImageJ unit in lower case, with its ``\uXXXX`` escapes decoded.
 
     ImageJ writes non-ASCII characters as ``\u00B5`` in the TIFF description, and
@@ -686,7 +686,7 @@ def _decode_escapes(text: str) -> str:
     return re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), text)
 
 
-def _resolution(tag) -> float | None:
+def _resolution(tag) -> float | None:  # noqa: ANN001
     if tag is None:
         return None
     try:
@@ -696,7 +696,7 @@ def _resolution(tag) -> float | None:
         return None
 
 
-def _number(value) -> float | None:
+def _number(value) -> float | None:  # noqa: ANN001
     if isinstance(value, bool):  # True would otherwise read as a size of 1
         return None
     try:

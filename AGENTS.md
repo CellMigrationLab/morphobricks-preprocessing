@@ -168,7 +168,8 @@ functions the tests use.
    PR description:
    *Summary* (by module), *Decisions*, *Notes for review* (limitations, what was not
    verified), *Tests* (exact counts, e.g. "455 passed, 2 skipped").
-5. **Done means:** `ruff check .`, `ruff format --check .` and `pytest` all pass (CI runs
+5. **Done means:** `python tools/check.py` passes (`ruff check .`, `ruff format --check .`,
+   `pytest` and the code rules of `docs/development.md` against their baseline), (CI runs
    lint on Ubuntu and tests on Ubuntu, Windows and macOS with Python 3.11 and 3.13), docs
    updated, and local changes ready for review. Open a PR only when the user requests it.
 6. **Be honest in reports.** Say what was verified and what was not (for example: "widgets

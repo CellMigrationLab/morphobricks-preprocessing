@@ -7,7 +7,7 @@ severities follow ``docs/contract.md`` §8.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sized
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -81,3 +81,23 @@ def plural(count: int, singular: str, plural_form: str | None = None) -> str:
     """Return e.g. ``"1 file"`` or ``"3 files"`` for plain-language messages."""
     word = singular if count == 1 else (plural_form or f"{singular}s")
     return f"{count:,} {word}"
+
+
+def agree(items: Sized, one: str, several: str) -> str:
+    """Return the word that agrees with how many items there are.
+
+    The one grammar helper of the brick's messages, beside :func:`plural`.
+
+    Parameters
+    ----------
+    items
+        The items the word is about.
+    one, several
+        The word for one item and for several, e.g. ``"is"`` and ``"are"``.
+
+    Returns
+    -------
+    str
+        ``one`` for exactly one item, ``several`` otherwise.
+    """
+    return one if len(items) == 1 else several

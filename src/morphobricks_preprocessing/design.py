@@ -23,7 +23,6 @@ import datetime
 import hashlib
 import io
 import os
-import tempfile
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -31,6 +30,7 @@ from types import MappingProxyType
 
 from morphobricks_normalization.records import SINGLE
 
+from ._io import write_text_atomic
 from .dataset import BiologicalRepeat
 from .discovery import IdentityError, check_identity_case, check_identity_text
 from .validation import ValidationIssue, error, plural
@@ -686,16 +686,7 @@ def write_experiment_design(design: ExperimentDesign, path: str | os.PathLike) -
                 DESIGN_SCHEMA_VERSION,
             ]
         )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(handle, "w", newline="", encoding="utf-8") as fh:
-            fh.write(buffer.getvalue())
-        os.replace(temporary, path)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
-    return path
+    return write_text_atomic(path, buffer.getvalue(), parents=True)
 
 
 def load_design(

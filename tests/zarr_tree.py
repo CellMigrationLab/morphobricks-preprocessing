@@ -15,7 +15,7 @@ def zarr_major() -> int:
     return int(zarr.__version__.split(".")[0])
 
 
-def write_ngff(
+def write_ngff(  # noqa: PLR0913
     path,
     data,
     axes="czyx",

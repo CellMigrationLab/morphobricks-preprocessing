@@ -32,7 +32,7 @@ from pathlib import Path, PurePosixPath
 import numpy as np
 from morphobricks_normalization.records import LEVELS, SINGLE
 
-from .validation import ValidationIssue, error, has_errors, plural, warning
+from .validation import ValidationIssue, agree, error, has_errors, plural, warning
 from .zarr_input import is_zarr_name
 
 logger = logging.getLogger(__name__)
@@ -470,7 +470,8 @@ def mask_name_issues(
         issues.append(
             warning(
                 "image_named_as_mask",
-                f"{plural(len(named), 'image')} {_are(named)} named as a mask of another "
+                f"{plural(len(named), 'image')} "
+                f"{agree(named, 'is', 'are')} named as a mask of another "
                 "image: that image's name followed by "
                 + ", ".join(sorted(suffixes))
                 + f" ({_few([f'{file} (of {owner})' for file, owner in named])}). A mask is "
@@ -591,7 +592,7 @@ def _few(items: list[str], shown: int = 5) -> str:
 class _Walker:
     """Collects leaf folders and problem paths during one walk."""
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path):  # noqa: ANN204
         self.root = root
         self.excluded: Path | None = None
         self.leaves: list[LeafFolder] = []
@@ -807,7 +808,8 @@ class _Walker:
             issues.append(
                 warning(
                     "empty_folder",
-                    f"{plural(len(self.empty), 'folder')} {_contain(self.empty)} no images "
+                    f"{plural(len(self.empty), 'folder')} "
+                    f"{agree(self.empty, 'contains', 'contain')} no images "
                     "and no subfolders and will not be analysed.",
                     self.empty,
                     "No action needed if this is expected. Otherwise add the missing images "
@@ -821,7 +823,8 @@ class _Walker:
                 # refuses it, so they are never dropped silently.
                 error(
                     "tiff_outside_leaf",
-                    f"{plural(len(self.outside_leaf), 'image')} {_are(self.outside_leaf)} "
+                    f"{plural(len(self.outside_leaf), 'image')} "
+                    f"{agree(self.outside_leaf, 'is', 'are')} "
                     "in folders that also contain subfolders. A folder holds either images "
                     "or subfolders, never both, so these images have no place in the "
                     "experiment's levels.",
@@ -842,11 +845,3 @@ class _Walker:
                 )
             )
         return tuple(issues)
-
-
-def _are(items: list) -> str:
-    return "is" if len(items) == 1 else "are"
-
-
-def _contain(items: list) -> str:
-    return "contains" if len(items) == 1 else "contain"

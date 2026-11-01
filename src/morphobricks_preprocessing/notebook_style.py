@@ -221,7 +221,7 @@ def checklist(items: Iterable[tuple[bool, str]]) -> str:
     return f"<ul class='mb-check'>{lines}</ul>"
 
 
-def button(description: str, *, style: str = "", icon: str = "", tooltip: str = "", main=False):
+def button(description: str, *, style: str = "", icon: str = "", tooltip: str = "", main=False):  # noqa: ANN001, ANN201
     """Build a button; ``main`` buttons are full width and taller, for a step's main action."""
     layout = widgets.Layout(width="99%", height="42px") if main else widgets.Layout(width="auto")
     return widgets.Button(
@@ -282,7 +282,7 @@ class ConfirmToggle:
         Text of the button that takes the confirmation back.
     """
 
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
         question: str,
         explanation: str,
@@ -336,7 +336,7 @@ class ConfirmToggle:
             f"<div class='mb-help' style='margin-bottom:0'>{explanation}</div></div>"
         )
 
-    def observe(self, callback) -> None:
+    def observe(self, callback) -> None:  # noqa: ANN001
         """Call ``callback(value)`` whenever the answer changes."""
         self._callbacks.append(callback)
 
@@ -362,7 +362,7 @@ class ConfirmToggle:
                 callback(value)
 
 
-def ask_open_file(initial: str = "", filetypes=(("All files", "*.*"),)) -> str | None:
+def ask_open_file(initial: str = "", filetypes=(("All files", "*.*"),)) -> str | None:  # noqa: ANN001
     """Open the system's file dialog; return the chosen file, ``""`` if cancelled.
 
     Returns None when no dialog can be shown, like :func:`ask_directory`.

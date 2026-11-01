@@ -415,7 +415,7 @@ def _relationship_line(pair: PairRelation) -> str:
     return text + (f"; {', '.join(extra)}" if extra else "")
 
 
-def _hierarchy_lines(hierarchy) -> list[str]:
+def _hierarchy_lines(hierarchy) -> list[str]:  # noqa: ANN001
     """Return the mask types as an indented tree; a type with two parents shows twice."""
     children: dict[str, list[str]] = {name: [] for name in hierarchy}
     for name, parents in hierarchy.items():

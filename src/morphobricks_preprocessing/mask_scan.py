@@ -44,7 +44,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,6 +52,7 @@ from types import MappingProxyType
 import numpy as np
 from scipy import ndimage
 
+from ._io import write_text_atomic
 from .manifest import package_versions
 from .masks import MaskInventory, check_labels, read_mask
 
@@ -418,18 +418,8 @@ def scan_masks(
 
 def write_mask_report(report: MaskReport, path: str | os.PathLike) -> Path:
     """Write the report as UTF-8 JSON (two-space indent, LF), atomically; return the path."""
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(report.to_dict(), indent=2, ensure_ascii=False) + "\n"
-    handle, temporary = tempfile.mkstemp(prefix=".mask_report-", dir=target.parent)
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
-            stream.write(text)
-        os.replace(temporary, target)
-    finally:
-        if os.path.exists(temporary):
-            os.remove(temporary)
-    return target
+    return write_text_atomic(path, text, parents=True)
 
 
 def _scan_plane(

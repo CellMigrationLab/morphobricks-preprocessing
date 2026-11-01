@@ -30,9 +30,35 @@ Its environment alternatives are tested without installing packages during the t
 
 - PEP 8 naming; lines up to 100 characters.
 - `ruff format` formats the code and `ruff check` lints it; both run in CI.
-- Type hints on all public functions.
+- Type hints on all functions (see the code standards below).
 - NumPy-style docstrings on public modules, classes and functions.
 - Comments explain *why*, not *what*.
+
+## Code standards (MorphoBricks spec §9)
+
+`python tools/check.py` runs everything a pull request must pass: `ruff check`,
+`ruff format --check`, pytest and the code rules. CI runs the code rules with
+`python tools/check.py --rules`.
+
+- **Size:** files at most 600 lines; functions at most 60 executable lines, complexity 15
+  (`C901`), 8 parameters (`PLR0913`) and 50 statements (`PLR0915`).
+- **Annotations** on every function in `src` and `tools`, private and nested ones included
+  (`ANN`). Tests are exempt, as they are from the docstring rules.
+- **Docstrings:** NumPy style for public names (`D`); at least an imperative line for
+  private functions over 10 lines.
+- **Layers:** every module of the package is declared `pure`, `io`, `ui` or
+  `orchestration` in `pyproject.toml` (`[tool.morphobricks.code-rules.layers]`). Pure
+  modules do no I/O and no UI; UI modules do not compute.
+- **Ownership:** shared logic lives in its owner repository; `RESERVED_NAMES` in
+  `tools/code_rules.py` fails a copy anywhere else. Write files with
+  `_io.write_text_atomic` and word messages with `validation.plural` and
+  `validation.agree`, never a local copy.
+- **Enforcement:** `tools/code_rules.py` is the shared file, identical in every MorphoBricks
+  repository (`tests/test_code_rules.py` checks its SHA-256). The violations that existed
+  when the rules came in are listed in `tools/code_rules_baseline.json`, with the number of
+  `# noqa` comments of the rules above. The baseline may only shrink: a new or grown
+  violation fails, and so does an entry the code no longer needs, until
+  `python tools/check.py --update-baseline` lowers it (it never adds an entry).
 
 ## Design rules
 
