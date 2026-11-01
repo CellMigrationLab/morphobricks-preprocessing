@@ -21,8 +21,9 @@ from morphobricks_preprocessing import (
 )
 from tiff_tree import write_data
 
-# check_declared_axes and declared_axes_transposed are deprecated in v0.4.0 (removed in
-# v0.5.0); their rules stay tested until then, and the warning has its own test below.
+# check_declared_axes and declared_axes_transposed are deprecated (removed before the v0.4.0
+# release, design v0.4 §6); their rules stay tested until then, and the warning has its own
+# test below.
 pytestmark = pytest.mark.filterwarnings(
     "ignore:morphobricks_preprocessing.(check_declared_axes|declared_axes_transposed) is "
     "deprecated:DeprecationWarning"
@@ -32,7 +33,7 @@ pytestmark = pytest.mark.filterwarnings(
 @pytest.mark.filterwarnings("error")
 def test_declared_axes_checks_are_deprecated(tmp_path):
     meta = inspect_image(write_data(tmp_path / "a.tif", np.zeros((2, 4, 5), np.uint8), "CYX"))
-    with pytest.warns(DeprecationWarning, match="check_declared_axes is deprecated.*v0.5.0"):
+    with pytest.warns(DeprecationWarning, match="check_declared_axes is deprecated.*v0.4.0"):
         assert check_declared_axes(meta, "CYX") is None
     with pytest.warns(DeprecationWarning, match="declared_axes_transposed is deprecated"):
         assert declared_axes_transposed(meta, "CXY")

@@ -291,8 +291,8 @@ def check_declared_axes(meta: TiffMetadata, declared: str) -> ValidationIssue | 
 
     .. deprecated:: 0.4.0
         Bricks no longer take axis declarations: they read the files of a preprocessing
-        run whose axes were checked (:func:`review_axes`, contract §2). This function will
-        be removed in v0.5.0.
+        run whose axes were checked (:func:`review_axes`, contract §2). This function is
+        removed before the v0.4.0 release.
 
     One rule for every brick that is told an image's (or mask's) axes, for example
     ``image_axes="CYX"`` (MorphoBricks D86): a declaration can name what the header leaves
@@ -362,7 +362,8 @@ def declared_axes_transposed(meta: TiffMetadata, declared: str) -> bool:
 
     .. deprecated:: 0.4.0
         Nothing is read transposed any more: a confirmed Y/X swap is the error
-        ``axes_yx_swapped`` (:func:`review_axes`). This function will be removed in v0.5.0.
+        ``axes_yx_swapped`` (:func:`review_axes`). This function is removed before the
+        v0.4.0 release.
 
     :func:`check_declared_axes` accepts a declaration that differs from the axes the
     metadata names only by swapping Y and X (header ``CYX`` declared ``CXY``): the image is
@@ -425,7 +426,7 @@ def _declared_axes_problem(header: str, named: str, declared: str) -> str | None
 
 def _deprecated(name: str) -> None:
     warnings.warn(
-        f"morphobricks_preprocessing.{name} is deprecated and will be removed in v0.5.0: "
+        f"morphobricks_preprocessing.{name} is deprecated and will be removed in v0.4.0: "
         "bricks read the files of a preprocessing run whose axes were checked, and take no "
         "axis declarations.",
         DeprecationWarning,

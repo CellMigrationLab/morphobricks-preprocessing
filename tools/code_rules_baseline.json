@@ -14,7 +14,7 @@
     "src/morphobricks_preprocessing/axes.py _declared_axes_problem: private function of # lines without a docstring": 20,
     "src/morphobricks_preprocessing/axes.py check_mapping: # executable lines (max #)": 72,
     "src/morphobricks_preprocessing/axes.py review_axes: # executable lines (max #)": 108,
-    "src/morphobricks_preprocessing/axes.py: # lines (max #)": 867,
+    "src/morphobricks_preprocessing/axes.py: # lines (max #)": 868,
     "src/morphobricks_preprocessing/cli.py _check: private function of # lines without a docstring": 52,
     "src/morphobricks_preprocessing/cli.py _common: private function of # lines without a docstring": 19,
     "src/morphobricks_preprocessing/cli.py _conversion_note: private function of # lines without a docstring": 15,

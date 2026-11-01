@@ -42,7 +42,7 @@ def mask_size_issues(
     skip
         Images not to check: those with an axis error (:attr:`.axes.AxisReview.axis_error_files`),
         which are never read, so a mask size would only be a misleading second message. Their
-        masks are checked when the images are saved as OME-Zarr.
+        masks are checked when the images are saved as named-axis copies.
 
     Returns
     -------

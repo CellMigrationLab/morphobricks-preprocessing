@@ -1540,7 +1540,7 @@ class PreprocessingNotebook:
                 *(
                     [
                         f"{plural(len(confirmed), 'image')} do not name their axes: their "
-                        "roles are recorded in the run manifest as confirmed by you."
+                        "roles are recorded as confirmed by you."
                     ]
                     if confirmed
                     else []
