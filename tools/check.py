@@ -78,8 +78,7 @@ def code_rule_problems() -> tuple[list[str], dict[str, int]]:
             problems += layer_problems(text, name, layers.get(_module_name(path, package_dir)))
     problems += duplicate_bodies(sources)
     problems += import_cycles(package_dir)
-    package_sources = [(n, t) for n, t in sources if not n.startswith("tests/")]
-    return problems, noqa_counts(package_sources)
+    return problems, noqa_counts(sources)
 
 
 def baseline_problems() -> list[str]:

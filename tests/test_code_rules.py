@@ -29,7 +29,7 @@ from code_rules import (  # noqa: E402
     shrunk_baseline,
 )
 
-SHARED_SHA256 = "616efc104c85e6f9bff0c537fea11335e1038b02865e70c5b40d4317af814efc"
+SHARED_SHA256 = "cc04a420a4d25d5ef200bfa370f052d9911786fde0c57385dcaf155716d6e0a2"
 """SHA-256 of the shared ``tools/code_rules.py``, identical in every MorphoBricks repository."""
 
 
@@ -75,6 +75,9 @@ def ruff_codes(path: Path) -> set[str]:
         ("missing_annotation.py", "ANN001"),
         ("too_complex.py", "C901"),
         ("many_arguments.py", "PLR0913"),
+        # A blanket noqa would hide every rule from the noqa ratchet.
+        ("blanket_noqa.py", "PGH004"),
+        ("missing_annotation.py", "I002"),
     ],
 )
 def test_ruff_guard_catches(fixture, code):
@@ -148,9 +151,29 @@ def test_the_baseline_only_shrinks():
     lowered = shrunk_baseline(smaller, noqa, recorded)
     assert lowered["problems"] == {"a.py: # lines (max #)": 650}
     more_noqa = {**noqa, "ANN": 3}
-    assert compare_with_baseline(problems, more_noqa, recorded) == ["# noqa: ANN grew from 2 to 3"]
+    assert compare_with_baseline(problems, more_noqa, recorded) == [f"{NOQA}: ANN grew from 2 to 3"]
+
+
+NOQA = "# " + "noqa"
+"""Built, not written out, so this file's test data is not counted by the noqa ratchet."""
 
 
 def test_noqa_counts():
-    sources = [("a.py", "x = 1  # noqa: ANN001, E501\ndef f():  # noqa: C901,PLR0915\n")]
+    sources = [("a.py", f"x = 1  {NOQA}: ANN001, E501\ndef f():  {NOQA}:C901,PLR0915\n")]
     assert noqa_counts(sources) == {"C901": 1, "PLR0913": 0, "PLR0915": 1, "ANN": 1}
+
+
+def test_file_level_noqa_counts():
+    sources = [("a.py", "# ruff: " + "noqa: ANN001, PLR0913\n")]
+    assert noqa_counts(sources) == {"C901": 0, "PLR0913": 1, "PLR0915": 0, "ANN": 1}
+
+
+def test_line_numbers_are_never_a_baseline_size():
+    """Moving a duplicated helper or a module with a digit in its name changes no size."""
+    duplicate = "identical bodies: tests/a.py:36 helper, tests/b.py:20 helper"
+    moved = "identical bodies: tests/a.py:90 helper, tests/b.py:20 helper"
+    assert baseline_key(duplicate) == baseline_key(moved)
+    assert baseline_key(duplicate)[1] == 0
+    assert baseline_key("import cycle: p.v2 -> p.c -> p.v2")[1] == 0
+    assert baseline_key("p.py:3 f_v2: 70 executable lines (max 60)")[1] == 70
+    assert baseline_key("p.py:3 _h: private function of 13 lines without a docstring")[1] == 13

@@ -43,7 +43,8 @@ Its environment alternatives are tested without installing packages during the t
 - **Size:** files at most 600 lines; functions at most 60 executable lines, complexity 15
   (`C901`), 8 parameters (`PLR0913`) and 50 statements (`PLR0915`).
 - **Annotations** on every function in `src` and `tools`, private and nested ones included
-  (`ANN`). Tests are exempt, as they are from the docstring rules.
+  (`ANN`), with `from __future__ import annotations` in every module (`I002`). Tests are
+  exempt, as they are from the docstring rules.
 - **Docstrings:** NumPy style for public names (`D`); at least an imperative line for
   private functions over 10 lines.
 - **Layers:** every module of the package is declared `pure`, `io`, `ui` or
@@ -58,7 +59,8 @@ Its environment alternatives are tested without installing packages during the t
   when the rules came in are listed in `tools/code_rules_baseline.json`, with the number of
   `# noqa` comments of the rules above. The baseline may only shrink: a new or grown
   violation fails, and so does an entry the code no longer needs, until
-  `python tools/check.py --update-baseline` lowers it (it never adds an entry).
+  `python tools/check.py --update-baseline` lowers it (it never adds an entry). A `# noqa`
+  must name its rules (`PGH004`), and line and file-level ones are counted, tests included.
 
 ## Design rules
 
