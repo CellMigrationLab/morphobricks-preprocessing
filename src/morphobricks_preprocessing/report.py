@@ -14,7 +14,7 @@ from morphobricks_normalization.histogram import PlaneHistogram
 from morphobricks_normalization.pooling import NoValidPixelsError, PooledHistogram
 from morphobricks_normalization.records import LEVELS, PlaneRecord, group_records
 
-from .axes import AxisMapping, axis_length_ranges, axis_name
+from .axes import AxisMapping, AxisReview, axis_length_ranges, axis_name
 from .dataset import BalanceTable
 from .design import ExperimentDesign
 from .discovery import DiscoveryResult
@@ -143,6 +143,23 @@ def mapping_summary(mapping: AxisMapping, files: Iterable = ()) -> str:
         size = f", length {length}" if length else ""
         lines.append(f"  {axis_name(axis)}{size} -> {role or 'no role'}")
     return "\n".join(lines)
+
+
+def axis_check_summary(review: AxisReview) -> str:
+    """Say in one line whether the axis check passed (contract §2), for the CLI.
+
+    The success message names what was checked; with axis errors it says how many images
+    are not read and that the errors are listed (they are printed with the other issues).
+    """
+    if review.axis_errors:
+        n = plural(len(review.axis_error_files), "image")
+        return (
+            f"Axes check: {n} cannot be read with these axes (see the errors below). "
+            "Check their axes; if they are right, save the images as OME-Zarr with them."
+        )
+    return (
+        "Axes checked: every image names its axes in its metadata, and the roles agree with them."
+    )
 
 
 def preflight_summary(pre: Preflight) -> str:

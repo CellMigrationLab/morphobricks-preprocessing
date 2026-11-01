@@ -267,7 +267,6 @@ LAYOUTS = [
     ),
     pytest.param((3, 6, 7), "ZXY", {}, None, ("Z", "Y", "X"), id="x-before-y"),
     pytest.param((1, 3, 6, 7), "QZYX", {}, None, ("Z", "Y", "X"), id="unassigned-singleton"),
-    pytest.param((4, 6, 7), None, {}, "TYX", ("T", "Y", "X"), id="pages-as-time"),
 ]
 
 

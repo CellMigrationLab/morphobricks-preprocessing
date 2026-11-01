@@ -64,6 +64,7 @@ from . import notebook_style as ui
 from .axes import (
     AxisMapping,
     AxisReview,
+    axis_disagreements,
     axis_length_ranges,
     axis_name,
     file_mapping_for,
@@ -1378,10 +1379,13 @@ class PreprocessingNotebook:
             self.axis_status.value = ui.status("error", str(exc))
             return
         ranges = axis_length_ranges(self.mapping, self.preflight.metadata.files)
-        for note, role, (low, high) in zip(
-            self.role_notes, self.mapping.roles, ranges, strict=True
+        marks = header_marks(self.mapping, self.preflight.metadata.files)
+        for index, (note, role, (low, high)) in enumerate(
+            zip(self.role_notes, self.mapping.roles, ranges, strict=True)
         ):
-            note.value = f"<div class='mb-help'>{role_effect(role, low, high)}</div>"
+            note.value = (
+                f"<div class='mb-help'>{role_effect(role, low, high)}</div>{marks.get(index, '')}"
+            )
         self.plane_summary.value = plane_summary_html(self.mapping, ranges)
         review = review_axes(
             self.preflight.metadata,
@@ -1394,7 +1398,8 @@ class PreprocessingNotebook:
         else:
             self.axis_status.value = ui.status(
                 "ok",
-                "These roles are valid for every image.",
+                "These roles are valid for every image, and agree with the axes their "
+                "metadata names.",
             )
             self.axis_next.value = ui.next_steps(
                 "Check the preview in Step 2, then confirm the axis roles.",
@@ -1517,7 +1522,15 @@ class PreprocessingNotebook:
                 )
                 if r is not None
             ]
-            self.confirmed_status.value = ui.status("ok", "Axis roles confirmed.", roles)
+            self.confirmed_status.value = ui.status(
+                "ok",
+                "Axes checked: they are correct for every image.",
+                [
+                    "Every image names its axes in its metadata, and the confirmed roles "
+                    "agree with them. Nothing needs to be saved again.",
+                    *roles,
+                ],
+            )
             self._open_image_type()
             self._refresh_axis_next()
         else:
@@ -3018,6 +3031,41 @@ def labels_html(pre: Preflight) -> str:
         "<div class='mb-table-wrap'><table class='mb-table mb-labels'>"
         f"<thead><tr>{header}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
     )
+
+
+def header_marks(mapping: AxisMapping, files: Iterable) -> dict[int, str]:
+    """Return a warning (HTML) for each role that disagrees with the axes the headers name.
+
+    Shown under the role dropdowns before the roles are confirmed, from the TIFF images
+    with the mapping's arrangement (:func:`.axes.axis_disagreements`); empty when the
+    roles agree with every header.
+    """
+    found: dict[int, set[str]] = {}
+    letters: dict[int, set[str]] = {}
+    for f in files:
+        if not f.readable or f.is_ome_zarr or f.axes != mapping.axes:
+            continue
+        for index, code in axis_disagreements(f, mapping).items():
+            found.setdefault(index, set()).add(code)
+            letters.setdefault(index, set()).add(f.axes[index])
+    marks = {}
+    for index, codes in found.items():
+        if "axes_not_named" in codes:
+            text = (
+                "The image metadata does not name this axis, so it cannot be checked: these "
+                "images are not read until they are saved as OME-Zarr with named axes."
+            )
+        else:
+            named = ", ".join(axis_name(letter) for letter in sorted(letters[index]))
+            what = (
+                "swaps the Y and X it names" if codes == {"axes_yx_swapped"} else "contradicts it"
+            )
+            text = (
+                f"The image header names this axis {html.escape(named)}; this role {what}. "
+                "Choose the header's role, or save the images as OME-Zarr with these axes."
+            )
+        marks[index] = f"<div class='mb-help' style='color:#92400E'>⚠ {text}</div>"
+    return marks
 
 
 def role_effect(role: str | None, low: int, high: int) -> str:

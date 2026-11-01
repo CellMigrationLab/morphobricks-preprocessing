@@ -526,11 +526,11 @@ def test_confirm_needs_valid_roles_and_a_checked_preview(experiment):
     assert "needs a role" in nb.role_notes[1].value
     assert "No role is chosen for the axis C (channel)" in nb.axis_status.value
     assert nb.confirm_button.disabled
-    nb.role_dropdowns[1].value = "T"
+    nb.role_dropdowns[1].value = "C"
     assert nb.confirm_button.disabled  # new roles: the preview must be checked again
     nb.preview_checked.button.click()
     assert not nb.confirm_button.disabled
-    assert nb.mapping.roles == ("Z", "T", "Y", "X")
+    assert nb.mapping.roles == ("Z", "C", "Y", "X")
 
 
 def test_confirmations_are_buttons_that_can_be_undone(experiment):
@@ -566,7 +566,7 @@ def test_confirmation_locks_and_unlocks(experiment):
     assert nb.confirmed_mapping == nb.mapping
     assert all(d.disabled for d in nb.role_dropdowns)
     assert nb.confirm_button.description == " Change axis roles"
-    assert "Axis roles confirmed" in nb.confirmed_status.value
+    assert "Axes checked: they are correct for every image" in nb.confirmed_status.value
     assert "Z (depth) → Z" in nb.confirmed_status.value
     nb.confirm_button.click()
     assert nb.confirmed_mapping is None

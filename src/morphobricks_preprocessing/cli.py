@@ -57,6 +57,7 @@ from .mask_scan import (
 )
 from .planes import DEFAULT_MEMORY_LIMIT, format_bytes
 from .report import (
+    axis_check_summary,
     balance_summary,
     design_summary,
     format_issues,
@@ -363,20 +364,28 @@ def _check(args: argparse.Namespace) -> int:
                 "Experiment design: not confirmed yet. 'run' writes experiment_design.csv to "
                 "the output folder for you to confirm."
             )
+    axis_errors = ()
     if pre.suggested_mapping is not None:
+        review = review_axes(pre.metadata, pre.suggested_mapping)
+        # The suggested roles are the header's own, so only an image that does not name its
+        # axes can fail the axis check here; 'run' checks the roles given with --axes.
+        axis_errors = review.axis_errors
+        print()
+        print(axis_check_summary(review))
+        if axis_errors:
+            print()
+            print(format_issues(axis_errors))
         print()
         print(
             f"Suggested option for 'run': --axes {pre.suggested_mapping.roles_string} "
             f"(axes in the files: {pre.suggested_mapping.axes})"
         )
-        type_review = review_image_type(
-            pre.metadata, review_axes(pre.metadata, pre.suggested_mapping)
-        )
+        type_review = review_image_type(pre.metadata, review)
         print(
             f"Suggested image type: {type_review.suggested}, because {type_review.reason}. "
             "'run' uses it unless you give --image-type."
         )
-    return 0 if pre.ok else 1
+    return 0 if pre.ok and not axis_errors else 1
 
 
 def _masks(args: argparse.Namespace) -> int:
@@ -476,6 +485,8 @@ def _run(args: argparse.Namespace) -> int:
     print(mapping_summary(mapping, pre.metadata.files))
     print()
     review = review_axes(pre.metadata, mapping, missing_as_singleton=args.missing_as_singleton)
+    print(axis_check_summary(review))
+    print()
     type_review = review_image_type(pre.metadata, review)
     image_type = args.image_type or type_review.suggested
     print(f"Image type: {image_type}")

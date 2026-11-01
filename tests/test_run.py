@@ -483,7 +483,10 @@ def test_changed_bin_count_rebuilds(experiment, reads):
 
 def test_changed_axis_mapping_rebuilds(experiment):
     run_experiment(experiment, ZYX)
-    result = run_experiment(experiment, AxisMapping("ZYX", "TYX"))
+    # The same images saved again as time-lapses: their headers now name T.
+    for seed, rel in enumerate(IMAGES):
+        write_data(experiment / rel, stack(seed), "TYX")
+    result = run_experiment(experiment, AxisMapping("TYX", "TYX"))
     assert result.rebuild_reason == "the axis mapping changed"
     records = read_plane_histograms(result.csv_path)
     assert {r.t for r in records} == {0, 1} and {r.z for r in records} == {0}

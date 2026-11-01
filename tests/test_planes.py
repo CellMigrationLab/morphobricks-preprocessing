@@ -110,7 +110,13 @@ def test_planes_match_the_source(tmp_path, page_reads, shape, axes, kwargs, role
     mapping = prefill_mapping(info.axes)
     if roles is not None:
         mapping = AxisMapping(info.axes, roles)
-    assert review_axes([info], mapping).ok
+    review = review_axes([info], mapping)
+    if axes is None:
+        # A plain stack is never analysed (axes_not_named); the reader still reads it with
+        # the confirmed roles to save it as OME-Zarr.
+        assert [i.code for i in review.issues] == ["axes_not_named"]
+    else:
+        assert review.ok
 
     planes = list(iter_planes(path, mapping))
     expected = expected_planes(data, mapping.roles)

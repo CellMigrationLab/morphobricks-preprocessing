@@ -44,7 +44,13 @@ from morphobricks_normalization.dtypes import default_bin_count, validate_bin_co
 from morphobricks_normalization.ranges import HistogramSettings, range_check_issues
 from morphobricks_normalization.records import PlaneRecord
 
-from .axes import AxisMapping, file_mapping_for, prefill_experiment_mapping, review_axes
+from .axes import (
+    AxisMapping,
+    AxisReview,
+    file_mapping_for,
+    prefill_experiment_mapping,
+    review_axes,
+)
 from .dataset import DatasetReport, check_dataset
 from .design import (
     DESIGN_FILENAME,
@@ -69,7 +75,7 @@ from .manifest import (
     read_manifest,
     write_manifest,
 )
-from .masks import MaskInventory, find_masks, mask_plane_issues
+from .masks import MaskInventory, find_masks, mask_plane_issues, mask_size_issues
 from .metadata import MetadataReport, TiffMetadata, inspect_images
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
@@ -461,12 +467,7 @@ def run_experiment(
         *image_type_issues(image_type, type_review),
         *design_problems,
         *dataset.issues,
-        *(pre.masks.issues if pre.masks is not None else ()),
-        *(
-            mask_plane_issues(pre.masks, pre.metadata.files, review.file_mappings)
-            if pre.masks is not None
-            else ()
-        ),
+        *(mask_issues(pre.masks, pre.metadata, review) if pre.masks is not None else ()),
     ]
     dtype = pre.metadata.dtype
     bins = None
@@ -707,6 +708,26 @@ def run_experiment(
         intensity=intensity,
         **counts,
     )
+
+
+def mask_issues(
+    masks: MaskInventory, metadata: MetadataReport, review: AxisReview
+) -> list[ValidationIssue]:
+    """Return the mask issues of a run, with the masks' sizes and planes by the confirmed roles.
+
+    :func:`.masks.find_masks` compares a mask's Y and X with those its image's header
+    names; with confirmed roles that comparison is replaced by
+    :func:`.masks.mask_size_issues`, and the planes are checked by
+    :func:`.masks.mask_plane_issues`. Images with an axis error are never read, so their
+    masks are left out of both: a size or plane message would only repeat the axis error
+    in another form.
+    """
+    skip = review.axis_error_files
+    return [
+        *(i for i in masks.issues if i.code != "mask_size_mismatch"),
+        *mask_size_issues(masks, metadata.files, review.file_mappings, skip=skip),
+        *mask_plane_issues(masks, metadata.files, review.file_mappings, skip=skip),
+    ]
 
 
 class _OutputRollbackError(RuntimeError):

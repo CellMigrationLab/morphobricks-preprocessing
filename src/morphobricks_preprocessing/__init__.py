@@ -12,6 +12,7 @@ from importlib.metadata import PackageNotFoundError, version
 # deprecated stand-ins for one version (see _moved).
 from . import _moved, csv_io, dtypes, histogram, normalization, pooling, records  # noqa: F401
 from .axes import (
+    AXIS_ERROR_CODES,
     AxisMapping,
     AxisReview,
     axis_length_ranges,
@@ -20,6 +21,7 @@ from .axes import (
     declared_axes_transposed,
     declared_mapping,
     file_mapping_for,
+    header_axis_issue,
     prefill_experiment_mapping,
     prefill_mapping,
     reference_axes,
@@ -121,6 +123,7 @@ from .masks import (
     check_labels,
     find_masks,
     mask_plane_issues,
+    mask_size_issues,
     read_mask,
     read_mask_file,
 )
@@ -208,6 +211,7 @@ except PackageNotFoundError:  # running from a source checkout without installin
     __version__ = "0.0.0+unknown"
 
 __all__ = [
+    "AXIS_ERROR_CODES",
     "CONSISTENCY_CODES",
     "DEFAULT_MEMORY_LIMIT",
     "DEFAULT_THRESHOLDS",
@@ -324,6 +328,7 @@ __all__ = [
     "group_summaries",
     "has_errors",
     "header_axes",
+    "header_axis_issue",
     "image_type_issues",
     "inspect_experiment",
     "inspect_image",
@@ -338,6 +343,7 @@ __all__ = [
     "images_named_as_masks",
     "mask_name_issues",
     "mask_plane_issues",
+    "mask_size_issues",
     "mask_thresholds",
     "min_max",
     "named_axes",

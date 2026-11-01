@@ -86,7 +86,9 @@ src/morphobricks_preprocessing/
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed),
-                    check_declared_axes (a brick's declared axes against the header, contract §16)
+                    header_axis_issue/axis_disagreements (the axis check: confirmed roles
+                    against the header's named axes, contract §2), check_declared_axes and
+                    declared_axes_transposed (deprecated in v0.4.0, removed in v0.5.0)
   planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), table rows as
                     XYC planes whose channels are read one at a time (iter_xyc_planes, XycPlane),
                     memory estimate,
@@ -225,6 +227,15 @@ functions the tests use.
   - X/Y/Z/C/T keep their role;
   - `S` (RGB samples) becomes C when there is no other C;
   - everything else (`I`, `Q`, …) is left unassigned: **never guess** depth vs time.
+- **Axis check (v0.4.0, plan §12 question 45):** every TIFF's confirmed roles must agree
+  with the axes its header names (`axes.header_axis_issue`, position by position, on
+  `metadata.named_axes`). Otherwise one of three errors naming the files with their header
+  and confirmed axes: `axes_not_named` (plain stack), `axes_yx_swapped`,
+  `axes_contradict_header`. Such an image is **never read** (not transposed, not under a
+  contradicted declaration); the remedy is an OME-Zarr copy with the confirmed axes.
+  `AxisReview.axis_error_files` lists them; mask sizes and planes are checked by the
+  confirmed roles and skip those images (`run.mask_issues`). OME-Zarr images never have
+  these errors.
 - **Position-like axes** (`R` tile, `M` mosaic, `J` column, `K` row) cannot get a role. If
   they hold more than one plane: `unsupported_axis` error.
 - **Missing axes:** a file lacking some of the mapping's axes (e.g. `ZYX` next to `ZCYX`) is
