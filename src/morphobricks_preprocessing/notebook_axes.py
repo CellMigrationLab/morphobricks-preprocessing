@@ -18,7 +18,8 @@ from .validation import plural
 def axis_check_html(review: AxisReview) -> str:
     """Show the axis check (contract §2) as one card: errors or plain stacks.
 
-    The three codes (``axes_yx_swapped``, ``axes_contradict_header``, ``axes_not_named``)
+    The four codes (``axes_yx_swapped``, ``axes_contradict_header``, ``axes_x_before_y``,
+    ``axes_not_named``)
     share one card; each group of files is listed with its header and confirmed axes, the
     errors with the likely cause and the two fixes. The codes stay in small print, for logs.
 
@@ -89,6 +90,13 @@ def header_marks(mapping: AxisMapping, files: Iterable) -> dict[int, str]:
             )
             continue
         codes = codes - {"axes_not_named"}
+        if codes == {"axes_x_before_y"}:
+            marks[index] = (
+                "<div class='mb-help' style='color:#92400E'>⚠ These roles put X before Y, and "
+                "nothing is read transposed. Choose Y before X, or save the images again with "
+                "Y before X.</div>"
+            )
+            continue
         named = ", ".join(axis_name(letter) for letter in sorted(letters[index]) if letter)
         what = "swaps the Y and X it names" if codes == {"axes_yx_swapped"} else "contradicts it"
         text = (
