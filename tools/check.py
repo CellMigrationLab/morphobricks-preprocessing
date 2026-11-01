@@ -39,6 +39,10 @@ from code_rules import (
 
 ROOT = Path(__file__).resolve().parents[1]
 LINTED = ("src", "tests", "tools")
+TESTS = "tests/"
+"""Tests are exempt from the annotation and docstring rules (owner decision, 1 November
+2026): Ruff ignores ``ANN`` and ``D`` there (``pyproject.toml``), and the private-docstring
+rule leaves them out here. Every other rule applies."""
 
 
 def config() -> dict:
@@ -71,7 +75,8 @@ def code_rule_problems() -> tuple[list[str], dict[str, int]]:
     problems = []
     for name, text in sources:
         problems += check_source(text, name)
-        problems += missing_private_docstrings(text, name)
+        if not name.startswith(TESTS):
+            problems += missing_private_docstrings(text, name)
         problems += reserved_name_problems(text, name, settings["owner"])
         path = ROOT / name
         if package_dir in path.parents:

@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Iterable
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,8 +22,9 @@ from morphobricks_normalization.records import PlaneRecord
 
 from ..axes import (
     AxisMapping,
-    review_axes,
 )
+from ..axis_check import ConfirmedAxes
+from ..axis_review import review_axes
 from ..dataset import check_dataset
 from ..design import (
     DESIGN_FILENAME,
@@ -33,26 +34,27 @@ from ..design import (
     write_experiment_design,
 )
 from ..discovery import default_output_folder
+from ..fingerprint import unchanged_confirmation
 from ..image_type import check_image_type, image_type_issues, review_image_type
 from ..intensity import check_intensities
 from ..manifest import (
     MANIFEST_FILENAME,
-    FileEntry,
     NarrowRange,
     RunManifest,
     RunSettings,
-    file_entry_for,
     file_sha256,
     package_versions,
     write_manifest,
 )
 from ..mask_checks import mask_issues
+from ..mask_record import mask_manifest
 from ..planes import (
     DEFAULT_MEMORY_LIMIT,
     PlaneReadError,
     check_planes,
 )
 from ..validation import ValidationIssue, error, has_errors, plural
+from .entries import compare_with_previous, file_entries
 from .preflight import preflight
 from .publish import _staged_outputs
 from .result import RunResult
@@ -64,7 +66,7 @@ logger = logging.getLogger(__name__)
 
 def run_experiment(  # noqa: C901, PLR0913, PLR0915
     experiment_root: str | os.PathLike,
-    mapping: AxisMapping,
+    mapping: AxisMapping | ConfirmedAxes,
     *,
     output_folder: str | os.PathLike | None = None,
     bin_count: int | None = None,
@@ -87,7 +89,9 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
     experiment_root
         The experiment folder. It is never written to.
     mapping
-        The experiment axis mapping the user confirmed.
+        The experiment axis mapping the user confirmed: for every file the run finds, or,
+        as a :class:`.axis_check.ConfirmedAxes`, only for the files it names (a plain stack
+        outside them is the error ``plain_stack_not_confirmed``).
     output_folder
         Where to write; defaults to :func:`default_output_folder`. Created if
         needed; must not be inside the experiment.
@@ -162,6 +166,8 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
     pre = preflight(
         root, output, exclude=exclude, masks_folder=masks_folder, ome_zarr_labels=ome_zarr_labels
     )
+    # A plain stack changed since its roles were confirmed is not covered (audit 2 B-1).
+    mapping = unchanged_confirmation(mapping, root)
     review = review_axes(pre.metadata, mapping, missing_as_singleton=missing_as_singleton)
     type_review = review_image_type(pre.metadata, review)
     dataset = pre.dataset
@@ -210,53 +216,17 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
         histogram=histogram_settings or HistogramSettings(),
     )
     previous, previous_records, reason = _load_previous(
-        output, settings, mapping, dtype.name, force_rebuild
+        output, settings, review.mapping, dtype.name, force_rebuild
     )
     labels = {image: leaf.labels for leaf in pre.discovery.leaves for image in leaf.images}
     in_blocks = {path for i in issues if i.code == "planes_read_in_blocks" for path in i.paths}
-    headers = {f.relative_path: f for f in pre.metadata.files}
-    entries: dict[str, FileEntry] = {}
-    new, changed, unchanged = [], [], []
-    for rel, file_mapping in sorted(review.file_mappings.items()):
-        header = headers[rel]
-        entries[rel] = file_entry_for(
-            root,
-            rel,
-            labels[rel],
-            file_mapping,
-            channel_names=header.channel_names,
-            significant_bits=header.significant_bits,
-            read_in_blocks=rel in in_blocks,
-            channel_names_trimmed=header.channel_names_trimmed,
-        )
-        if header.channel_names_trimmed:
-            logger.info(
-                "Leading or trailing whitespace was removed from the channel names of %s", rel
-            )
-        before = previous.file(rel) if previous is not None else None
-        if before is None:
-            new.append(rel)
-        elif (
-            before.same_source(entries[rel])
-            # During a rebuild there are no rows to check; otherwise the rows must be complete.
-            and (reason is not None or len(previous_records.get(rel, ())) == before.plane_count)
-        ):
-            unchanged.append(rel)
-        else:
-            changed.append(rel)
-    removed = sorted(
-        f.relative_path
-        for f in (previous.files if previous else ())
-        if f.relative_path not in entries
+    entries = file_entries(pre, review, root, in_blocks)
+    found = compare_with_previous(
+        entries, previous, previous_records, reason is not None, settings, root
     )
+    new, changed, unchanged = found.new, found.changed, found.unchanged
     to_read = sorted([*new, *changed, *(unchanged if reason else ())])
-    counts = {
-        "new": tuple(new),
-        "changed": tuple(changed),
-        "unchanged": tuple(unchanged),
-        "removed": tuple(removed),
-        "rebuild_reason": reason,
-    }
+    counts = {**asdict(found), "rebuild_reason": reason}
 
     records: list[PlaneRecord] = []
     narrow: list[NarrowRange] = []
@@ -324,7 +294,7 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
             experiment_root=root.as_posix(),
             dtype=dtype.name,
             settings=settings,
-            mapping=mapping,
+            mapping=review.mapping,
             files=tuple(
                 replace(entry, plane_count=per_file[rel]) for rel, entry in sorted(entries.items())
             ),
@@ -332,7 +302,7 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
             versions=package_versions(),
             written_at=datetime.now(UTC).isoformat(timespec="seconds"),
             experiment_design_sha256=design_sha256,
-            masks=None if pre.masks is None else pre.masks.to_manifest(),
+            masks=None if pre.masks is None else mask_manifest(pre.masks, root),
             image_type=image_type,
             channels_from_rgb_samples=type_review.channels_from_rgb_samples,
             intensity_checks=intensity.settings,

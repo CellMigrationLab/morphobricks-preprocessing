@@ -13,6 +13,7 @@ Nothing here reads pixels.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .metadata import OPEN_AXIS, TiffMetadata, named_axes
@@ -20,6 +21,7 @@ from .validation import ValidationIssue, error, plural, warning
 
 if TYPE_CHECKING:  # the mapping class lives in .axes, which imports this module
     from .axes import AxisMapping
+    from .fingerprint import Fingerprint
 
 POSITION_AXES = frozenset("RMKJ")
 """``tifffile`` letters for positions in a sample (tile, mosaic, row, column): they identify
@@ -35,7 +37,11 @@ AXES_YX_SWAPPED = "axes_yx_swapped"
 AXES_CONTRADICT_HEADER = "axes_contradict_header"
 """An error: confirmed roles that give a named axis another role than the header's."""
 
-AXIS_ERROR_CODES = (AXES_YX_SWAPPED, AXES_CONTRADICT_HEADER)
+AXES_X_BEFORE_Y = "axes_x_before_y"
+"""An error: confirmed roles that put X before Y, for example a plain stack confirmed
+``TXY``. Reading it would transpose every plane, and nothing is ever read transposed."""
+
+AXIS_ERROR_CODES = (AXES_YX_SWAPPED, AXES_CONTRADICT_HEADER, AXES_X_BEFORE_Y)
 """The errors of an image whose confirmed roles disagree with the axes its header names
 (contract §2). Such an image is never read, not transposed and not under a contradicted
 declaration: the user corrects the roles, or saves the image as a named-axis copy."""
@@ -64,6 +70,8 @@ def header_axis_issue(meta: TiffMetadata, mapping: AxisMapping) -> str | None:
     - a named axis with its own letter as role, the RGB samples ``S`` as C when the header
       has no C, and a length-1 axis without a role agree;
     - the named Y given role X and the named X role Y: ``axes_yx_swapped``;
+    - roles confirmed for a plain stack's unnamed axes that put X before Y (``TXY``):
+      ``axes_x_before_y``, as nothing is ever read transposed;
     - any other role for a named axis: ``axes_contradict_header``. That includes a Z read
       as T, and a named axis that is not a role (angle ``A``, lambda ``E``, ...) given one.
       A named axis longer than 1 without a role is :func:`check_mapping`'s
@@ -83,12 +91,13 @@ def header_axis_issue(meta: TiffMetadata, mapping: AxisMapping) -> str | None:
     Returns
     -------
     str or None
-        ``"axes_contradict_header"``, ``"axes_yx_swapped"`` or ``"axes_not_named"`` (the
-        first of these when several apply), or None when the roles agree with the header.
+        ``"axes_contradict_header"``, ``"axes_yx_swapped"``, ``"axes_x_before_y"`` or
+        ``"axes_not_named"`` (the first of these when several apply), or None when the roles
+        agree with the header.
     """
     found = set(axis_disagreements(meta, mapping).values())
     # Errors first (a contradiction is more than a swap); then the plain stack's warning.
-    for code in (AXES_CONTRADICT_HEADER, AXES_YX_SWAPPED, AXES_NOT_NAMED):
+    for code in (AXES_CONTRADICT_HEADER, AXES_YX_SWAPPED, AXES_X_BEFORE_Y, AXES_NOT_NAMED):
         if code in found:
             return code
     return None
@@ -110,9 +119,9 @@ def axis_disagreements(meta: TiffMetadata, mapping: AxisMapping) -> dict[int, st
     Returns
     -------
     dict
-        ``{dimension: code}``, with ``"axes_not_named"``, ``"axes_yx_swapped"`` or
-        ``"axes_contradict_header"``; empty for an OME-Zarr image, an unreadable one, or
-        roles that agree with the header.
+        ``{dimension: code}``, with ``"axes_not_named"``, ``"axes_yx_swapped"``,
+        ``"axes_x_before_y"`` or ``"axes_contradict_header"``; empty for an OME-Zarr
+        image, an unreadable one, or roles that agree with the header.
     """
     if not meta.readable or meta.is_ome_zarr or len(mapping.roles) != len(meta.axes):
         return {}
@@ -132,6 +141,23 @@ def axis_disagreements(meta: TiffMetadata, mapping: AxisMapping) -> dict[int, st
         found[index] = (
             AXES_YX_SWAPPED if letter in "YX" and role in "YX" else AXES_CONTRADICT_HEADER
         )
+    return _x_before_y(mapping.roles, found)
+
+
+def _x_before_y(roles: tuple[str | None, ...], found: dict[int, str]) -> dict[int, str]:
+    """Mark the Y and X a plain stack's roles put X before Y, unless already an error.
+
+    Only roles the user confirmed for axes the metadata does not name; a header that names
+    X before Y is read as it names them (unchanged in v0.4.0).
+    """
+    if "X" not in roles or "Y" not in roles or roles.index("X") > roles.index("Y"):
+        return found
+    yx = (roles.index("Y"), roles.index("X"))
+    if AXES_NOT_NAMED not in (found.get(index) for index in yx):
+        return found
+    for index in yx:
+        if found.get(index, AXES_NOT_NAMED) == AXES_NOT_NAMED:
+            found[index] = AXES_X_BEFORE_Y
     return found
 
 
@@ -184,6 +210,9 @@ def axis_check_issues(
                     "reads the same axes.",
                 )
             )
+            continue
+        if code == AXES_X_BEFORE_Y:
+            issues.append(error(code, _x_before_y_text(n, details), paths, _SAVE_Y_FIRST))
             continue
         if code == AXES_YX_SWAPPED:
             message = (
@@ -241,6 +270,20 @@ def likely_axis_cause(meta: TiffMetadata, mapping: AxisMapping, code: str) -> st
     return "the tool that saved the file wrote a default or wrong axis order in its metadata"
 
 
+def _x_before_y_text(n: str, details: str) -> str:
+    """Say that the roles confirmed for ``n`` images put X before Y."""
+    return (
+        f"The axes confirmed for {n} put X before Y ({details}). Reading them would "
+        "transpose every plane, and nothing is ever read transposed."
+    )
+
+
+_SAVE_Y_FIRST = (
+    "Save these images again with Y before X (rows, then columns), or as named-axis copies "
+    "(OME-TIFF) with Y before X, then run preprocessing on them. If the roles are wrong, "
+    "correct them."
+)
+
 _TWO_FIXES = (
     "Two fixes. Correct the axes: if the header is right, choose its roles. Or convert: if "
     "your roles are right, save these images as named-axis copies (OME-TIFF) with them, "
@@ -269,7 +312,9 @@ def _some(paths: Iterable[str], shown: int = 3) -> str:
 
 
 def check_header_axes(
-    files: Iterable[tuple[TiffMetadata, AxisMapping]], analysed: Mapping[str, AxisMapping]
+    files: Iterable[tuple[TiffMetadata, AxisMapping]],
+    analysed: Mapping[str, AxisMapping],
+    confirmed: frozenset[str] | None = None,
 ) -> tuple[list[ValidationIssue], dict[str, str]]:
     """Run the axis check on every file and say where each analysed file's roles come from.
 
@@ -280,6 +325,9 @@ def check_header_axes(
     analysed
         The files that are read (:attr:`.axes.AxisReview.file_mappings`); only these get an
         ``axes_from`` entry.
+    confirmed
+        The files the user's confirmation covers (:class:`ConfirmedAxes`), or None for every
+        file given. A plain stack outside them is the error ``plain_stack_not_confirmed``.
 
     Returns
     -------
@@ -296,4 +344,78 @@ def check_header_axes(
         if meta.relative_path in analysed:
             unnamed = AXES_NOT_NAMED in axis_disagreements(meta, mapping).values()
             axes_from[meta.relative_path] = AXES_FROM_CONFIRMED if unnamed else AXES_FROM_HEADER
-    return axis_check_issues(found), axes_from
+    unconfirmed = [
+        path
+        for path, how in sorted(axes_from.items())
+        if how == AXES_FROM_CONFIRMED and confirmed is not None and path not in confirmed
+    ]
+    return [*axis_check_issues(found), *_unconfirmed_issues(unconfirmed)], axes_from
+
+
+@dataclass(frozen=True)
+class ConfirmedAxes:
+    """The user's confirmation of an axis mapping, for the files it was given for.
+
+    A plain stack names no axes, so its roles are only the user's statement about the files
+    the user looked at, as they were then (audit 2 B-1): a plain stack added later, or
+    changed since (another :class:`.fingerprint.Fingerprint`), is not covered and must be
+    confirmed again, never read with roles confirmed for other files or other contents.
+    :func:`.fingerprint.confirm_axes` records the files with their fingerprints.
+
+    Attributes
+    ----------
+    mapping
+        The experiment mapping confirmed.
+    files
+        ``{relative path: Fingerprint}``: the images it was confirmed for, relative to the
+        experiment root, each with its fingerprint when the user confirmed it.
+    """
+
+    mapping: AxisMapping
+    files: Mapping[str, Fingerprint] = field(hash=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.files, Mapping):
+            raise TypeError(
+                "ConfirmedAxes.files maps each confirmed image to its fingerprint when it was "
+                "confirmed (fingerprint.confirm_axes), so a changed image is not covered"
+            )
+        object.__setattr__(self, "files", dict(sorted(self.files.items())))
+
+
+def confirmation_of(
+    mapping: AxisMapping | ConfirmedAxes,
+) -> tuple[AxisMapping, frozenset[str] | None]:
+    """Split a confirmation into its mapping and the files it covers (None for every file).
+
+    Parameters
+    ----------
+    mapping
+        An :class:`.axes.AxisMapping`, confirmed for every file given, or a
+        :class:`ConfirmedAxes`.
+
+    Returns
+    -------
+    tuple
+        ``(mapping, files)``.
+    """
+    if isinstance(mapping, ConfirmedAxes):
+        return mapping.mapping, frozenset(mapping.files)
+    return mapping, None
+
+
+def _unconfirmed_issues(paths: list[str]) -> list[ValidationIssue]:
+    """Return the error naming plain stacks the user's confirmation does not cover."""
+    if not paths:
+        return []
+    return [
+        error(
+            "plain_stack_not_confirmed",
+            f"{plural(len(paths), 'image')} do not name their axes, and the roles were not "
+            f"confirmed for them ({_some(paths)}): they are new or changed since the roles "
+            "were confirmed. A plain stack's roles cover only the files they were confirmed "
+            "for, so they are not read with roles confirmed for other images.",
+            paths,
+            "Check their roles with the preview and confirm them again (the CLI: give --axes).",
+        )
+    ]

@@ -14,13 +14,11 @@ from .axes import (
     AxisMapping,
     AxisReview,
     axis_length_ranges,
-    check_mapping,
     declared_mapping,
     file_mapping_for,
     prefill_experiment_mapping,
     prefill_mapping,
     reference_axes,
-    review_axes,
 )
 from .axis_check import (
     AXIS_CHECK_CODES,
@@ -29,6 +27,7 @@ from .axis_check import (
     header_axis_issue,
     likely_axis_cause,
 )
+from .axis_review import check_mapping, review_axes
 from .dataset import (
     CONSISTENCY_CODES,
     BalanceCell,
@@ -100,7 +99,6 @@ from .manifest import (
     ManifestFormatError,
     RunManifest,
     RunSettings,
-    check_sources,
     file_sha256,
     read_manifest,
     source_fingerprint,
@@ -174,6 +172,7 @@ from .planes import (
 )
 from .report import GroupSummary, group_summaries
 from .run import Preflight, RunResult, SamplePlane, preflight, run_experiment, sample_planes
+from .sources import check_sources
 from .validation import Severity, ValidationIssue, has_errors
 from .zarr_input import (
     NgffError,

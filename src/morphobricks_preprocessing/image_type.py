@@ -20,7 +20,8 @@ from dataclasses import dataclass
 
 from morphobricks_normalization.rgb import check_rgb
 
-from .axes import AxisReview, channel_count
+from .axes import AxisReview
+from .axis_review import channel_count
 from .metadata import MetadataReport
 from .validation import ValidationIssue, error
 

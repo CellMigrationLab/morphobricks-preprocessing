@@ -289,14 +289,8 @@ def test_the_run_records_the_masks_in_the_manifest(experiment, masks, tmp_path):
     assert result.written
     recorded = read_manifest(out / "run_manifest.json").masks
     assert recorded["types"] == ["Cells", "Nuclei"]
-    assert recorded["files"][0] == {
-        "image": "ctrl/rep1/a.tif",
-        "type": "Cells",
-        "path": "Cells/ctrl/rep1/a.tif",
-        "source": "folder",
-        "axes": "YX",
-        "shape": [16, 20],
-    }
+    # Each entry's keys are checked in test_manifest_v2 (manifest version 2).
+    assert recorded["files"][0]["path"] == "Cells/ctrl/rep1/a.tif"
     # Without masks the manifest has no masks key, as before.
     run_experiment(experiment, prefill_mapping("CYX"), output_folder=out)
     data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))

@@ -67,9 +67,9 @@ from .axes import (
     axis_length_ranges,
     axis_name,
     file_mapping_for,
-    review_axes,
 )
 from .axis_check import AXIS_CHECK_CODES
+from .axis_review import review_axes
 from .dataset import CONSISTENCY_CODES, BalanceTable, DatasetReport, check_dataset
 from .design import (
     DESIGN_FILENAME,

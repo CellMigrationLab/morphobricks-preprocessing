@@ -27,6 +27,8 @@ def entry(path="cond/rep/a.tif", **kwargs):
         "labels": ("cond", "rep", "single"),
         "axes": "ZYX",
         "plane_count": 3,
+        "roles": ("Z", "Y", "X"),
+        "axes_from": "header",
     }
     return FileEntry(**{**values, **kwargs})
 
@@ -64,7 +66,7 @@ def test_written_json_is_readable_and_stable(tmp_path):
     raw = path.read_bytes()
     assert b"\r\n" not in raw and raw.endswith(b"\n")
     data = json.loads(raw)
-    assert data["manifest_version"] == "1" and data["schema_version"] == "4"
+    assert data["manifest_version"] == "2" and data["schema_version"] == "4"
     assert data["axis_mapping"] == {"axes": "ZYX", "roles": ["Z", "Y", "X"]}
     assert data["settings"]["exclude"] == ["a.tif", "b.tif"]
     assert data["labels"] == [
@@ -151,7 +153,7 @@ def test_image_type_round_trips_and_is_none_when_absent(tmp_path):
     assert read_manifest(path) == original
     data = json.loads(path.read_bytes())
     assert (data["image_type"], data["channels_from_rgb_samples"]) == ("rgb", True)
-    assert data["manifest_version"] == "1"
+    assert data["manifest_version"] == "2"
     del data["image_type"], data["channels_from_rgb_samples"]  # written before P4
     path.write_text(json.dumps(data), encoding="utf-8")
     read = read_manifest(path)
@@ -313,7 +315,11 @@ def test_each_files_axis_roles_round_trip_and_are_none_when_absent(tmp_path):
     assert read_manifest(path) == original
     data = json.loads(path.read_bytes())
     assert [f["roles"] for f in data["files"]] == [["Z", "Y", "X"], [None, None, None]]
-    del data["files"][0]["roles"]  # written before the roles were recorded
+    del data["files"][0]["roles"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ManifestFormatError, match="has no roles or axes_from"):
+        read_manifest(path)  # required in manifest version 2
+    data["manifest_version"] = "1"  # written before the roles were recorded
     path.write_text(json.dumps(data), encoding="utf-8")
     assert read_manifest(path).files[0].roles is None
     data["files"][1]["roles"] = ["Z", "Y"]  # not one role per axis

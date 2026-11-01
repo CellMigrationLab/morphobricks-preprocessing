@@ -179,7 +179,7 @@ def test_a_version_2_table_is_recomputed_on_the_next_run(tmp_path, pixels):
     assert second.read == tuple(sorted(rel for rel, _, _ in EXPERIMENTS["float32"][2]))
     assert second.csv_path.read_bytes() == table
     data = json.loads(second.manifest_path.read_text(encoding="utf-8"))
-    assert (data["manifest_version"], data["schema_version"]) == ("1", "4")
+    assert (data["manifest_version"], data["schema_version"]) == ("2", "4")
     assert read_manifest(second.manifest_path).csv_sha256 == file_sha256(second.csv_path)
 
 
