@@ -118,10 +118,11 @@ def test_rgb_is_refused_for_images_that_cannot_be_rgb(experiment, capsys):
     out = capsys.readouterr().out
     assert "Image type: fluorescence" in out
     assert "Give --image-type rgb if these are rgb images." in out
-    assert main(["run", str(experiment), "--axes", "TCYX", "--image-type", "rgb"]) == 0
+    assert main(["run", str(experiment), "--axes", "ZCYX", "--image-type", "rgb"]) == 0
     capsys.readouterr()
     assert main(["run", str(experiment), "--axes", "ZYCX", "--image-type", "rgb"]) == 1
     out = capsys.readouterr().out
+    assert "contradict their header" in out
     assert "RGB images need exactly three colour channels" in out
     assert "8 channels of type uint8" in out and "Nothing was written" in out
 
@@ -172,7 +173,7 @@ def test_invalid_check_limits_are_refused(experiment, capsys):
 def test_run_options_reach_the_run(experiment, tmp_path, capsys):
     out_dir = tmp_path / "results"
     log = tmp_path / "run.log"
-    args = ["run", str(experiment), "--axes", "TCYX", "--output", str(out_dir)]
+    args = ["run", str(experiment), "--axes", "ZCYX", "--output", str(out_dir)]
     args += ["--bins", "16", "--memory-limit", "256MiB", "--exclude", "drug/rep1/a.tif"]
     args += ["--log", str(log)]
     confirm_design(experiment, out_dir)
@@ -181,7 +182,7 @@ def test_run_options_reach_the_run(experiment, tmp_path, capsys):
     assert manifest.settings.bin_count == 16
     assert manifest.settings.memory_limit == 256 * 2**20
     assert manifest.settings.exclude == ("drug/rep1/a.tif",)
-    assert manifest.mapping.roles == ("T", "C", "Y", "X")
+    assert manifest.mapping.roles == ("Z", "C", "Y", "X")
     assert "Wrote" in log.read_text(encoding="utf-8")
     capsys.readouterr()
     assert main(args + ["--force-rebuild"]) == 0

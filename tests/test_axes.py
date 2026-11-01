@@ -256,11 +256,13 @@ def test_channel_count_follows_the_confirmed_channel_axis():
     report = MetadataReport(tuple(files), tuple(check_metadata(files)))
     assert "different_channel_counts" not in codes(report.issues)
     as_time = review_axes(report, prefill_mapping("IYX").with_role(0, "T"))
-    assert as_time.ok
+    # A plain stack never names its axes: read with the confirmed roles, with a warning.
+    assert as_time.ok and codes(as_time.issues) == ["axes_not_named"]
     as_channel = review_axes(report, prefill_mapping("IYX").with_role(0, "C"))
     assert codes(as_channel.combined_issues(report)) == [
         "different_channel_counts",
         "different_plane_counts",
+        "axes_not_named",
     ]
 
 
@@ -303,8 +305,9 @@ def test_differently_arranged_file_is_an_inconsistent_mapping():
 def test_review_includes_the_mapping_rules():
     files = [meta("a.tif", (5, 8, 8), "IYX")]
     review = review_axes(files, prefill_mapping("IYX"))
-    assert not review.ok and codes(review.issues) == ["unassigned_axis"]
-    assert review_axes(files, prefill_mapping("IYX").with_role(0, "T")).ok
+    assert not review.ok and codes(review.issues) == ["unassigned_axis", "axes_not_named"]
+    as_time = review_axes(files, prefill_mapping("IYX").with_role(0, "T"))
+    assert as_time.ok and codes(as_time.issues) == ["axes_not_named"]
 
 
 def test_review_from_metadata_report_replaces_missing_axes(tmp_path):
@@ -328,8 +331,10 @@ def test_review_from_metadata_report_replaces_missing_axes(tmp_path):
         "unreadable_tiff",
         "different_channel_counts",
     ]
+    # The channel count is the confirmed roles' (C read as T gives one channel), but a named
+    # C read as T contradicts the header (v0.4.0).
     as_time = review_axes(report, mapping.with_role(1, "T"), missing_as_singleton=True)
-    assert codes(as_time.combined_issues(report)) == ["unreadable_tiff"]
+    assert codes(as_time.combined_issues(report)) == ["unreadable_tiff", "axes_contradict_header"]
 
 
 def test_combined_issues_put_errors_first(tmp_path):
@@ -337,7 +342,11 @@ def test_combined_issues_put_errors_first(tmp_path):
     write_tiff(tmp_path / "b.tif", (3, 8, 9), axes="QYX")
     report = inspect_images(tmp_path, ["a.tif", "b.tif"])
     review = review_axes(report, prefill_mapping("QYX"))
-    assert codes(review.combined_issues(report)) == ["unassigned_axis", "different_sizes"]
+    assert codes(review.combined_issues(report)) == [
+        "unassigned_axis",
+        "different_sizes",
+        "axes_not_named",
+    ]
 
 
 def test_roles_string_round_trips():

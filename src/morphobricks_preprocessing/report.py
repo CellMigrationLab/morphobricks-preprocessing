@@ -14,7 +14,7 @@ from morphobricks_normalization.histogram import PlaneHistogram
 from morphobricks_normalization.pooling import NoValidPixelsError, PooledHistogram
 from morphobricks_normalization.records import LEVELS, PlaneRecord, group_records
 
-from .axes import AxisMapping, axis_length_ranges, axis_name
+from .axes import AxisMapping, AxisReview, axis_length_ranges, axis_name
 from .dataset import BalanceTable
 from .design import ExperimentDesign
 from .discovery import DiscoveryResult
@@ -143,6 +143,30 @@ def mapping_summary(mapping: AxisMapping, files: Iterable = ()) -> str:
         size = f", length {length}" if length else ""
         lines.append(f"  {axis_name(axis)}{size} -> {role or 'no role'}")
     return "\n".join(lines)
+
+
+def axis_check_summary(review: AxisReview) -> str:
+    """Say in one line how the axis check went (contract §2), for the CLI.
+
+    The success message names what was checked. With axis errors it says how many images
+    cannot be read and that the errors (with the likely cause and the two fixes) are listed;
+    with plain stacks, that their roles are recorded as confirmed.
+    """
+    if review.axis_errors:
+        n = plural(len(review.axis_error_files), "image")
+        return (
+            f"Axes check: {n} cannot be read with these roles (see the errors below): correct "
+            "the axes, or save named-axis copies with 'convert'."
+        )
+    if review.confirmed_files:
+        n = plural(len(review.confirmed_files), "image")
+        return (
+            f"Axes checked: the roles agree with every header; {n} do not name their axes, "
+            "so their roles are recorded as confirmed by you (see the warning)."
+        )
+    return (
+        "Axes checked: every image names its axes in its metadata, and the roles agree with them."
+    )
 
 
 def preflight_summary(pre: Preflight) -> str:

@@ -69,6 +69,7 @@ from .axes import (
     file_mapping_for,
     review_axes,
 )
+from .axis_check import AXIS_CHECK_CODES
 from .dataset import CONSISTENCY_CODES, BalanceTable, DatasetReport, check_dataset
 from .design import (
     DESIGN_FILENAME,
@@ -94,6 +95,7 @@ from .intensity import (
     repeat_distributions,
 )
 from .manifest import MANIFEST_FILENAME, ManifestFormatError, read_manifest
+from .notebook_axes import axis_check_html, header_marks
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
     Plane,
@@ -1378,10 +1380,13 @@ class PreprocessingNotebook:
             self.axis_status.value = ui.status("error", str(exc))
             return
         ranges = axis_length_ranges(self.mapping, self.preflight.metadata.files)
-        for note, role, (low, high) in zip(
-            self.role_notes, self.mapping.roles, ranges, strict=True
+        marks = header_marks(self.mapping, self.preflight.metadata.files)
+        for index, (note, role, (low, high)) in enumerate(
+            zip(self.role_notes, self.mapping.roles, ranges, strict=True)
         ):
-            note.value = f"<div class='mb-help'>{role_effect(role, low, high)}</div>"
+            note.value = (
+                f"<div class='mb-help'>{role_effect(role, low, high)}</div>{marks.get(index, '')}"
+            )
         self.plane_summary.value = plane_summary_html(self.mapping, ranges)
         review = review_axes(
             self.preflight.metadata,
@@ -1389,12 +1394,16 @@ class PreprocessingNotebook:
             missing_as_singleton=self.missing_as_singleton.value,
         )
         if review.issues:
-            self.axis_status.value = issues_html(review.issues)
+            others = [i for i in review.issues if i.code not in AXIS_CHECK_CODES]
+            self.axis_status.value = axis_check_html(review) + (
+                issues_html(others) if others else ""
+            )
             self.axis_next.value = ""
         else:
             self.axis_status.value = ui.status(
                 "ok",
-                "These roles are valid for every image.",
+                "These roles are valid for every image, and agree with the axes their "
+                "metadata names.",
             )
             self.axis_next.value = ui.next_steps(
                 "Check the preview in Step 2, then confirm the axis roles.",
@@ -1517,7 +1526,30 @@ class PreprocessingNotebook:
                 )
                 if r is not None
             ]
-            self.confirmed_status.value = ui.status("ok", "Axis roles confirmed.", roles)
+            review = review_axes(
+                self.preflight.metadata,
+                self.confirmed_mapping,
+                missing_as_singleton=self.missing_as_singleton.value,
+            )
+            confirmed = review.confirmed_files
+            lines = [
+                "The confirmed roles agree with every axis the image metadata names."
+                if confirmed
+                else "Every image names its axes in its metadata, and the confirmed roles "
+                "agree with them.",
+                *(
+                    [
+                        f"{plural(len(confirmed), 'image')} do not name their axes: their "
+                        "roles are recorded in the run manifest as confirmed by you."
+                    ]
+                    if confirmed
+                    else []
+                ),
+                *roles,
+            ]
+            self.confirmed_status.value = ui.status(
+                "ok", "Axes checked: they are correct for every image.", lines
+            )
             self._open_image_type()
             self._refresh_axis_next()
         else:
