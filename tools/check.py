@@ -7,6 +7,10 @@ Usage:
 - ``python tools/check.py --rules``: only the code rules against their baseline (CI);
 - ``python tools/check.py --update-baseline``: lower the baseline to the current code. It
   never adds or raises an entry: new violations must be fixed.
+- ``python tools/check.py --rename OLD=NEW``: re-key the baseline entries of code moved from
+  ``OLD`` to ``NEW`` (a file, or a function as ``path name``), for a pull request that only
+  moves code; then ``--update-baseline`` drops what the move removed. Nothing is added or
+  raised: an entry whose new key already exists keeps the smaller size.
 
 The code rules are the shared ``tools/code_rules.py``, configured in ``pyproject.toml``
 under ``[tool.morphobricks.code-rules]`` (owner, package, layers, baseline file).
@@ -93,8 +97,28 @@ def update_baseline() -> Path:
     return path
 
 
+def rename_baseline(renames: list[str]) -> Path:
+    """Re-key baseline entries for moved code, as ``OLD=NEW`` key prefixes."""
+    path = ROOT / config()["baseline"]
+    baseline = read_baseline(path)
+    problems = {}
+    for key, size in baseline.get("problems", {}).items():
+        for rename in renames:
+            old, new = rename.split("=", 1)
+            if key.startswith(old):
+                key = new + key[len(old) :]
+        problems[key] = min(size, problems.get(key, size))
+    baseline["problems"] = dict(sorted(problems.items()))
+    path.write_text(json.dumps(baseline, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
 def main(argv: list[str]) -> int:
     """Run the checks and return the process exit code."""
+    if "--rename" in argv:
+        renames = [argv[i + 1] for i, arg in enumerate(argv) if arg == "--rename"]
+        print(f"Baseline re-keyed: {rename_baseline(renames)}")
+        return 0
     if "--update-baseline" in argv:
         print(f"Baseline lowered: {update_baseline()}")
         return 0

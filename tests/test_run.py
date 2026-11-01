@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shutil
 from dataclasses import replace
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from morphobricks_preprocessing import (
 )
 from morphobricks_preprocessing import planes as planes_module
 from morphobricks_preprocessing import run as run_module
+from morphobricks_preprocessing.manifest import file_sha256
 from simulation import simulate_plane
 from tiff_tree import write_data, write_file
 
@@ -75,13 +77,13 @@ class Reads(list):
 def reads(monkeypatch):
     """Record which files have their pixels read."""
     paths = Reads()
-    original = run_module.iter_xyc_planes
+    original = run_module.rows.iter_xyc_planes
 
     def spy(path, *args, **kwargs):
         paths.append(path)
         return original(path, *args, **kwargs)
 
-    monkeypatch.setattr(run_module, "iter_xyc_planes", spy)
+    monkeypatch.setattr(run_module.rows, "iter_xyc_planes", spy)
     return paths
 
 
@@ -577,7 +579,7 @@ def test_preparing_outputs_preserves_earlier_files_on_failure(experiment, monkey
     first = run_experiment(experiment, ZYX)
     before = {path.name: path.read_bytes() for path in (first.csv_path, first.manifest_path)}
     touch(experiment / IMAGES[0], stack(99))
-    original_hash = run_module.file_sha256
+    original_hash = run_module.pipeline.file_sha256
 
     def broken_csv(*args, **kwargs):
         raise OSError("simulated CSV failure")
@@ -595,13 +597,13 @@ def test_preparing_outputs_preserves_earlier_files_on_failure(experiment, monkey
 
     with monkeypatch.context() as patch:
         if failure == "csv":
-            patch.setattr(run_module, "write_plane_histograms", broken_csv)
+            patch.setattr(run_module.pipeline, "write_plane_histograms", broken_csv)
         elif failure == "hash":
-            patch.setattr(run_module, "file_sha256", broken_hash)
+            patch.setattr(run_module.pipeline, "file_sha256", broken_hash)
         elif failure == "manifest":
-            patch.setattr(run_module, "write_manifest", broken_manifest)
+            patch.setattr(run_module.pipeline, "write_manifest", broken_manifest)
         else:
-            patch.setattr(run_module.shutil, "copy2", broken_backup)
+            patch.setattr(shutil, "copy2", broken_backup)
         with pytest.raises(OSError, match="simulated"):
             run_experiment(experiment, ZYX)
     assert {path.name: path.read_bytes() for path in first.output_folder.iterdir()} == before
@@ -634,16 +636,14 @@ def test_publishing_outputs_restores_the_previous_state(
         return original_replace(source, destination)
 
     with monkeypatch.context() as patch:
-        patch.setattr(run_module.os, "replace", broken_replace)
+        patch.setattr(os, "replace", broken_replace)
         with pytest.raises(PermissionError, match="simulated publication failure"):
             run_experiment(experiment, ZYX)
     assert failed
     assert {path.name: path.read_bytes() for path in first.output_folder.iterdir()} == before
     retried = run_experiment(experiment, ZYX)
     assert retried.written
-    assert read_manifest(retried.manifest_path).csv_sha256 == run_module.file_sha256(
-        retried.csv_path
-    )
+    assert read_manifest(retried.manifest_path).csv_sha256 == file_sha256(retried.csv_path)
     assert unrelated.read_text(encoding="utf-8") == "keep this file"
 
 
@@ -658,7 +658,7 @@ def test_interrupted_publication_restores_earlier_output(experiment, monkeypatch
             raise KeyboardInterrupt
         return original_replace(source, destination)
 
-    monkeypatch.setattr(run_module.os, "replace", interrupted)
+    monkeypatch.setattr(os, "replace", interrupted)
     with pytest.raises(KeyboardInterrupt):
         run_experiment(experiment, ZYX)
     assert {path.name: path.read_bytes() for path in first.output_folder.iterdir()} == before
@@ -675,7 +675,7 @@ def test_failed_rollback_retains_backups_and_reports_their_location(experiment, 
             raise PermissionError("simulated locked output")
         return original_replace(source, destination)
 
-    monkeypatch.setattr(run_module.os, "replace", broken_replace)
+    monkeypatch.setattr(os, "replace", broken_replace)
     with pytest.raises(RuntimeError, match="could not be fully restored") as excinfo:
         run_experiment(experiment, ZYX)
     (staged,) = first.output_folder.glob(".run-*")
@@ -690,10 +690,10 @@ def test_cleanup_failure_does_not_report_completed_output_as_failed(
     def broken_cleanup(path):
         raise PermissionError("simulated temporary folder in use")
 
-    monkeypatch.setattr(run_module.shutil, "rmtree", broken_cleanup)
+    monkeypatch.setattr(shutil, "rmtree", broken_cleanup)
     result = run_experiment(experiment, ZYX)
     assert result.written
-    assert read_manifest(result.manifest_path).csv_sha256 == run_module.file_sha256(result.csv_path)
+    assert read_manifest(result.manifest_path).csv_sha256 == file_sha256(result.csv_path)
     assert "Cannot remove temporary output folder" in caplog.text
 
 

@@ -18,8 +18,8 @@ from morphobricks_preprocessing import (
     read_manifest,
     run_experiment,
 )
-from morphobricks_preprocessing import run as run_module
 from morphobricks_preprocessing.cli import main
+from morphobricks_preprocessing.run import rows as rows_module
 from tiff_tree import write_data
 
 YX = prefill_mapping("YX")
@@ -53,13 +53,13 @@ def hot_experiment(tmp_path):
 @pytest.fixture
 def reads(monkeypatch):
     paths = []
-    original = run_module.iter_xyc_planes
+    original = rows_module.iter_xyc_planes
 
     def spy(path, *args, **kwargs):
         paths.append(path)
         return original(path, *args, **kwargs)
 
-    monkeypatch.setattr(run_module, "iter_xyc_planes", spy)
+    monkeypatch.setattr(rows_module, "iter_xyc_planes", spy)
     return paths
 
 
