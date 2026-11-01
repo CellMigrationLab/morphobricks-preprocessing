@@ -195,7 +195,8 @@ OPEN_AXIS = "?"
 def named_axes(meta: TiffMetadata) -> str:
     """Return the image's axes with every dimension its metadata does not name as ``?``.
 
-    The one rule behind :func:`header_axes` and :func:`.axes.check_declared_axes`
+    The one rule behind :func:`header_axes` and the axis check
+    (:func:`.axis_check.header_axis_issue`)
     (MorphoBricks D86): a dimension is named when ``tifffile`` (or OME-NGFF) gives it a
     letter from the file's metadata. Left open (:data:`OPEN_AXIS`) are
 
@@ -237,10 +238,7 @@ def header_axes(meta: TiffMetadata) -> str | None:
     the OME-NGFF axes of an OME-Zarr image. When any dimension is left open
     (:func:`named_axes`: a placeholder axis, so a plain multi-page TIFF ``IYX`` or a shaped
     one without axes ``QYX``), the file does not say which dimension is depth, time or
-    channel, so there are no header axes and nothing may be guessed. Exactly when this
-    gives axes, :func:`.axes.check_declared_axes` accepts those axes, them with Y and X
-    swapped (read transposed) and, without a C axis, the RGB samples ``S`` declared C;
-    nothing else.
+    channel, so there are no header axes and nothing may be guessed.
     Length-1 axes are left out, as ``tifffile`` reads them.
 
     Parameters

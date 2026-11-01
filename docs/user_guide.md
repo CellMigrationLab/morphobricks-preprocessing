@@ -37,8 +37,7 @@ pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellM
 pip install jupyterlab
 ```
 
-To read OME-Zarr images, or to convert TIFF images to OME-Zarr (§6), install the `zarr`
-extra too:
+To read OME-Zarr images, install the `zarr` extra too:
 `pip install "morphobricks-preprocessing[notebook,zarr] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git"`.
 
 Start JupyterLab with `jupyter lab` and open the notebook. Google Colab is detected by the
@@ -299,28 +298,6 @@ results or comparing another grouping.
        same, only reading takes longer. Raise the limit only if the computer has enough
        memory.
      - *Recompute every row:* start from scratch instead of updating the earlier table.
-   - **(Optional) Image conversion:**
-     - **Read the images directly** (the default and recommended choice) reads TIFF and
-       OME-Zarr images as they are and saves nothing extra.
-     - **Convert the TIFF images to OME-Zarr, then process the converted copies** writes
-       every TIFF image in OME-Zarr format to the **ome_zarr** folder of the output (see
-       §6) and computes its histograms from that copy, like for any OME-Zarr image; the
-       results are the same. OME-Zarr images are never converted.
-     - When converting, an amber box warns that the images are stored again, so the space
-       they occupy is duplicated. It shows the size of the TIFF images, the most the copies
-       may need (before compression) and the free space on the output drive. It turns red
-       if the space may not be enough, but you can still run.
-     - **OME-Zarr conversion settings** opens when you choose conversion. Click its header
-       to collapse or expand three cards, each with its own controls and explanation:
-       **Storage block size** (square chunks, default 1,024 pixels per side), **Lossless
-       compression** (LZ4 by default, Zstandard, or none, with a level from 1 to 9), and
-       **Preview resolutions** (smaller copies for fast viewing: automatic, full resolution
-       only, or a fixed number). Histograms use full resolution. Collapsing the panel keeps
-       your choices and leaves the disk-space warning visible. Changing the settings later
-       writes the copies again; the histograms do not change.
-     - The choice is greyed out, with the install command below it, when the `zarr` extra
-       is not installed. **What will happen** says which images are converted and with
-       which settings, and a tile counts the conversions.
    - Click **Compute histograms**. A progress bar shows which image is being read. Tiles
      then summarise planes written, images read, kept, new, changed, removed and excluded.
      Nothing is written unless the whole run succeeds. **Technical details (log)** holds
@@ -421,10 +398,6 @@ never writes the file. Other options:
 | `--image-type fluorescence\|rgb` | The image type (default: the suggested one, printed) |
 | `--design FILE` | The confirmed experiment design (default: `experiment_design.csv` in the output folder); it is copied to the output folder |
 | `--force-rebuild` | Recompute every row |
-| `--convert-tiff` | Convert the TIFF images to OME-Zarr first and process the copies (needs the `zarr` extra); prints the disk space needed |
-| `--chunk-size PX` | With `--convert-tiff`: tile size of the copies (16 to 8192, default 1024) |
-| `--compression lz4\|zstd\|none`, `--compression-level N` | With `--convert-tiff`: lossless compression (default lz4, level 5) |
-| `--pyramid-levels auto\|none\|N` | With `--convert-tiff`: smaller levels for viewing (default auto) |
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
 | `--log FILE` | Write technical details to a file |
 | `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json` |
@@ -502,17 +475,8 @@ The default output folder is next to the experiment folder:
   fingerprint of the experiment design, and each image's position, size and modification time. Channel names and significant bits are recorded when the metadata
   provides them, and whether the image's planes were too large to read whole and are read
   in blocks. Format in [contract.md](contract.md) §9.
-- **`ome_zarr/`** (only when TIFF images are converted): one `.ome.zarr` folder per TIFF
-  image, in the same folder structure as the experiment, e.g.
-  `ome_zarr/control/bio_rep1/tech_rep1/img_01.ome.zarr`. The full-resolution level holds
-  exactly the source pixel values; smaller levels are averages for fast viewing (for
-  example in napari with the `napari-ome-zarr` plugin). Pixel sizes and channel names are
-  copied from the metadata when present (an unnamed channel stays unnamed), each axis with its own unit. Copies of unchanged
-  images are kept on later runs, copies of deleted or excluded images are removed. Copies
-  written by an earlier version with the X unit on every axis are converted again once,
-  with their own units; the table does not change. Switching back to reading the
-  TIFF images directly removes the copies and recomputes their rows. Details in
-  [contract.md](contract.md) §10.
+- **`ome_zarr/`**: written only by v0.3 runs that converted TIFF images to OME-Zarr. That
+  option was removed in v0.4.0; such a folder is left as it is, and may be deleted.
 
 - **`mask_relationships.json`** (only from the `masks` command): each kind of mask, the
   relationship between every two kinds with its counts, and the hierarchy. The rules and
@@ -578,7 +542,6 @@ continues.
 | `axes_not_named` | Warning | The metadata of some images does not name their axes (a plain stack of pages, `IYX` or `QYX`), so which dimension is depth, time or channel comes only from the roles you confirm. The images are read with them, and the roles are recorded as confirmed by you. Check the roles with the preview. Before segmenting these images in other tools, consider saving named-axis copies (OME-TIFF), so every tool reads the same axes. |
 | `axes_yx_swapped` | Error | The roles you confirmed give the Y and X the image header names the other way round, so the images are not read (never transposed). The message names the likely cause. Two fixes: correct the axes (if the header is right, choose its roles), or convert (save named-axis copies with your roles, then run preprocessing on the copies). |
 | `axes_contradict_header` | Error | The roles you confirmed contradict the axes the image header names (for example the header says channels, C, and you chose time, T). The images are not read under a contradicted declaration. The message names the likely cause, often the tool that saved the files: tifffile labels a 3-D stack saved with `imagej=True` or `ome=True` as `CYX`, and an ImageJ stack of slices reads as depth even for a time-lapse. The same two fixes as `axes_yx_swapped`. |
-| `declared_axes_mismatch` | Error (other bricks; deprecated, removed in v0.4.0) | The axes a brick was told for an image or mask contradict the axes in its metadata (for example a depth stack declared as channels). Declare the axes the metadata gives, or export the image again with the right axes. |
 | `missing_xy_axis`, `duplicate_axis_role` | Error | X/Y missing or a role used twice. Correct the axis roles. |
 | `unassigned_axis` | Error | A dimension with several planes has no role. Choose Z, C or T. |
 | `unsupported_axis` | Error | A position or tile dimension. Export each position separately. |
@@ -628,7 +591,7 @@ continues.
 | `ambiguous_mask` | Error | A mask's name could belong to two images (one image name starts another's) or fit both layouts. Rename the masks or the images so each names one image and one kind. |
 | `mask_without_image`, `mask_outside_type_folder` | Warning | Files in the masks folder that match no analysed image (check the folder and file names), or other files directly in the masks folder. They are not used. |
 | `images_not_in_manifest`, `images_missing`, `images_changed`, `position_id_not_recorded`, `identity_differs`, `axis_mapping_mismatch` | Error (other bricks) | A later brick checked its images against this brick's run (`check_sources`): an image the run did not analyse, no longer there, changed since, recorded with other labels or position (or by a version that did not record positions), or read with axes the run gave other roles. Run this brick again on the experiment as it is, or use the run's labels and axis roles. |
-| `zarr_not_installed` | Error | OME-Zarr images, or converting TIFF images, need the `zarr` extra. Install it, exclude the OME-Zarr images, or read the TIFF images directly. |
+| `zarr_not_installed` | Error | OME-Zarr images need the `zarr` extra. Install it, or exclude the OME-Zarr images. |
 
 ## 9. Python interface
 

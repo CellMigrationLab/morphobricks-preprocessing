@@ -35,12 +35,12 @@ brick**.
   `morphobricks_normalization` (pinned to its release v0.3.2; first pinned at v0.2.0, plan §12 questions 27 and
   28). This brick runs them over
   the experiment. Later bricks such as patch extraction use them to normalise any group of
-  planes without rereading pixels. The old names stay importable from here, deprecated,
-  for one version (follow-up P1, normalization plan N6).
+  planes without rereading pixels. Import them from `morphobricks_normalization`; the
+  deprecated paths through this package were removed in v0.4.0.
 - **Never:** modifies source images, writes inside the experiment folder, or applies a
   normalization itself.
-- **Optional (`zarr` extra, plan §12 question 12):** OME-Zarr input, and converting TIFF
-  images to OME-Zarr in the output folder before processing them (contract §10).
+- **Optional (`zarr` extra, plan §12 question 12):** OME-Zarr input. (Converting TIFF images
+  to OME-Zarr in the output folder, `convert_tiffs`, was removed in v0.4.0.)
 - **Large planes (plan §12 question 15):** planes over the memory limit are read in blocks,
   automatically and announced, with identical rows.
 - **Out of scope:** spatial corrections (flat-field, BaSiC, CLAHE).
@@ -71,7 +71,7 @@ src/morphobricks_preprocessing/
   physical_sizes.py PhysicalSizes (pixel sizes, z-step, time step, a unit per axis, micrometers()
                     for comparing), space_unit/to_micrometers (the shared unit rule, contract §16),
                     read_physical_sizes (OME / ImageJ TIFF metadata; also importable
-                    from zarr_export) and ngff_physical_sizes (OME-NGFF scale and axis units)
+                    ) and ngff_physical_sizes (OME-NGFF scale and axis units)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
   design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
@@ -85,9 +85,7 @@ src/morphobricks_preprocessing/
                     the notebook's plots, intensity_text for the CLI
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
-                    applied to every file, missing axes as singletons only when confirmed),
-                    check_declared_axes and declared_axes_transposed (deprecated; removed
-                    before the v0.4.0 release)
+                    applied to every file, missing axes as singletons only when confirmed)
   axis_check.py     the axis check (contract §2): header_axis_issue, axis_disagreements,
                     likely_axis_cause, check_header_axes; AXIS_ERROR_CODES, AXIS_CHECK_CODES
   planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), table rows as
@@ -96,10 +94,7 @@ src/morphobricks_preprocessing/
                     check_planes (preflight memory / layout errors); planes over the limit read in
                     blocks of TIFF strips/tiles or zarr chunks (Plane.blocks, BlockReader), reduced
                     previews
-  _moved.py         deprecated access to the code moved to morphobricks_normalization: the moved
-                    names, warn-once DeprecationWarning, __getattr__ helpers
-  dtypes.py, histogram.py, records.py, csv_io.py, pooling.py, normalization.py
-                    deprecated stand-ins (module __getattr__ only, no code) for one version
+  _io.py            write_text_atomic (every file the brick writes) and free_space
   manifest.py       RunManifest / RunSettings / FileEntry, JSON read/write, SHA-256 of the CSV,
                     check_sources (images against a run, for other bricks, contract §16)
   run.py            preflight(), run_experiment() (incremental), sample_planes() for previews
@@ -120,9 +115,6 @@ src/morphobricks_preprocessing/
                     letters and physical sizes from the scale and axis units),
                     ngff_label_names/open_ngff_labels (label images, for later bricks),
                     zarr 2/3 helpers, canonical_dtype; needs the `zarr` extra
-  zarr_export.py    TIFF -> OME-Zarr conversion (OmeZarrWriter, OME-NGFF 0.4, plane by plane or
-                    block by block),
-                    ConversionSettings (chunk size, compression, pyramid levels), estimate_conversion
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
   notebook_axes.py  the notebook's axis-check card and the marks under the role dropdowns
   notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra);
@@ -150,8 +142,7 @@ Moved to [morphobricks-normalization](https://github.com/CellMigrationLab/morpho
 ```
 
 Their tests (`test_histogram.py`, `test_csv_io.py`, `test_pooling.py`,
-`test_normalization.py`) moved with them. `tests/test_moved.py` checks the deprecated
-names here.
+`test_normalization.py`) moved with them. The deprecated names here were removed in v0.4.0.
 
 The notebook and the CLI contain **no processing logic**. They call the same public
 functions the tests use.
@@ -478,7 +469,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 |---|---|
 | Binning | Per-plane min–max, same bin count per experiment, pooled counts for groups (binning study) |
 | Core dependencies | `numpy`, `tifffile`, `scipy` (the mask step's piece counts, Q32) and `morphobricks-normalization` (git dependency pinned to its release tag v0.3.2, whose CSV reader checks each row's stored `plane_id`, `image_file` and `bit_depth`; `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
-| OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
+| OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. *Removed in v0.4.0 (plan Q46): TIFF images are always read directly; the following describes v0.3.* TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
 | Folders named `single` (Q23) | Accepted as the level's value `single` when lower case and the only folder in its place (MorphoBricks one-member level, MorphoRelate M3); another case or other folders beside it stay `reserved_folder_name` |
@@ -492,8 +483,8 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Corrupt files (Q6) | Explicit exclusion list, recorded in manifest, rows removed |
 | Notebook target | Local Jupyter (not Colab-first) |
 | CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--histogram-range`, `--robust-quantiles`, `--memory-limit 2GiB`, `--missing-as-singleton`, `--force-rebuild`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata. Exit 1 on errors |
-| Large planes (Q15) | Planes over the memory limit are read in blocks automatically, announced by the warning `planes_read_in_blocks` and `read_in_blocks` in the manifest. Block size derived from the limit (whole strips/tiles/chunks, uncompressed pieces and chunks also by rows). Compressed single-strip/tile planes keep the `plane_over_memory_limit` error. Two-pass histograms identical to whole planes. OME-Zarr copies written block by block, smaller levels built from the stored level above. Axis preview reduced (every n-th pixel) with a caption saying so |
-| Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Their public names stay importable from `morphobricks_preprocessing` and from the old submodules for one version: module `__getattr__` stand-ins (`_moved.py`), one `DeprecationWarning` per old path naming `morphobricks_normalization.<module>.<name>`, same objects. The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, now §6.2 for the CSV) |
+| Large planes (Q15) | Planes over the memory limit are read in blocks automatically, announced by the warning `planes_read_in_blocks` and `read_in_blocks` in the manifest. Block size derived from the limit (whole strips/tiles/chunks, uncompressed pieces and chunks also by rows). Compressed single-strip/tile planes keep the `plane_over_memory_limit` error. Two-pass histograms identical to whole planes. (Up to v0.3, OME-Zarr copies were written block by block; conversion was removed in v0.4.0.) Axis preview reduced (every n-th pixel) with a caption saying so |
+| Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Up to v0.3 their public names stayed importable from `morphobricks_preprocessing` and the old submodules, with a `DeprecationWarning`; those stand-ins (`_moved.py`) were removed in v0.4.0 (plan Q46). The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, now §6.2 for the CSV) |
 | Dataset consistency (Q21, P2) | Step 1 "Dataset consistency" panel: balance table (images and technical-repeat folders per condition x biological repeat), `unbalanced_images` (< 0.5 or > 2 x median), `repeat_missing_conditions`, `different_pixel_sizes`, `missing_pixel_size` (OME-Zarr scale included), `different_plane_counts`; `different_sizes` narrowed to width/height; consistency issues shown only in that panel, not in Messages. Warnings only; outputs unchanged |
 | Experiment design (Q22, P3) | Step 1 after the labels: pairing dropdowns, one yellow "Yes, they are comparable" question per repeat group (single whole-experiment question without biological-repeat folders), control checkboxes; `experiment_design.csv` written after every answer; reruns load it and fold the questions behind a Change button; step 3 gated. CLI `run` reads it or `--design`, else writes a template and exits 1. `run_experiment(design=...)` optional; manifest `experiment_design_sha256` (optional key, version 1). Two folders of one condition in a group block that group |
 | Image type (Q29, P4) | Step 2 card after the axis roles: Fluorescence or RGB, suggestion preselected, confirmed with **Yes, this is the right image type**; RGB suggested for TIFF photometric RGB with three samples on the C axis; RGB needs three integer channels (`check_rgb`), else disabled with the reason and `rgb_not_possible` in a run. Manifest keys `image_type`, `channels_from_rgb_samples` (optional, version 1); type changes recompute nothing. CLI `--image-type`, default the printed suggestion |
@@ -539,12 +530,9 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 - **No new core dependencies** without asking. tkinter (for folder dialogs) is optional
   and imported lazily with a fallback.
 - **Public API** is re-exported in `__init__.py`. `__all__` is sorted: constants, then
-  classes, then functions. It still lists the deprecated names moved to the normalization
-  brick; they are served by `__getattr__` (see `_moved.py`), never imported in
-  `__init__.py`.
+  classes, then functions.
 - **Code from the normalization brick:** import it as
-  `from morphobricks_normalization.<module> import ...`, never through the deprecated
-  `morphobricks_preprocessing` paths (`tests/test_moved.py` checks this).
+  `from morphobricks_normalization.<module> import ...`.
 
 ### Tests
 
@@ -556,11 +544,10 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 - **Proving "no pixels are read":** monkeypatch `asarray` on `TiffFile`, `TiffPage`,
   `TiffFrame` and `TiffPageSeries` to raise.
 - **OME-Zarr test data:** `tests/zarr_tree.py` (`write_ngff`, `write_bioformats2raw`,
-  `write_plate`) writes stores with zarr directly, independent of `zarr_export`; 0.5 tests
+  `write_plate`) writes stores with zarr directly; 0.5 tests
   skip with zarr 2.18.
 - **Proving "one page at a time":** spy on `planes._read_page`. To prove "only changed
-  files are read", spy on `run.iter_xyc_planes` (`run.iter_planes` only converts TIFF
-  images to OME-Zarr). For planes in blocks, spy on
+  files are read", spy on `run.iter_xyc_planes`. For planes in blocks, spy on
   `planes._read_segment` and make `asarray` of every tifffile class fail.
 - **Planes in blocks with small test images:** the memory limit
   `plane_layout(path, mapping, memory_limit=1).block_memory_estimate` gives the smallest

@@ -3,6 +3,8 @@ import os
 import numpy as np
 import pytest
 import tifffile
+from morphobricks_normalization.csv_io import read_plane_histograms
+from morphobricks_normalization.histogram import compute_plane_histogram
 
 from morphobricks_preprocessing import (
     AxisMapping,
@@ -16,15 +18,12 @@ from morphobricks_preprocessing import (
     inspect_image,
     inspect_images,
     iter_planes,
-    ome_zarr_relative_path,
     open_ngff,
     plane_layout,
     prefill_mapping,
     preflight,
     read_manifest,
-    read_physical_sizes,
     read_plane,
-    read_plane_histograms,
     read_sample_plane,
     reference_axes,
     review_axes,
@@ -33,8 +32,6 @@ from morphobricks_preprocessing import (
 )
 from morphobricks_preprocessing import run as run_module
 from morphobricks_preprocessing.cli import main
-from morphobricks_preprocessing.histogram import compute_plane_histogram
-from morphobricks_preprocessing.zarr_export import ConversionSettings
 from morphobricks_preprocessing.zarr_input import ngff_axes
 from tiff_tree import write_data, write_file
 from zarr_tree import write_bioformats2raw, write_ngff, write_plate, zarr_major
@@ -283,30 +280,6 @@ def test_header_of_a_store_carries_its_physical_sizes(tmp_path, version):
     info = inspect_image(path)
     assert info.is_ome_zarr and info.physical_sizes == open_ngff(path).physical_sizes
     assert (info.physical_sizes.x, info.physical_sizes.unit("Z")) == (0.25, "micrometer")
-
-
-def test_converted_copies_give_the_sizes_of_their_tiff(tmp_path):
-    source = tmp_path / "exp/a.ome.tif"
-    source.parent.mkdir(parents=True)
-    tifffile.imwrite(
-        source,
-        np.zeros((2, 3, 8, 8), np.uint16),
-        ome=True,
-        photometric="minisblack",
-        metadata={
-            "axes": "TZYX",
-            "PhysicalSizeX": 120.0,
-            "PhysicalSizeXUnit": "nm",
-            "PhysicalSizeY": 0.25,
-            "PhysicalSizeYUnit": "µm",
-            "PhysicalSizeZ": 2.0,
-            "TimeIncrement": 30.0,
-            "TimeIncrementUnit": "s",
-        },
-    )
-    result = run_experiment(tmp_path / "exp", prefill_mapping("TZYX"), convert_tiffs=True)
-    copy = result.output_folder / ome_zarr_relative_path("a.ome.tif")
-    assert open_ngff(copy).physical_sizes == read_physical_sizes(source)
 
 
 def test_bioformats2raw_layout(tmp_path):
@@ -683,7 +656,7 @@ def test_ome_zarr_experiment_end_to_end(zarr_experiment):
     pre = preflight(zarr_experiment)
     assert pre.ok and pre.suggested_mapping == prefill_mapping("CZYX")
     result = run_experiment(zarr_experiment, pre.suggested_mapping)
-    assert result.written and result.converted == ()
+    assert result.written
     records = read_plane_histograms(result.csv_path)
     assert len(records) == 9  # 3 stores x 3 depth slices, each row with 2 channels
     import zarr
@@ -753,20 +726,6 @@ def test_mixed_tiff_and_ome_zarr_experiment(tmp_path):
         a.channel_histogram(1).counts, compute_plane_histogram(tiff_data[2, 1]).counts
     )
     assert {r.z for r in rows.values() if r.source_relative_path == "drug/d.ome.zarr"} == {0, 1, 2}
-
-
-def test_conversion_leaves_ome_zarr_images_alone(tmp_path):
-    root = tmp_path / "exp"
-    write_data(root / "a.tif", random_data((3, 8, 8), "uint8"), axes="ZYX")
-    write_ngff(root / "b.ome.zarr", random_data((3, 8, 8), "uint8", seed=1), "zyx")
-    result = run_experiment(root, prefill_mapping("ZYX"), convert_tiffs=True)
-    assert result.converted == ("a.tif",)
-    manifest = read_manifest(result.manifest_path)
-    assert manifest.file("b.ome.zarr").ome_zarr_path is None
-    assert manifest.file("a.tif").ome_zarr_path == "ome_zarr/a.ome.zarr"
-    # A converted image keeps the position identifier of its source.
-    assert {r.position_id for r in read_plane_histograms(result.csv_path)} == {"a", "b"}
-    assert manifest.file("a.tif").position_id == "a"
 
 
 def test_sample_planes_cover_both_formats(tmp_path):
@@ -853,30 +812,6 @@ def test_transformations_that_are_not_a_list_give_no_sizes(tmp_path, where):
     )
     path = write_ngff(tmp_path / "a.ome.zarr", np.zeros((3, 8, 8), np.uint8), "zyx", **kwargs)
     assert open_ngff(path).physical_sizes == PhysicalSizes()
-
-
-def test_sizes_come_from_level_0_of_a_pyramid(tmp_path):
-    # The brick's own copy has three levels with scales 0.5, 1 and 2 along X and Y.
-    source = tmp_path / "exp/a.ome.tif"
-    source.parent.mkdir(parents=True)
-    tifffile.imwrite(
-        source,
-        np.zeros((2, 64, 64), np.uint16),
-        ome=True,
-        photometric="minisblack",
-        metadata={"axes": "ZYX", "PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5, "PhysicalSizeZ": 2},
-    )
-    result = run_experiment(
-        tmp_path / "exp",
-        prefill_mapping("ZYX"),
-        convert_tiffs=True,
-        conversion=ConversionSettings(chunk_size=16, pyramid_levels=2),
-    )
-    copy = result.output_folder / ome_zarr_relative_path("a.ome.tif")
-    image = open_ngff(copy)
-    assert image.dataset_path == "0" and image.shape == (2, 64, 64)
-    sizes = image.physical_sizes
-    assert (sizes.x, sizes.y, sizes.z) == (0.5, 0.5, 2.0)
 
 
 # Pixel sizes compared in the folder check -------------------------------------------------

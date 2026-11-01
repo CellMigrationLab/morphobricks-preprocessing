@@ -4,13 +4,13 @@ import sys
 
 import numpy as np
 import pytest
+from morphobricks_normalization.csv_io import read_plane_histograms
 
 from morphobricks_preprocessing import (
     default_design,
     default_output_folder,
     preflight,
     read_manifest,
-    read_plane_histograms,
     write_experiment_design,
 )
 from morphobricks_preprocessing.cli import main, parse_size
@@ -251,41 +251,3 @@ def test_python_dash_m(experiment):
     )
     assert completed.returncode == 0, completed.stderr
     assert "--axes ZCYX" in completed.stdout
-
-
-@pytest.mark.parametrize(
-    ("text", "levels"), [("auto", None), ("none", 0), ("3", 3), ("AUTO", None)]
-)
-def test_parse_pyramid_levels(text, levels):
-    from morphobricks_preprocessing.cli import parse_pyramid_levels
-
-    assert parse_pyramid_levels(text) == levels
-
-
-@pytest.mark.parametrize("text", ["8", "-1", "many"])
-def test_parse_pyramid_levels_rejects_bad_values(text):
-    from morphobricks_preprocessing.cli import parse_pyramid_levels
-
-    with pytest.raises(argparse.ArgumentTypeError):
-        parse_pyramid_levels(text)
-
-
-def test_conversion_options(experiment, tmp_path, capsys):
-    pytest.importorskip("zarr")
-    out_dir = tmp_path / "out"
-    args = ["run", str(experiment), "--axes", "ZCYX", "--output", str(out_dir), "--convert-tiff"]
-    args += ["--chunk-size", "64", "--compression", "zstd", "--compression-level", "7"]
-    args += ["--pyramid-levels", "none"]
-    confirm_design(experiment, out_dir)
-    assert main(args) == 0
-    out = capsys.readouterr().out
-    assert "Conversion (chunks of 64 x 64 px, Blosc Zstandard level 7, no smaller levels)" in out
-    assert "so the space they take is duplicated" in out and "free space on the output" in out
-    settings = read_manifest(out_dir / "run_manifest.json").settings
-    assert settings.convert_tiffs
-    assert (settings.conversion.chunk_size, settings.conversion.compression) == (64, "zstd")
-
-
-def test_invalid_chunk_size_is_refused(experiment, capsys):
-    assert main(["run", str(experiment), "--axes", "ZCYX", "--chunk-size", "4"]) == 1
-    assert "chunk size must be between 16" in capsys.readouterr().out

@@ -256,7 +256,6 @@ def test_bad_role_in_manifest_is_refused():
     ("where", "key"),
     [
         ("settings", "missing_as_singleton"),
-        ("settings", "convert_tiffs"),
         ("file", "read_in_blocks"),
         ("file", "channel_names_trimmed"),
         ("top", "channels_from_rgb_samples"),
@@ -283,7 +282,6 @@ def _with_flag(key, value):
     "key",
     [
         "missing_as_singleton",
-        "convert_tiffs",
         "read_in_blocks",
         "channel_names_trimmed",
         "channels_from_rgb_samples",

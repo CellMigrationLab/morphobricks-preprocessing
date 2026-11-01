@@ -296,7 +296,8 @@ API, CLI). The notebook and CLI only call the API.
   expandable panel with separate storage, compression and preview-resolution cards.*
 - **OME-Zarr (optional `zarr` extra):** OME-Zarr images (OME-NGFF 0.4 and 0.5) are read
   as input next to TIFF files, plane by plane from level 0, with their declared axes
-  (`zarr_input`). For TIFF images the user chooses once per experiment: read them
+  (`zarr_input`). *TIFF to OME-Zarr conversion, described next, was removed in v0.4.0
+  (question 46); TIFF images are read directly.* For TIFF images the user chose once per experiment: read them
   directly, or convert each to `<output>/ome_zarr/<relative path>.ome.zarr` (OME-NGFF 0.4)
   and compute its histograms from the copy, like any OME-Zarr image (`zarr_export`). The
   copies keep the source values at level 0; smaller levels (2 x 2 means) are for viewers.
@@ -307,7 +308,7 @@ API, CLI). The notebook and CLI only call the API.
 - **Large planes in blocks:** planes over the memory limit are read in blocks of their
   stored strips, tiles or chunks, sized by the memory limit (`planes`), and their
   histograms are computed in two passes over the blocks with results identical to whole
-  planes (`histogram.compute_block_histogram`). OME-Zarr copies of such planes are written
+  planes (`histogram.compute_block_histogram`). Up to v0.3, OME-Zarr copies of such planes were written
   block by block, with their smaller levels built from the stored level above
   (`zarr_export`). The axis preview shows them reduced. Step 3's "What will happen" box
   names these images before the run. *Implemented, see questions 15 and 16.*
@@ -1056,6 +1057,17 @@ Raised during review; to be decided before the milestones that need them:
     roles (they were compared with the header's letters; the role-based comparison still
     matters for plain stacks, whose positional Y and X need not be the roles), and not at
     all for an image with an axis error. `check_declared_axes` and
-    `declared_axes_transposed` are deprecated, to be removed before the v0.4.0 release
-    (design v0.4 §6, PP-2). Breaking for v0.4.0: experiments run with roles that swap or
-    contradict the header no longer run as they are.*
+    `declared_axes_transposed` are removed in v0.4.0 (question 46). Breaking for
+    v0.4.0: experiments run with roles that swap or contradict the header no longer run
+    as they are.*
+46. What does v0.4.0 remove (spec revision 4, §8 PP-2)?
+    *Decided (1 November 2026, owner): `convert_tiffs` with `zarr_export` (OME-Zarr copies in
+    the output folder; the bricks never read them, and named-axis copies of images with axis
+    errors are a separate OME-TIFF step), the manifest's `convert_tiffs`, `conversion` and
+    `ome_zarr_path` (ignored when an older manifest holds them), the CLI `--convert-tiff`,
+    `--chunk-size`, `--compression`, `--compression-level` and `--pyramid-levels`, the
+    notebook's conversion card; the deprecated stand-ins of the code moved to the
+    normalization brick (`_moved` and the `csv_io`, `dtypes`, `histogram`, `normalization`,
+    `pooling` and `records` modules); and `check_declared_axes` with
+    `declared_axes_transposed`, removed rather than deprecated because they read a Y/X swap
+    transposed, which v0.4 forbids. Breaking for v0.4.0.*

@@ -40,7 +40,6 @@ from .axes import AxisMapping, file_mapping_for
 from .discovery import position_id
 from .metadata import inspect_image
 from .validation import ValidationIssue, error, plural
-from .zarr_export import ConversionSettings
 
 MANIFEST_FILENAME = "run_manifest.json"
 MANIFEST_VERSION = "1"
@@ -65,12 +64,6 @@ class RunSettings:
         them.
     exclude
         Relative paths of images the user excluded from the run, sorted.
-    convert_tiffs
-        Whether TIFF images are converted to OME-Zarr in the output folder and
-        their histograms computed from the converted copies.
-    conversion
-        How the copies are written (chunk size, compression, smaller levels);
-        only used when ``convert_tiffs`` is on. It does not change any row.
     histogram
         The histogram range of histograms that are not exact, with the limits of
         the range check (the normalization brick's ``HistogramSettings``).
@@ -82,8 +75,6 @@ class RunSettings:
     memory_limit: int
     missing_as_singleton: bool = False
     exclude: tuple[str, ...] = ()
-    convert_tiffs: bool = False
-    conversion: ConversionSettings = field(default_factory=ConversionSettings)
     histogram: HistogramSettings = field(default_factory=HistogramSettings)
 
     def __post_init__(self) -> None:
@@ -116,9 +107,6 @@ class FileEntry:
         Channel names from metadata; empty when not given.
     significant_bits
         Significant bits from metadata; None when not given.
-    ome_zarr_path
-        For a TIFF converted to OME-Zarr, the converted copy relative to the
-        output folder (its rows are computed from it); otherwise None.
     channel_names_trimmed
         True when leading or trailing whitespace was removed from the image's
         channel names as they were read (names are recorded trimmed).
@@ -146,7 +134,6 @@ class FileEntry:
     plane_count: int = 0
     channel_names: tuple[str | None, ...] = ()
     significant_bits: int | None = None
-    ome_zarr_path: str | None = None
     read_in_blocks: bool = False
     position_id: str | None = None
     channel_names_trimmed: bool = False
@@ -161,7 +148,6 @@ class FileEntry:
             and self.labels == other.labels
             and self.axes == other.axes
             and self.singleton_roles == other.singleton_roles
-            and self.ome_zarr_path == other.ome_zarr_path
         )
 
 
@@ -312,8 +298,6 @@ class RunManifest:
                     self.settings.missing_as_singleton, "missing_as_singleton"
                 ),
                 "exclude": list(self.settings.exclude),
-                "convert_tiffs": _flag(self.settings.convert_tiffs, "convert_tiffs"),
-                "conversion": self.settings.conversion.to_dict(),
                 "histogram": self.settings.histogram.to_dict(),
             },
             "axis_mapping": {"axes": self.mapping.axes, "roles": list(self.mapping.roles)},
@@ -370,8 +354,6 @@ class RunManifest:
                     memory_limit=int(settings["memory_limit"]),
                     missing_as_singleton=_flag(settings["missing_as_singleton"]),
                     exclude=tuple(str(p) for p in settings["exclude"]),
-                    convert_tiffs=_flag(settings.get("convert_tiffs", False)),
-                    conversion=ConversionSettings.from_dict(settings.get("conversion")),
                     histogram=(
                         HistogramSettings()
                         if settings.get("histogram") is None
@@ -421,7 +403,6 @@ def file_entry_for(  # noqa: PLR0913
     plane_count: int = 0,
     channel_names: tuple[str | None, ...] = (),
     significant_bits: int | None = None,
-    ome_zarr_path: str | None = None,
     read_in_blocks: bool = False,
     channel_names_trimmed: bool = False,
 ) -> FileEntry:
@@ -437,7 +418,6 @@ def file_entry_for(  # noqa: PLR0913
         plane_count=plane_count,
         channel_names=tuple(channel_names),
         significant_bits=significant_bits,
-        ome_zarr_path=ome_zarr_path,
         read_in_blocks=read_in_blocks,
         position_id=position_id(relative_path),
         channel_names_trimmed=channel_names_trimmed,
@@ -686,7 +666,6 @@ def _file_dict(entry: FileEntry) -> dict:
         "plane_count": entry.plane_count,
         "channel_names": list(entry.channel_names),
         "significant_bits": entry.significant_bits,
-        "ome_zarr_path": entry.ome_zarr_path,
         "read_in_blocks": _flag(entry.read_in_blocks, "read_in_blocks"),
         "position_id": entry.position_id,
         "channel_names_trimmed": _flag(entry.channel_names_trimmed, "channel_names_trimmed"),
@@ -710,7 +689,6 @@ def _file_entry(data: dict) -> FileEntry:
         plane_count=int(data["plane_count"]),
         channel_names=tuple(None if n is None else str(n) for n in data.get("channel_names", [])),
         significant_bits=None if bits is None else int(bits),
-        ome_zarr_path=None if data.get("ome_zarr_path") is None else str(data["ome_zarr_path"]),
         read_in_blocks=_flag(data.get("read_in_blocks", False)),
         position_id=None if data.get("position_id") is None else str(data["position_id"]),
         channel_names_trimmed=_flag(data.get("channel_names_trimmed", False)),

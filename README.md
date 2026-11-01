@@ -54,12 +54,11 @@ Pre-alpha. Implemented and tested:
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
 to its release v0.3.2): per-plane histograms with the robust range and the range check
 (`histogram`, `ranges`), the histogram table (`csv_io`, schema version 4), pooled group statistics
-(`pooling`) and normalization parameters (`normalization`). Importing these
-names from `morphobricks_preprocessing` still works for one version, with a
-`DeprecationWarning`.
+(`pooling`) and normalization parameters (`normalization`); import them from
+`morphobricks_normalization` (the deprecated paths through `morphobricks_preprocessing` were
+removed in v0.4.0).
 
-Optional (the `zarr` extra): OME-Zarr images as input (`zarr_input`), and converting TIFF
-images to OME-Zarr before processing them (`zarr_export`). **New users: start with the
+Optional (the `zarr` extra): OME-Zarr images as input (`zarr_input`). **New users: start with the
 [user guide](docs/user_guide.md).**
 
 ## Installation

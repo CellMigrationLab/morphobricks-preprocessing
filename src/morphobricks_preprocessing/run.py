@@ -26,7 +26,7 @@ import logging
 import os
 import shutil
 import tempfile
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -76,28 +76,16 @@ from .manifest import (
 )
 from .mask_checks import mask_issues
 from .masks import MaskInventory, find_masks
-from .metadata import MetadataReport, TiffMetadata, inspect_images
+from .metadata import MetadataReport, inspect_images
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
     Plane,
     PlaneReadError,
     check_planes,
-    iter_planes,
     iter_xyc_planes,
-    plane_layout,
     read_sample_plane,
 )
 from .validation import ValidationIssue, error, has_errors, plural, warning
-from .zarr_export import (
-    ConversionSettings,
-    OmeZarrWriter,
-    copy_channels_current,
-    copy_units_current,
-    is_copy_path,
-    ome_zarr_relative_path,
-    read_physical_sizes,
-    zarr_available,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -177,8 +165,6 @@ class RunResult:
         Why every row was recomputed, or None when the earlier table was updated.
     plane_count
         Number of rows in the written table.
-    converted
-        Files whose OME-Zarr copy was written in this run.
     design
         The experiment design written with the table, or None when the run was
         given none.
@@ -201,7 +187,6 @@ class RunResult:
     excluded: tuple[str, ...] = ()
     rebuild_reason: str | None = None
     plane_count: int = 0
-    converted: tuple[str, ...] = ()
     design: ExperimentDesign | None = None
     image_type: str | None = None
     intensity: IntensityReport | None = None
@@ -347,8 +332,6 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
     exclude: Iterable[str] = (),
     force_rebuild: bool = False,
     progress: Callable[[int, int, str], None] | None = None,
-    convert_tiffs: bool = False,
-    conversion: ConversionSettings | None = None,
     design: ExperimentDesign | None = None,
     masks_folder: str | os.PathLike | None = None,
     ome_zarr_labels: bool = False,
@@ -381,16 +364,6 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
     progress
         Called as ``progress(done, total, relative_path)`` before each file is
         read, and as ``progress(total, total, "")`` when reading is finished.
-    convert_tiffs
-        Convert every TIFF image to OME-Zarr in ``<output>/ome_zarr`` and compute
-        its histograms from the converted copy, as for any OME-Zarr image (needs
-        the ``zarr`` extra). Copies of unchanged images are kept; copies of
-        images no longer converted are removed. Switching this recomputes the
-        rows of every TIFF image.
-    conversion
-        How converted copies are written (chunk size, compression, smaller
-        levels); defaults to :class:`ConversionSettings`. Changing it rewrites
-        the copies of every TIFF image.
     design
         The experiment design the user confirmed: how biological repeats pair
         across conditions, and the controls. It is brought up to date with the
@@ -434,15 +407,12 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
     ------
     ValueError
         For an image type other than ``"fluorescence"`` and ``"rgb"``, or for
-        ``missing_as_singleton`` or ``convert_tiffs`` that is not True or False
+        ``missing_as_singleton`` that is not True or False
         (the manifest records them as JSON booleans, contract §9).
     """
     if image_type is not None:
         check_image_type(image_type)
-    for name, value in (
-        ("missing_as_singleton", missing_as_singleton),
-        ("convert_tiffs", convert_tiffs),
-    ):
+    for name, value in (("missing_as_singleton", missing_as_singleton),):
         # Refused before anything is read rather than when the manifest is written.
         if not isinstance(value, bool):
             raise ValueError(f"{name} must be True or False, found {value!r}")
@@ -484,16 +454,6 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
                 histogram_settings=histogram_settings,
             )
         )
-    if convert_tiffs and not zarr_available():
-        issues.append(
-            error(
-                "zarr_not_installed",
-                "Converting the TIFF images to OME-Zarr was requested, but the zarr package "
-                "is not installed.",
-                action='Install it with pip install "morphobricks-preprocessing[zarr]", or '
-                "read the TIFF images directly.",
-            )
-        )
 
     def stop(**counts) -> RunResult:  # noqa: ANN003
         return RunResult(output, False, _sorted(issues), excluded=pre.excluded, **counts)
@@ -501,21 +461,16 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
     if has_errors(issues):
         return stop()
 
-    conversion = conversion or ConversionSettings()
     settings = RunSettings(
         bins,
         memory_limit,
         missing_as_singleton,
         pre.excluded,
-        convert_tiffs,
-        conversion,
         histogram=histogram_settings or HistogramSettings(),
     )
     previous, previous_records, reason = _load_previous(
         output, settings, mapping, dtype.name, force_rebuild
     )
-    # Copies written with other conversion settings are rewritten (their rows are the same).
-    same_conversion = previous is None or previous.settings.conversion == conversion
     labels = {image: leaf.labels for leaf in pre.discovery.leaves for image in leaf.images}
     in_blocks = {path for i in issues if i.code == "planes_read_in_blocks" for path in i.paths}
     headers = {f.relative_path: f for f in pre.metadata.files}
@@ -523,7 +478,6 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
     new, changed, unchanged = [], [], []
     for rel, file_mapping in sorted(review.file_mappings.items()):
         header = headers[rel]
-        copy = ome_zarr_relative_path(rel) if convert_tiffs and not header.is_ome_zarr else None
         entries[rel] = file_entry_for(
             root,
             rel,
@@ -531,7 +485,6 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
             file_mapping,
             channel_names=header.channel_names,
             significant_bits=header.significant_bits,
-            ome_zarr_path=copy,
             read_in_blocks=rel in in_blocks,
             channel_names_trimmed=header.channel_names_trimmed,
         )
@@ -546,18 +499,6 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
             before.same_source(entries[rel])
             # During a rebuild there are no rows to check; otherwise the rows must be complete.
             and (reason is not None or len(previous_records.get(rel, ())) == before.plane_count)
-            # Rows of a converted TIFF are only kept while its copy is still there, as
-            # written with the same settings and with the axis units read now (copies
-            # written before each axis had its own unit are written again).
-            and (
-                copy is None
-                or (
-                    (output / copy).is_dir()
-                    and same_conversion
-                    and copy_units_current(output / copy, header.physical_sizes)
-                    and copy_channels_current(output / copy, header.channel_names)
-                )
-            )
         ):
             unchanged.append(rel)
         else:
@@ -576,9 +517,6 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
         "rebuild_reason": reason,
     }
 
-    to_convert = [rel for rel in to_read if entries[rel].ome_zarr_path]
-    staging = _CopyStaging(output, root, conversion) if to_convert else None
-
     records: list[PlaneRecord] = []
     narrow: list[NarrowRange] = []
     for rel in unchanged if not reason else ():
@@ -591,32 +529,24 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
         # Kept rows keep the range checks they were written with.
         narrow.extend(entry for entry in previous.narrow_ranges if entry.relative_path == rel)
     failed: list[str] = []
-    try:
-        for done, rel in enumerate(to_read):
-            if progress is not None:
-                progress(done, len(to_read), rel)
-            file_mapping = review.file_mappings[rel]
-            position = entries[rel].position_id
-            try:
-                if rel in to_convert:
-                    # Convert first, then read the copy like any other OME-Zarr image.
-                    copy, copy_mapping = staging.convert(rel, file_mapping, headers[rel], settings)
-                    rows, ranges = _read_file(
-                        copy, rel, labels[rel], copy_mapping, settings, position
-                    )
-                else:
-                    rows, ranges = _read_file(
-                        root / rel, rel, labels[rel], file_mapping, settings, position
-                    )
-                records.extend(rows)
-                narrow.extend(ranges)
-            except PlaneReadError:
-                logger.warning("Cannot read the planes of %s", rel, exc_info=True)
-                failed.append(rel)
-    except BaseException:
-        if staging is not None:
-            staging.discard()
-        raise
+    for done, rel in enumerate(to_read):
+        if progress is not None:
+            progress(done, len(to_read), rel)
+        try:
+            rows, ranges = _read_file(
+                root / rel,
+                rel,
+                labels[rel],
+                review.file_mappings[rel],
+                settings,
+                entries[rel].position_id,
+            )
+        except PlaneReadError:
+            logger.warning("Cannot read the planes of %s", rel, exc_info=True)
+            failed.append(rel)
+            continue
+        records.extend(rows)
+        narrow.extend(ranges)
     if progress is not None:
         progress(len(to_read), len(to_read), "")
     if failed:
@@ -629,16 +559,12 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
                 "Export the images again, or exclude them from the run to continue without them.",
             )
         )
-        if staging is not None:
-            staging.discard()
         return stop(read=tuple(to_read), **counts)
 
     issues.extend(_pixel_issues(records))
     narrow.sort(key=lambda entry: (entry.plane_id, entry.channel))
     issues.extend(_range_issues(narrow))
     if has_errors(issues):
-        if staging is not None:
-            staging.discard()
         return stop(read=tuple(to_read), **counts)
 
     records.sort(key=_row_order)
@@ -648,23 +574,7 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
     for record in records:
         per_file[record.source_relative_path] = per_file.get(record.source_relative_path, 0) + 1
     output.mkdir(parents=True, exist_ok=True)
-    # Copies recorded for images no longer analysed, or no longer converted, are
-    # removed; a damaged manifest cannot point the removal outside this brick's own
-    # ome_zarr folder.
-    removed_copies = [
-        f.ome_zarr_path
-        for f in (previous.files if previous else ())
-        if f.ome_zarr_path
-        and (f.relative_path not in entries or entries[f.relative_path].ome_zarr_path is None)
-        and is_copy_path(output, f.ome_zarr_path)
-    ]
-    with _staged_outputs(
-        output,
-        staging.root if staging is not None else None,
-        copies=[ome_zarr_relative_path(rel) for rel in to_convert],
-        removed_copies=removed_copies,
-        with_design=design is not None,
-    ) as staged:
+    with _staged_outputs(output, with_design=design is not None) as staged:
         csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME)
         design_sha256 = None
         if design is not None:
@@ -702,7 +612,6 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
         read=tuple(to_read),
         excluded=pre.excluded,
         plane_count=len(records),
-        converted=tuple(to_convert),
         design=design,
         image_type=image_type,
         intensity=intensity,
@@ -715,25 +624,17 @@ class _OutputRollbackError(RuntimeError):
 
 
 @contextmanager
-def _staged_outputs(
-    output: Path,
-    staged: Path | None = None,
-    *,
-    copies: Sequence[str] = (),
-    removed_copies: Sequence[str] = (),
-    with_design: bool = False,
-) -> Iterator[Path]:
+def _staged_outputs(output: Path, *, with_design: bool = False) -> Iterator[Path]:
     """Prepare all outputs before publishing, and retain backups if recovery fails.
 
-    ``staged`` is a temporary folder inside ``output`` that may already hold the
-    OME-Zarr ``copies`` written while reading; one is created if None.
-    ``with_design`` publishes ``experiment_design.csv`` too.
+    The outputs are written to a temporary folder inside ``output``; ``with_design``
+    publishes ``experiment_design.csv`` too.
     """
-    staged = staged or Path(tempfile.mkdtemp(prefix=".run-", dir=output))
+    staged = Path(tempfile.mkdtemp(prefix=".run-", dir=output))
     keep_backups = False
     try:
         yield staged
-        _publish_outputs(output, staged, copies, removed_copies, with_design)
+        _publish_outputs(output, staged, with_design)
     except _OutputRollbackError:
         keep_backups = True
         raise
@@ -746,18 +647,11 @@ def _staged_outputs(
                 logger.warning("Cannot remove temporary output folder %s", staged, exc_info=True)
 
 
-def _publish_outputs(
-    output: Path,
-    staged: Path,
-    copies: Sequence[str] = (),
-    removed_copies: Sequence[str] = (),
-    with_design: bool = False,
-) -> None:
+def _publish_outputs(output: Path, staged: Path, with_design: bool = False) -> None:
     """Replace the outputs, restoring their previous state on a publication failure.
 
-    OME-Zarr copies are published first and the manifest last, so a manifest never
-    names a copy or design that is not in place. Earlier copies are moved into the
-    backup folder rather than copied, because they can be large.
+    The manifest is published last, so a manifest never names a design that is not in
+    place.
     """
     filenames = (OUTPUT_FILENAME, *((DESIGN_FILENAME,) if with_design else ()), MANIFEST_FILENAME)
     backup = staged / "previous"
@@ -768,34 +662,18 @@ def _publish_outputs(
         previous = output / name
         if previous.exists() or previous.is_symlink():
             shutil.copy2(previous, backup / name, follow_symlinks=False)
-    # Undo steps in order: ("moved", copy) went to the backup, ("placed", copy) is new,
-    # ("file", name) is a published table or manifest.
-    done: list[tuple[str, str]] = []
+    published: list[str] = []
     try:
-        for target in removed_copies:
-            if (output / target).exists():
-                _move(output / target, backup / target)
-                done.append(("moved", target))
-        for target in copies:
-            if (output / target).exists():
-                _move(output / target, backup / target)
-                done.append(("moved", target))
-            _move(staged / target, output / target)
-            done.append(("placed", target))
         for name in filenames:
             os.replace(staged / name, output / name)
-            done.append(("file", name))
+            published.append(name)
     except BaseException:
         try:
-            for kind, item in reversed(done):
-                if kind == "placed":
-                    shutil.rmtree(output / item)
-                elif kind == "moved":
-                    _move(backup / item, output / item)
-                elif (backup / item).exists() or (backup / item).is_symlink():
-                    os.replace(backup / item, output / item)
+            for name in reversed(published):
+                if (backup / name).exists() or (backup / name).is_symlink():
+                    os.replace(backup / name, output / name)
                 else:
-                    (output / item).unlink()
+                    (output / name).unlink()
         except BaseException as exc:
             raise _OutputRollbackError(
                 "The output update failed and the earlier files could not be fully restored. "
@@ -843,64 +721,6 @@ def _read_file(
             if check is not None and check.narrow
         )
     return records, narrow
-
-
-def _move(source: Path, destination: Path) -> None:
-    """Rename a file or folder, creating the destination's parent folders."""
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    os.replace(source, destination)
-
-
-class _CopyStaging:
-    """The run's temporary folder while TIFF images are converted to OME-Zarr.
-
-    The copies are published with the table and manifest by :func:`_staged_outputs`,
-    which reuses this folder; :meth:`discard` removes it when the run stops early.
-    """
-
-    def __init__(self, output: Path, experiment_root: Path, settings: ConversionSettings):  # noqa: ANN204
-        self.output = output
-        self.experiment_root = experiment_root
-        self.settings = settings
-        self.created_output = not output.exists()
-        output.mkdir(parents=True, exist_ok=True)
-        self.root = Path(tempfile.mkdtemp(prefix=".run-", dir=output))
-
-    def writer(
-        self, rel: str, mapping: AxisMapping, header: TiffMetadata, memory_limit: int
-    ) -> OmeZarrWriter:
-        """Create the writer of one image's copy inside the temporary folder."""
-        source = self.experiment_root / rel
-        return OmeZarrWriter.create(
-            self.root / ome_zarr_relative_path(rel),
-            mapping,
-            plane_layout(source, mapping),
-            sizes=read_physical_sizes(source),
-            channel_names=header.channel_names,
-            name=rel,
-            settings=self.settings,
-            memory_limit=memory_limit,
-        )
-
-    def convert(
-        self, rel: str, mapping: AxisMapping, header: TiffMetadata, settings: RunSettings
-    ) -> tuple[Path, AxisMapping]:
-        """Convert one TIFF plane by plane; return the copy and its own axis mapping."""
-        writer = self.writer(rel, mapping, header, settings.memory_limit)
-        for plane in iter_planes(
-            self.experiment_root / rel,
-            mapping,
-            memory_limit=settings.memory_limit,
-            bin_count=settings.bin_count,
-        ):
-            writer.write(plane)
-        return writer.finish(), writer.mapping
-
-    def discard(self) -> None:
-        """Remove the temporary folder, and the output folder if this run created it."""
-        shutil.rmtree(self.root, ignore_errors=True)
-        if self.created_output and not any(self.output.iterdir()):
-            self.output.rmdir()
 
 
 def _load_previous(

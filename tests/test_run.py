@@ -7,22 +7,23 @@ from pathlib import Path
 import numpy as np
 import pytest
 import tifffile
-from morphobricks_normalization.csv_io import write_plane_histograms
+from morphobricks_normalization.csv_io import (
+    OUTPUT_FILENAME,
+    read_plane_histograms,
+    write_plane_histograms,
+)
+from morphobricks_normalization.pooling import PooledHistogram
+from morphobricks_normalization.records import SINGLE, group_records
 
 from morphobricks_preprocessing import (
     MANIFEST_FILENAME,
-    OUTPUT_FILENAME,
-    SINGLE,
     AxisMapping,
     PlaneReadError,
-    PooledHistogram,
     Severity,
-    group_records,
     plane_layout,
     prefill_mapping,
     preflight,
     read_manifest,
-    read_plane_histograms,
     run_experiment,
 )
 from morphobricks_preprocessing import planes as planes_module
@@ -941,11 +942,10 @@ def test_sample_planes_report_problems(tmp_path):
     assert "limit" in too_big[0].error and too_big[0].plane is None
 
 
-@pytest.mark.parametrize("flag", ["missing_as_singleton", "convert_tiffs"])
+@pytest.mark.parametrize("flag", ["missing_as_singleton"])
 @pytest.mark.parametrize("value", [1, "false", np.bool_(True)])
 def test_run_refuses_flags_that_are_not_booleans_before_reading(experiment, tmp_path, flag, value):
-    # Review of #44: the manifest writer refuses such flags; the run refuses them up
-    # front instead of after every image has been read.
+    # Review of #44: the run refuses such flags before reading, as the manifest writer does.
     output = tmp_path / "out"
     with pytest.raises(ValueError, match=f"{flag} must be True or False"):
         run_experiment(experiment, ZYX, output_folder=output, **{flag: value})

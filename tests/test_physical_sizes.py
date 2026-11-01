@@ -1,11 +1,10 @@
-import pickle
 from dataclasses import replace
 
 import numpy as np
 import pytest
 import tifffile
 
-from morphobricks_preprocessing import PhysicalSizes, read_physical_sizes, zarr_export
+from morphobricks_preprocessing import PhysicalSizes, read_physical_sizes
 from morphobricks_preprocessing import physical_sizes as physical_sizes_module
 
 # PhysicalSizes(x=0.1, y=0.2, z=0.5, space_unit="micrometer") pickled before per-axis units.
@@ -126,15 +125,6 @@ def test_replace_keeps_units_consistent():
     assert replace(sizes, space_unit=None).unit("X") is None
 
 
-def test_sizes_pickled_before_per_axis_units_keep_their_unit():
-    # PhysicalSizes(x=0.1, y=0.2, z=0.5, space_unit="micrometer") pickled by the version
-    # before per-axis units (as morphobricks_preprocessing.zarr_export.PhysicalSizes).
-    sizes = pickle.loads(OLD_PICKLE)
-    assert [sizes.unit(role) for role in "XYZ"] == ["micrometer"] * 3
-    assert sizes == PhysicalSizes(x=0.1, y=0.2, z=0.5, space_unit="micrometer")
-    assert pickle.loads(pickle.dumps(sizes)) == sizes
-
-
 def test_equal_sizes_hash_alike():
     given = PhysicalSizes(x=0.1, space_unit="micrometer")
     spelled_out = PhysicalSizes(
@@ -149,11 +139,6 @@ def test_units_of_unknown_sizes_and_channels_are_none():
     sizes = PhysicalSizes(x=1.0, space_unit="micrometer", time_unit="second")
     assert sizes.unit("Y") is None and sizes.unit("T") is None and sizes.unit("C") is None
     assert sizes.scale("Y") == 1.0
-
-
-def test_still_importable_from_zarr_export():
-    assert zarr_export.PhysicalSizes is physical_sizes_module.PhysicalSizes is PhysicalSizes
-    assert zarr_export.read_physical_sizes is read_physical_sizes
 
 
 # Unit spellings ------------------------------------------------------------------------

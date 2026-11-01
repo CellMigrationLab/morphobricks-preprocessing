@@ -10,16 +10,11 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 
-# The modules that moved to morphobricks_normalization stay importable as
-# deprecated stand-ins for one version (see _moved).
-from . import _moved, csv_io, dtypes, histogram, normalization, pooling, records  # noqa: F401
 from .axes import (
     AxisMapping,
     AxisReview,
     axis_length_ranges,
-    check_declared_axes,
     check_mapping,
-    declared_axes_transposed,
     declared_mapping,
     file_mapping_for,
     prefill_experiment_mapping,
@@ -180,13 +175,6 @@ from .planes import (
 from .report import GroupSummary, group_summaries
 from .run import Preflight, RunResult, SamplePlane, preflight, run_experiment, sample_planes
 from .validation import Severity, ValidationIssue, has_errors
-from .zarr_export import (
-    ConversionEstimate,
-    ConversionSettings,
-    OmeZarrWriter,
-    estimate_conversion,
-    ome_zarr_relative_path,
-)
 from .zarr_input import (
     NgffError,
     NgffImage,
@@ -197,20 +185,6 @@ from .zarr_input import (
     open_ngff_labels,
     zarr_available,
 )
-
-
-def __getattr__(name: str) -> object:
-    # Called only for names not defined here: the moved ones warn and come from
-    # the normalization brick, anything else is missing.
-    module = _moved.TOP_LEVEL_NAMES.get(name)
-    if module is None:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    return _moved.moved_attribute(__name__, module, name)
-
-
-def __dir__() -> list[str]:
-    return sorted({*globals(), *_moved.TOP_LEVEL_NAMES})
-
 
 try:
     __version__ = version("morphobricks-preprocessing")
@@ -237,11 +211,9 @@ __all__ = [
     "MASK_REPORT_FILENAME",
     "MISSING_TEXT",
     "OPEN_AXIS",
-    "OUTPUT_FILENAME",
     "PIXEL_SIZE_TOLERANCE",
     "PLACEHOLDER_AXES",
     "RGB",
-    "SINGLE",
     "SPACE_UNITS",
     "AxisMapping",
     "AxisReview",
@@ -251,8 +223,6 @@ __all__ = [
     "Block",
     "BlockReader",
     "ConfirmedDesign",
-    "ConversionEstimate",
-    "ConversionSettings",
     "DatasetReport",
     "DesignChanges",
     "DesignCheckError",
@@ -275,19 +245,12 @@ __all__ = [
     "MetadataReport",
     "NgffError",
     "NgffImage",
-    "NoValidPixelsError",
-    "NormalizationParameters",
-    "OmeZarrWriter",
     "PairRelation",
     "PhysicalSizes",
     "Plane",
-    "PlaneHistogram",
     "PlaneLayout",
     "PlaneMemoryError",
     "PlaneReadError",
-    "PlaneRecord",
-    "PooledHistogram",
-    "PooledStatistics",
     "Preflight",
     "RepeatBox",
     "RunManifest",
@@ -296,7 +259,6 @@ __all__ = [
     "SamplePlane",
     "Severity",
     "TiffMetadata",
-    "UnsupportedDtypeError",
     "UnsupportedUnitError",
     "ValidationIssue",
     "XycPlane",
@@ -306,7 +268,6 @@ __all__ = [
     "balance_table",
     "biological_repeats",
     "check_dataset",
-    "check_declared_axes",
     "check_identity_case",
     "check_identity_text",
     "check_image_type",
@@ -319,21 +280,15 @@ __all__ = [
     "check_planes",
     "check_sources",
     "check_table",
-    "compute_block_histogram",
-    "compute_plane_histogram",
-    "declared_axes_transposed",
     "declared_mapping",
-    "default_bin_count",
     "default_design",
     "default_output_folder",
     "default_repeat_groups",
     "design_issues",
     "discover_experiment",
-    "estimate_conversion",
     "file_mapping_for",
     "file_sha256",
     "find_masks",
-    "group_records",
     "group_summaries",
     "has_errors",
     "header_axes",
@@ -349,25 +304,20 @@ __all__ = [
     "iter_xyc_planes",
     "likely_axis_cause",
     "load_design",
-    "make_plane_id",
     "images_named_as_masks",
     "mask_issues",
     "mask_name_issues",
     "mask_plane_issues",
     "mask_size_issues",
     "mask_thresholds",
-    "min_max",
     "named_axes",
     "ngff_label_names",
-    "ome_zarr_relative_path",
     "open_ngff",
     "open_ngff_labels",
     "pair_counts",
-    "percentile_range",
     "piece_counts",
     "pixel_size_groups",
     "plane_layout",
-    "pooled_statistics",
     "position_id",
     "prefill_experiment_mapping",
     "prefill_mapping",
@@ -379,7 +329,6 @@ __all__ = [
     "read_mask_file",
     "read_physical_sizes",
     "read_plane",
-    "read_plane_histograms",
     "read_sample_plane",
     "reconcile_design",
     "reference_axes",
@@ -387,7 +336,6 @@ __all__ = [
     "repeat_distributions",
     "review_axes",
     "review_image_type",
-    "robust_z_score",
     "run_experiment",
     "same_pixel_size",
     "sample_planes",
@@ -399,7 +347,5 @@ __all__ = [
     "write_experiment_design",
     "write_manifest",
     "write_mask_report",
-    "write_plane_histograms",
-    "z_score",
     "zarr_available",
 ]
