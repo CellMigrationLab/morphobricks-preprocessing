@@ -16,7 +16,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from .metadata import OPEN_AXIS, TiffMetadata, named_axes
+from .axis_names import OPEN_AXIS
+from .metadata import TiffMetadata, named_axes
 from .validation import ValidationIssue, error, plural, warning
 
 if TYPE_CHECKING:  # the mapping class lives in .axes, which imports this module

@@ -3,8 +3,10 @@
 Every mask entry adds to what :meth:`.masks.MaskInventory.to_manifest` gives its
 fingerprint (``size``, ``mtime_ns``), so a brick can tell a mask changed since the run, and
 how it is read: ``roles`` (one per axis of ``axes``), ``axes_from`` (``"header"``: the
-mask's metadata names them) and ``shared`` (a 2-D mask stated as shared by every plane of
-its image; never without a statement).
+mask's metadata names them; ``"stated"``: the user stated them for its mask type) and
+``shared`` (a 2-D mask stated as shared by every plane of its image; never without a
+statement). A label image of an OME-Zarr image has its own fingerprint, left out of its
+image's (:func:`.manifest.source_fingerprint`).
 """
 
 from __future__ import annotations
@@ -30,7 +32,9 @@ def mask_manifest(inventory: MaskInventory, experiment_root: str | os.PathLike) 
     -------
     dict
         :meth:`.masks.MaskInventory.to_manifest` with, per file, ``size``, ``mtime_ns``,
-        ``roles``, ``axes_from`` and ``shared``.
+        ``roles``, ``axes_from`` and ``shared``. ``axes`` are the mask's axes as stored
+        (its header's letters, ``"IYX"`` for a plain stack), ``roles`` what they are read as
+        (``"TYX"`` when stated), so a brick reads the mask as stored, never reordered.
     """
     data = inventory.to_manifest()
     by_path = {mask.path: mask for mask in inventory.files}
@@ -38,11 +42,12 @@ def mask_manifest(inventory: MaskInventory, experiment_root: str | os.PathLike) 
         mask = by_path[entry["path"]]
         fingerprint = Fingerprint.of(_mask_path(mask, inventory.folder, Path(experiment_root)))
         entry.update(
+            axes=mask.header_axes or mask.axes,
             size=fingerprint.size,
             mtime_ns=fingerprint.mtime_ns,
             roles=mask.axes,
-            axes_from="header",
-            shared=False,
+            axes_from=mask.axes_from or "header",
+            shared=mask.shared,
         )
     return data
 

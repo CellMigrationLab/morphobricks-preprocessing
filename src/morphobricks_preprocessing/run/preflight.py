@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterable
-from dataclasses import dataclass, field
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from ..axes import (
@@ -19,6 +19,7 @@ from ..axes import (
 )
 from ..dataset import DatasetReport, check_dataset
 from ..discovery import DiscoveryResult, default_output_folder, discover_experiment
+from ..mask_names import MASK_NAME_CODES, mask_name_issues
 from ..masks import MaskInventory, find_masks
 from ..metadata import MetadataReport, inspect_images
 from ..planes import (
@@ -146,7 +147,7 @@ def preflight(
     *,
     exclude: Iterable[str] = (),
     masks_folder: str | os.PathLike | None = None,
-    ome_zarr_labels: bool = False,
+    mask_axes: Mapping[str, str] | None = None,
 ) -> Preflight:
     """Pass 1: check the folder and the image headers without reading pixels.
 
@@ -162,11 +163,10 @@ def preflight(
     masks_folder
         The masks folder (contract §15): one subfolder per mask type, each
         mirroring the experiment's folders. The masks are paired with the images
-        and checked from their headers; the label images of OME-Zarr images are
-        included.
-    ome_zarr_labels
-        Use the label images of OME-Zarr images as masks, also without a masks
-        folder.
+        and checked from their headers. The label images of OME-Zarr images are
+        always used as masks, also without a masks folder (design v0.4 §2).
+    mask_axes
+        The axes stated per mask type, ``{type: roles}`` (:func:`.masks.find_masks`).
 
     Returns
     -------
@@ -176,11 +176,14 @@ def preflight(
     output = default_output_folder(root) if output_folder is None else Path(output_folder)
     discovery = discover_experiment(root, output)
     excluded = tuple(sorted({_normalise(path) for path in exclude}))
+    discovery = _without_excluded_masks(discovery, excluded)
     images = [path for path in discovery.images if path not in excluded]
     metadata = inspect_images(root, images)
-    masks = None
-    if masks_folder is not None or ome_zarr_labels:
-        masks = find_masks(masks_folder, discovery, metadata.files)
+    masks = find_masks(
+        masks_folder, discovery, metadata.files, mask_axes=mask_axes, output_folder=output
+    )
+    if masks_folder is None and not masks.files and not masks.issues:
+        masks = None  # no masks folder and no label images: the run has no masks
     return Preflight(
         discovery=discovery,
         metadata=metadata,
@@ -190,6 +193,17 @@ def preflight(
         dataset=check_dataset(discovery, excluded=excluded),
         masks=masks,
     )
+
+
+def _without_excluded_masks(
+    discovery: DiscoveryResult, excluded: tuple[str, ...]
+) -> DiscoveryResult:
+    """Screen the mask names again, leaving out excluded images: excluding one clears it."""
+    if not excluded:
+        return discovery
+    kept = [issue for issue in discovery.issues if issue.code not in MASK_NAME_CODES]
+    names = mask_name_issues(discovery.leaves, excluded=excluded)
+    return replace(discovery, issues=(*kept, *names))
 
 
 def _exclusion_issues(discovery: DiscoveryResult, excluded: tuple[str, ...]) -> list:

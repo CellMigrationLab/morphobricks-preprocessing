@@ -23,6 +23,7 @@ import logging
 import re
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -56,6 +57,7 @@ from .mask_scan import (
     scan_masks,
     write_mask_report,
 )
+from .masks import MaskInventory, mask_axes_option
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import (
     axis_check_summary,
@@ -69,7 +71,7 @@ from .report import (
     preflight_summary,
     run_summary,
 )
-from .run import preflight, run_experiment
+from .run import Preflight, preflight, run_experiment
 from .validation import has_errors
 
 _UNITS = {
@@ -233,6 +235,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     handler = _attach_log(args.log) if getattr(args, "log", None) else None
     try:
+        try:
+            args.mask_axes = mask_axes_option(args.mask_axes)
+        except ValueError as exc:
+            print(exc)
+            return 1
         return {"check": _check, "run": _run, "masks": _masks}[args.command](args)
     finally:
         if handler is not None:
@@ -241,6 +248,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _common(parser: argparse.ArgumentParser) -> None:
+    """Add the experiment and the options every command shares."""
     parser.add_argument("experiment", help="the experiment folder")
     parser.add_argument(
         "--output",
@@ -260,10 +268,35 @@ def _common(parser: argparse.ArgumentParser) -> None:
         help="masks folder: one subfolder per mask type, each mirroring the experiment's "
         "folders, outside the experiment; the label images of OME-Zarr images are added",
     )
+    _mask_axes_option(parser)
+
+
+def _mask_axes_option(parser: argparse.ArgumentParser) -> None:
+    """Add ``--mask-axes TYPE=ROLES``, stated once per mask type (design v0.4 §3)."""
+    parser.add_argument(
+        "--mask-axes",
+        action="append",
+        default=[],
+        metavar="TYPE=ROLES",
+        help="the axes of a mask type whose files do not name them, one role (Y, X, Z or T) "
+        "per axis as stored: Cells=TYX for plain stacks of time points, Cells=YX for one 2D "
+        "mask shared by every plane of its image (repeatable)",
+    )
+
+
+def _preflight(args: argparse.Namespace) -> Preflight:
+    """Run :func:`preflight` with the options every command shares."""
+    return preflight(
+        args.experiment,
+        args.output,
+        exclude=args.exclude,
+        masks_folder=args.masks,
+        mask_axes=args.mask_axes,
+    )
 
 
 def _check(args: argparse.Namespace) -> int:
-    pre = preflight(args.experiment, args.output, exclude=args.exclude, masks_folder=args.masks)
+    pre = _preflight(args)
     print(preflight_summary(pre))
     if pre.discovery.leaves:
         print()
@@ -327,13 +360,8 @@ def _masks(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(exc)
         return 1
-    pre = preflight(
-        args.experiment,
-        args.output,
-        exclude=args.exclude,
-        masks_folder=args.masks,
-        ome_zarr_labels=True,
-    )
+    pre = _preflight(args)
+    pre = replace(pre, masks=pre.masks or MaskInventory(folder=None))  # none found
     print(mask_summary(pre.masks))
     blocking = [*pre.discovery.issues, *pre.exclusion_issues, *pre.masks.issues]
     if blocking:
@@ -365,7 +393,7 @@ def _masks(args: argparse.Namespace) -> int:
 
 
 def _run(args: argparse.Namespace) -> int:  # noqa: PLR0915
-    pre = preflight(args.experiment, args.output, exclude=args.exclude, masks_folder=args.masks)
+    pre = _preflight(args)
     axes = reference_axes(pre.metadata.files)
     if axes is None:
         print(format_issues(pre.issues) or "No readable images were found.")
@@ -385,10 +413,6 @@ def _run(args: argparse.Namespace) -> int:  # noqa: PLR0915
             saturation_limit=args.saturation_limit,
             min_images=args.min_images,
         )
-    except ValueError as exc:
-        print(exc)
-        return 1
-    try:
         histogram_settings = HistogramSettings(
             histogram_range=args.histogram_range, robust_quantiles=tuple(args.robust_quantiles)
         )
@@ -435,6 +459,7 @@ def _run(args: argparse.Namespace) -> int:  # noqa: PLR0915
         progress=progress,
         design=design,
         masks_folder=args.masks,
+        mask_axes=args.mask_axes,
         image_type=image_type,
         intensity_settings=intensity_settings,
         histogram_settings=histogram_settings,

@@ -11,7 +11,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 from .axes import file_mapping_for
-from .discovery import position_id
+from .image_names import position_id
 from .manifest import RunManifest, source_fingerprint
 from .metadata import inspect_image
 from .validation import ValidationIssue, error, plural

@@ -110,7 +110,7 @@ def test_missing_and_unpaired_masks_are_warnings(experiment, masks):
 def test_masks_of_excluded_images_are_not_used(experiment, masks):
     found = inventory(experiment, masks, exclude=["drug/rep1/a.tif"])
     assert "drug/rep1/a.tif" not in found.images
-    assert codes(found.issues) == ["mask_without_image"]
+    assert codes(found.issues) == ["mask_of_excluded_image"]
 
 
 # The type after the image name -------------------------------------------------------
@@ -268,14 +268,14 @@ def test_label_images_of_ome_zarr_images_are_masks(tmp_path):
 
     path = write_ngff(tmp_path / "exp" / "ctrl" / "a.ome.zarr", np.zeros((16, 20), np.uint8), "yx")
     write_labels(path, {"cells": label_image(0), "nuclei": label_image(1)}, "yx")
-    found = preflight(tmp_path / "exp", ome_zarr_labels=True).masks
+    found = preflight(tmp_path / "exp").masks
     assert found.ok
     assert found.types == ("cells", "nuclei")
     assert [f.path for f in found.files] == [
         "ctrl/a.ome.zarr/labels/cells",
         "ctrl/a.ome.zarr/labels/nuclei",
     ]
-    assert preflight(tmp_path / "exp").masks is None  # only when masks are asked for
+    assert found.folder is None  # always used, without a masks folder (design v0.4 §2)
 
 
 # Run, manifest and command line -------------------------------------------------------
@@ -460,7 +460,7 @@ def test_label_images_with_time_points(tmp_path):
     path = write_ngff(tmp_path / "exp" / "a.ome.zarr", np.zeros((3, 16, 20), np.uint8), "tyx")
     data = np.stack([label_image(t) for t in range(3)])
     write_labels(path, {"cells": data}, "tyx")
-    found = preflight(tmp_path / "exp", ome_zarr_labels=True).masks
+    found = preflight(tmp_path / "exp").masks
     assert found.ok
     cells = found.for_image("a.ome.zarr")["cells"]
     assert (cells.axes, cells.planes) == ("TYX", {"Z": 1, "T": 3})
@@ -469,7 +469,7 @@ def test_label_images_with_time_points(tmp_path):
         tmp_path / "exp",
         prefill_mapping("TYX"),
         output_folder=tmp_path / "out",
-        ome_zarr_labels=True,
+        mask_axes=None,  # label images are always used (design v0.4 §2)
     )
     assert result.written, result.issues
 
@@ -538,7 +538,7 @@ def test_a_malformed_labels_group_is_an_error_not_a_vanished_mask_type(tmp_path)
     for path in paths:
         group = zarr.open_group(str(path / "labels"), mode="a")
         group.attrs.update({"labels": "cells"})
-    found = preflight(tmp_path / "exp", ome_zarr_labels=True).masks
+    found = preflight(tmp_path / "exp").masks
     assert not found.ok
     assert codes(found.issues) == ["unreadable_mask"]
     assert found.issues[0].paths == ("ctrl/a.ome.zarr/labels", "drug/a.ome.zarr/labels")
@@ -546,7 +546,7 @@ def test_a_malformed_labels_group_is_an_error_not_a_vanished_mask_type(tmp_path)
         tmp_path / "exp",
         prefill_mapping("YX"),
         output_folder=tmp_path / "out",
-        ome_zarr_labels=True,
+        mask_axes=None,  # label images are always used (design v0.4 §2)
     )
     assert not result.written and "unreadable_mask" in codes(result.issues)
 

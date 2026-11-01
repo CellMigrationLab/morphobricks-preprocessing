@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -77,7 +77,7 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
     progress: Callable[[int, int, str], None] | None = None,
     design: ExperimentDesign | None = None,
     masks_folder: str | os.PathLike | None = None,
-    ome_zarr_labels: bool = False,
+    mask_axes: Mapping[str, str] | None = None,
     image_type: str | None = None,
     intensity_settings: IntensityCheckSettings | None = None,
     histogram_settings: HistogramSettings | None = None,
@@ -118,11 +118,12 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
         with the table, and its SHA-256 recorded in the manifest. Without a
         design nothing is asked, the manifest records none, and an existing
         ``experiment_design.csv`` is left as it is.
-    masks_folder, ome_zarr_labels
-        As :func:`preflight`. The masks are recorded in the manifest (``masks``,
-        contract §9); an error about them stops the run, including a mask whose
-        depth slices and time points are not its image's under the confirmed
-        roles (``mask_planes_mismatch``). Their pixels are not read: the mask
+    masks_folder, mask_axes
+        As :func:`preflight`; the label images of OME-Zarr images are always used.
+        The masks are recorded in the manifest (``masks``, contract §9); an error
+        about them stops the run, including a mask whose depth slices and time
+        points are not its image's under the confirmed roles
+        (``mask_planes_mismatch``). Their pixels are not read: the mask
         step (:func:`.mask_scan.scan_masks`) does that.
     image_type
         The image type the user confirmed, ``"fluorescence"`` or ``"rgb"``
@@ -163,9 +164,7 @@ def run_experiment(  # noqa: C901, PLR0913, PLR0915
             raise ValueError(f"{name} must be True or False, found {value!r}")
     root = Path(experiment_root).resolve()
     output = default_output_folder(root) if output_folder is None else Path(output_folder).resolve()
-    pre = preflight(
-        root, output, exclude=exclude, masks_folder=masks_folder, ome_zarr_labels=ome_zarr_labels
-    )
+    pre = preflight(root, output, exclude=exclude, masks_folder=masks_folder, mask_axes=mask_axes)
     # A plain stack changed since its roles were confirmed is not covered (audit 2 B-1).
     mapping = unchanged_confirmation(mapping, root)
     review = review_axes(pre.metadata, mapping, missing_as_singleton=missing_as_singleton)

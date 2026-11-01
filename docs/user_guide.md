@@ -86,7 +86,9 @@ experiment/
   an error (`invalid_name`).
 - Keep masks out of the experiment folder (see Masks below). Images named like a mask of
   another image (`f1_mask.tif` beside `f1.tif`), or a folder named like a masks folder
-  holding such files, give a warning (`image_named_as_mask`, `mask_folder_in_experiment`).
+  holding such files, are reported: an image named as a mask is an error (`image_named_as_mask`:
+  rename it or exclude it), a masks folder inside the experiment a warning
+  (`mask_folder_in_experiment`).
 - Each image is one position (field of view), named after its file without the extension:
   `img_01.tif` and `img_01.ome.zarr` are both position `img_01`. The same name may be used
   in different folders (`tech_rep1/img_01.tif` and `tech_rep2/img_01.tif` are two
@@ -401,6 +403,7 @@ never writes the file. Other options:
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
 | `--log FILE` | Write technical details to a file |
 | `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json` |
+| `--mask-axes TYPE=ROLES` | The axes of a mask type whose files do not name them, one role (Y, X, Z or T) per axis as stored: `Cells=TYX` for plain stacks of time points, `Cells=YX` for one 2D mask shared by every plane of its image (repeatable; `check`, `run`, `masks`). Masks are never reordered. |
 
 After writing, `run` prints the intensity checks of the table, grouped by kind, each with
 the channel, the image or biological repeat and the values compared, and what to do once
@@ -554,7 +557,7 @@ continues.
 | `no_usable_planes` | Error | No plane has finite pixel values. Check the images. |
 | `tiff_outside_leaf` | Error | Images sit in a folder that also holds subfolders, so they have no condition or repeat of their own. A folder holds either images or subfolders, never both. Move the images into a folder of their own, or out of the experiment folder. |
 | `non_tiff_file`, `empty_folder` | Warning | Files or folders that are skipped. |
-| `image_named_as_mask` | Warning | An image is named like a mask of another image (`f1_mask.tif` beside `f1.tif`; the endings `_mask`, `_labels`, `_label`, `_seg`, `_segmentation`), so a mask would be analysed as an image. If it is a mask, move it into a masks folder outside the experiment; if it is an image, nothing to do. |
+| `image_named_as_mask` | Error | An image is named like a mask of another image (`f1_mask.tif` beside `f1.tif`; the endings `_mask`, `_masks`, `_cp_masks`, `_labels`, `_label`, `_seg`, `_segmentation`), and a mask is never analysed as an image. If it is a mask, move it into a masks folder outside the experiment, or exclude it; if it is an image, rename it. |
 | `mask_folder_in_experiment` | Warning | A folder inside the experiment is named like a masks folder (`masks`, `ctrl_masks`, `CellLabels`) and holds files named like masks of the images; they would be analysed as images. Move it out of the experiment and give it as the masks folder, or rename it if these are images. |
 | `planes_read_in_blocks` | Warning | Planes too large for the memory limit are read in blocks. The results are the same; nothing to do. Raise the limit to read them whole, which is faster. |
 | `different_sizes` | Warning | Images have different widths or heights. Usually expected; otherwise check the camera settings. |
@@ -580,18 +583,21 @@ continues.
 | `no_finite_pixels` | Warning | Some planes have a channel without finite pixels; those channels are left out of group statistics. |
 | `excluded_images`, `excluded_path_not_found` | Warning | Images excluded as requested, or an excluded path that matches no image. |
 | `masks_folder_not_found` | Error | The masks folder does not exist. Select the folder that holds one folder per kind of mask. |
+| `output_inside_masks` | Error | The output folder is inside the masks folder, where the run's files would be read as masks. Choose another output folder. |
 | `masks_inside_experiment` | Error | The masks folder is inside the experiment folder, where its folders would be read as conditions and repeats. Move it next to the experiment folder. |
 | `mask_names_differ_in_case` | Error | Two kinds of mask have names that differ only in upper/lower case. Rename one. |
 | `duplicate_mask` | Error | An image has two masks of one kind (two extensions, or a file and an OME-Zarr label image of the same name). Keep one. |
 | `unreadable_mask` | Error | A mask cannot be opened, or holds several images, or the `labels` group of an OME-Zarr image cannot be read (it must list its label images). Save the mask again as a TIFF label image, or repair the OME-Zarr labels. |
-| `mask_not_2d` | Error | A mask has dimensions other than Y and X that its metadata does not name as depth (Z) or time (T), for example a plain stack. (A mask one pixel high or wide is a 2D mask, not this error.) Save it as a 2D label image, or with its axes named (an ImageJ hyperstack or OME-TIFF with axes TYX or ZYX). |
+| `mask_not_2d` | Error | A mask has dimensions other than Y and X that its metadata does not name as depth (Z) or time (T), for example a plain stack. (A mask one pixel high or wide is a 2D mask, not this error.) State the axes of its mask type once (`--mask-axes Cells=TYX`), or save it as a 2D label image, or with its axes named (an ImageJ hyperstack or OME-TIFF with axes TYX or ZYX). |
+| `invalid_mask_axes`, `mask_axes_contradict_header` | Error | Axes stated for a mask type do not fit its masks (one role, Y, X, Z or T, per axis; Y and X once each), name a type that is not found, or contradict the axes a mask's metadata names. Correct the statement. |
+| `mask_layout` | Error | A mask is stored with its Y and X the other way round from its image as read (X before Y, or the image's height and width swapped). Masks are never transposed: save it again with `numpy.swapaxes(mask, -1, -2)`. |
 | `mask_planes_differ` | Error | The masks of one image have different numbers of depth slices or time points. Make every mask of an image with the image's planes. |
-| `mask_planes_mismatch` | Error (`run`) | A mask does not have the depth slices and time points of its image under the confirmed axis roles: a 2D mask fits only an image with one plane (not a Z-stack or time-lapse), and a mask with Z or T needs as many slices or time points as its image. Save one mask plane per image plane, with the axes named, or check the axis roles. |
+| `mask_planes_mismatch` | Error (`run`) | A mask does not have the depth slices and time points of its image under the confirmed axis roles: a 2D mask fits only an image with one plane (not a Z-stack or time-lapse) unless its type is stated `YX` (`--mask-axes Cells=YX`: one mask shared by every plane), and a mask with Z or T needs as many slices or time points as its image. Save one mask plane per image plane, with the axes named, or check the axis roles. |
 | `mask_size_mismatch` | Error | A mask does not have the width and height of its image. Check that it was made from that image at full resolution. |
 | `mask_pixel_type` | Error | A mask's pixels are not whole numbers (for example decimals). Save it as an integer label image. |
 | `mask_missing` | Warning | Some images have no mask of a kind that other images have; their objects of that kind cannot be measured. Add the masks, or exclude the images. |
 | `ambiguous_mask` | Error | A mask's name could belong to two images (one image name starts another's) or fit both layouts. Rename the masks or the images so each names one image and one kind. |
-| `mask_without_image`, `mask_outside_type_folder` | Warning | Files in the masks folder that match no analysed image (check the folder and file names), or other files directly in the masks folder. They are not used. |
+| `mask_without_image`, `mask_outside_type_folder`, `mask_of_excluded_image` | Warning | Files in the masks folder that match no image of the experiment (check the folder and file names), other files directly in the masks folder, or masks of excluded images. They are not used. |
 | `images_not_in_manifest`, `images_missing`, `images_changed`, `position_id_not_recorded`, `identity_differs`, `axis_mapping_mismatch` | Error (other bricks) | A later brick checked its images against this brick's run (`check_sources`): an image the run did not analyse, no longer there, changed since, recorded with other labels or position (or by a version that did not record positions), or read with axes the run gave other roles. Run this brick again on the experiment as it is, or use the run's labels and axis roles. |
 | `zarr_not_installed` | Error | OME-Zarr images need the `zarr` extra. Install it, or exclude the OME-Zarr images. |
 
@@ -674,8 +680,9 @@ write_mask_report(report, "/data/exp1_MorphoBricks_Preprocessing/mask_relationsh
 ```
 
 `scan_masks(..., thresholds={"inside_object_share": 0.8})` changes a threshold (the others
-keep their defaults, `DEFAULT_THRESHOLDS`). `preflight(..., ome_zarr_labels=True)` uses the
-label images of OME-Zarr images without a masks folder; `read_mask` reads one mask's pixels
+keep their defaults, `DEFAULT_THRESHOLDS`). The label images of OME-Zarr images are always
+used, with or without a masks folder; `preflight(..., mask_axes={"Cells": "TYX"})` states
+the axes of a mask type whose files do not name them; `read_mask` reads one mask's pixels
 (a `ValueError` for a negative label or a label above 2,147,483,647, the int32 limit of
 every MorphoBricks brick, as in `piece_counts`, `pair_counts` and `scan_masks`; `check_labels`
 is that check alone);

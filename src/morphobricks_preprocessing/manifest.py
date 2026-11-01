@@ -36,7 +36,7 @@ from morphobricks_normalization.ranges import HistogramSettings
 
 from ._io import write_text_atomic
 from .axes import AxisMapping
-from .discovery import position_id
+from .image_names import position_id
 from .narrow_ranges import NarrowRange
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
 
@@ -46,6 +46,9 @@ AXES_FROM = ("header", "confirmed")
 MANIFEST_VERSION = "2"
 LEGACY_MANIFEST_VERSION = "1"
 """Manifests written before v0.4.0: read for reporting, never trusted (no row is reused)."""
+
+LABELS_GROUP = "labels"
+"""An OME-Zarr image's group of label images (masks): outside the image's fingerprint."""
 
 
 class ManifestFormatError(ValueError):
@@ -118,7 +121,7 @@ class FileEntry:
         read in blocks. For information only: the rows are the same either way.
     position_id
         The image's position identifier, its name without the extension
-        (:func:`~morphobricks_preprocessing.discovery.position_id`); None in
+        (:func:`~morphobricks_preprocessing.image_names.position_id`); None in
         manifests written before it was recorded.
     roles
         The role of each of the file's axes (``"X"``, ``"Y"``, ``"Z"``, ``"C"``,
@@ -400,14 +403,18 @@ def source_fingerprint(path: str | os.PathLike) -> tuple[int, int]:
 
     A TIFF file gives its own size and time. An OME-Zarr folder gives the total
     size of its files and the time of the newest one, so rewriting any chunk or
-    metadata file counts as a change.
+    metadata file counts as a change. Its ``labels`` group is left out: label
+    images are masks, fingerprinted one by one (design v0.4 §2), so adding or
+    changing one does not change the image.
     """
     path = Path(path)
     if not path.is_dir():
         stat = path.stat()
         return stat.st_size, stat.st_mtime_ns
     size, newest = 0, path.stat().st_mtime_ns
-    for folder, _, names in os.walk(path):
+    for folder, subfolders, names in os.walk(path):
+        if Path(folder) == path and LABELS_GROUP in subfolders:
+            subfolders.remove(LABELS_GROUP)
         for name in names:
             stat = (Path(folder) / name).stat()
             size += stat.st_size
