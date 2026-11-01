@@ -26,7 +26,7 @@ from morphobricks_preprocessing import (
     review_axes,
     run_experiment,
 )
-from morphobricks_preprocessing.axes import axis_disagreements
+from morphobricks_preprocessing.axis_check import axis_disagreements
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.design import default_design, write_experiment_design
 from morphobricks_preprocessing.discovery import default_output_folder
@@ -415,7 +415,7 @@ def test_notebook_marks_roles_that_disagree_with_the_header(tmp_path):
 def test_notebook_marks_axes_a_plain_stack_does_not_name(tmp_path):
     pytest.importorskip("ipywidgets")
     pytest.importorskip("matplotlib")
-    from morphobricks_preprocessing.notebook_ui import header_marks
+    from morphobricks_preprocessing.notebook_axes import header_marks
 
     root = tmp_path / "exp"
     plain(root / "ctrl/a.tif", data((3, 6, 8)))
