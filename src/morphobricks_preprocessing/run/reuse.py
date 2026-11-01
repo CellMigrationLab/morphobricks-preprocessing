@@ -21,6 +21,7 @@ from ..axes import (
     AxisMapping,
 )
 from ..manifest import (
+    LEGACY_MANIFEST_VERSION,
     MANIFEST_FILENAME,
     ManifestFormatError,
     RunManifest,
@@ -50,6 +51,8 @@ def _load_previous(
         return None, {}, "the earlier run manifest could not be read"
     if force:
         return manifest, {}, "a full rebuild was requested"
+    if manifest.manifest_version == LEGACY_MANIFEST_VERSION:
+        return manifest, {}, "the earlier run was written before v0.4.0, without the axis check"
     if manifest.schema_version != SCHEMA_VERSION:
         return manifest, {}, "the earlier table uses a different format version"
     if manifest.dtype != dtype:

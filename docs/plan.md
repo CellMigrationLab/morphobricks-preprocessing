@@ -1070,3 +1070,14 @@ Raised during review; to be decided before the milestones that need them:
     `pooling` and `records` modules); and `check_declared_axes` with
     `declared_axes_transposed`, removed rather than deprecated because they read a Y/X swap
     transposed, which v0.4 forbids. Breaking for v0.4.0.*
+47. What does manifest version 2 record, and when is a row reused (design v0.4 §1, §3, §6;
+    PP-4)?
+    *Decided (1 November 2026, owner, design revision 4): `manifest_version` "2"; per file
+    `roles` and `axes_from` (`header` or `confirmed`) are required, with `pixel_sizes` by role
+    (value, unit, source); per mask `size`, `mtime_ns`, `roles`, `axes_from` and `shared`; an
+    optional `conversion_record_sha256`. A version 1 manifest gives no reusable row. A row is
+    reused only when its `RowKey` (fingerprint, labels, axes, roles, `axes_from`, read path and
+    the row-changing settings) is the earlier run's. A plain stack's confirmation covers only
+    the files it was given for (`ConfirmedAxes`); a new or changed plain stack is
+    `plain_stack_not_confirmed` until confirmed again (audit 2 B-1). Breaking: every v1 run is
+    recomputed.*

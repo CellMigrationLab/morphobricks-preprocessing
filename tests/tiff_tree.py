@@ -24,6 +24,14 @@ def write_data(path, data, axes=None, **kwargs):
     return path
 
 
+def write_plain(path, data):
+    """Write ``data`` as a plain stack of pages, without axis metadata (``IYX``)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tifffile.imwrite(path, data, photometric="minisblack", metadata=None)
+    return path
+
+
 def write_file(path, content=b"not an image"):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

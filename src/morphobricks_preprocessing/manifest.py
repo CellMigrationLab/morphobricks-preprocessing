@@ -23,7 +23,7 @@ import hashlib
 import json
 import os
 import platform
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -32,14 +32,20 @@ import numpy as np
 import tifffile
 from morphobricks_normalization.checks import IntensityCheckSettings
 from morphobricks_normalization.csv_io import SCHEMA_VERSION
-from morphobricks_normalization.ranges import HistogramSettings, RangeCheck
+from morphobricks_normalization.ranges import HistogramSettings
 
 from ._io import write_text_atomic
 from .axes import AxisMapping
 from .discovery import position_id
+from .narrow_ranges import NarrowRange
+from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
 
 MANIFEST_FILENAME = "run_manifest.json"
-MANIFEST_VERSION = "1"
+AXES_FROM = ("header", "confirmed")
+"""Where a file's roles come from (:attr:`FileEntry.axes_from`)."""
+MANIFEST_VERSION = "2"
+LEGACY_MANIFEST_VERSION = "1"
+"""Manifests written before v0.4.0: read for reporting, never trusted (no row is reused)."""
 
 
 class ManifestFormatError(ValueError):
@@ -118,8 +124,15 @@ class FileEntry:
         The role of each of the file's axes (``"X"``, ``"Y"``, ``"Z"``, ``"C"``,
         ``"T"`` or None), from its own mapping: for an OME-Zarr image whose
         declared order differs from the experiment mapping's, these are its
-        roles, not the experiment's. None in manifests written before they were
-        recorded.
+        roles, not the experiment's. Required in manifest version 2; None in older
+        manifests.
+    axes_from
+        Where the roles come from: ``"header"`` (the metadata names every axis and
+        the roles agree) or ``"confirmed"`` (a plain stack: the user confirmed them).
+        Required in manifest version 2; None in older manifests.
+    pixel_sizes
+        The size of one step along X, Y, Z and T, each with its unit and source
+        (:class:`.recorded_sizes.RecordedSize`); empty in older manifests.
     """
 
     relative_path: str
@@ -135,6 +148,8 @@ class FileEntry:
     position_id: str | None = None
     channel_names_trimmed: bool = False
     roles: tuple[str | None, ...] | None = None
+    axes_from: str | None = None
+    pixel_sizes: tuple[RecordedSize, ...] = ()
 
     def same_source(self, other: FileEntry) -> bool:
         """Return True if ``other`` describes the same unchanged file, read the same way."""
@@ -145,57 +160,6 @@ class FileEntry:
             and self.labels == other.labels
             and self.axes == other.axes
             and self.singleton_roles == other.singleton_roles
-        )
-
-
-@dataclass(frozen=True)
-class NarrowRange:
-    """A channel plane whose central intensity range covers too few histogram bins.
-
-    Attributes
-    ----------
-    relative_path
-        The image the plane belongs to.
-    plane_id
-        The plane's ``plane_id`` in the table.
-    channel
-        The zero-based channel.
-    check
-        The normalization brick's ``RangeCheck`` of the plane's channel.
-    """
-
-    relative_path: str
-    plane_id: str
-    channel: int
-    check: RangeCheck
-
-    def to_dict(self) -> dict:
-        """Return the entry as JSON-compatible data."""
-        check = {name: _plain(value) for name, value in asdict(self.check).items()}
-        return {
-            "relative_path": self.relative_path,
-            "plane_id": self.plane_id,
-            "channel": self.channel,
-            **check,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> NarrowRange:
-        """Read an entry written by :meth:`to_dict`."""
-        return cls(
-            relative_path=str(data["relative_path"]),
-            plane_id=str(data["plane_id"]),
-            channel=int(data["channel"]),
-            check=RangeCheck(
-                histogram_range=str(data["histogram_range"]),
-                central_percentiles=tuple(float(v) for v in data["central_percentiles"]),
-                central_bins=int(data["central_bins"]),
-                robust_quantiles=tuple(float(v) for v in data["robust_quantiles"]),
-                robust_limits=tuple(data["robust_limits"]),
-                outside_robust_count=int(data["outside_robust_count"]),
-                robust_central_bins=int(data["robust_central_bins"]),
-                min_central_bins=int(data["min_central_bins"]),
-            ),
         )
 
 
@@ -245,10 +209,14 @@ class RunManifest:
         than the range check's limit (``narrow_histogram_range``), sorted by
         plane and channel; empty when there were none (and in manifests
         written before they were recorded).
+    conversion_record_sha256
+        SHA-256 of the conversion record in the experiment root, when the experiment is
+        a copy tree of named-axis copies (design v0.4 §5); None otherwise.
     schema_version
         Version of the CSV format.
     manifest_version
-        Version of the manifest format.
+        Version of the manifest format: ``"2"`` since v0.4.0. A ``"1"`` manifest (older
+        runs) is read for reporting only; no row of such a run is reused.
     """
 
     experiment_root: str
@@ -265,6 +233,7 @@ class RunManifest:
     channels_from_rgb_samples: bool | None = None
     intensity_checks: IntensityCheckSettings | None = None
     narrow_ranges: tuple[NarrowRange, ...] = ()
+    conversion_record_sha256: str | None = None
     schema_version: str = SCHEMA_VERSION
     manifest_version: str = MANIFEST_VERSION
 
@@ -307,7 +276,7 @@ class RunManifest:
                 }
                 for folder, labels in self.leaves.items()
             ],
-            "files": [_file_dict(f) for f in self.files],
+            "files": [_file_dict(f, strict=self.manifest_version != "1") for f in self.files],
             "csv_sha256": self.csv_sha256,
             "experiment_design_sha256": self.experiment_design_sha256,
             "image_type": self.image_type,
@@ -320,6 +289,7 @@ class RunManifest:
                 None if self.intensity_checks is None else self.intensity_checks.to_dict()
             ),
             "narrow_histogram_ranges": [entry.to_dict() for entry in self.narrow_ranges],
+            "conversion_record_sha256": self.conversion_record_sha256,
             "versions": dict(self.versions),
         }
         if self.masks is not None:
@@ -336,9 +306,10 @@ class RunManifest:
             If the data is not a manifest of this version.
         """
         try:
-            if data["manifest_version"] != MANIFEST_VERSION:
+            version = data["manifest_version"]
+            if version not in (MANIFEST_VERSION, LEGACY_MANIFEST_VERSION):
                 raise ManifestFormatError(
-                    f"Manifest version {data['manifest_version']!r} is not supported "
+                    f"Manifest version {version!r} is not supported "
                     f"(this version reads {MANIFEST_VERSION!r})."
                 )
             settings = data["settings"]
@@ -358,7 +329,7 @@ class RunManifest:
                     ),
                 ),
                 mapping=AxisMapping(str(mapping["axes"]), tuple(mapping["roles"])),
-                files=tuple(_file_entry(f) for f in data["files"]),
+                files=tuple(_file_entry(f, strict=version != "1") for f in data["files"]),
                 csv_sha256=str(data["csv_sha256"]),
                 versions={str(k): str(v) for k, v in data.get("versions", {}).items()},
                 written_at=str(data.get("written_at", "")),
@@ -383,7 +354,9 @@ class RunManifest:
                     NarrowRange.from_dict(entry)
                     for entry in data.get("narrow_histogram_ranges") or ()
                 ),
+                conversion_record_sha256=_text(data.get("conversion_record_sha256")),
                 schema_version=str(data["schema_version"]),
+                manifest_version=str(version),
             )
         except ManifestFormatError:
             raise
@@ -499,7 +472,18 @@ def _masks(data: object) -> dict | None:
     return data
 
 
-def _file_dict(entry: FileEntry) -> dict:
+def _text(value: object) -> str | None:
+    """Return an optional text value as text, or None."""
+    return None if value is None else str(value)
+
+
+def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
+    """Return a file entry as manifest data; ``strict`` (version 2) requires roles and source.
+
+    The writer refuses what the reader would refuse, so a written manifest always reads back.
+    """
+    if strict and (entry.roles is None or entry.axes_from not in AXES_FROM):
+        raise ValueError(f"the entry of {entry.relative_path!r} has no roles or axes_from")
     return {
         "relative_path": entry.relative_path,
         "size": entry.size,
@@ -516,11 +500,16 @@ def _file_dict(entry: FileEntry) -> dict:
         "position_id": entry.position_id,
         "channel_names_trimmed": _flag(entry.channel_names_trimmed, "channel_names_trimmed"),
         "roles": None if entry.roles is None else list(entry.roles),
+        "axes_from": entry.axes_from,
+        "pixel_sizes": sizes_to_data(entry.pixel_sizes),
     }
 
 
-def _file_entry(data: dict) -> FileEntry:
+def _file_entry(data: dict, *, strict: bool = True) -> FileEntry:
+    """Read a file entry; ``strict`` (manifest version 2) requires its roles and their source."""
     bits = data.get("significant_bits")
+    if strict and (data.get("roles") is None or data.get("axes_from") not in AXES_FROM):
+        raise ValueError(f"the entry of {data.get('relative_path')!r} has no roles or axes_from")
     return FileEntry(
         relative_path=str(data["relative_path"]),
         size=int(data["size"]),
@@ -539,6 +528,8 @@ def _file_entry(data: dict) -> FileEntry:
         position_id=None if data.get("position_id") is None else str(data["position_id"]),
         channel_names_trimmed=_flag(data.get("channel_names_trimmed", False)),
         roles=_roles(data.get("roles"), str(data["axes"])),
+        axes_from=_text(data.get("axes_from")),
+        pixel_sizes=sizes_from_data(data.get("pixel_sizes")),
     )
 
 
@@ -562,15 +553,6 @@ def _flag(value: object, key: str | None = None) -> bool:
     if not isinstance(value, bool):
         where = f" for {key}" if key else ""
         raise ValueError(f"expected true or false{where}, found {value!r}")
-    return value
-
-
-def _plain(value):  # noqa: ANN001, ANN202
-    """Return a range check value as JSON data: Python numbers, lists for tuples."""
-    if isinstance(value, tuple):
-        return [_plain(item) for item in value]
-    if isinstance(value, np.generic):
-        return value.item()
     return value
 
 

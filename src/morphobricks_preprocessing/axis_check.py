@@ -13,6 +13,7 @@ Nothing here reads pixels.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .metadata import OPEN_AXIS, TiffMetadata, named_axes
@@ -269,7 +270,9 @@ def _some(paths: Iterable[str], shown: int = 3) -> str:
 
 
 def check_header_axes(
-    files: Iterable[tuple[TiffMetadata, AxisMapping]], analysed: Mapping[str, AxisMapping]
+    files: Iterable[tuple[TiffMetadata, AxisMapping]],
+    analysed: Mapping[str, AxisMapping],
+    confirmed: frozenset[str] | None = None,
 ) -> tuple[list[ValidationIssue], dict[str, str]]:
     """Run the axis check on every file and say where each analysed file's roles come from.
 
@@ -280,6 +283,9 @@ def check_header_axes(
     analysed
         The files that are read (:attr:`.axes.AxisReview.file_mappings`); only these get an
         ``axes_from`` entry.
+    confirmed
+        The files the user's confirmation covers (:class:`ConfirmedAxes`), or None for every
+        file given. A plain stack outside them is the error ``plain_stack_not_confirmed``.
 
     Returns
     -------
@@ -296,4 +302,70 @@ def check_header_axes(
         if meta.relative_path in analysed:
             unnamed = AXES_NOT_NAMED in axis_disagreements(meta, mapping).values()
             axes_from[meta.relative_path] = AXES_FROM_CONFIRMED if unnamed else AXES_FROM_HEADER
-    return axis_check_issues(found), axes_from
+    unconfirmed = [
+        path
+        for path, how in sorted(axes_from.items())
+        if how == AXES_FROM_CONFIRMED and confirmed is not None and path not in confirmed
+    ]
+    return [*axis_check_issues(found), *_unconfirmed_issues(unconfirmed)], axes_from
+
+
+@dataclass(frozen=True)
+class ConfirmedAxes:
+    """The user's confirmation of an axis mapping, for the files it was given for.
+
+    A plain stack names no axes, so its roles are only the user's statement about the files
+    the user looked at (audit 2 B-1): a plain stack added or changed later is not covered,
+    and must be confirmed again, never read with roles confirmed for other files.
+
+    Attributes
+    ----------
+    mapping
+        The experiment mapping confirmed.
+    files
+        The images it was confirmed for, relative to the experiment root.
+    """
+
+    mapping: AxisMapping
+    files: frozenset[str]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "files", frozenset(self.files))
+
+
+def confirmation_of(
+    mapping: AxisMapping | ConfirmedAxes,
+) -> tuple[AxisMapping, frozenset[str] | None]:
+    """Split a confirmation into its mapping and the files it covers (None for every file).
+
+    Parameters
+    ----------
+    mapping
+        An :class:`.axes.AxisMapping`, confirmed for every file given, or a
+        :class:`ConfirmedAxes`.
+
+    Returns
+    -------
+    tuple
+        ``(mapping, files)``.
+    """
+    if isinstance(mapping, ConfirmedAxes):
+        return mapping.mapping, mapping.files
+    return mapping, None
+
+
+def _unconfirmed_issues(paths: list[str]) -> list[ValidationIssue]:
+    """Return the error naming plain stacks the user's confirmation does not cover."""
+    if not paths:
+        return []
+    return [
+        error(
+            "plain_stack_not_confirmed",
+            f"{plural(len(paths), 'image')} do not name their axes, and the roles were not "
+            f"confirmed for them ({_some(paths)}): they are new or changed since the roles "
+            "were confirmed. A plain stack's roles cover only the files they were confirmed "
+            "for, so they are not read with roles confirmed for other images.",
+            paths,
+            "Check their roles with the preview and confirm them again (the CLI: give --axes).",
+        )
+    ]

@@ -20,7 +20,9 @@ from .axes import (
 )
 from .axis_check import (
     POSITION_AXES,
+    ConfirmedAxes,
     check_header_axes,
+    confirmation_of,
 )
 from .metadata import (
     MetadataReport,
@@ -132,7 +134,7 @@ def check_mapping(
 
 def review_axes(
     files: MetadataReport | Iterable[TiffMetadata],
-    mapping: AxisMapping,
+    mapping: AxisMapping | ConfirmedAxes,
     *,
     missing_as_singleton: bool = False,
 ) -> AxisReview:
@@ -144,7 +146,10 @@ def review_axes(
         The metadata report or the file headers.
     mapping
         The mapping the user confirmed, defined on the experiment's full
-        arrangement of axes (see :func:`reference_axes`).
+        arrangement of axes (see :func:`reference_axes`). A plain mapping is a
+        confirmation for every file given; a :class:`.axis_check.ConfirmedAxes`
+        covers only the files it names, and a plain stack outside them is the
+        error ``plain_stack_not_confirmed`` (design v0.4 §3, audit 2 B-1).
     missing_as_singleton
         The user confirmed that files lacking some of the mapping's dimensions
         simply have one plane along them (for example one channel). Without this
@@ -166,6 +171,7 @@ def review_axes(
         declaration) and the warning ``axes_not_named`` (a plain stack, read with
         the confirmed roles; :attr:`AxisReview.axes_from` records it).
     """
+    mapping, confirmed = confirmation_of(mapping)
     if isinstance(files, MetadataReport):
         files = files.files
     readable = [f for f in files if f.readable]
@@ -272,12 +278,9 @@ def review_axes(
         if f.relative_path in file_mappings or f.relative_path in unconfirmed
     ]
     axis_issues, axes_from = check_header_axes(
-        [(f, m) for f, m in checked if m is not None], analysed=file_mappings
+        [(f, m) for f, m in checked if m is not None], file_mappings, confirmed
     )
-    issues.extend(axis_issues)
-    return AxisReview(
-        mapping=mapping, file_mappings=file_mappings, issues=tuple(issues), axes_from=axes_from
-    )
+    return AxisReview(mapping, file_mappings, (*issues, *axis_issues), axes_from)
 
 
 def channel_count(f: TiffMetadata, mapping: AxisMapping) -> int:
