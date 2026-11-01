@@ -181,7 +181,10 @@ def test_a_run_with_images_beside_subfolders_writes_nothing(tmp_path):
     result = run_experiment(root, AxisMapping("YX", "YX"), output_folder=output)
     assert not result.written
     assert "tiff_outside_leaf" in [i.code for i in result.issues if i.is_error]
-    assert sorted(p.name for p in output.iterdir()) == ["discovery_report.json"]
+    assert sorted(p.name for p in output.iterdir()) == [
+        "discovery_report.json",
+        "discovery_report.txt",
+    ]
 
 
 def test_system_files_are_ignored_silently(tmp_path):

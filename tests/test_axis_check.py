@@ -273,7 +273,7 @@ def test_run_stops_naming_every_file(tmp_path, reads, write, axes, roles, code):
     assert [i.code for i in result.issues if i.is_error] == [code]
     # Only the discovery report is written (discover, validate, report, then stop).
     written = sorted(p.name for p in default_output_folder(root).iterdir())
-    assert written == ["discovery_report.json"]
+    assert written == ["discovery_report.json", "discovery_report.txt"]
 
 
 def test_a_plain_stack_runs_with_a_warning(tmp_path):

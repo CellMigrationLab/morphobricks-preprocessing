@@ -289,7 +289,10 @@ def test_a_run_with_an_invalid_date_stops_before_writing(tmp_path):
     result = run_experiment(root, prefill_mapping("YX"), design=design)
     assert not result.written and "invalid_experiment_design" in codes(result.issues)
     # Only the discovery report is written before the step stops on its errors.
-    assert sorted(p.name for p in result.output_folder.iterdir()) == ["discovery_report.json"]
+    assert sorted(p.name for p in result.output_folder.iterdir()) == [
+        "discovery_report.json",
+        "discovery_report.txt",
+    ]
 
 
 def test_the_cli_dates_a_hand_confirmation_as_an_iso_date(tmp_path, capsys):
@@ -344,7 +347,10 @@ def test_run_needs_a_confirmed_design_when_given_one(tmp_path):
     result = run_experiment(root, prefill_mapping("YX"), design=design)
     assert not result.written and "design_not_confirmed" in codes(result.issues)
     # Only the discovery report is written before the step stops on its errors.
-    assert sorted(p.name for p in result.output_folder.iterdir()) == ["discovery_report.json"]
+    assert sorted(p.name for p in result.output_folder.iterdir()) == [
+        "discovery_report.json",
+        "discovery_report.txt",
+    ]
 
 
 def test_run_writes_the_design_and_records_its_hash(tmp_path):

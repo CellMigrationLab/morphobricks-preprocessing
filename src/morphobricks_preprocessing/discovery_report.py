@@ -26,9 +26,12 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .check_families import CHECK_FAMILIES, family_of, family_scope
 from .validation import ValidationIssue, plural
 
 DISCOVERY_REPORT_FILENAME = "discovery_report.json"
+DISCOVERY_REPORT_TEXT = "discovery_report.txt"
+"""The readable text version, written next to the JSON report."""
 DISCOVERY_REPORT_VERSION = "1"
 
 FULL = "full"
@@ -38,123 +41,6 @@ RESTART = "restart"
 """Mode (default): reuse the results of unchanged images; process new or changed ones."""
 
 MODES = (RESTART, FULL)
-
-CHECK_FAMILIES: Mapping[str, tuple[str, ...]] = {
-    "folders_and_names": (
-        "experiment_not_found",
-        "unreadable_folder",
-        "folder_too_deep",
-        "reserved_folder_name",
-        "case_conflict",
-        "invalid_name",
-        "duplicate_position_id",
-        "tiff_outside_leaf",
-        "image_named_as_mask",
-        "mask_folder_in_experiment",
-        "non_tiff_file",
-        "empty_folder",
-        "output_inside_experiment",
-        "output_inside_masks",
-        "no_images",
-        "excluded_images",
-        "excluded_path_not_found",
-    ),
-    "images": (
-        "unreadable_tiff",
-        "unreadable_ome_zarr",
-        "unreadable_planes",
-        "multiple_series",
-        "unsupported_dtype",
-        "mixed_dtypes",
-        "zarr_not_installed",
-        "plane_over_memory_limit",
-        "unsupported_layout",
-        "planes_read_in_blocks",
-        "non_finite_pixels",
-        "no_finite_pixels",
-        "no_usable_planes",
-        "invalid_bin_count",
-    ),
-    "axes": (
-        "axes_not_named",
-        "axes_yx_swapped",
-        "axes_contradict_header",
-        "missing_axes",
-        "ambiguous_missing_axes",
-        "inconsistent_dimensions",
-        "inconsistent_mapping",
-        "ome_zarr_axes_mismatch",
-        "missing_xy_axis",
-        "duplicate_axis_role",
-        "unassigned_axis",
-        "unsupported_axis",
-    ),
-    "dataset_consistency": (
-        "unbalanced_images",
-        "repeat_missing_conditions",
-        "different_pixel_sizes",
-        "missing_pixel_size",
-        "unsupported_pixel_size_unit",
-        "different_channel_counts",
-        "channel_names_differ",
-        "different_plane_counts",
-        "different_sizes",
-    ),
-    "experiment_design": (
-        "design_not_confirmed",
-        "repeat_group_conflict",
-        "invalid_experiment_design",
-        "unreadable_experiment_design",
-    ),
-    "image_type": ("rgb_not_possible",),
-    "histograms": ("narrow_histogram_range",),
-    "intensity_checks": (
-        "image_intensity_outlier",
-        "repeat_intensity_shift",
-        "saturated_image",
-        "no_intensity_spread",
-    ),
-    "masks": (
-        "masks_folder_not_found",
-        "masks_inside_experiment",
-        "mask_names_differ_in_case",
-        "duplicate_mask",
-        "ambiguous_mask",
-        "mask_without_image",
-        "mask_of_excluded_image",
-        "mask_outside_type_folder",
-        "mask_missing",
-        "unreadable_mask",
-        "mask_not_2d",
-        "invalid_mask_axes",
-        "mask_axes_contradict_header",
-        "mask_layout",
-        "mask_size_mismatch",
-        "mask_pixel_type",
-        "mask_planes_differ",
-        "mask_planes_mismatch",
-    ),
-    "normalization_version": ("normalization_version_differs",),
-}
-"""Every check family of the brick and the codes it gives (contract §1, §2, §4, §8, §11–§15).
-A code not listed falls under ``"other"``, so no issue is ever left out of the report."""
-
-_SCOPES = {
-    "folders_and_names": "every folder and file, again in every run",
-    "images": "every image header, again in every run; pixels of the images read in this run",
-    "axes": "every image, again in every run, against the confirmed roles",
-    "dataset_consistency": "the whole experiment, again in every run (never only the new images)",
-    "experiment_design": "the whole design, again in every run",
-    "image_type": "every image, again in every run",
-    "intensity_checks": "every row of the table, again in every run (never only the new images)",
-    "masks": "every mask header and its pairing, again in every run",
-    "normalization_version": "the installed normalization brick, again in every run",
-}
-
-
-def family_of(code: str) -> str:
-    """Return the check family of an issue code (``"other"`` when it has none)."""
-    return next((name for name, codes in CHECK_FAMILIES.items() if code in codes), "other")
 
 
 @dataclass(frozen=True)
@@ -184,9 +70,14 @@ class DiscoveryReport:
         ``ambiguous`` list the masks that pair with no image or with several.
     reused, recomputed, erased
         Images whose rows were kept, images read in this run, and the brick's earlier
-        output files erased (``full`` mode).
+        output files replaced (``full`` mode).
     issues
         Every warning and error, errors first.
+    status
+        ``"stopped"`` (errors: nothing but the report written), ``"written"`` (the table
+        and manifest published with it) or ``"checked"`` (``check``: the report only).
+    manifest_sha256
+        The SHA-256 of the manifest the report describes, for a written run.
     """
 
     experiment_root: str
@@ -209,6 +100,8 @@ class DiscoveryReport:
     erased: tuple[str, ...] = ()
     versions: Mapping[str, str] = field(default_factory=dict)
     issues: tuple[ValidationIssue, ...] = ()
+    status: str = "stopped"
+    manifest_sha256: str | None = None
 
     @property
     def checks(self) -> list[dict]:
@@ -233,25 +126,26 @@ class DiscoveryReport:
         return families
 
     def _scope(self, family: str) -> str:
-        if family == "histograms":
-            if self.mode == "check":
-                return "not run: 'check' reads no pixels"
-            kept = len(self.reused)
-            text = f"computed for {plural(len(self.recomputed), 'image')} read in this run"
-            if kept:
-                text += (
-                    f"; the rows of {plural(kept, 'unchanged image')} were reused with the "
-                    "range checks they were written with"
-                )
-            return text
-        if family == "intensity_checks" and self.mode == "check":
-            return "not run: 'check' reads no pixels"
-        return _SCOPES.get(family, "every image")
+        """Say what a check family covered in this run.
+
+        Parameters
+        ----------
+        family
+            The family's name.
+
+        Returns
+        -------
+        str
+            Its scope in plain words.
+        """
+        return family_scope(family, self.mode, len(self.recomputed), len(self.reused))
 
     def to_dict(self) -> dict:
         """Return the report as JSON-compatible data."""
         return {
             "report_version": DISCOVERY_REPORT_VERSION,
+            "status": self.status,
+            "manifest_sha256": self.manifest_sha256,
             "experiment_root": self.experiment_root,
             "output_folder": self.output_folder,
             "masks_folder": self.masks_folder,
@@ -287,7 +181,7 @@ class DiscoveryReport:
 
     def text(self) -> str:
         """Describe the report in plain text (ASCII-safe for consoles)."""
-        lines = [f"Discovery report ({self.mode})"]
+        lines = [f"Discovery report ({self.mode}, {self.status})"]
         conditions = Counter(g["condition"] for g in self.groups)
         repeats = {(g["condition"], g["biological_repeat"]) for g in self.groups}
         lines.append(
@@ -464,10 +358,39 @@ def build_discovery_report(
 
 
 def write_discovery_report(report: DiscoveryReport, path: str | os.PathLike) -> Path:
-    """Write the report as JSON, replacing the file only once writing succeeded."""
+    """Write the report as JSON, and its text version beside it (``discovery_report.txt``).
+
+    Each file is replaced only once writing it succeeded.
+
+    Parameters
+    ----------
+    report
+        The report.
+    path
+        The JSON file.
+
+    Returns
+    -------
+    Path
+        The JSON file.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(report.to_dict(), indent=2, ensure_ascii=False) + "\n"
+    _write_text(path, json.dumps(report.to_dict(), indent=2, ensure_ascii=False) + "\n")
+    _write_text(path.with_name(DISCOVERY_REPORT_TEXT), report.text() + "\n")
+    return path
+
+
+def _write_text(path: Path, text: str) -> None:
+    """Write UTF-8 text with LF line endings, atomically (temporary file, then replace).
+
+    Parameters
+    ----------
+    path
+        The file.
+    text
+        Its content.
+    """
     handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(handle, "w", newline="\n", encoding="utf-8") as fh:
@@ -476,42 +399,3 @@ def write_discovery_report(report: DiscoveryReport, path: str | os.PathLike) -> 
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
-    return path
-
-
-def normalization_version_issues() -> list[ValidationIssue]:
-    """Warn when the installed normalization brick is not the release this one pins.
-
-    The notebook's Step 0 makes sure the brick is installed; the run records its version
-    (``versions`` in the manifest). This compares that version with the tag in this
-    package's requirements (``@v0.3.2``), so a mismatch is never silent.
-    """
-    import re
-    from importlib.metadata import PackageNotFoundError, requires
-
-    import morphobricks_normalization
-
-    from .validation import warning
-
-    try:
-        requirements = requires("morphobricks-preprocessing") or []
-    except PackageNotFoundError:  # a source checkout that is not installed
-        return []
-    pinned = None
-    for requirement in requirements:
-        found = re.search(r"morphobricks-normalization.*@v([0-9][0-9.]*)", requirement)
-        if found:
-            pinned = found.group(1)
-    installed = morphobricks_normalization.__version__
-    if pinned is None or installed == pinned:
-        return []
-    return [
-        warning(
-            "normalization_version_differs",
-            f"The installed morphobricks-normalization is version {installed}, but this "
-            f"brick is pinned to its release v{pinned}. Histograms and the table format come "
-            "from it.",
-            action=f'Reinstall the brick (pip install "morphobricks-preprocessing") so that '
-            f"morphobricks-normalization v{pinned} is used.",
-        )
-    ]

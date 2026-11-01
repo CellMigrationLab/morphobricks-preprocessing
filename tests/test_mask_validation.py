@@ -19,7 +19,7 @@ from morphobricks_preprocessing import (
     read_mask,
     run_experiment,
 )
-from morphobricks_preprocessing.masks import mask_roles
+from morphobricks_preprocessing.mask_axes import mask_roles
 from tiff_tree import write_data, write_file
 
 

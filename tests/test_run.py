@@ -362,7 +362,10 @@ def test_images_with_the_same_position_id_are_refused(experiment):
     write_data(experiment / "control/bio_rep1/tech_rep1/img_01.ome.tif", stack(9), "ZYX")
     result = run_experiment(experiment, ZYX)
     assert not result.written
-    assert sorted(p.name for p in result.output_folder.iterdir()) == ["discovery_report.json"]
+    assert sorted(p.name for p in result.output_folder.iterdir()) == [
+        "discovery_report.json",
+        "discovery_report.txt",
+    ]
     assert issue(result.issues, "duplicate_position_id").paths == (
         "control/bio_rep1/tech_rep1/img_01.ome.tif",
         "control/bio_rep1/tech_rep1/img_01.tif",
@@ -570,7 +573,10 @@ def test_first_run_with_errors_creates_no_output(experiment):
     result = run_experiment(experiment, ZYX)
     assert not result.written
     # Only the discovery report is written before the step stops on its errors.
-    assert sorted(p.name for p in result.output_folder.iterdir()) == ["discovery_report.json"]
+    assert sorted(p.name for p in result.output_folder.iterdir()) == [
+        "discovery_report.json",
+        "discovery_report.txt",
+    ]
 
 
 @pytest.mark.parametrize("failure", ["csv", "hash", "manifest", "backup"])
@@ -752,7 +758,10 @@ def test_pixel_data_that_cannot_be_decoded_blocks(experiment, monkeypatch):
     assert found.paths == ("control/bio_rep1/tech_rep1/img_02.tif",)
     assert "exclude" in found.action
     assert not result.written
-    assert sorted(p.name for p in result.output_folder.iterdir()) == ["discovery_report.json"]
+    assert sorted(p.name for p in result.output_folder.iterdir()) == [
+        "discovery_report.json",
+        "discovery_report.txt",
+    ]
 
 
 def test_missing_axes_need_confirmation(tmp_path):

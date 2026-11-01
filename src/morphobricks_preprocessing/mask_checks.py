@@ -12,7 +12,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 
 from .axes import AxisMapping, AxisReview
-from .masks import _TEXTS, MaskInventory, _size_code, _yx, mask_plane_issues
+from .mask_axes import size_code
+from .masks import _TEXTS, MaskInventory, _yx, mask_plane_issues
 from .metadata import MetadataReport, TiffMetadata
 from .validation import ValidationIssue, error
 
@@ -65,7 +66,7 @@ def mask_size_issues(
         image_yx = (meta.shape[y], meta.shape[x])
         mask_yx = _yx(mask.axes, mask.shape)
         if mask_yx != image_yx:
-            mismatched.setdefault(_size_code(mask_yx, image_yx), []).append(mask.path)
+            mismatched.setdefault(size_code(mask_yx, image_yx), []).append(mask.path)
     return [
         error(code, _TEXTS[code][0], sorted(paths), _TEXTS[code][1])
         for code, paths in sorted(mismatched.items())

@@ -50,6 +50,7 @@ from .axes import (
     prefill_experiment_mapping,
     review_axes,
 )
+from .check_families import normalization_version_issues
 from .dataset import DatasetReport, check_dataset
 from .design import (
     DESIGN_FILENAME,
@@ -61,13 +62,18 @@ from .design import (
 from .discovery import DiscoveryResult, default_output_folder, discover_experiment
 from .discovery_report import (
     DISCOVERY_REPORT_FILENAME,
+    DISCOVERY_REPORT_TEXT,
     FULL,
     MODES,
     RESTART,
     DiscoveryReport,
-    build_discovery_report,
-    normalization_version_issues,
-    write_discovery_report,
+)
+from .discovery_step import (
+    full_run_replaced,
+    output_in_masks_issue,
+    step_report,
+    without_excluded_named_masks,
+    write_step_report,
 )
 from .image_type import check_image_type, image_type_issues, review_image_type
 from .intensity import IntensityReport, check_intensities
@@ -357,14 +363,14 @@ def preflight(
     output = default_output_folder(root) if output_folder is None else Path(output_folder)
     discovery = discover_experiment(root, output)
     excluded = tuple(sorted({_normalise(path) for path in exclude}))
-    discovery = _without_excluded_masks(discovery, excluded)
+    discovery = without_excluded_named_masks(discovery, excluded)
     images = [path for path in discovery.images if path not in excluded]
     metadata = inspect_images(root, images)
     masks = None
     if masks_folder is not None or ome_zarr_labels:
         masks = find_masks(masks_folder, discovery, metadata.files, mask_axes=mask_axes)
         if masks_folder is not None:
-            discovery = _with_output_check(discovery, output, Path(masks_folder).resolve())
+            discovery = output_in_masks_issue(discovery, output, Path(masks_folder).resolve())
     return Preflight(
         discovery=discovery,
         metadata=metadata,
@@ -555,26 +561,19 @@ def run_experiment(
             )
         )
 
-    def report(read=(), reused=(), erased=(), extra=(), write=True) -> DiscoveryReport:
-        found = build_discovery_report(
+    def stop(**counts) -> RunResult:
+        # Discover, check, report, then stop: the report is the only file written.
+        found = step_report(
             pre,
-            output_folder=output,
-            issues=[*issues, *extra],
+            output=output,
+            issues=issues,
             review=review,
             mode=mode,
-            reused=reused,
-            recomputed=read,
-            erased=erased,
             versions=package_versions(),
+            status="stopped",
+            read=counts.get("read", ()),
         )
-        # The report is written also when the run stops, unless the output folder is
-        # refused (inside the experiment or the masks folder): nothing is written there.
-        if write and not any(i.code in _BAD_OUTPUT for i in issues):
-            write_discovery_report(found, output / DISCOVERY_REPORT_FILENAME)
-        return found
-
-    def stop(**counts) -> RunResult:
-        found = report(read=counts.get("read", ()))
+        write_step_report(found, output, issues)
         return RunResult(
             output,
             False,
@@ -761,17 +760,7 @@ def run_experiment(
             }
             - {ome_zarr_relative_path(rel) for rel in to_convert}
         )
-        erased = _erased_results(output, removed_copies)
-    # The intensity checks stay apart from the run's issues (RunResult.intensity), as
-    # before; the report lists them with every other check. It is published with the
-    # table and manifest.
-    found = report(
-        read=tuple(to_read),
-        reused=() if reason else tuple(unchanged),
-        erased=erased,
-        extra=[warning(i.code, i.message, tuple(i.items), i.action) for i in intensity.issues],
-        write=False,
-    )
+        erased = full_run_replaced(output, removed_copies)
     with _staged_outputs(
         output,
         staging.root if staging is not None else None,
@@ -779,7 +768,6 @@ def run_experiment(
         removed_copies=removed_copies,
         with_design=design is not None,
     ) as staged:
-        write_discovery_report(found, staged / DISCOVERY_REPORT_FILENAME)
         csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME)
         design_sha256 = None
         if design is not None:
@@ -803,6 +791,23 @@ def run_experiment(
             narrow_ranges=tuple(narrow),
         )
         write_manifest(manifest, staged / MANIFEST_FILENAME)
+        # The intensity checks stay apart from the run's issues (RunResult.intensity); the
+        # report lists them with every other check, and is published with the manifest
+        # it describes.
+        found = step_report(
+            pre,
+            output=output,
+            issues=[*issues, *_as_issues(intensity)],
+            review=review,
+            mode=mode,
+            versions=package_versions(),
+            status="written",
+            read=tuple(to_read),
+            reused=() if reason else tuple(unchanged),
+            replaced=erased,
+            manifest_sha256=file_sha256(staged / MANIFEST_FILENAME),
+        )
+        write_step_report(found, staged, issues)
     logger.info(
         "Wrote %d planes (%d files read, %d kept) to %s",
         len(records),
@@ -829,25 +834,6 @@ def run_experiment(
         report=found,
         **counts,
     )
-
-
-_BAD_OUTPUT = frozenset({"output_inside_experiment", "output_inside_masks"})
-
-
-def _erased_results(output: Path, copies: Sequence[str]) -> list[str]:
-    """List the brick's earlier results that a full run erases or replaces.
-
-    Only the brick's own files: the table, manifest and discovery report (replaced), the
-    mask report (erased once the new results are written), and the OME-Zarr copies
-    recorded in the earlier manifest (inside ``<output>/ome_zarr``,
-    :func:`.zarr_export.is_copy_path`). ``experiment_design.csv`` holds the user's answers
-    and is kept. Never a source image or a mask: the output folder is outside the
-    experiment and the masks folder. Relative to the output folder.
-    """
-    names = (OUTPUT_FILENAME, MANIFEST_FILENAME, DISCOVERY_REPORT_FILENAME, MASK_REPORT_FILENAME)
-    erased = [name for name in names if (output / name).is_file()]
-    erased.extend(copy for copy in copies if (output / copy).exists())
-    return sorted(erased)
 
 
 class _OutputRollbackError(RuntimeError):
@@ -903,6 +889,7 @@ def _publish_outputs(
         OUTPUT_FILENAME,
         *((DESIGN_FILENAME,) if with_design else ()),
         DISCOVERY_REPORT_FILENAME,
+        DISCOVERY_REPORT_TEXT,
         MANIFEST_FILENAME,
     )
     backup = staged / "previous"
@@ -988,6 +975,22 @@ def _read_file(
             if check is not None and check.narrow
         )
     return records, narrow
+
+
+def _as_issues(intensity: IntensityReport) -> list[ValidationIssue]:
+    """Return the intensity checks as warnings, for the discovery report.
+
+    Parameters
+    ----------
+    intensity
+        The intensity checks of the written table.
+
+    Returns
+    -------
+    list of ValidationIssue
+        One warning per finding, with its code, message, images and action.
+    """
+    return [warning(i.code, i.message, tuple(i.items), i.action) for i in intensity.issues]
 
 
 def _move(source: Path, destination: Path) -> None:
@@ -1203,38 +1206,6 @@ def _exclusion_issues(discovery: DiscoveryResult, excluded: tuple[str, ...]) -> 
             )
         )
     return issues
-
-
-def _with_output_check(discovery: DiscoveryResult, output: Path, masks: Path) -> DiscoveryResult:
-    """Refuse an output folder in the masks folder: a full run erases files there."""
-    output = output.resolve()
-    if output != masks and masks not in output.parents:
-        return discovery
-    issue = error(
-        "output_inside_masks",
-        "The output folder is the masks folder or inside it. Results must be kept apart from "
-        "the masks, which the brick never changes.",
-        [output.as_posix()],
-        f"Choose an output folder outside the masks folder, for example "
-        f"{default_output_folder(discovery.root)}.",
-    )
-    return replace(discovery, issues=(*discovery.issues, issue))
-
-
-def _without_excluded_masks(
-    discovery: DiscoveryResult, excluded: tuple[str, ...]
-) -> DiscoveryResult:
-    """Leave excluded files out of ``image_named_as_mask``: an excluded file is not an image."""
-    issues = []
-    for issue in discovery.issues:
-        if issue.code == "image_named_as_mask":
-            paths = tuple(p for p in issue.paths if p not in excluded)
-            if not paths:
-                continue
-            if paths != issue.paths:
-                issue = replace(issue, paths=paths)
-        issues.append(issue)
-    return replace(discovery, issues=tuple(issues))
 
 
 def _normalise(path: str) -> str:

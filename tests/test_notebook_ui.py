@@ -798,6 +798,7 @@ def test_intensity_checks_follow_a_successful_run(tmp_path):
     # The checks and plots write no file.
     assert sorted(p.name for p in out.iterdir()) == [
         "discovery_report.json",
+        "discovery_report.txt",
         "experiment_design.csv",
         "plane_histograms.csv",
         "run_manifest.json",
