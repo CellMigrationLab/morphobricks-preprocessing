@@ -1,4 +1,4 @@
-"""Command-line interface: ``morphobricks-preprocessing check``, ``run`` and ``masks``.
+"""Command-line interface: ``morphobricks-preprocessing check``, ``run``, ``convert``, ``masks``.
 
 ``check`` runs the preflight (folders and image headers, no pixels) and prints
 what will be analysed, the problems found and the suggested axis roles.
@@ -12,8 +12,11 @@ prints the intensity checks of the table (warnings only; plots are drawn in the
 notebook only).
 ``masks`` is the optional mask step: it pairs every image with its masks (``--masks``, and the
 label images of OME-Zarr images), reads them, and writes ``mask_relationships.json`` with each
-mask type and the relationships between them (contract §15). All three exit with status 1 when
-an error blocks processing.
+mask type and the relationships between them (contract §15). ``convert`` saves every image
+again as OME-Zarr with the axes given in ``--axes`` (masks as label images) in a new folder,
+the fix for the axis errors of ``check`` and ``run`` (contract §17), and prints the commands
+that check and run preprocessing on the copies. All four exit with status 1 when an error
+blocks processing.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from morphobricks_normalization.ranges import (
 )
 
 from .axes import AxisMapping, reference_axes, review_axes
+from .convert import carry_design, conversion_summary, convert_experiment
 from .design import (
     DESIGN_FILENAME,
     DesignCheckError,
@@ -143,9 +147,11 @@ def build_parser() -> argparse.ArgumentParser:
         "check", help="check the folder and image headers and suggest axis roles"
     )
     _common(check)
+    _labels_option(check)
 
     run = commands.add_parser("run", help="compute or update the histogram table")
     _common(run)
+    _labels_option(run)
     run.add_argument(
         "--axes",
         required=True,
@@ -206,37 +212,10 @@ def build_parser() -> argparse.ArgumentParser:
         "its histograms from the copy (needs the zarr extra); OME-Zarr images are always "
         "read directly",
     )
-    conversion = run.add_argument_group(
-        "conversion settings", "used with --convert-tiff; the defaults suit most experiments"
-    )
-    conversion.add_argument(
-        "--chunk-size",
-        type=int,
-        default=CHUNK_SIDE,
-        metavar="PX",
-        help=f"side of the stored tiles in pixels ({MIN_CHUNK_SIZE} to {MAX_CHUNK_SIZE}; "
-        f"default {CHUNK_SIDE})",
-    )
-    conversion.add_argument(
-        "--compression",
-        choices=sorted(COMPRESSIONS),
-        default="lz4",
-        help="lossless compression: lz4 (default, fast), zstd (smaller, slower) or none",
-    )
-    conversion.add_argument(
-        "--compression-level",
-        type=int,
-        default=5,
-        metavar="N",
-        help="1 (fastest) to 9 (smallest files); default 5",
-    )
-    conversion.add_argument(
-        "--pyramid-levels",
-        type=parse_pyramid_levels,
-        default=None,
-        metavar="auto|none|N",
-        help="smaller levels for viewing: auto (default, halve until a plane fits 512 px), "
-        f"none, or a number from 1 to {MAX_LEVELS - 1}",
+    _conversion_options(
+        run.add_argument_group(
+            "conversion settings", "used with --convert-tiff; the defaults suit most experiments"
+        )
     )
     checks = run.add_argument_group(
         "intensity checks", "limits of the warnings printed after the run; the defaults suit most"
@@ -263,6 +242,48 @@ def build_parser() -> argparse.ArgumentParser:
         help="fewest images a comparison needs (default 5)",
     )
     run.add_argument("--log", metavar="FILE", help="write technical details to this file")
+
+    convert = commands.add_parser(
+        "convert",
+        help="save every image again as OME-Zarr with the axes you confirm, masks as label "
+        "images, in a new folder; then run preprocessing on the copies",
+    )
+    _common(convert)
+    convert.add_argument(
+        "--axes",
+        required=True,
+        metavar="ROLES",
+        help="the role of each axis of the images, in their order (as for run): the copies "
+        "are written with these axes",
+    )
+    convert.add_argument(
+        "--to",
+        metavar="FOLDER",
+        help="the new folder for the copies (default: next to the experiment, "
+        "<name>_ome_zarr); outside the experiment, masks and output folders",
+    )
+    convert.add_argument(
+        "--mask-axes",
+        action="append",
+        default=[],
+        metavar="TYPE=ROLES",
+        help="the axes of the masks of one type, one role (Y, X, Z, T) per axis of the "
+        "mask's header (repeatable); without it, masks follow their image's confirmed axes",
+    )
+    convert.add_argument(
+        "--missing-as-singleton",
+        action="store_true",
+        help="confirm that images lacking some axes have one plane along them",
+    )
+    convert.add_argument(
+        "--memory-limit",
+        type=parse_size,
+        default=DEFAULT_MEMORY_LIMIT,
+        metavar="SIZE",
+        help="working-memory limit per plane, e.g. 2GiB (default: 1GiB)",
+    )
+    _conversion_options(convert.add_argument_group("how the copies are written"))
+    convert.add_argument("--log", metavar="FILE", help="write technical details to this file")
 
     masks = commands.add_parser(
         "masks",
@@ -301,11 +322,53 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     handler = _attach_log(args.log) if getattr(args, "log", None) else None
     try:
-        return {"check": _check, "run": _run, "masks": _masks}[args.command](args)
+        commands = {"check": _check, "run": _run, "convert": _convert, "masks": _masks}
+        return commands[args.command](args)
     finally:
         if handler is not None:
             logging.getLogger("morphobricks_preprocessing").removeHandler(handler)
             handler.close()
+
+
+def _labels_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--ome-zarr-labels",
+        action="store_true",
+        help="use the label images of OME-Zarr images as masks, also without --masks (for "
+        "example the masks of copies written by 'convert')",
+    )
+
+
+def _conversion_options(group) -> None:
+    group.add_argument(
+        "--chunk-size",
+        type=int,
+        default=CHUNK_SIDE,
+        metavar="PX",
+        help=f"side of the stored tiles in pixels ({MIN_CHUNK_SIZE} to {MAX_CHUNK_SIZE}; "
+        f"default {CHUNK_SIDE})",
+    )
+    group.add_argument(
+        "--compression",
+        choices=sorted(COMPRESSIONS),
+        default="lz4",
+        help="lossless compression: lz4 (default, fast), zstd (smaller, slower) or none",
+    )
+    group.add_argument(
+        "--compression-level",
+        type=int,
+        default=5,
+        metavar="N",
+        help="1 (fastest) to 9 (smallest files); default 5",
+    )
+    group.add_argument(
+        "--pyramid-levels",
+        type=parse_pyramid_levels,
+        default=None,
+        metavar="auto|none|N",
+        help="smaller levels for viewing: auto (default, halve until a plane fits 512 px), "
+        f"none, or a number from 1 to {MAX_LEVELS - 1}",
+    )
 
 
 def _common(parser: argparse.ArgumentParser) -> None:
@@ -331,7 +394,13 @@ def _common(parser: argparse.ArgumentParser) -> None:
 
 
 def _check(args: argparse.Namespace) -> int:
-    pre = preflight(args.experiment, args.output, exclude=args.exclude, masks_folder=args.masks)
+    pre = preflight(
+        args.experiment,
+        args.output,
+        exclude=args.exclude,
+        masks_folder=args.masks,
+        ome_zarr_labels=args.ome_zarr_labels,
+    )
     print(preflight_summary(pre))
     if pre.discovery.leaves:
         print()
@@ -433,7 +502,13 @@ def _masks(args: argparse.Namespace) -> int:
 
 
 def _run(args: argparse.Namespace) -> int:
-    pre = preflight(args.experiment, args.output, exclude=args.exclude, masks_folder=args.masks)
+    pre = preflight(
+        args.experiment,
+        args.output,
+        exclude=args.exclude,
+        masks_folder=args.masks,
+        ome_zarr_labels=args.ome_zarr_labels,
+    )
     axes = reference_axes(pre.metadata.files)
     if axes is None:
         print(format_issues(pre.issues) or "No readable images were found.")
@@ -518,6 +593,7 @@ def _run(args: argparse.Namespace) -> int:
         conversion=conversion,
         design=design,
         masks_folder=args.masks,
+        ome_zarr_labels=args.ome_zarr_labels,
         image_type=image_type,
         intensity_settings=intensity_settings,
         histogram_settings=histogram_settings,
@@ -530,6 +606,89 @@ def _run(args: argparse.Namespace) -> int:
         print()
         print(intensity_text(result.intensity))
     return 0 if result.written else 1
+
+
+def _convert(args: argparse.Namespace) -> int:
+    pre = preflight(args.experiment, args.output, exclude=args.exclude, masks_folder=args.masks)
+    axes = reference_axes(pre.metadata.files)
+    if axes is None:
+        print(format_issues(pre.issues) or "No readable images were found.")
+        return 1
+    try:
+        mapping = AxisMapping(axes, tuple(args.axes))
+    except ValueError:
+        print(
+            f"--axes {args.axes} does not fit the images, whose axes are {axes}: give one role "
+            f"(X, Y, Z, C, T or -) for each of the {len(axes)} axes."
+        )
+        return 1
+    mask_axes = {}
+    for item in args.mask_axes:
+        mask_type, sep, roles = item.rpartition("=")
+        if not sep or not mask_type or not roles:
+            print(f"--mask-axes {item!r} is not TYPE=ROLES, for example --mask-axes Nuclei=TYX.")
+            return 1
+        mask_axes[mask_type] = roles
+    try:
+        settings = ConversionSettings(
+            chunk_size=args.chunk_size,
+            compression=args.compression,
+            compression_level=args.compression_level,
+            pyramid_levels=args.pyramid_levels,
+        )
+    except ValueError as exc:
+        print(exc)
+        return 1
+    print("Axes the copies are written with:")
+    print(mapping_summary(mapping, pre.metadata.files))
+    print()
+
+    def progress(done: int, total: int, path: str) -> None:
+        if path:
+            print(f"[{done + 1}/{total}] {path}", flush=True)
+
+    result = convert_experiment(
+        args.experiment,
+        mapping,
+        args.to,
+        masks_folder=args.masks,
+        mask_axes=mask_axes,
+        missing_as_singleton=args.missing_as_singleton,
+        exclude=args.exclude,
+        settings=settings,
+        output_folder=args.output,
+        memory_limit=args.memory_limit,
+        progress=progress,
+    )
+    if result.axis_errors and result.written:
+        print(
+            f"Axis errors fixed by the copies: {plural(len(result.axis_errors), 'problem')} "
+            "in the original images (listed in the conversion record)."
+        )
+        print()
+    if result.issues:
+        print(format_issues(result.issues))
+        print()
+    print(conversion_summary(result))
+    if not result.written:
+        return 1
+    root = pre.discovery.root
+    design = (Path(args.output) if args.output else default_output_folder(root)) / DESIGN_FILENAME
+    if design.exists():
+        try:
+            carried = carry_design(design, default_output_folder(result.target), result.target)
+        except DesignCheckError as exc:
+            print()
+            print("The experiment design was not carried to the copies:")
+            print(format_issues(exc.issues))
+        else:
+            print(f"  Experiment design carried to {carried.path} and checked.")
+    print()
+    print("Next: check the copies, then run preprocessing on them (that run is the one other")
+    print("bricks use):")
+    for command in result.next_commands:
+        print(f"  {command}")
+    return 0
 
 
 def _design_for_run(pre, args: argparse.Namespace) -> tuple[ExperimentDesign | None, str]:

@@ -62,6 +62,7 @@ from morphobricks_normalization.records import PlaneRecord, group_records
 
 from . import notebook_style as ui
 from .axes import (
+    AXIS_ERROR_CODES,
     AxisMapping,
     AxisReview,
     axis_disagreements,
@@ -69,6 +70,13 @@ from .axes import (
     axis_name,
     file_mapping_for,
     review_axes,
+)
+from .convert import (
+    ConversionResult,
+    carry_design,
+    conversion_summary,
+    convert_experiment,
+    default_conversion_target,
 )
 from .dataset import CONSISTENCY_CODES, BalanceTable, DatasetReport, check_dataset
 from .design import (
@@ -237,6 +245,10 @@ class PreprocessingNotebook:
         self._show_output = True
         self._show_design = True
         self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None
+        # True once "Check the copies" switched the notebook to a copy tree: its masks are
+        # the copies' label images.
+        self._ome_zarr_labels = False
+        self.conversion_result: ConversionResult | None = None
         self._build_folder_step(str(experiment_folder), str(output_folder))
         self._build_axis_step()
         self._build_run_step()
@@ -1206,6 +1218,7 @@ class PreprocessingNotebook:
         self.preview_checked.observe(lambda _: self._update_confirm_button())
         self.confirm_button.on_click(lambda _: self._toggle_confirmation())
         self._build_image_type_card()
+        self._build_save_card()
 
     def _build_image_type_card(self) -> None:
         self.image_type = widgets.RadioButtons(
@@ -1239,11 +1252,216 @@ class PreprocessingNotebook:
         self.image_type.observe(lambda _: self._show_image_type_note(), names="value")
         self.image_type_checked.observe(self._image_type_answered)
 
+    def _build_save_card(self) -> None:
+        self.save_intro = widgets.HTML()
+        self.save_target = widgets.Text(
+            placeholder="e.g. D:/microscopy/experiment_2026_10_ome_zarr",
+            layout=widgets.Layout(width="99%"),
+        )
+        self.save_masks = widgets.Text(
+            placeholder="optional: the masks folder", layout=widgets.Layout(width="99%")
+        )
+        self.save_mask_axes = widgets.Text(
+            placeholder="optional, e.g. Nuclei=TYX; Cells=YX", layout=widgets.Layout(width="99%")
+        )
+        self.save_design = widgets.Checkbox(
+            value=True,
+            description="Carry the confirmed experiment design to the copies",
+            indent=False,
+        )
+        self.save_estimate = widgets.HTML()
+        self.save_button = ui.button(
+            " Save copies",
+            style="success",
+            icon="save",
+            tooltip="Write every image as OME-Zarr with the confirmed axes in the new folder",
+            main=True,
+        )
+        self.save_status = widgets.HTML()
+        self.check_copies_button = ui.button(
+            " Check the copies",
+            style="info",
+            icon="search",
+            tooltip="Open the copies in this notebook and check them again from step 1",
+            main=True,
+        )
+        ui.set_visible(self.check_copies_button, False)
+        self.save_card = ui.card(
+            "Save these images as OME-Zarr",
+            [
+                self.save_intro,
+                widgets.HTML("<b>New folder for the copies</b>"),
+                self.save_target,
+                ui.help_text(
+                    "A new folder outside the experiment, masks and output folders. The copies "
+                    "keep the folders and image names, so conditions, repeats and positions do "
+                    "not change. Default: <b>&lt;experiment&gt;_ome_zarr</b> beside it."
+                ),
+                widgets.HTML("<b>Masks folder (optional)</b>"),
+                self.save_masks,
+                ui.help_text(
+                    "Each mask is written as a label image of its image's copy (int32). Leave "
+                    "empty if there are no masks."
+                ),
+                widgets.HTML("<b>Mask axes (optional)</b>"),
+                self.save_mask_axes,
+                ui.help_text(
+                    "By default each mask follows its image's confirmed axes, with the same "
+                    "reordering. To state the axes of a mask type instead, give one role (Y, "
+                    "X, Z, T) per axis of the mask file, as <b>Type=ROLES</b>, separated by "
+                    "semicolons. Nothing is guessed from the shape."
+                ),
+                self.save_design,
+                self.save_estimate,
+                self.save_button,
+                self.save_status,
+                self.check_copies_button,
+            ],
+            visible=False,
+        )
+        self.save_button.on_click(lambda _: self.save_copies())
+        self.check_copies_button.on_click(lambda _: self.check_copies())
+
+    def _open_save_card(self, review: AxisReview) -> None:
+        """Offer the OME-Zarr copies: required with axis errors, optional otherwise."""
+        pre = self.preflight
+        if not self.save_target.value:
+            self.save_target.value = str(default_conversion_target(pre.discovery.root))
+        if review.axis_errors:
+            self.save_intro.value = ui.status(
+                "error",
+                "Required: these images cannot be read with their axes as they are.",
+                [
+                    "Save them as OME-Zarr with the axes you confirmed. Every axis is then "
+                    "named in the copies' metadata.",
+                    "Then click Check the copies: the check runs again on the copies, and the "
+                    "rest of the notebook continues with them.",
+                ],
+            )
+        else:
+            self.save_intro.value = ui.status(
+                "info",
+                "Optional: the axes are correct, so you can continue to step 3 directly.",
+                [
+                    "Saving the images as OME-Zarr with named axes is offered anyway, for "
+                    "example to view them lazily or share them with their masks as label "
+                    "images. After saving, the check runs again on the copies.",
+                ],
+            )
+        estimate = estimate_conversion(pre.discovery.root, pre.metadata.files)
+        free = free_space(ui.clean_path(self.save_target.value) or pre.discovery.root)
+        self.save_estimate.value = (
+            f"<div class='mb-help'>{plural(estimate.image_count, 'TIFF image')} "
+            f"({format_bytes(estimate.source_bytes)}) will take up to about "
+            f"{format_bytes(estimate.copy_bytes)} before compression; free space: "
+            f"{format_bytes(free) if free is not None else 'unknown'}. OME-Zarr images are "
+            "copied as they are.</div>"
+        )
+        design = self._design_folder()
+        has_design = design is not None and (design / DESIGN_FILENAME).exists()
+        ui.set_visible(self.save_design, has_design)
+        self.save_button.disabled = False
+        ui.set_visible(self.save_card, True)
+
+    def _close_save_card(self) -> None:
+        ui.set_visible(self.save_card, False)
+        ui.set_visible(self.check_copies_button, False)
+        self.save_status.value = ""
+        self.conversion_result = None
+
+    def save_copies(self) -> ConversionResult | None:
+        """Save every image as OME-Zarr with the confirmed axes (contract §17)."""
+        if self.preflight is None or self.confirmed_mapping is None:
+            return None
+        try:
+            mask_axes = parse_mask_axes(self.save_mask_axes.value)
+        except ValueError as exc:
+            self.save_status.value = ui.status("error", "The mask axes cannot be read.", [str(exc)])
+            return None
+        target = ui.clean_path(self.save_target.value) or None
+        masks = ui.clean_path(self.save_masks.value) or None
+        self._busy(self.save_button, "Saving…")
+        self.save_status.value = ui.working("Saving the images as OME-Zarr…")
+        try:
+            with self.log.attached():
+                result = convert_experiment(
+                    self.preflight.discovery.root,
+                    self.confirmed_mapping,
+                    target,
+                    masks_folder=masks,
+                    mask_axes=mask_axes,
+                    missing_as_singleton=self.missing_as_singleton.value,
+                    exclude=self._excluded(),
+                    output_folder=self._output_folder(),
+                    memory_limit=self._memory_limit(),
+                )
+        except Exception as exc:  # unexpected failures still get a readable message
+            self.log.lines.append(traceback.format_exc())
+            self.save_status.value = ui.status(
+                "error",
+                "Saving stopped because of an unexpected problem.",
+                [f"{type(exc).__name__}: {exc}", "Open Technical details for the full report."],
+            )
+            self._show_log()
+            return None
+        finally:
+            self._idle(self.save_button, " Save copies", "save")
+        self.conversion_result = result
+        if not result.written:
+            self.save_status.value = ui.status(
+                "error",
+                "Nothing was saved.",
+                ["Read the messages below; each one says what to do."],
+            ) + issues_html(result.issues)
+            ui.set_visible(self.check_copies_button, False)
+            self._show_log()
+            return result
+        lines = [html.escape(line.strip()) for line in conversion_summary(result).splitlines()]
+        design = self._design_folder()
+        if self.save_design.value and design is not None and (design / DESIGN_FILENAME).exists():
+            try:
+                carried = carry_design(
+                    design / DESIGN_FILENAME, default_output_folder(result.target), result.target
+                )
+                lines.append(
+                    f"Experiment design carried to <b>{html.escape(str(carried.path))}</b>."
+                )
+            except DesignCheckError as exc:
+                lines.append(
+                    "The experiment design was not carried: "
+                    + html.escape(exc.issues[0].message)
+                    + " Confirm it again in step 1 for the copies."
+                )
+        self.save_status.value = ui.status("ok", "The copies are saved.", lines, raw=True) + (
+            issues_html(result.issues) if result.issues else ""
+        )
+        ui.set_visible(self.check_copies_button, True)
+        self._show_log()
+        return result
+
+    def check_copies(self) -> Preflight | None:
+        """Switch the notebook to the copies and check them again from step 1.
+
+        The folder becomes the copy tree, the output folder its default
+        (``<copies>_MorphoBricks_Preprocessing``, where the experiment design was carried),
+        and the copies' label images are their masks. Steps 2 and 3 then work on the copies;
+        their axes are named, so the roles are prefilled from them.
+        """
+        result = self.conversion_result
+        if result is None or not result.written:
+            return None
+        self.folder.value = str(result.target)
+        self.output.value = str(default_output_folder(result.target))
+        self._ome_zarr_labels = True
+        self._close_save_card()
+        return self.check_folder()
+
     def _refresh_axis_step(self) -> None:
         pre = self.preflight
         self.axis_next.value = ""
         self._preview_shown = False
         self._close_image_type()
+        self._close_save_card()
         if pre is None:
             self.axis_box.children = [
                 widgets.HTML(
@@ -1325,6 +1543,7 @@ class PreprocessingNotebook:
             self.preview_card,
             self.confirm_button,
             self.confirmed_status,
+            self.save_card,
             self.image_type_card,
             self.axis_next,
         ]
@@ -1406,6 +1625,9 @@ class PreprocessingNotebook:
                 "Click Show preview and inspect a few planes before confirming.",
             )
         self._review_ok = review.ok
+        # Roles whose only errors are axis errors can be confirmed: they are what the
+        # OME-Zarr copies are written with.
+        self._review_convertible = review.only_axis_errors
         if self._preview_shown:
             self._configure_sliders(reset=False)
             self._render_preview()
@@ -1415,7 +1637,8 @@ class PreprocessingNotebook:
         if self.confirmed_mapping is not None:
             self.confirm_button.disabled = False
             return
-        ready = getattr(self, "_review_ok", False) and self.preview_checked.value
+        valid = getattr(self, "_review_ok", False) or getattr(self, "_review_convertible", False)
+        ready = valid and self.preview_checked.value
         self.confirm_button.disabled = not ready
         self.confirm_button.tooltip = (
             "Use these roles for every image of the experiment"
@@ -1522,19 +1745,43 @@ class PreprocessingNotebook:
                 )
                 if r is not None
             ]
-            self.confirmed_status.value = ui.status(
-                "ok",
-                "Axes checked: they are correct for every image.",
-                [
-                    "Every image names its axes in its metadata, and the confirmed roles "
-                    "agree with them. Nothing needs to be saved again.",
-                    *roles,
-                ],
+            review = review_axes(
+                self.preflight.metadata,
+                self.confirmed_mapping,
+                missing_as_singleton=self.missing_as_singleton.value,
             )
-            self._open_image_type()
-            self._refresh_axis_next()
+            if review.axis_errors:
+                self.confirmed_status.value = ui.status(
+                    "error",
+                    f"Axis roles confirmed, but {plural(len(review.axis_error_files), 'image')} "
+                    "cannot be read with them.",
+                    [
+                        "Check the axes named in the messages above. If your roles are right, "
+                        "save the images as OME-Zarr with them below, then check the copies.",
+                        *roles,
+                    ],
+                )
+                self._open_save_card(review)
+                self.axis_next.value = ui.next_steps(
+                    "Save these images as OME-Zarr, then click Check the copies.",
+                    "The images with axis errors are never read as they are.",
+                )
+            else:
+                self.confirmed_status.value = ui.status(
+                    "ok",
+                    "Axes checked: they are correct for every image.",
+                    [
+                        "Every image names its axes in its metadata, and the confirmed roles "
+                        "agree with them. Nothing needs to be saved again.",
+                        *roles,
+                    ],
+                )
+                self._open_save_card(review)
+                self._open_image_type()
+                self._refresh_axis_next()
         else:
             self.confirmed_status.value = ""
+            self._close_save_card()
             # The image type depends on the channels the roles give.
             self._close_image_type()
             self._mapping_changed()
@@ -2020,6 +2267,21 @@ class PreprocessingNotebook:
                     *review.combined_issues(pre.metadata),
                 )
             )
+        axes_ok = True
+        if review is not None and review.axis_errors:
+            axes_ok = False
+            # The axis errors have their own item; other errors still block as before.
+            folder_ok = not has_errors(
+                (
+                    *pre.discovery.issues,
+                    *pre.exclusion_issues,
+                    *(
+                        i
+                        for i in review.combined_issues(pre.metadata)
+                        if i.code not in AXIS_ERROR_CODES
+                    ),
+                )
+            )
         items = [
             (folder_ok, "Check the experiment folder and fix any errors (step 1)"),
             (pre is not None and self.labels_confirmed.value, "Confirm the labels (step 1)"),
@@ -2029,6 +2291,17 @@ class PreprocessingNotebook:
                 else []
             ),
             (self.confirmed_mapping is not None, "Confirm the axis roles (step 2)"),
+            *(
+                []
+                if axes_ok
+                else [
+                    (
+                        False,
+                        "Save the images with axis errors as OME-Zarr and check the copies "
+                        "(step 2)",
+                    )
+                ]
+            ),
             (self.confirmed_image_type is not None, "Confirm the image type (step 2)"),
         ]
         missing = [text for done, text in items if not done]
@@ -2217,6 +2490,7 @@ class PreprocessingNotebook:
                     convert_tiffs=self._convert_tiffs(),
                     conversion=self._conversion_settings(),
                     design=self.design,
+                    ome_zarr_labels=self._ome_zarr_labels,
                     image_type=self.confirmed_image_type,
                     intensity_settings=self.run_checks.settings(),
                     histogram_settings=histogram_settings,
@@ -3031,6 +3305,29 @@ def labels_html(pre: Preflight) -> str:
         "<div class='mb-table-wrap'><table class='mb-table mb-labels'>"
         f"<thead><tr>{header}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
     )
+
+
+def parse_mask_axes(text: str) -> dict[str, str]:
+    """Read the mask axes typed in the notebook, ``"Nuclei=TYX; Cells=YX"``.
+
+    Raises
+    ------
+    ValueError
+        For an entry that is not ``Type=ROLES``, or a type given twice.
+    """
+    found: dict[str, str] = {}
+    for item in text.replace(",", ";").split(";"):
+        item = item.strip()
+        if not item:
+            continue
+        mask_type, sep, roles = item.rpartition("=")
+        mask_type, roles = mask_type.strip(), roles.strip()
+        if not sep or not mask_type or not roles:
+            raise ValueError(f"{item!r} is not Type=ROLES, for example Nuclei=TYX.")
+        if mask_type in found:
+            raise ValueError(f"The axes of {mask_type} are given twice.")
+        found[mask_type] = roles
+    return found
 
 
 def header_marks(mapping: AxisMapping, files: Iterable) -> dict[int, str]:

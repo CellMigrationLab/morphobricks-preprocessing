@@ -369,7 +369,12 @@ def test_notebook_marks_roles_that_disagree_with_the_header(tmp_path):
     assert "axes_yx_swapped" in nb.axis_status.value or "swap the Y and X" in nb.axis_status.value
     nb.preview_button.click()
     nb.preview_checked.button.click()
-    assert nb.confirm_button.disabled
+    # Roles whose only errors are axis errors can be confirmed, to save the OME-Zarr copies.
+    assert not nb.confirm_button.disabled
+    nb.confirm_button.click()
+    assert "cannot be read with them" in nb.confirmed_status.value
+    assert "Required" in nb.save_intro.value
+    nb.confirm_button.click()  # change the roles again
     nb.role_dropdowns[1].value = "Y"
     nb.role_dropdowns[2].value = "X"
     nb.preview_checked.button.click()
