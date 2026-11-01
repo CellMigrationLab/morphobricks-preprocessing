@@ -146,16 +146,23 @@ def mapping_summary(mapping: AxisMapping, files: Iterable = ()) -> str:
 
 
 def axis_check_summary(review: AxisReview) -> str:
-    """Say in one line whether the axis check passed (contract §2), for the CLI.
+    """Say in one line how the axis check went (contract §2), for the CLI.
 
-    The success message names what was checked; with axis errors it says how many images
-    are not read and that the errors are listed (they are printed with the other issues).
+    The success message names what was checked. With axis errors it says how many images
+    cannot be read and that the errors (with the likely cause and the two fixes) are listed;
+    with plain stacks, that their roles are recorded as confirmed.
     """
     if review.axis_errors:
         n = plural(len(review.axis_error_files), "image")
         return (
-            f"Axes check: {n} cannot be read with these axes (see the errors below). "
-            "Check their axes; if they are right, save the images as OME-Zarr with them."
+            f"Axes check: {n} cannot be read with these roles (see the errors below): correct "
+            "the axes, or save named-axis copies with 'convert'."
+        )
+    if review.confirmed_files:
+        n = plural(len(review.confirmed_files), "image")
+        return (
+            f"Axes checked: the roles agree with every header; {n} do not name their axes, "
+            "so their roles are recorded as confirmed by you (see the warning)."
         )
     return (
         "Axes checked: every image names its axes in its metadata, and the roles agree with them."

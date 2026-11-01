@@ -367,14 +367,14 @@ def _check(args: argparse.Namespace) -> int:
     axis_errors = ()
     if pre.suggested_mapping is not None:
         review = review_axes(pre.metadata, pre.suggested_mapping)
-        # The suggested roles are the header's own, so only an image that does not name its
-        # axes can fail the axis check here; 'run' checks the roles given with --axes.
+        # The suggested roles are the header's own, so they never contradict it; 'run'
+        # checks the roles given with --axes.
         axis_errors = review.axis_errors
         print()
         print(axis_check_summary(review))
-        if axis_errors:
+        if review.axis_check:
             print()
-            print(format_issues(axis_errors))
+            print(format_issues(review.axis_check))
         print()
         print(
             f"Suggested option for 'run': --axes {pre.suggested_mapping.roles_string} "

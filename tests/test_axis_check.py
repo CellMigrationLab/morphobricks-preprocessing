@@ -1,10 +1,11 @@
-"""The axis check (contract §2, v0.4.0): any axis problem is an error, never read.
+"""The axis check (contract §2, v0.4.0).
 
-An image whose metadata does not name its axes (``axes_not_named``), or whose confirmed
-roles swap Y and X (``axes_yx_swapped``) or otherwise contradict its header
-(``axes_contradict_header``), is an error naming the file with its header and confirmed
-axes. Before v0.4.0 these were read silently: a plain stack with the user's roles, a swap
-transposed, a contradiction under the declaration.
+Confirmed roles that swap Y and X (``axes_yx_swapped``) or otherwise contradict the header
+(``axes_contradict_header``) are errors naming the file with its header and confirmed axes
+and the likely cause; such an image is never read. Before v0.4.0 a swap was read transposed
+and a contradiction under the declaration, silently. A plain stack whose metadata does not
+name its axes is read with the confirmed roles, with the ``axes_not_named`` warning, and
+recorded as confirmed (``AxisReview.axes_from``).
 """
 
 import numpy as np
@@ -12,6 +13,7 @@ import pytest
 import tifffile
 
 from morphobricks_preprocessing import (
+    AXIS_CHECK_CODES,
     AXIS_ERROR_CODES,
     AxisMapping,
     TiffMetadata,
@@ -114,10 +116,12 @@ def test_plain_stacks_never_name_their_axes(tmp_path, writer, roles):
     assert meta.axes in ("IYX", "QYX")
     review = review_axes([meta], AxisMapping(meta.axes, roles))
     found = one(review.issues, "axes_not_named")
-    assert found.is_error and found.paths == ("a.tif",)
+    assert not found.is_error and found.paths == ("a.tif",)
+    assert review.ok and review.axes_from == {"a.tif": "confirmed"}
+    assert review.confirmed_files == ("a.tif",)
     assert f"header {meta.axes}, confirmed {roles}: a.tif" in found.message
-    assert "do not name their axes in their metadata" in found.message
-    assert "save the images as OME-Zarr" in found.action
+    assert "read with the roles you confirmed" in found.message
+    assert "named-axis copies (OME-TIFF)" in found.action
 
 
 def test_shaped_axes_with_a_placeholder_are_not_named(tmp_path):
@@ -202,11 +206,35 @@ def test_every_file_is_named_with_its_header_and_confirmed_axes(tmp_path):
         found.message
     )
     assert "They are not read transposed." in found.message
-    assert "confirm the header's axes instead" in found.action
+    assert "likely cause: the image was saved with its rows and columns exchanged" in (
+        found.message
+    )
+    assert "Correct the axes" in found.action and "Or convert" in found.action
 
 
-def test_the_three_codes():
-    assert AXIS_ERROR_CODES == ("axes_not_named", "axes_yx_swapped", "axes_contradict_header")
+def test_the_likely_cause_of_tifffiles_cyx_default_is_named(tmp_path):
+    # tifffile labels any 3-D stack saved with imagej=True or ome=True CYX.
+    meta = inspect_image(ome(tmp_path / "a.tif", data((5, 6, 8)), "CYX"))
+    review = review_axes([meta], AxisMapping("CYX", "TYX"))
+    found = one(review.issues, "axes_contradict_header")
+    assert "likely cause: tifffile labels a 3-D stack saved with imagej=True or ome=True" in (
+        found.message
+    )
+    relabel = review_axes(
+        [inspect_image(imagej(tmp_path / "b.tif", data((3, 6, 8)), "ZYX"))],
+        AxisMapping("ZYX", "TYX"),
+    )
+    assert "an ImageJ stack of slices reads as depth" in relabel.issues[0].message
+
+
+def test_the_codes():
+    assert AXIS_ERROR_CODES == ("axes_yx_swapped", "axes_contradict_header")
+    assert AXIS_CHECK_CODES == ("axes_not_named", "axes_yx_swapped", "axes_contradict_header")
+
+
+def test_named_images_are_recorded_as_from_the_header(tmp_path):
+    meta = inspect_image(write_data(tmp_path / "a.tif", data((2, 6, 8)), "CYX"))
+    assert review_axes([meta], prefill_mapping("CYX")).axes_from == {"a.tif": "header"}
 
 
 # The run stops, reading nothing --------------------------------------------------------
@@ -232,7 +260,6 @@ def reads(monkeypatch):
     [
         (lambda p: write_data(p, data((2, 6, 8)), "CYX"), "CYX", "CXY", "axes_yx_swapped"),
         (lambda p: imagej(p, data((3, 6, 8)), "ZYX"), "ZYX", "TYX", "axes_contradict_header"),
-        (lambda p: plain(p, data((3, 6, 8))), "IYX", "ZYX", "axes_not_named"),
     ],
 )
 def test_run_stops_naming_every_file(tmp_path, reads, write, axes, roles, code):
@@ -245,6 +272,13 @@ def test_run_stops_naming_every_file(tmp_path, reads, write, axes, roles, code):
     assert found.paths == ("ctrl/r1/a.tif", "ctrl/r1/b.tif", "drug/r1/a.tif")
     assert [i.code for i in result.issues if i.is_error] == [code]
     assert not default_output_folder(root).exists()
+
+
+def test_a_plain_stack_runs_with_a_warning(tmp_path):
+    root = tmp_path / "exp"
+    plain(root / "ctrl/a.tif", data((3, 6, 8)))
+    result = run_experiment(root, AxisMapping("IYX", "ZYX"))
+    assert result.written and one(result.issues, "axes_not_named").paths == ("ctrl/a.tif",)
 
 
 def test_a_clean_run_is_unchanged(tmp_path):
@@ -324,9 +358,10 @@ def confirm(root):
 def test_cli_check_reports_plain_stacks(tmp_path, capsys):
     root = tmp_path / "exp"
     plain(root / "ctrl/a.tif", data((3, 6, 8)))
-    assert main(["check", str(root)]) == 1
+    # A warning: 'run' reads the stack with the roles given in --axes.
+    assert main(["check", str(root)]) == 0
     out = capsys.readouterr().out
-    assert "Axes check: 1 image cannot be read with these axes" in out
+    assert "1 image do not name their axes, so their roles are recorded as confirmed" in out
     assert "do not name their axes in their metadata (header IYX, confirmed -YX" in out
 
 

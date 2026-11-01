@@ -256,13 +256,13 @@ def test_channel_count_follows_the_confirmed_channel_axis():
     report = MetadataReport(tuple(files), tuple(check_metadata(files)))
     assert "different_channel_counts" not in codes(report.issues)
     as_time = review_axes(report, prefill_mapping("IYX").with_role(0, "T"))
-    # A plain stack never names its axes, so it is an error whatever the roles (v0.4.0).
-    assert codes(as_time.issues) == ["axes_not_named"]
+    # A plain stack never names its axes: read with the confirmed roles, with a warning.
+    assert as_time.ok and codes(as_time.issues) == ["axes_not_named"]
     as_channel = review_axes(report, prefill_mapping("IYX").with_role(0, "C"))
     assert codes(as_channel.combined_issues(report)) == [
         "different_channel_counts",
-        "axes_not_named",
         "different_plane_counts",
+        "axes_not_named",
     ]
 
 
@@ -307,7 +307,7 @@ def test_review_includes_the_mapping_rules():
     review = review_axes(files, prefill_mapping("IYX"))
     assert not review.ok and codes(review.issues) == ["unassigned_axis", "axes_not_named"]
     as_time = review_axes(files, prefill_mapping("IYX").with_role(0, "T"))
-    assert codes(as_time.issues) == ["axes_not_named"]
+    assert as_time.ok and codes(as_time.issues) == ["axes_not_named"]
 
 
 def test_review_from_metadata_report_replaces_missing_axes(tmp_path):
@@ -344,8 +344,8 @@ def test_combined_issues_put_errors_first(tmp_path):
     review = review_axes(report, prefill_mapping("QYX"))
     assert codes(review.combined_issues(report)) == [
         "unassigned_axis",
-        "axes_not_named",
         "different_sizes",
+        "axes_not_named",
     ]
 
 

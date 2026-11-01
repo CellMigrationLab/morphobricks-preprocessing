@@ -12,6 +12,7 @@ from importlib.metadata import PackageNotFoundError, version
 # deprecated stand-ins for one version (see _moved).
 from . import _moved, csv_io, dtypes, histogram, normalization, pooling, records  # noqa: F401
 from .axes import (
+    AXIS_CHECK_CODES,
     AXIS_ERROR_CODES,
     AxisMapping,
     AxisReview,
@@ -211,6 +212,7 @@ except PackageNotFoundError:  # running from a source checkout without installin
     __version__ = "0.0.0+unknown"
 
 __all__ = [
+    "AXIS_CHECK_CODES",
     "AXIS_ERROR_CODES",
     "CONSISTENCY_CODES",
     "DEFAULT_MEMORY_LIMIT",

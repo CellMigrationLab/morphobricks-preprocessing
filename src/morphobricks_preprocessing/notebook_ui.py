@@ -62,6 +62,7 @@ from morphobricks_normalization.records import PlaneRecord, group_records
 
 from . import notebook_style as ui
 from .axes import (
+    AXIS_CHECK_CODES,
     AxisMapping,
     AxisReview,
     axis_disagreements,
@@ -1393,7 +1394,10 @@ class PreprocessingNotebook:
             missing_as_singleton=self.missing_as_singleton.value,
         )
         if review.issues:
-            self.axis_status.value = issues_html(review.issues)
+            others = [i for i in review.issues if i.code not in AXIS_CHECK_CODES]
+            self.axis_status.value = axis_check_html(review) + (
+                issues_html(others) if others else ""
+            )
             self.axis_next.value = ""
         else:
             self.axis_status.value = ui.status(
@@ -1522,14 +1526,29 @@ class PreprocessingNotebook:
                 )
                 if r is not None
             ]
+            review = review_axes(
+                self.preflight.metadata,
+                self.confirmed_mapping,
+                missing_as_singleton=self.missing_as_singleton.value,
+            )
+            confirmed = review.confirmed_files
+            lines = [
+                "The confirmed roles agree with every axis the image metadata names."
+                if confirmed
+                else "Every image names its axes in its metadata, and the confirmed roles "
+                "agree with them.",
+                *(
+                    [
+                        f"{plural(len(confirmed), 'image')} do not name their axes: their "
+                        "roles are recorded in the run manifest as confirmed by you."
+                    ]
+                    if confirmed
+                    else []
+                ),
+                *roles,
+            ]
             self.confirmed_status.value = ui.status(
-                "ok",
-                "Axes checked: they are correct for every image.",
-                [
-                    "Every image names its axes in its metadata, and the confirmed roles "
-                    "agree with them. Nothing needs to be saved again.",
-                    *roles,
-                ],
+                "ok", "Axes checked: they are correct for every image.", lines
             )
             self._open_image_type()
             self._refresh_axis_next()
@@ -3033,6 +3052,34 @@ def labels_html(pre: Preflight) -> str:
     )
 
 
+def axis_check_html(review: AxisReview) -> str:
+    """Show the axis check (contract §2) as one card: errors, plain stacks, or success.
+
+    The three codes (``axes_yx_swapped``, ``axes_contradict_header``, ``axes_not_named``)
+    share one card; each group of files is listed with its header and confirmed axes, the
+    errors with the likely cause and the two fixes. The codes stay in small print, for logs.
+    """
+    errors, notes = review.axis_errors, [i for i in review.axis_check if not i.is_error]
+    if not errors and not notes:
+        return ""
+    lines = []
+    for issue in (*errors, *notes):
+        lines.append(
+            f"{html.escape(issue.message)}{ui.path_list(list(issue.paths), limit=5)}"
+            f"<div class='mb-help'>{html.escape(issue.action)} "
+            f"<span style='opacity:.6'>({html.escape(issue.code)})</span></div>"
+        )
+    if errors:
+        n = plural(len(review.axis_error_files), "image")
+        return ui.status(
+            "error", f"Axis check: {n} cannot be read with these roles.", lines, raw=True
+        )
+    n = plural(len(review.confirmed_files), "image")
+    return ui.status(
+        "warn", f"Axis check: {n} do not name their axes; your roles are recorded.", lines, raw=True
+    )
+
+
 def header_marks(mapping: AxisMapping, files: Iterable) -> dict[int, str]:
     """Return a warning (HTML) for each role that disagrees with the axes the headers name.
 
@@ -3050,20 +3097,20 @@ def header_marks(mapping: AxisMapping, files: Iterable) -> dict[int, str]:
             letters.setdefault(index, set()).add(f.axes[index])
     marks = {}
     for index, codes in found.items():
-        if "axes_not_named" in codes:
-            text = (
-                "The image metadata does not name this axis, so it cannot be checked: these "
-                "images are not read until they are saved as OME-Zarr with named axes."
+        if codes == {"axes_not_named"}:
+            marks[index] = (
+                "<div class='mb-help' style='color:#92400E'>ⓘ The image metadata does not name "
+                "this axis: the role you confirm is recorded as yours. Check it with the "
+                "preview.</div>"
             )
-        else:
-            named = ", ".join(axis_name(letter) for letter in sorted(letters[index]))
-            what = (
-                "swaps the Y and X it names" if codes == {"axes_yx_swapped"} else "contradicts it"
-            )
-            text = (
-                f"The image header names this axis {html.escape(named)}; this role {what}. "
-                "Choose the header's role, or save the images as OME-Zarr with these axes."
-            )
+            continue
+        codes = codes - {"axes_not_named"}
+        named = ", ".join(axis_name(letter) for letter in sorted(letters[index]) if letter)
+        what = "swaps the Y and X it names" if codes == {"axes_yx_swapped"} else "contradicts it"
+        text = (
+            f"The image header names this axis {html.escape(named)}; this role {what}. "
+            "Choose the header's role, or save named-axis copies with these axes."
+        )
         marks[index] = f"<div class='mb-help' style='color:#92400E'>⚠ {text}</div>"
     return marks
 

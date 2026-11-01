@@ -143,9 +143,9 @@ that measure objects; the optional `masks` command (§5) also tells how they rel
 ## 3. Supported images
 
 - **TIFF files:** `.tif` and `.tiff` (any case), including OME-TIFF and ImageJ hyperstacks.
-  Their metadata must name every axis with more than one plane, and the axis roles must
-  agree with it (§4 step 2). A plain stack of pages without axis metadata, or a file whose
-  axes you know better than its header, is saved as OME-Zarr with the right axes first.
+  The axis roles must agree with the axes their metadata names (§4 step 2); a file whose
+  axes you know better than its header is saved as a named-axis copy first. A plain stack
+  of pages without axis metadata is read with the roles you confirm (a warning).
 - **OME-Zarr images:** OME-NGFF 0.4 and 0.5 (needs the `zarr` extra; 0.5 needs Python 3.11
   or newer). Their axes (time, channel, z, y, x) come from their metadata. Only the
   full-resolution level of a single image is read; a folder holding several images (a
@@ -241,13 +241,14 @@ results or comparing another grouping.
      channels, a message says so and step 3 stays locked. Each picture should be a normal image of your sample;
      stripes or a smear mean X or Y is on the wrong dimension. Brightness is stretched for
      display only.
-   - The roles are checked against the axes each image's metadata names. A role that
-     disagrees with the header, or an axis the metadata does not name (a plain stack of
-     pages), is marked in amber under its dropdown, and the messages give the error
-     (`axes_not_named`, `axes_yx_swapped` or `axes_contradict_header`, §8) naming the
-     images with their header axes and your roles. Such images are never read: check the
-     axes, and if your roles are right, save the images as OME-Zarr with them and run
-     preprocessing on the copies.
+   - The roles are checked against the axes each image's metadata names, in one **Axis
+     check** card. A role that disagrees with the header is marked in amber under its
+     dropdown; the card gives the error (`axes_yx_swapped` or `axes_contradict_header`,
+     §8) naming the images with their header axes, your roles and the likely cause. Such
+     images are never read: correct the axes, or save named-axis copies with your roles and
+     run preprocessing on the copies. An axis the metadata does not name (a plain stack of
+     pages) takes the role you confirm: the card warns (`axes_not_named`) and the run
+     records the roles as confirmed by you.
    - If the preview looks right, press **Yes, the preview looks right**, then click
      **Confirm axis roles**. When the roles agree with every header, a green card says
      **Axes checked: they are correct for every image**. Changing a role afterwards asks
@@ -388,10 +389,11 @@ morphobricks-preprocessing run /data/exp1 --axes ZCYX
 without being stated.
 
 Both commands check the axes (§4, step 2): `check` with the suggested roles, which are the
-headers' own, so only images whose metadata does not name their axes fail there
-(`axes_not_named`); `run` with the roles given in `--axes`. They print **Axes checked:
-every image names its axes in its metadata, and the roles agree with them** when all is
-well, or the errors naming the images, and stop (exit status 1).
+headers' own, so only the `axes_not_named` warning of plain stacks can appear there; `run`
+with the roles given in `--axes`. They print **Axes checked: every image names its axes in
+its metadata, and the roles agree with them** when all is well (and name the plain stacks
+whose roles are recorded as confirmed), or the errors naming the images, the likely cause
+and the two fixes, and `run` stops (exit status 1).
 
 `--image-type fluorescence` or `--image-type rgb` gives the image type (§4, step 2).
 Without it, `run` uses the type suggested from the image headers and prints it, with why it
@@ -573,9 +575,9 @@ continues.
 | `inconsistent_dimensions`, `inconsistent_mapping` | Error | Images have their dimensions in a different order. Export them the same way or process separately. |
 | `missing_axes` | Error | Some images lack a dimension. Confirm they have one plane along it (step 2), or export them again. |
 | `ambiguous_missing_axes` | Error | It is unclear which dimension an image lacks. Export it again. |
-| `axes_not_named` | Error | The metadata of some images does not name their axes (a plain stack of pages, `IYX` or `QYX`): which dimension is depth, time or channel cannot be checked, so they are not read. The message names each image with its axes and the roles you confirmed. Check these axes; if they are right, save the images as OME-Zarr with them, then run preprocessing on the copies. |
-| `axes_yx_swapped` | Error | The roles you confirmed give the Y and X the image header names the other way round. The images are not read transposed. Check the axes: if the header is right, confirm its axes; if your roles are right, save the images as OME-Zarr with them and run preprocessing on the copies. |
-| `axes_contradict_header` | Error | The roles you confirmed contradict the axes the image header names (for example the header says depth, Z, and you chose time, T). The images are not read under a contradicted declaration. Check the axes as for `axes_yx_swapped`. |
+| `axes_not_named` | Warning | The metadata of some images does not name their axes (a plain stack of pages, `IYX` or `QYX`), so which dimension is depth, time or channel comes only from the roles you confirm. The images are read with them, and the run manifest records them as confirmed by you. Check the roles with the preview. Before segmenting these images in other tools, consider saving named-axis copies (OME-TIFF), so every tool reads the same axes. |
+| `axes_yx_swapped` | Error | The roles you confirmed give the Y and X the image header names the other way round, so the images are not read (never transposed). The message names the likely cause. Two fixes: correct the axes (if the header is right, choose its roles), or convert (save named-axis copies with your roles with `morphobricks-preprocessing convert`, then run preprocessing on the copies). |
+| `axes_contradict_header` | Error | The roles you confirmed contradict the axes the image header names (for example the header says channels, C, and you chose time, T). The images are not read under a contradicted declaration. The message names the likely cause, often the tool that saved the files: tifffile labels a 3-D stack saved with `imagej=True` or `ome=True` as `CYX`, and an ImageJ stack of slices reads as depth even for a time-lapse. The same two fixes as `axes_yx_swapped`. |
 | `declared_axes_mismatch` | Error (other bricks; deprecated, removed in v0.5.0) | The axes a brick was told for an image or mask contradict the axes in its metadata (for example a depth stack declared as channels). Declare the axes the metadata gives, or export the image again with the right axes. |
 | `missing_xy_axis`, `duplicate_axis_role` | Error | X/Y missing or a role used twice. Correct the axis roles. |
 | `unassigned_axis` | Error | A dimension with several planes has no role. Choose Z, C or T. |

@@ -230,9 +230,11 @@ functions the tests use.
 - **Axis check (v0.4.0, plan §12 question 45):** every TIFF's confirmed roles must agree
   with the axes its header names (`axes.header_axis_issue`, position by position, on
   `metadata.named_axes`). Otherwise one of three errors naming the files with their header
-  and confirmed axes: `axes_not_named` (plain stack), `axes_yx_swapped`,
-  `axes_contradict_header`. Such an image is **never read** (not transposed, not under a
-  contradicted declaration); the remedy is an OME-Zarr copy with the confirmed axes.
+  and confirmed axes: the errors `axes_yx_swapped` and `axes_contradict_header` (with the
+  likely cause; such an image is **never read**, not transposed, not under a contradicted
+  declaration; fix: correct the axes, or named-axis copies) and the warning
+  `axes_not_named` (a plain stack, read with the confirmed roles, `axes_from:
+  "confirmed"`).
   `AxisReview.axis_error_files` lists them; mask sizes and planes are checked by the
   confirmed roles and skip those images (`run.mask_issues`). OME-Zarr images never have
   these errors.
