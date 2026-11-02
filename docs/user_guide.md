@@ -21,7 +21,7 @@ run **Step 0**. It detects local Jupyter or Google Colab and checks these option
 2. **Installed package:** otherwise, use the package already available to this kernel.
 3. **GitHub installation:** if the package is missing, install it with the notebook
    dependencies from the project's GitHub repository, at the release the notebook names
-   (`RELEASE_TAG` in Step 0, for example `v0.4.0rc2`), never the changing `main` branch.
+   (`RELEASE_TAG` in Step 0, for example `v0.4.0rc3`), never the changing `main` branch.
 
 Missing notebook dependencies are installed into the same Python environment as the
 kernel. A local checkout is installed in editable mode when it needs dependencies;
