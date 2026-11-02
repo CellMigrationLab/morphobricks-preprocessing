@@ -170,7 +170,7 @@ ruff format .
 pytest
 ```
 
-Coding conventions are described in [docs/development.md](docs/development.md).
+Coding conventions are described in [docs/development.md](docs/development.md). Planned work after v0.4.0 is in [docs/roadmap.md](docs/roadmap.md).
 
 ## License
 
