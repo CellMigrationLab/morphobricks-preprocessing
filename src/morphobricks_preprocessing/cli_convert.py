@@ -20,6 +20,7 @@ from .discovery import default_output_folder
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import format_issues
 from .run import preflight
+from .run.output_guard import recorded_masks_of
 from .validation import plural
 
 
@@ -82,6 +83,12 @@ def add_convert_parser(commands: argparse._SubParsersAction) -> argparse.Argumen
         help="remove the lock of an earlier conversion into --to that was stopped; give it "
         "only when you are sure no other conversion writes there",
     )
+    convert.add_argument(
+        "--masks",
+        metavar="FOLDER",
+        help="the masks folder of your runs, which the copies may not be inside; by default "
+        "the one recorded by the run in the default output folder",
+    )
     convert.add_argument("--log", metavar="FILE", help="write technical details to this file")
     return convert
 
@@ -92,6 +99,7 @@ def convert_command(args: argparse.Namespace) -> int:
     mapping = mapping_option(args, pre, None)
     if mapping is None or mapping is False:
         return 1
+    output = default_output_folder(Path(args.experiment).resolve())
     result = convert_experiment(
         args.experiment,
         mapping,
@@ -100,11 +108,12 @@ def convert_command(args: argparse.Namespace) -> int:
         missing_as_singleton=args.missing_as_singleton,
         memory_limit=args.memory_limit,
         progress=print_progress,
+        masks_folder=args.masks or recorded_masks_of(output),
     )
     if result.issues:
         print(format_issues(result.issues))
         print()
-    print(conversion_text(result, default_output_folder(Path(args.experiment).resolve())))
+    print(conversion_text(result, output))
     return 0 if result.written else 1
 
 

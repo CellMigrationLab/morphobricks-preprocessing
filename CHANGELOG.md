@@ -96,11 +96,11 @@ and the bricks' migration).
   (#116).
 - Warnings `partial_pixel_size` (a pixel size along only one of X and Y) and
   `non_square_pixels` (X and Y not exactly equal in micrometres): bricks that measure
-  lengths refuse such images (audit m5, plan §12 question 70).
+  lengths refuse such images (audit m5, plan §12 question 71).
 
 ### Fixed
 
-- Preprocessing audit of 3 November 2026 (plan §12 question 70): `read_plane` and
+- Preprocessing audit of 3 November 2026 (plan §12 question 71): `read_plane` and
   `RunInputs.read_plane` no longer count histogram memory, so a 5000² float32 plane is read
   within the 1 GiB limit (I2); a header size in an unsupported unit (OME `pixel`) or without
   a unit is unknown in `pixel_sizes`, never a value without a unit (I3); `RunInputs.read_mask`
@@ -130,6 +130,12 @@ and the bricks' migration).
   #74).
 - The conversion checks memory and free space before writing and refuses 64-bit integer
   images (PP-11, #124; issues #75, #76). The run reads the copies themselves (issue #79).
+- An experiment or named-axis copies inside the masks folder are refused
+  (`experiment_inside_masks`, `copies_inside_masks`), and so is a copy folder overlapping it
+  (`copy_folder_overlaps_masks`; `convert --masks`, `masks_folder=`); `RunInputs.open`
+  refuses a recorded run that breaks these rules (audit B1, 3 November 2026).
+- `check`, `run`, `masks`, `design` and `calibrate` check the output folder against the
+  masks folder, given or recorded, before writing anything (audit I1).
 - Masks one pixel high or wide are read as 2-D `YX` masks (#63).
 - Step 1 keeps an unreadable `experiment_design.csv` untouched (#61).
 

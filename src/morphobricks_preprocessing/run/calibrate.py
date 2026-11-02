@@ -17,6 +17,7 @@ from pathlib import Path
 from ..calibration import CALIBRATION_FILENAME, Calibration
 from ..calibration_io import read_calibration, write_calibration_file
 from .lock import output_lock
+from .output_guard import refuse_output_inside_masks
 
 
 def write_calibration(calibration: Calibration, output_folder: str | os.PathLike) -> Path:
@@ -39,8 +40,12 @@ def write_calibration(calibration: Calibration, output_folder: str | os.PathLike
     ------
     OutputLockedError
         If a run holds the output folder's lock; nothing is written.
+    OutputInsideMasksError
+        If the run in the output folder recorded a masks folder that holds it; nothing is
+        written.
     """
     output = Path(output_folder).resolve()
+    refuse_output_inside_masks(output)
     output.mkdir(parents=True, exist_ok=True)
     with output_lock(output):
         return write_calibration_file(calibration, output / CALIBRATION_FILENAME)
@@ -69,10 +74,14 @@ def update_calibration(
     ------
     OutputLockedError
         If a run holds the output folder's lock; nothing is read or written.
+    OutputInsideMasksError
+        If the run in the output folder recorded a masks folder that holds it; nothing is
+        read or written.
     CalibrationFormatError
         If the file cannot be read; it is left as it is.
     """
     output = Path(output_folder).resolve()
+    refuse_output_inside_masks(output)
     output.mkdir(parents=True, exist_ok=True)
     with output_lock(output):
         path = output / CALIBRATION_FILENAME

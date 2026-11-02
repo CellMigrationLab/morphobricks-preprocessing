@@ -25,6 +25,7 @@ from .notebook_options import _PAIRING_COLUMNS
 from .notebook_render import _group_explanation, _group_question
 from .run import OutputLockedError
 from .run.design_file import write_design
+from .run.output_guard import OutputInsideMasksError
 from .validation import plural
 
 
@@ -337,6 +338,9 @@ class _DesignCard:
                     "Not saved: another run holds the lock of the output folder.",
                     ["See The output folder is locked above; answer again once it is free."],
                 )
+                return
+            except OutputInsideMasksError as exc:
+                self._design_refusal = ui.status("error", "Not saved.", [str(exc)])
                 return
             except OSError:
                 logging.getLogger(__name__).warning("Cannot save the design", exc_info=True)

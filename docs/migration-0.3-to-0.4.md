@@ -144,11 +144,17 @@ later bricks on the new run.
   - The notebook has a **Masks folder** field and a **Describe the masks** button (the
     `masks` step).
   - `same_objects` in `mask_relationships.json` is a one-to-one matching (report version 2).
+  - The masks folder may hold only masks: an experiment, named-axis copies or the output
+    folder inside it is refused (`experiment_inside_masks`, `copies_inside_masks`,
+    `output_inside_masks`, before anything is written), and so is a `convert` folder
+    inside it (`copy_folder_overlaps_masks`). `RunInputs.open` refuses a recorded run whose
+    folders break this rule.
 - **Why.** A mask read under the wrong axes describes other objects. Objects must be joined
   by their recorded pairing, never by guessing a layout.
 - **What to do.** Rename or exclude images named like masks. Save masks with their axes
   named (or state them per type). Save X-before-Y masks again with `numpy.swapaxes`. Remove
-  `ome_zarr_labels=` from `find_masks` calls.
+  `ome_zarr_labels=` from `find_masks` calls. Move an experiment or copies out of the
+  masks folder, and run again a run recorded with them.
 
 ### 8. OME-Zarr input
 

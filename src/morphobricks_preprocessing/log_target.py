@@ -32,7 +32,7 @@ from .calibration import CALIBRATION_FILENAME
 from .conversion_record import RECORD_FILENAME
 from .design import DESIGN_FILENAME
 from .discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
-from .links import is_inside
+from .links import parts_below
 from .manifest import MANIFEST_FILENAME
 from .mask_scan import MASK_REPORT_FILENAME
 from .run.generation import PUBLISH_FOLDER
@@ -84,9 +84,9 @@ def log_refusal(
     """
     target = Path(log).resolve()
     for what, folder in folders.items():
-        if folder is not None and _parts_below(target, Path(folder)) is not None:
+        if folder is not None and parts_below(target, Path(folder)) is not None:
             return _refused(log, f"it is inside the {what} ({Path(folder).resolve()})")
-    parts = None if output is None else _parts_below(target, Path(output))
+    parts = None if output is None else parts_below(target, Path(output))
     if parts is not None:
         first = parts[0].casefold() if parts else ""
         if not parts or first in _PROTECTED_FOLDED:
@@ -101,29 +101,6 @@ def log_refusal(
 
 
 _PROTECTED_FOLDED = frozenset(name.casefold() for name in PROTECTED_OUTPUTS)
-
-
-def _parts_below(target: Path, folder: Path) -> tuple[str, ...] | None:
-    """Return the names of ``target`` (resolved) below ``folder``; None when it is not inside.
-
-    Compared by resolved path, then, for each existing folder above ``target``, by device and
-    inode, which catches another spelling of ``folder`` on a file system that ignores case.
-    """
-    real = folder.resolve()
-    if is_inside(target, real):
-        return target.relative_to(real).parts
-    try:
-        wanted = os.stat(real)
-    except OSError:  # a folder that does not exist holds nothing
-        return None
-    chain = [target, *target.parents]
-    for depth, above in enumerate(chain):
-        try:
-            if os.path.samestat(os.stat(above), wanted):
-                return tuple(path.name for path in reversed(chain[:depth]))
-        except OSError:  # not there (yet): nothing to compare
-            continue
-    return None
 
 
 def run_log_refusal(
