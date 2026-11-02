@@ -466,11 +466,29 @@ API, CLI). The notebook and CLI only call the API.
     folder (MorphoRelate has its own masks card); the embedding API is unchanged.
   - Not in this PR: a notebook button for the `masks` step (`mask_relationships.json`); it is
     PP-10d.
-- **PP-10d (the notebook's masks-step button)** *(not started; owner decision of 2 November
-  2026: right after PP-10c)*: a notebook button for the `masks` step (describe the masks:
-  `mask_relationships.json`). It first moves the CLI's scan-and-write-under-lock out of
-  `cli_masks.masks_command` into a shared orchestration function that the CLI and the
-  notebook both call.
+- **PP-10d (the notebook's masks-step button)** *(implemented, PR #123; owner decision of 2
+  November 2026: right after PP-10c, before PP-11)*: a notebook button for the `masks` step
+  (describe the masks: `mask_relationships.json`; contract §9.2 "Notebook mask step", §15):
+  - Move only, first: the CLI's pairing with the recorded inputs, scan and write under the
+    lock leave `cli_masks.masks_command` for `run.mask_step` (orchestration):
+    `prepare_mask_step` (a `MaskStep`) and `describe_masks` (a `MaskStepResult`, the lock
+    refusal returned rather than raised). Review (coordinator decision): the lock is held
+    from before the first mask is read to the write, so a locked folder is refused before
+    any mask is read, in the command and the notebook. The command only prints; its output is unchanged
+    (same text and exit status over 13 scenarios, the HPMEC data included).
+  - Step 3's **Describe the masks (optional)** card (`notebook_mask_step`, ui): enabled when
+    step 1's output folder holds a v2 manifest that recorded masks (`recorded_masks`), after
+    a run in this session or for an earlier run in a reopened notebook (review, coordinator
+    decision); the help line names the run it describes; runs the step with the run's
+    recorded inputs and the default thresholds (the notebook offers no threshold option;
+    the command line does), with a progress bar; shows the mask types, the relationships
+    with their counts, masks of the same objects and the hierarchy as suggestions to check,
+    and the path of `mask_relationships.json`. Refusals use the existing cards (the lock
+    card with **Remove the lock of a stopped run**, red cards for mask errors and masks that
+    cannot be used). Hidden with `folder_step(show_output=False)`; the pinned embedding API
+    is unchanged.
+  - The masks' texts and the new table rows moved from `report` to `mask_text` (pure), so
+    `report.py` stays within §9's 600 lines.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;

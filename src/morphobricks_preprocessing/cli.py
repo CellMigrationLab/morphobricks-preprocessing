@@ -41,6 +41,7 @@ from .design import (
 )
 from .discovery import default_output_folder
 from .image_type import review_image_type
+from .mask_text import mask_summary
 from .masks import mask_axes_option
 from .report import (
     axis_check_summary,
@@ -48,7 +49,6 @@ from .report import (
     design_summary,
     format_issues,
     label_tree,
-    mask_summary,
     preflight_summary,
 )
 from .run import (

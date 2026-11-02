@@ -191,7 +191,8 @@ masks/
   measured.
 
 Masks do not change `plane_histograms.csv`. They are checked and recorded for the bricks
-that measure objects; the optional `masks` command (§5) also tells how they relate.
+that measure objects; the optional `masks` command (§5), or **Describe the masks** in the
+notebook's step 3 (§4), also tells how they relate.
 
 ## 3. Supported images
 
@@ -451,6 +452,28 @@ results or comparing another grouping.
        repeats as amber boxes; and one panel per condition with the intensity distribution
        of each biological repeat (comparable repeats lie close together; a shifted one is
        dashed). The plots are only shown here, never saved.
+   - **Describe the masks (optional)**, after a run that recorded masks: the notebook's
+     counterpart of the `masks` command (§5), with the same functions and the inputs the
+     run recorded (experiment folder, masks folder, mask axes, excluded images). The button
+     works for the run in step 1's output folder: after a run in this session, and also for
+     an earlier run when you reopen the notebook (choose the same experiment or output
+     folder in step 1). The line above it names the run it describes (output folder, when
+     it was written, experiment and masks folders, mask types); it is greyed out, saying
+     why, when that folder holds no run that recorded masks. Click it to read every mask, one image at a
+     time (a progress bar names the image); the card then shows each mask type (kind,
+     images, objects, median pieces per label), the relationships found (which type is
+     inside or grouped by which, how many objects are inside, how many objects of the
+     other type hold 0, 1, 2 or 3 or more, and how many are outside or split), masks of
+     the same objects, and the hierarchy of direct parents. These are suggestions to
+     check, not decisions. The description is written to **mask_relationships.json** in
+     the output folder (its path is shown). The output folder's lock is held from before the
+     first mask is read until the file is written: when another run holds it, **The output folder is locked** is shown with **Remove the lock of a
+     stopped run**, no mask is read and nothing is written. Errors found since the run
+     (the experiment or masks folder moved, a mask changed or removed) and masks that
+     cannot be used (a label above 2,147,483,647) are shown as red cards, and nothing is
+     written. The notebook uses the default thresholds
+     (contract §15.1); the `masks` command can change them. A new run clears the card;
+     an embedding brick that hides the output folder does not show it.
 4. **Calculate the statistics (optional).** The table from step 3 is all that later bricks
    need; this step only reads it to compare groups and writes no files.
    - **Histogram table** is filled in with the table from step 3. To look at another
@@ -619,6 +642,9 @@ you give that differs from the recorded one is used for this scan and printed as
 the run keeps its recorded value until you give it the new one. Label 0 is the background and
 objects have positive labels: a mask with a negative value stops the command with a message
 naming the mask, and no report is written.
+The output folder's lock is held from before the first mask is read until the report is
+written: when another run holds it, the command stops with `output_locked` before reading
+any mask.
 
 The rules behind each suggestion use thresholds you can change, for example
 `--inside-object-share 0.8` to call a kind of mask "inside" another when 80% of its objects
@@ -714,7 +740,8 @@ The default output folder is next to the experiment folder:
 - **`ome_zarr/`**: written only by v0.3 runs that converted TIFF images to OME-Zarr. That
   option was removed in v0.4.0; such a folder is left as it is, and may be deleted.
 
-- **`mask_relationships.json`** (only from the `masks` command): each kind of mask, the
+- **`mask_relationships.json`** (only from the `masks` command or the notebook's
+  **Describe the masks**): each kind of mask, the
   relationship between every two kinds with its counts, and the hierarchy. The rules and
   thresholds are in [contract.md](contract.md) §15.
 
@@ -736,12 +763,14 @@ with `chmod a+r <output folder>/*`, or delete them before running again.
 Only one run at a time can use an output folder: a run holds a lock file
 (`.morphobricks-preprocessing.lock`) and a second run is refused (`output_locked`). If the
 process is forcibly stopped, its lock stays; remove it with `--remove-stale-lock` once you
-are sure no run is going on (every command takes it). `check` and `masks` hold the lock
-while they write their reports, `design` and `calibrate` while they change their files,
+are sure no run is going on (every command takes it). `check` holds the lock
+while it writes its report, `masks` (and **Describe the masks**) from before the first
+mask is read until `mask_relationships.json` is written (a locked folder is refused before
+any mask is read), `design` and `calibrate` while they change their files,
 and are refused the same way. A stopped run leaves the last good results in place;
 rerunning checks the table against the manifest and rebuilds a mismatched pair.
 `mask_relationships.json` is removed by a `full` run and when the masks changed since it
-was written; run the `masks` command again.
+was written; run the `masks` command (or **Describe the masks**) again.
 
 ## 7. Running again, and excluding images
 

@@ -120,11 +120,16 @@ src/morphobricks_preprocessing/
                     pipeline.py (run_experiment, incremental), steps.py (header checks,
                     rows, outcome), modes.py (restart/full), recorded.py (inputs reused from
                     the earlier run, InputChange), lock.py (the output folder's O_EXCL lock,
-                    remove_stale_lock), check_step.py (write_check_report), result.py (RunResult),
+                    remove_stale_lock), check_step.py (write_check_report), mask_step.py
+                    (the masks step shared by CLI `masks` and the notebook: prepare_mask_step,
+                    describe_masks, recorded_masks; PP-10d), result.py (RunResult),
                     entries.py (manifest entries, new/changed/unchanged by RowKey),
                     reuse.py (which earlier rows are reused), rows.py (a file's rows and their
                     pixel checks), publish.py (staged outputs, published together)
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
+  mask_text.py      the masks' texts (mask_summary, mask_report_summary) and the notebook's
+                    tables of the mask step (mask_type_rows, mask_relationship_rows,
+                    mask_hierarchy_lines); moved from report.py in PP-10d
   discovery_report.py the run report (discovery_report.json and .txt, design v0.4 §4): status,
                     manifest SHA-256, what was found, reused, recomputed and replaced
   cli.py, __main__  `morphobricks-preprocessing check|run|masks|calibrate` (also `python -m morphobricks_preprocessing`);
@@ -151,6 +156,8 @@ src/morphobricks_preprocessing/
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
   notebook_axes.py  the notebook's axis-check card and the marks under the role dropdowns
   notebook_masks.py step 1's masks folder, Masks card and mask-axis statements (PP-10c)
+  notebook_mask_step.py step 3's Describe the masks card: the masks step after a run that
+                    recorded masks (PP-10d)
   notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra);
                     folder_step/axis_step take title, purpose, intro and show_next (and
                     show_output and show_design for step 1) so other bricks can embed them
@@ -882,8 +889,10 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   `repeat_group`, repeat groups differing only in case, or a `confirmed_on` that is not
   `YYYY-MM-DD` are refused, naming the line and column.
 - **Notebook masks field (PP-10c):** step 1 takes the masks folder and the mask axes per
-  mask type (design v0.4 §2), see plan §10. Next, PP-10d: a notebook button for the
-  `masks` step (`mask_relationships.json`).
+  mask type (design v0.4 §2), see plan §10.
+- **Notebook masks step (PP-10d):** step 3's **Describe the masks** runs the `masks` step
+  (`mask_relationships.json`) with the run's recorded inputs, through `run.mask_step`, which
+  the CLI calls too; see plan §10.
 - **Next (not started):** the notebook step for the masks (name each mask, confirm or
   correct the relationships) and a file saving those answers for the other bricks
   (question 32); 3D and time-lapse masks later.

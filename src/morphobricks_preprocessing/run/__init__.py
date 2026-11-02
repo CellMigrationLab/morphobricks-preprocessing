@@ -26,6 +26,14 @@ from .calibrate import write_calibration
 from .check_step import CheckOutputs, write_check_outputs, write_check_report
 from .design_file import edit_design, write_design_template
 from .lock import LOCK_FILENAME, LockHolder, OutputLockedError, read_lock, remove_stale_lock
+from .mask_step import (
+    MaskStep,
+    MaskStepResult,
+    RecordedMasks,
+    describe_masks,
+    prepare_mask_step,
+    recorded_masks,
+)
 from .modes import FULL, MODES, RESTART
 from .pipeline import run_experiment
 from .preflight import Preflight, SamplePlane, preflight, sample_planes
@@ -38,13 +46,19 @@ __all__ = [
     "RESTART",
     "CheckOutputs",
     "LockHolder",
+    "MaskStep",
+    "MaskStepResult",
     "OutputLockedError",
     "Preflight",
+    "RecordedMasks",
     "RunResult",
     "SamplePlane",
+    "describe_masks",
     "edit_design",
     "preflight",
+    "prepare_mask_step",
     "read_lock",
+    "recorded_masks",
     "remove_stale_lock",
     "run_experiment",
     "sample_planes",

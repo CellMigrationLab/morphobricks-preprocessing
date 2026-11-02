@@ -153,6 +153,7 @@ def test_notebook_names_buttons_that_exist():
         nb.confirm_button,
         nb.image_type_checked.button,
         nb.run_button,
+        nb.mask_step_button,
         nb.statistics_button,
     ):
         assert f"**{button.description.strip()}**" in text

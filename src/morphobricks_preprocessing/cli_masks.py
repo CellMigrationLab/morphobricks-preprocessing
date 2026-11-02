@@ -5,30 +5,20 @@ the label images of OME-Zarr images), reads them, and writes ``mask_relationship
 with each mask type and the relationships between them (contract §15). Like ``run``, it
 takes every input it is not given from the run in the output folder (design v0.4 §1): the
 experiment folder (``experiment_not_recorded`` without one), the masks folder, the mask
-axes and the exclusions; a value given that differs is used and named.
+axes and the exclusions; a value given that differs is used and named. The pairing, the
+scan and the write are :mod:`.run.mask_step`'s, shared with the notebook: the output
+folder's lock is held from before the first mask is read to the write, so a locked folder
+is refused before any mask is read.
 """
 
 from __future__ import annotations
 
 import argparse
-from dataclasses import replace
-from pathlib import Path
 
-from .cli_run import command_preflight, use_recorded_experiment
-from .discovery import default_output_folder
-from .mask_scan import (
-    DEFAULT_THRESHOLDS,
-    MASK_REPORT_FILENAME,
-    mask_thresholds,
-    scan_masks,
-    write_mask_report,
-)
-from .masks import MaskInventory
-from .report import format_issues, mask_report_summary, mask_summary
-from .run import OutputLockedError
-from .run.lock import lock_issue, output_lock
-from .run.recorded import GivenInputs, InputChange, resolve_inputs
-from .run.reuse import read_previous
+from .mask_scan import DEFAULT_THRESHOLDS, mask_thresholds
+from .mask_text import mask_report_summary, mask_summary
+from .report import format_issues
+from .run.mask_step import describe_masks, prepare_mask_step
 from .validation import has_errors
 
 THRESHOLD_HELP = {
@@ -40,11 +30,6 @@ THRESHOLD_HELP = {
     "grouped_label_share": "share of a grouped mask's pixels carrying the parent's label",
     "grouped_median_pieces": "median pieces per label above which a mask is grouped",
 }
-
-
-_RECORDED = ("experiment_root", "exclude", "masks_folder", "mask_axes")
-"""The recorded inputs ``masks`` uses."""
-_EFFECT = "used for this scan only; the run keeps the recorded value until it is given this one"
 
 
 def add_masks_arguments(masks: argparse.ArgumentParser) -> None:
@@ -82,21 +67,25 @@ def masks_command(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(exc)
         return 1
-    if not use_recorded_experiment(args):
+    step = prepare_mask_step(
+        args.experiment,
+        args.output,
+        exclude=() if args.no_exclude else (tuple(args.exclude) or None),
+        masks_folder=args.masks,
+        mask_axes=args.mask_axes or None,
+    )
+    if step.refusal is not None:
+        print(format_issues([step.refusal]))
         return 1
-    changes = _recorded_inputs(args)
-    pre = command_preflight(args)
-    pre = replace(pre, masks=pre.masks or MaskInventory(folder=None))  # none found
-    print(mask_summary(pre.masks))
-    for change in changes:
+    print(mask_summary(step.masks))
+    for change in step.changes:
         print(f"Changed {change.name}: {change.recorded} -> {change.given} ({change.effect})")
-    blocking = [*pre.discovery.issues, *pre.exclusion_issues, *pre.masks.issues]
-    if blocking:
+    if step.issues:
         print()
-        print(format_issues(blocking))
-    if has_errors(blocking):
+        print(format_issues(step.issues))
+    if has_errors(step.issues):
         return 1
-    if not pre.masks.types:
+    if not step.masks.types:
         print("Give the masks folder with --masks, or use OME-Zarr images with label images.")
         return 1
 
@@ -106,43 +95,15 @@ def masks_command(args: argparse.Namespace) -> int:
 
     print()
     try:
-        report = scan_masks(pre.masks, pre.discovery.root, progress=progress, thresholds=thresholds)
+        result = describe_masks(step, progress=progress, thresholds=thresholds)
     except ValueError as exc:  # masks whose pixels cannot be used (planes, labels)
         print(f"The masks cannot be used: {exc}")
         return 1
-    output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
-    output.mkdir(parents=True, exist_ok=True)
-    try:
-        with output_lock(output):  # a run may be replacing or removing the same file
-            path = write_mask_report(report, output / MASK_REPORT_FILENAME)
-    except OutputLockedError as exc:
-        print()
-        print(format_issues([lock_issue(exc)]))
+    if result.refusal is not None:  # refused before any mask is read
+        print(format_issues([result.refusal]))
         return 1
     print()
-    print(mask_report_summary(report))
+    print(mask_report_summary(result.report))
     print()
-    print(f"Report written to {path}")
+    print(f"Report written to {result.path}")
     return 0
-
-
-def _recorded_inputs(args: argparse.Namespace) -> tuple[InputChange, ...]:
-    """Fill the masks folder, mask axes and exclusions not given from the recorded run.
-
-    Returns the inputs given that differ from the recorded ones, with their effect.
-    """
-    root = Path(args.experiment).resolve()
-    output = Path(args.output) if args.output else default_output_folder(root)
-    exclude = () if args.no_exclude else (tuple(args.exclude) or None)
-    given = GivenInputs(
-        experiment_root=root,
-        exclude=exclude,
-        masks_folder=Path(args.masks).resolve() if args.masks else None,
-        mask_axes=args.mask_axes or None,
-    )
-    resolved = resolve_inputs(given, read_previous(output.resolve())[0])
-    args.masks, args.mask_axes = resolved.masks_folder, resolved.mask_axes
-    args.exclude = list(resolved.exclude)
-    return tuple(
-        replace(change, effect=_EFFECT) for change in resolved.changes if change.name in _RECORDED
-    )

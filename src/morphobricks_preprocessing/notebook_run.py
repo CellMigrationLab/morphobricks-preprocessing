@@ -251,6 +251,7 @@ class _RunStep:
         self.readiness.value = title + ui.checklist(items)
         self.run_button.disabled = bool(missing)
         self.plan.value = self._plan_html(review if folder_ok else None)
+        self._refresh_mask_step()
 
     def run(self) -> RunResult | None:
         """Compute or update the histogram table (pass 2) and show what happened."""
@@ -285,6 +286,7 @@ class _RunStep:
         self.run_checks.clear()
         self.run_lock.hide()
         self.run_report.clear()
+        self._mask_step_stale()
         ui.set_visible(self.progress, True)
         self.progress.value, self.progress.max, self.progress.bar_style = 0, 1, "info"
         self.run_status.value = ui.working("Preparing: checking everything again…")
