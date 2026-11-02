@@ -188,6 +188,9 @@ def unchanged_confirmation(
 def current_fingerprint(path: Path) -> Fingerprint | None:
     """Return a file's fingerprint now, or None when it is gone.
 
+    A path under a file (``somefile/out/run_manifest.json``) is gone too: no file can be
+    there.
+
     Parameters
     ----------
     path
@@ -199,7 +202,7 @@ def current_fingerprint(path: Path) -> Fingerprint | None:
     """
     try:
         return Fingerprint.of(path)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         return None
 
 

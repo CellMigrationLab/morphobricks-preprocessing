@@ -93,6 +93,8 @@ def balance_html(balance: BalanceTable) -> str:
         if balance.median is not None
         else ""
     )
+    if balance.not_counted():
+        median += f"<div class='mb-help'>{html.escape(balance.not_counted())}</div>"
     return (
         "<div class='mb-table-wrap'><table class='mb-table mb-labels'>"
         f"<thead><tr>{header}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>" + median

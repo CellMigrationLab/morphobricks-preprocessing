@@ -239,6 +239,8 @@ class _RunStep:
         masks = self._masks_ready_item(review)
         if masks is not None:
             items.insert(1, masks)
+        if self._output_file_in_the_way() is not None:
+            items.insert(0, (False, "Choose an output folder that is not a file (step 1)"))
         self._refresh_masks(review)
         missing = [text for done, text in items if not done]
         if missing:
