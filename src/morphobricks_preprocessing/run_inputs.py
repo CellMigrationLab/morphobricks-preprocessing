@@ -38,6 +38,7 @@ from .calibration import CALIBRATION_FILENAME
 from .conversion_record import RECORD_FILENAME as CONVERSION_RECORD
 from .design import DESIGN_FILENAME, ExperimentDesign, read_experiment_design
 from .fingerprint import Fingerprint
+from .links import LinkRefusedError
 from .manifest import (
     LEGACY_MANIFEST_VERSION,
     MANIFEST_FILENAME,
@@ -343,6 +344,8 @@ class RunInputs:
             raise RunInputsError(_ZARR_MISSING) from exc
         except NgffError as exc:
             raise RunInputsError(_labels_unreadable_text(exc)) from exc
+        except LinkRefusedError as exc:
+            raise RunInputsError(f"The run cannot be checked:\n{exc}") from exc
         if unrecorded:
             raise UnrecordedFilesError(unrecorded)
 

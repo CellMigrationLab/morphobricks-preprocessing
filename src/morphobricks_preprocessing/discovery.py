@@ -17,7 +17,8 @@ refused when their headers are checked. A position is identified by its labels
 and its ``position_id``, the image name without its extension (contract §1).
 
 Only folder and file names are read here; image headers are inspected by
-:mod:`morphobricks_preprocessing.metadata`.
+:mod:`morphobricks_preprocessing.metadata`. Links are followed only inside the
+experiment folder (:mod:`.links`, issue #81).
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ import numpy as np
 from morphobricks_normalization.records import LEVELS, SINGLE
 
 from .image_names import position_id
+from .links import LinkGuard
 from .mask_names import mask_name_issues
 from .validation import ValidationIssue, agree, error, has_errors, plural, warning
 from .zarr_input import is_zarr_name
@@ -348,7 +350,7 @@ def discover_experiment(
         walker.issues.extend(check_output_folder(root, output_folder))
         walker.excluded = Path(output_folder).resolve()
     walker.visit(root, ())
-    issues = (*walker.finish(), *mask_name_issues(walker.leaves))
+    issues = (*walker.finish(), *walker.links.issues(), *mask_name_issues(walker.leaves))
     return DiscoveryResult(root=root, leaves=tuple(walker.leaves), issues=issues)
 
 
@@ -357,6 +359,7 @@ class _Walker:
 
     def __init__(self, root: Path):  # noqa: ANN204
         self.root = root
+        self.links = LinkGuard(root, "experiment folder")
         self.excluded: Path | None = None
         self.leaves: list[LeafFolder] = []
         self.issues: list[ValidationIssue] = []
@@ -390,13 +393,13 @@ class _Walker:
             path = Path(entry.path)
             if is_system_name(entry.name):
                 logger.debug("Skipping system file %s", path)
-            elif is_ome_zarr_folder(entry):
-                tiffs.append(self.relative(path))
+            elif (real := self.links.real(entry, folder)) is None:
+                logger.debug("Link %s not followed", path)  # reported by discover_experiment
+            elif is_ome_zarr_folder(entry) or not entry.is_dir() and is_tiff_name(entry.name):
+                tiffs.append(self.links.claim(path, real))
             elif entry.is_dir():
                 if path != self.excluded:
                     subfolders.append(path)
-            elif is_tiff_name(entry.name):
-                tiffs.append(self.relative(path))
             else:
                 self.non_tiff.append(self.relative(path))
 
@@ -412,18 +415,16 @@ class _Walker:
         self.outside_leaf.extend(tiffs)
         self._check_names(subfolders, len(names))
         if len(names) == len(LEVELS):
-            # Stop here: the folders below a technical repeat have no level to map
-            # to, and listing them is enough for the error message.
+            # Stop: no level below a technical repeat; listing the folders is enough.
             self.too_deep.extend(self.relative(path) for path in subfolders)
             return
         for path in subfolders:
             self.visit(path, (*names, path.name))
 
     def _check_names(self, subfolders: list[Path], level: int) -> None:
-        # Names are compared ignoring case, across the whole experiment (decision D-e):
-        # Windows and macOS would merge "Ctrl" and "ctrl" when the experiment is copied
-        # there, and later bricks would key "Rep1" and "rep1" as two biological repeats
-        # where design pairing and other tools take them as one.
+        # Names are compared ignoring case, experiment-wide (decision D-e): Windows and
+        # macOS would merge "Ctrl" and "ctrl" in a copy, and later bricks would key "Rep1"
+        # and "rep1" as two biological repeats where design pairing takes them as one.
         for path in subfolders:
             if level < len(LEVELS):
                 spellings = self.spellings[level].setdefault(path.name.casefold(), {})
@@ -445,9 +446,8 @@ class _Walker:
                 self.single_with_siblings.append(self.relative(path))
 
     def _check_positions(self, images: list[str]) -> None:
-        # Two images of one technical repeat with the same position identifier would
-        # be the same field of view to every later brick, so this is refused rather
-        # than guessed. Case is ignored for the same reason as for folder names.
+        # Two images of one technical repeat with one position identifier (ignoring case,
+        # as for folder names) would be one field of view to every brick: refused.
         by_key: dict[str, list[str]] = {}
         for image in images:
             by_key.setdefault(position_id(image).casefold(), []).append(image)
@@ -581,9 +581,8 @@ class _Walker:
             )
         if self.outside_leaf:
             issues.append(
-                # An error, not a warning (owner decision, October 2026): a folder holding
-                # both images and subfolders has no level for its images, and every brick
-                # refuses it, so they are never dropped silently.
+                # An error (owner, October 2026): a folder holding images and subfolders
+                # has no level for its images; every brick refuses it, never dropping them.
                 error(
                     "tiff_outside_leaf",
                     f"{plural(len(self.outside_leaf), 'image')} "
