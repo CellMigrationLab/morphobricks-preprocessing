@@ -15,6 +15,7 @@ from morphobricks_preprocessing import (
     scan_masks,
 )
 from morphobricks_preprocessing.cli import main
+from morphobricks_preprocessing.run.lock import output_lock
 from tiff_tree import write_data, write_file
 
 IMAGES = ["ctrl/rep1/a.tif", "ctrl/rep1/b.tif", "drug/rep1/a.tif"]
@@ -323,6 +324,17 @@ def test_masks_command_writes_the_report(experiment, masks, tmp_path, capsys):
     assert report["report_version"] == "1"
     assert sorted(report["masks"]) == ["Cells", "Nuclei"]
     assert report["same_objects"] == [["Cells", "Nuclei"]]
+
+
+def test_masks_command_writes_nothing_while_a_run_holds_the_lock(
+    experiment, masks, tmp_path, capsys
+):
+    out = tmp_path / "out"
+    out.mkdir()
+    with output_lock(out):
+        assert main(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 1
+    assert "Another run is using this output folder" in capsys.readouterr().out
+    assert not (out / "mask_relationships.json").exists()
 
 
 def test_masks_command_stops_on_mask_errors_or_without_masks(experiment, masks, capsys):

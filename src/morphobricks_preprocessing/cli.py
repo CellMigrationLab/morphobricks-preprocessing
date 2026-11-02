@@ -59,6 +59,7 @@ from .run import (
     remove_stale_lock,
     write_check_report,
 )
+from .run.lock import lock_issue, output_lock
 from .validation import has_errors
 
 __all__ = ["build_parser", "main", "parse_size"]
@@ -272,6 +273,7 @@ def _check(args: argparse.Namespace) -> int:
 
 
 def _masks(args: argparse.Namespace) -> int:
+    """Scan the masks and write ``mask_relationships.json``, holding the folder's lock."""
     changes = {name: getattr(args, name) for name in _THRESHOLD_HELP}
     try:
         thresholds = mask_thresholds({k: v for k, v in changes.items() if v is not None})
@@ -302,7 +304,14 @@ def _masks(args: argparse.Namespace) -> int:
         print(f"The masks cannot be used: {exc}")
         return 1
     output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
-    path = write_mask_report(report, output / MASK_REPORT_FILENAME)
+    output.mkdir(parents=True, exist_ok=True)
+    try:
+        with output_lock(output):  # a run may be replacing or removing the same file
+            path = write_mask_report(report, output / MASK_REPORT_FILENAME)
+    except OutputLockedError as exc:
+        print()
+        print(format_issues([lock_issue(exc)]))
+        return 1
     print()
     print(mask_report_summary(report))
     print()
