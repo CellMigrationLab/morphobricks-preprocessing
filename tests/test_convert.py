@@ -351,3 +351,35 @@ def test_an_rgb_image_with_swapped_y_and_x_is_written_as_channel_pages(tmp_path)
     assert result.written and inspect_image(copy).axes == "CYX"
     np.testing.assert_array_equal(tifffile.imread(copy), data.transpose(2, 1, 0))
     assert_bitwise_equal(source, mapping, copy)
+
+
+def test_planes_that_cannot_be_read_within_the_memory_limit_stop_it_before_writing(tmp_path):
+    # Review of PP-11 (issue #76's criterion): the memory budget fails fast. It used to be
+    # found while writing, after the copies before it were written.
+    ome(tmp_path / "exp" / "a.tif", pixels((2, 8, 9)), "ZYX")
+    compressed = pixels((2, 64, 48))
+    tifffile.imwrite(
+        tmp_path / "exp" / "b.tif", compressed, ome=True, photometric="minisblack",
+        compression="zlib", rowsperstrip=64, metadata={"axes": "ZYX"},
+    )  # fmt: skip
+    limit = plane_layout(tmp_path / "exp" / "a.tif", ZYX_SWAPPED).memory_estimate
+    result = convert(tmp_path, ZYX_SWAPPED, memory_limit=limit)
+    assert not result.written
+    assert [i.code for i in result.issues if i.is_error] == ["plane_over_memory_limit"]
+    assert result.issues[0].paths == ("b.tif",)
+    assert not (tmp_path / "copies").exists(), "nothing written, not even the folder"
+
+
+@pytest.mark.parametrize(
+    ("keyword", "value"),
+    [("memory_limit", 0), ("memory_limit", 2.5), ("memory_limit", True), ("memory_limit", "1GiB"),
+     ("missing_as_singleton", 1), ("missing_as_singleton", "yes")],
+)  # fmt: skip
+def test_settings_that_are_not_allowed_are_refused_before_anything_is_read(
+    tmp_path, keyword, value
+):
+    # Review of PP-11 (issue #80's criterion): strict settings, never coerced.
+    plain(tmp_path / "exp" / "img.tif", pixels((2, 4, 5)))
+    with pytest.raises(ValueError, match=keyword):
+        convert(tmp_path, AxisMapping("IYX", ("Z", "Y", "X")), **{keyword: value})
+    assert not (tmp_path / "copies").exists()

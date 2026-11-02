@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -67,7 +67,7 @@ from .fingerprint import Fingerprint, current_fingerprint
 from .manifest import package_versions
 from .metadata import TiffMetadata
 from .ome_tiff_copy import CopyWriteError, copy_nbytes, write_named_copy
-from .planes import DEFAULT_MEMORY_LIMIT, PlaneReadError
+from .planes import DEFAULT_MEMORY_LIMIT, PlaneReadError, check_planes
 from .run.lock import LOCK_FILENAME, OutputLockedError, output_lock
 from .run.preflight import preflight
 from .validation import ValidationIssue, has_errors
@@ -179,12 +179,21 @@ def convert_experiment(
     Returns
     -------
     ConversionResult
+
+    Raises
+    ------
+    ValueError
+        If ``missing_as_singleton`` is not True or False, or ``memory_limit`` is not a
+        whole number of bytes above 0 (nothing is read or written then).
     """
+    _check_arguments(missing_as_singleton, memory_limit)
     root, dest = Path(experiment_root).resolve(), Path(destination).resolve()
     refused = _folder_issues(root, dest)
     if refused:
         return ConversionResult(dest, False, tuple(refused))
-    planned, issues = plan_conversion(root, mapping, dest, exclude, missing_as_singleton)
+    planned, issues = plan_conversion(
+        root, mapping, dest, exclude, missing_as_singleton, memory_limit
+    )
     if has_errors(issues):
         return ConversionResult(dest, False, _sorted(issues))
     dest.mkdir(parents=True, exist_ok=True)
@@ -194,6 +203,18 @@ def convert_experiment(
             return _locked_conversion(root, dest, planned, issues, options, progress)
     except OutputLockedError as exc:
         return ConversionResult(dest, False, (lock_issue(exc),))
+
+
+def _check_arguments(missing_as_singleton: object, memory_limit: object) -> None:
+    """Refuse arguments that are not allowed, before anything is read or written."""
+    if not isinstance(missing_as_singleton, bool):
+        raise ValueError(
+            f"missing_as_singleton must be True or False, found {missing_as_singleton!r}"
+        )
+    if isinstance(memory_limit, bool) or not isinstance(memory_limit, int) or memory_limit < 1:
+        raise ValueError(
+            f"memory_limit must be a whole number of bytes above 0, found {memory_limit!r}"
+        )
 
 
 @dataclass(frozen=True)
@@ -211,11 +232,14 @@ def plan_conversion(
     destination: Path,
     exclude: Iterable[str] = (),
     missing_as_singleton: bool = False,
+    memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> tuple[tuple[PlannedCopy, ...], list[ValidationIssue]]:
     """Check the experiment with the confirmed roles and plan each image's copy.
 
     Only the headers are read. The axis errors do not stop the conversion: they are what
-    it corrects. Any other error does, and nothing is planned.
+    it corrects. Any other error does, and nothing is planned: so does an image to convert
+    of a pixel type OME-TIFF cannot hold, or whose planes cannot be read within the memory
+    limit, not even in blocks (checked as the run checks them, before anything is written).
 
     Parameters
     ----------
@@ -228,6 +252,8 @@ def plan_conversion(
     exclude
         Images to leave unread.
     missing_as_singleton
+        As :func:`convert_experiment`.
+    memory_limit
         As :func:`convert_experiment`.
 
     Returns
@@ -245,9 +271,9 @@ def plan_conversion(
     issues = [i for i in issues if not i.is_error]  # the axis errors are what is corrected
     to_convert = set(review.axis_error_files) | set(review.confirmed_files)
     headers = {meta.relative_path: meta for meta in pre.metadata.files}
-    wide = sorted(rel for rel in to_convert if headers[rel].dtype.name in _NOT_IN_OME)
-    if wide:
-        return (), [pixel_type_issue(wide, headers[wide[0]].dtype.name), *issues]
+    issues += _cannot_convert(root, to_convert, headers, review.file_mappings, memory_limit)
+    if has_errors(issues):
+        return (), issues
     planned = []
     for rel in pre.discovery.images:
         source = Fingerprint.of(root / rel)
@@ -259,6 +285,20 @@ def plan_conversion(
             entry = CopyEntry(rel, COPIED, reason, source, source_axes=meta.axes if meta else "")
             planned.append(PlannedCopy(entry, nbytes=source.size))
     return tuple(planned), issues
+
+
+def _cannot_convert(
+    root: Path,
+    to_convert: set[str],
+    headers: dict[str, TiffMetadata],
+    mappings: Mapping[str, AxisMapping],
+    memory_limit: int,
+) -> list[ValidationIssue]:
+    """Return why images cannot be converted (errors) and the planes read in blocks."""
+    wide = sorted(rel for rel in to_convert if headers[rel].dtype.name in _NOT_IN_OME)
+    if wide:
+        return [pixel_type_issue(wide, headers[wide[0]].dtype.name)]
+    return check_planes(root, {rel: mappings[rel] for rel in to_convert}, memory_limit=memory_limit)
 
 
 def _converted(meta: TiffMetadata, mapping: AxisMapping, source: Fingerprint) -> PlannedCopy:
