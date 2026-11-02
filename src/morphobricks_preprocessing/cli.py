@@ -83,7 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
         "masks",
         help="find every image's masks, describe them and how they relate (reads the masks)",
     )
-    _common(masks)
+    _common(masks, recorded=True)
     add_masks_arguments(masks)
     add_calibrate_parser(commands)
     return parser
@@ -117,8 +117,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _common(parser: argparse.ArgumentParser, *, recorded: bool = False) -> None:
     """Add the experiment and the options every command shares.
 
-    With ``recorded``, the experiment may be left out: ``run`` then uses the one the run
-    in ``--output`` recorded (design v0.4 §1).
+    With ``recorded``, the experiment may be left out: ``run`` and ``masks`` then use the
+    one the run in ``--output`` recorded (design v0.4 §1).
     """
     if recorded:
         parser.add_argument(

@@ -1201,3 +1201,14 @@ Raised during review; to be decided before the milestones that need them:
     the template when written (`RunResult.report_written`, `run_summary(design_template=)`);
     the notebook says "The run stopped: no table or manifest was written." Only a run
     refused before it starts (the lock) still says "Nothing was written."*
+56. Does the `masks` command use the recorded inputs (PP-8c, from a run on real data)?
+    *Decided (2 November 2026, owner): yes, like `run` (question 48). The experiment
+    argument is optional when the output folder holds a v2 manifest recording it (else
+    `experiment_not_recorded`); the masks folder and mask axes are the recorded ones unless
+    given, and a value given that differs is named with its effect. The exclusions follow
+    the same rule (with `--no-exclude`), so `masks` never reads a mask of an image the run
+    left out unless asked. `--no-masks` is not needed. A change is used for that scan only:
+    `masks` writes only `mask_relationships.json`, never the manifest, so the next `run`
+    keeps the recorded value until it is given the new one, and then removes a
+    `mask_relationships.json` written for other masks (question 48). The recorded-experiment
+    lookup is one helper shared by both commands (`cli_run.use_recorded_experiment`).*

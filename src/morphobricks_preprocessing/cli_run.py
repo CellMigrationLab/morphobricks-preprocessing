@@ -93,6 +93,29 @@ def command_preflight(args: argparse.Namespace) -> Preflight:
     )
 
 
+def use_recorded_experiment(args: argparse.Namespace) -> bool:
+    """Take the experiment folder the run in ``--output`` recorded, when none is given.
+
+    Parameters
+    ----------
+    args
+        The command's arguments; ``args.experiment`` is set to the recorded folder.
+
+    Returns
+    -------
+    bool
+        False, after printing ``experiment_not_recorded``, when none is given or recorded.
+    """
+    if args.experiment is not None:
+        return True
+    root, missing = recorded_experiment_root(args.output and Path(args.output).resolve())
+    if missing is not None:
+        print(format_issues([missing]))
+        return False
+    args.experiment = str(root)
+    return True
+
+
 def add_run_arguments(run: argparse.ArgumentParser) -> None:
     """Add the options of ``run`` after the shared ones.
 
@@ -204,12 +227,8 @@ _INTENSITY_HELP = {
 
 def run_command(args: argparse.Namespace) -> int:
     """Run pass 2 with the command's options, print what it did and return the status."""
-    if args.experiment is None:
-        root, missing = recorded_experiment_root(args.output and Path(args.output).resolve())
-        if missing is not None:
-            print(format_issues([missing]))
-            return 1
-        args.experiment = str(root)
+    if not use_recorded_experiment(args):
+        return 1
     output = (
         Path(args.output) if args.output else default_output_folder(Path(args.experiment).resolve())
     )

@@ -2,7 +2,10 @@
 
 ``masks`` is the optional mask step: it pairs every image with its masks (``--masks``, and
 the label images of OME-Zarr images), reads them, and writes ``mask_relationships.json``
-with each mask type and the relationships between them (contract §15).
+with each mask type and the relationships between them (contract §15). Like ``run``, it
+takes every input it is not given from the run in the output folder (design v0.4 §1): the
+experiment folder (``experiment_not_recorded`` without one), the masks folder, the mask
+axes and the exclusions; a value given that differs is used and named.
 """
 
 from __future__ import annotations
@@ -11,7 +14,7 @@ import argparse
 from dataclasses import replace
 from pathlib import Path
 
-from .cli_run import command_preflight
+from .cli_run import command_preflight, use_recorded_experiment
 from .discovery import default_output_folder
 from .mask_scan import (
     DEFAULT_THRESHOLDS,
@@ -24,6 +27,8 @@ from .masks import MaskInventory
 from .report import format_issues, mask_report_summary, mask_summary
 from .run import OutputLockedError
 from .run.lock import lock_issue, output_lock
+from .run.recorded import GivenInputs, InputChange, resolve_inputs
+from .run.reuse import read_previous
 from .validation import has_errors
 
 THRESHOLD_HELP = {
@@ -37,6 +42,11 @@ THRESHOLD_HELP = {
 }
 
 
+_RECORDED = ("experiment_root", "exclude", "masks_folder", "mask_axes")
+"""The recorded inputs ``masks`` uses."""
+_EFFECT = "used for this scan only; the run keeps the recorded value until it is given this one"
+
+
 def add_masks_arguments(masks: argparse.ArgumentParser) -> None:
     """Add the options of ``masks`` after the shared ones.
 
@@ -45,6 +55,11 @@ def add_masks_arguments(masks: argparse.ArgumentParser) -> None:
     masks
         The ``masks`` command's parser.
     """
+    masks.add_argument(
+        "--no-exclude",
+        action="store_true",
+        help="clear the exclusions of the earlier run for this scan (not with --exclude)",
+    )
     masks.add_argument("--log", metavar="FILE", help="write technical details to this file")
     limits = masks.add_argument_group(
         "relationship thresholds", "change the defaults (contract §15.1); shares are 0 to 1"
@@ -67,9 +82,14 @@ def masks_command(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(exc)
         return 1
+    if not use_recorded_experiment(args):
+        return 1
+    changes = _recorded_inputs(args)
     pre = command_preflight(args)
     pre = replace(pre, masks=pre.masks or MaskInventory(folder=None))  # none found
     print(mask_summary(pre.masks))
+    for change in changes:
+        print(f"Changed {change.name}: {change.recorded} -> {change.given} ({change.effect})")
     blocking = [*pre.discovery.issues, *pre.exclusion_issues, *pre.masks.issues]
     if blocking:
         print()
@@ -104,3 +124,25 @@ def masks_command(args: argparse.Namespace) -> int:
     print()
     print(f"Report written to {path}")
     return 0
+
+
+def _recorded_inputs(args: argparse.Namespace) -> tuple[InputChange, ...]:
+    """Fill the masks folder, mask axes and exclusions not given from the recorded run.
+
+    Returns the inputs given that differ from the recorded ones, with their effect.
+    """
+    root = Path(args.experiment).resolve()
+    output = Path(args.output) if args.output else default_output_folder(root)
+    exclude = () if args.no_exclude else (tuple(args.exclude) or None)
+    given = GivenInputs(
+        experiment_root=root,
+        exclude=exclude,
+        masks_folder=Path(args.masks).resolve() if args.masks else None,
+        mask_axes=args.mask_axes or None,
+    )
+    resolved = resolve_inputs(given, read_previous(output.resolve())[0])
+    args.masks, args.mask_axes = resolved.masks_folder, resolved.mask_axes
+    args.exclude = list(resolved.exclude)
+    return tuple(
+        replace(change, effect=_EFFECT) for change in resolved.changes if change.name in _RECORDED
+    )

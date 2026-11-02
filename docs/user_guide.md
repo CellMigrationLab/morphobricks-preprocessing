@@ -463,7 +463,18 @@ mask that segment the same objects are reported as such. These are suggestions f
 pixels, not decisions: you name each kind of mask and check the relationships in the bricks
 that use them. The report is written to `mask_relationships.json` in the output folder
 (§6). The command takes `--output`, `--exclude` and `--log` like the others, and exits with
-status 1 when an error blocks it or when no masks are found. Label 0 is the background and
+status 1 when an error blocks it or when no masks are found. Like `run`, it uses what the
+run in the output folder recorded: after a run,
+
+```bash
+morphobricks-preprocessing masks --output /data/exp1_MorphoBricks_Preprocessing
+```
+
+scans the recorded experiment folder with the recorded masks folder, mask axes and
+exclusions (`--no-exclude` clears the exclusions for this scan). Without an experiment
+folder and without a run recording one, it stops with `experiment_not_recorded`. A value
+you give that differs from the recorded one is used for this scan and printed as a change;
+the run keeps its recorded value until you give it the new one. Label 0 is the background and
 objects have positive labels: a mask with a negative value stops the command with a message
 naming the mask, and no report is written.
 
