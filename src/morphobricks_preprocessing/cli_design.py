@@ -22,13 +22,18 @@ from .run.design_file import edit_design
 from .run.lock import lock_issue
 
 
-def add_design_parser(commands: argparse._SubParsersAction) -> None:
-    """Add the ``design`` command and its options.
+def add_design_parser(commands: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    """Add the ``design`` command and its options; return its parser.
 
     Parameters
     ----------
     commands
         The command line's subcommands.
+
+    Returns
+    -------
+    argparse.ArgumentParser
+        The ``design`` command's parser.
     """
     design = commands.add_parser(
         "design",
@@ -73,6 +78,7 @@ def add_design_parser(commands: argparse._SubParsersAction) -> None:
         action="store_true",
         help="confirm every repeat group not confirmed yet",
     )
+    return design
 
 
 def design_command(args: argparse.Namespace) -> int:

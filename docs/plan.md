@@ -1231,3 +1231,7 @@ Raised during review; to be decided before the milestones that need them:
     a group that gained a folder since is asked again. Python: `edit_design` with
     `DesignEdit` (`apply_design_edit` without files). The confirmation stays an explicit
     act of the user: nothing confirms by default. Contract §12.*
+    *Decided in review (2 November 2026, owner): `design` and `calibrate` also take
+    `--remove-stale-lock`, as `check`, `run` and `masks` do (the `output_locked` message
+    tells users to give it to the command). Same rule: the lock is removed only on that
+    request, and never one of a process still running on the same computer.*

@@ -88,8 +88,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _common(masks, recorded=True)
     add_masks_arguments(masks)
-    add_calibrate_parser(commands)
-    add_design_parser(commands)
+    for command in (add_calibrate_parser(commands), add_design_parser(commands)):
+        _remove_stale_lock_option(command)
     return parser
 
 
@@ -98,10 +98,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     _safe_output()
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "calibrate":
-        return calibrate_command(args)
-    if args.command == "design":
-        return design_command(args)
+    if args.command in ("calibrate", "design"):
+        if args.remove_stale_lock and not _remove_stale_lock(args):
+            return 1
+        return {"calibrate": calibrate_command, "design": design_command}[args.command](args)
     if getattr(args, "no_exclude", False) and args.exclude:
         parser.error("--exclude and --no-exclude cannot be given together")
     handler = _attach_log(args.log) if getattr(args, "log", None) else None
@@ -153,6 +153,11 @@ def _common(parser: argparse.ArgumentParser, *, recorded: bool = False) -> None:
         "folders, outside the experiment; the label images of OME-Zarr images are added",
     )
     _mask_axes_option(parser)
+    _remove_stale_lock_option(parser)
+
+
+def _remove_stale_lock_option(parser: argparse.ArgumentParser) -> None:
+    """Add ``--remove-stale-lock``, which every command holding the folder's lock takes."""
     parser.add_argument(
         "--remove-stale-lock",
         action="store_true",
@@ -178,7 +183,7 @@ def _remove_stale_lock(args: argparse.Namespace) -> bool:
     """Remove the output folder's lock the user said is stale; False when it is not."""
     if args.output:
         output = Path(args.output).resolve()
-    elif args.experiment:
+    elif getattr(args, "experiment", None):  # 'design' takes only --output
         output = default_output_folder(Path(args.experiment).resolve())
     else:
         print("Give the experiment folder or --output to say whose lock to remove.")

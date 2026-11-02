@@ -442,7 +442,7 @@ report names the change and its effect. Other options:
 | `--mode restart\|full` | `restart` (default) reuses the rows of unchanged images; `full` recomputes every row and check. Both keep your confirmations and replace the results only when the run succeeds |
 | `--no-masks` | Drop the masks folder an earlier run recorded |
 | `--no-exclude` | Clear the exclusions an earlier run recorded, so every image is analysed again (not together with `--exclude`) |
-| `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check` and `run`); give it only when no other run uses the output folder |
+| `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks`, `design` and `calibrate`); give it only when no other run uses the output folder |
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
 | `--log FILE` | Write technical details to a file |
 | `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json` |
@@ -611,8 +611,9 @@ with `chmod a+r <output folder>/*`, or delete them before running again.
 Only one run at a time can use an output folder: a run holds a lock file
 (`.morphobricks-preprocessing.lock`) and a second run is refused (`output_locked`). If the
 process is forcibly stopped, its lock stays; remove it with `--remove-stale-lock` once you
-are sure no run is going on. `check` and `masks` hold the lock while they write their
-reports, and are refused the same way. A stopped run leaves the last good results in place;
+are sure no run is going on (every command takes it). `check` and `masks` hold the lock
+while they write their reports, `design` and `calibrate` while they change their files,
+and are refused the same way. A stopped run leaves the last good results in place;
 rerunning checks the table against the manifest and rebuilds a mismatched pair.
 `mask_relationships.json` is removed by a `full` run and when the masks changed since it
 was written; run the `masks` command again.
