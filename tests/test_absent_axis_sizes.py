@@ -114,9 +114,8 @@ def test_rows_recorded_with_a_z_size_from_an_earlier_version_are_reused(tmp_path
     # The manifest as an earlier version wrote it: the unused z-step recorded.
     path = output / "run_manifest.json"
     data = json.loads(path.read_text(encoding="utf-8"))
-    data["files"][0]["pixel_sizes"][2] = {
-        "role": "Z", "value": 0.43, "unit": "micrometer", "source": "header"
-    }  # fmt: skip
+    z_step = {"role": "Z", "value": 0.43, "unit": "micrometer", "source": "header"}
+    data["files"][0]["pixel_sizes"][2] = z_step
     path.write_text(json.dumps(data), encoding="utf-8")
     again = run_experiment(output_folder=output)
     assert again.written and again.reused == ("ctrl/a.ome.tif",) and again.read == ()

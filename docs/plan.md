@@ -1184,3 +1184,12 @@ Raised during review; to be decided before the milestones that need them:
     images with the axis. The `RowKey` does not include pixel sizes, so earlier rows are
     reused (no row depends on a size, question 49): the next `restart` leaves the table
     byte-identical and rewrites the manifest without the absent sizes. Contract §9.3.*
+54. What do `RunInputs.read_plane` and `read_mask` do with a `z` or `t` that is not a number
+    (PP-8c, from a run on real data)?
+    *Decided (2 November 2026, owner): a `TypeError` naming the expected arguments. A
+    `plane_id` passed as `z` gave the misleading `IndexError` "has no Z …" on a 2D image,
+    and `read_mask(z=True)` reached the reader. Python and NumPy integers are accepted
+    (`bool` is not), and `read_mask` keeps None. A read by `plane_id` is not added: the
+    spec's interface is `read_plane(fov, z, t)` (design v0.4 §6), every table row carries
+    its `z` and `t`, and a second way to address a plane would be a second rule to keep
+    in step. Contract §9.1.*

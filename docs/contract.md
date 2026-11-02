@@ -233,6 +233,9 @@ It gives:
   as stored through the recorded `axes` and `roles` by preprocessing's reader with
   `check_labels`; a mask changed since the run is refused; a stated shared 2-D mask serves
   every plane;
+- `z` and `t` are whole numbers (Python or NumPy integers; `read_mask` also takes None); any
+  other value, such as a `plane_id`, is a `TypeError` naming the expected arguments
+  (v0.4.0, plan §12 question 54). There is no read by `plane_id`: a row gives its `z` and `t`;
 - `histograms()` (the table as read when opened), `design()` and `image_type()`.
 
 A `RunInputs` is picklable, so worker processes can use it.
