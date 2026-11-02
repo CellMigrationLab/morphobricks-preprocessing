@@ -1,6 +1,8 @@
 """The input changes a run would report, named before it runs (design v0.4 §1, PP-10).
 
-It also works out, from the headers only, how each image's planes would be read within
+:func:`recorded_inputs` gives the inputs the earlier run recorded, as a run given none
+would use them, so the notebook can start from them (audit I4). It also works out, from
+the headers only, how each image's planes would be read within
 the memory limit (:func:`plane_layouts`, :func:`memory_plan`), for the notebook's "What
 will happen".
 
@@ -28,6 +30,7 @@ from .design_file import design_for_run
 from .recorded import (
     GivenInputs,
     InputChange,
+    ResolvedInputs,
     calibration_change,
     recorded_mask_axes,
     recorded_masks_folder,
@@ -69,6 +72,35 @@ def planned_changes(
     designed = design_for_run(design, output, previous)[2] if design is not None else ()
     calibrated = () if calibration is None else calibration_change(usable(previous), calibration)
     return (*changes, *designed, *calibrated)
+
+
+def recorded_inputs(
+    output_folder: str | os.PathLike, experiment_root: Path | None = None
+) -> ResolvedInputs | None:
+    """Return the inputs a run given none would take from the earlier run in the folder.
+
+    The run's own rule (:func:`.recorded.resolve_inputs`) with nothing given but the
+    experiment folder, so a caller showing these values as its defaults gives the run
+    the recorded inputs, and only an edit is a change. It reads only the earlier run's
+    manifest; it writes nothing.
+
+    Parameters
+    ----------
+    output_folder
+        The run's output folder.
+    experiment_root
+        The experiment folder the run would be given, resolved, or None.
+
+    Returns
+    -------
+    ResolvedInputs or None
+        None without a usable earlier run (none, unreadable, or a version 1 manifest).
+    """
+    output = Path(output_folder).resolve()
+    previous = usable(read_previous(output)[0]) if output.is_dir() else None
+    if previous is None:
+        return None
+    return resolve_inputs(GivenInputs(experiment_root=experiment_root), previous)
 
 
 @dataclass(frozen=True)

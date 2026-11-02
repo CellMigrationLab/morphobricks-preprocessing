@@ -96,11 +96,11 @@ and the bricks' migration).
   (#116).
 - Warnings `partial_pixel_size` (a pixel size along only one of X and Y) and
   `non_square_pixels` (X and Y not exactly equal in micrometres): bricks that measure
-  lengths refuse such images (audit m5, plan §12 question 71).
+  lengths refuse such images (audit m5, plan §12 question 72).
 
 ### Fixed
 
-- Preprocessing audit of 3 November 2026 (plan §12 question 71): `read_plane` and
+- Preprocessing audit of 3 November 2026 (plan §12 question 72): `read_plane` and
   `RunInputs.read_plane` no longer count histogram memory, so a 5000² float32 plane is read
   within the 1 GiB limit (I2); a header size in an unsupported unit (OME `pixel`) or without
   a unit is unknown in `pixel_sizes`, never a value without a unit (I3); `RunInputs.read_mask`
@@ -138,6 +138,10 @@ and the bricks' migration).
   masks folder, given or recorded, before writing anything (audit I1).
 - Masks one pixel high or wide are read as 2-D `YX` masks (#63).
 - Step 1 keeps an unreadable `experiment_design.csv` untouched (#61).
+- The notebook starts from the inputs the earlier run in the output folder recorded: the
+  exclusions, bins, histogram and intensity settings, image type and missing-axes answer,
+  from the run's own rule (`run.planned.recorded_inputs`). An untouched notebook kept
+  neither a CLI run's `--bins` nor its `--exclude` (audit I4; plan §12 question 71).
 
 ### Removed
 

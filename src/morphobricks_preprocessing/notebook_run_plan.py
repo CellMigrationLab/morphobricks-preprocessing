@@ -86,6 +86,12 @@ class _RunPlan:
             lines = [self._earlier_run_line(manifest)]
         else:
             lines = ["No earlier run was found: every image will be read (mode <b>restart</b>)."]
+        if self._recorded is not None:
+            lines.append(
+                "The inputs start from those the earlier run recorded: the excluded images, "
+                "the bins, the histogram range, the intensity limits, the image type and the "
+                "answer about missing axes. Any you change is listed below."
+            )
         changes = change_lines(self._planned_changes(output))
         if changes:
             lines.append(
