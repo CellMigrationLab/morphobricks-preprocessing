@@ -111,6 +111,8 @@ def balance_summary(balance: BalanceTable) -> str:
         + (f" of {balance.median:g} images:" if balance.median is not None else ":"),
         format_table(balance_rows(balance)),
     ]
+    if balance.not_counted():
+        lines.append(balance.not_counted())
     return "\n".join(lines)
 
 

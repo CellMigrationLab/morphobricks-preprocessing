@@ -26,7 +26,7 @@ from morphobricks_preprocessing.notebook_ui import (  # noqa: E402
 )
 from morphobricks_preprocessing.planes import DEFAULT_MEMORY_LIMIT, plane_layout  # noqa: E402
 from morphobricks_preprocessing.validation import error, warning  # noqa: E402
-from tiff_tree import write_data, write_file  # noqa: E402
+from tiff_tree import design_tree, write_data, write_file  # noqa: E402
 
 
 @pytest.fixture
@@ -248,14 +248,6 @@ def test_unreadable_image_can_be_excluded(experiment):
 
 
 # Experiment design (follow-up P3) ------------------------------------------------------
-
-
-def design_tree(root, folders):
-    rng = np.random.default_rng(2)
-    for folder in folders:
-        data = rng.integers(0, 200, (3, 2, 16, 16), dtype=np.uint8)
-        write_data(root / folder / "a.tif", data, axes="ZCYX")
-    return root
 
 
 def labelled(root, tmp_path):

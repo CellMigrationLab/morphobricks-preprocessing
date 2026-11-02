@@ -1,3 +1,5 @@
+import pytest
+
 from morphobricks_preprocessing import (
     CONSISTENCY_CODES,
     balance_table,
@@ -161,3 +163,66 @@ def test_cli_check_prints_the_balance_and_warnings(tmp_path, capsys):
     assert "1 (0) !" in out
     assert "not found in every condition" in out
     assert "differs strongly between conditions" in out
+
+
+def test_a_technical_repeat_whose_images_are_all_excluded_is_not_counted(tmp_path):
+    # Issue #82: techB's only image is excluded, so the repeat has one technical repeat.
+    root = tree(tmp_path / "exp", {"ctrl/rep1/techA": 1, "ctrl/rep1/techB": 1})
+    excluded = ["ctrl/rep1/techB/img_00.tif"]
+    (repeat,) = biological_repeats(discover_experiment(root), excluded)
+    assert (repeat.image_count, repeat.technical_repeat_count) == (1, 1)
+    report = check_dataset(discover_experiment(root), excluded=excluded)
+    cell = report.balance.cell("rep1", "ctrl")
+    assert (cell.image_count, cell.technical_repeat_count) == (1, 1)
+    assert report.balance.excluded_images == 1
+    assert report.balance.excluded_folders == ("ctrl/rep1/techB",)
+    # The texts say what the counts leave out.
+    assert "ctrl/rep1/techB" in balance_summary(report.balance)
+    assert balance_rows(report.balance)[1] == ["rep1", "1 (1)"]
+
+
+def test_without_exclusions_nothing_is_said_about_them(tmp_path):
+    root = tree(tmp_path / "exp", {"ctrl/rep1/techA": 1, "ctrl/rep1/techB": 1})
+    balance = check_dataset(discover_experiment(root)).balance
+    assert balance.not_counted() == "" and "Not counted" not in balance_summary(balance)
+    assert balance.cell("rep1", "ctrl").technical_repeat_count == 2
+
+
+def test_a_technical_repeat_folder_named_single_is_the_level_value(tmp_path):
+    # Plan §12 question 23 (documented, not changed by #82): a lower-case folder named
+    # single, alone in its place, is the level's value single, so it counts as no
+    # technical-repeat folder, like images directly in the biological-repeat folder.
+    root = tree(tmp_path / "exp", {"ctrl/rep1/single": 2})
+    (repeat,) = biological_repeats(discover_experiment(root))
+    assert (repeat.image_count, repeat.technical_repeat_count) == (2, 0)
+
+
+def test_the_design_written_by_a_run_counts_only_analysed_technical_repeats(tmp_path):
+    from morphobricks_preprocessing import default_design, read_confirmed_design
+    from morphobricks_preprocessing.design import DESIGN_FILENAME
+
+    root = tree(tmp_path / "exp", {"ctrl/rep1/techA": 1, "ctrl/rep1/techB": 1})
+    excluded = ["ctrl/rep1/techB/img_00.tif"]
+    repeats = biological_repeats(discover_experiment(root), excluded)
+    design = default_design(repeats)
+    design = design.with_confirmed(design.groups[0], True, on="2026-11-02")
+    output = tmp_path / "out"
+    result = run_experiment(
+        root, prefill_mapping("YX"), output_folder=output, exclude=excluded, design=design
+    )
+    assert result.written
+    (row,) = read_confirmed_design(output / DESIGN_FILENAME).design.rows
+    assert (row.image_count, row.technical_repeat_count) == (1, 1)
+
+
+def test_the_notebook_balance_table_says_what_is_not_counted(tmp_path):
+    pytest.importorskip("ipywidgets")
+    from morphobricks_preprocessing.notebook_render import balance_html
+
+    root = tree(tmp_path / "exp", {"ctrl/rep1/techA": 1, "ctrl/rep1/techB": 1})
+    balance = check_dataset(
+        discover_experiment(root), excluded=["ctrl/rep1/techB/img_00.tif"]
+    ).balance
+    text = balance_html(balance)
+    assert "1 technical repeat<" in text and "Not counted: 1 excluded image" in text
+    assert "ctrl/rep1/techB" in text
