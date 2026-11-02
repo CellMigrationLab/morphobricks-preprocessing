@@ -49,8 +49,9 @@ def source_signature(path: str | os.PathLike) -> tuple[int, int, str | None]:
     Raises
     ------
     OSError
-        If the image does not exist (``FileNotFoundError``), or a folder inside it cannot
-        be listed: an inventory is never taken with a part left out.
+        If the image does not exist (``FileNotFoundError``), a folder inside it cannot
+        be listed, or links reach one folder twice: an inventory is never taken with a
+        part left out. Links to folders inside the image are followed.
     """
     path = Path(path)
     if not path.is_dir():
@@ -58,8 +59,15 @@ def source_signature(path: str | os.PathLike) -> tuple[int, int, str | None]:
         return stat.st_size, stat.st_mtime_ns, None
     found = []
     newest = path.stat().st_mtime_ns
-    for folder, subfolders, names in os.walk(path, onerror=_raise):
+    seen: set[str] = set()
+    # A link to a folder is followed, as the image's reader follows it: its files are part
+    # of the image. A folder reached twice (a loop of links) is refused.
+    for folder, subfolders, names in os.walk(path, onerror=_raise, followlinks=True):
         here = Path(folder)
+        real = os.path.realpath(here)
+        if real in seen:
+            raise OSError(f"{path} reaches the folder {real} twice through links")
+        seen.add(real)
         if here == path and LABELS_GROUP in subfolders:
             subfolders.remove(LABELS_GROUP)
         relative = here.relative_to(path).as_posix()

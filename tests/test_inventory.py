@@ -86,6 +86,35 @@ def test_a_chunk_removed_and_another_added_changes_the_fingerprint(tmp_path):
     assert Fingerprint.of(image) != before
 
 
+def link_folder(link, target):
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        pytest.skip("symbolic links need privileges here")
+
+
+def test_a_chunk_behind_a_link_to_a_folder_changes_the_fingerprint(tmp_path):
+    # Review of PR #132: os.walk does not enter a linked folder by default, so a chunk
+    # changed behind the link (which the reader follows) left the fingerprint unchanged.
+    image, real = tmp_path / "a.ome.zarr", tmp_path / "chunks"
+    (image / "0").mkdir(parents=True)
+    (image / "zarr.json").write_text("{}", encoding="utf-8")
+    real.mkdir()
+    (real / "0").write_bytes(b"ab")
+    link_folder(image / "0" / "0", real)
+    before = Fingerprint.of(image)
+    os.utime(real / "0", ns=(1_000, 1_000))
+    assert Fingerprint.of(image) != before
+
+
+def test_links_that_reach_a_folder_twice_are_refused(tmp_path):
+    image = tmp_path / "a.ome.zarr"
+    (image / "0").mkdir(parents=True)
+    link_folder(image / "0" / "loop", image)
+    with pytest.raises(OSError, match="twice"):
+        source_signature(image)
+
+
 def test_an_unchanged_store_keeps_its_fingerprint_and_labels_are_left_out(tmp_path):
     image = two_chunks(tmp_path / "a.ome.zarr")
     before = Fingerprint.of(image)
