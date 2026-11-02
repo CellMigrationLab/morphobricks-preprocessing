@@ -209,7 +209,20 @@ DUPLICATED = HEADER.replace("\n", ",repeat_group\n")
             HEADER.replace("\n", ", Control\n") + "ctrl,rep1,rep1,true,2,0,true,,1,false\n",
             r"'control' twice \(columns 4 and 10, the second written ' Control'\)",
         ),
+        # Invisible characters do not make another column (review of #130).
+        (
+            HEADER.replace("\n", ",\ufeffcondition\n") + "ctrl,rep1,rep1,true,2,0,true,,1,x\n",
+            r"'condition' twice \(columns 1 and 10",
+        ),
+        (
+            HEADER.replace("\n", ",Condition\u200b\n") + "ctrl,rep1,rep1,true,2,0,true,,1,x\n",
+            r"'condition' twice \(columns 1 and 10",
+        ),
         (HEADER.replace("\n", ",\n") + "ctrl,rep1,rep1,true,2,0,true,,1,\n", "column 10 .*no name"),
+        (
+            HEADER.replace("\n", ",\ufeff\n") + "ctrl,rep1,rep1,true,2,0,true,,1,\n",
+            "column 10 .*no name",
+        ),
         (
             HEADER.replace("\n", ",  \n") + "ctrl,rep1,rep1,true,2,0,true,,1,\n",
             "column 10 .*no name",

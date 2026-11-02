@@ -10,6 +10,7 @@ files; :mod:`.design` reads them and re-exports :class:`DesignFormatError`.
 from __future__ import annotations
 
 import datetime
+import unicodedata
 from collections.abc import Iterable
 
 DATE_FORMAT = "YYYY-MM-DD"
@@ -28,6 +29,9 @@ def check_header(columns: Iterable[str], name: str) -> None:
 
     Names are compared ignoring case and outer whitespace, so ``repeat_group`` and
     `` Repeat_Group`` are the same column: no reader chooses between two values.
+    Invisible format characters (a byte-order mark or zero-width space inside the file,
+    Unicode category ``Cf``) are ignored too: a column that looks like ``condition`` is
+    ``condition``.
 
     Parameters
     ----------
@@ -43,11 +47,12 @@ def check_header(columns: Iterable[str], name: str) -> None:
     """
     seen: dict[str, tuple[int, str]] = {}
     for number, column in enumerate(columns, start=1):
-        if not column.strip():
+        key = _visible(column).strip().casefold()
+        if not key:
             raise DesignFormatError(
                 f"{name}: column {number} of the header has no name. Name it or delete it."
             )
-        first_number, first = seen.setdefault(column.strip().casefold(), (number, column))
+        first_number, first = seen.setdefault(key, (number, column))
         if first_number != number:
             spelled = "" if first == column else f", the second written {column!r}"
             raise DesignFormatError(
@@ -55,6 +60,11 @@ def check_header(columns: Iterable[str], name: str) -> None:
                 f"{first_number} and {number}{spelled}), so it is not clear which value "
                 "to read. Delete one of the two columns."
             )
+
+
+def _visible(text: str) -> str:
+    """Return ``text`` without invisible format characters (Unicode category ``Cf``)."""
+    return "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
 
 
 def parse_bool(value: str, column: str, where: str) -> bool:

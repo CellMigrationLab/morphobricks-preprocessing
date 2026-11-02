@@ -1518,7 +1518,9 @@ Raised during review; to be decided before the milestones that need them:
     (`read_experiment_design`, so `load_design`, the notebook, `check`, `run --design` and
     the `design` command, and `read_confirmed_design`), with `DesignFormatError` naming
     the column and both positions; the lenient reader kept the last of two columns before,
-    and a test asserted it. Names are compared ignoring case and outer whitespace. Nothing
+    and a test asserted it. Names are compared ignoring case and outer whitespace (and,
+    from the review, invisible format characters such as a byte-order mark or zero-width
+    space inside the header, which made a second `condition` look new). Nothing
     is rewritten on refusal. `RunInputs.design()` reads with `read_confirmed_design`
     checked against the manifest's SHA-256 (it used the lenient reader). The header check
     and the value parsers moved to `design_values` (pure); `DesignFormatError` is

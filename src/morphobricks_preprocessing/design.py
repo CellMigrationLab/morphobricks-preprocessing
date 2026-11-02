@@ -505,8 +505,8 @@ def read_experiment_design(path: str | os.PathLike) -> ExperimentDesign:
     Raises
     ------
     DesignFormatError
-        If the file cannot be read, the header names a column twice (ignoring case and
-        outer whitespace) or has a column without a name, a column is missing, a value
+        If the file cannot be read, the header names a column twice (ignoring case,
+        outer whitespace and invisible characters) or has a column without a name, a column is missing, a value
         is not valid
         (including a repeat-group name or confirmation date as above), a folder is
         listed twice, the rows of a condition disagree about ``control``, or the
