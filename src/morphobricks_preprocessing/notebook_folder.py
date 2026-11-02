@@ -31,6 +31,53 @@ class _FolderStep:
     # Step 1 ------------------------------------------------------------------------------
 
     def _build_folder_step(self, folder: str, output: str) -> None:
+        """Build step 1: the folders, the check, the labels, consistency and messages."""
+        self._build_folder_inputs(folder, output)
+        self.exclude = widgets.Textarea(
+            placeholder="control/bio_rep1/tech_rep1/damaged_image.tif",
+            layout=widgets.Layout(width="99%", height="5em"),
+        )
+        self.exclude_box = widgets.Accordion(
+            children=[
+                widgets.VBox(
+                    [
+                        self.exclude,
+                        ui.help_text(
+                            "One image per line, relative to the experiment folder. Excluded "
+                            "images are not read and their earlier rows are removed. Use this "
+                            "for damaged files; remove a line to analyse the image again."
+                        ),
+                    ]
+                )
+            ],
+            titles=("Exclude images (optional)",),
+            selected_index=None,
+        )
+        self.check_button = ui.button(
+            " Check folder",
+            style="primary",
+            icon="search",
+            tooltip="Scan the folders and image headers (no pixels are read)",
+            main=True,
+        )
+        self.folder_status = widgets.HTML()
+        self.folder_next = widgets.HTML()
+        self.folder_tiles = widgets.HTML()
+        self._build_labels_card()
+        self._build_consistency_card()
+        self._build_issues_card()
+        self.folder_browse.on_click(lambda _: self._browse(self.folder))
+        self.output_browse.on_click(lambda _: self._browse(self.output))
+        self.check_button.on_click(lambda _: self.check_folder())
+        self.exclude_button.on_click(lambda _: self._exclude_blocking_images())
+        self.folder.observe(lambda _: self._folder_edited(), names="value")
+        self.output.observe(lambda _: self._output_edited(), names="value")
+        self.labels_confirmed.observe(lambda _: self._labels_changed())
+        self._build_design_card()
+        self._update_output_hint()
+
+    def _build_folder_inputs(self, folder: str, output: str) -> None:
+        """Build the experiment folder and output folder cards."""
         self.folder = widgets.Text(
             value=folder,
             placeholder="e.g. D:/microscopy/experiment_2026_10",
@@ -66,36 +113,9 @@ class _FolderStep:
                 self.output_hint,
             ],
         )
-        self.exclude = widgets.Textarea(
-            placeholder="control/bio_rep1/tech_rep1/damaged_image.tif",
-            layout=widgets.Layout(width="99%", height="5em"),
-        )
-        self.exclude_box = widgets.Accordion(
-            children=[
-                widgets.VBox(
-                    [
-                        self.exclude,
-                        ui.help_text(
-                            "One image per line, relative to the experiment folder. Excluded "
-                            "images are not read and their earlier rows are removed. Use this "
-                            "for damaged files; remove a line to analyse the image again."
-                        ),
-                    ]
-                )
-            ],
-            titles=("Exclude images (optional)",),
-            selected_index=None,
-        )
-        self.check_button = ui.button(
-            " Check folder",
-            style="primary",
-            icon="search",
-            tooltip="Scan the folders and image headers (no pixels are read)",
-            main=True,
-        )
-        self.folder_status = widgets.HTML()
-        self.folder_next = widgets.HTML()
-        self.folder_tiles = widgets.HTML()
+
+    def _build_labels_card(self) -> None:
+        """Build the card of the labels taken from the folder names, and its confirmation."""
         self.labels_table = widgets.HTML()
         self.labels_confirmed = ui.ConfirmToggle(
             "Do the labels in the table match your experiment?",
@@ -119,6 +139,9 @@ class _FolderStep:
             ],
             visible=False,
         )
+
+    def _build_consistency_card(self) -> None:
+        """Build the dataset consistency card: the balance table and its warnings."""
         self.balance_table = widgets.HTML()
         self.consistency_counts = widgets.HTML()
         self.consistency_issues = widgets.HTML()
@@ -145,6 +168,9 @@ class _FolderStep:
             ],
             visible=False,
         )
+
+    def _build_issues_card(self) -> None:
+        """Build the messages card, with the button that excludes unreadable images."""
         self.folder_issues = widgets.HTML()
         self.exclude_button = ui.button(
             " Exclude these images and check again",
@@ -162,16 +188,6 @@ class _FolderStep:
         self.issues_card = ui.card(
             "Messages", [self.issue_counts, self.issue_details], visible=False
         )
-
-        self.folder_browse.on_click(lambda _: self._browse(self.folder))
-        self.output_browse.on_click(lambda _: self._browse(self.output))
-        self.check_button.on_click(lambda _: self.check_folder())
-        self.exclude_button.on_click(lambda _: self._exclude_blocking_images())
-        self.folder.observe(lambda _: self._folder_edited(), names="value")
-        self.output.observe(lambda _: self._output_edited(), names="value")
-        self.labels_confirmed.observe(lambda _: self._labels_changed())
-        self._build_design_card()
-        self._update_output_hint()
 
     def check_folder(self) -> Preflight | None:
         """Run the folder and header check (pass 1) and show its results."""
@@ -229,6 +245,7 @@ class _FolderStep:
         return sorted(merged, key=lambda issue: not issue.is_error)
 
     def _show_issue_summary(self) -> None:
+        """Show the check's status, tiles, consistency and messages."""
         pre = self.preflight
         issues = self._step1_issues()
         errors = [i for i in issues if i.is_error]
@@ -284,6 +301,7 @@ class _FolderStep:
         self._refresh_run_step()
 
     def _refresh_folder_next(self) -> None:
+        """Say what to do next in step 1."""
         self.folder_next.value = ""
         if self.preflight is None or not self.preflight.ok:
             return
@@ -337,6 +355,7 @@ class _FolderStep:
             self._refresh_run_step()
 
     def _update_output_hint(self) -> None:
+        """Say where the results will be written, and warn about a folder inside."""
         folder = ui.clean_path(self.folder.value)
         output = self._output_folder()
         if not folder and not output:

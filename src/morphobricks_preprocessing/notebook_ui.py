@@ -59,7 +59,6 @@ from .notebook_options import (
     IMAGE_TYPE_NAMES,
     IMAGE_TYPE_OPTIONS,
     LEVEL_OPTIONS,
-    PYRAMID_OPTIONS,
     ROLE_OPTIONS,
 )
 from .notebook_output import _OutputCards
@@ -95,7 +94,6 @@ __all__ = [
     "IMAGE_TYPE_OPTIONS",
     "IntensityPanel",
     "LEVEL_OPTIONS",
-    "PYRAMID_OPTIONS",
     "PreprocessingNotebook",
     "ROLE_OPTIONS",
     "balance_html",

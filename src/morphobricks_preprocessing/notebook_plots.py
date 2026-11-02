@@ -62,30 +62,31 @@ class IntensityPanel:
     def __init__(self, title: str, explanation: str):  # noqa: ANN204
         self.records: list[PlaneRecord] = []
         self.report: IntensityReport | None = None
-        defaults = IntensityCheckSettings()
-        self.outlier_limit = widgets.BoundedFloatText(
-            value=defaults.outlier_limit,
-            min=0.5,
-            max=100,
-            step=0.5,
-            description="Outlier limit",
-            style=_label(),
+        self._build_settings_box()
+        self.status = widgets.HTML()
+        self.tiles = widgets.HTML()
+        self.findings = widgets.HTML()
+        self._build_plots()
+        self.card = ui.card(
+            title,
+            [
+                ui.help_text(explanation),
+                self.status,
+                self.tiles,
+                self.findings,
+                self.settings_box,
+                self.plots,
+            ],
+            visible=False,
         )
-        self.saturation_percent = widgets.BoundedFloatText(
-            value=100 * defaults.saturation_limit,
-            min=0,
-            max=99.9,
-            step=0.5,
-            description="Saturated pixels (%)",
-            style=_label(),
-        )
-        self.min_images = widgets.BoundedIntText(
-            value=defaults.min_images,
-            min=2,
-            max=100_000,
-            description="Fewest images",
-            style=_label(),
-        )
+        for control in (self.outlier_limit, self.saturation_percent, self.min_images):
+            control.observe(lambda _: self._settings_changed(), names="value")
+        self.defaults_button.on_click(lambda _: self.restore_defaults())
+        self.channel.observe(lambda _: self._draw(), names="value")
+
+    def _build_settings_box(self) -> None:
+        """Build the folded "Check settings": the three limits and "Restore the defaults"."""
+        self._build_limits()
         self.defaults_button = ui.button(
             " Restore the defaults",
             style="warning",
@@ -122,9 +123,36 @@ class IntensityPanel:
             titles=("Check settings",),
             selected_index=None,
         )
-        self.status = widgets.HTML()
-        self.tiles = widgets.HTML()
-        self.findings = widgets.HTML()
+
+    def _build_limits(self) -> None:
+        """Build the three limits of the checks, at their default values."""
+        defaults = IntensityCheckSettings()
+        self.outlier_limit = widgets.BoundedFloatText(
+            value=defaults.outlier_limit,
+            min=0.5,
+            max=100,
+            step=0.5,
+            description="Outlier limit",
+            style=_label(),
+        )
+        self.saturation_percent = widgets.BoundedFloatText(
+            value=100 * defaults.saturation_limit,
+            min=0,
+            max=99.9,
+            step=0.5,
+            description="Saturated pixels (%)",
+            style=_label(),
+        )
+        self.min_images = widgets.BoundedIntText(
+            value=defaults.min_images,
+            min=2,
+            max=100_000,
+            description="Fewest images",
+            style=_label(),
+        )
+
+    def _build_plots(self) -> None:
+        """Build the channel choice and the two plots of the chosen channel."""
         self.channel = widgets.ToggleButtons(options=[("C0", 0)], style={"button_width": "64px"})
         self.channel_row = widgets.VBox(
             [
@@ -154,22 +182,6 @@ class IntensityPanel:
                 self.curves,
             ]
         )
-        self.card = ui.card(
-            title,
-            [
-                ui.help_text(explanation),
-                self.status,
-                self.tiles,
-                self.findings,
-                self.settings_box,
-                self.plots,
-            ],
-            visible=False,
-        )
-        for control in (self.outlier_limit, self.saturation_percent, self.min_images):
-            control.observe(lambda _: self._settings_changed(), names="value")
-        self.defaults_button.on_click(lambda _: self.restore_defaults())
-        self.channel.observe(lambda _: self._draw(), names="value")
 
     def settings(self) -> IntensityCheckSettings:
         """Return the limits as currently set."""
@@ -220,6 +232,7 @@ class IntensityPanel:
             self._check()
 
     def _check(self) -> None:
+        """Run the intensity checks with the limits shown and show their findings."""
         self.report = check_intensities(self.records, self.settings())
         report = self.report
         lines = [
@@ -251,6 +264,7 @@ class IntensityPanel:
         self._draw()
 
     def _draw(self) -> None:
+        """Draw the plots of the chosen channel."""
         report = self.report
         if report is None or not report.summaries:
             self.boxes.value = self.curves.value = b""
@@ -415,7 +429,7 @@ def distribution_png(groups: dict[tuple[str, ...], list]) -> bytes | None:
             pooled = PooledHistogram(channel_histograms(members))
         except NoValidPixelsError:
             continue
-        cumulative = np.cumsum(pooled.counts) / pooled.pixel_count
+        cumulative = cumulative_share(pooled)
         label = " / ".join(key[-2:]) if len(key) > 1 else key[0]
         curves.append((label, pooled, cumulative))
     if not curves:

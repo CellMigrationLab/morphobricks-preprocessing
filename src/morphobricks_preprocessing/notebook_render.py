@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import html
-import math
 from collections.abc import Iterable, Sequence
 
-import numpy as np
 from morphobricks_normalization.dtypes import MAX_BIN_COUNT, MIN_FLOAT_BIN_COUNT, is_integer
 
 from . import notebook_style as ui
@@ -14,6 +12,7 @@ from .axes import AxisMapping
 from .dataset import BalanceTable
 from .design import ExperimentDesign
 from .notebook_options import _SKIPPED_CODES
+from .notebook_values import plane_counts, value_range
 from .planes import Plane
 from .run import Preflight
 from .run.recorded import InputChange
@@ -153,11 +152,11 @@ def role_effect(role: str | None, low: int, high: int) -> str:
 
 def plane_summary_html(mapping: AxisMapping, ranges: Sequence[tuple[int, int]]) -> str:
     """Say how many planes of which size each image is split into."""
-    lengths = dict(zip(mapping.roles, ranges, strict=True))
-    if "X" not in lengths or "Y" not in lengths:
+    counts = plane_counts(mapping, ranges)
+    if counts is None:
         return ""
-    low = math.prod(lengths[r][0] for r in ("Z", "C", "T") if r in lengths)
-    high = math.prod(lengths[r][1] for r in ("Z", "C", "T") if r in lengths)
+    low, high = counts
+    lengths = dict(zip(mapping.roles, ranges, strict=True))
     count = f"{low:,}" if low == high else f"{low:,} to {high:,}"
     (y_low, y_high), (x_low, x_high) = lengths["Y"], lengths["X"]
     size = (
@@ -175,8 +174,8 @@ def preview_caption(relative_path: str, plane: Plane) -> str:
     """Caption under the preview: which plane, its size and its value range."""
     coords = ", ".join(f"{k} = {v}" for k, v in plane.coordinates.items() if v is not None)
     pixels = plane.pixels
-    finite = pixels[np.isfinite(pixels)] if pixels.dtype.kind == "f" else pixels
-    values = f"values {finite.min():g} to {finite.max():g}" if finite.size else "no finite values"
+    found = value_range(pixels)
+    values = f"values {found[0]:g} to {found[1]:g}" if found else "no finite values"
     height, width = plane.shape
     reduced = ""
     if plane.step > 1:
@@ -242,6 +241,7 @@ def _group_explanation(design: ExperimentDesign, group: str) -> str:
 
 
 def _folder_tiles(pre: Preflight, issues: Sequence[ValidationIssue]) -> list[tuple[str, str, str]]:
+    """Return the headline numbers of a folder check."""
     skipped = sum(len(i.paths) for i in pre.discovery.issues if i.code in _SKIPPED_CODES)
     conditions = {leaf.condition for leaf in pre.discovery.leaves}
     dtype = pre.metadata.dtype
@@ -263,6 +263,7 @@ def _folder_tiles(pre: Preflight, issues: Sequence[ValidationIssue]) -> list[tup
 
 
 def _bins_help(dtype) -> str:  # noqa: ANN001
+    """Say which bin counts the pixel type allows."""
     if is_integer(dtype):
         top = min(MAX_BIN_COUNT, 2 ** (dtype.itemsize * 8))
         exact = (

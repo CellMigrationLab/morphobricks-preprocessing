@@ -23,6 +23,23 @@ class _ResultsStep:
     # Step 4 ------------------------------------------------------------------------------
 
     def _build_results_step(self) -> None:
+        """Build step 4: the table, the grouping, the statistics, plots and checks."""
+        self._build_csv_card()
+        self._build_grouping_card()
+        self._build_statistics_cards()
+        self.table_checks = IntensityPanel(
+            "Intensity checks",
+            "The same checks as after step 3, for the chosen table. Each image is compared only "
+            "with the others of its condition, so differences between conditions are never "
+            "reported. Nothing is written.",
+        )
+        self.statistics_button.on_click(lambda _: self.show_statistics())
+        self.csv_browse.on_click(lambda _: self._browse_csv())
+        self.csv_file.observe(lambda _: self._csv_changed(), names="value")
+        self.level.observe(lambda _: self._statistics_option_changed(), names="value")
+
+    def _build_csv_card(self) -> None:
+        """Build the card that chooses the histogram table."""
         self.csv_file = widgets.Text(
             placeholder="filled in after step 3, or choose a plane_histograms.csv",
             layout=widgets.Layout(flex="1 1 auto", width="auto"),
@@ -42,6 +59,9 @@ class _ResultsStep:
                 ),
             ],
         )
+
+    def _build_grouping_card(self) -> None:
+        """Build the grouping and percentile choices with the button that calculates."""
         self.level = widgets.ToggleButtons(
             options=LEVEL_OPTIONS,
             value="condition",
@@ -78,6 +98,9 @@ class _ResultsStep:
                 self.stats_status,
             ],
         )
+
+    def _build_statistics_cards(self) -> None:
+        """Build the statistics table and the intensity distribution cards, hidden."""
         self.stats_tiles = widgets.HTML()
         self.statistics = widgets.HTML()
         self.statistics_card = ui.card(
@@ -105,16 +128,6 @@ class _ResultsStep:
             ],
             visible=False,
         )
-        self.table_checks = IntensityPanel(
-            "Intensity checks",
-            "The same checks as after step 3, for the chosen table. Each image is compared only "
-            "with the others of its condition, so differences between conditions are never "
-            "reported. Nothing is written.",
-        )
-        self.statistics_button.on_click(lambda _: self.show_statistics())
-        self.csv_browse.on_click(lambda _: self._browse_csv())
-        self.csv_file.observe(lambda _: self._csv_changed(), names="value")
-        self.level.observe(lambda _: self._statistics_option_changed(), names="value")
 
     def _browse_csv(self) -> None:
         current = ui.clean_path(self.csv_file.value)
