@@ -12,6 +12,7 @@ step: the copies checked in step 1 with the same output folder, then the run.
 import importlib
 import json
 import re
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -205,7 +206,9 @@ def test_the_plan_shows_what_is_converted_and_copied_and_the_space(tmp_path):
     from morphobricks_preprocessing import preview_conversion  # new in PP-11b
 
     expected = preview_conversion(root, SWAPPED, tmp_path / "copies", exclude=["drug/r1/a.tif"])
-    assert nb._convert_preview == expected
+    # The same plan as the command's; the free space may change between the two calls.
+    shown = nb._convert_preview
+    assert replace(shown, free_bytes=None) == replace(expected, free_bytes=None)
 
 
 def test_not_enough_free_space_disables_the_button(tmp_path, monkeypatch):
