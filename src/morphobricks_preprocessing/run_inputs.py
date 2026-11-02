@@ -51,6 +51,7 @@ from .masks import FOLDER, MaskFile, read_mask
 from .masks.header import _mask_header
 from .planes import DEFAULT_MEMORY_LIMIT, read_plane
 from .recorded_sizes import RecordedSize
+from .run.generation import published_path, read_stable
 from .unrecorded import UnrecordedFiles, unrecorded_files
 from .validation import plural
 from .zarr_input import NgffError, ZarrUnavailableError
@@ -180,24 +181,42 @@ class RunInputs:
             excluded (added since the run): it names them.
         """
         output = Path(output_folder).resolve()
+        # One generation of the outputs (contract §9): read again if a run published
+        # meanwhile.
+        inputs = read_stable(output, lambda: cls._read(output, experiment_root, masks_root))
+        if inputs is None:
+            raise RunInputsError(
+                f"Another run kept publishing new results in {output} while they were being "
+                "opened. Open the run again once it has finished."
+            )
+        inputs._check_files()
+        return inputs
+
+    @classmethod
+    def _read(
+        cls,
+        output: Path,
+        experiment_root: str | os.PathLike | None,
+        masks_root: str | os.PathLike | None,
+    ) -> RunInputs:
+        """Read the manifest and the files it names, checking their SHA-256."""
         manifest = _manifest(output)
-        _check_sha(output / OUTPUT_FILENAME, manifest.csv_sha256, "histogram table")
+        table = published_path(output, OUTPUT_FILENAME, manifest.csv_sha256)
+        _check_sha(table, manifest.csv_sha256, "histogram table")
         if manifest.experiment_design_sha256 is not None:
-            _check_sha(output / DESIGN_FILENAME, manifest.experiment_design_sha256, "design")
+            design = published_path(output, DESIGN_FILENAME, manifest.experiment_design_sha256)
+            _check_sha(design, manifest.experiment_design_sha256, "design")
         _check_calibration(output / CALIBRATION_FILENAME, manifest.calibration_sha256)
         root = Path(experiment_root or manifest.experiment_root).resolve()
         _check_conversion(root, manifest)
-        recorded_masks = (manifest.masks or {}).get("folder")
-        masks = masks_root or recorded_masks
-        inputs = cls(
+        masks = masks_root or (manifest.masks or {}).get("folder")
+        return cls(
             output_folder=output,
             experiment_root=root,
             masks_root=None if masks is None else Path(masks).resolve(),
             manifest=manifest,
-            records=tuple(read_plane_histograms(output / OUTPUT_FILENAME)),
+            records=tuple(read_plane_histograms(table)),
         )
-        inputs._check_files()
-        return inputs
 
     def fovs(self) -> tuple[Fov, ...]:
         """Return every position of the run, sorted by image path."""
@@ -317,8 +336,9 @@ class RunInputs:
         """Return the run's experiment design, or None when it had none."""
         if self.manifest.experiment_design_sha256 is None:
             return None
-        path = self.output_folder / DESIGN_FILENAME
-        _check_sha(path, self.manifest.experiment_design_sha256, "design")
+        expected = self.manifest.experiment_design_sha256
+        path = published_path(self.output_folder, DESIGN_FILENAME, expected)
+        _check_sha(path, expected, "design")
         return read_experiment_design(path)
 
     def image_type(self) -> str | None:

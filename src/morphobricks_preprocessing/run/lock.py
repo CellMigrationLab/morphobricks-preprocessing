@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ..validation import ValidationIssue, error
+from .generation import finish_publication
 
 LOCK_FILENAME = ".morphobricks-preprocessing.lock"
 
@@ -92,7 +93,10 @@ def output_lock(output_folder: str | os.PathLike) -> Iterator[LockHolder]:
     """Hold the output folder's lock for the duration of the block.
 
     The folder must exist. The lock file is created with ``O_CREAT | O_EXCL``, so two
-    runs can never both hold it, and removed when the block ends, also on an error.
+    runs can never both hold it, and removed when the block ends, also on an error. Once
+    it is held, a publication an earlier run left unfinished is finished, or discarded
+    when it was never committed (:func:`.generation.finish_publication`), so whatever
+    holds the lock works on one whole generation of the outputs.
 
     Parameters
     ----------
@@ -108,6 +112,8 @@ def output_lock(output_folder: str | os.PathLike) -> Iterator[LockHolder]:
     ------
     OutputLockedError
         When another run holds the lock.
+    PublicationIncompleteError
+        When an unfinished publication's files cannot be moved into place.
     """
     path = Path(output_folder) / LOCK_FILENAME
     holder = LockHolder(
@@ -124,6 +130,7 @@ def output_lock(output_folder: str | os.PathLike) -> Iterator[LockHolder]:
         path.unlink(missing_ok=True)  # just created by this run: a lock it could not write
         raise
     try:
+        finish_publication(Path(output_folder))
         yield holder
     finally:
         if read_lock(output_folder) == holder:

@@ -66,6 +66,10 @@ class RunOutcome:
         ``{output file: what happened}`` for the earlier output files replaced or removed.
     changes
         Inputs given that differ from the recorded ones (:class:`.run.recorded.InputChange`).
+    resumed
+        Files whose rows an interrupted run had staged, reused (design v0.4 §1).
+    staged_discarded
+        ``{file: why}`` for the staged rows of an interrupted run that were not reused.
     """
 
     step: str = "run"
@@ -76,6 +80,8 @@ class RunOutcome:
     removed: tuple[str, ...] = ()
     replaced: Mapping[str, str] = field(default_factory=dict)
     changes: tuple[InputChange, ...] = ()
+    resumed: tuple[str, ...] = ()
+    staged_discarded: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -120,6 +126,8 @@ class DiscoveryReport:
             "reused": list(outcome.reused),
             "recomputed": dict(outcome.recomputed),
             "removed": list(outcome.removed),
+            "resumed": list(outcome.resumed),
+            "staged_discarded": dict(outcome.staged_discarded),
             "replaced": dict(outcome.replaced),
             "input_changes": [change.to_dict() for change in outcome.changes],
             "issues": [_issue_dict(issue) for issue in self.issues],
@@ -448,6 +456,16 @@ def _outcome_lines(outcome: RunOutcome) -> list[str]:
     ]
     reasons = Counter(outcome.recomputed.values())
     lines.extend(f"  {count} recomputed: {reason}" for reason, count in reasons.most_common())
+    if outcome.resumed:
+        lines.append(
+            f"  Resumed: {plural(len(outcome.resumed), 'image')} whose rows an interrupted "
+            "run had staged"
+        )
+    discarded = Counter(outcome.staged_discarded.values())
+    lines.extend(
+        f"  {count} staged {'file' if count == 1 else 'files'} not reused: {why}"
+        for why, count in discarded.most_common()
+    )
     lines.extend(f"  {name}: {what}" for name, what in sorted(outcome.replaced.items()))
     for change in outcome.changes:
         lines.append(

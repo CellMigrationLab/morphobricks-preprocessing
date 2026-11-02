@@ -53,10 +53,11 @@ from ..mask_scan import MASK_REPORT_FILENAME
 from ..planes import DEFAULT_MEMORY_LIMIT
 from ..validation import ValidationIssue, has_errors, warning
 from .design_file import design_for_run
+from .generation import staged_generation
 from .lock import OutputLockedError, lock_issue, output_lock
 from .modes import FULL, RESTART, check_mode
 from .preflight import Preflight, fit_calibration, preflight
-from .publish import _staged_outputs, write_report
+from .publish import write_report
 from .recorded import (
     GivenInputs,
     ResolvedInputs,
@@ -65,8 +66,10 @@ from .recorded import (
     usable,
 )
 from .result import RunResult
+from .resume import changed_issue, changed_since
 from .reuse import read_previous, recorded_experiment_root
 from .rows import _pixel_issues, _range_issues, _row_order
+from .staging import clear_staging
 from .steps import Checked, Rows, compute_rows, counts, header_checks, outcome_of, unreadable_issue
 
 logger = logging.getLogger(__name__)
@@ -215,12 +218,15 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
     found = frozenset(path.name for path in output.iterdir())
     previous = read_previous(output)
     inputs = resolve_inputs(given, previous[0])
+    # Each header bound to its image's fingerprint (issue #90): the rows must describe
+    # the file whose header was checked.
     pre = preflight(
         inputs.experiment_root,
         output,
         exclude=inputs.exclude,
         masks_folder=inputs.masks_folder,
         mask_axes=inputs.mask_axes or None,
+        bind_headers=True,
     )
     design, design_problems, design_changed = design_for_run(options.design, output, previous[0])
     checked = header_checks(pre, inputs, design, options.memory_limit)
@@ -249,8 +255,11 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
         histogram=inputs.histogram_settings,
     )
     rows = compute_rows(pre, checked, settings, output, previous, options.mode, options.progress)
+    if rows.changed:
+        checked.issues.append(changed_issue(list(rows.changed)))
     if rows.failed:
         checked.issues.append(unreadable_issue(rows.failed))
+    if rows.changed or rows.failed:
         return _stop(run, base, rows)
     checked.issues.extend(_pixel_issues(rows.records))
     rows.narrow.sort(key=lambda entry: (entry.plane_id, entry.channel))
@@ -297,48 +306,36 @@ def _stop(run: _Run, base: RunOutcome, rows: Rows | None) -> RunResult:
 
 
 def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> RunResult:
-    """Publish the table, design, manifest and report together, and return the result."""
+    """Publish the table, design, manifest and report as one generation; return the result.
+
+    Every image is fingerprinted again just before the commit (issue #90): an image changed
+    since the run checked it stops the run, and nothing is published.
+    """
     output, pre, design = run.output, run.pre, run.checked.design
     records = sorted(rows.records, key=_row_order)
     # From the rows in memory: no image is read again.
     intensity = check_intensities(records, run.inputs.intensity_settings)
-    per_file = Counter(record.source_relative_path for record in records)
-    root = pre.discovery.root
-    masks = None if pre.masks is None else mask_manifest(pre.masks, root)
+    masks = None if pre.masks is None else mask_manifest(pre.masks, pre.discovery.root)
     outcome = replace(outcome_of(rows, base), replaced=_replaced(run, masks))
-    with _staged_outputs(output, with_design=design is not None, with_report=True) as staged:
-        csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME)
-        design_sha256 = None
-        if design is not None:
-            design_sha256 = file_sha256(write_experiment_design(design, staged / DESIGN_FILENAME))
-        manifest = RunManifest(
-            experiment_root=root.as_posix(),
-            dtype=pre.metadata.dtype.name,
-            settings=settings,
-            mapping=run.checked.review.mapping,
-            files=tuple(
-                replace(entry, plane_count=per_file[rel])
-                for rel, entry in sorted(rows.entries.items())
-            ),
-            csv_sha256=file_sha256(csv_path),
-            versions=package_versions(),
-            written_at=datetime.now(UTC).isoformat(timespec="seconds"),
-            experiment_design_sha256=design_sha256,
-            masks=masks,
-            image_type=run.inputs.image_type,
-            channels_from_rgb_samples=run.checked.type_review.channels_from_rgb_samples,
-            intensity_checks=intensity.settings,
-            narrow_ranges=tuple(rows.narrow),
-            calibration_sha256=pre.calibration.sha256,
-            conversion_record_sha256=None if pre.conversion is None else pre.conversion.sha256,
-        )
-        manifest_sha256 = file_sha256(write_manifest(manifest, staged / MANIFEST_FILENAME))
-        report = _report(run, outcome, intensity)
-        write_report(replace(report, status=WRITTEN, manifest_sha256=manifest_sha256), staged)
-    if MASK_REPORT_FILENAME in outcome.replaced:
-        (output / MASK_REPORT_FILENAME).unlink(missing_ok=True)
-    kept = len(records) - sum(per_file[rel] for rel in rows.read)
-    logger.info("Wrote %d planes (%d files read, %d kept)", len(records), len(rows.read), kept)
+    removes = [name for name in (MASK_REPORT_FILENAME,) if name in outcome.replaced]
+    try:
+        with staged_generation(output, removes) as staged:
+            sha256 = _write_generation(run, rows, settings, records, (masks, intensity), staged)
+            changed = changed_since(rows.entries, pre.discovery.root)
+            if changed:
+                raise _SourcesChangedError(changed)
+            report = replace(_report(run, outcome, intensity), status=WRITTEN)
+            write_report(replace(report, manifest_sha256=sha256), staged)
+    except _SourcesChangedError as exc:
+        run.checked.issues.append(changed_issue(exc.paths))
+        return _stop(run, base, rows)
+    clear_staging(output)
+    logger.info(
+        "Wrote %d planes (%d files read, %d resumed)",
+        len(records),
+        len(rows.read),
+        len(rows.resumed),
+    )
     return RunResult(
         output,
         True,
@@ -354,6 +351,57 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
         report_written=True,
         **counts(rows),
     )
+
+
+class _SourcesChangedError(Exception):
+    """Raised inside the publication when images changed since the run checked them."""
+
+    def __init__(self, paths: list[str]) -> None:
+        super().__init__(", ".join(paths))
+        self.paths = paths
+
+
+def _write_generation(
+    run: _Run,
+    rows: Rows,
+    settings: RunSettings,
+    records: list,
+    checks: tuple[dict | None, IntensityReport],
+    staged: Path,
+) -> str:
+    """Write the table, design and manifest into the publication folder.
+
+    ``checks`` are the masks entry and the intensity checks. Returns the manifest's
+    SHA-256 (the report, which names it, is written once the images are checked again).
+    """
+    pre, design = run.pre, run.checked.design
+    masks, intensity = checks
+    per_file = Counter(record.source_relative_path for record in records)
+    csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME)
+    design_sha256 = None
+    if design is not None:
+        design_sha256 = file_sha256(write_experiment_design(design, staged / DESIGN_FILENAME))
+    manifest = RunManifest(
+        experiment_root=pre.discovery.root.as_posix(),
+        dtype=pre.metadata.dtype.name,
+        settings=settings,
+        mapping=run.checked.review.mapping,
+        files=tuple(
+            replace(entry, plane_count=per_file[rel]) for rel, entry in sorted(rows.entries.items())
+        ),
+        csv_sha256=file_sha256(csv_path),
+        versions=package_versions(),
+        written_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        experiment_design_sha256=design_sha256,
+        masks=masks,
+        image_type=run.inputs.image_type,
+        channels_from_rgb_samples=run.checked.type_review.channels_from_rgb_samples,
+        intensity_checks=intensity.settings,
+        narrow_ranges=tuple(rows.narrow),
+        calibration_sha256=pre.calibration.sha256,
+        conversion_record_sha256=None if pre.conversion is None else pre.conversion.sha256,
+    )
+    return file_sha256(write_manifest(manifest, staged / MANIFEST_FILENAME))
 
 
 def _replaced(run: _Run, masks: dict | None) -> dict[str, str]:
