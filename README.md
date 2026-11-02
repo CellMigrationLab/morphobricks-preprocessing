@@ -172,7 +172,8 @@ gets the permissions a file you save yourself would (your umask). `convert` save
 images whose metadata name their axes wrongly or not at all as named-axis OME-TIFF copies
 with your roles in a new folder (each plane bit for bit the plane read with those roles;
 every other image copied as it is; a conversion record written last), then you run
-preprocessing on that folder with the same output folder. Details in the
+preprocessing on that folder with the same output folder. The notebook offers the same
+conversion in step 2, under the axis check, when it finds such images. Details in the
 [user guide](docs/user_guide.md) §5.
 
 ## Example

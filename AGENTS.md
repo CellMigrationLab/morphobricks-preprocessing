@@ -74,6 +74,8 @@ src/morphobricks_preprocessing/
                     for comparing), space_unit/to_micrometers (the shared unit rule, contract §16),
                     read_physical_sizes (OME / ImageJ TIFF metadata; also importable
                     ) and ngff_physical_sizes (OME-NGFF scale and axis units)
+  ngff_scale.py     read_scale: an OME-NGFF coordinateTransformations scale, checked; what
+                    is wrong with a malformed one (PhysicalSizes.invalid, issue #94)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
   design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
@@ -157,13 +159,23 @@ src/morphobricks_preprocessing/
                     swap, question 59) and OME metadata of a named-axis copy
   ome_tiff_copy.py  write_named_copy: one image as uncompressed OME-TIFF, planes from iter_planes
                     under the confirmed roles, blocks written in place (BigTIFF when large)
-  conversion_record.py the copy tree's .morphobricks-conversion.json (fingerprints, roles, sizes),
-                    review_conversion (the run's conversion_source_changed and
-                    copy_changed_after_conversion warnings)
-  conversion.py     convert_experiment/plan_conversion: the copy tree under its lock, .partial
-                    files moved into place together (any failure removes what it wrote),
-                    planes checked against the memory limit first, unchanged copies reused,
-                    record last; conversion_issues.py its messages (pure)
+  conversion_record.py the copy tree's .morphobricks-conversion.json (version 2: fingerprints,
+                    copy SHA-256, roles, sizes, channel names, bits), review_conversion (the
+                    run's conversion_source_changed and copy_changed_after_conversion
+                    warnings), changed_copies
+  content_hash.py   content_sha256: a copy's SHA-256 (file, or OME-Zarr folder without labels)
+  conversion_check.py conversion_problem: RunInputs.open's check of a copy tree (record SHA-256,
+                    version, each recorded copy's SHA-256, read once at open)
+  conversion.py     convert_experiment: the copy tree under its lock, record last;
+                    conversion_issues.py its messages (pure)
+  conversion_plan.py plan_conversion: headers checked with the confirmed roles, each bound to
+                    its image's fingerprint (source_changed_during_check), planes checked
+                    against the memory limit first, PlannedCopy per image;
+                    copy_folder_issues (the folder rule) and preview_conversion (the plan,
+                    space needed and free, for the notebook card; writes nothing, PP-11b)
+  conversion_reuse.py compare: unchanged copies reused, anything else there refused
+  conversion_write.py write_all: .partial files moved into place together (any failure
+                    removes what it wrote)
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis
                     letters and physical sizes from the scale and axis units),
                     ngff_label_names/open_ngff_labels (label images, for later bricks),
@@ -173,6 +185,9 @@ src/morphobricks_preprocessing/
   notebook_masks.py step 1's masks folder, Masks card and mask-axis statements (PP-10c)
   notebook_mask_step.py step 3's Describe the masks card: the masks step after a run that
                     recorded masks (PP-10d)
+  notebook_convert.py step 2's Make named-axis copies card under the axis check (PP-11b):
+                    preview_conversion, then convert_experiment under the copy folder's lock,
+                    then Check the copies in step 1 (same output folder)
   notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra);
                     folder_step/axis_step take title, purpose, intro and show_next (and
                     show_output and show_design for step 1) so other bricks can embed them
@@ -302,7 +317,7 @@ functions the tests use.
   "confirmed"`).
   `AxisReview.axis_error_files` lists them; mask sizes and planes are checked by the
   confirmed roles and skip those images (`run.mask_issues`). OME-Zarr images never have
-  these errors.
+  these errors: their roles are always those their OME-NGFF axes declare (next bullets).
 - **Position-like axes** (`R` tile, `M` mosaic, `J` column, `K` row) cannot get a role. If
   they hold more than one plane: `unsupported_axis` error.
 - **Missing axes:** a file lacking some of the mapping's axes (e.g. `ZYX` next to `ZCYX`) is
@@ -322,10 +337,18 @@ functions the tests use.
   (`axes._SUPERSEDED_METADATA_CODES`). Shared builder `metadata.channel_count_issues`.
 - **OME-Zarr axes:** translated from OME-NGFF metadata (`zarr_input.ngff_axes`: time -> T,
   channel -> C, space z/y/x -> Z/Y/X, anything else -> Q). The experiment mapping is
-  defined on the TIFF arrangement if there are TIFFs; OME-Zarr images with another order
-  are matched by role (`axes.declared_mapping`, `file_mapping_for`); a misfit is
-  `ome_zarr_axes_mismatch`. Use `file_mapping_for`, never `mapping.for_axes`, to get an
-  image's mapping.
+  defined on the TIFF arrangement if there are TIFFs; every OME-Zarr image, also one with
+  the mapping's letters, is matched by role (`axes.ome_zarr_mapping`, `declared_mapping`,
+  `file_mapping_for`; issue #72): a misfit, or confirmed roles that contradict the declared
+  axes (`ZYX` confirmed `TYX`), is `ome_zarr_axes_mismatch`. Use `file_mapping_for`, never
+  `mapping.for_axes`, to get an image's mapping. Missing axes are never guessed (issue
+  #73): the version is read first, and OME-NGFF 0.1/0.2 stores are refused whatever they
+  contain (re-save as 0.4 or later; owner, 2 November 2026); any other store without axes
+  is `unreadable_ome_zarr` too, with no confirmation path.
+- **OME-Zarr calibration (issue #94):** a malformed `coordinateTransformations`
+  (`ngff_scale.read_scale`) gives unknown sizes with the reason in
+  `PhysicalSizes.invalid`, named by the warning `invalid_physical_calibration`; never a
+  silent fallback, never a substituted size.
 
 ### Pixel types and binning (normalization contract §1.2.1–§1.2.2)
 
@@ -911,7 +934,11 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   the CLI calls too; see plan §10.
 - **Named-axis copies (PP-11):** `convert` / `convert_experiment` writes OME-TIFF copies of
   the images with axis errors or unnamed axes with the confirmed roles into a new folder
-  (contract §17, plan §10 and question 59); the notebook card is PP-11b.
+  (contract §17, plan §10 and question 59).
+- **Notebook conversion card (PP-11b):** step 2's **Make named-axis copies (optional)** card,
+  under the axis check when it reports these images: the folder for the copies, the
+  confirmed roles, the plan (`preview_conversion`), the copies (`convert_experiment`) with a
+  progress bar, the lock card, and **Check the copies in step 1**; see plan §10.
 - **Next (not started):** the notebook step for the masks (name each mask, confirm or
   correct the relationships) and a file saving those answers for the other bricks
   (question 32); 3D and time-lapse masks later.

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .conversion_record import RECORD_FILENAME
-from .validation import ValidationIssue, error, plural
+from .validation import ValidationIssue, agree, error, plural
 
 if TYPE_CHECKING:
     from .conversion_record import ConversionRecordError
@@ -61,6 +61,18 @@ def pixel_type_issue(paths: list[str], dtype: str) -> ValidationIssue:
         paths,
         "Save these images again with their axes named in their metadata (for example as "
         "OME-TIFF in a 32-bit type, if their values fit), or correct the roles.",
+    )
+
+
+def header_changed_issue(paths: list[str]) -> ValidationIssue:
+    """Refuse images that changed while their headers were read (issue #96)."""
+    return error(
+        "source_changed_during_check",
+        f"{plural(len(paths), 'image')} changed while {agree(paths, 'its', 'their')} "
+        "header was read, so the header may not describe the file that would be copied. "
+        "Nothing was written.",
+        paths,
+        "Wait until nothing is writing into the experiment folder, then convert again.",
     )
 
 

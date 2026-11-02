@@ -513,19 +513,46 @@ API, CLI). The notebook and CLI only call the API.
     `RunInputs.open` refuses a record changed or gone since the run (question 59 (14)).
   - The axis messages (`axes_yx_swapped`, `axes_contradict_header`, `axes_x_before_y`,
     `axes_not_named`) and the notebook's axis marks name the `convert` command.
-  - Not in this PR: the notebook card for the conversion (PP-11b).
+  - The notebook card for the conversion followed in PP-11b.
   - Review (2 November 2026): the obsolete issues of `convert_tiffs`/`zarr_export` had
     acceptance criteria kept here: a memory budget that fails fast (#76), strict settings
     (#80), no 64-bit precision loss (refused, #75), the copy's fingerprint and scales
     checked before reuse (#87, #88, #92), no mixing of metadata epochs (#96); the run reads
     the copies themselves, so the table describes the persisted pixels (#79).
-- **PP-11b (notebook card for the conversion)** *(next PR; owner decision of 2 November
-  2026, plan §12 question 59 (15))*: design v0.4 §5 "the notebook offers conversion only
-  for files with errors": a card offered after the axis check when images have an axis
-  error or unnamed axes, calling `convert_experiment` with the confirmed roles and a
-  folder the user names, showing the result and the next run on the copies.
-- **Before the audit: links and the log (issues #81 and #99)** *(done; questions 60 and
-  61)*: `links.LinkGuard` follows a link only inside the folder walked (discovery, OME-Zarr
+- **PP-11b (notebook card for the conversion)** *(implemented, this PR; owner decision of
+  2 November 2026, plan §12 question 59 (15))*: design v0.4 §5 "the notebook offers
+  conversion only for files with errors" (contract §17 "Notebook"):
+  - Step 2's **Make named-axis copies (optional)** card (`notebook_convert`, ui), right
+    under the axis check, shown when it reports `axes_yx_swapped`, `axes_contradict_header`,
+    `axes_x_before_y` or `axes_not_named` for the roles being edited; hidden with
+    `folder_step(show_output=False)`; the pinned embedding API is unchanged.
+  - The roles: those confirmed with **Confirm axis roles**, or, while the axis errors keep
+    that button disabled, the roles shown once the preview is checked and the card's
+    **Yes, write the copies with these roles** is pressed; changing a role or the
+    missing-axes answer takes it back. Nothing is taken from the headers.
+  - A required folder for the copies (Browse…, the Colab **Copy path** card); the plan from
+    `preview_conversion` (in `conversion_plan`, beside the command's `plan_conversion`
+    (PP-11c), with the folder rule `copy_folder_issues` moved there from `conversion`,
+    plus the space needed and free; writes nothing): images converted (with their code) and
+    copied byte for byte, the space; errors keep the button disabled.
+  - **Make named-axis copies** calls `convert_experiment` with a progress bar; refusals on
+    the existing cards (the lock card, now naming the folder for the copies, with **Remove
+    the lock of a stopped run**).
+  - After the copies: the record's path and **Check the copies in step 1** (the experiment
+    folder becomes the copy tree, the output folder is kept and filled in, and the folder is
+    checked again); the card says the missing-axes answer must be given again and lists the
+    copies whose relabelled Y/X sizes are unknown (`ConversionResult.unknown_sizes`, new), to
+    state under **Pixel sizes**.
+- **PP-11c (conversion integrity)** *(implemented, PR #126; issues #80, #87, #88, #92,
+  #96; question 59 (16)-(18))*: `conversion.py` split into `conversion_plan`,
+  `conversion_reuse` and `conversion_write` (move only); the copies' SHA-256 in the conversion record (version 2,
+  `content_hash`) verified at reuse, by `review_conversion` and by `RunInputs.open`
+  (`conversion_check`); channel names, significant bits and the unknown sizes' reasons
+  compared at reuse; each header bound to its image's fingerprint
+  (`preflight(bind_headers=True)`, `source_changed_during_check`); the copy's pixel type
+  from that header; `parse_size` exact.
+- **Before the audit: links and the log (issues #81 and #99)** *(done; questions 61 and
+  62)*: `links.LinkGuard` follows a link only inside the folder walked (discovery, OME-Zarr
   stores, the masks folder; `RunInputs` and `convert` refuse the same links), and the CLI
   checks `--log` (`log_target`) before opening it, after the other arguments.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
@@ -1467,9 +1494,65 @@ Raised during review; to be decided before the milestones that need them:
     (14) **`RunInputs` checks the conversion record**: a run whose manifest records
     `conversion_record_sha256` is refused by `RunInputs.open` when the record changed or
     disappeared, as for `calibration_sha256` and the design's SHA-256.
-    (15) **Notebook card**: the next PR, PP-11b (§10); the axis-check card names the
-    command meanwhile.
-60. Are symbolic links in the experiment or masks folder followed (issue #81)? *Decided
+    (15) **Notebook card**: PP-11b (§10), implemented: step 2's **Make named-axis copies
+    (optional)** card under the axis check.
+    (16) **The copies' SHA-256** *(owner decision of 2 November 2026, after an independent
+    review of 8db1f4a; implemented in PP-11c, issue #87)*: a fingerprint (size and time)
+    does not see a change that keeps both, so the record gives each copy's SHA-256,
+    computed in one pass after it is written; reuse, the run's `review_conversion` and
+    `RunInputs.open` verify it (`RunInputs` once at open, for the copies of every image the
+    run recorded: one read of those copies, documented in contract §9.1). Sources keep the
+    fingerprint rule (design v0.4 §1). The record is version 2; a version 1 record is
+    refused with a message to convert again (its copies cannot be checked). Reuse also
+    compares the channel names and significant bits (#88) and the reasons of the unknown
+    sizes (#92).
+    (17) **One metadata epoch** *(same review; PP-11c, issue #96)*: each image is
+    fingerprinted before and after the header read the copy's layout comes from, and is
+    refused (`source_changed_during_check`) when the two differ; that fingerprint is the
+    one recorded and checked before and after the copy is written. The copy's pixel type
+    also comes from that header (the writer no longer opens the header for it), and a
+    plane of another type is refused, never cast. Still read again, by design: the planes'
+    memory check (`check_planes`, the run's own check) and the reader that reads the pixels
+    (it opens the file and parses its header); both are bounded by the same fingerprint.
+    (18) **Exact memory sizes on the command line** *(same review; PP-11c, issue #80)*:
+    `--memory-limit` is parsed without floating point and must be a whole number of bytes
+    above 0 (`1.5GiB` is accepted, `1.5` and `0.5B` are refused before anything is
+    read).
+60. How are OME-Zarr axes and calibrations checked (issues #72, #73, #94, from the audit)?
+    *Decided (2 November 2026, design v0.4 §3: nothing guessed, nothing silent):*
+    (1) **Same letters, contradictory roles (#72)**: every OME-Zarr image is matched by the
+    roles its OME-NGFF axes declare, also when its letters are the mapping's
+    (`axes.ome_zarr_mapping`, in `review_axes` and `file_mapping_for`). A confirmed role
+    that is not the declared letter (`ZYX` confirmed `TYX` or `ZXY`, `QYX` confirmed `CYX`)
+    is the error `ome_zarr_axes_mismatch`, naming each image with its declared axes and
+    the confirmed roles. It is not one of the axis-check errors (`axes_contradict_header`
+    and others) because those offer conversion, and an OME-Zarr image is never converted;
+    the fix is to correct the roles. An axis of no known type is therefore never given a
+    role, in any arrangement.
+    (2) **Missing axes (#73)**, by the version the metadata states, read before the axes:
+    an OME-NGFF 0.1 or 0.2 store is `unreadable_ome_zarr` whatever it contains, with the
+    message to re-save it as OME-NGFF 0.4 or later: no spec-default `t, c, z, y, x` is
+    applied (owner, 2 November 2026; the PR had kept it for 5-D arrays). 0.3, 0.4 and 0.5
+    require `axes`, so a store without them is `unreadable_ome_zarr`; a store without
+    `axes` that states no version or another one is `unreadable_ome_zarr` too. Such an
+    image is refused, with no confirmation path, rather than offered for confirmation as a
+    plain stack (owner, 2 November 2026): an OME-Zarr image cannot be converted to a
+    named-axis copy, and the declared-role match refuses an axis of no known type. No new
+    `axes_from` value.
+    (3) **Malformed calibration (#94)**: a calibration given but unusable (transformations
+    not a list or of another type than scale, translation and identity, two scales, a
+    scale in a file or not one number per axis, a scale value of X, Y, Z or T that is not a
+    positive finite number) gives unknown sizes on those axes, with what is wrong in
+    `PhysicalSizes.invalid`, and the warning `invalid_physical_calibration` naming every
+    image (also when every image has it). A warning, not an error: the pixels are readable
+    and the image is uncalibrated, as design v0.4 §3 treats an image without a value
+    (owner, 2 November 2026: stays a warning). It disappears once every size the malformed
+    calibration leaves unknown is stated in `calibration.csv` (owner, 2 November 2026); a
+    time step cannot be stated there, so a lost time step of a time series stays named
+    (review finding: the PR dropped the warning when only X and Y were stated). Only
+    these metadata problems are caught: any other exception while reading the scale makes
+    the image unreadable instead of being hidden by a debug log.
+61. Are symbolic links in the experiment or masks folder followed (issue #81)? *Decided
     (owner, 2 November 2026): contain.* A link (file or folder; on Windows also a directory
     junction) is followed only when its real path stays inside the experiment folder, or the
     masks folder for masks, both resolved; a link that leaves it is refused
@@ -1484,7 +1567,7 @@ Raised during review; to be decided before the milestones that need them:
     and the masks folder for discovery, the masks pairing, the unrecorded-files check of
     `RunInputs` (raised as `RunInputsError`) and, through discovery, `convert`. Contract §1,
     §8.
-61. Where may the command line's `--log` write (issue #99)?
+62. Where may the command line's `--log` write (issue #99)?
     *Decided (owner, 2 November 2026):* the log path is checked first and the file opened
     only after the other arguments are checked. It is refused inside the experiment or masks
     folder (given or recorded by the earlier run), inside `convert`'s folder of copies, and
@@ -1495,3 +1578,4 @@ Raised during review; to be decided before the milestones that need them:
     case (macOS and Windows), and an existing file with a second name (a hard link) is
     refused.
     Contract §8; user guide §5.
+

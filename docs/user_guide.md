@@ -208,7 +208,10 @@ notebook's step 3 (§4), also tells how they relate.
   axes you know better than its header is saved as a named-axis copy first. A plain stack
   of pages without axis metadata is read with the roles you confirm (a warning).
 - **OME-Zarr images:** OME-NGFF 0.4 and 0.5 (needs the `zarr` extra; 0.5 needs Python 3.11
-  or newer). Their axes (time, channel, z, y, x) come from their metadata. Only the
+  or newer). Their axes (time, channel, z, y, x) come from their metadata, and they are
+  read only with those roles: roles that give an axis another role (its depth as time,
+  say) are an error, and an image whose metadata do not name its axes is not read (the
+  axes are never guessed). Only the
   full-resolution level of a single image is read; a folder holding several images (a
   plate, or a bioformats2raw export with several series) is an error: export each image
   separately or exclude it.
@@ -368,7 +371,8 @@ results or comparing another grouping.
      dropdown; the card gives the error (`axes_yx_swapped` or `axes_contradict_header`,
      §8) naming the images with their header axes, your roles and the likely cause. Such
      images are never read: correct the axes, or save named-axis copies with your roles and
-     run preprocessing on the copies. An axis the metadata does not name (a plain stack of
+     run preprocessing on the copies (the **Make named-axis copies (optional)** card under
+     the axis check, §5 "Named-axis copies"). An axis the metadata does not name (a plain stack of
      pages) takes the role you confirm: the card warns (`axes_not_named`) and the run
      records the roles as confirmed by you.
    - If the preview looks right, press **Yes, the preview looks right**, then click
@@ -590,7 +594,7 @@ report names the change and its effect. Other options:
 | `--exclude PATH` | Leave out an image, relative to the experiment folder; repeat for several |
 | `--bins N` | Bins per plane |
 | `--histogram-range minmax\|robust`, `--robust-quantiles LOW HIGH` | Histogram range of histograms that are not exact (default minmax; robust quantiles 0.01 99.99) |
-| `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` |
+| `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` or `1.5GiB`: a whole number of bytes above 0 (`1.5` or `0.5B` are refused before anything is read) |
 | `--missing-as-singleton` | Confirm that images lacking some dimensions have one plane along them |
 | `--image-type fluorescence\|rgb` | The image type (default: the earlier run's, else the suggested one, printed) |
 | `--design FILE` | The confirmed experiment design (default: `experiment_design.csv` in the output folder); it is copied to the output folder |
@@ -739,18 +743,59 @@ Give `run` the output folder of your runs on the originals: the design, image ty
 stated pixel sizes are kept (the copies have the same names), the report says the
 experiment is now the folder of copies, and every row is computed again. The conversion
 record, **.morphobricks-conversion.json** in the folder of copies, lists every image with
-its original's and its copy's size and modification time, the roles and the pixel sizes;
-the run records its SHA-256 and warns when an original changes after the conversion
-(`conversion_source_changed`) or a copy is changed (`copy_changed_after_conversion`).
+its original's and its copy's size and modification time, the copy's SHA-256 (a checksum of
+its content), the roles, the pixel sizes, the channel names and the significant bits; the
+run records the record's SHA-256 and warns when an original changes after the conversion
+(`conversion_source_changed`) or a copy is changed (`copy_changed_after_conversion`, also a
+change that keeps the copy's size and time). Checking the copies reads each of them whole,
+so `check` and `run` on a folder of copies, and opening their run, take about one read of
+the copies longer. An original that changes while `convert` reads its metadata is refused
+(`source_changed_during_check`); convert again once nothing writes into the experiment.
+
+A folder of copies made by v0.4.0rc3 or earlier has a conversion record of version 1, without the
+copies' SHA-256: `convert`, `run` and the bricks refuse it (`conversion_record_unreadable`,
+naming version 1). Convert the originals again into a new folder.
 
 Running `convert` again with the same images and roles reuses the copies and only adds new
 images; when nothing is added the record is left as it was. Bricks reading the run on the
-copies (`RunInputs`) refuse it if the conversion record is changed or removed afterwards.
+copies (`RunInputs`) refuse it if the conversion record is changed or removed afterwards,
+or if a copy no longer has the SHA-256 the record gives.
 `convert` never overwrites anything else: a folder holding other files, copies of other
 images or made with other roles is refused (`copy_folder_not_empty`, `copy_differs`);
 convert into a new folder then. If it fails (`conversion_failed`), the folder is left as it
 was. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
-The notebook does not offer the conversion yet: run the command in a terminal.
+
+**In the notebook.** When step 2's axis check reports these images, a **Make named-axis
+copies (optional)** card appears under it, calling the same functions as the command:
+
+1. **The roles.** They are yours: the roles confirmed with **Confirm axis roles** (possible
+   with only `axes_not_named`), or, while the axis errors keep that button disabled, the
+   roles shown once you pressed **Yes, the preview looks right** and then **Yes, write the
+   copies with these roles** on the card. Changing a role, or the answer about missing
+   axes, takes that answer back. Nothing is taken from the header.
+2. **The folder for the copies** (required, no default): paste it or use **Browse…** (on
+   Google Colab, **Copy path** in the **Files** panel). It is checked with the command's rule
+   (`copy_folder_overlaps_experiment`, `copy_folder_not_a_folder`).
+3. **What will happen**, from the command's planning, reading headers only: the images
+   written as OME-TIFF (with their axis code) and those copied as they are (with `excluded`),
+   the space needed and the free space. Any error that would stop the conversion is shown
+   here and keeps **Make named-axis copies** disabled, as does a drive without the space.
+4. **Make named-axis copies** writes the copies with a progress bar, holding the folder's
+   lock. Refusals are shown on the card with what to do; a folder locked by a stopped
+   conversion shows its holder and **Remove the lock of a stopped run** (the rule of
+   `--remove-stale-lock`).
+5. **After the copies:** the card shows the folder, what was written, copied and reused, the
+   path of the conversion record and what to do next. **Check the copies in step 1** sets
+   the experiment folder to the copies, keeps the output folder (an empty box is filled with
+   the originals' default) and checks again. Confirm the labels, the axis roles (now named in
+   the copies' metadata) and the image type again; the design and stated pixel sizes are
+   kept. If you pressed **Yes, they have a single plane there**, press it again (the copies
+   do not add those axes; `--missing-as-singleton` on the command line). The card lists the
+   copies whose relabelled Y or X has no pixel size (unless the header gave X and Y the same
+   size): state them under **Pixel sizes** in step 1.
+
+The card is not shown when another brick embeds step 1 without the output folder
+(`folder_step(show_output=False)`).
 
 ## 6. Output files
 
@@ -870,8 +915,8 @@ continues.
 | `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. |
 | `no_images` | Error | No images to analyse (or all excluded). Check the folder. |
 | `unreadable_tiff` | Error | A TIFF file cannot be opened. Export it again, or exclude it. |
-| `unreadable_ome_zarr` | Error | A `.zarr` folder is not an OME-Zarr image that can be read. Export it again as OME-Zarr (OME-NGFF 0.4 or 0.5), or exclude it. |
-| `ome_zarr_axes_mismatch` | Error | An OME-Zarr image declares an axis with several planes that the experiment has no role for (or has no X/Y). Check the axis roles, or process it separately. |
+| `unreadable_ome_zarr` | Error | A `.zarr` folder is not an OME-Zarr image that can be read; the message says why. That includes an image whose metadata do not name its axes (OME-NGFF 0.3 to 0.5 require them), and every OME-NGFF 0.1 or 0.2 store (their metadata never name the axes): the axes are never guessed. Re-save an 0.1 or 0.2 store as OME-NGFF 0.4 or later. Export it again as OME-Zarr (OME-NGFF 0.4 or 0.5) with its axes, or exclude it. |
+| `ome_zarr_axes_mismatch` | Error | An OME-Zarr image declares an axis with several planes that the experiment has no role for (or has no X/Y), or the confirmed roles give one of its axes another role than its metadata declares (for example its depth `z` confirmed as time `T`); the message names each image with its declared axes and the confirmed roles. An OME-Zarr image is read only with the roles it declares. Check the axis roles, or process it separately. |
 | `multiple_series` | Error | A file or OME-Zarr folder holds several images (positions, scenes, series, wells or fields). Export them separately, or exclude it. |
 | `unsupported_dtype` | Error | Unsupported pixel type (e.g. float16). Convert, or exclude it. |
 | `mixed_dtypes` | Error | Images have different pixel types. Process them separately or convert. |
@@ -899,11 +944,12 @@ continues.
 | `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. |
 | `copy_differs` | Error | `convert`: images in the folder of copies differ from the copies this conversion would write (an original changed, other roles, a copy changed, an image no longer in the experiment), or the folder holds copies of another experiment. Nothing is overwritten; convert into a new folder, or remove those copies first. |
 | `cannot_convert_pixel_type` | Error | `convert`: images of 64-bit integers cannot be saved as OME-TIFF, and pixel values are never changed to fit. Save them again with named axes in a 32-bit type if their values fit, or correct the roles. |
+| `source_changed_during_check` | Error | `convert`: an original changed while its metadata was read, so the metadata may not describe the file that would be copied. Nothing was written; convert again when nothing writes into the experiment. |
 | `conversion_failed` | Error | `convert`: an image could not be copied (unreadable, changed while copied, or the folder cannot be written). The copies written by this conversion were removed; fix the cause and convert again, or exclude the image. |
 | `not_enough_space` | Error | `convert`: the copies would not fit on the drive. Free space or choose another drive. |
-| `conversion_record_unreadable` | Error | The conversion record of a folder of named-axis copies (**.morphobricks-conversion.json**) cannot be read, so `run` stops and `convert` refuses the folder. Convert again into a new folder. |
+| `conversion_record_unreadable` | Error | The conversion record of a folder of named-axis copies (**.morphobricks-conversion.json**) cannot be read, or is of version 1 (made by v0.4.0rc3 or earlier, without the copies' SHA-256), so `run` stops and `convert` refuses the folder. Convert again into a new folder. |
 | `conversion_source_changed` | Warning | An original changed or went missing after its named-axis copy was made; the copies hold the images as converted. If the originals were corrected, convert again into a new folder. |
-| `copy_changed_after_conversion` | Warning | An image of the folder of named-axis copies changed, went missing or was added after the conversion, so the conversion record does not describe it. Convert again, or check it is the image you want. |
+| `copy_changed_after_conversion` | Warning | An image of the folder of named-axis copies changed (its size, time or SHA-256), went missing or was added after the conversion, so the conversion record does not describe it. The run goes on, but the bricks (`RunInputs`) refuse a run on such copies: convert the originals again into a new folder. |
 | `design_unreadable` | Error | The `experiment_design.csv` an earlier run wrote cannot be read. Correct it, or delete it to confirm the design again. |
 | `no_usable_planes` | Error | No plane has finite pixel values. Check the images. |
 | `tiff_outside_leaf` | Error | Images sit in a folder that also holds subfolders, so they have no condition or repeat of their own. A folder holds either images or subfolders, never both. Move the images into a folder of their own, or out of the experiment folder. |
@@ -916,6 +962,7 @@ continues.
 | `different_pixel_sizes` | Warning | The physical pixel size or z-step (from the metadata or `calibration.csv`) differs between images by more than 0.1 % (for example different objectives). Images outside the largest group of matching sizes are listed; when sizes only change by small steps from image to image, none is listed. Check the microscope settings if this is not intended. |
 | `missing_pixel_size` | Warning | Some images have a pixel size (from the metadata or `calibration.csv`) and others do not, so it cannot be checked; images stated as measured in pixels count as without one, and the message says how many. Export them again with metadata, or state their sizes with `calibrate`, if needed. |
 | `unsupported_pixel_size_unit` | Warning | An image gives its pixel size or z-step in a unit that is not converted (for example inches); only pm, Å, nm, µm, mm, cm and m are. The message names each image, axis and unit. Those sizes are not used: the image is treated as uncalibrated on those axes. Export it again with the pixel size in a supported unit, or state it with `calibrate`, if the physical size matters. Not reported for an axis whose size is stated. |
+| `invalid_physical_calibration` | Warning | An image's metadata give a pixel size, z-step or time step that cannot be used (for OME-Zarr: `coordinateTransformations` that are malformed, of an unsupported type, stored in a separate file, or a scale that is zero, negative or not a number); the message names each image and what is wrong. The image is treated as uncalibrated on those axes; no size is made up. Correct the metadata, or state the sizes with the `calibrate` command: the warning goes once every lost pixel size and z-step is stated. A lost time step cannot be stated, so its warning stays until the metadata are corrected. |
 | `calibration_axis_absent` | Warning | `calibration.csv` states a size for an axis some images do not have (for example a Z size for 2D images or projections); the message names them. No size is recorded for an axis an image does not have. Give the statement a narrower target, or no action if it is meant for the other images. |
 | `calibration_differs_from_header` | Warning | `calibration.csv` states a pixel size (or `pixels`) that differs from an image's metadata; the message names each image and axis with both sizes. The stated size is used. Correct or remove the statement if the metadata are right. |
 | `calibration_target_not_found` | Error | `calibration.csv` names a folder or image that is not in the experiment (names are compared exactly, case included). Correct the target, or remove the line. |

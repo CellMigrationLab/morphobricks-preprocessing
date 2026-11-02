@@ -39,6 +39,7 @@ from .calibration import (
 )
 from .calibration_io import CalibrationFormatError, read_calibration
 from .conversion import ConversionResult, convert_experiment
+from .conversion_plan import ConversionPreview, preview_conversion
 from .conversion_record import (
     RECORD_FILENAME as CONVERSION_RECORD_FILENAME,
 )
@@ -265,6 +266,7 @@ __all__ = [
     "ConfirmedDesign",
     "ConversionRecord",
     "ConversionRecordError",
+    "ConversionPreview",
     "ConversionResult",
     "DatasetReport",
     "DesignChanges",
@@ -336,6 +338,7 @@ __all__ = [
     "check_sources",
     "check_table",
     "convert_experiment",
+    "preview_conversion",
     "declared_mapping",
     "default_design",
     "default_output_folder",
