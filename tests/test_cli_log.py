@@ -78,7 +78,8 @@ def test_a_log_over_an_output_file_leaves_it_unchanged(clean, capsys, command, n
         "calibration.csv",
         "mask_relationships.json",
         ".morphobricks-preprocessing.lock",
-        ".run-x/log.txt",
+        ".publish/log.txt",
+        ".staging/log.txt",
     ],
 )
 def test_a_log_named_as_another_output_is_refused(clean, capsys, name):

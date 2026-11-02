@@ -41,6 +41,9 @@ class RunResult:
         Without a usable earlier manifest, every file is new.
     read
         Files whose pixels were read in this run.
+    resumed
+        Files whose rows an interrupted run had staged and this run reused, without
+        reading their pixels (design v0.4 §1).
     excluded
         Images the user excluded.
     rebuild_reason
@@ -76,6 +79,7 @@ class RunResult:
     unchanged: tuple[str, ...] = ()
     removed: tuple[str, ...] = ()
     read: tuple[str, ...] = ()
+    resumed: tuple[str, ...] = ()
     excluded: tuple[str, ...] = ()
     rebuild_reason: str | None = None
     plane_count: int = 0

@@ -35,10 +35,11 @@ from .discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
 from .links import is_inside
 from .manifest import MANIFEST_FILENAME
 from .mask_scan import MASK_REPORT_FILENAME
+from .run.generation import PUBLISH_FOLDER
 from .run.lock import LOCK_FILENAME
-from .run.publish import STAGING_PREFIX
 from .run.recorded import recorded_masks_folder, usable
 from .run.reuse import read_previous
+from .run.staging import STAGING_FOLDER
 
 PROTECTED_OUTPUTS = frozenset(
     {
@@ -51,6 +52,8 @@ PROTECTED_OUTPUTS = frozenset(
         MASK_REPORT_FILENAME,
         LOCK_FILENAME,
         RECORD_FILENAME,
+        PUBLISH_FOLDER,
+        STAGING_FOLDER,
     }
 )
 """Names in an output folder a log may not be written to, or inside."""
@@ -86,7 +89,7 @@ def log_refusal(
     parts = None if output is None else _parts_below(target, Path(output))
     if parts is not None:
         first = parts[0].casefold() if parts else ""
-        if not parts or first in _PROTECTED_FOLDED or first.startswith(STAGING_PREFIX):
+        if not parts or first in _PROTECTED_FOLDED:
             return _refused(log, f"it would write over the run's {parts[0] if parts else 'folder'}")
     if target.is_dir():
         return _refused(log, "it is a folder")

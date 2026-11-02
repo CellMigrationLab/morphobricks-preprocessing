@@ -400,6 +400,7 @@ class _RunStep:
         tiles = [
             ("🧩", f"{result.plane_count:,}", "planes in the table"),
             ("📖", f"{len(result.read):,}", "images read"),
+            ("⏯️", f"{len(result.resumed):,}", "images resumed from an interrupted run"),
             ("♻️", f"{kept:,}", "images kept from the last run"),
             ("🆕", f"{len(result.new):,}", "new images"),
             ("✏️", f"{len(result.changed):,}", "changed images"),

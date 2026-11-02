@@ -12,7 +12,8 @@ from pathlib import Path
 
 from .axes import file_mapping_for
 from .image_names import position_id
-from .manifest import LEGACY_MANIFEST_VERSION, RunManifest, source_fingerprint
+from .inventory import source_signature
+from .manifest import LEGACY_MANIFEST_VERSION, RunManifest
 from .metadata import inspect_image
 from .validation import ValidationIssue, error, plural
 
@@ -30,8 +31,9 @@ def check_sources(
     The per-image checks every brick that uses ``plane_histograms.csv`` makes (MorphoBricks
     D86; formerly CellPatcher ``statistics.check_images`` and MorphoFeature
     ``histogram_fit``): each image is in the manifest; it is unchanged, by the size and
-    modification time :func:`source_fingerprint` gives (an OME-Zarr folder: its files' total
-    size and newest time); its recorded ``position_id`` is the one its name gives; with
+    modification time :func:`.inventory.source_signature` gives (an OME-Zarr folder: its
+    files' total size, newest time and inventory digest, issue #86); its recorded
+    ``position_id`` is the one its name gives; with
     ``identities``, its labels and ``position_id`` are the caller's; with ``image_axes``,
     the caller's axes give every axis the role the run confirmed for that image. A version 1
     manifest (a run before v0.4.0, without the axis check) fails every image: such a run
@@ -88,11 +90,11 @@ def check_sources(
             report("images_not_in_manifest", path)
             continue
         try:
-            fingerprint = source_fingerprint(root / path)
+            fingerprint = source_signature(root / path)
         except FileNotFoundError:
             report("images_missing", path)
             continue
-        if fingerprint != (entry.size, entry.mtime_ns):
+        if fingerprint != (entry.size, entry.mtime_ns, entry.inventory_sha256):
             report("images_changed", path)
         recorded = (*entry.labels, entry.position_id)
         if entry.position_id is not None and entry.position_id != position_id(path):

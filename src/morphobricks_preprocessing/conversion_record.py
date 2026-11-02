@@ -308,8 +308,8 @@ class ConversionReview:
     source_root
         The experiment folder the copies were made from, or None.
     issues
-        ``conversion_source_changed`` and ``copy_changed_after_conversion`` (warnings), or
-        ``conversion_record_unreadable`` (an error).
+        ``conversion_source_changed`` (a warning), ``copy_changed_after_conversion`` and
+        ``conversion_record_unreadable`` (errors: the run stops before it writes).
     record
         The record's file name, in the experiment folder.
     """
@@ -408,18 +408,23 @@ def _source_issue(paths: list[str], source_root: str) -> list[ValidationIssue]:
 
 
 def _copy_issue(paths: list[str]) -> list[ValidationIssue]:
-    """Warn about copies changed, gone or added since the conversion."""
+    """Refuse copies changed, gone or added since the conversion (owner, 2 November 2026).
+
+    The bricks would refuse a run on them (``RunInputs`` checks every recorded copy against
+    the record), so the run stops before it writes rather than publish one they refuse.
+    """
     if not paths:
         return []
     return [
-        warning(
+        error(
             "copy_changed_after_conversion",
             f"{plural(len(paths), 'image')} of this folder of named-axis copies changed, went "
             "missing or were added after the conversion, so the conversion record does not "
-            "describe them. The bricks will refuse a run on them (RunInputs checks every "
-            "copy the run records against the record).",
+            "describe them, and the bricks would refuse a run on them. No image was read and "
+            "no table or manifest was written.",
             paths,
-            "Convert the originals again into a new folder and run preprocessing on that one.",
+            "Convert the originals again into a new folder, and run preprocessing on that "
+            "one (with the same output folder).",
         )
     ]
 
@@ -437,7 +442,7 @@ def _unreadable(exc: ConversionRecordError) -> ValidationIssue:
 
 def _fingerprint_data(fingerprint: Fingerprint) -> dict:
     """Return a fingerprint as JSON-compatible data."""
-    return {"size": fingerprint.size, "mtime_ns": fingerprint.mtime_ns}
+    return fingerprint.to_data()
 
 
 def _choice(value: object, allowed: tuple[str, ...], name: str) -> str:

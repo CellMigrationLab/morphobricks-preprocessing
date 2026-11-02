@@ -132,12 +132,13 @@ def test_a_same_size_change_with_the_time_put_back_is_found_at_reuse(tmp_path):
     assert snapshot(copies) == before
 
 
-def test_the_run_on_the_copies_warns_about_a_same_size_change(tmp_path):
+def test_the_run_on_the_copies_stops_on_a_same_size_change(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
     change_in_place(copies / "drug" / "r1" / "a.tif")
     run = run_experiment(copies, NAMED, output_folder=tmp_path / "out")
     found = {issue.code: issue for issue in run.issues}
+    assert not run.written and found["copy_changed_after_conversion"].is_error
     assert found["copy_changed_after_conversion"].paths == ("drug/r1/a.tif",)
 
 
@@ -304,15 +305,19 @@ def test_an_ome_zarr_copy_holding_a_folder_link_counts_as_changed(tmp_path):
     assert not unchanged_content(zarr, expected)
 
 
-def test_the_run_warning_about_an_added_copy_says_the_bricks_will_refuse_it(tmp_path):
-    # Review of PP-11c: the run goes on with the warning, but RunInputs refuses the run, so
-    # the warning must not suggest that analysing such a copy is an option.
+def test_an_added_copy_stops_the_run_and_the_earlier_run_is_kept(tmp_path):
+    # Owner decision of 2 November 2026 (PP-12): an error, not a warning, since RunInputs
+    # would refuse the run; the earlier clean run stays as it was.
     exp, copies, out = swapped_experiment(tmp_path / "exp"), tmp_path / "copies", tmp_path / "o"
     assert convert_experiment(exp, SWAPPED, copies).written
+    assert run_experiment(copies, NAMED, output_folder=out).written
+    table = (out / "plane_histograms.csv").read_bytes()
     (copies / "ctrl" / "r1" / "n.tif").write_bytes((copies / "ctrl" / "r1" / "a.tif").read_bytes())
     run = run_experiment(copies, NAMED, output_folder=out)
     found = {issue.code: issue for issue in run.issues}["copy_changed_after_conversion"]
+    assert not run.written and found.is_error
     assert found.paths == ("ctrl/r1/n.tif",) and "refuse" in found.message
-    assert "Convert the originals again" in found.action
+    assert "Convert the originals again into a new folder" in found.action
+    assert (out / "plane_histograms.csv").read_bytes() == table
     with pytest.raises(RunInputsError, match="ctrl/r1/n.tif"):
         RunInputs.open(out)

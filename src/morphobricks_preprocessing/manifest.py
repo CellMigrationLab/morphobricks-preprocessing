@@ -37,6 +37,8 @@ from morphobricks_normalization.ranges import HistogramSettings
 from ._io import write_text_atomic
 from .axes import AxisMapping
 from .image_names import position_id
+from .inventory import INVENTORY_KEY, source_signature
+from .inventory import source_fingerprint as source_fingerprint  # re-exported (moved, PP-12)
 from .narrow_ranges import NarrowRange
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
 
@@ -46,9 +48,6 @@ AXES_FROM = ("header", "confirmed")
 MANIFEST_VERSION = "2"
 LEGACY_MANIFEST_VERSION = "1"
 """Manifests written before v0.4.0: read for reporting, never trusted (no row is reused)."""
-
-LABELS_GROUP = "labels"
-"""An OME-Zarr image's group of label images (masks): outside the image's fingerprint."""
 
 
 class ManifestFormatError(ValueError):
@@ -136,6 +135,11 @@ class FileEntry:
     pixel_sizes
         The size of one step along X, Y, Z and T, each with its unit and source
         (:class:`.recorded_sizes.RecordedSize`); empty in older manifests.
+    inventory_sha256
+        For an OME-Zarr folder, the SHA-256 of its inventory (each file's relative path,
+        size and modification time, :func:`.inventory.source_signature`); None for a
+        TIFF file, and in manifests written before it was recorded (such an OME-Zarr
+        image counts as changed: its fingerprint is not known to be complete).
     """
 
     relative_path: str
@@ -153,6 +157,7 @@ class FileEntry:
     roles: tuple[str | None, ...] | None = None
     axes_from: str | None = None
     pixel_sizes: tuple[RecordedSize, ...] = ()
+    inventory_sha256: str | None = None
 
     def same_source(self, other: FileEntry) -> bool:
         """Return True if ``other`` describes the same unchanged file, read the same way."""
@@ -160,6 +165,7 @@ class FileEntry:
             self.relative_path == other.relative_path
             and self.size == other.size
             and self.mtime_ns == other.mtime_ns
+            and self.inventory_sha256 == other.inventory_sha256
             and self.labels == other.labels
             and self.axes == other.axes
             and self.singleton_roles == other.singleton_roles
@@ -386,7 +392,43 @@ def file_entry_for(  # noqa: PLR0913
     channel_names_trimmed: bool = False,
 ) -> FileEntry:
     """Describe a source image as it is on disk now, with its position identifier."""
-    size, mtime_ns = source_fingerprint(Path(root) / relative_path)
+    return file_entry_with(
+        source_signature(Path(root) / relative_path),
+        relative_path,
+        labels,
+        mapping,
+        plane_count=plane_count,
+        channel_names=tuple(channel_names),
+        significant_bits=significant_bits,
+        read_in_blocks=read_in_blocks,
+        channel_names_trimmed=channel_names_trimmed,
+    )
+
+
+def file_entry_with(
+    signature: tuple[int, int, str | None],
+    relative_path: str,
+    labels: tuple[str, str, str],
+    mapping: AxisMapping,
+    **header: object,
+) -> FileEntry:
+    """Describe a source image with a fingerprint already taken, as :func:`file_entry_for`.
+
+    Parameters
+    ----------
+    signature
+        ``(size, mtime_ns, inventory)`` (:func:`.inventory.source_signature`), for example
+        the one taken when its header was read.
+    relative_path, labels, mapping
+        As :func:`file_entry_for`.
+    **header
+        The keyword arguments of :func:`file_entry_for` (channel names, bits, ...).
+
+    Returns
+    -------
+    FileEntry
+    """
+    size, mtime_ns, inventory = signature
     return FileEntry(
         relative_path=relative_path,
         size=size,
@@ -394,38 +436,11 @@ def file_entry_for(  # noqa: PLR0913
         labels=tuple(labels),
         axes=mapping.axes,
         singleton_roles=mapping.singleton_roles,
-        plane_count=plane_count,
-        channel_names=tuple(channel_names),
-        significant_bits=significant_bits,
-        read_in_blocks=read_in_blocks,
         position_id=position_id(relative_path),
-        channel_names_trimmed=channel_names_trimmed,
         roles=tuple(mapping.roles),
+        inventory_sha256=inventory,
+        **header,
     )
-
-
-def source_fingerprint(path: str | os.PathLike) -> tuple[int, int]:
-    """Size and modification time used to tell whether an image changed.
-
-    A TIFF file gives its own size and time. An OME-Zarr folder gives the total
-    size of its files and the time of the newest one, so rewriting any chunk or
-    metadata file counts as a change. Its ``labels`` group is left out: label
-    images are masks, fingerprinted one by one (design v0.4 §2), so adding or
-    changing one does not change the image.
-    """
-    path = Path(path)
-    if not path.is_dir():
-        stat = path.stat()
-        return stat.st_size, stat.st_mtime_ns
-    size, newest = 0, path.stat().st_mtime_ns
-    for folder, subfolders, names in os.walk(path):
-        if Path(folder) == path and LABELS_GROUP in subfolders:
-            subfolders.remove(LABELS_GROUP)
-        for name in names:
-            stat = (Path(folder) / name).stat()
-            size += stat.st_size
-            newest = max(newest, stat.st_mtime_ns)
-    return size, newest
 
 
 def package_versions() -> dict[str, str]:
@@ -497,7 +512,7 @@ def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
     """
     if strict and (entry.roles is None or entry.axes_from not in AXES_FROM):
         raise ValueError(f"the entry of {entry.relative_path!r} has no roles or axes_from")
-    return {
+    data = {
         "relative_path": entry.relative_path,
         "size": entry.size,
         "mtime_ns": entry.mtime_ns,
@@ -516,6 +531,9 @@ def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
         "axes_from": entry.axes_from,
         "pixel_sizes": sizes_to_data(entry.pixel_sizes),
     }
+    if entry.inventory_sha256 is not None:
+        data[INVENTORY_KEY] = entry.inventory_sha256
+    return data
 
 
 def _file_entry(data: dict, *, strict: bool = True) -> FileEntry:
@@ -543,6 +561,7 @@ def _file_entry(data: dict, *, strict: bool = True) -> FileEntry:
         roles=_roles(data.get("roles"), str(data["axes"])),
         axes_from=_text(data.get("axes_from")),
         pixel_sizes=sizes_from_data(data.get("pixel_sizes")),
+        inventory_sha256=_text(data.get(INVENTORY_KEY)),
     )
 
 

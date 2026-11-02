@@ -4,8 +4,8 @@ One rule for "the same file, read the same way" (plan-structure audit D5), used 
 when it decides which rows to reuse, and by the bricks' checks:
 
 - :class:`Fingerprint`: a file's size and modification time (for an OME-Zarr folder, the
-  total size of its files and the newest time), as :func:`.manifest.source_fingerprint`
-  gives them;
+  total size of its files, the newest time and the digest of its inventory: every file's
+  path, size and time, issue #86), as :func:`.inventory.source_signature` gives them;
 - :class:`RowKey`: everything a row depends on. A row is reused only when its file is
   unchanged and its roles, ``axes_from`` and every setting that changes rows are unchanged
   (bins, histogram range, robust quantiles, range-check limit, the path it is read from).
@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .axis_check import ConfirmedAxes
-from .manifest import FileEntry, RunSettings, source_fingerprint
+from .inventory import INVENTORY_KEY, source_signature
+from .manifest import FileEntry, RunSettings
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -38,10 +39,15 @@ class Fingerprint:
         Size in bytes; for an OME-Zarr folder, the total size of its files.
     mtime_ns
         Modification time in nanoseconds; for an OME-Zarr folder, its newest file's.
+    inventory
+        For an OME-Zarr folder, the SHA-256 of its inventory (every file's relative path,
+        size and modification time), so any chunk added, removed or changed changes the
+        fingerprint (issue #86); None for a file.
     """
 
     size: int
     mtime_ns: int
+    inventory: str | None = None
 
     @classmethod
     def of(cls, path: str | os.PathLike) -> Fingerprint:
@@ -52,15 +58,36 @@ class Fingerprint:
         FileNotFoundError
             If the file does not exist.
         """
-        size, mtime_ns = source_fingerprint(path)
-        return cls(size, mtime_ns)
+        return cls(*source_signature(path))
 
     @classmethod
     def recorded(cls, entry: FileEntry | Mapping) -> Fingerprint:
-        """Return the fingerprint recorded for a file (a manifest entry or its data)."""
+        """Return the fingerprint recorded for a file (a manifest entry or its data).
+
+        A record without an inventory (a file, or a record written before it was kept)
+        has None, so an OME-Zarr folder recorded without one never equals it now.
+        """
         if isinstance(entry, Mapping):
-            return cls(int(entry["size"]), int(entry["mtime_ns"]))
-        return cls(entry.size, entry.mtime_ns)
+            inventory = entry.get(INVENTORY_KEY)
+            return cls(
+                int(entry["size"]),
+                int(entry["mtime_ns"]),
+                None if inventory is None else str(inventory),
+            )
+        return cls(entry.size, entry.mtime_ns, entry.inventory_sha256)
+
+    def to_data(self) -> dict:
+        """Return the fingerprint as JSON data: ``size``, ``mtime_ns`` (and the inventory).
+
+        Returns
+        -------
+        dict
+            The inventory digest is under ``inventory_sha256``, only for a folder.
+        """
+        data = {"size": self.size, "mtime_ns": self.mtime_ns}
+        if self.inventory is not None:
+            data[INVENTORY_KEY] = self.inventory
+        return data
 
 
 @dataclass(frozen=True)

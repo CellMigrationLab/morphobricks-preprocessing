@@ -52,8 +52,15 @@ from .masks import FOLDER, MaskFile, read_mask
 from .masks.header import _mask_header
 from .planes import DEFAULT_MEMORY_LIMIT, read_plane
 from .recorded_sizes import RecordedSize
+from .run.generation import published_path, read_stable
+from .run_inputs_text import (
+    _ZARR_MISSING,
+    _changed_text,
+    _labels_unreadable_text,
+    _unrecorded_text,
+    _without_axes_text,
+)
 from .unrecorded import UnrecordedFiles, unrecorded_files
-from .validation import plural
 from .zarr_input import NgffError, ZarrUnavailableError
 
 
@@ -181,24 +188,42 @@ class RunInputs:
             excluded (added since the run): it names them.
         """
         output = Path(output_folder).resolve()
+        # One generation of the outputs (contract §9): read again if a run published
+        # meanwhile.
+        inputs = read_stable(output, lambda: cls._read(output, experiment_root, masks_root))
+        if inputs is None:
+            raise RunInputsError(
+                f"Another run kept publishing new results in {output} while they were being "
+                "opened. Open the run again once it has finished."
+            )
+        inputs._check_files()
+        return inputs
+
+    @classmethod
+    def _read(
+        cls,
+        output: Path,
+        experiment_root: str | os.PathLike | None,
+        masks_root: str | os.PathLike | None,
+    ) -> RunInputs:
+        """Read the manifest and the files it names, checking their SHA-256."""
         manifest = _manifest(output)
-        _check_sha(output / OUTPUT_FILENAME, manifest.csv_sha256, "histogram table")
+        table = published_path(output, OUTPUT_FILENAME, manifest.csv_sha256)
+        _check_sha(table, manifest.csv_sha256, "histogram table")
         if manifest.experiment_design_sha256 is not None:
-            _check_sha(output / DESIGN_FILENAME, manifest.experiment_design_sha256, "design")
+            design = published_path(output, DESIGN_FILENAME, manifest.experiment_design_sha256)
+            _check_sha(design, manifest.experiment_design_sha256, "design")
         _check_calibration(output / CALIBRATION_FILENAME, manifest.calibration_sha256)
         root = Path(experiment_root or manifest.experiment_root).resolve()
         _check_conversion(root, manifest)
-        recorded_masks = (manifest.masks or {}).get("folder")
-        masks = masks_root or recorded_masks
-        inputs = cls(
+        masks = masks_root or (manifest.masks or {}).get("folder")
+        return cls(
             output_folder=output,
             experiment_root=root,
             masks_root=None if masks is None else Path(masks).resolve(),
             manifest=manifest,
-            records=tuple(read_plane_histograms(output / OUTPUT_FILENAME)),
+            records=tuple(read_plane_histograms(table)),
         )
-        inputs._check_files()
-        return inputs
 
     def fovs(self) -> tuple[Fov, ...]:
         """Return every position of the run, sorted by image path."""
@@ -329,10 +354,9 @@ class RunInputs:
         expected = self.manifest.experiment_design_sha256
         if expected is None:
             return None
+        path = published_path(self.output_folder, DESIGN_FILENAME, expected)
         try:
-            return read_confirmed_design(
-                self.output_folder / DESIGN_FILENAME, expected_sha256=expected
-            ).design
+            return read_confirmed_design(path, expected_sha256=expected).design
         except DesignCheckError as exc:
             raise RunInputsError(
                 f"The design {DESIGN_FILENAME} cannot be used: {exc.issues[0].message} "
@@ -504,69 +528,6 @@ def _check_conversion(root: Path, manifest: RunManifest) -> None:
     problem = conversion_problem(root, manifest.conversion_record_sha256, paths)
     if problem is not None:
         raise RunInputsError(problem)
-
-
-def _changed_text(paths: list[str], what: str = "image") -> str:
-    """Say which files changed or went missing since the run."""
-    where = "experiment_root=" if what == "image" else "masks_root="
-    return (
-        f"{len(paths)} {what}{'' if len(paths) == 1 else 's'} changed or missing since the "
-        f"run: {_shown(paths)}. Run preprocessing again on the experiment as it is (or, if the "
-        f"{what}s were only moved, give {where} where they are now)."
-    )
-
-
-def _shown(paths: tuple[str, ...] | list[str]) -> str:
-    """Name up to five paths, sorted."""
-    return ", ".join(sorted(paths)[:5]) + (" and more" if len(paths) > 5 else "")
-
-
-def _without_axes_text(paths: list[str]) -> str:
-    """Say which masks the run recorded without axes, and what to do."""
-    return (
-        f"The run recorded {plural(len(paths), 'mask')} without axes: "
-        f"{_shown(paths)}. A run before v0.4.0 wrote such a record for a mask whose header "
-        "puts X before Y; masks are never transposed. Save each such mask again with its "
-        "last two axes swapped (numpy.swapaxes(mask, -1, -2)), then run preprocessing again."
-    )
-
-
-def _unrecorded_text(files: UnrecordedFiles) -> str:
-    """Name the images and masks the run did not record, and what to do."""
-    parts = [
-        f"{plural(len(found), what)} ({_shown(found)})"
-        for what, found in (("image", files.images), ("mask", files.masks))
-        if found
-    ]
-    masks = (
-        " with its masks folder (--masks <masks folder>; the label images of OME-Zarr images "
-        "are added)"
-        if files.masks
-        else ""
-    )
-    exclude = ", or exclude the images (--exclude)" if files.images else ""
-    return (
-        f"The experiment holds {' and '.join(parts)} that the preprocessing run did not "
-        "record, for example added since the run; they would be left out. Run preprocessing "
-        f"again on the experiment as it is{masks} (morphobricks-preprocessing run --output "
-        f"<output folder>){exclude}."
-    )
-
-
-_ZARR_MISSING = (
-    "The run holds OME-Zarr images, and the zarr package is not installed, so their label "
-    "images cannot be checked against the run (none is ever skipped). Install it with: "
-    'pip install "morphobricks-preprocessing[zarr]"'
-)
-
-
-def _labels_unreadable_text(exc: NgffError) -> str:
-    """Say which OME-Zarr image's labels group cannot be read, and what to do."""
-    return (
-        f"The run cannot be checked: {exc}. Its label images may have changed since the "
-        "run; check the image's labels group, then run preprocessing again on the "
-        "experiment as it is."
-    )
 
 
 def _mapping(entry: FileEntry) -> AxisMapping:

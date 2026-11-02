@@ -8,8 +8,7 @@ module holds the header checks (:func:`header_checks`), reading the rows
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -25,15 +24,15 @@ from ..fingerprint import unchanged_confirmation
 from ..image_type import ImageTypeReview, image_type_issues, review_image_type
 from ..manifest import FileEntry, NarrowRange, RunManifest, RunSettings
 from ..mask_checks import mask_issues
-from ..planes import PlaneReadError, check_planes
+from ..planes import check_planes
 from ..validation import ValidationIssue, error, has_errors, plural
 from .entries import Comparison, compare_with_previous, file_entries
+from .modes import FULL
 from .preflight import Preflight
 from .recorded import ResolvedInputs
+from .resume import FileJob, changed_during_check, new_rows
 from .reuse import _load_previous
-from .rows import _bin_count, _read_file
-
-logger = logging.getLogger(__name__)
+from .rows import _bin_count
 
 
 @dataclass(frozen=True)
@@ -156,13 +155,19 @@ class Rows:
     found
         The files compared with the earlier run's.
     read
-        The files read in this run.
+        The files whose pixels were read in this run.
     reason
         Why every row was recomputed, or None.
     failed
         Files whose pixels could not be read.
     entries
         The manifest entry of every analysed file, as it is now.
+    resumed
+        The files whose rows an interrupted run had staged, reused (design v0.4 §1).
+    changed
+        The files that changed while the run checked or read them (issue #90).
+    discarded
+        ``{file: why}`` for the staged rows not reused.
     """
 
     records: list[PlaneRecord]
@@ -172,6 +177,9 @@ class Rows:
     reason: str | None
     failed: tuple[str, ...] = ()
     entries: dict[str, FileEntry] = field(default_factory=dict)
+    resumed: tuple[str, ...] = ()
+    changed: tuple[str, ...] = ()
+    discarded: Mapping[str, str] = field(default_factory=dict)
 
 
 def compute_rows(
@@ -183,7 +191,7 @@ def compute_rows(
     mode: str,
     progress: Callable[[int, int, str], None] | None,
 ) -> Rows:
-    """Reuse the earlier rows that can be reused, and read every other file.
+    """Reuse the earlier rows that can be reused, resume staged rows, and read the rest.
 
     Parameters
     ----------
@@ -220,26 +228,27 @@ def compute_rows(
         records.extend(replace(r, position_id=entries[rel].position_id) for r in earlier[rel])
         # Kept rows keep the range checks they were written with.
         narrow.extend(entry for entry in previous[0].narrow_ranges if entry.relative_path == rel)
-    to_read = sorted([*found.new, *found.changed, *(found.unchanged if reason else ())])
-    labels = {image: leaf.labels for leaf in pre.discovery.leaves for image in leaf.images}
-    failed = []
-    for done, rel in enumerate(to_read):
-        if progress is not None:
-            progress(done, len(to_read), rel)
-        file_mapping, position = review.file_mappings[rel], entries[rel].position_id
-        try:
-            rows, ranges = _read_file(
-                root / rel, rel, labels[rel], file_mapping, settings, position
-            )
-        except PlaneReadError:
-            logger.warning("Cannot read the planes of %s", rel, exc_info=True)
-            failed.append(rel)
-            continue
-        records.extend(rows)
-        narrow.extend(ranges)
-    if progress is not None:
-        progress(len(to_read), len(to_read), "")
-    return Rows(records, narrow, found, tuple(to_read), reason, tuple(failed), entries)
+    job = FileJob(pre, review, settings, entries, output, mode == FULL)
+    changed = changed_during_check(job)
+    to_read = [
+        rel
+        for rel in sorted([*found.new, *found.changed, *(found.unchanged if reason else ())])
+        if rel not in changed
+    ]
+    kept = set(found.unchanged) if not reason else set()
+    new = new_rows(job, to_read, kept, progress)
+    return Rows(
+        [*records, *new.records],
+        [*narrow, *new.narrow],
+        found,
+        tuple(new.read),
+        reason,
+        tuple(new.failed),
+        entries,
+        resumed=tuple(new.resumed),
+        changed=tuple(sorted({*changed, *new.changed})),
+        discarded=dict(sorted(new.discarded.items())),
+    )
 
 
 def unreadable_issue(failed: tuple[str, ...]) -> ValidationIssue:
@@ -274,11 +283,23 @@ def outcome_of(rows: Rows | None, base: RunOutcome) -> RunOutcome:
     why.update({rel: "changed since the earlier run" for rel in found.changed})
     recomputed = {rel: rows.reason or why.get(rel, "") for rel in rows.read}
     reused = () if rows.reason else found.unchanged
-    return replace(base, reused=reused, recomputed=recomputed, removed=found.removed)
+    return replace(
+        base,
+        reused=reused,
+        recomputed=recomputed,
+        removed=found.removed,
+        resumed=rows.resumed,
+        staged_discarded=rows.discarded,
+    )
 
 
 def counts(rows: Rows | None) -> dict:
     """Return the :class:`.result.RunResult` fields that come from the rows."""
     if rows is None:
         return {}
-    return {**asdict(rows.found), "rebuild_reason": rows.reason, "read": rows.read}
+    return {
+        **asdict(rows.found),
+        "rebuild_reason": rows.reason,
+        "read": rows.read,
+        "resumed": rows.resumed,
+    }

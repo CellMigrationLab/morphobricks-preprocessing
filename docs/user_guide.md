@@ -768,8 +768,10 @@ record, **.morphobricks-conversion.json** in the folder of copies, lists every i
 its original's and its copy's size and modification time, the copy's SHA-256 (a checksum of
 its content), the roles, the pixel sizes, the channel names and the significant bits; the
 run records the record's SHA-256 and warns when an original changes after the conversion
-(`conversion_source_changed`) or a copy is changed (`copy_changed_after_conversion`, also a
-change that keeps the copy's size and time). Checking the copies reads each of them whole,
+(`conversion_source_changed`). A copy that changed (also a change that keeps the copy's size
+and time), went missing or was added since the conversion stops the run before anything but
+the report is written (`copy_changed_after_conversion`, an error): later bricks would refuse
+such a run, so convert the originals again into a new folder and run on that one. Checking the copies reads each of them whole,
 so `check` and `run` on a folder of copies, and opening their run, take about one read of
 the copies longer. An original that changes while `convert` reads its metadata is refused
 (`source_changed_during_check`); convert again once nothing writes into the experiment.
@@ -870,11 +872,28 @@ The default output folder is next to the experiment folder:
 When masks are given, `run_manifest.json` also lists every image's masks (`masks`), with
 each mask's axes and size (for example `TYX` and 50 x 512 x 512 for a mask per time point).
 
-The table and manifest are both prepared before the earlier files are replaced. If a
-replacement fails, the earlier files are restored. This needs temporary disk space for
-the new outputs and copies of the earlier pair. If restoration also fails (for example,
-another program locks an output file), the error names a backup folder: close programs
-using the output files and restore those backups before running again.
+**Interrupted runs resume.** As soon as an image is read, its rows are kept in the
+hidden folder `.staging` in the output folder. If the run is interrupted (a crash, a
+stopped kernel, a lost Colab session, a computer switched off), run again with the same
+settings: the images already read are not read again, as long as they are unchanged (same
+size, time and, for OME-Zarr, the same files) and the settings that change rows are the
+same. The report lists them as `resumed`, and lists any rows it did not reuse with the
+reason (`staged_discarded`). A `full` run reuses none. After a killed run, remove its lock
+first (`--remove-stale-lock`). Once a run has written its results, `.staging` is deleted.
+
+**Results are switched in one step.** The new table, design, manifest and report are first
+written into the hidden folder `.publish`; replacing `run_manifest.json` then makes them
+the current results in one step, and the other files are moved into place. A run stopped
+before that step leaves the earlier results exactly as they were; one stopped after it is
+finished by the next run (or `check`, `masks`, `design`, `calibrate`). Later bricks always
+read one whole set of results, old or new. If a file cannot be moved into place (for
+example because another program has the table open on Windows), the run says so: close
+that program and run again. This needs temporary disk space for the new outputs.
+
+**Images that change during the run.** If an image changes or disappears while the run
+checks or reads it (an acquisition or a copy still writing into the experiment), the run
+stops with `source_changed_during_run` and publishes nothing. Wait until nothing writes to
+the experiment, then run again: the images already read resume.
 
 Every output file gets the permissions a file you save yourself would get (your umask;
 usually readable by everyone, writable by you), so colleagues can open the results in a
@@ -971,7 +990,8 @@ continues.
 | `not_enough_space` | Error | `convert`: the copies would not fit on the drive. Free space or choose another drive. |
 | `conversion_record_unreadable` | Error | The conversion record of a folder of named-axis copies (**.morphobricks-conversion.json**) cannot be read, or is of version 1 (made by v0.4.0rc3 or earlier, without the copies' SHA-256), so `run` stops and `convert` refuses the folder. Convert again into a new folder. |
 | `conversion_source_changed` | Warning | An original changed or went missing after its named-axis copy was made; the copies hold the images as converted. If the originals were corrected, convert again into a new folder. |
-| `copy_changed_after_conversion` | Warning | An image of the folder of named-axis copies changed (its size, time or SHA-256), went missing or was added after the conversion, so the conversion record does not describe it. The run goes on, but the bricks (`RunInputs`) refuse a run on such copies: convert the originals again into a new folder. |
+| `copy_changed_after_conversion` | Error | An image of the folder of named-axis copies changed (its size, time or SHA-256), went missing or was added after the conversion, so the conversion record does not describe it, and the bricks (`RunInputs`) would refuse a run on it. The run stops before it writes anything but the report: convert the originals again into a new folder, and run preprocessing on that one (same output folder). |
+| `source_changed_during_run` | Error | An image changed or went missing while the run was checking or reading it, so its rows would not describe it. Nothing is published. Wait until nothing writes to the experiment (an acquisition or a copy still running), then run again: the images already read resume from their staged rows. |
 | `design_unreadable` | Error | The `experiment_design.csv` an earlier run wrote cannot be read. Correct it, or delete it to confirm the design again. |
 | `no_usable_planes` | Error | No plane has finite pixel values. Check the images. |
 | `tiff_outside_leaf` | Error | Images sit in a folder that also holds subfolders, so they have no condition or repeat of their own. A folder holds either images or subfolders, never both. Move the images into a folder of their own, or out of the experiment folder. |
