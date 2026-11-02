@@ -1148,3 +1148,13 @@ Raised during review; to be decided before the milestones that need them:
     reads no pixel and no TIFF header (a folder walk, plus OME-Zarr label metadata), and a
     check bricks must remember to call could be forgotten; there is no opt-out. Contract
     §9.1.*
+    *Also decided (2 November 2026, owner, on the PP-8b review questions): (1) a run that
+    v0.4.0rc1 recorded with a mask of empty axes is refused as a whole by `RunInputs.open`,
+    not only at `read_mask`; (2) a `masks_root` given for a run that recorded no masks
+    folder is refused: every mask there paired with a recorded image is unrecorded, and the
+    message says to run preprocessing again with the masks folder (`--masks`); (3) OME-Zarr
+    label images are never skipped: without the `zarr` extra, `RunInputs.open` refuses a run
+    holding OME-Zarr images, naming `morphobricks-preprocessing[zarr]`, and a recorded
+    OME-Zarr image whose `labels` group cannot be read is its own refusal naming the image,
+    not a silent pass and not an "unrecorded" file; (4) the version stays 0.3.4 until PP-13,
+    and v0.4.0rc2 is tagged by the owner after this PR.*

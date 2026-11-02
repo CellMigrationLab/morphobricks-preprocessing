@@ -11,12 +11,13 @@ discovers them itself, so an image added after the run would be left out without
 - masks: the masks folder's files paired with a recorded image as
   :func:`.masks.find_masks` pairs them (masks of excluded images and files that pair with
   no image are left out, as the run leaves them out), and the label images of the recorded
-  OME-Zarr images, less the masks the run recorded.
+  OME-Zarr images, less the masks the run recorded. Label images are never skipped: without
+  the ``zarr`` extra, or with a ``labels`` group that cannot be read, the check raises
+  instead of passing (owner, 2 November 2026).
 """
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,9 +26,7 @@ from .discovery import DiscoveryResult, discover_experiment
 from .manifest import RunManifest
 from .masks import FOLDER
 from .masks.files import _folder_masks
-from .zarr_input import NgffError, ZarrUnavailableError, is_zarr_name, ngff_label_names
-
-logger = logging.getLogger(__name__)
+from .zarr_input import NgffError, is_zarr_name, ngff_label_names
 
 
 @dataclass(frozen=True)
@@ -40,8 +39,7 @@ class UnrecordedFiles:
         Images, relative to the experiment root, sorted.
     masks
         Masks: masks-folder files relative to the masks folder, label images as
-        ``<image>/labels/<name>`` (``<image>/labels`` for a labels group that cannot be
-        read), sorted.
+        ``<image>/labels/<name>``, sorted.
     """
 
     images: tuple[str, ...] = ()
@@ -77,6 +75,15 @@ def unrecorded_files(
     -------
     UnrecordedFiles
         What the run did not record; empty (false) when it recorded everything.
+
+    Raises
+    ------
+    ZarrUnavailableError
+        When the run recorded OME-Zarr images and the ``zarr`` extra is not installed:
+        their label images cannot be listed, and are never skipped.
+    NgffError
+        When the ``labels`` group of a recorded OME-Zarr image cannot be read (the message
+        names the image).
     """
     recorded = {entry.relative_path for entry in manifest.files}
     discovery = discover_experiment(experiment_root, output_folder)
@@ -99,18 +106,19 @@ def _folder_mask_paths(
 
 
 def _label_paths(experiment_root: Path, recorded: Collection[str]) -> set[str]:
-    """Return the label images of the recorded OME-Zarr images, as their mask paths."""
+    """Return the label images of the recorded OME-Zarr images, as their mask paths.
+
+    Without the ``zarr`` extra, :class:`.zarr_input.ZarrUnavailableError` is raised, and an
+    unreadable ``labels`` group is an :class:`.zarr_input.NgffError` naming its image:
+    neither is skipped, or a label image added since the run would pass unseen.
+    """
     paths = set()
-    for image in recorded:
+    for image in sorted(recorded):
         if not is_zarr_name(image):
             continue
         try:
             names = ngff_label_names(experiment_root / image)
-        except ZarrUnavailableError as exc:  # the image itself cannot be read either
-            logger.info("No label images listed for %s: %s", image, exc)
-            continue
-        except NgffError:
-            paths.add(f"{image}/labels")
-            continue
+        except NgffError as exc:
+            raise NgffError(f"the label images of {image} cannot be read: {exc}") from exc
         paths.update(f"{image}/labels/{name}" for name in names)
     return paths

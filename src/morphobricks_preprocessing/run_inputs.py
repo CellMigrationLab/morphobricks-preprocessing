@@ -10,7 +10,9 @@ Nothing is parsed from names, guessed or transposed, and no file is read once it
   run, a mask recorded without axes (a v0.4.0rc1 run of a mask whose header puts X before
   Y), and an image or mask in the experiment the run neither recorded nor excluded
   (:class:`UnrecordedFilesError`, from :func:`.unrecorded.unrecorded_files`: folders are
-  listed, no pixel is read);
+  listed, no pixel is read). OME-Zarr label images are never skipped: a run holding
+  OME-Zarr images is refused without the ``zarr`` extra, and so is a recorded image whose
+  ``labels`` group cannot be read;
 - every read checks the file's fingerprint again (:class:`.fingerprint.Fingerprint`);
 - masks are read by the recorded pairing only, with preprocessing's reader and its label
   check (:func:`.masks.check_labels`); a stated shared 2-D mask serves every plane.
@@ -48,6 +50,7 @@ from .planes import DEFAULT_MEMORY_LIMIT, read_plane
 from .recorded_sizes import RecordedSize
 from .unrecorded import UnrecordedFiles, unrecorded_files
 from .validation import plural
+from .zarr_input import NgffError, ZarrUnavailableError
 
 
 class RunInputsError(ValueError):
@@ -164,7 +167,9 @@ class RunInputs:
         ------
         RunInputsError
             For a run before v0.4.0, a table, design or calibration changed since the run,
-            an image or mask changed or gone, or a mask recorded without axes.
+            an image or mask changed or gone, a mask recorded without axes, OME-Zarr images
+            without the ``zarr`` extra (``morphobricks-preprocessing[zarr]``), or an OME-Zarr
+            image whose ``labels`` group cannot be read.
         UnrecordedFilesError
             For images or masks in the experiment that the run neither recorded nor
             excluded (added since the run): it names them.
@@ -308,7 +313,7 @@ class RunInputs:
         return self.manifest.image_type
 
     def _check_files(self) -> None:
-        """Refuse changed or gone files, masks without axes and unrecorded files."""
+        """Refuse changed or gone files, masks without axes, unchecked labels, unrecorded files."""
         changed = [e.relative_path for e in self.manifest.files if not self._unchanged(e)]
         if changed:
             raise RunInputsError(_changed_text(changed))
@@ -319,9 +324,14 @@ class RunInputs:
         without_axes = [m["path"] for m in recorded if not m.get("axes") or not m.get("roles")]
         if without_axes:
             raise RunInputsError(_without_axes_text(without_axes))
-        unrecorded = unrecorded_files(
-            self.manifest, self.experiment_root, self.masks_root, self.output_folder
-        )
+        try:
+            unrecorded = unrecorded_files(
+                self.manifest, self.experiment_root, self.masks_root, self.output_folder
+            )
+        except ZarrUnavailableError as exc:
+            raise RunInputsError(_ZARR_MISSING) from exc
+        except NgffError as exc:
+            raise RunInputsError(_labels_unreadable_text(exc)) from exc
         if unrecorded:
             raise UnrecordedFilesError(unrecorded)
 
@@ -474,11 +484,34 @@ def _unrecorded_text(files: UnrecordedFiles) -> str:
         for what, found in (("image", files.images), ("mask", files.masks))
         if found
     ]
+    masks = (
+        " with its masks folder (--masks <masks folder>; the label images of OME-Zarr images "
+        "are added)"
+        if files.masks
+        else ""
+    )
+    exclude = ", or exclude the images (--exclude)" if files.images else ""
     return (
         f"The experiment holds {' and '.join(parts)} that the preprocessing run did not "
         "record, for example added since the run; they would be left out. Run preprocessing "
-        "again on the experiment as it is (morphobricks-preprocessing run --output "
-        "<output folder>), or exclude the images (--exclude)."
+        f"again on the experiment as it is{masks} (morphobricks-preprocessing run --output "
+        f"<output folder>){exclude}."
+    )
+
+
+_ZARR_MISSING = (
+    "The run holds OME-Zarr images, and the zarr package is not installed, so their label "
+    "images cannot be checked against the run (none is ever skipped). Install it with: "
+    'pip install "morphobricks-preprocessing[zarr]"'
+)
+
+
+def _labels_unreadable_text(exc: NgffError) -> str:
+    """Say which OME-Zarr image's labels group cannot be read, and what to do."""
+    return (
+        f"The run cannot be checked: {exc}. Its label images may have changed since the "
+        "run; check the image's labels group, then run preprocessing again on the "
+        "experiment as it is."
     )
 
 

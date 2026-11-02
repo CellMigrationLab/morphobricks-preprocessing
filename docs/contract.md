@@ -201,8 +201,14 @@ and system files, images outside a leaf folder or below the technical repeat, ma
 pair with no image or belong to an excluded image) do not count. `open` always runs this
 check: it lists folders and reads OME-Zarr label metadata, never a pixel or a TIFF header,
 so a brick never leaves out an image added since the run and never discovers files itself.
+Label images are never skipped (owner, 2 November 2026): a run holding OME-Zarr images is
+refused (`RunInputsError`) without the `zarr` extra, naming `morphobricks-preprocessing[zarr]`,
+and so is a recorded OME-Zarr image whose `labels` group cannot be read (the message names
+it). A `masks_root` given for a run that recorded no masks folder makes every mask there
+paired with a recorded image unrecorded; the message then says to run preprocessing again
+with the masks folder (`--masks`).
 `unrecorded_files(manifest, experiment_root, masks_root, output_folder=None)` gives the same
-list without raising.
+list without raising (it raises `ZarrUnavailableError` or `NgffError` for those two cases).
 It gives:
 
 - `fovs()`: `Fov` records with the FOV key, `plane_id`s, axes, roles, `axes_from`, channel

@@ -2,6 +2,7 @@
 
 import json
 import pickle
+import sys
 
 import numpy as np
 import pytest
@@ -157,3 +158,57 @@ def test_a_label_image_added_after_the_run_is_named(tmp_path):
     with pytest.raises(UnrecordedFilesError) as raised:
         RunInputs.open(result.output_folder)
     assert raised.value.files.masks == ("ctrl/a.ome.zarr/labels/nuclei",)
+
+
+# 3. Label images are never skipped (owner, 2 November 2026) ---------------------------
+
+
+@pytest.fixture
+def labelled(tmp_path):
+    pytest.importorskip("zarr")
+    image = np.arange(40, dtype=np.uint8).reshape(2, 4, 5)
+    path = write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", image, "zyx")
+    write_labels(path, {"cells": _labels((2, 4, 5))}, "zyx")
+    result = run_experiment(tmp_path / "exp", prefill_mapping("ZYX"))
+    assert result.written, result.issues
+    RunInputs.open(result.output_folder)
+    return result.output_folder, path
+
+
+def test_ome_zarr_images_without_the_zarr_extra_are_refused(labelled, monkeypatch):
+    output, _ = labelled
+    monkeypatch.setitem(sys.modules, "zarr", None)  # import zarr raises ImportError
+    with pytest.raises(RunInputsError) as raised:
+        RunInputs.open(output)
+    assert not isinstance(raised.value, UnrecordedFilesError)
+    assert "morphobricks-preprocessing[zarr]" in str(raised.value)
+    assert "label images cannot be checked" in str(raised.value)
+
+
+def test_a_labels_group_that_cannot_be_read_is_refused(labelled):
+    output, path = labelled
+    attrs = path / "labels" / ".zattrs"
+    if not attrs.exists():  # Zarr format 3 keeps the attributes in zarr.json
+        attrs = path / "labels" / "zarr.json"
+        meta = json.loads(attrs.read_text())
+        meta["attributes"] = {"labels": "cells"}
+        attrs.write_text(json.dumps(meta))
+    else:
+        attrs.write_text(json.dumps({"labels": "cells"}))
+    with pytest.raises(RunInputsError) as raised:
+        RunInputs.open(output)
+    message = str(raised.value)
+    assert not isinstance(raised.value, UnrecordedFilesError)
+    assert "the label images of ctrl/a.ome.zarr cannot be read" in message
+    assert "run preprocessing again" in message
+
+
+def test_masks_given_to_a_run_without_masks_ask_for_a_run_with_them(tmp_path):
+    clean = make_clean_run(tmp_path)
+    write_data(tmp_path / "masks/Cells/ctrl/rep1/a.tif", _labels((16, 20)), "YX")
+    with pytest.raises(UnrecordedFilesError) as raised:
+        RunInputs.open(clean.output, masks_root=tmp_path / "masks")
+    assert raised.value.files.masks == ("Cells/ctrl/rep1/a.tif",)
+    message = str(raised.value)
+    assert "with its masks folder (--masks <masks folder>" in message
+    assert "--exclude" not in message
