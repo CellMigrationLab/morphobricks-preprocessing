@@ -181,7 +181,11 @@ class _AxisPreview:
         self.image_type_checked.set(False, notify=False)
         self.confirmed_image_type = None
         # The suggestion is only preselected; nothing is used until it is confirmed.
-        self.image_type.value = self._image_type_review.suggested
+        # The earlier run's type comes first (audit I4), as the run would keep it.
+        self.image_type.value = (
+            self._recorded_image_type(self._image_type_review.rgb_allowed)
+            or self._image_type_review.suggested
+        )
         self.image_type.disabled = not self._image_type_review.rgb_allowed
         self.image_type_checked.disabled = False
         self._show_image_type_note()
