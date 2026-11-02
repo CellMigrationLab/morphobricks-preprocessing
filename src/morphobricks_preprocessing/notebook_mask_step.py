@@ -41,6 +41,11 @@ _SUGGESTIONS = (
 )
 
 
+def _heading(text: str) -> str:
+    """Return a bold heading inside the card, spaced from the table above it."""
+    return f"<div style='margin:12px 0 4px'><b>{html.escape(text)}</b></div>"
+
+
 class _MaskStepCard:
     """Step 3's optional mask step: the button, its progress and the description."""
 
@@ -228,16 +233,19 @@ class _MaskStepCard:
         )
         hierarchy = html.escape("\n".join(mask_hierarchy_lines(report)))
         parts = [
-            "<b>Mask types (suggestions to check)</b>",
+            _heading("Mask types (suggestions to check)"),
             ui.table(mask_type_rows(report), numeric_from=2),
-            "<b>Relationships found (suggestions to check)</b>",
+            _heading("Relationships found (suggestions to check)"),
             ui.table(relationships, numeric_from=3)
             if len(relationships) > 1
             else "<div class='mb-help'>None: no mask type is inside or grouped by another.</div>",
         ]
         if same:
-            parts += ["<b>Two segmentations of the same objects (to check)</b>", f"<ul>{same}</ul>"]
-        parts += ["<b>Hierarchy (direct parents only)</b>", f"<pre>{hierarchy}</pre>"]
+            parts += [
+                _heading("Two segmentations of the same objects (to check)"),
+                f"<ul>{same}</ul>",
+            ]
+        parts += [_heading("Hierarchy (direct parents only)"), f"<pre>{hierarchy}</pre>"]
         if step.issues:
             parts.append(issues_html(step.issues))
         self.mask_step_result.value = "".join(parts)

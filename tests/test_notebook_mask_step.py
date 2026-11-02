@@ -108,7 +108,7 @@ def test_describe_the_masks_writes_the_report_and_shows_the_cards(tmp_path, caps
     assert "The masks are described: 2 mask types in 4 images." in status
     assert str(path) in status and "Thresholds: the defaults." in status
     assert "suggestions from the masks&#x27; pixels" in status
-    assert "Mask types (suggestions to check)" in shown
+    assert "<b>Mask types (suggestions to check)</b>" in shown
     assert "one object per label" in shown
     assert "<td>nuclei</td><td>inside</td><td>cells</td>" in shown
     assert "8 of 8" in shown and "0/8/0/0" in shown
