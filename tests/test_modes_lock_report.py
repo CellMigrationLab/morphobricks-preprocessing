@@ -292,6 +292,16 @@ def test_a_lock_that_cannot_be_written_is_not_left_behind(experiment, monkeypatc
     assert not (output / LOCK_FILENAME).exists()
 
 
+def test_the_masks_command_writes_nothing_while_a_run_holds_the_lock(tmp_path, capsys):
+    clean = make_clean_run(tmp_path, mask_types=("Cells",), axes="YX", shape=(16, 20))
+    args = ["masks", clean.experiment, "--masks", clean.masks, "--output", clean.output]
+    with output_lock(clean.output):
+        assert main([str(arg) for arg in args]) == 1
+    assert "Another run is using this output folder" in capsys.readouterr().out
+    assert not (clean.output / MASK_REPORT_FILENAME).exists()
+    assert main([str(arg) for arg in args]) == 0 and (clean.output / MASK_REPORT_FILENAME).exists()
+
+
 def stale_lock(output, pid, host=None):
     output.mkdir(parents=True, exist_ok=True)
     data = {"host": host or socket.gethostname(), "pid": pid, "started_at": "2026-11-01"}
