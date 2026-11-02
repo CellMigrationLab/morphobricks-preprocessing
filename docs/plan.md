@@ -1493,3 +1493,14 @@ Raised during review; to be decided before the milestones that need them:
     checked against the manifest's SHA-256 (it used the lenient reader). The header check
     and the value parsers moved to `design_values` (pure); `DesignFormatError` is
     re-exported from `design` unchanged. Contract §9.1, §12, §16; user guide §8.
+64. What happens to the experiment design when the notebook's output folder changes (issue
+    #98)?
+    *Decided (owner, 2 November 2026):* the design belongs to its output folder. Since
+    PP-10a a run reported the other folder's design as a design change but used it, so a
+    design (its confirmations and controls) confirmed for one output folder could be
+    written into another. Now changing the output folder reads the design from the new
+    folder (`load_design`, an unreadable file refused and kept), or asks the questions
+    again when it holds none; nothing is carried over and nothing is written until an
+    answer (the folder may still be being typed), and the design card says which. The run
+    is gated as before, so it runs only on the new folder's confirmed design. No copy
+    action: the user answers again, or copies the file. Contract §12; user guide §4.

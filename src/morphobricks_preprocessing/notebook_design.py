@@ -97,15 +97,21 @@ class _DesignCard:
         output = Path(self._output_folder() or default_output_folder(folder))
         return None if check_output_folder(folder, output) else output
 
-    def _open_design(self) -> None:
+    def _open_design(self, *, output_changed: bool = False) -> None:
         """Load the saved design, or start a new one, once the labels are confirmed.
 
         A saved file that cannot be read is left as it is (owner decision of 31 October
         2026): nothing is written until the user corrects it or answers a question again,
         and the questions start unanswered, so step 3 cannot run on a guessed design.
+
+        After the output folder changed (``output_changed``, issue #98) the design is read
+        from the new folder, or asked again without one, and nothing is written until an
+        answer: the folder is still being typed, and the earlier folder's answers (its
+        confirmations and controls) belong to that folder.
         """
         repeats = self.preflight.dataset.repeats
         output = self._design_folder()
+        self._design_output = output
         changes, problem, saved = DesignChanges(), None, False
         if output is None:
             design = default_design(repeats)
@@ -123,17 +129,25 @@ class _DesignCard:
         reopen = not (saved and design.confirmed and not changes.any)
         ui.set_visible(self.design_editor, reopen)
         ui.set_visible(self.design_change, not reopen)
-        self._design_note = self._design_load_note(design, changes, problem, saved)
+        self._design_note = self._design_load_note(design, changes, problem, saved, output)
+        if output_changed:
+            self._design_note = _output_changed_note(output, saved, problem) + self._design_note
         self._design_refusal = ""
         ui.set_visible(self.design_card, True)
-        if self._design_unreadable:
-            self._design_saved = False
+        if self._design_unreadable or output_changed:
+            self._design_saved = saved and not changes.any and not self._design_unreadable
+            self._design_waiting = output_changed and not self._design_saved
         else:
             self._save_design()
         self._design_changed()
 
     def _design_load_note(
-        self, design: ExperimentDesign, changes: DesignChanges, problem: str | None, saved: bool
+        self,
+        design: ExperimentDesign,
+        changes: DesignChanges,
+        problem: str | None,
+        saved: bool,
+        output: Path | None,
     ) -> str:
         """Say what was found in the output folder: an unreadable file, changes, a template."""
         if problem:
@@ -162,7 +176,13 @@ class _DesignCard:
                     "No longer found: " + ", ".join(f"{c}/{b}" for c, b in changes.removed) + "."
                 )
             return ui.status("info", "The folders changed since the design was saved.", lines)
-        if self._design_template is not None and not design.confirmed:
+        template = self._design_template
+        if (
+            template is not None
+            and output is not None
+            and template.parent == output.resolve()
+            and not design.confirmed
+        ):
             return ui.status(
                 "info",
                 f"Check folder wrote {DESIGN_FILENAME}, prefilled from the folders.",
@@ -302,7 +322,7 @@ class _DesignCard:
     def _save_design(self) -> None:
         """Write the design to the output folder under its lock; the log goes to the details."""
         output = self._design_folder()
-        self._design_saved = False
+        self._design_saved = self._design_waiting = False
         if output is None or self.design is None:
             return
         with self.log.attached():
@@ -356,6 +376,11 @@ class _DesignCard:
                 f"Not saved: the unreadable {DESIGN_FILENAME} is kept as it is until you "
                 "correct it or answer a question."
             )
+        elif getattr(self, "_design_waiting", False) and self._design_folder() is not None:
+            where = (
+                "Not saved yet: your next answer saves it in "
+                f"<b>{html.escape(str(self._design_folder() / DESIGN_FILENAME))}</b>."
+            )
         else:
             where = (
                 "Not saved: the output folder is not set or cannot be written; the answers "
@@ -404,3 +429,26 @@ class _DesignCard:
     def _design_pending(self) -> bool:
         """Return True while the design shown in step 1 still has questions to answer."""
         return self._show_design and not self._design_confirmed()
+
+
+def _output_changed_note(output: Path | None, saved: bool, problem: str | None) -> str:
+    """Say that the design follows the new output folder and what was found there (#98)."""
+    if problem:
+        return ""  # the refusal of the new folder's file says it all
+    if output is None:
+        title = "The output folder changed: the experiment design is asked again."
+        lines = ["Choose an output folder outside the experiment folder to save the answers."]
+    elif saved:
+        title = "The output folder changed: its experiment design was read."
+        lines = [
+            f"Read from <b>{html.escape(str(output / DESIGN_FILENAME))}</b>; nothing from the "
+            "previous output folder was carried over."
+        ]
+    else:
+        title = "The output folder changed: the experiment design is asked again."
+        lines = [
+            f"<b>{html.escape(str(output))}</b> holds no {DESIGN_FILENAME}. The answers given "
+            "for the previous output folder (confirmations and controls) are not carried "
+            "over: answer the questions below; each answer is saved in the new folder."
+        ]
+    return ui.status("info", title, lines, raw=True)

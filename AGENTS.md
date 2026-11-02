@@ -746,8 +746,10 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
    3 shows a "Before you run" checklist naming the first thing still to do, and Run stays
    disabled until it is empty.
 2. **Inputs reset what depends on them.** Changing the experiment folder resets the
-   preflight, the confirmations and the axis roles. Changing an axis role resets the
-   preview confirmation. Choosing another CSV clears the old statistics.
+   preflight, the confirmations and the axis roles. Changing the output folder reads the
+   experiment design from the new folder, or asks it again (#98); never carried over.
+   Changing an axis role resets the preview confirmation. Choosing another CSV clears the
+   old statistics.
 3. **Explain every choice live.** Each axis card shows its length, the suggested role and a
    dropdown with descriptive options ("Z - depth (focal planes)"). Under it, a sentence
    updates with the choice ("3 depth slices, numbered z = 0 to 2; each becomes its own

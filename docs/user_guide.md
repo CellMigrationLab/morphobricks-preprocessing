@@ -289,6 +289,11 @@ results or comparing another grouping.
        naming the line and column, and the file is left as it is. Correct the file and
        undo and confirm the labels again to read it, or answer the questions again: the
        first answer replaces the file.
+     - The design belongs to its output folder. If you change the output folder, the design
+       is read from the new folder (its own answers and controls, a blue box says so), or,
+       when it holds none, the questions are asked again: answers given for the previous
+       output folder are never carried over, and nothing is written in the new folder until
+       you answer. Changing back reads the first folder's design again.
    - **Pixel sizes (calibration)** lists the size of one pixel along X, Y, Z and T for every
      image (images with the same sizes share a row), with its source: **header** (the image
      metadata), **stated** (in **calibration.csv**), **pixels** (stated as deliberately

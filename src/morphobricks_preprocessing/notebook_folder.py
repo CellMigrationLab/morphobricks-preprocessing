@@ -359,6 +359,10 @@ class _FolderStep:
 
     def _output_edited(self) -> None:
         self._update_output_hint()
+        # A design belongs to its output folder (issue #98): another folder's design is
+        # read, or the questions asked again; nothing is carried over or written here.
+        if self.design is not None and self._design_folder() != self._design_output:
+            self._open_design(output_changed=True)
         # "What will happen" and the free disk space depend on the output folder.
         if hasattr(self, "readiness"):
             self._refresh_run_step()
