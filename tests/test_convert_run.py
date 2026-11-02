@@ -338,17 +338,32 @@ def test_every_row_is_recomputed_and_equals_the_originals_rows(tmp_path):
     assert report["experiment_root_changed"] and report["design"] is not None
 
 
-def test_the_run_warns_when_a_source_or_a_copy_changed_after_the_conversion(tmp_path):
+def test_the_run_warns_when_a_source_changed_after_the_conversion(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
     (exp / "ctrl" / "r1" / "a.tif").unlink()
-    copy = copies / "drug" / "r1" / "a.tif"
-    os.utime(copy, ns=(copy.stat().st_atime_ns, copy.stat().st_mtime_ns + 10**9))
     run = run_experiment(copies, AxisMapping("ZYX", tuple("ZYX")), output_folder=tmp_path / "o")
     assert run.written
     found = {issue.code: issue for issue in run.issues}
     assert found["conversion_source_changed"].paths == ("ctrl/r1/a.tif",)
-    assert found["copy_changed_after_conversion"].paths == ("drug/r1/a.tif",)
+    assert not found["conversion_source_changed"].is_error
+
+
+def test_a_copy_changed_after_the_conversion_stops_the_run_before_it_writes(tmp_path):
+    # Owner decision of 2 November 2026 (PP-12): the bricks would refuse the run anyway.
+    exp, copies, out = swapped_experiment(tmp_path / "exp"), tmp_path / "copies", tmp_path / "o"
+    assert convert_experiment(exp, SWAPPED, copies).written
+    copy = copies / "drug" / "r1" / "a.tif"
+    os.utime(copy, ns=(copy.stat().st_atime_ns, copy.stat().st_mtime_ns + 10**9))
+    run = run_experiment(copies, AxisMapping("ZYX", tuple("ZYX")), output_folder=out)
+    assert not run.written and run.read == ()
+    found = {issue.code: issue for issue in run.issues}["copy_changed_after_conversion"]
+    assert found.is_error and found.paths == ("drug/r1/a.tif",)
+    assert "Convert the originals again into a new folder" in found.action
+    assert sorted(p.name for p in out.iterdir()) == [
+        "discovery_report.json",
+        "discovery_report.txt",
+    ]
 
 
 def test_an_unreadable_conversion_record_stops_the_run(tmp_path):
