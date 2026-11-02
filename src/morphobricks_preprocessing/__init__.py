@@ -67,6 +67,7 @@ from .design import (
     reconcile_design,
     write_experiment_design,
 )
+from .design_edit import DesignEdit, DesignEditError, apply_design_edit
 from .discovery import (
     FOV_KEY,
     MISSING_TEXT,
@@ -187,6 +188,7 @@ from .run import (
     Preflight,
     RunResult,
     SamplePlane,
+    edit_design,
     preflight,
     run_experiment,
     sample_planes,
@@ -252,6 +254,8 @@ __all__ = [
     "DatasetReport",
     "DesignChanges",
     "DesignCheckError",
+    "DesignEdit",
+    "DesignEditError",
     "DesignFormatError",
     "DesignRow",
     "DiscoveryResult",
@@ -297,6 +301,7 @@ __all__ = [
     "ValidationIssue",
     "XycPlane",
     "ZarrUnavailableError",
+    "apply_design_edit",
     "axis_disagreements",
     "axis_length_ranges",
     "balance_table",
@@ -320,6 +325,7 @@ __all__ = [
     "default_output_folder",
     "default_repeat_groups",
     "design_issues",
+    "edit_design",
     "discover_experiment",
     "file_mapping_for",
     "file_sha256",

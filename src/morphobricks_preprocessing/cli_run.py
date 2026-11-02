@@ -26,6 +26,7 @@ from morphobricks_normalization.ranges import (
 
 from .axes import AxisMapping, reference_axes
 from .axis_review import review_axes
+from .cli_design import design_instructions
 from .design import (
     DESIGN_FILENAME,
     DesignFormatError,
@@ -434,21 +435,7 @@ def _design_template(
             target = write_experiment_design(design, output / DESIGN_FILENAME)
     except OutputLockedError as exc:
         return None, format_issues([lock_issue(exc)])
-    lines = [
-        f"The experiment design was written to {target}. Open it in a spreadsheet program "
-        "or a text editor, one row per biological-repeat folder of each condition:",
-        "  - repeat_group: rows with the same value are the same biological repeat across "
-        "conditions (by default the folder name). Change it to pair repeats whose folders "
-        "are named differently; each group may hold one folder per condition. It must not "
-        "be empty or NA.",
-        "  - confirmed_on: the date of the confirmation as YYYY-MM-DD, or empty (the run "
-        "fills it in).",
-        "  - confirmed: set it to true in every row of a repeat group once you are sure its "
-        "images were prepared and acquired under the same circumstances, so they are "
-        "comparable.",
-        "  - control: set it to true in the rows of control conditions (optional; recorded only).",
-        "Then run again.",
-    ]
+    lines = [*design_instructions(target, output), "Then run again."]
     return target, "\n".join(lines)
 
 

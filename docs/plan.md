@@ -1212,3 +1212,22 @@ Raised during review; to be decided before the milestones that need them:
     keeps the recorded value until it is given the new one, and then removes a
     `mask_relationships.json` written for other masks (question 48). The recorded-experiment
     lookup is one helper shared by both commands (`cli_run.use_recorded_experiment`).*
+57. Where does the experiment design template come from, and can it be confirmed without
+    editing the CSV (PP-8c, from a run on real data)?
+    *Decided (2 November 2026, owner): earlier, and from the command line. `check` also
+    writes `experiment_design.csv` prefilled from the folders (conditions, biological
+    repeats, `repeat_group` the folder name, counts; `confirmed=false`, `control=false`)
+    when the output folder holds none, under the lock, and only when the folders have no
+    error; it never replaces a design, edited or unreadable. This amends design v0.4 §1
+    ("`check` … writes only the report"). A new command `design --output OUT` prints the
+    design and what is still unconfirmed, and changes it without editing the file:
+    `--repeat-group CONDITION/REPEAT=GROUP`, `--control`/`--no-control CONDITION`,
+    `--confirm GROUP` and `--confirm-all` (a separate flag rather than `--confirm all`, so a
+    repeat group named `all` stays confirmable). It reads, changes and writes under the lock
+    with the run's reader (`read_experiment_design`) and validator (`design_issues`), fills
+    `confirmed_on`, refuses unknown names and a group whose rows break the rules, and
+    changes nothing when it refuses. It does not rediscover the folders: it works on the
+    rows `check` or `run` wrote, and the run reconciles them with the folders as before, so
+    a group that gained a folder since is asked again. Python: `edit_design` with
+    `DesignEdit` (`apply_design_edit` without files). The confirmation stays an explicit
+    act of the user: nothing confirms by default. Contract §12.*

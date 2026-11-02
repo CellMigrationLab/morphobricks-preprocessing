@@ -393,14 +393,31 @@ for images that are not three channels of a whole-number pixel type stops the ru
 (`rgb_not_possible`).
 
 `run` also needs the experiment design (§4, step 1). It reads `experiment_design.csv` from
-the output folder (or the file given with `--design`). The first time, or when folders were
-added, it writes that file and stops, so you can fill it in with a spreadsheet program or a
-text editor: give rows the same `repeat_group` to pair biological repeats named differently,
-set `confirmed` to `true` in every row of a repeat group whose images are comparable, and
-optionally `control` to `true` for control conditions. Then run again. `check` says whether
-the design is confirmed, or why a saved one cannot be read (naming the line and column); it
-never writes the file. `check` writes only the report, `discovery_report.json` and
-`discovery_report.txt`, to the output folder; `run` writes it on every run, also one that
+the output folder (or the file given with `--design`). `check` writes that file, prefilled
+from the folders, when the output folder holds none (one row per biological-repeat folder of
+each condition, the repeat group named after the folder, nothing confirmed, no control); it
+never replaces a design that is there. `run` does the same the first time, or when folders
+were added, and stops. Fill it in with a spreadsheet program or a text editor: give rows the
+same `repeat_group` to pair biological repeats named differently, set `confirmed` to `true`
+in every row of a repeat group whose images are comparable, and optionally `control` to
+`true` for control conditions. Or use the `design` command, which changes the file for you:
+
+```bash
+morphobricks-preprocessing design --output /data/exp1_MorphoBricks_Preprocessing
+morphobricks-preprocessing design --output /data/exp1_MorphoBricks_Preprocessing \
+    --repeat-group drug/d2=day2 --control ctrl --confirm day1 --confirm day2
+```
+
+The first prints the design as a table and the repeat groups not confirmed yet; nothing is
+confirmed unless you ask. The second moves the folder `drug/d2` into the repeat group
+`day2` (pairing it with the other conditions' `day2`), marks `ctrl` as a control and
+confirms the two groups, filling in today's date. `--confirm-all` confirms every group not
+confirmed yet, and `--no-control` unmarks a control. A group whose folders break the rules
+(two folders of one condition, a name such as `NA`) is not confirmed, an unknown name is
+refused, and the file is then left as it was. Then run again. `check` also says whether the
+design is confirmed, or why a saved one cannot be read (naming the line and column). Both
+commands write the report, `discovery_report.json` and `discovery_report.txt`, to the
+output folder; `run` writes it on every run, also one that
 stops (`status` `stopped` or `written`, with the SHA-256 of the manifest it describes).
 A run that stops says so, says that no table or manifest was written, and names what it
 did write: the report, and the design template when it wrote one. Only a run refused before
@@ -750,6 +767,22 @@ for group in design.groups:
     design = design.with_confirmed(group, True, "2026-10-26")
 result = run_experiment("/data/exp1", mapping, design=design)
 pairing = design.repeat_groups()  # {(condition, biological_repeat): repeat_group}
+```
+
+The `design` command's Python equivalent changes `experiment_design.csv` in the output
+folder under its lock (refusing what the command refuses, with `DesignEditError`):
+
+```python
+from morphobricks_preprocessing import DesignEdit, edit_design
+
+design, written = edit_design(
+    "/data/exp1_MorphoBricks_Preprocessing",
+    DesignEdit(
+        repeat_groups={("treated", "rep2_day2"): "rep2"},
+        control=("ctrl",),
+        confirm=("rep1", "rep2"),
+    ),
+)  # written is None when nothing changed
 ```
 
 Later bricks read the file with `read_experiment_design(path)`.

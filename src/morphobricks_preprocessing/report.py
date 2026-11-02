@@ -135,6 +135,54 @@ def design_summary(design: ExperimentDesign) -> str:
     return "\n".join(lines)
 
 
+def design_table(design: ExperimentDesign) -> str:
+    """Show the design's rows as a table, then the repeat groups still to confirm.
+
+    Parameters
+    ----------
+    design
+        The experiment design.
+
+    Returns
+    -------
+    str
+        One row per biological-repeat folder of each condition (``experiment_design.csv``
+        without its schema column), then which repeat groups are not confirmed yet.
+    """
+    rows = [
+        [
+            "condition",
+            "biological repeat",
+            "repeat group",
+            "control",
+            "images",
+            "technical repeats",
+            "confirmed",
+        ]
+    ]
+    for row in design.rows:
+        on = f", {row.confirmed_on}" if row.confirmed_on else ""
+        confirmed = f"yes{on}" if row.confirmed else "no"
+        rows.append(
+            [
+                row.condition,
+                row.biological_repeat,
+                row.repeat_group,
+                "yes" if row.control else "no",
+                str(row.image_count),
+                str(row.technical_repeat_count),
+                confirmed,
+            ]
+        )
+    waiting = design.unconfirmed_groups
+    last = (
+        f"Not confirmed yet: {', '.join(waiting)}"
+        if waiting
+        else "Every repeat group is confirmed."
+    )
+    return format_table(rows) + "\n" + last
+
+
 def mapping_summary(mapping: AxisMapping, files: Iterable = ()) -> str:
     """Describe each axis on one line: its label, its length across files and its role."""
     ranges = axis_length_ranges(mapping, files)

@@ -23,7 +23,8 @@ succeeds; the earlier output is then replaced.
 from __future__ import annotations
 
 from .calibrate import write_calibration
-from .check_step import write_check_report
+from .check_step import CheckOutputs, write_check_outputs, write_check_report
+from .design_file import edit_design, write_design_template
 from .lock import LOCK_FILENAME, LockHolder, OutputLockedError, read_lock, remove_stale_lock
 from .modes import FULL, MODES, RESTART
 from .pipeline import run_experiment
@@ -35,16 +36,20 @@ __all__ = [
     "LOCK_FILENAME",
     "MODES",
     "RESTART",
+    "CheckOutputs",
     "LockHolder",
     "OutputLockedError",
     "Preflight",
     "RunResult",
     "SamplePlane",
+    "edit_design",
     "preflight",
     "read_lock",
     "remove_stale_lock",
     "run_experiment",
     "sample_planes",
     "write_calibration",
+    "write_check_outputs",
     "write_check_report",
+    "write_design_template",
 ]

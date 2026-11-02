@@ -1,8 +1,10 @@
-"""Command-line interface: ``morphobricks-preprocessing check``, ``run``, ``masks``, ``calibrate``.
+"""Command-line interface: ``check``, ``run``, ``masks``, ``calibrate`` and ``design``.
 
 ``check`` runs the preflight (folders and image headers, no pixels) and prints
-what will be analysed, the problems found and the suggested axis roles; it writes only
-the report (``discovery_report.json`` and ``.txt``) to the output folder.
+what will be analysed, the problems found and the suggested axis roles; it writes the
+report (``discovery_report.json`` and ``.txt``) to the output folder, and the experiment
+design template, prefilled from the folders, when the folder holds no design.
+``design`` (:mod:`.cli_design`) shows, checks and changes that design without editing it.
 ``run`` (:mod:`.cli_run`) processes the experiment with the axis roles given in ``--axes``,
 or those of the earlier run in the same output folder; roles are never taken from metadata
 without being stated. It also needs the
@@ -30,6 +32,7 @@ from pathlib import Path
 
 from .axis_review import review_axes
 from .cli_calibrate import add_calibrate_parser, calibrate_command, calibration_summary
+from .cli_design import add_design_parser, design_command, design_instructions
 from .cli_masks import add_masks_arguments, masks_command
 from .cli_run import add_run_arguments, command_preflight, parse_size, run_command
 from .design import (
@@ -53,7 +56,7 @@ from .run import (
     OutputLockedError,
     Preflight,
     remove_stale_lock,
-    write_check_report,
+    write_check_outputs,
 )
 from .run.preflight import fit_calibration
 
@@ -86,6 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     _common(masks, recorded=True)
     add_masks_arguments(masks)
     add_calibrate_parser(commands)
+    add_design_parser(commands)
     return parser
 
 
@@ -96,6 +100,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "calibrate":
         return calibrate_command(args)
+    if args.command == "design":
+        return design_command(args)
     if getattr(args, "no_exclude", False) and args.exclude:
         parser.error("--exclude and --no-exclude cannot be given together")
     handler = _attach_log(args.log) if getattr(args, "log", None) else None
@@ -231,19 +237,23 @@ def _check(args: argparse.Namespace) -> int:
             f"Suggested image type: {type_review.suggested}, because {type_review.reason}. "
             "'run' uses it unless you give --image-type."
         )
-    path, refusal = write_check_report(pre, args.output, review)
+    written = write_check_outputs(pre, args.output, review)
+    if written.design is not None:
+        print()
+        print("\n".join(design_instructions(written.design, written.design.parent)))
     print()
+    refusal, path = written.refusal, written.report
     print(format_issues([refusal]) if refusal else f"Report written to {path}" if path else "")
     return 0 if pre.ok and not axis_errors and refusal is None else 1
 
 
 def _print_design(args: argparse.Namespace, pre: Preflight) -> None:
-    """Print the experiment design in the output folder; ``check`` never writes it."""
+    """Print the experiment design in the output folder; ``check`` never replaces it."""
     output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
     try:
         design, _ = load_design(output, pre.dataset.repeats)
     except DesignCheckError as exc:
-        # Refused and left as it is: 'check' never writes the design.
+        # Refused and left as it is: 'check' never replaces a design.
         design, refusal = None, exc.issues[0]
     print()
     if design is None:
@@ -254,8 +264,8 @@ def _print_design(args: argparse.Namespace, pre: Preflight) -> None:
         print(design_summary(design))
     else:
         print(
-            "Experiment design: not confirmed yet. 'run' writes experiment_design.csv to "
-            "the output folder for you to confirm."
+            "Experiment design: not confirmed yet. 'check' writes experiment_design.csv, "
+            "prefilled from the folders, to the output folder for you to confirm."
         )
 
 
