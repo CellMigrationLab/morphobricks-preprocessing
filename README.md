@@ -82,6 +82,36 @@ The notebook's Step 0 can set this up automatically: it uses a nearby checkout o
 installed package, and installs missing requirements into the active kernel. A standalone
 download installs from GitHub if needed (internet access and Git required).
 
+### Notebook: Google Colab and JupyterLab
+
+[`notebooks/MorphoBricks_Preprocessing.ipynb`](notebooks/MorphoBricks_Preprocessing.ipynb)
+runs unchanged in Google Colab and in JupyterLab (also as a LabConstrictor app). It follows
+LabConstrictor's
+[notebook portability guide](https://github.com/CellMigrationLab/LabConstrictor/blob/main/.tools/docs/notebook_portability.md):
+
+1. Every code cell starts with `# @title …` (Colab's cell header) and is hidden: the notebook is
+   driven by widgets, so no code is edited. Explanations are in Markdown cells.
+2. Colab-only setup runs in Step 0 inside `if "google.colab" in sys.modules:`: it mounts
+   Google Drive at `/content/drive` and enables Colab's custom widget manager (the notebook
+   needs ipywidgets 8). Locally Step 0 prints the Python version, platform and working folder.
+   No shell or line magics are used; pip runs with the kernel's Python.
+3. When the package is missing (always on a fresh Colab runtime), Step 0 installs the release
+   named by `RELEASE_TAG` (currently `v0.4.0rc2`), never the moving `main` branch, and prints
+   which source and version it uses. A checkout around the notebook, or an installed package,
+   is used first.
+4. `current_version` and `notebook_name` in Step 0 are the names LabConstrictor's version check
+   reads; [`notebooks/notebook_latest_versions.yaml`](notebooks/notebook_latest_versions.yaml)
+   lists the latest version. At each release, `RELEASE_TAG`, `current_version`, the index and
+   the tag named in the Step 0 Colab callout move to the new tag before it is tagged
+   ([plan](docs/plan.md) §10, release checklist); `tests/test_notebook_file.py` checks that
+   they agree, that the rules above hold, and runs the notebook in a local kernel. The Colab
+   run itself is checked by hand.
+5. On Colab, Step 0 installs the `notebook` and `zarr` extras; locally it installs `notebook`.
+6. Steps 0 and 1 have *Colab users* / *JupyterLab users* callouts. On Colab, keep the data and
+   the output folder on Google Drive; the [user guide](docs/user_guide.md) §1 explains why, and
+   the limits of Google Drive: on Drive the lock cannot guard an output folder across machines
+   or sessions, so use one session at a time per output folder.
+
 From a terminal:
 
 ```bash

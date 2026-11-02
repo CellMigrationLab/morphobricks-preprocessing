@@ -1,5 +1,3 @@
-import ast
-import json
 import os
 from pathlib import Path
 
@@ -29,8 +27,6 @@ from morphobricks_preprocessing.notebook_ui import (  # noqa: E402
 from morphobricks_preprocessing.planes import DEFAULT_MEMORY_LIMIT, plane_layout  # noqa: E402
 from morphobricks_preprocessing.validation import error, warning  # noqa: E402
 from tiff_tree import write_data, write_file  # noqa: E402
-
-NOTEBOOK = Path(__file__).parents[1] / "notebooks" / "MorphoBricks_Preprocessing.ipynb"
 
 
 @pytest.fixture
@@ -487,6 +483,7 @@ def test_browse_fills_the_path_or_explains(experiment, monkeypatch):
     monkeypatch.setattr(ui, "ask_directory", lambda initial: None)  # no dialog possible
     nb.folder_browse.click()
     assert "could not be opened" in nb.folder_status.value
+    assert "<b>Copy path</b>" in nb.folder_status.value  # how to paste on Google Colab
     assert nb.folder.value == str(experiment)
 
 
@@ -1417,7 +1414,8 @@ def test_statistics_of_another_table(experiment, monkeypatch):
     assert later.stats_next.value == ""
     monkeypatch.setattr(ui, "ask_open_file", lambda initial, filetypes: None)
     later.csv_browse.click()
-    assert "could not be opened" in later.stats_status.value
+    assert "file dialog could not be opened" in later.stats_status.value
+    assert "right-click the file" in later.stats_status.value
 
 
 def test_step_4_is_optional_and_keeps_its_controls_in_the_group_card():
@@ -1502,7 +1500,12 @@ def test_tiles_table_and_checklist():
 
 @pytest.mark.parametrize(
     ("text", "expected"),
-    [('  "C:/data/exp"  ', "C:/data/exp"), ("‘/data’", "/data"), ("", "")],
+    [
+        ('  "C:/data/exp"  ', "C:/data/exp"),
+        ("‘/data’", "/data"),
+        ("", ""),
+        ("'/content/drive/MyDrive/exp 1' ", "/content/drive/MyDrive/exp 1"),  # Colab Copy path
+    ],
 )
 def test_clean_path(text, expected):
     assert ui.clean_path(text) == expected
@@ -1510,48 +1513,6 @@ def test_clean_path(text, expected):
 
 def test_clean_path_expands_home():
     assert ui.clean_path("~/data") == os.path.expanduser("~/data")
-
-
-# The notebook file -------------------------------------------------------------------------
-
-
-def _notebook():
-    return json.loads(NOTEBOOK.read_text(encoding="utf-8"))
-
-
-def test_notebook_is_valid_and_has_no_outputs():
-    notebook = _notebook()
-    assert notebook["nbformat"] == 4
-    code = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
-    assert all(cell["outputs"] == [] and cell["execution_count"] is None for cell in code)
-
-
-def test_notebook_code_cells_are_hidden_and_titled():
-    for cell in _notebook()["cells"]:
-        if cell["cell_type"] == "code":
-            assert cell["metadata"]["jupyter"]["source_hidden"] is True
-            assert cell["metadata"]["jupyterlabHideCode"]["locked"] is True
-            assert cell["source"][0].startswith("# @markdown ### Run to ")
-
-
-def test_notebook_keeps_processing_in_the_package():
-    sources = [
-        "".join(c["source"][1:]).strip() for c in _notebook()["cells"] if c["cell_type"] == "code"
-    ]
-    # Step 0 must work before the package or third-party dependencies are installed.
-    setup_imports = set()
-    for node in ast.walk(ast.parse(sources[0])):
-        if isinstance(node, ast.Import):
-            setup_imports.update(alias.name.split(".")[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            setup_imports.add(node.module.split(".")[0])
-    assert setup_imports <= {"subprocess", "sys", "importlib", "pathlib"}
-    assert sources[1:] == [
-        "notebook.folder_step()",
-        "notebook.axis_step()",
-        "notebook.run_step()",
-        "notebook.results_step()",
-    ]
 
 
 def test_widgets_use_99_percent_width_and_bold_paths(experiment):
@@ -1564,31 +1525,6 @@ def test_widgets_use_99_percent_width_and_bold_paths(experiment):
         assert "<code>" not in source
     nb = checked(experiment)
     assert "<b>" in nb.output_hint.value and "<code>" not in nb.labels_table.value
-
-
-def test_notebook_names_buttons_that_exist():
-    text = "".join("".join(c["source"]) for c in _notebook()["cells"])
-    nb = PreprocessingNotebook()
-    for button in (
-        nb.check_button,
-        nb.labels_confirmed.button,
-        nb.preview_button,
-        nb.preview_checked.button,
-        nb.missing_as_singleton.button,
-        nb.confirm_button,
-        nb.image_type_checked.button,
-        nb.run_button,
-        nb.statistics_button,
-    ):
-        assert f"**{button.description.strip()}**" in text
-
-
-def test_notebook_cells_run():
-    namespace: dict = {}
-    for cell in _notebook()["cells"]:
-        if cell["cell_type"] == "code":
-            exec("".join(cell["source"]), namespace)  # noqa: S102 - our own notebook
-    assert isinstance(namespace["notebook"], PreprocessingNotebook)
 
 
 def test_preview_caption_of_a_reduced_plane():

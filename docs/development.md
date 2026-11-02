@@ -25,6 +25,9 @@ functions the tests use.
 The notebook's Step 0 contains a standalone bootstrap using only the standard library,
 so it can locate a checkout or install missing requirements before importing the package.
 Its environment alternatives are tested without installing packages during the test suite.
+Colab-only setup sits inside `if "google.colab" in sys.modules:` and the GitHub installation
+is pinned to the release in `RELEASE_TAG` (plan §12 question 58);
+`tests/test_notebook_file.py` checks these rules and runs the notebook in a real kernel.
 
 ## Style
 

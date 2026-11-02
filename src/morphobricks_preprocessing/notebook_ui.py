@@ -1088,11 +1088,7 @@ class PreprocessingNotebook:
     def _browse(self, target: widgets.Text) -> None:
         chosen = ui.ask_directory(ui.clean_path(target.value))
         if chosen is None:
-            self.folder_status.value = ui.status(
-                "warn",
-                "The folder dialog could not be opened here.",
-                ["Paste the path of the folder into the box instead."],
-            )
+            self.folder_status.value = ui.no_dialog_status("folder", "the folder")
         elif chosen:
             target.value = chosen
 
@@ -2196,11 +2192,7 @@ class PreprocessingNotebook:
         start = str(Path(current).parent) if current else ui.clean_path(self.folder.value)
         chosen = ui.ask_open_file(start, (("Histogram tables", "*.csv"), ("All files", "*.*")))
         if chosen is None:
-            self.stats_status.value = ui.status(
-                "warn",
-                "The file dialog could not be opened here.",
-                ["Paste the path of the plane_histograms.csv file into the box instead."],
-            )
+            self.stats_status.value = ui.no_dialog_status("file", "the plane_histograms.csv file")
         elif chosen:
             self.csv_file.value = chosen
 

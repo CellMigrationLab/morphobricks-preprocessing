@@ -299,6 +299,8 @@ API, CLI). The notebook and CLI only call the API.
   *Setup feedback: standalone Step 0 detects the environment, prefers a nearby checkout,
   reuses an installed package, or installs missing requirements into the active kernel.*
   *Step-1 feedback: centre the folder-label table's headers and contents consistently.*
+  *v0.4.0 (PP-8d, question 58): the notebook runs on Google Colab and in JupyterLab following
+  LabConstrictor's portability guide; its GitHub installation is pinned to a release tag.*
   *Notebook guidance feedback: separate "What next?" boxes show the next action in larger
   text, following the current confirmations. Step-1 message details are collapsed with
   persistent orange warning and red error counts. Step-3 conversion settings use an
@@ -381,6 +383,20 @@ API, CLI). The notebook and CLI only call the API.
   35.*
 - **Release v0.3.1:** `position_id` names an image with the other image extensions bricks
   read (MorphoBricks D85, PR #33). *To be tagged, see question 36.*
+- **PP-10 (notebook cards) notes:** a button on the `output_locked` card that removes the
+  lock of a stopped run (owner, 2 November 2026, PP-8d review: Colab disconnects leave
+  locks behind). Same rule as `--remove-stale-lock`: only on that request, never the lock
+  of a process still running on the same computer. Until then the notebook's "Common
+  problems" gives a `remove_stale_lock(...)` code cell. *To do in PP-10.*
+- **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
+  candidates, in the release PR before the tag is pushed:
+  - set `version` in `pyproject.toml`;
+  - set the notebook's pin (question 58): `RELEASE_TAG` in Step 0 to the new tag,
+    `current_version` to the tag without "v", the same version in
+    `notebooks/notebook_latest_versions.yaml`, and the tag named in the Step 0 Colab callout
+    (`tests/test_notebook_file.py` checks that the four agree);
+  - run the notebook by hand on Google Colab with the PR #118 checklist (the tests run it
+    only in a local kernel).
 
 ## 11. Tests and acceptance criteria
 
@@ -1235,3 +1251,32 @@ Raised during review; to be decided before the milestones that need them:
     `--remove-stale-lock`, as `check`, `run` and `masks` do (the `output_locked` message
     tells users to give it to the command). Same rule: the lock is removed only on that
     request, and never one of a process still running on the same computer.*
+58. How does the notebook run on Google Colab, and which release does it install (PP-8d)?
+    *Decided (2 November 2026, owner's PP-8d brief; supersedes the "Local Jupyter (not
+    Colab-first)" target): one notebook file for Google Colab and JupyterLab, following
+    LabConstrictor's notebook portability guide. Every code cell starts with `# @title`, and
+    explanations are in Markdown cells. Every code cell keeps its source hidden: the notebook
+    is an app-like widget notebook in which nothing is edited (LabConstrictor's code-hiding
+    guide), so this differs from fiberfeatures, whose settings cells stay visible. Colab-only
+    code runs inside `if "google.colab" in sys.modules:` in Step 0: Google Drive is mounted
+    at `/content/drive` and Colab's custom widget manager is enabled (the package needs
+    ipywidgets 8; Colab ships 7). Locally Step 0 prints the Python version, platform and
+    working folder. No shell or line magics; pip runs through `subprocess` with the kernel's
+    Python. When the package is missing, Step 0 installs the release named by `RELEASE_TAG`
+    (v0.4.0rc2 first), never an unpinned `main`; a nearby checkout and an installed package
+    are still used first, and Step 0 prints which one and its version. `current_version`
+    equals the tag without "v" and `notebook_name` the file name, as LabConstrictor's
+    version check reads them, with `notebooks/notebook_latest_versions.yaml` as the index;
+    the pin is moved at every release (§10, release checklist). Steps 0 and 1 have "Colab
+    users" / "JupyterLab users" callouts (data and results on Drive, output folder outside
+    the experiment, one session per output folder, a runtime wiped on disconnect). The run's
+    semantics are unchanged on Google Drive; its limits there are in the user guide §1.*
+    *Decided in review (2 November 2026, owner, PR #118 questions): (1) the lock on Google
+    Drive is documented only: one session per output folder, because the lock cannot guard
+    an output folder across machines or sessions on Drive; (2) a button that removes the
+    lock of a stopped run comes in PP-10 (§10, PP-10 notes); until then a documented code
+    cell; (3) no advice to copy the dataset to the runtime's own disk, because reuse
+    depends on the absolute path of the images: data and output stay on Drive; (4) on
+    Colab, Step 0 installs the `notebook` and `zarr` extras (locally `notebook`, unchanged),
+    so OME-Zarr images can be read there; (5) `RELEASE_TAG` stays `v0.4.0rc2`; the owner
+    tags it after PP-8c and PP-8d are merged.*
