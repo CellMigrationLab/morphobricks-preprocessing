@@ -955,9 +955,12 @@ def test_folder_step_shows_the_design_by_default(tmp_path):
             nb.exclude_box,
             nb.check_button,
             nb.folder_status,
+            nb.folder_lock.card,
+            nb.check_report.widget,
             nb.folder_tiles,
             nb.labels_card,
             nb.design_card,
+            nb.calibration_card,
             nb.consistency_card,
             nb.issues_card,
             nb.folder_next,
@@ -1080,10 +1083,8 @@ def test_recommended_settings_hide_and_reset_the_advanced_ones(experiment):
     assert ui.is_visible(nb.advanced)
     assert "1 to 256 bins" in nb.bins_hint.value and "exact histogram" in nb.bins_hint.value
     nb.bins.value = 16
-    nb.force_rebuild.value = True
-    assert "Every image will be read" in nb.plan.value
     nb.recommended.value = True
-    assert nb.bins.value == 256 and not nb.force_rebuild.value
+    assert nb.bins.value == 256
 
 
 def test_the_histogram_range_is_chosen_in_step_3_and_recorded(experiment):
@@ -1211,8 +1212,7 @@ def test_plan_layouts_are_cached_until_their_inputs_change(tmp_path, monkeypatch
         return count
 
     calls.clear()
-    nb.force_rebuild.value = True
-    nb._refresh_run_step()
+    nb.mode.value = "full"  # refreshes the plan
     assert recomputed() == 0
     nb.memory_gib.value = 2.0
     assert recomputed() == 2

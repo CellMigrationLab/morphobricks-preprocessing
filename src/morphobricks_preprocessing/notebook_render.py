@@ -16,6 +16,7 @@ from .design import ExperimentDesign
 from .notebook_options import _SKIPPED_CODES
 from .planes import Plane
 from .run import Preflight
+from .run.recorded import InputChange
 from .validation import ValidationIssue, has_errors, plural
 
 
@@ -50,6 +51,15 @@ def issue_count_chips(issues: Sequence[ValidationIssue]) -> str:
         for kind, items, name in (("error", errors, "error"), ("warn", warnings, "warning"))
         if items
     )
+
+
+def change_lines(changes: Iterable[InputChange]) -> list[str]:
+    """Name each input that differs from the earlier run, with its effect (HTML lines)."""
+    return [
+        f"<b>{html.escape(change.name)}</b>: {html.escape(change.recorded)} → "
+        f"{html.escape(change.given)}. Effect: {html.escape(change.effect)}."
+        for change in changes
+    ]
 
 
 def balance_html(balance: BalanceTable) -> str:

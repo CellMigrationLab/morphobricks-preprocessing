@@ -6,10 +6,13 @@ The notebook ``notebooks/MorphoBricks_Preprocessing.ipynb`` shows the four steps
 1. **Folder** - choose the experiment folder, check it, confirm the labels
    taken from the folder names, and confirm the experiment design: which
    biological repeats belong together across conditions, that they are
-   comparable, and which conditions are controls.
+   comparable, and which conditions are controls; see and state the pixel
+   sizes. The check writes its report (and the design template) to the output
+   folder, as the command line's ``check`` does.
 2. **Axes** - review the role of every image axis, look at planes with the
    preview, and confirm; then confirm the image type (fluorescence or RGB).
-3. **Run** - check that everything is ready, see what will happen, and compute
+3. **Run** - check that everything is ready, see what will happen (the mode and
+   the inputs that changed since the earlier run), and compute
    or update the histogram table; then the intensity checks of the table, with
    their plots.
 4. **Results** - pooled statistics and intensity distributions per group, and the
@@ -46,6 +49,7 @@ from .design import ExperimentDesign
 from .image_type import ImageTypeReview
 from .notebook_axis_preview import _AxisPreview
 from .notebook_axis_step import _AxisStep
+from .notebook_calibration import _CalibrationCard
 from .notebook_design import _DesignCard
 from .notebook_folder import _FolderStep
 from .notebook_options import (
@@ -58,6 +62,7 @@ from .notebook_options import (
     PYRAMID_OPTIONS,
     ROLE_OPTIONS,
 )
+from .notebook_output import _OutputCards
 from .notebook_plots import (
     IntensityPanel,
     distribution_png,
@@ -78,6 +83,7 @@ from .notebook_render import (
 )
 from .notebook_results import _ResultsStep
 from .notebook_run import _RunStep
+from .notebook_run_plan import _RunPlan
 from .notebook_values import display_range
 from .planes import PlaneLayout
 from .run import Preflight, RunResult
@@ -109,7 +115,15 @@ __all__ = [
 
 
 class PreprocessingNotebook(
-    _FolderStep, _DesignCard, _AxisStep, _AxisPreview, _RunStep, _ResultsStep
+    _FolderStep,
+    _DesignCard,
+    _CalibrationCard,
+    _OutputCards,
+    _AxisStep,
+    _AxisPreview,
+    _RunStep,
+    _RunPlan,
+    _ResultsStep,
 ):
     """The steps of the notebook, sharing one state.
 
@@ -158,6 +172,8 @@ class PreprocessingNotebook(
         self._show_output = True
         self._show_design = True
         self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None
+        self._build_output_cards()
+        self._build_calibration_card()
         self._build_folder_step(str(experiment_folder), str(output_folder))
         self._build_axis_step()
         self._build_run_step()
@@ -221,7 +237,9 @@ class PreprocessingNotebook(
             False hides the "Output folder (optional)" card, which sets where this
             brick writes its histogram table; the check then uses the folder in its
             box (the default when empty). The card is shown again when the check
-            finds that folder inside the experiment, so it can be fixed.
+            finds that folder inside the experiment, so it can be fixed. It also
+            leaves out the "Pixel sizes" card, and the check writes nothing (no
+            report, no design template): the step only checks.
         show_next
             False hides the "What next?" box, which names this notebook's next
             steps.
@@ -253,8 +271,8 @@ class PreprocessingNotebook(
         return ui.page(
             "Step 1 · Check the experiment folder" if title is None else title,
             (
-                "Choose the folder with your images. It is checked without reading any pixels "
-                "and without changing anything."
+                "Choose the folder with your images. It is checked without reading any pixels; "
+                "nothing in it is changed."
             )
             if purpose is None
             else purpose,
@@ -265,9 +283,12 @@ class PreprocessingNotebook(
                 self.exclude_box,
                 self.check_button,
                 self.folder_status,
+                self.folder_lock.card,
+                self.check_report.widget,
                 self.folder_tiles,
                 self.labels_card,
                 *([self.design_card] if show_design else []),
+                *([self.calibration_card] if show_output else []),
                 self.consistency_card,
                 self.issues_card,
                 self.folder_next,
@@ -337,6 +358,8 @@ class PreprocessingNotebook(
                 self.run_button,
                 self.progress,
                 self.run_status,
+                self.run_lock.card,
+                self.run_report.widget,
                 self.run_tiles,
                 self.run_issues,
                 self.run_checks.card,

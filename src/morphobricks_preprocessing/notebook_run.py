@@ -7,26 +7,30 @@ import traceback
 from pathlib import Path
 
 import ipywidgets as widgets
-from morphobricks_normalization.csv_io import OUTPUT_FILENAME, read_plane_histograms
+from morphobricks_normalization.csv_io import read_plane_histograms
 from morphobricks_normalization.dtypes import (
     MAX_BIN_COUNT,
     MIN_FLOAT_BIN_COUNT,
     default_bin_count,
     is_integer,
 )
-from morphobricks_normalization.ranges import DEFAULT_ROBUST_QUANTILES
+from morphobricks_normalization.ranges import DEFAULT_ROBUST_QUANTILES, HistogramSettings
 
 from . import notebook_style as ui
 from .axes import AxisReview
 from .axis_review import review_axes
-from .discovery import default_output_folder
-from .manifest import MANIFEST_FILENAME, ManifestFormatError, read_manifest
-from .notebook_options import _PLAN_PATHS, HISTOGRAM_RANGE_OPTIONS, IMAGE_TYPE_NAMES
+from .notebook_options import (
+    _PLAN_PATHS,
+    _WIDE,
+    HISTOGRAM_RANGE_OPTIONS,
+    MODE_HELP,
+    MODE_OPTIONS,
+)
 from .notebook_plots import IntensityPanel
-from .notebook_render import _bins_help, _label, issues_html
+from .notebook_render import _bins_help, _label, change_lines, issues_html
 from .planes import DEFAULT_MEMORY_LIMIT, PlaneLayout, PlaneReadError, format_bytes, plane_layout
 from .report import issue_counts
-from .run import FULL, RESTART, Preflight, RunResult, run_experiment
+from .run import RESTART, Preflight, RunResult, run_experiment
 from .validation import has_errors, plural
 
 
@@ -36,80 +40,10 @@ class _RunStep:
     # Step 3 ------------------------------------------------------------------------------
 
     def _build_run_step(self) -> None:
+        """Build step 3: readiness, settings, mode, what will happen, the run and its results."""
         self.readiness = widgets.HTML()
         self.readiness_card = ui.card("Before you run", [self.readiness])
-        self.recommended = widgets.Checkbox(
-            value=True, description="Use the recommended settings", indent=False
-        )
-        self.recommended_hint = ui.help_text("")
-        self.bins = widgets.BoundedIntText(
-            value=65_536, min=1, max=MAX_BIN_COUNT, description="Bins per plane", style=_label()
-        )
-        self.bins_hint = ui.help_text("")
-        self.histogram_range = widgets.RadioButtons(
-            options=HISTOGRAM_RANGE_OPTIONS, value="minmax", layout=widgets.Layout(width="99%")
-        )
-        self.robust_low = widgets.BoundedFloatText(
-            value=DEFAULT_ROBUST_QUANTILES[0],
-            min=0,
-            max=100,
-            step=0.01,
-            description="Lower quantile (%)",
-            style=_label(),
-        )
-        self.robust_high = widgets.BoundedFloatText(
-            value=DEFAULT_ROBUST_QUANTILES[1],
-            min=0,
-            max=100,
-            step=0.01,
-            description="Upper quantile (%)",
-            style=_label(),
-        )
-        self.robust_box = widgets.VBox([self.robust_low, self.robust_high])
-        ui.set_visible(self.robust_box, False)
-        self.memory_gib = widgets.BoundedFloatText(
-            value=DEFAULT_MEMORY_LIMIT / 2**30,
-            min=0.01,
-            max=4096,
-            step=0.5,
-            description="Memory limit (GiB)",
-            style=_label(),
-        )
-        self.force_rebuild = widgets.Checkbox(
-            description="Recompute every row, even for unchanged images", indent=False
-        )
-        self.advanced = widgets.VBox(
-            [
-                self.bins,
-                self.bins_hint,
-                widgets.HTML("<b>Histogram range</b>"),
-                self.histogram_range,
-                self.robust_box,
-                ui.help_text(
-                    "For histograms that are not exact (float images, and integer images with "
-                    "more values than bins). A few extreme pixels, such as hot pixels, can "
-                    "squeeze every other pixel into a few bins of the minimum-to-maximum range; "
-                    "the run then warns about a narrow range. The robust range bins between "
-                    "the two quantiles and counts the pixels outside separately. 8- and 16-bit "
-                    "histograms are the same either way. Changing it reads every image again."
-                ),
-                self.memory_gib,
-                ui.help_text(
-                    "The most working memory one plane may use. A larger plane is read in "
-                    "blocks instead: the results are the same, but reading takes longer. Raise "
-                    "it only if the computer has enough memory."
-                ),
-                self.force_rebuild,
-                ui.help_text(
-                    "Normally a new run only reads images that are new or changed since the "
-                    "last run. Tick this to start from scratch."
-                ),
-            ]
-        )
-        ui.set_visible(self.advanced, False)
-        self.settings_card = ui.card(
-            "Settings", [self.recommended, self.recommended_hint, self.advanced]
-        )
+        self._build_settings()
         self.plan = widgets.HTML()
         self.plan_card = ui.card("What will happen", [self.plan])
         self.run_button = ui.button(
@@ -148,13 +82,91 @@ class _RunStep:
             self.robust_low,
             self.robust_high,
             self.memory_gib,
-            self.force_rebuild,
+            self.mode,
         ):
             control.observe(lambda _: self._refresh_run_step(), names="value")
         self.histogram_range.observe(
             lambda change: ui.set_visible(self.robust_box, change["new"] == "robust"), names="value"
         )
         self.run_button.on_click(lambda _: self.run())
+
+    def _build_settings(self) -> None:
+        """Build the settings card: the recommended settings, the advanced ones and the mode."""
+        self.recommended = widgets.Checkbox(
+            value=True, description="Use the recommended settings", indent=False
+        )
+        self.recommended_hint = ui.help_text("")
+        self.bins = widgets.BoundedIntText(
+            value=65_536, min=1, max=MAX_BIN_COUNT, description="Bins per plane", style=_label()
+        )
+        self.bins_hint = ui.help_text("")
+        self.memory_gib = widgets.BoundedFloatText(
+            value=DEFAULT_MEMORY_LIMIT / 2**30,
+            min=0.01,
+            max=4096,
+            step=0.5,
+            description="Memory limit (GiB)",
+            style=_label(),
+        )
+        self.advanced = widgets.VBox(
+            [
+                self.bins,
+                self.bins_hint,
+                widgets.HTML("<b>Histogram range</b>"),
+                *self._build_histogram_range(),
+                self.memory_gib,
+                ui.help_text(
+                    "The most working memory one plane may use. A larger plane is read in "
+                    "blocks instead: the results are the same, but reading takes longer. Raise "
+                    "it only if the computer has enough memory."
+                ),
+            ]
+        )
+        ui.set_visible(self.advanced, False)
+        self.mode = widgets.RadioButtons(
+            options=MODE_OPTIONS, value=RESTART, layout=widgets.Layout(**_WIDE)
+        )
+        self.settings_card = ui.card(
+            "Settings",
+            [
+                self.recommended,
+                self.recommended_hint,
+                self.advanced,
+                widgets.HTML("<b>Mode</b>"),
+                self.mode,
+                ui.help_text(MODE_HELP),
+            ],
+        )
+
+    def _build_histogram_range(self) -> list[widgets.Widget]:
+        """Build the histogram range choice and its robust quantiles; return the widgets."""
+        self.histogram_range = widgets.RadioButtons(
+            options=HISTOGRAM_RANGE_OPTIONS, value="minmax", layout=widgets.Layout(**_WIDE)
+        )
+        self.robust_low, self.robust_high = (
+            widgets.BoundedFloatText(
+                value=value, min=0, max=100, step=0.01, description=text, style=_label()
+            )
+            for value, text in zip(
+                DEFAULT_ROBUST_QUANTILES,
+                ("Lower quantile (%)", "Upper quantile (%)"),
+                strict=True,
+            )
+        )
+        self.robust_box = widgets.VBox([self.robust_low, self.robust_high])
+        ui.set_visible(self.robust_box, False)
+        return [
+            self.histogram_range,
+            self.robust_box,
+            ui.help_text(
+                "For histograms that are not exact (float images, and integer images with "
+                "more values than bins). A few extreme pixels, such as hot pixels, can "
+                "squeeze every other pixel into a few bins of the minimum-to-maximum range; "
+                "the run then warns about a narrow range. The robust range bins between "
+                "the two quantiles and counts the pixels outside separately. 8- and 16-bit "
+                "histograms are the same either way. Changing it reads every image again."
+            ),
+        ]
 
     def _reset_settings(self, pre: Preflight) -> None:
         dtype = pre.metadata.dtype
@@ -173,6 +185,7 @@ class _RunStep:
         self._recommended_changed()
 
     def _recommended_changed(self) -> None:
+        """Show or hide the advanced settings; the recommended ones are set back when ticked."""
         recommended = self.recommended.value
         ui.set_visible(self.advanced, not recommended)
         if recommended:
@@ -181,13 +194,12 @@ class _RunStep:
             self.histogram_range.value = "minmax"
             self.robust_low.value, self.robust_high.value = DEFAULT_ROBUST_QUANTILES
             self.memory_gib.value = DEFAULT_MEMORY_LIMIT / 2**30
-            self.force_rebuild.value = False
         bins = getattr(self, "_default_bins", None)
         bins_text = f"{bins:,} bins per plane" if bins else "the default bin count"
         self.recommended_hint.value = (
             f"<div class='mb-help'>Recommended: {bins_text}, each plane's minimum to maximum as "
-            "the histogram range, a memory limit of 1 GiB per plane, and only new or changed "
-            "images are read. Untick to change them.</div>"
+            "the histogram range and a memory limit of 1 GiB per plane. Untick to change "
+            "them.</div>"
         )
         self._refresh_run_step()
 
@@ -311,59 +323,6 @@ class _RunStep:
             )
         return line, card
 
-    def _plan_html(self, review: AxisReview | None = None) -> str:
-        folder = ui.clean_path(self.folder.value)
-        if self.preflight is None or not folder:
-            return "<div class='mb-help'>Check the experiment folder in step 1 first.</div>"
-        output = Path(self._output_folder() or default_output_folder(folder))
-        n = len(self.preflight.metadata.files)
-        lines = [
-            f"<b>{plural(n, 'image')}</b> will be analysed"
-            + (
-                f" ({len(self.preflight.excluded):,} excluded)." if self.preflight.excluded else "."
-            ),
-            f"Output folder: <b>{html.escape(str(output))}</b>",
-            f"Files written: <b>{OUTPUT_FILENAME}</b> (one row per plane, its channels in "
-            "columns) and "
-            f"<b>{MANIFEST_FILENAME}</b> (what was read, with which settings).",
-        ]
-        if self.confirmed_image_type is not None:
-            lines.append(
-                f"Image type: <b>{IMAGE_TYPE_NAMES[self.confirmed_image_type]}</b>, recorded in "
-                "the manifest for later bricks (the histograms are the same for either type)."
-            )
-        files = self.preflight.metadata.files
-        tiffs = sum(not f.is_ome_zarr for f in files)
-        zarrs = len(files) - tiffs
-        if zarrs:
-            lines.append(
-                f"<b>{plural(zarrs, 'OME-Zarr image')}</b> will be read directly, with the axes "
-                f"{'its' if zarrs == 1 else 'their'} metadata declares."
-            )
-        # Which images are read in blocks depends on the axis roles, so it is only
-        # worked out once they are confirmed (``review`` is None until then).
-        blocks_line, over_card = self._memory_plan(review) if review is not None else ("", "")
-        if blocks_line:
-            lines.append(blocks_line)
-        manifest = output / MANIFEST_FILENAME
-        if self.force_rebuild.value:
-            lines.append("Every image will be read (recompute every row is ticked).")
-        elif manifest.exists():
-            try:
-                earlier = read_manifest(manifest)
-                lines.append(
-                    f"An earlier run was found ({plural(len(earlier.files), 'image')}, "
-                    f"{html.escape(earlier.written_at or 'unknown date')}). Only new or "
-                    "changed images will be read; if the bin count, histogram range or axis "
-                    "roles changed, every image is read again."
-                )
-            except ManifestFormatError:
-                lines.append("An earlier run was found but cannot be read; it will be replaced.")
-        else:
-            lines.append("No earlier run was found: every image will be read.")
-        lines.append("Nothing is written unless the whole run succeeds.")
-        return "<ul>" + "".join(f"<li>{line}</li>" for line in lines) + "</ul>" + over_card
-
     def run(self) -> RunResult | None:
         """Compute or update the histogram table (pass 2) and show what happened."""
         self._refresh_run_step()
@@ -378,82 +337,130 @@ class _RunStep:
                 [str(exc), "Correct the quantiles in Settings above."],
             )
             return None
+        self._start_run()
+        try:
+            with self.log.attached():
+                self.result = self._call_run(histogram_settings)
+        except Exception as exc:  # unexpected failures still get a readable message
+            self._run_failed(exc)
+            return None
+        finally:
+            self._idle(self.run_button, " Compute histograms", "play")
+        self._finish_run(self.result)
+        return self.result
+
+    def _start_run(self) -> None:
+        """Clear the results of an earlier run and show that this one is starting."""
         self._busy(self.run_button, "Computing…")
         self.run_next.value = ""
         self.run_checks.clear()
+        self.run_lock.hide()
+        self.run_report.clear()
         ui.set_visible(self.progress, True)
         self.progress.value, self.progress.max, self.progress.bar_style = 0, 1, "info"
         self.run_status.value = ui.working("Preparing: checking everything again…")
         self.run_tiles.value = self.run_issues.value = ""
-        try:
-            with self.log.attached():
-                self.result = run_experiment(
-                    ui.clean_path(self.folder.value),
-                    self.confirmed_mapping,
-                    output_folder=self._output_folder(),
-                    bin_count=self.bins.value or None,
-                    memory_limit=self._memory_limit(),
-                    missing_as_singleton=self.missing_as_singleton.value,
-                    exclude=self._excluded(),
-                    mode=FULL if self.force_rebuild.value else RESTART,
-                    progress=self._progress,
-                    design=self.design,
-                    image_type=self.confirmed_image_type,
-                    intensity_settings=self.run_checks.settings(),
-                    histogram_settings=histogram_settings,
-                )
-        except Exception as exc:  # unexpected failures still get a readable message
-            self.log.lines.append(traceback.format_exc())
-            self.progress.bar_style = "danger"
-            self.run_status.value = ui.status(
-                "error",
-                "The run stopped because of an unexpected problem.",
-                [
-                    f"{type(exc).__name__}: {exc}",
-                    "Open Technical details below for the full report.",
-                ],
-            )
-            self._show_log()
-            return None
-        finally:
-            self._idle(self.run_button, " Compute histograms", "play")
-        self._show_run_result(self.result)
-        if self.result.written:
-            self._show_run_checks(self.result.csv_path)
+
+    def _call_run(self, histogram_settings: HistogramSettings) -> RunResult:
+        """Run the brick with the inputs of :meth:`_given_inputs` and the mode chosen."""
+        given = self._given_inputs()
+        return run_experiment(
+            given.experiment_root,
+            given.mapping,
+            output_folder=self._output_folder(),
+            bin_count=given.bin_count,
+            memory_limit=self._memory_limit(),
+            missing_as_singleton=given.missing_as_singleton,
+            exclude=given.exclude,
+            mode=self.mode.value,
+            progress=self._progress,
+            design=self.design,
+            image_type=given.image_type,
+            intensity_settings=given.intensity_settings,
+            histogram_settings=histogram_settings,
+        )
+
+    def _run_failed(self, exc: Exception) -> None:
+        """Show an unexpected failure in plain words, with the traceback in the details."""
+        self.log.lines.append(traceback.format_exc())
+        self.progress.bar_style = "danger"
+        self.run_status.value = ui.status(
+            "error",
+            "The run stopped because of an unexpected problem.",
+            [f"{type(exc).__name__}: {exc}", "Open Technical details below for the full report."],
+        )
         self._show_log()
-        if self.result.written:
-            self.csv_file.value = str(self.result.csv_path)
+
+    def _finish_run(self, result: RunResult) -> None:
+        """Show what the run did and, when it wrote the table, its intensity checks."""
+        self._show_run_result(result)
+        if result.written:
+            self._show_run_checks(result.csv_path)
+        self._show_log()
+        if result.written:
+            self.csv_file.value = str(result.csv_path)
             self.stats_status.value = ui.status(
                 "info",
                 "The table from step 3 is selected.",
                 ["Click Calculate statistics to compare the groups (optional)."],
             )
-        return self.result
 
     def _show_run_result(self, result: RunResult) -> None:
+        """Show what the run wrote, or why it stopped, with its report."""
         self.run_next.value = ""
         self.progress.bar_style = "success" if result.written else "danger"
         self.run_issues.value = issues_html(result.issues) if result.issues else ""
+        if result.report_written:
+            self.run_report.show(result.output_folder, "The run")
         if not result.written:
-            self.run_status.value = ui.status(
-                "error",
-                "The run stopped: no table or manifest was written.",
-                ["Read the messages below; each one says what to do.", "Then run again."],
-            )
+            self._show_stopped(result)
             return
-        lines = [f"Table: {result.csv_path}", f"Manifest: {result.manifest_path}"]
+        lines = [
+            html.escape(f"Table: {result.csv_path}"),
+            html.escape(f"Manifest: {result.manifest_path}"),
+        ]
         if result.design_path is not None:
-            lines.append(f"Experiment design: {result.design_path}")
+            lines.append(html.escape(f"Experiment design: {result.design_path}"))
+        lines.append(f"Mode: <b>{result.mode}</b>")
         if result.rebuild_reason:
-            lines.append(f"Every image was read because {result.rebuild_reason}.")
+            lines.append(html.escape(f"Every image was read because {result.rebuild_reason}."))
+        if result.replaced:
+            lines.append("Replaced: " + html.escape(", ".join(result.replaced)))
+        changes = change_lines(result.input_changes)
+        if changes:
+            lines.append(
+                "Inputs that differ from the earlier run:<ul>"
+                + "".join(f"<li>{line}</li>" for line in changes)
+                + "</ul>"
+            )
         self.run_status.value = ui.status(
-            "ok", f"Done: {plural(result.plane_count, 'plane')} in the table.", lines
+            "ok", f"Done: {plural(result.plane_count, 'plane')} in the table.", lines, raw=True
         )
         self.run_next.value = ui.next_steps(
             "Go to Step 4 (optional) and calculate the statistics.",
             "Run its cell, choose how to group the images, then click Calculate statistics. "
             "You can also finish here: the histogram table is ready for later MorphoBricks bricks.",
         )
+        self._show_run_tiles(result)
+
+    def _show_stopped(self, result: RunResult) -> None:
+        """Say what a run that stopped wrote (its report), or that it was refused (PP-8c)."""
+        if any(issue.code == "output_locked" for issue in result.issues):
+            self.run_lock.show(result.output_folder)
+        if result.report_written:
+            title = "The run stopped: no table or manifest was written."
+            first = "Its report was written; the earlier results are as they were."
+        else:
+            title = "Nothing was written."
+            first = "The run was refused before it started."
+        self.run_status.value = ui.status(
+            "error",
+            title,
+            [first, "Read the messages below; each one says what to do.", "Then run again."],
+        )
+
+    def _show_run_tiles(self, result: RunResult) -> None:
+        """Show the run's headline numbers."""
         kept = 0 if result.rebuild_reason else len(result.unchanged)
         tiles = [
             ("🧩", f"{result.plane_count:,}", "planes in the table"),
@@ -463,8 +470,8 @@ class _RunStep:
             ("✏️", f"{len(result.changed):,}", "changed images"),
             ("🗑️", f"{len(result.removed):,}", "images removed"),
             ("⛔", f"{len(result.excluded):,}", "excluded images"),
+            ("⚠️", issue_counts(result.issues), "checks"),
         ]
-        tiles.append(("⚠️", issue_counts(result.issues), "checks"))
         self.run_tiles.value = ui.tiles(tiles)
 
     def _show_run_checks(self, path: Path) -> None:

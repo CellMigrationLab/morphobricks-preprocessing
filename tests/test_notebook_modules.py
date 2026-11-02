@@ -49,7 +49,7 @@ def test_a_design_that_cannot_be_saved_is_logged_under_the_package_logger(
     def read_only(*args, **kwargs):
         raise OSError("read-only output folder")
 
-    monkeypatch.setattr(notebook_design, "write_experiment_design", read_only)
+    monkeypatch.setattr(notebook_design, "write_design", read_only)
     notebook = PreprocessingNotebook(str(root))
     for step in (notebook.welcome, notebook.folder_step, notebook.axis_step):
         step()

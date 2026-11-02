@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipywidgets as widgets
 
 from .image_type import FLUORESCENCE, RGB
+from .run.modes import FULL, RESTART
 
 ROLE_OPTIONS = [
     ("Z - depth (focal planes)", "Z"),
@@ -41,6 +42,20 @@ HISTOGRAM_RANGE_OPTIONS = [
     ("Minimum to maximum of each plane (recommended)", "minmax"),
     ("Robust: between two quantiles, the pixels outside counted separately", "robust"),
 ]
+
+# Step 3's mode (design v0.4 §1, PP-7): what each reuses, and what both keep.
+MODE_OPTIONS = [
+    (
+        "Restart (recommended): reuse the rows of unchanged images, read new or changed ones",
+        RESTART,
+    ),
+    ("Full: read every image again and recompute every row and check", FULL),
+]
+MODE_HELP = (
+    "Both modes keep your confirmations (labels, design, axis roles, image type, stated pixel "
+    "sizes) and write the table only when the whole run succeeds: a run that stops leaves the "
+    "earlier results as they are. Full takes longer; use it to start from scratch."
+)
 
 PYRAMID_OPTIONS = [
     ("Automatic (recommended)", "auto"),
