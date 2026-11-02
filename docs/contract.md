@@ -144,6 +144,15 @@ previous state, including the absence of files on a first run. If restoration fa
 backup folder is retained and its location is reported for manual recovery. Failures to
 remove temporary files after a successful publication are logged.
 
+**File permissions (v0.4.0, plan §12 question 50).** Every file the brick writes (the
+table, the manifest, the design, the report files, `calibration.csv` and
+`mask_relationships.json`) gets the permissions a plain `open()` would give it: a new file
+`0666` without the process's umask (`0644` with the usual umask `022`), so colleagues can
+read the results in a shared folder; a file that already exists keeps its own mode, as the
+user set it. Before v0.4.0 every output was `0600` (owner only) whatever the umask, because
+the temporary file of the atomic write kept its private mode; such files keep `0600` until
+the user changes them (`chmod a+r`) or deletes them. On Windows file modes do not apply.
+
 The two replacements are not jointly atomic: forced process termination between them can
 leave a mismatched pair, detected by `csv_sha256` on the next run and rebuilt. Only one run
 writes to a given output folder at a time, enforced by a lock (§9.2). This write protocol

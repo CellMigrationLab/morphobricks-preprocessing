@@ -568,6 +568,12 @@ the new outputs and copies of the earlier pair. If restoration also fails (for e
 another program locks an output file), the error names a backup folder: close programs
 using the output files and restore those backups before running again.
 
+Every output file gets the permissions a file you save yourself would get (your umask;
+usually readable by everyone, writable by you), so colleagues can open the results in a
+shared folder. A file that already exists keeps the permissions you gave it. Outputs
+written by versions before v0.4.0 are readable by their owner only: make them readable
+with `chmod a+r <output folder>/*`, or delete them before running again.
+
 Only one run at a time can use an output folder: a run holds a lock file
 (`.morphobricks-preprocessing.lock`) and a second run is refused (`output_locked`). If the
 process is forcibly stopped, its lock stays; remove it with `--remove-stale-lock` once you

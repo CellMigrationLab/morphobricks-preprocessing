@@ -1122,3 +1122,14 @@ Raised during review; to be decided before the milestones that need them:
     (owner, 1 November 2026). The manifest records `calibration_sha256`, checked by
     `RunInputs`; a changed file is an input change that recomputes no row. Y and X are
     stated per role and never exchanged. Contract §9.3.*
+50. Which permissions do the output files get (PP-8c, from a run on real data)?
+    *Decided (2 November 2026, owner): the mode a plain `open()` gives. The atomic write's
+    temporary file (`tempfile.mkstemp`) is private, so every output was `0600` whatever the
+    umask, and colleagues could not read the results in a shared lab folder. Now a new file
+    gets `0666 & ~umask` (the umask read from `/proc/self/status` where the system gives
+    it, else by setting it under a lock, to the most restrictive value while it is set), and
+    a file that already exists keeps its own mode, as the user set it: the run never widens
+    or narrows what the user chose. Files written `0600` by earlier versions therefore stay
+    so until the user changes them; the user guide says how. The table, written by the
+    normalization brick's writer into the staging folder, is given its mode when it is
+    published. Windows: unchanged (no such modes). Contract §9.*
