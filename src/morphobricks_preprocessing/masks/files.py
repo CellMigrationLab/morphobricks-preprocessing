@@ -11,6 +11,7 @@ from collections.abc import Collection, Iterable, Mapping
 from pathlib import Path
 
 from ..discovery import DiscoveryResult, is_system_name, is_tiff_name
+from ..folder_rules import masks_folder_issues
 from ..image_names import position_id
 from ..links import LinkGuard
 from ..metadata import TiffMetadata
@@ -55,7 +56,9 @@ def find_masks(
         mask is read as stored.
     output_folder
         The run's output folder: inside the masks folder it is the error
-        ``output_inside_masks`` (the run's files would be read as masks).
+        ``output_inside_masks`` (the run's files would be read as masks). The folder rules
+        (:mod:`..folder_rules`) also refuse a masks folder inside the experiment, holding it
+        or holding named-axis copies.
 
     Returns
     -------
@@ -103,28 +106,7 @@ def _folder_issues(
                 action="Select the folder that holds one subfolder per mask type.",
             )
         ]
-    if folder == experiment_root or experiment_root in folder.parents:
-        return [
-            error(
-                "masks_inside_experiment",
-                "The masks folder is inside the experiment folder, where its folders would be "
-                "read as conditions and repeats.",
-                [folder.relative_to(experiment_root).as_posix() or "."],
-                "Move the masks folder next to the experiment folder and select it there.",
-            )
-        ]
-    output = None if output_folder is None else Path(output_folder).resolve()
-    if output is not None and (output == folder or folder in output.parents):
-        return [
-            error(
-                "output_inside_masks",
-                "The output folder is inside the masks folder, where the run's own files would "
-                "be read as masks.",
-                [output.relative_to(folder).as_posix() or "."],
-                "Choose an output folder outside the masks folder.",
-            )
-        ]
-    return []
+    return masks_folder_issues(folder, experiment_root, output_folder)
 
 
 def _folder_masks(

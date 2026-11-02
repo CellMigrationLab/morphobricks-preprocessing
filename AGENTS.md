@@ -66,6 +66,9 @@ src/morphobricks_preprocessing/
                     check_plane_index, check_identity_case (the shared identity rules, contract §16)
   links.py          LinkGuard: links followed only inside the folder walked (experiment, OME-Zarr
                     stores, masks folder); link_outside_folder, link_loop, linked_twice (#81)
+  folder_rules.py   which of the experiment, masks, copies and output folders may hold which:
+                    experiment_inside_masks, copies_inside_masks, masks_inside_experiment,
+                    output_inside_masks (audit B1/I1, plan §12 question 70)
   metadata.py       TIFF header inspection (tifffile, no pixel reads), dtype/dimension/series checks,
                     OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes);
                     header consistency warnings (width/height, plane counts, pixel sizes);
@@ -131,7 +134,9 @@ src/morphobricks_preprocessing/
                     pipeline.py (run_experiment, incremental), steps.py (header checks,
                     rows, outcome), modes.py (restart/full), recorded.py (inputs reused from
                     the earlier run, InputChange), lock.py (the output folder's O_EXCL lock,
-                    remove_stale_lock), check_step.py (write_check_report), mask_step.py
+                    remove_stale_lock), output_guard.py (the output folder against the
+                    masks folder, given or recorded, before anything is written),
+                    check_step.py (write_check_report), mask_step.py
                     (the masks step shared by CLI `masks` and the notebook: prepare_mask_step,
                     describe_masks, recorded_masks; PP-10d), result.py (RunResult),
                     entries.py (manifest entries, new/changed/unchanged by RowKey),

@@ -34,6 +34,7 @@ from .axis_check import (
 from .axis_review import review_axes
 from .conversion_issues import (
     header_changed_issue,
+    masks_overlap_issue,
     not_a_folder_issue,
     overlap_issue,
     pixel_type_issue,
@@ -41,6 +42,8 @@ from .conversion_issues import (
 from .conversion_record import CONVERTED, COPIED, RECORD_FILENAME, CopyEntry
 from .copy_axes import CopyLayout, copy_layout
 from .fingerprint import Fingerprint
+from .folder_rules import relative_inside
+from .links import is_inside
 from .metadata import TiffMetadata
 from .ome_tiff_copy import copy_nbytes
 from .planes import DEFAULT_MEMORY_LIMIT, check_planes
@@ -196,9 +199,11 @@ def _copied(
 
 
 def copy_folder_issues(
-    experiment_root: str | os.PathLike, destination: str | os.PathLike
+    experiment_root: str | os.PathLike,
+    destination: str | os.PathLike,
+    masks_folder: str | os.PathLike | None = None,
 ) -> list[ValidationIssue]:
-    """Refuse a folder for the copies inside the experiment, holding it, or that is a file.
+    """Refuse a folder for the copies overlapping the experiment or masks, or that is a file.
 
     The rule :func:`.conversion.convert_experiment` applies first, before anything is read.
 
@@ -208,16 +213,24 @@ def copy_folder_issues(
         The experiment folder.
     destination
         The folder for the copies.
+    masks_folder
+        The masks folder of the runs, if known: the copies may not be inside it (they would
+        be read as masks, audit B1) nor hold it.
 
     Returns
     -------
     list of ValidationIssue
-        ``copy_folder_overlaps_experiment`` or ``copy_folder_not_a_folder``; empty when the
-        folder can hold the copies.
+        ``copy_folder_overlaps_experiment``, ``copy_folder_overlaps_masks`` or
+        ``copy_folder_not_a_folder``; empty when the folder can hold the copies.
     """
     root, dest = Path(experiment_root).resolve(), Path(destination).resolve()
-    if dest == root or root in dest.parents or dest in root.parents:
+    if is_inside(dest, root) or is_inside(root, dest):
         return [overlap_issue(root, dest)]
+    masks = None if masks_folder is None else Path(masks_folder).resolve()
+    if masks is not None and (
+        relative_inside(dest, masks) is not None or relative_inside(masks, dest) is not None
+    ):
+        return [masks_overlap_issue(dest)]
     if dest.exists() and not dest.is_dir():
         return [not_a_folder_issue(dest)]
     return []
@@ -275,6 +288,7 @@ def preview_conversion(
     exclude: Iterable[str] = (),
     missing_as_singleton: bool = False,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
+    masks_folder: str | os.PathLike | None = None,
 ) -> ConversionPreview:
     """Work out what :func:`.conversion.convert_experiment` would write; write nothing.
 
@@ -296,13 +310,15 @@ def preview_conversion(
         As :func:`.conversion.convert_experiment`.
     memory_limit
         As :func:`.conversion.convert_experiment`.
+    masks_folder
+        As :func:`.conversion.convert_experiment`.
 
     Returns
     -------
     ConversionPreview
     """
     root, dest = Path(experiment_root).resolve(), Path(destination).resolve()
-    refused = copy_folder_issues(root, dest)
+    refused = copy_folder_issues(root, dest, masks_folder)
     if refused:
         return ConversionPreview(dest, tuple(refused))
     planned, issues = plan_conversion(

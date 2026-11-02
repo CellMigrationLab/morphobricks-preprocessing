@@ -20,6 +20,7 @@ from .report import design_table, format_issues
 from .run import OutputLockedError
 from .run.design_file import edit_design
 from .run.lock import lock_issue
+from .run.output_guard import OutputInsideMasksError
 from .validation import ValidationIssue, has_errors
 
 
@@ -96,7 +97,7 @@ def design_command(args: argparse.Namespace) -> int:
             args.confirm_all,
         )
         design, written = edit_design(args.output, edit)
-    except (DesignEditError, DesignFormatError) as exc:
+    except (DesignEditError, DesignFormatError, OutputInsideMasksError) as exc:
         print(f"The experiment design was not changed: {exc}")
         return 1
     except OutputLockedError as exc:

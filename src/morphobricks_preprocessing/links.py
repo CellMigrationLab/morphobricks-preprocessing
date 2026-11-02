@@ -74,6 +74,41 @@ def is_inside(path: Path, folder: Path) -> bool:
     return path == folder or folder in path.parents
 
 
+def parts_below(target: Path, folder: Path) -> tuple[str, ...] | None:
+    """Return the names of ``target`` (resolved) below ``folder``; None when it is not inside.
+
+    Compared by resolved path, then, for each existing folder above ``target``, by device and
+    inode, which catches another spelling of ``folder`` on a file system that ignores case.
+
+    Parameters
+    ----------
+    target
+        The path, resolved; it need not exist.
+    folder
+        The folder; resolved here (compared by device and inode only when it exists).
+
+    Returns
+    -------
+    tuple of str or None
+        The names from ``folder`` down to ``target`` (empty for ``folder`` itself), or None.
+    """
+    real = folder.resolve()
+    if is_inside(target, real):
+        return target.relative_to(real).parts
+    try:
+        wanted = os.stat(real)
+    except OSError:  # a folder that does not exist holds nothing
+        return None
+    chain = [target, *target.parents]
+    for depth, above in enumerate(chain):
+        try:
+            if os.path.samestat(os.stat(above), wanted):
+                return tuple(path.name for path in reversed(chain[:depth]))
+        except OSError:  # not there (yet): nothing to compare
+            continue
+    return None
+
+
 class LinkGuard:
     """Follow the links of one walk of ``root`` only when they stay inside it.
 

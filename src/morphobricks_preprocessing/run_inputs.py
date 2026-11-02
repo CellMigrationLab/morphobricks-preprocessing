@@ -39,6 +39,7 @@ from .calibration import CALIBRATION_FILENAME
 from .conversion_check import conversion_problem
 from .design import DESIGN_FILENAME, DesignCheckError, ExperimentDesign, read_confirmed_design
 from .fingerprint import Fingerprint
+from .folder_rules import masks_folder_issues
 from .links import LinkRefusedError
 from .manifest import (
     LEGACY_MANIFEST_VERSION,
@@ -177,7 +178,9 @@ class RunInputs:
         Raises
         ------
         RunInputsError
-            For a run before v0.4.0, a table, design, calibration or conversion record (of a
+            For a run before v0.4.0, an experiment, named-axis copies or an output folder
+            inside the masks folder or a masks folder inside the experiment
+            (:mod:`.folder_rules`), a table, design, calibration or conversion record (of a
             run on named-axis copies) changed or gone since the run, a named-axis copy whose
             SHA-256 is not its record's (or a record of version 1, without them),
             an image or mask changed or gone, a mask recorded without axes, OME-Zarr images
@@ -217,6 +220,10 @@ class RunInputs:
         root = Path(experiment_root or manifest.experiment_root).resolve()
         _check_conversion(root, manifest)
         masks = masks_root or (manifest.masks or {}).get("folder")
+        refused = [] if masks is None else masks_folder_issues(masks, root, output)
+        if refused:
+            # A run recorded before these folder rules (audit B1) is refused as a new one is.
+            raise RunInputsError(f"The run cannot be used: {refused[0].message}")
         return cls(
             output_folder=output,
             experiment_root=root,

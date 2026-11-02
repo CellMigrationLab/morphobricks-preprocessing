@@ -51,6 +51,7 @@ from .report import (
 )
 from .run import MODES, RESTART, Preflight, preflight, run_experiment
 from .run.lock import OutputLockedError, lock_issue, output_lock
+from .run.output_guard import output_masks_issues
 from .run.recorded import usable
 from .run.reuse import read_previous, recorded_experiment_root
 from .validation import ValidationIssue, has_errors
@@ -440,8 +441,9 @@ def _design_template(
     """
     root = pre.discovery.root
     output = Path(args.output) if args.output else default_output_folder(root)
-    if check_output_folder(root, output):
-        return None, ""  # the run reported it; nothing is written inside the experiment
+    masks = pre.masks.folder if pre.masks is not None else None
+    if check_output_folder(root, output) or output_masks_issues(output, masks):
+        return None, ""  # the run reported it; nothing is written inside these folders
     try:
         with output_lock(output):
             target = write_experiment_design(design, output / DESIGN_FILENAME)
