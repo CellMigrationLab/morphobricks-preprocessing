@@ -158,10 +158,13 @@ src/morphobricks_preprocessing/
   conversion_record.py the copy tree's .morphobricks-conversion.json (fingerprints, roles, sizes),
                     review_conversion (the run's conversion_source_changed and
                     copy_changed_after_conversion warnings)
-  conversion.py     convert_experiment/plan_conversion: the copy tree under its lock, .partial
-                    files moved into place together (any failure removes what it wrote),
-                    planes checked against the memory limit first, unchanged copies reused,
-                    record last; conversion_issues.py its messages (pure)
+  conversion.py     convert_experiment: the copy tree under its lock, record last;
+                    conversion_issues.py its messages (pure)
+  conversion_plan.py plan_conversion: headers checked with the confirmed roles, planes checked
+                    against the memory limit first, PlannedCopy per image
+  conversion_reuse.py compare: unchanged copies reused, anything else there refused
+  conversion_write.py write_all: .partial files moved into place together (any failure
+                    removes what it wrote)
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis
                     letters and physical sizes from the scale and axis units),
                     ngff_label_names/open_ngff_labels (label images, for later bricks),

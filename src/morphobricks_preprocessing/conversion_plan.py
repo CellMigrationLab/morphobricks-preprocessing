@@ -1,0 +1,153 @@
+"""Plan a conversion: check the experiment and decide each image's copy (design v0.4 §5).
+
+Moved from :mod:`.conversion` (PP-11c). :func:`plan_conversion` reads only the headers: the
+axis errors and unnamed axes are what the conversion corrects; any other error stops it
+before anything is written.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+
+from .axes import AxisMapping
+from .axis_check import (
+    AXES_NOT_NAMED,
+    AXIS_ERROR_CODES,
+    ConfirmedAxes,
+    header_axis_issue,
+)
+from .axis_review import review_axes
+from .conversion_issues import pixel_type_issue
+from .conversion_record import CONVERTED, COPIED, CopyEntry
+from .copy_axes import CopyLayout, copy_layout
+from .fingerprint import Fingerprint
+from .metadata import TiffMetadata
+from .ome_tiff_copy import copy_nbytes
+from .planes import DEFAULT_MEMORY_LIMIT, check_planes
+from .run.preflight import preflight
+from .validation import ValidationIssue, has_errors
+
+_NOT_IN_OME = frozenset({"int64", "uint64"})
+"""Pixel types the brick reads that OME-TIFF cannot hold: they are never changed to fit."""
+
+
+@dataclass(frozen=True)
+class PlannedCopy:
+    """One image of the copy tree, before it is written.
+
+    Attributes
+    ----------
+    entry
+        Its conversion-record entry, without the copy's fingerprint.
+    layout
+        The named-axis copy of a converted image, else None.
+    mapping
+        The roles a converted image is read with, else None.
+    nbytes
+        The bytes the copy takes (pixels only for a converted image).
+    """
+
+    entry: CopyEntry
+    layout: CopyLayout | None = None
+    mapping: AxisMapping | None = None
+    nbytes: int = 0
+
+    @property
+    def relative_path(self) -> str:
+        """The image, relative to the experiment and to the copy tree."""
+        return self.entry.relative_path
+
+
+def plan_conversion(
+    root: Path,
+    mapping: AxisMapping | ConfirmedAxes,
+    destination: Path,
+    exclude: Iterable[str] = (),
+    missing_as_singleton: bool = False,
+    memory_limit: int = DEFAULT_MEMORY_LIMIT,
+) -> tuple[tuple[PlannedCopy, ...], list[ValidationIssue]]:
+    """Check the experiment with the confirmed roles and plan each image's copy.
+
+    Only the headers are read. The axis errors do not stop the conversion: they are what
+    it corrects. Any other error does, and nothing is planned: so does an image to convert
+    of a pixel type OME-TIFF cannot hold, or whose planes cannot be read within the memory
+    limit, not even in blocks (checked as the run checks them, before anything is written).
+
+    Parameters
+    ----------
+    root
+        The experiment folder (absolute).
+    mapping
+        The confirmed mapping.
+    destination
+        The copy tree (absolute).
+    exclude
+        Images to leave unread.
+    missing_as_singleton
+        As :func:`convert_experiment`.
+    memory_limit
+        As :func:`convert_experiment`.
+
+    Returns
+    -------
+    tuple
+        The planned copies, sorted by path (empty when an error stops the conversion),
+        and the issues: the errors that stop it, and the warnings.
+    """
+    pre = preflight(root, destination, exclude=exclude)
+    review = review_axes(pre.metadata, mapping, missing_as_singleton=missing_as_singleton)
+    others = [issue for issue in pre.issues if issue not in pre.metadata.issues]
+    issues = [*others, *review.combined_issues(pre.metadata)]
+    if any(i.is_error and i.code not in AXIS_ERROR_CODES for i in issues):
+        return (), [i for i in issues if not (i.is_error and i.code in AXIS_ERROR_CODES)]
+    # The axis errors and unnamed axes are what is corrected (each entry records its code).
+    issues = [i for i in issues if not i.is_error and i.code != AXES_NOT_NAMED]
+    to_convert = set(review.axis_error_files) | set(review.confirmed_files)
+    headers = {meta.relative_path: meta for meta in pre.metadata.files}
+    issues += _cannot_convert(root, to_convert, headers, review.file_mappings, memory_limit)
+    if has_errors(issues):
+        return (), issues
+    planned = []
+    for rel in pre.discovery.images:
+        source = Fingerprint.of(root / rel)
+        if rel in to_convert:
+            planned.append(_converted(headers[rel], review.file_mappings[rel], source))
+        else:
+            reason = "excluded" if rel in pre.excluded else None
+            meta = headers.get(rel)
+            entry = CopyEntry(rel, COPIED, reason, source, source_axes=meta.axes if meta else "")
+            planned.append(PlannedCopy(entry, nbytes=source.size))
+    return tuple(planned), issues
+
+
+def _cannot_convert(
+    root: Path,
+    to_convert: set[str],
+    headers: dict[str, TiffMetadata],
+    mappings: Mapping[str, AxisMapping],
+    memory_limit: int,
+) -> list[ValidationIssue]:
+    """Return why images cannot be converted (errors) and the planes read in blocks."""
+    wide = sorted(rel for rel in to_convert if headers[rel].dtype.name in _NOT_IN_OME)
+    if wide:
+        return [pixel_type_issue(wide, headers[wide[0]].dtype.name)]
+    return check_planes(root, {rel: mappings[rel] for rel in to_convert}, memory_limit=memory_limit)
+
+
+def _converted(meta: TiffMetadata, mapping: AxisMapping, source: Fingerprint) -> PlannedCopy:
+    """Plan the named-axis copy of one image read under its confirmed roles."""
+    layout = copy_layout(meta, mapping)
+    entry = CopyEntry(
+        relative_path=meta.relative_path,
+        action=CONVERTED,
+        reason=header_axis_issue(meta, mapping),
+        source=source,
+        source_axes=meta.axes,
+        roles=mapping.roles,
+        copy_axes=layout.axes,
+        pixel_sizes=layout.sizes,
+        unknown_sizes=layout.unknown,
+    )
+    return PlannedCopy(entry, layout, mapping, copy_nbytes(layout, meta.dtype))
