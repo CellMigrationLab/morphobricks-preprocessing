@@ -147,6 +147,12 @@ experiment/
   images is dropped silently.
 - Other files (`.txt`, `.csv`, ...) are reported and skipped. System files such as
   `.DS_Store`, `Thumbs.db`, `desktop.ini` and `__MACOSX` are ignored without a message.
+- Links (symbolic links, and junctions on Windows) are followed only when they stay inside
+  the experiment folder; the same holds for the masks folder. A link to a file or folder
+  outside it is an error (`link_outside_folder`) naming the link and its target: nothing
+  outside the folder you selected is read, so copy the data in or select a folder that
+  holds it. A link back to a folder above it is an error (`link_loop`), and so is one file
+  reached by two paths, a link and its target (`linked_twice`): it would count twice.
 
 To change a label, rename the folder and check again.
 
@@ -592,7 +598,7 @@ report names the change and its effect. Other options:
 | `--no-exclude` | Clear the exclusions an earlier run recorded, so every image is analysed again (not together with `--exclude`) |
 | `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks`, `design` and `calibrate`); give it only when no other run uses the output folder |
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
-| `--log FILE` | Write technical details to a file |
+| `--log FILE` | Write technical details to a file (`run`, `masks`, `convert`). It is checked before anything is written and opened only once the other options are checked: a file inside the experiment or masks folder (given or recorded by the earlier run), inside the folder of the copies (`convert`), or named as one of the run's files in the output folder (`plane_histograms.csv`, `run_manifest.json`, the reports, `experiment_design.csv`, `calibration.csv`, `mask_relationships.json`, the lock) is refused and nothing is written. Any other name in the output folder is fine, for example `run.log` |
 | `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json` |
 | `--mask-axes TYPE=ROLES` | The axes of a mask type whose files do not name them, one role (Y, X, Z or T) per axis as stored: `Cells=TYX` for plain stacks of time points, `Cells=YX` for one 2D mask shared by every plane of its image (repeatable; `check`, `run`, `masks`). Masks are never reordered. |
 
@@ -852,6 +858,9 @@ continues.
 |---|---|---|
 | `experiment_not_found` | Error | The folder does not exist. Select an existing folder. |
 | `unreadable_folder` | Error | A folder could not be opened. Check permissions. |
+| `link_outside_folder` | Error | A link in the experiment or masks folder leads outside it (the message names each link and its target), and nothing outside the selected folder is read. Copy or move the files in, or select a folder that holds them, then remove the link. |
+| `link_loop` | Error | A link leads back to a folder that holds it. Remove it. |
+| `linked_twice` | Error | One file is reached by two paths (a link and its target, or two links), so it would count twice under two names; both are named. Keep one path to each file. |
 | `reserved_folder_name` | Error | A folder is named `single` in another case (`Single`), or a folder named `single` has other folders beside it. Rename it to `single` in lower case, or give it a name of its own. |
 | `case_conflict` | Error | Folders of one level have names that differ only in case, next to each other or anywhere in the experiment (`control/Rep1` and `treated/rep1`). Spell each name one way, or rename or merge them. |
 | `invalid_name` | Error | A folder or image name starts or ends with a space, or is `NA`, `nan`, `none`, `null`, `n/a` or `<NA>` (any case), which tables read as a missing value. Rename it. |

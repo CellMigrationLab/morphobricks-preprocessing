@@ -524,6 +524,10 @@ API, CLI). The notebook and CLI only call the API.
   for files with errors": a card offered after the axis check when images have an axis
   error or unnamed axes, calling `convert_experiment` with the confirmed roles and a
   folder the user names, showing the result and the next run on the copies.
+- **Before the audit: links and the log (issues #81 and #99)** *(done; questions 60 and
+  61)*: `links.LinkGuard` follows a link only inside the folder walked (discovery, OME-Zarr
+  stores, the masks folder; `RunInputs` and `convert` refuse the same links), and the CLI
+  checks `--log` (`log_target`) before opening it, after the other arguments.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;
@@ -1465,4 +1469,22 @@ Raised during review; to be decided before the milestones that need them:
     disappeared, as for `calibration_sha256` and the design's SHA-256.
     (15) **Notebook card**: the next PR, PP-11b (§10); the axis-check card names the
     command meanwhile.
-
+60. Are symbolic links in the experiment or masks folder followed (issue #81)?
+    *Decided (owner, 2 November 2026): contain.* A link (file or folder; on Windows also a
+    directory junction) is followed only when its real path stays inside the experiment
+    folder, or the masks folder for masks, both resolved; a link that leaves it is refused
+    (`link_outside_folder`, naming each link and its target, a broken link too). One file
+    reached by two paths is refused, naming both (`linked_twice`); a link back to a folder
+    on its own path is `link_loop`. The links inside an OME-Zarr store are held to the same
+    rule (reading and copying a store follow them). One helper (`links.LinkGuard`) walks
+    the experiment and the masks folder for discovery, the masks pairing, the unrecorded-files
+    check of `RunInputs` (raised as `RunInputsError`) and, through discovery, `convert`.
+    Contract §1, §8.
+61. Where may the command line's `--log` write (issue #99)?
+    *Decided (owner, 2 November 2026):* the log path is checked first and the file opened
+    only after the other arguments are checked. It is refused inside the experiment or masks
+    folder (given or recorded by the earlier run), inside `convert`'s folder of copies, and
+    as or inside a protected output artefact (`plane_histograms.csv`, `run_manifest.json`,
+    the reports, the design, `calibration.csv`, `mask_relationships.json`, the lock, the
+    conversion record, the staging folders). Any other name in the output folder is fine.
+    Contract §8; user guide §5.
