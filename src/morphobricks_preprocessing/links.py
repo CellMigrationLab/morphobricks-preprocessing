@@ -109,6 +109,25 @@ def parts_below(target: Path, folder: Path) -> tuple[str, ...] | None:
     return None
 
 
+def relative_inside(path: Path, folder: str | os.PathLike) -> str | None:
+    """Return ``path`` (resolved) relative to ``folder`` when it is inside, ``"."`` for it.
+
+    Parameters
+    ----------
+    path
+        The path, resolved; it need not exist.
+    folder
+        The folder, compared as :func:`parts_below` does.
+
+    Returns
+    -------
+    str or None
+        The relative path in POSIX form, or None when ``path`` is not inside ``folder``.
+    """
+    parts = parts_below(path, Path(folder))
+    return None if parts is None else Path(*parts).as_posix()
+
+
 class LinkGuard:
     """Follow the links of one walk of ``root`` only when they stay inside it.
 

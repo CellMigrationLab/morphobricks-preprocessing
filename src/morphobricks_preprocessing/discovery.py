@@ -33,7 +33,7 @@ import numpy as np
 from morphobricks_normalization.records import LEVELS, SINGLE
 
 from .image_names import position_id
-from .links import LinkGuard
+from .links import LinkGuard, relative_inside
 from .mask_names import mask_name_issues
 from .validation import ValidationIssue, agree, error, has_errors, plural, warning
 from .zarr_input import is_zarr_name
@@ -291,7 +291,9 @@ def check_output_folder(
     """Check that the output folder is not the experiment folder or inside it.
 
     Writing inside the experiment would mix results with source images and make
-    the next scan pick them up.
+    the next scan pick them up. Compared as the folder rules are (resolved, then by device
+    and inode, :func:`.links.relative_inside`), so another spelling of the
+    experiment on a file system that ignores case is the experiment.
 
     Returns
     -------
@@ -299,15 +301,15 @@ def check_output_folder(
         One error if the output folder is inside the experiment, otherwise empty.
     """
     root = Path(experiment_root).resolve()
-    output = Path(output_folder).resolve()
-    if output != root and root not in output.parents:
+    below = relative_inside(Path(output_folder).resolve(), root)
+    if below is None:
         return []
     return [
         error(
             "output_inside_experiment",
             "The output folder is inside the experiment folder. Results must be kept "
             "separate from the source images.",
-            [output.relative_to(root).as_posix() or ROOT],
+            [below],
             f"Choose an output folder outside the experiment, for example "
             f"{default_output_folder(root)}.",
         )
@@ -347,8 +349,10 @@ def discover_experiment(
 
     walker = _Walker(root)
     if output_folder is not None:
-        walker.issues.extend(check_output_folder(root, output_folder))
-        walker.excluded = Path(output_folder).resolve()
+        found = check_output_folder(root, output_folder)
+        walker.issues.extend(found)
+        # The walk's own spelling of the output folder, which may differ in case.
+        walker.excluded = root.joinpath(found[0].paths[0]) if found else None
     walker.visit(root, ())
     issues = (*walker.finish(), *walker.links.issues(), *mask_name_issues(walker.leaves))
     return DiscoveryResult(root=root, leaves=tuple(walker.leaves), issues=issues)
