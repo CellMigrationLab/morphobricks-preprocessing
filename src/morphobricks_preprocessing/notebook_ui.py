@@ -52,6 +52,7 @@ from .image_type import ImageTypeReview
 from .notebook_axis_preview import _AxisPreview
 from .notebook_axis_step import _AxisStep
 from .notebook_calibration import _CalibrationCard
+from .notebook_convert import _ConvertCard
 from .notebook_design import _DesignCard
 from .notebook_folder import _FolderStep
 from .notebook_mask_step import _MaskStepCard
@@ -124,6 +125,7 @@ class PreprocessingNotebook(
     _OutputCards,
     _AxisStep,
     _AxisPreview,
+    _ConvertCard,
     _RunStep,
     _MaskStepCard,
     _RunPlan,
@@ -183,6 +185,7 @@ class PreprocessingNotebook(
         self._build_masks_cards()
         self._build_folder_step(str(experiment_folder), str(output_folder))
         self._build_axis_step()
+        self._build_convert_card()
         self._build_mask_step_card()
         self._build_run_step()
         self._build_results_step()
