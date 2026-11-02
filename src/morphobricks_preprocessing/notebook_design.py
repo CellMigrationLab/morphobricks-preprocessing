@@ -95,7 +95,9 @@ class _DesignCard:
         if not folder:
             return None
         output = Path(self._output_folder() or default_output_folder(folder))
-        return None if check_output_folder(folder, output) else output
+        if check_output_folder(folder, output) or self._output_file_in_the_way():
+            return None
+        return output
 
     def _open_design(self, *, output_changed: bool = False) -> None:
         """Load the saved design, or start a new one, once the labels are confirmed.
@@ -437,7 +439,10 @@ def _output_changed_note(output: Path | None, saved: bool, problem: str | None) 
         return ""  # the refusal of the new folder's file says it all
     if output is None:
         title = "The output folder changed: the experiment design is asked again."
-        lines = ["Choose an output folder outside the experiment folder to save the answers."]
+        lines = [
+            "Choose an output folder that can be written, outside the experiment folder, to "
+            "save the answers."
+        ]
     elif saved:
         title = "The output folder changed: its experiment design was read."
         lines = [

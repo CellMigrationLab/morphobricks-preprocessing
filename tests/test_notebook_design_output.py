@@ -161,3 +161,27 @@ def test_an_answer_that_cannot_be_saved_in_the_new_output_folder_says_so(tmp_pat
     assert not (locked / "experiment_design.csv").exists()
     assert nb.design.controls == ()
     assert (a / "experiment_design.csv").read_bytes() == saved_a
+
+
+def test_an_output_folder_under_a_file_is_refused_with_a_message(tmp_path):
+    # Was an uncaught NotADirectoryError from the run step's refresh (found with #98).
+    from morphobricks_preprocessing.fingerprint import current_fingerprint
+
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
+    a = tmp_path / "a"
+    saved_a = confirmed_output(root, a, "ctrl")
+    nb = confirmed(root, a)
+    somefile = tmp_path / "somefile"
+    somefile.write_text("not a folder")
+    nb.output.value = str(somefile / "out")
+    assert f"<b>{somefile}</b> is a file, not a folder" in nb.output_hint.value
+    assert "Still to do: choose an output folder that is not a file" in nb.readiness.value
+    assert nb.run_button.disabled
+    confirm_repeats(nb)  # an answer is kept, not written
+    assert nb.run_button.disabled and nb.run() is None
+    assert "cannot be written" in nb.design_status.value
+    assert somefile.read_text() == "not a folder"
+    assert (a / "experiment_design.csv").read_bytes() == saved_a
+    assert current_fingerprint(somefile / "out" / "run_manifest.json") is None
+    nb.output.value = str(a)  # and back: nothing is left blocking
+    assert "is a file" not in nb.output_hint.value and not nb.run_button.disabled

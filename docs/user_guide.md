@@ -241,7 +241,9 @@ results or comparing another grouping.
    version.
 1. **Check the experiment folder.**
    - Paste the folder path, or click **Browse…** to choose it in a dialog. Below the output
-     folder, a line shows where the results will go.
+     folder, a line shows where the results will go. An output folder that is a file, or
+     inside one (for example `somefile/out`), cannot be created: the line says so in red,
+     nothing is written there, and step 3 waits until you choose another folder.
    - If you have masks (§2), give their folder under **Masks folder (optional)** the same way
      (on Colab, paste its path: **Browse…** explains how). Leave it empty for no masks.
      **Check folder** pairs them with the images exactly as `check --masks` does.

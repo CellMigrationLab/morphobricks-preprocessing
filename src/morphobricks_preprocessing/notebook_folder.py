@@ -388,7 +388,30 @@ class _FolderStep:
                 "<span style='color:#991B1B'>This folder is inside the experiment folder; "
                 "choose one outside it.</span>"
             )
+        blocking = self._output_file_in_the_way()
+        if blocking is not None:
+            lines.append(
+                f"<span style='color:#991B1B'><b>{html.escape(str(blocking))}</b> is a file, "
+                "not a folder, so nothing can be written there; choose another output "
+                "folder.</span>"
+            )
         self.output_hint.value = f"<div class='mb-help'>{'<br>'.join(lines)}</div>"
+
+    def _output_file_in_the_way(self) -> Path | None:
+        """Return the file the output folder is, or is under; None if it can be a folder.
+
+        A path such as ``somefile/out`` can never be created, so the notebook says so
+        instead of failing with ``NotADirectoryError`` when it looks there.
+        """
+        folder = ui.clean_path(self.folder.value)
+        output = self._output_folder()
+        if not folder and not output:
+            return None
+        target = Path(output or default_output_folder(folder)).absolute()
+        for path in (target, *target.parents):
+            if path.exists():
+                return None if path.is_dir() else path
+        return None
 
     def _browse(self, target: widgets.Text) -> None:
         chosen = ui.ask_directory(ui.clean_path(target.value))
