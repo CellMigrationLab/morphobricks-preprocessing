@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from pathlib import Path
 
 from ..discovery import DiscoveryResult, is_system_name, is_tiff_name
@@ -127,7 +127,7 @@ def _folder_issues(
 
 
 def _folder_masks(
-    folder: Path, discovery: DiscoveryResult, images: Mapping[str, TiffMetadata]
+    folder: Path, discovery: DiscoveryResult, images: Collection[str]
 ) -> tuple[list[MaskFile], list[ValidationIssue]]:
     """Pair the TIFF files of the masks folder with the images, in either layout.
 
@@ -137,7 +137,8 @@ def _folder_masks(
     an analysed image; a file matching two images or both layouts is refused, never guessed.
     A mask matching no image is the warning ``mask_without_image``, and a mask of an excluded
     image the warning ``mask_of_excluded_image``: neither is used (design v0.4 §3 keeps the
-    severity of every existing check).
+    severity of every existing check). ``images`` are the analysed images' paths (excluded
+    images left out).
     """
     by_key, by_leaf = {}, {}
     for leaf in discovery.leaves:

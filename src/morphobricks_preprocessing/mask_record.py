@@ -35,7 +35,16 @@ def mask_manifest(inventory: MaskInventory, experiment_root: str | os.PathLike) 
         ``roles``, ``axes_from`` and ``shared``. ``axes`` are the mask's axes as stored
         (its header's letters, ``"IYX"`` for a plain stack), ``roles`` what they are read as
         (``"TYX"`` when stated), so a brick reads the mask as stored, never reordered.
+
+    Raises
+    ------
+    ValueError
+        For a mask without roles: its header was refused, so the run has an error and
+        records no mask without axes.
     """
+    unread = [mask.path for mask in inventory.files if not mask.axes]
+    if unread:
+        raise ValueError(f"Masks without roles cannot be recorded: {', '.join(unread)}")
     data = inventory.to_manifest()
     by_path = {mask.path: mask for mask in inventory.files}
     for entry in data["files"]:

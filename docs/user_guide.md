@@ -597,6 +597,10 @@ Run the notebook or `run` again after adding, changing or removing images:
 - changing only the image type reads nothing again: the histograms are the same for both
   types, and only the manifest records the new type.
 
+Run the brick again after adding images or masks before using a later brick: later bricks
+read the images and masks this brick's run recorded, and refuse an experiment holding images
+or masks the run did not record (they name them).
+
 To leave out images, for example a damaged file, list them under *Exclude images* (one per
 line) or pass `--exclude`. Excluded images are not read, are listed in the messages and the
 manifest, and their earlier rows are removed. Remove them from the list to analyse them
@@ -683,7 +687,7 @@ continues.
 | `unreadable_mask` | Error | A mask cannot be opened, or holds several images, or the `labels` group of an OME-Zarr image cannot be read (it must list its label images). Save the mask again as a TIFF label image, or repair the OME-Zarr labels. |
 | `mask_not_2d` | Error | A mask has dimensions other than Y and X that its metadata does not name as depth (Z) or time (T), for example a plain stack. (A mask one pixel high or wide is a 2D mask, not this error.) State the axes of its mask type once (`--mask-axes Cells=TYX`), or save it as a 2D label image, or with its axes named (an ImageJ hyperstack or OME-TIFF with axes TYX or ZYX). |
 | `invalid_mask_axes`, `mask_axes_contradict_header` | Error | Axes stated for a mask type do not fit its masks (one role, Y, X, Z or T, per axis; Y and X once each), name a type that is not found, or contradict the axes a mask's metadata names. Correct the statement. |
-| `mask_layout` | Error | A mask is stored with its Y and X the other way round from its image as read (X before Y, or the image's height and width swapped). Masks are never transposed: save it again with `numpy.swapaxes(mask, -1, -2)`. |
+| `mask_layout` | Error | A mask is stored with its Y and X the other way round from its image as read (its header names X before Y, for example `XY`, named in the message with the mask; or the image's height and width swapped). Masks are never transposed: save it again with `numpy.swapaxes(mask, -1, -2)`. |
 | `mask_planes_differ` | Error | The masks of one image have different numbers of depth slices or time points. Make every mask of an image with the image's planes. |
 | `mask_planes_mismatch` | Error (`run`) | A mask does not have the depth slices and time points of its image under the confirmed axis roles: a 2D mask fits only an image with one plane (not a Z-stack or time-lapse) unless its type is stated `YX` (`--mask-axes Cells=YX`: one mask shared by every plane), and a mask with Z or T needs as many slices or time points as its image. Save one mask plane per image plane, with the axes named, or check the axis roles. |
 | `mask_size_mismatch` | Error | A mask does not have the width and height of its image. Check that it was made from that image at full resolution. |
@@ -692,6 +696,7 @@ continues.
 | `ambiguous_mask` | Error | A mask's name could belong to two images (one image name starts another's) or fit both layouts. Rename the masks or the images so each names one image and one kind. |
 | `mask_without_image`, `mask_outside_type_folder`, `mask_of_excluded_image` | Warning | Files in the masks folder that match no image of the experiment (check the folder and file names), other files directly in the masks folder, or masks of excluded images. They are not used. |
 | `manifest_before_v040`, `images_not_in_manifest`, `images_missing`, `images_changed`, `position_id_not_recorded`, `identity_differs`, `axis_mapping_mismatch` | Error (other bricks) | A later brick checked its images against this brick's run (`check_sources`): a run written before v0.4.0 (redo it), an image the run did not analyse, no longer there, changed since, recorded with other labels or position (or by a version that did not record positions), or read with axes the run gave other roles. Run this brick again on the experiment as it is, or use the run's labels and axis roles. |
+| `UnrecordedFilesError` | Error (other bricks) | The experiment holds images or masks that the preprocessing run neither recorded nor excluded, for example added after the run. Later bricks never look for images themselves, so they refuse rather than leave them out: run this brick again on the experiment as it is (with its masks folder, `--masks`, for masks), or exclude the images. Files the run ignores (non-image files, system files, masks matching no image) do not count. A run holding OME-Zarr images also needs the `zarr` extra here (`pip install "morphobricks-preprocessing[zarr]"`), so that their label images can be checked; an OME-Zarr image whose `labels` group cannot be read is refused too. |
 | `zarr_not_installed` | Error | OME-Zarr images need the `zarr` extra. Install it, or exclude the OME-Zarr images. |
 
 ## 9. Python interface
