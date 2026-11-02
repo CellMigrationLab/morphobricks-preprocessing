@@ -192,8 +192,9 @@ from .run import (
     sample_planes,
     write_calibration,
 )
-from .run_inputs import Fov, LazyImage, RunInputs, RunInputsError
+from .run_inputs import Fov, LazyImage, RunInputs, RunInputsError, UnrecordedFilesError
 from .sources import check_sources
+from .unrecorded import UnrecordedFiles, unrecorded_files
 from .validation import Severity, ValidationIssue, has_errors
 from .zarr_input import (
     NgffError,
@@ -283,6 +284,9 @@ __all__ = [
     "RunResult",
     "RunInputs",
     "RunInputsError",
+    "UnrecordedFiles",
+    "UnrecordedFilesError",
+    "unrecorded_files",
     "Fov",
     "LazyImage",
     "RunSettings",

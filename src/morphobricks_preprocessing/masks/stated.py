@@ -84,7 +84,8 @@ def mask_roles(header: str, named: str, stated: str | None) -> tuple[str, str | 
             detail = f"header axes {header}, stated {stated}: {', '.join(contradicted)}"
             return "", "mask_axes_contradict_header", detail
     if roles.index("X") < roles.index("Y"):
-        return "", "mask_layout", f"axes {roles}: X is stored before Y"
+        given = f"header axes {header}" + ("" if stated is None else f", stated {stated}")
+        return "", "mask_layout", f"{given}: X is stored before Y"
     return roles, None, ""
 
 

@@ -10,6 +10,7 @@ image with an axis error is never read, so its masks are not compared.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import replace
 
 from .axes import AxisMapping, AxisReview
 from .masks import MaskInventory, mask_plane_issues
@@ -87,7 +88,8 @@ def mask_issues(
     :func:`mask_size_issues`, and the planes are checked by
     :func:`.masks.mask_plane_issues`. Images with an axis error are never read, so their
     masks are left out of both: a size or plane message would only repeat the axis error
-    in another form.
+    in another form. A mask whose own header puts X before Y has no roles and stays
+    refused (``mask_layout``): only the header's size comparison is replaced.
 
     Parameters
     ----------
@@ -106,6 +108,24 @@ def mask_issues(
     skip = review.axis_error_files
     return [
         *(i for i in masks.issues if i.code not in SIZE_CODES),
+        *_header_refusals(masks),
         *mask_size_issues(masks, metadata.files, review.file_mappings, skip=skip),
         *mask_plane_issues(masks, metadata.files, review.file_mappings, skip=skip),
     ]
+
+
+def _header_refusals(masks: MaskInventory) -> list[ValidationIssue]:
+    """Return the size-code issues of masks whose header was refused, not size-compared.
+
+    :func:`.masks.find_masks` gives ``mask_layout`` both to a mask whose own header puts X
+    before Y (it gets no roles) and to a mask whose Y and X are its image's header's
+    swapped. Only the second is superseded by :func:`mask_size_issues`; the first is kept,
+    or the run would record the mask without axes.
+    """
+    refused = {mask.path for mask in masks.files if not mask.axes}
+    kept = []
+    for issue in masks.issues:
+        paths = tuple(path for path in issue.paths if path in refused)
+        if issue.code in SIZE_CODES and paths:
+            kept.append(replace(issue, paths=paths))
+    return kept

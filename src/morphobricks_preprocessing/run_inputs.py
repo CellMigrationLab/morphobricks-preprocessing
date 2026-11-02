@@ -6,8 +6,13 @@ Nothing is parsed from names, guessed or transposed, and no file is read once it
 
 - :meth:`RunInputs.open` refuses a version 1 manifest (a run before the axis check), a table,
   design or ``calibration.csv`` whose SHA-256 is not the manifest's (also a
-  ``calibration.csv`` added since the run), and an image or mask changed or gone since the
-  run;
+  ``calibration.csv`` added since the run), an image or mask changed or gone since the
+  run, a mask recorded without axes (a v0.4.0rc1 run of a mask whose header puts X before
+  Y), and an image or mask in the experiment the run neither recorded nor excluded
+  (:class:`UnrecordedFilesError`, from :func:`.unrecorded.unrecorded_files`: folders are
+  listed, no pixel is read). OME-Zarr label images are never skipped: a run holding
+  OME-Zarr images is refused without the ``zarr`` extra, and so is a recorded image whose
+  ``labels`` group cannot be read;
 - every read checks the file's fingerprint again (:class:`.fingerprint.Fingerprint`);
 - masks are read by the recorded pairing only, with preprocessing's reader and its label
   check (:func:`.masks.check_labels`); a stated shared 2-D mask serves every plane.
@@ -43,10 +48,34 @@ from .masks import FOLDER, MaskFile, read_mask
 from .masks.header import _mask_header
 from .planes import DEFAULT_MEMORY_LIMIT, read_plane
 from .recorded_sizes import RecordedSize
+from .unrecorded import UnrecordedFiles, unrecorded_files
+from .validation import plural
+from .zarr_input import NgffError, ZarrUnavailableError
 
 
 class RunInputsError(ValueError):
     """The run cannot be used as it is: run preprocessing again (the message says why)."""
+
+
+class UnrecordedFilesError(RunInputsError):
+    """The experiment holds images or masks the run neither recorded nor excluded.
+
+    A brick never discovers files itself and never leaves them out without a word: run
+    preprocessing again on the experiment as it is, or exclude the images.
+
+    Attributes
+    ----------
+    files
+        The unrecorded images and masks (:class:`.unrecorded.UnrecordedFiles`).
+    """
+
+    def __init__(self, files: UnrecordedFiles) -> None:
+        super().__init__(_unrecorded_text(files))
+        self.files = files
+
+    def __reduce__(self) -> tuple:
+        """Pickle with the files, so a worker process can raise it to its parent."""
+        return (type(self), (self.files,))
 
 
 @dataclass(frozen=True)
@@ -138,7 +167,12 @@ class RunInputs:
         ------
         RunInputsError
             For a run before v0.4.0, a table, design or calibration changed since the run,
-            or an image or mask changed or gone.
+            an image or mask changed or gone, a mask recorded without axes, OME-Zarr images
+            without the ``zarr`` extra (``morphobricks-preprocessing[zarr]``), or an OME-Zarr
+            image whose ``labels`` group cannot be read.
+        UnrecordedFilesError
+            For images or masks in the experiment that the run neither recorded nor
+            excluded (added since the run): it names them.
         """
         output = Path(output_folder).resolve()
         manifest = _manifest(output)
@@ -156,13 +190,7 @@ class RunInputs:
             manifest=manifest,
             records=tuple(read_plane_histograms(output / OUTPUT_FILENAME)),
         )
-        changed = [e.relative_path for e in manifest.files if not inputs._unchanged(e)]
-        if changed:
-            raise RunInputsError(_changed_text(changed))
-        recorded = (manifest.masks or {}).get("files", ())
-        changed = [m["path"] for m in recorded if not inputs._mask_unchanged(m)]
-        if changed:
-            raise RunInputsError(_changed_text(changed, "mask"))
+        inputs._check_files()
         return inputs
 
     def fovs(self) -> tuple[Fov, ...]:
@@ -284,6 +312,29 @@ class RunInputs:
         """Return the image type the user confirmed (``"fluorescence"`` or ``"rgb"``), or None."""
         return self.manifest.image_type
 
+    def _check_files(self) -> None:
+        """Refuse changed or gone files, masks without axes, unchecked labels, unrecorded files."""
+        changed = [e.relative_path for e in self.manifest.files if not self._unchanged(e)]
+        if changed:
+            raise RunInputsError(_changed_text(changed))
+        recorded = (self.manifest.masks or {}).get("files", ())
+        changed = [m["path"] for m in recorded if not self._mask_unchanged(m)]
+        if changed:
+            raise RunInputsError(_changed_text(changed, "mask"))
+        without_axes = [m["path"] for m in recorded if not m.get("axes") or not m.get("roles")]
+        if without_axes:
+            raise RunInputsError(_without_axes_text(without_axes))
+        try:
+            unrecorded = unrecorded_files(
+                self.manifest, self.experiment_root, self.masks_root, self.output_folder
+            )
+        except ZarrUnavailableError as exc:
+            raise RunInputsError(_ZARR_MISSING) from exc
+        except NgffError as exc:
+            raise RunInputsError(_labels_unreadable_text(exc)) from exc
+        if unrecorded:
+            raise UnrecordedFilesError(unrecorded)
+
     def _fov(self, entry: FileEntry) -> Fov:
         """Describe one position from its entry and its rows of the snapshot."""
         rows = [r for r in self.records if r.source_relative_path == entry.relative_path]
@@ -403,12 +454,64 @@ def _check_calibration(path: Path, expected: str | None) -> None:
 
 def _changed_text(paths: list[str], what: str = "image") -> str:
     """Say which files changed or went missing since the run."""
-    shown = ", ".join(sorted(paths)[:5]) + (" and more" if len(paths) > 5 else "")
     where = "experiment_root=" if what == "image" else "masks_root="
     return (
         f"{len(paths)} {what}{'' if len(paths) == 1 else 's'} changed or missing since the "
-        f"run: {shown}. Run preprocessing again on the experiment as it is (or, if the "
+        f"run: {_shown(paths)}. Run preprocessing again on the experiment as it is (or, if the "
         f"{what}s were only moved, give {where} where they are now)."
+    )
+
+
+def _shown(paths: tuple[str, ...] | list[str]) -> str:
+    """Name up to five paths, sorted."""
+    return ", ".join(sorted(paths)[:5]) + (" and more" if len(paths) > 5 else "")
+
+
+def _without_axes_text(paths: list[str]) -> str:
+    """Say which masks the run recorded without axes, and what to do."""
+    return (
+        f"The run recorded {plural(len(paths), 'mask')} without axes: "
+        f"{_shown(paths)}. A run before v0.4.0 wrote such a record for a mask whose header "
+        "puts X before Y; masks are never transposed. Save each such mask again with its "
+        "last two axes swapped (numpy.swapaxes(mask, -1, -2)), then run preprocessing again."
+    )
+
+
+def _unrecorded_text(files: UnrecordedFiles) -> str:
+    """Name the images and masks the run did not record, and what to do."""
+    parts = [
+        f"{plural(len(found), what)} ({_shown(found)})"
+        for what, found in (("image", files.images), ("mask", files.masks))
+        if found
+    ]
+    masks = (
+        " with its masks folder (--masks <masks folder>; the label images of OME-Zarr images "
+        "are added)"
+        if files.masks
+        else ""
+    )
+    exclude = ", or exclude the images (--exclude)" if files.images else ""
+    return (
+        f"The experiment holds {' and '.join(parts)} that the preprocessing run did not "
+        "record, for example added since the run; they would be left out. Run preprocessing "
+        f"again on the experiment as it is{masks} (morphobricks-preprocessing run --output "
+        f"<output folder>){exclude}."
+    )
+
+
+_ZARR_MISSING = (
+    "The run holds OME-Zarr images, and the zarr package is not installed, so their label "
+    "images cannot be checked against the run (none is ever skipped). Install it with: "
+    'pip install "morphobricks-preprocessing[zarr]"'
+)
+
+
+def _labels_unreadable_text(exc: NgffError) -> str:
+    """Say which OME-Zarr image's labels group cannot be read, and what to do."""
+    return (
+        f"The run cannot be checked: {exc}. Its label images may have changed since the "
+        "run; check the image's labels group, then run preprocessing again on the "
+        "experiment as it is."
     )
 
 
