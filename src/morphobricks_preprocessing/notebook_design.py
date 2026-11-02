@@ -34,6 +34,7 @@ class _DesignCard:
     # Experiment design (step 1) -------------------------------------------------------------
 
     def _build_design_card(self) -> None:
+        """Build the experiment design card, hidden until the labels are confirmed."""
         self.design_status = widgets.HTML()
         self.design_change = ui.button(
             " Change the experiment design",
@@ -185,6 +186,7 @@ class _DesignCard:
         self._refresh_design_status()
 
     def _build_design_editor(self) -> None:
+        """Build the pairing dropdowns and the control checkboxes of the design."""
         design = self.design
         pairing = len(design.conditions) > 1 and not design.single_repeat
         ui.set_visible(self.pairing_box, pairing)

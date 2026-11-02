@@ -57,11 +57,6 @@ MODE_HELP = (
     "earlier results as they are. Full takes longer; use it to start from scratch."
 )
 
-PYRAMID_OPTIONS = [
-    ("Automatic (recommended)", "auto"),
-    ("Full resolution only", "none"),
-    ("Choose the number of smaller copies", "fixed"),
-]
 _MAX_PLOTTED_GROUPS = 12
 # Short names of the intensity checks, for the tiles and the table's first column.
 _CHECK_LABELS = {

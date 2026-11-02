@@ -1,5 +1,9 @@
 """The input changes a run would report, named before it runs (design v0.4 §1, PP-10).
 
+It also works out, from the headers only, how each image's planes would be read within
+the memory limit (:func:`plane_layouts`, :func:`memory_plan`), for the notebook's "What
+will happen".
+
 A run uses every input it is given and takes the others from the earlier run in its output
 folder; its report names each input given that differs from the recorded one, with its
 effect (:mod:`.recorded`). :func:`planned_changes` names them before the run, from the same
@@ -10,10 +14,16 @@ run's manifest and design; it writes nothing.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
+from morphobricks_normalization.ranges import HistogramSettings
+
+from ..axes import AxisMapping
 from ..calibration import CalibrationReview
 from ..design import ExperimentDesign
+from ..planes import PlaneLayout, PlaneReadError, plane_layout
 from .design_file import design_for_run
 from .recorded import GivenInputs, InputChange, calibration_change, resolve_inputs, usable
 from .reuse import read_previous
@@ -51,3 +61,88 @@ def planned_changes(
     designed = design_for_run(design, output, previous)[2] if design is not None else ()
     calibrated = () if calibration is None else calibration_change(usable(previous), calibration)
     return (*changes, *designed, *calibrated)
+
+
+def plane_layouts(
+    root: Path,
+    file_mappings: Mapping[str, AxisMapping],
+    *,
+    memory_limit: int,
+    bin_count: int | None = None,
+    histogram_settings: HistogramSettings | None = None,
+) -> dict[str, PlaneLayout]:
+    """Return how each image's planes would be read, from its header only.
+
+    Parameters
+    ----------
+    root
+        The experiment folder.
+    file_mappings
+        Each image's axis mapping (:attr:`.axes.AxisReview.file_mappings`).
+    memory_limit, bin_count, histogram_settings
+        As :func:`.planes.plane_layout`.
+
+    Returns
+    -------
+    dict
+        ``{relative path: layout}``, in path order; an image whose layout cannot be worked
+        out is left out (the run reports it as ``unsupported_layout``).
+    """
+    layouts = {}
+    for rel, mapping in sorted(file_mappings.items()):
+        try:
+            layouts[rel] = plane_layout(
+                root / rel,
+                mapping,
+                memory_limit=memory_limit,
+                bin_count=bin_count,
+                histogram_settings=histogram_settings,
+            )
+        except PlaneReadError:
+            continue
+    return layouts
+
+
+@dataclass(frozen=True)
+class MemoryPlan:
+    """Which images the memory limit makes the run read in blocks, or stop on.
+
+    Attributes
+    ----------
+    blocked
+        Images with planes too large to read whole, read in blocks (same histograms).
+    largest
+        The most memory a plane of ``blocked`` needs whole, in bytes (0 without any).
+    over
+        Images whose smallest readable piece is over the limit: the run stops on them.
+    need
+        The most memory the smallest piece of a plane of ``over`` needs, in bytes (0
+        without any).
+    """
+
+    blocked: tuple[str, ...] = ()
+    largest: int = 0
+    over: tuple[str, ...] = ()
+    need: int = 0
+
+
+def memory_plan(layouts: Mapping[str, PlaneLayout]) -> MemoryPlan:
+    """Return which images are read in blocks and which cannot be read within the limit.
+
+    Parameters
+    ----------
+    layouts
+        Each image's layout (:func:`plane_layouts`).
+
+    Returns
+    -------
+    MemoryPlan
+    """
+    blocked = {rel: lay for rel, lay in layouts.items() if lay.fits and lay.in_blocks}
+    over = {rel: lay for rel, lay in layouts.items() if not lay.fits}
+    return MemoryPlan(
+        tuple(blocked),
+        max((lay.memory_estimate for lay in blocked.values()), default=0),
+        tuple(over),
+        max((lay.min_memory_estimate for lay in over.values()), default=0),
+    )

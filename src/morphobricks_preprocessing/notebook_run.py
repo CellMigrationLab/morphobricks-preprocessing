@@ -167,6 +167,7 @@ class _RunStep:
         ]
 
     def _reset_settings(self, pre: Preflight) -> None:
+        """Set the bin count limits and default for the checked pixel type."""
         dtype = pre.metadata.dtype
         self._default_bins = None
         if (
@@ -202,6 +203,7 @@ class _RunStep:
         self._refresh_run_step()
 
     def _refresh_run_step(self) -> None:
+        """Update what is still to do before the run, and what will happen."""
         if self.result is None:
             self.run_next.value = ""
         pre = self.preflight

@@ -24,11 +24,34 @@ class _AxisStep:
     # Step 2 ------------------------------------------------------------------------------
 
     def _build_axis_step(self) -> None:
+        """Build step 2: the role boxes, the missing-axes card, the preview, the confirmation."""
         self.axis_box = widgets.VBox()
         self.role_dropdowns: list[widgets.Dropdown] = []
         self.role_notes: list[widgets.HTML] = []
         self.plane_summary = widgets.HTML()
         self.axis_status = widgets.HTML()
+        self._build_missing_card()
+        self._build_preview_card()
+        self.confirm_button = ui.button(
+            " Confirm axis roles",
+            style="success",
+            icon="check",
+            tooltip="Use these roles for every image of the experiment",
+            main=True,
+        )
+        self.confirmed_status = widgets.HTML()
+        self.axis_next = widgets.HTML()
+        self.missing_as_singleton.observe(lambda _: self._mapping_changed())
+        self.preview_button.on_click(lambda _: self.show_preview())
+        self.preview_file.observe(lambda _: self._preview_file_changed(), names="value")
+        for slider in self.preview_sliders.values():
+            slider.observe(lambda _: self._render_preview_if_shown(), names="value")
+        self.preview_checked.observe(lambda _: self._update_confirm_button())
+        self.confirm_button.on_click(lambda _: self._toggle_confirmation())
+        self._build_image_type_card()
+
+    def _build_missing_card(self) -> None:
+        """Build the card asking whether images lacking an axis have one plane along it."""
         self.missing_note = widgets.HTML()
         self.missing_as_singleton = ui.ConfirmToggle(
             "Do these images really have a single plane along the missing axes?",
@@ -44,6 +67,9 @@ class _AxisStep:
             [self.missing_note, self.missing_as_singleton.widget],
             visible=False,
         )
+
+    def _build_preview_card(self) -> None:
+        """Build the preview card: image, sliders, the picture and its confirmation."""
         self.preview_file = widgets.Dropdown(layout=widgets.Layout(width="99%"))
         self.preview_sliders = {
             role: widgets.IntSlider(
@@ -89,25 +115,9 @@ class _AxisStep:
                 self.preview_checked.widget,
             ],
         )
-        self.confirm_button = ui.button(
-            " Confirm axis roles",
-            style="success",
-            icon="check",
-            tooltip="Use these roles for every image of the experiment",
-            main=True,
-        )
-        self.confirmed_status = widgets.HTML()
-        self.axis_next = widgets.HTML()
-        self.missing_as_singleton.observe(lambda _: self._mapping_changed())
-        self.preview_button.on_click(lambda _: self.show_preview())
-        self.preview_file.observe(lambda _: self._preview_file_changed(), names="value")
-        for slider in self.preview_sliders.values():
-            slider.observe(lambda _: self._render_preview_if_shown(), names="value")
-        self.preview_checked.observe(lambda _: self._update_confirm_button())
-        self.confirm_button.on_click(lambda _: self._toggle_confirmation())
-        self._build_image_type_card()
 
     def _build_image_type_card(self) -> None:
+        """Build the image type card, hidden until the axis roles are confirmed."""
         self.image_type = widgets.RadioButtons(
             options=IMAGE_TYPE_OPTIONS, value=FLUORESCENCE, layout=widgets.Layout(width="99%")
         )
@@ -140,72 +150,18 @@ class _AxisStep:
         self.image_type_checked.observe(self._image_type_answered)
 
     def _refresh_axis_step(self) -> None:
+        """Rebuild step 2 for the checked folder: one role box per axis, reset the preview."""
         pre = self.preflight
         self.axis_next.value = ""
         self._preview_shown = False
         self._close_image_type()
-        if pre is None:
-            self.axis_box.children = [
-                widgets.HTML(
-                    ui.status("info", "Waiting for step 1.", ["Check the experiment folder first."])
-                )
-            ]
+        waiting = self._axis_waiting()
+        if waiting:
+            self.axis_box.children = [widgets.HTML(waiting)]
             return
-        if self.mapping is None:
-            self.axis_box.children = [
-                widgets.HTML(
-                    ui.status(
-                        "error",
-                        "No axis roles can be suggested.",
-                        [
-                            "The images have no readable headers, or their dimensions are "
-                            "arranged differently.",
-                            "See the messages in step 1.",
-                        ],
-                    )
-                )
-            ]
-            return
-        ranges = axis_length_ranges(self.mapping, pre.metadata.files)
-        self.role_dropdowns, self.role_notes, axis_cards = [], [], []
-        for axis, role, (low, high) in zip(
-            self.mapping.axes, self.mapping.roles, ranges, strict=True
-        ):
-            dropdown = widgets.Dropdown(
-                options=ROLE_OPTIONS, value=role or "-", layout=widgets.Layout(width="99%")
-            )
-            note = widgets.HTML()
-            dropdown.observe(lambda _: self._roles_edited(), names="value")
-            self.role_dropdowns.append(dropdown)
-            self.role_notes.append(note)
-            length = f"{low}" if low == high else f"{low} to {high}"
-            box = widgets.VBox(
-                [
-                    widgets.HTML(
-                        f"<b>{html.escape(axis_name(axis))}</b> in the file"
-                        f"<div class='mb-help'>Length {length} · suggested: "
-                        f"{html.escape(role or 'no role')}</div>"
-                    ),
-                    dropdown,
-                    note,
-                ]
-            )
-            box.add_class("mb-card")
-            axis_cards.append(box)
-        grid = widgets.GridBox(
-            axis_cards,
-            layout=widgets.Layout(
-                grid_template_columns="repeat(auto-fill, minmax(240px, 1fr))", grid_gap="10px"
-            ),
-        )
+        grid = self._role_grid()
         self._refresh_missing_card(pre)
-        self.preview_checked.set(False, notify=False)
-        self.preview_checked.disabled = True
-        for slider in self.preview_sliders.values():
-            ui.set_visible(slider, False)
-        self.preview_image.value = b""
-        self.preview_caption.value = ""
-        self.confirmed_status.value = ""
+        self._reset_preview()
         self._set_locked(False)
         self.axis_box.children = [
             ui.card(
@@ -231,7 +187,69 @@ class _AxisStep:
         self._fill_preview_files()
         self._mapping_changed()
 
+    def _axis_waiting(self) -> str:
+        """Return why no roles can be shown yet (HTML), or an empty string."""
+        if self.preflight is None:
+            return ui.status("info", "Waiting for step 1.", ["Check the experiment folder first."])
+        if self.mapping is None:
+            return ui.status(
+                "error",
+                "No axis roles can be suggested.",
+                [
+                    "The images have no readable headers, or their dimensions are "
+                    "arranged differently.",
+                    "See the messages in step 1.",
+                ],
+            )
+        return ""
+
+    def _role_grid(self) -> widgets.GridBox:
+        """Build one box per axis, with its length, the suggested role and a dropdown."""
+        ranges = axis_length_ranges(self.mapping, self.preflight.metadata.files)
+        self.role_dropdowns, self.role_notes, axis_cards = [], [], []
+        for axis, role, (low, high) in zip(
+            self.mapping.axes, self.mapping.roles, ranges, strict=True
+        ):
+            dropdown = widgets.Dropdown(
+                options=ROLE_OPTIONS, value=role or "-", layout=widgets.Layout(width="99%")
+            )
+            note = widgets.HTML()
+            dropdown.observe(lambda _: self._roles_edited(), names="value")
+            self.role_dropdowns.append(dropdown)
+            self.role_notes.append(note)
+            length = f"{low}" if low == high else f"{low} to {high}"
+            box = widgets.VBox(
+                [
+                    widgets.HTML(
+                        f"<b>{html.escape(axis_name(axis))}</b> in the file"
+                        f"<div class='mb-help'>Length {length} · suggested: "
+                        f"{html.escape(role or 'no role')}</div>"
+                    ),
+                    dropdown,
+                    note,
+                ]
+            )
+            box.add_class("mb-card")
+            axis_cards.append(box)
+        return widgets.GridBox(
+            axis_cards,
+            layout=widgets.Layout(
+                grid_template_columns="repeat(auto-fill, minmax(240px, 1fr))", grid_gap="10px"
+            ),
+        )
+
+    def _reset_preview(self) -> None:
+        """Clear the preview and its answer: new roles need a new look."""
+        self.preview_checked.set(False, notify=False)
+        self.preview_checked.disabled = True
+        for slider in self.preview_sliders.values():
+            ui.set_visible(slider, False)
+        self.preview_image.value = b""
+        self.preview_caption.value = ""
+        self.confirmed_status.value = ""
+
     def _refresh_missing_card(self, pre: Preflight) -> None:
+        """Show the images lacking some of the axes, and ask about them."""
         # OME-Zarr images may store the same roles in another order; only roles that
         # an image lacks need the user's confirmation.
         lacking: dict[str, str] = {}
@@ -271,6 +289,7 @@ class _AxisStep:
         self._mapping_changed()
 
     def _mapping_changed(self) -> None:
+        """Check the roles as edited and show what they mean for every image."""
         if self.preflight is None or self.mapping is None or not self.role_dropdowns:
             return
         try:

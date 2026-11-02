@@ -21,9 +21,9 @@ from .discovery_report import REPORT_TEXT_FILENAME
 from .manifest import MANIFEST_FILENAME, ManifestFormatError, read_manifest
 from .notebook_options import _PLAN_PATHS, IMAGE_TYPE_NAMES
 from .notebook_render import change_lines
-from .planes import PlaneLayout, PlaneReadError, format_bytes, plane_layout
+from .planes import PlaneLayout, format_bytes
 from .run import FULL
-from .run.planned import planned_changes
+from .run.planned import memory_plan, plane_layouts, planned_changes
 from .run.recorded import GivenInputs, InputChange
 from .validation import plural
 
@@ -153,52 +153,45 @@ class _RunPlan:
         # A new check of the folder gives a new Preflight, even for the same folder.
         if cached is not None and cached[0][0] is self.preflight and cached[0][1:] == key:
             return cached[1]
-        root = self.preflight.discovery.root
-        layouts = {}
-        for rel, mapping in sorted(review.file_mappings.items()):
-            try:
-                layouts[rel] = plane_layout(
-                    root / rel,
-                    mapping,
-                    memory_limit=self._memory_limit(),
-                    bin_count=bins,
-                    histogram_settings=histogram,
-                )
-            except PlaneReadError:
-                continue  # the run reports these images as unsupported_layout
+        layouts = plane_layouts(
+            self.preflight.discovery.root,
+            review.file_mappings,
+            memory_limit=self._memory_limit(),
+            bin_count=bins,
+            histogram_settings=histogram,
+        )
         self._layouts_cache = ((self.preflight, *key), layouts)
         return layouts
 
     def _memory_plan(self, review: AxisReview) -> tuple[str, str]:
         """Return the "read in blocks" bullet and the "cannot be read" card, if any."""
-        layouts = self._plan_layouts(review)
+        plan = memory_plan(self._plan_layouts(review))
         limit = format_bytes(self._memory_limit())
-        blocked = {rel: lay for rel, lay in layouts.items() if lay.fits and lay.in_blocks}
-        over = {rel: lay for rel, lay in layouts.items() if not lay.fits}
         line = card = ""
-        if blocked:
-            largest = format_bytes(max(lay.memory_estimate for lay in blocked.values()))
+        if plan.blocked:
+            largest = format_bytes(plan.largest)
             line = (
-                f"<b>{plural(len(blocked), 'image')}</b> {'has' if len(blocked) == 1 else 'have'} "
+                f"<b>{plural(len(plan.blocked), 'image')}</b> "
+                f"{'has' if len(plan.blocked) == 1 else 'have'} "
                 f"planes too large to read whole within the memory limit of {limit} (they need "
                 f"up to {largest}), so they will be read in blocks. The histograms are exactly the "
                 "same; reading takes longer. To read them whole, raise the memory limit to "
                 f"{largest} or more in <b>Settings</b> above (untick <b>Use the recommended "
                 "settings</b>), "
                 "if this computer has enough memory."
-                + ui.path_list(list(blocked), limit=_PLAN_PATHS)
+                + ui.path_list(list(plan.blocked), limit=_PLAN_PATHS)
             )
-        if over:
-            need = format_bytes(max(lay.min_memory_estimate for lay in over.values()))
+        if plan.over:
+            need = format_bytes(plan.need)
             card = ui.status(
                 "error",
-                f"{plural(len(over), 'image')} cannot be read within the memory limit; "
+                f"{plural(len(plan.over), 'image')} cannot be read within the memory limit; "
                 "the run will stop.",
                 [
                     f"The smallest part of a plane that can be read on its own needs up to "
                     f"{need}, more than the limit of {limit}. A plane stored compressed in "
                     "one piece has to be decoded whole."
-                    + ui.path_list(list(over), limit=_PLAN_PATHS),
+                    + ui.path_list(list(plan.over), limit=_PLAN_PATHS),
                     f"<b>What to do:</b> raise the memory limit to {need} or more in "
                     "<b>Settings</b> above, if this computer has enough memory, or exclude "
                     "these images in step 1. "

@@ -19,6 +19,7 @@ class _AxisPreview:
     """Step 2's preview, the confirmation of the axis roles and the image type."""
 
     def _fill_preview_files(self) -> None:
+        """List the images that fit the roles in the preview dropdown."""
         files = [
             f
             for f in self.preflight.metadata.files
@@ -194,6 +195,7 @@ class _AxisPreview:
         ui.set_visible(self.image_type_card, False)
 
     def _show_image_type_note(self) -> None:
+        """Explain the suggested image type, and warn when another is chosen."""
         review = self._image_type_review
         if review is None:
             return
@@ -227,6 +229,7 @@ class _AxisPreview:
         self._refresh_run_step()
 
     def _refresh_axis_next(self) -> None:
+        """Say what to do next once the axis roles are confirmed."""
         if self.confirmed_image_type is None:
             self.axis_next.value = ui.next_steps(
                 "Confirm the image type in Step 2.",
