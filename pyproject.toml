@@ -45,6 +45,9 @@ zarr = [
 dev = [
     "pytest>=7.4",
     "ruff>=0.6",
+    # Running the notebook file in a real kernel (tests/test_notebook_file.py).
+    "nbclient>=0.7",
+    "ipykernel>=6",
 ]
 
 [project.scripts]

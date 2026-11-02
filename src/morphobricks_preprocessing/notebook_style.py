@@ -384,3 +384,34 @@ def ask_open_file(initial: str = "", filetypes=(("All files", "*.*"),)) -> str |
     finally:
         root.destroy()
     return os.path.normpath(chosen) if chosen else ""
+
+
+def no_dialog_status(dialog: str, target: str) -> str:
+    """HTML of the status card shown when no system dialog can open (Google Colab, a server).
+
+    The Browse… buttons open a dialog on the computer running the kernel, which a hosted
+    runtime such as Google Colab does not have; the paths are pasted instead.
+
+    Parameters
+    ----------
+    dialog
+        What the dialog chooses, ``"folder"`` or ``"file"``.
+    target
+        What to paste the path of, e.g. ``"the folder"``.
+
+    Returns
+    -------
+    str
+        An amber status card naming how to copy a path on Google Colab.
+    """
+    return status(
+        "warn",
+        f"The {dialog} dialog could not be opened here.",
+        [
+            f"Paste the path of {target} into the box instead.",
+            f"On Google Colab: open the <b>Files</b> panel in the left bar, right-click the "
+            f"{dialog}, choose <b>Copy path</b> and paste it. Google Drive is the folder "
+            "<b>/content/drive/MyDrive</b>.",
+        ],
+        raw=True,
+    )
