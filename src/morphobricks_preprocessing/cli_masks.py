@@ -6,7 +6,9 @@ with each mask type and the relationships between them (contract §15). Like ``r
 takes every input it is not given from the run in the output folder (design v0.4 §1): the
 experiment folder (``experiment_not_recorded`` without one), the masks folder, the mask
 axes and the exclusions; a value given that differs is used and named. The pairing, the
-scan and the write under the lock are :mod:`.run.mask_step`'s, shared with the notebook.
+scan and the write are :mod:`.run.mask_step`'s, shared with the notebook: the output
+folder's lock is held from before the first mask is read to the write, so a locked folder
+is refused before any mask is read.
 """
 
 from __future__ import annotations
@@ -97,8 +99,7 @@ def masks_command(args: argparse.Namespace) -> int:
     except ValueError as exc:  # masks whose pixels cannot be used (planes, labels)
         print(f"The masks cannot be used: {exc}")
         return 1
-    if result.refusal is not None:
-        print()
+    if result.refusal is not None:  # refused before any mask is read
         print(format_issues([result.refusal]))
         return 1
     print()

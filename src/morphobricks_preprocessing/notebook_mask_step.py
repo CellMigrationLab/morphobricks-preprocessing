@@ -177,8 +177,8 @@ class _MaskStepCard:
             self.mask_step_progress.bar_style = "danger"
             self.mask_step_status.value = ui.status(
                 "error",
-                "The description was not written: the output folder is locked.",
-                ["The masks were read, but nothing was written."],
+                "The masks were not read: the output folder is locked.",
+                ["No mask was read and nothing was written."],
             )
             self.mask_step_lock.show(step.output_folder)
             return None

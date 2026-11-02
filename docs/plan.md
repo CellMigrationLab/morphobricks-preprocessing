@@ -472,7 +472,9 @@ API, CLI). The notebook and CLI only call the API.
   - Move only, first: the CLI's pairing with the recorded inputs, scan and write under the
     lock leave `cli_masks.masks_command` for `run.mask_step` (orchestration):
     `prepare_mask_step` (a `MaskStep`) and `describe_masks` (a `MaskStepResult`, the lock
-    refusal returned rather than raised). The command only prints; its output is unchanged
+    refusal returned rather than raised). Review (coordinator decision): the lock is held
+    from before the first mask is read to the write, so a locked folder is refused before
+    any mask is read, in the command and the notebook. The command only prints; its output is unchanged
     (same text and exit status over 13 scenarios, the HPMEC data included).
   - Step 3's **Describe the masks (optional)** card (`notebook_mask_step`, ui): enabled only
     after a run that recorded masks (`recorded_mask_types`); runs the step with the run's

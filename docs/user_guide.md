@@ -462,9 +462,9 @@ results or comparing another grouping.
      other type hold 0, 1, 2 or 3 or more, and how many are outside or split), masks of
      the same objects, and the hierarchy of direct parents. These are suggestions to
      check, not decisions. The description is written to **mask_relationships.json** in
-     the output folder (its path is shown), holding the output folder's lock: when another
-     run holds it, **The output folder is locked** is shown with **Remove the lock of a
-     stopped run**, and nothing is written. Mask errors found since the run (a mask
+     the output folder (its path is shown). The output folder's lock is held from before the
+     first mask is read until the file is written: when another run holds it, **The output folder is locked** is shown with **Remove the lock of a
+     stopped run**, no mask is read and nothing is written. Mask errors found since the run (a mask
      changed or removed) and masks that cannot be used (a label above 2,147,483,647) are
      shown as red cards, and nothing is written. The notebook uses the default thresholds
      (contract §15.1); the `masks` command can change them. A new run clears the card;
@@ -637,6 +637,9 @@ you give that differs from the recorded one is used for this scan and printed as
 the run keeps its recorded value until you give it the new one. Label 0 is the background and
 objects have positive labels: a mask with a negative value stops the command with a message
 naming the mask, and no report is written.
+The output folder's lock is held from before the first mask is read until the report is
+written: when another run holds it, the command stops with `output_locked` before reading
+any mask.
 
 The rules behind each suggestion use thresholds you can change, for example
 `--inside-object-share 0.8` to call a kind of mask "inside" another when 80% of its objects
@@ -755,8 +758,10 @@ with `chmod a+r <output folder>/*`, or delete them before running again.
 Only one run at a time can use an output folder: a run holds a lock file
 (`.morphobricks-preprocessing.lock`) and a second run is refused (`output_locked`). If the
 process is forcibly stopped, its lock stays; remove it with `--remove-stale-lock` once you
-are sure no run is going on (every command takes it). `check` and `masks` hold the lock
-while they write their reports, `design` and `calibrate` while they change their files,
+are sure no run is going on (every command takes it). `check` holds the lock
+while it writes its report, `masks` (and **Describe the masks**) from before the first
+mask is read until `mask_relationships.json` is written (a locked folder is refused before
+any mask is read), `design` and `calibrate` while they change their files,
 and are refused the same way. A stopped run leaves the last good results in place;
 rerunning checks the table against the manifest and rebuilds a mismatched pair.
 `mask_relationships.json` is removed by a `full` run and when the masks changed since it

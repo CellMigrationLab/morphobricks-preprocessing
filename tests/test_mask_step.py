@@ -16,7 +16,8 @@ from morphobricks_preprocessing.run import (
     describe_masks,
     prepare_mask_step,
 )
-from morphobricks_preprocessing.run.lock import output_lock
+from morphobricks_preprocessing.run import mask_step
+from morphobricks_preprocessing.run.lock import output_lock, read_lock
 from morphobricks_preprocessing.testing import make_clean_run
 
 
@@ -84,12 +85,35 @@ def test_mask_errors_stop_the_step_before_any_mask_is_read(clean):
         describe_masks(step)
 
 
-def test_a_locked_output_folder_gets_the_report_but_no_file(clean):
+def test_a_locked_output_folder_is_refused_before_any_mask_is_read(clean, monkeypatch):
     step = prepare_mask_step(None, clean.output)
+    seen = []
+    monkeypatch.setattr(mask_step, "scan_masks", lambda *a, **k: seen.append(a))
     with output_lock(clean.output):
-        result = describe_masks(step)
+        result = describe_masks(step, progress=lambda *a: seen.append(a))
     assert result.refusal.code == "output_locked"
-    assert result.path is None and result.report.images == 4
+    assert result.path is None and result.report is None
+    assert seen == []
+    assert not (clean.output / MASK_REPORT_FILENAME).exists()
+
+
+def test_the_lock_is_held_from_the_first_mask_read_to_the_write(clean):
+    held = []
+    result = describe_masks(
+        prepare_mask_step(None, clean.output),
+        progress=lambda *a: held.append(read_lock(clean.output) is not None),
+    )
+    assert result.refusal is None
+    assert held and all(held)
+    assert read_lock(clean.output) is None
+
+
+def test_the_command_refuses_a_locked_folder_before_reading_a_mask(clean, capsys):
+    with output_lock(clean.output):
+        assert main(["masks", "--output", str(clean.output)]) == 1
+    out = capsys.readouterr().out
+    assert "output_locked" in out or "Another run is using this output folder" in out
+    assert "[1/4]" not in out
     assert not (clean.output / MASK_REPORT_FILENAME).exists()
 
 
