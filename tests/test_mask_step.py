@@ -14,9 +14,9 @@ from morphobricks_preprocessing.mask_scan import MASK_REPORT_FILENAME
 from morphobricks_preprocessing.run import (
     MaskStep,
     describe_masks,
+    mask_step,
     prepare_mask_step,
 )
-from morphobricks_preprocessing.run import mask_step
 from morphobricks_preprocessing.run.lock import output_lock, read_lock
 from morphobricks_preprocessing.testing import make_clean_run
 
