@@ -3,6 +3,7 @@
 Every input left out is the earlier run's in the same output folder (design v0.4 §1):
 ``--axes`` is needed for the first run and for plain stacks that are new or changed;
 ``--no-masks`` drops the recorded masks folder; ``--mode full`` recomputes every row.
+Also the helpers every command shares: :func:`parse_size` and :func:`command_preflight`.
 """
 
 from __future__ import annotations
