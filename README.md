@@ -30,6 +30,9 @@ Pre-alpha. Implemented and tested:
   recorded per axis with their source; never guessed (`calibration`, command `calibrate`)
 - Axis mapping: prefill from metadata, validation, applying one mapping to every
   file (`axes`)
+- Named-axis copies: images whose metadata name their axes wrongly or not at all saved as
+  OME-TIFF with the confirmed roles, pixel for pixel, in a new folder with a conversion
+  record (`conversion`, command `convert`)
 - Reading TIFFs one 2D plane at a time, with a memory limit and a preview plane, and the
   channels of a table row one after another; planes too large for the limit are read in
   blocks with identical results (`planes`)
@@ -52,7 +55,8 @@ Pre-alpha. Implemented and tested:
   refused, projections included (`mask_planes_mismatch`), and the manifest records each
   mask's `axes` and `shape`
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
-  and a command line (`morphobricks-preprocessing check` / `run` / `masks` / `calibrate`)
+  and a command line (`morphobricks-preprocessing check` / `run` / `masks` / `calibrate` /
+  `design` / `convert`)
 
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
 to its release v0.3.2): per-plane histograms with the robust range and the range check
@@ -155,6 +159,7 @@ morphobricks-preprocessing run /data/exp1 --axes ZCYX
 morphobricks-preprocessing run --output /data/exp1_MorphoBricks_Preprocessing   # later runs
 morphobricks-preprocessing masks --output /data/exp1_MorphoBricks_Preprocessing # mask step
 morphobricks-preprocessing calibrate --output /data/exp1_MorphoBricks_Preprocessing
+morphobricks-preprocessing convert /data/exp1 --to /data/exp1_named_axes --axes ZXY  # axis errors
 ```
 
 `check` writes the report and, when the output folder holds no design, an
@@ -163,7 +168,11 @@ groups (`--confirm GROUP`, `--confirm-all`), marks controls (`--control`, `--no-
 and pairs repeats (`--repeat-group CONDITION/REPEAT=GROUP`) without editing the file;
 nothing is confirmed unless asked. `run` and `masks` reuse every input the run in the
 output folder recorded. A run that stops writes its report and says so. Every output file
-gets the permissions a file you save yourself would (your umask). Details in the
+gets the permissions a file you save yourself would (your umask). `convert` saves the
+images whose metadata name their axes wrongly or not at all as named-axis OME-TIFF copies
+with your roles in a new folder (each plane bit for bit the plane read with those roles;
+every other image copied as it is; a conversion record written last), then you run
+preprocessing on that folder with the same output folder. Details in the
 [user guide](docs/user_guide.md) §5.
 
 ## Example

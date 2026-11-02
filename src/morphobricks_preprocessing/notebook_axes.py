@@ -94,7 +94,7 @@ def header_marks(mapping: AxisMapping, files: Iterable) -> dict[int, str]:
             marks[index] = (
                 "<div class='mb-help' style='color:#92400E'>⚠ These roles put X before Y, and "
                 "nothing is read transposed. Choose Y before X, or save the images again with "
-                "Y before X.</div>"
+                "Y before X, or convert them (the convert command).</div>"
             )
             continue
         named = ", ".join(axis_name(letter) for letter in sorted(letters[index]) if letter)

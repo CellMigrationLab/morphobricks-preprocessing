@@ -39,7 +39,7 @@ from pathlib import Path
 
 from ._io import free_space
 from .axes import AxisMapping, prefill_mapping
-from .axis_check import AXIS_ERROR_CODES, ConfirmedAxes, header_axis_issue
+from .axis_check import AXIS_ERROR_CODES, ConfirmedAxes, confirmation_of, header_axis_issue
 from .axis_review import review_axes
 from .conversion_record import (
     CONVERTED,
@@ -62,6 +62,9 @@ from .run.preflight import preflight
 from .validation import ValidationIssue, error, has_errors, plural
 
 logger = logging.getLogger(__name__)
+
+_NOT_IN_OME = frozenset({"int64", "uint64"})
+"""Pixel types the brick reads that OME-TIFF cannot hold: they are never changed to fit."""
 
 PARTIAL_SUFFIX = ".partial"
 """A copy is written as ``<name>.partial`` and renamed once every copy is written."""
@@ -176,9 +179,19 @@ def convert_experiment(
     dest.mkdir(parents=True, exist_ok=True)
     try:
         with output_lock(dest):
-            return _locked_conversion(root, dest, planned, issues, (memory_limit, progress))
+            options = _Options(confirmation_of(mapping)[0], missing_as_singleton, memory_limit)
+            return _locked_conversion(root, dest, planned, issues, options, progress)
     except OutputLockedError as exc:
         return ConversionResult(dest, False, (_lock_issue(exc),))
+
+
+@dataclass(frozen=True)
+class _Options:
+    """What the conversion records and how it reads, besides the plan."""
+
+    mapping: AxisMapping
+    missing_as_singleton: bool
+    memory_limit: int
 
 
 def plan_conversion(
@@ -221,6 +234,9 @@ def plan_conversion(
     issues = [i for i in issues if not i.is_error]  # the axis errors are what is corrected
     to_convert = set(review.axis_error_files) | set(review.confirmed_files)
     headers = {meta.relative_path: meta for meta in pre.metadata.files}
+    wide = sorted(rel for rel in to_convert if headers[rel].dtype.name in _NOT_IN_OME)
+    if wide:
+        return (), [_pixel_type_issue(wide, headers[wide[0]].dtype.name), *issues]
     planned = []
     for rel in pre.discovery.images:
         source = Fingerprint.of(root / rel)
@@ -256,7 +272,8 @@ def _locked_conversion(
     dest: Path,
     planned: tuple[PlannedCopy, ...],
     issues: list[ValidationIssue],
-    options: tuple[int, Callable[[int, int, str], None] | None],
+    options: _Options,
+    progress: Callable[[int, int, str], None] | None,
 ) -> ConversionResult:
     """Compare with what the copy tree holds, write the new copies and the record."""
     try:
@@ -268,14 +285,14 @@ def _locked_conversion(
     if refusal is not None:
         return ConversionResult(dest, False, (refusal, *issues))
     try:
-        written = _write_all(root, dest, to_write, *options)
+        written = _write_all(root, dest, to_write, options.memory_limit, progress)
     except _ConversionFailed as failed:
         return ConversionResult(dest, False, (failed.issue, *issues))
     files = sorted([*reused, *written], key=lambda entry: entry.relative_path)
     record = ConversionRecord(
         source_root=root.as_posix(),
-        mapping=_experiment_mapping(planned, earlier),
-        missing_as_singleton=_singleton(planned),
+        mapping=options.mapping,
+        missing_as_singleton=options.missing_as_singleton,
         files=tuple(files),
         versions=package_versions(),
         written_at=datetime.now(UTC).isoformat(timespec="seconds"),
@@ -417,23 +434,6 @@ def _remove(path: Path) -> None:
         path.unlink(missing_ok=True)
 
 
-def _experiment_mapping(
-    planned: tuple[PlannedCopy, ...], earlier: tuple[ConversionRecord, str] | None
-) -> AxisMapping:
-    """Return the experiment mapping of the conversion, as the record lists it."""
-    for item in planned:
-        if item.mapping is not None:
-            return item.mapping
-    if earlier is not None:
-        return earlier[0].mapping
-    return AxisMapping("YX", ("Y", "X"))
-
-
-def _singleton(planned: tuple[PlannedCopy, ...]) -> bool:
-    """Return True if some image was converted with roles confirmed as single planes."""
-    return any(item.mapping is not None and item.mapping.singleton_roles for item in planned)
-
-
 def _suggested_axes(files: list[CopyEntry]) -> str | None:
     """Return the roles for ``run --axes`` on the copies when they all have the same axes."""
     axes = {
@@ -486,6 +486,19 @@ def _space_issue(dest: Path, to_write: list[PlannedCopy]) -> ValidationIssue | N
         f"{free / 2**30:.1f} GiB free. Nothing was written.",
         [dest.as_posix()],
         "Free some space, or choose a folder on a drive with more space.",
+    )
+
+
+def _pixel_type_issue(paths: list[str], dtype: str) -> ValidationIssue:
+    """Refuse to convert images of a pixel type that OME-TIFF cannot hold."""
+    return error(
+        "cannot_convert_pixel_type",
+        f"{plural(len(paths), 'image')} with axis problems have the pixel type {dtype}, which "
+        "OME-TIFF cannot hold, and pixel values are never changed to fit. Nothing was "
+        "written.",
+        paths,
+        "Save these images again with their axes named in their metadata (for example as "
+        "OME-TIFF in a 32-bit type, if their values fit), or correct the roles.",
     )
 
 

@@ -103,6 +103,7 @@ def header_checks(
         *design_problems,
         *dataset.issues,
         *(mask_issues(pre.masks, pre.metadata, review) if pre.masks is not None else ()),
+        *(pre.conversion.issues if pre.conversion is not None else ()),
     ]
     bins = _bins(pre, inputs, issues)
     if not has_errors(issues):

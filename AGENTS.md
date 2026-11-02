@@ -132,8 +132,9 @@ src/morphobricks_preprocessing/
                     mask_hierarchy_lines); moved from report.py in PP-10d
   discovery_report.py the run report (discovery_report.json and .txt, design v0.4 §4): status,
                     manifest SHA-256, what was found, reused, recomputed and replaced
-  cli.py, __main__  `morphobricks-preprocessing check|run|masks|calibrate` (also `python -m morphobricks_preprocessing`);
-                    cli_run.py holds `run`'s options and output; cli_calibrate.py `calibrate`
+  cli.py, __main__  `morphobricks-preprocessing check|run|masks|calibrate|design|convert` (also `python -m morphobricks_preprocessing`);
+                    cli_run.py holds `run`'s options and output; cli_calibrate.py `calibrate`;
+                    cli_convert.py `convert`
   masks/           masks (Q32; a package since PP-5: model, files, header, layout, read,
                     checks, labels): find_masks pairs every image with its masks (masks folder with one
                     folder per type mirroring the experiment, or <image>_<type>.tif in the
@@ -149,6 +150,15 @@ src/morphobricks_preprocessing/
                     scan_masks -> MaskReport (kinds, relations, direct-parent hierarchy, evidence),
                     write_mask_report (mask_relationships.json); DEFAULT_THRESHOLDS,
                     mask_thresholds (checked changes)
+  copy_axes.py      convert (PP-11, contract §17): the axes, shape, pixel sizes (by role; a
+                    relabelled axis gets an unknown scale) and OME metadata of a named-axis copy
+  ome_tiff_copy.py  write_named_copy: one image as uncompressed OME-TIFF, planes from iter_planes
+                    under the confirmed roles, blocks written in place (BigTIFF when large)
+  conversion_record.py the copy tree's .morphobricks-conversion.json (fingerprints, roles, sizes),
+                    review_conversion (the run's conversion_source_changed and
+                    copy_changed_after_conversion warnings)
+  conversion.py     convert_experiment/plan_conversion: the copy tree under its lock, .partial
+                    files moved into place together, unchanged copies reused, record last
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis
                     letters and physical sizes from the scale and axis units),
                     ngff_label_names/open_ngff_labels (label images, for later bricks),
@@ -825,6 +835,7 @@ pytest
 morphobricks-preprocessing check /data/exp1
 morphobricks-preprocessing run /data/exp1 --axes ZCYX
 morphobricks-preprocessing masks /data/exp1 --masks /data/exp1_masks
+morphobricks-preprocessing convert /data/exp1 --to /data/exp1_named_axes --axes ZXY
 jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 ```
 
@@ -893,6 +904,9 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 - **Notebook masks step (PP-10d):** step 3's **Describe the masks** runs the `masks` step
   (`mask_relationships.json`) with the run's recorded inputs, through `run.mask_step`, which
   the CLI calls too; see plan §10.
+- **Named-axis copies (PP-11):** `convert` / `convert_experiment` writes OME-TIFF copies of
+  the images with axis errors or unnamed axes with the confirmed roles into a new folder
+  (contract §17, plan §10 and question 59); the notebook card is PP-11b.
 - **Next (not started):** the notebook step for the masks (name each mask, confirm or
   correct the relationships) and a file saving those answers for the other bricks
   (question 32); 3D and time-lapse masks later.
