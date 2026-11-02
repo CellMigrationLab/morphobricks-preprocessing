@@ -144,6 +144,55 @@ def test_a_failed_conversion_leaves_the_folder_as_it_was(tmp_path, monkeypatch):
     assert convert_experiment(exp, SWAPPED, copies).written
 
 
+@pytest.mark.parametrize(
+    ("error", "reported"),
+    [(ValueError("data too large for non-BigTIFF file"), True), (KeyboardInterrupt(), False)],
+)
+def test_any_failure_or_interruption_removes_the_partial_files_and_new_folders(
+    tmp_path, monkeypatch, error, reported
+):
+    # Review of PP-11: an error other than OSError (tifffile raises ValueError) or an
+    # interruption left a .partial file and the folders behind.
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    original, calls = conversion_module.write_named_copy, []
+
+    def failing(source, target, *args, **kwargs):
+        calls.append(target)
+        if len(calls) == 2:
+            target.write_bytes(b"half")
+            raise error
+        return original(source, target, *args, **kwargs)
+
+    monkeypatch.setattr(conversion_module, "write_named_copy", failing)
+    if reported:
+        result = convert_experiment(exp, SWAPPED, copies)
+        assert not result.written and codes(result.issues) == ["conversion_failed"]
+        assert "data too large" in result.issues[0].message
+    else:
+        with pytest.raises(KeyboardInterrupt):
+            convert_experiment(exp, SWAPPED, copies)
+    assert list(copies.iterdir()) == [], "no copy, no folder, no record, no lock"
+
+
+def test_a_failure_while_moving_the_copies_into_place_removes_the_moved_ones(tmp_path, monkeypatch):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    original, moved = os.replace, []
+
+    def failing(source, target):
+        moved.append(target)
+        if len(moved) == 2:
+            raise OSError("device removed")
+        return original(source, target)
+
+    monkeypatch.setattr(conversion_module.os, "replace", failing)
+    result = convert_experiment(exp, SWAPPED, copies)
+    monkeypatch.undo()
+    assert not result.written and codes(result.issues) == ["conversion_failed"]
+    assert result.issues[0].paths == ("ctrl/r1/b.tif",)
+    assert list(copies.iterdir()) == []
+    assert convert_experiment(exp, SWAPPED, copies).written
+
+
 def test_partial_files_left_by_an_interrupted_conversion_are_written_again(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     left = copies / "ctrl" / "r1" / "a.tif.partial"

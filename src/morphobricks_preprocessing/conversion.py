@@ -377,6 +377,12 @@ class _ConversionFailed(Exception):
         self.issue = issue
 
 
+_FAILURES = (PlaneReadError, CopyWriteError, OSError, ValueError)
+"""What reading a source or writing a copy raises when it fails (``tifffile`` raises
+:class:`ValueError` for a file it cannot write); anything else is re-raised, after the same
+clean-up."""
+
+
 def _write_all(
     root: Path,
     dest: Path,
@@ -386,35 +392,64 @@ def _write_all(
 ) -> list[CopyEntry]:
     """Write every copy as ``.partial``, then move them all into place.
 
-    On a failure the ``.partial`` files written so far are removed, so the copy tree is
-    left as it was, and :class:`_ConversionFailed` is raised.
+    On any failure, an interruption included, every ``.partial`` file of the conversion,
+    every copy already moved into place (each where nothing was before) and every folder
+    the conversion made are removed, so the copy tree is left as it was; a failure to read
+    or write raises :class:`_ConversionFailed`, anything else is re-raised.
     """
-    partials: list[Path] = []
+    made = _missing_folders(dest, to_write)
+    written: list[Path] = []
+    current = to_write[0].relative_path if to_write else ""
     try:
         for done, item in enumerate(to_write):
+            current = item.relative_path
             if progress is not None:
-                progress(done, len(to_write), item.relative_path)
-            partials.append(_write_partial(root, dest, item, memory_limit))
-    except (PlaneReadError, CopyWriteError, OSError, _SourceChanged) as exc:
-        logger.debug("Conversion of %s failed", item.relative_path, exc_info=True)
-        for partial in [*partials, _partial(dest, item)]:
-            _remove(partial)
-        raise _ConversionFailed(failed_issue(item.relative_path, exc)) from exc
-    if progress is not None:
-        progress(len(to_write), len(to_write), "")
-    entries = []
-    for item, partial in zip(to_write, partials, strict=True):
-        target = dest / item.relative_path
-        os.replace(partial, target)
-        entries.append(replace(item.entry, copy=Fingerprint.of(target)))
+                progress(done, len(to_write), current)
+            _write_partial(root, dest, item, memory_limit)
+        if progress is not None:
+            progress(len(to_write), len(to_write), "")
+        entries = []
+        for item in to_write:
+            current, target = item.relative_path, dest / item.relative_path
+            os.replace(_partial(dest, item), target)
+            written.append(target)
+            entries.append(replace(item.entry, copy=Fingerprint.of(target)))
+    except BaseException as exc:
+        logger.debug("Conversion of %s failed", current, exc_info=True)
+        for path in [*written, *(_partial(dest, item) for item in to_write)]:
+            _remove(path)
+        _remove_empty(made)
+        if isinstance(exc, (*_FAILURES, _SourceChanged)):
+            raise _ConversionFailed(failed_issue(current, exc)) from exc
+        raise
     return entries
+
+
+def _missing_folders(dest: Path, to_write: list[PlannedCopy]) -> list[Path]:
+    """Return the folders of the copy tree that writing these copies will make."""
+    missing = set()
+    for item in to_write:
+        folder = (dest / item.relative_path).parent
+        while folder != dest and not folder.exists():
+            missing.add(folder)
+            folder = folder.parent
+    return sorted(missing, key=lambda folder: len(folder.parts), reverse=True)
+
+
+def _remove_empty(folders: list[Path]) -> None:
+    """Remove the folders this conversion made, deepest first, when they are empty."""
+    for folder in folders:
+        try:
+            folder.rmdir()
+        except OSError:
+            logger.debug("Folder %s kept: not empty or gone", folder, exc_info=True)
 
 
 class _SourceChanged(Exception):
     """A source image changed since it was checked, or while it was copied."""
 
 
-def _write_partial(root: Path, dest: Path, item: PlannedCopy, memory_limit: int) -> Path:
+def _write_partial(root: Path, dest: Path, item: PlannedCopy, memory_limit: int) -> None:
     """Write one copy as ``<name>.partial``, refusing a source that changes meanwhile."""
     source, partial = root / item.relative_path, _partial(dest, item)
     partial.parent.mkdir(parents=True, exist_ok=True)
@@ -429,7 +464,6 @@ def _write_partial(root: Path, dest: Path, item: PlannedCopy, memory_limit: int)
         shutil.copyfile(source, partial)
     if current_fingerprint(source) != item.entry.source:
         raise _SourceChanged("it changed while it was copied")
-    return partial
 
 
 def _partial(dest: Path, item: PlannedCopy) -> Path:
