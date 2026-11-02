@@ -39,7 +39,13 @@ from pathlib import Path
 
 from ._io import free_space
 from .axes import AxisMapping, prefill_mapping
-from .axis_check import AXIS_ERROR_CODES, ConfirmedAxes, confirmation_of, header_axis_issue
+from .axis_check import (
+    AXES_NOT_NAMED,
+    AXIS_ERROR_CODES,
+    ConfirmedAxes,
+    confirmation_of,
+    header_axis_issue,
+)
 from .axis_review import review_axes
 from .conversion_issues import (
     differs_issue,
@@ -268,7 +274,8 @@ def plan_conversion(
     issues = [*others, *review.combined_issues(pre.metadata)]
     if any(i.is_error and i.code not in AXIS_ERROR_CODES for i in issues):
         return (), [i for i in issues if not (i.is_error and i.code in AXIS_ERROR_CODES)]
-    issues = [i for i in issues if not i.is_error]  # the axis errors are what is corrected
+    # The axis errors and unnamed axes are what is corrected (each entry records its code).
+    issues = [i for i in issues if not i.is_error and i.code != AXES_NOT_NAMED]
     to_convert = set(review.axis_error_files) | set(review.confirmed_files)
     headers = {meta.relative_path: meta for meta in pre.metadata.files}
     issues += _cannot_convert(root, to_convert, headers, review.file_mappings, memory_limit)
@@ -340,15 +347,7 @@ def _locked_conversion(
     except _ConversionFailed as failed:
         return ConversionResult(dest, False, (failed.issue, *issues))
     files = sorted([*reused, *written], key=lambda entry: entry.relative_path)
-    record = ConversionRecord(
-        source_root=root.as_posix(),
-        mapping=options.mapping,
-        missing_as_singleton=options.missing_as_singleton,
-        files=tuple(files),
-        versions=package_versions(),
-        written_at=datetime.now(UTC).isoformat(timespec="seconds"),
-    )
-    sha256 = write_record(record, dest)
+    sha256 = _publish_record(root, dest, files, options, earlier)
     logger.info("Converted %d images into %s", len(written), dest)
     return ConversionResult(
         destination=dest,
@@ -360,6 +359,38 @@ def _locked_conversion(
         record_sha256=sha256,
         suggested_axes=_suggested_axes(files),
     )
+
+
+def _publish_record(
+    root: Path,
+    dest: Path,
+    files: list[CopyEntry],
+    options: _Options,
+    earlier: tuple[ConversionRecord, str] | None,
+) -> str:
+    """Write the conversion record; keep the earlier one when it would say the same.
+
+    A conversion that reuses every copy leaves the record as it was, so a run on the
+    copies, which recorded its SHA-256, stays valid (``RunInputs`` checks it).
+    """
+    if earlier is not None:
+        old, sha256 = earlier
+        same = (old.files, old.mapping, old.missing_as_singleton) == (
+            tuple(files),
+            options.mapping,
+            options.missing_as_singleton,
+        )
+        if same:
+            return sha256
+    record = ConversionRecord(
+        source_root=root.as_posix(),
+        mapping=options.mapping,
+        missing_as_singleton=options.missing_as_singleton,
+        files=tuple(files),
+        versions=package_versions(),
+        written_at=datetime.now(UTC).isoformat(timespec="seconds"),
+    )
+    return write_record(record, dest)
 
 
 def _compare(

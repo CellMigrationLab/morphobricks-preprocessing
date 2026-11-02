@@ -304,6 +304,22 @@ def test_run_inputs_refuses_a_conversion_record_changed_or_gone_since_the_run(tm
     RunInputs.open(out)  # the same bytes again: accepted
 
 
+def test_a_conversion_reusing_every_copy_keeps_the_record_so_the_run_stays_valid(tmp_path):
+    # Review of PP-11: a rerun that reused every copy rewrote the record (a new written_at),
+    # so its SHA-256 changed and RunInputs then refused the run on the copies.
+    exp, out = plain_experiment(tmp_path / "exp"), tmp_path / "out"
+    copies = tmp_path / "copies"
+    first = convert_experiment(exp, PLAIN, copies)
+    assert first.written and "axes_not_named" not in codes(first.issues)
+    assert run_experiment(copies, AxisMapping("ZYX", tuple("ZYX")), output_folder=out).written
+    record = (copies / CONVERSION_RECORD_FILENAME).read_bytes()
+    again = convert_experiment(exp, PLAIN, copies)
+    assert again.written and again.reused == first.converted
+    assert again.record_sha256 == first.record_sha256
+    assert (copies / CONVERSION_RECORD_FILENAME).read_bytes() == record
+    RunInputs.open(out)
+
+
 def test_every_row_is_recomputed_and_equals_the_originals_rows(tmp_path):
     exp, out = plain_experiment(tmp_path / "exp"), tmp_path / "out"
     design = _confirmed_design(exp)
