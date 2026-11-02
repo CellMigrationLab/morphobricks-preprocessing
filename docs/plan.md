@@ -1644,7 +1644,9 @@ Raised during review; to be decided before the milestones that need them:
     `invalid_physical_calibration` names the image (a warning, not an error, as for #94);
     a stated size in `calibration.csv` or `calibrate` is refused naming the line. (3) Every
     command exits with status 1 when it prints an error, and 0 otherwise (warnings never
-    change it): `check` exited with 0 on an experiment design it could not read, and
+    change it): `check` exited with 0 on an experiment design it could not read or that
+    had `repeat_group_conflict` or `invalid_experiment_design` (which `run` stops on;
+    review of #133), and
     `design` with 0 when the design it printed had `repeat_group_conflict` or
     `invalid_experiment_design`, also after writing a change. `run`, `masks`, `calibrate`
     and `convert` already did. Contract §2, §9.2, §9.3, §11, §16; user guide §5, §8.

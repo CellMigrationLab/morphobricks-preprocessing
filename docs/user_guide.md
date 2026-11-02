@@ -625,7 +625,8 @@ per kind; it draws no plots (the notebook does).
 **Exit status.** Every command (`check`, `run`, `masks`, `calibrate`, `design` and
 `convert`) exits with status 1 when it prints an error, and with 0 otherwise: warnings,
 intensity warnings included, never change it. So `check` exits with 1 on every error it
-reports, also an experiment design it cannot read (it never replaces that file), and
+reports, also an experiment design it cannot read (it never replaces that file) or one
+with a `repeat_group_conflict` or `invalid_experiment_design`, which `run` stops on; and
 `design` exits with 1 when the design it prints has a `repeat_group_conflict` or
 `invalid_experiment_design`, also after a change it wrote (since v0.4.0; both exited with 0
 before). Options that cannot be read exit with 2. Scripts can therefore stop on any

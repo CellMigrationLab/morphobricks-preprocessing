@@ -34,7 +34,7 @@ from pathlib import Path
 
 from .cli_calibrate import add_calibrate_parser, calibrate_command, calibration_summary
 from .cli_convert import add_convert_parser, convert_command
-from .cli_design import add_design_parser, design_command, design_instructions
+from .cli_design import add_design_parser, design_command, design_errors, design_instructions
 from .cli_masks import add_masks_arguments, masks_command
 from .cli_run import (
     add_run_arguments,
@@ -274,9 +274,10 @@ def _check(args: argparse.Namespace) -> int:
 
 
 def _print_design(args: argparse.Namespace, pre: Preflight) -> bool:
-    """Print the experiment design in the output folder; False when it is refused.
+    """Print the experiment design in the output folder; False when it has an error.
 
-    ``check`` never replaces a design. One it cannot read is printed as the error it is,
+    ``check`` never replaces a design. One it cannot read, or one ``run`` would stop on
+    (``repeat_group_conflict``, ``invalid_experiment_design``), is printed with its error,
     and ``check`` then exits with status 1.
     """
     output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
@@ -293,6 +294,10 @@ def _print_design(args: argparse.Namespace, pre: Preflight) -> bool:
     if (output / DESIGN_FILENAME).exists():
         print(f"Experiment design ({output / DESIGN_FILENAME}):")
         print(design_summary(design))
+        problems = design_errors(design)  # what 'run' would stop on, as errors
+        if problems:
+            print(format_issues(problems))
+            return False
     else:
         print(
             "Experiment design: not confirmed yet. 'check' writes experiment_design.csv, "

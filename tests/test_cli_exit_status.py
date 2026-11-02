@@ -63,3 +63,15 @@ def test_design_exits_with_1_when_it_reports_a_conflict(checked, capsys):
     assert "day1 has more than one folder of ctrl" in out
     # the move itself is written; undoing it gives a usable design again (status 0)
     assert main(["design", "--output", str(checked), "--repeat-group", "ctrl/day2=day2"]) == 0
+
+
+def test_check_exits_with_1_on_a_repeat_group_conflict(experiment, checked, capsys):
+    # Review of #133: 'check' described the conflict in its summary but exited 0, while
+    # 'run' stops on it with 1. It is now reported as the error it is.
+    assert main(["design", "--output", str(checked), "--repeat-group", "ctrl/day2=day1"]) == 1
+    capsys.readouterr()
+    assert main(["check", str(experiment), "--output", str(checked)]) == 1
+    out = capsys.readouterr().out
+    assert "day1: ctrl/day1, ctrl/day2, drug/day1 (more than one folder of ctrl)" in out
+    assert "Error: A repeat group is one biological repeat" in out
+    assert main(["run", str(experiment), "--output", str(checked), "--axes", "YX"]) == 1
