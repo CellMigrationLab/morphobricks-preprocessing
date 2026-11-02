@@ -220,6 +220,25 @@ def test_a_recorded_masks_folder_is_reused_or_dropped_explicitly(tmp_path):
     assert again.run().input_changes == ()
 
 
+def test_a_recorded_mask_axes_statement_is_not_asked_to_be_checked_again(tmp_path):
+    """A new session shows the recorded statement in use: nothing is pending (review)."""
+    root = experiment(tmp_path, (3, 16, 16), "TYX")
+    masks = tmp_path / "masks"
+    for rel in IMAGES:
+        write_plain(masks / "Cells" / rel, labels((3, 16, 16)))
+    first = notebook(root, masks)
+    confirm_everything(first)
+    first._mask_choices["Cells"].value = "TYX"
+    first.masks_button.click()
+    assert first.run().written
+    again = notebook(root)  # the box is empty: the recorded folder and statement are used
+    assert again._mask_choices["Cells"].value == "TYX" and again._mask_axes == {}
+    assert "Click Check the masks" not in again.masks_status.value
+    confirm_everything(again)
+    assert not again.run_button.disabled
+    assert again.run().input_changes == ()
+
+
 # 5. Embedding ---------------------------------------------------------------------------
 
 

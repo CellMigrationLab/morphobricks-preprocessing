@@ -205,8 +205,9 @@ class _MasksCard:
         """Return True when the masks shown are not those the run would use, or not stated."""
         if self.preflight is None or not self._show_output or plan is None:
             return False
+        # A choice is pending when it differs from the statement in use (given or recorded).
         pending = any(
-            choice.value not in (_NOT_STATED, self._mask_axes.get(name))
+            choice.value not in (_NOT_STATED, plan.mask_axes.get(name))
             for name, choice in self._mask_choices.items()
         )
         return pending or _pairing(plan) != self._paired_masks
