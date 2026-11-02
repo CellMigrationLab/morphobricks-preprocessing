@@ -35,7 +35,13 @@ from .cli_calibrate import add_calibrate_parser, calibrate_command, calibration_
 from .cli_convert import add_convert_parser, convert_command
 from .cli_design import add_design_parser, design_command, design_instructions
 from .cli_masks import add_masks_arguments, masks_command
-from .cli_run import add_run_arguments, command_preflight, parse_size, run_command
+from .cli_run import (
+    add_run_arguments,
+    command_preflight,
+    parse_size,
+    run_command,
+    use_recorded_experiment,
+)
 from .design import (
     DESIGN_FILENAME,
     DesignCheckError,
@@ -43,6 +49,7 @@ from .design import (
 )
 from .discovery import default_output_folder
 from .image_type import review_image_type
+from .log_target import log_refusal, run_log_refusal
 from .mask_text import mask_summary
 from .masks import mask_axes_option
 from .report import (
@@ -106,15 +113,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         return {"calibrate": calibrate_command, "design": design_command}[args.command](args)
     if getattr(args, "no_exclude", False) and args.exclude:
         parser.error("--exclude and --no-exclude cannot be given together")
-    handler = _attach_log(args.log) if getattr(args, "log", None) else None
-    try:
-        if args.command == "convert":
-            return convert_command(args) if _remove_stale_lock(args) else 1
+    if args.command != "convert":
         try:
             args.mask_axes = mask_axes_option(args.mask_axes)
         except ValueError as exc:
             print(exc)
             return 1
+    if args.command in ("run", "masks") and not use_recorded_experiment(args):
+        return 1
+    # The log is opened only now, once the arguments are checked, and never inside the
+    # experiment, the masks or the copies, or over an output file (issue #99).
+    refusal = _log_refusal(args) if getattr(args, "log", None) else None
+    if refusal is not None:
+        print(refusal)
+        return 1
+    handler = _attach_log(args.log) if getattr(args, "log", None) else None
+    try:
+        if args.command == "convert":
+            return convert_command(args) if _remove_stale_lock(args) else 1
         if args.remove_stale_lock and not _remove_stale_lock(args):
             return 1
         return {"check": _check, "run": run_command, "masks": masks_command}[args.command](args)
@@ -276,6 +292,16 @@ def _print_design(args: argparse.Namespace, pre: Preflight) -> None:
             "Experiment design: not confirmed yet. 'check' writes experiment_design.csv, "
             "prefilled from the folders, to the output folder for you to confirm."
         )
+
+
+def _log_refusal(args: argparse.Namespace) -> str | None:
+    """Return why ``--log`` may not be written for this command, or None."""
+    if args.command == "convert":
+        folders = {"experiment folder": args.experiment, "folder of the copies": args.to}
+        return log_refusal(args.log, folders)
+    experiment = Path(args.experiment).resolve()
+    output = Path(args.output) if args.output else default_output_folder(experiment)
+    return run_log_refusal(args.log, experiment, output, args.masks)
 
 
 def _attach_log(path: str) -> logging.Handler:
