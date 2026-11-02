@@ -569,7 +569,7 @@ API, CLI). The notebook and CLI only call the API.
   the same as another; `check` and `design` exit with status 1 whenever they print an
   error.
 - **PP-12 (staging and resume)** *(implemented, PR #132; design v0.4 §1, §8; issues #86,
-  #90; question 67; contract §9.4)*:
+  #90; question 69; contract §9.4)*:
   - Move only, first: `source_fingerprint` and `LABELS_GROUP` from `manifest` to
     `inventory` (io; `manifest` re-exports `source_fingerprint`).
   - #86: an OME-Zarr image's fingerprint adds the SHA-256 of its inventory (each file's
@@ -585,7 +585,7 @@ API, CLI). The notebook and CLI only call the API.
     per file); a stopped run keeps `.staging`, a published run removes it; `full` reuses
     none.
   - Crash-consistent publication (`run.generation`, owner decision of 2 November 2026,
-    question 67): the generation in `.publish` with a publication record, committed by
+    question 69): the generation in `.publish` with a publication record, committed by
     the manifest's `os.replace`, then moved in; the lock finishes or discards an
     interrupted publication; `RunInputs` reads by SHA-256 (`published_path`) and again if
     the manifest changed (`read_stable`). The backup-and-restore protocol is gone.
@@ -1688,7 +1688,34 @@ Raised during review; to be decided before the milestones that need them:
     review of #133), and `design` with 0 when the design it printed had `repeat_group_conflict` or
     `invalid_experiment_design`, also after writing a change. `run`, `masks`, `calibrate`
     and `convert` already did. Contract §2, §9.2, §9.3, §11, §16; user guide §5, §8.
-67. How does a run resume after an interruption, and how is its publication made
+
+67. How are the one-to-one matches of `same_objects` counted (issue #67)?
+    *Decided (2 November 2026, implemented for issue #67; the rule is the issue's
+    acceptance): as a maximum matching of the child and parent objects of each plane whose
+    intersection over union is at least `same_objects_iou`
+    (`scipy.sparse.csgraph.maximum_bipartite_matching`, a sparse graph, no K x K matrix).
+    Each object is matched at most once, so two children halving one parent are one match.
+    The number of matches is the same for every maximum matching, so the counts do not
+    depend on label numbers or tie-breaking. Above an intersection over union of 0.5 the
+    matching is every eligible pair (an object can overlap only one partner that much); at
+    the default of exactly 0.5 only an object split into exact halves has two eligible
+    partners, so the default changes nothing for real one-to-one segmentations (the HPMEC
+    masks give the same report). The evidence adds `children_not_matched`,
+    `parents_not_matched`, `children_over_iou_with_several_parents` and
+    `parents_over_iou_with_several_children`; `mask_relationships.json` is report version 2.
+    Contract §15.1.*
+68. Which axes do the size and plane-count warnings use (issue #74)?
+    *Decided (2 November 2026, implemented for issue #74): the confirmed roles, once they
+    are confirmed. Before (`check`, preflight), `different_sizes` and
+    `different_plane_counts` compare the axes each header names, and a plain stack is left
+    out, since its header's letters are not its roles (design v0.4 §3). After the
+    confirmation, `AxisReview.combined_issues` (used by `run`, the notebook's run and the
+    conversion plan) drops the header versions and compares each image under its own
+    confirmed roles; an image with an axis error is compared by its header, never by the
+    contradicted roles. Images without confirmed roles that the header names are compared
+    by their header, as before. The notebook's axis card still shows only the axis review's
+    own issues; the corrected warnings appear in the run's result. Contract §11.*
+69. How does a run resume after an interruption, and how is its publication made
     crash-consistent (PP-12, design v0.4 §1)? *Decided (owner, 2 November 2026; contract
     §9.4):* (1) **Resume:** each image's rows are staged as soon as it is read; staged rows
     are reused only when their row key, the pixel type, the schema version and the

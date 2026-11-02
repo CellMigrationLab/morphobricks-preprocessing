@@ -226,7 +226,7 @@ def test_report_file(tmp_path):
     raw = path.read_bytes()
     assert b"\r\n" not in raw
     data = json.loads(raw)
-    assert data["report_version"] == "1"
+    assert data["report_version"] == "2"
     assert data["thresholds"]["inside_object_share"] == 0.9
     assert data["hierarchy"]["Nucleoli"] == ["Nuclei", "NucleiAlt"]
     assert data["same_objects"] == [["Nuclei", "NucleiAlt"]]

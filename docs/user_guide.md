@@ -655,7 +655,9 @@ Hierarchy (direct parents only):
 ```
 
 Nucleoli inside nuclei inside cells have the nuclei as their direct parent; two kinds of
-mask that segment the same objects are reported as such. These are suggestions from the
+mask that segment the same objects are reported as such: at least 90% of the objects of
+both are matched one to one, each object matched at most once (two halves of one cell are
+one match, not two). These are suggestions from the
 pixels, not decisions: you name each kind of mask and check the relationships in the bricks
 that use them. The report is written to `mask_relationships.json` in the output folder
 (§6). The command takes `--output`, `--exclude` and `--log` like the others, and exits with
@@ -997,8 +999,8 @@ continues.
 | `image_named_as_mask` | Error | An image is named like a mask of another image (`f1_mask.tif` beside `f1.tif`; the endings `_mask`, `_masks`, `_cp_masks`, `_labels`, `_label`, `_seg`, `_segmentation`), and a mask is never analysed as an image. If it is a mask, move it into a masks folder outside the experiment, or exclude it; if it is an image, rename it. |
 | `mask_folder_in_experiment` | Warning | A folder inside the experiment is named like a masks folder (`masks`, `ctrl_masks`, `CellLabels`) and holds files named like masks of the images; they would be analysed as images. Move it out of the experiment and give it as the masks folder, or rename it if these are images. |
 | `planes_read_in_blocks` | Warning | Planes too large for the memory limit are read in blocks. The results are the same; nothing to do. Raise the limit to read them whole, which is faster. |
-| `different_sizes` | Warning | Images have different widths or heights. Usually expected; otherwise check the camera settings. |
-| `different_plane_counts` | Warning | Images have different numbers of depth slices, time points or other planes. Images with more planes weigh more in pooled statistics. Check the acquisition if this is not expected. |
+| `different_sizes` | Warning | Images have different widths or heights. Usually expected; otherwise check the camera settings. For a plain stack (no axes in its file), the sizes are compared once you confirm its axis roles, with those roles. |
+| `different_plane_counts` | Warning | Images have different numbers of depth slices, time points or other planes. Images with more planes weigh more in pooled statistics. Check the acquisition if this is not expected. For a plain stack, compared with its confirmed axis roles, as `different_sizes`. |
 | `different_pixel_sizes` | Warning | The physical pixel size or z-step (from the metadata or `calibration.csv`) differs between images by more than 0.1 % (for example different objectives). Images outside the largest group of matching sizes are listed; when sizes only change by small steps from image to image, none is listed. Check the microscope settings if this is not intended. |
 | `missing_pixel_size` | Warning | Some images have a pixel size (from the metadata or `calibration.csv`) and others do not, so it cannot be checked; images stated as measured in pixels count as without one, and the message says how many. Export them again with metadata, or state their sizes with `calibrate`, if needed. |
 | `unsupported_pixel_size_unit` | Warning | An image gives its pixel size or z-step in a unit that is not converted (for example inches); only pm, Å, nm, µm, mm, cm and m are. The message names each image, axis and unit. Those sizes are not used: the image is treated as uncalibrated on those axes. Export it again with the pixel size in a supported unit, or state it with `calibrate`, if the physical size matters. Not reported for an axis whose size is stated. |

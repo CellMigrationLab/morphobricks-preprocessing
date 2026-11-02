@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Callable, Hashable, Iterable, Mapping
+from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree
@@ -31,7 +31,15 @@ from .axis_names import OPEN_AXIS, named_letters
 from .discovery import DiscoveryResult
 from .physical_sizes import PhysicalSizes, _tiff_sizes
 from .pixel_size_checks import pixel_size_issues
-from .validation import ValidationIssue, error, has_errors, plural, warning
+from .size_checks import (
+    breakdown,
+    image_size_issues,
+    lettered_plane_counts,
+    plane_count_issues,
+    role_plane_counts,
+    role_size,
+)
+from .validation import ValidationIssue, error, has_errors, plural
 from .zarr_input import (
     NgffError,
     ZarrUnavailableError,
@@ -382,6 +390,8 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     known for only some images (``missing_pixel_size``), and pixel sizes given
     in a length unit that is not converted (``unsupported_pixel_size_unit``,
     decision D-a2): those images are uncalibrated, and the unit is named.
+    Sizes and plane counts are compared by the axes the headers name; a plain stack is
+    left out until its roles are confirmed (:func:`dimension_issues`, issue #74).
 
     Parameters
     ----------
@@ -489,10 +499,9 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
         )
 
     issues.extend(_check_dimensions([f for f in readable if not f.is_ome_zarr]))
-    issues.extend(_check_image_sizes(readable))
     issues.extend(_check_channel_names(readable))
     issues.extend(_check_channel_counts(readable))
-    issues.extend(_check_plane_counts(readable))
+    issues.extend(dimension_issues(readable))
     issues.extend(pixel_size_issues(readable))
     return issues
 
@@ -640,32 +649,6 @@ def _check_dimensions(files: list[TiffMetadata]) -> list[ValidationIssue]:
     return []
 
 
-def _check_image_sizes(files: list[TiffMetadata]) -> list[ValidationIssue]:
-    # Width and height only: the other dimensions are compared by _check_plane_counts.
-    sized = [f for f in files if "X" in f.axes and "Y" in f.axes]
-    if len({(f.length("Y"), f.length("X")) for f in sized}) < 2:
-        return []
-    summary, minority = _breakdown(sized, lambda f: (f.length("Y"), f.length("X")), _format_shape)
-    return [
-        warning(
-            "different_sizes",
-            "The images have different widths or heights (height x width in pixels): "
-            f"{summary}. They can still be processed together.",
-            minority,
-            "No action needed if the sizes are expected, for example images cropped "
-            "differently. Otherwise check that these images were acquired with the same "
-            "camera settings.",
-        )
-    ]
-
-
-# What the planes along each dimension are called in messages.
-_PLANE_NAMES = {"Z": "depth slices (Z)", "T": "time points"}
-# Dimensions that do not hold planes: the image itself, and channels (or RGB samples),
-# which are compared by _check_channel_counts.
-_NOT_PLANES = frozenset("XYSC")
-
-
 def header_channel_count(f: TiffMetadata) -> int:
     """Return the channel count the header suggests: the C axis, else the RGB samples."""
     return f.length("C") if "C" in f.axes else f.length("S")
@@ -715,40 +698,39 @@ def _check_channel_counts(files: list[TiffMetadata]) -> list[ValidationIssue]:
     return channel_count_issues({f.relative_path: header_channel_count(f) for f in files})
 
 
-def _plane_counts(f: TiffMetadata) -> dict[str, int]:
-    counts = {"Z": 1, "T": 1}
-    counts.update({axis: f.length(axis) for axis in f.axes if axis not in _NOT_PLANES})
-    return counts
+def dimension_issues(
+    files: Iterable[TiffMetadata], roles: Mapping[str, Sequence[str | None]] | None = None
+) -> list[ValidationIssue]:
+    """Report images of different sizes or plane counts (contract §11).
 
+    Each readable image is measured by its confirmed roles when ``roles`` has them, else by
+    the letters its header names. A plain stack without confirmed roles is left out: the Y
+    and X of its header are only where its rows and columns are stored (:func:`named_axes`),
+    so its sizes are compared only once its roles are confirmed (issue #74).
 
-def _check_plane_counts(files: list[TiffMetadata]) -> list[ValidationIssue]:
-    counts = {f.relative_path: _plane_counts(f) for f in files}
-    axes = sorted({axis for c in counts.values() for axis in c}, key=lambda a: ("ZT".find(a), a))
-    descriptions: list[str] = []
-    differing: list[str] = []
-    for axis in axes:
-        if len({c.get(axis, 1) for c in counts.values()}) < 2:
-            continue
-        summary, minority = _breakdown(
-            files, lambda f, a=axis: counts[f.relative_path].get(a, 1), str
-        )
-        descriptions.append(f"{_PLANE_NAMES.get(axis, f'planes along {axis}')}: {summary}")
-        differing.extend(minority)
-    if not differing:
-        return []
-    return [
-        warning(
-            "different_plane_counts",
-            "The images have different numbers of planes ("
-            + "; ".join(descriptions)
-            + "). Every plane is still analysed, but images with more planes weigh more "
-            "in pooled statistics.",
-            sorted(set(differing)),
-            "No action needed if this is expected, for example time series of different "
-            "lengths. Otherwise check that these images were acquired with the same "
-            "depth range and time points.",
-        )
-    ]
+    Parameters
+    ----------
+    files
+        The image headers.
+    roles
+        The confirmed role of each axis, by relative path (:attr:`.axes.AxisReview.file_mappings`).
+
+    Returns
+    -------
+    list of ValidationIssue
+        The warnings ``different_sizes`` and ``different_plane_counts``, or nothing.
+    """
+    roles = roles or {}
+    sizes: dict[str, tuple[int, int]] = {}
+    planes: dict[str, dict[str, int]] = {}
+    for f in (f for f in files if f.readable):
+        path, given = f.relative_path, roles.get(f.relative_path)
+        if given is not None and {"Y", "X"} <= set(given):
+            sizes[path], planes[path] = role_size(f.shape, given), role_plane_counts(f.shape, given)
+        elif given is None and {"Y", "X"} <= set(named_axes(f)):
+            sizes[path] = f.length("Y"), f.length("X")
+            planes[path] = lettered_plane_counts(f.axes, f.shape)
+    return [*image_size_issues(sizes), *plane_count_issues(planes)]
 
 
 def _breakdown(
@@ -756,22 +738,8 @@ def _breakdown(
     key: Callable[[TiffMetadata], Hashable],
     describe: Callable[[Hashable], str],
 ) -> tuple[str, list[str]]:
-    """Summarise files by ``key``, most common first.
-
-    Returns the summary text, e.g. ``"ZCYX (10 images), ZYX (2 images)"``, and the
-    paths of the files outside the most common group.
-    """
-    groups: dict[Hashable, list[str]] = {}
-    for f in files:
-        groups.setdefault(key(f), []).append(f.relative_path)
-    ordered = sorted(groups.items(), key=lambda item: (-len(item[1]), describe(item[0])))
-    summary = ", ".join(f"{describe(k)} ({plural(len(paths), 'image')})" for k, paths in ordered)
-    minority = [path for _, paths in ordered[1:] for path in paths]
-    return summary, minority
-
-
-def _format_shape(shape: Hashable) -> str:
-    return " x ".join(str(n) for n in shape)
+    """Summarise files by ``key``, most common first (:func:`.size_checks.breakdown`)."""
+    return breakdown({f.relative_path: key(f) for f in files}, describe)
 
 
 def _is_subsequence(short: str, long: str) -> bool:
