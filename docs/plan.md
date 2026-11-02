@@ -551,6 +551,35 @@ API, CLI). The notebook and CLI only call the API.
   compared at reuse; each header bound to its image's fingerprint
   (`preflight(bind_headers=True)`, `source_changed_during_check`); the copy's pixel type
   from that header; `parse_size` exact.
+- **PP-12 (staging and resume)** *(implemented, PR #132; design v0.4 §1, §8; issues #86,
+  #90; question 61; contract §9.4)*:
+  - Move only, first: `source_fingerprint` and `LABELS_GROUP` from `manifest` to
+    `inventory` (io; `manifest` re-exports `source_fingerprint`).
+  - #86: an OME-Zarr image's fingerprint adds the SHA-256 of its inventory (each file's
+    relative path, size and `mtime_ns`, sorted by path; still metadata only):
+    `Fingerprint.inventory`, `FileEntry.inventory_sha256` (OME-Zarr only), kept for label
+    images and copies too; `check_sources` compares it; a record without it counts as
+    changed. A folder inside the image that cannot be listed raises instead of being
+    skipped.
+  - Staging (`run.staging`) and resume (`run.resume`): each image's rows staged in
+    `.staging` as soon as it is read; the next run reuses them only when the staging key
+    (row key, pixel type, schema version, the versions of preprocessing and normalization)
+    and the fingerprint still match, and reports `resumed` and `staged_discarded` (reason
+    per file); a stopped run keeps `.staging`, a published run removes it; `full` reuses
+    none.
+  - Crash-consistent publication (`run.generation`, owner decision of 2 November 2026,
+    question 61): the generation in `.publish` with a publication record, committed by
+    the manifest's `os.replace`, then moved in; the lock finishes or discards an
+    interrupted publication; `RunInputs` reads by SHA-256 (`published_path`) and again if
+    the manifest changed (`read_stable`). The backup-and-restore protocol is gone.
+  - #90: headers bound to fingerprints in the run (`bind_headers=True`), the entry records
+    that fingerprint, the image is fingerprinted after its pixels are read (before its rows
+    are staged) and every image before the commit: `source_changed_during_run` (error).
+  - Owner decision: `copy_changed_after_conversion` is an error that stops the run before
+    it writes (§17).
+  - Not in this PR: masks are fingerprinted when the manifest is written, as before (their
+    pixels are not read by the run); a v0.4.0rc3 run on OME-Zarr images must be run again
+    (its entries have no inventory: recomputed, and `RunInputs` refuses them).
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;
@@ -1514,4 +1543,32 @@ Raised during review; to be decided before the milestones that need them:
     `--memory-limit` is parsed without floating point and must be a whole number of bytes
     above 0 (`1.5GiB` is accepted, `1.5` and `0.5B` are refused before anything is
     read).
-
+61. How does a run resume after an interruption, and how is its publication made
+    crash-consistent (PP-12, design v0.4 §1)? *Decided (owner, 2 November 2026; contract
+    §9.4):* (1) **Resume:** each image's rows are staged as soon as it is read; staged rows
+    are reused only when their row key, the pixel type, the schema version and the
+    versions of the two packages that compute rows are unchanged and the image still has
+    its fingerprint; anything else is discarded and reported, never reused. The staging
+    folder is kept until a run publishes (design v0.4 §1 says it is removed "at the start
+    of the next run"; keeping it until publication means a second interruption loses
+    nothing, and staged rows are still checked at the start of each run). (2)
+    **Publication:** the owner asked that any reader see the old or the new generation,
+    never a mix, after a kill between any two steps. Chosen: manifest-last commit, the
+    simplest design that keeps the documented file names as plain files on every system:
+    the whole generation in `.publish`, a publication record, then one `os.replace` of
+    `run_manifest.json` (the commit), then the moves; the next holder of the lock finishes
+    or discards it; readers through the manifest read each file by its SHA-256 (from
+    `.publish` while unfinished); a plain reader of `plane_histograms.csv` always reads one
+    whole table (the old one until moved). Rejected: a generation folder with an atomic
+    symbolic link, which would make every reader consistent but needs symbolic links
+    (Windows without Developer Mode, Google Drive in Colab and copied or zipped output
+    folders do not keep them); generation-named files with the manifest as pointer, which
+    changes the documented `plane_histograms.csv` path or doubles the disk space. A plain
+    reader that opens several files without the manifest can pair two generations during
+    or after an interrupted move; it is told to read through `RunInputs`. (3) **#90:**
+    headers bound to fingerprints, each image fingerprinted after its pixels are read and
+    every image before the commit; a change is `source_changed_during_run` and nothing is
+    published. (4) **#86:** the OME-Zarr inventory digest (each file's path, size and
+    time), metadata only as design v0.4 §1 decides; content hashing stays the owner's
+    call. (5) **`copy_changed_after_conversion`** is an error that stops the run before it
+    writes (owner, 2 November 2026): the bricks would refuse the run anyway.

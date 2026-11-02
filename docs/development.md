@@ -87,11 +87,13 @@ is pinned to the release in `RELEASE_TAG` (plan §12 question 58);
 - Floats are written at full precision (`repr`); files are UTF-8.
 - Outputs are written to a temporary file and replace the previous version only after a
   complete successful write.
-- Experiment runs stage both the CSV and manifest (and any OME-Zarr copies) before
-  publishing either, back up earlier outputs, and restore their previous state if
-  publication raises. Preserve
-  backups if recovery fails. The CSV hash check still detects forced termination between
-  replacements; run only one writer per output folder.
+- Experiment runs publish their outputs as one generation (contract §9.4, PP-12): the
+  whole generation is written into `.publish`, then the manifest's `os.replace` commits
+  it, then the other files are moved in. Whatever takes the output folder's lock first
+  finishes or discards an interrupted publication (`run.generation.finish_publication`);
+  readers go through the manifest (`published_path`, `read_stable`). Each image's rows are
+  staged in `.staging` as soon as it is read, so an interrupted run resumes. Run only one
+  writer per output folder (the lock).
 
 ## Tests
 

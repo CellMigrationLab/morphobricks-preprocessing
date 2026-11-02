@@ -87,7 +87,9 @@ src/morphobricks_preprocessing/
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
   axis_review.py    review_axes and check_mapping (moved from axes.py in PP-4)
-  fingerprint.py    Fingerprint (size, mtime) and RowKey: when a file's rows are reused (D5);
+  inventory.py      source_signature/source_fingerprint: a file's size and mtime, an OME-Zarr
+                    folder's total size, newest mtime and inventory digest (issue #86; PP-12)
+  fingerprint.py    Fingerprint (size, mtime, inventory) and RowKey: when a file's rows are reused (D5);
                     confirm_axes/unchanged_confirmation (a confirmation of the files as they are)
   recorded_sizes.py RecordedSize: pixel sizes by role with unit and source (manifest v2):
                     header, stated or pixels (no value)
@@ -125,7 +127,11 @@ src/morphobricks_preprocessing/
                     describe_masks, recorded_masks; PP-10d), result.py (RunResult),
                     entries.py (manifest entries, new/changed/unchanged by RowKey),
                     reuse.py (which earlier rows are reused), rows.py (a file's rows and their
-                    pixel checks), publish.py (staged outputs, published together)
+                    pixel checks), publish.py (write_report), generation.py (the outputs
+                    as one generation: .publish, the manifest's replacement as the commit,
+                    finish_publication, published_path/read_stable for readers; PP-12),
+                    staging.py (each file's rows staged in .staging), resume.py (resume or
+                    read each file between fingerprints, source_changed_during_run)
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
   mask_text.py      the masks' texts (mask_summary, mask_report_summary) and the notebook's
                     tables of the mask step (mask_type_rows, mask_relationship_rows,
@@ -157,8 +163,8 @@ src/morphobricks_preprocessing/
                     under the confirmed roles, blocks written in place (BigTIFF when large)
   conversion_record.py the copy tree's .morphobricks-conversion.json (version 2: fingerprints,
                     copy SHA-256, roles, sizes, channel names, bits), review_conversion (the
-                    run's conversion_source_changed and copy_changed_after_conversion
-                    warnings), changed_copies
+                    run's conversion_source_changed warning and copy_changed_after_conversion
+                    error, PP-12), changed_copies
   content_hash.py   content_sha256: a copy's SHA-256 (file, or OME-Zarr folder without labels)
   conversion_check.py conversion_problem: RunInputs.open's check of a copy tree (record SHA-256,
                     version, each recorded copy's SHA-256, read once at open)
@@ -411,7 +417,8 @@ functions the tests use.
     stays 1); flags are JSON booleans only and the versions are strings (`"1"`, `"4"`);
   - channel names and significant bits (OME only, information only);
   - the CSV's SHA-256 and package versions (including `morphobricks-normalization`).
-- **A file is unchanged** when its size, mtime, labels and axis layout match and the table
+- **A file is unchanged** when its size, mtime (an OME-Zarr image: also its inventory digest,
+  `inventory_sha256`, issue #86), labels and axis layout match and the table
   still holds all its rows. Unchanged rows are reused; new and changed files are read;
   deleted, renamed or excluded files lose their rows.
 - **Full rebuild** happens in `mode="full"` (PP-7; `force_rebuild` was removed), when there
@@ -419,9 +426,14 @@ functions the tests use.
   the dtype, bin count, histogram settings (`RunSettings.histogram`) or axis mapping
   changed, or when the CSV's hash no longer matches.
   Changing only the memory limit or the exclusions recomputes nothing.
-- **Writes:** the CSV is written first, then the manifest, each via a temporary file and
-  replace. Nothing is written if any error is found. An interrupted run is caught next
-  time by the hash check.
+- **Writes (PP-12, contract §9.4):** each image's rows are staged in `.staging` as soon
+  as it is read (an interrupted run resumes from the staged rows whose key still matches;
+  anything else is discarded and reported). The outputs are one generation, written into
+  `.publish` and committed by the manifest's `os.replace` (the one atomic step), then moved
+  into place; the next holder of the lock finishes or discards an interrupted publication.
+  Every image is fingerprinted when its header is read, before and after its pixels are
+  read, and before the commit (`source_changed_during_run`, issue #90). Nothing is
+  published if any error is found.
 - **Exclusions:** the user may exclude images explicitly (`exclude=[...]`, e.g. damaged
   files). Excluded images are not read, are reported (`excluded_images` warning), are
   recorded in the manifest, and lose their rows.
