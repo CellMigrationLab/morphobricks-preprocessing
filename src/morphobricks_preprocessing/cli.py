@@ -20,7 +20,8 @@ mask type and the relationships between them (contract §15).
 ``calibrate`` (:mod:`.cli_calibrate`) shows or states the pixel sizes in the output folder's
 ``calibration.csv`` (design v0.4 §3). ``convert`` (:mod:`.cli_convert`) saves the images whose
 axes are wrong or not named as named-axis OME-TIFF copies in a new folder (design v0.4 §5).
-All exit with status 1 when an error blocks processing.
+All exit with status 1 when they report an error (an error blocks processing) and 0
+otherwise; argparse exits with 2 on options it cannot read.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ from pathlib import Path
 
 from .cli_calibrate import add_calibrate_parser, calibrate_command, calibration_summary
 from .cli_convert import add_convert_parser, convert_command
-from .cli_design import add_design_parser, design_command, design_instructions
+from .cli_design import add_design_parser, design_command, design_errors, design_instructions
 from .cli_masks import add_masks_arguments, masks_command
 from .cli_run import (
     add_run_arguments,
@@ -240,8 +241,7 @@ def _check(args: argparse.Namespace) -> int:
     if pre.issues:
         print()
         print(format_issues(pre.issues))
-    if pre.dataset.repeats:
-        _print_design(args, pre)
+    design_refused = bool(pre.dataset.repeats) and not _print_design(args, pre)
     axis_errors = ()
     if review is not None:
         # The suggested roles are the header's own, so they never contradict it; 'run'
@@ -269,11 +269,17 @@ def _check(args: argparse.Namespace) -> int:
     print()
     refusal, path = written.refusal, written.report
     print(format_issues([refusal]) if refusal else f"Report written to {path}" if path else "")
-    return 0 if pre.ok and not axis_errors and refusal is None else 1
+    blocked = not pre.ok or axis_errors or refusal is not None or design_refused
+    return 1 if blocked else 0  # every error printed exits with 1, as 'run' does
 
 
-def _print_design(args: argparse.Namespace, pre: Preflight) -> None:
-    """Print the experiment design in the output folder; ``check`` never replaces it."""
+def _print_design(args: argparse.Namespace, pre: Preflight) -> bool:
+    """Print the experiment design in the output folder; False when it has an error.
+
+    ``check`` never replaces a design. One it cannot read, or one ``run`` would stop on
+    (``repeat_group_conflict``, ``invalid_experiment_design``), is printed with its error,
+    and ``check`` then exits with status 1.
+    """
     output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
     try:
         design, _ = load_design(output, pre.dataset.repeats)
@@ -284,14 +290,20 @@ def _print_design(args: argparse.Namespace, pre: Preflight) -> None:
     if design is None:
         print(f"Experiment design: {refusal.message}")
         print(f"  Suggested action: {refusal.action}")
-    elif (output / DESIGN_FILENAME).exists():
+        return not refusal.is_error
+    if (output / DESIGN_FILENAME).exists():
         print(f"Experiment design ({output / DESIGN_FILENAME}):")
         print(design_summary(design))
+        problems = design_errors(design)  # what 'run' would stop on, as errors
+        if problems:
+            print(format_issues(problems))
+            return False
     else:
         print(
             "Experiment design: not confirmed yet. 'check' writes experiment_design.csv, "
             "prefilled from the folders, to the output folder for you to confirm."
         )
+    return True
 
 
 def _log_refusal(args: argparse.Namespace) -> str | None:
