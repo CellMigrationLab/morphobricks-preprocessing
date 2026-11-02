@@ -1,4 +1,4 @@
-"""Command-line interface: ``check``, ``run``, ``masks``, ``calibrate`` and ``design``.
+"""Command-line interface: ``check``, ``run``, ``masks``, ``calibrate``, ``design``, ``convert``.
 
 ``check`` runs the preflight (folders and image headers, no pixels) and prints
 what will be analysed, the problems found and the suggested axis roles; it writes the
@@ -18,8 +18,9 @@ notebook only).
 label images of OME-Zarr images), reads them, and writes ``mask_relationships.json`` with each
 mask type and the relationships between them (contract §15).
 ``calibrate`` (:mod:`.cli_calibrate`) shows or states the pixel sizes in the output folder's
-``calibration.csv`` (design v0.4 §3). All four exit with status 1 when an error blocks
-processing.
+``calibration.csv`` (design v0.4 §3). ``convert`` (:mod:`.cli_convert`) saves the images whose
+axes are wrong or not named as named-axis OME-TIFF copies in a new folder (design v0.4 §5).
+All exit with status 1 when an error blocks processing.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .cli_calibrate import add_calibrate_parser, calibrate_command, calibration_summary
+from .cli_convert import add_convert_parser, convert_command
 from .cli_design import add_design_parser, design_command, design_instructions
 from .cli_masks import add_masks_arguments, masks_command
 from .cli_run import add_run_arguments, command_preflight, parse_size, run_command
@@ -89,6 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_masks_arguments(masks)
     for command in (add_calibrate_parser(commands), add_design_parser(commands)):
         _remove_stale_lock_option(command)
+    add_convert_parser(commands)
     return parser
 
 
@@ -105,6 +108,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--exclude and --no-exclude cannot be given together")
     handler = _attach_log(args.log) if getattr(args, "log", None) else None
     try:
+        if args.command == "convert":
+            return convert_command(args) if _remove_stale_lock(args) else 1
         try:
             args.mask_axes = mask_axes_option(args.mask_axes)
         except ValueError as exc:
@@ -180,7 +185,11 @@ def _mask_axes_option(parser: argparse.ArgumentParser) -> None:
 
 def _remove_stale_lock(args: argparse.Namespace) -> bool:
     """Remove the output folder's lock the user said is stale; False when it is not."""
-    if args.output:
+    if not args.remove_stale_lock:
+        return True
+    if getattr(args, "to", None):  # 'convert' locks the folder of the copies
+        output = Path(args.to).resolve()
+    elif args.output:
         output = Path(args.output).resolve()
     elif getattr(args, "experiment", None):  # 'design' takes only --output
         output = default_output_folder(Path(args.experiment).resolve())

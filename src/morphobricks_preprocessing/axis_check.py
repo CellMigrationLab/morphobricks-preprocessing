@@ -207,8 +207,8 @@ def axis_check_issues(
                     "with the roles you confirmed, and recorded as confirmed by you.",
                     paths,
                     "Check the roles with the preview. Before segmenting these images in "
-                    "other tools, consider saving named-axis copies (OME-TIFF), so every tool "
-                    "reads the same axes.",
+                    "other tools, consider saving named-axis copies (OME-TIFF) with the convert "
+                    "command, so every tool reads the same axes.",
                 )
             )
             continue
@@ -280,15 +280,17 @@ def _x_before_y_text(n: str, details: str) -> str:
 
 
 _SAVE_Y_FIRST = (
-    "Save these images again with Y before X (rows, then columns), or as named-axis copies "
-    "(OME-TIFF) with Y before X, then run preprocessing on them. If the roles are wrong, "
+    "Save these images again with Y before X (rows, then columns), or convert them: the "
+    "convert command (morphobricks-preprocessing convert) saves named-axis copies (OME-TIFF) "
+    "with Y before X in a new folder; then run preprocessing on them. If the roles are wrong, "
     "correct them."
 )
 
 _TWO_FIXES = (
     "Two fixes. Correct the axes: if the header is right, choose its roles. Or convert: if "
-    "your roles are right, save these images as named-axis copies (OME-TIFF) with them, "
-    "then run preprocessing on the copies."
+    "your roles are right, the convert command (morphobricks-preprocessing convert) saves "
+    "these images as named-axis copies (OME-TIFF) with them in a new folder; then run "
+    "preprocessing on the copies."
 )
 
 

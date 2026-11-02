@@ -21,6 +21,7 @@ from ..axes import (
 )
 from ..calibration import CalibrationReview, fit_to_roles, review_calibration
 from ..calibration_io import load_calibration
+from ..conversion_record import ConversionReview, review_conversion
 from ..dataset import DatasetReport, check_dataset
 from ..discovery import DiscoveryResult, default_output_folder, discover_experiment
 from ..mask_names import MASK_NAME_CODES, mask_name_issues
@@ -66,6 +67,9 @@ class Preflight:
         Each analysed image's pixel sizes from its header and ``calibration.csv``
         (:mod:`.calibration`). Its issues, and the pixel-size checks on these sizes,
         are among the metadata's issues.
+    conversion
+        The conversion record of a tree of named-axis copies (design v0.4 §5), checked
+        against the sources and copies; None for an ordinary experiment.
     """
 
     discovery: DiscoveryResult
@@ -76,6 +80,7 @@ class Preflight:
     dataset: DatasetReport = field(default_factory=DatasetReport)
     masks: MaskInventory | None = None
     calibration: CalibrationReview = field(default_factory=CalibrationReview)
+    conversion: ConversionReview | None = None
 
     @property
     def issues(self) -> tuple[ValidationIssue, ...]:
@@ -86,6 +91,7 @@ class Preflight:
             *self.metadata.issues,
             *self.dataset.issues,
             *(self.masks.issues if self.masks is not None else ()),
+            *(self.conversion.issues if self.conversion is not None else ()),
         ]
         return tuple(sorted(merged, key=lambda issue: not issue.is_error))
 
@@ -199,6 +205,7 @@ def preflight(
         dataset=check_dataset(discovery, excluded=excluded),
         masks=_masks(discovery, metadata, masks_folder, mask_axes, output),
         calibration=calibration,
+        conversion=review_conversion(root, discovery.images),
     )
 
 

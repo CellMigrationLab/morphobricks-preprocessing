@@ -101,7 +101,8 @@ def header_marks(mapping: AxisMapping, files: Iterable) -> dict[int, str]:
         what = "swaps the Y and X it names" if codes == {"axes_yx_swapped"} else "contradicts it"
         text = (
             f"The image header names this axis {html.escape(named)}; this role {what}. "
-            "Choose the header's role, or save named-axis copies with these axes."
+            "Choose the header's role, or save named-axis copies with these axes (the "
+            "convert command)."
         )
         marks[index] = f"<div class='mb-help' style='color:#92400E'>⚠ {text}</div>"
     return marks
