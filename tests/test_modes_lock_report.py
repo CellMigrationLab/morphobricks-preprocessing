@@ -240,6 +240,20 @@ def test_the_lock_is_released_when_a_run_fails(experiment, monkeypatch):
     assert read_lock(default_output_folder(experiment)) is None
 
 
+def test_a_lock_that_cannot_be_written_is_not_left_behind(experiment, monkeypatch):
+    from morphobricks_preprocessing.run import lock as lock_module
+
+    def broken(*args, **kwargs):
+        raise OSError("simulated: disk full")
+
+    output = default_output_folder(experiment)
+    output.mkdir(parents=True)
+    monkeypatch.setattr(lock_module.json, "dumps", broken)
+    with pytest.raises(OSError, match="disk full"), output_lock(output):
+        pass
+    assert not (output / LOCK_FILENAME).exists()
+
+
 def stale_lock(output, pid, host=None):
     output.mkdir(parents=True, exist_ok=True)
     data = {"host": host or socket.gethostname(), "pid": pid, "started_at": "2026-11-01"}

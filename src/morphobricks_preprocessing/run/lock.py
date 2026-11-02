@@ -117,8 +117,12 @@ def output_lock(output_folder: str | os.PathLike) -> Iterator[LockHolder]:
         handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
     except FileExistsError:
         raise OutputLockedError(path, read_lock(output_folder) or LockHolder("", 0)) from None
-    with os.fdopen(handle, "w", encoding="utf-8") as stream:
-        stream.write(json.dumps(asdict(holder)) + "\n")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(asdict(holder)) + "\n")
+    except BaseException:
+        path.unlink(missing_ok=True)  # just created by this run: a lock it could not write
+        raise
     try:
         yield holder
     finally:
