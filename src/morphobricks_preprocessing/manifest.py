@@ -392,7 +392,43 @@ def file_entry_for(  # noqa: PLR0913
     channel_names_trimmed: bool = False,
 ) -> FileEntry:
     """Describe a source image as it is on disk now, with its position identifier."""
-    size, mtime_ns, inventory = source_signature(Path(root) / relative_path)
+    return file_entry_with(
+        source_signature(Path(root) / relative_path),
+        relative_path,
+        labels,
+        mapping,
+        plane_count=plane_count,
+        channel_names=tuple(channel_names),
+        significant_bits=significant_bits,
+        read_in_blocks=read_in_blocks,
+        channel_names_trimmed=channel_names_trimmed,
+    )
+
+
+def file_entry_with(
+    signature: tuple[int, int, str | None],
+    relative_path: str,
+    labels: tuple[str, str, str],
+    mapping: AxisMapping,
+    **header: object,
+) -> FileEntry:
+    """Describe a source image with a fingerprint already taken, as :func:`file_entry_for`.
+
+    Parameters
+    ----------
+    signature
+        ``(size, mtime_ns, inventory)`` (:func:`.inventory.source_signature`), for example
+        the one taken when its header was read.
+    relative_path, labels, mapping
+        As :func:`file_entry_for`.
+    **header
+        The keyword arguments of :func:`file_entry_for` (channel names, bits, ...).
+
+    Returns
+    -------
+    FileEntry
+    """
+    size, mtime_ns, inventory = signature
     return FileEntry(
         relative_path=relative_path,
         size=size,
@@ -400,14 +436,10 @@ def file_entry_for(  # noqa: PLR0913
         labels=tuple(labels),
         axes=mapping.axes,
         singleton_roles=mapping.singleton_roles,
-        plane_count=plane_count,
-        channel_names=tuple(channel_names),
-        significant_bits=significant_bits,
-        read_in_blocks=read_in_blocks,
         position_id=position_id(relative_path),
-        channel_names_trimmed=channel_names_trimmed,
         roles=tuple(mapping.roles),
         inventory_sha256=inventory,
+        **header,
     )
 
 

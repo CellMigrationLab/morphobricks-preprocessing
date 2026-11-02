@@ -3,9 +3,9 @@
 Every file a run must compute rows for is either **resumed** (its rows staged by an
 interrupted run, with the same row key: :mod:`.staging`) or **read**, and its rows staged
 as soon as it is read. Whether a file stayed the file the run checked is decided by its
-fingerprint (issue #90): the one taken with its manifest entry must be the one taken when
-its header was read, and the file must still have it just before and just after its
-pixels are read. A file that changed is never staged or published: it is listed, and the
+fingerprint (issue #90): its manifest entry records the fingerprint taken when its header
+was read (between two fingerprints that must agree), and the file must still have it just
+after its pixels are read. A file that changed is never staged or published: it is listed, and the
 run stops with ``source_changed_during_run`` (:func:`changed_issue`).
 """
 
@@ -164,10 +164,9 @@ def new_rows(
 def _read_one(job: FileJob, rel: str, key: dict, found: NewRows) -> None:
     """Read one file between two fingerprints, and stage its rows when it did not change."""
     root = job.pre.discovery.root
+    # The entry's fingerprint is the one taken with the header: a file changed since then
+    # (before or during the read) has another one after the read.
     expected = Fingerprint.recorded(job.entries[rel])
-    if current_fingerprint(root / rel) != expected:
-        found.changed.append(rel)
-        return
     labels = job.entries[rel].labels
     try:
         rows, ranges = _read_file(

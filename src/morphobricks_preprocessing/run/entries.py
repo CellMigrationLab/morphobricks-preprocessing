@@ -11,14 +11,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import astuple, dataclass, replace
 from pathlib import Path
 
 from morphobricks_normalization.records import PlaneRecord
 
 from ..axes import AxisReview
 from ..fingerprint import RowKey
-from ..manifest import FileEntry, RunManifest, RunSettings, file_entry_for
+from ..inventory import source_signature
+from ..manifest import FileEntry, RunManifest, RunSettings, file_entry_with
 from .preflight import Preflight
 
 logger = logging.getLogger(__name__)
@@ -50,12 +51,14 @@ def file_entries(
     entries: dict[str, FileEntry] = {}
     for rel, file_mapping in sorted(review.file_mappings.items()):
         header = headers[rel]
-        entry = file_entry_for(
-            root,
+        # The fingerprint taken with the header (issue #90), else as it is now.
+        bound = pre.header_fingerprints.get(rel)
+        entry = file_entry_with(
+            source_signature(root / rel) if bound is None else astuple(bound),
             rel,
             labels[rel],
             file_mapping,
-            channel_names=header.channel_names,
+            channel_names=tuple(header.channel_names),
             significant_bits=header.significant_bits,
             read_in_blocks=rel in in_blocks,
             channel_names_trimmed=header.channel_names_trimmed,
