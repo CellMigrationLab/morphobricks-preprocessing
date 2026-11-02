@@ -1790,3 +1790,5 @@ Raised during review; to be decided before the milestones that need them:
     `--bins 64 --exclude …` keeps both; an edit is a change named in "What will happen" and
     in `input_changes`. A folder without a run sets back only the values filled from the
     other folder and not edited, so exclusions typed for a new folder are kept.
+    A check fills the bin count and the missing-axes answer only while the user has not
+    changed them since; a changed one is set as without an earlier run (review of #137).

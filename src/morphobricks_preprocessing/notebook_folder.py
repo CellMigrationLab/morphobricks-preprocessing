@@ -220,6 +220,7 @@ class _FolderStep:
         self.mapping = pre.suggested_mapping
         self.confirmed_mapping = None
         self.result = None
+        self._note_edits()  # a check fills only what the user left as filled
         self.missing_as_singleton.set(self._recorded_missing_as_singleton(), notify=False)
         self._show_folder_results(pre)
         self._reset_settings(pre)

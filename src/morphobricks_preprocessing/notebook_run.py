@@ -332,7 +332,6 @@ class _RunStep:
         self._show_run_result(result)
         if result.written:
             self._recorded_after_run()
-        if result.written:
             self._show_run_checks(result.csv_path)
         self._show_log()
         if result.written:

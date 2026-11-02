@@ -33,6 +33,8 @@ class _Prefill:
         self._recorded: ResolvedInputs | None = None
         self._prefill_for: Path | None = None
         self._prefilled: dict[str, object] = {}
+        # The inputs filled at each check that the user changed: a check keeps them.
+        self._edited: set[str] = set()
         # The recorded histogram settings without a widget (``min_central_bins``) are kept.
         self._histogram_base = HistogramSettings()
 
@@ -44,6 +46,7 @@ class _Prefill:
         if output == self._prefill_for:
             return
         self._prefill_for = output
+        self._edited = set()
         folder = ui.clean_path(self.folder.value)
         root = Path(folder).resolve() if folder else None
         self._recorded = None if output is None else recorded_inputs(output, root)
@@ -89,14 +92,38 @@ class _Prefill:
         if now["intensity"] == self._prefilled["intensity"]:
             self.run_checks.restore_defaults()
         kept = ("recommended", "bins", "histogram")
-        if all(now[key] == self._prefilled[key] for key in kept) and not now["recommended"]:
+        unedited = "bins" not in self._edited
+        unedited = unedited and all(now[key] == self._prefilled[key] for key in kept)
+        if unedited and not now["recommended"]:
             self.recommended.value = True  # sets the bins and the histogram range back
 
+    def _note_edits(self) -> None:
+        """Note the inputs filled at a check that were changed since, before checking again."""
+        if not self._prefilled:
+            return
+        now = self._prefill_values()
+        if (now["bins"], now["recommended"]) != (
+            self._prefilled["bins"],
+            self._prefilled["recommended"],
+        ):
+            self._edited.add("bins")
+        if now["singleton"] != self._prefilled["singleton"]:
+            self._edited.add("singleton")
+
     def _prefill_check(self) -> None:
-        """Show the recorded bin count after a check, which sets the pixel type's default."""
-        self._prefill_bins()
+        """Show the recorded bin count after a check, which sets the pixel type's default.
+
+        A bin count or "recommended" choice changed by the user is not filled again: the
+        check sets it as it would without an earlier run.
+        """
+        if "bins" not in self._edited:
+            self._prefill_bins()
         if self._prefilled:
-            self._prefilled.update(bins=self.bins.value, recommended=self.recommended.value)
+            self._prefilled.update(
+                bins=self.bins.value,
+                recommended=self.recommended.value,
+                singleton=self.missing_as_singleton.value,
+            )
 
     def _prefill_bins(self) -> None:
         """Show the recorded bin count, when it was recorded for the checked pixel type."""
@@ -118,7 +145,12 @@ class _Prefill:
         return recorded.bin_count if self.bins.min <= recorded.bin_count <= self.bins.max else None
 
     def _recorded_missing_as_singleton(self) -> bool:
-        """Return the missing-axes answer the earlier run recorded (False without one)."""
+        """Return the missing-axes answer the earlier run recorded (False without one).
+
+        Once the user changed it, a check asks again (False), as without an earlier run.
+        """
+        if "singleton" in self._edited:
+            return False
         return self._recorded is not None and self._recorded.missing_as_singleton
 
     def _recorded_image_type(self, rgb_allowed: bool) -> str | None:
@@ -133,6 +165,7 @@ class _Prefill:
             root = Path(folder).resolve() if folder else None
             self._recorded = recorded_inputs(self._prefill_for, root)
             self._prefilled = self._prefill_values()
+            self._edited = set()  # what was run is now what is recorded
 
     def _prefill_values(self) -> dict[str, object]:
         """Return the values of the filled widgets, to tell later which were edited."""
@@ -146,6 +179,7 @@ class _Prefill:
                 self.robust_high.value,
             ),
             "intensity": self.run_checks.settings(),
+            "singleton": self.missing_as_singleton.value,
         }
 
     def _histogram_from(

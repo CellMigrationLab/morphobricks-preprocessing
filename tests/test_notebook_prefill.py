@@ -200,3 +200,69 @@ def test_recorded_inputs_is_the_run_rule(experiment):
     recorded = recorded_inputs(output_of(experiment))
     assert recorded.exclude == ("drug/rep1/a.tif",) and recorded.bin_count == 64
     assert recorded.bins_recorded_for == "uint8" and recorded.changes == ()
+
+
+def test_a_new_check_fills_only_the_unedited_bins(experiment):
+    """Review of #137: a check never overwrites a bin choice the user made."""
+    run_experiment(experiment, prefill_mapping("ZYX"), bin_count=64)
+    nb = ready(experiment)
+    nb.check_button.click()
+    assert nb.bins.value == 64 and not nb.recommended.value  # unedited: filled again
+    nb.recommended.value = True  # the user's choice
+    nb.check_button.click()
+    nb.check_button.click()
+    assert nb.recommended.value and nb.bins.value == 256
+
+
+def test_a_withdrawn_missing_axes_answer_is_not_given_again(tmp_path):
+    """Review of #137: a check asks again rather than re-applying the recorded answer."""
+    root = tmp_path / "exp"
+    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZTYX")
+    write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
+    assert run_experiment(root, prefill_mapping("ZTYX"), missing_as_singleton=True).written
+    nb = ready(root)
+    nb.missing_as_singleton.set(False)
+    nb.check_button.click()
+    assert not nb.missing_as_singleton.value
+
+
+def test_the_recorded_image_type_still_needs_confirming(experiment):
+    run_experiment(experiment, prefill_mapping("ZYX"), image_type="fluorescence")
+    nb = PreprocessingNotebook(str(experiment))
+    for step in (nb.welcome, nb.folder_step, nb.axis_step, nb.run_step, nb.results_step):
+        step()
+    nb.check_button.click()
+    nb.labels_confirmed.button.click()
+    for toggle in nb.group_confirmations.values():
+        if not toggle.value:
+            toggle.button.click()
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    nb.confirm_button.click()
+    assert nb.image_type.value == "fluorescence"
+    assert nb.confirmed_image_type is None and nb.run_button.disabled
+
+
+def test_a_newer_run_from_the_cli_is_a_change_before_the_notebook_runs(experiment):
+    """Review of #137: the widgets keep their values; the plan and run name the change."""
+    args = ["run", str(experiment), "--axes", "ZYX", "--image-type", "fluorescence"]
+    assert main([*args, "--bins", "64"]) == 1  # the design is to be confirmed first
+    assert main(["design", "--output", str(output_of(experiment)), "--confirm-all"]) == 0
+    assert main([*args, "--bins", "64"]) == 0
+    nb = ready(experiment)
+    assert main([*args, "--bins", "32"]) == 0  # written meanwhile
+    nb._refresh_run_step()
+    assert nb.bins.value == 64 and "<b>bin_count</b>: 32 → 64" in nb.plan.value
+    planned = nb._planned_changes(output_of(experiment).resolve())
+    assert nb.run().input_changes == planned and [c.name for c in planned] == ["bin_count"]
+
+
+@pytest.mark.parametrize("saturation", [0.07, 0.123456789, 1 / 3, 0.29, 0.57])
+def test_recorded_intensity_limits_come_back_exactly(experiment, saturation):
+    limits = IntensityCheckSettings(outlier_limit=7 / 3, saturation_limit=saturation)
+    run_experiment(experiment, prefill_mapping("ZYX"), intensity_settings=limits)
+    nb = ready(experiment)
+    assert nb.run_checks.settings() == limits
+    assert "intensity_settings" not in {
+        c.name for c in nb._planned_changes(output_of(experiment).resolve())
+    }
