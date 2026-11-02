@@ -86,30 +86,7 @@ class IntensityPanel:
 
     def _build_settings_box(self) -> None:
         """Build the folded "Check settings": the three limits and "Restore the defaults"."""
-        defaults = IntensityCheckSettings()
-        self.outlier_limit = widgets.BoundedFloatText(
-            value=defaults.outlier_limit,
-            min=0.5,
-            max=100,
-            step=0.5,
-            description="Outlier limit",
-            style=_label(),
-        )
-        self.saturation_percent = widgets.BoundedFloatText(
-            value=100 * defaults.saturation_limit,
-            min=0,
-            max=99.9,
-            step=0.5,
-            description="Saturated pixels (%)",
-            style=_label(),
-        )
-        self.min_images = widgets.BoundedIntText(
-            value=defaults.min_images,
-            min=2,
-            max=100_000,
-            description="Fewest images",
-            style=_label(),
-        )
+        self._build_limits()
         self.defaults_button = ui.button(
             " Restore the defaults",
             style="warning",
@@ -145,6 +122,33 @@ class IntensityPanel:
             ],
             titles=("Check settings",),
             selected_index=None,
+        )
+
+    def _build_limits(self) -> None:
+        """Build the three limits of the checks, at their default values."""
+        defaults = IntensityCheckSettings()
+        self.outlier_limit = widgets.BoundedFloatText(
+            value=defaults.outlier_limit,
+            min=0.5,
+            max=100,
+            step=0.5,
+            description="Outlier limit",
+            style=_label(),
+        )
+        self.saturation_percent = widgets.BoundedFloatText(
+            value=100 * defaults.saturation_limit,
+            min=0,
+            max=99.9,
+            step=0.5,
+            description="Saturated pixels (%)",
+            style=_label(),
+        )
+        self.min_images = widgets.BoundedIntText(
+            value=defaults.min_images,
+            min=2,
+            max=100_000,
+            description="Fewest images",
+            style=_label(),
         )
 
     def _build_plots(self) -> None:
