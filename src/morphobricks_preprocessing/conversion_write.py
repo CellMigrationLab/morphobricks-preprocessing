@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
+from .content_hash import content_sha256
 from .conversion_issues import failed_issue
 from .conversion_plan import PlannedCopy
 from .conversion_record import CopyEntry
@@ -71,7 +72,8 @@ def write_all(
             current, target = item.relative_path, dest / item.relative_path
             os.replace(partial_path(dest, item), target)
             written.append(target)
-            entries.append(replace(item.entry, copy=Fingerprint.of(target)))
+            copy, sha256 = Fingerprint.of(target), content_sha256(target)
+            entries.append(replace(item.entry, copy=copy, copy_sha256=sha256))
     except BaseException as exc:
         logger.debug("Conversion of %s failed", current, exc_info=True)
         for path in [*written, *(partial_path(dest, item) for item in to_write)]:
@@ -115,7 +117,9 @@ def _write_partial(root: Path, dest: Path, item: PlannedCopy, memory_limit: int)
     if current_fingerprint(source) != item.entry.source:
         raise _SourceChanged("it changed since it was checked")
     if item.layout is not None:
-        write_named_copy(source, partial, item.layout, item.mapping, memory_limit=memory_limit)
+        write_named_copy(
+            source, partial, item.layout, item.mapping, dtype=item.dtype, memory_limit=memory_limit
+        )
     elif source.is_dir():
         shutil.copytree(source, partial, copy_function=shutil.copyfile)
     else:
