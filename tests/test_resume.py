@@ -282,7 +282,8 @@ def test_a_chunk_changed_while_an_ome_zarr_image_is_read_is_never_published(tmp_
         chunk = sorted(p for p in (image / "0").iterdir() if not p.name.startswith("."))[0]
         stat = chunk.stat()
         chunk.write_bytes(chunk.read_bytes())  # same bytes and size, another time
-        os.utime(chunk, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1))
+        # 1 ms later: NTFS keeps times in 100 ns steps, so 1 ns would be rounded away.
+        os.utime(chunk, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**6))
         return rows
 
     monkeypatch.setattr(run_module.resume, "_read_file", chunk_rewritten)
