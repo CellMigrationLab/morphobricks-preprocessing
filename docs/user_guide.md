@@ -376,7 +376,8 @@ uses the experiment folder and everything else the earlier run recorded there. W
 experiment folder and without an output folder of a v0.4.0 run, `run` stops with
 `experiment_not_recorded`, naming what is missing. Giving an experiment folder other than
 the recorded one (for example after moving it) is reported as a change: every row is read
-again from the new place.
+again from the new place, and images that do not name their axes (plain stacks) must be
+confirmed again with `--axes`.
 
 Both commands check the axes (§4, step 2): `check` with the suggested roles, which are the
 headers' own, so only the `axes_not_named` warning of plain stacks can appear there; `run`
@@ -526,7 +527,8 @@ using the output files and restore those backups before running again.
 Only one run at a time can use an output folder: a run holds a lock file
 (`.morphobricks-preprocessing.lock`) and a second run is refused (`output_locked`). If the
 process is forcibly stopped, its lock stays; remove it with `--remove-stale-lock` once you
-are sure no run is going on. A stopped run leaves the last good results in place;
+are sure no run is going on. `check` and `masks` hold the lock while they write their
+reports, and are refused the same way. A stopped run leaves the last good results in place;
 rerunning checks the table against the manifest and rebuilds a mismatched pair.
 `mask_relationships.json` is removed by a `full` run and when the masks changed since it
 was written; run the `masks` command again.
