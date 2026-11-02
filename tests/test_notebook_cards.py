@@ -340,6 +340,21 @@ def test_a_stale_lock_is_removed_only_on_the_button(experiment):
     assert not ui.is_visible(nb.run_lock.card)
 
 
+def test_the_button_removes_only_the_lock_it_names(experiment):
+    """A lock taken by another run after the card was shown is named, not removed."""
+    nb = ready(experiment)
+    output = output_of(experiment)
+    hold_lock(output, finished_pid())
+    assert not nb.run().written
+    hold_lock(output, 4242, host="another-computer")
+    nb.run_lock.button.click()
+    assert (output / LOCK_FILENAME).exists()
+    assert "Nothing was removed" in nb.run_lock.result.value
+    assert "another-computer" in nb.run_lock.holder.value and "4242" in nb.run_lock.holder.value
+    nb.run_lock.button.click()  # the user has now seen this holder too
+    assert not (output / LOCK_FILENAME).exists()
+
+
 @pytest.mark.skipif(os.name != "posix", reason="only POSIX can tell a process runs")
 def test_the_lock_of_a_process_running_here_is_kept(experiment):
     nb = checked(experiment)

@@ -57,6 +57,7 @@ class _LockCard:
         """Build the card, hidden; ``again`` names the button to press after a removal."""
         self.again = again
         self.output: Path | None = None
+        self.shown: LockHolder | None = None
         self.holder = widgets.HTML()
         self.button = ui.button(
             " Remove the lock of a stopped run",
@@ -86,7 +87,7 @@ class _LockCard:
     def show(self, output: Path) -> None:
         """Show who holds the lock of ``output``; the user decides whether to remove it."""
         self.output = output
-        holder = read_lock(output)
+        holder = self.shown = read_lock(output)
         self.result.value = ""
         if holder is None:
             self.hide()
@@ -105,8 +106,20 @@ class _LockCard:
         ui.set_visible(self.card, False)
 
     def remove(self) -> LockHolder | None:
-        """Remove the lock the user says is stale; keep one held by a running process here."""
+        """Remove the lock the user says is stale; keep one held by a running process here.
+
+        Only the holder the card names is removed: a lock taken since by another run is shown
+        instead, for the user to decide again.
+        """
         if self.output is None:
+            return None
+        if read_lock(self.output) not in (None, self.shown):
+            self.show(self.output)
+            self.result.value = ui.status(
+                "warn",
+                "Nothing was removed: another run took the lock since it was shown.",
+                ["Its holder is named above. Wait for it, or click again if it is stopped too."],
+            )
             return None
         try:
             holder = remove_stale_lock(self.output)
