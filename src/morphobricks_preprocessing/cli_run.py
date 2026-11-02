@@ -2,7 +2,9 @@
 
 Every input left out is the earlier run's in the same output folder (design v0.4 §1):
 ``--axes`` is needed for the first run and for plain stacks that are new or changed;
-``--no-masks`` drops the recorded masks folder; ``--mode full`` recomputes every row.
+``--no-masks`` drops the recorded masks folder, ``--no-exclude`` the recorded exclusions;
+``--mode full`` recomputes every row. Given only ``--output``, ``run`` uses the recorded
+experiment folder (``experiment_not_recorded`` without one).
 Also the helpers every command shares: :func:`parse_size` and :func:`command_preflight`.
 """
 
@@ -47,7 +49,7 @@ from .report import (
 )
 from .run import MODES, RESTART, Preflight, preflight, run_experiment
 from .run.recorded import usable
-from .run.reuse import read_previous
+from .run.reuse import read_previous, recorded_experiment_root
 from .validation import has_errors
 
 _UNITS = {
@@ -129,6 +131,12 @@ def _run_inputs(run: argparse.ArgumentParser) -> None:
         "--no-masks", action="store_true", help="drop the masks folder of the earlier run"
     )
     run.add_argument(
+        "--no-exclude",
+        action="store_true",
+        help="clear the exclusions of the earlier run: analyse every image again "
+        "(not with --exclude)",
+    )
+    run.add_argument(
         "--missing-as-singleton",
         action=argparse.BooleanOptionalAction,
         help="confirm that images lacking some axes have one plane along them (default: as "
@@ -195,9 +203,19 @@ _INTENSITY_HELP = {
 
 def run_command(args: argparse.Namespace) -> int:
     """Run pass 2 with the command's options, print what it did and return the status."""
-    pre = command_preflight(args)
-    output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
+    if args.experiment is None:
+        root, missing = recorded_experiment_root(args.output and Path(args.output).resolve())
+        if missing is not None:
+            print(format_issues([missing]))
+            return 1
+        args.experiment = str(root)
+    output = (
+        Path(args.output) if args.output else default_output_folder(Path(args.experiment).resolve())
+    )
     recorded = usable(read_previous(output.resolve())[0])
+    if recorded is not None and not args.exclude and not args.no_exclude:
+        args.exclude = list(recorded.settings.exclude)  # the preflight leaves them out too
+    pre = command_preflight(args)
     mapping = _mapping_option(args, pre, recorded)
     settings = _settings_options(args, recorded)
     if mapping is False or settings is None:
@@ -218,7 +236,7 @@ def run_command(args: argparse.Namespace) -> int:
         bin_count=args.bins,
         memory_limit=args.memory_limit,
         missing_as_singleton=args.missing_as_singleton,
-        exclude=args.exclude or None,
+        exclude=[] if args.no_exclude else args.exclude or None,
         mode=args.mode,
         progress=_progress,
         design=design,

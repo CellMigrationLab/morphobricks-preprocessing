@@ -18,10 +18,13 @@ import pytest
 
 from morphobricks_preprocessing import (
     AxisMapping,
+    default_design,
     default_output_folder,
     prefill_mapping,
+    preflight,
     read_manifest,
     run_experiment,
+    write_experiment_design,
 )
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
@@ -179,7 +182,7 @@ def test_a_version_1_manifest_gives_no_inputs(experiment):
     first.manifest_path.write_text(json.dumps(data), encoding="utf-8")
     result = run_experiment(experiment)
     assert "axes_not_confirmed" in codes(result.issues)
-    with pytest.raises(ValueError, match="holds no run of v0.4.0 or later"):
+    with pytest.raises(ValueError, match="experiment_not_recorded|records none"):
         run_experiment(output_folder=first.output_folder)
 
 
@@ -366,3 +369,86 @@ def test_nothing_is_written_inside_the_experiment(experiment):
     result = run_experiment(experiment, ZYX, output_folder=experiment / "results")
     assert codes([i for i in result.issues if i.is_error]) == ["output_inside_experiment"]
     assert not (experiment / "results").exists()
+
+
+# The command line: --no-exclude and running from --output alone (owner, PP-7 review) --------
+
+
+def cli_run(*args):
+    return main(["run", *map(str, args)])
+
+
+def confirmed_design(root, output):
+    """Confirm every repeat group, as the user does before 'run' (contract §12)."""
+    design = default_design(preflight(root).dataset.repeats)
+    for group in design.groups:
+        design = design.with_confirmed(group, True, "2026-11-02")
+    write_experiment_design(design, output / "experiment_design.csv")
+
+
+def test_no_exclude_clears_the_recorded_exclusions(experiment, tmp_path, capsys):
+    out = tmp_path / "out"
+    confirmed_design(experiment, out)
+    assert cli_run(experiment, "--axes", "ZYX", "--output", out, "--exclude", "ctrl/r1/b.tif") == 0
+    # Left out, the recorded exclusions are kept.
+    assert cli_run(experiment, "--output", out) == 0
+    assert read_manifest(out / "run_manifest.json").settings.exclude == ("ctrl/r1/b.tif",)
+    capsys.readouterr()
+    assert cli_run(experiment, "--output", out, "--no-exclude") == 0
+    assert read_manifest(out / "run_manifest.json").settings.exclude == ()
+    out_text = capsys.readouterr().out
+    assert "Changed exclude: ctrl/r1/b.tif -> none" in out_text
+    assert "Read: 1 image" in out_text
+
+
+def test_exclude_and_no_exclude_together_are_refused(experiment, capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        cli_run(experiment, "--axes", "ZYX", "--exclude", "drug/r1/a.tif", "--no-exclude")
+    assert excinfo.value.code == 2
+    assert "--exclude and --no-exclude cannot be given together" in capsys.readouterr().err
+    assert not default_output_folder(experiment).exists()
+
+
+def test_the_cli_runs_from_the_output_folder_alone(experiment, tmp_path, capsys):
+    out = tmp_path / "out"
+    confirmed_design(experiment, out)
+    assert cli_run(experiment, "--axes", "ZYX", "--output", out) == 0
+    capsys.readouterr()
+    assert cli_run("--output", out) == 0
+    text = capsys.readouterr().out
+    assert "Unchanged (rows kept): 3 images" in text and "Changed" not in text
+
+
+def test_the_cli_names_a_changed_experiment_and_its_effect(experiment, tmp_path, capsys):
+    out = tmp_path / "out"
+    confirmed_design(experiment, out)
+    assert cli_run(experiment, "--axes", "ZYX", "--output", out) == 0
+    moved = experiment.rename(tmp_path / "moved")
+    capsys.readouterr()
+    assert cli_run(moved, "--output", out) == 0
+    text = capsys.readouterr().out
+    assert f"Changed experiment_root: {experiment.as_posix()} -> {moved.as_posix()}" in text
+    assert "every row is recomputed (the images are read from the new place)" in text
+
+
+@pytest.mark.parametrize("folder", ["none", "empty", "version 1"])
+def test_without_a_recorded_experiment_the_cli_names_what_is_missing(
+    experiment, tmp_path, capsys, folder
+):
+    out = tmp_path / "out"
+    if folder == "version 1":
+        run_experiment(experiment, ZYX, output_folder=out)
+        data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
+        data["manifest_version"] = "1"
+        (out / "run_manifest.json").write_text(json.dumps(data), encoding="utf-8")
+    elif folder == "empty":
+        out.mkdir()
+    assert cli_run(*(() if folder == "none" else ("--output", out))) == 1
+    text = capsys.readouterr().out
+    assert "No experiment folder was given" in text and "--output" in text
+    expected = {
+        "none": "neither the experiment folder nor the output folder was given",
+        "empty": "there is no earlier run in the output folder",
+        "version 1": "its run is older than v0.4.0",
+    }[folder]
+    assert expected in text

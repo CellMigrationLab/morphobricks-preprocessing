@@ -29,6 +29,7 @@ from ..manifest import (
     file_sha256,
     read_manifest,
 )
+from ..validation import ValidationIssue, error
 from .modes import FULL
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,42 @@ def read_previous(output: Path) -> tuple[RunManifest | None, str | None]:
     except ManifestFormatError:
         logger.warning("Cannot read %s", manifest_path, exc_info=True)
         return None, "the earlier run manifest could not be read"
+
+
+def recorded_experiment_root(
+    output: Path | None,
+) -> tuple[Path | None, ValidationIssue | None]:
+    """Return the experiment folder the run in ``output`` recorded, or why there is none.
+
+    Only a manifest of v0.4.0 or later (version 2) records it usably (design v0.4 §1).
+
+    Parameters
+    ----------
+    output
+        The output folder, resolved, or None when none was given.
+
+    Returns
+    -------
+    tuple
+        ``(experiment folder, None)``, or ``(None, error)``: ``experiment_not_recorded``,
+        naming what is missing.
+    """
+    if output is None:
+        why = "neither the experiment folder nor the output folder was given"
+        paths: list[str] = []
+    else:
+        manifest, missing = read_previous(output)
+        if manifest is not None and manifest.manifest_version != LEGACY_MANIFEST_VERSION:
+            return Path(manifest.experiment_root), None
+        why = f"the output folder records none: {missing or 'its run is older than v0.4.0'}"
+        paths = [output.as_posix()]
+    return None, error(
+        "experiment_not_recorded",
+        f"No experiment folder was given, and {why}.",
+        paths,
+        "Give the experiment folder, or the output folder (--output) of a run of v0.4.0 or "
+        "later, whose manifest records it.",
+    )
 
 
 def _load_previous(

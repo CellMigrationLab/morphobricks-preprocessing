@@ -60,7 +60,7 @@ from .preflight import Preflight, preflight
 from .publish import _staged_outputs, write_report
 from .recorded import GivenInputs, ResolvedInputs, resolve_inputs, usable
 from .result import RunResult
-from .reuse import read_previous
+from .reuse import read_previous, recorded_experiment_root
 from .rows import _pixel_issues, _range_issues, _row_order
 from .steps import Checked, Rows, compute_rows, counts, header_checks, outcome_of, unreadable_issue
 
@@ -404,16 +404,11 @@ def _folders(
         root = Path(experiment_root).resolve()
         output = default_output_folder(root) if output_folder is None else output_folder
         return Path(output).resolve(), root
-    if output_folder is None:
-        raise ValueError("Give the experiment folder, or the output folder of an earlier run.")
-    output = Path(output_folder).resolve()
-    recorded = usable(read_previous(output)[0])
-    if recorded is None:
-        raise ValueError(
-            f"{output} holds no run of v0.4.0 or later that records the experiment folder; "
-            "give the experiment folder."
-        )
-    return output, Path(recorded.experiment_root)
+    output = None if output_folder is None else Path(output_folder).resolve()
+    root, missing = recorded_experiment_root(output)
+    if missing is not None:
+        raise ValueError(f"{missing.message} {missing.action}")
+    return output, root
 
 
 def _masks_argument(

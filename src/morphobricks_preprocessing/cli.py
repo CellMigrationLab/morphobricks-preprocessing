@@ -80,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     _common(check)
 
     run = commands.add_parser("run", help="compute or update the histogram table")
-    _common(run)
+    _common(run, recorded=True)
     add_run_arguments(run)
 
     masks = commands.add_parser(
@@ -117,7 +117,10 @@ _THRESHOLD_HELP = {
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line; return the exit status."""
     _safe_output()
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if getattr(args, "no_exclude", False) and args.exclude:
+        parser.error("--exclude and --no-exclude cannot be given together")
     handler = _attach_log(args.log) if getattr(args, "log", None) else None
     try:
         try:
@@ -134,9 +137,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             handler.close()
 
 
-def _common(parser: argparse.ArgumentParser) -> None:
-    """Add the experiment and the options every command shares."""
-    parser.add_argument("experiment", help="the experiment folder")
+def _common(parser: argparse.ArgumentParser, *, recorded: bool = False) -> None:
+    """Add the experiment and the options every command shares.
+
+    With ``recorded``, the experiment may be left out: ``run`` then uses the one the run
+    in ``--output`` recorded (design v0.4 §1).
+    """
+    if recorded:
+        parser.add_argument(
+            "experiment",
+            nargs="?",
+            help="the experiment folder (default: the one the run in --output recorded)",
+        )
+    else:
+        parser.add_argument("experiment", help="the experiment folder")
     parser.add_argument(
         "--output",
         metavar="FOLDER",
@@ -179,8 +193,13 @@ def _mask_axes_option(parser: argparse.ArgumentParser) -> None:
 
 def _remove_stale_lock(args: argparse.Namespace) -> bool:
     """Remove the output folder's lock the user said is stale; False when it is not."""
-    root = Path(args.experiment).resolve()
-    output = Path(args.output).resolve() if args.output else default_output_folder(root)
+    if args.output:
+        output = Path(args.output).resolve()
+    elif args.experiment:
+        output = default_output_folder(Path(args.experiment).resolve())
+    else:
+        print("Give the experiment folder or --output to say whose lock to remove.")
+        return False
     try:
         holder = remove_stale_lock(output)
     except OutputLockedError as exc:
