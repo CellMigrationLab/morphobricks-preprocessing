@@ -290,10 +290,8 @@ def check_output_folder(
 ) -> list[ValidationIssue]:
     """Check that the output folder is not the experiment folder or inside it.
 
-    Writing inside the experiment would mix results with source images and make
-    the next scan pick them up. Compared as the folder rules are (resolved, then by device
-    and inode, :func:`.links.relative_inside`), so another spelling of the
-    experiment on a file system that ignores case is the experiment.
+    Writing inside the experiment would mix results with source images and make the next
+    scan pick them up. Compared by :func:`.links.relative_inside` (device and inode too).
 
     Returns
     -------
@@ -349,10 +347,8 @@ def discover_experiment(
 
     walker = _Walker(root)
     if output_folder is not None:
-        found = check_output_folder(root, output_folder)
-        walker.issues.extend(found)
-        # The walk's own spelling of the output folder, which may differ in case.
-        walker.excluded = root.joinpath(found[0].paths[0]) if found else None
+        walker.issues.extend(found := check_output_folder(root, output_folder))
+        walker.excluded = root.joinpath(found[0].paths[0]) if found else None  # walk's name
     walker.visit(root, ())
     issues = (*walker.finish(), *walker.links.issues(), *mask_name_issues(walker.leaves))
     return DiscoveryResult(root=root, leaves=tuple(walker.leaves), issues=issues)

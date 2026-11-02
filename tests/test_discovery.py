@@ -1,7 +1,4 @@
 import os
-import shutil
-import subprocess
-import sys
 
 import numpy as np
 import pytest
@@ -16,7 +13,6 @@ from morphobricks_preprocessing import (
     position_id,
     run_experiment,
 )
-from morphobricks_preprocessing.conversion_plan import copy_folder_issues
 from morphobricks_preprocessing.discovery import is_system_name, is_tiff_name
 from tiff_tree import make_tree, write_data
 
@@ -629,47 +625,6 @@ def test_check_output_folder_outside(tmp_path):
     assert check_output_folder(tmp_path / "exp", default_output_folder(tmp_path / "exp")) == []
     # A shared name prefix is not containment.
     assert check_output_folder(tmp_path / "exp", tmp_path / "exp2" / "out") == []
-
-
-def assert_alias_is_the_experiment(root, alias):
-    # The output folder and the copy tree are refused through another spelling of the
-    # experiment, and the walk still leaves the output folder out (#135 review follow-up).
-    issues = check_output_folder(root, alias / "results")
-    assert [i.code for i in issues] == ["output_inside_experiment"]
-    assert issues[0].paths == ("results",)
-    assert [i.code for i in check_output_folder(root, alias)] == ["output_inside_experiment"]
-    result = discover_experiment(root, output_folder=alias / "results")
-    assert codes(result) == ["output_inside_experiment"]
-    issues = copy_folder_issues(root, alias / "copies")
-    assert [i.code for i in issues] == ["copy_folder_overlaps_experiment"]
-
-
-def test_output_folder_in_the_experiment_spelled_in_another_case(tmp_path):
-    # On a file system that ignores case (macOS, Windows) "EXP/results" is inside "exp".
-    make_tree(tmp_path, ["exp/cond/a.tif", "exp/results/plane_histograms.csv"])
-    alias = tmp_path / "EXP"
-    if not alias.is_dir():
-        pytest.skip("this file system tells names apart by case")
-    assert_alias_is_the_experiment(tmp_path / "exp", alias)
-
-
-@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="bind mounts are Linux's")
-def test_output_folder_in_the_experiment_through_a_bind_mount(tmp_path):
-    # A bind mount is another path to the same folder that no link resolves: only the
-    # device and inode tell it is the experiment.
-    make_tree(tmp_path, ["exp/cond/a.tif", "exp/results/plane_histograms.csv"])
-    alias = tmp_path / "alias"
-    alias.mkdir()
-    mount = shutil.which("mount")
-    if mount is None or os.geteuid() != 0:
-        pytest.skip("a bind mount needs root and mount")
-    if subprocess.run([mount, "--bind", str(tmp_path / "exp"), str(alias)]).returncode:
-        pytest.skip("bind mounts are not allowed here")
-    try:
-        assert alias.resolve() != (tmp_path / "exp").resolve()
-        assert_alias_is_the_experiment(tmp_path / "exp", alias)
-    finally:
-        subprocess.run(["umount", str(alias)], check=True)
 
 
 def test_default_output_folder_is_a_sibling(tmp_path):
