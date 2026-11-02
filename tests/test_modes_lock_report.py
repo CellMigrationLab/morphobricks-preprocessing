@@ -294,6 +294,7 @@ def test_a_written_run_reports_its_manifest_and_what_it_found(tmp_path):
     assert image["axes_from"] == "header" and image["roles"] == "YX"
     assert image["pixel_sizes"]["X"] == {"value": 0.5, "unit": "micrometer", "source": "header"}
     assert data["masks"]["types"]["Cells"] == {"paired": 4, "images_without": []}
+    assert data["replaced"] == {}  # the first run replaces nothing
     assert data["channels"] == 1
     text = (clean.output / REPORT_TEXT_FILENAME).read_text(encoding="utf-8")
     assert "run, written" in text and data["manifest_sha256"] in text

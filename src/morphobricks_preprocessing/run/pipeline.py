@@ -201,10 +201,13 @@ class _Run:
     mode: str
     checked: Checked
     previous: tuple[RunManifest | None, str | None]
+    found: frozenset[str]
+    """The names in the output folder before the run wrote anything."""
 
 
 def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResult:
     """Run every step while holding the output folder's lock."""
+    found = frozenset(path.name for path in output.iterdir())
     previous = read_previous(output)
     inputs = resolve_inputs(given, previous[0])
     pre = preflight(
@@ -217,7 +220,7 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
     design, design_problems = _design(options.design, output, previous[0])
     checked = header_checks(pre, inputs, design, options.memory_limit)
     checked.issues.extend(design_problems)
-    run = _Run(output, pre, inputs, options.mode, checked, previous)
+    run = _Run(output, pre, inputs, options.mode, checked, previous, found)
     recorded = usable(previous[0])
     base = RunOutcome(
         step="run",
@@ -345,12 +348,11 @@ def _replaced(run: _Run, masks: dict | None) -> dict[str, str]:
     ``mask_relationships.json`` is removed when the masks changed since the earlier run
     (or nothing usable records them), and in ``full`` mode, which recomputes every check.
     """
-    output = run.output
     names = [OUTPUT_FILENAME, MANIFEST_FILENAME, REPORT_FILENAME, REPORT_TEXT_FILENAME]
     if run.checked.design is not None:
         names.append(DESIGN_FILENAME)
-    replaced = {name: "replaced" for name in names if (output / name).exists()}
-    if (output / MASK_REPORT_FILENAME).exists():
+    replaced = {name: "replaced" for name in names if name in run.found}
+    if MASK_REPORT_FILENAME in run.found:
         before = usable(run.previous[0])
         if run.mode == FULL:
             replaced[MASK_REPORT_FILENAME] = "removed: a full run recomputes every check"

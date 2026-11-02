@@ -387,7 +387,15 @@ text editor: give rows the same `repeat_group` to pair biological repeats named 
 set `confirmed` to `true` in every row of a repeat group whose images are comparable, and
 optionally `control` to `true` for control conditions. Then run again. `check` says whether
 the design is confirmed, or why a saved one cannot be read (naming the line and column); it
-never writes the file. Other options:
+never writes the file. `check` writes only the report, `discovery_report.json` and
+`discovery_report.txt`, to the output folder; `run` writes it on every run, also one that
+stops (`status` `stopped` or `written`, with the SHA-256 of the manifest it describes).
+
+A later `run` in the same output folder reuses everything the earlier run recorded: the
+axis roles (`--axes` is needed again only for plain stacks that are new or changed), the
+masks folder and mask axes, the exclusions, the image type, the bins and the histogram and
+intensity settings. An option given that differs from the recorded value is used, and the
+report names the change and its effect. Other options:
 
 | Option | Meaning |
 |---|---|
@@ -397,9 +405,11 @@ never writes the file. Other options:
 | `--histogram-range minmax\|robust`, `--robust-quantiles LOW HIGH` | Histogram range of histograms that are not exact (default minmax; robust quantiles 0.01 99.99) |
 | `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` |
 | `--missing-as-singleton` | Confirm that images lacking some dimensions have one plane along them |
-| `--image-type fluorescence\|rgb` | The image type (default: the suggested one, printed) |
+| `--image-type fluorescence\|rgb` | The image type (default: the earlier run's, else the suggested one, printed) |
 | `--design FILE` | The confirmed experiment design (default: `experiment_design.csv` in the output folder); it is copied to the output folder |
-| `--force-rebuild` | Recompute every row |
+| `--mode restart\|full` | `restart` (default) reuses the rows of unchanged images; `full` recomputes every row and check. Both keep your confirmations and replace the results only when the run succeeds |
+| `--no-masks` | Drop the masks folder an earlier run recorded |
+| `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check` and `run`); give it only when no other run uses the output folder |
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
 | `--log FILE` | Write technical details to a file |
 | `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json` |
@@ -478,6 +488,13 @@ The default output folder is next to the experiment folder:
   fingerprint of the experiment design, and each image's position, size and modification time. Channel names and significant bits are recorded when the metadata
   provides them, and whether the image's planes were too large to read whole and are read
   in blocks. Format in [contract.md](contract.md) §9.
+- **`discovery_report.json`** and **`discovery_report.txt`:** the report of the last run (or
+  `check`), written also when the run stops: its `status` (`stopped` or `written`), the
+  SHA-256 of the manifest it describes, the folders, conditions, repeats and positions, the
+  channels, each image's axes (and whether they come from the header or your
+  confirmation) and pixel sizes (or `uncalibrated`), the design and image type, the masks,
+  every message with its action, and what the run reused, recomputed and replaced, and
+  why. It is for you to read; later bricks never use it.
 - **`ome_zarr/`**: written only by v0.3 runs that converted TIFF images to OME-Zarr. That
   option was removed in v0.4.0; such a folder is left as it is, and may be deleted.
 
@@ -494,8 +511,13 @@ the new outputs and copies of the earlier pair. If restoration also fails (for e
 another program locks an output file), the error names a backup folder: close programs
 using the output files and restore those backups before running again.
 
-Run only one writer per output folder. If the process is forcibly stopped during output
-replacement, rerunning checks the table against the manifest and rebuilds a mismatched pair.
+Only one run at a time can use an output folder: a run holds a lock file
+(`.morphobricks-preprocessing.lock`) and a second run is refused (`output_locked`). If the
+process is forcibly stopped, its lock stays; remove it with `--remove-stale-lock` once you
+are sure no run is going on. A stopped run leaves the last good results in place;
+rerunning checks the table against the manifest and rebuilds a mismatched pair.
+`mask_relationships.json` is removed by a `full` run and when the masks changed since it
+was written; run the `masks` command again.
 
 ## 7. Running again, and excluding images
 
@@ -507,7 +529,7 @@ Run the notebook or `run` again after adding, changing or removing images:
 - everything is recomputed when the bin count, the histogram range, the axis roles or the
   pixel type changed,
   when the table was edited by hand or written by an earlier version of the brick, or when
-  you ask for it;
+  you ask for it (`--mode full`, `mode="full"`);
 - changing only the image type reads nothing again: the histograms are the same for both
   types, and only the manifest records the new type.
 
@@ -554,6 +576,9 @@ continues.
 | `unsupported_layout` | Error | The image cannot be read one plane at a time. Check the axis roles or export again. |
 | `unreadable_planes` | Error | Pixel data cannot be decoded. Export again, or exclude the image. |
 | `invalid_bin_count` | Error | Bin count outside the allowed range. Use the default or a value in range. |
+| `axes_not_confirmed` | Error | No axis roles were given and the output folder holds no earlier run that records them. Confirm the roles (`--axes`). |
+| `output_locked` | Error | Another run is using the output folder; it is named with its computer, process and start time. Wait for it to finish; if it was stopped or the computer restarted, remove its lock (`--remove-stale-lock`). Nothing was written. |
+| `design_unreadable` | Error | The `experiment_design.csv` an earlier run wrote cannot be read. Correct it, or delete it to confirm the design again. |
 | `no_usable_planes` | Error | No plane has finite pixel values. Check the images. |
 | `tiff_outside_leaf` | Error | Images sit in a folder that also holds subfolders, so they have no condition or repeat of their own. A folder holds either images or subfolders, never both. Move the images into a folder of their own, or out of the experiment folder. |
 | `non_tiff_file`, `empty_folder` | Warning | Files or folders that are skipped. |
