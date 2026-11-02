@@ -157,13 +157,21 @@ src/morphobricks_preprocessing/
                     swap, question 59) and OME metadata of a named-axis copy
   ome_tiff_copy.py  write_named_copy: one image as uncompressed OME-TIFF, planes from iter_planes
                     under the confirmed roles, blocks written in place (BigTIFF when large)
-  conversion_record.py the copy tree's .morphobricks-conversion.json (fingerprints, roles, sizes),
-                    review_conversion (the run's conversion_source_changed and
-                    copy_changed_after_conversion warnings)
-  conversion.py     convert_experiment/plan_conversion: the copy tree under its lock, .partial
-                    files moved into place together (any failure removes what it wrote),
-                    planes checked against the memory limit first, unchanged copies reused,
-                    record last; conversion_issues.py its messages (pure)
+  conversion_record.py the copy tree's .morphobricks-conversion.json (version 2: fingerprints,
+                    copy SHA-256, roles, sizes, channel names, bits), review_conversion (the
+                    run's conversion_source_changed and copy_changed_after_conversion
+                    warnings), changed_copies
+  content_hash.py   content_sha256: a copy's SHA-256 (file, or OME-Zarr folder without labels)
+  conversion_check.py conversion_problem: RunInputs.open's check of a copy tree (record SHA-256,
+                    version, each recorded copy's SHA-256, read once at open)
+  conversion.py     convert_experiment: the copy tree under its lock, record last;
+                    conversion_issues.py its messages (pure)
+  conversion_plan.py plan_conversion: headers checked with the confirmed roles, each bound to
+                    its image's fingerprint (source_changed_during_check), planes checked
+                    against the memory limit first, PlannedCopy per image
+  conversion_reuse.py compare: unchanged copies reused, anything else there refused
+  conversion_write.py write_all: .partial files moved into place together (any failure
+                    removes what it wrote)
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis
                     letters and physical sizes from the scale and axis units),
                     ngff_label_names/open_ngff_labels (label images, for later bricks),

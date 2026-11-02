@@ -15,6 +15,7 @@ import pytest
 import tifffile
 
 import morphobricks_preprocessing.conversion as conversion_module
+import morphobricks_preprocessing.conversion_write as write_module
 from morphobricks_preprocessing import (
     CONVERSION_RECORD_FILENAME,
     AxisMapping,
@@ -151,7 +152,7 @@ def test_a_folder_holding_other_files_or_another_experiments_copies_is_refused(t
 
 def test_a_failed_conversion_leaves_the_folder_as_it_was(tmp_path, monkeypatch):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
-    original, calls = conversion_module.write_named_copy, []
+    original, calls = write_module.write_named_copy, []
 
     def failing(source, target, *args, **kwargs):
         calls.append(target)
@@ -160,7 +161,7 @@ def test_a_failed_conversion_leaves_the_folder_as_it_was(tmp_path, monkeypatch):
             raise OSError("disk full")
         return original(source, target, *args, **kwargs)
 
-    monkeypatch.setattr(conversion_module, "write_named_copy", failing)
+    monkeypatch.setattr(write_module, "write_named_copy", failing)
     result = convert_experiment(exp, SWAPPED, copies)
     assert not result.written and codes(result.issues) == ["conversion_failed"]
     assert result.issues[0].paths == ("ctrl/r1/b.tif",) and "disk full" in result.issues[0].message
@@ -179,7 +180,7 @@ def test_any_failure_or_interruption_removes_the_partial_files_and_new_folders(
     # Review of PP-11: an error other than OSError (tifffile raises ValueError) or an
     # interruption left a .partial file and the folders behind.
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
-    original, calls = conversion_module.write_named_copy, []
+    original, calls = write_module.write_named_copy, []
 
     def failing(source, target, *args, **kwargs):
         calls.append(target)
@@ -188,7 +189,7 @@ def test_any_failure_or_interruption_removes_the_partial_files_and_new_folders(
             raise error
         return original(source, target, *args, **kwargs)
 
-    monkeypatch.setattr(conversion_module, "write_named_copy", failing)
+    monkeypatch.setattr(write_module, "write_named_copy", failing)
     if reported:
         result = convert_experiment(exp, SWAPPED, copies)
         assert not result.written and codes(result.issues) == ["conversion_failed"]
@@ -209,7 +210,7 @@ def test_a_failure_while_moving_the_copies_into_place_removes_the_moved_ones(tmp
             raise OSError("device removed")
         return original(source, target)
 
-    monkeypatch.setattr(conversion_module.os, "replace", failing)
+    monkeypatch.setattr(write_module.os, "replace", failing)
     result = convert_experiment(exp, SWAPPED, copies)
     monkeypatch.undo()
     assert not result.written and codes(result.issues) == ["conversion_failed"]

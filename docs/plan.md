@@ -524,6 +524,14 @@ API, CLI). The notebook and CLI only call the API.
   for files with errors": a card offered after the axis check when images have an axis
   error or unnamed axes, calling `convert_experiment` with the confirmed roles and a
   folder the user names, showing the result and the next run on the copies.
+- **PP-11c (conversion integrity)** *(this PR; issues #80, #87, #88, #92, #96; question 59
+  (16)-(18))*: `conversion.py` split into `conversion_plan`, `conversion_reuse` and
+  `conversion_write` (move only); the copies' SHA-256 in the conversion record (version 2,
+  `content_hash`) verified at reuse, by `review_conversion` and by `RunInputs.open`
+  (`conversion_check`); channel names, significant bits and the unknown sizes' reasons
+  compared at reuse; each header bound to its image's fingerprint
+  (`preflight(bind_headers=True)`, `source_changed_during_check`); the copy's pixel type
+  from that header; `parse_size` exact.
 - **Before the audit: experiment design identity and counts (issues #82, #83 and #98)**
   *(this PR; questions 62, 63 and 64)*: technical-repeat folders whose images are all
   excluded are not counted, and the balance text names them; every design reader refuses a
@@ -1471,6 +1479,28 @@ Raised during review; to be decided before the milestones that need them:
     disappeared, as for `calibration_sha256` and the design's SHA-256.
     (15) **Notebook card**: the next PR, PP-11b (§10); the axis-check card names the
     command meanwhile.
+    (16) **The copies' SHA-256** *(owner decision of 2 November 2026, after an independent
+    review of 8db1f4a; implemented in PP-11c, issue #87)*: a fingerprint (size and time)
+    does not see a change that keeps both, so the record gives each copy's SHA-256,
+    computed in one pass after it is written; reuse, the run's `review_conversion` and
+    `RunInputs.open` verify it (`RunInputs` once at open, for the copies of every image the
+    run recorded: one read of those copies, documented in contract §9.1). Sources keep the
+    fingerprint rule (design v0.4 §1). The record is version 2; a version 1 record is
+    refused with a message to convert again (its copies cannot be checked). Reuse also
+    compares the channel names and significant bits (#88) and the reasons of the unknown
+    sizes (#92).
+    (17) **One metadata epoch** *(same review; PP-11c, issue #96)*: each image is
+    fingerprinted before and after the header read the copy's layout comes from, and is
+    refused (`source_changed_during_check`) when the two differ; that fingerprint is the
+    one recorded and checked before and after the copy is written. The copy's pixel type
+    also comes from that header (the writer no longer opens the header for it), and a
+    plane of another type is refused, never cast. Still read again, by design: the planes'
+    memory check (`check_planes`, the run's own check) and the reader that reads the pixels
+    (it opens the file and parses its header); both are bounded by the same fingerprint.
+    (18) **Exact memory sizes on the command line** *(same review; PP-11c, issue #80)*:
+    `--memory-limit` is parsed without floating point and must be a whole number of bytes
+    above 0 (`1.5GiB` is accepted, `1.5` and `0.5B` are refused before anything is
+    read).
 62. Which technical-repeat folders are counted (issue #82)?
     *Decided (owner, 2 November 2026):* only those holding at least one image to analyse.
     A technical-repeat folder whose images are all excluded is not counted in
