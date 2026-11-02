@@ -7,6 +7,8 @@ run the same two functions (contract §15):
   output folder recorded unless they are given (design v0.4 §1): the experiment folder
   (``experiment_not_recorded`` without one), the masks folder, the mask axes and the
   exclusions; a value given that differs is used and named. It reads no pixels.
+- :func:`recorded_mask_types` says whether the run in the output folder recorded masks:
+  the notebook offers the step only then.
 - :func:`describe_masks` reads the masks (:func:`.mask_scan.scan_masks`) and writes the
   report, holding the output folder's lock while it writes: a run may be replacing or
   removing the same file.
@@ -25,7 +27,7 @@ from ..masks import MaskInventory
 from ..validation import ValidationIssue, has_errors
 from .lock import OutputLockedError, lock_issue, output_lock
 from .preflight import Preflight, preflight
-from .recorded import GivenInputs, InputChange, resolve_inputs
+from .recorded import GivenInputs, InputChange, resolve_inputs, usable
 from .reuse import read_previous, recorded_experiment_root
 
 _RECORDED = ("experiment_root", "exclude", "masks_folder", "mask_axes")
@@ -196,3 +198,22 @@ def describe_masks(
     except OutputLockedError as exc:
         return MaskStepResult(report=report, path=None, refusal=lock_issue(exc))
     return MaskStepResult(report=report, path=path)
+
+
+def recorded_mask_types(output_folder: str | os.PathLike) -> tuple[str, ...]:
+    """Return the mask types the run in the output folder recorded (v0.4.0 manifest).
+
+    Parameters
+    ----------
+    output_folder
+        The output folder.
+
+    Returns
+    -------
+    tuple of str
+        The recorded mask types; empty without a usable manifest or without masks.
+    """
+    manifest = usable(read_previous(Path(output_folder).resolve())[0])
+    if manifest is None:
+        return ()
+    return tuple((manifest.masks or {}).get("types") or ())

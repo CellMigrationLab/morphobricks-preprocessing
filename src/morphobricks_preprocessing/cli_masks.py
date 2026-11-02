@@ -14,7 +14,8 @@ from __future__ import annotations
 import argparse
 
 from .mask_scan import DEFAULT_THRESHOLDS, mask_thresholds
-from .report import format_issues, mask_report_summary, mask_summary
+from .mask_text import mask_report_summary, mask_summary
+from .report import format_issues
 from .run.mask_step import describe_masks, prepare_mask_step
 from .validation import has_errors
 

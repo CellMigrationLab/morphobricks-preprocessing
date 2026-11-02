@@ -15,7 +15,8 @@ The notebook ``notebooks/MorphoBricks_Preprocessing.ipynb`` shows the four steps
 3. **Run** - check that everything is ready, see what will happen (the mode and
    the inputs that changed since the earlier run), and compute
    or update the histogram table; then the intensity checks of the table, with
-   their plots.
+   their plots; after a run that recorded masks, the optional mask step
+   (**Describe the masks**, as the command line's ``masks``).
 4. **Results** - pooled statistics and intensity distributions per group, and the
    intensity checks of any histogram table.
 
@@ -53,6 +54,7 @@ from .notebook_axis_step import _AxisStep
 from .notebook_calibration import _CalibrationCard
 from .notebook_design import _DesignCard
 from .notebook_folder import _FolderStep
+from .notebook_mask_step import _MaskStepCard
 from .notebook_masks import _MasksCard
 from .notebook_options import (
     _PACKAGE_LOGGER,
@@ -123,6 +125,7 @@ class PreprocessingNotebook(
     _AxisStep,
     _AxisPreview,
     _RunStep,
+    _MaskStepCard,
     _RunPlan,
     _ResultsStep,
 ):
@@ -178,6 +181,7 @@ class PreprocessingNotebook(
         self._build_masks_cards()
         self._build_folder_step(str(experiment_folder), str(output_folder))
         self._build_axis_step()
+        self._build_mask_step_card()
         self._build_run_step()
         self._build_results_step()
         self._refresh_axis_step()
@@ -260,6 +264,7 @@ class PreprocessingNotebook(
         ui.set_visible(self.folder_next, show_next)
         self._show_output = show_output
         ui.set_visible(self.output_card, show_output)
+        ui.set_visible(self.mask_step_card, show_output)
         self.labels_confirmed.explain(_labels_explanation(show_design))
         if show_design != self._show_design:
             self._show_design = show_design
@@ -368,6 +373,7 @@ class PreprocessingNotebook(
                 self.run_tiles,
                 self.run_issues,
                 self.run_checks.card,
+                self.mask_step_card,
                 self.details_box,
                 self.run_next,
             ],

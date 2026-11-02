@@ -1,0 +1,183 @@
+"""PP-10d: the notebook's **Describe the masks** button (plan §10, contract §15).
+
+After a run that recorded masks, step 3's button runs the command line's ``masks`` step with
+the run's recorded inputs (:mod:`morphobricks_preprocessing.run.mask_step`): it writes
+``mask_relationships.json`` holding the lock and shows the mask types, the relationships and
+the hierarchy as suggestions to check. It is disabled without such a run, shows refusals with
+the existing cards, and is hidden when an embedding brick hides the output folder.
+"""
+
+import importlib
+import json
+
+import numpy as np
+import pytest
+
+from morphobricks_preprocessing.cli import main
+from morphobricks_preprocessing.mask_scan import MASK_REPORT_FILENAME
+from morphobricks_preprocessing.run.lock import output_lock
+from tiff_tree import write_data
+
+pytest.importorskip("ipywidgets")
+pytest.importorskip("matplotlib")
+ui = importlib.import_module("morphobricks_preprocessing.notebook_style")
+PreprocessingNotebook = importlib.import_module(
+    "morphobricks_preprocessing.notebook_ui"
+).PreprocessingNotebook
+
+IMAGES = ["ctrl/rep1/a.tif", "ctrl/rep2/a.tif", "drug/rep1/a.tif", "drug/rep2/a.tif"]
+
+
+def experiment(tmp_path):
+    root = tmp_path / "exp"
+    rng = np.random.default_rng(0)
+    for rel in IMAGES:
+        write_data(root / rel, rng.integers(0, 200, (16, 16), dtype=np.uint8), axes="YX")
+    return root
+
+
+def nested_masks(tmp_path):
+    """Write cells (two squares) and nuclei (one smaller square inside each cell)."""
+    masks = tmp_path / "masks"
+    cells = np.zeros((16, 16), np.uint16)
+    cells[1:7, 1:7], cells[9:15, 9:15] = 1, 2
+    nuclei = np.zeros((16, 16), np.uint16)
+    nuclei[3:5, 3:5], nuclei[11:13, 11:13] = 1, 2
+    for rel in IMAGES:
+        write_data(masks / "cells" / rel, cells)
+        write_data(masks / "nuclei" / rel, nuclei)
+    return masks
+
+
+def output_of(root):
+    return root.parent / f"{root.name}_MorphoBricks_Preprocessing"
+
+
+def ran(root, masks=None, *, show_output=True):
+    nb = PreprocessingNotebook(str(root))
+    nb.welcome()
+    nb.folder_step(show_output=show_output)
+    nb.axis_step()
+    page = nb.run_step()
+    if masks is not None:
+        nb.masks_folder.value = str(masks)
+    nb.check_button.click()
+    nb.labels_confirmed.button.click()
+    for toggle in nb.group_confirmations.values():
+        if not toggle.value:
+            toggle.button.click()
+    nb.preview_button.click()
+    nb.preview_checked.button.click()
+    nb.confirm_button.click()
+    nb.image_type_checked.button.click()
+    return nb, page
+
+
+def test_the_button_is_on_step_3_and_waits_for_a_run_that_recorded_masks(tmp_path):
+    root = experiment(tmp_path)
+    nb, page = ran(root, nested_masks(tmp_path))
+    assert nb.mask_step_card in page.children[1].children
+    assert ui.is_visible(nb.mask_step_card)
+    assert nb.mask_step_button.disabled
+    assert "Available after a run that recorded masks" in nb.mask_step_hint.value
+    assert nb._on_describe_masks() is None
+    assert nb.run().written
+    assert not nb.mask_step_button.disabled
+    assert "2 mask types" in nb.mask_step_hint.value and "cells, nuclei" in nb.mask_step_hint.value
+
+
+def test_without_recorded_masks_the_button_stays_disabled(tmp_path):
+    root = experiment(tmp_path)
+    nb, _ = ran(root)
+    assert nb.run().written
+    assert nb.mask_step_button.disabled
+    assert "The run recorded no masks" in nb.mask_step_hint.value
+    nb.mask_step_button.click()
+    assert nb.mask_step_status.value == ""
+    assert not (output_of(root) / MASK_REPORT_FILENAME).exists()
+
+
+def test_describe_the_masks_writes_the_report_and_shows_the_cards(tmp_path, capsys):
+    root = experiment(tmp_path)
+    nb, _ = ran(root, nested_masks(tmp_path))
+    assert nb.run().written
+    nb.mask_step_button.click()
+    path = output_of(root).resolve() / MASK_REPORT_FILENAME
+    assert path.is_file()
+    status, shown = nb.mask_step_status.value, nb.mask_step_result.value
+    assert "The masks are described: 2 mask types in 4 images." in status
+    assert str(path) in status and "Thresholds: the defaults." in status
+    assert "suggestions from the masks&#x27; pixels" in status
+    assert "Mask types (suggestions to check)" in shown
+    assert "one object per label" in shown
+    assert "<td>nuclei</td><td>inside</td><td>cells</td>" in shown
+    assert "8 of 8" in shown and "0/8/0/0" in shown
+    assert "<pre>    cells\n        nuclei</pre>" in shown
+    assert nb.mask_step_progress.bar_style == "success"
+    assert not nb.mask_step_button.disabled and nb.mask_step_button.icon == "sitemap"
+    # The same report as the command line's masks step, with the recorded inputs.
+    written = json.loads(path.read_text(encoding="utf-8"))
+    path.unlink()
+    assert main(["masks", "--output", str(output_of(root))]) == 0
+    again = json.loads(path.read_text(encoding="utf-8"))
+    assert {k: v for k, v in again.items() if k != "versions"} == {
+        k: v for k, v in written.items() if k != "versions"
+    }
+
+
+def test_a_locked_output_folder_shows_the_lock_card_and_writes_nothing(tmp_path):
+    root = experiment(tmp_path)
+    nb, _ = ran(root, nested_masks(tmp_path))
+    assert nb.run().written
+    with output_lock(output_of(root)):
+        assert nb._on_describe_masks() is None
+        assert ui.is_visible(nb.mask_step_lock.card)
+    assert "the output folder is locked" in nb.mask_step_status.value
+    assert nb.mask_step_result.value == ""
+    assert not (output_of(root) / MASK_REPORT_FILENAME).exists()
+    assert "Describe the masks again" in nb.mask_step_lock.again
+    assert nb._on_describe_masks() is not None
+    assert not ui.is_visible(nb.mask_step_lock.card)
+
+
+def test_mask_errors_since_the_run_are_shown_and_nothing_is_read(tmp_path):
+    root = experiment(tmp_path)
+    masks = nested_masks(tmp_path)
+    nb, _ = ran(root, masks)
+    assert nb.run().written
+    write_data(masks / "cells" / IMAGES[0], np.zeros((8, 8), np.uint16))  # wrong size now
+    assert nb._on_describe_masks() is None
+    assert "The masks have errors: none was read." in nb.mask_step_status.value
+    assert "mask size mismatch" in nb.mask_step_result.value
+    assert not (output_of(root) / MASK_REPORT_FILENAME).exists()
+
+
+def test_masks_whose_labels_cannot_be_used_get_a_red_card(tmp_path):
+    root = experiment(tmp_path)
+    masks = nested_masks(tmp_path)
+    nb, _ = ran(root, masks)
+    assert nb.run().written
+    write_data(masks / "cells" / IMAGES[0], np.full((16, 16), 2**31, np.uint32))
+    assert nb._on_describe_masks() is None
+    assert "The masks cannot be used." in nb.mask_step_status.value
+    assert "Nothing was written." in nb.mask_step_status.value
+    assert nb.mask_step_progress.bar_style == "danger"
+
+
+def test_a_new_run_clears_the_description(tmp_path):
+    root = experiment(tmp_path)
+    nb, _ = ran(root, nested_masks(tmp_path))
+    assert nb.run().written
+    nb.mask_step_button.click()
+    assert nb.mask_step_result.value
+    assert nb.run().written
+    assert nb.mask_step_result.value == "" and nb.mask_step_status.value == ""
+    assert not nb.mask_step_button.disabled
+
+
+def test_an_embedding_brick_that_hides_the_output_folder_gets_no_card(tmp_path):
+    root = experiment(tmp_path)
+    nb, _ = ran(root, show_output=False)
+    assert not ui.is_visible(nb.mask_step_card)
+    nb.run()
+    assert not ui.is_visible(nb.mask_step_card)
