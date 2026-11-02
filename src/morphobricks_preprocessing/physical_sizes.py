@@ -480,6 +480,7 @@ def _tiff_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
 
 
 def _ome_sizes(xml: str) -> PhysicalSizes:
+    """Read the sizes of an OME-XML ``Pixels`` element, naming the unusable ones (#93)."""
     root = ElementTree.fromstring(xml)
     pixels = next((e for e in root.iter() if e.tag.rsplit("}", 1)[-1] == "Pixels"), None)
     if pixels is None:
@@ -506,6 +507,7 @@ def _ome_sizes(xml: str) -> PhysicalSizes:
 
 
 def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
+    """Read the sizes of an ImageJ TIFF, naming the unusable ones of a known unit (#93)."""
     meta = tif.imagej_metadata or {}
     # ImageJ writes yunit and zunit only when they differ from the X unit.
     given = {
