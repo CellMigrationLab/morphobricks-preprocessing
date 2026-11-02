@@ -64,6 +64,8 @@ src/morphobricks_preprocessing/
   discovery.py      folder walk, leaf folders, labels (condition / biological_repeat / technical_repeat),
                     position_id per image and the duplicate check; FOV_KEY, check_identity_text,
                     check_plane_index, check_identity_case (the shared identity rules, contract §16)
+  links.py          LinkGuard: links followed only inside the folder walked (experiment, OME-Zarr
+                    stores, masks folder); link_outside_folder, link_loop, linked_twice (#81)
   metadata.py       TIFF header inspection (tifffile, no pixel reads), dtype/dimension/series checks,
                     OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes);
                     header consistency warnings (width/height, plane counts, pixel sizes);
@@ -138,7 +140,7 @@ src/morphobricks_preprocessing/
                     manifest SHA-256, what was found, reused, recomputed and replaced
   cli.py, __main__  `morphobricks-preprocessing check|run|masks|calibrate|design|convert` (also `python -m morphobricks_preprocessing`);
                     cli_run.py holds `run`'s options and output; cli_calibrate.py `calibrate`;
-                    cli_convert.py `convert`
+                    cli_convert.py `convert`; log_target.py where `--log` may write (#99)
   masks/           masks (Q32; a package since PP-5: model, files, header, layout, read,
                     checks, labels): find_masks pairs every image with its masks (masks folder with one
                     folder per type mirroring the experiment, or <image>_<type>.tif in the
