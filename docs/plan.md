@@ -1589,7 +1589,7 @@ Raised during review; to be decided before the milestones that need them:
     answer (the folder may still be being typed), and the design card says which. The run
     is gated as before, so it runs only on the new folder's confirmed design. No copy
     action: the user answers again, or copies the file. Contract §12; user guide §4.
-66. How are the one-to-one matches of `same_objects` counted (issue #67)?
+64. How are the one-to-one matches of `same_objects` counted (issue #67)?
     *Decided (2 November 2026, implemented for issue #67; the rule is the issue's
     acceptance): as a maximum matching of the child and parent objects of each plane whose
     intersection over union is at least `same_objects_iou`
@@ -1597,13 +1597,14 @@ Raised during review; to be decided before the milestones that need them:
     Each object is matched at most once, so two children halving one parent are one match.
     The number of matches is the same for every maximum matching, so the counts do not
     depend on label numbers or tie-breaking. Above an intersection over union of 0.5 the
-    matching is every eligible pair (an object can overlap only one partner that much), so
-    the default threshold changes nothing for real one-to-one segmentations (the HPMEC
+    matching is every eligible pair (an object can overlap only one partner that much); at
+    the default of exactly 0.5 only an object split into exact halves has two eligible
+    partners, so the default changes nothing for real one-to-one segmentations (the HPMEC
     masks give the same report). The evidence adds `children_not_matched`,
     `parents_not_matched`, `children_over_iou_with_several_parents` and
     `parents_over_iou_with_several_children`; `mask_relationships.json` is report version 2.
     Contract §15.1.*
-67. Which axes do the size and plane-count warnings use (issue #74)?
+65. Which axes do the size and plane-count warnings use (issue #74)?
     *Decided (2 November 2026, implemented for issue #74): the confirmed roles, once they
     are confirmed. Before (`check`, preflight), `different_sizes` and
     `different_plane_counts` compare the axes each header names, and a plain stack is left
