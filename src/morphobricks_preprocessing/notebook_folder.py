@@ -1,0 +1,367 @@
+"""Step 1 of the notebook: the experiment folder, its check and the labels."""
+
+from __future__ import annotations
+
+import html
+from pathlib import Path
+
+import ipywidgets as widgets
+from morphobricks_normalization.csv_io import OUTPUT_FILENAME
+
+from . import notebook_style as ui
+from .dataset import CONSISTENCY_CODES
+from .discovery import check_output_folder, default_output_folder
+from .manifest import MANIFEST_FILENAME
+from .notebook_options import _WIDE, EXCLUDABLE_CODES
+from .notebook_render import (
+    _folder_tiles,
+    _labels_explanation,
+    balance_html,
+    issue_count_chips,
+    issues_html,
+    labels_html,
+)
+from .run import Preflight, preflight
+from .validation import ValidationIssue, plural
+
+
+class _FolderStep:
+    """Step 1's folder and labels: check the folder, show its issues, confirm the labels."""
+
+    # Step 1 ------------------------------------------------------------------------------
+
+    def _build_folder_step(self, folder: str, output: str) -> None:
+        self.folder = widgets.Text(
+            value=folder,
+            placeholder="e.g. D:/microscopy/experiment_2026_10",
+            layout=widgets.Layout(flex="1 1 auto", width="auto"),
+        )
+        self.folder_browse = ui.button(
+            "Browse…", icon="folder-open", tooltip="Choose the experiment folder in a dialog"
+        )
+        self.output = widgets.Text(
+            value=output,
+            placeholder="leave empty to use the default folder shown below",
+            layout=widgets.Layout(flex="1 1 auto", width="auto"),
+        )
+        self.output_browse = ui.button(
+            "Browse…", icon="folder-open", tooltip="Choose another output folder"
+        )
+        self.output_hint = ui.help_text("")
+        self.folder_card = ui.card(
+            "Experiment folder",
+            [
+                widgets.HBox([self.folder, self.folder_browse], layout=widgets.Layout(**_WIDE)),
+                ui.help_text(
+                    "The folder that contains your condition folders, or the images "
+                    "themselves. Paste the path or use <b>Browse…</b>. Nothing inside it is "
+                    "ever changed."
+                ),
+            ],
+        )
+        self.output_card = ui.card(
+            "Output folder (optional)",
+            [
+                widgets.HBox([self.output, self.output_browse], layout=widgets.Layout(**_WIDE)),
+                self.output_hint,
+            ],
+        )
+        self.exclude = widgets.Textarea(
+            placeholder="control/bio_rep1/tech_rep1/damaged_image.tif",
+            layout=widgets.Layout(width="99%", height="5em"),
+        )
+        self.exclude_box = widgets.Accordion(
+            children=[
+                widgets.VBox(
+                    [
+                        self.exclude,
+                        ui.help_text(
+                            "One image per line, relative to the experiment folder. Excluded "
+                            "images are not read and their earlier rows are removed. Use this "
+                            "for damaged files; remove a line to analyse the image again."
+                        ),
+                    ]
+                )
+            ],
+            titles=("Exclude images (optional)",),
+            selected_index=None,
+        )
+        self.check_button = ui.button(
+            " Check folder",
+            style="primary",
+            icon="search",
+            tooltip="Scan the folders and image headers (no pixels are read)",
+            main=True,
+        )
+        self.folder_status = widgets.HTML()
+        self.folder_next = widgets.HTML()
+        self.folder_tiles = widgets.HTML()
+        self.labels_table = widgets.HTML()
+        self.labels_confirmed = ui.ConfirmToggle(
+            "Do the labels in the table match your experiment?",
+            _labels_explanation(show_design=True),
+            "Yes, the labels are correct",
+            "Labels confirmed.",
+            "Undo: the labels are not right",
+        )
+        self.labels_confirmed.disabled = True
+        self.labels_card = ui.card(
+            "Labels from the folder names",
+            [
+                ui.help_text(
+                    "Each row is a folder of images and the labels its images get. "
+                    "<i>single</i> means the level has one member: the folder level is "
+                    "missing, or the folder is named single. To change a label, "
+                    "rename the folder and press <b>Check folder</b> again."
+                ),
+                self.labels_table,
+                self.labels_confirmed.widget,
+            ],
+            visible=False,
+        )
+        self.balance_table = widgets.HTML()
+        self.consistency_counts = widgets.HTML()
+        self.consistency_issues = widgets.HTML()
+        self.consistency_details = widgets.Accordion(
+            children=[self.consistency_issues],
+            titles=("Show consistency warnings",),
+            selected_index=None,
+        )
+        self.consistency_card = ui.card(
+            "Dataset consistency",
+            [
+                ui.help_text(
+                    "How many images each condition (column) and biological repeat (row) has, "
+                    "over all its technical repeats. Amber cells are far from the others "
+                    "(fewer than half or more than twice the median), or a biological repeat "
+                    "the condition does not have. Below, the checks that "
+                    "compare the images with each other: pixel type, dimensions, sizes, "
+                    "numbers of planes, channel names and pixel sizes. Warnings do not stop "
+                    "processing; they say what to check."
+                ),
+                self.balance_table,
+                self.consistency_counts,
+                self.consistency_details,
+            ],
+            visible=False,
+        )
+        self.folder_issues = widgets.HTML()
+        self.exclude_button = ui.button(
+            " Exclude these images and check again",
+            style="warning",
+            icon="ban",
+            tooltip="Add the images that cannot be processed to the exclusion list",
+        )
+        ui.set_visible(self.exclude_button, False)
+        self.issue_counts = widgets.HTML()
+        self.issue_details = widgets.Accordion(
+            children=[widgets.VBox([self.folder_issues, self.exclude_button])],
+            titles=("Show warnings and errors",),
+            selected_index=None,
+        )
+        self.issues_card = ui.card(
+            "Messages", [self.issue_counts, self.issue_details], visible=False
+        )
+
+        self.folder_browse.on_click(lambda _: self._browse(self.folder))
+        self.output_browse.on_click(lambda _: self._browse(self.output))
+        self.check_button.on_click(lambda _: self.check_folder())
+        self.exclude_button.on_click(lambda _: self._exclude_blocking_images())
+        self.folder.observe(lambda _: self._folder_edited(), names="value")
+        self.output.observe(lambda _: self._output_edited(), names="value")
+        self.labels_confirmed.observe(lambda _: self._labels_changed())
+        self._build_design_card()
+        self._update_output_hint()
+
+    def check_folder(self) -> Preflight | None:
+        """Run the folder and header check (pass 1) and show its results."""
+        folder = ui.clean_path(self.folder.value)
+        if not folder:
+            self.folder_status.value = ui.status(
+                "warn", "Enter the experiment folder first.", ["Paste its path or use Browse…."]
+            )
+            return None
+        self._busy(self.check_button, "Checking…")
+        self.folder_next.value = ""
+        self.folder_status.value = ui.working("Checking the folders and image headers…")
+        try:
+            with self.log.attached():
+                pre = preflight(folder, self._output_folder(), exclude=self._excluded())
+        finally:
+            self._idle(self.check_button, " Check folder", "search")
+        self.preflight = pre
+        self._checked_folder = folder
+        self.mapping = pre.suggested_mapping
+        self.confirmed_mapping = None
+        self.result = None
+        self.missing_as_singleton.set(False, notify=False)
+        self._show_folder_results(pre)
+        self._reset_settings(pre)
+        self._refresh_axis_step()
+        self._refresh_run_step()
+        self._show_log()
+        return pre
+
+    def _show_folder_results(self, pre: Preflight) -> None:
+        self.design = None
+        self.dataset = pre.dataset
+        ui.set_visible(self.design_card, False)
+        self.labels_table.value = labels_html(pre)
+        self.labels_confirmed.set(False, notify=False)
+        self.labels_confirmed.disabled = not pre.discovery.leaves
+        ui.set_visible(self.labels_card, bool(pre.discovery.leaves))
+        self.consistency_details.selected_index = None
+        self.issue_details.selected_index = None
+        self._show_issue_summary()
+
+    def _step1_issues(self) -> list[ValidationIssue]:
+        """Return the folder-check issues, with the balance warnings of the current pairing."""
+        pre = self.preflight
+        merged = [
+            *pre.discovery.issues,
+            *pre.exclusion_issues,
+            *pre.metadata.issues,
+            *self.dataset.issues,
+        ]
+        return sorted(merged, key=lambda issue: not issue.is_error)
+
+    def _show_issue_summary(self) -> None:
+        pre = self.preflight
+        issues = self._step1_issues()
+        errors = [i for i in issues if i.is_error]
+        warnings = [i for i in issues if not i.is_error]
+        if errors:
+            self.folder_status.value = ui.status(
+                "error",
+                f"Action required: {plural(len(errors), 'problem')} must be fixed first.",
+                ["Read the messages below; each one says what to do.", "Then check again."],
+            )
+        elif warnings:
+            self.folder_status.value = ui.status(
+                "warn",
+                f"Ready, with {plural(len(warnings), 'warning')} to read.",
+            )
+        else:
+            self.folder_status.value = ui.status(
+                "ok",
+                "The folder looks good.",
+            )
+        self.folder_tiles.value = ui.tiles(_folder_tiles(pre, issues))
+        # Consistency issues have their own card next to the balance table; the
+        # messages card keeps the folder, file and readability problems.
+        consistency = [i for i in issues if i.code in CONSISTENCY_CODES]
+        others = [i for i in issues if i.code not in CONSISTENCY_CODES]
+        self.balance_table.value = balance_html(self.dataset.balance)
+        self.consistency_counts.value = issue_count_chips(consistency) or ui.status(
+            "ok", "The images are consistent with each other."
+        )
+        self.consistency_issues.value = issues_html(consistency)
+        ui.set_visible(self.consistency_details, bool(consistency))
+        ui.set_visible(self.consistency_card, bool(pre.discovery.leaves))
+        self.folder_issues.value = issues_html(others)
+        self.issue_counts.value = issue_count_chips(others)
+        ui.set_visible(self.issues_card, bool(others))
+        # A hidden output card comes back when its folder is the problem to fix.
+        ui.set_visible(
+            self.output_card,
+            self._show_output or any(i.code == "output_inside_experiment" for i in issues),
+        )
+        blocking = any(i.code in EXCLUDABLE_CODES for i in issues)
+        ui.set_visible(self.exclude_button, blocking)
+        self._refresh_folder_next()
+
+    def _labels_changed(self) -> None:
+        if self.labels_confirmed.value and self.preflight is not None and self._show_design:
+            self._open_design()
+        else:
+            self._close_design()
+        self._refresh_folder_next()
+        if self.confirmed_mapping is not None:
+            self._refresh_axis_next()
+        self._refresh_run_step()
+
+    def _refresh_folder_next(self) -> None:
+        self.folder_next.value = ""
+        if self.preflight is None or not self.preflight.ok:
+            return
+        if self.labels_confirmed.value and self._design_pending():
+            self.folder_next.value = ui.next_steps(
+                "Confirm the biological repeats in Step 1.",
+                "Under Experiment design, pair the repeats if needed and answer each yellow "
+                "question with Yes, they are comparable.",
+            )
+        elif self.labels_confirmed.value:
+            self.folder_next.value = ui.next_steps(
+                "Go to Step 2 and review the axis roles.",
+                "Run its cell, check the preview, then click Confirm axis roles.",
+            )
+        else:
+            self.folder_next.value = ui.next_steps(
+                "Check the labels in Step 1 and confirm them.",
+                "Read any warnings and review the labels, then click Yes, the labels are correct.",
+            )
+
+    def _folder_edited(self) -> None:
+        self._update_output_hint()
+        if self.preflight is None or ui.clean_path(self.folder.value) == self._checked_folder:
+            return
+        # A different folder makes every later choice stale.
+        self.preflight = None
+        self.mapping = self.confirmed_mapping = None
+        self.result = None
+        self.folder_status.value = ui.status(
+            "info", "The folder changed.", ["Press Check folder to check the new folder."]
+        )
+        self.folder_tiles.value = ""
+        self.folder_next.value = ""
+        self.labels_confirmed.set(False, notify=False)
+        self.design = None
+        ui.set_visible(self.design_card, False)
+        ui.set_visible(self.labels_card, False)
+        ui.set_visible(self.consistency_card, False)
+        ui.set_visible(self.issues_card, False)
+        self._refresh_axis_step()
+        self._refresh_run_step()
+
+    def _output_edited(self) -> None:
+        self._update_output_hint()
+        # "What will happen" and the free disk space depend on the output folder.
+        if hasattr(self, "readiness"):
+            self._refresh_run_step()
+
+    def _update_output_hint(self) -> None:
+        folder = ui.clean_path(self.folder.value)
+        output = self._output_folder()
+        if not folder and not output:
+            self.output_hint.value = (
+                "<div class='mb-help'>Results go next to the experiment folder, in "
+                "<b>&lt;experiment&gt;_MorphoBricks_Preprocessing</b>.</div>"
+            )
+            return
+        target = Path(output) if output else default_output_folder(folder)
+        lines = [
+            f"Results will be written to <b>{html.escape(str(target))}</b>"
+            + ("" if output else " (default)")
+            + f": <b>{OUTPUT_FILENAME}</b> and <b>{MANIFEST_FILENAME}</b>."
+        ]
+        if folder and output and check_output_folder(folder, output):
+            lines.append(
+                "<span style='color:#991B1B'>This folder is inside the experiment folder; "
+                "choose one outside it.</span>"
+            )
+        self.output_hint.value = f"<div class='mb-help'>{'<br>'.join(lines)}</div>"
+
+    def _browse(self, target: widgets.Text) -> None:
+        chosen = ui.ask_directory(ui.clean_path(target.value))
+        if chosen is None:
+            self.folder_status.value = ui.no_dialog_status("folder", "the folder")
+        elif chosen:
+            target.value = chosen
+
+    def _exclude_blocking_images(self) -> None:
+        if self.preflight is None:
+            return
+        paths = {p for i in self.preflight.issues if i.code in EXCLUDABLE_CODES for p in i.paths}
+        self.exclude.value = "\n".join(sorted(set(self._excluded()) | paths))
+        self.exclude_box.selected_index = 0
+        self.check_folder()

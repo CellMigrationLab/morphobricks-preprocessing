@@ -150,7 +150,19 @@ src/morphobricks_preprocessing/
   notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra);
                     folder_step/axis_step take title, purpose, intro and show_next (and
                     show_output and show_design for step 1) so other bricks can embed them
-                    (plan §12 Q26, Q31)
+                    (plan §12 Q26, Q31). Since PP-9 it holds the page methods, __init__ and
+                    the shared helpers; the step methods live on mixin classes in the modules
+                    below, and it re-exports every public name it had (`__all__`)
+  notebook_folder.py        step 1: folder, check, issues, labels (_FolderStep)
+  notebook_design.py        step 1: the experiment design card (_DesignCard)
+  notebook_axis_step.py     step 2: role dropdowns, axis check, missing-axes card (_AxisStep)
+  notebook_axis_preview.py  step 2: preview, confirmation, image type (_AxisPreview)
+  notebook_run.py           step 3: settings, what will happen, the run (_RunStep)
+  notebook_results.py       step 4: pooled statistics per group (_ResultsStep)
+  notebook_plots.py         the PNG plots and IntensityPanel (the intensity checks card)
+  notebook_render.py        HTML helpers: issues, balance, labels, role effect, captions, tiles
+  notebook_options.py       the steps' choices and fixed settings (ROLE_OPTIONS, ...)
+  notebook_values.py        display_range (pure: no widgets, no files)
 notebooks/MorphoBricks_Preprocessing.ipynb   thin notebook: every code cell calls notebook_ui only
 notebooks/notebook_latest_versions.yaml      the notebook's latest version, for LabConstrictor's version check
 tests/              pytest with simulated TIFFs (tests/tiff_tree.py, tests/simulation.py); the

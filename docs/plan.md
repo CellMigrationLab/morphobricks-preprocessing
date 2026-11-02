@@ -388,6 +388,24 @@ API, CLI). The notebook and CLI only call the API.
   locks behind). Same rule as `--remove-stale-lock`: only on that request, never the lock
   of a process still running on the same computer. Until then the notebook's "Common
   problems" gives a `remove_stale_lock(...)` code cell. *To do in PP-10.*
+
+  Left by PP-9 (a move-only split, so no logic was changed there), *to do in PP-10*:
+  - UI modules that compute (§9 layers; audit finding D6): `notebook_plots.distribution_png`
+    works out the cumulative share itself (`np.cumsum(pooled.counts) / pooled.pixel_count`),
+    a copy of `intensity.cumulative_share` (§9: no duplicated helpers);
+    `notebook_render.preview_caption` computes the finite minimum and maximum;
+    `notebook_render.plane_summary_html` multiplies the plane counts;
+    `notebook_run._RunStep._plan_layouts`/`_memory_plan` work out the plane layouts in
+    the UI. Move each computation to a pure or orchestration module.
+  - The baseline entries re-keyed by PP-9: `_build_folder_step` (140 executable lines),
+    `_build_run_step` (119), `IntensityPanel.__init__` (110), `_build_results_step` (92),
+    `_refresh_axis_step` (90), `_build_axis_step` (82), `run` (63) and 31 private
+    functions without a docstring. PP-10 adds cards to these modules; shrink them then.
+  - "Cannot save the design" (`notebook_design._save_design`) is logged outside
+    `log.attached()`, so it never reaches the "Technical details" panel (also before
+    PP-9); the design status card is the only place that says the design was not saved.
+  - `PYRAMID_OPTIONS` is public but unused since `convert_tiffs` was removed; remove it
+    (with PP-11 or PP-13).
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;

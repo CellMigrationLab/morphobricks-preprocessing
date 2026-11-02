@@ -64,6 +64,10 @@ is pinned to the release in `RELEASE_TAG` (plan §12 question 58);
   violation fails, and so does an entry the code no longer needs, until
   `python tools/check.py --update-baseline` lowers it (it never adds an entry). A `# noqa`
   must name its rules (`PGH004`), and line and file-level ones are counted, tests included.
+- **Embedding API:** `notebook_ui.PreprocessingNotebook` and `notebook_style` are a declared,
+  tested embedding API (MorphoRelate builds its notebook from them).
+  `tests/test_embedding_api.py` pins their public names and parameters; changing them needs
+  a coordinated change in the bricks that embed them.
 
 ## Design rules
 

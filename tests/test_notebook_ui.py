@@ -1184,15 +1184,17 @@ def test_plan_warns_about_images_that_cannot_be_read_within_the_limit(tmp_path):
 
 
 def test_plan_layouts_are_cached_until_their_inputs_change(tmp_path, monkeypatch):
+    import morphobricks_preprocessing.notebook_run as notebook_run
+
     root = large_planes_experiment(tmp_path)
     calls = []
-    real = notebook_ui.plane_layout
+    real = notebook_run.plane_layout
 
     def spy(path, *args, **kwargs):
         calls.append(Path(path).name)
         return real(path, *args, **kwargs)
 
-    monkeypatch.setattr(notebook_ui, "plane_layout", spy)
+    monkeypatch.setattr(notebook_run, "plane_layout", spy)
     nb = checked(root)
     nb.recommended.value = False
     assert calls == []  # nothing is opened before the axis roles are confirmed
@@ -1283,7 +1285,7 @@ def test_run_with_errors_shows_what_to_do(experiment, monkeypatch):
 
 
 def test_unexpected_failures_are_reported(experiment, monkeypatch):
-    import morphobricks_preprocessing.notebook_ui as module
+    import morphobricks_preprocessing.notebook_run as module
 
     nb = confirmed(experiment)
 
@@ -1306,7 +1308,7 @@ def test_unexpected_failures_are_reported(experiment, monkeypatch):
 def test_statistics_stay_busy_until_finished_and_recover_on_failure(
     experiment, monkeypatch, failure
 ):
-    import morphobricks_preprocessing.notebook_ui as module
+    import morphobricks_preprocessing.notebook_results as module
 
     nb = confirmed(experiment)
     nb.run()
@@ -1516,11 +1518,9 @@ def test_clean_path_expands_home():
 
 
 def test_widgets_use_99_percent_width_and_bold_paths(experiment):
-    import morphobricks_preprocessing.notebook_style as style_module
-    import morphobricks_preprocessing.notebook_ui as ui_module
-
-    for module in (style_module, ui_module):
-        source = Path(module.__file__).read_text(encoding="utf-8")
+    # The notebook's modules: notebook_style, notebook_ui and the step modules split from it.
+    for path in sorted(Path(notebook_ui.__file__).parent.glob("notebook_*.py")):
+        source = path.read_text(encoding="utf-8")
         assert "100%" not in source
         assert "<code>" not in source
     nb = checked(experiment)
