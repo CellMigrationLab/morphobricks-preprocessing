@@ -25,6 +25,7 @@ so. Each axis is recorded with its source, ``"header"``, ``"stated"`` or ``"pixe
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -47,6 +48,8 @@ CALIBRATION_CODES = ("calibration_unreadable", "calibration_target_not_found")
 
 _SHOWN = 5
 """Images described one by one in a message; every one is in its paths."""
+_DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+"""A size as text: plain ASCII decimal notation (no ``_`` separators, no other digits)."""
 
 
 @dataclass(frozen=True)
@@ -106,7 +109,8 @@ def calibration_entry(target: str, axis: str, size: object, unit: str) -> Calibr
     axis
         ``"X"``, ``"Y"`` or ``"Z"`` (upper case).
     size
-        A positive, finite number (or its text), or None/``""`` with the unit ``"pixels"``.
+        A positive, finite number (or its text in plain decimal notation, such as ``"0.65"``
+        or ``"1e-3"``), or None/``""`` with the unit ``"pixels"``.
     unit
         A supported length unit in any spelling :func:`.physical_sizes.space_unit` reads,
         or ``"pixels"``.
@@ -142,12 +146,14 @@ def _target(text: str) -> str:
     while target.startswith("./"):
         target = target[2:]
     target = target.rstrip("/") or EXPERIMENT
+    if target == EXPERIMENT:
+        return EXPERIMENT
     parts = target.split("/")
-    if target.startswith("/") or ":" in parts[0] or any(p in ("", "..") for p in parts):
+    if target.startswith("/") or ":" in parts[0] or any(p in ("", ".", "..") for p in parts):
         raise ValueError(
             f"the target {text!r} is not a folder or image inside the experiment folder"
         )
-    return target if parts != ["."] else EXPERIMENT
+    return target
 
 
 def _unit(text: str) -> str:
@@ -163,7 +169,9 @@ def _unit(text: str) -> str:
 
 def _size(value: object) -> float:
     """Return a stated size as a positive finite float, refusing anything else."""
-    if isinstance(value, bool):
+    if isinstance(value, bool) or (
+        isinstance(value, str) and not _DECIMAL.fullmatch(value.strip())
+    ):
         raise ValueError(f"the size {value!r} is not a number")
     try:
         size = float(value.strip()) if isinstance(value, str) else float(value)
