@@ -59,6 +59,11 @@ class MaskFile:
     header_axes
         The mask's axes as its header gives them (``tifffile``'s letters, length-1 axes
         other than Y and X left out), e.g. ``"QYX"`` for a plain stack; empty when unknown.
+        Also kept for a mask whose axes are not known (``axes`` empty), so the statements
+        that fit it can be offered (:mod:`.mask_review`).
+    named_axes
+        The same axes with ``?`` for each one the mask's metadata does not name
+        (:func:`.stated.mask_named_axes`), e.g. ``"?YX"``; empty when unknown.
     axes_from
         ``"header"`` when the axes are those the mask's metadata names, ``"stated"`` when
         the user stated the axes of its mask type (a plain stack, or a 2-D mask shared by
@@ -74,6 +79,7 @@ class MaskFile:
     axes: str = ""
     header_axes: str = ""
     axes_from: str = ""
+    named_axes: str = ""
 
     @property
     def shared(self) -> bool:

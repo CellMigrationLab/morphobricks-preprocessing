@@ -29,6 +29,7 @@ from ..calibration import CalibrationReview
 from ..design import ExperimentDesign
 from ..fingerprint import Fingerprint
 from ..manifest import LEGACY_MANIFEST_VERSION, RunManifest
+from ..masks.model import OME_ZARR
 
 RECOMPUTED = "every row is recomputed"
 UNAFFECTED = "no row is affected"
@@ -163,9 +164,11 @@ def resolve_inputs(given: GivenInputs, previous: RunManifest | None) -> Resolved
         return _defaults(given)
     settings = before.settings
     exclude = None if given.exclude is None else _exclusions(given.exclude)
-    recorded_masks = _recorded_masks_folder(before)
+    recorded_masks = recorded_masks_folder(before)
     masks = recorded_masks if given.masks_folder is None else (given.masks_folder or None)
-    mask_axes = {**recorded_mask_axes(before), **dict(given.mask_axes or {})}
+    # Dropping the masks folder drops the statements made for its masks; label images stay.
+    recorded_axes = recorded_mask_axes(before, labels_only=given.masks_folder is False)
+    mask_axes = {**recorded_axes, **dict(given.mask_axes or {})}
     resolved = ResolvedInputs(
         experiment_root=given.experiment_root or Path(before.experiment_root),
         mapping=_mapping(given, before),
@@ -315,18 +318,33 @@ def _answers(design: ExperimentDesign) -> dict[str, str]:
     }
 
 
-def recorded_mask_axes(manifest: RunManifest) -> dict[str, str]:
-    """Return the mask axes stated per mask type in the earlier run, ``{type: roles}``."""
+def recorded_mask_axes(manifest: RunManifest, *, labels_only: bool = False) -> dict[str, str]:
+    """Return the mask axes stated per mask type in the earlier run, ``{type: roles}``.
+
+    Parameters
+    ----------
+    manifest
+        The earlier run's manifest (version 2).
+    labels_only
+        True for the statements of OME-Zarr label images only: those of the masks folder
+        go with it when it is dropped (``masks_folder=False``, ``--no-masks``).
+
+    Returns
+    -------
+    dict
+    """
     masks = manifest.masks or {}
     return {
         str(entry["type"]): str(entry["roles"])
         for entry in masks.get("files", ())
-        if entry.get("axes_from") == "stated" and entry.get("roles")
+        if entry.get("axes_from") == "stated"
+        and entry.get("roles")
+        and (not labels_only or entry.get("source") == OME_ZARR)
     }
 
 
-def _recorded_masks_folder(manifest: RunManifest) -> Path | None:
-    """Return the masks folder the earlier run recorded, or None."""
+def recorded_masks_folder(manifest: RunManifest) -> Path | None:
+    """Return the masks folder the earlier run recorded, or None (version 2 manifest)."""
     folder = (manifest.masks or {}).get("folder")
     return None if folder is None else Path(folder)
 
@@ -358,7 +376,7 @@ def _with_changes(
         _change("exclude", settings.exclude, given.exclude, _exclude_effect),
         _change(
             "masks_folder",
-            _recorded_masks_folder(before),
+            recorded_masks_folder(before),
             _given_masks(given.masks_folder),
             "no row is affected; the masks are recorded again and mask_relationships.json "
             "is removed",

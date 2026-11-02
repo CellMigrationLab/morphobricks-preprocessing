@@ -55,12 +55,7 @@ def confirm_repeats(nb):
 
 def confirmed(experiment, **kwargs):
     """Check the folder and confirm everything step 3 needs: labels, design, roles, type."""
-    nb = checked(experiment, **kwargs)
-    nb.labels_confirmed.button.click()
-    confirm_repeats(nb)
-    nb.preview_button.click()
-    nb.preview_checked.button.click()
-    nb.confirm_button.click()
+    nb = roles_confirmed(experiment, **kwargs)
     nb.image_type_checked.button.click()
     return nb
 
@@ -952,6 +947,7 @@ def test_folder_step_shows_the_design_by_default(tmp_path):
         assert page.children[1].children[3:] == (
             nb.folder_card,
             nb.output_card,
+            nb.masks_input_card,
             nb.exclude_box,
             nb.check_button,
             nb.folder_status,
@@ -962,6 +958,7 @@ def test_folder_step_shows_the_design_by_default(tmp_path):
             nb.design_card,
             nb.calibration_card,
             nb.consistency_card,
+            nb.masks_card,
             nb.issues_card,
             nb.folder_next,
         )

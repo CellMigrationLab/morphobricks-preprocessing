@@ -68,8 +68,9 @@ def _check_header(
 ) -> tuple[MaskFile | None, list[tuple[str, str, str]]]:
     """Check one mask's header: its roles, its size against the image's named Y/X, its type.
 
-    Returns the mask with its shape, pixel type and roles (None when its header cannot be
-    used), and its problems as ``(code, path, detail)``.
+    Returns the mask with its shape, pixel type and header axes, and its roles when they are
+    known (None when its header cannot be read), and its problems as ``(code, path,
+    detail)``.
     """
     try:
         axes, shape, dtype = _mask_header(mask, folder, root)
@@ -77,11 +78,13 @@ def _check_header(
     except (OSError, ValueError, tifffile.TiffFileError, NgffError, ZarrUnavailableError) as exc:
         logger.info("Mask %s could not be opened: %s", mask.path, exc)
         return None, [("unreadable_mask", mask.path, "")]
+    header = replace(mask, shape=shape, dtype=dtype, header_axes=axes, named_axes=named)
     roles, code, detail = mask_roles(axes, named, stated.get(mask.mask_type))
     if code is not None:
-        return None, [(code, mask.path, detail)]
+        # Kept without roles: its header says which statements would fit it.
+        return header, [(code, mask.path, detail)]
     how = "stated" if mask.mask_type in stated else "header"
-    checked = replace(mask, shape=shape, dtype=dtype, axes=roles, header_axes=axes, axes_from=how)
+    checked = replace(header, axes=roles, axes_from=how)
     problems = []
     expected = _image_yx(image)
     if expected is not None and _yx(roles, shape) != expected:

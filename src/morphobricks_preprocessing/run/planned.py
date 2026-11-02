@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from morphobricks_normalization.ranges import HistogramSettings
@@ -25,7 +25,15 @@ from ..calibration import CalibrationReview
 from ..design import ExperimentDesign
 from ..planes import PlaneLayout, PlaneReadError, plane_layout
 from .design_file import design_for_run
-from .recorded import GivenInputs, InputChange, calibration_change, resolve_inputs, usable
+from .recorded import (
+    GivenInputs,
+    InputChange,
+    calibration_change,
+    recorded_mask_axes,
+    recorded_masks_folder,
+    resolve_inputs,
+    usable,
+)
 from .reuse import read_previous
 
 
@@ -61,6 +69,61 @@ def planned_changes(
     designed = design_for_run(design, output, previous)[2] if design is not None else ()
     calibrated = () if calibration is None else calibration_change(usable(previous), calibration)
     return (*changes, *designed, *calibrated)
+
+
+@dataclass(frozen=True)
+class PlannedMasks:
+    """The masks a run would use: given, else recorded by the earlier run.
+
+    Attributes
+    ----------
+    folder
+        The masks folder the run would use, or None (only OME-Zarr label images, if any).
+    mask_axes
+        The mask axes stated per mask type: those given, added to the recorded ones.
+    recorded_folder
+        The masks folder the earlier run in the output folder recorded, or None.
+    recorded_axes
+        The mask axes the earlier run recorded, ``{type: roles}``.
+    """
+
+    folder: Path | None
+    mask_axes: dict[str, str]
+    recorded_folder: Path | None = None
+    recorded_axes: dict[str, str] = field(default_factory=dict)
+
+
+def planned_masks(given: GivenInputs, output_folder: str | os.PathLike) -> PlannedMasks:
+    """Return the masks folder and mask axes a run given these inputs would use.
+
+    The run's own rule (:func:`.recorded.resolve_inputs`, design v0.4 §1): a masks folder
+    given is used; none given reuses the one the earlier run recorded, and ``False``
+    drops it; stated mask axes add to the recorded ones. It reads only the earlier run's
+    manifest; it writes nothing.
+
+    Parameters
+    ----------
+    given
+        The inputs the run would be given; only ``masks_folder`` and ``mask_axes`` count.
+    output_folder
+        The run's output folder.
+
+    Returns
+    -------
+    PlannedMasks
+    """
+    output = Path(output_folder).resolve()
+    previous = usable(read_previous(output)[0]) if output.is_dir() else None
+    masks = GivenInputs(masks_folder=given.masks_folder, mask_axes=given.mask_axes)
+    resolved = resolve_inputs(masks, previous)
+    if previous is None:
+        return PlannedMasks(resolved.masks_folder, resolved.mask_axes)
+    return PlannedMasks(
+        resolved.masks_folder,
+        resolved.mask_axes,
+        recorded_masks_folder(previous),
+        recorded_mask_axes(previous),
+    )
 
 
 def plane_layouts(

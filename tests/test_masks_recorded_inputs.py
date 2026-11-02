@@ -77,6 +77,29 @@ def test_masks_takes_the_recorded_mask_axes_of_plain_stacks(tmp_path, capsys):
     assert (output / RELATIONS).is_file()
 
 
+def test_dropping_the_masks_drops_the_mask_axes_stated_for_them(tmp_path, capsys):
+    """``--no-masks`` after a run with stated mask axes runs without masks (PP-10c)."""
+    root, masks, output = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    for seed, rel in enumerate(["ctrl/r1/a.tif", "drug/r1/a.tif"]):
+        write_data(root / rel, np.random.default_rng(seed).integers(0, 9, (3, 8, 8), "u1"), "ZYX")
+        write_plain(masks / "Cells" / rel, np.ones((3, 8, 8), np.uint16))
+    design = default_design(biological_repeats(preflight(root).discovery))
+    design = design.with_confirmed("r1", True, "2026-11-02")
+    stated = run_experiment(
+        root,
+        prefill_mapping("ZYX"),
+        output_folder=output,
+        masks_folder=masks,
+        mask_axes={"Cells": "ZYX"},
+        design=design,
+    )
+    assert stated.written, stated.issues
+    assert main(["run", str(root), "--output", str(output), "--no-masks"]) == 0
+    assert "invalid_mask_axes" not in capsys.readouterr().out
+    manifest = json.loads((output / "run_manifest.json").read_text(encoding="utf-8"))
+    assert manifest.get("masks") is None
+
+
 def test_masks_takes_the_recorded_exclusions(tmp_path, capsys):
     clean = make_clean_run(tmp_path, axes="YX", shape=(8, 8), mask_types=("Cells",))
     excluded = "ctrl/rep1/b.ome.tif"

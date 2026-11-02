@@ -45,7 +45,7 @@
     "tests/test_discovery.py: # lines (max #)": 826,
     "tests/test_masks.py: # lines (max #)": 612,
     "tests/test_metadata.py: # lines (max #)": 629,
-    "tests/test_notebook_ui.py: # lines (max #)": 1540,
+    "tests/test_notebook_ui.py: # lines (max #)": 1537,
     "tests/test_planes.py: # lines (max #)": 818,
     "tests/test_run.py: # lines (max #)": 982,
     "tests/test_zarr_input.py: # lines (max #)": 869,
