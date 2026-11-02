@@ -4,6 +4,8 @@ Each reproduces the audit's finding on the code before the fix (they changed wha
 ``RunInputs`` gives the bricks).
 """
 
+import struct
+
 import numpy as np
 import pytest
 import tifffile
@@ -16,10 +18,12 @@ from morphobricks_preprocessing import (
     run_experiment,
 )
 from morphobricks_preprocessing.length_units import to_micrometers
+from morphobricks_preprocessing.physical_sizes import same_pixel_size
 from morphobricks_preprocessing.planes import read_plane
 from morphobricks_preprocessing.recorded_sizes import header_sizes
 from morphobricks_preprocessing.run_inputs import RunInputs
 from tiff_tree import write_data, write_plain
+from zarr_tree import write_ngff
 
 # The audit's sizes at the 1 GiB default, scaled down 100 times (plane and limit).
 LIMIT = 2**30 // 100
@@ -124,6 +128,12 @@ def test_numpy_real_scalars_are_lengths(value):
 def test_other_values_are_still_refused(value):
     with pytest.raises(ValueError, match="not"):
         to_micrometers(value, "um")
+    with pytest.raises(ValueError, match="not"):  # the shared D-a comparison as well
+        same_pixel_size([value, 0.5], [0.5, 0.5])
+
+
+def test_numpy_real_scalars_are_compared_as_pixel_sizes():
+    assert same_pixel_size([np.float32(0.5), np.float64(0.5)], [0.5, np.int64(1) / 2])
 
 
 # m5: partial and non-square calibrations are named ---------------------------------------------
@@ -168,3 +178,51 @@ def test_damaged_ome_xml_is_an_invalid_calibration(tmp_path):
     report = inspect_images(tmp_path, ["a.ome.tif"])
     found = issue(report.issues, "invalid_physical_calibration")
     assert found.paths == ("a.ome.tif",) and "OME-XML" in found.message
+
+
+# Review of #136: a malformed ImageJ resolution tag and an OME-Zarr scale without a unit ------
+
+
+@pytest.mark.parametrize("entry", [struct.pack("<HIHH", 3, 1, 3, 0), struct.pack("<HII", 4, 1, 2)])
+def test_a_malformed_imagej_resolution_tag_is_an_invalid_calibration(tmp_path, entry):
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(
+        path, np.zeros((8, 8), np.uint8), imagej=True, resolution=(2.0, 2.0),
+        metadata={"unit": "um", "axes": "YX"},
+    )  # fmt: skip
+    with tifffile.TiffFile(path) as tif:
+        offsets = [tif.pages.first.tags[code].offset for code in (282, 283)]
+    raw = bytearray(path.read_bytes())
+    for offset in offsets:  # the type, count and value of the IFD entry: SHORT or LONG
+        raw[offset + 2 : offset + 12] = entry
+    path.write_bytes(bytes(raw))
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.y) == (None, None)
+    assert "XResolution tag" in sizes.invalid and "YResolution tag" in sizes.invalid
+    found = issue(inspect_images(tmp_path, ["a.tif"]).issues, "invalid_physical_calibration")
+    assert found.paths == ("a.tif",) and "malformed" in found.message
+
+
+def test_a_well_formed_imagej_resolution_is_not_invalid(tmp_path):
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(
+        path, np.zeros((8, 8), np.uint8), imagej=True, resolution=(2.0, 2.0),
+        metadata={"unit": "um", "axes": "YX"},
+    )  # fmt: skip
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.y, sizes.invalid) == (0.5, 0.5, None)
+
+
+def test_an_ome_zarr_scale_without_a_unit_is_unknown_and_named(tmp_path):
+    root = tmp_path / "exp"
+    write_ngff(root / "c/a.ome.zarr", np.zeros((8, 8), np.uint16), "yx", scale=[0.5, 0.5])
+    write_ngff(
+        root / "c/b.ome.zarr", np.zeros((8, 8), np.uint16), "yx", scale=[0.5, 0.5],
+        units={"y": "micrometer", "x": "micrometer"},
+    )  # fmt: skip
+    result = run_experiment(root, prefill_mapping("YX"))
+    found = issue(result.issues, "unsupported_pixel_size_unit")
+    assert found.paths == ("c/a.ome.zarr",)
+    assert "c/a.ome.zarr (X and Y without a unit)" in found.message
+    sizes = RunInputs.open(result.output_folder).pixel_sizes("c/a.ome.zarr")
+    assert (sizes["X"].value, sizes["Y"].value, sizes["X"].source) == (None, None, None)

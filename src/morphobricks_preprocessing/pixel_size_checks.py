@@ -319,7 +319,9 @@ def _missing_issue(
 def _unit_issue(
     files: Sequence[TiffMetadata], by_role: Mapping[str, Mapping[str, RecordedSize]]
 ) -> list[ValidationIssue]:
-    """Warn about header sizes in a length unit that is not converted (decision D-a2).
+    """Warn about header sizes in a length unit that is not converted (D-a2), or in none.
+
+    A size without a unit (an OME-Zarr scale) is never taken as micrometres (audit I3).
 
     Such a size is never converted, so the axis is uncalibrated; without this warning
     nothing would say which unit caused it. Every image is named with its axes and unit.
@@ -341,10 +343,10 @@ def _unit_issue(
     return [
         warning(
             "unsupported_pixel_size_unit",
-            f"{plural(len(found), 'image')} give a pixel size or z-step in a length unit "
-            f"that is not supported: {details}. Only pm, angstrom, nm, micrometre (um, "
-            "micron), mm, cm and m are converted. These sizes are not converted: the images "
-            "are treated as uncalibrated on those axes.",
+            f"{plural(len(found), 'image')} {agree(found, 'gives', 'give')} a pixel size or "
+            f"z-step in a length unit that is not supported, or without a unit: {details}. "
+            "Only pm, angstrom, nm, micrometre (um, micron), mm, cm and m are converted. These "
+            "sizes are not converted: the images are treated as uncalibrated on those axes.",
             list(found),
             "No action needed if the physical size does not matter. Otherwise export these "
             "images again with the pixel size in a supported unit, or state it in "
@@ -354,11 +356,14 @@ def _unit_issue(
 
 
 def _describe_units(units: Sequence[tuple[str, str]]) -> str:
-    """Return e.g. ``"X and Y in 'inch'"`` for an image's unsupported units."""
+    """Return e.g. ``"X and Y in 'inch'"`` for an image's unsupported units (``""``: none)."""
     by_unit: dict[str, list[str]] = {}
     for axis, unit in units:
         by_unit.setdefault(unit, []).append(axis)
-    return ", ".join(f"{' and '.join(axes)} in {unit!r}" for unit, axes in by_unit.items())
+    return ", ".join(
+        f"{' and '.join(axes)} {f'in {unit!r}' if unit else 'without a unit'}"
+        for unit, axes in by_unit.items()
+    )
 
 
 def _format_range(values: list[float]) -> str:

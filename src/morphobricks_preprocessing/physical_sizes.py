@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import math
+import numbers
 import os
 from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -80,7 +81,8 @@ class PhysicalSizes:
     unsupported_units
         The space axes whose size the metadata give in a length unit that is not one
         of :data:`SPACE_UNITS` (decision D-a2), as ``(axis letter, unit as written)``
-        pairs, for example ``(("X", "inch"), ("Y", "inch"))``. Such a size is never
+        pairs, for example ``(("X", "inch"), ("Y", "inch"))``; ``""`` for an OME-Zarr
+        axis whose scale has no unit. Such a size is never
         converted: the axis is uncalibrated (:meth:`micrometers` is None). Recorded so
         that the unit can be named (``unsupported_pixel_size_unit``); for information
         only, not part of equality.
@@ -282,7 +284,7 @@ def _micrometer_values(
     if any(v is None for v in values):
         return None
     for v in values:
-        if isinstance(v, bool) or not isinstance(v, int | float) or not math.isfinite(v) or v <= 0:
+        if isinstance(v, bool) or not isinstance(v, numbers.Real) or not 0 < v < math.inf:
             raise ValueError(f"the pixel size {v!r} is not a positive finite number")
     return tuple(float(v) for v in values)
 
@@ -385,9 +387,10 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
     None, and a scale value that is not a positive finite number is None, each
     with what is wrong in :attr:`PhysicalSizes.invalid` (:mod:`.ngff_scale`). An
     axis without a ``unit`` has the unit None. A scale given without a unit is
-    kept: it may be a placeholder (some writers write 1 when the size is not
-    known). This brick's OME-Zarr copies name such axes in the multiscales
-    entry's ``metadata`` (``"unknown_scale": ["x", "y"]``); their sizes are None.
+    kept, with the unit ``""`` in ``unsupported_units`` so that the folder check
+    names it: it may be a placeholder (some writers write 1 when the size is not
+    known); a run records it as unknown. This brick's copies name such axes in
+    their ``metadata`` (``"unknown_scale": ["x", "y"]``); their sizes are None.
 
     Parameters
     ----------
@@ -435,9 +438,10 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
             table = _TIME_UNITS if letter == "T" else _SPACE_UNITS
             found.setdefault(letter, (_number(size), _ngff_unit(unit, table)))
     sizes = {letter: found.get(letter, (None, None)) for letter in "XYZT"}
-    # Units other than D-a2's are kept as written (never converted): name them.
+    # Units other than D-a2's are kept as written (never converted): name them, and a
+    # missing unit as "" (the run records such a size as unknown, audit I3).
     written = {
-        letter: unit if unit is not None and unit not in _MICROMETERS else None
+        letter: ("" if unit is None else unit) if unit not in _MICROMETERS else None
         for letter, (_, unit) in sizes.items()
         if letter in "XYZ"
     }
@@ -520,12 +524,9 @@ def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
     units = {axis: _imagej_unit(value) for axis, value in given.items()}
     page = tif.pages.first
     time_unit = _TIME_UNITS.get(_imagej_text(meta.get("tunit", "sec")))
-    spacing = _header_size("Z", meta.get("spacing"))
-    given_sizes = {
-        "X": _resolution(page.tags.get("XResolution")),
-        "Y": _resolution(page.tags.get("YResolution")),
-        "Z": spacing[0],
-    }
+    read = {axis: _resolution(axis, page.tags.get(f"{axis}Resolution")) for axis in "XY"}
+    read["Z"] = _header_size("Z", meta.get("spacing"))
+    given_sizes = {axis: size for axis, (size, _) in read.items()}
     # Without a unit the resolution tags are a default (often 1 pixel per inch).
     sizes = {axis: size if units[axis] else None for axis, size in given_sizes.items()}
     written = {
@@ -541,7 +542,9 @@ def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
         time_unit,
         _unsupported(given_sizes, written),
     )
-    return _with_invalid(found, [spacing[1] if units["Z"] else None, step[1]])
+    # A malformed tag or spacing is named when its axis has a unit, so that it is a size.
+    named = [problem for axis, (_, problem) in read.items() if units[axis] or written[axis]]
+    return _with_invalid(found, [*named, step[1]])
 
 
 def _ngff_unit(value, table: dict[str, str]) -> str | None:  # noqa: ANN001
@@ -579,14 +582,12 @@ def _imagej_text(value) -> str:  # noqa: ANN001
     return _decode_escapes(str(value or "")).strip().lower()
 
 
-def _resolution(tag) -> float | None:  # noqa: ANN001
-    if tag is None:
-        return None
-    try:
-        numerator, denominator = tag.value
-        return denominator / numerator if numerator else math.inf  # 0 pixels per unit (#93)
-    except (TypeError, ValueError):
-        return None
+def _resolution(axis: str, tag: tifffile.TiffTag | None) -> tuple[float | None, str | None]:
+    """Read a resolution tag as a pixel size, with what is wrong when it is malformed."""
+    value = None if tag is None else tag.value
+    if isinstance(value, tuple) and len(value) == 2 and all(isinstance(n, int) for n in value):
+        return value[1] / value[0] if value[0] else math.inf, None  # 0 pixels per unit (#93)
+    return None, None if tag is None else f"{axis}: the {tag.name} tag {value!r} is malformed"
 
 
 def _number(value) -> float | None:  # noqa: ANN001
