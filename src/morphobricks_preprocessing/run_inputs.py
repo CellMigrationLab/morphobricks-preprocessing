@@ -6,8 +6,9 @@ Nothing is parsed from names, guessed or transposed, and no file is read once it
 
 - :meth:`RunInputs.open` refuses a version 1 manifest (a run before the axis check), a table,
   design or ``calibration.csv`` whose SHA-256 is not the manifest's (also a
-  ``calibration.csv`` added since the run), an image or mask changed or gone since the
-  run, a mask recorded without axes (a v0.4.0rc1 run of a mask whose header puts X before
+  ``calibration.csv`` added since the run), a conversion record changed or gone since a
+  run on named-axis copies (``conversion_record_sha256``), an image or mask changed or gone
+  since the run, a mask recorded without axes (a v0.4.0rc1 run of a mask whose header puts X before
   Y), and an image or mask in the experiment the run neither recorded nor excluded
   (:class:`UnrecordedFilesError`, from :func:`.unrecorded.unrecorded_files`: folders are
   listed, no pixel is read). OME-Zarr label images are never skipped: a run holding
@@ -34,6 +35,7 @@ from morphobricks_normalization.records import PlaneRecord
 
 from .axes import AxisMapping
 from .calibration import CALIBRATION_FILENAME
+from .conversion_record import RECORD_FILENAME as CONVERSION_RECORD
 from .design import DESIGN_FILENAME, ExperimentDesign, read_experiment_design
 from .fingerprint import Fingerprint
 from .manifest import (
@@ -166,7 +168,8 @@ class RunInputs:
         Raises
         ------
         RunInputsError
-            For a run before v0.4.0, a table, design or calibration changed since the run,
+            For a run before v0.4.0, a table, design, calibration or conversion record (of a
+            run on named-axis copies) changed or gone since the run,
             an image or mask changed or gone, a mask recorded without axes, OME-Zarr images
             without the ``zarr`` extra (``morphobricks-preprocessing[zarr]``), or an OME-Zarr
             image whose ``labels`` group cannot be read.
@@ -181,6 +184,7 @@ class RunInputs:
             _check_sha(output / DESIGN_FILENAME, manifest.experiment_design_sha256, "design")
         _check_calibration(output / CALIBRATION_FILENAME, manifest.calibration_sha256)
         root = Path(experiment_root or manifest.experiment_root).resolve()
+        _check_conversion(root, manifest.conversion_record_sha256)
         recorded_masks = (manifest.masks or {}).get("folder")
         masks = masks_root or recorded_masks
         inputs = cls(
@@ -467,6 +471,18 @@ def _check_calibration(path: Path, expected: str | None) -> None:
         raise RunInputsError(
             f"{path.name} was added since the run, so the pixel sizes it records may not be "
             "the ones stated now. Run preprocessing again."
+        )
+
+
+def _check_conversion(root: Path, expected: str | None) -> None:
+    """Refuse a conversion record changed or gone since a run on named-axis copies."""
+    path = root / CONVERSION_RECORD
+    if expected is not None and (not path.exists() or file_sha256(path) != expected):
+        raise RunInputsError(
+            f"The conversion record {path.name} in {root} is not the one the run read "
+            "(missing, or changed since), so it is not known how these named-axis copies "
+            "were made. Run preprocessing again on the copies (or, if the copies were only "
+            "moved, give experiment_root= where they are now)."
         )
 
 

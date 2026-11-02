@@ -19,6 +19,7 @@ from morphobricks_preprocessing import (
     CONVERSION_RECORD_FILENAME,
     AxisMapping,
     RunInputs,
+    RunInputsError,
     convert_experiment,
     file_sha256,
     read_conversion_record,
@@ -265,6 +266,30 @@ def test_the_run_on_the_copies_reads_them_with_their_named_axes(tmp_path):
         inputs.read_plane(inputs.fovs()[0], z=1)[0],
         tifffile.imread(exp / "ctrl" / "r1" / "a.tif")[1].T,
     )
+
+
+def test_run_inputs_refuses_a_conversion_record_changed_or_gone_since_the_run(tmp_path):
+    # Owner decision of 2 November 2026 (plan question 59, (14)): RunInputs.open checks the
+    # manifest's conversion_record_sha256, like calibration_sha256 and the design's SHA-256.
+    exp, out = swapped_experiment(tmp_path / "exp"), tmp_path / "out"
+    copies = tmp_path / "copies"
+    assert convert_experiment(exp, SWAPPED, copies).written
+    assert run_experiment(copies, AxisMapping("ZYX", tuple("ZYX")), output_folder=out).written
+    record = copies / CONVERSION_RECORD_FILENAME
+    RunInputs.open(out)  # the record as the run read it
+    moved = tmp_path / "moved"
+    copies.rename(moved)
+    RunInputs.open(out, experiment_root=moved)  # the copies moved, with their record
+    text = (moved / CONVERSION_RECORD_FILENAME).read_text()
+    (moved / CONVERSION_RECORD_FILENAME).write_text(text.replace('"converted"', '"copied"', 1))
+    with pytest.raises(RunInputsError, match="conversion record .* changed since"):
+        RunInputs.open(out, experiment_root=moved)
+    (moved / CONVERSION_RECORD_FILENAME).unlink()
+    with pytest.raises(RunInputsError, match="missing"):
+        RunInputs.open(out, experiment_root=moved)
+    moved.rename(copies)
+    record.write_text(text)
+    RunInputs.open(out)  # the same bytes again: accepted
 
 
 def test_every_row_is_recomputed_and_equals_the_originals_rows(tmp_path):
