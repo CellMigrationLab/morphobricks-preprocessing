@@ -37,7 +37,8 @@ from morphobricks_normalization.ranges import HistogramSettings
 from ._io import write_text_atomic
 from .axes import AxisMapping
 from .image_names import position_id
-from .inventory import source_fingerprint
+from .inventory import INVENTORY_KEY, source_signature
+from .inventory import source_fingerprint as source_fingerprint  # re-exported (moved, PP-12)
 from .narrow_ranges import NarrowRange
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
 
@@ -134,6 +135,11 @@ class FileEntry:
     pixel_sizes
         The size of one step along X, Y, Z and T, each with its unit and source
         (:class:`.recorded_sizes.RecordedSize`); empty in older manifests.
+    inventory_sha256
+        For an OME-Zarr folder, the SHA-256 of its inventory (each file's relative path,
+        size and modification time, :func:`.inventory.source_signature`); None for a
+        TIFF file, and in manifests written before it was recorded (such an OME-Zarr
+        image counts as changed: its fingerprint is not known to be complete).
     """
 
     relative_path: str
@@ -151,6 +157,7 @@ class FileEntry:
     roles: tuple[str | None, ...] | None = None
     axes_from: str | None = None
     pixel_sizes: tuple[RecordedSize, ...] = ()
+    inventory_sha256: str | None = None
 
     def same_source(self, other: FileEntry) -> bool:
         """Return True if ``other`` describes the same unchanged file, read the same way."""
@@ -158,6 +165,7 @@ class FileEntry:
             self.relative_path == other.relative_path
             and self.size == other.size
             and self.mtime_ns == other.mtime_ns
+            and self.inventory_sha256 == other.inventory_sha256
             and self.labels == other.labels
             and self.axes == other.axes
             and self.singleton_roles == other.singleton_roles
@@ -384,7 +392,7 @@ def file_entry_for(  # noqa: PLR0913
     channel_names_trimmed: bool = False,
 ) -> FileEntry:
     """Describe a source image as it is on disk now, with its position identifier."""
-    size, mtime_ns = source_fingerprint(Path(root) / relative_path)
+    size, mtime_ns, inventory = source_signature(Path(root) / relative_path)
     return FileEntry(
         relative_path=relative_path,
         size=size,
@@ -399,6 +407,7 @@ def file_entry_for(  # noqa: PLR0913
         position_id=position_id(relative_path),
         channel_names_trimmed=channel_names_trimmed,
         roles=tuple(mapping.roles),
+        inventory_sha256=inventory,
     )
 
 
@@ -471,7 +480,7 @@ def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
     """
     if strict and (entry.roles is None or entry.axes_from not in AXES_FROM):
         raise ValueError(f"the entry of {entry.relative_path!r} has no roles or axes_from")
-    return {
+    data = {
         "relative_path": entry.relative_path,
         "size": entry.size,
         "mtime_ns": entry.mtime_ns,
@@ -490,6 +499,9 @@ def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
         "axes_from": entry.axes_from,
         "pixel_sizes": sizes_to_data(entry.pixel_sizes),
     }
+    if entry.inventory_sha256 is not None:
+        data[INVENTORY_KEY] = entry.inventory_sha256
+    return data
 
 
 def _file_entry(data: dict, *, strict: bool = True) -> FileEntry:
@@ -517,6 +529,7 @@ def _file_entry(data: dict, *, strict: bool = True) -> FileEntry:
         roles=_roles(data.get("roles"), str(data["axes"])),
         axes_from=_text(data.get("axes_from")),
         pixel_sizes=sizes_from_data(data.get("pixel_sizes")),
+        inventory_sha256=_text(data.get(INVENTORY_KEY)),
     )
 
 

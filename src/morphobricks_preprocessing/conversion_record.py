@@ -437,7 +437,7 @@ def _unreadable(exc: ConversionRecordError) -> ValidationIssue:
 
 def _fingerprint_data(fingerprint: Fingerprint) -> dict:
     """Return a fingerprint as JSON-compatible data."""
-    return {"size": fingerprint.size, "mtime_ns": fingerprint.mtime_ns}
+    return fingerprint.to_data()
 
 
 def _choice(value: object, allowed: tuple[str, ...], name: str) -> str:

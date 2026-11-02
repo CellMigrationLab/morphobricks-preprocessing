@@ -1,12 +1,13 @@
 """The masks as the run manifest records them (manifest version 2, contract §9, §15).
 
 Every mask entry adds to what :meth:`.masks.MaskInventory.to_manifest` gives its
-fingerprint (``size``, ``mtime_ns``), so a brick can tell a mask changed since the run, and
+fingerprint (``size``, ``mtime_ns``, and ``inventory_sha256`` for an OME-Zarr label image,
+issue #86), so a brick can tell a mask changed since the run, and
 how it is read: ``roles`` (one per axis of ``axes``), ``axes_from`` (``"header"``: the
 mask's metadata names them; ``"stated"``: the user stated them for its mask type) and
 ``shared`` (a 2-D mask stated as shared by every plane of its image; never without a
 statement). A label image of an OME-Zarr image has its own fingerprint, left out of its
-image's (:func:`.manifest.source_fingerprint`).
+image's (:func:`.inventory.source_signature`).
 """
 
 from __future__ import annotations
@@ -52,8 +53,7 @@ def mask_manifest(inventory: MaskInventory, experiment_root: str | os.PathLike) 
         fingerprint = Fingerprint.of(_mask_path(mask, inventory.folder, Path(experiment_root)))
         entry.update(
             axes=mask.header_axes or mask.axes,
-            size=fingerprint.size,
-            mtime_ns=fingerprint.mtime_ns,
+            **fingerprint.to_data(),
             roles=mask.axes,
             axes_from=mask.axes_from or "header",
             shared=mask.shared,
