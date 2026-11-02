@@ -16,6 +16,7 @@ from morphobricks_preprocessing import (
     run_experiment,
 )
 from morphobricks_preprocessing.run import rows as rows_module
+from run_files import only_the_report
 from tiff_tree import write_data
 
 
@@ -201,7 +202,7 @@ def test_rgb_is_refused_for_images_that_are_not_rgb(tmp_path):
     assert not result.written and "rgb_not_possible" in codes(result.issues)
     (issue,) = [i for i in result.issues if i.code == "rgb_not_possible"]
     assert "2 channels of type uint8" in issue.message and "fluorescence" in issue.action
-    assert not result.output_folder.exists()
+    assert only_the_report(result.output_folder)
 
 
 def test_rgb_for_three_grey_channels_is_allowed(tmp_path):

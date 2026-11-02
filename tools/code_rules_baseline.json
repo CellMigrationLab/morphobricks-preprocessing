@@ -1,9 +1,9 @@
 {
   "noqa": {
-    "ANN": 57,
-    "C901": 1,
+    "ANN": 55,
+    "C901": 0,
     "PLR0913": 3,
-    "PLR0915": 2
+    "PLR0915": 0
   },
   "problems": {
     "identical bodies: tests/test_axis_check.py:# imagej, tests/test_header_axes.py:# imagej": 0,
@@ -11,11 +11,6 @@
     "identical bodies: tests/test_cli.py:# bright_tree, tests/test_notebook_ui.py:# bright_tree": 0,
     "src/morphobricks_preprocessing/axis_review.py check_mapping: # executable lines (max #)": 72,
     "src/morphobricks_preprocessing/axis_review.py review_axes: # executable lines (max #)": 106,
-    "src/morphobricks_preprocessing/cli.py _check: private function of # lines without a docstring": 52,
-    "src/morphobricks_preprocessing/cli.py _masks: private function of # lines without a docstring": 34,
-    "src/morphobricks_preprocessing/cli.py _run: # executable lines (max #)": 75,
-    "src/morphobricks_preprocessing/cli.py _run: private function of # lines without a docstring": 75,
-    "src/morphobricks_preprocessing/cli.py build_parser: # executable lines (max #)": 108,
     "src/morphobricks_preprocessing/dataset.py _missing_issues: private function of # lines without a docstring": 32,
     "src/morphobricks_preprocessing/dataset.py _unbalanced_issues: private function of # lines without a docstring": 19,
     "src/morphobricks_preprocessing/design.py _check_strict_values: private function of # lines without a docstring": 19,
@@ -84,7 +79,6 @@
     "src/morphobricks_preprocessing/planes.py _zarr_layout: private function of # lines without a docstring": 40,
     "src/morphobricks_preprocessing/planes.py check_planes: # executable lines (max #)": 65,
     "src/morphobricks_preprocessing/planes.py: # lines (max #)": 1422,
-    "src/morphobricks_preprocessing/run/pipeline.py run_experiment: # executable lines (max #)": 159,
     "src/morphobricks_preprocessing/run/pipeline.py run_experiment: # parameters (max #)": 15,
     "src/morphobricks_preprocessing/run/preflight.py _exclusion_issues: private function of # lines without a docstring": 34,
     "src/morphobricks_preprocessing/run/rows.py _bin_count: private function of # lines without a docstring": 12,

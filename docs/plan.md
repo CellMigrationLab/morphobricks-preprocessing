@@ -281,6 +281,9 @@ API, CLI). The notebook and CLI only call the API.
   preflight and incremental runs with exclusions (`run`).*
   *Review fix: stage both files, preserve earlier output on write/publication failures,
   and keep backup files with a recovery message if restoration fails.*
+  *v0.4.0 (PP-7, question 48): `restart`/`full` modes replace `force_rebuild`; later runs
+  reuse every recorded input; an `O_EXCL` lock guards the output folder; every run writes
+  `discovery_report.json` and `.txt` (contract §9.2).*
 - **Milestone 5 — Integration and docs:** public API, notebook, CLI, user documentation.
   *Implemented: summaries (`report`), notebook widgets (`notebook_ui`,
   `notebooks/MorphoBricks_Preprocessing.ipynb`), `check`/`run` command line (`cli`) and the
@@ -1082,3 +1085,15 @@ Raised during review; to be decided before the milestones that need them:
     the files it was given for (`ConfirmedAxes`); a new or changed plain stack is
     `plain_stack_not_confirmed` until confirmed again (audit 2 B-1). Breaking: every v1 run is
     recomputed.*
+48. How do later runs reuse earlier results and inputs, and what does a run report (design
+    v0.4 §1, §4; PP-7)?
+    *Decided (2 November 2026, owner): two modes, `restart` (default) and `full`, replace
+    `force_rebuild`. A later run takes every input it is not given from the earlier v2
+    manifest; a value given that differs is used and reported with its effect; the masks are
+    dropped only with `--no-masks` and the exclusions cleared only with `--no-exclude`
+    (refused together with `--exclude`). The CLI `run` may be given only `--output`: the
+    experiment folder is then the recorded one, and without one the run stops with
+    `experiment_not_recorded`; another experiment folder than the recorded one is reported
+    as a change. An `O_EXCL` lock file guards the output folder; a stale lock is removed
+    only on request. Every run writes `discovery_report.json` and `.txt`, also when it stops;
+    `check`'s report keeps `status: "stopped"` with `step: "check"`. Contract §9.2.*

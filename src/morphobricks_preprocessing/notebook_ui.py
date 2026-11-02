@@ -112,7 +112,7 @@ from .report import (
     group_table,
     issue_counts,
 )
-from .run import Preflight, RunResult, preflight, run_experiment
+from .run import FULL, RESTART, Preflight, RunResult, preflight, run_experiment
 from .validation import ValidationIssue, has_errors, plural
 
 ROLE_OPTIONS = [
@@ -1997,7 +1997,7 @@ class PreprocessingNotebook:
                     memory_limit=self._memory_limit(),
                     missing_as_singleton=self.missing_as_singleton.value,
                     exclude=self._excluded(),
-                    force_rebuild=self.force_rebuild.value,
+                    mode=FULL if self.force_rebuild.value else RESTART,
                     progress=self._progress,
                     design=self.design,
                     image_type=self.confirmed_image_type,

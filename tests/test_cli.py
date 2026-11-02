@@ -14,6 +14,7 @@ from morphobricks_preprocessing import (
     write_experiment_design,
 )
 from morphobricks_preprocessing.cli import main, parse_size
+from run_files import only_the_report
 from tiff_tree import write_data, write_file
 
 
@@ -56,7 +57,9 @@ def test_check_prints_summary_and_suggested_axes(experiment, capsys):
     assert "Images to analyse: 3 in 2 leaf folders" in out
     assert "ctrl/" in out and "rep1/  (2 images; technical repeat: single)" in out
     assert "Suggested option for 'run': --axes ZCYX (axes in the files: ZCYX)" in out
-    assert not (experiment.parent / "exp_MorphoBricks_Preprocessing").exists()
+    # 'check' is the run's step stopped after the report: it writes only the report.
+    output = experiment.parent / "exp_MorphoBricks_Preprocessing"
+    assert only_the_report(output) and f"Report written to {output}" in out
 
 
 def test_check_exits_with_1_on_errors(experiment, capsys):
@@ -185,8 +188,8 @@ def test_run_options_reach_the_run(experiment, tmp_path, capsys):
     assert manifest.mapping.roles == ("Z", "C", "Y", "X")
     assert "Wrote" in log.read_text(encoding="utf-8")
     capsys.readouterr()
-    assert main(args + ["--force-rebuild"]) == 0
-    assert "a full rebuild was requested" in capsys.readouterr().out
+    assert main(args + ["--mode", "full"]) == 0
+    assert "a full run was asked for (mode full)" in capsys.readouterr().out
 
 
 def test_run_rejects_axes_of_the_wrong_length(experiment, capsys):
@@ -234,10 +237,19 @@ def test_different_channel_counts_stop_check_and_run(tmp_path, capsys):
     assert "Nothing was written" in out
 
 
-def test_axes_are_required_for_run(experiment):
-    with pytest.raises(SystemExit) as excinfo:
-        main(["run", str(experiment)])
-    assert excinfo.value.code == 2
+def test_axes_are_needed_for_the_first_run_only(experiment, capsys):
+    confirm_design(experiment)
+    assert main(["run", str(experiment)]) == 1
+    assert "Give the role of each axis with --axes (for example --axes ZCYX)" in (
+        capsys.readouterr().out
+    )
+    assert main(["run", str(experiment), "--axes", "ZCYX"]) == 0
+    capsys.readouterr()
+    # A later run in the same output folder reuses the confirmed roles.
+    assert main(["run", str(experiment)]) == 0
+    out = capsys.readouterr().out
+    assert "Axis roles: as confirmed for the earlier run (ZCYX)" in out
+    assert "Unchanged (rows kept): 3 images" in out
 
 
 def test_python_dash_m(experiment):

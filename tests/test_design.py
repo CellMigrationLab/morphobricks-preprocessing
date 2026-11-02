@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from morphobricks_preprocessing import (
@@ -19,7 +21,10 @@ from morphobricks_preprocessing import (
 )
 from morphobricks_preprocessing.axes import prefill_mapping
 from morphobricks_preprocessing.cli import main
+from morphobricks_preprocessing.discovery_report import REPORT_FILENAME
 from morphobricks_preprocessing.manifest import file_sha256
+from morphobricks_preprocessing.run.lock import output_lock
+from run_files import only_the_report
 from tiff_tree import make_tree
 
 TODAY = "2026-10-26"
@@ -288,7 +293,7 @@ def test_a_run_with_an_invalid_date_stops_before_writing(tmp_path):
     design = default_design(repeats_of(root)).with_confirmed("rep1", True, "26/10/2026")
     result = run_experiment(root, prefill_mapping("YX"), design=design)
     assert not result.written and "invalid_experiment_design" in codes(result.issues)
-    assert not result.output_folder.exists()
+    assert only_the_report(result.output_folder)
 
 
 def test_the_cli_dates_a_hand_confirmation_as_an_iso_date(tmp_path, capsys):
@@ -342,7 +347,7 @@ def test_run_needs_a_confirmed_design_when_given_one(tmp_path):
     design = default_design(repeats_of(root))
     result = run_experiment(root, prefill_mapping("YX"), design=design)
     assert not result.written and "design_not_confirmed" in codes(result.issues)
-    assert not result.output_folder.exists()
+    assert only_the_report(result.output_folder)
 
 
 def test_run_writes_the_design_and_records_its_hash(tmp_path):
@@ -399,6 +404,10 @@ def test_cli_run_writes_a_template_and_stops(tmp_path, capsys):
     template = read_experiment_design(path)
     assert template.groups == ("rep1", "rep1b") and not template.confirmed
     assert not (path.parent / "plane_histograms.csv").exists()
+    # The run stopped on the design and its report says so (design v0.4 §1, §4).
+    report = json.loads((path.parent / REPORT_FILENAME).read_text(encoding="utf-8"))
+    assert report["status"] == "stopped" and report["step"] == "run"
+    assert "design_not_confirmed" in [issue["code"] for issue in report["issues"]]
 
     # The user pairs the repeats and confirms them in the file.
     text = path.read_text(encoding="utf-8").replace("rep1b,rep1b", "rep1b,rep1")
@@ -409,6 +418,16 @@ def test_cli_run_writes_a_template_and_stops(tmp_path, capsys):
     design = read_experiment_design(path)
     assert design.confirmed and all(row.confirmed_on for row in design.rows)
     assert "Experiment design" in out
+
+
+def test_cli_writes_no_template_while_another_run_holds_the_lock(tmp_path, capsys):
+    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
+    output = default_output_folder(root)
+    output.mkdir(parents=True)
+    with output_lock(output):
+        assert main(["run", str(root), "--axes", "YX"]) == 1
+    assert "Another run is using this output folder" in capsys.readouterr().out
+    assert not (output / DESIGN_FILENAME).exists() and not (output / REPORT_FILENAME).exists()
 
 
 def test_cli_template_keeps_the_answers_given(tmp_path, capsys):

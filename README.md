@@ -100,8 +100,11 @@ result = run_experiment("/data/exp1", mapping)  # writes to /data/exp1_MorphoBri
 print(result.written, result.read, result.unchanged)
 ```
 
-Rerunning only reads images that are new or changed; `force_rebuild=True`
-recomputes everything, and `exclude=[...]` leaves out damaged files. The notebook and the
+Rerunning (`mode="restart"`, the default) only reads images that are new or changed, and
+reuses every input the earlier run recorded in the output folder (axis roles, masks,
+exclusions, design, image type, settings); `mode="full"` recomputes everything, and
+`exclude=[...]` leaves out damaged files. One run at a time holds the output folder's lock,
+and every run, also one that stops, writes `discovery_report.json` and a text version. The notebook and the
 command line also ask for the experiment design (which biological repeats pair across
 conditions, and that they are comparable) and write `experiment_design.csv`; in Python,
 pass it with `design=` (see the [user guide](docs/user_guide.md) §9). Later bricks read it

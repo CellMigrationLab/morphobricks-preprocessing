@@ -22,8 +22,27 @@ succeeds; the earlier output is then replaced.
 
 from __future__ import annotations
 
+from .check_step import write_check_report
+from .lock import LOCK_FILENAME, LockHolder, OutputLockedError, read_lock, remove_stale_lock
+from .modes import FULL, MODES, RESTART
 from .pipeline import run_experiment
 from .preflight import Preflight, SamplePlane, preflight, sample_planes
 from .result import RunResult
 
-__all__ = ["Preflight", "RunResult", "SamplePlane", "preflight", "run_experiment", "sample_planes"]
+__all__ = [
+    "FULL",
+    "LOCK_FILENAME",
+    "MODES",
+    "RESTART",
+    "LockHolder",
+    "OutputLockedError",
+    "Preflight",
+    "RunResult",
+    "SamplePlane",
+    "preflight",
+    "read_lock",
+    "remove_stale_lock",
+    "run_experiment",
+    "sample_planes",
+    "write_check_report",
+]

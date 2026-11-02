@@ -791,7 +791,7 @@ def test_intensity_checks_follow_a_successful_run(tmp_path):
     assert not ui.is_visible(nb.run_checks.card)
     nb.run()
     # The checks and plots write no file.
-    assert sorted(p.name for p in out.iterdir()) == [
+    assert sorted(p.name for p in out.iterdir() if "report" not in p.name) == [
         "experiment_design.csv",
         "plane_histograms.csv",
         "run_manifest.json",

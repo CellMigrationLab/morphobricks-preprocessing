@@ -230,6 +230,9 @@ def run_summary(result: RunResult) -> str:
     ):
         if files:
             lines.append(f"{label}: {plural(len(files), 'image')}")
+    lines.extend(
+        f"Changed {c.name}: {c.recorded} -> {c.given} ({c.effect})" for c in result.input_changes
+    )
     lines.append(f"Checks: {issue_counts(result.issues)}")
     return "\n".join(lines)
 
