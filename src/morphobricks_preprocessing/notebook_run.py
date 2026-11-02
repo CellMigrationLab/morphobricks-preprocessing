@@ -17,10 +17,8 @@ from morphobricks_normalization.dtypes import (
 from morphobricks_normalization.ranges import DEFAULT_ROBUST_QUANTILES, HistogramSettings
 
 from . import notebook_style as ui
-from .axes import AxisReview
 from .axis_review import review_axes
 from .notebook_options import (
-    _PLAN_PATHS,
     _WIDE,
     HISTOGRAM_RANGE_OPTIONS,
     MODE_HELP,
@@ -28,7 +26,7 @@ from .notebook_options import (
 )
 from .notebook_plots import IntensityPanel
 from .notebook_render import _bins_help, _label, change_lines, issues_html
-from .planes import DEFAULT_MEMORY_LIMIT, PlaneLayout, PlaneReadError, format_bytes, plane_layout
+from .planes import DEFAULT_MEMORY_LIMIT
 from .report import issue_counts
 from .run import RESTART, Preflight, RunResult, run_experiment
 from .validation import has_errors, plural
@@ -246,82 +244,6 @@ class _RunStep:
         self.readiness.value = title + ui.checklist(items)
         self.run_button.disabled = bool(missing)
         self.plan.value = self._plan_html(review if folder_ok else None)
-
-    def _plan_layouts(self, review: AxisReview) -> dict[str, PlaneLayout]:
-        """Return how each image's planes are read, from the headers only.
-
-        Opening every header takes a moment on large experiments, and this runs on
-        every settings edit, so the layouts are kept until the checked folder, the
-        axis roles, the memory limit or the bin count change.
-        """
-        bins = self.bins.value or None
-        histogram = self._histogram_settings_or_none()
-        key = (
-            self.confirmed_mapping,
-            self.missing_as_singleton.value,
-            self._memory_limit(),
-            bins,
-            histogram,
-        )
-        cached = self._layouts_cache
-        # A new check of the folder gives a new Preflight, even for the same folder.
-        if cached is not None and cached[0][0] is self.preflight and cached[0][1:] == key:
-            return cached[1]
-        root = self.preflight.discovery.root
-        layouts = {}
-        for rel, mapping in sorted(review.file_mappings.items()):
-            try:
-                layouts[rel] = plane_layout(
-                    root / rel,
-                    mapping,
-                    memory_limit=self._memory_limit(),
-                    bin_count=bins,
-                    histogram_settings=histogram,
-                )
-            except PlaneReadError:
-                continue  # the run reports these images as unsupported_layout
-        self._layouts_cache = ((self.preflight, *key), layouts)
-        return layouts
-
-    def _memory_plan(self, review: AxisReview) -> tuple[str, str]:
-        """Return the "read in blocks" bullet and the "cannot be read" card, if any."""
-        layouts = self._plan_layouts(review)
-        limit = format_bytes(self._memory_limit())
-        blocked = {rel: lay for rel, lay in layouts.items() if lay.fits and lay.in_blocks}
-        over = {rel: lay for rel, lay in layouts.items() if not lay.fits}
-        line = card = ""
-        if blocked:
-            largest = format_bytes(max(lay.memory_estimate for lay in blocked.values()))
-            line = (
-                f"<b>{plural(len(blocked), 'image')}</b> {'has' if len(blocked) == 1 else 'have'} "
-                f"planes too large to read whole within the memory limit of {limit} (they need "
-                f"up to {largest}), so they will be read in blocks. The histograms are exactly the "
-                "same; reading takes longer. To read them whole, raise the memory limit to "
-                f"{largest} or more in <b>Settings</b> above (untick <b>Use the recommended "
-                "settings</b>), "
-                "if this computer has enough memory."
-                + ui.path_list(list(blocked), limit=_PLAN_PATHS)
-            )
-        if over:
-            need = format_bytes(max(lay.min_memory_estimate for lay in over.values()))
-            card = ui.status(
-                "error",
-                f"{plural(len(over), 'image')} cannot be read within the memory limit; "
-                "the run will stop.",
-                [
-                    f"The smallest part of a plane that can be read on its own needs up to "
-                    f"{need}, more than the limit of {limit}. A plane stored compressed in "
-                    "one piece has to be decoded whole."
-                    + ui.path_list(list(over), limit=_PLAN_PATHS),
-                    f"<b>What to do:</b> raise the memory limit to {need} or more in "
-                    "<b>Settings</b> above, if this computer has enough memory, or exclude "
-                    "these images in step 1. "
-                    "Saving them again as tiled or uncompressed TIFF files, or as OME-Zarr, "
-                    "also works.",
-                ],
-                raw=True,
-            )
-        return line, card
 
     def run(self) -> RunResult | None:
         """Compute or update the histogram table (pass 2) and show what happened."""

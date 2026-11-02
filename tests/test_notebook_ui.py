@@ -1185,7 +1185,7 @@ def test_plan_warns_about_images_that_cannot_be_read_within_the_limit(tmp_path):
 
 
 def test_plan_layouts_are_cached_until_their_inputs_change(tmp_path, monkeypatch):
-    import morphobricks_preprocessing.notebook_run as notebook_run
+    import morphobricks_preprocessing.notebook_run_plan as notebook_run
 
     root = large_planes_experiment(tmp_path)
     calls = []
