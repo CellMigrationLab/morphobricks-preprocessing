@@ -1,12 +1,17 @@
-"""Plan a conversion: what each image's copy will be, before anything is written (§17).
+"""Plan a conversion: check the experiment and decide each image's copy (design v0.4 §5).
 
-:func:`plan_conversion` checks the experiment with the confirmed roles, from the headers
-only, and plans each image's copy: a named-axis OME-TIFF for an image with an axis error or
-unnamed axes, a byte-for-byte copy for every other image. :func:`.conversion.convert_experiment`
-writes that plan. :func:`preview_conversion` gives the same plan, with the folder rule
-(:func:`copy_folder_issues`), the space the copies need and the free space, so the notebook
-can show what will happen before the user starts the conversion (PP-11b); it writes
-nothing.
+Moved from :mod:`.conversion` (PP-11c). :func:`plan_conversion` reads only the headers: the
+axis errors and unnamed axes are what the conversion corrects; any other error stops it
+before anything is written. :func:`preview_conversion` gives the same plan, with the folder
+rule (:func:`copy_folder_issues`), the space the copies need and the free space, so the
+notebook can show what will happen before the user starts the conversion (PP-11b); it
+writes nothing.
+
+One metadata epoch (issue #96): each image is fingerprinted before and after its header is
+read (``preflight(bind_headers=True)``), and an image whose fingerprint differs is refused
+(``source_changed_during_check``). The copy's axes, sizes, channel names and pixel type
+come from that header, and the fingerprint taken with it is the one the copy's source must
+still have before and after it is copied (:mod:`.conversion_write`).
 """
 
 from __future__ import annotations
@@ -15,6 +20,8 @@ import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+
+import numpy as np
 
 from ._io import free_space
 from .axes import AxisMapping
@@ -25,7 +32,12 @@ from .axis_check import (
     header_axis_issue,
 )
 from .axis_review import review_axes
-from .conversion_issues import not_a_folder_issue, overlap_issue, pixel_type_issue
+from .conversion_issues import (
+    header_changed_issue,
+    not_a_folder_issue,
+    overlap_issue,
+    pixel_type_issue,
+)
 from .conversion_record import CONVERTED, COPIED, RECORD_FILENAME, CopyEntry
 from .copy_axes import CopyLayout, copy_layout
 from .fingerprint import Fingerprint
@@ -53,12 +65,15 @@ class PlannedCopy:
         The roles a converted image is read with, else None.
     nbytes
         The bytes the copy takes (pixels only for a converted image).
+    dtype
+        The pixel type a converted image's header gives (native byte order), else None.
     """
 
     entry: CopyEntry
     layout: CopyLayout | None = None
     mapping: AxisMapping | None = None
     nbytes: int = 0
+    dtype: np.dtype | None = None
 
     @property
     def relative_path(self) -> str:
@@ -76,10 +91,12 @@ def plan_conversion(
 ) -> tuple[tuple[PlannedCopy, ...], list[ValidationIssue]]:
     """Check the experiment with the confirmed roles and plan each image's copy.
 
-    Only the headers are read. The axis errors do not stop the conversion: they are what
-    it corrects. Any other error does, and nothing is planned: so does an image to convert
-    of a pixel type OME-TIFF cannot hold, or whose planes cannot be read within the memory
-    limit, not even in blocks (checked as the run checks them, before anything is written).
+    Only the headers are read, each between two fingerprints of its image (an image that
+    changed meanwhile stops the conversion). The axis errors do not stop the conversion:
+    they are what it corrects. Any other error does, and nothing is planned: so does an
+    image to convert of a pixel type OME-TIFF cannot hold, or whose planes cannot be read
+    within the memory limit, not even in blocks (checked as the run checks them, before
+    anything is written).
 
     Parameters
     ----------
@@ -102,7 +119,10 @@ def plan_conversion(
         The planned copies, sorted by path (empty when an error stops the conversion),
         and the issues: the errors that stop it, and the warnings.
     """
-    pre = preflight(root, destination, exclude=exclude)
+    pre = preflight(root, destination, exclude=exclude, bind_headers=True)
+    unsettled = sorted(rel for rel, bound in pre.header_fingerprints.items() if bound is None)
+    if unsettled:
+        return (), [header_changed_issue(unsettled)]
     review = review_axes(pre.metadata, mapping, missing_as_singleton=missing_as_singleton)
     others = [issue for issue in pre.issues if issue not in pre.metadata.issues]
     issues = [*others, *review.combined_issues(pre.metadata)]
@@ -117,14 +137,12 @@ def plan_conversion(
         return (), issues
     planned = []
     for rel in pre.discovery.images:
-        source = Fingerprint.of(root / rel)
+        # An excluded image is never read: its fingerprint is taken now, for the byte copy.
+        source = pre.header_fingerprints.get(rel) or Fingerprint.of(root / rel)
         if rel in to_convert:
             planned.append(_converted(headers[rel], review.file_mappings[rel], source))
         else:
-            reason = "excluded" if rel in pre.excluded else None
-            meta = headers.get(rel)
-            entry = CopyEntry(rel, COPIED, reason, source, source_axes=meta.axes if meta else "")
-            planned.append(PlannedCopy(entry, nbytes=source.size))
+            planned.append(_copied(rel, headers.get(rel), source, rel in pre.excluded))
     return tuple(planned), issues
 
 
@@ -155,8 +173,26 @@ def _converted(meta: TiffMetadata, mapping: AxisMapping, source: Fingerprint) ->
         copy_axes=layout.axes,
         pixel_sizes=layout.sizes,
         unknown_sizes=layout.unknown,
+        channel_names=layout.channel_names,
+        significant_bits=layout.significant_bits,
     )
-    return PlannedCopy(entry, layout, mapping, copy_nbytes(layout, meta.dtype))
+    return PlannedCopy(entry, layout, mapping, copy_nbytes(layout, meta.dtype), meta.dtype)
+
+
+def _copied(
+    rel: str, meta: TiffMetadata | None, source: Fingerprint, excluded: bool
+) -> PlannedCopy:
+    """Plan the byte-for-byte copy of one image (its header as it is, or excluded unread)."""
+    entry = CopyEntry(
+        relative_path=rel,
+        action=COPIED,
+        reason="excluded" if excluded else None,
+        source=source,
+        source_axes=meta.axes if meta else "",
+        channel_names=meta.channel_names if meta else (),
+        significant_bits=meta.significant_bits if meta else None,
+    )
+    return PlannedCopy(entry, nbytes=source.size)
 
 
 def copy_folder_issues(

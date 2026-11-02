@@ -14,6 +14,7 @@ import argparse
 import re
 from dataclasses import replace
 from datetime import date
+from fractions import Fraction
 from pathlib import Path
 from typing import Literal
 
@@ -67,20 +68,31 @@ _UNITS = {
 
 
 def parse_size(text: str) -> int:
-    """Parse a memory size such as ``"1GiB"``, ``"512 MiB"`` or ``"1073741824"``.
+    """Parse a memory size such as ``"1GiB"``, ``"1.5 GiB"`` or ``"1073741824"``.
+
+    The size must be an exact whole number of bytes above 0, computed without rounding
+    (``"1.5GiB"`` is 1610612736 bytes; ``"1.5"`` and ``"0.5B"`` are refused, issue #80).
+    ``argparse`` calls it while reading the command line, so a refused size stops the
+    command before anything is read.
 
     Raises
     ------
     argparse.ArgumentTypeError
-        If the text is not a positive size.
+        If the text is not a whole positive number of bytes.
     """
-    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([A-Za-z]*)\s*", text)
+    match = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]*)\s*", text, flags=re.ASCII)
     unit = match.group(2).upper() if match else None
-    if not match or unit not in _UNITS or float(match.group(1)) <= 0:
+    if not match or unit not in _UNITS:
         raise argparse.ArgumentTypeError(
             f"{text!r} is not a memory size; use for example 1GiB, 512MiB or a number of bytes."
         )
-    return int(float(match.group(1)) * _UNITS[unit])
+    size = Fraction(match.group(1)) * _UNITS[unit]
+    if size.denominator != 1 or size <= 0:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not a whole number of bytes above 0; use for example 1GiB, 512MiB "
+            "or a whole number of bytes."
+        )
+    return int(size)
 
 
 def command_preflight(args: argparse.Namespace) -> Preflight:

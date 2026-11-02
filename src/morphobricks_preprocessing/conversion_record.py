@@ -3,10 +3,15 @@
 :func:`.conversion.convert_experiment` writes it last, into the root of the copy tree, as
 :data:`RECORD_FILENAME` (a dot-file: discovery skips it, so it is never taken for an
 image). It lists every image of the tree with its source's and its copy's fingerprints,
-relative paths, roles, axes and pixel sizes, and the package versions. A run on the copy
-tree records the record's SHA-256 in its manifest (``conversion_record_sha256``) and
+the copy's SHA-256 (:mod:`.content_hash`), relative paths, roles, axes, pixel sizes,
+channel names and significant bits, and the package versions. A run on the copy tree
+records the record's SHA-256 in its manifest (``conversion_record_sha256``) and
 :func:`review_conversion` warns when a source changed after the conversion, or a copy
-since it was written.
+since it was written (its fingerprint or its SHA-256).
+
+Record version 2 (PP-11c) added the copies' SHA-256, channel names and significant bits;
+a version 1 record is refused with a message to convert again
+(:class:`ConversionRecordError`), since its copies cannot be checked.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from pathlib import Path
 
 from ._io import write_text_atomic
 from .axes import AxisMapping
+from .content_hash import unchanged_content
 from .fingerprint import Fingerprint, current_fingerprint
 from .manifest import file_sha256
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
@@ -27,7 +33,11 @@ from .validation import ValidationIssue, error, plural, warning
 RECORD_FILENAME = ".morphobricks-conversion.json"
 """The conversion record, in the root of the copy tree."""
 
-RECORD_VERSION = "1"
+RECORD_VERSION = "2"
+"""Version 2 (PP-11c): each copy's SHA-256, channel names and significant bits."""
+
+_OLD_VERSIONS = ("1",)
+"""Record versions written before the copies' SHA-256: refused, convert again."""
 
 CONVERTED = "converted"
 """An image written as a named-axis OME-TIFF with the confirmed roles."""
@@ -69,6 +79,14 @@ class CopyEntry:
         The copy's pixel sizes by role (converted images).
     unknown_sizes
         ``{role: reason}`` for each size the source header gives that the copy does not.
+    copy_sha256
+        The copy's SHA-256 when it was written (:func:`.content_hash.content_sha256`;
+        None before it is written).
+    channel_names
+        The channel names the copy holds (a converted image's as written, a copied
+        image's from its header); empty for none.
+    significant_bits
+        The significant bits the copy holds, or None.
     """
 
     relative_path: str
@@ -81,13 +99,17 @@ class CopyEntry:
     copy_axes: str | None = None
     pixel_sizes: tuple[RecordedSize, ...] = ()
     unknown_sizes: Mapping[str, str] = field(default_factory=dict)
+    copy_sha256: str | None = None
+    channel_names: tuple[str | None, ...] = ()
+    significant_bits: int | None = None
 
     def same_plan(self, other: CopyEntry) -> bool:
         """Return True if ``other`` copies the same source the same way (copies aside).
 
         The source's fingerprint and axes, the action and reason, the roles, the copy's
-        axes and its pixel sizes (and which sizes are unknown) must all be the same, so a
-        copy written under another rule is never reused beside new ones.
+        axes, its pixel sizes, which sizes are unknown and why, its channel names and
+        significant bits must all be the same, so a copy written under another rule is
+        never reused beside new ones.
         """
         return self._plan() == other._plan()
 
@@ -102,7 +124,9 @@ class CopyEntry:
             self.roles,
             self.copy_axes,
             self.pixel_sizes,
-            frozenset(self.unknown_sizes),
+            tuple(sorted(self.unknown_sizes.items())),
+            tuple(self.channel_names),
+            self.significant_bits,
         )
 
     def to_dict(self) -> dict:
@@ -118,13 +142,18 @@ class CopyEntry:
             "copy_axes": self.copy_axes,
             "pixel_sizes": sizes_to_data(self.pixel_sizes),
             "unknown_sizes": dict(sorted(self.unknown_sizes.items())),
+            "copy_sha256": self.copy_sha256,
+            "channel_names": list(self.channel_names),
+            "significant_bits": self.significant_bits,
         }
 
     @classmethod
     def from_dict(cls, data: Mapping) -> CopyEntry:
-        """Read an entry written by :meth:`to_dict`."""
+        """Read an entry written by :meth:`to_dict`; it must give its copy and SHA-256."""
         roles = data.get("roles")
         copy = data.get("copy")
+        if copy is None or not isinstance(data.get("copy_sha256"), str):
+            raise ValueError(f"{data.get('relative_path')!r} has no copy fingerprint or SHA-256")
         return cls(
             relative_path=str(data["relative_path"]),
             action=_choice(data["action"], (CONVERTED, COPIED), "action"),
@@ -136,6 +165,9 @@ class CopyEntry:
             copy_axes=None if data.get("copy_axes") is None else str(data["copy_axes"]),
             pixel_sizes=sizes_from_data(data.get("pixel_sizes")),
             unknown_sizes={str(k): str(v) for k, v in (data.get("unknown_sizes") or {}).items()},
+            copy_sha256=str(data["copy_sha256"]),
+            channel_names=tuple(None if n is None else str(n) for n in data["channel_names"]),
+            significant_bits=_bits(data["significant_bits"]),
         )
 
 
@@ -185,8 +217,15 @@ class ConversionRecord:
         Raises
         ------
         ConversionRecordError
-            For another record version or data that is not a record.
+            For another record version (a version 1 record: convert again) or data that is
+            not a record.
         """
+        if isinstance(data, Mapping) and data.get("record_version") in _OLD_VERSIONS:
+            raise ConversionRecordError(
+                f"it is a record of version {data['record_version']}, written before the "
+                "copies' SHA-256 was recorded, so the copies cannot be checked; convert the "
+                "originals again into a new folder"
+            )
         if not isinstance(data, Mapping) or data.get("record_version") != RECORD_VERSION:
             raise ConversionRecordError(f"not a conversion record of version {RECORD_VERSION}")
         try:
@@ -310,16 +349,45 @@ def review_conversion(root: str | os.PathLike, images: Iterable[str]) -> Convers
         if current_fingerprint(sources / e.relative_path) != e.source
     ]
     listed = {e.relative_path for e in record.files}
-    copies = sorted(
-        {
-            e.relative_path
-            for e in record.files
-            if current_fingerprint(Path(root) / e.relative_path) != e.copy
-        }
-        | (set(images) - listed)
-    )
+    copies = sorted(set(changed_copies(root, record)) | (set(images) - listed))
     issues = [*_source_issue(changed, record.source_root), *_copy_issue(copies)]
     return ConversionReview(sha256, record.source_root, tuple(issues))
+
+
+def changed_copies(
+    root: str | os.PathLike, record: ConversionRecord, paths: Iterable[str] | None = None
+) -> list[str]:
+    """Return the copies changed or gone since they were written: fingerprint or SHA-256.
+
+    Each copy listed is read whole to compute its SHA-256 (unless its fingerprint already
+    differs), so the check costs one read of the copies.
+
+    Parameters
+    ----------
+    root
+        The copy tree.
+    record
+        Its conversion record.
+    paths
+        The images to check, relative; by default every image the record lists. An image
+        the record does not list counts as changed.
+
+    Returns
+    -------
+    list of str
+        The changed, gone or unlisted copies, sorted.
+    """
+    wanted = [e.relative_path for e in record.files] if paths is None else list(paths)
+    changed = []
+    for rel in sorted(set(wanted)):
+        entry, copy = record.entry(rel), Path(root) / rel
+        if (
+            entry is None
+            or current_fingerprint(copy) != entry.copy
+            or not unchanged_content(copy, entry.copy_sha256)
+        ):
+            changed.append(rel)
+    return changed
 
 
 def _source_issue(paths: list[str], source_root: str) -> list[ValidationIssue]:
@@ -348,10 +416,10 @@ def _copy_issue(paths: list[str]) -> list[ValidationIssue]:
             "copy_changed_after_conversion",
             f"{plural(len(paths), 'image')} of this folder of named-axis copies changed, went "
             "missing or were added after the conversion, so the conversion record does not "
-            "describe them.",
+            "describe them. The bricks will refuse a run on them (RunInputs checks every "
+            "copy the run records against the record).",
             paths,
-            "Convert the originals again into a new folder, or check that these images are "
-            "the ones you want analysed.",
+            "Convert the originals again into a new folder and run preprocessing on that one.",
         )
     ]
 
@@ -377,6 +445,15 @@ def _choice(value: object, allowed: tuple[str, ...], name: str) -> str:
     if value not in allowed:
         raise ValueError(f"{name} {value!r} is not one of {', '.join(allowed)}")
     return str(value)
+
+
+def _bits(value: object) -> int | None:
+    """Return recorded significant bits: a whole number, or None."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"significant_bits {value!r} is not a whole number")
+    return value
 
 
 def _flag(value: object) -> bool:

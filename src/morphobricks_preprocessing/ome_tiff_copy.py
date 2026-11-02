@@ -19,7 +19,7 @@ import tifffile
 
 from .axes import AxisMapping
 from .copy_axes import CopyLayout
-from .planes import DEFAULT_MEMORY_LIMIT, Block, iter_planes, plane_layout
+from .planes import DEFAULT_MEMORY_LIMIT, Block, iter_planes
 
 BIGTIFF_FROM = 2**32 - 2**25
 """Copies whose file would take more bytes than this are written as BigTIFF (a classic
@@ -78,6 +78,7 @@ def write_named_copy(
     layout: CopyLayout,
     mapping: AxisMapping,
     *,
+    dtype: np.dtype,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> None:
     """Write ``source``, read under ``mapping``, to ``target`` as a named-axis OME-TIFF.
@@ -92,6 +93,9 @@ def write_named_copy(
         The copy's axes, shape and metadata (:func:`.copy_axes.copy_layout`).
     mapping
         The image's own confirmed mapping.
+    dtype
+        The pixel type the inspected header gives (native byte order): the header is not
+        read again for it (issue #96), and a plane of another type is refused, never cast.
     memory_limit
         Working-memory limit per plane, as the run's.
 
@@ -100,11 +104,11 @@ def write_named_copy(
     PlaneReadError
         If the source cannot be read under ``mapping`` within the memory limit.
     CopyWriteError
-        If the planes do not lie where the file was laid out.
+        If the planes do not lie where the file was laid out, or are not of ``dtype``.
     OSError
         If the file cannot be written.
     """
-    dtype = plane_layout(source, mapping, memory_limit=memory_limit).dtype
+    dtype = np.dtype(dtype)
     offset, _ = tifffile.imwrite(
         target,
         shape=layout.shape,
@@ -140,7 +144,9 @@ def _check_contiguous(path: Path, offset: int, plane_nbytes: int, count: int) ->
 
 def _write_block(stream: BinaryIO, start: int, block: Block, cols: int, dtype: np.dtype) -> None:
     """Write one block of a plane at its place; a block as wide as the plane in one write."""
-    pixels = np.ascontiguousarray(block.pixels, dtype=dtype)
+    if block.pixels.dtype != dtype:
+        raise CopyWriteError(f"a plane is {block.pixels.dtype}, not {dtype} as its header said")
+    pixels = np.ascontiguousarray(block.pixels)
     row_nbytes = cols * dtype.itemsize
     first = start + block.y * row_nbytes + block.x * dtype.itemsize
     if pixels.shape[1] == cols:

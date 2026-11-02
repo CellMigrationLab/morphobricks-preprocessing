@@ -31,9 +31,8 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
@@ -42,11 +41,7 @@ from ._io import free_space
 from .axes import AxisMapping, prefill_mapping
 from .axis_check import ConfirmedAxes, confirmation_of
 from .conversion_issues import (
-    differs_issue,
-    failed_issue,
     lock_issue,
-    not_empty_issue,
-    other_experiment_issue,
     record_issue,
     space_issue,
 )
@@ -60,17 +55,14 @@ from .conversion_record import (
     read_record,
     write_record,
 )
-from .fingerprint import Fingerprint, current_fingerprint
+from .conversion_reuse import compare
+from .conversion_write import ConversionFailed, write_all
 from .manifest import package_versions
-from .ome_tiff_copy import CopyWriteError, write_named_copy
-from .planes import DEFAULT_MEMORY_LIMIT, PlaneReadError
-from .run.lock import LOCK_FILENAME, OutputLockedError, output_lock
+from .planes import DEFAULT_MEMORY_LIMIT
+from .run.lock import OutputLockedError, output_lock
 from .validation import ValidationIssue, has_errors
 
 logger = logging.getLogger(__name__)
-
-PARTIAL_SUFFIX = ".partial"
-"""A copy is written as ``<name>.partial`` and renamed once every copy is written."""
 
 
 @dataclass(frozen=True)
@@ -212,13 +204,13 @@ def _locked_conversion(
         earlier = read_record(dest)
     except ConversionRecordError as exc:
         return ConversionResult(dest, False, (record_issue(exc, dest),))
-    reused, to_write, refusal = _compare(root, dest, planned, earlier)
+    reused, to_write, refusal = compare(root, dest, planned, earlier)
     refusal = refusal or _space_issue(dest, to_write)
     if refusal is not None:
         return ConversionResult(dest, False, (refusal, *issues))
     try:
-        written = _write_all(root, dest, to_write, options.memory_limit, progress)
-    except _ConversionFailed as failed:
+        written = write_all(root, dest, to_write, options.memory_limit, progress)
+    except ConversionFailed as failed:
         return ConversionResult(dest, False, (failed.issue, *issues))
     files = sorted([*reused, *written], key=lambda entry: entry.relative_path)
     sha256 = _publish_record(root, dest, files, options, earlier)
@@ -268,163 +260,6 @@ def _publish_record(
         written_at=datetime.now(UTC).isoformat(timespec="seconds"),
     )
     return write_record(record, dest)
-
-
-def _compare(
-    root: Path,
-    dest: Path,
-    planned: tuple[PlannedCopy, ...],
-    earlier: tuple[ConversionRecord, str] | None,
-) -> tuple[list[CopyEntry], list[PlannedCopy], ValidationIssue | None]:
-    """Split the plan into copies to reuse and to write; refuse anything else there."""
-    if earlier is None:
-        unknown = _unknown_content(dest, planned)
-        return [], list(planned), not_empty_issue(dest, unknown) if unknown else None
-    record = earlier[0]
-    if record.source_root != root.as_posix():
-        return [], [], other_experiment_issue(dest, record.source_root)
-    reused, to_write, differing = [], [], []
-    for item in planned:
-        old = record.entry(item.relative_path)
-        target = dest / item.relative_path
-        if old is None:
-            (differing if os.path.lexists(target) else to_write).append(item)
-        elif old.same_plan(item.entry) and current_fingerprint(target) == old.copy:
-            reused.append(old)
-        else:
-            differing.append(item)
-    paths = [item.relative_path for item in differing]
-    names = {item.relative_path for item in planned}
-    paths += [e.relative_path for e in record.files if e.relative_path not in names]
-    return reused, to_write, differs_issue(dest, sorted(paths)) if paths else None
-
-
-def _unknown_content(dest: Path, planned: tuple[PlannedCopy, ...]) -> list[str]:
-    """Return the files in a folder without a record that this conversion did not leave.
-
-    Only the lock and the ``.partial`` files of the planned copies (left by an interrupted
-    conversion, removed before they are written again) are allowed.
-    """
-    partials = {item.relative_path + PARTIAL_SUFFIX for item in planned}
-    found = []
-    for folder, subfolders, names in os.walk(dest):
-        relative = Path(folder).relative_to(dest)
-        subfolders[:] = [d for d in subfolders if (relative / d).as_posix() not in partials]
-        for name in names:
-            path = (relative / name).as_posix()
-            if path != LOCK_FILENAME and path not in partials:
-                found.append(path)
-    return sorted(found)
-
-
-class _ConversionFailed(Exception):
-    """A copy could not be written; carries the error for the user."""
-
-    def __init__(self, issue: ValidationIssue) -> None:
-        super().__init__(issue.message)
-        self.issue = issue
-
-
-_FAILURES = (PlaneReadError, CopyWriteError, OSError, ValueError)
-"""What reading a source or writing a copy raises when it fails (``tifffile`` raises
-:class:`ValueError` for a file it cannot write); anything else is re-raised, after the same
-clean-up."""
-
-
-def _write_all(
-    root: Path,
-    dest: Path,
-    to_write: list[PlannedCopy],
-    memory_limit: int,
-    progress: Callable[[int, int, str], None] | None,
-) -> list[CopyEntry]:
-    """Write every copy as ``.partial``, then move them all into place.
-
-    On any failure, an interruption included, every ``.partial`` file of the conversion,
-    every copy already moved into place (each where nothing was before) and every folder
-    the conversion made are removed, so the copy tree is left as it was; a failure to read
-    or write raises :class:`_ConversionFailed`, anything else is re-raised.
-    """
-    made = _missing_folders(dest, to_write)
-    written: list[Path] = []
-    current = to_write[0].relative_path if to_write else ""
-    try:
-        for done, item in enumerate(to_write):
-            current = item.relative_path
-            if progress is not None:
-                progress(done, len(to_write), current)
-            _write_partial(root, dest, item, memory_limit)
-        if progress is not None:
-            progress(len(to_write), len(to_write), "")
-        entries = []
-        for item in to_write:
-            current, target = item.relative_path, dest / item.relative_path
-            os.replace(_partial(dest, item), target)
-            written.append(target)
-            entries.append(replace(item.entry, copy=Fingerprint.of(target)))
-    except BaseException as exc:
-        logger.debug("Conversion of %s failed", current, exc_info=True)
-        for path in [*written, *(_partial(dest, item) for item in to_write)]:
-            _remove(path)
-        _remove_empty(made)
-        if isinstance(exc, (*_FAILURES, _SourceChanged)):
-            raise _ConversionFailed(failed_issue(current, exc)) from exc
-        raise
-    return entries
-
-
-def _missing_folders(dest: Path, to_write: list[PlannedCopy]) -> list[Path]:
-    """Return the folders of the copy tree that writing these copies will make."""
-    missing = set()
-    for item in to_write:
-        folder = (dest / item.relative_path).parent
-        while folder != dest and not folder.exists():
-            missing.add(folder)
-            folder = folder.parent
-    return sorted(missing, key=lambda folder: len(folder.parts), reverse=True)
-
-
-def _remove_empty(folders: list[Path]) -> None:
-    """Remove the folders this conversion made, deepest first, when they are empty."""
-    for folder in folders:
-        try:
-            folder.rmdir()
-        except OSError:
-            logger.debug("Folder %s kept: not empty or gone", folder, exc_info=True)
-
-
-class _SourceChanged(Exception):
-    """A source image changed since it was checked, or while it was copied."""
-
-
-def _write_partial(root: Path, dest: Path, item: PlannedCopy, memory_limit: int) -> None:
-    """Write one copy as ``<name>.partial``, refusing a source that changes meanwhile."""
-    source, partial = root / item.relative_path, _partial(dest, item)
-    partial.parent.mkdir(parents=True, exist_ok=True)
-    _remove(partial)  # left by an interrupted conversion: it is never reused
-    if current_fingerprint(source) != item.entry.source:
-        raise _SourceChanged("it changed since it was checked")
-    if item.layout is not None:
-        write_named_copy(source, partial, item.layout, item.mapping, memory_limit=memory_limit)
-    elif source.is_dir():
-        shutil.copytree(source, partial, copy_function=shutil.copyfile)
-    else:
-        shutil.copyfile(source, partial)
-    if current_fingerprint(source) != item.entry.source:
-        raise _SourceChanged("it changed while it was copied")
-
-
-def _partial(dest: Path, item: PlannedCopy) -> Path:
-    """Return the ``.partial`` path of a copy."""
-    return dest / (item.relative_path + PARTIAL_SUFFIX)
-
-
-def _remove(path: Path) -> None:
-    """Remove a file or folder this conversion wrote (or left earlier) if it is there."""
-    if path.is_dir() and not path.is_symlink():
-        shutil.rmtree(path)
-    else:
-        path.unlink(missing_ok=True)
 
 
 def _suggested_axes(files: list[CopyEntry]) -> str | None:
