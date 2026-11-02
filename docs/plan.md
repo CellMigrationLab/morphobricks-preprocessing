@@ -299,7 +299,7 @@ API, CLI). The notebook and CLI only call the API.
   *Setup feedback: standalone Step 0 detects the environment, prefers a nearby checkout,
   reuses an installed package, or installs missing requirements into the active kernel.*
   *Step-1 feedback: centre the folder-label table's headers and contents consistently.*
-  *v0.4.0 (PP-8d, question 52): the notebook runs on Google Colab and in JupyterLab following
+  *v0.4.0 (PP-8d, question 58): the notebook runs on Google Colab and in JupyterLab following
   LabConstrictor's portability guide; its GitHub installation is pinned to a release tag.*
   *Notebook guidance feedback: separate "What next?" boxes show the next action in larger
   text, following the current confirmations. Step-1 message details are collapsed with
@@ -386,7 +386,7 @@ API, CLI). The notebook and CLI only call the API.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;
-  - set the notebook's pin (question 52): `RELEASE_TAG` in Step 0 to the new tag,
+  - set the notebook's pin (question 58): `RELEASE_TAG` in Step 0 to the new tag,
     `current_version` to the tag without "v", the same version in
     `notebooks/notebook_latest_versions.yaml`, and the tag named in the Step 0 Colab callout
     (`tests/test_notebook_file.py` checks that the four agree);
@@ -1169,7 +1169,84 @@ Raised during review; to be decided before the milestones that need them:
     OME-Zarr image whose `labels` group cannot be read is its own refusal naming the image,
     not a silent pass and not an "unrecorded" file; (4) the version stays 0.3.4 until PP-13,
     and v0.4.0rc2 is tagged by the owner after this PR.*
-52. How does the notebook run on Google Colab, and which release does it install (PP-8d)?
+52. Which permissions do the output files get (PP-8c, from a run on real data)?
+    *Decided (2 November 2026, owner): the mode a plain `open()` gives. The atomic write's
+    temporary file (`tempfile.mkstemp`) is private, so every output was `0600` whatever the
+    umask, and colleagues could not read the results in a shared lab folder. Now a new file
+    gets `0666 & ~umask` (the umask read from `/proc/self/status` where the system gives
+    it, else by setting it under a lock, to the most restrictive value while it is set), and
+    a file that already exists keeps its own mode, as the user set it: the run never widens
+    or narrows what the user chose. Files written `0600` by earlier versions therefore stay
+    so until the user changes them; the user guide says how. The table, written by the
+    normalization brick's writer into the staging folder, is given its mode when it is
+    published. Windows: unchanged (no such modes). Contract §9.*
+53. Is a pixel size recorded for an axis the image does not have (PP-8c, from a run on
+    real data)?
+    *Decided (2 November 2026, owner): no. MorphoRelate's HPMEC max projections (`CYX`)
+    keep the z-step of their stacks in their ImageJ metadata (0.43 µm), and the run
+    recorded it as their Z size from the header. A Z or T size is now recorded only for an
+    image whose roles include that axis (`calibration.fit_to_roles`, after the axis
+    review; a singleton role of a missing axis does not count); otherwise the axis has no
+    value and no source. A `calibration.csv` statement for an axis an image lacks is
+    neither refused nor recorded: the warning `calibration_axis_absent` names the images
+    (refusing would make a whole-experiment Z statement impossible in an experiment that
+    mixes stacks and 2D images; the question 49 rule that a statement matching nothing is
+    an error is about targets, not axes). The report's text counts Z and T sizes for the
+    images with the axis. The `RowKey` does not include pixel sizes, so earlier rows are
+    reused (no row depends on a size, question 49): the next `restart` leaves the table
+    byte-identical and rewrites the manifest without the absent sizes. Contract §9.3.*
+54. What do `RunInputs.read_plane` and `read_mask` do with a `z` or `t` that is not a number
+    (PP-8c, from a run on real data)?
+    *Decided (2 November 2026, owner): a `TypeError` naming the expected arguments. A
+    `plane_id` passed as `z` gave the misleading `IndexError` "has no Z …" on a 2D image,
+    and `read_mask(z=True)` reached the reader. Python and NumPy integers are accepted
+    (`bool` is not), and `read_mask` keeps None. A read by `plane_id` is not added: the
+    spec's interface is `read_plane(fov, z, t)` (design v0.4 §6), every table row carries
+    its `z` and `t`, and a second way to address a plane would be a second rule to keep
+    in step. Contract §9.1.*
+55. What does a run that stops say it wrote (PP-8c, from a run on real data)?
+    *Decided (2 November 2026, owner): what it wrote. Since PP-7 every run that holds the
+    lock writes its report, also when it stops, and the CLI `run` writes the design template
+    when it stops on the design, yet the summary said "Nothing was written". It now says
+    "The run stopped (…): no table or manifest was written." and names the report files and
+    the template when written (`RunResult.report_written`, `run_summary(design_template=)`);
+    the notebook says "The run stopped: no table or manifest was written." Only a run
+    refused before it starts (the lock) still says "Nothing was written."*
+56. Does the `masks` command use the recorded inputs (PP-8c, from a run on real data)?
+    *Decided (2 November 2026, owner): yes, like `run` (question 48). The experiment
+    argument is optional when the output folder holds a v2 manifest recording it (else
+    `experiment_not_recorded`); the masks folder and mask axes are the recorded ones unless
+    given, and a value given that differs is named with its effect. The exclusions follow
+    the same rule (with `--no-exclude`), so `masks` never reads a mask of an image the run
+    left out unless asked. `--no-masks` is not needed. A change is used for that scan only:
+    `masks` writes only `mask_relationships.json`, never the manifest, so the next `run`
+    keeps the recorded value until it is given the new one, and then removes a
+    `mask_relationships.json` written for other masks (question 48). The recorded-experiment
+    lookup is one helper shared by both commands (`cli_run.use_recorded_experiment`).*
+57. Where does the experiment design template come from, and can it be confirmed without
+    editing the CSV (PP-8c, from a run on real data)?
+    *Decided (2 November 2026, owner): earlier, and from the command line. `check` also
+    writes `experiment_design.csv` prefilled from the folders (conditions, biological
+    repeats, `repeat_group` the folder name, counts; `confirmed=false`, `control=false`)
+    when the output folder holds none, under the lock, and only when the folders have no
+    error; it never replaces a design, edited or unreadable. This amends design v0.4 §1
+    ("`check` … writes only the report"). A new command `design --output OUT` prints the
+    design and what is still unconfirmed, and changes it without editing the file:
+    `--repeat-group CONDITION/REPEAT=GROUP`, `--control`/`--no-control CONDITION`,
+    `--confirm GROUP` and `--confirm-all` (a separate flag rather than `--confirm all`, so a
+    repeat group named `all` stays confirmable). It reads, changes and writes under the lock
+    with the run's reader (`read_experiment_design`) and validator (`design_issues`), fills
+    `confirmed_on`, refuses unknown names and a group whose rows break the rules, and
+    changes nothing when it refuses. It does not rediscover the folders: it works on the
+    rows `check` or `run` wrote, and the run reconciles them with the folders as before, so
+    a group that gained a folder since is asked again. Python: `edit_design` with
+    `DesignEdit` (`apply_design_edit` without files). The confirmation stays an explicit
+    act of the user: nothing confirms by default. Contract §12.*
+    *Decided in review (2 November 2026, owner): `design` and `calibrate` also take
+    `--remove-stale-lock`, as `check`, `run` and `masks` do (the `output_locked` message
+    tells users to give it to the command). Same rule: the lock is removed only on that
+    request, and never one of a process still running on the same computer.*
+58. How does the notebook run on Google Colab, and which release does it install (PP-8d)?
     *Decided (2 November 2026, owner's PP-8d brief; supersedes the "Local Jupyter (not
     Colab-first)" target): one notebook file for Google Colab and JupyterLab, following
     LabConstrictor's notebook portability guide. Every code cell starts with `# @title`, and

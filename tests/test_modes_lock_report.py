@@ -38,7 +38,7 @@ from morphobricks_preprocessing.run import (
 )
 from morphobricks_preprocessing.run.lock import output_lock
 from morphobricks_preprocessing.testing import make_clean_run
-from run_files import only_the_report
+from run_files import check_outputs, only_the_report
 from tiff_tree import write_data, write_plain
 
 ZYX = prefill_mapping("ZYX")
@@ -418,10 +418,10 @@ def test_a_moved_experiment_is_reported(experiment, tmp_path):
     assert {c.name for c in again.input_changes} == {"experiment_root"}
 
 
-def test_check_writes_only_the_report(experiment):
+def test_check_writes_the_report_and_the_design_template(experiment):
     assert main(["check", str(experiment)]) == 0
     output = default_output_folder(experiment)
-    assert only_the_report(output)
+    assert check_outputs(output)
     data = json.loads((output / REPORT_FILENAME).read_text(encoding="utf-8"))
     assert data["step"] == "check" and data["mode"] is None
     assert data["images"]["ctrl/r1/a.tif"]["roles"] == "ZYX"

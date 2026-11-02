@@ -20,7 +20,7 @@ from morphobricks_normalization.csv_io import (
     OUTPUT_FILENAME,
 )
 
-from .._io import write_text_atomic
+from .._io import give_output_mode, write_text_atomic
 from ..design import (
     DESIGN_FILENAME,
 )
@@ -108,6 +108,7 @@ def _publish_outputs(
     published: list[str] = []
     try:
         for name in filenames:
+            give_output_mode(staged / name, output / name)
             os.replace(staged / name, output / name)
             published.append(name)
     except BaseException:

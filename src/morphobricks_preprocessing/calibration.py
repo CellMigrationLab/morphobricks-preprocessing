@@ -19,6 +19,10 @@ so. Each axis is recorded with its source, ``"header"``, ``"stated"`` or ``"pixe
   ``calibration_differs_from_header`` naming the images, and the statement is used.
 - **Unknown targets.** A statement whose target is neither a folder nor an image of the
   experiment is the error ``calibration_target_not_found``: it is never dropped silently.
+- **Only axes the image has.** A Z or T size is recorded only for an image with that role
+  (:func:`fit_to_roles`): a max projection keeps the z-step of its stack in its metadata,
+  which is not a size of the projection. A statement for an axis an image lacks is the
+  warning ``calibration_axis_absent`` naming the images, and is not recorded for them.
 - **No row depends on it.** Changing the calibration recomputes no row.
 """
 
@@ -26,8 +30,8 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Collection, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
@@ -244,7 +248,8 @@ class CalibrationReview:
         The SHA-256 of the file's bytes as read, or None without one.
     issues
         ``calibration_unreadable``, ``calibration_target_not_found`` and
-        ``calibration_differs_from_header``.
+        ``calibration_differs_from_header``; after :func:`fit_to_roles`, also
+        ``calibration_axis_absent``.
     """
 
     sizes: Mapping[str, tuple[RecordedSize, ...]] = field(default_factory=dict)
@@ -314,6 +319,70 @@ def resolve_sizes(meta: TiffMetadata, calibration: Calibration) -> tuple[Recorde
         entry = calibration.statement(meta.relative_path, role) if role != "T" else None
         resolved.append(header[role] if entry is None else entry.recorded())
     return tuple(resolved)
+
+
+def fit_to_roles(
+    review: CalibrationReview, roles: Mapping[str, Collection[str | None]]
+) -> tuple[CalibrationReview, tuple[ValidationIssue, ...]]:
+    """Keep a Z or T size only for the images that have that role.
+
+    The header of a max projection still gives the z-step of its stack, and a statement for
+    the whole experiment covers every image: neither is a size of an axis the image does not
+    have. Such an axis is recorded with no value and no source; a statement for it is the
+    warning ``calibration_axis_absent`` naming the images (the statement still sizes the
+    images that have the axis).
+
+    Parameters
+    ----------
+    review
+        The calibration resolved from the headers and ``calibration.csv``.
+    roles
+        ``{relative path: the roles the image is read with}`` (its axes' roles, without the
+        singleton roles of axes it lacks); images left out keep their sizes.
+
+    Returns
+    -------
+    tuple
+        The review with those sizes removed and the warning among its issues, and the new
+        issues alone (the warning, or nothing).
+    """
+    statements = review.calibration or Calibration()
+    sizes, absent = dict(review.sizes), {}
+    for path, found in review.sizes.items():
+        if path not in roles:
+            continue
+        lacking = [role for role in ("Z", "T") if role not in roles[path]]
+        sizes[path] = tuple(RecordedSize(s.role) if s.role in lacking else s for s in found)
+        for axis in lacking:
+            if axis in CALIBRATION_AXES and statements.statement(path, axis) is not None:
+                absent.setdefault(path, []).append(axis)
+    issues = _absent_axis_issues(absent)
+    fitted = replace(review, sizes=sizes, issues=(*review.issues, *issues))
+    return fitted, issues
+
+
+def _absent_axis_issues(absent: Mapping[str, list[str]]) -> tuple[ValidationIssue, ...]:
+    """Warn about statements for an axis the images they cover do not have."""
+    if not absent:
+        return ()
+    paths = sorted(absent)
+    shown = [f"{path} (no {' or '.join(absent[path])})" for path in paths[:_SHOWN]]
+    more = len(paths) - len(shown)
+    axes = " and ".join(sorted({axis for found in absent.values() for axis in found}))
+    return (
+        warning(
+            "calibration_axis_absent",
+            f"calibration.csv states a {axes} size for {plural(len(paths), 'image')} that "
+            "have no such axis: "
+            + "; ".join(shown)
+            + (f"; and {more} more" if more else "")
+            + ". No size is recorded for an axis an image does not have.",
+            paths,
+            "No action needed if the statement is meant for other images (for example a "
+            "statement for the whole experiment). Otherwise give it a narrower target, or "
+            "remove it.",
+        ),
+    )
 
 
 def _unknown_targets(calibration: Calibration, images: list[str]) -> list[ValidationIssue]:

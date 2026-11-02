@@ -462,15 +462,35 @@ for images that are not three channels of a whole-number pixel type stops the ru
 (`rgb_not_possible`).
 
 `run` also needs the experiment design (§4, step 1). It reads `experiment_design.csv` from
-the output folder (or the file given with `--design`). The first time, or when folders were
-added, it writes that file and stops, so you can fill it in with a spreadsheet program or a
-text editor: give rows the same `repeat_group` to pair biological repeats named differently,
-set `confirmed` to `true` in every row of a repeat group whose images are comparable, and
-optionally `control` to `true` for control conditions. Then run again. `check` says whether
-the design is confirmed, or why a saved one cannot be read (naming the line and column); it
-never writes the file. `check` writes only the report, `discovery_report.json` and
-`discovery_report.txt`, to the output folder; `run` writes it on every run, also one that
+the output folder (or the file given with `--design`). `check` writes that file, prefilled
+from the folders, when the output folder holds none (one row per biological-repeat folder of
+each condition, the repeat group named after the folder, nothing confirmed, no control); it
+never replaces a design that is there. `run` does the same the first time, or when folders
+were added, and stops. Fill it in with a spreadsheet program or a text editor: give rows the
+same `repeat_group` to pair biological repeats named differently, set `confirmed` to `true`
+in every row of a repeat group whose images are comparable, and optionally `control` to
+`true` for control conditions. Or use the `design` command, which changes the file for you:
+
+```bash
+morphobricks-preprocessing design --output /data/exp1_MorphoBricks_Preprocessing
+morphobricks-preprocessing design --output /data/exp1_MorphoBricks_Preprocessing \
+    --repeat-group drug/d2=day2 --control ctrl --confirm day1 --confirm day2
+```
+
+The first prints the design as a table and the repeat groups not confirmed yet; nothing is
+confirmed unless you ask. The second moves the folder `drug/d2` into the repeat group
+`day2` (pairing it with the other conditions' `day2`), marks `ctrl` as a control and
+confirms the two groups, filling in today's date. `--confirm-all` confirms every group not
+confirmed yet, and `--no-control` unmarks a control. A group whose folders break the rules
+(two folders of one condition, a name such as `NA`) is not confirmed, an unknown name is
+refused, and the file is then left as it was. Then run again. `check` also says whether the
+design is confirmed, or why a saved one cannot be read (naming the line and column). Both
+commands write the report, `discovery_report.json` and `discovery_report.txt`, to the
+output folder; `run` writes it on every run, also one that
 stops (`status` `stopped` or `written`, with the SHA-256 of the manifest it describes).
+A run that stops says so, says that no table or manifest was written, and names what it
+did write: the report, and the design template when it wrote one. Only a run refused before
+it starts (another run holds the lock) writes nothing.
 
 A later `run` in the same output folder reuses everything the earlier run recorded: the
 axis roles (`--axes` is needed again only for plain stacks that are new or changed), the
@@ -491,7 +511,7 @@ report names the change and its effect. Other options:
 | `--mode restart\|full` | `restart` (default) reuses the rows of unchanged images; `full` recomputes every row and check. Both keep your confirmations and replace the results only when the run succeeds |
 | `--no-masks` | Drop the masks folder an earlier run recorded |
 | `--no-exclude` | Clear the exclusions an earlier run recorded, so every image is analysed again (not together with `--exclude`) |
-| `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check` and `run`); give it only when no other run uses the output folder |
+| `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks`, `design` and `calibrate`); give it only when no other run uses the output folder |
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
 | `--log FILE` | Write technical details to a file |
 | `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json` |
@@ -529,7 +549,18 @@ mask that segment the same objects are reported as such. These are suggestions f
 pixels, not decisions: you name each kind of mask and check the relationships in the bricks
 that use them. The report is written to `mask_relationships.json` in the output folder
 (§6). The command takes `--output`, `--exclude` and `--log` like the others, and exits with
-status 1 when an error blocks it or when no masks are found. Label 0 is the background and
+status 1 when an error blocks it or when no masks are found. Like `run`, it uses what the
+run in the output folder recorded: after a run,
+
+```bash
+morphobricks-preprocessing masks --output /data/exp1_MorphoBricks_Preprocessing
+```
+
+scans the recorded experiment folder with the recorded masks folder, mask axes and
+exclusions (`--no-exclude` clears the exclusions for this scan). Without an experiment
+folder and without a run recording one, it stops with `experiment_not_recorded`. A value
+you give that differs from the recorded one is used for this scan and printed as a change;
+the run keeps its recorded value until you give it the new one. Label 0 is the background and
 objects have positive labels: a mask with a negative value stops the command with a message
 naming the mask, and no report is written.
 
@@ -578,8 +609,11 @@ A run reads the file and never changes or removes it (also with `--mode full`, o
 stops). The next run records each image's sizes with their source (`header`, `stated` or
 `pixels`), names the change in its report, and recomputes no row. A stated size that
 differs from the metadata is a warning (`calibration_differs_from_header`); the stated size
-is used. In Python, `write_calibration(calibration, output_folder)` writes the file
-(see §9).
+is used. A Z (or time) size is recorded only for images that have that axis: a max
+projection whose metadata still give the z-step of its stack gets no Z size, and a
+statement for an axis some images lack is a warning naming them
+(`calibration_axis_absent`). In Python, `write_calibration(calibration, output_folder)`
+writes the file (see §9).
 
 ## 6. Output files
 
@@ -637,11 +671,18 @@ the new outputs and copies of the earlier pair. If restoration also fails (for e
 another program locks an output file), the error names a backup folder: close programs
 using the output files and restore those backups before running again.
 
+Every output file gets the permissions a file you save yourself would get (your umask;
+usually readable by everyone, writable by you), so colleagues can open the results in a
+shared folder. A file that already exists keeps the permissions you gave it. Outputs
+written by versions before v0.4.0 are readable by their owner only: make them readable
+with `chmod a+r <output folder>/*`, or delete them before running again.
+
 Only one run at a time can use an output folder: a run holds a lock file
 (`.morphobricks-preprocessing.lock`) and a second run is refused (`output_locked`). If the
 process is forcibly stopped, its lock stays; remove it with `--remove-stale-lock` once you
-are sure no run is going on. `check` and `masks` hold the lock while they write their
-reports, and are refused the same way. A stopped run leaves the last good results in place;
+are sure no run is going on (every command takes it). `check` and `masks` hold the lock
+while they write their reports, `design` and `calibrate` while they change their files,
+and are refused the same way. A stopped run leaves the last good results in place;
 rerunning checks the table against the manifest and rebuilds a mismatched pair.
 `mask_relationships.json` is removed by a `full` run and when the masks changed since it
 was written; run the `masks` command again.
@@ -722,12 +763,13 @@ continues.
 | `different_pixel_sizes` | Warning | The physical pixel size or z-step (from the metadata or `calibration.csv`) differs between images by more than 0.1 % (for example different objectives). Images outside the largest group of matching sizes are listed; when sizes only change by small steps from image to image, none is listed. Check the microscope settings if this is not intended. |
 | `missing_pixel_size` | Warning | Some images have a pixel size (from the metadata or `calibration.csv`) and others do not, so it cannot be checked; images stated as measured in pixels count as without one, and the message says how many. Export them again with metadata, or state their sizes with `calibrate`, if needed. |
 | `unsupported_pixel_size_unit` | Warning | An image gives its pixel size or z-step in a unit that is not converted (for example inches); only pm, Å, nm, µm, mm, cm and m are. The message names each image, axis and unit. Those sizes are not used: the image is treated as uncalibrated on those axes. Export it again with the pixel size in a supported unit, or state it with `calibrate`, if the physical size matters. Not reported for an axis whose size is stated. |
+| `calibration_axis_absent` | Warning | `calibration.csv` states a size for an axis some images do not have (for example a Z size for 2D images or projections); the message names them. No size is recorded for an axis an image does not have. Give the statement a narrower target, or no action if it is meant for the other images. |
 | `calibration_differs_from_header` | Warning | `calibration.csv` states a pixel size (or `pixels`) that differs from an image's metadata; the message names each image and axis with both sizes. The stated size is used. Correct or remove the statement if the metadata are right. |
 | `calibration_target_not_found` | Error | `calibration.csv` names a folder or image that is not in the experiment (names are compared exactly, case included). Correct the target, or remove the line. |
 | `calibration_unreadable` | Error | `calibration.csv` cannot be read; the message names the line and what is wrong. The file is left as it is: correct it, or remove it to use the sizes in the metadata. |
 | `unbalanced_images` | Warning | A condition and biological repeat has fewer than half or more than twice the median number of images. Check for missing, misplaced or duplicated images. |
 | `repeat_missing_conditions` | Warning | A biological repeat is not found in every condition. It is still used. If it has another folder name in some condition, pair it in the experiment design (step 1). |
-| `design_not_confirmed` | Error | Some repeat groups are not confirmed as comparable. Confirm them in step 1, or set `confirmed` to `true` in `experiment_design.csv`. |
+| `design_not_confirmed` | Error | Some repeat groups are not confirmed as comparable. Confirm them in step 1, with the `design` command (`--confirm GROUP`, `--confirm-all`), or set `confirmed` to `true` in `experiment_design.csv`. |
 | `rgb_not_possible` | Error | The image type RGB was chosen, but the images are not three channels of a whole-number pixel type. Choose fluorescence, or check the axis roles: the RGB samples must have the role C. |
 | `repeat_group_conflict` | Error | A repeat group holds two folders of the same condition. Move one into another group. |
 | `invalid_experiment_design` | Error | A repeat group has no usable name (empty, `NA`, `nan`, `none`, `null`, `n/a`, `<NA>`, or spaces around it), two repeat groups are spelled the same apart from upper and lower case, or a confirmation date is not written `YYYY-MM-DD`. Correct `experiment_design.csv` (the message names the line and column). |
@@ -795,6 +837,22 @@ for group in design.groups:
     design = design.with_confirmed(group, True, "2026-10-26")
 result = run_experiment("/data/exp1", mapping, design=design)
 pairing = design.repeat_groups()  # {(condition, biological_repeat): repeat_group}
+```
+
+The `design` command's Python equivalent changes `experiment_design.csv` in the output
+folder under its lock (refusing what the command refuses, with `DesignEditError`):
+
+```python
+from morphobricks_preprocessing import DesignEdit, edit_design
+
+design, written = edit_design(
+    "/data/exp1_MorphoBricks_Preprocessing",
+    DesignEdit(
+        repeat_groups={("treated", "rep2_day2"): "rep2"},
+        control=("ctrl",),
+        confirm=("rep1", "rep2"),
+    ),
+)  # written is None when nothing changed
 ```
 
 Later bricks read the file with `read_experiment_design(path)`.

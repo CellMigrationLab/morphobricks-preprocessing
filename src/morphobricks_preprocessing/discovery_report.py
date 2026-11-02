@@ -18,7 +18,7 @@ checks gave, with their own severities.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -364,10 +364,34 @@ def _image_lines(data: Mapping) -> list[str]:
         f"Pixel sizes: {kinds[HEADER]} from the header, {kinds[STATED]} stated, "
         f"{kinds[PIXELS]} measured in pixels as stated, {kinds[None]} uncalibrated"
     )
+    lines.extend(_axis_size_line(images, axis) for axis in ("Z", "T") if _with_axis(images, axis))
     statements = data["calibration"]["statements"]
     if data["calibration"]["file"] is not None:
         lines.append(f"  calibration.csv: {plural(len(statements), 'statement')}")
     return lines
+
+
+def _with_axis(images: Iterable[Mapping], axis: str) -> list[Mapping]:
+    """Return the images read with ``axis`` among their roles."""
+    return [image for image in images if axis in (image["roles"] or "")]
+
+
+def _axis_size_line(images: Iterable[Mapping], axis: str) -> str:
+    """Count how the Z or T size of the images with that axis is known; the others have none."""
+    images = list(images)
+    having = _with_axis(images, axis)
+    sources = Counter(
+        image["pixel_sizes"].get(axis, {}).get("source")
+        if isinstance(image["pixel_sizes"], Mapping)
+        else None
+        for image in having
+    )
+    name = "Z step" if axis == "Z" else "Time step"
+    return (
+        f"  {name}: {sources[HEADER]} from the header, {sources[STATED]} stated, "
+        f"{sources[PIXELS]} in pixels, {sources[None]} unknown; "
+        f"{len(images) - len(having)} without {axis} (no size recorded)"
+    )
 
 
 def _calibration_kind(sizes: Mapping | str) -> str | None:

@@ -487,8 +487,8 @@ def design_issues(design: ExperimentDesign) -> list[ValidationIssue]:
                 "that the biological repeats were prepared and acquired under the same "
                 "circumstances, so that they are comparable.",
                 [_folder(row) for g in unconfirmed for row in design.members(g)],
-                "Confirm the biological repeats in step 1 of the notebook, or set confirmed "
-                "to true for every row of these groups in experiment_design.csv.",
+                "Confirm the biological repeats in step 1 of the notebook, with the design "
+                "command (--confirm), or by setting confirmed to true in experiment_design.csv.",
             )
         )
     return issues

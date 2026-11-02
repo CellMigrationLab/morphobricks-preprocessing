@@ -144,6 +144,26 @@ with `read_experiment_design`. They also ask for the image type, `fluorescence` 
 `image_type=`. After writing, the run checks the images' intensities from the table
 (`result.intensity`); `check_table(path)` checks any table.
 
+## Command line
+
+```bash
+morphobricks-preprocessing check /data/exp1          # report, suggested --axes, design template
+morphobricks-preprocessing design --output /data/exp1_MorphoBricks_Preprocessing --confirm-all
+morphobricks-preprocessing run /data/exp1 --axes ZCYX
+morphobricks-preprocessing run --output /data/exp1_MorphoBricks_Preprocessing   # later runs
+morphobricks-preprocessing masks --output /data/exp1_MorphoBricks_Preprocessing # mask step
+morphobricks-preprocessing calibrate --output /data/exp1_MorphoBricks_Preprocessing
+```
+
+`check` writes the report and, when the output folder holds no design, an
+`experiment_design.csv` prefilled from the folders. `design` prints it and confirms repeat
+groups (`--confirm GROUP`, `--confirm-all`), marks controls (`--control`, `--no-control`)
+and pairs repeats (`--repeat-group CONDITION/REPEAT=GROUP`) without editing the file;
+nothing is confirmed unless asked. `run` and `masks` reuse every input the run in the
+output folder recorded. A run that stops writes its report and says so. Every output file
+gets the permissions a file you save yourself would (your umask). Details in the
+[user guide](docs/user_guide.md) §5.
+
 ## Example
 
 ```python

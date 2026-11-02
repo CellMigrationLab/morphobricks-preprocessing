@@ -387,7 +387,7 @@ def test_cli_run_names_the_swapped_files(tmp_path, capsys):
     assert main(["run", str(root), "--axes", "CXY"]) == 1
     out = capsys.readouterr().out
     assert "header CYX, confirmed CXY: ctrl/a.tif" in out
-    assert "Nothing was written" in out
+    assert "no table or manifest was written" in out
 
 
 def test_notebook_marks_roles_that_disagree_with_the_header(tmp_path):

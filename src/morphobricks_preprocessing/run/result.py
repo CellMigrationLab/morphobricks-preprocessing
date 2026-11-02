@@ -62,6 +62,10 @@ class RunResult:
         The earlier output files the run replaced or removed (the report says why).
     input_changes
         The inputs given that differ from those the earlier run recorded.
+    report_written
+        True when the run wrote its report (every run that holds the lock does, also when
+        it stops); False when it was refused before (the lock, an output folder inside
+        the experiment).
     """
 
     output_folder: Path
@@ -81,6 +85,7 @@ class RunResult:
     mode: str = RESTART
     replaced: tuple[str, ...] = ()
     input_changes: tuple[InputChange, ...] = ()
+    report_written: bool = False
 
     @property
     def ok(self) -> bool:

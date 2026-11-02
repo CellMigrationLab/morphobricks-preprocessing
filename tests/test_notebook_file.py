@@ -1,6 +1,6 @@
 """The notebook file: LabConstrictor's portability rules, its release pin, and that it runs.
 
-The rules follow LabConstrictor's notebook portability guide (plan §12 question 52): every
+The rules follow LabConstrictor's notebook portability guide (plan §12 question 58): every
 code cell starts with ``# @title``; Colab-only code runs inside
 ``if "google.colab" in sys.modules:``; no shell or line magics; ``current_version`` and
 ``notebook_name`` as its version check reads them. This notebook is an app-like widget
