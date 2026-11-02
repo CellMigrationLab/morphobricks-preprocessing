@@ -26,11 +26,11 @@ import argparse
 import logging
 import sys
 from collections.abc import Sequence
-from dataclasses import replace
 from pathlib import Path
 
 from .axis_review import review_axes
 from .cli_calibrate import add_calibrate_parser, calibrate_command, calibration_summary
+from .cli_masks import add_masks_arguments, masks_command
 from .cli_run import add_run_arguments, command_preflight, parse_size, run_command
 from .design import (
     DESIGN_FILENAME,
@@ -39,21 +39,13 @@ from .design import (
 )
 from .discovery import default_output_folder
 from .image_type import review_image_type
-from .mask_scan import (
-    DEFAULT_THRESHOLDS,
-    MASK_REPORT_FILENAME,
-    mask_thresholds,
-    scan_masks,
-    write_mask_report,
-)
-from .masks import MaskInventory, mask_axes_option
+from .masks import mask_axes_option
 from .report import (
     axis_check_summary,
     balance_summary,
     design_summary,
     format_issues,
     label_tree,
-    mask_report_summary,
     mask_summary,
     preflight_summary,
 )
@@ -63,9 +55,7 @@ from .run import (
     remove_stale_lock,
     write_check_report,
 )
-from .run.lock import lock_issue, output_lock
 from .run.preflight import fit_calibration
-from .validation import has_errors
 
 __all__ = ["build_parser", "main", "parse_size"]
 
@@ -94,31 +84,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="find every image's masks, describe them and how they relate (reads the masks)",
     )
     _common(masks)
-    masks.add_argument("--log", metavar="FILE", help="write technical details to this file")
-    limits = masks.add_argument_group(
-        "relationship thresholds", "change the defaults (contract §15.1); shares are 0 to 1"
-    )
-    for name, text in _THRESHOLD_HELP.items():
-        limits.add_argument(
-            "--" + name.replace("_", "-"),
-            dest=name,
-            type=float,
-            metavar="X",
-            help=f"{text} (default {DEFAULT_THRESHOLDS[name]:g})",
-        )
+    add_masks_arguments(masks)
     add_calibrate_parser(commands)
     return parser
-
-
-_THRESHOLD_HELP = {
-    "inside_pixel_share": "share of a child's pixels in one parent for it to be inside",
-    "inside_object_share": "share of the children inside for a mask to be inside another",
-    "parent_larger_share": "share of the inside children whose parent is larger",
-    "same_objects_iou": "intersection over union for two objects to match one to one",
-    "same_objects_share": "share of the objects of both masks matched for the same objects",
-    "grouped_label_share": "share of a grouped mask's pixels carrying the parent's label",
-    "grouped_median_pieces": "median pieces per label above which a mask is grouped",
-}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -139,7 +107,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         if args.remove_stale_lock and not _remove_stale_lock(args):
             return 1
-        return {"check": _check, "run": run_command, "masks": _masks}[args.command](args)
+        return {"check": _check, "run": run_command, "masks": masks_command}[args.command](args)
     finally:
         if handler is not None:
             logging.getLogger("morphobricks_preprocessing").removeHandler(handler)
@@ -289,53 +257,6 @@ def _print_design(args: argparse.Namespace, pre: Preflight) -> None:
             "Experiment design: not confirmed yet. 'run' writes experiment_design.csv to "
             "the output folder for you to confirm."
         )
-
-
-def _masks(args: argparse.Namespace) -> int:
-    """Scan the masks and write ``mask_relationships.json``, holding the folder's lock."""
-    changes = {name: getattr(args, name) for name in _THRESHOLD_HELP}
-    try:
-        thresholds = mask_thresholds({k: v for k, v in changes.items() if v is not None})
-    except ValueError as exc:
-        print(exc)
-        return 1
-    pre = command_preflight(args)
-    pre = replace(pre, masks=pre.masks or MaskInventory(folder=None))  # none found
-    print(mask_summary(pre.masks))
-    blocking = [*pre.discovery.issues, *pre.exclusion_issues, *pre.masks.issues]
-    if blocking:
-        print()
-        print(format_issues(blocking))
-    if has_errors(blocking):
-        return 1
-    if not pre.masks.types:
-        print("Give the masks folder with --masks, or use OME-Zarr images with label images.")
-        return 1
-
-    def progress(done: int, total: int, path: str) -> None:
-        if path:
-            print(f"[{done + 1}/{total}] {path}", flush=True)
-
-    print()
-    try:
-        report = scan_masks(pre.masks, pre.discovery.root, progress=progress, thresholds=thresholds)
-    except ValueError as exc:  # masks whose pixels cannot be used (planes, labels)
-        print(f"The masks cannot be used: {exc}")
-        return 1
-    output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
-    output.mkdir(parents=True, exist_ok=True)
-    try:
-        with output_lock(output):  # a run may be replacing or removing the same file
-            path = write_mask_report(report, output / MASK_REPORT_FILENAME)
-    except OutputLockedError as exc:
-        print()
-        print(format_issues([lock_issue(exc)]))
-        return 1
-    print()
-    print(mask_report_summary(report))
-    print()
-    print(f"Report written to {path}")
-    return 0
 
 
 def _attach_log(path: str) -> logging.Handler:
