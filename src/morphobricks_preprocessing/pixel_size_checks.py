@@ -76,24 +76,37 @@ def pixel_size_issues(
     ]
 
 
+def _lost_roles(f: TiffMetadata) -> tuple[str, ...]:
+    """Return the roles whose size an image's malformed calibration leaves unknown.
+
+    X and Y, and Z and T with more than one plane, that the header gives no size for; X and
+    Y when the problem concerns none of them (it is still named unless they are stated).
+    """
+    roles = ("X", "Y", *(role for role in ("Z", "T") if f.length(role) > 1))
+    lost = tuple(role for role in roles if not f.physical_sizes.known(role))
+    return lost or ("X", "Y")
+
+
 def _invalid_issue(
     files: Sequence[TiffMetadata], by_role: Mapping[str, Mapping[str, RecordedSize]]
 ) -> list[ValidationIssue]:
     """Warn about calibrations the metadata give but that cannot be used (issue #94).
 
     Such an image is uncalibrated on the axes concerned (never a substituted value); without
-    this warning it would look merely uncalibrated. Every image is named with what is wrong.
-    An image whose X, Y and (with several depth slices) Z are all stated in
-    ``calibration.csv`` does not use the header's sizes, so it is not named.
+    this warning it would look merely uncalibrated. Every image is named with what is wrong,
+    unless each axis the malformed calibration leaves without a size (:func:`_lost_roles`) is
+    stated in ``calibration.csv``. A time step cannot be stated there, so an image with
+    several time points whose time step is lost is always named.
     """
     found = {}
     for f in files:
-        roles = ("X", "Y", "Z") if f.length("Z") > 1 else ("X", "Y")
+        if not f.physical_sizes.invalid:
+            continue
         recorded = by_role[f.relative_path]
-        uses_header = any(
-            role not in recorded or recorded[role].source in (None, HEADER) for role in roles
-        )
-        if f.physical_sizes.invalid and uses_header:
+        if any(
+            role not in recorded or recorded[role].source in (None, HEADER)
+            for role in _lost_roles(f)
+        ):
             found[f.relative_path] = f.physical_sizes.invalid
     if not found:
         return []

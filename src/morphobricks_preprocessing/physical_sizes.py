@@ -490,7 +490,7 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
     :func:`read_physical_sizes` gives: common spellings such as ``"µm"``, ``"um"``
     or ``"micron"`` become ``"micrometer"``, other units are kept as written.
 
-    Nothing is guessed: without a level-0 scale (OME-NGFF 0.1 to 0.3) every size
+    Nothing is guessed: without a level-0 scale (OME-NGFF 0.3) every size
     is None. Nothing is dropped silently either (issue #94): with a malformed
     scale (transformations that are not a list or of another type, a scale stored
     in a separate file through ``path``, not one number per axis) every size is

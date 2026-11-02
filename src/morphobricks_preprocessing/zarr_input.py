@@ -296,7 +296,7 @@ def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:  # n
     except KeyError as exc:
         raise NgffError(f"the level-0 array {dataset_path!r} is missing") from exc
     version = str(meta.get("version") or first.get("version") or "")
-    axes = ngff_axes(first.get("axes"), len(array.shape), version)
+    axes = ngff_axes(first.get("axes"), version)
     if len(axes) != len(array.shape):
         raise NgffError(f"its metadata names {len(axes)} axes but the array has {len(array.shape)}")
     omero = meta.get("omero") if isinstance(meta.get("omero"), dict) else {}
@@ -331,26 +331,30 @@ def _labels_group(group):  # noqa: ANN001, ANN202
     return labels if hasattr(labels, "group_keys") else None
 
 
-def ngff_axes(axes: Any, ndim: int, version: str = "") -> str:  # noqa: ANN401
+def ngff_axes(axes: Any, version: str = "") -> str:  # noqa: ANN401
     """Translate OME-NGFF axis metadata into one-letter codes.
 
     ``axes`` is the ``multiscales[0]["axes"]`` entry: a list of objects with
-    ``name`` and ``type`` (OME-NGFF 0.4 and 0.5) or of names (0.3). Nothing is
-    guessed when it is absent or empty (issue #73): only OME-NGFF 0.1 and 0.2,
-    whose specification fixes every image array as 5-D in the order ``t, c, z,
-    y, x``, have axes without naming them (:data:`SPEC_FIXED_AXES`, by the
-    ``version`` the metadata states). OME-NGFF 0.3 to 0.5 require the axes, and
-    a store that states another version or none does not say what its axes are:
-    both are refused.
+    ``name`` and ``type`` (OME-NGFF 0.4 and 0.5) or of names (0.3). ``version``
+    is the version the metadata state, read before the axes. Nothing is guessed
+    (issue #73; owner decision, 2 November 2026): OME-NGFF 0.1 and 0.2 stores
+    (:data:`REFUSED_VERSIONS`), whose metadata never name the axes, are refused,
+    whatever they contain; OME-NGFF 0.3 to 0.5 require the axes, and a store that
+    states another version or none does not say what its axes are: a store
+    without axes is refused in every case.
 
     Raises
     ------
     NgffError
-        If the axes are not given and the stated version does not fix them, or
-        are not a list.
+        If the version is 0.1 or 0.2, or the axes are not given, or are not a list.
     """
+    if version in REFUSED_VERSIONS:
+        raise NgffError(
+            f"it is an OME-NGFF {version} store, whose metadata do not name its axes, so "
+            "they are not guessed; re-save it as OME-NGFF 0.4 or later"
+        )
     if not axes:
-        return _spec_fixed_axes(ndim, version)
+        raise NgffError(_no_axes_problem(version))
     if not isinstance(axes, list):
         raise NgffError("its axes metadata is not a list of axes")
     letters = []
@@ -371,34 +375,24 @@ def ngff_axes(axes: Any, ndim: int, version: str = "") -> str:  # noqa: ANN401
     return "".join(letters)
 
 
-SPEC_FIXED_AXES = {"0.1": "TCZYX", "0.2": "TCZYX"}
-"""The OME-NGFF versions whose specification fixes the axes without naming them: "All image
-arrays are 5-dimensional with dimension order (t, c, z, y, x)"."""
+REFUSED_VERSIONS = ("0.1", "0.2")
+"""The OME-NGFF versions that are refused: their metadata never name the axes (their
+specification fixes them as ``t, c, z, y, x``), and no axis order is ever assumed (owner
+decision, 2 November 2026)."""
 
 AXES_REQUIRED_VERSIONS = ("0.3", "0.4", "0.5")
 """The OME-NGFF versions whose specification requires the multiscales ``axes`` field."""
 
 
-def _spec_fixed_axes(ndim: int, version: str) -> str:
-    """Return the axes the stated OME-NGFF version fixes for a store that names none.
-
-    Raises :class:`NgffError` naming what is wrong when the version does not fix them.
-    """
-    fixed = SPEC_FIXED_AXES.get(version)
-    if fixed is not None:
-        if ndim != len(fixed):
-            raise NgffError(
-                f"it does not name its axes, and OME-NGFF {version} fixes them only for "
-                f"5-D arrays (t, c, z, y, x); its array has {ndim} dimensions"
-            )
-        return fixed
+def _no_axes_problem(version: str) -> str:
+    """Return why a store whose metadata name no axes is refused, by the version it states."""
     if version in AXES_REQUIRED_VERSIONS:
-        raise NgffError(
+        return (
             f"its OME-NGFF {version} multiscales metadata has no axes, which that version "
             "requires; add the axes (name and type of each dimension) to its metadata"
         )
     stated = f"states OME-NGFF version {version!r}" if version else "states no OME-NGFF version"
-    raise NgffError(
+    return (
         f"it does not name its axes and {stated}, so what its axes are is not known; add "
         "the axes (name and type of each dimension) to its metadata"
     )

@@ -327,8 +327,9 @@ functions the tests use.
   `file_mapping_for`; issue #72): a misfit, or confirmed roles that contradict the declared
   axes (`ZYX` confirmed `TYX`), is `ome_zarr_axes_mismatch`. Use `file_mapping_for`, never
   `mapping.for_axes`, to get an image's mapping. Missing axes are never guessed (issue
-  #73): only OME-NGFF 0.1/0.2 fix them (`t, c, z, y, x`, 5-D); any other store without
-  axes is `unreadable_ome_zarr`.
+  #73): the version is read first, and OME-NGFF 0.1/0.2 stores are refused whatever they
+  contain (re-save as 0.4 or later; owner, 2 November 2026); any other store without axes
+  is `unreadable_ome_zarr` too, with no confirmation path.
 - **OME-Zarr calibration (issue #94):** a malformed `coordinateTransformations`
   (`ngff_scale.read_scale`) gives unknown sizes with the reason in
   `PhysicalSizes.invalid`, named by the warning `invalid_physical_calibration`; never a

@@ -1476,22 +1476,27 @@ Raised during review; to be decided before the milestones that need them:
     and others) because those offer conversion, and an OME-Zarr image is never converted;
     the fix is to correct the roles. An axis of no known type is therefore never given a
     role, in any arrangement.
-    (2) **Missing axes (#73)**, by the version the metadata states, per the OME-NGFF
-    specifications: 0.1 and 0.2 ("all image arrays are 5-dimensional with dimension order
-    (t, c, z, y, x)") keep `TCZYX` for a 5-D array and refuse other dimensionalities; 0.3,
-    0.4 and 0.5 require `axes`, so a store without them is `unreadable_ome_zarr`; a store
-    without `axes` that states no version or another one is `unreadable_ome_zarr` too.
-    Such an image is refused rather than offered for confirmation as a plain stack: an
-    OME-Zarr image cannot be converted to a named-axis copy, and the declared-role match
-    refuses an axis of no known type. The spec-fixed axes of 0.1/0.2 are recorded as
-    `axes_from: "header"` (the metadata's version fixes them); no new `axes_from` value.
+    (2) **Missing axes (#73)**, by the version the metadata states, read before the axes:
+    an OME-NGFF 0.1 or 0.2 store is `unreadable_ome_zarr` whatever it contains, with the
+    message to re-save it as OME-NGFF 0.4 or later: no spec-default `t, c, z, y, x` is
+    applied (owner, 2 November 2026; the PR had kept it for 5-D arrays). 0.3, 0.4 and 0.5
+    require `axes`, so a store without them is `unreadable_ome_zarr`; a store without
+    `axes` that states no version or another one is `unreadable_ome_zarr` too. Such an
+    image is refused, with no confirmation path, rather than offered for confirmation as a
+    plain stack (owner, 2 November 2026): an OME-Zarr image cannot be converted to a
+    named-axis copy, and the declared-role match refuses an axis of no known type. No new
+    `axes_from` value.
     (3) **Malformed calibration (#94)**: a calibration given but unusable (transformations
     not a list or of another type than scale, translation and identity, two scales, a
     scale in a file or not one number per axis, a scale value of X, Y, Z or T that is not a
     positive finite number) gives unknown sizes on those axes, with what is wrong in
     `PhysicalSizes.invalid`, and the warning `invalid_physical_calibration` naming every
     image (also when every image has it). A warning, not an error: the pixels are readable
-    and the image is uncalibrated, as design v0.4 §3 treats an image without a value. Only
+    and the image is uncalibrated, as design v0.4 §3 treats an image without a value
+    (owner, 2 November 2026: stays a warning). It disappears once every size the malformed
+    calibration leaves unknown is stated in `calibration.csv` (owner, 2 November 2026); a
+    time step cannot be stated there, so a lost time step of a time series stays named
+    (review finding: the PR dropped the warning when only X and Y were stated). Only
     these metadata problems are caught: any other exception while reading the scale makes
     the image unreadable instead of being hidden by a debug log.
 

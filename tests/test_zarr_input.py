@@ -83,7 +83,7 @@ def meta(path, shape, axes, kind="ome-zarr"):
     ],
 )
 def test_ngff_axes_become_letters(axes, ndim, letters):
-    assert ngff_axes(axes, ndim) == letters
+    assert (ngff_axes(axes), len(letters)) == (letters, ndim)
 
 
 # Opening stores -------------------------------------------------------------------------

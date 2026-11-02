@@ -155,30 +155,43 @@ def test_ngff_without_version_or_axes_is_unreadable(tmp_path):
     assert not inspect_image(path, "a.ome.zarr").readable
 
 
+@pytest.mark.parametrize("keep_axes", [False, True])
 @pytest.mark.parametrize("version", ["0.1", "0.2"])
-def test_early_ngff_axes_are_those_its_specification_fixes(tmp_path, version):
+def test_early_ngff_stores_are_refused_whatever_they_contain(tmp_path, version, keep_axes):
+    # Owner decision (2 November 2026): no spec-default t, c, z, y, x is ever applied; an
+    # OME-NGFF 0.1 or 0.2 store is refused, also a 5-D one and one that lists axes.
     def early(multiscale, meta):
-        multiscale.pop("axes")
+        if not keep_axes:
+            multiscale.pop("axes")
         multiscale.pop("coordinateTransformations", None)
         multiscale["datasets"] = [{"path": "0"}]
         multiscale["version"] = version
 
+    root = tmp_path / "exp"
     path = edit_multiscale(
-        write_ngff(tmp_path / "a.ome.zarr", data((1, 2, 3, 6, 8)), "tczyx"), early
+        write_ngff(root / "ctrl" / "a.ome.zarr", data((1, 2, 3, 6, 8)), "tczyx"), early
     )
-    image = open_ngff(path)
-    assert (image.axes, image.version) == ("TCZYX", version)
+    with pytest.raises(NgffError, match=r"OME-NGFF 0\.[12] store.*re-save it as OME-NGFF 0\.4"):
+        open_ngff(path)
+    assert not inspect_image(path, "ctrl/a.ome.zarr").readable
+    found = issue(preflight(root, tmp_path / "o").issues, "unreadable_ome_zarr")
+    assert found.is_error and found.paths == ("ctrl/a.ome.zarr",)
+    assert "re-save it as OME-NGFF 0.4 or later" in found.message
 
 
-def test_ngff_axes_without_metadata_follow_the_version():
-    assert ngff_axes(None, 5, "0.1") == ngff_axes([], 5, "0.2") == "TCZYX"
-    with pytest.raises(NgffError, match="5-D"):
-        ngff_axes(None, 3, "0.2")
+def test_ngff_axes_without_metadata_are_never_guessed():
+    for version in ("0.1", "0.2"):
+        with pytest.raises(NgffError, match="re-save it as OME-NGFF 0.4"):
+            ngff_axes(None, version)
+        with pytest.raises(NgffError, match="re-save it as OME-NGFF 0.4"):
+            ngff_axes(["t", "c", "z", "y", "x"], version)
     for version in ("", "0.3", "0.4", "0.5", "0.6"):
-        with pytest.raises(NgffError):
-            ngff_axes(None, 5, version)
+        with pytest.raises(NgffError, match="add the axes"):
+            ngff_axes(None, version)
+        with pytest.raises(NgffError, match="add the axes"):
+            ngff_axes([], version)
     with pytest.raises(NgffError, match="not a list"):
-        ngff_axes("tczyx", 5, "0.4")
+        ngff_axes("tczyx", "0.4")
 
 
 # Issue #94: a malformed calibration is never dropped silently -------------------------------
@@ -264,6 +277,38 @@ def test_a_stated_calibration_replaces_the_malformed_one(tmp_path):
         "target,axis,size,unit\n.,X,0.5,um\n.,Y,0.5,um\n", encoding="utf-8"
     )
     assert "invalid_physical_calibration" not in codes(preflight(root, out).issues)
+
+
+@pytest.mark.parametrize(
+    ("axes", "shape", "scale", "stated", "named"),
+    [
+        # A time step cannot be stated in calibration.csv: a lost one is always named.
+        ("tyx", (3, 6, 8), [0.0, 0.5, 0.5], "XY", True),
+        # Only X is lost; stating X and Y replaces everything the malformed scale lost.
+        ("tyx", (3, 6, 8), [60.0, -1.0, 0.5], "XY", False),
+        # The whole scale is lost on a z-stack: X and Y stated still leave Z unknown.
+        ("zyx", (3, 6, 8), "dict", "XY", True),
+        ("zyx", (3, 6, 8), "dict", "XYZ", False),
+    ],
+)
+def test_the_warning_stays_until_every_lost_size_is_stated(
+    tmp_path, axes, shape, scale, stated, named
+):
+    root = tmp_path / "exp"
+    transforms = (
+        {"type": "scale", "scale": [2.0, 0.5, 0.25]}
+        if scale == "dict"
+        else [{"type": "scale", "scale": scale}]
+    )
+    write_ngff(root / "ctrl/a.ome.zarr", data(shape), axes, dataset_transforms=transforms)
+    out = tmp_path / "o"
+    out.mkdir()
+    rows = "".join(f".,{axis},0.5,um\n" for axis in stated)
+    (out / "calibration.csv").write_text(f"target,axis,size,unit\n{rows}", encoding="utf-8")
+    found = [i for i in preflight(root, out).issues if i.code == "invalid_physical_calibration"]
+    assert bool(found) is named
+    if named:
+        assert found[0].paths == ("ctrl/a.ome.zarr",)
 
 
 def test_unexpected_errors_reading_the_scale_are_not_swallowed(tmp_path, monkeypatch):
