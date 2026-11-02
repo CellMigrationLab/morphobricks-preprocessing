@@ -58,7 +58,14 @@ from .lock import OutputLockedError, lock_issue, output_lock
 from .modes import FULL, RESTART, check_mode
 from .preflight import Preflight, preflight
 from .publish import _staged_outputs, write_report
-from .recorded import GivenInputs, ResolvedInputs, resolve_inputs, usable
+from .recorded import (
+    GivenInputs,
+    InputChange,
+    ResolvedInputs,
+    design_change,
+    resolve_inputs,
+    usable,
+)
 from .result import RunResult
 from .reuse import read_previous, recorded_experiment_root
 from .rows import _pixel_issues, _range_issues, _row_order
@@ -217,7 +224,8 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
         masks_folder=inputs.masks_folder,
         mask_axes=inputs.mask_axes or None,
     )
-    design, design_problems = _design(options.design, output, previous[0])
+    design, design_problems, design_changed = _design(options.design, output, previous[0])
+    inputs = replace(inputs, changes=(*inputs.changes, *design_changed))
     checked = header_checks(pre, inputs, design, options.memory_limit)
     checked.issues.extend(design_problems)
     run = _Run(output, pre, inputs, options.mode, checked, previous, found)
@@ -363,25 +371,36 @@ def _replaced(run: _Run, masks: dict | None) -> dict[str, str]:
 
 def _design(
     given: ExperimentDesign | None, output: Path, previous: RunManifest | None
-) -> tuple[ExperimentDesign | None, list[ValidationIssue]]:
-    """Return the design given, else the earlier run's ``experiment_design.csv``."""
+) -> tuple[ExperimentDesign | None, list[ValidationIssue], tuple[InputChange, ...]]:
+    """Return the design given, else the earlier run's ``experiment_design.csv``.
+
+    Also the change from the recorded design: a design given that differs from it, or the
+    file edited since the earlier run wrote it.
+    """
     path = output / DESIGN_FILENAME
     recorded = usable(previous)
-    if given is not None or recorded is None or recorded.experiment_design_sha256 is None:
-        return given, []
-    if not path.exists():
-        return None, []
+    if recorded is None or recorded.experiment_design_sha256 is None or not path.exists():
+        return given, [], ()
+    edited = file_sha256(path) != recorded.experiment_design_sha256
     try:
-        return read_experiment_design(path), []
+        on_file = read_experiment_design(path)
     except DesignFormatError as exc:
-        return None, [
-            error(
-                "design_unreadable",
-                f"The experiment design of the earlier run cannot be read: {exc}",
-                [path.as_posix()],
-                "Correct the file, or delete it to confirm the design again.",
-            )
-        ]
+        if given is not None:
+            return given, [], design_change(None, given, edited=True)
+        return (
+            None,
+            [
+                error(
+                    "design_unreadable",
+                    f"The experiment design of the earlier run cannot be read: {exc}",
+                    [path.as_posix()],
+                    "Correct the file, or delete it to confirm the design again.",
+                )
+            ],
+            (),
+        )
+    used = on_file if given is None else given
+    return used, [], design_change(on_file, used, edited=edited)
 
 
 def _check_arguments(mode: str, image_type: str | None, missing_as_singleton: object) -> None:

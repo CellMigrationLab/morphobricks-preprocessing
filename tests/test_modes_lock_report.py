@@ -228,6 +228,25 @@ def test_the_recorded_design_is_reused_and_new_unconfirmed_repeats_stop_a_restar
     assert "design_not_confirmed" in (clean.output / REPORT_TEXT_FILENAME).read_text("utf-8")
 
 
+def test_a_changed_design_is_named_with_its_effect(tmp_path):
+    clean = make_clean_run(tmp_path, axes="YX", shape=(16, 20), design=True)
+    same = run_experiment(clean.experiment, output_folder=clean.output, design=clean.result.design)
+    assert same.written and same.input_changes == ()
+    given = clean.result.design.with_control("drug", True)
+    changed = run_experiment(clean.experiment, output_folder=clean.output, design=given)
+    (change,) = changed.input_changes
+    assert change.name == "design" and change.effect == "no row is affected"
+    assert "drug/rep1" in change.given and "control" in change.given
+    assert "control" not in change.recorded and changed.read == ()
+    assert report(changed)["input_changes"] == [change.to_dict()]
+    # The file edited in the output folder, as the CLI's user does, is a change too.
+    path = clean.output / "experiment_design.csv"
+    write_experiment_design(given.with_control("drug", False), path)
+    edited = run_experiment(clean.experiment, output_folder=clean.output)
+    assert [c.name for c in edited.input_changes] == ["design"]
+    assert "Changed design:" in (clean.output / REPORT_TEXT_FILENAME).read_text("utf-8")
+
+
 # The lock ------------------------------------------------------------------------------------
 
 

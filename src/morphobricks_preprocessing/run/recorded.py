@@ -24,6 +24,7 @@ from morphobricks_normalization.ranges import HistogramSettings
 
 from ..axes import AxisMapping
 from ..axis_check import ConfirmedAxes
+from ..design import ExperimentDesign
 from ..fingerprint import Fingerprint
 from ..manifest import LEGACY_MANIFEST_VERSION, RunManifest
 
@@ -222,6 +223,57 @@ def _moved(given: GivenInputs, before: RunManifest) -> bool:
     return root is not None and _comparable(root, "experiment_root") != _comparable(
         before.experiment_root, "experiment_root"
     )
+
+
+def design_change(
+    recorded: ExperimentDesign | None, used: ExperimentDesign, *, edited: bool
+) -> tuple[InputChange, ...]:
+    """Return the change of the design from the one the earlier run recorded, if any.
+
+    Only the answers count (repeat group, confirmation, control) of the folders in both;
+    folders added or removed since are the dataset's business, and dates are filled in
+    by the run.
+
+    Parameters
+    ----------
+    recorded
+        ``experiment_design.csv`` of the earlier run, or None when it cannot be read.
+    used
+        The design the run uses.
+    edited
+        True when the file differs from the one the earlier run wrote (SHA-256).
+
+    Returns
+    -------
+    tuple
+        One :class:`InputChange` named ``"design"``, or nothing.
+    """
+    if recorded is None:
+        return (
+            InputChange("design", "its file cannot be read now", "the design given", UNAFFECTED),
+        )
+    before, now = _answers(recorded), _answers(used)
+    differ = [key for key in sorted(set(before) & set(now)) if before[key] != now[key]]
+    if differ:
+        was = "; ".join(f"{key}: {before[key]}" for key in differ)
+        given = "; ".join(f"{key}: {now[key]}" for key in differ)
+        return (InputChange("design", was, given, UNAFFECTED),)
+    if edited:
+        was = "experiment_design.csv as the earlier run wrote it"
+        return (InputChange("design", was, "the file edited since", UNAFFECTED),)
+    return ()
+
+
+def _answers(design: ExperimentDesign) -> dict[str, str]:
+    """Return each folder's answers in words, ``{"ctrl/r1": "group r1, confirmed"}``."""
+    return {
+        f"{row.condition}/{row.biological_repeat}": ", ".join(
+            [f"group {row.repeat_group}"]
+            + (["confirmed"] if row.confirmed else ["not confirmed"])
+            + (["control"] if row.control else [])
+        )
+        for row in design.rows
+    }
 
 
 def recorded_mask_axes(manifest: RunManifest) -> dict[str, str]:
