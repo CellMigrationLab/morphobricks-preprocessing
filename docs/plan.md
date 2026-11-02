@@ -1778,3 +1778,15 @@ Raised during review; to be decided before the milestones that need them:
     time), metadata only as design v0.4 §1 decides; content hashing stays the owner's
     call. (5) **`copy_changed_after_conversion`** is an error that stops the run before it
     writes (owner, 2 November 2026): the bricks would refuse the run anyway.
+70. Which inputs does the notebook start from when the output folder holds an earlier run
+    (audit I4)? *Decided (audit I4, 2 November 2026):* those the run would keep, worked out
+    by the run's own rule (`run.planned.recorded_inputs`, i.e. `resolve_inputs` given
+    nothing): the exclusions, the histogram settings (with `min_central_bins`, which has no
+    widget) and the intensity limits when the output folder changes (as the design is read
+    again, #98); the bin count, only when recorded for the checked pixel type, and the
+    missing-axes answer with each check; the image type preselected in step 2 (still to be
+    confirmed). The masks folder and mask axes were already kept by leaving the box empty.
+    An untouched widget gives the recorded value, so a notebook run after a CLI run with
+    `--bins 64 --exclude …` keeps both; an edit is a change named in "What will happen" and
+    in `input_changes`. A folder without a run sets back only the values filled from the
+    other folder and not edited, so exclusions typed for a new folder are kept.

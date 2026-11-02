@@ -412,6 +412,15 @@ results or comparing another grouping.
        **run_manifest.json** (§6); changing it on a later run reads no image again.
 3. **Compute the histograms.**
    - **Before you run** lists anything still to do.
+   - **The settings start from the earlier run** in the output folder, as the command
+     line's `run` keeps them: the excluded images (filled in step 1 when you choose the
+     folders), the bins (when recorded for the same pixel type), the histogram range and
+     its quantiles, the intensity limits, the image type (preselected in step 2) and the
+     answer about missing axes; the masks folder and mask axes are kept by leaving the
+     masks folder empty. Leave a setting as it is to keep it. A setting you change is
+     listed under **What will happen** and in the run's report. Choosing another output
+     folder fills them again from that folder's run; a folder without a run sets back the
+     values filled from the other folder that you did not edit.
    - **What will happen** names the output folder and files, the image type and the masks
      recorded (or that the recorded masks are dropped), and says
      whether an earlier run was found and what will be read. It lists the inputs that differ

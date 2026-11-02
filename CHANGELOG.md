@@ -119,6 +119,10 @@ and the bricks' migration).
   images (PP-11, #124; issues #75, #76). The run reads the copies themselves (issue #79).
 - Masks one pixel high or wide are read as 2-D `YX` masks (#63).
 - Step 1 keeps an unreadable `experiment_design.csv` untouched (#61).
+- The notebook starts from the inputs the earlier run in the output folder recorded: the
+  exclusions, bins, histogram and intensity settings, image type and missing-axes answer,
+  from the run's own rule (`run.planned.recorded_inputs`). An untouched notebook kept
+  neither a CLI run's `--bins` nor its `--exclude` (audit I4; plan §12 question 70).
 
 ### Removed
 

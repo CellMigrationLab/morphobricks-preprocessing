@@ -62,6 +62,7 @@ class IntensityPanel:
     def __init__(self, title: str, explanation: str):  # noqa: ANN204
         self.records: list[PlaneRecord] = []
         self.report: IntensityReport | None = None
+        self._used: tuple[tuple, IntensityCheckSettings] | None = None
         self._build_settings_box()
         self.status = widgets.HTML()
         self.tiles = widgets.HTML()
@@ -185,18 +186,28 @@ class IntensityPanel:
 
     def settings(self) -> IntensityCheckSettings:
         """Return the limits as currently set."""
+        shown = (self.outlier_limit.value, self.saturation_percent.value, self.min_images.value)
+        # The limits set by :meth:`use`, exactly, while unedited: a fraction shown as a
+        # percentage does not always come back as the same float.
+        if self._used is not None and shown == self._used[0]:
+            return self._used[1]
         return IntensityCheckSettings(
             outlier_limit=self.outlier_limit.value,
             saturation_limit=self.saturation_percent.value / 100,
             min_images=self.min_images.value,
         )
 
+    def use(self, settings: IntensityCheckSettings) -> None:
+        """Show ``settings`` as the limits, e.g. those an earlier run recorded."""
+        self.outlier_limit.value = settings.outlier_limit
+        self.saturation_percent.value = 100 * settings.saturation_limit
+        self.min_images.value = settings.min_images
+        shown = (self.outlier_limit.value, self.saturation_percent.value, self.min_images.value)
+        self._used = (shown, settings)
+
     def restore_defaults(self) -> None:
         """Set the default limits again."""
-        defaults = IntensityCheckSettings()
-        self.outlier_limit.value = defaults.outlier_limit
-        self.saturation_percent.value = 100 * defaults.saturation_limit
-        self.min_images.value = defaults.min_images
+        self.use(IntensityCheckSettings())
 
     def show(self, records: Sequence[PlaneRecord]) -> None:
         """Check the intensities of ``records`` and show the warnings and plots."""
