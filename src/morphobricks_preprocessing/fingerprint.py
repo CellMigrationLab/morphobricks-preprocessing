@@ -178,13 +178,25 @@ def unchanged_confirmation(
         return mapping
     root = Path(experiment_root)
     kept = {
-        rel: recorded for rel, recorded in mapping.files.items() if _current(root / rel) == recorded
+        rel: recorded
+        for rel, recorded in mapping.files.items()
+        if current_fingerprint(root / rel) == recorded
     }
     return ConfirmedAxes(mapping.mapping, kept)
 
 
-def _current(path: Path) -> Fingerprint | None:
-    """Return a file's fingerprint now, or None when it is gone."""
+def current_fingerprint(path: Path) -> Fingerprint | None:
+    """Return a file's fingerprint now, or None when it is gone.
+
+    Parameters
+    ----------
+    path
+        The file.
+
+    Returns
+    -------
+    Fingerprint or None
+    """
     try:
         return Fingerprint.of(path)
     except FileNotFoundError:

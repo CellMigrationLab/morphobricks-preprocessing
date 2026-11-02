@@ -25,7 +25,7 @@ from morphobricks_preprocessing.design import read_experiment_design  # noqa: E4
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 from morphobricks_preprocessing.run import LOCK_FILENAME, write_calibration  # noqa: E402
 from run_files import check_outputs, finished_pid  # noqa: E402
-from tiff_tree import write_data  # noqa: E402
+from tiff_tree import write_data, write_plain  # noqa: E402
 
 HEADER = {"PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5, "PhysicalSizeZ": 0.43}
 
@@ -303,6 +303,43 @@ def test_the_plan_reads_the_calibration_the_run_reads(experiment):
     write_calibration(Calibration((calibration_entry(".", "X", 0.7, "um"),)), output)
     planned = nb._planned_changes(output.resolve())
     assert [change.name for change in planned] == ["calibration"]
+    assert nb.run().input_changes == planned
+
+
+def test_the_plan_names_the_mask_changes_the_run_names(experiment, tmp_path):
+    """The masks folder and mask axes given, changed or dropped: plan and run agree (PP-10c)."""
+    first, second = tmp_path / "masks_a", tmp_path / "masks_b"
+    for folder in (first, second):
+        for rel in ["ctrl/rep1/a.tif", "ctrl/rep2/a.tif", "drug/rep1/a.tif", "drug/rep2/a.tif"]:
+            write_plain(folder / "cells" / rel, np.ones((2, 16, 16), np.uint16))  # IYX
+    nb = PreprocessingNotebook(str(experiment))
+    for step in (nb.folder_step, nb.axis_step, nb.run_step):
+        step()
+    nb.masks_folder.value = str(first)
+    nb.check_button.click()
+    nb._mask_choices["cells"].value = "ZYX"  # stated as --mask-axes cells=ZYX
+    nb.masks_button.click()
+    nb.labels_confirmed.button.click()
+    for toggle in nb.group_confirmations.values():
+        toggle.button.click()
+    confirm_axes(nb)
+    nb.image_type_checked.button.click()
+    assert nb.run().written
+    output = output_of(experiment).resolve()
+    assert nb._planned_changes(output) == ()
+    nb.masks_folder.value = str(second)  # a new masks folder: its statements start over
+    nb._mask_choices["cells"].value = "ZYX"
+    nb.masks_button.click()
+    planned = nb._planned_changes(output)
+    assert [change.name for change in planned] == ["masks_folder"]
+    assert nb.run().input_changes == planned
+    nb.masks_folder.value = ""
+    nb.masks_drop.click()  # explicit, as --no-masks
+    nb.masks_button.click()
+    planned = nb._planned_changes(output)
+    assert [(change.name, change.given) for change in planned] == [
+        ("masks_folder", "none (dropped)")
+    ]
     assert nb.run().input_changes == planned
 
 

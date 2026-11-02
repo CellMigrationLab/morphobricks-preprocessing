@@ -63,6 +63,9 @@ class _RunPlan:
                 f"Image type: <b>{IMAGE_TYPE_NAMES[self.confirmed_image_type]}</b>, recorded in "
                 "the manifest for later bricks (the histograms are the same for either type)."
             )
+        masks = self._plan_masks_line()
+        if masks:
+            lines.append(masks)
         zarrs = sum(f.is_ome_zarr for f in files)
         if zarrs:
             lines.append(
@@ -126,6 +129,8 @@ class _RunPlan:
             experiment_root=Path(ui.clean_path(self.folder.value)).resolve(),
             mapping=self.confirmed_mapping,
             exclude=tuple(self._excluded()),
+            masks_folder=self._masks_given(),
+            mask_axes=dict(self._mask_axes) or None,
             image_type=self.confirmed_image_type,
             bin_count=self.bins.value or None,
             missing_as_singleton=self.missing_as_singleton.value,

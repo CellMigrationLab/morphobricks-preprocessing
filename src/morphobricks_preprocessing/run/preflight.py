@@ -190,11 +190,6 @@ def preflight(
     discovery = _without_excluded_masks(discovery, excluded)
     images = [path for path in discovery.images if path not in excluded]
     metadata, calibration = _calibrated(inspect_images(root, images), discovery.images, output)
-    masks = find_masks(
-        masks_folder, discovery, metadata.files, mask_axes=mask_axes, output_folder=output
-    )
-    if masks_folder is None and not masks.files and not masks.issues:
-        masks = None  # no masks folder and no label images: the run has no masks
     return Preflight(
         discovery=discovery,
         metadata=metadata,
@@ -202,9 +197,55 @@ def preflight(
         exclusion_issues=tuple(_exclusion_issues(discovery, excluded)),
         suggested_mapping=prefill_experiment_mapping(metadata),
         dataset=check_dataset(discovery, excluded=excluded),
-        masks=masks,
+        masks=_masks(discovery, metadata, masks_folder, mask_axes, output),
         calibration=calibration,
     )
+
+
+def remasked(
+    pre: Preflight,
+    masks_folder: str | os.PathLike | None,
+    mask_axes: Mapping[str, str] | None,
+    output_folder: str | os.PathLike,
+) -> Preflight:
+    """Return the preflight with its masks paired again, as :func:`preflight` pairs them.
+
+    The notebook calls it when the user changes the masks folder or states the axes of a
+    mask type, so the masks follow without checking the folder again (the answers given
+    so far are kept). Only the masks' headers are read.
+
+    Parameters
+    ----------
+    pre
+        The preflight.
+    masks_folder, mask_axes
+        As :func:`preflight`.
+    output_folder
+        The output folder (it may not be inside the masks folder).
+
+    Returns
+    -------
+    Preflight
+        With :attr:`Preflight.masks` replaced.
+    """
+    masks = _masks(pre.discovery, pre.metadata, masks_folder, mask_axes, Path(output_folder))
+    return replace(pre, masks=masks)
+
+
+def _masks(
+    discovery: DiscoveryResult,
+    metadata: MetadataReport,
+    masks_folder: str | os.PathLike | None,
+    mask_axes: Mapping[str, str] | None,
+    output: Path,
+) -> MaskInventory | None:
+    """Pair the analysed images with their masks; None without masks folder or label image."""
+    masks = find_masks(
+        masks_folder, discovery, metadata.files, mask_axes=mask_axes, output_folder=output
+    )
+    if masks_folder is None and not masks.files and not masks.issues:
+        return None  # no masks folder and no label images: the run has no masks
+    return masks
 
 
 def _calibrated(

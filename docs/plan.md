@@ -439,6 +439,38 @@ API, CLI). The notebook and CLI only call the API.
   - `PYRAMID_OPTIONS`, public but unused since `convert_tiffs` was removed (v0.4.0, PP-2),
     is removed from `notebook_options` and `notebook_ui.__all__`; migration-guide note for
     PP-13: nothing replaces it.
+- **PP-10c (the notebook's masks field)** *(implemented, PR #122; owner decision of 2 November
+  2026: before PP-11)*: design v0.4 §2 "the notebook has a masks field, with mask-axis
+  statements per mask type" (contract §9.2 "Notebook masks", §15):
+  - Step 1 has an optional **Masks folder** (Browse… as the experiment field, with the Colab
+    "Copy path" message); **Check folder** pairs it with `preflight(masks_folder=,
+    mask_axes=)`, as `check --masks`. The masks folder and statements are those the run
+    would use (`run.planned.planned_masks`: given, else recorded); the **Masks** card shows
+    each type (`mask_review.mask_type_rows`), the images without one and the masks' issues
+    (by the confirmed roles once there are any: `mask_checks.mask_issues`, as `run`).
+  - **Mask axes** per type, asked only where needed (`mask_review.mask_axes_questions`:
+    unnamed axes or a statement that does not fit; 2-D masks of multi-plane images once the
+    roles are confirmed, answered `YX`), offering only the statements `mask_roles` accepts
+    for every mask of the type; nothing preselected, nothing applied until **Check the
+    masks** (`run.preflight.remasked`, other answers kept). `MaskFile.named_axes` is new,
+    and a mask whose roles are refused keeps its header axes and shape, so the choices can
+    be worked out.
+  - The run is given the same masks folder and mask axes; **What will happen** names them
+    and the changes (`planned_changes` stays equal to the run's `input_changes`, tested);
+    **Drop the recorded masks** is `--no-masks`. Step 3 is gated on masks without errors and
+    a pairing matching the choices.
+  - Fix found on the way: `--no-masks` (`masks_folder=False`) after a run with stated mask
+    axes was refused with `invalid_mask_axes`; it now drops the statements recorded for the
+    masks folder's masks (label-image statements are kept).
+  - Embedding: `folder_step(show_output=False)` shows neither card and pairs no masks
+    folder (MorphoRelate has its own masks card); the embedding API is unchanged.
+  - Not in this PR: a notebook button for the `masks` step (`mask_relationships.json`); it is
+    PP-10d.
+- **PP-10d (the notebook's masks-step button)** *(not started; owner decision of 2 November
+  2026: right after PP-10c)*: a notebook button for the `masks` step (describe the masks:
+  `mask_relationships.json`). It first moves the CLI's scan-and-write-under-lock out of
+  `cli_masks.masks_command` into a shared orchestration function that the CLI and the
+  notebook both call.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;

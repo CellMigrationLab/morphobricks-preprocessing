@@ -7,8 +7,9 @@ The notebook ``notebooks/MorphoBricks_Preprocessing.ipynb`` shows the four steps
    taken from the folder names, and confirm the experiment design: which
    biological repeats belong together across conditions, that they are
    comparable, and which conditions are controls; see and state the pixel
-   sizes. The check writes its report (and the design template) to the output
-   folder, as the command line's ``check`` does.
+   sizes; with a masks folder, see the masks paired with the images and state the
+   axes of the mask types that need it. The check writes its report (and the design
+   template) to the output folder, as the command line's ``check`` does.
 2. **Axes** - review the role of every image axis, look at planes with the
    preview, and confirm; then confirm the image type (fluorescence or RGB).
 3. **Run** - check that everything is ready, see what will happen (the mode and
@@ -52,6 +53,7 @@ from .notebook_axis_step import _AxisStep
 from .notebook_calibration import _CalibrationCard
 from .notebook_design import _DesignCard
 from .notebook_folder import _FolderStep
+from .notebook_masks import _MasksCard
 from .notebook_options import (
     _PACKAGE_LOGGER,
     EXCLUDABLE_CODES,
@@ -114,6 +116,7 @@ __all__ = [
 
 class PreprocessingNotebook(
     _FolderStep,
+    _MasksCard,
     _DesignCard,
     _CalibrationCard,
     _OutputCards,
@@ -172,6 +175,7 @@ class PreprocessingNotebook(
         self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None
         self._build_output_cards()
         self._build_calibration_card()
+        self._build_masks_cards()
         self._build_folder_step(str(experiment_folder), str(output_folder))
         self._build_axis_step()
         self._build_run_step()
@@ -236,8 +240,9 @@ class PreprocessingNotebook(
             brick writes its histogram table; the check then uses the folder in its
             box (the default when empty). The card is shown again when the check
             finds that folder inside the experiment, so it can be fixed. It also
-            leaves out the "Pixel sizes" card, and the check writes nothing (no
-            report, no design template): the step only checks.
+            leaves out the "Pixel sizes" card and the masks folder with its "Masks"
+            card (the check then pairs no masks folder, as without one), and the check
+            writes nothing (no report, no design template): the step only checks.
         show_next
             False hides the "What next?" box, which names this notebook's next
             steps.
@@ -278,6 +283,7 @@ class PreprocessingNotebook(
                 *([ui.intro(intro)] if intro else []),
                 self.folder_card,
                 self.output_card,
+                *([self.masks_input_card] if show_output else []),
                 self.exclude_box,
                 self.check_button,
                 self.folder_status,
@@ -288,6 +294,7 @@ class PreprocessingNotebook(
                 *([self.design_card] if show_design else []),
                 *([self.calibration_card] if show_output else []),
                 self.consistency_card,
+                *([self.masks_card] if show_output else []),
                 self.issues_card,
                 self.folder_next,
             ],

@@ -202,7 +202,14 @@ class _FolderStep:
         self.folder_status.value = ui.working("Checking the folders and image headers…")
         try:
             with self.log.attached():
-                pre = preflight(folder, self._output_folder(), exclude=self._excluded())
+                masks, mask_axes = self._check_masks_arguments(Path(folder).resolve())
+                pre = preflight(
+                    folder,
+                    self._output_folder(),
+                    exclude=self._excluded(),
+                    masks_folder=masks,
+                    mask_axes=mask_axes,
+                )
                 self._write_check(pre)
         finally:
             self._idle(self.check_button, " Check folder", "search")
@@ -245,11 +252,12 @@ class _FolderStep:
         return sorted(merged, key=lambda issue: not issue.is_error)
 
     def _show_issue_summary(self) -> None:
-        """Show the check's status, tiles, consistency and messages."""
+        """Show the check's status, tiles, consistency and messages (masks on their card)."""
         pre = self.preflight
         issues = self._step1_issues()
-        errors = [i for i in issues if i.is_error]
-        warnings = [i for i in issues if not i.is_error]
+        counted = [*issues, *self._mask_issues_now()]
+        errors = [i for i in counted if i.is_error]
+        warnings = [i for i in counted if not i.is_error]
         if errors:
             self.folder_status.value = ui.status(
                 "error",
@@ -266,7 +274,7 @@ class _FolderStep:
                 "ok",
                 "The folder looks good.",
             )
-        self.folder_tiles.value = ui.tiles(_folder_tiles(pre, issues))
+        self.folder_tiles.value = ui.tiles(_folder_tiles(pre, counted))
         # Consistency issues have their own card next to the balance table; the
         # messages card keeps the folder, file and readability problems.
         consistency = [i for i in issues if i.code in CONSISTENCY_CODES]
@@ -343,6 +351,7 @@ class _FolderStep:
         ui.set_visible(self.consistency_card, False)
         ui.set_visible(self.issues_card, False)
         ui.set_visible(self.calibration_card, False)
+        self._reset_masks()
         self.folder_lock.hide()
         self.check_report.clear()
         self._refresh_axis_step()

@@ -207,7 +207,8 @@ class _RunStep:
         if self.result is None:
             self.run_next.value = ""
         pre = self.preflight
-        folder_ok = pre is not None and pre.ok
+        # The masks have their own item below: a mask error is fixed on the masks card.
+        folder_ok = pre is not None and not has_errors(self._step1_issues())
         review = None
         if pre is not None and self.confirmed_mapping is not None:
             # Axis confirmation can resolve a preflight missing-axes error, but
@@ -235,6 +236,10 @@ class _RunStep:
             (self.confirmed_mapping is not None, "Confirm the axis roles (step 2)"),
             (self.confirmed_image_type is not None, "Confirm the image type (step 2)"),
         ]
+        masks = self._masks_ready_item(review)
+        if masks is not None:
+            items.insert(1, masks)
+        self._refresh_masks(review)
         missing = [text for done, text in items if not done]
         if missing:
             self.run_next.value = ""
@@ -296,6 +301,8 @@ class _RunStep:
             memory_limit=self._memory_limit(),
             missing_as_singleton=given.missing_as_singleton,
             exclude=given.exclude,
+            masks_folder=given.masks_folder,
+            mask_axes=given.mask_axes,
             mode=self.mode.value,
             progress=self._progress,
             design=self.design,
