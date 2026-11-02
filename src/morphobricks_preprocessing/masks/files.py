@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ..discovery import DiscoveryResult, is_system_name, is_tiff_name
 from ..image_names import position_id
+from ..links import LinkGuard
 from ..metadata import TiffMetadata
 from ..validation import ValidationIssue, agree, error, has_errors, plural, warning
 from ..zarr_input import (
@@ -138,7 +139,7 @@ def _folder_masks(
     A mask matching no image is the warning ``mask_without_image``, and a mask of an excluded
     image the warning ``mask_of_excluded_image``: neither is used (design v0.4 §3 keeps the
     severity of every existing check). ``images`` are the analysed images' paths (excluded
-    images left out).
+    images left out). Links are followed only inside the masks folder (:mod:`..links`).
     """
     by_key, by_leaf = {}, {}
     for leaf in discovery.leaves:
@@ -149,14 +150,13 @@ def _folder_masks(
             by_key[(prefix + stem).casefold()] = image
             by_leaf.setdefault(prefix.casefold(), []).append((stem, image))
     files, unpaired, loose, ambiguous, excluded = [], [], [], [], []
-    for path in sorted(folder.rglob("*")):
-        relative = path.relative_to(folder)
-        if any(is_system_name(part) for part in relative.parts) or not path.is_file():
-            continue
-        mask_path = relative.as_posix()
+    links = LinkGuard(folder, "masks folder")
+    for path, real in links.files(folder, is_system_name):
+        relative = path.relative_to(folder)  # a broken link is kept: its reader names it
         if not is_tiff_name(path.name):
-            (loose if len(relative.parts) == 1 else unpaired).append(mask_path)
+            (loose if len(relative.parts) == 1 else unpaired).append(relative.as_posix())
             continue
+        mask_path = links.claim(path, real)
         found = _suffix_matches(relative, by_leaf)
         if len(relative.parts) > 1:
             key = Path(*relative.parts[1:]).with_name(position_id(path.name)).as_posix()
@@ -168,7 +168,7 @@ def _folder_masks(
             files.append(MaskFile(found[0][0], found[0][1], mask_path, FOLDER))
         else:
             (ambiguous if found else unpaired).append(mask_path)
-    issues = [*_layout_issues(loose, unpaired), *_excluded_issues(excluded)]
+    issues = [*links.issues(), *_layout_issues(loose, unpaired), *_excluded_issues(excluded)]
     if ambiguous:
         issues.append(
             error(

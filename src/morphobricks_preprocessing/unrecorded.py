@@ -13,7 +13,10 @@ discovers them itself, so an image added after the run would be left out without
   no image are left out, as the run leaves them out), and the label images of the recorded
   OME-Zarr images, less the masks the run recorded. Label images are never skipped: without
   the ``zarr`` extra, or with a ``labels`` group that cannot be read, the check raises
-  instead of passing (owner, 2 November 2026).
+  instead of passing (owner, 2 November 2026);
+- links: a link that leaves the experiment or masks folder, leads back to a folder holding
+  it, or is a second path to a file is never passed over: the check raises
+  :class:`.links.LinkRefusedError` (issue #81), as the run refuses it.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .discovery import DiscoveryResult, discover_experiment
+from .links import refuse_links
 from .manifest import RunManifest
 from .masks import FOLDER
 from .masks.files import _folder_masks
@@ -84,9 +88,13 @@ def unrecorded_files(
     NgffError
         When the ``labels`` group of a recorded OME-Zarr image cannot be read (the message
         names the image).
+    LinkRefusedError
+        When the experiment or masks folder holds a link the run refuses (the message names
+        each link).
     """
     recorded = {entry.relative_path for entry in manifest.files}
     discovery = discover_experiment(experiment_root, output_folder)
+    refuse_links(discovery.issues)
     images = set(discovery.images) - recorded - set(manifest.settings.exclude)
     recorded_masks = {m["path"] for m in (manifest.masks or {}).get("files", ())}
     masks = _folder_mask_paths(masks_root, discovery, recorded) | _label_paths(
@@ -101,7 +109,8 @@ def _folder_mask_paths(
     """Return the masks-folder files that pair with a recorded image, by the run's rules."""
     if masks_root is None or not masks_root.is_dir():
         return set()
-    found, _ = _folder_masks(masks_root, discovery, recorded)
+    found, issues = _folder_masks(masks_root, discovery, recorded)
+    refuse_links(issues)
     return {mask.path for mask in found if mask.source == FOLDER}
 
 

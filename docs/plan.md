@@ -557,8 +557,12 @@ API, CLI). The notebook and CLI only call the API.
   header naming a column twice or a column without a name, and `RunInputs.design()` reads
   with `read_confirmed_design`; changing the notebook's output folder reloads the design
   from the new folder and asks again.
+- **Before the audit: links and the log (issues #81 and #99)** *(done; questions 64 and
+  65)*: `links.LinkGuard` follows a link only inside the folder walked (discovery, OME-Zarr
+  stores, the masks folder; `RunInputs` and `convert` refuse the same links), and the CLI
+  checks `--log` (`log_target`) before opening it, after the other arguments.
 - **PP-12 (staging and resume)** *(implemented, PR #132; design v0.4 §1, §8; issues #86,
-  #90; question 64; contract §9.4)*:
+  #90; question 66; contract §9.4)*:
   - Move only, first: `source_fingerprint` and `LABELS_GROUP` from `manifest` to
     `inventory` (io; `manifest` re-exports `source_fingerprint`).
   - #86: an OME-Zarr image's fingerprint adds the SHA-256 of its inventory (each file's
@@ -574,7 +578,7 @@ API, CLI). The notebook and CLI only call the API.
     per file); a stopped run keeps `.staging`, a published run removes it; `full` reuses
     none.
   - Crash-consistent publication (`run.generation`, owner decision of 2 November 2026,
-    question 64): the generation in `.publish` with a publication record, committed by
+    question 66): the generation in `.publish` with a publication record, committed by
     the manifest's `os.replace`, then moved in; the lock finishes or discards an
     interrupted publication; `RunInputs` reads by SHA-256 (`published_path`) and again if
     the manifest changed (`read_stable`). The backup-and-restore protocol is gone.
@@ -1623,8 +1627,33 @@ Raised during review; to be decided before the milestones that need them:
     answer (the folder may still be being typed), and the design card says which. The run
     is gated as before, so it runs only on the new folder's confirmed design. No copy
     action: the user answers again, or copies the file. Contract §12; user guide §4.
-
-64. How does a run resume after an interruption, and how is its publication made
+64. Are symbolic links in the experiment or masks folder followed (issue #81)? *Decided
+    (owner, 2 November 2026): contain.* A link (file or folder; on Windows also a directory
+    junction) is followed only when its real path stays inside the experiment folder, or the
+    masks folder for masks, both resolved; a link that leaves it is refused
+    (`link_outside_folder`, naming each link and its target, a broken link too). One file
+    reached by two paths is refused, naming both (`linked_twice`); hard links too (the same
+    device and inode, from the one `stat` taken per image or mask; owner, 2 November 2026,
+    in review). A link back to a folder on its own path is `link_loop`. A broken link that
+    stays inside is reported by its reader, never skipped (review: masks skipped it). The
+    links inside an OME-Zarr store are held to the same rule (reading and copying a store
+    follow them); the cost, about 84 ms per 20,000 store files on each discovery, is
+    accepted (owner, 2 November 2026). One helper (`links.LinkGuard`) walks the experiment
+    and the masks folder for discovery, the masks pairing, the unrecorded-files check of
+    `RunInputs` (raised as `RunInputsError`) and, through discovery, `convert`. Contract §1,
+    §8.
+65. Where may the command line's `--log` write (issue #99)?
+    *Decided (owner, 2 November 2026):* the log path is checked first and the file opened
+    only after the other arguments are checked. It is refused inside the experiment or masks
+    folder (given or recorded by the earlier run), inside `convert`'s folder of copies, and
+    as or inside a protected output artefact (`plane_histograms.csv`, `run_manifest.json`,
+    the reports, the design, `calibration.csv`, `mask_relationships.json`, the lock, the
+    conversion record, the staging folders). Any other name in the output folder is fine.
+    In review: folders are also compared by device and inode and output names ignoring
+    case (macOS and Windows), and an existing file with a second name (a hard link) is
+    refused. Also in review: the design file given with `--design` (an input) is refused
+    (it was appended to). Contract §8; user guide §5.
+66. How does a run resume after an interruption, and how is its publication made
     crash-consistent (PP-12, design v0.4 §1)? *Decided (owner, 2 November 2026; contract
     §9.4):* (1) **Resume:** each image's rows are staged as soon as it is read; staged rows
     are reused only when their row key, the pixel type, the schema version and the
