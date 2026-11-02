@@ -18,7 +18,7 @@ output folder when reading the experiment and the masks (contract §15).
 
 Every path is compared resolved (every link followed), then by device and inode for the
 folders that exist (another spelling of a folder on a file system that ignores case), with
-:func:`.links.parts_below`.
+:func:`.links.relative_inside`.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import os
 from pathlib import Path
 
 from .conversion_record import RECORD_FILENAME
-from .links import parts_below
+from .links import relative_inside
 from .validation import ValidationIssue, error
 
 EXPERIMENT_INSIDE_MASKS = "experiment_inside_masks"
@@ -131,25 +131,6 @@ def output_inside_masks_issues(
             "Choose an output folder outside the masks folder.",
         )
     ]
-
-
-def relative_inside(path: Path, folder: str | os.PathLike) -> str | None:
-    """Return ``path`` (resolved) relative to ``folder`` when it is inside, ``"."`` for it.
-
-    Parameters
-    ----------
-    path
-        The path, resolved; it need not exist.
-    folder
-        The folder, compared as :func:`.links.parts_below` does.
-
-    Returns
-    -------
-    str or None
-        The relative path in POSIX form, or None when ``path`` is not inside ``folder``.
-    """
-    parts = parts_below(path, Path(folder))
-    return None if parts is None else Path(*parts).as_posix()
 
 
 def conversion_record_in(folder: str | os.PathLike) -> str | None:

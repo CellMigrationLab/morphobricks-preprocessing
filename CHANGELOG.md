@@ -136,6 +136,10 @@ and the bricks' migration).
   refuses a recorded run that breaks these rules (audit B1, 3 November 2026).
 - `check`, `run`, `masks`, `design` and `calibrate` check the output folder against the
   masks folder, given or recorded, before writing anything (audit I1).
+- `output_inside_experiment` and `copy_folder_overlaps_experiment` compare folders by
+  device and inode too, as the masks-folder rules do, so `Exp/out` is inside `exp/` on a
+  file system that ignores case (macOS, Windows), and discovery still skips that output
+  folder (#135 review follow-up).
 - Masks one pixel high or wide are read as 2-D `YX` masks (#63).
 - Step 1 keeps an unreadable `experiment_design.csv` untouched (#61).
 - The notebook starts from the inputs the earlier run in the output folder recorded: the

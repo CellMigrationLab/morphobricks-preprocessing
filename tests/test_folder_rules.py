@@ -7,20 +7,25 @@ anything is written.
 
 import json
 import os
+import shutil
+import subprocess
+import sys
 
 import numpy as np
 import pytest
 
 from morphobricks_preprocessing import (
     CONVERSION_RECORD_FILENAME,
+    check_output_folder,
     convert_experiment,
     default_output_folder,
+    discover_experiment,
     prefill_mapping,
     preflight,
     run_experiment,
 )
 from morphobricks_preprocessing.cli import main
-from morphobricks_preprocessing.conversion_plan import preview_conversion
+from morphobricks_preprocessing.conversion_plan import copy_folder_issues, preview_conversion
 from morphobricks_preprocessing.design_edit import DesignEdit
 from morphobricks_preprocessing.manifest import MANIFEST_FILENAME
 from morphobricks_preprocessing.run.calibrate import update_calibration
@@ -29,7 +34,7 @@ from morphobricks_preprocessing.run.design_file import edit_design
 from morphobricks_preprocessing.run.output_guard import OutputInsideMasksError
 from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError
 from morphobricks_preprocessing.testing import make_clean_run
-from tiff_tree import write_data
+from tiff_tree import make_tree, write_data
 
 YX = prefill_mapping("YX")
 
@@ -201,3 +206,44 @@ def test_the_masks_folder_spelled_in_another_case_is_the_same_folder(tmp_path):
     assert errors(result.issues) == ["copy_folder_overlaps_masks"]
     pre = preflight(root, masks_folder=tmp_path.with_name(tmp_path.name.swapcase()))
     assert errors(pre.masks.issues) == ["experiment_inside_masks"]
+
+
+def assert_alias_is_the_experiment(root, alias):
+    # The output folder and the copy tree are refused through another spelling of the
+    # experiment, and the walk still leaves the output folder out (#135 review follow-up).
+    issues = check_output_folder(root, alias / "results")
+    assert [i.code for i in issues] == ["output_inside_experiment"]
+    assert issues[0].paths == ("results",)
+    assert [i.code for i in check_output_folder(root, alias)] == ["output_inside_experiment"]
+    result = discover_experiment(root, output_folder=alias / "results")
+    assert [i.code for i in result.issues] == ["output_inside_experiment"]
+    issues = copy_folder_issues(root, alias / "copies")
+    assert [i.code for i in issues] == ["copy_folder_overlaps_experiment"]
+
+
+def test_output_folder_in_the_experiment_spelled_in_another_case(tmp_path):
+    # On a file system that ignores case (macOS, Windows) "EXP/results" is inside "exp".
+    make_tree(tmp_path, ["exp/cond/a.tif", "exp/results/plane_histograms.csv"])
+    alias = tmp_path / "EXP"
+    if not alias.is_dir():
+        pytest.skip("this file system tells names apart by case")
+    assert_alias_is_the_experiment(tmp_path / "exp", alias)
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="bind mounts are Linux's")
+def test_output_folder_in_the_experiment_through_a_bind_mount(tmp_path):
+    # A bind mount is another path to the same folder that no link resolves: only the
+    # device and inode tell it is the experiment.
+    make_tree(tmp_path, ["exp/cond/a.tif", "exp/results/plane_histograms.csv"])
+    alias = tmp_path / "alias"
+    alias.mkdir()
+    mount = shutil.which("mount")
+    if mount is None or os.geteuid() != 0:
+        pytest.skip("a bind mount needs root and mount")
+    if subprocess.run([mount, "--bind", str(tmp_path / "exp"), str(alias)]).returncode:
+        pytest.skip("bind mounts are not allowed here")
+    try:
+        assert alias.resolve() != (tmp_path / "exp").resolve()
+        assert_alias_is_the_experiment(tmp_path / "exp", alias)
+    finally:
+        subprocess.run(["umount", str(alias)], check=True)
