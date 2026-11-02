@@ -422,24 +422,23 @@ API, CLI). The notebook and CLI only call the API.
   - Touched functions end within §9: `_build_run_step` and `run` are split, and the plan
     moved to `notebook_run_plan`.
 
-  Left by PP-9 (a move-only split, so no logic was changed there), *to do in PP-10b*
-  (`_build_run_step`, `run` and the design-save log were done in PP-10a):
-  - UI modules that compute (§9 layers; audit finding D6): `notebook_plots.distribution_png`
-    works out the cumulative share itself (`np.cumsum(pooled.counts) / pooled.pixel_count`),
-    a copy of `intensity.cumulative_share` (§9: no duplicated helpers);
-    `notebook_render.preview_caption` computes the finite minimum and maximum;
-    `notebook_render.plane_summary_html` multiplies the plane counts;
-    `notebook_run._RunStep._plan_layouts`/`_memory_plan` work out the plane layouts in
-    the UI. Move each computation to a pure or orchestration module.
-  - The baseline entries re-keyed by PP-9: `_build_folder_step` (140 executable lines),
-    `_build_run_step` (119), `IntensityPanel.__init__` (110), `_build_results_step` (92),
-    `_refresh_axis_step` (90), `_build_axis_step` (82), `run` (63) and 31 private
-    functions without a docstring. PP-10 adds cards to these modules; shrink them then.
-  - "Cannot save the design" (`notebook_design._save_design`) is logged outside
-    `log.attached()`, so it never reaches the "Technical details" panel (also before
-    PP-9); the design status card is the only place that says the design was not saved.
-  - `PYRAMID_OPTIONS` is public but unused since `convert_tiffs` was removed; remove it
-    (with PP-11 or PP-13).
+  **PP-10b** *(implemented, the PR after #120)*: the debt PP-9 left (a move-only split):
+  - UI modules no longer compute (§9 layers; audit finding D6):
+    `notebook_plots.distribution_png` calls the owner `intensity.cumulative_share` instead of
+    its copy; `notebook_render.preview_caption` takes the value range from
+    `notebook_values.value_range` and `plane_summary_html` the plane counts from
+    `notebook_values.plane_counts` (pure); the plan's layouts come from
+    `run.planned.plane_layouts` and `memory_plan` (orchestration), the UI keeping only the
+    cache and the words (`_plan_layouts`/`_memory_plan` moved to `notebook_run_plan` first,
+    move only).
+  - Every notebook function is within §9: `_build_folder_step` (140 executable lines),
+    `IntensityPanel.__init__` (110), `_build_results_step` (92), `_refresh_axis_step` (90)
+    and `_build_axis_step` (82) are split into builders of one card each (PP-10a did
+    `_build_run_step` and `run`), and every private notebook function over 10 lines has a
+    docstring: the baseline holds no notebook entry any more.
+  - `PYRAMID_OPTIONS`, public but unused since `convert_tiffs` was removed (v0.4.0, PP-2),
+    is removed from `notebook_options` and `notebook_ui.__all__`; migration-guide note for
+    PP-13: nothing replaces it.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;
