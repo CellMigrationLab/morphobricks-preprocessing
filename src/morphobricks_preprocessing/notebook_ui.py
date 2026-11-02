@@ -2039,7 +2039,7 @@ class PreprocessingNotebook:
         if not result.written:
             self.run_status.value = ui.status(
                 "error",
-                "Nothing was written.",
+                "The run stopped: no table or manifest was written.",
                 ["Read the messages below; each one says what to do.", "Then run again."],
             )
             return

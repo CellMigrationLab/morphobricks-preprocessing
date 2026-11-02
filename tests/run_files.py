@@ -14,6 +14,12 @@ def only_the_report(folder):
     return json.loads((folder / REPORT_FILENAME).read_text(encoding="utf-8"))["status"] == "stopped"
 
 
+def check_outputs(folder):
+    """True when ``check`` wrote its report and the design template, and nothing else."""
+    names = {p.name for p in folder.iterdir()} if folder.is_dir() else set()
+    return names == {*REPORT_FILES, "experiment_design.csv"}
+
+
 def without_report(files):
     """Leave the report files out of ``{name: content}``: every run rewrites them."""
     return {name: content for name, content in files.items() if name not in REPORT_FILES}

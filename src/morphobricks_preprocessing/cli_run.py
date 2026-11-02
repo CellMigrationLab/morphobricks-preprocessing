@@ -26,6 +26,7 @@ from morphobricks_normalization.ranges import (
 
 from .axes import AxisMapping, reference_axes
 from .axis_review import review_axes
+from .cli_design import design_instructions
 from .design import (
     DESIGN_FILENAME,
     DesignFormatError,
@@ -91,6 +92,29 @@ def command_preflight(args: argparse.Namespace) -> Preflight:
         masks_folder=args.masks,
         mask_axes=args.mask_axes,
     )
+
+
+def use_recorded_experiment(args: argparse.Namespace) -> bool:
+    """Take the experiment folder the run in ``--output`` recorded, when none is given.
+
+    Parameters
+    ----------
+    args
+        The command's arguments; ``args.experiment`` is set to the recorded folder.
+
+    Returns
+    -------
+    bool
+        False, after printing ``experiment_not_recorded``, when none is given or recorded.
+    """
+    if args.experiment is not None:
+        return True
+    root, missing = recorded_experiment_root(args.output and Path(args.output).resolve())
+    if missing is not None:
+        print(format_issues([missing]))
+        return False
+    args.experiment = str(root)
+    return True
 
 
 def add_run_arguments(run: argparse.ArgumentParser) -> None:
@@ -204,12 +228,8 @@ _INTENSITY_HELP = {
 
 def run_command(args: argparse.Namespace) -> int:
     """Run pass 2 with the command's options, print what it did and return the status."""
-    if args.experiment is None:
-        root, missing = recorded_experiment_root(args.output and Path(args.output).resolve())
-        if missing is not None:
-            print(format_issues([missing]))
-            return 1
-        args.experiment = str(root)
+    if not use_recorded_experiment(args):
+        return 1
     output = (
         Path(args.output) if args.output else default_output_folder(Path(args.experiment).resolve())
     )
@@ -247,16 +267,19 @@ def run_command(args: argparse.Namespace) -> int:
         intensity_settings=settings[0],
         histogram_settings=settings[1],
     )
+    template, instructions = None, ""
+    if _stopped_on_design(result.issues, design):
+        template, instructions = _design_template(design, pre, args)
     if result.issues:
         print(format_issues(result.issues))
         print()
-    print(run_summary(result))
+    print(run_summary(result, design_template=template is not None))
     if result.intensity is not None:
         print()
         print(intensity_text(result.intensity))
-    if _stopped_on_design(result.issues, design):
+    if instructions:
         print()
-        print(_design_template(design, pre, args))
+        print(instructions)
     return 0 if result.written else 1
 
 
@@ -394,37 +417,26 @@ def _stopped_on_design(
     return any(issue.code in found for issue in design_issues(design))
 
 
-def _design_template(design: ExperimentDesign, pre: Preflight, args: argparse.Namespace) -> str:
+def _design_template(
+    design: ExperimentDesign, pre: Preflight, args: argparse.Namespace
+) -> tuple[Path | None, str]:
     """Write the design for the user to fill in, holding the output folder's lock.
 
     The run, given the design, stopped on it and wrote its report; the template keeps
-    every answer already given. Returns what the user has to do.
+    every answer already given. Returns the file written (None when nothing was) and what
+    the user has to do.
     """
     root = pre.discovery.root
     output = Path(args.output) if args.output else default_output_folder(root)
     if check_output_folder(root, output):
-        return ""  # the run reported it; nothing is written inside the experiment
+        return None, ""  # the run reported it; nothing is written inside the experiment
     try:
         with output_lock(output):
             target = write_experiment_design(design, output / DESIGN_FILENAME)
     except OutputLockedError as exc:
-        return format_issues([lock_issue(exc)])
-    lines = [
-        f"The experiment design was written to {target}. Open it in a spreadsheet program "
-        "or a text editor, one row per biological-repeat folder of each condition:",
-        "  - repeat_group: rows with the same value are the same biological repeat across "
-        "conditions (by default the folder name). Change it to pair repeats whose folders "
-        "are named differently; each group may hold one folder per condition. It must not "
-        "be empty or NA.",
-        "  - confirmed_on: the date of the confirmation as YYYY-MM-DD, or empty (the run "
-        "fills it in).",
-        "  - confirmed: set it to true in every row of a repeat group once you are sure its "
-        "images were prepared and acquired under the same circumstances, so they are "
-        "comparable.",
-        "  - control: set it to true in the rows of control conditions (optional; recorded only).",
-        "Then run again.",
-    ]
-    return "\n".join(lines)
+        return None, format_issues([lock_issue(exc)])
+    lines = [*design_instructions(target, output), "Then run again."]
+    return target, "\n".join(lines)
 
 
 def _image_type_note(review: ImageTypeReview, given: str | None) -> str:

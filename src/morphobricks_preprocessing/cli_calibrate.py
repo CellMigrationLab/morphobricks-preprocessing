@@ -30,8 +30,8 @@ from .run.calibrate import update_calibration
 from .run.lock import lock_issue
 
 
-def add_calibrate_parser(commands: argparse._SubParsersAction) -> None:
-    """Add the ``calibrate`` command and its options."""
+def add_calibrate_parser(commands: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    """Add the ``calibrate`` command and its options; return its parser."""
     parser = commands.add_parser(
         "calibrate",
         help="show or state the pixel sizes in calibration.csv in the output folder",
@@ -69,6 +69,7 @@ def add_calibrate_parser(commands: argparse._SubParsersAction) -> None:
         help="remove the statements for TARGET along AXES; the image metadata are used "
         "again (repeatable)",
     )
+    return parser
 
 
 def calibrate_command(args: argparse.Namespace) -> int:

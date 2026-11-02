@@ -222,11 +222,14 @@ class RunInputs:
 
         Raises
         ------
+        TypeError
+            If ``z`` or ``t`` is not a whole number (a ``plane_id`` is not a coordinate).
         RunInputsError
             If the image changed since the run.
         IndexError
             If ``z`` or ``t`` is outside the image.
         """
+        z, t = (_coordinate(v, k, "read_plane(fov, z, t)") for k, v in (("z", z), ("t", t)))
         entry = self._checked(fov)
         mapping = _mapping(entry)
         path = self.experiment_root / entry.relative_path
@@ -268,11 +271,15 @@ class RunInputs:
 
         Raises
         ------
+        TypeError
+            If ``z`` or ``t`` is neither None nor a whole number.
         RunInputsError
             If the image has no recorded mask of that type, or the mask changed since the run.
         ValueError
             For a label outside 0 to the int32 limit (:func:`.masks.check_labels`).
         """
+        call = "read_mask(fov, mask_type, z, t)"
+        z, t = (None if v is None else _coordinate(v, k, call) for k, v in (("z", z), ("t", t)))
         entry = self._checked(fov)
         recorded = self._mask_entry(entry.relative_path, mask_type)
         if not self._mask_unchanged(recorded):
@@ -416,6 +423,17 @@ class LazyImage:
             [np.stack([self[t, z] for z in range(self.shape[1])]) for t in range(self.shape[0])]
         )
         return data if dtype is None else data.astype(dtype)
+
+
+def _coordinate(value: object, name: str, call: str) -> int:
+    """Return a plane coordinate as an int, refusing anything but a whole number."""
+    if isinstance(value, bool) or not isinstance(value, int | np.integer):
+        raise TypeError(
+            f"{call} takes the plane's zero-based coordinates z and t as whole numbers; "
+            f"{name} is {value!r} ({type(value).__name__}). A row's plane_id is not a "
+            "coordinate: give the row's z and t (PlaneRecord.z, PlaneRecord.t)."
+        )
+    return int(value)
 
 
 def _manifest(output: Path) -> RunManifest:

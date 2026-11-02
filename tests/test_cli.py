@@ -14,7 +14,7 @@ from morphobricks_preprocessing import (
     write_experiment_design,
 )
 from morphobricks_preprocessing.cli import main, parse_size
-from run_files import only_the_report
+from run_files import check_outputs
 from tiff_tree import write_data, write_file
 
 
@@ -57,9 +57,11 @@ def test_check_prints_summary_and_suggested_axes(experiment, capsys):
     assert "Images to analyse: 3 in 2 leaf folders" in out
     assert "ctrl/" in out and "rep1/  (2 images; technical repeat: single)" in out
     assert "Suggested option for 'run': --axes ZCYX (axes in the files: ZCYX)" in out
-    # 'check' is the run's step stopped after the report: it writes only the report.
+    # 'check' is the run's step stopped after the report: it writes the report, and the
+    # design template prefilled from the folders (PP-8c).
     output = experiment.parent / "exp_MorphoBricks_Preprocessing"
-    assert only_the_report(output) and f"Report written to {output}" in out
+    assert check_outputs(output) and f"Report written to {output}" in out
+    assert f"The experiment design was written to {output / 'experiment_design.csv'}" in out
 
 
 def test_check_exits_with_1_on_errors(experiment, capsys):
@@ -127,7 +129,7 @@ def test_rgb_is_refused_for_images_that_cannot_be_rgb(experiment, capsys):
     out = capsys.readouterr().out
     assert "contradict their header" in out
     assert "RGB images need exactly three colour channels" in out
-    assert "8 channels of type uint8" in out and "Nothing was written" in out
+    assert "8 channels of type uint8" in out and "no table or manifest was written" in out
 
 
 def test_image_type_must_be_known(experiment):
@@ -204,7 +206,7 @@ def test_run_reports_blocking_errors(experiment, capsys):
     assert main(["run", str(experiment), "--axes", "Z-YX"]) == 1
     out = capsys.readouterr().out
     assert "No role is chosen for the axis C (channel)" in out
-    assert "Nothing was written" in out
+    assert "no table or manifest was written" in out
 
 
 def test_run_without_readable_images(tmp_path, capsys):
@@ -234,7 +236,7 @@ def test_different_channel_counts_stop_check_and_run(tmp_path, capsys):
     assert main(["run", str(root), "--axes", "ZCYX"]) == 1
     out = capsys.readouterr().out
     assert "different numbers of channels" in out and "b.tif" in out
-    assert "Nothing was written" in out
+    assert "no table or manifest was written" in out
 
 
 def test_axes_are_needed_for_the_first_run_only(experiment, capsys):

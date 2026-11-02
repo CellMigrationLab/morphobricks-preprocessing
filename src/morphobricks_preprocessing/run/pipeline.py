@@ -56,7 +56,7 @@ from ..planes import DEFAULT_MEMORY_LIMIT
 from ..validation import ValidationIssue, error, has_errors, warning
 from .lock import OutputLockedError, lock_issue, output_lock
 from .modes import FULL, RESTART, check_mode
-from .preflight import Preflight, preflight
+from .preflight import Preflight, fit_calibration, preflight
 from .publish import _staged_outputs, write_report
 from .recorded import (
     GivenInputs,
@@ -226,10 +226,13 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
         mask_axes=inputs.mask_axes or None,
     )
     design, design_problems, design_changed = _design(options.design, output, previous[0])
-    calibrated = calibration_change(usable(previous[0]), pre.calibration)
-    inputs = replace(inputs, changes=(*inputs.changes, *design_changed, *calibrated))
     checked = header_checks(pre, inputs, design, options.memory_limit)
     checked.issues.extend(design_problems)
+    if checked.review is not None:
+        pre, absent = fit_calibration(pre, checked.review)
+        checked.issues.extend(absent)
+    calibrated = calibration_change(usable(previous[0]), pre.calibration)
+    inputs = replace(inputs, changes=(*inputs.changes, *design_changed, *calibrated))
     run = _Run(output, pre, inputs, options.mode, checked, previous, found)
     recorded = usable(previous[0])
     base = RunOutcome(
@@ -291,6 +294,7 @@ def _stop(run: _Run, base: RunOutcome, rows: Rows | None) -> RunResult:
         excluded=run.pre.excluded,
         mode=run.mode,
         input_changes=run.inputs.changes,
+        report_written=True,
         **counts(rows),
     )
 
@@ -349,6 +353,7 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
         mode=run.mode,
         replaced=tuple(sorted(outcome.replaced)),
         input_changes=run.inputs.changes,
+        report_written=True,
         **counts(rows),
     )
 
