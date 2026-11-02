@@ -90,7 +90,7 @@ def _lost_roles(f: TiffMetadata) -> tuple[str, ...]:
 def _invalid_issue(
     files: Sequence[TiffMetadata], by_role: Mapping[str, Mapping[str, RecordedSize]]
 ) -> list[ValidationIssue]:
-    """Warn about calibrations the metadata give but that cannot be used (issue #94).
+    """Warn about calibrations the metadata give but that cannot be used (issues #93, #94).
 
     Such an image is uncalibrated on the axes concerned (never a substituted value); without
     this warning it would look merely uncalibrated. Every image is named with what is wrong,
@@ -118,8 +118,9 @@ def _invalid_issue(
             f"be used ({details}). The sizes it gives are not used: these images are "
             "uncalibrated on those axes, and no size is substituted.",
             list(found),
-            "Correct the coordinateTransformations in these images' OME-NGFF metadata, or "
-            "state their pixel sizes in calibration.csv (the 'calibrate' command).",
+            "Correct the calibration in these images' metadata (for OME-Zarr images, the "
+            "coordinateTransformations), or state their pixel sizes in calibration.csv (the "
+            "'calibrate' command).",
         )
     ]
 

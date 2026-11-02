@@ -31,7 +31,6 @@
     "src/morphobricks_preprocessing/metadata.py: # lines (max #)": 779,
     "src/morphobricks_preprocessing/physical_sizes.py _imagej_sizes: private function of # lines without a docstring": 27,
     "src/morphobricks_preprocessing/physical_sizes.py _ome_sizes: private function of # lines without a docstring": 20,
-    "src/morphobricks_preprocessing/physical_sizes.py: # lines (max #)": 684,
     "src/morphobricks_preprocessing/planes.py _layout: private function of # lines without a docstring": 45,
     "src/morphobricks_preprocessing/planes.py _tiff_block_plane: private function of # lines without a docstring": 14,
     "src/morphobricks_preprocessing/planes.py _zarr_layout: private function of # lines without a docstring": 40,

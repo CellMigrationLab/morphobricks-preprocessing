@@ -557,6 +557,13 @@ API, CLI). The notebook and CLI only call the API.
   header naming a column twice or a column without a name, and `RunInputs.design()` reads
   with `read_confirmed_design`; changing the notebook's output folder reloads the design
   from the new folder and asks again.
+- **Before the audit: micrometre conversion and exit status (issue #93, #130 review)**
+  *(this PR; question 66)*: every conversion to micrometres is a positive finite length
+  (`length_units.to_micrometers`, moved from `physical_sizes` with the unit table, which
+  re-exports them); a header size that overflows or underflows is unknown and named by
+  `invalid_physical_calibration`, a stated one is refused, and an infinite size is never
+  the same as another; `check` and `design` exit with status 1 whenever they print an
+  error.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;
@@ -1589,3 +1596,25 @@ Raised during review; to be decided before the milestones that need them:
     answer (the folder may still be being typed), and the design card says which. The run
     is gated as before, so it runs only on the new folder's confirmed design. No copy
     action: the user answers again, or copies the file. Contract §12; user guide §4.
+66. What happens to a size that does not fit in micrometres, and what is the exit status of
+    a command that reports an error (issue #93, review of #130)?
+    *Decided (2 November 2026, design v0.4 §3: nothing guessed, nothing silent; owner to
+    confirm in the review):* (1) every conversion to micrometres goes through
+    `to_micrometers`, whose result is always a positive finite number: a length that
+    overflows (`1e308 m` is infinite in micrometres) or underflows (`1e-320 pm` is zero), or
+    a whole number beyond the float range, is a `ValueError` naming the value and unit
+    (before, `inf` and `0.0` were returned, and an `OverflowError` raised).
+    `PhysicalSizes.micrometers` uses it and is None for such a size, so `same_pixel_size`
+    is None and `pixel_size_groups` leaves it out (both raised `ValueError` before), and
+    the comparison never takes an infinite or NaN size for another (before, `inf` was "the
+    same" as every size, so `1e308 m` beside `0.5 µm` gave no issue at all). (2) A header
+    size of TIFF or OME-Zarr metadata that does so, or an OME-Zarr level-0 scale times the
+    image's scale that does so, is treated like the malformed calibrations of question 60
+    (3): the size is None, `PhysicalSizes.invalid` gives the axis and value, and the warning
+    `invalid_physical_calibration` names the image (a warning, not an error, as for #94);
+    a stated size in `calibration.csv` or `calibrate` is refused naming the line. (3) Every
+    command exits with status 1 when it prints an error, and 0 otherwise (warnings never
+    change it): `check` exited with 0 on an experiment design it could not read, and
+    `design` with 0 when the design it printed had `repeat_group_conflict` or
+    `invalid_experiment_design`, also after writing a change. `run`, `masks`, `calibrate`
+    and `convert` already did. Contract §2, §9.2, §9.3, §11, §16; user guide §5, §8.

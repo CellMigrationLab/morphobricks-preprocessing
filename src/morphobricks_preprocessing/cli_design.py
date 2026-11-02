@@ -20,6 +20,7 @@ from .report import design_table, format_issues
 from .run import OutputLockedError
 from .run.design_file import edit_design
 from .run.lock import lock_issue
+from .validation import has_errors
 
 
 def add_design_parser(commands: argparse._SubParsersAction) -> argparse.ArgumentParser:
@@ -108,7 +109,7 @@ def design_command(args: argparse.Namespace) -> int:
     if problems:
         print()
         print(format_issues(problems))
-    return 0
+    return 1 if has_errors(problems) else 0  # an error printed is an exit status of 1
 
 
 def design_instructions(path: Path, output: Path) -> list[str]:

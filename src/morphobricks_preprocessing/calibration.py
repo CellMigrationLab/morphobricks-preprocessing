@@ -114,7 +114,8 @@ def calibration_entry(target: str, axis: str, size: object, unit: str) -> Calibr
         ``"X"``, ``"Y"`` or ``"Z"`` (upper case).
     size
         A positive, finite number (or its text in plain decimal notation, such as ``"0.65"``
-        or ``"1e-3"``), or None/``""`` with the unit ``"pixels"``.
+        or ``"1e-3"``) that is also one in micrometres (issue #93), or None/``""`` with the
+        unit ``"pixels"``.
     unit
         A supported length unit in any spelling :func:`.physical_sizes.space_unit` reads,
         or ``"pixels"``.
@@ -138,8 +139,9 @@ def calibration_entry(target: str, axis: str, size: object, unit: str) -> Calibr
                 f"a statement in pixels has no size (found {size!r}): leave the size empty"
             )
         return CalibrationEntry(target, axis, None, PIXELS)
-    name = _unit(unit)
-    return CalibrationEntry(target, axis, _size(size), name)
+    name, size = _unit(unit), _size(size)
+    to_micrometers(size, name)  # refuses one beyond micrometres: 1e308 m is inf (issue #93)
+    return CalibrationEntry(target, axis, size, name)
 
 
 def _target(text: str) -> str:
@@ -181,6 +183,8 @@ def _size(value: object) -> float:
         size = float(value.strip()) if isinstance(value, str) else float(value)
     except (TypeError, ValueError):
         raise ValueError(f"the size {value!r} is not a number") from None
+    except OverflowError:  # an int beyond the float range
+        raise ValueError(f"the size {value!r} is not a positive finite number") from None
     if not math.isfinite(size) or size <= 0:
         raise ValueError(f"the size {value!r} is not a positive finite number")
     return size

@@ -69,9 +69,11 @@ src/morphobricks_preprocessing/
                     header consistency warnings (width/height, plane counts, pixel sizes);
                     header_axes and named_axes (the axes the metadata names, contract §16)
   physical_sizes.py PhysicalSizes (pixel sizes, z-step, time step, a unit per axis, micrometers()
-                    for comparing), space_unit/to_micrometers (the shared unit rule, contract §16),
+                    for comparing), re-exports length_units' space_unit/to_micrometers,
                     read_physical_sizes (OME / ImageJ TIFF metadata; also importable
                     ) and ngff_physical_sizes (OME-NGFF scale and axis units)
+  length_units.py   space_unit/to_micrometers, SPACE_UNITS (the shared unit rule, contract
+                    §16): a conversion is always a positive finite length, else ValueError (#93)
   ngff_scale.py     read_scale: an OME-NGFF coordinateTransformations scale, checked; what
                     is wrong with a malformed one (PhysicalSizes.invalid, issue #94)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
