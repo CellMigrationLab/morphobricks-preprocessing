@@ -64,7 +64,9 @@ def _raise(exc: OSError) -> None:
 
 
 def unchanged_content(path: str | os.PathLike, expected: str | None) -> bool:
-    """Return True when a copy is there and its SHA-256 is ``expected``.
+    """Return True when a copy is there, readable, and its SHA-256 is ``expected``.
+
+    A copy that cannot be read is not known to be unchanged, so it counts as changed.
 
     Parameters
     ----------
@@ -81,5 +83,5 @@ def unchanged_content(path: str | os.PathLike, expected: str | None) -> bool:
         return False
     try:
         return content_sha256(path) == expected
-    except FileNotFoundError:
+    except OSError:
         return False

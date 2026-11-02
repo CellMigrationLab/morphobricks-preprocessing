@@ -36,7 +36,7 @@ RECORD_FILENAME = ".morphobricks-conversion.json"
 RECORD_VERSION = "2"
 """Version 2 (PP-11c): each copy's SHA-256, channel names and significant bits."""
 
-_OLD_VERSIONS = frozenset({"1"})
+_OLD_VERSIONS = ("1",)
 """Record versions written before the copies' SHA-256: refused, convert again."""
 
 CONVERTED = "converted"
