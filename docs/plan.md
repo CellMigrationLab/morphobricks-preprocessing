@@ -383,6 +383,11 @@ API, CLI). The notebook and CLI only call the API.
   35.*
 - **Release v0.3.1:** `position_id` names an image with the other image extensions bricks
   read (MorphoBricks D85, PR #33). *To be tagged, see question 36.*
+- **PP-10 (notebook cards) notes:** a button on the `output_locked` card that removes the
+  lock of a stopped run (owner, 2 November 2026, PP-8d review: Colab disconnects leave
+  locks behind). Same rule as `--remove-stale-lock`: only on that request, never the lock
+  of a process still running on the same computer. Until then the notebook's "Common
+  problems" gives a `remove_stale_lock(...)` code cell. *To do in PP-10.*
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;
@@ -1264,7 +1269,14 @@ Raised during review; to be decided before the milestones that need them:
     version check reads them, with `notebooks/notebook_latest_versions.yaml` as the index;
     the pin is moved at every release (§10, release checklist). Steps 0 and 1 have "Colab
     users" / "JupyterLab users" callouts (data and results on Drive, output folder outside
-    the experiment, slower Drive reads, a runtime wiped on disconnect). The run's semantics
-    are unchanged on Google Drive; its known limits there (the lock is only exclusive within
-    one runtime, fingerprints of copies) are in the user guide §1 and were put to the owner
-    in PR #118.*
+    the experiment, one session per output folder, a runtime wiped on disconnect). The run's
+    semantics are unchanged on Google Drive; its limits there are in the user guide §1.*
+    *Decided in review (2 November 2026, owner, PR #118 questions): (1) the lock on Google
+    Drive is documented only: one session per output folder, because the lock cannot guard
+    an output folder across machines or sessions on Drive; (2) a button that removes the
+    lock of a stopped run comes in PP-10 (§10, PP-10 notes); until then a documented code
+    cell; (3) no advice to copy the dataset to the runtime's own disk, because reuse
+    depends on the absolute path of the images: data and output stay on Drive; (4) on
+    Colab, Step 0 installs the `notebook` and `zarr` extras (locally `notebook`, unchanged),
+    so OME-Zarr images can be read there; (5) `RELEASE_TAG` stays `v0.4.0rc2`; the owner
+    tags it after PP-8c and PP-8d are merged.*

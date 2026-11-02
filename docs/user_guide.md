@@ -54,13 +54,10 @@ run **Step 0**. On Colab it:
 - connects your Google Drive: allow access in the window that opens. Your Drive is then the
   folder `/content/drive/MyDrive`;
 - installs MorphoBricks preprocessing at the release the notebook names, with its notebook
-  dependencies, which takes a minute or two (ipywidgets 8 replaces Colab's ipywidgets 7;
-  if a message asks you to, choose **Runtime › Restart session** and run Step 0 again);
+  dependencies and the `zarr` extra (to read OME-Zarr images), which takes a minute or two
+  (ipywidgets 8 replaces Colab's ipywidgets 7; if a message asks you to, choose
+  **Runtime › Restart session** and run Step 0 again);
 - enables Colab's widget support for these widgets.
-
-To read OME-Zarr images on Colab, also install the `zarr` extra: in a new code cell run
-`import subprocess, sys` and then
-`subprocess.run([sys.executable, "-m", "pip", "install", "zarr>=2.18"], check=True)`.
 
 **Where to keep the data.** A Colab runtime is a temporary computer: everything on it except
 Google Drive is wiped when it disconnects (after some idle time, or after several hours).
@@ -70,33 +67,19 @@ Google Drive is wiped when it disconnects (after some idle time, or after severa
   the **Files** panel in the left bar, right-click the folder, choose **Copy path** and paste.
 - Keep the output folder on Google Drive too, outside the experiment folder. The default,
   next to the experiment folder, is right when the experiment is on Drive.
-- Google Drive is slower to read than the runtime's own disk. For a large dataset you may
-  copy the experiment folder to the runtime's disk first, keeping the modification times,
-  for example in a new code cell:
-
-  ```python
-  import shutil
-
-  shutil.copytree("/content/drive/MyDrive/experiment_2026_10", "/content/experiment_2026_10")
-  ```
-
-  Then type an output folder on Drive in step 1 (for example
-  `/content/drive/MyDrive/experiment_2026_10_MorphoBricks_Preprocessing`): the default would
-  be next to the copy and lost with the runtime. The output records where the images were
-  read and each image's size and modification time. A later run reuses the rows only when
-  the images are read from the same place: copy to the same path in every session (as
-  above; the copy keeps the times) and only new or changed images are read again. Reading
-  from another place (Drive one time, the copy another) recomputes every row, and plain
-  stacks must be confirmed again. Later bricks must be given the experiment folder they
-  should read, because the recorded location is the copy's, which a new runtime no longer
-  has until you copy again.
+- Keep both there for every session. The output records where the images were read (their
+  full path) and each image's size and modification time; a later run reuses the rows only
+  when the images are read from the same place. Do not copy the experiment to the runtime's
+  own disk to read it faster: the copy is lost when the runtime disconnects, and reading it
+  from another place recomputes every row.
 
 **Limits of Google Drive** (the run behaves the same; these are things to know):
 
-- **One session per output folder.** The output folder's lock stops a second run on the
-  same Colab runtime. Google Drive copies files between computers with a delay, so the lock
-  does not stop a run started at the same time from another Colab session or from a
-  computer that syncs the same Drive folder. Never run two sessions on one output folder.
+- **One session per output folder.** On Google Drive the lock cannot guard an output folder
+  across machines or sessions. It only stops a second run in the same Colab runtime. Google
+  Drive copies files between computers with a delay, so a run started at the same time from
+  another Colab session, or from a computer that syncs the same Drive folder, is not
+  stopped. Use one session at a time per output folder on Drive.
 - **A lock left by a disconnected runtime.** If the runtime disconnects during a check or a
   run, its lock stays in the output folder and the next check says "Another run is using
   this output folder". When you are sure no other session uses the folder, remove it in a

@@ -106,9 +106,11 @@ LabConstrictor's
    ([plan](docs/plan.md) §10, release checklist); `tests/test_notebook_file.py` checks that
    they agree, that the rules above hold, and runs the notebook in a local kernel. The Colab
    run itself is checked by hand.
-5. Steps 0 and 1 have *Colab users* / *JupyterLab users* callouts. On Colab, keep the data and
+5. On Colab, Step 0 installs the `notebook` and `zarr` extras; locally it installs `notebook`.
+6. Steps 0 and 1 have *Colab users* / *JupyterLab users* callouts. On Colab, keep the data and
    the output folder on Google Drive; the [user guide](docs/user_guide.md) §1 explains why, and
-   the limits of Google Drive.
+   the limits of Google Drive: on Drive the lock cannot guard an output folder across machines
+   or sessions, so use one session at a time per output folder.
 
 From a terminal:
 

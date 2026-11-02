@@ -637,7 +637,8 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
   - Outputs are stripped.
   - Step 0 is a standalone standard-library bootstrap: nearby checkout, installed package,
     or GitHub installation of the release `RELEASE_TAG`, with missing requirements
-    installed using the kernel's Python (`subprocess`, never `!pip`). Colab-only code
+    installed using the kernel's Python (`subprocess`, never `!pip`); on Colab with the
+    `zarr` extra too. Colab-only code
     (Drive mount, `output.enable_custom_widget_manager()`) stays inside
     `if "google.colab" in sys.modules:`; no `/content` path outside it. `current_version`
     and `notebook_name` are LabConstrictor's names; at each release the pin moves
@@ -645,8 +646,8 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
   - Later cells are one call each, e.g. `notebook.folder_step()`.
 - **Step 0** starts the notebook and shows a green "ready" card with the package version.
 - **Runtime callouts:** Steps 0 and 1 carry "**Colab users:**" / "**JupyterLab users:**"
-  blockquotes (Drive, output folder outside the experiment, slower Drive reads, runtime
-  wiped on disconnect, Browse… only locally).
+  blockquotes (Drive, output folder outside the experiment, one session per output folder
+  on Drive, runtime wiped on disconnect, Browse… only locally).
 - **Closing cell:** "✅ After running" checklist and "Common problems" that quote the real
   message texts (check they still match the code).
 - **Text:** use bold, not inline code, in the markdown (fenced text blocks such as the
