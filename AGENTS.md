@@ -151,14 +151,17 @@ src/morphobricks_preprocessing/
                     write_mask_report (mask_relationships.json); DEFAULT_THRESHOLDS,
                     mask_thresholds (checked changes)
   copy_axes.py      convert (PP-11, contract §17): the axes, shape, pixel sizes (by role; a
-                    relabelled axis gets an unknown scale) and OME metadata of a named-axis copy
+                    relabelled axis gets an unknown scale; equal X and Y kept through a Y/X
+                    swap, question 59) and OME metadata of a named-axis copy
   ome_tiff_copy.py  write_named_copy: one image as uncompressed OME-TIFF, planes from iter_planes
                     under the confirmed roles, blocks written in place (BigTIFF when large)
   conversion_record.py the copy tree's .morphobricks-conversion.json (fingerprints, roles, sizes),
                     review_conversion (the run's conversion_source_changed and
                     copy_changed_after_conversion warnings)
   conversion.py     convert_experiment/plan_conversion: the copy tree under its lock, .partial
-                    files moved into place together, unchanged copies reused, record last
+                    files moved into place together (any failure removes what it wrote),
+                    planes checked against the memory limit first, unchanged copies reused,
+                    record last; conversion_issues.py its messages (pure)
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis
                     letters and physical sizes from the scale and axis units),
                     ngff_label_names/open_ngff_labels (label images, for later bricks),

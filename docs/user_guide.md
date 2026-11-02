@@ -721,8 +721,11 @@ never converted: keep using your masks folder.
 
 Pixel sizes follow the roles. An axis you give another role than its metadata gets no size
 in the copy: after a Y/X swap the copy has no X or Y pixel size (the metadata's X size
-belongs to the axis you call Y), and a depth step is never written as a time step. State
-the sizes in `calibration.csv` if you know them (`calibrate`). The command prints what it
+belongs to the axis you call Y), unless the metadata give X and Y exactly the same size,
+which is then kept; a depth step is never written as a time step. State the missing sizes
+in `calibration.csv` if you know them (`calibrate`). Images whose planes cannot be read
+within the memory limit, and a folder without the space for the copies, are refused
+before anything is written. The command prints what it
 wrote and the next commands, with the suggested `--axes` for the copies.
 
 Give `run` the output folder of your runs on the originals: the design, image type and
@@ -734,7 +737,9 @@ the run records its SHA-256 and warns when an original changes after the convers
 (`conversion_source_changed`) or a copy is changed (`copy_changed_after_conversion`).
 
 Running `convert` again with the same images and roles reuses the copies and only adds new
-images. It never overwrites anything else: a folder holding other files, copies of other
+images; when nothing is added the record is left as it was. Bricks reading the run on the
+copies (`RunInputs`) refuse it if the conversion record is changed or removed afterwards.
+`convert` never overwrites anything else: a folder holding other files, copies of other
 images or made with other roles is refused (`copy_folder_not_empty`, `copy_differs`);
 convert into a new folder then. If it fails (`conversion_failed`), the folder is left as it
 was. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
