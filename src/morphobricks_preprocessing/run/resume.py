@@ -146,14 +146,15 @@ def new_rows(
             progress(done, len(to_read), rel)
         key = staging_key(RowKey.of(job.entries[rel], job.settings, root.as_posix()), dtype)
         earlier = staged.get(rel)
-        if earlier is not None and not job.full and earlier.key == key:
-            if current_fingerprint(root / rel) == Fingerprint.recorded(job.entries[rel]):
+        if earlier is not None:
+            now = current_fingerprint(root / rel)
+            unchanged = now == Fingerprint.recorded(job.entries[rel])
+            if not job.full and earlier.key == key and unchanged:
                 found.records.extend(earlier.records)
                 found.narrow.extend(earlier.narrow)
                 found.resumed.append(rel)
                 continue
-        if earlier is not None:
-            found.discarded[rel] = _why_discarded(earlier.key, key, job.full)
+            found.discarded[rel] = _why_discarded(earlier.key, key, job.full, unchanged)
             discard_staged(job.output, rel)
         _read_one(job, rel, key, found)
     if progress is not None:
@@ -212,16 +213,21 @@ def changed_since(entries: Mapping[str, FileEntry], root: Path) -> list[str]:
     )
 
 
-def _why_discarded(staged: dict, now: dict, full: bool) -> str:
-    """Say why a file's staged rows are not reused."""
+def _why_discarded(staged: dict, now: dict, full: bool, unchanged: bool) -> str:
+    """Say why a file's staged rows are not reused (``unchanged``: its fingerprint now)."""
     if full:
         return "a full run reuses no staged row"
-    if staged.get("row_key", {}).get("fingerprint") != now["row_key"]["fingerprint"]:
+    if (
+        not unchanged
+        or staged.get("row_key", {}).get("fingerprint") != now["row_key"]["fingerprint"]
+    ):
         return "the image changed since its rows were staged"
     if {k: staged.get(k) for k in ("versions", "schema_version")} != {
         k: now[k] for k in ("versions", "schema_version")
     }:
         return "its rows were staged by another version"
+    if staged.get("dtype") != now["dtype"]:
+        return "the experiment's pixel type changed since its rows were staged"
     return "its axis roles, labels, folder or row settings changed since its rows were staged"
 
 

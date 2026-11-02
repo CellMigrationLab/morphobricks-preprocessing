@@ -420,7 +420,8 @@ def _copy_issue(paths: list[str]) -> list[ValidationIssue]:
             "copy_changed_after_conversion",
             f"{plural(len(paths), 'image')} of this folder of named-axis copies changed, went "
             "missing or were added after the conversion, so the conversion record does not "
-            "describe them, and the bricks would refuse a run on them. Nothing was written.",
+            "describe them, and the bricks would refuse a run on them. No image was read and "
+            "no table or manifest was written.",
             paths,
             "Convert the originals again into a new folder, and run preprocessing on that "
             "one (with the same output folder).",

@@ -138,7 +138,8 @@ def load_staged(output: Path) -> tuple[dict[str, StagedFile], dict[str, str]]:
     Returns
     -------
     tuple
-        ``({relative path: StagedFile}, {name: why it was discarded})``. A record that
+        ``({relative path: StagedFile}, {image: why it was discarded})`` (the record's
+        file name when it does not name its image). A record that
         cannot be read, or whose rows file is missing or not the one it names, is
         discarded (and removed); a rows file without its record (a run killed between the
         two writes) is removed without a report: it was never staged.
@@ -153,7 +154,7 @@ def load_staged(output: Path) -> tuple[dict[str, StagedFile], dict[str, str]]:
             found = _read_staged(path)
         except (OSError, ValueError, KeyError, TypeError, CsvFormatError) as exc:
             logger.warning("Cannot read the staged rows %s", path, exc_info=True)
-            discarded[path.name] = f"its staged rows could not be read ({exc})"
+            discarded[_staged_name(path)] = f"its staged rows could not be read ({exc})"
             _remove(path)
             continue
         staged[found.relative_path] = found
@@ -218,6 +219,17 @@ def _read_staged(path: Path) -> StagedFile:
         raise ValueError("its rows are not the file's")
     narrow = tuple(NarrowRange.from_dict(e) for e in data["narrow_histogram_ranges"])
     return StagedFile(relative, dict(data["key"]), records, narrow)
+
+
+def _staged_name(record: Path) -> str:
+    """Return the image a staged record names, or the record's file name when unreadable."""
+    try:
+        relative = json.loads(record.read_text(encoding="utf-8"))["relative_path"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return record.name
+    if isinstance(relative, str) and record.stem == _stem(relative):
+        return relative
+    return record.name
 
 
 def _remove(record: Path) -> None:

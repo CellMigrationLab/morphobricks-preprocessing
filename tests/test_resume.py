@@ -300,3 +300,23 @@ def test_the_summary_names_the_resumed_images(tmp_path, experiment):
     killed_run(tmp_path, root, out, kill_at=3)
     result = run_experiment(root, ZYX, output_folder=out)
     assert "Resumed (rows staged by an interrupted run): 2 images" in run_summary(result)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="SIGKILL is POSIX only")
+def test_a_discarded_record_is_reported_by_its_image_and_its_true_reason(tmp_path, experiment):
+    # Review of PR #132: another pixel type was reported as changed roles or settings, and
+    # unreadable rows by the record's hashed file name instead of the image.
+    root, out = experiment
+    killed_run(tmp_path, root, out, kill_at=3)
+    first, second = sorted((out / STAGING_FOLDER).glob("*.json"))
+    record = json.loads(first.read_text(encoding="utf-8"))
+    record["key"]["dtype"] = "uint16"
+    first.write_text(json.dumps(record), encoding="utf-8")
+    rows = second.with_suffix(".csv")
+    rows.write_text(rows.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    named = json.loads(second.read_text(encoding="utf-8"))["relative_path"]
+    result = run_experiment(root, ZYX, output_folder=out)
+    assert result.written and result.resumed == ()
+    discarded = report(out)["staged_discarded"]
+    assert discarded[record["relative_path"]].startswith("the experiment's pixel type changed")
+    assert discarded[named].startswith("its staged rows could not be read")
