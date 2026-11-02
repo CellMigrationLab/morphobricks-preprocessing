@@ -282,6 +282,7 @@ def run_summary(result: RunResult, *, design_template: bool = False) -> str:
         lines.append(f"All rows were computed because {result.rebuild_reason}.")
     for label, files in (
         ("Read", result.read),
+        ("Resumed (rows staged by an interrupted run)", result.resumed),
         ("New since the last run", result.new),
         ("Changed since the last run", result.changed),
         ("Unchanged (rows kept)", () if result.rebuild_reason else result.unchanged),

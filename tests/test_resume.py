@@ -289,3 +289,13 @@ def test_a_chunk_changed_while_an_ome_zarr_image_is_read_is_never_published(tmp_
     result = run_experiment(root, ZYX, output_folder=out)
     assert not result.written
     assert [i.code for i in result.issues if i.is_error] == ["source_changed_during_run"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="SIGKILL is POSIX only")
+def test_the_summary_names_the_resumed_images(tmp_path, experiment):
+    from morphobricks_preprocessing.report import run_summary
+
+    root, out = experiment
+    killed_run(tmp_path, root, out, kill_at=3)
+    result = run_experiment(root, ZYX, output_folder=out)
+    assert "Resumed (rows staged by an interrupted run): 2 images" in run_summary(result)
