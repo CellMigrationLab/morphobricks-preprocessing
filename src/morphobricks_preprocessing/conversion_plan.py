@@ -42,6 +42,7 @@ from .conversion_issues import (
 from .conversion_record import CONVERTED, COPIED, RECORD_FILENAME, CopyEntry
 from .copy_axes import CopyLayout, copy_layout
 from .fingerprint import Fingerprint
+from .folder_rules import relative_inside
 from .links import is_inside
 from .metadata import TiffMetadata
 from .ome_tiff_copy import copy_nbytes
@@ -226,7 +227,9 @@ def copy_folder_issues(
     if is_inside(dest, root) or is_inside(root, dest):
         return [overlap_issue(root, dest)]
     masks = None if masks_folder is None else Path(masks_folder).resolve()
-    if masks is not None and (is_inside(dest, masks) or is_inside(masks, dest)):
+    if masks is not None and (
+        relative_inside(dest, masks) is not None or relative_inside(masks, dest) is not None
+    ):
         return [masks_overlap_issue(dest)]
     if dest.exists() and not dest.is_dir():
         return [not_a_folder_issue(dest)]

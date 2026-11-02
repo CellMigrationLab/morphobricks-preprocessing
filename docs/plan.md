@@ -1792,7 +1792,8 @@ Raised during review; to be decided before the milestones that need them:
     recorded, before it creates the folder, takes its lock or writes its report; `design`
     and `calibrate` raise `OutputInsideMasksError`. `RunInputs.open` refuses a recorded run
     that breaks these rules. Paths are compared resolved, with the links' containment
-    rule. An output folder that holds both the experiment and the masks folder (their
+    rule, and by device and inode for the folders that exist (a folder spelled in another
+    case on a file system that ignores case). An output folder that holds both the experiment and the masks folder (their
     parent, m8) is **allowed and documented**, not refused: the brick writes only its named
     files (and its hidden `.publish`/staging folders) at the output folder's top level, the
     experiment and masks walks never enter the output folder's other contents, and

@@ -16,8 +16,9 @@ An output folder that holds both the experiment and the masks folder (their pare
 allowed: the brick writes only named files at its top level and walks neither them nor the
 output folder when reading the experiment and the masks (contract §15).
 
-Every path is compared resolved (every link followed), with the containment rule of
-:mod:`.links`.
+Every path is compared resolved (every link followed), then by device and inode for the
+folders that exist (another spelling of a folder on a file system that ignores case), with
+:func:`.links.parts_below`.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ import os
 from pathlib import Path
 
 from .conversion_record import RECORD_FILENAME
-from .links import is_inside
+from .links import parts_below
 from .validation import ValidationIssue, error
 
 EXPERIMENT_INSIDE_MASKS = "experiment_inside_masks"
@@ -61,23 +62,25 @@ def masks_folder_issues(
         The first error of :data:`FOLDER_RULE_CODES` that applies; empty when none does.
     """
     folder, root = Path(masks_folder).resolve(), Path(experiment_root).resolve()
-    if is_inside(folder, root):
+    below = relative_inside(folder, root)
+    if below is not None:
         return [
             error(
                 MASKS_INSIDE_EXPERIMENT,
                 "The masks folder is inside the experiment folder, where its folders would be "
                 "read as conditions and repeats.",
-                [folder.relative_to(root).as_posix() or "."],
+                [below],
                 "Move the masks folder next to the experiment folder and select it there.",
             )
         ]
-    if is_inside(root, folder):
+    below = relative_inside(root, folder)
+    if below is not None:
         return [
             error(
                 EXPERIMENT_INSIDE_MASKS,
                 "The experiment folder is inside the masks folder, where its images would be "
                 "read as masks.",
-                [root.relative_to(folder).as_posix()],
+                [below],
                 "Select the folder that holds only the masks, one subfolder per mask type, "
                 "next to the experiment folder.",
             )
@@ -116,18 +119,37 @@ def output_inside_masks_issues(
     """
     if output_folder is None or masks_folder is None:
         return []
-    output, folder = Path(output_folder).resolve(), Path(masks_folder).resolve()
-    if not is_inside(output, folder):
+    below = relative_inside(Path(output_folder).resolve(), Path(masks_folder))
+    if below is None:
         return []
     return [
         error(
             OUTPUT_INSIDE_MASKS,
             "The output folder is inside the masks folder, where the run's own files would "
             "be read as masks.",
-            [output.relative_to(folder).as_posix() or "."],
+            [below],
             "Choose an output folder outside the masks folder.",
         )
     ]
+
+
+def relative_inside(path: Path, folder: str | os.PathLike) -> str | None:
+    """Return ``path`` (resolved) relative to ``folder`` when it is inside, ``"."`` for it.
+
+    Parameters
+    ----------
+    path
+        The path, resolved; it need not exist.
+    folder
+        The folder, compared as :func:`.links.parts_below` does.
+
+    Returns
+    -------
+    str or None
+        The relative path in POSIX form, or None when ``path`` is not inside ``folder``.
+    """
+    parts = parts_below(path, Path(folder))
+    return None if parts is None else Path(*parts).as_posix()
 
 
 def conversion_record_in(folder: str | os.PathLike) -> str | None:

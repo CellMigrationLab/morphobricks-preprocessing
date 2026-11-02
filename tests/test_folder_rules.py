@@ -185,3 +185,19 @@ def test_an_output_folder_holding_the_experiment_and_the_masks_is_allowed(tmp_pa
     manifest = json.loads((tmp_path / MANIFEST_FILENAME).read_text(encoding="utf-8"))
     assert manifest["masks"]["types"] == ["Cells"]
     assert default_output_folder(root) != tmp_path
+
+
+def test_the_masks_folder_spelled_in_another_case_is_the_same_folder(tmp_path):
+    # On a file system that ignores case (macOS, Windows) "Masks" is the masks folder: the
+    # rules compare existing folders by device and inode, not only by resolved name.
+    root, masks = masks_next_to(tmp_path)
+    other = masks.with_name(masks.name.swapcase())
+    if not other.is_dir():
+        pytest.skip("this file system tells names apart by case")
+    result = run_experiment(root, YX, masks_folder=masks, output_folder=other / "out")
+    assert not result.written and errors(result.issues) == ["output_inside_masks"]
+    assert not (masks / "out").exists()
+    result = convert_experiment(root, YX, other / "copies", masks_folder=masks)
+    assert errors(result.issues) == ["copy_folder_overlaps_masks"]
+    pre = preflight(root, masks_folder=tmp_path.with_name(tmp_path.name.swapcase()))
+    assert errors(pre.masks.issues) == ["experiment_inside_masks"]
