@@ -32,7 +32,8 @@ from morphobricks_preprocessing import (
 from morphobricks_preprocessing.calibration_io import calibration_text
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.run import OutputLockedError
-from morphobricks_preprocessing.run.lock import output_lock
+from morphobricks_preprocessing.run.calibrate import update_calibration
+from morphobricks_preprocessing.run.lock import LOCK_FILENAME, output_lock
 from morphobricks_preprocessing.testing import make_clean_run
 
 A = "ctrl/rep1/a.ome.tif"
@@ -427,6 +428,32 @@ def test_write_calibration_holds_the_lock(tmp_path):
         with pytest.raises(OutputLockedError, match="is locked by process"):
             write_calibration(Calibration(), tmp_path / "out")
     assert read_calibration(path)[0] == calibration
+
+
+def test_update_calibration_reads_and_writes_under_the_lock(tmp_path):
+    # Reading outside the lock would let two changes overwrite each other.
+    output = tmp_path / "out"
+    first = Calibration((calibration_entry(".", "X", 1, "um"),))
+    write_calibration(first, output)
+    seen = []
+
+    def change(current):
+        seen.append((current, (output / LOCK_FILENAME).exists()))
+        return current.stating([calibration_entry(".", "Y", 2, "um")])
+
+    changed, path = update_calibration(output, change)
+    assert seen == [(first, True)]
+    assert read_calibration(path)[0] == changed and len(changed.entries) == 2
+    assert update_calibration(output, lambda current: current) == (changed, None)
+
+
+def test_the_calibrate_command_keeps_an_unreadable_file(tmp_path, capsys):
+    output = tmp_path / "out"
+    path = state(output, ".,X,1,inch\n")
+    before = path.read_bytes()
+    assert main(["calibrate", "--output", str(output), "--size", ".", "Y", "1", "um"]) == 1
+    assert "Nothing was changed" in capsys.readouterr().out
+    assert path.read_bytes() == before and not (output / LOCK_FILENAME).exists()
 
 
 def test_the_calibrate_command_states_shows_and_removes(tmp_path, capsys):

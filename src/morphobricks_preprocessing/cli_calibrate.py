@@ -11,6 +11,7 @@ sizes with their source, and names the change in its report; no row is recompute
 from __future__ import annotations
 
 import argparse
+from functools import partial
 from pathlib import Path
 
 from .calibration import (
@@ -24,7 +25,8 @@ from .calibration_io import CalibrationFormatError, read_calibration
 from .discovery import default_output_folder
 from .recorded_sizes import PIXELS
 from .report import format_issues
-from .run import OutputLockedError, write_calibration
+from .run import OutputLockedError
+from .run.calibrate import update_calibration
 from .run.lock import lock_issue
 
 
@@ -80,18 +82,20 @@ def calibrate_command(args: argparse.Namespace) -> int:
         return 1
     path = output / CALIBRATION_FILENAME
     try:
-        current = read_calibration(path)[0] if path.is_file() else Calibration()
-        changed = _changed(current, args)
+        if not (args.size or args.pixels or args.remove):
+            shown = read_calibration(path)[0] if path.is_file() else Calibration()
+            print(calibration_summary(shown))
+            return 0
+        _changed(Calibration(), args)  # refuse a wrong statement before taking the lock
+        changed, written = update_calibration(output, partial(_changed, args=args))
+    except OutputLockedError as exc:
+        print(format_issues([lock_issue(exc)]))
+        return 1
     except (CalibrationFormatError, OSError, ValueError) as exc:
         print(f"Nothing was changed: {exc}")
         return 1
-    if changed != current:
-        try:
-            path = write_calibration(changed, output)
-        except OutputLockedError as exc:
-            print(format_issues([lock_issue(exc)]))
-            return 1
-        print(f"Written to {path}. The next run records these sizes; no row is recomputed.")
+    if written is not None:
+        print(f"Written to {written}. The next run records these sizes; no row is recomputed.")
     print(calibration_summary(changed))
     return 0
 
