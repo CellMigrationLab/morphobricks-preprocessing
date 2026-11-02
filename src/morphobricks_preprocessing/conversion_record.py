@@ -83,21 +83,26 @@ class CopyEntry:
     unknown_sizes: Mapping[str, str] = field(default_factory=dict)
 
     def same_plan(self, other: CopyEntry) -> bool:
-        """Return True if ``other`` copies the same source the same way (copies aside)."""
+        """Return True if ``other`` copies the same source the same way (copies aside).
+
+        The source's fingerprint and axes, the action and reason, the roles, the copy's
+        axes and its pixel sizes (and which sizes are unknown) must all be the same, so a
+        copy written under another rule is never reused beside new ones.
+        """
+        return self._plan() == other._plan()
+
+    def _plan(self) -> tuple:
+        """Return what decides how the copy is written."""
         return (
             self.relative_path,
             self.action,
             self.reason,
             self.source,
+            self.source_axes,
             self.roles,
             self.copy_axes,
-        ) == (
-            other.relative_path,
-            other.action,
-            other.reason,
-            other.source,
-            other.roles,
-            other.copy_axes,
+            self.pixel_sizes,
+            frozenset(self.unknown_sizes),
         )
 
     def to_dict(self) -> dict:

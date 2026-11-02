@@ -110,6 +110,30 @@ def test_a_different_existing_copy_is_never_overwritten(tmp_path):
     assert snapshot(copies) == before
 
 
+def test_a_copy_recorded_with_other_pixel_sizes_is_not_reused(tmp_path):
+    # Review of PP-11 (issues #92 and #96's criteria): the copy's scales are checked before
+    # it is reused, so copies written under another rule are never mixed with new ones.
+    exp, copies = tmp_path / "exp", tmp_path / "copies"
+    path = exp / "c" / "img.tif"
+    path.parent.mkdir(parents=True)
+    tifffile.imwrite(
+        path, np.zeros((2, 6, 9), np.uint8), ome=True, photometric="minisblack",
+        metadata={"axes": "ZYX", "PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5},
+    )  # fmt: skip
+    assert convert_experiment(exp, SWAPPED, copies).written
+    record = json.loads((copies / CONVERSION_RECORD_FILENAME).read_text())
+    sizes = record["files"][0]["pixel_sizes"]
+    assert [s["value"] for s in sizes if s["role"] in "XY"] == [0.5, 0.5]
+    for size in sizes:
+        if size["role"] in "XY":
+            size.update(value=None, unit=None, source=None)
+    record["files"][0]["unknown_sizes"] = {"X": "relabelled", "Y": "relabelled"}
+    (copies / CONVERSION_RECORD_FILENAME).write_text(json.dumps(record))
+    again = convert_experiment(exp, SWAPPED, copies)
+    assert not again.written and codes(again.issues) == ["copy_differs"]
+    assert again.issues[0].paths == ("c/img.tif",)
+
+
 def test_a_folder_holding_other_files_or_another_experiments_copies_is_refused(tmp_path):
     exp = swapped_experiment(tmp_path / "exp")
     busy = tmp_path / "busy"
