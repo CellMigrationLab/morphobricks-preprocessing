@@ -19,7 +19,6 @@ reads images.
 from __future__ import annotations
 
 import csv
-import datetime
 import hashlib
 import io
 import os
@@ -32,6 +31,14 @@ from morphobricks_normalization.records import SINGLE
 
 from ._io import write_text_atomic
 from .dataset import BiologicalRepeat
+from .design_values import (
+    DATE_FORMAT,
+    DesignFormatError,
+    check_header,
+    is_date,
+    parse_bool,
+    parse_count,
+)
 from .discovery import IdentityError, check_identity_case, check_identity_text
 from .validation import ValidationIssue, error, plural
 
@@ -48,16 +55,6 @@ DESIGN_COLUMNS = (
     "confirmed_on",
     "schema_version",
 )
-
-DATE_FORMAT = "YYYY-MM-DD"
-"""The form of ``confirmed_on``: an ISO 8601 calendar date, e.g. ``2026-10-26``."""
-
-_TRUE = frozenset({"true", "yes", "1"})
-_FALSE = frozenset({"false", "no", "0", ""})
-
-
-class DesignFormatError(ValueError):
-    """Raised when a file is not an experiment design this version can read."""
 
 
 class DesignCheckError(ValueError):
@@ -508,7 +505,9 @@ def read_experiment_design(path: str | os.PathLike) -> ExperimentDesign:
     Raises
     ------
     DesignFormatError
-        If the file cannot be read, a column is missing, a value is not valid
+        If the file cannot be read, the header names a column twice (ignoring case and
+        outer whitespace) or has a column without a name, a column is missing, a value
+        is not valid
         (including a repeat-group name or confirmation date as above), a folder is
         listed twice, the rows of a condition disagree about ``control``, or the
         schema version is not 1.
@@ -519,6 +518,7 @@ def read_experiment_design(path: str | os.PathLike) -> ExperimentDesign:
     except (OSError, UnicodeDecodeError) as exc:
         raise DesignFormatError(f"{path} cannot be read: {exc}") from exc
     reader = csv.DictReader(io.StringIO(text))
+    check_header(reader.fieldnames or (), path.name)
     missing = [c for c in DESIGN_COLUMNS if c not in (reader.fieldnames or ())]
     if missing:
         raise DesignFormatError(
@@ -533,18 +533,7 @@ def read_experiment_design(path: str | os.PathLike) -> ExperimentDesign:
         rows.append(_parse_row(record, f"{path.name}, line {number}"))
         numbers.append(number)
     _check_group_case(zip(numbers, rows, strict=True), path.name)
-    keys = [row.key for row in rows]
-    twice = sorted({key for key in keys if keys.count(key) > 1})
-    if twice:
-        raise DesignFormatError(
-            f"{path.name} lists a folder more than once: "
-            + "; ".join(f"{c} / {b}" for c, b in twice)
-        )
-    for condition in {row.condition for row in rows}:
-        if len({row.control for row in rows if row.condition == condition}) > 1:
-            raise DesignFormatError(
-                f"{path.name}: control must be the same in every row of condition {condition}."
-            )
+    _check_rows(rows, path.name)
     return ExperimentDesign(tuple(rows))
 
 
@@ -766,6 +755,7 @@ def _parse_strict(data: bytes, name: str) -> ExperimentDesign:
         lines = list(csv.reader(io.StringIO(text, newline=""), strict=True))
     except csv.Error as exc:
         raise DesignFormatError(f"{name} is not a well-formed CSV file: {exc}") from None
+    check_header(lines[0] if lines else (), name)
     if not lines or tuple(lines[0]) != DESIGN_COLUMNS:
         found = ", ".join(lines[0]) if lines else "nothing"
         raise DesignFormatError(
@@ -786,6 +776,17 @@ def _parse_strict(data: bytes, name: str) -> ExperimentDesign:
         numbers.append(number)
     if not rows:
         raise DesignFormatError(f"{name} lists no folder.")
+    _check_rows(rows, name)
+    try:
+        check_identity_case((row.condition, row.biological_repeat, SINGLE) for row in rows)
+    except IdentityError as exc:
+        raise DesignFormatError(f"{name}: {exc}") from None
+    _check_group_case(zip(numbers, rows, strict=True), name)
+    return ExperimentDesign(tuple(rows))
+
+
+def _check_rows(rows: list[DesignRow], name: str) -> None:
+    """Refuse a folder listed twice, or rows of one condition disagreeing on ``control``."""
     keys = [row.key for row in rows]
     twice = sorted({key for key in keys if keys.count(key) > 1})
     if twice:
@@ -797,12 +798,6 @@ def _parse_strict(data: bytes, name: str) -> ExperimentDesign:
             raise DesignFormatError(
                 f"{name}: control must be the same in every row of condition {condition}."
             )
-    try:
-        check_identity_case((row.condition, row.biological_repeat, SINGLE) for row in rows)
-    except IdentityError as exc:
-        raise DesignFormatError(f"{name}: {exc}") from None
-    _check_group_case(zip(numbers, rows, strict=True), name)
-    return ExperimentDesign(tuple(rows))
 
 
 def _check_strict_values(record: Mapping[str, str], where: str) -> None:
@@ -858,7 +853,7 @@ def _parse_row(record: Mapping[str, str | None], where: str) -> DesignRow:
             f"the folder name {repeat!r}."
         ) from None
     on = text("confirmed_on")
-    if on and not _is_date(on):
+    if on and not is_date(on):
         raise DesignFormatError(
             f"{where}, column confirmed_on: {on!r} is not a date in the form {DATE_FORMAT} "
             "(for example 2026-10-26)."
@@ -867,24 +862,14 @@ def _parse_row(record: Mapping[str, str | None], where: str) -> DesignRow:
         condition=condition,
         biological_repeat=repeat,
         repeat_group=group,
-        control=_bool(text("control"), "control", where),
-        image_count=_count(text("image_count"), "image_count", where),
-        technical_repeat_count=_count(
+        control=parse_bool(text("control"), "control", where),
+        image_count=parse_count(text("image_count"), "image_count", where),
+        technical_repeat_count=parse_count(
             text("technical_repeat_count"), "technical_repeat_count", where
         ),
-        confirmed=_bool(text("confirmed"), "confirmed", where),
+        confirmed=parse_bool(text("confirmed"), "confirmed", where),
         confirmed_on=on,
     )
-
-
-def _is_date(value: str) -> bool:
-    if len(value) != len(DATE_FORMAT) or value[4] != "-" or value[7] != "-":
-        return False
-    try:
-        datetime.date.fromisoformat(value)
-    except ValueError:
-        return False
-    return True
 
 
 def _design_problems(design: ExperimentDesign) -> list[tuple[DesignRow, str]]:
@@ -925,34 +910,11 @@ def _row_problems(row: DesignRow) -> list[str]:
         check_identity_text(row.repeat_group, "repeat_group")
     except IdentityError as exc:
         problems.append(str(exc))
-    if row.confirmed_on and not _is_date(row.confirmed_on):
+    if row.confirmed_on and not is_date(row.confirmed_on):
         problems.append(
             f"confirmed_on {row.confirmed_on!r} is not a date in the form {DATE_FORMAT}"
         )
     return problems
-
-
-def _bool(value: str, column: str, where: str) -> bool:
-    lowered = value.lower()
-    if lowered in _TRUE:
-        return True
-    if lowered in _FALSE:
-        return False
-    raise DesignFormatError(f"{where}: {column} must be true or false, not {value!r}.")
-
-
-def _count(value: str, column: str, where: str) -> int:
-    if not value:
-        return 0
-    try:
-        number = int(value)
-    except ValueError:
-        raise DesignFormatError(
-            f"{where}: {column} must be a whole number, not {value!r}."
-        ) from None
-    if number < 0:
-        raise DesignFormatError(f"{where}: {column} must not be negative.")
-    return number
 
 
 def _bool_text(value: bool) -> str:

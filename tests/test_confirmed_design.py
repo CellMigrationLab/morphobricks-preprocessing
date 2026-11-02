@@ -9,10 +9,12 @@ from morphobricks_preprocessing import (
     DESIGN_FILENAME,
     ConfirmedDesign,
     DesignCheckError,
+    DesignFormatError,
     biological_repeats,
     default_design,
     default_output_folder,
     discover_experiment,
+    load_design,
     read_confirmed_design,
     read_experiment_design,
     read_manifest,
@@ -140,7 +142,7 @@ def test_a_missing_file_is_refused(tmp_path):
         ("", "must have the columns"),
         (HEADER.replace("repeat_group,control", "control,repeat_group") + GOOD, "in this order"),
         (HEADER.replace("\n", ",notes\n") + GOOD, "in this order"),
-        (HEADER.replace("schema_version", "condition") + GOOD, "in this order"),
+        (HEADER.replace("schema_version", "condition") + GOOD, "column .condition. twice"),
         (HEADER + "ctrl,rep1,rep1,true,2,0,true,2026-10-31\n", "8 values for 9 columns"),
         (HEADER + "ctrl,rep1,rep1,true,2,0,true,2026-10-31,1,x\n", "10 values for 9 columns"),
         (HEADER + '"ctrl,rep1,rep1,true,2,0,true,2026-10-31,1\n', "well-formed CSV"),
@@ -188,13 +190,51 @@ def test_the_lenient_reader_takes_what_the_shared_reader_refuses(tmp_path):
     path = write(tmp_path, HEADER + "ctrl ,rep1,rep1,TRUE,2,0,yes,,1\n")
     assert read_experiment_design(path).repeat_groups() == {("ctrl", "rep1"): "rep1"}
     assert refusal(path).code == "unreadable_experiment_design"
-    # A duplicated column: the lenient reader silently kept the last one.
-    path = write(
-        tmp_path,
-        HEADER.replace("\n", ",repeat_group\n") + "ctrl,rep1,rep1,true,2,0,true,,1,other\n",
-    )
-    assert read_experiment_design(path).repeat_groups() == {("ctrl", "rep1"): "other"}
-    assert refusal(path).code == "unreadable_experiment_design"
+
+
+DUPLICATED = HEADER.replace("\n", ",repeat_group\n")
+
+
+@pytest.mark.parametrize(
+    "text, message",
+    [
+        # Issue #83: the lenient reader silently kept the last of two columns.
+        (
+            DUPLICATED + "ctrl,rep1,rep1,true,2,0,true,,1,other\n",
+            r"names the column 'repeat_group' twice \(columns 3 and 10\)",
+        ),
+        # Equal values are refused too: the header itself is wrong.
+        (DUPLICATED + "ctrl,rep1,rep1,true,2,0,true,,1,rep1\n", "'repeat_group' twice"),
+        (
+            HEADER.replace("\n", ", Control\n") + "ctrl,rep1,rep1,true,2,0,true,,1,false\n",
+            r"'control' twice \(columns 4 and 10, the second written ' Control'\)",
+        ),
+        (HEADER.replace("\n", ",\n") + "ctrl,rep1,rep1,true,2,0,true,,1,\n", "column 10 .*no name"),
+        (
+            HEADER.replace("\n", ",  \n") + "ctrl,rep1,rep1,true,2,0,true,,1,\n",
+            "column 10 .*no name",
+        ),
+    ],
+)
+def test_every_reader_refuses_a_column_named_twice_or_not_at_all(tmp_path, text, message):
+    path = write(tmp_path, text)
+    with pytest.raises(DesignFormatError, match=message):
+        read_experiment_design(path)
+    issue = refusal(path)
+    assert issue.code == "unreadable_experiment_design"
+    assert re.search(message, issue.message), issue.message
+    # The step-1 reader refuses it too, and leaves the file as it is.
+    with pytest.raises(DesignCheckError, match=message):
+        load_design(tmp_path, [])
+    assert path.read_text(encoding="utf-8") == text
+
+
+def test_the_design_command_does_not_rewrite_a_design_with_a_column_named_twice(tmp_path, capsys):
+    text = DUPLICATED + "ctrl,rep1,rep1,true,2,0,false,,1,other\n"
+    path = write(tmp_path, text)
+    assert main(["design", "--output", str(tmp_path), "--confirm-all"]) == 1
+    assert "'repeat_group' twice" in capsys.readouterr().out
+    assert path.read_text(encoding="utf-8") == text
 
 
 def test_an_unconfirmed_group_is_refused(tmp_path):

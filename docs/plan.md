@@ -1481,3 +1481,15 @@ Raised during review; to be decided before the milestones that need them:
     design card. A technical-repeat folder named `single` keeps question 23's meaning
     (the level's value `single`, counted as no technical-repeat folder, like a missing
     level): documented, not changed. Contract §11, §12; user guide §4.
+63. Which design file headers are read, and how does `RunInputs.design()` read the file
+    (issue #83)?
+    *Decided (owner, 2 November 2026):* a header that names a column twice, or has a
+    column without a name (empty or only whitespace), is refused by every design reader
+    (`read_experiment_design`, so `load_design`, the notebook, `check`, `run --design` and
+    the `design` command, and `read_confirmed_design`), with `DesignFormatError` naming
+    the column and both positions; the lenient reader kept the last of two columns before,
+    and a test asserted it. Names are compared ignoring case and outer whitespace. Nothing
+    is rewritten on refusal. `RunInputs.design()` reads with `read_confirmed_design`
+    checked against the manifest's SHA-256 (it used the lenient reader). The header check
+    and the value parsers moved to `design_values` (pure); `DesignFormatError` is
+    re-exported from `design` unchanged. Contract §9.1, §12, §16; user guide §8.
