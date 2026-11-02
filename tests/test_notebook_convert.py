@@ -11,6 +11,7 @@ step: the copies checked in step 1 with the same output folder, then the run.
 
 import importlib
 import json
+import os
 import re
 from dataclasses import replace
 
@@ -304,9 +305,19 @@ def test_a_conversion_going_on_shows_the_lock_card_and_writes_nothing(tmp_path):
         assert ui.is_visible(nb.convert_lock.card)
         assert "Another conversion holds the lock" in text(nb.convert_lock.holder)
         assert "The folder for the copies is locked" in nb.convert_lock.card.children[0].value
+    assert sorted(p.name for p in copies.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name != "posix", reason="only POSIX can tell a process runs")
+def test_the_lock_of_a_conversion_running_here_is_kept(tmp_path):
+    copies = tmp_path / "copies"
+    copies.mkdir()
+    nb, _ = ready_to_convert(tmp_path)
+    with output_lock(copies):
+        nb.convert_button.click()
         nb.convert_lock.button.click()  # a process running here: its lock is kept
         assert "The lock was kept" in nb.convert_lock.result.value
-    assert sorted(p.name for p in copies.iterdir()) == []
+        assert (copies / LOCK_FILENAME).exists()
 
 
 def test_the_stale_lock_of_a_stopped_conversion_is_removed_only_on_the_button(tmp_path):
