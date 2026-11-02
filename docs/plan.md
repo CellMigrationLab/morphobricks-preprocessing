@@ -602,6 +602,30 @@ API, CLI). The notebook and CLI only call the API.
     atomic write's temporary file is open leaves that hidden `.<name>.<random>.tmp` file in
     the output folder (on main too, for the provisional report); the lock could remove
     them.
+- **PP-13 (docs and the migration guide)** *(done, this PR; design v0.4 §8)*:
+  - [docs/migration-0.3-to-0.4.md](migration-0.3-to-0.4.md): every breaking change from
+    v0.3.4 for users and for bricks (what changed, why, what to do), linked from the README
+    and the user guide §7;
+  - [CHANGELOG.md](../CHANGELOG.md) for 0.4.0 (breaking, added, fixed, removed);
+  - docs pass: README (masks, `RunInputs`, resume), user guide §7 (upgrading), contract
+    (§9.3 before §9.4; the removed declared-axes text dropped), the notebook's step 3 note on
+    resuming;
+  - [docs/colab-release-check.md](colab-release-check.md): the Colab hand checks of PRs
+    #118, #123 and #127 in one list, for the major release;
+  - version 0.4.0rc4 (pyproject and the notebook pin), for the data-flow audit and the bricks'
+    migration; the final 0.4.0 bump comes after the audit.
+  - **Follow-ups recorded for the audit (coordinator, 2 November 2026; not changed here):**
+    (a) `pair_counts` breaks an exact-half tie by the lower parent index, so `inside` and
+    `parents_with_N_children` can depend on label numbering when a child lies exactly half in
+    each of two parents (the `same_objects` counts do not, question 67); (b) masks are not
+    bound to a fingerprint during a run: they are fingerprinted when the manifest is written
+    (PP-12 follow-up (a)); (c) a run killed while an atomic write's temporary file is open
+    leaves a hidden `.<name>.<random>.tmp` in the output folder, for example after the
+    provisional report (PP-12 follow-up (b)); (d) `length_units.to_micrometers` refuses NumPy
+    scalars other than `float64` (for example `np.float32`, `np.int64`) instead of
+    converting them; (e) the notebook's axis card does not show the size and plane-count
+    warnings recomputed under the confirmed roles (question 68): they appear only in the
+    run's result.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;
@@ -609,8 +633,17 @@ API, CLI). The notebook and CLI only call the API.
     `current_version` to the tag without "v", the same version in
     `notebooks/notebook_latest_versions.yaml`, and the tag named in the Step 0 Colab callout
     (`tests/test_notebook_file.py` checks that the four agree);
-  - run the notebook by hand on Google Colab with the PR #118 checklist (the tests run it
-    only in a local kernel).
+  - add the tag's changes to [CHANGELOG.md](../CHANGELOG.md), and any breaking change to the
+    [migration guide](migration-0.3-to-0.4.md);
+  - run the full gate (ruff check and format, pytest with `.[dev,notebook,zarr]`,
+    `tools/check.py --rules`) and wait for CI on every platform;
+  - **for the major release v0.4.0 only** (owner, 2 November 2026): after the round-2
+    data-flow audit and the matrix run, run the notebook by hand on Google Colab with
+    [docs/colab-release-check.md](colab-release-check.md) (PRs #118, #123 and #127). Release
+    candidates are not checked on Colab: until then the notebook is verified headless only
+    (the tests run it in a local kernel).
+  - v0.4.0rc4 (PP-13): version and pin set; the owner tags it. The data-flow audit and
+    MorphoFeature's migration run against it.
 
 ## 11. Tests and acceptance criteria
 

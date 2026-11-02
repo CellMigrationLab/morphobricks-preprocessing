@@ -21,7 +21,7 @@ run **Step 0**. It detects local Jupyter or Google Colab and checks these option
 2. **Installed package:** otherwise, use the package already available to this kernel.
 3. **GitHub installation:** if the package is missing, install it with the notebook
    dependencies from the project's GitHub repository, at the release the notebook names
-   (`RELEASE_TAG` in Step 0, for example `v0.4.0rc3`), never the changing `main` branch.
+   (`RELEASE_TAG` in Step 0, for example `v0.4.0rc4`), never the changing `main` branch.
 
 Missing notebook dependencies are installed into the same Python environment as the
 kernel. A local checkout is installed in editable mode when it needs dependencies;
@@ -927,6 +927,12 @@ Run the notebook or `run` again after adding, changing or removing images:
 - changing only the image type reads nothing again: the histograms are the same for both
   types, and only the manifest records the new type.
 
+**After upgrading from v0.3** (or from v0.4.0rc3 or earlier with OME-Zarr images): the
+first run recomputes every row. A v0.3 manifest (version 1) gives no reusable row and no
+recorded input, so give the axis roles, masks and exclusions again; an OME-Zarr image
+recorded without its file inventory counts as changed. Later bricks refuse such older runs
+until they are run again. The [migration guide](migration-0.3-to-0.4.md) lists every change.
+
 Run the brick again after adding images or masks before using a later brick: later bricks
 read the images and masks this brick's run recorded, and refuse an experiment holding images
 or masks the run did not record (they name them).
@@ -1065,7 +1071,7 @@ The experiment design is optional in Python: without `design=`, the run neither 
 nor writes one. To record it as the notebook does (`load_design` returns the saved design
 brought up to date with the folders, or the default design when there is no file yet; a
 saved file that cannot be read raises `DesignCheckError` instead, never a default design;
-breaking change for the next release, plan §12 question 43: until v0.3.4 it returned a
+breaking in v0.4.0, plan §12 question 43: until v0.3.4 it returned a
 third value, `problem`, with the default design):
 
 ```python
