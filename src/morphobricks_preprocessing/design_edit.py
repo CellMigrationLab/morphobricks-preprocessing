@@ -42,7 +42,9 @@ class DesignEdit:
         Confirm every repeat group not confirmed yet.
     unconfirm
         Repeat groups whose confirmation is taken back (after the moves, before the
-        confirmations); the notebook's "Undo" (PP-10).
+        confirmations); the notebook's "Undo" (PP-10). Python only, not a ``design``
+        option. It never confirms anything: a group in it cannot also be confirmed, and it
+        cannot be combined with ``confirm_all``.
     """
 
     repeat_groups: Mapping[tuple[str, str], str] = field(default_factory=dict)
@@ -114,7 +116,7 @@ def apply_design_edit(design: ExperimentDesign, edit: DesignEdit, on: str) -> Ex
     """
     design = _moved(design, edit.repeat_groups)
     design = _controls(design, edit.control, edit.not_control)
-    design = _unconfirmed(design, edit.unconfirm, edit.confirm)
+    design = _unconfirmed(design, edit.unconfirm, edit.confirm, edit.confirm_all)
     groups = design.unconfirmed_groups if edit.confirm_all else edit.confirm
     _known("repeat group", groups, design.groups)
     for group in dict.fromkeys(groups):
@@ -157,11 +159,14 @@ def _controls(
 
 
 def _unconfirmed(
-    design: ExperimentDesign, unconfirm: tuple[str, ...], confirm: tuple[str, ...]
+    design: ExperimentDesign,
+    unconfirm: tuple[str, ...],
+    confirm: tuple[str, ...],
+    confirm_all: bool,
 ) -> ExperimentDesign:
     """Take back confirmations, refusing unknown groups and a group both confirmed and not."""
     _known("repeat group", unconfirm, design.groups)
-    both = sorted(set(unconfirm) & set(confirm))
+    both = sorted(set(unconfirm) & set(confirm)) if not confirm_all else sorted(set(unconfirm))
     if both:
         raise DesignEditError(f"{', '.join(both)} cannot be confirmed and unconfirmed at once")
     for group in dict.fromkeys(unconfirm):

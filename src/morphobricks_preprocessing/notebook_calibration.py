@@ -111,14 +111,16 @@ class _CalibrationCard:
         """Disable the size for ``pixels``, which states no value."""
         self.calibration_size.disabled = self.calibration_unit.value == PIXELS
 
-    def _shown_calibration(self) -> tuple[Preflight, dict | None]:
+    def _shown_calibration(self, output: Path | None = None) -> tuple[Preflight, dict | None]:
         """Return the preflight with its sizes as the run records them, and the roles.
 
         Before the axis roles are confirmed, the sizes the folder check found and no roles;
         after, the sizes fitted to the confirmed roles (no Z or T size for an image without
-        that axis, with ``calibration_axis_absent``), as the run records them.
+        that axis, with ``calibration_axis_absent``), as the run records them. With
+        ``output``, ``calibration.csv`` is read again from that folder first, as the run
+        reads it (it may have been edited, or the output folder changed, since the check).
         """
-        pre = self.preflight
+        pre = self.preflight if output is None else recalibrated(self.preflight, output)
         if self.confirmed_mapping is None:
             return pre, None
         review = review_axes(

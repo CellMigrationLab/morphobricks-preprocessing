@@ -39,6 +39,11 @@ def test_unconfirm_takes_a_confirmation_back_and_refuses_contradictions(experime
         apply_design_edit(design, DesignEdit(unconfirm=("nope",)), "2026-11-02")
     with pytest.raises(DesignEditError, match="cannot be confirmed and unconfirmed"):
         apply_design_edit(design, DesignEdit(confirm=("rep1",), unconfirm=("rep1",)), "2026-11-02")
+    with pytest.raises(DesignEditError, match="cannot be confirmed and unconfirmed"):
+        apply_design_edit(design, DesignEdit(unconfirm=("rep1",), confirm_all=True), "2026-11-02")
+    # Taking back a confirmation never confirms anything.
+    fresh = default_design(pre.dataset.repeats)
+    assert not apply_design_edit(fresh, DesignEdit(unconfirm=fresh.groups), "2026-11-02").confirmed
 
 
 def test_write_design_holds_the_lock(experiment, tmp_path):

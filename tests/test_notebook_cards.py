@@ -20,9 +20,10 @@ pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
 
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
+from morphobricks_preprocessing.calibration import Calibration, calibration_entry  # noqa: E402
 from morphobricks_preprocessing.design import read_experiment_design  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
-from morphobricks_preprocessing.run import LOCK_FILENAME  # noqa: E402
+from morphobricks_preprocessing.run import LOCK_FILENAME, write_calibration  # noqa: E402
 from run_files import check_outputs, finished_pid  # noqa: E402
 from tiff_tree import write_data  # noqa: E402
 
@@ -294,6 +295,17 @@ def test_the_run_step_names_the_mode_and_the_input_changes(experiment):
     assert "<b>exclude</b>" in nb.run_status.value and "Mode: <b>full</b>" in nb.run_status.value
 
 
+def test_the_plan_reads_the_calibration_the_run_reads(experiment):
+    """A ``calibration.csv`` edited after the check (e.g. by ``calibrate``) is in the plan."""
+    nb = ready(experiment)
+    assert nb.run().written
+    output = output_of(experiment)
+    write_calibration(Calibration((calibration_entry(".", "X", 0.7, "um"),)), output)
+    planned = nb._planned_changes(output.resolve())
+    assert [change.name for change in planned] == ["calibration"]
+    assert nb.run().input_changes == planned
+
+
 def test_a_stopped_run_says_it_wrote_its_report(experiment):
     nb = ready(experiment)
     (experiment / "drug/rep2/a.tif").write_bytes(b"no longer an image")
@@ -326,6 +338,21 @@ def test_a_stale_lock_is_removed_only_on_the_button(experiment):
     assert "The lock of the stopped run was removed" in nb.run_lock.result.value
     assert nb.run().written
     assert not ui.is_visible(nb.run_lock.card)
+
+
+def test_the_button_removes_only_the_lock_it_names(experiment):
+    """A lock taken by another run after the card was shown is named, not removed."""
+    nb = ready(experiment)
+    output = output_of(experiment)
+    hold_lock(output, finished_pid())
+    assert not nb.run().written
+    hold_lock(output, 4242, host="another-computer")
+    nb.run_lock.button.click()
+    assert (output / LOCK_FILENAME).exists()
+    assert "Nothing was removed" in nb.run_lock.result.value
+    assert "another-computer" in nb.run_lock.holder.value and "4242" in nb.run_lock.holder.value
+    nb.run_lock.button.click()  # the user has now seen this holder too
+    assert not (output / LOCK_FILENAME).exists()
 
 
 @pytest.mark.skipif(os.name != "posix", reason="only POSIX can tell a process runs")

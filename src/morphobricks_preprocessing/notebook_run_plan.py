@@ -117,7 +117,7 @@ class _RunPlan:
             self._given_inputs(),
             output,
             design=self.design,
-            calibration=self._shown_calibration()[0].calibration,
+            calibration=self._shown_calibration(output)[0].calibration,
         )
 
     def _given_inputs(self) -> GivenInputs:
