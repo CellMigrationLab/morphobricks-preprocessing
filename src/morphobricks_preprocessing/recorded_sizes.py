@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
+from .length_units import _MICROMETERS
 from .physical_sizes import PhysicalSizes, UnsupportedUnitError, to_micrometers
 
 SIZE_ROLES = ("X", "Y", "Z", "T")
@@ -96,14 +97,23 @@ def header_sizes(sizes: PhysicalSizes) -> tuple[RecordedSize, ...]:
     Returns
     -------
     tuple of RecordedSize
-        One entry per role of :data:`SIZE_ROLES`; unknown sizes have no value.
+        One entry per role of :data:`SIZE_ROLES`; unknown sizes have no value. A size is
+        recorded only with a supported unit (a length unit of :data:`.SPACE_UNITS`, or a
+        time unit): one without a unit, or in another unit (``"pixel"``, ``"inch"``), is
+        unknown, never recorded as a value of no unit (audit I3); the folder check names
+        such a unit (``unsupported_pixel_size_unit``).
     """
     return tuple(
         RecordedSize(role, sizes.scale(role), sizes.unit(role), HEADER)
-        if sizes.known(role)
+        if sizes.known(role) and _supported(role, sizes.unit(role))
         else RecordedSize(role)
         for role in SIZE_ROLES
     )
+
+
+def _supported(role: str, unit: str | None) -> bool:
+    """Return True if ``unit`` is a supported unit of ``role`` (a time unit for T)."""
+    return unit is not None if role == "T" else unit in _MICROMETERS
 
 
 def sizes_to_data(sizes: Iterable[RecordedSize]) -> list[dict]:

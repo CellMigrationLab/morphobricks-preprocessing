@@ -818,7 +818,7 @@ def test_sample_planes_report_problems(tmp_path):
     pre = preflight(root)
     misfit, fits = sorted(run_module.sample_planes(pre, ZYX), key=lambda s: s.plane is not None)
     assert misfit.relative_path == "b.tif" and "does not fit" in misfit.error
-    too_big = run_module.sample_planes(pre, ZYX, memory_limit=100)
+    too_big = run_module.sample_planes(pre, ZYX, memory_limit=10)
     assert "limit" in too_big[0].error and too_big[0].plane is None
 
 

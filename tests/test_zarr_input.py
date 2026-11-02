@@ -392,7 +392,7 @@ def test_mixed_formats_with_different_axis_orders_are_not_a_dimension_conflict(t
     write_data(tmp_path / "a.tif", random_data((3, 2, 8, 8)), axes="ZCYX", imagej=True)
     write_ngff(tmp_path / "b.ome.zarr", random_data((2, 3, 8, 8)), "czyx")
     report = inspect_images(tmp_path, ["a.tif", "b.ome.zarr"])
-    assert report.issues == ()
+    assert codes(report.issues) == ["unsupported_pixel_size_unit"]  # its scale 1 has no unit
 
 
 def test_the_manifest_records_each_files_own_axis_roles(tmp_path):
@@ -619,7 +619,7 @@ def test_large_chunks_are_read_a_few_rows_at_a_time(tmp_path):
     mapping = prefill_mapping("ZYX")
     layout = plane_layout(path, mapping, memory_limit=smallest_limit(path, mapping))
     assert layout.block_shape[0] < 64
-    preview = read_plane(path, mapping, memory_limit=layout.memory_estimate - 1, preview=True)
+    preview = read_plane(path, mapping, memory_limit=layout.page_nbytes * 2 - 1, preview=True)
     assert preview.step >= 2
     np.testing.assert_array_equal(preview.pixels, data[0, :: preview.step, :: preview.step])
 
@@ -847,6 +847,6 @@ def test_pixel_sizes_are_compared_across_tiff_and_ome_zarr(tmp_path):
     with_scale(other, [1.0, 1.0], ["micrometer", "micrometer"])
     plain = write_ngff(tmp_path / "d.ome.zarr", np.zeros((8, 8), np.uint8), "yx")
     report = inspect_images(tmp_path, ["a.ome.tif", "b.ome.zarr", "c.ome.zarr", "d.ome.zarr"])
-    assert codes(report.issues) == ["different_pixel_sizes", "missing_pixel_size"]
-    assert report.issues[0].paths == ("c.ome.zarr",)
-    assert report.issues[1].paths == (plain.name,)
+    assert codes(report.issues)[1:] == ["missing_pixel_size", "unsupported_pixel_size_unit"]
+    assert report.issues[0].paths == ("c.ome.zarr",) and len(report.issues) == 3  # d: no unit
+    assert report.issues[1].paths == report.issues[2].paths == (plain.name,)

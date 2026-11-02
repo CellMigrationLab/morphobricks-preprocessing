@@ -3,7 +3,9 @@
 Pixel sizes and z-steps that differ between the images (``different_pixel_sizes``), are known
 for only some of them (``missing_pixel_size``), or are given in a length unit that is not
 converted (``unsupported_pixel_size_unit``, decision D-a2), or come from a calibration the
-metadata give but that cannot be used (``invalid_physical_calibration``, issue #94). The
+metadata give but that cannot be used (``invalid_physical_calibration``, issue #94), and
+images the bricks measuring lengths will refuse: a pixel size known along only one of X and
+Y (``partial_pixel_size``) or pixels that are not square (``non_square_pixels``, audit m5). The
 checks run on the sizes an image is recorded with: its header's, or those stated in
 ``calibration.csv`` (design v0.4 §3, :mod:`.calibration`), so they check the resolved values.
 Moved from :mod:`.metadata` (PP-8).
@@ -27,6 +29,8 @@ PIXEL_SIZE_CODES = (
     "missing_pixel_size",
     "unsupported_pixel_size_unit",
     "invalid_physical_calibration",
+    "partial_pixel_size",
+    "non_square_pixels",
 )
 """The codes of these checks; :func:`.run.preflight.preflight` gives them on resolved sizes."""
 
@@ -58,7 +62,8 @@ def pixel_size_issues(
     -------
     list of ValidationIssue
         Warnings only: ``different_pixel_sizes``, ``missing_pixel_size``,
-        ``unsupported_pixel_size_unit`` and ``invalid_physical_calibration``.
+        ``unsupported_pixel_size_unit``, ``invalid_physical_calibration``,
+        ``partial_pixel_size`` and ``non_square_pixels``.
     """
     if sizes is None:
         sizes = {f.relative_path: header_sizes(f.physical_sizes) for f in files}
@@ -73,6 +78,7 @@ def pixel_size_issues(
         *_missing_issue(axes, by_role),
         *_unit_issue(files, by_role),
         *_invalid_issue(files, by_role),
+        *_shape_issues(files, by_role),
     ]
 
 
@@ -126,6 +132,63 @@ def _invalid_issue(
             "command).",
         )
     ]
+
+
+def _shape_issues(
+    files: Sequence[TiffMetadata], by_role: Mapping[str, Mapping[str, RecordedSize]]
+) -> list[ValidationIssue]:
+    """Warn about images whose X and Y sizes the bricks measuring lengths will refuse (m5).
+
+    Calibration decisions 1 and 8 (2 November 2026): a pixel size known in micrometres along
+    only one of X and Y (the other unknown or stated as ``pixels``) is partial; the Y and X
+    sizes are square only when exactly equal in micrometres, never within a tolerance.
+    """
+    partial, non_square = {}, {}
+    for f in files:
+        x, y = (by_role[f.relative_path].get(role) for role in ("X", "Y"))
+        x, y = (None if size is None else size.micrometers() for size in (x, y))
+        if (x is None) != (y is None):
+            partial[f.relative_path] = f"X {_shown(x)}, Y {_shown(y)}"
+        elif x is not None and x != y:
+            non_square[f.relative_path] = f"X {x!r}, Y {y!r} micrometres"
+    issues = []
+    if partial:
+        issues.append(
+            warning(
+                "partial_pixel_size",
+                f"{plural(len(partial), 'image')} {agree(partial, 'has', 'have')} a pixel size "
+                f"along only one of X and Y ({_listed(partial)}). Bricks that measure lengths "
+                "will refuse such an image: a partial calibration is never completed or "
+                "approximated.",
+                list(partial),
+                "State both sizes in calibration.csv (the 'calibrate' command), or state both "
+                "as pixels to measure in pixels.",
+            )
+        )
+    if non_square:
+        issues.append(
+            warning(
+                "non_square_pixels",
+                f"{plural(len(non_square), 'image')} {agree(non_square, 'has', 'have')} pixels "
+                f"that are not square: the Y and X sizes are not exactly equal "
+                f"({_listed(non_square)}). Bricks that measure lengths (perimeter, Feret "
+                "diameter, axis lengths) will refuse such an image; nothing is approximated.",
+                list(non_square),
+                "If the pixels are square, state both sizes, equal, in calibration.csv (the "
+                "'calibrate' command). No action needed if no lengths are measured.",
+            )
+        )
+    return issues
+
+
+def _shown(micrometers: float | None) -> str:
+    """Return a size in micrometres for a message, or ``"unknown"``."""
+    return "unknown" if micrometers is None else f"{micrometers!r} micrometres"
+
+
+def _listed(details: Mapping[str, str]) -> str:
+    """Return ``"a.tif: X ..., Y ...; b.tif: ..."`` for a warning's images."""
+    return "; ".join(f"{path}: {detail}" for path, detail in details.items())
 
 
 def _micrometers(
@@ -256,7 +319,9 @@ def _missing_issue(
 def _unit_issue(
     files: Sequence[TiffMetadata], by_role: Mapping[str, Mapping[str, RecordedSize]]
 ) -> list[ValidationIssue]:
-    """Warn about header sizes in a length unit that is not converted (decision D-a2).
+    """Warn about header sizes in a length unit that is not converted (D-a2), or in none.
+
+    A size without a unit (an OME-Zarr scale) is never taken as micrometres (audit I3).
 
     Such a size is never converted, so the axis is uncalibrated; without this warning
     nothing would say which unit caused it. Every image is named with its axes and unit.
@@ -278,10 +343,10 @@ def _unit_issue(
     return [
         warning(
             "unsupported_pixel_size_unit",
-            f"{plural(len(found), 'image')} give a pixel size or z-step in a length unit "
-            f"that is not supported: {details}. Only pm, angstrom, nm, micrometre (um, "
-            "micron), mm, cm and m are converted. These sizes are not converted: the images "
-            "are treated as uncalibrated on those axes.",
+            f"{plural(len(found), 'image')} {agree(found, 'gives', 'give')} a pixel size or "
+            f"z-step in a length unit that is not supported, or without a unit: {details}. "
+            "Only pm, angstrom, nm, micrometre (um, micron), mm, cm and m are converted. These "
+            "sizes are not converted: the images are treated as uncalibrated on those axes.",
             list(found),
             "No action needed if the physical size does not matter. Otherwise export these "
             "images again with the pixel size in a supported unit, or state it in "
@@ -291,11 +356,14 @@ def _unit_issue(
 
 
 def _describe_units(units: Sequence[tuple[str, str]]) -> str:
-    """Return e.g. ``"X and Y in 'inch'"`` for an image's unsupported units."""
+    """Return e.g. ``"X and Y in 'inch'"`` for an image's unsupported units (``""``: none)."""
     by_unit: dict[str, list[str]] = {}
     for axis, unit in units:
         by_unit.setdefault(unit, []).append(axis)
-    return ", ".join(f"{' and '.join(axes)} in {unit!r}" for unit, axes in by_unit.items())
+    return ", ".join(
+        f"{' and '.join(axes)} {f'in {unit!r}' if unit else 'without a unit'}"
+        for unit, axes in by_unit.items()
+    )
 
 
 def _format_range(values: list[float]) -> str:

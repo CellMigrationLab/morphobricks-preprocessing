@@ -247,7 +247,7 @@ def test_a_copy_recorded_with_other_reasons_for_its_unknown_sizes_is_not_reused(
 
     edit_record(copies, other_reasons)
     again = convert_experiment(exp, CHANNELS, copies)
-    assert not again.written and codes(again.issues) == ["copy_differs"]
+    assert not again.written and codes(again.issues) == ["copy_differs", "non_square_pixels"]
 
 
 # #80: exact memory sizes -------------------------------------------------------------------
