@@ -13,11 +13,14 @@ from ..design import (
     DESIGN_FILENAME,
     ExperimentDesign,
 )
+from ..discovery_report import REPORT_FILENAME
 from ..intensity import IntensityReport
 from ..manifest import (
     MANIFEST_FILENAME,
 )
 from ..validation import ValidationIssue, has_errors
+from .modes import RESTART
+from .recorded import InputChange
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,12 @@ class RunResult:
     intensity
         The intensity checks of the written table (warnings, never errors), or
         None when nothing was written.
+    mode
+        ``"restart"`` or ``"full"``.
+    replaced
+        The earlier output files the run replaced or removed (the report says why).
+    input_changes
+        The inputs given that differ from those the earlier run recorded.
     """
 
     output_folder: Path
@@ -69,6 +78,9 @@ class RunResult:
     design: ExperimentDesign | None = None
     image_type: str | None = None
     intensity: IntensityReport | None = None
+    mode: str = RESTART
+    replaced: tuple[str, ...] = ()
+    input_changes: tuple[InputChange, ...] = ()
 
     @property
     def ok(self) -> bool:
@@ -84,6 +96,16 @@ class RunResult:
     def csv_path(self) -> Path:
         """Location of ``plane_histograms.csv``."""
         return self.output_folder / OUTPUT_FILENAME
+
+    @property
+    def report_path(self) -> Path:
+        """Location of ``discovery_report.json`` (written on every run that holds the lock)."""
+        return self.output_folder / REPORT_FILENAME
+
+    @property
+    def reused(self) -> tuple[str, ...]:
+        """Files whose rows were reused from the earlier run."""
+        return () if self.rebuild_reason else self.unchanged
 
     @property
     def manifest_path(self) -> Path:

@@ -20,6 +20,7 @@ from morphobricks_preprocessing import (
 from morphobricks_preprocessing.axes import prefill_mapping
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.manifest import file_sha256
+from run_files import only_the_report
 from tiff_tree import make_tree
 
 TODAY = "2026-10-26"
@@ -288,7 +289,7 @@ def test_a_run_with_an_invalid_date_stops_before_writing(tmp_path):
     design = default_design(repeats_of(root)).with_confirmed("rep1", True, "26/10/2026")
     result = run_experiment(root, prefill_mapping("YX"), design=design)
     assert not result.written and "invalid_experiment_design" in codes(result.issues)
-    assert not result.output_folder.exists()
+    assert only_the_report(result.output_folder)
 
 
 def test_the_cli_dates_a_hand_confirmation_as_an_iso_date(tmp_path, capsys):
@@ -342,7 +343,7 @@ def test_run_needs_a_confirmed_design_when_given_one(tmp_path):
     design = default_design(repeats_of(root))
     result = run_experiment(root, prefill_mapping("YX"), design=design)
     assert not result.written and "design_not_confirmed" in codes(result.issues)
-    assert not result.output_folder.exists()
+    assert only_the_report(result.output_folder)
 
 
 def test_run_writes_the_design_and_records_its_hash(tmp_path):

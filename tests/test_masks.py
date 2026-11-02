@@ -291,8 +291,8 @@ def test_the_run_records_the_masks_in_the_manifest(experiment, masks, tmp_path):
     assert recorded["types"] == ["Cells", "Nuclei"]
     # Each entry's keys are checked in test_manifest_v2 (manifest version 2).
     assert recorded["files"][0]["path"] == "Cells/ctrl/rep1/a.tif"
-    # Without masks the manifest has no masks key, as before.
-    run_experiment(experiment, prefill_mapping("CYX"), output_folder=out)
+    # Without masks (dropped on request, design v0.4 §1) the manifest has no masks key.
+    run_experiment(experiment, prefill_mapping("CYX"), output_folder=out, masks_folder=False)
     data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
     assert "masks" not in data and read_manifest(out / "run_manifest.json").masks is None
 

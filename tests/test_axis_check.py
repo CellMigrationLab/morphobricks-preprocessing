@@ -30,6 +30,7 @@ from morphobricks_preprocessing.axis_check import axis_disagreements
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.design import default_design, write_experiment_design
 from morphobricks_preprocessing.discovery import default_output_folder
+from run_files import only_the_report
 from tiff_tree import write_data
 
 
@@ -275,7 +276,7 @@ def test_run_stops_naming_every_file(tmp_path, reads, write, axes, roles, code):
     found = one(result.issues, code)
     assert found.paths == ("ctrl/r1/a.tif", "ctrl/r1/b.tif", "drug/r1/a.tif")
     assert [i.code for i in result.issues if i.is_error] == [code]
-    assert not default_output_folder(root).exists()
+    assert only_the_report(default_output_folder(root))
 
 
 def test_a_plain_stack_runs_with_a_warning(tmp_path):

@@ -1,10 +1,13 @@
 """Publish a run's outputs together, restoring the earlier ones on failure (contract §9).
 
-Moved from ``run.py`` (PP-3).
+The table, the design, the manifest and the report are published together, the report
+last, only when the run succeeds; before that nothing is erased (design v0.4 §1). A run
+that stops writes only its report (:func:`write_report`). Moved from ``run.py`` (PP-3).
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
@@ -17,9 +20,11 @@ from morphobricks_normalization.csv_io import (
     OUTPUT_FILENAME,
 )
 
+from .._io import write_text_atomic
 from ..design import (
     DESIGN_FILENAME,
 )
+from ..discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME, DiscoveryReport
 from ..manifest import (
     MANIFEST_FILENAME,
 )
@@ -31,18 +36,40 @@ class _OutputRollbackError(RuntimeError):
     """Raised when an output update fails and its earlier files cannot be restored."""
 
 
+def write_report(report: DiscoveryReport, folder: Path) -> Path:
+    """Write the report as JSON and as text to ``folder``, each file atomically.
+
+    Parameters
+    ----------
+    report
+        The report.
+    folder
+        The output folder, or the run's staging folder.
+
+    Returns
+    -------
+    Path
+        The JSON file.
+    """
+    write_text_atomic(folder / REPORT_TEXT_FILENAME, report.text())
+    text = json.dumps(report.to_dict(), indent=2, ensure_ascii=False) + "\n"
+    return write_text_atomic(folder / REPORT_FILENAME, text)
+
+
 @contextmanager
-def _staged_outputs(output: Path, *, with_design: bool = False) -> Iterator[Path]:
+def _staged_outputs(
+    output: Path, *, with_design: bool = False, with_report: bool = False
+) -> Iterator[Path]:
     """Prepare all outputs before publishing, and retain backups if recovery fails.
 
     The outputs are written to a temporary folder inside ``output``; ``with_design``
-    publishes ``experiment_design.csv`` too.
+    publishes ``experiment_design.csv`` too, and ``with_report`` the report files.
     """
     staged = Path(tempfile.mkdtemp(prefix=".run-", dir=output))
     keep_backups = False
     try:
         yield staged
-        _publish_outputs(output, staged, with_design)
+        _publish_outputs(output, staged, with_design, with_report)
     except _OutputRollbackError:
         keep_backups = True
         raise
@@ -55,13 +82,21 @@ def _staged_outputs(output: Path, *, with_design: bool = False) -> Iterator[Path
                 logger.warning("Cannot remove temporary output folder %s", staged, exc_info=True)
 
 
-def _publish_outputs(output: Path, staged: Path, with_design: bool = False) -> None:
+def _publish_outputs(
+    output: Path, staged: Path, with_design: bool = False, with_report: bool = False
+) -> None:
     """Replace the outputs, restoring their previous state on a publication failure.
 
-    The manifest is published last, so a manifest never names a design that is not in
-    place.
+    The manifest is published after the table and design, so a manifest never names a
+    design that is not in place; the report, which names the manifest, comes last.
     """
-    filenames = (OUTPUT_FILENAME, *((DESIGN_FILENAME,) if with_design else ()), MANIFEST_FILENAME)
+    report = (REPORT_TEXT_FILENAME, REPORT_FILENAME) if with_report else ()
+    filenames = (
+        OUTPUT_FILENAME,
+        *((DESIGN_FILENAME,) if with_design else ()),
+        MANIFEST_FILENAME,
+        *report,
+    )
     backup = staged / "previous"
     backup.mkdir()
     # Copy before replacing either file, so even a backup failure leaves the

@@ -29,6 +29,7 @@ from ..planes import (
     read_sample_plane,
 )
 from ..validation import ValidationIssue, error, has_errors, plural, warning
+from .recorded import normalise_relative_path
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +176,7 @@ def preflight(
     root = Path(experiment_root).resolve()
     output = default_output_folder(root) if output_folder is None else Path(output_folder)
     discovery = discover_experiment(root, output)
-    excluded = tuple(sorted({_normalise(path) for path in exclude}))
+    excluded = tuple(sorted({normalise_relative_path(path) for path in exclude}))
     discovery = _without_excluded_masks(discovery, excluded)
     images = [path for path in discovery.images if path not in excluded]
     metadata = inspect_images(root, images)
@@ -241,10 +242,3 @@ def _exclusion_issues(discovery: DiscoveryResult, excluded: tuple[str, ...]) -> 
             )
         )
     return issues
-
-
-def _normalise(path: str) -> str:
-    path = str(path).replace("\\", "/")
-    while path.startswith("./"):
-        path = path[2:]
-    return path

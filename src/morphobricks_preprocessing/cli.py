@@ -1,9 +1,11 @@
 """Command-line interface: ``morphobricks-preprocessing check``, ``run`` and ``masks``.
 
 ``check`` runs the preflight (folders and image headers, no pixels) and prints
-what will be analysed, the problems found and the suggested axis roles.
-``run`` processes the experiment with the axis roles given in ``--axes``; roles
-are never taken from metadata without being stated. It also needs the
+what will be analysed, the problems found and the suggested axis roles; it writes only
+the report (``discovery_report.json`` and ``.txt``) to the output folder.
+``run`` (:mod:`.cli_run`) processes the experiment with the axis roles given in ``--axes``,
+or those of the earlier run in the same output folder; roles are never taken from metadata
+without being stated. It also needs the
 experiment design confirmed in ``experiment_design.csv``: without it, ``run``
 writes a template to the output folder for the user to fill in, and stops.
 The image type (fluorescence or RGB) is given with ``--image-type``, or the
@@ -25,20 +27,15 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from morphobricks_normalization.ranges import (
-    DEFAULT_ROBUST_QUANTILES,
-    HISTOGRAM_RANGES,
-)
-
 from .axis_review import review_axes
-from .cli_run import command_preflight, parse_size, run_command
+from .cli_run import add_run_arguments, command_preflight, parse_size, run_command
 from .design import (
     DESIGN_FILENAME,
     DesignCheckError,
     load_design,
 )
 from .discovery import default_output_folder
-from .image_type import IMAGE_TYPES, review_image_type
+from .image_type import review_image_type
 from .mask_scan import (
     DEFAULT_THRESHOLDS,
     MASK_REPORT_FILENAME,
@@ -47,7 +44,6 @@ from .mask_scan import (
     write_mask_report,
 )
 from .masks import MaskInventory, mask_axes_option
-from .planes import DEFAULT_MEMORY_LIMIT
 from .report import (
     axis_check_summary,
     balance_summary,
@@ -57,6 +53,11 @@ from .report import (
     mask_report_summary,
     mask_summary,
     preflight_summary,
+)
+from .run import (
+    OutputLockedError,
+    remove_stale_lock,
+    write_check_report,
 )
 from .validation import has_errors
 
@@ -73,90 +74,14 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     check = commands.add_parser(
-        "check", help="check the folder and image headers and suggest axis roles"
+        "check",
+        help="check the folder and image headers, suggest axis roles and write the report",
     )
     _common(check)
 
     run = commands.add_parser("run", help="compute or update the histogram table")
     _common(run)
-    run.add_argument(
-        "--axes",
-        required=True,
-        metavar="ROLES",
-        help="role of each axis of the images, in the order of their axes: X, Y, Z, C, T, or "
-        "- for none (for example ZCYX). 'check' prints the suggested value.",
-    )
-    run.add_argument(
-        "--design",
-        metavar="FILE",
-        help="the confirmed experiment design (default: experiment_design.csv in the output "
-        "folder); without a confirmed design, run writes a template there and stops",
-    )
-    run.add_argument(
-        "--image-type",
-        choices=IMAGE_TYPES,
-        help="fluorescence (each channel a separate stain) or rgb (colour images with "
-        "three channels); default: the type suggested from the image headers, printed",
-    )
-    run.add_argument("--bins", type=int, help="bins per plane (default: depends on pixel type)")
-    run.add_argument(
-        "--histogram-range",
-        choices=HISTOGRAM_RANGES,
-        default="minmax",
-        help="range of histograms that are not exact (float images, and integer images with "
-        "more values than bins): minmax (default, each plane's minimum to maximum) or robust "
-        "(between the --robust-quantiles, the pixels outside counted separately); 8- and "
-        "16-bit histograms are the same either way",
-    )
-    run.add_argument(
-        "--robust-quantiles",
-        type=float,
-        nargs=2,
-        default=list(DEFAULT_ROBUST_QUANTILES),
-        metavar=("LOW", "HIGH"),
-        help="quantiles in percent of the robust range, also used by the range check "
-        "(default 0.01 99.99)",
-    )
-    run.add_argument(
-        "--memory-limit",
-        type=parse_size,
-        default=DEFAULT_MEMORY_LIMIT,
-        metavar="SIZE",
-        help="working-memory limit per plane, e.g. 2GiB (default: 1GiB)",
-    )
-    run.add_argument(
-        "--missing-as-singleton",
-        action="store_true",
-        help="confirm that images lacking some axes have one plane along them",
-    )
-    run.add_argument(
-        "--force-rebuild", action="store_true", help="recompute every row of the table"
-    )
-    checks = run.add_argument_group(
-        "intensity checks", "limits of the warnings printed after the run; the defaults suit most"
-    )
-    checks.add_argument(
-        "--outlier-limit",
-        type=float,
-        default=3.0,
-        metavar="N",
-        help="robust deviations beyond which an image or biological repeat is reported (default 3)",
-    )
-    checks.add_argument(
-        "--saturation-limit",
-        type=float,
-        default=0.01,
-        metavar="FRACTION",
-        help="fraction of saturated pixels above which an image is reported (default 0.01, 1 %%)",
-    )
-    checks.add_argument(
-        "--min-images",
-        type=int,
-        default=5,
-        metavar="N",
-        help="fewest images a comparison needs (default 5)",
-    )
-    run.add_argument("--log", metavar="FILE", help="write technical details to this file")
+    add_run_arguments(run)
 
     masks = commands.add_parser(
         "masks",
@@ -200,6 +125,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ValueError as exc:
             print(exc)
             return 1
+        if args.remove_stale_lock and not _remove_stale_lock(args):
+            return 1
         return {"check": _check, "run": run_command, "masks": _masks}[args.command](args)
     finally:
         if handler is not None:
@@ -229,6 +156,12 @@ def _common(parser: argparse.ArgumentParser) -> None:
         "folders, outside the experiment; the label images of OME-Zarr images are added",
     )
     _mask_axes_option(parser)
+    parser.add_argument(
+        "--remove-stale-lock",
+        action="store_true",
+        help="remove the lock of an earlier run that was stopped or whose computer restarted; "
+        "give it only when you are sure no other run uses the output folder",
+    )
 
 
 def _mask_axes_option(parser: argparse.ArgumentParser) -> None:
@@ -244,7 +177,21 @@ def _mask_axes_option(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _remove_stale_lock(args: argparse.Namespace) -> bool:
+    """Remove the output folder's lock the user said is stale; False when it is not."""
+    root = Path(args.experiment).resolve()
+    output = Path(args.output).resolve() if args.output else default_output_folder(root)
+    try:
+        holder = remove_stale_lock(output)
+    except OutputLockedError as exc:
+        print(f"The lock was kept: {exc.holder.describe()} is still running on this computer.")
+        return False
+    print("No lock to remove." if holder is None else f"Removed the lock of {holder.describe()}.")
+    return True
+
+
 def _check(args: argparse.Namespace) -> int:
+    """Print what the preflight found and the suggested roles, and write the report."""
     pre = command_preflight(args)
     print(preflight_summary(pre))
     if pre.discovery.leaves:
@@ -278,7 +225,7 @@ def _check(args: argparse.Namespace) -> int:
                 "Experiment design: not confirmed yet. 'run' writes experiment_design.csv to "
                 "the output folder for you to confirm."
             )
-    axis_errors = ()
+    axis_errors, review = (), None
     if pre.suggested_mapping is not None:
         review = review_axes(pre.metadata, pre.suggested_mapping)
         # The suggested roles are the header's own, so they never contradict it; 'run'
@@ -299,7 +246,10 @@ def _check(args: argparse.Namespace) -> int:
             f"Suggested image type: {type_review.suggested}, because {type_review.reason}. "
             "'run' uses it unless you give --image-type."
         )
-    return 0 if pre.ok and not axis_errors else 1
+    path, refusal = write_check_report(pre, args.output, review)
+    print()
+    print(format_issues([refusal]) if refusal else f"Report written to {path}" if path else "")
+    return 0 if pre.ok and not axis_errors and refusal is None else 1
 
 
 def _masks(args: argparse.Namespace) -> int:

@@ -30,6 +30,7 @@ from morphobricks_preprocessing import (
 from morphobricks_preprocessing import planes as planes_module
 from morphobricks_preprocessing import run as run_module
 from morphobricks_preprocessing.manifest import file_sha256
+from run_files import only_the_report, outputs
 from simulation import simulate_plane
 from tiff_tree import write_data, write_file
 
@@ -364,7 +365,7 @@ def test_position_ids_that_are_text_stay_text(tmp_path):
 def test_images_with_the_same_position_id_are_refused(experiment):
     write_data(experiment / "control/bio_rep1/tech_rep1/img_01.ome.tif", stack(9), "ZYX")
     result = run_experiment(experiment, ZYX)
-    assert not result.written and not result.output_folder.exists()
+    assert not result.written and only_the_report(result.output_folder)
     assert issue(result.issues, "duplicate_position_id").paths == (
         "control/bio_rep1/tech_rep1/img_01.ome.tif",
         "control/bio_rep1/tech_rep1/img_01.tif",
@@ -463,11 +464,11 @@ def test_renamed_file_is_a_delete_plus_an_add(experiment, reads):
     assert reads.relative(experiment) == [renamed]
 
 
-def test_force_rebuild_reads_everything(experiment, reads):
+def test_full_mode_reads_everything(experiment, reads):
     first = run_experiment(experiment, ZYX)
     reads.clear()
-    result = run_experiment(experiment, ZYX, force_rebuild=True)
-    assert result.rebuild_reason == "a full rebuild was requested"
+    result = run_experiment(experiment, ZYX, mode="full")
+    assert result.rebuild_reason == "a full run was asked for (mode full)"
     assert result.unchanged == tuple(sorted(IMAGES)) and result.read == tuple(sorted(IMAGES))
     assert sorted(reads.relative(experiment)) == sorted(IMAGES)
     assert csv_bytes(result) == csv_bytes(first)
@@ -567,11 +568,10 @@ def test_errors_write_nothing_and_keep_earlier_output(experiment):
     assert csv_bytes(first) == table and first.manifest_path.read_bytes() == manifest
 
 
-def test_first_run_with_errors_creates_no_output(experiment):
+def test_first_run_with_errors_writes_only_the_report(experiment):
     write_file(experiment / "control/bio_rep1/tech_rep1/bad.tif", b"garbage")
     result = run_experiment(experiment, ZYX)
-    assert not result.written
-    assert not result.output_folder.exists()
+    assert not result.written and only_the_report(result.output_folder)
 
 
 @pytest.mark.parametrize("failure", ["csv", "hash", "manifest", "backup"])
@@ -606,7 +606,7 @@ def test_preparing_outputs_preserves_earlier_files_on_failure(experiment, monkey
             patch.setattr(shutil, "copy2", broken_backup)
         with pytest.raises(OSError, match="simulated"):
             run_experiment(experiment, ZYX)
-    assert {path.name: path.read_bytes() for path in first.output_folder.iterdir()} == before
+    assert outputs(first.output_folder) == before
     retried = run_experiment(experiment, ZYX)
     assert retried.written and retried.changed == (IMAGES[0],)
 
@@ -622,7 +622,7 @@ def test_publishing_outputs_restores_the_previous_state(
             path.unlink()
     unrelated = first.output_folder / "notes.txt"
     unrelated.write_text("keep this file", encoding="utf-8")
-    before = {path.name: path.read_bytes() for path in first.output_folder.iterdir()}
+    before = outputs(first.output_folder)
     touch(experiment / IMAGES[0], stack(99))
     original_replace = os.replace
     failed = False
@@ -640,7 +640,7 @@ def test_publishing_outputs_restores_the_previous_state(
         with pytest.raises(PermissionError, match="simulated publication failure"):
             run_experiment(experiment, ZYX)
     assert failed
-    assert {path.name: path.read_bytes() for path in first.output_folder.iterdir()} == before
+    assert outputs(first.output_folder) == before
     retried = run_experiment(experiment, ZYX)
     assert retried.written
     assert read_manifest(retried.manifest_path).csv_sha256 == file_sha256(retried.csv_path)
@@ -649,7 +649,7 @@ def test_publishing_outputs_restores_the_previous_state(
 
 def test_interrupted_publication_restores_earlier_output(experiment, monkeypatch):
     first = run_experiment(experiment, ZYX)
-    before = {path.name: path.read_bytes() for path in first.output_folder.iterdir()}
+    before = outputs(first.output_folder)
     touch(experiment / IMAGES[0], stack(99))
     original_replace = os.replace
 
@@ -661,12 +661,12 @@ def test_interrupted_publication_restores_earlier_output(experiment, monkeypatch
     monkeypatch.setattr(os, "replace", interrupted)
     with pytest.raises(KeyboardInterrupt):
         run_experiment(experiment, ZYX)
-    assert {path.name: path.read_bytes() for path in first.output_folder.iterdir()} == before
+    assert outputs(first.output_folder) == before
 
 
 def test_failed_rollback_retains_backups_and_reports_their_location(experiment, monkeypatch):
     first = run_experiment(experiment, ZYX)
-    before = {path.name: path.read_bytes() for path in first.output_folder.iterdir()}
+    before = outputs(first.output_folder)
     touch(experiment / IMAGES[0], stack(99))
     original_replace = os.replace
 
@@ -681,7 +681,7 @@ def test_failed_rollback_retains_backups_and_reports_their_location(experiment, 
     (staged,) = first.output_folder.glob(".run-*")
     backup = staged / "previous"
     assert str(backup) in str(excinfo.value)
-    assert {path.name: path.read_bytes() for path in backup.iterdir()} == before
+    assert outputs(backup) == before
 
 
 def test_cleanup_failure_does_not_report_completed_output_as_failed(
@@ -750,7 +750,7 @@ def test_pixel_data_that_cannot_be_decoded_blocks(experiment, monkeypatch):
     found = issue(result.issues, "unreadable_planes")
     assert found.paths == ("control/bio_rep1/tech_rep1/img_02.tif",)
     assert "exclude" in found.action
-    assert not result.written and not result.output_folder.exists()
+    assert not result.written and only_the_report(result.output_folder)
 
 
 def test_missing_axes_need_confirmation(tmp_path):

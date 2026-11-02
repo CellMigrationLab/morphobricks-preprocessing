@@ -29,37 +29,60 @@ from ..manifest import (
     file_sha256,
     read_manifest,
 )
+from .modes import FULL
 
 logger = logging.getLogger(__name__)
 
 
-def _load_previous(
-    output: Path, settings: RunSettings, mapping: AxisMapping, dtype: str, force: bool
-) -> tuple[RunManifest | None, dict[str, list[PlaneRecord]], str | None]:
-    """Load the earlier manifest and its rows by file, and say why they cannot be reused.
+def read_previous(output: Path) -> tuple[RunManifest | None, str | None]:
+    """Read the earlier run's manifest in the output folder.
 
-    The manifest is returned whenever it can be read, so files can still be
-    reported as new, changed or unchanged during a rebuild.
+    Parameters
+    ----------
+    output
+        The output folder.
+
+    Returns
+    -------
+    tuple
+        ``(manifest, None)``, or ``(None, why there is none)``.
     """
-    manifest_path, csv_path = output / MANIFEST_FILENAME, output / OUTPUT_FILENAME
+    manifest_path = output / MANIFEST_FILENAME
     if not manifest_path.exists():
-        return None, {}, "there is no earlier run in the output folder"
+        return None, "there is no earlier run in the output folder"
     try:
-        manifest = read_manifest(manifest_path)
+        return read_manifest(manifest_path), None
     except ManifestFormatError:
         logger.warning("Cannot read %s", manifest_path, exc_info=True)
-        return None, {}, "the earlier run manifest could not be read"
-    if force:
-        return manifest, {}, "a full rebuild was requested"
+        return None, "the earlier run manifest could not be read"
+
+
+def _load_previous(
+    output: Path,
+    previous: tuple[RunManifest | None, str | None],
+    settings: RunSettings,
+    mapping: AxisMapping,
+    dtype: str,
+    mode: str,
+) -> tuple[dict[str, list[PlaneRecord]], str | None]:
+    """Load the earlier run's rows by file, and say why they cannot be reused.
+
+    ``previous`` is :func:`read_previous`'s answer. In ``full`` mode no row is reused.
+    """
+    manifest, missing = previous
+    csv_path = output / OUTPUT_FILENAME
+    if manifest is None:
+        return {}, missing
+    if mode == FULL:
+        return {}, "a full run was asked for (mode full)"
     if manifest.manifest_version == LEGACY_MANIFEST_VERSION:
-        return manifest, {}, "the earlier run was written before v0.4.0, without the axis check"
+        return {}, "the earlier run was written before v0.4.0, without the axis check"
     if manifest.schema_version != SCHEMA_VERSION:
-        return manifest, {}, "the earlier table uses a different format version"
+        return {}, "the earlier table uses a different format version"
     if manifest.dtype != dtype:
-        return manifest, {}, f"the pixel type changed from {manifest.dtype} to {dtype}"
+        return {}, f"the pixel type changed from {manifest.dtype} to {dtype}"
     if manifest.settings.bin_count != settings.bin_count:
         return (
-            manifest,
             {},
             f"the bin count changed from {manifest.settings.bin_count:,} to {settings.bin_count:,}",
         )
@@ -67,21 +90,21 @@ def _load_previous(
         before = _describe_histogram(manifest.settings.histogram)
         now = _describe_histogram(settings.histogram)
         if before == now:
-            return manifest, {}, "the limit of the histogram range check changed"
-        return manifest, {}, f"the histogram range changed from {before} to {now}"
+            return {}, "the limit of the histogram range check changed"
+        return {}, f"the histogram range changed from {before} to {now}"
     if (manifest.mapping.axes, manifest.mapping.roles) != (mapping.axes, mapping.roles):
-        return manifest, {}, "the axis mapping changed"
+        return {}, "the axis mapping changed"
     if not csv_path.exists() or file_sha256(csv_path) != manifest.csv_sha256:
-        return manifest, {}, "the histogram table was changed or replaced after the earlier run"
+        return {}, "the histogram table was changed or replaced after the earlier run"
     try:
         rows = read_plane_histograms(csv_path)
     except CsvFormatError:
         logger.warning("Cannot read %s", csv_path, exc_info=True)
-        return manifest, {}, "the earlier histogram table could not be read"
+        return {}, "the earlier histogram table could not be read"
     by_file: dict[str, list[PlaneRecord]] = {}
     for record in rows:
         by_file.setdefault(record.source_relative_path, []).append(record)
-    return manifest, by_file, None
+    return by_file, None
 
 
 def _describe_histogram(settings: HistogramSettings) -> str:
