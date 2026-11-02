@@ -22,8 +22,13 @@ from .copy_axes import CopyLayout
 from .planes import DEFAULT_MEMORY_LIMIT, Block, iter_planes, plane_layout
 
 BIGTIFF_FROM = 2**32 - 2**25
-"""Copies whose pixels take more bytes than this are written as BigTIFF (a classic TIFF
-addresses at most 4 GiB; the margin leaves room for the headers and the OME-XML)."""
+"""Copies whose file would take more bytes than this are written as BigTIFF (a classic
+TIFF addresses at most 4 GiB; the margin leaves room for the header and the OME-XML)."""
+
+PAGE_OVERHEAD = 1024
+"""Bytes allowed per page for its directory and tags besides its pixels (``tifffile``
+writes about 170 in an uncompressed OME-TIFF), so that many small pages cannot overflow a
+classic TIFF whose pixels alone would fit."""
 
 
 class CopyWriteError(OSError):
@@ -48,6 +53,23 @@ def copy_nbytes(layout: CopyLayout, dtype: np.dtype) -> int:
     for length in layout.shape:
         count *= length
     return count * np.dtype(dtype).itemsize
+
+
+def needs_bigtiff(layout: CopyLayout, dtype: np.dtype) -> bool:
+    """Return True when a copy would not fit a classic TIFF, its pages' directories counted.
+
+    Parameters
+    ----------
+    layout
+        The copy's layout.
+    dtype
+        Its pixel type.
+
+    Returns
+    -------
+    bool
+    """
+    return copy_nbytes(layout, dtype) + layout.plane_count * PAGE_OVERHEAD > BIGTIFF_FROM
 
 
 def write_named_copy(
@@ -89,7 +111,7 @@ def write_named_copy(
         dtype=dtype,
         ome=True,
         photometric="minisblack",
-        bigtiff=copy_nbytes(layout, dtype) > BIGTIFF_FROM,
+        bigtiff=needs_bigtiff(layout, dtype),
         metadata=layout.ome_metadata(),
         returnoffset=True,
     )

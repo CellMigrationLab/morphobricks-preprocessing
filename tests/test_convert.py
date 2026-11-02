@@ -26,7 +26,7 @@ from morphobricks_preprocessing import (
     plane_layout,
     read_conversion_record,
 )
-from morphobricks_preprocessing.copy_axes import copy_layout
+from morphobricks_preprocessing.copy_axes import CopyLayout, copy_layout
 
 ZYX_SWAPPED = AxisMapping("ZYX", ("Z", "X", "Y"))
 
@@ -268,6 +268,18 @@ def test_a_large_copy_is_written_as_bigtiff(tmp_path, monkeypatch):
     with tifffile.TiffFile(copy) as tif:
         assert tif.is_bigtiff and tif.is_ome
     assert_bitwise_equal(source, mapping, copy)
+
+
+def test_many_small_pages_that_would_overflow_a_classic_tiff_make_a_bigtiff():
+    # Review of PP-11: pixels at the old threshold in 2**18 pages; their directories
+    # (about 170 bytes each) would take 44 MB, more than the 32 MiB margin, and tifffile
+    # would refuse to write a classic TIFF.
+    many = CopyLayout("TYX", (2**18, 127, 128))
+    assert copy_module.copy_nbytes(many, np.dtype(np.uint8)) == copy_module.BIGTIFF_FROM
+    assert copy_module.needs_bigtiff(many, np.dtype(np.uint8))
+    few = CopyLayout("ZYX", (16, 4096, 8192))
+    assert not copy_module.needs_bigtiff(few, np.dtype(np.uint16))
+    assert copy_module.needs_bigtiff(few, np.dtype(np.float64))
 
 
 # What is copied, and the originals ------------------------------------------------------
