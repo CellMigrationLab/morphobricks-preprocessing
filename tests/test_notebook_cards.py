@@ -115,6 +115,19 @@ def test_the_check_without_the_design_card_writes_the_report_only(experiment):
     assert not (output / "experiment_design.csv").exists()
 
 
+def test_a_check_that_cannot_write_its_report_still_shows_its_results(experiment, monkeypatch):
+    from morphobricks_preprocessing import notebook_output
+
+    def read_only(*args, **kwargs):
+        raise PermissionError("read-only output folder")
+
+    monkeypatch.setattr(notebook_output, "write_check_outputs", read_only)
+    nb = checked(experiment)
+    assert nb.preflight.ok and ui.is_visible(nb.labels_card)
+    assert "could not write its report" in nb.check_report.where.value
+    assert "Cannot write the check report" in nb.details.value
+
+
 # 2. Design answers through design_edit, saved under the lock ------------------------------
 
 

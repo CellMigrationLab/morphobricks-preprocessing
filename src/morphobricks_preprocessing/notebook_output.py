@@ -12,6 +12,7 @@ wrote (``discovery_report.txt``), with where it is.
 from __future__ import annotations
 
 import html
+import logging
 from pathlib import Path
 
 import ipywidgets as widgets
@@ -198,11 +199,20 @@ class _OutputCards:
             return
         checked, review = suggested_review(pre)
         output = self._output_path(pre.discovery.root)
-        if self._show_design:
-            written = write_check_outputs(checked, output, review)
-        else:
-            report, refusal = write_check_report(checked, output, review)
-            written = CheckOutputs(report=report, refusal=refusal)
+        try:
+            if self._show_design:
+                written = write_check_outputs(checked, output, review)
+            else:
+                report, refusal = write_check_report(checked, output, review)
+                written = CheckOutputs(report=report, refusal=refusal)
+        except OSError as exc:
+            logging.getLogger(__name__).warning("Cannot write the check report", exc_info=True)
+            self.check_report.where.value = ui.status(
+                "warn",
+                "The check could not write its report to the output folder.",
+                [str(exc), "Choose an output folder you can write to; the run needs one too."],
+            )
+            return
         if written.refusal is not None:
             self.folder_lock.show(output)
         elif written.report is not None:
