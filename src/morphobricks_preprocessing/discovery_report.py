@@ -7,7 +7,8 @@ manifest it describes. It is for people: bricks never read it.
 
 It contains the experiment root (and whether it changed), the conditions, repeats and
 positions with image counts; the channels and their names; each image's axes with
-``axes_from`` and pixel sizes with their source, or ``"uncalibrated"``; the design and
+``axes_from`` and pixel sizes with their source (``header``, ``stated`` in
+``calibration.csv``, or ``pixels``), or ``"uncalibrated"``; the calibration file; the design and
 image type; the mask types with paired, unpaired and ambiguous masks and the images
 without masks; every warning and error with its action; and what the mode reused,
 recomputed and replaced, and why. Nothing here checks anything: the issues are those the
@@ -23,7 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .image_names import position_id
-from .recorded_sizes import header_sizes
+from .recorded_sizes import HEADER, PIXELS, STATED, RecordedSize
 from .validation import ValidationIssue, plural
 
 if TYPE_CHECKING:
@@ -186,6 +187,7 @@ def build_report(
         "groups": _groups(pre),
         **_channels(pre, review),
         "images": _images(pre, review),
+        "calibration": _calibration(pre),
         "design": _design(design),
         "image_type": image_type,
         "masks": _masks(pre),
@@ -252,19 +254,40 @@ def _images(pre: Preflight, review: AxisReview | None) -> dict[str, dict]:
     images = {}
     for meta in pre.metadata.files:
         mapping = None if review is None else review.file_mappings.get(meta.relative_path)
-        sizes = {
-            size.role: {"value": size.value, "unit": size.unit, "source": size.source}
-            for size in header_sizes(meta.physical_sizes)
-            if size.value is not None
-        }
-        calibrated = "X" in sizes and "Y" in sizes
         images[meta.relative_path] = {
             "axes": meta.axes,
             "roles": None if mapping is None else mapping.roles_string,
             "axes_from": None if review is None else review.axes_from.get(meta.relative_path),
-            "pixel_sizes": sizes if calibrated else "uncalibrated",
+            "pixel_sizes": _sizes(pre.calibration.sizes.get(meta.relative_path, ())),
         }
     return images
+
+
+def _sizes(sizes: Sequence[RecordedSize]) -> dict | str:
+    """Return the sizes given or stated, by role; ``"uncalibrated"`` without X and Y.
+
+    A ``"pixels"`` statement is shown with its source and no value: deliberately
+    uncalibrated, as the user stated.
+    """
+    found = {
+        size.role: {"value": size.value, "unit": size.unit, "source": size.source}
+        for size in sizes
+        if size.source is not None
+    }
+    return found if "X" in found and "Y" in found else "uncalibrated"
+
+
+def _calibration(pre: Preflight) -> dict:
+    """Return the stated calibration: its file's SHA-256 and statements, or none."""
+    calibration = pre.calibration.calibration
+    return {
+        "file": None if pre.calibration.sha256 is None else "calibration.csv",
+        "sha256": pre.calibration.sha256,
+        "statements": [
+            {"target": e.target, "axis": e.axis, "size": e.size, "unit": e.unit}
+            for e in (calibration.entries if calibration is not None else ())
+        ],
+    }
 
 
 def _design(design: ExperimentDesign | None) -> list[dict] | None:
@@ -336,12 +359,25 @@ def _image_lines(data: Mapping) -> list[str]:
     lines.append(
         "Axes: " + ", ".join(f"{count} from {how}" for how, count in sorted(sources.items()))
     )
-    uncalibrated = sum(image["pixel_sizes"] == "uncalibrated" for image in images)
+    kinds = Counter(_calibration_kind(image["pixel_sizes"]) for image in images)
     lines.append(
-        f"Pixel sizes: {len(images) - uncalibrated} calibrated (from the header), "
-        f"{uncalibrated} uncalibrated"
+        f"Pixel sizes: {kinds[HEADER]} from the header, {kinds[STATED]} stated, "
+        f"{kinds[PIXELS]} measured in pixels as stated, {kinds[None]} uncalibrated"
     )
+    statements = data["calibration"]["statements"]
+    if data["calibration"]["file"] is not None:
+        lines.append(f"  calibration.csv: {plural(len(statements), 'statement')}")
     return lines
+
+
+def _calibration_kind(sizes: Mapping | str) -> str | None:
+    """Return how an image's pixel size (X by Y) is known: header, stated, pixels or None."""
+    if sizes == "uncalibrated":
+        return None
+    sources = {sizes["X"]["source"], sizes["Y"]["source"]}
+    if PIXELS in sources:
+        return PIXELS
+    return STATED if STATED in sources else HEADER
 
 
 def _mask_lines(data: Mapping) -> list[str]:

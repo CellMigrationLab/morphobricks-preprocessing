@@ -1,7 +1,8 @@
 """The manifest entry of every analysed file, and which of them changed (contract §9).
 
 Each entry records the file's fingerprint, labels, axes, roles, where the roles come from
-(``axes_from``) and its pixel sizes with their source (manifest version 2). A file is
+(``axes_from``) and its pixel sizes with their source: the header's, or those stated in
+``calibration.csv`` (manifest version 2, design v0.4 §3). A file is
 unchanged when its :class:`.fingerprint.RowKey` is the earlier run's: the same file, read
 the same way from the same place.
 """
@@ -18,7 +19,6 @@ from morphobricks_normalization.records import PlaneRecord
 from ..axes import AxisReview
 from ..fingerprint import RowKey
 from ..manifest import FileEntry, RunManifest, RunSettings, file_entry_for
-from ..recorded_sizes import header_sizes
 from .preflight import Preflight
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ def file_entries(
         entries[rel] = replace(
             entry,
             axes_from=review.axes_from.get(rel),
-            pixel_sizes=header_sizes(header.physical_sizes),
+            pixel_sizes=pre.calibration.sizes[rel],
         )
         if header.channel_names_trimmed:
             logger.info(

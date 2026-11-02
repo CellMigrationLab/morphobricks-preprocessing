@@ -1,7 +1,8 @@
 """Pass 1: discover the experiment and read its headers, without pixels (contract §1, §2).
 
-:func:`preflight` walks the folder, inspects every header and suggests an axis mapping;
-:func:`sample_planes` reads the preview planes. Moved from ``run.py`` (PP-3).
+:func:`preflight` walks the folder, inspects every header, resolves each image's pixel
+sizes with the output folder's ``calibration.csv`` (design v0.4 §3) and suggests an axis
+mapping; :func:`sample_planes` reads the preview planes. Moved from ``run.py`` (PP-3).
 """
 
 from __future__ import annotations
@@ -17,11 +18,14 @@ from ..axes import (
     file_mapping_for,
     prefill_experiment_mapping,
 )
+from ..calibration import CalibrationReview, review_calibration
+from ..calibration_io import load_calibration
 from ..dataset import DatasetReport, check_dataset
 from ..discovery import DiscoveryResult, default_output_folder, discover_experiment
 from ..mask_names import MASK_NAME_CODES, mask_name_issues
 from ..masks import MaskInventory, find_masks
 from ..metadata import MetadataReport, inspect_images
+from ..pixel_size_checks import PIXEL_SIZE_CODES, pixel_size_issues
 from ..planes import (
     DEFAULT_MEMORY_LIMIT,
     Plane,
@@ -57,6 +61,10 @@ class Preflight:
     masks
         The masks of the images (contract §15), found from their headers, when
         masks were asked for; None otherwise.
+    calibration
+        Each analysed image's pixel sizes from its header and ``calibration.csv``
+        (:mod:`.calibration`). Its issues, and the pixel-size checks on these sizes,
+        are among the metadata's issues.
     """
 
     discovery: DiscoveryResult
@@ -66,6 +74,7 @@ class Preflight:
     suggested_mapping: AxisMapping | None = None
     dataset: DatasetReport = field(default_factory=DatasetReport)
     masks: MaskInventory | None = None
+    calibration: CalibrationReview = field(default_factory=CalibrationReview)
 
     @property
     def issues(self) -> tuple[ValidationIssue, ...]:
@@ -179,7 +188,7 @@ def preflight(
     excluded = tuple(sorted({normalise_relative_path(path) for path in exclude}))
     discovery = _without_excluded_masks(discovery, excluded)
     images = [path for path in discovery.images if path not in excluded]
-    metadata = inspect_images(root, images)
+    metadata, calibration = _calibrated(inspect_images(root, images), discovery.images, output)
     masks = find_masks(
         masks_folder, discovery, metadata.files, mask_axes=mask_axes, output_folder=output
     )
@@ -193,7 +202,24 @@ def preflight(
         suggested_mapping=prefill_experiment_mapping(metadata),
         dataset=check_dataset(discovery, excluded=excluded),
         masks=masks,
+        calibration=calibration,
     )
+
+
+def _calibrated(
+    metadata: MetadataReport, images: tuple[str, ...], output: Path
+) -> tuple[MetadataReport, CalibrationReview]:
+    """Resolve the pixel sizes with ``calibration.csv``; check them instead of the headers'.
+
+    The pixel-size checks (contract §11) run on the sizes each image is recorded with, and
+    the calibration's own issues join the metadata's.
+    """
+    calibration, sha256, refusal = load_calibration(output)
+    readable = [f for f in metadata.files if f.readable]
+    review = review_calibration(readable, images, calibration, sha256=sha256, refusal=refusal)
+    kept = [issue for issue in metadata.issues if issue.code not in PIXEL_SIZE_CODES]
+    checked = pixel_size_issues(readable, review.sizes)
+    return replace(metadata, issues=(*kept, *checked, *review.issues)), review
 
 
 def _without_excluded_masks(

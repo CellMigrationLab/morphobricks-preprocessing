@@ -30,7 +30,7 @@ from morphobricks_normalization.dtypes import UnsupportedDtypeError, check_suppo
 from .axis_names import OPEN_AXIS, named_letters
 from .discovery import DiscoveryResult
 from .physical_sizes import PhysicalSizes, _tiff_sizes
-from .pixel_size_checks import _check_pixel_size_units, _check_pixel_sizes
+from .pixel_size_checks import pixel_size_issues
 from .validation import ValidationIssue, error, has_errors, plural, warning
 from .zarr_input import (
     NgffError,
@@ -493,8 +493,7 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     issues.extend(_check_channel_names(readable))
     issues.extend(_check_channel_counts(readable))
     issues.extend(_check_plane_counts(readable))
-    issues.extend(_check_pixel_sizes(readable))
-    issues.extend(_check_pixel_size_units(readable))
+    issues.extend(pixel_size_issues(readable))
     return issues
 
 

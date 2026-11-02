@@ -62,6 +62,7 @@ from .recorded import (
     GivenInputs,
     InputChange,
     ResolvedInputs,
+    calibration_change,
     design_change,
     resolve_inputs,
     usable,
@@ -225,7 +226,8 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
         mask_axes=inputs.mask_axes or None,
     )
     design, design_problems, design_changed = _design(options.design, output, previous[0])
-    inputs = replace(inputs, changes=(*inputs.changes, *design_changed))
+    calibrated = calibration_change(usable(previous[0]), pre.calibration)
+    inputs = replace(inputs, changes=(*inputs.changes, *design_changed, *calibrated))
     checked = header_checks(pre, inputs, design, options.memory_limit)
     checked.issues.extend(design_problems)
     run = _Run(output, pre, inputs, options.mode, checked, previous, found)
@@ -326,6 +328,7 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
             channels_from_rgb_samples=run.checked.type_review.channels_from_rgb_samples,
             intensity_checks=intensity.settings,
             narrow_ranges=tuple(rows.narrow),
+            calibration_sha256=pre.calibration.sha256,
         )
         manifest_sha256 = file_sha256(write_manifest(manifest, staged / MANIFEST_FILENAME))
         report = _report(run, outcome, intensity)

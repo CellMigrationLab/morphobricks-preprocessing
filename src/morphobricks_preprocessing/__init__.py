@@ -29,6 +29,15 @@ from .axis_check import (
 )
 from .axis_names import OPEN_AXIS, PLACEHOLDER_AXES
 from .axis_review import check_mapping, review_axes
+from .calibration import (
+    CALIBRATION_FILENAME,
+    Calibration,
+    CalibrationEntry,
+    CalibrationReview,
+    calibration_entry,
+    review_calibration,
+)
+from .calibration_io import CalibrationFormatError, read_calibration
 from .dataset import (
     CONSISTENCY_CODES,
     BalanceCell,
@@ -172,8 +181,17 @@ from .planes import (
     read_plane,
     read_sample_plane,
 )
+from .recorded_sizes import RecordedSize
 from .report import GroupSummary, group_summaries
-from .run import Preflight, RunResult, SamplePlane, preflight, run_experiment, sample_planes
+from .run import (
+    Preflight,
+    RunResult,
+    SamplePlane,
+    preflight,
+    run_experiment,
+    sample_planes,
+    write_calibration,
+)
 from .run_inputs import Fov, LazyImage, RunInputs, RunInputsError
 from .sources import check_sources
 from .validation import Severity, ValidationIssue, has_errors
@@ -196,6 +214,7 @@ except PackageNotFoundError:  # running from a source checkout without installin
 __all__ = [
     "AXIS_CHECK_CODES",
     "AXIS_ERROR_CODES",
+    "CALIBRATION_FILENAME",
     "CONSISTENCY_CODES",
     "DEFAULT_MEMORY_LIMIT",
     "DEFAULT_THRESHOLDS",
@@ -224,6 +243,10 @@ __all__ = [
     "BiologicalRepeat",
     "Block",
     "BlockReader",
+    "Calibration",
+    "CalibrationEntry",
+    "CalibrationFormatError",
+    "CalibrationReview",
     "ConfirmedDesign",
     "DatasetReport",
     "DesignChanges",
@@ -254,6 +277,7 @@ __all__ = [
     "PlaneMemoryError",
     "PlaneReadError",
     "Preflight",
+    "RecordedSize",
     "RepeatBox",
     "RunManifest",
     "RunResult",
@@ -273,6 +297,7 @@ __all__ = [
     "axis_length_ranges",
     "balance_table",
     "biological_repeats",
+    "calibration_entry",
     "check_dataset",
     "check_identity_case",
     "check_identity_text",
@@ -329,6 +354,7 @@ __all__ = [
     "prefill_experiment_mapping",
     "prefill_mapping",
     "preflight",
+    "read_calibration",
     "read_confirmed_design",
     "read_experiment_design",
     "read_manifest",
@@ -342,6 +368,7 @@ __all__ = [
     "repeat_boxes",
     "repeat_distributions",
     "review_axes",
+    "review_calibration",
     "review_image_type",
     "run_experiment",
     "same_pixel_size",
@@ -351,6 +378,7 @@ __all__ = [
     "source_fingerprint",
     "space_unit",
     "to_micrometers",
+    "write_calibration",
     "write_experiment_design",
     "write_manifest",
     "write_mask_report",

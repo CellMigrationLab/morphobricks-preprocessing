@@ -4,7 +4,8 @@ One output folder belongs to one experiment. A run given no value for an input u
 value its folder's manifest records: the experiment root, masks folder, exclusions,
 plain-stack confirmations, mask-axis statements, image type, bins, histogram and
 intensity settings, and ``missing_as_singleton`` (the design is the
-``experiment_design.csv`` in the folder). A value given explicitly that differs from the
+``experiment_design.csv`` in the folder, and the stated calibration its ``calibration.csv``,
+which a run never writes). A value given explicitly that differs from the
 recorded one is used, and an :class:`InputChange` names the change and its effect. The
 masks are dropped only on request (``masks_folder=False``, CLI ``--no-masks``).
 
@@ -24,6 +25,7 @@ from morphobricks_normalization.ranges import HistogramSettings
 
 from ..axes import AxisMapping
 from ..axis_check import ConfirmedAxes
+from ..calibration import CalibrationReview
 from ..design import ExperimentDesign
 from ..fingerprint import Fingerprint
 from ..manifest import LEGACY_MANIFEST_VERSION, RunManifest
@@ -262,6 +264,43 @@ def design_change(
         was = "experiment_design.csv as the earlier run wrote it"
         return (InputChange("design", was, "the file edited since", UNAFFECTED),)
     return ()
+
+
+def calibration_change(
+    recorded: RunManifest | None, review: CalibrationReview
+) -> tuple[InputChange, ...]:
+    """Return the change of ``calibration.csv`` since the earlier run, if any.
+
+    The file is the input (design v0.4 §3): added, edited or removed since the earlier run
+    recorded its SHA-256. The effect names how many images are recorded with other pixel
+    sizes; no row depends on them.
+
+    Parameters
+    ----------
+    recorded
+        The earlier run's manifest (version 2), or None.
+    review
+        The calibration as read now.
+
+    Returns
+    -------
+    tuple
+        One :class:`InputChange` named ``"calibration"``, or nothing.
+    """
+    if recorded is None or recorded.calibration_sha256 == review.sha256:
+        return ()
+    before = {entry.relative_path: entry.pixel_sizes for entry in recorded.files}
+    moved = [
+        path for path, sizes in review.sizes.items() if path in before and before[path] != sizes
+    ]
+    was = "none" if recorded.calibration_sha256 is None else "calibration.csv as recorded"
+    if review.sha256 is None:
+        now = "none (calibration.csv removed or refused)"
+    else:
+        now = "calibration.csv " + ("added" if recorded.calibration_sha256 is None else "edited")
+    images = "image" if len(moved) == 1 else "images"
+    effect = f"no row is affected; the pixel sizes of {len(moved)} {images} change"
+    return (InputChange("calibration", was, now, effect),)
 
 
 def _answers(design: ExperimentDesign) -> dict[str, str]:

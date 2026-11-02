@@ -4,9 +4,10 @@ A brick that works on files reads them only through a clean run: the images, the
 roles, pixel sizes, masks, histograms, design and image type, all as the run recorded them.
 Nothing is parsed from names, guessed or transposed, and no file is read once it changed:
 
-- :meth:`RunInputs.open` refuses a version 1 manifest (a run before the axis check), a table
-  or design whose SHA-256 is not the manifest's, and an image or mask changed or gone since
-  the run;
+- :meth:`RunInputs.open` refuses a version 1 manifest (a run before the axis check), a table,
+  design or ``calibration.csv`` whose SHA-256 is not the manifest's (also a
+  ``calibration.csv`` added since the run), and an image or mask changed or gone since the
+  run;
 - every read checks the file's fingerprint again (:class:`.fingerprint.Fingerprint`);
 - masks are read by the recorded pairing only, with preprocessing's reader and its label
   check (:func:`.masks.check_labels`); a stated shared 2-D mask serves every plane.
@@ -27,6 +28,7 @@ from morphobricks_normalization.csv_io import OUTPUT_FILENAME, read_plane_histog
 from morphobricks_normalization.records import PlaneRecord
 
 from .axes import AxisMapping
+from .calibration import CALIBRATION_FILENAME
 from .design import DESIGN_FILENAME, ExperimentDesign, read_experiment_design
 from .fingerprint import Fingerprint
 from .manifest import (
@@ -135,14 +137,15 @@ class RunInputs:
         Raises
         ------
         RunInputsError
-            For a run before v0.4.0, a table or design changed since the run, or an image or
-            mask changed or gone.
+            For a run before v0.4.0, a table, design or calibration changed since the run,
+            or an image or mask changed or gone.
         """
         output = Path(output_folder).resolve()
         manifest = _manifest(output)
         _check_sha(output / OUTPUT_FILENAME, manifest.csv_sha256, "histogram table")
         if manifest.experiment_design_sha256 is not None:
             _check_sha(output / DESIGN_FILENAME, manifest.experiment_design_sha256, "design")
+        _check_calibration(output / CALIBRATION_FILENAME, manifest.calibration_sha256)
         root = Path(experiment_root or manifest.experiment_root).resolve()
         recorded_masks = (manifest.masks or {}).get("folder")
         masks = masks_root or recorded_masks
@@ -177,7 +180,10 @@ class RunInputs:
     def pixel_sizes(self, fov: Fov | str) -> dict[str, RecordedSize]:
         """Return the recorded size of one step along X, Y, Z and T, by role.
 
-        A size the run does not know has no value and no source (uncalibrated).
+        Each has its value, unit and source: ``"header"`` (the image's metadata),
+        ``"stated"`` (``calibration.csv``) or ``"pixels"`` (stated as deliberately
+        uncalibrated, no value). A size nothing gives has no value and no source
+        (uncalibrated). Nothing is guessed.
         """
         return {size.role: size for size in self._entry(fov).pixel_sizes}
 
@@ -381,6 +387,17 @@ def _check_sha(path: Path, expected: str, what: str) -> None:
         raise RunInputsError(
             f"The {what} {path.name} is not the one the run wrote (missing, or changed since). "
             "Run preprocessing again."
+        )
+
+
+def _check_calibration(path: Path, expected: str | None) -> None:
+    """Refuse a ``calibration.csv`` changed, removed or added since the run."""
+    if expected is not None:
+        _check_sha(path, expected, "calibration")
+    elif path.exists():
+        raise RunInputsError(
+            f"{path.name} was added since the run, so the pixel sizes it records may not be "
+            "the ones stated now. Run preprocessing again."
         )
 
 

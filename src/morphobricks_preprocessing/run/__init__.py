@@ -22,6 +22,7 @@ succeeds; the earlier output is then replaced.
 
 from __future__ import annotations
 
+from .calibrate import write_calibration
 from .check_step import write_check_report
 from .lock import LOCK_FILENAME, LockHolder, OutputLockedError, read_lock, remove_stale_lock
 from .modes import FULL, MODES, RESTART
@@ -44,5 +45,6 @@ __all__ = [
     "remove_stale_lock",
     "run_experiment",
     "sample_planes",
+    "write_calibration",
     "write_check_report",
 ]

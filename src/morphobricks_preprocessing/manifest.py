@@ -215,6 +215,9 @@ class RunManifest:
     conversion_record_sha256
         SHA-256 of the conversion record in the experiment root, when the experiment is
         a copy tree of named-axis copies (design v0.4 §5); None otherwise.
+    calibration_sha256
+        SHA-256 of the output folder's ``calibration.csv`` as the run read it (the pixel
+        sizes the user stated, design v0.4 §3); None when there was none.
     schema_version
         Version of the CSV format.
     manifest_version
@@ -237,6 +240,7 @@ class RunManifest:
     intensity_checks: IntensityCheckSettings | None = None
     narrow_ranges: tuple[NarrowRange, ...] = ()
     conversion_record_sha256: str | None = None
+    calibration_sha256: str | None = None
     schema_version: str = SCHEMA_VERSION
     manifest_version: str = MANIFEST_VERSION
 
@@ -293,6 +297,7 @@ class RunManifest:
             ),
             "narrow_histogram_ranges": [entry.to_dict() for entry in self.narrow_ranges],
             "conversion_record_sha256": self.conversion_record_sha256,
+            "calibration_sha256": self.calibration_sha256,
             "versions": dict(self.versions),
         }
         if self.masks is not None:
@@ -358,6 +363,7 @@ class RunManifest:
                     for entry in data.get("narrow_histogram_ranges") or ()
                 ),
                 conversion_record_sha256=_text(data.get("conversion_record_sha256")),
+                calibration_sha256=_text(data.get("calibration_sha256")),
                 schema_version=str(data["schema_version"]),
                 manifest_version=str(version),
             )

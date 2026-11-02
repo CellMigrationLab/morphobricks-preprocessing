@@ -124,7 +124,7 @@ def test_the_writer_refuses_an_entry_without_roles(tmp_path):
 
 def test_recorded_sizes_are_checked():
     assert RecordedSize.from_dict({"role": "X", "value": 1, "unit": "nm", "source": "header"})
-    with pytest.raises(ValueError, match="both a value and a source"):
+    with pytest.raises(ValueError, match="needs a value with the source header or stated"):
         RecordedSize.from_dict({"role": "X", "value": 1, "unit": "nm", "source": None})
     with pytest.raises(ValueError, match="unknown role or source"):
         RecordedSize.from_dict({"role": "C", "value": None, "source": None})
