@@ -251,7 +251,9 @@ results or comparing another grouping.
    version.
 1. **Check the experiment folder.**
    - Paste the folder path, or click **Browse…** to choose it in a dialog. Below the output
-     folder, a line shows where the results will go.
+     folder, a line shows where the results will go. An output folder that is a file, or
+     inside one (for example `somefile/out`), cannot be created: the line says so in red,
+     nothing is written there, and step 3 waits until you choose another folder.
    - If you have masks (§2), give their folder under **Masks folder (optional)** the same way
      (on Colab, paste its path: **Browse…** explains how). Leave it empty for no masks.
      **Check folder** pairs them with the images exactly as `check --masks` does.
@@ -299,6 +301,11 @@ results or comparing another grouping.
        naming the line and column, and the file is left as it is. Correct the file and
        undo and confirm the labels again to read it, or answer the questions again: the
        first answer replaces the file.
+     - The design belongs to its output folder. If you change the output folder, the design
+       is read from the new folder (its own answers and controls, a blue box says so), or,
+       when it holds none, the questions are asked again: answers given for the previous
+       output folder are never carried over, and nothing is written in the new folder until
+       you answer. Changing back reads the first folder's design again.
    - **Pixel sizes (calibration)** lists the size of one pixel along X, Y, Z and T for every
      image (images with the same sizes share a row), with its source: **header** (the image
      metadata), **stated** (in **calibration.csv**), **pixels** (stated as deliberately
@@ -314,7 +321,11 @@ results or comparing another grouping.
      as the run records no size for it. No histogram depends on the sizes. (When another
      brick embeds this step without the output folder, the card is left out.)
    - **Dataset consistency** shows how many images each condition (columns) and
-     biological repeat (rows; the repeat groups once paired) has, with the number of technical-repeat folders. A cell is
+     biological repeat (rows; the repeat groups once paired) has, with the number of technical-repeat folders. Excluded images
+     are not counted, nor is a technical-repeat folder whose images are all excluded; the
+     line under the table says how many images were excluded and names those folders. A
+     technical-repeat folder named **single** is the level's value single, so it counts as
+     no technical-repeat folder, like images directly in the biological-repeat folder. A cell is
      amber when it has fewer than half or more than twice the median number of images, or
      when a condition does not have that biological repeat. Expand **Show consistency
      warnings** to see the checks that compare the images with each other: pixel type,
@@ -973,8 +984,8 @@ continues.
 | `rgb_not_possible` | Error | The image type RGB was chosen, but the images are not three channels of a whole-number pixel type. Choose fluorescence, or check the axis roles: the RGB samples must have the role C. |
 | `repeat_group_conflict` | Error | A repeat group holds two folders of the same condition. Move one into another group. |
 | `invalid_experiment_design` | Error | A repeat group has no usable name (empty, `NA`, `nan`, `none`, `null`, `n/a`, `<NA>`, or spaces around it), two repeat groups are spelled the same apart from upper and lower case, or a confirmation date is not written `YYYY-MM-DD`. Correct `experiment_design.csv` (the message names the line and column). |
-| `missing_experiment_design`, `unreadable_experiment_design` | Error (other bricks) | A brick that pools biological repeats as `experiment_design.csv` pairs them found no such file, or one it cannot use as written by the preprocessing brick (another column order, a value with spaces around it, `TRUE` or `yes` for `true`, an empty repeat group, a byte-order mark from a spreadsheet program, ...). Run the preprocessing brick on the experiment again: its run writes the file as other bricks read it. |
-| `unreadable_experiment_design` | Error (`load_design`, notebook step 1, `check`) | The saved `experiment_design.csv` in the output folder cannot be read even leniently (for example a date a spreadsheet program rewrote as 26/10/2026, or a repeat group `NA`); the message names the line and column. The file is left as it is. Correct it, or answer the questions again in step 1, which replaces it. |
+| `missing_experiment_design`, `unreadable_experiment_design` | Error (other bricks) | A brick that pools biological repeats as `experiment_design.csv` pairs them found no such file, or one it cannot use as written by the preprocessing brick (another column order, a column named twice or without a name, a value with spaces around it, `TRUE` or `yes` for `true`, an empty repeat group, a byte-order mark from a spreadsheet program, ...). Run the preprocessing brick on the experiment again: its run writes the file as other bricks read it. |
+| `unreadable_experiment_design` | Error (`load_design`, notebook step 1, `check`) | The saved `experiment_design.csv` in the output folder cannot be read even leniently (for example a date a spreadsheet program rewrote as 26/10/2026, a repeat group `NA`, or a header that names a column twice, such as two `repeat_group` columns, or has a column without a name); the message names the line and column. No reader chooses between two columns of one name: delete one. The file is left as it is. Correct it, or answer the questions again in step 1, which replaces it. |
 | `changed_experiment_design` | Error (other bricks) | `experiment_design.csv` is not the file the preprocessing run that wrote the statistics used (its SHA-256 differs from the one in the run manifest). Give that run's design, or run the preprocessing brick again. |
 | `image_intensity_outlier` | Warning (intensity check) | An image's median or high percentile in a channel is far from the other images of its condition and biological repeat. Look at it: it may be out of focus, contain debris or bubbles, or have been acquired differently. Exclude it if it is faulty. |
 | `repeat_intensity_shift` | Warning (intensity check) | A biological repeat is brighter or darker than the other repeats of its condition. Check whether it was prepared or acquired differently; normalising per biological repeat in later bricks removes such differences. |

@@ -37,7 +37,7 @@ from morphobricks_normalization.records import PlaneRecord
 from .axes import AxisMapping
 from .calibration import CALIBRATION_FILENAME
 from .conversion_check import conversion_problem
-from .design import DESIGN_FILENAME, ExperimentDesign, read_experiment_design
+from .design import DESIGN_FILENAME, DesignCheckError, ExperimentDesign, read_confirmed_design
 from .fingerprint import Fingerprint
 from .links import LinkRefusedError
 from .manifest import (
@@ -315,12 +315,29 @@ class RunInputs:
         return self.records
 
     def design(self) -> ExperimentDesign | None:
-        """Return the run's experiment design, or None when it had none."""
-        if self.manifest.experiment_design_sha256 is None:
+        """Return the run's experiment design, or None when it had none.
+
+        Read with the strict :func:`.design.read_confirmed_design` (issue #83), checked
+        against the manifest's ``experiment_design_sha256`` on the bytes it parses.
+
+        Raises
+        ------
+        RunInputsError
+            If the design is missing, changed since the run, or not one the strict reader
+            takes (its refusal is the ``__cause__``).
+        """
+        expected = self.manifest.experiment_design_sha256
+        if expected is None:
             return None
-        path = self.output_folder / DESIGN_FILENAME
-        _check_sha(path, self.manifest.experiment_design_sha256, "design")
-        return read_experiment_design(path)
+        try:
+            return read_confirmed_design(
+                self.output_folder / DESIGN_FILENAME, expected_sha256=expected
+            ).design
+        except DesignCheckError as exc:
+            raise RunInputsError(
+                f"The design {DESIGN_FILENAME} cannot be used: {exc.issues[0].message} "
+                "Run preprocessing again."
+            ) from exc
 
     def image_type(self) -> str | None:
         """Return the image type the user confirmed (``"fluorescence"`` or ``"rgb"``), or None."""

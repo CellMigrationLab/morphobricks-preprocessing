@@ -551,8 +551,14 @@ API, CLI). The notebook and CLI only call the API.
   compared at reuse; each header bound to its image's fingerprint
   (`preflight(bind_headers=True)`, `source_changed_during_check`); the copy's pixel type
   from that header; `parse_size` exact.
-- **Before the audit: links and the log (issues #81 and #99)** *(done; questions 61 and
-  62)*: `links.LinkGuard` follows a link only inside the folder walked (discovery, OME-Zarr
+- **Before the audit: experiment design identity and counts (issues #82, #83 and #98)**
+  *(this PR; questions 61, 62 and 63)*: technical-repeat folders whose images are all
+  excluded are not counted, and the balance text names them; every design reader refuses a
+  header naming a column twice or a column without a name, and `RunInputs.design()` reads
+  with `read_confirmed_design`; changing the notebook's output folder reloads the design
+  from the new folder and asks again.
+- **Before the audit: links and the log (issues #81 and #99)** *(done; questions 64 and
+  65)*: `links.LinkGuard` follows a link only inside the folder walked (discovery, OME-Zarr
   stores, the masks folder; `RunInputs` and `convert` refuse the same links), and the CLI
   checks `--log` (`log_target`) before opening it, after the other arguments.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
@@ -1552,7 +1558,42 @@ Raised during review; to be decided before the milestones that need them:
     (review finding: the PR dropped the warning when only X and Y were stated). Only
     these metadata problems are caught: any other exception while reading the scale makes
     the image unreadable instead of being hidden by a debug log.
-61. Are symbolic links in the experiment or masks folder followed (issue #81)? *Decided
+61. Which technical-repeat folders are counted (issue #82)?
+    *Decided (owner, 2 November 2026):* only those holding at least one image to analyse.
+    A technical-repeat folder whose images are all excluded is not counted in
+    `BiologicalRepeat.technical_repeat_count`, the balance table or the design's
+    `technical_repeat_count` (it was counted before). The balance table's text says what
+    was left out (`BalanceTable.not_counted()`: the excluded images and the folders whose
+    images are all excluded), in the CLI `check`, the notebook's consistency card and its
+    design card. A technical-repeat folder named `single` keeps question 23's meaning
+    (the level's value `single`, counted as no technical-repeat folder, like a missing
+    level): documented, not changed. Contract §11, §12; user guide §4.
+62. Which design file headers are read, and how does `RunInputs.design()` read the file
+    (issue #83)?
+    *Decided (owner, 2 November 2026):* a header that names a column twice, or has a
+    column without a name (empty or only whitespace), is refused by every design reader
+    (`read_experiment_design`, so `load_design`, the notebook, `check`, `run --design` and
+    the `design` command, and `read_confirmed_design`), with `DesignFormatError` naming
+    the column and both positions; the lenient reader kept the last of two columns before,
+    and a test asserted it. Names are compared ignoring case and outer whitespace (and,
+    from the review, invisible format characters such as a byte-order mark or zero-width
+    space inside the header, which made a second `condition` look new). Nothing
+    is rewritten on refusal. `RunInputs.design()` reads with `read_confirmed_design`
+    checked against the manifest's SHA-256 (it used the lenient reader). The header check
+    and the value parsers moved to `design_values` (pure); `DesignFormatError` is
+    re-exported from `design` unchanged. Contract §9.1, §12, §16; user guide §8.
+63. What happens to the experiment design when the notebook's output folder changes (issue
+    #98)?
+    *Decided (owner, 2 November 2026):* the design belongs to its output folder. Since
+    PP-10a a run reported the other folder's design as a design change but used it, so a
+    design (its confirmations and controls) confirmed for one output folder could be
+    written into another. Now changing the output folder reads the design from the new
+    folder (`load_design`, an unreadable file refused and kept), or asks the questions
+    again when it holds none; nothing is carried over and nothing is written until an
+    answer (the folder may still be being typed), and the design card says which. The run
+    is gated as before, so it runs only on the new folder's confirmed design. No copy
+    action: the user answers again, or copies the file. Contract §12; user guide §4.
+64. Are symbolic links in the experiment or masks folder followed (issue #81)? *Decided
     (owner, 2 November 2026): contain.* A link (file or folder; on Windows also a directory
     junction) is followed only when its real path stays inside the experiment folder, or the
     masks folder for masks, both resolved; a link that leaves it is refused
@@ -1567,7 +1608,7 @@ Raised during review; to be decided before the milestones that need them:
     and the masks folder for discovery, the masks pairing, the unrecorded-files check of
     `RunInputs` (raised as `RunInputsError`) and, through discovery, `convert`. Contract §1,
     §8.
-62. Where may the command line's `--log` write (issue #99)?
+65. Where may the command line's `--log` write (issue #99)?
     *Decided (owner, 2 November 2026):* the log path is checked first and the file opened
     only after the other arguments are checked. It is refused inside the experiment or masks
     folder (given or recorded by the earlier run), inside `convert`'s folder of copies, and
@@ -1576,6 +1617,6 @@ Raised during review; to be decided before the milestones that need them:
     conversion record, the staging folders). Any other name in the output folder is fine.
     In review: folders are also compared by device and inode and output names ignoring
     case (macOS and Windows), and an existing file with a second name (a hard link) is
-    refused.
-    Contract §8; user guide §5.
+    refused. Also in review: the design file given with `--design` (an input) is refused
+    (it was appended to). Contract §8; user guide §5.
 

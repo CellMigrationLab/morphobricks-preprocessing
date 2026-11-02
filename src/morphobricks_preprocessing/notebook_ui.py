@@ -166,6 +166,8 @@ class PreprocessingNotebook(
         self.design: ExperimentDesign | None = None
         # True while the saved design cannot be read and has not been replaced by an answer.
         self._design_unreadable = False
+        # The output folder the design was read for: a design belongs to it (issue #98).
+        self._design_output: Path | None = None
         self.dataset = DatasetReport()
         self.mapping: AxisMapping | None = None
         self.confirmed_mapping: AxisMapping | None = None

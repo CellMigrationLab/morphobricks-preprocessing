@@ -81,6 +81,8 @@ src/morphobricks_preprocessing/
   design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
                     the folders on reruns, design_issues, read/write experiment_design.csv, load_design;
                     read_confirmed_design/ConfirmedDesign (the strict reader other bricks use, §16)
+  design_values.py  the design file's header check (no column twice or unnamed, #83), booleans,
+                    counts, dates and DesignFormatError (pure; re-exported by design.py)
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)
@@ -503,10 +505,12 @@ functions the tests use.
   get one whole-experiment question. Controls are recorded only.
 - **`experiment_design.csv`** (schema 1): one row per condition x biological-repeat folder,
   sorted; counts at confirmation; `confirmed_on` ISO date. Lenient reader (any-case
-  booleans, BOM); `DesignFormatError` otherwise, also for a repeat group that is not a
+  booleans, BOM); `DesignFormatError` otherwise, also for a header naming a column twice
+  or not at all (#83, both readers), a repeat group that is not a
   D-e identity or a `confirmed_on` that is not `YYYY-MM-DD` (naming line and column).
   Other bricks read it with the strict `read_confirmed_design` (contract §16,
-  question 40): nothing filled in, every group confirmed, SHA-256 of the bytes parsed.
+  question 40): nothing filled in, every group confirmed, SHA-256 of the bytes parsed;
+  `RunInputs.design()` uses it too (#83).
 - **Reruns:** `reconcile_design` keeps answers for known folders, reopens only groups that
   gain a folder, drops removed folders.
 - **Notebook** writes the file after every answer once the labels are confirmed; a
@@ -767,8 +771,10 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
    3 shows a "Before you run" checklist naming the first thing still to do, and Run stays
    disabled until it is empty.
 2. **Inputs reset what depends on them.** Changing the experiment folder resets the
-   preflight, the confirmations and the axis roles. Changing an axis role resets the
-   preview confirmation. Choosing another CSV clears the old statistics.
+   preflight, the confirmations and the axis roles. Changing the output folder reads the
+   experiment design from the new folder, or asks it again (#98); never carried over.
+   Changing an axis role resets the preview confirmation. Choosing another CSV clears the
+   old statistics.
 3. **Explain every choice live.** Each axis card shows its length, the suggested role and a
    dropdown with descriptive options ("Z - depth (focal planes)"). Under it, a sentence
    updates with the choice ("3 depth slices, numbered z = 0 to 2; each becomes its own

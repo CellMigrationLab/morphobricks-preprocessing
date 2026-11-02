@@ -211,6 +211,26 @@ def test_a_changed_or_missing_design_is_refused(tmp_path):
         RunInputs.open(clean.output)
 
 
+def test_the_design_is_read_with_the_strict_reader(tmp_path):
+    # Issue #83: RunInputs.design() used the lenient reader, so a design the strict
+    # reader refuses was given to bricks once its SHA-256 matched the manifest.
+    from morphobricks_preprocessing.manifest import file_sha256
+
+    clean = make_clean_run(tmp_path, design=True)
+    path = clean.output / DESIGN_FILENAME
+    text = path.read_text(encoding="utf-8")
+    header, rest = text.split("\n", 1)
+    path.write_text(f"{header},repeat_group\n" + rest.replace(",1\n", ",1,other\n"), "utf-8")
+    manifest_path = clean.output / MANIFEST_FILENAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["experiment_design_sha256"] = file_sha256(path)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    inputs = RunInputs.open(clean.output)
+    with pytest.raises(RunInputsError, match="'repeat_group' twice") as caught:
+        inputs.design()
+    assert caught.value.__cause__ is not None
+
+
 def test_a_header_naming_x_before_y_is_read_y_before_x(tmp_path):
     # Owner rule (design v0.4 change log): the header names the axes, so reordering is exact.
     stored = np.arange(2 * 2 * 5 * 7, dtype=np.uint16).reshape(2, 2, 5, 7)  # Z, C, X, Y
