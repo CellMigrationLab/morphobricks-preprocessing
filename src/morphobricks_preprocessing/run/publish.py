@@ -31,6 +31,9 @@ from ..manifest import (
 
 logger = logging.getLogger(__name__)
 
+STAGING_PREFIX = ".run-"
+"""The name prefix of a run's staging folders in the output folder (removed after the run)."""
+
 
 class _OutputRollbackError(RuntimeError):
     """Raised when an output update fails and its earlier files cannot be restored."""
@@ -65,7 +68,7 @@ def _staged_outputs(
     The outputs are written to a temporary folder inside ``output``; ``with_design``
     publishes ``experiment_design.csv`` too, and ``with_report`` the report files.
     """
-    staged = Path(tempfile.mkdtemp(prefix=".run-", dir=output))
+    staged = Path(tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=output))
     keep_backups = False
     try:
         yield staged

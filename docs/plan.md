@@ -557,6 +557,10 @@ API, CLI). The notebook and CLI only call the API.
   header naming a column twice or a column without a name, and `RunInputs.design()` reads
   with `read_confirmed_design`; changing the notebook's output folder reloads the design
   from the new folder and asks again.
+- **Before the audit: links and the log (issues #81 and #99)** *(done; questions 64 and
+  65)*: `links.LinkGuard` follows a link only inside the folder walked (discovery, OME-Zarr
+  stores, the masks folder; `RunInputs` and `convert` refuse the same links), and the CLI
+  checks `--log` (`log_target`) before opening it, after the other arguments.
 - **Before the audit: micrometre conversion and exit status (issue #93, #130 review)**
   *(this PR; question 66)*: every conversion to micrometres is a positive finite length
   (`length_units.to_micrometers`, moved from `physical_sizes` with the unit table, which
@@ -1596,6 +1600,32 @@ Raised during review; to be decided before the milestones that need them:
     answer (the folder may still be being typed), and the design card says which. The run
     is gated as before, so it runs only on the new folder's confirmed design. No copy
     action: the user answers again, or copies the file. Contract §12; user guide §4.
+64. Are symbolic links in the experiment or masks folder followed (issue #81)? *Decided
+    (owner, 2 November 2026): contain.* A link (file or folder; on Windows also a directory
+    junction) is followed only when its real path stays inside the experiment folder, or the
+    masks folder for masks, both resolved; a link that leaves it is refused
+    (`link_outside_folder`, naming each link and its target, a broken link too). One file
+    reached by two paths is refused, naming both (`linked_twice`); hard links too (the same
+    device and inode, from the one `stat` taken per image or mask; owner, 2 November 2026,
+    in review). A link back to a folder on its own path is `link_loop`. A broken link that
+    stays inside is reported by its reader, never skipped (review: masks skipped it). The
+    links inside an OME-Zarr store are held to the same rule (reading and copying a store
+    follow them); the cost, about 84 ms per 20,000 store files on each discovery, is
+    accepted (owner, 2 November 2026). One helper (`links.LinkGuard`) walks the experiment
+    and the masks folder for discovery, the masks pairing, the unrecorded-files check of
+    `RunInputs` (raised as `RunInputsError`) and, through discovery, `convert`. Contract §1,
+    §8.
+65. Where may the command line's `--log` write (issue #99)?
+    *Decided (owner, 2 November 2026):* the log path is checked first and the file opened
+    only after the other arguments are checked. It is refused inside the experiment or masks
+    folder (given or recorded by the earlier run), inside `convert`'s folder of copies, and
+    as or inside a protected output artefact (`plane_histograms.csv`, `run_manifest.json`,
+    the reports, the design, `calibration.csv`, `mask_relationships.json`, the lock, the
+    conversion record, the staging folders). Any other name in the output folder is fine.
+    In review: folders are also compared by device and inode and output names ignoring
+    case (macOS and Windows), and an existing file with a second name (a hard link) is
+    refused. Also in review: the design file given with `--design` (an input) is refused
+    (it was appended to). Contract §8; user guide §5.
 66. What happens to a size that does not fit in micrometres, and what is the exit status of
     a command that reports an error (issue #93, review of #130)?
     *Decided (2 November 2026, design v0.4 §3: nothing guessed, nothing silent; owner to
