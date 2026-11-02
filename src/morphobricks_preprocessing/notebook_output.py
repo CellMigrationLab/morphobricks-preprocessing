@@ -242,7 +242,12 @@ class _OutputCards:
                 [str(exc), "Choose an output folder you can write to; the run needs one too."],
             )
             return
-        if written.refusal is not None:
+        if written.refusal is not None and written.refusal.code != "output_locked":
+            refusal = written.refusal  # output_inside_masks, of a recorded masks folder
+            self.check_report.where.value = ui.status(
+                "error", "The check wrote nothing.", [refusal.message, refusal.action]
+            )
+        elif written.refusal is not None:
             self.folder_lock.show(output)
         elif written.report is not None:
             self.check_report.show(output, "The check")

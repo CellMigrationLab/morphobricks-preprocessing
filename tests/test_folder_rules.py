@@ -138,7 +138,7 @@ def test_check_and_masks_write_nothing_into_the_masks_folder(tmp_path):
     assert not out.exists()
 
 
-def test_a_recorded_masks_folder_holding_the_output_folder_is_refused(tmp_path):
+def test_a_recorded_masks_folder_holding_the_output_folder_is_refused(tmp_path, capsys):
     # A run recorded before the rule: its masks folder is made the parent of the output.
     clean = make_clean_run(tmp_path, mask_types=("Cells",), design=True)
     path = clean.output / MANIFEST_FILENAME
@@ -151,6 +151,9 @@ def test_a_recorded_masks_folder_holding_the_output_folder_is_refused(tmp_path):
     with pytest.raises(OutputInsideMasksError, match="inside the masks folder"):
         edit_design(clean.output, DesignEdit(confirm_all=True))
     assert main(["design", "--output", str(clean.output), "--confirm-all"]) == 1
+    # 'check' is not given the masks folder, so only the recorded one refuses it: exit 1.
+    assert main(["check", str(clean.experiment), "--output", str(clean.output)]) == 1
+    assert "inside the masks folder" in capsys.readouterr().out
     result = run_experiment(clean.experiment, output_folder=clean.output)
     assert not result.written and "output_inside_masks" in errors(result.issues)
     assert sorted(p.name for p in clean.output.iterdir()) == before

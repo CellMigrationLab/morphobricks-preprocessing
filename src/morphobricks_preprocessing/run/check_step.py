@@ -70,7 +70,8 @@ def write_check_report(
     tuple
         ``(path, None)`` when written; ``(None, None)`` when the output folder is inside
         the experiment (nothing is written there; the preflight reports it); ``(None,
-        issue)`` when another run holds the folder's lock.
+        issue)`` when another run holds the folder's lock or a recorded masks folder holds
+        it (:attr:`CheckOutputs.refusal`).
     """
     written = _write(pre, output_folder, review, with_design=False)
     return written.report, written.refusal
@@ -88,7 +89,9 @@ class CheckOutputs:
         ``experiment_design.csv`` when the template was written; None when the folder holds
         a design already, the folders have errors, or nothing was written.
     refusal
-        ``output_locked`` when another run holds the folder's lock, else None.
+        ``output_locked`` when another run holds the folder's lock; ``output_inside_masks``
+        when the masks folder recorded by the run in the output folder holds it (the
+        preflight does not know that folder); else None.
     """
 
     report: Path | None = None
@@ -121,7 +124,8 @@ def write_check_outputs(
     -------
     CheckOutputs
         Nothing written when the output folder is inside the experiment or the masks folder
-        (the preflight reports it) or another run holds its lock.
+        (the preflight reports it, or :attr:`CheckOutputs.refusal` for a recorded masks
+        folder) or another run holds its lock.
     """
     return _write(pre, output_folder, review, with_design=True)
 
@@ -138,8 +142,12 @@ def _write(
     output = default_output_folder(root) if output_folder is None else Path(output_folder)
     output = output.resolve()
     masks = pre.masks.folder if pre.masks is not None else None
-    if check_output_folder(root, output) or output_masks_issues(output, masks):
-        return CheckOutputs()  # the preflight or the run reports it; nothing is written
+    inside_masks = output_masks_issues(output, masks)
+    if check_output_folder(root, output) or inside_masks:
+        # Nothing is written; the refusal is returned unless the preflight reports it (a
+        # masks folder recorded by the run in the output folder, not given to 'check').
+        reported = {issue.code for issue in pre.issues}
+        return CheckOutputs(refusal=next((i for i in inside_masks if i.code not in reported), None))
     output.mkdir(parents=True, exist_ok=True)
     report = build_report(pre, output, pre.issues, review=review, outcome=RunOutcome("check"))
     folders_ok = not has_errors([*pre.discovery.issues, *pre.exclusion_issues])
