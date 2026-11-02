@@ -137,6 +137,9 @@ src/morphobricks_preprocessing/
                     read_mask_file (a mask by its path), check_labels (int32 labels, contract §16)
   mask_checks.py    mask checks with the confirmed roles: mask_size_issues (Y/X by role),
                     mask_issues (a run's mask issues; images with axis errors skipped)
+  mask_review.py    what the notebook shows about the masks: mask_type_rows, and
+                    mask_axes_questions (the types whose axes must be stated, with the
+                    statements mask_roles accepts)
   mask_scan.py      the optional mask step (Q32): piece_counts (scipy.ndimage), pair_counts,
                     scan_masks -> MaskReport (kinds, relations, direct-parent hierarchy, evidence),
                     write_mask_report (mask_relationships.json); DEFAULT_THRESHOLDS,
@@ -147,6 +150,7 @@ src/morphobricks_preprocessing/
                     zarr 2/3 helpers, canonical_dtype; needs the `zarr` extra
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
   notebook_axes.py  the notebook's axis-check card and the marks under the role dropdowns
+  notebook_masks.py step 1's masks folder, Masks card and mask-axis statements (PP-10c)
   notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra);
                     folder_step/axis_step take title, purpose, intro and show_next (and
                     show_output and show_design for step 1) so other bricks can embed them
@@ -877,6 +881,8 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   `read_confirmed_design`; edits to `experiment_design.csv` with an empty or NA-like
   `repeat_group`, repeat groups differing only in case, or a `confirmed_on` that is not
   `YYYY-MM-DD` are refused, naming the line and column.
+- **Notebook masks field (PP-10c):** step 1 takes the masks folder and the mask axes per
+  mask type (design v0.4 §2), see plan §10.
 - **Next (not started):** the notebook step for the masks (name each mask, confirm or
   correct the relationships) and a file saving those answers for the other bricks
   (question 32); 3D and time-lapse masks later.

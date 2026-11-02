@@ -7,8 +7,9 @@ The notebook ``notebooks/MorphoBricks_Preprocessing.ipynb`` shows the four steps
    taken from the folder names, and confirm the experiment design: which
    biological repeats belong together across conditions, that they are
    comparable, and which conditions are controls; see and state the pixel
-   sizes. The check writes its report (and the design template) to the output
-   folder, as the command line's ``check`` does.
+   sizes; with a masks folder, see the masks paired with the images and state the
+   axes of the mask types that need it. The check writes its report (and the design
+   template) to the output folder, as the command line's ``check`` does.
 2. **Axes** - review the role of every image axis, look at planes with the
    preview, and confirm; then confirm the image type (fluorescence or RGB).
 3. **Run** - check that everything is ready, see what will happen (the mode and

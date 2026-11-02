@@ -177,7 +177,10 @@ masks/
 - A 2D mask belongs to an image with one plane. For a Z-stack or a time-lapse, the mask needs
   one plane per depth slice or time point, with its axes named in its metadata (an ImageJ
   hyperstack or OME-TIFF with axes `ZYX` or `TYX`); a 2D mask for such an image, or a plain
-  stack whose axis could be depth or time, is refused by `run`/`check`.
+  stack whose axis could be depth or time, is refused by `run`/`check` unless its axes are
+  stated once for its kind of mask (`--mask-axes`, §5, or **Mask axes** in the notebook's
+  step 1, §4): `TYX` for a plain stack of time points, `YX` for one 2D mask shared by every
+  plane of its image.
 - You may have any number of kinds of mask. Their folder names (or the part after the image
   name) are their names: they must differ by more than upper/lower case. If one image's name
   starts another's (`a.tif` and `a_b.tif`), a mask named `a_b_cells.tif` could belong to
@@ -238,6 +241,9 @@ results or comparing another grouping.
 1. **Check the experiment folder.**
    - Paste the folder path, or click **Browse…** to choose it in a dialog. Below the output
      folder, a line shows where the results will go.
+   - If you have masks (§2), give their folder under **Masks folder (optional)** the same way
+     (on Colab, paste its path: **Browse…** explains how). Leave it empty for no masks.
+     **Check folder** pairs them with the images exactly as `check --masks` does.
    - Click **Check folder**. Only folder names and image headers are read. Like the command
      line's `check`, it writes its report, **discovery_report.txt** and
      **discovery_report.json** (§6), to the output folder; **Show the report** under the
@@ -305,6 +311,33 @@ results or comparing another grouping.
      names and physical pixel sizes (see §8). Warnings never stop you; they say what to
      check. Images with different numbers of channels, pixel types or dimension orders are
      errors: fix them before going on.
+   - **Masks** (with a masks folder, or OME-Zarr images with label images) lists every kind
+     of mask found, where from (the masks folder or label images), its axes, how many masks
+     it has and the images without one (named below the table), and the masks' messages
+     (§8): the same checks as `check --masks` and, once the axis roles are confirmed in
+     step 2, as `run`. A mask error blocks step 3; the step-1 status and tiles count the
+     masks' errors and warnings too.
+     - **Mask axes** appears only for kinds of mask that need their axes stated, as the
+       command line's `--mask-axes TYPE=ROLES`: masks whose files do not name their axes (a
+       plain stack, `mask_not_2d`), or whose statement does not fit; and, once the axis roles
+       are confirmed, 2D masks of images with several depth slices or time points
+       (`mask_planes_mismatch`), for which the only choice is **YX: one 2-D mask shared by
+       every plane of its image**. The dropdown lists only the statements that fit every
+       mask of that kind (one role per axis as stored, never X before Y), starts at **Not
+       stated**, and nothing is applied until you press **Check the masks**. If no statement
+       fits (masks of one kind stored differently), it says so: save them alike.
+     - **Check the masks** pairs the masks again with the masks folder and the mask axes
+       chosen, keeping your other answers (labels, design, axis roles). Step 3 asks you to
+       press it after changing the masks folder or a mask axis; masks that were not checked
+       are never used. A new masks folder starts its mask axes over.
+     - The run records the masks folder and the mask axes in **run_manifest.json**; a later
+       run in the same output folder reuses them (§7). With the box empty, the masks folder of
+       the earlier run is used again, and the card says so; **Drop the recorded masks** (then
+       **Check the masks**) runs without masks, as `--no-masks`, and drops the mask axes
+       stated for that folder's masks. A masks folder other than the recorded one, or dropped,
+       is named under **What will happen** in step 3 and in the run's report.
+     - When another brick embeds this step without the output folder, neither the masks
+       folder nor the card is shown, and the check pairs no masks folder.
    - **Messages** lists the other problems (folders, files that are not images, unreadable
      images), with the warning count visible in orange and the error count in red.
      Expand **Show warnings and errors** to see each problem, the affected files and what
@@ -356,7 +389,8 @@ results or comparing another grouping.
        **run_manifest.json** (§6); changing it on a later run reads no image again.
 3. **Compute the histograms.**
    - **Before you run** lists anything still to do.
-   - **What will happen** names the output folder and files and the image type, and says
+   - **What will happen** names the output folder and files, the image type and the masks
+     recorded (or that the recorded masks are dropped), and says
      whether an earlier run was found and what will be read. It lists the inputs that differ
      from those the earlier run recorded (for example an image excluded since, or another
      bin count), each with its effect (*every row is recomputed*, *no row is affected*,
@@ -531,7 +565,7 @@ report names the change and its effect. Other options:
 | `--image-type fluorescence\|rgb` | The image type (default: the earlier run's, else the suggested one, printed) |
 | `--design FILE` | The confirmed experiment design (default: `experiment_design.csv` in the output folder); it is copied to the output folder |
 | `--mode restart\|full` | `restart` (default) reuses the rows of unchanged images; `full` recomputes every row and check. Both keep your confirmations and replace the results only when the run succeeds |
-| `--no-masks` | Drop the masks folder an earlier run recorded |
+| `--no-masks` | Drop the masks folder an earlier run recorded, with the mask axes stated for its masks (those of OME-Zarr label images are kept) |
 | `--no-exclude` | Clear the exclusions an earlier run recorded, so every image is analysed again (not together with `--exclude`) |
 | `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks`, `design` and `calibrate`); give it only when no other run uses the output folder |
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |

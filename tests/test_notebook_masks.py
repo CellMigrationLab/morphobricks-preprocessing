@@ -7,16 +7,20 @@ only where needed and applied only on **Check the masks**; the run is given the 
 folder and mask axes; a recorded masks folder is reused unless dropped explicitly.
 """
 
+import importlib
+
 import numpy as np
 import pytest
 
+from morphobricks_preprocessing import preflight, read_manifest
+from tiff_tree import write_data, write_plain
+
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
-
-from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
-from morphobricks_preprocessing import preflight, read_manifest  # noqa: E402
-from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
-from tiff_tree import write_data, write_plain  # noqa: E402
+ui = importlib.import_module("morphobricks_preprocessing.notebook_style")
+PreprocessingNotebook = importlib.import_module(
+    "morphobricks_preprocessing.notebook_ui"
+).PreprocessingNotebook
 
 IMAGES = ["ctrl/rep1/a.tif", "ctrl/rep2/a.tif", "drug/rep1/a.tif", "drug/rep2/a.tif"]
 
