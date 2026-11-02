@@ -51,9 +51,15 @@ Pre-alpha. Implemented and tested:
   and tells how the kinds relate (inside, grouped by, same objects, with the counts behind
   it, such as cells with two nuclei) and their hierarchy, in `mask_relationships.json`
   (`mask_scan`, command `masks`). A mask is 2D, or has depth (Z) and/or time (T) planes
-  named in its own metadata, one per image plane; a 2D mask of a Z-stack or time-lapse is
-  refused, projections included (`mask_planes_mismatch`), and the manifest records each
-  mask's `axes` and `shape`
+  named in its own metadata (or stated once per mask type), one per image plane; a 2D mask
+  of a Z-stack or time-lapse is refused (`mask_planes_mismatch`) unless its type is stated
+  as one mask shared by every plane (`--mask-axes Cells=YX`); masks are checked as stored
+  and never converted, and the manifest records each mask's axes, roles and size
+- Reading a run from another brick: `RunInputs.open(output_folder)` gives the FOVs, pixel
+  sizes, planes, masks, design and image type the run recorded, and refuses a run whose
+  files changed or that misses files (`run_inputs`)
+- Interrupted runs resume, and results are published in one crash-consistent step
+  (`run.staging`, `run.resume`, `run.generation`)
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
   and a command line (`morphobricks-preprocessing check` / `run` / `masks` / `calibrate` /
   `design` / `convert`)
@@ -67,6 +73,10 @@ removed in v0.4.0).
 
 Optional (the `zarr` extra): OME-Zarr images as input (`zarr_input`). **New users: start with the
 [user guide](docs/user_guide.md).**
+
+**Upgrading from v0.3:** v0.4.0 is a breaking release. Every v0.3 run must be run again, and
+bricks read runs through `RunInputs`. See the [migration guide](docs/migration-0.3-to-0.4.md)
+and the [CHANGELOG](CHANGELOG.md).
 
 ## Installation
 
@@ -100,7 +110,7 @@ LabConstrictor's
    needs ipywidgets 8). Locally Step 0 prints the Python version, platform and working folder.
    No shell or line magics are used; pip runs with the kernel's Python.
 3. When the package is missing (always on a fresh Colab runtime), Step 0 installs the release
-   named by `RELEASE_TAG` (currently `v0.4.0rc3`), never the moving `main` branch, and prints
+   named by `RELEASE_TAG` (currently `v0.4.0rc4`), never the moving `main` branch, and prints
    which source and version it uses. A checkout around the notebook, or an installed package,
    is used first.
 4. `current_version` and `notebook_name` in Step 0 are the names LabConstrictor's version check
@@ -108,8 +118,9 @@ LabConstrictor's
    lists the latest version. At each release, `RELEASE_TAG`, `current_version`, the index and
    the tag named in the Step 0 Colab callout move to the new tag before it is tagged
    ([plan](docs/plan.md) §10, release checklist); `tests/test_notebook_file.py` checks that
-   they agree, that the rules above hold, and runs the notebook in a local kernel. The Colab
-   run itself is checked by hand.
+   they agree, that the rules above hold, and runs the notebook in a local kernel. Until the
+   major release the notebook is verified headless only; the Colab run is checked by hand on
+   the major release with [docs/colab-release-check.md](docs/colab-release-check.md).
 5. On Colab, Step 0 installs the `notebook` and `zarr` extras; locally it installs `notebook`.
 6. Steps 0 and 1 have *Colab users* / *JupyterLab users* callouts. On Colab, keep the data and
    the output folder on Google Drive; the [user guide](docs/user_guide.md) §1 explains why, and
