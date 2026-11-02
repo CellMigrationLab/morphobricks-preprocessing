@@ -26,6 +26,7 @@ pytest.importorskip("matplotlib")
 notebook_style = importlib.import_module("morphobricks_preprocessing.notebook_style")
 notebook_ui = importlib.import_module("morphobricks_preprocessing.notebook_ui")
 PreprocessingNotebook = notebook_ui.PreprocessingNotebook
+ValidationIssue = importlib.import_module("morphobricks_preprocessing.validation").ValidationIssue
 
 EMPTY = inspect.Parameter.empty
 POSITIONAL = inspect.Parameter.POSITIONAL_OR_KEYWORD
@@ -179,3 +180,15 @@ def test_steps_one_and_two_embed_as_morphorelate_does(tmp_path):
     result = notebook.check_folder()
     assert result is notebook.preflight and result.ok
     assert len(result.discovery.images) == 2 and len(result.discovery.leaves) == 2
+    # What MorphoRelate reads from the check: each issue's severity and the folder.
+    assert result.issues == ()  # a clean folder; each issue says whether it is an error:
+    assert isinstance(inspect.getattr_static(ValidationIssue, "is_error"), property)
+    assert result.discovery.root == root
+    # Step 2: an embedder's handler on confirm_button sees the brick's confirmed mapping.
+    confirmed = []
+    notebook.confirm_button.on_click(lambda _: confirmed.append(notebook.confirmed_mapping))
+    notebook.preview_button.click()
+    notebook.preview_checked.button.click()
+    notebook.confirm_button.click()
+    assert confirmed and confirmed[0] is notebook.confirmed_mapping
+    assert "".join(notebook.confirmed_mapping.roles) == "ZYX"
