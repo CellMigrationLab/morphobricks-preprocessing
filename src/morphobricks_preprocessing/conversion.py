@@ -31,22 +31,21 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 
 from ._io import free_space
 from .axes import AxisMapping, prefill_mapping
 from .axis_check import ConfirmedAxes, confirmation_of
 from .conversion_issues import (
     lock_issue,
-    not_a_folder_issue,
-    overlap_issue,
     record_issue,
     space_issue,
 )
-from .conversion_plan import PlannedCopy, plan_conversion
+from .conversion_plan import PlannedCopy, copy_folder_issues, plan_conversion
 from .conversion_record import (
     CONVERTED,
     COPIED,
@@ -90,6 +89,10 @@ class ConversionResult:
     suggested_axes
         The roles to give ``run`` on the copy tree (``--axes``), when every copy has the
         same axes; else None.
+    unknown_sizes
+        ``{image: roles}`` for each copy in the tree whose source header gives pixel sizes
+        that the copy does not carry (a relabelled axis gets an unknown scale), sorted; the
+        user states them (``calibration.csv``) if known.
     """
 
     destination: Path
@@ -100,6 +103,10 @@ class ConversionResult:
     reused: tuple[str, ...] = ()
     record_sha256: str | None = None
     suggested_axes: str | None = field(default=None)
+    unknown_sizes: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "unknown_sizes", MappingProxyType(dict(self.unknown_sizes)))
 
 
 def convert_experiment(
@@ -146,7 +153,7 @@ def convert_experiment(
     """
     _check_arguments(missing_as_singleton, memory_limit)
     root, dest = Path(experiment_root).resolve(), Path(destination).resolve()
-    refused = _folder_issues(root, dest)
+    refused = copy_folder_issues(root, dest)
     if refused:
         return ConversionResult(dest, False, tuple(refused))
     planned, issues = plan_conversion(
@@ -217,6 +224,9 @@ def _locked_conversion(
         reused=tuple(e.relative_path for e in reused),
         record_sha256=sha256,
         suggested_axes=_suggested_axes(files),
+        unknown_sizes={
+            e.relative_path: tuple(sorted(e.unknown_sizes)) for e in files if e.unknown_sizes
+        },
     )
 
 
@@ -265,15 +275,6 @@ def _suggested_axes(files: list[CopyEntry]) -> str | None:
         return prefill_mapping(next(iter(axes))).roles_string
     except ValueError:
         return None
-
-
-def _folder_issues(root: Path, dest: Path) -> list[ValidationIssue]:
-    """Refuse a copy tree inside the experiment, holding it, or that is a file."""
-    if dest == root or root in dest.parents or dest in root.parents:
-        return [overlap_issue(root, dest)]
-    if dest.exists() and not dest.is_dir():
-        return [not_a_folder_issue(dest)]
-    return []
 
 
 def _space_issue(dest: Path, to_write: list[PlannedCopy]) -> ValidationIssue | None:
