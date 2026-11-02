@@ -45,7 +45,9 @@ class _FolderStep:
                         ui.help_text(
                             "One image per line, relative to the experiment folder. Excluded "
                             "images are not read and their earlier rows are removed. Use this "
-                            "for damaged files; remove a line to analyse the image again."
+                            "for damaged files; remove a line to analyse the image again. "
+                            "When the output folder holds an earlier run, the list starts "
+                            "with the images it excluded."
                         ),
                     ]
                 )
@@ -218,7 +220,8 @@ class _FolderStep:
         self.mapping = pre.suggested_mapping
         self.confirmed_mapping = None
         self.result = None
-        self.missing_as_singleton.set(False, notify=False)
+        self._note_edits()  # a check fills only what the user left as filled
+        self.missing_as_singleton.set(self._recorded_missing_as_singleton(), notify=False)
         self._show_folder_results(pre)
         self._reset_settings(pre)
         self._refresh_axis_step()
@@ -333,6 +336,7 @@ class _FolderStep:
     def _folder_edited(self) -> None:
         """Make every later choice stale when the folder differs from the one checked."""
         self._update_output_hint()
+        self._prefill_from_output()  # the default output folder follows the experiment
         if self.preflight is None or ui.clean_path(self.folder.value) == self._checked_folder:
             return
         # A different folder makes every later choice stale.
@@ -359,6 +363,8 @@ class _FolderStep:
 
     def _output_edited(self) -> None:
         self._update_output_hint()
+        # The inputs start from the earlier run in the new output folder (audit I4).
+        self._prefill_from_output()
         # A design belongs to its output folder (issue #98): another folder's design is
         # read, or the questions asked again; nothing is carried over or written here.
         if self.design is not None and self._design_folder() != self._design_output:

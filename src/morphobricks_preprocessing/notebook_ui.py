@@ -75,6 +75,7 @@ from .notebook_plots import (
     plane_png,
     repeat_curves_png,
 )
+from .notebook_prefill import _Prefill
 from .notebook_render import (
     _labels_explanation,
     balance_html,
@@ -129,6 +130,7 @@ class PreprocessingNotebook(
     _RunStep,
     _MaskStepCard,
     _RunPlan,
+    _Prefill,
     _ResultsStep,
 ):
     """The steps of the notebook, sharing one state.
@@ -180,6 +182,7 @@ class PreprocessingNotebook(
         self._show_output = True
         self._show_design = True
         self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None
+        self._init_prefill()
         self._build_output_cards()
         self._build_calibration_card()
         self._build_masks_cards()
@@ -189,6 +192,7 @@ class PreprocessingNotebook(
         self._build_mask_step_card()
         self._build_run_step()
         self._build_results_step()
+        self._prefill_from_output()
         self._refresh_axis_step()
         self._refresh_run_step()
 
@@ -437,9 +441,8 @@ class PreprocessingNotebook(
 
     def _histogram_settings(self) -> HistogramSettings:
         """Return the histogram range chosen in step 3; raise ValueError for unusable quantiles."""
-        return HistogramSettings(
-            histogram_range=self.histogram_range.value,
-            robust_quantiles=(self.robust_low.value, self.robust_high.value),
+        return self._histogram_from(
+            self.histogram_range.value, (self.robust_low.value, self.robust_high.value)
         )
 
     def _histogram_settings_or_none(self) -> HistogramSettings | None:

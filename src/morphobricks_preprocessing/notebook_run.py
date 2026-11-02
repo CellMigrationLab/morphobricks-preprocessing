@@ -181,6 +181,7 @@ class _RunStep:
             self.bins.max = top or MAX_BIN_COUNT
             self.bins.value = self._default_bins
             self.bins_hint.value = f"<div class='mb-help'>{_bins_help(dtype)}</div>"
+        self._prefill_check()
         self._recommended_changed()
 
     def _recommended_changed(self) -> None:
@@ -330,6 +331,7 @@ class _RunStep:
         """Show what the run did and, when it wrote the table, its intensity checks."""
         self._show_run_result(result)
         if result.written:
+            self._recorded_after_run()
             self._show_run_checks(result.csv_path)
         self._show_log()
         if result.written:
