@@ -141,3 +141,23 @@ def test_the_design_card_says_which_folders_are_not_counted(tmp_path):
     assert (row.image_count, row.technical_repeat_count) == (1, 1)
     saved = read_experiment_design(tmp_path / "out" / "experiment_design.csv")
     assert [r.technical_repeat_count for r in saved.rows] == [1, 1]
+
+
+def test_an_answer_that_cannot_be_saved_in_the_new_output_folder_says_so(tmp_path):
+    import os
+
+    from test_notebook_cards import hold_lock
+
+    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
+    a, locked = tmp_path / "a", tmp_path / "locked"
+    saved_a = confirmed_output(root, a, "ctrl")
+    nb = confirmed(root, a)
+    hold_lock(locked, os.getpid())  # another run, still going, holds the new folder
+    nb.output.value = str(locked)
+    assert not nb.design.confirmed
+    confirm_repeats(nb)
+    status = nb.design_status.value
+    assert "Not saved: another run holds the lock" in status and "Saved in" not in status
+    assert not (locked / "experiment_design.csv").exists()
+    assert nb.design.controls == ()
+    assert (a / "experiment_design.csv").read_bytes() == saved_a
