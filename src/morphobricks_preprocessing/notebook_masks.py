@@ -28,7 +28,7 @@ from . import notebook_style as ui
 from .axes import AxisReview
 from .axis_review import review_axes
 from .discovery import default_output_folder
-from .fingerprint import Fingerprint
+from .fingerprint import current_fingerprint
 from .manifest import MANIFEST_FILENAME
 from .mask_checks import mask_issues
 from .mask_review import MaskAxesQuestion, mask_axes_questions, mask_type_rows
@@ -135,7 +135,7 @@ class _MasksCard:
         given = GivenInputs(masks_folder=self._masks_given(), mask_axes=self._mask_axes or None)
         output = Path(self._output_folder() or default_output_folder(root)).resolve()
         # Every refresh of step 3 asks; the earlier run's manifest is read once per version.
-        key = (given, output, _stamp(output / MANIFEST_FILENAME))
+        key = (given, output, current_fingerprint(output / MANIFEST_FILENAME))
         if self._planned_cache is None or self._planned_cache[0] != key:
             self._planned_cache = (key, planned_masks(given, output))
         return self._planned_cache[1]
@@ -313,14 +313,6 @@ class _MasksCard:
         if rows:
             rows.insert(0, widgets.HTML(_QUESTIONS_INTRO))
         self.mask_axes_box.children = rows
-
-
-def _stamp(path: Path) -> Fingerprint | None:
-    """Return the file's fingerprint (size, modification time), or None without one."""
-    try:
-        return Fingerprint.of(path)
-    except FileNotFoundError:
-        return None
 
 
 def _pairing(plan: PlannedMasks) -> tuple:
