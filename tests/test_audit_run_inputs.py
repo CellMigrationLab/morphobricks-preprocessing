@@ -1,0 +1,170 @@
+"""Regressions of the preprocessing audit of 3 November 2026: I2, I3, I5, m4, m5 and m6.
+
+Each reproduces the audit's finding on the code before the fix (they changed what
+``RunInputs`` gives the bricks).
+"""
+
+import numpy as np
+import pytest
+import tifffile
+
+from morphobricks_preprocessing import (
+    AxisMapping,
+    inspect_images,
+    prefill_mapping,
+    read_physical_sizes,
+    run_experiment,
+)
+from morphobricks_preprocessing.length_units import to_micrometers
+from morphobricks_preprocessing.planes import read_plane
+from morphobricks_preprocessing.recorded_sizes import header_sizes
+from morphobricks_preprocessing.run_inputs import RunInputs
+from tiff_tree import write_data, write_plain
+
+# The audit's sizes at the 1 GiB default, scaled down 100 times (plane and limit).
+LIMIT = 2**30 // 100
+
+
+def write_ome(path, shape=(8, 8), **sizes):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tifffile.imwrite(
+        path, np.zeros(shape, np.uint16), ome=True, photometric="minisblack", metadata=sizes
+    )
+    return path
+
+
+def codes(issues):
+    return [issue.code for issue in issues]
+
+
+def issue(issues, code):
+    (found,) = [i for i in issues if i.code == code]
+    return found
+
+
+# I2: reading a plane counts no histogram memory -------------------------------------------------
+
+
+@pytest.mark.parametrize(("side", "dtype"), [(500, "float32"), (300, "uint32")])
+def test_reading_a_plane_counts_no_histogram_memory(tmp_path, side, dtype):
+    # 5000² float32 needed "2.0 GiB" and 3000² uint32 1.1 GiB at the 1 GiB limit before.
+    data = np.arange(side * side, dtype=dtype).reshape(side, side)
+    path = write_data(tmp_path / "a.tif", data, "YX")
+    plane = read_plane(path, prefill_mapping("YX"), memory_limit=LIMIT)
+    assert not plane.in_blocks
+    np.testing.assert_array_equal(plane.pixels, data)
+
+
+def test_run_inputs_reads_a_wide_integer_plane_within_its_limit(tmp_path):
+    data = np.arange(300 * 300, dtype=np.uint32).reshape(300, 300)
+    write_data(tmp_path / "exp/ctrl/a.tif", data, "YX")
+    result = run_experiment(tmp_path / "exp", prefill_mapping("YX"))
+    inputs = RunInputs.open(result.output_folder)
+    np.testing.assert_array_equal(inputs.read_plane("ctrl/a.tif", memory_limit=LIMIT), data[None])
+
+
+# I3: a header size is recorded only with a supported unit ---------------------------------------
+
+
+@pytest.mark.parametrize("unit", ["pixel", "inch"])
+def test_a_header_size_in_an_unsupported_unit_is_not_recorded(tmp_path, unit):
+    path = write_ome(
+        tmp_path / "exp/ctrl/a.ome.tif",
+        axes="YX",
+        PhysicalSizeX=1.0,
+        PhysicalSizeXUnit=unit,
+        PhysicalSizeY=1.0,
+        PhysicalSizeYUnit=unit,
+    )
+    recorded = {size.role: size for size in header_sizes(read_physical_sizes(path))}
+    assert (recorded["X"].value, recorded["X"].unit, recorded["X"].source) == (None, None, None)
+    result = run_experiment(tmp_path / "exp", prefill_mapping("YX"))
+    sizes = RunInputs.open(result.output_folder).pixel_sizes("ctrl/a.ome.tif")
+    assert sizes["X"].value is None and sizes["Y"].source is None
+    assert f"X and Y in {unit!r}" in issue(result.issues, "unsupported_pixel_size_unit").message
+
+
+# I5: z and t are checked against the image, for a shared mask too ------------------------------
+
+
+def test_a_shared_mask_is_not_read_outside_the_image(tmp_path):
+    root, masks = tmp_path / "exp", tmp_path / "masks"
+    write_plain(root / "ctrl/a.tif", np.zeros((3, 6, 8), np.uint8))
+    write_data(masks / "Cells/ctrl/a.tif", np.ones((6, 8), np.uint16), "YX")
+    result = run_experiment(
+        root, AxisMapping("IYX", "TYX"), masks_folder=masks, mask_axes={"Cells": "YX"}
+    )
+    inputs = RunInputs.open(result.output_folder)
+    assert inputs.read_mask("ctrl/a.tif", "Cells", t=2).shape == (6, 8)
+    for z, t in ((None, 7), (99, None), (0, -1), (1, 0)):
+        with pytest.raises(IndexError, match="outside"):
+            inputs.read_mask("ctrl/a.tif", "Cells", z=z, t=t)
+    with pytest.raises(IndexError):
+        inputs.read_plane("ctrl/a.tif", t=3)
+    with pytest.raises(TypeError):
+        inputs.read_mask("ctrl/a.tif", "Cells", t=1.0)
+
+
+# m4: numpy real scalars are lengths ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "value", [np.float32(0.5), np.float16(0.5), np.int64(2), np.uint8(2), np.longdouble(0.5)]
+)
+def test_numpy_real_scalars_are_lengths(value):
+    converted = to_micrometers(value, "nm")
+    assert type(converted) is float and converted == float(value) * 1e-3
+
+
+@pytest.mark.parametrize(
+    "value",
+    [True, np.bool_(True), 1 + 0j, np.complex64(1), np.float32("nan"), np.float32("inf")]
+    + [np.float32(-0.5), np.int64(0), "0.5"],
+)
+def test_other_values_are_still_refused(value):
+    with pytest.raises(ValueError, match="not"):
+        to_micrometers(value, "um")
+
+
+# m5: partial and non-square calibrations are named ---------------------------------------------
+
+
+def test_partial_and_non_square_pixel_sizes_are_named(tmp_path):
+    root = tmp_path / "exp"
+    write_ome(root / "c/square.ome.tif", axes="YX", PhysicalSizeX=0.5, PhysicalSizeY=0.5)
+    write_ome(root / "c/x_only.ome.tif", axes="YX", PhysicalSizeX=0.5)
+    write_ome(root / "c/wide.ome.tif", axes="YX", PhysicalSizeX=0.5, PhysicalSizeY=0.5004)
+    report = inspect_images(root, ["c/square.ome.tif", "c/x_only.ome.tif", "c/wide.ome.tif"])
+    partial = issue(report.issues, "partial_pixel_size")
+    assert partial.paths == ("c/x_only.ome.tif",)
+    assert "X 0.5 micrometres, Y unknown" in partial.message
+    assert "refuse" in partial.message
+    wide = issue(report.issues, "non_square_pixels")
+    assert wide.paths == ("c/wide.ome.tif",) and "0.5004" in wide.message
+    assert "exactly equal" in wide.message and "refuse" in wide.message
+
+
+def test_square_and_uncalibrated_images_are_not_named(tmp_path):
+    root = tmp_path / "exp"
+    write_ome(root / "c/a.ome.tif", axes="YX", PhysicalSizeX=0.5, PhysicalSizeY=0.5)
+    nm = {"PhysicalSizeX": 500, "PhysicalSizeXUnit": "nm"}  # 0.5 micrometres, exactly
+    write_ome(root / "c/b.ome.tif", axes="YX", PhysicalSizeY=0.5, **nm)
+    write_data(root / "c/c.tif", np.zeros((8, 8), np.uint16), "YX")
+    report = inspect_images(root, ["c/a.ome.tif", "c/b.ome.tif", "c/c.tif"])
+    assert not {"partial_pixel_size", "non_square_pixels"} & set(codes(report.issues))
+
+
+# m6: damaged OME-XML is an invalid calibration, not an uncalibrated image ----------------------
+
+
+def test_damaged_ome_xml_is_an_invalid_calibration(tmp_path):
+    path = write_ome(tmp_path / "a.ome.tif", axes="YX", PhysicalSizeX=0.5, PhysicalSizeY=0.5)
+    raw = path.read_bytes()
+    damaged = raw.replace(b'PhysicalSizeX="0.5"', b'PhysicalSizeX="0<5"')  # same length
+    assert damaged != raw
+    path.write_bytes(damaged)
+    sizes = read_physical_sizes(path)
+    assert sizes.x is None and "OME-XML metadata cannot be read" in sizes.invalid
+    report = inspect_images(tmp_path, ["a.ome.tif"])
+    found = issue(report.issues, "invalid_physical_calibration")
+    assert found.paths == ("a.ome.tif",) and "OME-XML" in found.message

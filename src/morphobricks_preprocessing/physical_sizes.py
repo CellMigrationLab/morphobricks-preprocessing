@@ -468,15 +468,17 @@ def _header_size(axis: str, value: object) -> tuple[float | None, str | None]:
 
 
 def _tiff_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
-    """Return the physical sizes of an open TIFF file (all None when not given)."""
-    try:
-        if tif.is_ome and tif.ome_metadata:
+    """Return the physical sizes of an open TIFF file (all None when not given).
+
+    OME-XML that cannot be parsed gives no sizes, with what is wrong in ``invalid``
+    (audit m6, the TIFF twin of issue #94): never read as merely uncalibrated.
+    """
+    if tif.is_ome and tif.ome_metadata:
+        try:
             return _ome_sizes(tif.ome_metadata)
-        if tif.is_imagej:
-            return _imagej_sizes(tif)
-    except Exception:  # metadata is optional; a damaged header is reported elsewhere
-        logger.debug("Cannot read physical sizes of %s", tif.filename, exc_info=True)
-    return PhysicalSizes()
+        except ElementTree.ParseError as exc:
+            return PhysicalSizes(invalid=f"the OME-XML metadata cannot be read ({exc})")
+    return _imagej_sizes(tif) if tif.is_imagej else PhysicalSizes()
 
 
 def _ome_sizes(xml: str) -> PhysicalSizes:

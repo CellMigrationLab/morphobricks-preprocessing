@@ -619,7 +619,7 @@ def test_large_chunks_are_read_a_few_rows_at_a_time(tmp_path):
     mapping = prefill_mapping("ZYX")
     layout = plane_layout(path, mapping, memory_limit=smallest_limit(path, mapping))
     assert layout.block_shape[0] < 64
-    preview = read_plane(path, mapping, memory_limit=layout.memory_estimate - 1, preview=True)
+    preview = read_plane(path, mapping, memory_limit=layout.page_nbytes * 2 - 1, preview=True)
     assert preview.step >= 2
     np.testing.assert_array_equal(preview.pixels, data[0, :: preview.step, :: preview.step])
 

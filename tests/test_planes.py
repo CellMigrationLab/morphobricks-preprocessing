@@ -360,13 +360,13 @@ def test_histogram_memory_estimate_grows_with_the_plane():
 def test_plane_over_the_limit_is_read_in_blocks_not_whole(tmp_path, page_reads):
     path = write_data(tmp_path / "a.tif", random_data((2, 64, 64), "float32"), axes="ZYX")
     mapping = prefill_mapping("ZYX")
-    estimate = plane_layout(path, mapping).memory_estimate
+    layout = plane_layout(path, mapping)
+    estimate, read = layout.memory_estimate, layout.page_nbytes * 2 + layout.encoded_nbytes
     planes = list(iter_planes(path, mapping, memory_limit=estimate - 1))
     assert len(planes) == 2 and all(plane.in_blocks for plane in planes)
     with pytest.raises(PlaneMemoryError, match="only be read in blocks") as excinfo:
-        read_plane(path, mapping, memory_limit=estimate - 1)
-    assert "a.tif" in str(excinfo.value)
-    assert page_reads == []
+        read_plane(path, mapping, memory_limit=read - 1)  # reading only: no histogram (I2)
+    assert "a.tif" in str(excinfo.value) and page_reads == []
     assert not any(p.in_blocks for p in iter_planes(path, mapping, memory_limit=estimate))
 
 
@@ -377,14 +377,14 @@ def test_plane_that_cannot_be_split_is_refused_before_reading(tmp_path, page_rea
     mapping = prefill_mapping("ZYX")
     layout = plane_layout(path, mapping, memory_limit=1)
     assert layout.block_memory_estimate is None and not layout.fits
-    estimate = layout.memory_estimate
+    estimate, read = layout.memory_estimate, layout.page_nbytes * 2 + layout.encoded_nbytes
     with pytest.raises(PlaneMemoryError, match="limit") as excinfo:
         next(iter_planes(path, mapping, memory_limit=estimate - 1))
     assert "a.tif" in str(excinfo.value) and "even in blocks" in str(excinfo.value)
     with pytest.raises(PlaneMemoryError):
-        read_plane(path, mapping, memory_limit=estimate - 1, preview=True)
+        read_plane(path, mapping, memory_limit=read - 1, preview=True)
     with pytest.raises(PlaneMemoryError):
-        read_sample_plane(path, mapping, memory_limit=estimate - 1)
+        read_sample_plane(path, mapping, memory_limit=read - 1)
     assert page_reads == []
     assert len(list(iter_planes(path, mapping, memory_limit=estimate))) == 2
 
@@ -713,7 +713,7 @@ def test_preview_of_a_plane_in_blocks_is_reduced(tmp_path):
     data = random_data((3, 64, 50), "uint16")
     path = write_data(tmp_path / "a.tif", data, axes="ZYX", compression="zlib", rowsperstrip=8)
     mapping = prefill_mapping("ZYX")
-    limit = plane_layout(path, mapping).memory_estimate - 1
+    limit = (layout := plane_layout(path, mapping)).page_nbytes * 2 + layout.encoded_nbytes - 1
     with pytest.raises(PlaneMemoryError, match="in blocks"):
         read_plane(path, mapping, z=2, memory_limit=limit)
     plane = read_plane(path, mapping, z=2, memory_limit=limit, preview=True)

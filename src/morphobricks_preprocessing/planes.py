@@ -23,9 +23,9 @@ each XYC plane when the channels are stored in different pages.
 
 Before anything is decoded, each plane's working memory is estimated from the
 header: the decoded page (for OME-Zarr, every chunk the plane touches), its
-encoded bytes, a copy of the plane, the temporary arrays of the histogram and
-the finished histograms of every channel of the XYC plane. One decision, whole
-or in blocks, applies to every channel of every plane of a file.
+encoded bytes, a copy of the plane and, for histograms only (not
+:func:`read_plane`), their temporary arrays and the finished histograms of every
+channel of the XYC plane. One decision, whole or in blocks, applies to a file.
 
 Planes above the memory limit (default 1 GiB) are read in blocks instead
 (``docs/plan.md`` §5): rectangles made of the pieces the image is stored in
@@ -326,9 +326,8 @@ class PlaneLayout:
         Size of a page as stored in the file (compressed size, if compressed); 0
         for OME-Zarr, whose compressed chunk sizes are not known in advance.
     memory_estimate
-        Estimated working memory to read one whole plane and compute its
-        histogram, holding the finished histograms of every channel of its XYC
-        plane, in bytes.
+        Estimated working memory to read one whole plane and, except for
+        :func:`read_plane`, compute its histogram, in bytes.
     memory_limit
         The memory limit the layout was worked out for, in bytes.
     block_shape
@@ -574,13 +573,13 @@ def read_plane(
     wanted = {"Z": z, "C": c, "T": t}
     if is_zarr_store(path):
         image = _open_zarr(path)
-        layout = _zarr_layout(image, mapping, path, _Binning(), memory_limit)
+        layout = _zarr_layout(image, mapping, path, _Binning(histogram=False), memory_limit)
         layout = _whole_or_preview(layout, path, preview, _zarr_reblock(image, mapping, path))
         position = _position(layout, mapping, wanted)
         return _whole_or_reduced(_zarr_plane(image, layout, mapping, position, path), layout)
     with _open(path) as tif:
         series = tif.series[0]
-        layout = _layout(series, mapping, path, _Binning(), memory_limit)
+        layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
         layout = _whole_or_preview(layout, path, preview, _tiff_reblock(series, mapping, path))
         return _whole_or_reduced(_read_one(series, layout, mapping, path, wanted), layout)
 
@@ -602,7 +601,7 @@ def read_sample_plane(
         return read_plane(path, mapping, z=z, memory_limit=memory_limit, preview=True)
     with _open(path) as tif:
         series = tif.series[0]
-        layout = _layout(series, mapping, path, _Binning(), memory_limit)
+        layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
         layout = _whole_or_preview(layout, path, True, _tiff_reblock(series, mapping, path))
         dim = mapping.index_of("Z")
         z = None if dim is None else layout.shape[dim] // 2
@@ -818,20 +817,21 @@ def _channel_count(shape: tuple[int, ...], mapping: AxisMapping) -> int:
 
 @dataclass(frozen=True)
 class _Binning:
-    """What a plane's histogram costs in memory: its bin count and histogram range."""
+    """What a plane's histogram costs in memory (nothing when only read, audit I2)."""
 
     bin_count: int | None = None
     settings: HistogramSettings | None = None
+    histogram: bool = True
 
     def memory(self, pixels: int, dtype: np.dtype) -> int:
         """Temporary memory of binning ``pixels`` pixels, with the range check every run does."""
-        return estimate_histogram_memory(
+        return self.histogram * estimate_histogram_memory(
             pixels, dtype, self.bin_count, settings=self.settings, range_check=True
         )
 
     def finished(self, dtype: np.dtype, channels: int) -> int:
         """Memory of the finished histograms of an XYC plane's channels."""
-        return _finished_histograms_nbytes(dtype, self.bin_count, channels)
+        return self.histogram * _finished_histograms_nbytes(dtype, self.bin_count, channels)
 
 
 def _finished_histograms_nbytes(dtype: np.dtype, bin_count: int | None, channels: int) -> int:
@@ -1235,7 +1235,7 @@ def _tiff_blocking(
 
 
 def _tiff_reblock(series, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:  # noqa: ANN001
-    return lambda limit: _layout(series, mapping, path, _Binning(), limit)
+    return lambda limit: _layout(series, mapping, path, _Binning(histogram=False), limit)
 
 
 def _tiff_block_plane(
@@ -1393,7 +1393,7 @@ def _zarr_layout(
 
 
 def _zarr_reblock(image: NgffImage, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:  # noqa: ANN001
-    return lambda limit: _zarr_layout(image, mapping, path, _Binning(), limit)
+    return lambda limit: _zarr_layout(image, mapping, path, _Binning(histogram=False), limit)
 
 
 def _zarr_plane(

@@ -8,6 +8,7 @@ conversion :func:`to_micrometers`, whose result is always a positive finite leng
 from __future__ import annotations
 
 import math
+import numbers
 import re
 
 # Length units in OME, ImageJ and OME-NGFF metadata, and their OME-NGFF (UDUNITS-2) names.
@@ -115,7 +116,8 @@ def to_micrometers(value: float | None, unit: str | None) -> float | None:
     Parameters
     ----------
     value
-        A positive, finite length, or None when it is not known.
+        A positive, finite length (any real number, numpy scalars included, audit m4),
+        or None when it is not known.
     unit
         Its unit, as :func:`space_unit` reads it; None (or blank) when not known.
 
@@ -137,7 +139,7 @@ def to_micrometers(value: float | None, unit: str | None) -> float | None:
     if value is None:
         return None
     name = space_unit(unit)
-    if isinstance(value, bool) or not isinstance(value, int | float):
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
         raise ValueError(f"the length {value!r} is not a number")
     try:
         number = float(value)

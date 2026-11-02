@@ -61,6 +61,7 @@ from .run_inputs_text import (
     _without_axes_text,
 )
 from .unrecorded import UnrecordedFiles, unrecorded_files
+from .validation import plural
 from .zarr_input import NgffError, ZarrUnavailableError
 
 
@@ -263,6 +264,7 @@ class RunInputs:
         """
         z, t = (_coordinate(v, k, "read_plane(fov, z, t)") for k, v in (("z", z), ("t", t)))
         entry = self._checked(fov)
+        _check_planes(entry.relative_path, self._fov(entry), z, t)
         mapping = _mapping(entry)
         path = self.experiment_root / entry.relative_path
         coordinates = {}
@@ -299,12 +301,14 @@ class RunInputs:
     ) -> np.ndarray:
         """Read one mask plane by the recorded pairing, checking its labels.
 
-        A stated shared 2-D mask is the same plane for every ``z`` and ``t``.
+        A stated shared 2-D mask is the same plane for every ``z`` and ``t`` of the image.
 
         Raises
         ------
         TypeError
             If ``z`` or ``t`` is neither None nor a whole number.
+        IndexError
+            If ``z`` or ``t`` is outside the image (``Fov.z_count``, ``Fov.t_count``).
         RunInputsError
             If the image has no recorded mask of that type, or the mask changed since the run.
         ValueError
@@ -313,6 +317,7 @@ class RunInputs:
         call = "read_mask(fov, mask_type, z, t)"
         z, t = (None if v is None else _coordinate(v, k, call) for k, v in (("z", z), ("t", t)))
         entry = self._checked(fov)
+        _check_planes(entry.relative_path, self._fov(entry), z, t)
         recorded = self._mask_entry(entry.relative_path, mask_type)
         if not self._mask_unchanged(recorded):
             raise RunInputsError(_changed_text([recorded["path"]], "mask"))
@@ -473,6 +478,16 @@ class LazyImage:
             [np.stack([self[t, z] for z in range(self.shape[1])]) for t in range(self.shape[0])]
         )
         return data if dtype is None else data.astype(dtype)
+
+
+def _check_planes(relative_path: str, fov: Fov, z: int | None, t: int | None) -> None:
+    """Refuse a ``z`` or ``t`` outside the image, even for a shared 2-D mask (audit I5)."""
+    for name, index, count in (("z", z, fov.z_count), ("t", t, fov.t_count)):
+        if index is not None and not 0 <= index < count:
+            raise IndexError(
+                f"{relative_path} has {plural(count, 'plane')} along "
+                f"{name.upper()} ({name} 0 to {count - 1}); {name}={index} is outside it"
+            )
 
 
 def _coordinate(value: object, name: str, call: str) -> int:
