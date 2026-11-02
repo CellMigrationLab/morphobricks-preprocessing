@@ -583,9 +583,14 @@ API, CLI). The notebook and CLI only call the API.
     are staged) and every image before the commit: `source_changed_during_run` (error).
   - Owner decision: `copy_changed_after_conversion` is an error that stops the run before
     it writes (§17).
-  - Not in this PR: masks are fingerprinted when the manifest is written, as before (their
-    pixels are not read by the run); a v0.4.0rc3 run on OME-Zarr images must be run again
-    (its entries have no inventory: recomputed, and `RunInputs` refuses them).
+  - Not in this PR: a v0.4.0rc3 run on OME-Zarr images must be run again (its entries
+    have no inventory: recomputed, and `RunInputs` refuses them).
+  - **Follow-ups (review of PR #132):** (a) masks are fingerprinted when the manifest is
+    written, as before, not bound to the fingerprint taken with their headers during the
+    run (owner and coordinator: a follow-up, not a blocker); (b) a run killed while an
+    atomic write's temporary file is open leaves that hidden `.<name>.<random>.tmp` file in
+    the output folder (on main too, for the provisional report); the lock could remove
+    them.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;
@@ -1627,7 +1632,8 @@ Raised during review; to be decided before the milestones that need them:
     its fingerprint; anything else is discarded and reported, never reused. The staging
     folder is kept until a run publishes (design v0.4 §1 says it is removed "at the start
     of the next run"; keeping it until publication means a second interruption loses
-    nothing, and staged rows are still checked at the start of each run). (2)
+    nothing; accepted by the owner and coordinator on 2 November 2026 on the condition,
+    checked in review, that every run re-validates every staged row at its start). (2)
     **Publication:** the owner asked that any reader see the old or the new generation,
     never a mix, after a kill between any two steps. Chosen: manifest-last commit, the
     simplest design that keeps the documented file names as plain files on every system:
