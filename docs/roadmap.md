@@ -66,30 +66,50 @@ corrected or re-annotated automatically.
   the model, its weights' identity, the measurement set, thresholds and versions, so a rerun
   can tell whether they are still valid.
 
-### Where the code lives (open question for the owner)
+### Where the code lives (owner, 2026-11-02)
 
-MorphoEmbed and MorphoObjects depend on preprocessing, so preprocessing cannot import them;
-that would be a circular dependency. Each check's algorithm belongs to its own brick (§9
-ownership).
+**Decision:**
+- each check runs when its brick is installed: Q1 when MorphoEmbed is installed, Q2 when
+  MorphoObjects is installed;
+- a check whose brick is missing is skipped;
+- neither brick is ever needed for `check` or `run`.
 
-The proposal:
-- **The bricks compute:**
-  - MorphoEmbed offers a whole-FOV embedding mode for a preprocessing run;
-  - MorphoObjects offers the quick per-object set;
-  - both read through `RunInputs`.
-- **Preprocessing owns the outlier statistic** (shared with the intensity checks) and the
-  QC table's format.
-- **Preprocessing only displays the flags:** the notebook and the report show them when the
-  table exists.
-- **The notebook step runs only when the bricks are installed:** the preprocessing notebook
-  gets an optional step 5 that imports MorphoEmbed and MorphoObjects only when they are
-  installed, or MorphoFeature offers the same as a "quick QC" preset.
+**Design (to keep the dependency one-way):**
+- **The bricks register their checks.** MorphoEmbed and MorphoObjects depend on preprocessing,
+  so preprocessing never imports them by name. Each brick declares its check through a Python
+  entry point, for example group `morphobricks_preprocessing.quick_checks` with names
+  `embedding_outliers` and `mask_outliers`. Preprocessing finds the installed ones with
+  `importlib.metadata.entry_points`.
+- **No extra of preprocessing installs the bricks,** since that would be a circular
+  install. Users install the bricks they want.
+- **The algorithms stay in the bricks:**
+  - MorphoEmbed: the whole-FOV embedding;
+  - MorphoObjects: the quick per-object set.
+  Both read the images and masks through `RunInputs`.
+- **Preprocessing owns the rest:**
+  - the hook's interface (a versioned protocol: inputs, the result table, the provenance it
+    must return);
+  - the outlier statistic, shared with the intensity checks;
+  - the QC table's format;
+  - showing the flags in the report, the CLI and the notebook.
+- **A skipped check is reported, never silent.** For example: "embedding check not run:
+  MorphoEmbed is not installed (`pip install …`)". A skipped check is never read as passed,
+  so the report keeps three outcomes apart: flagged, checked with nothing found, and not
+  run.
+- **A hook that fails, or returns an incompatible protocol version, is reported as not run,
+  with the reason.** Preprocessing does not fall back to another method.
+- **When the checks run:**
+  - in the notebook, after the run, as an optional step that lists which checks are
+    available;
+  - on the command line, through a `quick-checks` command (or `run --quick-checks`), so
+    the default run stays as fast as today.
+- **Model and device for Q1 come from MorphoEmbed's own explicit settings.** Its weights must
+  already be present; a missing weight file is "not run", never a download.
 
-**To decide:**
-- where the step runs: an optional step in the preprocessing notebook, a MorphoFeature
-  preset, or both;
+**Still to decide:**
 - the default model for Q1;
-- the per-FOV time budget.
+- the per-FOV time budget;
+- whether MorphoFeature also offers the same checks as a "quick QC" preset.
 
 ### When
 
