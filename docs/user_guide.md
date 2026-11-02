@@ -471,6 +471,47 @@ kinds of mask count as the same objects. `morphobricks-preprocessing masks --hel
 all seven with their defaults; the values used are printed and written in the report.
 `python -m morphobricks_preprocessing` works the same way.
 
+### Stating pixel sizes (`calibrate`)
+
+Each image's pixel size (X and Y) and z-step (Z) come from its metadata. When the
+metadata give none, or the wrong one, state them in `calibration.csv` in the output
+folder. Nothing is ever guessed: an image with neither is *uncalibrated*, and the report
+says so.
+
+```bash
+# 0.65 um pixels for the whole experiment; a 2 um z-step for one condition
+morphobricks-preprocessing calibrate /data/exp1 --size . XY 0.65 um --size treated Z 2 um
+# one image measured in pixels on purpose (deliberately uncalibrated)
+morphobricks-preprocessing calibrate /data/exp1 --pixels treated/rep1/img3.tif XY
+# show the statements, or remove one (the metadata are used again)
+morphobricks-preprocessing calibrate /data/exp1
+morphobricks-preprocessing calibrate /data/exp1 --remove treated Z
+```
+
+The target is `.` (the whole experiment), a folder (a condition or repeat) or an image,
+relative to the experiment folder with `/`, spelled exactly as on disk. The most specific
+statement applies: an image's own over its folder's, a folder's over the whole
+experiment's. Each axis is stated on its own (`XY` states both with the same size), so Y
+and X never trade sizes. Units are pm, Å, nm, µm (um, micron), mm, cm or m. You may also
+edit the file in a spreadsheet; its columns are `target,axis,size,unit`, with an empty size
+and the unit `pixels` for a pixel statement:
+
+```text
+target,axis,size,unit
+.,X,0.65,um
+.,Y,0.65,um
+treated,Z,2,um
+treated/rep1/img3.tif,X,,pixels
+treated/rep1/img3.tif,Y,,pixels
+```
+
+A run reads the file and never changes or removes it (also with `--mode full`, or when it
+stops). The next run records each image's sizes with their source (`header`, `stated` or
+`pixels`), names the change in its report, and recomputes no row. A stated size that
+differs from the metadata is a warning (`calibration_differs_from_header`); the stated size
+is used. In Python, `write_calibration(calibration, output_folder)` writes the file
+(see §9).
+
 ## 6. Output files
 
 The default output folder is next to the experiment folder:
@@ -498,16 +539,19 @@ The default output folder is next to the experiment folder:
   the image type (and whether the channels are RGB colour samples), bin count, histogram
   range, memory limit, excluded images, the limits of the intensity checks, the planes with a
   narrow histogram range, package versions, the
-  fingerprint of the experiment design, and each image's position, size and modification time. Channel names and significant bits are recorded when the metadata
+  fingerprint of the experiment design (and of `calibration.csv`), and each image's position, size, modification time and pixel sizes with their source. Channel names and significant bits are recorded when the metadata
   provides them, and whether the image's planes were too large to read whole and are read
   in blocks. Format in [contract.md](contract.md) §9.
 - **`discovery_report.json`** and **`discovery_report.txt`:** the report of the last run (or
   `check`), written also when the run stops: its `status` (`stopped` or `written`), the
   SHA-256 of the manifest it describes, the folders, conditions, repeats and positions, the
   channels, each image's axes (and whether they come from the header or your
-  confirmation) and pixel sizes (or `uncalibrated`), the design and image type, the masks,
+  confirmation) and pixel sizes with their source (the metadata, `calibration.csv`, or
+  pixels as stated; or `uncalibrated`), the stated calibration, the design and image type, the masks,
   every message with its action, and what the run reused, recomputed and replaced, and
   why. It is for you to read; later bricks never use it.
+- **`calibration.csv`** (only when you state pixel sizes): your statements (§5, Stating
+  pixel sizes). Runs read it and never change it.
 - **`ome_zarr/`**: written only by v0.3 runs that converted TIFF images to OME-Zarr. That
   option was removed in v0.4.0; such a folder is left as it is, and may be deleted.
 
@@ -602,9 +646,12 @@ continues.
 | `planes_read_in_blocks` | Warning | Planes too large for the memory limit are read in blocks. The results are the same; nothing to do. Raise the limit to read them whole, which is faster. |
 | `different_sizes` | Warning | Images have different widths or heights. Usually expected; otherwise check the camera settings. |
 | `different_plane_counts` | Warning | Images have different numbers of depth slices, time points or other planes. Images with more planes weigh more in pooled statistics. Check the acquisition if this is not expected. |
-| `different_pixel_sizes` | Warning | The physical pixel size or z-step in the metadata differs between images by more than 0.1 % (for example different objectives). Images outside the largest group of matching sizes are listed; when sizes only change by small steps from image to image, none is listed. Check the microscope settings if this is not intended. |
-| `missing_pixel_size` | Warning | Some images give their pixel size in the metadata and others do not, so it cannot be checked. Export them again with metadata if needed. |
-| `unsupported_pixel_size_unit` | Warning | An image gives its pixel size or z-step in a unit that is not converted (for example inches); only pm, Å, nm, µm, mm, cm and m are. The message names each image, axis and unit. Those sizes are not used: the image is treated as uncalibrated on those axes. Export it again with the pixel size in a supported unit if the physical size matters. |
+| `different_pixel_sizes` | Warning | The physical pixel size or z-step (from the metadata or `calibration.csv`) differs between images by more than 0.1 % (for example different objectives). Images outside the largest group of matching sizes are listed; when sizes only change by small steps from image to image, none is listed. Check the microscope settings if this is not intended. |
+| `missing_pixel_size` | Warning | Some images have a pixel size (from the metadata or `calibration.csv`) and others do not, so it cannot be checked; images stated as measured in pixels count as without one, and the message says how many. Export them again with metadata, or state their sizes with `calibrate`, if needed. |
+| `unsupported_pixel_size_unit` | Warning | An image gives its pixel size or z-step in a unit that is not converted (for example inches); only pm, Å, nm, µm, mm, cm and m are. The message names each image, axis and unit. Those sizes are not used: the image is treated as uncalibrated on those axes. Export it again with the pixel size in a supported unit, or state it with `calibrate`, if the physical size matters. Not reported for an axis whose size is stated. |
+| `calibration_differs_from_header` | Warning | `calibration.csv` states a pixel size (or `pixels`) that differs from an image's metadata; the message names each image and axis with both sizes. The stated size is used. Correct or remove the statement if the metadata are right. |
+| `calibration_target_not_found` | Error | `calibration.csv` names a folder or image that is not in the experiment (names are compared exactly, case included). Correct the target, or remove the line. |
+| `calibration_unreadable` | Error | `calibration.csv` cannot be read; the message names the line and what is wrong. The file is left as it is: correct it, or remove it to use the sizes in the metadata. |
 | `unbalanced_images` | Warning | A condition and biological repeat has fewer than half or more than twice the median number of images. Check for missing, misplaced or duplicated images. |
 | `repeat_missing_conditions` | Warning | A biological repeat is not found in every condition. It is still used. If it has another folder name in some condition, pair it in the experiment design (step 1). |
 | `design_not_confirmed` | Error | Some repeat groups are not confirmed as comparable. Confirm them in step 1, or set `confirmed` to `true` in `experiment_design.csv`. |
@@ -677,6 +724,18 @@ pairing = design.repeat_groups()  # {(condition, biological_repeat): repeat_grou
 ```
 
 Later bricks read the file with `read_experiment_design(path)`.
+
+Stated pixel sizes (§5) are built with `calibration_entry` and written with
+`write_calibration`; the next run records them, and later bricks read every image's sizes
+with their source through `RunInputs.pixel_sizes`:
+
+```python
+from morphobricks_preprocessing import Calibration, calibration_entry, write_calibration
+
+calibration = Calibration(tuple(calibration_entry(".", axis, 0.65, "um") for axis in ("X", "Y")))
+write_calibration(calibration, result.output_folder)
+result = run_experiment(output_folder=result.output_folder)  # no row is recomputed
+```
 
 The intensity checks of a written table are in `result.intensity` (summaries and the
 normalization brick's warnings, each with its channel); `check_table(path)` checks any

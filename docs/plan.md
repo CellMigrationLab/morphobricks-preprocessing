@@ -284,6 +284,9 @@ API, CLI). The notebook and CLI only call the API.
   *v0.4.0 (PP-7, question 48): `restart`/`full` modes replace `force_rebuild`; later runs
   reuse every recorded input; an `O_EXCL` lock guards the output folder; every run writes
   `discovery_report.json` and `.txt` (contract §9.2).*
+  *v0.4.0 (PP-8, question 49): stated calibration in the output folder's `calibration.csv`
+  (experiment, folder or image; a size or `pixels`), recorded per axis with its source;
+  the pixel-size checks run on the resolved sizes; CLI `calibrate` (contract §9.3).*
 - **Milestone 5 — Integration and docs:** public API, notebook, CLI, user documentation.
   *Implemented: summaries (`report`), notebook widgets (`notebook_ui`,
   `notebooks/MorphoBricks_Preprocessing.ipynb`), `check`/`run` command line (`cli`) and the
@@ -1097,3 +1100,25 @@ Raised during review; to be decided before the milestones that need them:
     as a change. An `O_EXCL` lock file guards the output folder; a stale lock is removed
     only on request. Every run writes `discovery_report.json` and `.txt`, also when it stops;
     `check`'s report keeps `status: "stopped"` with `step: "check"`. Contract §9.2.*
+49. How are pixel sizes stated and recorded (design v0.4 §3, §4, §6; PP-8)?
+    *Decided (2 November 2026, owner, as implemented in PP-8, PR #114). The choices the
+    design left open: `calibration.csv` is written only by the `calibrate` command,
+    `write_calibration` or by hand, and the run takes no calibration argument; a target that
+    matches nothing is an error (`calibration_target_not_found`); targets are relative paths
+    compared exactly; the unit `pixels` records the source `pixels` with no value, and
+    against a header size the statement wins with the warning
+    `calibration_differs_from_header`; the calibration reader accepts a UTF-8 byte-order
+    mark and CRLF line endings (the design reader still refuses a byte-order mark; noted, not
+    changed). Each image's X, Y and Z size comes from its header or from a statement in the output folder's `calibration.csv`
+    (`target,axis,size,unit`; target `.`, a folder or an image, compared exactly; a length
+    unit of D-a2 or `pixels`), the most specific statement applying. The run reads the file
+    and never writes it: the user writes it by hand, with `write_calibration` or with the CLI
+    `calibrate`, so it survives `full` and failed runs. Each axis is recorded with its source
+    (`header`, `stated`, or `pixels` without a value); nothing is guessed and an axis without
+    either is uncalibrated. A statement that differs from the header is the warning
+    `calibration_differs_from_header` and is used; a target outside the experiment
+    (`calibration_target_not_found`) and an unreadable file (`calibration_unreadable`) are
+    errors. The §11 checks run on the resolved sizes; `missing_pixel_size` stays a warning
+    (owner, 1 November 2026). The manifest records `calibration_sha256`, checked by
+    `RunInputs`; a changed file is an input change that recomputes no row. Y and X are
+    stated per role and never exchanged. Contract §9.3.*

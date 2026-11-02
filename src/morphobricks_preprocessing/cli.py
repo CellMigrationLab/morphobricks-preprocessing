@@ -1,4 +1,4 @@
-"""Command-line interface: ``morphobricks-preprocessing check``, ``run`` and ``masks``.
+"""Command-line interface: ``morphobricks-preprocessing check``, ``run``, ``masks``, ``calibrate``.
 
 ``check`` runs the preflight (folders and image headers, no pixels) and prints
 what will be analysed, the problems found and the suggested axis roles; it writes only
@@ -14,8 +14,10 @@ prints the intensity checks of the table (warnings only; plots are drawn in the
 notebook only).
 ``masks`` is the optional mask step: it pairs every image with its masks (``--masks``, and the
 label images of OME-Zarr images), reads them, and writes ``mask_relationships.json`` with each
-mask type and the relationships between them (contract §15). All three exit with status 1 when
-an error blocks processing.
+mask type and the relationships between them (contract §15).
+``calibrate`` (:mod:`.cli_calibrate`) shows or states the pixel sizes in the output folder's
+``calibration.csv`` (design v0.4 §3). All four exit with status 1 when an error blocks
+processing.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from .axis_review import review_axes
+from .cli_calibrate import add_calibrate_parser, calibrate_command, calibration_summary
 from .cli_run import add_run_arguments, command_preflight, parse_size, run_command
 from .design import (
     DESIGN_FILENAME,
@@ -56,6 +59,7 @@ from .report import (
 )
 from .run import (
     OutputLockedError,
+    Preflight,
     remove_stale_lock,
     write_check_report,
 )
@@ -101,6 +105,7 @@ def build_parser() -> argparse.ArgumentParser:
             metavar="X",
             help=f"{text} (default {DEFAULT_THRESHOLDS[name]:g})",
         )
+    add_calibrate_parser(commands)
     return parser
 
 
@@ -120,6 +125,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     _safe_output()
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "calibrate":
+        return calibrate_command(args)
     if getattr(args, "no_exclude", False) and args.exclude:
         parser.error("--exclude and --no-exclude cannot be given together")
     handler = _attach_log(args.log) if getattr(args, "log", None) else None
@@ -223,28 +230,14 @@ def _check(args: argparse.Namespace) -> int:
     if pre.dataset.balance.cells:
         print()
         print(balance_summary(pre.dataset.balance))
+    if pre.calibration.calibration is not None:
+        print()
+        print(calibration_summary(pre.calibration.calibration))
     if pre.issues:
         print()
         print(format_issues(pre.issues))
     if pre.dataset.repeats:
-        output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
-        try:
-            design, _ = load_design(output, pre.dataset.repeats)
-        except DesignCheckError as exc:
-            # Refused and left as it is: 'check' never writes the design.
-            design, refusal = None, exc.issues[0]
-        print()
-        if design is None:
-            print(f"Experiment design: {refusal.message}")
-            print(f"  Suggested action: {refusal.action}")
-        elif (output / DESIGN_FILENAME).exists():
-            print(f"Experiment design ({output / DESIGN_FILENAME}):")
-            print(design_summary(design))
-        else:
-            print(
-                "Experiment design: not confirmed yet. 'run' writes experiment_design.csv to "
-                "the output folder for you to confirm."
-            )
+        _print_design(args, pre)
     axis_errors, review = (), None
     if pre.suggested_mapping is not None:
         review = review_axes(pre.metadata, pre.suggested_mapping)
@@ -270,6 +263,28 @@ def _check(args: argparse.Namespace) -> int:
     print()
     print(format_issues([refusal]) if refusal else f"Report written to {path}" if path else "")
     return 0 if pre.ok and not axis_errors and refusal is None else 1
+
+
+def _print_design(args: argparse.Namespace, pre: Preflight) -> None:
+    """Print the experiment design in the output folder; ``check`` never writes it."""
+    output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
+    try:
+        design, _ = load_design(output, pre.dataset.repeats)
+    except DesignCheckError as exc:
+        # Refused and left as it is: 'check' never writes the design.
+        design, refusal = None, exc.issues[0]
+    print()
+    if design is None:
+        print(f"Experiment design: {refusal.message}")
+        print(f"  Suggested action: {refusal.action}")
+    elif (output / DESIGN_FILENAME).exists():
+        print(f"Experiment design ({output / DESIGN_FILENAME}):")
+        print(design_summary(design))
+    else:
+        print(
+            "Experiment design: not confirmed yet. 'run' writes experiment_design.csv to "
+            "the output folder for you to confirm."
+        )
 
 
 def _masks(args: argparse.Namespace) -> int:

@@ -2,9 +2,10 @@
 
 Each analysed file's manifest entry gives the size of one step along X, Y and Z (and the
 time step along T), by role, each with its unit and where it comes from: ``"header"`` (the
-image's own metadata) or, once stated calibration exists (design v0.4 §3), ``"stated"`` or
-``"pixels"``. An axis without a size records no value and no source: it is uncalibrated,
-never guessed. Bricks read these, never the headers.
+image's own metadata), ``"stated"`` (a size stated in ``calibration.csv``, design v0.4 §3,
+:mod:`.calibration`) or ``"pixels"`` (stated as deliberately uncalibrated: no value). An axis
+without a size or statement records no value and no source: it is uncalibrated, never
+guessed. Bricks read these, never the headers.
 """
 
 from __future__ import annotations
@@ -12,13 +13,16 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-from .physical_sizes import PhysicalSizes
+from .physical_sizes import PhysicalSizes, UnsupportedUnitError, to_micrometers
 
 SIZE_ROLES = ("X", "Y", "Z", "T")
 """The roles a size is recorded for, in this order."""
 
-SOURCES = ("header", "stated", "pixels")
-"""Where a recorded size comes from."""
+HEADER = "header"
+STATED = "stated"
+PIXELS = "pixels"
+SOURCES = (HEADER, STATED, PIXELS)
+"""Where a recorded size comes from; a ``"pixels"`` statement has no value."""
 
 
 @dataclass(frozen=True)
@@ -30,11 +34,12 @@ class RecordedSize:
     role
         ``"X"``, ``"Y"``, ``"Z"`` or ``"T"``.
     value
-        The size, or None when unknown (uncalibrated).
+        The size, or None when unknown or stated as ``"pixels"`` (uncalibrated).
     unit
         Its unit as an OME-NGFF name (``"micrometer"``, ``"second"``), or None.
     source
-        ``"header"``, ``"stated"`` or ``"pixels"``; None when the size is unknown.
+        ``"header"`` or ``"stated"`` with a value; ``"pixels"`` (deliberately uncalibrated,
+        no value); None when nothing gives a size.
     """
 
     role: str
@@ -46,6 +51,13 @@ class RecordedSize:
         """Return the size as JSON-compatible data."""
         return {"role": self.role, "value": self.value, "unit": self.unit, "source": self.source}
 
+    def micrometers(self) -> float | None:
+        """Return the size in micrometres; None when unknown or not a convertible length."""
+        try:
+            return to_micrometers(self.value, self.unit)
+        except (UnsupportedUnitError, ValueError):
+            return None
+
     @classmethod
     def from_dict(cls, data: Mapping) -> RecordedSize:
         """Read a size written by :meth:`to_dict`.
@@ -53,14 +65,18 @@ class RecordedSize:
         Raises
         ------
         ValueError
-            For an unknown role or source, or a source without a value.
+            For an unknown role or source, a header or stated size without a value, or a
+            value without a source or with ``"pixels"``.
         """
         role, source = str(data["role"]), data.get("source")
         value = data.get("value")
         if role not in SIZE_ROLES or (source is not None and source not in SOURCES):
             raise ValueError(f"the pixel size {dict(data)!r} has an unknown role or source")
-        if (value is None) != (source is None):
-            raise ValueError(f"the pixel size {dict(data)!r} needs both a value and a source")
+        if (value is None) != (source in (None, PIXELS)):
+            raise ValueError(
+                f"the pixel size {dict(data)!r} needs a value with the source header or "
+                "stated, and none otherwise"
+            )
         unit = data.get("unit")
         return cls(role, None if value is None else float(value), unit and str(unit), source)
 
@@ -83,7 +99,7 @@ def header_sizes(sizes: PhysicalSizes) -> tuple[RecordedSize, ...]:
         One entry per role of :data:`SIZE_ROLES`; unknown sizes have no value.
     """
     return tuple(
-        RecordedSize(role, sizes.scale(role), sizes.unit(role), "header")
+        RecordedSize(role, sizes.scale(role), sizes.unit(role), HEADER)
         if sizes.known(role)
         else RecordedSize(role)
         for role in SIZE_ROLES

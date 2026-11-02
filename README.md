@@ -25,6 +25,9 @@ Pre-alpha. Implemented and tested:
   repeat, repeats missing from some conditions, differing plane counts and pixel sizes,
   and an error for differing numbers of channels (`dataset`, `metadata`,
   `physical_sizes`)
+- Calibration: pixel sizes and z-steps from the metadata, or stated by the user for the
+  whole experiment, a folder or an image in `calibration.csv` (or as measured in pixels),
+  recorded per axis with their source; never guessed (`calibration`, command `calibrate`)
 - Axis mapping: prefill from metadata, validation, applying one mapping to every
   file (`axes`)
 - Reading TIFFs one 2D plane at a time, with a memory limit and a preview plane, and the
@@ -49,7 +52,7 @@ Pre-alpha. Implemented and tested:
   refused, projections included (`mask_planes_mismatch`), and the manifest records each
   mask's `axes` and `shape`
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
-  and a command line (`morphobricks-preprocessing check` / `run` / `masks`)
+  and a command line (`morphobricks-preprocessing check` / `run` / `masks` / `calibrate`)
 
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
 to its release v0.3.2): per-plane histograms with the robust range and the range check

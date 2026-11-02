@@ -89,7 +89,14 @@ src/morphobricks_preprocessing/
   axis_review.py    review_axes and check_mapping (moved from axes.py in PP-4)
   fingerprint.py    Fingerprint (size, mtime) and RowKey: when a file's rows are reused (D5);
                     confirm_axes/unchanged_confirmation (a confirmation of the files as they are)
-  recorded_sizes.py RecordedSize: pixel sizes by role with unit and source (manifest v2)
+  recorded_sizes.py RecordedSize: pixel sizes by role with unit and source (manifest v2):
+                    header, stated or pixels (no value)
+  calibration.py    stated calibration (PP-8, contract §9.3): CalibrationEntry/Calibration
+                    (target `.`, folder or image; most specific applies), resolve_sizes,
+                    review_calibration (calibration_target_not_found,
+                    calibration_differs_from_header); calibration_io.py reads/writes
+                    calibration.csv strictly; run/calibrate.py write_calibration (locked)
+  pixel_size_checks.py the §11 pixel-size checks on resolved sizes (moved from metadata.py)
   narrow_ranges.py  NarrowRange (moved from manifest.py)
   sources.py        check_sources (moved from manifest.py in PP-4)
   mask_record.py    the manifest's masks entry with fingerprints and roles (manifest v2)
@@ -117,8 +124,8 @@ src/morphobricks_preprocessing/
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
   discovery_report.py the run report (discovery_report.json and .txt, design v0.4 §4): status,
                     manifest SHA-256, what was found, reused, recomputed and replaced
-  cli.py, __main__  `morphobricks-preprocessing check|run|masks` (also `python -m morphobricks_preprocessing`);
-                    cli_run.py holds `run`'s options and output
+  cli.py, __main__  `morphobricks-preprocessing check|run|masks|calibrate` (also `python -m morphobricks_preprocessing`);
+                    cli_run.py holds `run`'s options and output; cli_calibrate.py `calibrate`
   masks/           masks (Q32; a package since PP-5: model, files, header, layout, read,
                     checks, labels): find_masks pairs every image with its masks (masks folder with one
                     folder per type mirroring the experiment, or <image>_<type>.tif in the
@@ -412,7 +419,9 @@ functions the tests use.
   micrometres, the shared 0.1 % rule `same_pixel_size` with single-linkage
   `pixel_size_groups`, D-a), `missing_pixel_size` (known for some only) and
   `unsupported_pixel_size_unit` (a size in a unit outside D-a2: not converted, the image
-  uncalibrated on that axis, the image, axis and unit named).
+  uncalibrated on that axis, the image, axis and unit named). Since PP-8 they run on the
+  resolved sizes (header or `calibration.csv`, contract §9.3); `preflight` replaces the
+  header-based ones in `metadata.issues`.
   OME-Zarr sizes come from the level-0 scale with axis units; no unit means unknown.
 - **`different_plane_counts`:** Z, T or any other dimension except X, Y, C and S;
   channels are the error `different_channel_counts` (question 27), also in this panel;
