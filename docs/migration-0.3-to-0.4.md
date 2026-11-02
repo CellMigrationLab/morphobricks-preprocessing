@@ -275,7 +275,12 @@ brick refuses and gives the preprocessing command; there are no standalone excep
   (a `plane_id` is a `TypeError`).
 - `mask_types()` and `read_mask(fov, type, z=None, t=None)`: the recorded pairing only, read
   as stored with `check_labels` (labels 0 to int32 max). A stated shared 2-D mask serves
-  every plane.
+  every plane of the image; a `z` or `t` outside the image is an `IndexError`, for
+  `read_plane` too (audit I5).
+- A header size in an unsupported unit (OME `pixel`, `inch`) or without a unit is unknown
+  in `pixel_sizes` (audit I3). `to_micrometers` takes NumPy scalars (audit m4). The
+  warnings `partial_pixel_size` and `non_square_pixels` name the images you will refuse
+  for length features (audit m5). `read_plane`'s memory limit counts only reading (I2).
 - `histograms()`, `design()` (the strict `read_confirmed_design`, checked against the
   manifest's SHA-256) and `image_type()`.
 - `RunInputs` is picklable for worker processes. `morphobricks_preprocessing.testing.

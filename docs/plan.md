@@ -1778,3 +1778,20 @@ Raised during review; to be decided before the milestones that need them:
     time), metadata only as design v0.4 §1 decides; content hashing stays the owner's
     call. (5) **`copy_changed_after_conversion`** is an error that stops the run before it
     writes (owner, 2 November 2026): the bricks would refuse the run anyway.
+70. How are the findings I2, I3, I5, m4, m5 and m6 of the preprocessing audit of 3 November
+    2026 fixed (they change what `RunInputs` gives the bricks)? *Decided (3 November 2026,
+    within the calibration decisions of 2 November 2026 and issues #93 and #94; contract §2,
+    §11, §16):* (I2) the memory limit of `read_plane` counts reading only (decoded page,
+    encoded bytes, a copy of the plane); the histogram path keeps its binning cost.
+    (I3) a header size is recorded only with a supported unit (D-a2 lengths, or a time
+    unit); otherwise it is unknown, and `unsupported_pixel_size_unit`, which already names
+    the unit as written, reports it (not also `invalid_physical_calibration`: one warning
+    per cause). (I5) `RunInputs.read_mask` and `read_plane` check `z` and `t` against
+    `Fov.z_count` and `Fov.t_count` (`IndexError`; a non-integer stays a `TypeError`).
+    (m4) `to_micrometers` takes any `numbers.Real` except bool, still requiring a positive
+    finite result. (m5) two warnings, `partial_pixel_size` and `non_square_pixels` (exact
+    equality in micrometres, calibration decision 1), say that bricks measuring lengths
+    will refuse the images; the run is not refused. (m6) only an OME-XML parse error is
+    caught when reading TIFF sizes; it sets `PhysicalSizes.invalid`, named by
+    `invalid_physical_calibration`; any other error makes the header unreadable as before
+    for other header failures, never silently uncalibrated.

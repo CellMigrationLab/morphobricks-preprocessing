@@ -94,9 +94,20 @@ and the bricks' migration).
 - Docs: the [migration guide](docs/migration-0.3-to-0.4.md), this changelog, and the
   [Colab hand check](docs/colab-release-check.md) for the major release (PP-13). The roadmap
   (#116).
+- Warnings `partial_pixel_size` (a pixel size along only one of X and Y) and
+  `non_square_pixels` (X and Y not exactly equal in micrometres): bricks that measure
+  lengths refuse such images (audit m5, plan §12 question 70).
 
 ### Fixed
 
+- Preprocessing audit of 3 November 2026 (plan §12 question 70): `read_plane` and
+  `RunInputs.read_plane` no longer count histogram memory, so a 5000² float32 plane is read
+  within the 1 GiB limit (I2); a header size in an unsupported unit (OME `pixel`) or without
+  a unit is unknown in `pixel_sizes`, never a value without a unit (I3); `RunInputs.read_mask`
+  and `read_plane` refuse a `z` or `t` outside the image with `IndexError`, a shared 2-D
+  mask included (I5); `to_micrometers` accepts NumPy real scalars (m4); OME-XML in a TIFF
+  that cannot be parsed is `invalid_physical_calibration`, no longer read as uncalibrated,
+  and other errors reading TIFF sizes are no longer hidden (m6).
 - Output files get the permissions of a plain `open()` (your umask) instead of `0600`
   (PP-8c, #117).
 - A stopped run says what it wrote (PP-8c, #117).
