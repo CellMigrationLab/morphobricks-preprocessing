@@ -365,7 +365,18 @@ morphobricks-preprocessing run /data/exp1 --axes ZCYX
 
 `--axes` gives one role per dimension of the images, in their order: `X`, `Y`, `Z`, `C`,
 `T`, or `-` for a length-1 dimension without a role. Roles are never taken from metadata
-without being stated.
+without being stated. A later `run` in the same output folder needs neither the roles nor
+the experiment folder again, unless plain stacks were added or changed:
+
+```bash
+morphobricks-preprocessing run --output /data/exp1_MorphoBricks_Preprocessing
+```
+
+uses the experiment folder and everything else the earlier run recorded there. Without an
+experiment folder and without an output folder of a v0.4.0 run, `run` stops with
+`experiment_not_recorded`, naming what is missing. Giving an experiment folder other than
+the recorded one (for example after moving it) is reported as a change: every row is read
+again from the new place.
 
 Both commands check the axes (§4, step 2): `check` with the suggested roles, which are the
 headers' own, so only the `axes_not_named` warning of plain stacks can appear there; `run`
@@ -409,6 +420,7 @@ report names the change and its effect. Other options:
 | `--design FILE` | The confirmed experiment design (default: `experiment_design.csv` in the output folder); it is copied to the output folder |
 | `--mode restart\|full` | `restart` (default) reuses the rows of unchanged images; `full` recomputes every row and check. Both keep your confirmations and replace the results only when the run succeeds |
 | `--no-masks` | Drop the masks folder an earlier run recorded |
+| `--no-exclude` | Clear the exclusions an earlier run recorded, so every image is analysed again (not together with `--exclude`) |
 | `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check` and `run`); give it only when no other run uses the output folder |
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
 | `--log FILE` | Write technical details to a file |
@@ -576,6 +588,7 @@ continues.
 | `unsupported_layout` | Error | The image cannot be read one plane at a time. Check the axis roles or export again. |
 | `unreadable_planes` | Error | Pixel data cannot be decoded. Export again, or exclude the image. |
 | `invalid_bin_count` | Error | Bin count outside the allowed range. Use the default or a value in range. |
+| `experiment_not_recorded` | Error | `run` was given no experiment folder, and the output folder holds no v0.4.0 run that records one (or no output folder was given). Give the experiment folder. |
 | `axes_not_confirmed` | Error | No axis roles were given and the output folder holds no earlier run that records them. Confirm the roles (`--axes`). |
 | `output_locked` | Error | Another run is using the output folder; it is named with its computer, process and start time. Wait for it to finish; if it was stopped or the computer restarted, remove its lock (`--remove-stale-lock`). Nothing was written. |
 | `design_unreadable` | Error | The `experiment_design.csv` an earlier run wrote cannot be read. Correct it, or delete it to confirm the design again. |
