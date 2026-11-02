@@ -8,7 +8,8 @@
   another and never raise on it.
 - A header size that cannot be given in micrometres is None, with what is wrong in
   ``PhysicalSizes.invalid``, so the folder check names the image and the value
-  (``invalid_physical_calibration``); a stated one is refused in ``calibration.csv``.
+  (``invalid_physical_calibration``); a stated one is refused in ``calibration.csv``. So is
+  a TIFF OME or ImageJ size that is itself ``inf``, NaN, zero or negative (#133 review).
 - Before the fix, ``1e308 m`` next to ``0.5 µm`` raised no issue at all (both sides were
   ``inf`` in the tolerance), and next to two other sizes the preflight raised ValueError.
 """
@@ -236,3 +237,84 @@ def test_the_calibrate_command_refuses_an_overflowing_size(tmp_path, capsys):
     assert main(["calibrate", "--output", str(output), "--size", ".", "XY", "1e308", "m"]) == 1
     assert "Nothing was changed" in capsys.readouterr().out
     assert not (output / "calibration.csv").exists()
+
+
+# TIFF sizes that are not positive finite numbers (#133 review: the TIFF counterpart of #94)
+
+
+@pytest.mark.parametrize("value", ["inf", "NaN", "0", "-1", "abc"])
+def test_an_ome_tiff_size_that_is_not_positive_finite_is_invalid(tmp_path, value):
+    # Before: the size was silently None, so the image looked merely uncalibrated.
+    path = tmp_path / "a.ome.tif"
+    tifffile.imwrite(
+        path,
+        np.zeros((2, 8, 8), np.uint16),
+        ome=True,
+        photometric="minisblack",
+        metadata={
+            "axes": "TYX",
+            "PhysicalSizeX": value,
+            "PhysicalSizeXUnit": "µm",
+            "PhysicalSizeY": 0.5,
+            "PhysicalSizeYUnit": "µm",
+            "TimeIncrement": value,
+            "TimeIncrementUnit": "s",
+        },
+    )
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.y, sizes.t) == (None, 0.5, None)
+    assert sizes.invalid == (
+        f"X: the size {value!r} is not a positive finite number; "
+        f"T: the size {value!r} is not a positive finite number"
+    )
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan, 0.0, -2.0])
+def test_an_imagej_size_that_is_not_positive_finite_is_invalid(tmp_path, value):
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(
+        path,
+        np.zeros((2, 3, 8, 8), np.uint16),
+        imagej=True,
+        resolution=(2.0, 2.0),
+        metadata={"axes": "TZYX", "unit": "um", "spacing": value, "finterval": value},
+    )
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.z, sizes.t) == (0.5, None, None)
+    assert sizes.invalid == (
+        f"Z: the size {value!r} is not a positive finite number; "
+        f"T: the size {value!r} is not a positive finite number"
+    )
+
+
+def test_an_imagej_resolution_of_zero_is_invalid_only_with_a_unit(tmp_path):
+    path = tmp_path / "a.tif"
+    image = np.zeros((8, 8), np.uint16)
+    tifffile.imwrite(path, image, imagej=True, resolution=((0, 1), (2, 1)), metadata={"unit": "um"})
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.y) == (None, 0.5)
+    assert sizes.invalid == "X: the length inf is not a positive finite number"
+    # without a unit the resolution tags are a default, not a calibration
+    tifffile.imwrite(path, image, imagej=True, resolution=((0, 1), (2, 1)))
+    assert read_physical_sizes(path).invalid is None
+
+
+@pytest.mark.parametrize(
+    ("bad", "says"),
+    [
+        (["b"], ["1 image gives a calibration in its metadata", "this image is uncalibrated"]),
+        (["b", "c"], ["2 images give a calibration in their metadata", "these images are unca"]),
+    ],
+)
+def test_the_invalid_calibration_message_agrees_with_the_count(tmp_path, bad, says):
+    # #133 review: "1 image give a calibration in their metadata ... these images are".
+    root = tmp_path / "exp"
+    write_ome(root / "ctrl/rep1/a.ome.tif", 0.5, "µm")
+    for name in bad:
+        write_ome(root / f"ctrl/rep1/{name}.ome.tif", "inf", "µm")
+    found = issue(preflight(root, tmp_path / "out").issues, "invalid_physical_calibration")
+    assert found.paths == tuple(f"ctrl/rep1/{name}.ome.tif" for name in bad)
+    assert "X: the size 'inf' is not a positive finite number" in found.message
+    for text in says:
+        assert text in found.message + found.action
+    assert ("this image's metadata" if len(bad) == 1 else "these images' metadata") in found.action

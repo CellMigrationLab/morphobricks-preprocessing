@@ -447,7 +447,24 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
         sizes["T"][1],
         _unsupported({letter: sizes[letter][0] for letter in "XYZ"}, written),
     )
-    return replace(found, invalid="; ".join(filter(None, (invalid, found.invalid))) or None)
+    return _with_invalid(found, [invalid])
+
+
+def _with_invalid(sizes: PhysicalSizes, problems: Sequence[str | None]) -> PhysicalSizes:
+    """Return ``sizes`` with the problems found first in ``invalid`` (issues #93, #94)."""
+    return replace(sizes, invalid="; ".join(filter(None, (*problems, sizes.invalid))) or None)
+
+
+def _header_size(axis: str, value: object) -> tuple[float | None, str | None]:
+    """Read a size given in TIFF metadata, with what is wrong when it is not usable (#93).
+
+    None and no problem when it is not given; None and the problem for ``inf``, ``NaN``,
+    zero, a negative number or text that is not a number, never silently unknown.
+    """
+    number = _number(value)
+    if value is None or number is not None:
+        return number, None
+    return None, f"{axis}: the size {value!r} is not a positive finite number"
 
 
 def _tiff_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
@@ -470,19 +487,22 @@ def _ome_sizes(xml: str) -> PhysicalSizes:
     given = {axis: pixels.get(f"PhysicalSize{axis}Unit", _OME_DEFAULT_SPACE_UNIT) for axis in "XYZ"}
     units = {axis: _SPACE_UNITS.get(unit) for axis, unit in given.items()}
     time_unit = _TIME_UNITS.get(pixels.get("TimeIncrementUnit", _OME_DEFAULT_TIME_UNIT))
-    sizes = {axis: _number(pixels.get(f"PhysicalSize{axis}")) for axis in "XYZ"}
+    read = {axis: _header_size(axis, pixels.get(f"PhysicalSize{axis}")) for axis in "XYZ"}
+    read["T"] = _header_size("T", pixels.get("TimeIncrement")) if time_unit else (None, None)
+    sizes = {axis: size for axis, (size, _) in read.items()}
     written = {
         axis: _written(unit) if units[axis] is None else None for axis, unit in given.items()
     }
-    return _sizes(
+    found = _sizes(
         sizes["X"],
         sizes["Y"],
         sizes["Z"],
-        _number(pixels.get("TimeIncrement")) if time_unit else None,
+        sizes["T"],
         units,
         time_unit,
         _unsupported(sizes, written),
     )
+    return _with_invalid(found, [problem for _, problem in read.values()])
 
 
 def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
@@ -496,25 +516,28 @@ def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
     units = {axis: _imagej_unit(value) for axis, value in given.items()}
     page = tif.pages.first
     time_unit = _TIME_UNITS.get(_imagej_text(meta.get("tunit", "sec")))
+    spacing = _header_size("Z", meta.get("spacing"))
     given_sizes = {
         "X": _resolution(page.tags.get("XResolution")),
         "Y": _resolution(page.tags.get("YResolution")),
-        "Z": _number(meta.get("spacing")),
+        "Z": spacing[0],
     }
     # Without a unit the resolution tags are a default (often 1 pixel per inch).
     sizes = {axis: size if units[axis] else None for axis, size in given_sizes.items()}
     written = {
         axis: _written(value) if units[axis] is None else None for axis, value in given.items()
     }
-    return _sizes(
+    step = _header_size("T", meta.get("finterval")) if time_unit else (None, None)
+    found = _sizes(
         sizes["X"],
         sizes["Y"],
         sizes["Z"],
-        _number(meta.get("finterval")) if time_unit else None,
+        step[0],
         units,
         time_unit,
         _unsupported(given_sizes, written),
     )
+    return _with_invalid(found, [spacing[1] if units["Z"] else None, step[1]])
 
 
 def _ngff_unit(value, table: dict[str, str]) -> str | None:  # noqa: ANN001
@@ -557,7 +580,7 @@ def _resolution(tag) -> float | None:  # noqa: ANN001
         return None
     try:
         numerator, denominator = tag.value
-        return denominator / numerator if numerator else None
+        return denominator / numerator if numerator else math.inf  # 0 pixels per unit (#93)
     except (TypeError, ValueError):
         return None
 

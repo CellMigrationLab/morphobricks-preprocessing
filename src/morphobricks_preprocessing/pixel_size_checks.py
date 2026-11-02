@@ -111,16 +111,19 @@ def _invalid_issue(
     if not found:
         return []
     details = "; ".join(f"{path}: {problem}" for path, problem in found.items())
+    whose = agree(found, "this image's", "these images'")
     return [
         warning(
             "invalid_physical_calibration",
-            f"{plural(len(found), 'image')} give a calibration in their metadata that cannot "
-            f"be used ({details}). The sizes it gives are not used: these images are "
+            f"{plural(len(found), 'image')} {agree(found, 'gives', 'give')} a calibration in "
+            f"{agree(found, 'its', 'their')} metadata that cannot be used ({details}). The "
+            f"sizes it gives are not used: {agree(found, 'this image is', 'these images are')} "
             "uncalibrated on those axes, and no size is substituted.",
             list(found),
-            "Correct the calibration in these images' metadata (for OME-Zarr images, the "
-            "coordinateTransformations), or state their pixel sizes in calibration.csv (the "
-            "'calibrate' command).",
+            f"Correct the calibration in {whose} metadata (for OME-Zarr images, the "
+            "coordinateTransformations), or state "
+            f"{agree(found, 'its', 'their')} pixel sizes in calibration.csv (the 'calibrate' "
+            "command).",
         )
     ]
 
