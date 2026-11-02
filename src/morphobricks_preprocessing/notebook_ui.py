@@ -264,7 +264,7 @@ class PreprocessingNotebook(
         ui.set_visible(self.folder_next, show_next)
         self._show_output = show_output
         ui.set_visible(self.output_card, show_output)
-        ui.set_visible(self.mask_step_card, show_output)
+        self._refresh_mask_step()  # hidden, and never offered, without the output folder
         self.labels_confirmed.explain(_labels_explanation(show_design))
         if show_design != self._show_design:
             self._show_design = show_design

@@ -79,11 +79,16 @@ def test_the_button_is_on_step_3_and_waits_for_a_run_that_recorded_masks(tmp_pat
     assert nb.mask_step_card in page.children[1].children
     assert ui.is_visible(nb.mask_step_card)
     assert nb.mask_step_button.disabled
-    assert "Available after a run that recorded masks" in nb.mask_step_hint.value
+    assert "Available when the output folder holds a run that recorded masks" in (
+        nb.mask_step_hint.value
+    )
     assert nb._on_describe_masks() is None
     assert nb.run().written
     assert not nb.mask_step_button.disabled
-    assert "2 mask types" in nb.mask_step_hint.value and "cells, nuclei" in nb.mask_step_hint.value
+    hint = nb.mask_step_hint.value
+    assert "2 mask types" in hint and "cells, nuclei" in hint
+    assert f"Describes the run in <b>{output_of(root).resolve()}</b>" in hint
+    assert f"of <b>{root.resolve()}</b>" in hint
 
 
 def test_without_recorded_masks_the_button_stays_disabled(tmp_path):
@@ -91,7 +96,7 @@ def test_without_recorded_masks_the_button_stays_disabled(tmp_path):
     nb, _ = ran(root)
     assert nb.run().written
     assert nb.mask_step_button.disabled
-    assert "The run recorded no masks" in nb.mask_step_hint.value
+    assert "it recorded no masks" in nb.mask_step_hint.value
     nb.mask_step_button.click()
     assert nb.mask_step_status.value == ""
     assert not (output_of(root) / MASK_REPORT_FILENAME).exists()
@@ -147,7 +152,7 @@ def test_mask_errors_since_the_run_are_shown_and_nothing_is_read(tmp_path):
     assert nb.run().written
     write_data(masks / "cells" / IMAGES[0], np.zeros((8, 8), np.uint16))  # wrong size now
     assert nb._on_describe_masks() is None
-    assert "The masks have errors: none was read." in nb.mask_step_status.value
+    assert "An error stops the step: no mask was read." in nb.mask_step_status.value
     assert "mask size mismatch" in nb.mask_step_result.value
     assert not (output_of(root) / MASK_REPORT_FILENAME).exists()
 
@@ -181,3 +186,97 @@ def test_an_embedding_brick_that_hides_the_output_folder_gets_no_card(tmp_path):
     assert not ui.is_visible(nb.mask_step_card)
     nb.run()
     assert not ui.is_visible(nb.mask_step_card)
+
+
+def reopened(root, *, show_output=True):
+    """Open a new notebook on an experiment, as after a restart: step 1's folders, no run."""
+    nb = PreprocessingNotebook(str(root))
+    nb.welcome()
+    nb.folder_step(show_output=show_output)
+    nb.axis_step()
+    nb.run_step()
+    return nb
+
+
+def test_a_reopened_notebook_describes_the_earlier_run(tmp_path):
+    root = experiment(tmp_path)
+    first, _ = ran(root, nested_masks(tmp_path))
+    assert first.run().written
+    nb = reopened(root)
+    assert nb.result is None
+    assert not nb.mask_step_button.disabled
+    hint = nb.mask_step_hint.value
+    assert f"Describes the run in <b>{output_of(root).resolve()}</b>, written " in hint
+    assert "cells, nuclei" in hint and str((tmp_path / "masks").resolve()) in hint
+    result = nb._on_describe_masks()
+    assert result is not None and result.path == output_of(root).resolve() / MASK_REPORT_FILENAME
+    written = json.loads(result.path.read_text(encoding="utf-8"))
+    result.path.unlink()
+    assert main(["masks", "--output", str(output_of(root))]) == 0
+    again = json.loads(result.path.read_text(encoding="utf-8"))
+    assert {k: v for k, v in again.items() if k != "versions"} == {
+        k: v for k, v in written.items() if k != "versions"
+    }
+
+
+def test_a_reopened_notebook_follows_the_output_folder_of_step_1(tmp_path):
+    root = experiment(tmp_path)
+    first, _ = ran(root, nested_masks(tmp_path))
+    assert first.run().written
+    nb = reopened(root)
+    assert not nb.mask_step_button.disabled
+    nb.output.value = str(tmp_path / "elsewhere")
+    assert nb.mask_step_button.disabled
+    assert "Available when the output folder holds" in nb.mask_step_hint.value
+    nb.output.value = str(output_of(root))
+    assert not nb.mask_step_button.disabled
+
+
+def test_a_reopened_notebook_refuses_when_the_experiment_folder_moved(tmp_path):
+    root = experiment(tmp_path)
+    first, _ = ran(root, nested_masks(tmp_path))
+    assert first.run().written
+    output = output_of(root)
+    root.rename(tmp_path / "moved")
+    nb = PreprocessingNotebook(str(tmp_path / "moved"), str(output))
+    nb.welcome()
+    nb.folder_step()
+    nb.axis_step()
+    nb.run_step()
+    assert not nb.mask_step_button.disabled
+    assert nb._on_describe_masks() is None
+    assert "An error stops the step: no mask was read." in nb.mask_step_status.value
+    assert "does not exist or is not a folder" in nb.mask_step_result.value
+    assert not (output / MASK_REPORT_FILENAME).exists()
+
+
+def test_a_reopened_notebook_refuses_when_the_masks_folder_moved(tmp_path):
+    root = experiment(tmp_path)
+    masks = nested_masks(tmp_path)
+    first, _ = ran(root, masks)
+    assert first.run().written
+    masks.rename(tmp_path / "moved_masks")
+    nb = reopened(root)
+    assert nb._on_describe_masks() is None
+    assert "The masks folder" in nb.mask_step_result.value
+    assert "does not exist or is not a folder" in nb.mask_step_result.value
+    assert not (output_of(root) / MASK_REPORT_FILENAME).exists()
+
+
+def test_a_reopened_notebook_without_a_run_keeps_the_button_disabled(tmp_path):
+    root = experiment(tmp_path)
+    nb = reopened(root)
+    assert nb.mask_step_button.disabled
+    assert nb._on_describe_masks() is None
+    assert nb.mask_step_status.value == ""
+
+
+def test_an_embedding_brick_never_gets_the_earlier_run_described(tmp_path):
+    root = experiment(tmp_path)
+    first, _ = ran(root, nested_masks(tmp_path))
+    assert first.run().written
+    nb = reopened(root, show_output=False)
+    assert not ui.is_visible(nb.mask_step_card)
+    assert nb.mask_step_button.disabled
+    assert nb._on_describe_masks() is None
+    assert not (output_of(root) / MASK_REPORT_FILENAME).exists()

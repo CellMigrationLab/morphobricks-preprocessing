@@ -122,7 +122,7 @@ src/morphobricks_preprocessing/
                     the earlier run, InputChange), lock.py (the output folder's O_EXCL lock,
                     remove_stale_lock), check_step.py (write_check_report), mask_step.py
                     (the masks step shared by CLI `masks` and the notebook: prepare_mask_step,
-                    describe_masks, recorded_mask_types; PP-10d), result.py (RunResult),
+                    describe_masks, recorded_masks; PP-10d), result.py (RunResult),
                     entries.py (manifest entries, new/changed/unchanged by RowKey),
                     reuse.py (which earlier rows are reused), rows.py (a file's rows and their
                     pixel checks), publish.py (staged outputs, published together)

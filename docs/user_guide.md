@@ -455,7 +455,11 @@ results or comparing another grouping.
    - **Describe the masks (optional)**, after a run that recorded masks: the notebook's
      counterpart of the `masks` command (§5), with the same functions and the inputs the
      run recorded (experiment folder, masks folder, mask axes, excluded images). The button
-     is greyed out until such a run, saying why. Click it to read every mask, one image at a
+     works for the run in step 1's output folder: after a run in this session, and also for
+     an earlier run when you reopen the notebook (choose the same experiment or output
+     folder in step 1). The line above it names the run it describes (output folder, when
+     it was written, experiment and masks folders, mask types); it is greyed out, saying
+     why, when that folder holds no run that recorded masks. Click it to read every mask, one image at a
      time (a progress bar names the image); the card then shows each mask type (kind,
      images, objects, median pieces per label), the relationships found (which type is
      inside or grouped by which, how many objects are inside, how many objects of the
@@ -464,9 +468,10 @@ results or comparing another grouping.
      check, not decisions. The description is written to **mask_relationships.json** in
      the output folder (its path is shown). The output folder's lock is held from before the
      first mask is read until the file is written: when another run holds it, **The output folder is locked** is shown with **Remove the lock of a
-     stopped run**, no mask is read and nothing is written. Mask errors found since the run (a mask
-     changed or removed) and masks that cannot be used (a label above 2,147,483,647) are
-     shown as red cards, and nothing is written. The notebook uses the default thresholds
+     stopped run**, no mask is read and nothing is written. Errors found since the run
+     (the experiment or masks folder moved, a mask changed or removed) and masks that
+     cannot be used (a label above 2,147,483,647) are shown as red cards, and nothing is
+     written. The notebook uses the default thresholds
      (contract §15.1); the `masks` command can change them. A new run clears the card;
      an embedding brick that hides the output folder does not show it.
 4. **Calculate the statistics (optional).** The table from step 3 is all that later bricks

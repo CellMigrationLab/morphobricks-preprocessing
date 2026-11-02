@@ -16,6 +16,7 @@ from morphobricks_preprocessing.run import (
     describe_masks,
     mask_step,
     prepare_mask_step,
+    recorded_masks,
 )
 from morphobricks_preprocessing.run.lock import output_lock, read_lock
 from morphobricks_preprocessing.testing import make_clean_run
@@ -122,3 +123,14 @@ def test_no_masks_found_is_not_ready(tmp_path):
     step = prepare_mask_step(None, bare.output)
     assert isinstance(step, MaskStep)
     assert step.refusal is None and step.masks.types == () and not step.ready
+
+
+def test_recorded_masks_names_the_run_the_step_describes(clean, tmp_path):
+    recorded = recorded_masks(clean.output)
+    assert recorded.output_folder == clean.output.resolve()
+    assert recorded.experiment_root == clean.experiment.resolve()
+    assert recorded.masks_folder == clean.masks.resolve()
+    assert recorded.mask_types == ("Cells", "Nuclei") and recorded.written_at
+    assert recorded_masks(tmp_path / "nothing") is None
+    bare = make_clean_run(tmp_path / "bare", axes="YX", shape=(8, 8))
+    assert recorded_masks(bare.output).mask_types == ()

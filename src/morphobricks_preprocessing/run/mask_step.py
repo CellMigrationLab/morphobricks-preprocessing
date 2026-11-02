@@ -7,8 +7,9 @@ run the same two functions (contract §15):
   output folder recorded unless they are given (design v0.4 §1): the experiment folder
   (``experiment_not_recorded`` without one), the masks folder, the mask axes and the
   exclusions; a value given that differs is used and named. It reads no pixels.
-- :func:`recorded_mask_types` says whether the run in the output folder recorded masks:
-  the notebook offers the step only then.
+- :func:`recorded_masks` says what the run in the output folder recorded (a v2 manifest):
+  the notebook offers the step only when it recorded masks, also for a run of an earlier
+  session.
 - :func:`describe_masks` reads the masks (:func:`.mask_scan.scan_masks`) and writes the
   report, holding the output folder's lock from the first mask read to the write: a run
   may be replacing or removing the same file. A locked folder is refused before any mask
@@ -92,6 +93,31 @@ class MaskStepResult:
     report: MaskReport | None
     path: Path | None
     refusal: ValidationIssue | None = None
+
+
+@dataclass(frozen=True)
+class RecordedMasks:
+    """The run in an output folder, as the mask step would describe it.
+
+    Attributes
+    ----------
+    output_folder
+        The output folder, resolved.
+    experiment_root
+        The experiment folder the run recorded.
+    masks_folder
+        The masks folder it recorded, or None (masks of OME-Zarr images only, or none).
+    mask_types
+        The mask types it recorded; empty when it recorded no masks.
+    written_at
+        When its manifest was written (UTC, ISO 8601), or empty when unknown.
+    """
+
+    output_folder: Path
+    experiment_root: Path
+    masks_folder: Path | None
+    mask_types: tuple[str, ...]
+    written_at: str = ""
 
 
 def prepare_mask_step(
@@ -204,8 +230,8 @@ def describe_masks(
     return MaskStepResult(report=report, path=path)
 
 
-def recorded_mask_types(output_folder: str | os.PathLike) -> tuple[str, ...]:
-    """Return the mask types the run in the output folder recorded (v0.4.0 manifest).
+def recorded_masks(output_folder: str | os.PathLike) -> RecordedMasks | None:
+    """Return what the run in the output folder recorded for the mask step (v2 manifest).
 
     Parameters
     ----------
@@ -214,10 +240,20 @@ def recorded_mask_types(output_folder: str | os.PathLike) -> tuple[str, ...]:
 
     Returns
     -------
-    tuple of str
-        The recorded mask types; empty without a usable manifest or without masks.
+    RecordedMasks or None
+        None without a usable (v0.4.0 or later) manifest; ``mask_types`` is empty when the
+        run recorded no masks.
     """
-    manifest = usable(read_previous(Path(output_folder).resolve())[0])
+    output = Path(output_folder).resolve()
+    manifest = usable(read_previous(output)[0])
     if manifest is None:
-        return ()
-    return tuple((manifest.masks or {}).get("types") or ())
+        return None
+    masks = manifest.masks or {}
+    folder = masks.get("folder")
+    return RecordedMasks(
+        output_folder=output,
+        experiment_root=Path(manifest.experiment_root),
+        masks_folder=Path(folder) if folder else None,
+        mask_types=tuple(masks.get("types") or ()),
+        written_at=manifest.written_at,
+    )

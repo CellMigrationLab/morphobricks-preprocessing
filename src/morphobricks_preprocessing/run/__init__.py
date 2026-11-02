@@ -29,9 +29,10 @@ from .lock import LOCK_FILENAME, LockHolder, OutputLockedError, read_lock, remov
 from .mask_step import (
     MaskStep,
     MaskStepResult,
+    RecordedMasks,
     describe_masks,
     prepare_mask_step,
-    recorded_mask_types,
+    recorded_masks,
 )
 from .modes import FULL, MODES, RESTART
 from .pipeline import run_experiment
@@ -49,6 +50,7 @@ __all__ = [
     "MaskStepResult",
     "OutputLockedError",
     "Preflight",
+    "RecordedMasks",
     "RunResult",
     "SamplePlane",
     "describe_masks",
@@ -56,7 +58,7 @@ __all__ = [
     "preflight",
     "prepare_mask_step",
     "read_lock",
-    "recorded_mask_types",
+    "recorded_masks",
     "remove_stale_lock",
     "run_experiment",
     "sample_planes",

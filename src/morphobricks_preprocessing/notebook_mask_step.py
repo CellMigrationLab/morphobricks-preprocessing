@@ -1,9 +1,11 @@
 """Step 3 of the notebook: **Describe the masks**, the optional mask step (plan §10, PP-10d).
 
-After a run that recorded masks, the button runs the command line's ``masks`` step with the
-same functions (:func:`.run.mask_step.prepare_mask_step`, :func:`.run.mask_step.describe_masks`)
-and the inputs the run recorded: the experiment folder, the masks folder, the mask axes and
-the exclusions. It reads the masks, writes ``mask_relationships.json`` to the output folder
+When the output folder of step 1 holds a run that recorded masks (a run of this session, or
+an earlier one in a reopened notebook), the button runs the command line's ``masks`` step
+with the same functions (:func:`.run.mask_step.prepare_mask_step`,
+:func:`.run.mask_step.describe_masks`) and the inputs the run recorded: the experiment
+folder, the masks folder, the mask axes and the exclusions; the help line names the run it
+describes. It reads the masks and writes ``mask_relationships.json`` to the output folder
 holding its lock, and shows each mask type, the relationships between the types and their
 hierarchy, as suggestions to check (contract §15). The thresholds are the defaults; the
 command line's ``masks`` can change them. A refusal is shown on the card (the locked output
@@ -15,10 +17,14 @@ from __future__ import annotations
 
 import html
 import traceback
+from pathlib import Path
 
 import ipywidgets as widgets
 
 from . import notebook_style as ui
+from .discovery import default_output_folder
+from .fingerprint import current_fingerprint
+from .manifest import MANIFEST_FILENAME
 from .mask_scan import MASK_REPORT_FILENAME
 from .mask_text import (
     mask_hierarchy_lines,
@@ -28,11 +34,11 @@ from .mask_text import (
 )
 from .notebook_output import _LockCard
 from .notebook_render import issues_html
-from .run import MaskStep, MaskStepResult, mask_step
+from .run import MaskStep, MaskStepResult, RecordedMasks, mask_step
 from .validation import has_errors, plural
 
 _STALE = object()
-"""Marks the step as describing no run (a run is going on)."""
+"""Marks the step as describing no run (a run is going on): the next refresh reads it again."""
 _LABEL = " Describe the masks"
 _ICON = "sitemap"
 _SUGGESTIONS = (
@@ -50,8 +56,9 @@ class _MaskStepCard:
     """Step 3's optional mask step: the button, its progress and the description."""
 
     def _build_mask_step_card(self) -> None:
-        """Build the card, its button disabled until a run records masks."""
-        self._mask_step_run: object = _STALE
+        """Build the card, its button disabled until the output folder holds recorded masks."""
+        self._mask_step_seen: object = _STALE
+        self._mask_step_recorded: RecordedMasks | None = None
         self.mask_step_button = ui.button(
             _LABEL,
             style="info",
@@ -90,35 +97,33 @@ class _MaskStepCard:
         self.mask_step_button.on_click(lambda _: self._on_describe_masks())
 
     def _refresh_mask_step(self) -> None:
-        """Offer the step only after a run that recorded masks; clear it for another run."""
+        """Offer the step when the output folder's run recorded masks; clear it for another."""
         ui.set_visible(self.mask_step_card, self._show_output)
-        if self.result is self._mask_step_run:
+        output = self._mask_step_output()
+        manifest = None if output is None else current_fingerprint(output / MANIFEST_FILENAME)
+        if self._mask_step_seen == (output, manifest):
             return
-        self._mask_step_run = self.result
+        self._mask_step_seen = (output, manifest)
         self._clear_mask_step()
-        types = self._recorded_mask_types()
-        self.mask_step_button.disabled = not types
-        if types:
-            hint = (
-                f"The run recorded {plural(len(types), 'mask type')}: "
-                f"<b>{html.escape(', '.join(types))}</b>."
-            )
-        elif self.result is not None and self.result.written:
-            hint = "The run recorded no masks: give a masks folder in step 1 and run again."
-        else:
-            hint = "Available after a run that recorded masks (step 1's masks folder)."
-        self.mask_step_hint.value = f"<div class='mb-help'>{hint}</div>"
-
-    def _recorded_mask_types(self) -> tuple[str, ...]:
-        """Return the mask types the last run recorded (none before a written run)."""
-        if self.result is None or not self.result.written:
-            return ()
         with self.log.attached():
-            return mask_step.recorded_mask_types(self.result.output_folder)
+            recorded = None if output is None else mask_step.recorded_masks(output)
+        self._mask_step_recorded = recorded if recorded and recorded.mask_types else None
+        self.mask_step_button.disabled = self._mask_step_recorded is None
+        self.mask_step_hint.value = f"<div class='mb-help'>{_recorded_hint(recorded)}</div>"
+
+    def _mask_step_output(self) -> Path | None:
+        """Return step 1's output folder, resolved; None without a folder or when hidden."""
+        if not self._show_output:
+            return None
+        output = self._output_folder()
+        folder = ui.clean_path(self.folder.value)
+        if output:
+            return Path(output).resolve()
+        return default_output_folder(Path(folder).resolve()).resolve() if folder else None
 
     def _mask_step_stale(self) -> None:
         """Clear the step and disable it while a run replaces the results it describes."""
-        self._mask_step_run = _STALE
+        self._mask_step_seen = _STALE
         self._clear_mask_step()
         self.mask_step_button.disabled = True
 
@@ -159,7 +164,7 @@ class _MaskStepCard:
 
     def _describe_recorded_masks(self) -> MaskStepResult | None:
         """Pair, read and describe the masks with the run's recorded inputs; show the result."""
-        step = mask_step.prepare_mask_step(None, self.result.output_folder)
+        step = mask_step.prepare_mask_step(None, self._mask_step_recorded.output_folder)
         if not step.ready:
             self._show_mask_step_refused(step)
             return None
@@ -204,7 +209,7 @@ class _MaskStepCard:
         if step.refusal is not None:
             title, issues = "The run's experiment folder is not recorded.", [step.refusal]
         elif has_errors(step.issues):
-            title, issues = "The masks have errors: none was read.", list(step.issues)
+            title, issues = "An error stops the step: no mask was read.", list(step.issues)
         else:
             title, issues = "No masks were found with the inputs the run recorded.", []
         self.mask_step_status.value = ui.status(
@@ -249,3 +254,27 @@ class _MaskStepCard:
         if step.issues:
             parts.append(issues_html(step.issues))
         self.mask_step_result.value = "".join(parts)
+
+
+def _recorded_hint(recorded: RecordedMasks | None) -> str:
+    """Name the run the step describes, or say why the button is disabled."""
+    if recorded is None:
+        return (
+            "Available when the output folder holds a run that recorded masks "
+            "(step 1's masks folder)."
+        )
+    when = f", written {html.escape(recorded.written_at)}" if recorded.written_at else ""
+    run = (
+        f"the run in <b>{html.escape(str(recorded.output_folder))}</b>{when}, of "
+        f"<b>{html.escape(str(recorded.experiment_root))}</b>"
+    )
+    if not recorded.mask_types:
+        return (
+            f"Describes {run}: it recorded no masks. Give a masks folder in step 1 and run again."
+        )
+    masks = recorded.masks_folder
+    source = f" from <b>{html.escape(str(masks))}</b>" if masks else ""
+    return (
+        f"Describes {run}: {plural(len(recorded.mask_types), 'mask type')}{source}: "
+        f"<b>{html.escape(', '.join(recorded.mask_types))}</b>."
+    )

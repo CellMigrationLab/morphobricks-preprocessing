@@ -476,8 +476,10 @@ API, CLI). The notebook and CLI only call the API.
     from before the first mask is read to the write, so a locked folder is refused before
     any mask is read, in the command and the notebook. The command only prints; its output is unchanged
     (same text and exit status over 13 scenarios, the HPMEC data included).
-  - Step 3's **Describe the masks (optional)** card (`notebook_mask_step`, ui): enabled only
-    after a run that recorded masks (`recorded_mask_types`); runs the step with the run's
+  - Step 3's **Describe the masks (optional)** card (`notebook_mask_step`, ui): enabled when
+    step 1's output folder holds a v2 manifest that recorded masks (`recorded_masks`), after
+    a run in this session or for an earlier run in a reopened notebook (review, coordinator
+    decision); the help line names the run it describes; runs the step with the run's
     recorded inputs and the default thresholds (the notebook offers no threshold option;
     the command line does), with a progress bar; shows the mask types, the relationships
     with their counts, masks of the same objects and the hierarchy as suggestions to check,
