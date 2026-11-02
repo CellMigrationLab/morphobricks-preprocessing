@@ -207,3 +207,18 @@ def test_run_inputs_refuse_a_mask_link_out_added_after_the_run(clean, tmp_path):
     (clean.masks / "Cells/ctrl/rep1/a.tif").symlink_to(outside)
     with pytest.raises(RunInputsError, match="link"):
         RunInputs.open(clean.output)
+
+
+def test_a_link_back_inside_an_ome_zarr_store_is_a_loop(tree):
+    # Copying the store (convert) follows its links: this one would never end.
+    pytest.importorskip("zarr")
+    from zarr_tree import write_ngff
+
+    root, _ = tree
+    store = write_ngff(root / "ctrl/rep1/z.ome.zarr", np.zeros((1, 1, 4, 4), np.uint8))
+    (store / "0" / "again").symlink_to(store, target_is_directory=True)
+    found = discover_experiment(root)
+    assert _codes(found.issues) == ["link_loop"]
+    assert _issue(found.issues, "link_loop").paths == (
+        f"ctrl/rep1/z.ome.zarr/0/again -> {store.resolve()}",
+    )

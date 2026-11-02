@@ -156,9 +156,27 @@ class LinkGuard:
                 yield Path(entry.path), real
 
     def check_store(self, store: Path) -> None:
-        """Hold every link inside an OME-Zarr store (a folder let through) to the rule."""
-        for _ in self.files(store, lambda name: False):
-            pass
+        """Hold every link inside an OME-Zarr store (a folder let through) to the rule.
+
+        A store can hold millions of chunk files: only its folders and its links are
+        followed up, so a file costs no more than its listing.
+        """
+        pending = [store]
+        while pending:
+            folder = pending.pop()
+            try:
+                entries = list(os.scandir(folder))
+            except OSError:
+                logger.debug("Cannot list %s", folder, exc_info=True)
+                continue
+            for entry in entries:
+                if is_link(entry):
+                    if self.real(entry, folder) is not None and entry.is_dir():
+                        pending.append(Path(entry.path))
+                elif entry.is_dir(follow_symlinks=False):
+                    stack = self._stacks[folder]
+                    self._stacks[Path(entry.path)] = (*stack, stack[-1] / entry.name)
+                    pending.append(Path(entry.path))
 
     def issues(self) -> list[ValidationIssue]:
         """Return the errors about the links found so far."""
