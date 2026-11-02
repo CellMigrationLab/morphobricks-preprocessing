@@ -28,6 +28,8 @@ from . import notebook_style as ui
 from .axes import AxisReview
 from .axis_review import review_axes
 from .discovery import default_output_folder
+from .fingerprint import Fingerprint
+from .manifest import MANIFEST_FILENAME
 from .mask_checks import mask_issues
 from .mask_review import MaskAxesQuestion, mask_axes_questions, mask_type_rows
 from .masks import MaskInventory
@@ -53,6 +55,7 @@ class _MasksCard:
         self._paired_masks: tuple | None = None
         self._mask_choices: dict[str, widgets.Dropdown] = {}
         self._mask_questions: tuple[MaskAxesQuestion, ...] | None = None
+        self._planned_cache: tuple[tuple, PlannedMasks] | None = None
         self.masks_folder = widgets.Text(
             placeholder="optional, e.g. D:/microscopy/experiment_2026_10_masks",
             layout=widgets.Layout(flex="1 1 auto", width="auto"),
@@ -130,8 +133,12 @@ class _MasksCard:
             return None
         root = Path(folder).resolve() if root is None else root
         given = GivenInputs(masks_folder=self._masks_given(), mask_axes=self._mask_axes or None)
-        output = self._output_folder() or default_output_folder(root)
-        return planned_masks(given, output)
+        output = Path(self._output_folder() or default_output_folder(root)).resolve()
+        # Every refresh of step 3 asks; the earlier run's manifest is read once per version.
+        key = (given, output, _stamp(output / MANIFEST_FILENAME))
+        if self._planned_cache is None or self._planned_cache[0] != key:
+            self._planned_cache = (key, planned_masks(given, output))
+        return self._planned_cache[1]
 
     def _check_masks_arguments(self, root: Path) -> tuple[Path | None, dict | None]:
         """Return the masks folder and axes for a folder check; nothing when embedded."""
@@ -255,6 +262,8 @@ class _MasksCard:
     def _show_recorded_masks(self, plan: PlannedMasks | None) -> None:
         """Say which masks folder the earlier run recorded, and offer to drop it."""
         recorded = None if plan is None else plan.recorded_folder
+        if recorded is None:
+            self._masks_dropped = False  # nothing recorded (any more) to drop
         typed = bool(ui.clean_path(self.masks_folder.value))
         ui.set_visible(self.masks_drop, recorded is not None and not typed)
         if recorded is None or typed:
@@ -303,6 +312,14 @@ class _MasksCard:
         if rows:
             rows.insert(0, widgets.HTML(_QUESTIONS_INTRO))
         self.mask_axes_box.children = rows
+
+
+def _stamp(path: Path) -> Fingerprint | None:
+    """Return the file's fingerprint (size, modification time), or None without one."""
+    try:
+        return Fingerprint.of(path)
+    except FileNotFoundError:
+        return None
 
 
 def _pairing(plan: PlannedMasks) -> tuple:

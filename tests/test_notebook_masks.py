@@ -215,6 +215,9 @@ def test_a_recorded_masks_folder_is_reused_or_dropped_explicitly(tmp_path):
     assert "<b>masks_folder</b>" in again.plan.value and "none (dropped)" in again.plan.value
     result = again.run()
     assert result.written and read_manifest(result.manifest_path).masks is None
+    # Nothing is recorded any more: running again names no change, and offers no drop.
+    assert not ui.is_visible(again.masks_drop) and "<b>masks_folder</b>" not in again.plan.value
+    assert again.run().input_changes == ()
 
 
 # 5. Embedding ---------------------------------------------------------------------------
