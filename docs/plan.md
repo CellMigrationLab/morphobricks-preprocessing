@@ -513,17 +513,36 @@ API, CLI). The notebook and CLI only call the API.
     `RunInputs.open` refuses a record changed or gone since the run (question 59 (14)).
   - The axis messages (`axes_yx_swapped`, `axes_contradict_header`, `axes_x_before_y`,
     `axes_not_named`) and the notebook's axis marks name the `convert` command.
-  - Not in this PR: the notebook card for the conversion (PP-11b).
+  - The notebook card for the conversion followed in PP-11b.
   - Review (2 November 2026): the obsolete issues of `convert_tiffs`/`zarr_export` had
     acceptance criteria kept here: a memory budget that fails fast (#76), strict settings
     (#80), no 64-bit precision loss (refused, #75), the copy's fingerprint and scales
     checked before reuse (#87, #88, #92), no mixing of metadata epochs (#96); the run reads
     the copies themselves, so the table describes the persisted pixels (#79).
-- **PP-11b (notebook card for the conversion)** *(next PR; owner decision of 2 November
-  2026, plan §12 question 59 (15))*: design v0.4 §5 "the notebook offers conversion only
-  for files with errors": a card offered after the axis check when images have an axis
-  error or unnamed axes, calling `convert_experiment` with the confirmed roles and a
-  folder the user names, showing the result and the next run on the copies.
+- **PP-11b (notebook card for the conversion)** *(implemented, this PR; owner decision of
+  2 November 2026, plan §12 question 59 (15))*: design v0.4 §5 "the notebook offers
+  conversion only for files with errors" (contract §17 "Notebook"):
+  - Step 2's **Make named-axis copies (optional)** card (`notebook_convert`, ui), right
+    under the axis check, shown when it reports `axes_yx_swapped`, `axes_contradict_header`,
+    `axes_x_before_y` or `axes_not_named` for the roles being edited; hidden with
+    `folder_step(show_output=False)`; the pinned embedding API is unchanged.
+  - The roles: those confirmed with **Confirm axis roles**, or, while the axis errors keep
+    that button disabled, the roles shown once the preview is checked and the card's
+    **Yes, write the copies with these roles** is pressed; changing a role or the
+    missing-axes answer takes it back. Nothing is taken from the headers.
+  - A required folder for the copies (Browse…, the Colab **Copy path** card); the plan from
+    `preview_conversion` (`conversion_plan`, orchestration, new: the command's
+    `plan_conversion` and folder rule `copy_folder_issues`, moved there from `conversion`,
+    plus the space needed and free; writes nothing): images converted (with their code) and
+    copied byte for byte, the space; errors keep the button disabled.
+  - **Make named-axis copies** calls `convert_experiment` with a progress bar; refusals on
+    the existing cards (the lock card, now naming the folder for the copies, with **Remove
+    the lock of a stopped run**).
+  - After the copies: the record's path and **Check the copies in step 1** (the experiment
+    folder becomes the copy tree, the output folder is kept and filled in, and the folder is
+    checked again); the card says the missing-axes answer must be given again and lists the
+    copies whose relabelled Y/X sizes are unknown (`ConversionResult.unknown_sizes`, new), to
+    state under **Pixel sizes**.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;
@@ -1463,6 +1482,6 @@ Raised during review; to be decided before the milestones that need them:
     (14) **`RunInputs` checks the conversion record**: a run whose manifest records
     `conversion_record_sha256` is refused by `RunInputs.open` when the record changed or
     disappeared, as for `calibration_sha256` and the design's SHA-256.
-    (15) **Notebook card**: the next PR, PP-11b (§10); the axis-check card names the
-    command meanwhile.
+    (15) **Notebook card**: PP-11b (§10), implemented: step 2's **Make named-axis copies
+    (optional)** card under the axis check.
 

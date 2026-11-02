@@ -158,7 +158,10 @@ src/morphobricks_preprocessing/
   conversion_record.py the copy tree's .morphobricks-conversion.json (fingerprints, roles, sizes),
                     review_conversion (the run's conversion_source_changed and
                     copy_changed_after_conversion warnings)
-  conversion.py     convert_experiment/plan_conversion: the copy tree under its lock, .partial
+  conversion_plan.py plan_conversion (headers only: what each image's copy will be),
+                    copy_folder_issues (the folder rule) and preview_conversion (the plan,
+                    space needed and free, for the notebook card; writes nothing, PP-11b)
+  conversion.py     convert_experiment: the copy tree under its lock, .partial
                     files moved into place together (any failure removes what it wrote),
                     planes checked against the memory limit first, unchanged copies reused,
                     record last; conversion_issues.py its messages (pure)
@@ -171,6 +174,9 @@ src/morphobricks_preprocessing/
   notebook_masks.py step 1's masks folder, Masks card and mask-axis statements (PP-10c)
   notebook_mask_step.py step 3's Describe the masks card: the masks step after a run that
                     recorded masks (PP-10d)
+  notebook_convert.py step 2's Make named-axis copies card under the axis check (PP-11b):
+                    preview_conversion, then convert_experiment under the copy folder's lock,
+                    then Check the copies in step 1 (same output folder)
   notebook_ui.py    PreprocessingNotebook: the four notebook steps (needs the `notebook` extra);
                     folder_step/axis_step take title, purpose, intro and show_next (and
                     show_output and show_design for step 1) so other bricks can embed them
@@ -909,7 +915,11 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   the CLI calls too; see plan §10.
 - **Named-axis copies (PP-11):** `convert` / `convert_experiment` writes OME-TIFF copies of
   the images with axis errors or unnamed axes with the confirmed roles into a new folder
-  (contract §17, plan §10 and question 59); the notebook card is PP-11b.
+  (contract §17, plan §10 and question 59).
+- **Notebook conversion card (PP-11b):** step 2's **Make named-axis copies (optional)** card,
+  under the axis check when it reports these images: the folder for the copies, the
+  confirmed roles, the plan (`preview_conversion`), the copies (`convert_experiment`) with a
+  progress bar, the lock card, and **Check the copies in step 1**; see plan §10.
 - **Next (not started):** the notebook step for the masks (name each mask, confirm or
   correct the relationships) and a file saving those answers for the other bricks
   (question 32); 3D and time-lapse masks later.

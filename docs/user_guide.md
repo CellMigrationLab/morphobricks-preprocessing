@@ -361,7 +361,8 @@ results or comparing another grouping.
      dropdown; the card gives the error (`axes_yx_swapped` or `axes_contradict_header`,
      §8) naming the images with their header axes, your roles and the likely cause. Such
      images are never read: correct the axes, or save named-axis copies with your roles and
-     run preprocessing on the copies. An axis the metadata does not name (a plain stack of
+     run preprocessing on the copies (the **Make named-axis copies (optional)** card under
+     the axis check, §5 "Named-axis copies"). An axis the metadata does not name (a plain stack of
      pages) takes the role you confirm: the card warns (`axes_not_named`) and the run
      records the roles as confirmed by you.
    - If the preview looks right, press **Yes, the preview looks right**, then click
@@ -743,7 +744,38 @@ copies (`RunInputs`) refuse it if the conversion record is changed or removed af
 images or made with other roles is refused (`copy_folder_not_empty`, `copy_differs`);
 convert into a new folder then. If it fails (`conversion_failed`), the folder is left as it
 was. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
-The notebook does not offer the conversion yet: run the command in a terminal.
+
+**In the notebook.** When step 2's axis check reports these images, a **Make named-axis
+copies (optional)** card appears under it, calling the same functions as the command:
+
+1. **The roles.** They are yours: the roles confirmed with **Confirm axis roles** (possible
+   with only `axes_not_named`), or, while the axis errors keep that button disabled, the
+   roles shown once you pressed **Yes, the preview looks right** and then **Yes, write the
+   copies with these roles** on the card. Changing a role, or the answer about missing
+   axes, takes that answer back. Nothing is taken from the header.
+2. **The folder for the copies** (required, no default): paste it or use **Browse…** (on
+   Google Colab, **Copy path** in the **Files** panel). It is checked with the command's rule
+   (`copy_folder_overlaps_experiment`, `copy_folder_not_a_folder`).
+3. **What will happen**, from the command's planning, reading headers only: the images
+   written as OME-TIFF (with their axis code) and those copied as they are (with `excluded`),
+   the space needed and the free space. Any error that would stop the conversion is shown
+   here and keeps **Make named-axis copies** disabled, as does a drive without the space.
+4. **Make named-axis copies** writes the copies with a progress bar, holding the folder's
+   lock. Refusals are shown on the card with what to do; a folder locked by a stopped
+   conversion shows its holder and **Remove the lock of a stopped run** (the rule of
+   `--remove-stale-lock`).
+5. **After the copies:** the card shows the folder, what was written, copied and reused, the
+   path of the conversion record and what to do next. **Check the copies in step 1** sets
+   the experiment folder to the copies, keeps the output folder (an empty box is filled with
+   the originals' default) and checks again. Confirm the labels, the axis roles (now named in
+   the copies' metadata) and the image type again; the design and stated pixel sizes are
+   kept. If you pressed **Yes, they have a single plane there**, press it again (the copies
+   do not add those axes; `--missing-as-singleton` on the command line). The card lists the
+   copies whose relabelled Y or X has no pixel size (unless the header gave X and Y the same
+   size): state them under **Pixel sizes** in step 1.
+
+The card is not shown when another brick embeds step 1 without the output folder
+(`folder_step(show_output=False)`).
 
 ## 6. Output files
 
