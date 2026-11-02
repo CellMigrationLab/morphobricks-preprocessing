@@ -178,6 +178,7 @@ class _AxisStep:
             ),
             self.missing_card,
             self.axis_status,
+            self.convert_card,
             self.preview_card,
             self.confirm_button,
             self.confirmed_status,
@@ -328,6 +329,7 @@ class _AxisStep:
                 "Click Show preview and inspect a few planes before confirming.",
             )
         self._review_ok = review.ok
+        self._refresh_convert_card(review)
         if self._preview_shown:
             self._configure_sliders(reset=False)
             self._render_preview()
