@@ -20,12 +20,14 @@ run **Step 0**. It detects local Jupyter or Google Colab and checks these option
    subfolders, use that checkout's source code, including local edits.
 2. **Installed package:** otherwise, use the package already available to this kernel.
 3. **GitHub installation:** if the package is missing, install it with the notebook
-   dependencies from the project's GitHub repository.
+   dependencies from the project's GitHub repository, at the release the notebook names
+   (`RELEASE_TAG` in Step 0, for example `v0.4.0rc2`), never the changing `main` branch.
 
 Missing notebook dependencies are installed into the same Python environment as the
 kernel. A local checkout is installed in editable mode when it needs dependencies;
 an installed package's notebook extra is used when its UI dependencies are missing.
-Setup prints the selected source and Python executable. It does not upgrade an already
+Setup prints the selected source with its version or release, the notebook's version and the
+Python executable. It does not upgrade an already
 usable installation. Installation needs internet access, and the GitHub option needs Git.
 If another copy of the package is already loaded, restart the kernel to switch checkouts.
 
@@ -40,9 +42,76 @@ pip install jupyterlab
 To read OME-Zarr images, install the `zarr` extra too:
 `pip install "morphobricks-preprocessing[notebook,zarr] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git"`.
 
-Start JupyterLab with `jupyter lab` and open the notebook. Google Colab is detected by the
-setup cell, but native **Browse…** dialogs are only available with a local desktop: paste
-paths on the runtime filesystem when using a hosted notebook.
+Start JupyterLab with `jupyter lab` and open the notebook. **Browse…** opens your computer's
+folder dialog; where no dialog can open (Google Colab, a remote server), it says so and you
+paste the path instead.
+
+### Google Colab
+
+Open the notebook in Google Colab (**File › Open notebook › GitHub**, or upload the file) and
+run **Step 0**. On Colab it:
+
+- connects your Google Drive: allow access in the window that opens. Your Drive is then the
+  folder `/content/drive/MyDrive`;
+- installs MorphoBricks preprocessing at the release the notebook names, with its notebook
+  dependencies, which takes a minute or two (ipywidgets 8 replaces Colab's ipywidgets 7;
+  if a message asks you to, choose **Runtime › Restart session** and run Step 0 again);
+- enables Colab's widget support for these widgets.
+
+To read OME-Zarr images on Colab, also install the `zarr` extra: in a new code cell run
+`import subprocess, sys` and then
+`subprocess.run([sys.executable, "-m", "pip", "install", "zarr>=2.18"], check=True)`.
+
+**Where to keep the data.** A Colab runtime is a temporary computer: everything on it except
+Google Drive is wiped when it disconnects (after some idle time, or after several hours).
+
+- Put the experiment folder on Google Drive and paste its path in step 1, for example
+  `/content/drive/MyDrive/experiment_2026_10`. **Browse…** cannot open a dialog on Colab: open
+  the **Files** panel in the left bar, right-click the folder, choose **Copy path** and paste.
+- Keep the output folder on Google Drive too, outside the experiment folder. The default,
+  next to the experiment folder, is right when the experiment is on Drive.
+- Google Drive is slower to read than the runtime's own disk. For a large dataset you may
+  copy the experiment folder to the runtime's disk first, keeping the modification times,
+  for example in a new code cell:
+
+  ```python
+  import shutil
+
+  shutil.copytree("/content/drive/MyDrive/experiment_2026_10", "/content/experiment_2026_10")
+  ```
+
+  Then type an output folder on Drive in step 1 (for example
+  `/content/drive/MyDrive/experiment_2026_10_MorphoBricks_Preprocessing`): the default would
+  be next to the copy and lost with the runtime. The output records where the images were
+  read and each image's size and modification time. A later run reuses the rows only when
+  the images are read from the same place: copy to the same path in every session (as
+  above; the copy keeps the times) and only new or changed images are read again. Reading
+  from another place (Drive one time, the copy another) recomputes every row, and plain
+  stacks must be confirmed again. Later bricks must be given the experiment folder they
+  should read, because the recorded location is the copy's, which a new runtime no longer
+  has until you copy again.
+
+**Limits of Google Drive** (the run behaves the same; these are things to know):
+
+- **One session per output folder.** The output folder's lock stops a second run on the
+  same Colab runtime. Google Drive copies files between computers with a delay, so the lock
+  does not stop a run started at the same time from another Colab session or from a
+  computer that syncs the same Drive folder. Never run two sessions on one output folder.
+- **A lock left by a disconnected runtime.** If the runtime disconnects during a check or a
+  run, its lock stays in the output folder and the next check says "Another run is using
+  this output folder". When you are sure no other session uses the folder, remove it in a
+  new code cell, then check the folder again:
+
+  ```python
+  from morphobricks_preprocessing.run import remove_stale_lock
+
+  remove_stale_lock("/content/drive/MyDrive/experiment_2026_10_MorphoBricks_Preprocessing")
+  ```
+
+- **Unchanged images read again.** An image counts as unchanged when its size and
+  modification time are the same as at the last run. If Google Drive reports a file's
+  time differently later (for example after the file was synced again from another
+  computer), the image is read again. That costs time but never reuses wrong rows.
 
 ## 2. Organising the experiment folder
 

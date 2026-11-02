@@ -299,6 +299,8 @@ API, CLI). The notebook and CLI only call the API.
   *Setup feedback: standalone Step 0 detects the environment, prefers a nearby checkout,
   reuses an installed package, or installs missing requirements into the active kernel.*
   *Step-1 feedback: centre the folder-label table's headers and contents consistently.*
+  *v0.4.0 (PP-8d, question 52): the notebook runs on Google Colab and in JupyterLab following
+  LabConstrictor's portability guide; its GitHub installation is pinned to a release tag.*
   *Notebook guidance feedback: separate "What next?" boxes show the next action in larger
   text, following the current confirmations. Step-1 message details are collapsed with
   persistent orange warning and red error counts. Step-3 conversion settings use an
@@ -381,6 +383,15 @@ API, CLI). The notebook and CLI only call the API.
   35.*
 - **Release v0.3.1:** `position_id` names an image with the other image extensions bricks
   read (MorphoBricks D85, PR #33). *To be tagged, see question 36.*
+- **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
+  candidates, in the release PR before the tag is pushed:
+  - set `version` in `pyproject.toml`;
+  - set the notebook's pin (question 52): `RELEASE_TAG` in Step 0 to the new tag,
+    `current_version` to the tag without "v", the same version in
+    `notebooks/notebook_latest_versions.yaml`, and the tag named in the Step 0 Colab callout
+    (`tests/test_notebook_file.py` checks that the four agree);
+  - run the notebook by hand on Google Colab with the PR #118 checklist (the tests run it
+    only in a local kernel).
 
 ## 11. Tests and acceptance criteria
 
@@ -1158,3 +1169,25 @@ Raised during review; to be decided before the milestones that need them:
     OME-Zarr image whose `labels` group cannot be read is its own refusal naming the image,
     not a silent pass and not an "unrecorded" file; (4) the version stays 0.3.4 until PP-13,
     and v0.4.0rc2 is tagged by the owner after this PR.*
+52. How does the notebook run on Google Colab, and which release does it install (PP-8d)?
+    *Decided (2 November 2026, owner's PP-8d brief; supersedes the "Local Jupyter (not
+    Colab-first)" target): one notebook file for Google Colab and JupyterLab, following
+    LabConstrictor's notebook portability guide. Every code cell starts with `# @title`, and
+    explanations are in Markdown cells. Every code cell keeps its source hidden: the notebook
+    is an app-like widget notebook in which nothing is edited (LabConstrictor's code-hiding
+    guide), so this differs from fiberfeatures, whose settings cells stay visible. Colab-only
+    code runs inside `if "google.colab" in sys.modules:` in Step 0: Google Drive is mounted
+    at `/content/drive` and Colab's custom widget manager is enabled (the package needs
+    ipywidgets 8; Colab ships 7). Locally Step 0 prints the Python version, platform and
+    working folder. No shell or line magics; pip runs through `subprocess` with the kernel's
+    Python. When the package is missing, Step 0 installs the release named by `RELEASE_TAG`
+    (v0.4.0rc2 first), never an unpinned `main`; a nearby checkout and an installed package
+    are still used first, and Step 0 prints which one and its version. `current_version`
+    equals the tag without "v" and `notebook_name` the file name, as LabConstrictor's
+    version check reads them, with `notebooks/notebook_latest_versions.yaml` as the index;
+    the pin is moved at every release (§10, release checklist). Steps 0 and 1 have "Colab
+    users" / "JupyterLab users" callouts (data and results on Drive, output folder outside
+    the experiment, slower Drive reads, a runtime wiped on disconnect). The run's semantics
+    are unchanged on Google Drive; its known limits there (the lock is only exclusive within
+    one runtime, fingerprints of copies) are in the user guide §1 and were put to the owner
+    in PR #118.*
