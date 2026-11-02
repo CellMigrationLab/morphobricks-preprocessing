@@ -99,6 +99,9 @@ src/morphobricks_preprocessing/
   pixel_size_checks.py the §11 pixel-size checks on resolved sizes (moved from metadata.py)
   narrow_ranges.py  NarrowRange (moved from manifest.py)
   sources.py        check_sources (moved from manifest.py in PP-4)
+  unrecorded.py     unrecorded_files: images and masks the run neither recorded nor excluded, by
+                    preprocessing's discovery and pairing; RunInputs.open raises
+                    UnrecordedFilesError for them (PP-8b, contract §9.1)
   mask_record.py    the manifest's masks entry with fingerprints and roles (manifest v2)
   axis_check.py     the axis check (contract §2): header_axis_issue, axis_disagreements,
                     likely_axis_cause, check_header_axes, ConfirmedAxes (a confirmation covers
