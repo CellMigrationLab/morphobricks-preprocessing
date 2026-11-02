@@ -304,7 +304,11 @@ results or comparing another grouping.
      as the run records no size for it. No histogram depends on the sizes. (When another
      brick embeds this step without the output folder, the card is left out.)
    - **Dataset consistency** shows how many images each condition (columns) and
-     biological repeat (rows; the repeat groups once paired) has, with the number of technical-repeat folders. A cell is
+     biological repeat (rows; the repeat groups once paired) has, with the number of technical-repeat folders. Excluded images
+     are not counted, nor is a technical-repeat folder whose images are all excluded; the
+     line under the table says how many images were excluded and names those folders. A
+     technical-repeat folder named **single** is the level's value single, so it counts as
+     no technical-repeat folder, like images directly in the biological-repeat folder. A cell is
      amber when it has fewer than half or more than twice the median number of images, or
      when a condition does not have that biological repeat. Expand **Show consistency
      warnings** to see the checks that compare the images with each other: pixel type,

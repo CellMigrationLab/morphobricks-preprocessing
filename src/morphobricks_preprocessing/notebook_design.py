@@ -362,6 +362,9 @@ class _DesignCard:
                 "are kept while the notebook is open and saved with the run."
             )
         controls = ", ".join(html.escape(c) for c in design.controls) or "none"
+        # The counts leave out excluded images and folders (issue #82); say which.
+        not_counted = html.escape(self.dataset.balance.not_counted())
+        where = f"{not_counted}<br>{where}" if not_counted else where
         if design.confirmed:
             dates = sorted({design.confirmed_on(g) for g in design.groups} - {""})
             when = f" on {', '.join(dates)}" if dates else ""

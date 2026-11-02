@@ -524,6 +524,12 @@ API, CLI). The notebook and CLI only call the API.
   for files with errors": a card offered after the axis check when images have an axis
   error or unnamed axes, calling `convert_experiment` with the confirmed roles and a
   folder the user names, showing the result and the next run on the copies.
+- **Before the audit: experiment design identity and counts (issues #82, #83 and #98)**
+  *(this PR; questions 62, 63 and 64)*: technical-repeat folders whose images are all
+  excluded are not counted, and the balance text names them; every design reader refuses a
+  header naming a column twice or a column without a name, and `RunInputs.design()` reads
+  with `read_confirmed_design`; changing the notebook's output folder reloads the design
+  from the new folder and asks again.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;
@@ -1465,4 +1471,13 @@ Raised during review; to be decided before the milestones that need them:
     disappeared, as for `calibration_sha256` and the design's SHA-256.
     (15) **Notebook card**: the next PR, PP-11b (§10); the axis-check card names the
     command meanwhile.
-
+62. Which technical-repeat folders are counted (issue #82)?
+    *Decided (owner, 2 November 2026):* only those holding at least one image to analyse.
+    A technical-repeat folder whose images are all excluded is not counted in
+    `BiologicalRepeat.technical_repeat_count`, the balance table or the design's
+    `technical_repeat_count` (it was counted before). The balance table's text says what
+    was left out (`BalanceTable.not_counted()`: the excluded images and the folders whose
+    images are all excluded), in the CLI `check`, the notebook's consistency card and its
+    design card. A technical-repeat folder named `single` keeps question 23's meaning
+    (the level's value `single`, counted as no technical-repeat folder, like a missing
+    level): documented, not changed. Contract §11, §12; user guide §4.
