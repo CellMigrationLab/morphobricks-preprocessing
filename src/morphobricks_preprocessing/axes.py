@@ -10,6 +10,8 @@ against the axes its header names (:func:`header_axis_issue`): confirmed roles t
 contradict the named axes are an error, and such an image is never read (the user corrects
 the roles, or saves named-axis copies); an image whose metadata does not name its axes (a
 plain stack) is read with the confirmed roles, with a warning, and recorded as confirmed.
+An OME-Zarr image is always matched by the roles its OME-NGFF metadata declares
+(:func:`ome_zarr_mapping`), also when its axis letters are the mapping's (issue #72).
 
 Nothing here reads pixels; the preview plane is read by
 :func:`~morphobricks_preprocessing.planes.read_sample_plane`.
@@ -335,16 +337,17 @@ def file_mapping_for(
 ) -> AxisMapping | None:
     """Resolve the experiment mapping for one image, or None if it does not fit.
 
-    An image with the mapping's arrangement gets the mapping itself. A TIFF with
-    some of its dimensions left out gets :meth:`AxisMapping.for_axes`. An OME-Zarr
-    image with another arrangement is matched by the roles its metadata declares
-    (see :func:`declared_mapping`). Experiment roles an image lacks are read as
-    length 1 only if ``missing_as_singleton``.
+    A TIFF with the mapping's arrangement gets the mapping itself, and one with some
+    of its dimensions left out gets :meth:`AxisMapping.for_axes`. An OME-Zarr image,
+    whatever its arrangement, is matched by the roles its metadata declares
+    (:func:`ome_zarr_mapping`): with the mapping's arrangement but other roles it
+    does not fit (issue #72). Experiment roles an image lacks are read as length 1
+    only if ``missing_as_singleton``.
     """
-    if f.axes == mapping.axes:
-        return mapping
     if f.is_ome_zarr:
-        resolved, problem = declared_mapping(f, mapping)
+        resolved, problem = ome_zarr_mapping(f, mapping)
+    elif f.axes == mapping.axes:
+        return mapping
     else:
         resolved = mapping.for_axes(f.axes)
         problem = "" if resolved is not None else "mismatch"
@@ -353,6 +356,33 @@ def file_mapping_for(
     if resolved.singleton_roles and not missing_as_singleton:
         return None
     return resolved
+
+
+def ome_zarr_mapping(f: TiffMetadata, mapping: AxisMapping) -> tuple[AxisMapping | None, str]:
+    """Resolve the experiment mapping for an OME-Zarr image by the roles it declares.
+
+    Every OME-Zarr image is matched by its OME-NGFF axes (:func:`declared_mapping`),
+    also when its axis letters are the mapping's (issue #72): confirmed roles that
+    give a declared axis another role (``ZYX`` confirmed ``TYX``, ``ZYX`` confirmed
+    ``ZXY``) or give an axis of no known type a role (``QYX`` confirmed ``CYX``)
+    contradict the metadata, and the image is not read under them.
+
+    Returns
+    -------
+    tuple
+        As :func:`declared_mapping`, and ``(None, "contradicted")`` for an image
+        with the mapping's arrangement when a confirmed role is not the letter its
+        metadata declares for that axis.
+    """
+    if f.axes == mapping.axes and any(
+        role is not None and role != axis for axis, role in zip(f.axes, mapping.roles, strict=True)
+    ):
+        return None, CONTRADICTED
+    return declared_mapping(f, mapping)
+
+
+CONTRADICTED = "contradicted"
+""":func:`ome_zarr_mapping`'s problem for roles that contradict an image's OME-NGFF axes."""
 
 
 def declared_mapping(f: TiffMetadata, mapping: AxisMapping) -> tuple[AxisMapping | None, str]:

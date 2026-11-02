@@ -79,8 +79,10 @@ def header_axis_issue(meta: TiffMetadata, mapping: AxisMapping) -> str | None:
       ``unassigned_axis``, and a position axis (``R``, ``M``, ``J``, ``K``) its
       ``unsupported_axis``, so they are left to those.
 
-    OME-Zarr images name their axes in their OME-NGFF metadata, which gives their roles
-    (:func:`declared_mapping`): they never have one of these problems.
+    OME-Zarr images name their axes in their OME-NGFF metadata, which gives their roles:
+    confirmed roles that contradict them are :func:`.axes.ome_zarr_mapping`'s
+    ``ome_zarr_axes_mismatch`` (issue #72), whatever the arrangement, so they never have
+    one of these problems (an OME-Zarr image cannot be converted to a named-axis copy).
 
     Parameters
     ----------

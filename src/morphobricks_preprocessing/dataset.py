@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import statistics
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 
 from morphobricks_normalization.records import SINGLE
@@ -34,6 +34,7 @@ CONSISTENCY_CODES = (
     "different_pixel_sizes",
     "missing_pixel_size",
     "unsupported_pixel_size_unit",
+    "invalid_physical_calibration",
     "unbalanced_images",
     "repeat_missing_conditions",
 )
@@ -59,8 +60,11 @@ class BiologicalRepeat:
     image_count
         Images to analyse in it, over all its technical repeats.
     technical_repeat_count
-        Technical-repeat folders in it; 0 when its images are directly in the
-        biological-repeat folder.
+        Technical-repeat folders in it with images to analyse; 0 when its images are
+        directly in the biological-repeat folder. A folder whose images are all excluded
+        is not counted (issue #82), and neither is a technical-repeat folder named
+        ``single``: it is the level's value ``single``, like a missing level (plan §12
+        question 23).
     """
 
     condition: str
@@ -85,8 +89,8 @@ class BalanceCell:
         Images, over all technical repeats (and all folders, if a repeat group
         holds more than one folder of the condition).
     technical_repeat_count
-        Technical-repeat folders; 0 when the images are directly in the
-        biological-repeat folder.
+        Technical-repeat folders with images to analyse; 0 when the images are directly
+        in the biological-repeat folder (as :class:`BiologicalRepeat`).
     folders
         The biological-repeat folders in the cell.
     unbalanced
@@ -115,6 +119,11 @@ class BalanceTable:
         images has no cell.
     median
         Median image count of the cells with images; None without images.
+    excluded_images
+        Images left out by the user, not counted.
+    excluded_folders
+        Leaf folders whose images are all excluded, sorted: not counted as technical
+        (or biological) repeats.
     """
 
     conditions: tuple[str, ...] = ()
@@ -123,6 +132,8 @@ class BalanceTable:
         default_factory=lambda: MappingProxyType({})
     )
     median: float | None = None
+    excluded_images: int = 0
+    excluded_folders: tuple[str, ...] = ()
 
     def cell(self, repeat_group: str, condition: str) -> BalanceCell | None:
         """Return the cell of a repeat group in a condition, or None if it has no images."""
@@ -131,6 +142,18 @@ class BalanceTable:
     def missing_conditions(self, repeat_group: str) -> tuple[str, ...]:
         """Return the conditions in which a repeat group has no folder."""
         return tuple(c for c in self.conditions if (repeat_group, c) not in self.cells)
+
+    def not_counted(self) -> str:
+        """Say what the counts leave out: excluded images and folders; empty without any."""
+        if not self.excluded_images:
+            return ""
+        text = f"Not counted: {plural(self.excluded_images, 'excluded image')}"
+        if self.excluded_folders:
+            text += (
+                ", so these folders, whose images are all excluded, are not counted as "
+                f"repeats: {', '.join(self.excluded_folders)}"
+            )
+        return text + "."
 
 
 @dataclass(frozen=True)
@@ -176,8 +199,11 @@ def biological_repeats(
         entry = found.setdefault(
             (leaf.condition, leaf.biological_repeat), [_repeat_folder(leaf), 0, 0]
         )
-        entry[1] += sum(image not in excluded for image in leaf.images)
-        entry[2] += leaf.technical_repeat != SINGLE
+        included = sum(image not in excluded for image in leaf.images)
+        entry[1] += included
+        # A technical-repeat folder whose images are all excluded is not analysed, so it
+        # does not count (issue #82); a folder named single is the level's value (Q23).
+        entry[2] += bool(included) and leaf.technical_repeat != SINGLE
     # A folder whose images are all excluded is not analysed, so it is not listed.
     return [
         BiologicalRepeat(condition, repeat, folder, images, technical)
@@ -255,7 +281,8 @@ def check_dataset(
         repeats across conditions; by default repeats with the same folder name
         are one group.
     excluded
-        Images left out by the user; they are not counted.
+        Images left out by the user; they are not counted, nor are the folders whose
+        images are all excluded (:meth:`BalanceTable.not_counted` says which).
 
     Returns
     -------
@@ -265,8 +292,16 @@ def check_dataset(
         and ``repeat_missing_conditions`` (a repeat group not found in every
         condition).
     """
+    excluded = set(excluded)
     repeats = biological_repeats(discovery, excluded)
-    balance = balance_table(repeats, repeat_groups)
+    leaves = [leaf for leaf in discovery.leaves if leaf.images]
+    balance = replace(
+        balance_table(repeats, repeat_groups),
+        excluded_images=sum(image in excluded for leaf in leaves for image in leaf.images),
+        excluded_folders=tuple(
+            sorted(leaf.relative_path for leaf in leaves if excluded.issuperset(leaf.images))
+        ),
+    )
     issues = [*_unbalanced_issues(balance), *_missing_issues(balance)]
     return DatasetReport(tuple(repeats), balance, tuple(issues))
 

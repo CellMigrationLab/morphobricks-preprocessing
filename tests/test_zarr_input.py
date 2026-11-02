@@ -77,19 +77,13 @@ def meta(path, shape, axes, kind="ome-zarr"):
             "CZYX",
         ),
         (["t", "c", "z", "y", "x"], 5, "TCZYX"),  # OME-NGFF 0.3 names only
-        (None, 5, "TCZYX"),  # 0.1 and 0.2: fixed order
         ([{"name": "angle", "type": "angle"}, {"name": "y"}, {"name": "x"}], 3, "QYX"),
         ([{"name": "frames", "type": "time"}, {"name": "y"}, {"name": "x"}], 3, "TYX"),
         ([{"name": "lambda", "type": "space"}, {"name": "y"}, {"name": "x"}], 3, "QYX"),
     ],
 )
 def test_ngff_axes_become_letters(axes, ndim, letters):
-    assert ngff_axes(axes, ndim) == letters
-
-
-def test_ngff_axes_without_metadata_need_five_dimensions():
-    with pytest.raises(NgffError):
-        ngff_axes(None, 3)
+    assert (ngff_axes(axes), len(letters)) == (letters, ndim)
 
 
 # Opening stores -------------------------------------------------------------------------
@@ -788,17 +782,6 @@ def test_scale_too_large_for_a_float_is_unknown_and_does_not_block(tmp_path):
     )
     sizes = open_ngff(path).physical_sizes
     assert (sizes.z, sizes.y, sizes.x) == (None, 0.5, 0.25)
-    assert preflight(root, tmp_path / "out").ok
-
-
-def test_unexpected_scale_metadata_does_not_block_the_image(tmp_path, monkeypatch):
-    def broken(*args, **kwargs):
-        raise RuntimeError("not understood")
-
-    monkeypatch.setattr(zarr_input, "ngff_physical_sizes", broken)
-    root = tmp_path / "exp"
-    path = write_ngff(root / "ctrl/a.ome.zarr", np.zeros((2, 8, 8), np.uint8), "zyx")
-    assert open_ngff(path).physical_sizes == PhysicalSizes()
     assert preflight(root, tmp_path / "out").ok
 
 

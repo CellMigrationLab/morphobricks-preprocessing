@@ -72,11 +72,15 @@ src/morphobricks_preprocessing/
                     for comparing), space_unit/to_micrometers (the shared unit rule, contract §16),
                     read_physical_sizes (OME / ImageJ TIFF metadata; also importable
                     ) and ngff_physical_sizes (OME-NGFF scale and axis units)
+  ngff_scale.py     read_scale: an OME-NGFF coordinateTransformations scale, checked; what
+                    is wrong with a malformed one (PhysicalSizes.invalid, issue #94)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
   design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
                     the folders on reruns, design_issues, read/write experiment_design.csv, load_design;
                     read_confirmed_design/ConfirmedDesign (the strict reader other bricks use, §16)
+  design_values.py  the design file's header check (no column twice or unnamed, #83), booleans,
+                    counts, dates and DesignFormatError (pure; re-exported by design.py)
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)
@@ -313,7 +317,7 @@ functions the tests use.
   "confirmed"`).
   `AxisReview.axis_error_files` lists them; mask sizes and planes are checked by the
   confirmed roles and skip those images (`run.mask_issues`). OME-Zarr images never have
-  these errors.
+  these errors: their roles are always those their OME-NGFF axes declare (next bullets).
 - **Position-like axes** (`R` tile, `M` mosaic, `J` column, `K` row) cannot get a role. If
   they hold more than one plane: `unsupported_axis` error.
 - **Missing axes:** a file lacking some of the mapping's axes (e.g. `ZYX` next to `ZCYX`) is
@@ -333,10 +337,18 @@ functions the tests use.
   (`axes._SUPERSEDED_METADATA_CODES`). Shared builder `metadata.channel_count_issues`.
 - **OME-Zarr axes:** translated from OME-NGFF metadata (`zarr_input.ngff_axes`: time -> T,
   channel -> C, space z/y/x -> Z/Y/X, anything else -> Q). The experiment mapping is
-  defined on the TIFF arrangement if there are TIFFs; OME-Zarr images with another order
-  are matched by role (`axes.declared_mapping`, `file_mapping_for`); a misfit is
-  `ome_zarr_axes_mismatch`. Use `file_mapping_for`, never `mapping.for_axes`, to get an
-  image's mapping.
+  defined on the TIFF arrangement if there are TIFFs; every OME-Zarr image, also one with
+  the mapping's letters, is matched by role (`axes.ome_zarr_mapping`, `declared_mapping`,
+  `file_mapping_for`; issue #72): a misfit, or confirmed roles that contradict the declared
+  axes (`ZYX` confirmed `TYX`), is `ome_zarr_axes_mismatch`. Use `file_mapping_for`, never
+  `mapping.for_axes`, to get an image's mapping. Missing axes are never guessed (issue
+  #73): the version is read first, and OME-NGFF 0.1/0.2 stores are refused whatever they
+  contain (re-save as 0.4 or later; owner, 2 November 2026); any other store without axes
+  is `unreadable_ome_zarr` too, with no confirmation path.
+- **OME-Zarr calibration (issue #94):** a malformed `coordinateTransformations`
+  (`ngff_scale.read_scale`) gives unknown sizes with the reason in
+  `PhysicalSizes.invalid`, named by the warning `invalid_physical_calibration`; never a
+  silent fallback, never a substituted size.
 
 ### Pixel types and binning (normalization contract §1.2.1–§1.2.2)
 
@@ -491,10 +503,12 @@ functions the tests use.
   get one whole-experiment question. Controls are recorded only.
 - **`experiment_design.csv`** (schema 1): one row per condition x biological-repeat folder,
   sorted; counts at confirmation; `confirmed_on` ISO date. Lenient reader (any-case
-  booleans, BOM); `DesignFormatError` otherwise, also for a repeat group that is not a
+  booleans, BOM); `DesignFormatError` otherwise, also for a header naming a column twice
+  or not at all (#83, both readers), a repeat group that is not a
   D-e identity or a `confirmed_on` that is not `YYYY-MM-DD` (naming line and column).
   Other bricks read it with the strict `read_confirmed_design` (contract §16,
-  question 40): nothing filled in, every group confirmed, SHA-256 of the bytes parsed.
+  question 40): nothing filled in, every group confirmed, SHA-256 of the bytes parsed;
+  `RunInputs.design()` uses it too (#83).
 - **Reruns:** `reconcile_design` keeps answers for known folders, reopens only groups that
   gain a folder, drops removed folders.
 - **Notebook** writes the file after every answer once the labels are confirmed; a
@@ -755,8 +769,10 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
    3 shows a "Before you run" checklist naming the first thing still to do, and Run stays
    disabled until it is empty.
 2. **Inputs reset what depends on them.** Changing the experiment folder resets the
-   preflight, the confirmations and the axis roles. Changing an axis role resets the
-   preview confirmation. Choosing another CSV clears the old statistics.
+   preflight, the confirmations and the axis roles. Changing the output folder reads the
+   experiment design from the new folder, or asks it again (#98); never carried over.
+   Changing an axis role resets the preview confirmation. Choosing another CSV clears the
+   old statistics.
 3. **Explain every choice live.** Each axis card shows its length, the suggested role and a
    dropdown with descriptive options ("Z - depth (focal planes)"). Under it, a sentence
    updates with the choice ("3 depth slices, numbered z = 0 to 2; each becomes its own

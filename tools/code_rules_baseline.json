@@ -1,6 +1,6 @@
 {
   "noqa": {
-    "ANN": 54,
+    "ANN": 53,
     "C901": 0,
     "PLR0913": 3,
     "PLR0915": 0
@@ -10,13 +10,12 @@
     "identical bodies: tests/test_axis_check.py:# plain, tests/test_header_axes.py:# plain": 0,
     "identical bodies: tests/test_cli.py:# bright_tree, tests/test_notebook_ui.py:# bright_tree": 0,
     "src/morphobricks_preprocessing/axis_review.py check_mapping: # executable lines (max #)": 72,
-    "src/morphobricks_preprocessing/axis_review.py review_axes: # executable lines (max #)": 106,
+    "src/morphobricks_preprocessing/axis_review.py review_axes: # executable lines (max #)": 67,
     "src/morphobricks_preprocessing/dataset.py _missing_issues: private function of # lines without a docstring": 32,
     "src/morphobricks_preprocessing/dataset.py _unbalanced_issues: private function of # lines without a docstring": 19,
     "src/morphobricks_preprocessing/design.py _check_strict_values: private function of # lines without a docstring": 19,
-    "src/morphobricks_preprocessing/design.py _count: private function of # lines without a docstring": 11,
     "src/morphobricks_preprocessing/design.py _parse_row: private function of # lines without a docstring": 36,
-    "src/morphobricks_preprocessing/design.py: # lines (max #)": 964,
+    "src/morphobricks_preprocessing/design.py: # lines (max #)": 926,
     "src/morphobricks_preprocessing/discovery.py _check_names: private function of # lines without a docstring": 14,
     "src/morphobricks_preprocessing/discovery.py finish: # executable lines (max #)": 145,
     "src/morphobricks_preprocessing/discovery.py: # lines (max #)": 610,
@@ -30,7 +29,7 @@
     "src/morphobricks_preprocessing/metadata.py: # lines (max #)": 756,
     "src/morphobricks_preprocessing/physical_sizes.py _imagej_sizes: private function of # lines without a docstring": 27,
     "src/morphobricks_preprocessing/physical_sizes.py _ome_sizes: private function of # lines without a docstring": 20,
-    "src/morphobricks_preprocessing/physical_sizes.py: # lines (max #)": 706,
+    "src/morphobricks_preprocessing/physical_sizes.py: # lines (max #)": 684,
     "src/morphobricks_preprocessing/planes.py _layout: private function of # lines without a docstring": 45,
     "src/morphobricks_preprocessing/planes.py _tiff_block_plane: private function of # lines without a docstring": 14,
     "src/morphobricks_preprocessing/planes.py _zarr_layout: private function of # lines without a docstring": 40,
@@ -43,10 +42,10 @@
     "tests/test_discovery.py: # lines (max #)": 826,
     "tests/test_masks.py: # lines (max #)": 612,
     "tests/test_metadata.py: # lines (max #)": 629,
-    "tests/test_notebook_ui.py: # lines (max #)": 1537,
+    "tests/test_notebook_ui.py: # lines (max #)": 1529,
     "tests/test_planes.py: # lines (max #)": 818,
     "tests/test_run.py: # lines (max #)": 982,
-    "tests/test_zarr_input.py: # lines (max #)": 869,
+    "tests/test_zarr_input.py: # lines (max #)": 852,
     "tests/zarr_tree.py write_ngff: # parameters (max #)": 12
   }
 }

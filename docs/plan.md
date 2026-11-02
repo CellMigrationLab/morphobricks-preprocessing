@@ -551,6 +551,12 @@ API, CLI). The notebook and CLI only call the API.
   compared at reuse; each header bound to its image's fingerprint
   (`preflight(bind_headers=True)`, `source_changed_during_check`); the copy's pixel type
   from that header; `parse_size` exact.
+- **Before the audit: experiment design identity and counts (issues #82, #83 and #98)**
+  *(this PR; questions 61, 62 and 63)*: technical-repeat folders whose images are all
+  excluded are not counted, and the balance text names them; every design reader refuses a
+  header naming a column twice or a column without a name, and `RunInputs.design()` reads
+  with `read_confirmed_design`; changing the notebook's output folder reloads the design
+  from the new folder and asks again.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;
@@ -1514,8 +1520,76 @@ Raised during review; to be decided before the milestones that need them:
     `--memory-limit` is parsed without floating point and must be a whole number of bytes
     above 0 (`1.5GiB` is accepted, `1.5` and `0.5B` are refused before anything is
     read).
-
-60. How are the one-to-one matches of `same_objects` counted (issue #67)?
+60. How are OME-Zarr axes and calibrations checked (issues #72, #73, #94, from the audit)?
+    *Decided (2 November 2026, design v0.4 §3: nothing guessed, nothing silent):*
+    (1) **Same letters, contradictory roles (#72)**: every OME-Zarr image is matched by the
+    roles its OME-NGFF axes declare, also when its letters are the mapping's
+    (`axes.ome_zarr_mapping`, in `review_axes` and `file_mapping_for`). A confirmed role
+    that is not the declared letter (`ZYX` confirmed `TYX` or `ZXY`, `QYX` confirmed `CYX`)
+    is the error `ome_zarr_axes_mismatch`, naming each image with its declared axes and
+    the confirmed roles. It is not one of the axis-check errors (`axes_contradict_header`
+    and others) because those offer conversion, and an OME-Zarr image is never converted;
+    the fix is to correct the roles. An axis of no known type is therefore never given a
+    role, in any arrangement.
+    (2) **Missing axes (#73)**, by the version the metadata states, read before the axes:
+    an OME-NGFF 0.1 or 0.2 store is `unreadable_ome_zarr` whatever it contains, with the
+    message to re-save it as OME-NGFF 0.4 or later: no spec-default `t, c, z, y, x` is
+    applied (owner, 2 November 2026; the PR had kept it for 5-D arrays). 0.3, 0.4 and 0.5
+    require `axes`, so a store without them is `unreadable_ome_zarr`; a store without
+    `axes` that states no version or another one is `unreadable_ome_zarr` too. Such an
+    image is refused, with no confirmation path, rather than offered for confirmation as a
+    plain stack (owner, 2 November 2026): an OME-Zarr image cannot be converted to a
+    named-axis copy, and the declared-role match refuses an axis of no known type. No new
+    `axes_from` value.
+    (3) **Malformed calibration (#94)**: a calibration given but unusable (transformations
+    not a list or of another type than scale, translation and identity, two scales, a
+    scale in a file or not one number per axis, a scale value of X, Y, Z or T that is not a
+    positive finite number) gives unknown sizes on those axes, with what is wrong in
+    `PhysicalSizes.invalid`, and the warning `invalid_physical_calibration` naming every
+    image (also when every image has it). A warning, not an error: the pixels are readable
+    and the image is uncalibrated, as design v0.4 §3 treats an image without a value
+    (owner, 2 November 2026: stays a warning). It disappears once every size the malformed
+    calibration leaves unknown is stated in `calibration.csv` (owner, 2 November 2026); a
+    time step cannot be stated there, so a lost time step of a time series stays named
+    (review finding: the PR dropped the warning when only X and Y were stated). Only
+    these metadata problems are caught: any other exception while reading the scale makes
+    the image unreadable instead of being hidden by a debug log.
+61. Which technical-repeat folders are counted (issue #82)?
+    *Decided (owner, 2 November 2026):* only those holding at least one image to analyse.
+    A technical-repeat folder whose images are all excluded is not counted in
+    `BiologicalRepeat.technical_repeat_count`, the balance table or the design's
+    `technical_repeat_count` (it was counted before). The balance table's text says what
+    was left out (`BalanceTable.not_counted()`: the excluded images and the folders whose
+    images are all excluded), in the CLI `check`, the notebook's consistency card and its
+    design card. A technical-repeat folder named `single` keeps question 23's meaning
+    (the level's value `single`, counted as no technical-repeat folder, like a missing
+    level): documented, not changed. Contract §11, §12; user guide §4.
+62. Which design file headers are read, and how does `RunInputs.design()` read the file
+    (issue #83)?
+    *Decided (owner, 2 November 2026):* a header that names a column twice, or has a
+    column without a name (empty or only whitespace), is refused by every design reader
+    (`read_experiment_design`, so `load_design`, the notebook, `check`, `run --design` and
+    the `design` command, and `read_confirmed_design`), with `DesignFormatError` naming
+    the column and both positions; the lenient reader kept the last of two columns before,
+    and a test asserted it. Names are compared ignoring case and outer whitespace (and,
+    from the review, invisible format characters such as a byte-order mark or zero-width
+    space inside the header, which made a second `condition` look new). Nothing
+    is rewritten on refusal. `RunInputs.design()` reads with `read_confirmed_design`
+    checked against the manifest's SHA-256 (it used the lenient reader). The header check
+    and the value parsers moved to `design_values` (pure); `DesignFormatError` is
+    re-exported from `design` unchanged. Contract §9.1, §12, §16; user guide §8.
+63. What happens to the experiment design when the notebook's output folder changes (issue
+    #98)?
+    *Decided (owner, 2 November 2026):* the design belongs to its output folder. Since
+    PP-10a a run reported the other folder's design as a design change but used it, so a
+    design (its confirmations and controls) confirmed for one output folder could be
+    written into another. Now changing the output folder reads the design from the new
+    folder (`load_design`, an unreadable file refused and kept), or asks the questions
+    again when it holds none; nothing is carried over and nothing is written until an
+    answer (the folder may still be being typed), and the design card says which. The run
+    is gated as before, so it runs only on the new folder's confirmed design. No copy
+    action: the user answers again, or copies the file. Contract §12; user guide §4.
+66. How are the one-to-one matches of `same_objects` counted (issue #67)?
     *Decided (2 November 2026, implemented for issue #67; the rule is the issue's
     acceptance): as a maximum matching of the child and parent objects of each plane whose
     intersection over union is at least `same_objects_iou`
@@ -1529,7 +1603,7 @@ Raised during review; to be decided before the milestones that need them:
     `parents_not_matched`, `children_over_iou_with_several_parents` and
     `parents_over_iou_with_several_children`; `mask_relationships.json` is report version 2.
     Contract §15.1.*
-61. Which axes do the size and plane-count warnings use (issue #74)?
+67. Which axes do the size and plane-count warnings use (issue #74)?
     *Decided (2 November 2026, implemented for issue #74): the confirmed roles, once they
     are confirmed. Before (`check`, preflight), `different_sizes` and
     `different_plane_counts` compare the axes each header names, and a plain stack is left
