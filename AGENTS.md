@@ -72,6 +72,8 @@ src/morphobricks_preprocessing/
                     for comparing), space_unit/to_micrometers (the shared unit rule, contract §16),
                     read_physical_sizes (OME / ImageJ TIFF metadata; also importable
                     ) and ngff_physical_sizes (OME-NGFF scale and axis units)
+  ngff_scale.py     read_scale: an OME-NGFF coordinateTransformations scale, checked; what
+                    is wrong with a malformed one (PhysicalSizes.invalid, issue #94)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
   design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
@@ -313,7 +315,7 @@ functions the tests use.
   "confirmed"`).
   `AxisReview.axis_error_files` lists them; mask sizes and planes are checked by the
   confirmed roles and skip those images (`run.mask_issues`). OME-Zarr images never have
-  these errors.
+  these errors: their roles are always those their OME-NGFF axes declare (next bullets).
 - **Position-like axes** (`R` tile, `M` mosaic, `J` column, `K` row) cannot get a role. If
   they hold more than one plane: `unsupported_axis` error.
 - **Missing axes:** a file lacking some of the mapping's axes (e.g. `ZYX` next to `ZCYX`) is
@@ -333,10 +335,18 @@ functions the tests use.
   (`axes._SUPERSEDED_METADATA_CODES`). Shared builder `metadata.channel_count_issues`.
 - **OME-Zarr axes:** translated from OME-NGFF metadata (`zarr_input.ngff_axes`: time -> T,
   channel -> C, space z/y/x -> Z/Y/X, anything else -> Q). The experiment mapping is
-  defined on the TIFF arrangement if there are TIFFs; OME-Zarr images with another order
-  are matched by role (`axes.declared_mapping`, `file_mapping_for`); a misfit is
-  `ome_zarr_axes_mismatch`. Use `file_mapping_for`, never `mapping.for_axes`, to get an
-  image's mapping.
+  defined on the TIFF arrangement if there are TIFFs; every OME-Zarr image, also one with
+  the mapping's letters, is matched by role (`axes.ome_zarr_mapping`, `declared_mapping`,
+  `file_mapping_for`; issue #72): a misfit, or confirmed roles that contradict the declared
+  axes (`ZYX` confirmed `TYX`), is `ome_zarr_axes_mismatch`. Use `file_mapping_for`, never
+  `mapping.for_axes`, to get an image's mapping. Missing axes are never guessed (issue
+  #73): the version is read first, and OME-NGFF 0.1/0.2 stores are refused whatever they
+  contain (re-save as 0.4 or later; owner, 2 November 2026); any other store without axes
+  is `unreadable_ome_zarr` too, with no confirmation path.
+- **OME-Zarr calibration (issue #94):** a malformed `coordinateTransformations`
+  (`ngff_scale.read_scale`) gives unknown sizes with the reason in
+  `PhysicalSizes.invalid`, named by the warning `invalid_physical_calibration`; never a
+  silent fallback, never a substituted size.
 
 ### Pixel types and binning (normalization contract §1.2.1–§1.2.2)
 

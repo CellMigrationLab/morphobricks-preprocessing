@@ -2,9 +2,11 @@
 
 Pixel sizes and z-steps that differ between the images (``different_pixel_sizes``), are known
 for only some of them (``missing_pixel_size``), or are given in a length unit that is not
-converted (``unsupported_pixel_size_unit``, decision D-a2). The checks run on the sizes an
-image is recorded with: its header's, or those stated in ``calibration.csv`` (design v0.4 §3,
-:mod:`.calibration`), so they check the resolved values. Moved from :mod:`.metadata` (PP-8).
+converted (``unsupported_pixel_size_unit``, decision D-a2), or come from a calibration the
+metadata give but that cannot be used (``invalid_physical_calibration``, issue #94). The
+checks run on the sizes an image is recorded with: its header's, or those stated in
+``calibration.csv`` (design v0.4 §3, :mod:`.calibration`), so they check the resolved values.
+Moved from :mod:`.metadata` (PP-8).
 """
 
 from __future__ import annotations
@@ -20,7 +22,12 @@ from .validation import ValidationIssue, agree, plural, warning
 if TYPE_CHECKING:
     from .metadata import TiffMetadata
 
-PIXEL_SIZE_CODES = ("different_pixel_sizes", "missing_pixel_size", "unsupported_pixel_size_unit")
+PIXEL_SIZE_CODES = (
+    "different_pixel_sizes",
+    "missing_pixel_size",
+    "unsupported_pixel_size_unit",
+    "invalid_physical_calibration",
+)
 """The codes of these checks; :func:`.run.preflight.preflight` gives them on resolved sizes."""
 
 
@@ -50,8 +57,8 @@ def pixel_size_issues(
     Returns
     -------
     list of ValidationIssue
-        Warnings only: ``different_pixel_sizes``, ``missing_pixel_size`` and
-        ``unsupported_pixel_size_unit``.
+        Warnings only: ``different_pixel_sizes``, ``missing_pixel_size``,
+        ``unsupported_pixel_size_unit`` and ``invalid_physical_calibration``.
     """
     if sizes is None:
         sizes = {f.relative_path: header_sizes(f.physical_sizes) for f in files}
@@ -65,6 +72,55 @@ def pixel_size_issues(
         *_different_issue(axes, by_role),
         *_missing_issue(axes, by_role),
         *_unit_issue(files, by_role),
+        *_invalid_issue(files, by_role),
+    ]
+
+
+def _lost_roles(f: TiffMetadata) -> tuple[str, ...]:
+    """Return the roles whose size an image's malformed calibration leaves unknown.
+
+    X and Y, and Z and T with more than one plane, that the header gives no size for; X and
+    Y when the problem concerns none of them (it is still named unless they are stated).
+    """
+    roles = ("X", "Y", *(role for role in ("Z", "T") if f.length(role) > 1))
+    lost = tuple(role for role in roles if not f.physical_sizes.known(role))
+    return lost or ("X", "Y")
+
+
+def _invalid_issue(
+    files: Sequence[TiffMetadata], by_role: Mapping[str, Mapping[str, RecordedSize]]
+) -> list[ValidationIssue]:
+    """Warn about calibrations the metadata give but that cannot be used (issue #94).
+
+    Such an image is uncalibrated on the axes concerned (never a substituted value); without
+    this warning it would look merely uncalibrated. Every image is named with what is wrong,
+    unless each axis the malformed calibration leaves without a size (:func:`_lost_roles`) is
+    stated in ``calibration.csv``. A time step cannot be stated there, so an image with
+    several time points whose time step is lost is always named.
+    """
+    found = {}
+    for f in files:
+        if not f.physical_sizes.invalid:
+            continue
+        recorded = by_role[f.relative_path]
+        if any(
+            role not in recorded or recorded[role].source in (None, HEADER)
+            for role in _lost_roles(f)
+        ):
+            found[f.relative_path] = f.physical_sizes.invalid
+    if not found:
+        return []
+    details = "; ".join(f"{path}: {problem}" for path, problem in found.items())
+    return [
+        warning(
+            "invalid_physical_calibration",
+            f"{plural(len(found), 'image')} give a calibration in their metadata that cannot "
+            f"be used ({details}). The sizes it gives are not used: these images are "
+            "uncalibrated on those axes, and no size is substituted.",
+            list(found),
+            "Correct the coordinateTransformations in these images' OME-NGFF metadata, or "
+            "state their pixel sizes in calibration.csv (the 'calibrate' command).",
+        )
     ]
 
 
