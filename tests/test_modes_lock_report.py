@@ -199,6 +199,25 @@ def test_recorded_plain_stack_confirmations_cover_only_the_files_as_they_were(tm
     assert issue.paths == ("ctrl/b.tif",)
 
 
+def test_recorded_plain_stack_confirmations_do_not_follow_another_experiment_folder(tmp_path):
+    root = tmp_path / "exp"
+    write_plain(root / "ctrl/a.tif", stack())
+    first = run_experiment(root, AxisMapping("IYX", "TYX"), output_folder=tmp_path / "out")
+    assert first.written
+    # Same relative path, size and modification time, but not the file that was confirmed.
+    other = root.rename(tmp_path / "other")
+    result = run_experiment(other, output_folder=first.output_folder)
+    assert not result.written
+    (issue,) = [i for i in result.issues if i.code == "plain_stack_not_confirmed"]
+    assert issue.paths == ("ctrl/a.tif",)
+    assert [c.name for c in result.input_changes] == ["experiment_root"]
+    assert "confirmed again" in result.input_changes[0].effect
+    # Confirmed again for the files of the new folder, it runs.
+    assert run_experiment(
+        other, AxisMapping("IYX", "TYX"), output_folder=first.output_folder
+    ).written
+
+
 def test_the_recorded_design_is_reused_and_new_unconfirmed_repeats_stop_a_restart(tmp_path):
     clean = make_clean_run(tmp_path, axes="YX", shape=(16, 20), design=True)
     again = run_experiment(clean.experiment, output_folder=clean.output)

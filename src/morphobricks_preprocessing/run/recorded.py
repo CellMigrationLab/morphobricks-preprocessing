@@ -165,7 +165,7 @@ def resolve_inputs(given: GivenInputs, previous: RunManifest | None) -> Resolved
     mask_axes = {**recorded_mask_axes(before), **dict(given.mask_axes or {})}
     resolved = ResolvedInputs(
         experiment_root=given.experiment_root or Path(before.experiment_root),
-        mapping=given.mapping if given.mapping is not None else recorded_confirmation(before),
+        mapping=_mapping(given, before),
         exclude=settings.exclude if exclude is None else exclude,
         masks_folder=masks,
         mask_axes=mask_axes,
@@ -183,7 +183,7 @@ def recorded_confirmation(manifest: RunManifest) -> ConfirmedAxes:
     """Return the recorded mapping, confirmed for the plain stacks the earlier run read.
 
     A plain stack's confirmation covers it only as it was then (its recorded
-    fingerprint); a header-named file needs none.
+    fingerprint), in the recorded experiment folder; a header-named file needs none.
 
     Parameters
     ----------
@@ -200,6 +200,28 @@ def recorded_confirmation(manifest: RunManifest) -> ConfirmedAxes:
         if entry.axes_from == "confirmed"
     }
     return ConfirmedAxes(manifest.mapping, files)
+
+
+def _mapping(given: GivenInputs, before: RunManifest) -> AxisMapping | ConfirmedAxes:
+    """Return the mapping given, else the recorded one for the earlier run's own files.
+
+    A plain stack's confirmation covers the files it was given for: in another experiment
+    folder they are other files, so none of them is covered (each is confirmed again).
+    """
+    if given.mapping is not None:
+        return given.mapping
+    recorded = recorded_confirmation(before)
+    if _moved(given, before):
+        return ConfirmedAxes(recorded.mapping, {})
+    return recorded
+
+
+def _moved(given: GivenInputs, before: RunManifest) -> bool:
+    """Return True when the experiment folder given is not the one the earlier run read."""
+    root = given.experiment_root
+    return root is not None and _comparable(root, "experiment_root") != _comparable(
+        before.experiment_root, "experiment_root"
+    )
 
 
 def recorded_mask_axes(manifest: RunManifest) -> dict[str, str]:
@@ -268,7 +290,10 @@ def _with_changes(
     return replace(resolved, changes=changes)
 
 
-_root_effect = "every row is recomputed (the images are read from the new place)"
+_root_effect = (
+    "every row is recomputed (the images are read from the new place); plain stacks must be "
+    "confirmed again"
+)
 _exclude_effect = (
     "the rows of newly excluded images are removed; images no longer excluded are read"
 )
