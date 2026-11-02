@@ -1,6 +1,8 @@
 """What a run leaves in its output folder: helpers for the tests (design v0.4 §1, §4)."""
 
 import json
+import subprocess
+import sys
 
 from morphobricks_preprocessing.discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
 
@@ -28,3 +30,10 @@ def without_report(files):
 def outputs(folder):
     """Return ``{name: bytes}`` of a folder's files, the report files left out."""
     return without_report({path.name: path.read_bytes() for path in folder.iterdir()})
+
+
+def finished_pid():
+    """Return the process ID of a process that has finished (a stale lock's holder)."""
+    process = subprocess.Popen([sys.executable, "-c", "pass"])
+    process.wait()
+    return process.pid

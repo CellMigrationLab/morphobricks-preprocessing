@@ -23,6 +23,7 @@ from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.design import read_experiment_design  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 from morphobricks_preprocessing.run import LOCK_FILENAME  # noqa: E402
+from run_files import check_outputs, finished_pid  # noqa: E402
 from tiff_tree import write_data  # noqa: E402
 
 HEADER = {"PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5, "PhysicalSizeZ": 0.43}
@@ -77,27 +78,13 @@ def hold_lock(output, pid, host=None):
     (output / LOCK_FILENAME).write_text(json.dumps(holder), encoding="utf-8")
 
 
-def stopped_pid():
-    """Return a process ID no process on this computer has."""
-    pid = 4_000_000
-    while True:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return pid
-        except (PermissionError, OSError):
-            pass
-        pid += 1
-
-
 # 4. The check writes its report and the design template, as the command line's check -----
 
 
 def test_the_check_writes_its_report_and_the_design_template(experiment):
     nb = checked(experiment)
     output = output_of(experiment)
-    assert (output / "discovery_report.json").is_file()
-    assert (output / "discovery_report.txt").is_file()
+    assert check_outputs(output)  # the report and the design template, nothing else
     assert "The check wrote its report" in nb.check_report.where.value
     assert "discovery_report.txt" in nb.check_report.where.value
     assert ui.is_visible(nb.check_report.box)
@@ -311,7 +298,7 @@ def test_a_stopped_run_says_it_wrote_its_report(experiment):
 def test_a_stale_lock_is_removed_only_on_the_button(experiment):
     nb = ready(experiment)
     output = output_of(experiment)
-    pid = stopped_pid()
+    pid = finished_pid()
     hold_lock(output, pid)
     result = nb.run()
     assert not result.written and not result.report_written
@@ -328,6 +315,7 @@ def test_a_stale_lock_is_removed_only_on_the_button(experiment):
     assert not ui.is_visible(nb.run_lock.card)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="only POSIX can tell a process runs")
 def test_the_lock_of_a_process_running_here_is_kept(experiment):
     nb = checked(experiment)
     output = output_of(experiment)
