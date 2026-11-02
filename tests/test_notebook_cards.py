@@ -176,6 +176,35 @@ def test_a_design_answer_is_not_saved_while_another_run_holds_the_lock(experimen
     assert ui.is_visible(nb.folder_lock.card)
 
 
+def test_a_design_answer_is_not_saved_in_an_output_folder_inside_the_masks(experiment, monkeypatch):
+    # A run recorded a masks folder holding the output folder (before the folder rules):
+    # the design card shows the refusal, as the calibration card does, and writes nothing.
+    from morphobricks_preprocessing.run import output_guard
+
+    nb = checked(experiment)
+    output = output_of(experiment)
+    nb.labels_confirmed.button.click()
+    before = (output / "experiment_design.csv").read_bytes()
+    monkeypatch.setattr(output_guard, "recorded_masks_of", lambda folder: output)
+    nb.group_confirmations["rep1"].button.click()
+    assert (output / "experiment_design.csv").read_bytes() == before
+    assert "Not saved." in nb.design_status.value
+    assert "inside the masks folder" in nb.design_status.value
+
+
+def test_the_check_writes_nothing_in_an_output_folder_inside_the_recorded_masks(
+    experiment, monkeypatch
+):
+    from morphobricks_preprocessing.run import output_guard
+
+    monkeypatch.setattr(output_guard, "recorded_masks_of", lambda folder: output_of(experiment))
+    nb = checked(experiment)
+    assert not output_of(experiment).exists()
+    assert "The check wrote nothing." in nb.check_report.where.value
+    assert "inside the masks folder" in nb.check_report.where.value
+    assert not ui.is_visible(nb.folder_lock.card)
+
+
 def test_a_design_that_cannot_be_saved_reaches_the_technical_details(experiment, monkeypatch):
     from morphobricks_preprocessing import notebook_design
 

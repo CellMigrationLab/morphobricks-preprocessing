@@ -160,7 +160,10 @@ To change a label, rename the folder and check again.
 ### Masks (optional)
 
 If you already have masks (segmentations of cells, nuclei, nucleoli, ...), keep them in a
-**masks folder** next to the experiment folder, not inside it. Make one folder per kind of
+**masks folder** next to the experiment folder, not inside it, and keep the experiment, the
+named-axis copies (`convert`) and the output folder out of the masks folder: everything in it
+is read as masks, so these are refused (`experiment_inside_masks`, `copies_inside_masks`,
+`output_inside_masks`). Make one folder per kind of
 mask, named as you like (`Cells`, `Nuclei`, ...), and inside each the same folders as the
 experiment, with one mask per image under the image's name:
 
@@ -759,7 +762,9 @@ whose metadata name your roles (Y and X are written rows then columns), every ot
 copied as it is. The originals are only read. Each plane of a copy holds exactly the pixel
 values preprocessing reads from the original with your roles: same pixel type, nothing
 rescaled. Large planes are read and written in blocks within `--memory-limit`. Masks are
-never converted: keep using your masks folder.
+never converted: keep using your masks folder, and keep the copies out of it
+(`copy_folder_overlaps_masks`; give `--masks` if your runs' masks folder is not the one
+recorded in the default output folder).
 
 Pixel sizes follow the roles. An axis you give another role than its metadata gets no size
 in the copy: after a Y/X swap the copy has no X or Y pixel size (the metadata's X size
@@ -808,7 +813,8 @@ copies (optional)** card appears under it, calling the same functions as the com
    axes, takes that answer back. Nothing is taken from the header.
 2. **The folder for the copies** (required, no default): paste it or use **Browse…** (on
    Google Colab, **Copy path** in the **Files** panel). It is checked with the command's rule
-   (`copy_folder_overlaps_experiment`, `copy_folder_not_a_folder`).
+   (`copy_folder_overlaps_experiment`, `copy_folder_overlaps_masks` against the masks
+   folder of step 1 or of the run in the output folder, `copy_folder_not_a_folder`).
 3. **What will happen**, from the command's planning, reading headers only: the images
    written as OME-TIFF (with their axis code) and those copied as they are (with `excluded`),
    the space needed and the free space. Any error that would stop the conversion is shown
@@ -996,6 +1002,7 @@ continues.
 | `axes_not_confirmed` | Error | No axis roles were given and the output folder holds no earlier run that records them. Confirm the roles (`--axes`). |
 | `output_locked` | Error | Another run is using the output folder; it is named with its computer, process and start time. Wait for it to finish; if it was stopped or the computer restarted, remove its lock (`--remove-stale-lock`). Nothing was written. |
 | `copy_folder_overlaps_experiment` | Error | `convert`: the folder for the copies is the experiment folder, inside it, or holds it. Choose a new folder outside the experiment. |
+| `copy_folder_overlaps_masks` | Error | `convert`: the folder for the copies is the masks folder, inside it, or holds it; copies there would be read as masks. Choose a folder outside the masks folder. |
 | `copy_folder_not_a_folder` | Error | `convert`: the path given with `--to` is a file. Choose a folder. |
 | `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. |
 | `copy_differs` | Error | `convert`: images in the folder of copies differ from the copies this conversion would write (an original changed, other roles, a copy changed, an image no longer in the experiment), or the folder holds copies of another experiment. Nothing is overwritten; convert into a new folder, or remove those copies first. |
@@ -1043,6 +1050,8 @@ continues.
 | `excluded_images`, `excluded_path_not_found` | Warning | Images excluded as requested, or an excluded path that matches no image. |
 | `masks_folder_not_found` | Error | The masks folder does not exist. Select the folder that holds one folder per kind of mask. |
 | `output_inside_masks` | Error | The output folder is inside the masks folder, where the run's files would be read as masks. Choose another output folder. |
+| `experiment_inside_masks` | Error | The experiment folder is inside the masks folder, where its images would be read as masks. Select the folder that holds only the masks, next to the experiment folder. |
+| `copies_inside_masks` | Error | The masks folder holds named-axis copies (a conversion record), which would be read as masks. Move the copies out of the masks folder. |
 | `masks_inside_experiment` | Error | The masks folder is inside the experiment folder, where its folders would be read as conditions and repeats. Move it next to the experiment folder. |
 | `mask_names_differ_in_case` | Error | Two kinds of mask have names that differ only in upper/lower case. Rename one. |
 | `duplicate_mask` | Error | An image has two masks of one kind (two extensions, or a file and an OME-Zarr label image of the same name). Keep one. |

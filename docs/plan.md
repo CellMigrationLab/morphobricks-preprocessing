@@ -1778,7 +1778,29 @@ Raised during review; to be decided before the milestones that need them:
     time), metadata only as design v0.4 §1 decides; content hashing stays the owner's
     call. (5) **`copy_changed_after_conversion`** is an error that stops the run before it
     writes (owner, 2 November 2026): the bricks would refuse the run anyway.
-70. Which inputs does the notebook start from when the output folder holds an earlier run
+70. Which folders may hold which: the experiment, the masks folder, the named-axis copies and
+    the output folder (audit of 3 November 2026, B1, I1 and m8)? *Decided (3 November 2026,
+    audit fixes; contract §15, §17):* everything in the masks folder is read as masks, so
+    it may hold none of the others: an experiment inside it is `experiment_inside_masks`, a
+    conversion record anywhere in its tree (OME-Zarr stores not entered) is
+    `copies_inside_masks`, an output folder inside it is `output_inside_masks`, and a
+    `convert` folder inside it or holding it is `copy_folder_overlaps_masks` (the masks
+    folder given, `--masks`/`masks_folder=`, else the one recorded by the run in the
+    default output folder or, in the notebook, step 1's; when `convert` cannot know it, the
+    run refuses the copies). Every command that writes into the output folder (`check`,
+    `run`, `masks`, `design`, `calibrate`) checks it against the masks folder, given or
+    recorded, before it creates the folder, takes its lock or writes its report; `design`
+    and `calibrate` raise `OutputInsideMasksError`. `RunInputs.open` refuses a recorded run
+    that breaks these rules. Paths are compared resolved, with the links' containment
+    rule, and by device and inode for the folders that exist (a folder spelled in another
+    case on a file system that ignores case). An output folder that holds both the experiment and the masks folder (their
+    parent, m8) is **allowed and documented**, not refused: the brick writes only its named
+    files (and its hidden `.publish`/staging folders) at the output folder's top level, the
+    experiment and masks walks never enter the output folder's other contents, and
+    `RunInputs.open` reads the outputs by name and SHA-256, so no output is read as an
+    input. A brick that writes its own folders into the output folder must not name one
+    like the experiment or masks folder.
+71. Which inputs does the notebook start from when the output folder holds an earlier run
     (audit I4)? *Decided (audit I4, 2 November 2026):* those the run would keep, worked out
     by the run's own rule (`run.planned.recorded_inputs`, i.e. `resolve_inputs` given
     nothing): the exclusions, the histogram settings (with `min_central_bins`, which has no

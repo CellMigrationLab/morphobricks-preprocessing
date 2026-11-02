@@ -30,6 +30,17 @@ def overlap_issue(root: Path, dest: Path) -> ValidationIssue:
     )
 
 
+def masks_overlap_issue(dest: Path) -> ValidationIssue:
+    """Refuse a copy tree inside the masks folder (read as masks there) or holding it."""
+    return error(
+        "copy_folder_overlaps_masks",
+        "The folder for the named-axis copies is the masks folder, inside it, or holds it. "
+        "Copies inside the masks folder would be read as masks.",
+        [dest.as_posix()],
+        "Choose a new folder outside the masks folder, next to the experiment folder.",
+    )
+
+
 def not_a_folder_issue(dest: Path) -> ValidationIssue:
     """Refuse a path for the copies that is a file."""
     return error(
