@@ -322,8 +322,8 @@ row (follow-up P3b, normalization plan N43).
 | `unsupported_pixel_size_unit` | Warning | An image's metadata give a pixel size or z-step (OME `PhysicalSize{X,Y,Z}`, ImageJ resolution or `spacing`, OME-Zarr level-0 scale) in a length unit that is not one of decision D-a2 (§16), for example OME `in` or ImageJ `inch`. The size is not converted and the axis is treated as uncalibrated (as before); the warning names each image, its axes and the unit as written, so the missing calibration is never silent. A unit without a size, and a plain TIFF's resolution tags (decision D-c), are not reported. The run is not refused. |
 | `invalid_physical_calibration` | Warning | An image's metadata give a calibration that cannot be used (issue #94): OME-Zarr `coordinateTransformations` that are not a list or of an unsupported type, more than one scale, a scale stored in a separate file or not one number per axis, or a scale value of X, Y, Z or T that is not a positive finite number; or, from any TIFF or OME-Zarr metadata, a size that is not a positive finite length in micrometres once converted (issue #93: `1e308 m`, `1e-320 pm`); or a size of OME-TIFF (`PhysicalSizeX/Y/Z`, `TimeIncrement`) or ImageJ metadata (`spacing`, `finterval` and the resolution tags, with a unit) that is itself not a positive finite number (`inf`, `NaN`, zero, negative or not a number; review of #133, before silently unknown). The message names each image and what is wrong, with the axis and value. Its sizes are unknown on those axes (never a substituted value) and recorded as uncalibrated; the warning is in the `check` and `run` issues and the report (`discovery_report.json`). An image is not named once every size the malformed calibration leaves unknown (X and Y, and Z or T with more than one plane) is stated in `calibration.csv`; a time step cannot be stated there, so a lost time step of a time series is always named. A calibration that is not given (no transformations, or no scale) is not reported. The run is not refused. |
 | `different_channel_counts` | Error | The number of channels differs between images: the `C` dimension, or the RGB samples `S` when there is no `C`; once the axis roles are confirmed, the length of the C axis (1 without one), which replaces the header's count. The images not having the most common number are listed, with each number's image count. Every image of an experiment must have the same channels: split the others into another experiment or exclude them. |
-| `different_plane_counts` | Warning | The number of depth slices (`Z`), time points (`T`) or planes along any other dimension except X, Y, C and S differs between images. A missing dimension counts as 1. Channels are compared by `different_channel_counts`. |
-| `different_sizes` | Warning | The image width or height differs between images (TIFF and OME-Zarr). The other dimensions are compared by `different_plane_counts`. |
+| `different_plane_counts` | Warning | The number of depth slices (`Z`), time points (`T`) or planes along any other dimension except X, Y, C and S differs between images. A missing dimension counts as 1. Channels are compared by `different_channel_counts`. Before the axis roles are confirmed (`check`, preflight) the axes each header names are compared, and a plain stack (its header names no axes, §2) is left out; once they are confirmed (`run`, the notebook's run, `AxisReview.combined_issues`) each image's depth slices and time points under its confirmed roles are compared instead, and the header version is dropped. An image whose confirmed roles contradict its header (an axis error, never read) is compared by its header. Before issue #74 a plain stack was compared by its header letters, so a plain `QYX` stack confirmed as `YXC` gave "planes along Q". |
+| `different_sizes` | Warning | The image width or height differs between images (TIFF and OME-Zarr). The other dimensions are compared by `different_plane_counts`. As for `different_plane_counts`, the header's Y and X before the roles are confirmed (a plain stack left out) and the confirmed Y and X after (issue #74: before, a plain `QYX` stack of (Y, X, C) arrays confirmed as `YXC` was compared by its X and channels, and a real difference in height was missed). |
 
 | Rule | Detail |
 |---|---|
@@ -424,7 +424,7 @@ masks/                         masks folder, outside the experiment folder
 | Warnings | `mask_missing` (images without a mask of a type that other images have: their objects of that type cannot be measured), `mask_without_image` (files matching no image of the experiment), `mask_of_excluded_image` (masks of excluded images, not used), `mask_outside_type_folder` (files directly in the masks folder that are not TIFF masks). |
 | Run | `run_experiment(..., masks_folder=..., mask_axes=...)` stops on a mask error and records the masks in the manifest's `masks` key (§9). Without masks, the run and its outputs are unchanged. |
 
-### 15.1 The mask step (`mask_relationships.json`, report version 1)
+### 15.1 The mask step (`mask_relationships.json`, report version 2)
 
 The optional mask step reads every image's masks, one image at a time, and describes each
 mask type and every ordered pair of types over the whole experiment. Pieces are counted with
@@ -453,7 +453,7 @@ Each child object's parent is the parent object sharing most of its pixels.
 
 | Relation of child to parent | Rule (default thresholds; the values used are written in the report) |
 |---|---|
-| `same_objects` | At least 90% of the children and 90% of the parents are matched one to one at an intersection over union of at least 0.5: two segmentations of the same objects. |
+| `same_objects` | At least 90% of the children and 90% of the parents are matched one to one at an intersection over union of at least 0.5: two segmentations of the same objects. The matches are a maximum matching of the pairs at or above the threshold, in each plane: each object is matched at most once, and as many objects as possible are matched. Two children that each cover half of one parent are one match, not two (issue #67; before report version 2 every object with any partner at the threshold counted as matched). |
 | `grouped_by` | The child is `grouped`, at least 90% of its objects are inside as below, and at least 99% of its pixels carry the label of the parent object under them. |
 | `inside` | At least 90% of the child objects have at least half of their pixels in one parent object, and that parent is larger than the child for at least 90% of them. |
 | `none` | Otherwise. |
@@ -465,7 +465,9 @@ Each child object's parent is the parent object sharing most of its pixels.
 | `split_between_parents`, `outside_parents` | Children touching parents but with less than half of their pixels in any one; children touching no parent. |
 | `parents_with_0_children`, `parents_with_1_child`, `parents_with_2_children`, `parents_with_3_or_more_children` | How many children each parent holds (two nuclei in one cell counts as 2). |
 | `child_pixels`, `child_pixels_with_parent_label` | Child pixels; those whose label equals the parent label under them. |
-| `children_matched_one_to_one`, `parents_matched_one_to_one` | Objects with a partner at an intersection over union of at least 0.5. |
+| `children_matched_one_to_one`, `parents_matched_one_to_one` | Objects matched one to one (the maximum matching above, at an intersection over union of at least 0.5); the two counts are equal. The number of matches does not depend on which of several equally large matchings is found, so it is deterministic. |
+| `children_not_matched`, `parents_not_matched` | Objects of each type left without a match. |
+| `children_over_iou_with_several_parents`, `parents_over_iou_with_several_children` | Objects with two or more partners at or above the threshold: a split or merged segmentation. Above 0.5 an object can overlap only one partner that much, so these are 0 at a threshold above 0.5. |
 
 **Thresholds.** The numbers above are defaults (`DEFAULT_THRESHOLDS`), and each may be
 changed: `inside_pixel_share` (0.5), `inside_object_share` (0.9), `parent_larger_share`
@@ -486,7 +488,7 @@ The report is UTF-8 JSON (two-space indent, LF), written atomically to the outpu
 
 | Key | Meaning |
 |---|---|
-| `report_version` | `1`. |
+| `report_version` | `2` (since issue #67: the one-to-one matches are a matching, and the four counts of unmatched and several-partner objects were added). |
 | `thresholds` | The thresholds used, all seven. |
 | `images` | Images scanned (every image with at least one mask). |
 | `masks` | Per mask type: `kind`, `images`, `objects` (labels over all images) and `median_pieces_per_label`. |
