@@ -222,3 +222,17 @@ def test_a_link_back_inside_an_ome_zarr_store_is_a_loop(tree):
     assert _issue(found.issues, "link_loop").paths == (
         f"ctrl/rep1/z.ome.zarr/0/again -> {store.resolve()}",
     )
+
+
+def test_a_masks_folder_given_through_a_link_keeps_its_links_inside(clean, tmp_path):
+    # The masks folder as RunInputs gives it may not be resolved: links are held to its real path.
+    from morphobricks_preprocessing.masks.files import _folder_masks
+
+    (clean.masks / "Cells/drug").rename(clean.masks / ".drug")
+    (clean.masks / "Cells/drug").symlink_to(clean.masks / ".drug", target_is_directory=True)
+    alias = tmp_path / "alias"
+    alias.symlink_to(clean.masks, target_is_directory=True)
+    discovery = discover_experiment(clean.experiment)
+    found, issues = _folder_masks(alias, discovery, discovery.images)
+    assert not [issue for issue in issues if issue.is_error]
+    assert "Cells/drug/rep1/a.tif" in {mask.path for mask in found}

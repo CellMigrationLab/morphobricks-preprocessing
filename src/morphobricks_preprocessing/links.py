@@ -79,16 +79,17 @@ class LinkGuard:
     Parameters
     ----------
     root
-        The folder walked, resolved.
+        The folder walked, as the walk names it; links are held to its real path.
     what
         What it is, for the messages (``"experiment folder"``, ``"masks folder"``).
     """
 
     def __init__(self, root: Path, what: str) -> None:
         self.root = root
+        self.real_root = Path(os.path.realpath(root))
         self.what = what
         # The real paths of the folders above each folder entered, the folder's own last.
-        self._stacks: dict[Path, tuple[Path, ...]] = {root: (root,)}
+        self._stacks: dict[Path, tuple[Path, ...]] = {root: (self.real_root,)}
         self._owners: dict[Path, str] = {}
         self.outside: list[str] = []
         self.loops: list[str] = []
@@ -110,7 +111,7 @@ class LinkGuard:
         else:
             target = Path(os.path.realpath(entry.path))
             shown = f"{self.relative(Path(entry.path))} -> {target}"
-            if not is_inside(target, self.root):
+            if not is_inside(target, self.real_root):
                 self.outside.append(shown)
                 return None
             if target in stack:
