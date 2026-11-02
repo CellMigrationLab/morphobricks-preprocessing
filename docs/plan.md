@@ -1469,17 +1469,21 @@ Raised during review; to be decided before the milestones that need them:
     disappeared, as for `calibration_sha256` and the design's SHA-256.
     (15) **Notebook card**: the next PR, PP-11b (§10); the axis-check card names the
     command meanwhile.
-60. Are symbolic links in the experiment or masks folder followed (issue #81)?
-    *Decided (owner, 2 November 2026): contain.* A link (file or folder; on Windows also a
-    directory junction) is followed only when its real path stays inside the experiment
-    folder, or the masks folder for masks, both resolved; a link that leaves it is refused
+60. Are symbolic links in the experiment or masks folder followed (issue #81)? *Decided
+    (owner, 2 November 2026): contain.* A link (file or folder; on Windows also a directory
+    junction) is followed only when its real path stays inside the experiment folder, or the
+    masks folder for masks, both resolved; a link that leaves it is refused
     (`link_outside_folder`, naming each link and its target, a broken link too). One file
-    reached by two paths is refused, naming both (`linked_twice`); a link back to a folder
-    on its own path is `link_loop`. The links inside an OME-Zarr store are held to the same
-    rule (reading and copying a store follow them). One helper (`links.LinkGuard`) walks
-    the experiment and the masks folder for discovery, the masks pairing, the unrecorded-files
-    check of `RunInputs` (raised as `RunInputsError`) and, through discovery, `convert`.
-    Contract §1, §8.
+    reached by two paths is refused, naming both (`linked_twice`); hard links too (the same
+    device and inode, from the one `stat` taken per image or mask; owner, 2 November 2026,
+    in review). A link back to a folder on its own path is `link_loop`. A broken link that
+    stays inside is reported by its reader, never skipped (review: masks skipped it). The
+    links inside an OME-Zarr store are held to the same rule (reading and copying a store
+    follow them); the cost, about 84 ms per 20,000 store files on each discovery, is
+    accepted (owner, 2 November 2026). One helper (`links.LinkGuard`) walks the experiment
+    and the masks folder for discovery, the masks pairing, the unrecorded-files check of
+    `RunInputs` (raised as `RunInputsError`) and, through discovery, `convert`. Contract §1,
+    §8.
 61. Where may the command line's `--log` write (issue #99)?
     *Decided (owner, 2 November 2026):* the log path is checked first and the file opened
     only after the other arguments are checked. It is refused inside the experiment or masks
@@ -1487,4 +1491,7 @@ Raised during review; to be decided before the milestones that need them:
     as or inside a protected output artefact (`plane_histograms.csv`, `run_manifest.json`,
     the reports, the design, `calibration.csv`, `mask_relationships.json`, the lock, the
     conversion record, the staging folders). Any other name in the output folder is fine.
+    In review: folders are also compared by device and inode and output names ignoring
+    case (macOS and Windows), and an existing file with a second name (a hard link) is
+    refused.
     Contract §8; user guide §5.

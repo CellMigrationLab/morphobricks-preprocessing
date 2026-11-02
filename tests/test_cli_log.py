@@ -4,6 +4,8 @@ Before the fix the log was opened, created or appended to, before anything was c
 the experiment folder, over a source image, or over an output file of the run.
 """
 
+import os
+
 import pytest
 
 from morphobricks_preprocessing.cli import main
@@ -134,3 +136,32 @@ def test_a_log_in_a_missing_folder_or_naming_a_folder_is_refused(clean, capsys, 
     for log in (tmp_path / "missing/run.log", tmp_path):
         assert main(_run(clean, "--log", str(log))) == 1
         assert "was not opened" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("command", [_run, _masks])
+def test_a_log_hard_linked_to_a_source_image_leaves_it_unchanged(clean, capsys, tmp_path, command):
+    image = clean.experiment / "ctrl/rep1/a.ome.tif"
+    before = image.read_bytes()
+    log = tmp_path / "elsewhere.log"
+    try:
+        os.link(image, log)
+    except (OSError, NotImplementedError):
+        pytest.skip("hard links cannot be made here")
+    assert main(command(clean, "--log", str(log))) == 1
+    assert "hard link" in _refused(capsys, image, before)
+
+
+def test_an_output_named_in_another_case_is_refused(clean, capsys):
+    before = (clean.output / "run_manifest.json").read_bytes()
+    assert main(_run(clean, "--log", str(clean.output / "Run_Manifest.JSON"))) == 1
+    _refused(capsys, clean.output / "run_manifest.json", before)
+
+
+def test_the_experiment_folder_in_another_case_is_refused(clean, capsys):
+    # On a file system that ignores case (macOS, Windows) it is the same folder.
+    other = clean.experiment.with_name(clean.experiment.name.swapcase())
+    if not other.is_dir():
+        pytest.skip("this file system tells names apart by case")
+    log = other / "notes.txt"
+    assert main(_run(clean, "--log", str(log))) == 1
+    assert "inside the experiment folder" in _refused(capsys, clean.experiment / "notes.txt")

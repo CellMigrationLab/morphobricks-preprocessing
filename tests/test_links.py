@@ -236,3 +236,58 @@ def test_a_masks_folder_given_through_a_link_keeps_its_links_inside(clean, tmp_p
     found, issues = _folder_masks(alias, discovery, discovery.images)
     assert not [issue for issue in issues if issue.is_error]
     assert "Cells/drug/rep1/a.tif" in {mask.path for mask in found}
+
+
+def _can_hard_link(folder):
+    (folder / "probe-source").write_bytes(b"")
+    try:
+        os.link(folder / "probe-source", folder / "probe-link")
+    except (OSError, NotImplementedError):
+        return False
+    finally:
+        for name in ("probe-source", "probe-link"):
+            (folder / name).unlink(missing_ok=True)
+    return True
+
+
+def test_a_hard_link_to_an_image_is_refused_naming_both(tmp_path):
+    # Owner, 2 November 2026: one device and inode reached by two names is one file.
+    if not _can_hard_link(tmp_path):
+        pytest.skip("hard links cannot be made here")
+    root = tmp_path / "exp"
+    for rel in ("ctrl/rep1/a.tif", "drug/rep1/a.tif"):
+        write_data(root / rel, np.zeros((4, 4), np.uint8), "YX")
+    os.link(root / "ctrl/rep1/a.tif", root / "drug/rep1/b.tif")
+    found = discover_experiment(root)
+    assert _codes(found.issues) == ["linked_twice"]
+    assert _issue(found.issues, "linked_twice").paths == (
+        "drug/rep1/b.tif (the same file as ctrl/rep1/a.tif)",
+    )
+    result = run_experiment(root, prefill_mapping("YX"), output_folder=tmp_path / "out")
+    assert not result.written
+    assert "linked_twice" in _codes(result.issues)
+
+
+def test_a_hard_link_between_masks_is_refused(tmp_path):
+    if not _can_hard_link(tmp_path):
+        pytest.skip("hard links cannot be made here")
+    clean = make_clean_run(tmp_path / "run", axes="YX", shape=(16, 20), mask_types=("Cells",))
+    mask = clean.masks / "Cells/ctrl/rep1/b.tif"
+    mask.unlink()
+    os.link(clean.masks / "Cells/ctrl/rep1/a.tif", mask)
+    pre = preflight(clean.experiment, clean.output, masks_folder=clean.masks)
+    assert _issue(pre.masks.issues, "linked_twice").paths == (
+        "Cells/ctrl/rep1/b.tif (the same file as Cells/ctrl/rep1/a.tif)",
+    )
+    with pytest.raises(RunInputsError):  # refused: the mask changed since the run
+        RunInputs.open(clean.output)
+
+
+def test_a_broken_link_in_the_masks_folder_is_named(clean):
+    # Before, it was skipped: its image only looked as if it had no mask (mask_missing).
+    mask = clean.masks / "Cells/ctrl/rep1/a.tif"
+    mask.unlink()
+    mask.symlink_to(clean.masks / "Cells/ctrl/rep1/gone.tif")
+    pre = preflight(clean.experiment, clean.output, masks_folder=clean.masks)
+    issue = _issue(pre.masks.issues, "unreadable_mask")
+    assert issue.is_error and issue.paths == ("Cells/ctrl/rep1/a.tif",)

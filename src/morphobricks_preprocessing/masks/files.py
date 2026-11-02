@@ -152,9 +152,7 @@ def _folder_masks(
     files, unpaired, loose, ambiguous, excluded = [], [], [], [], []
     links = LinkGuard(folder, "masks folder")
     for path, real in links.files(folder, is_system_name):
-        relative = path.relative_to(folder)
-        if not path.is_file():  # a broken link
-            continue
+        relative = path.relative_to(folder)  # a broken link is kept: its reader names it
         if not is_tiff_name(path.name):
             (loose if len(relative.parts) == 1 else unpaired).append(relative.as_posix())
             continue

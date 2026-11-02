@@ -8,8 +8,9 @@ masks folder, itself resolved. Nothing outside the folder the user selected is r
   ``link_outside_folder`` naming each link and its target;
 - a link to a folder on the walk's own path (the folder holding it or one above) is not
   followed, and is the error ``link_loop``;
-- two paths of one file (a link and its target, or two links to it) would count one image
-  or mask twice under two names: the error ``linked_twice`` names both.
+- two paths of one file (a link and its target, two links to it, or two hard links: the
+  same device and inode) would count one image or mask twice under two names: the error
+  ``linked_twice`` names both (hard links: owner, 2 November 2026).
 
 Inside an OME-Zarr store, which discovery never enters as a folder level, every link is
 held to the same rule (:meth:`LinkGuard.check_store`), since reading and copying the store
@@ -90,7 +91,7 @@ class LinkGuard:
         self.what = what
         # The real paths of the folders above each folder entered, the folder's own last.
         self._stacks: dict[Path, tuple[Path, ...]] = {root: (self.real_root,)}
-        self._owners: dict[Path, str] = {}
+        self._owners: dict[Path | tuple[int, int], str] = {}
         self.outside: list[str] = []
         self.loops: list[str] = []
         self.twice: list[str] = []
@@ -124,12 +125,20 @@ class LinkGuard:
     def claim(self, path: Path, real: Path) -> str:
         """Record that ``path``, an image or mask of the walk, is ``real``; return its name.
 
-        An OME-Zarr store (a folder) also has its links checked (:meth:`check_store`).
+        A file is known by its device and inode (from the one ``stat`` this takes), so a
+        hard link to an image already found is caught like a symbolic one; by its real
+        path when it cannot be stat'ed (a broken link) or has no inode. An OME-Zarr store
+        (a folder) also has its links checked (:meth:`check_store`).
         """
-        if path.is_dir():
+        try:
+            found = os.stat(path)
+        except OSError:  # a broken link: refused or reported unreadable by its reader
+            found = None
+        if found is not None and stat.S_ISDIR(found.st_mode):
             self.check_store(path)
+        key = (found.st_dev, found.st_ino) if found is not None and found.st_ino else real
         name = self.relative(path)
-        first = self._owners.setdefault(real, name)
+        first = self._owners.setdefault(key, name)
         if first != name:
             self.twice.append(f"{name} (the same file as {first})")
         return name
@@ -210,11 +219,11 @@ class LinkGuard:
                 error(
                     LINKED_TWICE,
                     f"{plural(len(self.twice), 'path')} in the {self.what} "
-                    f"{agree(self.twice, 'leads', 'lead')} through a link to a file also found "
-                    "under another name, so one file would count twice, under two names.",
+                    f"{agree(self.twice, 'is', 'are')} the same file as another path (through a "
+                    "link, or a hard link), so one file would count twice, under two names.",
                     self.twice,
-                    "Keep one path to each file: remove the link, or replace it with a copy "
-                    "if both are really meant.",
+                    "Keep one path to each file: remove the link (or the hard link), or "
+                    "replace it with a copy if both are really meant.",
                 )
             )
         return issues

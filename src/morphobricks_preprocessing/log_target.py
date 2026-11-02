@@ -13,7 +13,10 @@ touched). A log is refused:
   output folder is fine;
 - when it is a folder, or its folder does not exist.
 
-Paths are compared resolved, so a link to a protected file is refused as the file.
+Paths are compared resolved, so a link to a protected file is refused as the file, and by
+device and inode where they exist, so another spelling of a folder (case on macOS and
+Windows) is refused as the folder; output names are compared ignoring case. An existing file
+with another name (a hard link) is refused: it may be a source or an output under that name.
 """
 
 from __future__ import annotations
@@ -77,16 +80,45 @@ def log_refusal(
     """
     target = Path(log).resolve()
     for what, folder in folders.items():
-        if folder is not None and is_inside(target, Path(folder).resolve()):
+        if folder is not None and _parts_below(target, Path(folder)) is not None:
             return _refused(log, f"it is inside the {what} ({Path(folder).resolve()})")
-    if output is not None and is_inside(target, Path(output).resolve()):
-        parts = target.relative_to(Path(output).resolve()).parts
-        if not parts or parts[0] in PROTECTED_OUTPUTS or parts[0].startswith(STAGING_PREFIX):
+    parts = None if output is None else _parts_below(target, Path(output))
+    if parts is not None:
+        first = parts[0].casefold() if parts else ""
+        if not parts or first in _PROTECTED_FOLDED or first.startswith(STAGING_PREFIX):
             return _refused(log, f"it would write over the run's {parts[0] if parts else 'folder'}")
     if target.is_dir():
         return _refused(log, "it is a folder")
     if not target.parent.is_dir():
         return _refused(log, f"its folder {target.parent} does not exist")
+    if target.is_file() and target.stat().st_nlink > 1:
+        return _refused(log, "it is a file that has another name too (a hard link)")
+    return None
+
+
+_PROTECTED_FOLDED = frozenset(name.casefold() for name in PROTECTED_OUTPUTS)
+
+
+def _parts_below(target: Path, folder: Path) -> tuple[str, ...] | None:
+    """Return the names of ``target`` (resolved) below ``folder``; None when it is not inside.
+
+    Compared by resolved path, then, for each existing folder above ``target``, by device and
+    inode, which catches another spelling of ``folder`` on a file system that ignores case.
+    """
+    real = folder.resolve()
+    if is_inside(target, real):
+        return target.relative_to(real).parts
+    try:
+        wanted = os.stat(real)
+    except OSError:  # a folder that does not exist holds nothing
+        return None
+    chain = [target, *target.parents]
+    for depth, above in enumerate(chain):
+        try:
+            if os.path.samestat(os.stat(above), wanted):
+                return tuple(path.name for path in reversed(chain[:depth]))
+        except OSError:  # not there (yet): nothing to compare
+            continue
     return None
 
 
