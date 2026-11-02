@@ -464,9 +464,13 @@ API, CLI). The notebook and CLI only call the API.
     masks folder's masks (label-image statements are kept).
   - Embedding: `folder_step(show_output=False)` shows neither card and pairs no masks
     folder (MorphoRelate has its own masks card); the embedding API is unchanged.
-  - Not in this PR: a notebook button for the `masks` step (`mask_relationships.json`). It
-    needs the CLI's scan-and-write-under-lock moved out of `cli_masks.masks_command` into a
-    shared orchestration function first; proposed as a follow-up.
+  - Not in this PR: a notebook button for the `masks` step (`mask_relationships.json`); it is
+    PP-10d.
+- **PP-10d (the notebook's masks-step button)** *(not started; owner decision of 2 November
+  2026: right after PP-10c)*: a notebook button for the `masks` step (describe the masks:
+  `mask_relationships.json`). It first moves the CLI's scan-and-write-under-lock out of
+  `cli_masks.masks_command` into a shared orchestration function that the CLI and the
+  notebook both call.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;

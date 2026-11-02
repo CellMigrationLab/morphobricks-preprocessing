@@ -882,7 +882,8 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   `repeat_group`, repeat groups differing only in case, or a `confirmed_on` that is not
   `YYYY-MM-DD` are refused, naming the line and column.
 - **Notebook masks field (PP-10c):** step 1 takes the masks folder and the mask axes per
-  mask type (design v0.4 §2), see plan §10.
+  mask type (design v0.4 §2), see plan §10. Next, PP-10d: a notebook button for the
+  `masks` step (`mask_relationships.json`).
 - **Next (not started):** the notebook step for the masks (name each mask, confirm or
   correct the relationships) and a file saving those answers for the other bricks
   (question 32); 3D and time-lapse masks later.
