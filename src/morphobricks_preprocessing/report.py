@@ -16,8 +16,9 @@ from morphobricks_normalization.records import LEVELS, PlaneRecord, group_record
 
 from .axes import AxisMapping, AxisReview, axis_length_ranges, axis_name
 from .dataset import BalanceTable
-from .design import ExperimentDesign
+from .design import DESIGN_FILENAME, ExperimentDesign
 from .discovery import DiscoveryResult
+from .discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
 from .mask_scan import DEFAULT_THRESHOLDS, MaskReport, PairRelation
 from .masks import MaskInventory
 from .run import Preflight, RunResult
@@ -205,13 +206,25 @@ def preflight_summary(pre: Preflight) -> str:
     return "\n".join(lines)
 
 
-def run_summary(result: RunResult) -> str:
-    """Summarise pass 2: whether output was written and what was read or kept."""
+def run_summary(result: RunResult, *, design_template: bool = False) -> str:
+    """Summarise pass 2: whether output was written and what was read or kept.
+
+    Parameters
+    ----------
+    result
+        What the run did.
+    design_template
+        True when ``experiment_design.csv`` was written for the user to confirm after the
+        run stopped on it (the CLI ``run`` does).
+
+    Returns
+    -------
+    str
+        For a stopped run, what it wrote (the report, the design template) and that no
+        table or manifest was written.
+    """
     if not result.written:
-        return (
-            f"Nothing was written ({issue_counts(result.issues)}). Resolve the errors "
-            "and run again."
-        )
+        return _stopped_summary(result, design_template)
     lines = [
         f"Wrote {plural(result.plane_count, 'plane')} to {result.csv_path}",
         f"Run manifest: {result.manifest_path}",
@@ -234,6 +247,23 @@ def run_summary(result: RunResult) -> str:
         f"Changed {c.name}: {c.recorded} -> {c.given} ({c.effect})" for c in result.input_changes
     )
     lines.append(f"Checks: {issue_counts(result.issues)}")
+    return "\n".join(lines)
+
+
+def _stopped_summary(result: RunResult, design_template: bool) -> str:
+    """Say that a stopped run wrote no table or manifest, and what it did write."""
+    written = []
+    if result.report_written:
+        written.append(f"{REPORT_FILENAME} and {REPORT_TEXT_FILENAME} (the report)")
+    if design_template:
+        written.append(f"{DESIGN_FILENAME} (the experiment design to confirm)")
+    lines = [
+        f"The run stopped ({issue_counts(result.issues)}): no table or manifest was written.",
+        f"Written to {result.output_folder}: {', '.join(written)}."
+        if written
+        else "Nothing was written.",
+        "Resolve the errors and run again.",
+    ]
     return "\n".join(lines)
 
 

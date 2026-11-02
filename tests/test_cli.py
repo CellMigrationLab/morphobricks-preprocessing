@@ -127,7 +127,7 @@ def test_rgb_is_refused_for_images_that_cannot_be_rgb(experiment, capsys):
     out = capsys.readouterr().out
     assert "contradict their header" in out
     assert "RGB images need exactly three colour channels" in out
-    assert "8 channels of type uint8" in out and "Nothing was written" in out
+    assert "8 channels of type uint8" in out and "no table or manifest was written" in out
 
 
 def test_image_type_must_be_known(experiment):
@@ -204,7 +204,7 @@ def test_run_reports_blocking_errors(experiment, capsys):
     assert main(["run", str(experiment), "--axes", "Z-YX"]) == 1
     out = capsys.readouterr().out
     assert "No role is chosen for the axis C (channel)" in out
-    assert "Nothing was written" in out
+    assert "no table or manifest was written" in out
 
 
 def test_run_without_readable_images(tmp_path, capsys):
@@ -234,7 +234,7 @@ def test_different_channel_counts_stop_check_and_run(tmp_path, capsys):
     assert main(["run", str(root), "--axes", "ZCYX"]) == 1
     out = capsys.readouterr().out
     assert "different numbers of channels" in out and "b.tif" in out
-    assert "Nothing was written" in out
+    assert "no table or manifest was written" in out
 
 
 def test_axes_are_needed_for_the_first_run_only(experiment, capsys):

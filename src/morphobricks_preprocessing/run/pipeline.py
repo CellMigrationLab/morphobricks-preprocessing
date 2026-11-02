@@ -294,6 +294,7 @@ def _stop(run: _Run, base: RunOutcome, rows: Rows | None) -> RunResult:
         excluded=run.pre.excluded,
         mode=run.mode,
         input_changes=run.inputs.changes,
+        report_written=True,
         **counts(rows),
     )
 
@@ -352,6 +353,7 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
         mode=run.mode,
         replaced=tuple(sorted(outcome.replaced)),
         input_changes=run.inputs.changes,
+        report_written=True,
         **counts(rows),
     )
 

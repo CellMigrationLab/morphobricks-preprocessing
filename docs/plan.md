@@ -1193,3 +1193,11 @@ Raised during review; to be decided before the milestones that need them:
     spec's interface is `read_plane(fov, z, t)` (design v0.4 §6), every table row carries
     its `z` and `t`, and a second way to address a plane would be a second rule to keep
     in step. Contract §9.1.*
+55. What does a run that stops say it wrote (PP-8c, from a run on real data)?
+    *Decided (2 November 2026, owner): what it wrote. Since PP-7 every run that holds the
+    lock writes its report, also when it stops, and the CLI `run` writes the design template
+    when it stops on the design, yet the summary said "Nothing was written". It now says
+    "The run stopped (…): no table or manifest was written." and names the report files and
+    the template when written (`RunResult.report_written`, `run_summary(design_template=)`);
+    the notebook says "The run stopped: no table or manifest was written." Only a run
+    refused before it starts (the lock) still says "Nothing was written."*

@@ -402,6 +402,9 @@ the design is confirmed, or why a saved one cannot be read (naming the line and 
 never writes the file. `check` writes only the report, `discovery_report.json` and
 `discovery_report.txt`, to the output folder; `run` writes it on every run, also one that
 stops (`status` `stopped` or `written`, with the SHA-256 of the manifest it describes).
+A run that stops says so, says that no table or manifest was written, and names what it
+did write: the report, and the design template when it wrote one. Only a run refused before
+it starts (another run holds the lock) writes nothing.
 
 A later `run` in the same output folder reuses everything the earlier run recorded: the
 axis roles (`--axes` is needed again only for plain stacks that are new or changed), the

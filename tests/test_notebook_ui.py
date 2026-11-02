@@ -1279,7 +1279,7 @@ def test_run_with_errors_shows_what_to_do(experiment, monkeypatch):
     write_file(experiment / "ctrl/rep1/bad.tif", b"garbage")  # appears after the check
     nb.run()
     assert not nb.result.written
-    assert "Nothing was written" in nb.run_status.value
+    assert "no table or manifest was written" in nb.run_status.value
     assert "could not be opened" in nb.run_issues.value
     assert nb.progress.bar_style == "danger"
     assert nb.run_next.value == ""
@@ -1297,7 +1297,7 @@ def test_unexpected_failures_are_reported(experiment, monkeypatch):
     assert nb.run() is None
     assert "unexpected problem" in nb.run_status.value
     assert "RuntimeError: disk on fire" in nb.run_status.value
-    assert "Nothing was written" not in nb.run_status.value
+    assert "no table or manifest was written" not in nb.run_status.value
     assert "Traceback" in nb.details.value
     assert not nb.run_button.disabled
 

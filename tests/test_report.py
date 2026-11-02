@@ -119,7 +119,7 @@ def test_run_summaries(experiment):
 
 def test_run_summary_when_blocked(experiment):
     result = run_experiment(experiment, prefill_mapping("ZYX"), bin_count=0)
-    assert run_summary(result).startswith("Nothing was written (1 error")
+    assert run_summary(result).startswith("The run stopped (1 error")
 
 
 def test_group_summaries_pool_the_planes(experiment):

@@ -247,16 +247,19 @@ def run_command(args: argparse.Namespace) -> int:
         intensity_settings=settings[0],
         histogram_settings=settings[1],
     )
+    template, instructions = None, ""
+    if _stopped_on_design(result.issues, design):
+        template, instructions = _design_template(design, pre, args)
     if result.issues:
         print(format_issues(result.issues))
         print()
-    print(run_summary(result))
+    print(run_summary(result, design_template=template is not None))
     if result.intensity is not None:
         print()
         print(intensity_text(result.intensity))
-    if _stopped_on_design(result.issues, design):
+    if instructions:
         print()
-        print(_design_template(design, pre, args))
+        print(instructions)
     return 0 if result.written else 1
 
 
@@ -394,21 +397,24 @@ def _stopped_on_design(
     return any(issue.code in found for issue in design_issues(design))
 
 
-def _design_template(design: ExperimentDesign, pre: Preflight, args: argparse.Namespace) -> str:
+def _design_template(
+    design: ExperimentDesign, pre: Preflight, args: argparse.Namespace
+) -> tuple[Path | None, str]:
     """Write the design for the user to fill in, holding the output folder's lock.
 
     The run, given the design, stopped on it and wrote its report; the template keeps
-    every answer already given. Returns what the user has to do.
+    every answer already given. Returns the file written (None when nothing was) and what
+    the user has to do.
     """
     root = pre.discovery.root
     output = Path(args.output) if args.output else default_output_folder(root)
     if check_output_folder(root, output):
-        return ""  # the run reported it; nothing is written inside the experiment
+        return None, ""  # the run reported it; nothing is written inside the experiment
     try:
         with output_lock(output):
             target = write_experiment_design(design, output / DESIGN_FILENAME)
     except OutputLockedError as exc:
-        return format_issues([lock_issue(exc)])
+        return None, format_issues([lock_issue(exc)])
     lines = [
         f"The experiment design was written to {target}. Open it in a spreadsheet program "
         "or a text editor, one row per biological-repeat folder of each condition:",
@@ -424,7 +430,7 @@ def _design_template(design: ExperimentDesign, pre: Preflight, args: argparse.Na
         "  - control: set it to true in the rows of control conditions (optional; recorded only).",
         "Then run again.",
     ]
-    return "\n".join(lines)
+    return target, "\n".join(lines)
 
 
 def _image_type_note(review: ImageTypeReview, given: str | None) -> str:
