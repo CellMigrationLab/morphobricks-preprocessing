@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from morphobricks_preprocessing import (
@@ -19,7 +21,9 @@ from morphobricks_preprocessing import (
 )
 from morphobricks_preprocessing.axes import prefill_mapping
 from morphobricks_preprocessing.cli import main
+from morphobricks_preprocessing.discovery_report import REPORT_FILENAME
 from morphobricks_preprocessing.manifest import file_sha256
+from morphobricks_preprocessing.run.lock import output_lock
 from run_files import only_the_report
 from tiff_tree import make_tree
 
@@ -400,6 +404,10 @@ def test_cli_run_writes_a_template_and_stops(tmp_path, capsys):
     template = read_experiment_design(path)
     assert template.groups == ("rep1", "rep1b") and not template.confirmed
     assert not (path.parent / "plane_histograms.csv").exists()
+    # The run stopped on the design and its report says so (design v0.4 §1, §4).
+    report = json.loads((path.parent / REPORT_FILENAME).read_text(encoding="utf-8"))
+    assert report["status"] == "stopped" and report["step"] == "run"
+    assert "design_not_confirmed" in [issue["code"] for issue in report["issues"]]
 
     # The user pairs the repeats and confirms them in the file.
     text = path.read_text(encoding="utf-8").replace("rep1b,rep1b", "rep1b,rep1")
@@ -410,6 +418,16 @@ def test_cli_run_writes_a_template_and_stops(tmp_path, capsys):
     design = read_experiment_design(path)
     assert design.confirmed and all(row.confirmed_on for row in design.rows)
     assert "Experiment design" in out
+
+
+def test_cli_writes_no_template_while_another_run_holds_the_lock(tmp_path, capsys):
+    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
+    output = default_output_folder(root)
+    output.mkdir(parents=True)
+    with output_lock(output):
+        assert main(["run", str(root), "--axes", "YX"]) == 1
+    assert "Another run is using this output folder" in capsys.readouterr().out
+    assert not (output / DESIGN_FILENAME).exists() and not (output / REPORT_FILENAME).exists()
 
 
 def test_cli_template_keeps_the_answers_given(tmp_path, capsys):

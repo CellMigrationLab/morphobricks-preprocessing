@@ -48,9 +48,10 @@ from .report import (
     run_summary,
 )
 from .run import MODES, RESTART, Preflight, preflight, run_experiment
+from .run.lock import OutputLockedError, lock_issue, output_lock
 from .run.recorded import usable
 from .run.reuse import read_previous, recorded_experiment_root
-from .validation import has_errors
+from .validation import ValidationIssue, has_errors
 
 _UNITS = {
     "": 1,
@@ -253,6 +254,9 @@ def run_command(args: argparse.Namespace) -> int:
     if result.intensity is not None:
         print()
         print(intensity_text(result.intensity))
+    if _stopped_on_design(result.issues, design):
+        print()
+        print(_design_template(design, pre, args))
     return 0 if result.written else 1
 
 
@@ -356,10 +360,10 @@ def _print_inputs(
 def _design_for_run(
     pre: Preflight, args: argparse.Namespace
 ) -> tuple[ExperimentDesign | None, str]:
-    """Return the confirmed experiment design, or None and what the user has to do.
+    """Return the experiment design brought up to date, or None and what went wrong.
 
-    Without a fully confirmed design, a template (keeping every answer already
-    given) is written to the output folder for the user to fill in.
+    A design that is not fully confirmed is returned too: the run stops on it and writes
+    its report, then :func:`_design_template` writes it for the user to fill in.
     """
     root = pre.discovery.root
     output = Path(args.output) if args.output else default_output_folder(root)
@@ -377,17 +381,35 @@ def _design_for_run(
         return None, f"The experiment design {source} does not exist."
     design, _ = reconcile_design(previous, pre.dataset.repeats)
     # Rows confirmed by hand in the file get today's date.
-    design = design.dated(date.today().isoformat())
-    problems = design_issues(design)
-    if not problems:
-        return design, ""
+    return design.dated(date.today().isoformat()), ""
+
+
+def _stopped_on_design(
+    issues: tuple[ValidationIssue, ...], design: ExperimentDesign | None
+) -> bool:
+    """Return True when the run stopped on the design given (not, e.g., on the lock)."""
+    if design is None:
+        return False
+    found = {issue.code for issue in issues}
+    return any(issue.code in found for issue in design_issues(design))
+
+
+def _design_template(design: ExperimentDesign, pre: Preflight, args: argparse.Namespace) -> str:
+    """Write the design for the user to fill in, holding the output folder's lock.
+
+    The run, given the design, stopped on it and wrote its report; the template keeps
+    every answer already given. Returns what the user has to do.
+    """
+    root = pre.discovery.root
+    output = Path(args.output) if args.output else default_output_folder(root)
     if check_output_folder(root, output):
-        # The run reports the output folder; nothing is written inside the experiment.
-        return design, ""
-    target = write_experiment_design(design, output / DESIGN_FILENAME)
+        return ""  # the run reported it; nothing is written inside the experiment
+    try:
+        with output_lock(output):
+            target = write_experiment_design(design, output / DESIGN_FILENAME)
+    except OutputLockedError as exc:
+        return format_issues([lock_issue(exc)])
     lines = [
-        format_issues(problems),
-        "",
         f"The experiment design was written to {target}. Open it in a spreadsheet program "
         "or a text editor, one row per biological-repeat folder of each condition:",
         "  - repeat_group: rows with the same value are the same biological repeat across "
@@ -402,7 +424,7 @@ def _design_for_run(
         "  - control: set it to true in the rows of control conditions (optional; recorded only).",
         "Then run again.",
     ]
-    return None, "\n".join(lines)
+    return "\n".join(lines)
 
 
 def _image_type_note(review: ImageTypeReview, given: str | None) -> str:
