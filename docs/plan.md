@@ -1169,3 +1169,18 @@ Raised during review; to be decided before the milestones that need them:
     so until the user changes them; the user guide says how. The table, written by the
     normalization brick's writer into the staging folder, is given its mode when it is
     published. Windows: unchanged (no such modes). Contract §9.*
+53. Is a pixel size recorded for an axis the image does not have (PP-8c, from a run on
+    real data)?
+    *Decided (2 November 2026, owner): no. MorphoRelate's HPMEC max projections (`CYX`)
+    keep the z-step of their stacks in their ImageJ metadata (0.43 µm), and the run
+    recorded it as their Z size from the header. A Z or T size is now recorded only for an
+    image whose roles include that axis (`calibration.fit_to_roles`, after the axis
+    review; a singleton role of a missing axis does not count); otherwise the axis has no
+    value and no source. A `calibration.csv` statement for an axis an image lacks is
+    neither refused nor recorded: the warning `calibration_axis_absent` names the images
+    (refusing would make a whole-experiment Z statement impossible in an experiment that
+    mixes stacks and 2D images; the question 49 rule that a statement matching nothing is
+    an error is about targets, not axes). The report's text counts Z and T sizes for the
+    images with the axis. The `RowKey` does not include pixel sizes, so earlier rows are
+    reused (no row depends on a size, question 49): the next `restart` leaves the table
+    byte-identical and rewrites the manifest without the absent sizes. Contract §9.3.*

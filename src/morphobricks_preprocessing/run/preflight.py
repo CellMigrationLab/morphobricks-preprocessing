@@ -15,10 +15,11 @@ from pathlib import Path
 
 from ..axes import (
     AxisMapping,
+    AxisReview,
     file_mapping_for,
     prefill_experiment_mapping,
 )
-from ..calibration import CalibrationReview, review_calibration
+from ..calibration import CalibrationReview, fit_to_roles, review_calibration
 from ..calibration_io import load_calibration
 from ..dataset import DatasetReport, check_dataset
 from ..discovery import DiscoveryResult, default_output_folder, discover_experiment
@@ -220,6 +221,30 @@ def _calibrated(
     kept = [issue for issue in metadata.issues if issue.code not in PIXEL_SIZE_CODES]
     checked = pixel_size_issues(readable, review.sizes)
     return replace(metadata, issues=(*kept, *checked, *review.issues)), review
+
+
+def fit_calibration(
+    pre: Preflight, review: AxisReview
+) -> tuple[Preflight, tuple[ValidationIssue, ...]]:
+    """Record a Z or T size only for the images that have that role (design v0.4 §3).
+
+    Parameters
+    ----------
+    pre
+        The preflight, its sizes resolved from the headers and ``calibration.csv``.
+    review
+        The axis review of the roles the images are read with.
+
+    Returns
+    -------
+    tuple
+        The preflight with those sizes removed and ``calibration_axis_absent`` among its
+        issues, and the new issues alone (:func:`.calibration.fit_to_roles`).
+    """
+    roles = {path: mapping.roles for path, mapping in review.file_mappings.items()}
+    fitted, issues = fit_to_roles(pre.calibration, roles)
+    metadata = replace(pre.metadata, issues=(*pre.metadata.issues, *issues))
+    return replace(pre, metadata=metadata, calibration=fitted), issues
 
 
 def _without_excluded_masks(

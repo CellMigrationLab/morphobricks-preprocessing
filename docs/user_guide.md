@@ -509,8 +509,11 @@ A run reads the file and never changes or removes it (also with `--mode full`, o
 stops). The next run records each image's sizes with their source (`header`, `stated` or
 `pixels`), names the change in its report, and recomputes no row. A stated size that
 differs from the metadata is a warning (`calibration_differs_from_header`); the stated size
-is used. In Python, `write_calibration(calibration, output_folder)` writes the file
-(see §9).
+is used. A Z (or time) size is recorded only for images that have that axis: a max
+projection whose metadata still give the z-step of its stack gets no Z size, and a
+statement for an axis some images lack is a warning naming them
+(`calibration_axis_absent`). In Python, `write_calibration(calibration, output_folder)`
+writes the file (see §9).
 
 ## 6. Output files
 
@@ -659,6 +662,7 @@ continues.
 | `different_pixel_sizes` | Warning | The physical pixel size or z-step (from the metadata or `calibration.csv`) differs between images by more than 0.1 % (for example different objectives). Images outside the largest group of matching sizes are listed; when sizes only change by small steps from image to image, none is listed. Check the microscope settings if this is not intended. |
 | `missing_pixel_size` | Warning | Some images have a pixel size (from the metadata or `calibration.csv`) and others do not, so it cannot be checked; images stated as measured in pixels count as without one, and the message says how many. Export them again with metadata, or state their sizes with `calibrate`, if needed. |
 | `unsupported_pixel_size_unit` | Warning | An image gives its pixel size or z-step in a unit that is not converted (for example inches); only pm, Å, nm, µm, mm, cm and m are. The message names each image, axis and unit. Those sizes are not used: the image is treated as uncalibrated on those axes. Export it again with the pixel size in a supported unit, or state it with `calibrate`, if the physical size matters. Not reported for an axis whose size is stated. |
+| `calibration_axis_absent` | Warning | `calibration.csv` states a size for an axis some images do not have (for example a Z size for 2D images or projections); the message names them. No size is recorded for an axis an image does not have. Give the statement a narrower target, or no action if it is meant for the other images. |
 | `calibration_differs_from_header` | Warning | `calibration.csv` states a pixel size (or `pixels`) that differs from an image's metadata; the message names each image and axis with both sizes. The stated size is used. Correct or remove the statement if the metadata are right. |
 | `calibration_target_not_found` | Error | `calibration.csv` names a folder or image that is not in the experiment (names are compared exactly, case included). Correct the target, or remove the line. |
 | `calibration_unreadable` | Error | `calibration.csv` cannot be read; the message names the line and what is wrong. The file is left as it is: correct it, or remove it to use the sizes in the metadata. |

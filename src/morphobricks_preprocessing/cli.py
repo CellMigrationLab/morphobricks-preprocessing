@@ -64,6 +64,7 @@ from .run import (
     write_check_report,
 )
 from .run.lock import lock_issue, output_lock
+from .run.preflight import fit_calibration
 from .validation import has_errors
 
 __all__ = ["build_parser", "main", "parse_size"]
@@ -220,6 +221,10 @@ def _remove_stale_lock(args: argparse.Namespace) -> bool:
 def _check(args: argparse.Namespace) -> int:
     """Print what the preflight found and the suggested roles, and write the report."""
     pre = command_preflight(args)
+    review = None
+    if pre.suggested_mapping is not None:
+        review = review_axes(pre.metadata, pre.suggested_mapping)
+        pre, _ = fit_calibration(pre, review)  # no Z or T size for images without one
     print(preflight_summary(pre))
     if pre.discovery.leaves:
         print()
@@ -238,9 +243,8 @@ def _check(args: argparse.Namespace) -> int:
         print(format_issues(pre.issues))
     if pre.dataset.repeats:
         _print_design(args, pre)
-    axis_errors, review = (), None
-    if pre.suggested_mapping is not None:
-        review = review_axes(pre.metadata, pre.suggested_mapping)
+    axis_errors = ()
+    if review is not None:
         # The suggested roles are the header's own, so they never contradict it; 'run'
         # checks the roles given with --axes.
         axis_errors = review.axis_errors
