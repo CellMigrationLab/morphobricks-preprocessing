@@ -292,15 +292,15 @@ def test_run_inputs_refuses_a_conversion_record_changed_or_gone_since_the_run(tm
     moved = tmp_path / "moved"
     copies.rename(moved)
     RunInputs.open(out, experiment_root=moved)  # the copies moved, with their record
-    text = (moved / CONVERSION_RECORD_FILENAME).read_text()
-    (moved / CONVERSION_RECORD_FILENAME).write_text(text.replace('"converted"', '"copied"', 1))
+    data = (moved / CONVERSION_RECORD_FILENAME).read_bytes()
+    (moved / CONVERSION_RECORD_FILENAME).write_bytes(data.replace(b'"converted"', b'"copied"', 1))
     with pytest.raises(RunInputsError, match="conversion record .* changed since"):
         RunInputs.open(out, experiment_root=moved)
     (moved / CONVERSION_RECORD_FILENAME).unlink()
     with pytest.raises(RunInputsError, match="missing"):
         RunInputs.open(out, experiment_root=moved)
     moved.rename(copies)
-    record.write_text(text)
+    record.write_bytes(data)  # bytes: write_text would add CR on Windows
     RunInputs.open(out)  # the same bytes again: accepted
 
 
