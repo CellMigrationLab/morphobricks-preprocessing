@@ -165,3 +165,13 @@ def test_the_experiment_folder_in_another_case_is_refused(clean, capsys):
     log = other / "notes.txt"
     assert main(_run(clean, "--log", str(log))) == 1
     assert "inside the experiment folder" in _refused(capsys, clean.experiment / "notes.txt")
+
+
+def test_a_log_over_the_design_given_leaves_it_unchanged(clean, capsys, tmp_path):
+    # Review of #128: the confirmed design given with --design, outside the output folder,
+    # was appended to (and the run went on).
+    design = tmp_path / "my_design.csv"
+    design.write_bytes((clean.output / "experiment_design.csv").read_bytes())
+    before = design.read_bytes()
+    assert main(_run(clean, "--design", str(design), "--log", str(design))) == 1
+    assert "design file given with --design" in _refused(capsys, design, before)

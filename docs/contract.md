@@ -129,7 +129,8 @@ Every message states what happened in plain language, lists the affected paths, 
 suggests an action. Technical details go to the diagnostic log. The command line's log
 (`--log FILE`, issue #99) is checked before it is opened, and opened only after the other
 arguments: it is refused inside the experiment or masks folder (given, or recorded by the
-earlier run in the output folder), inside `convert`'s folder of copies, as a folder or in a
+earlier run in the output folder), inside `convert`'s folder of copies, as the design file
+given with `--design` (an input of the run), as a folder or in a
 folder that does not exist, and as or inside an output artefact (`plane_histograms.csv`,
 `run_manifest.json`, the report files, `experiment_design.csv`, `calibration.csv`,
 `mask_relationships.json`, the lock, `.morphobricks-conversion.json`, the `.run-` staging

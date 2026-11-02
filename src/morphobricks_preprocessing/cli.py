@@ -301,7 +301,8 @@ def _log_refusal(args: argparse.Namespace) -> str | None:
         return log_refusal(args.log, folders)
     experiment = Path(args.experiment).resolve()
     output = Path(args.output) if args.output else default_output_folder(experiment)
-    return run_log_refusal(args.log, experiment, output, args.masks)
+    design = getattr(args, "design", None)
+    return run_log_refusal(args.log, experiment, output, args.masks, design)
 
 
 def _attach_log(path: str) -> logging.Handler:

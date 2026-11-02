@@ -11,6 +11,7 @@ touched). A log is refused:
 - as, or inside, a file or folder the run writes or keeps in its output folder
   (:data:`PROTECTED_OUTPUTS`, the lock and the staging folders). Any other name in the
   output folder is fine;
+- as the design file given with ``--design`` (an input of the run);
 - when it is a folder, or its folder does not exist.
 
 Paths are compared resolved, so a link to a protected file is refused as the file, and by
@@ -127,11 +128,12 @@ def run_log_refusal(
     experiment: str | os.PathLike,
     output: str | os.PathLike,
     masks: str | os.PathLike | None,
+    design: str | os.PathLike | None = None,
 ) -> str | None:
     """Return why the log of ``run`` or ``masks`` cannot be written, or None.
 
     The experiment and masks folders recorded by the earlier run in ``output`` are refused
-    too, as the given ones (the manifest is only read).
+    too, as the given ones (the manifest is only read), and so is the design file given.
 
     Parameters
     ----------
@@ -143,18 +145,33 @@ def run_log_refusal(
         The output folder.
     masks
         The masks folder given, or None.
+    design
+        The design file given with ``--design``, or None.
 
     Returns
     -------
     str or None
         As :func:`log_refusal`.
     """
+    if design is not None and _same_file(Path(log), Path(design)):
+        given = Path(design).resolve()
+        return _refused(log, f"it is the design file given with --design ({given})")
     recorded = usable(read_previous(Path(output).resolve())[0])
     folders = {"experiment folder": experiment, "masks folder": masks}
     if recorded is not None:
         folders["experiment folder of the earlier run"] = recorded.experiment_root
         folders["masks folder of the earlier run"] = recorded_masks_folder(recorded)
     return log_refusal(log, folders, output)
+
+
+def _same_file(one: Path, other: Path) -> bool:
+    """Return True when two paths name one file: resolved, or by device and inode."""
+    if one.resolve() == other.resolve():
+        return True
+    try:
+        return os.path.samefile(one, other)
+    except OSError:  # one of them does not exist: not the same file
+        return False
 
 
 def _refused(log: str | os.PathLike, why: str) -> str:
