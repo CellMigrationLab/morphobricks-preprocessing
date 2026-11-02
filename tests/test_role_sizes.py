@@ -105,3 +105,32 @@ def test_the_run_reports_the_warnings_of_the_confirmed_roles(tmp_path):
     assert "different_plane_counts" not in codes(result.issues)
     sizes = issue(result.issues, "different_sizes")
     assert "16 x 16 (1 image), 32 x 16 (1 image)" in sizes.message
+
+
+def test_contradicted_roles_are_never_used_for_the_warnings(tmp_path):
+    # OME-Zarr ZYX confirmed as TYX contradicts its OME-NGFF axes (issue #72): it is
+    # measured by the Z its metadata names, never as time points.
+    pytest.importorskip("zarr")
+    from zarr_tree import write_ngff
+
+    write_ngff(tmp_path / "a.ome.zarr", np.zeros((3, 8, 8), np.uint8), "zyx")
+    write_ngff(tmp_path / "b.ome.zarr", np.zeros((5, 8, 8), np.uint8), "zyx")
+    report = inspect_images(tmp_path, ["a.ome.zarr", "b.ome.zarr"])
+    review = review_axes(report, AxisMapping("ZYX", "TYX"))
+    issues = review.combined_issues(report)
+    assert "ome_zarr_axes_mismatch" in codes(issues)
+    planes = issue(issues, "different_plane_counts")
+    assert "depth slices (Z): 3 (1 image), 5 (1 image)" in planes.message
+    assert "time points" not in planes.message
+
+
+def test_an_image_with_an_axis_error_is_measured_by_its_header(tmp_path):
+    write_tiff(tmp_path / "a.tif", (3, 8, 9), axes="ZYX")
+    write_tiff(tmp_path / "b.tif", (3, 8, 12), axes="ZYX")
+    report = inspect_images(tmp_path, ["a.tif", "b.tif"])
+    review = review_axes(report, AxisMapping("ZYX", "ZXY"))
+    issues = review.combined_issues(report)
+    assert "axes_yx_swapped" in codes(issues)
+    # Height x width as the header names them, not as the swapped roles would give.
+    assert "8 x 12 (1 image), 8 x 9 (1 image)" in issue(issues, "different_sizes").message
+    assert codes(issues).count("different_sizes") == 1
