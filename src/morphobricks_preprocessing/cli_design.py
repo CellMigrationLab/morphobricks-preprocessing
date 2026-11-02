@@ -14,12 +14,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .design import DESIGN_FILENAME, DesignFormatError, design_issues
+from .design import DESIGN_FILENAME, DesignFormatError, ExperimentDesign, design_issues
 from .design_edit import DesignEdit, DesignEditError, parse_repeat_group
 from .report import design_table, format_issues
 from .run import OutputLockedError
 from .run.design_file import edit_design
 from .run.lock import lock_issue
+from .validation import ValidationIssue, has_errors
 
 
 def add_design_parser(commands: argparse._SubParsersAction) -> argparse.ArgumentParser:
@@ -104,11 +105,21 @@ def design_command(args: argparse.Namespace) -> int:
     path = Path(args.output).resolve() / DESIGN_FILENAME
     print(f"Experiment design ({path}{', updated' if written else ''}):")
     print(design_table(design))
-    problems = [issue for issue in design_issues(design) if issue.code != "design_not_confirmed"]
+    problems = design_errors(design)
     if problems:
         print()
         print(format_issues(problems))
-    return 0
+    return 1 if has_errors(problems) else 0  # an error printed is an exit status of 1
+
+
+def design_errors(design: ExperimentDesign) -> list[ValidationIssue]:
+    """Return what stops a run on this design, other than groups not confirmed yet.
+
+    ``invalid_experiment_design`` and ``repeat_group_conflict`` (:func:`.design.design_issues`),
+    which ``check`` and ``design`` report as errors as ``run`` does; ``design_not_confirmed``
+    is left out, since confirming is what these commands ask for.
+    """
+    return [issue for issue in design_issues(design) if issue.code != "design_not_confirmed"]
 
 
 def design_instructions(path: Path, output: Path) -> list[str]:

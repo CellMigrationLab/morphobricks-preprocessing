@@ -476,7 +476,7 @@ def test_cli_check_refuses_an_unreadable_design_without_writing(tmp_path, capsys
     write_experiment_design(confirm_all(default_design(repeats_of(root))), path)
     path.write_text(path.read_text(encoding="utf-8").replace(TODAY, "26/10/2026"), "utf-8")
     unreadable = path.read_bytes()
-    assert main(["check", str(root)]) == 0
+    assert main(["check", str(root)]) == 1  # an error printed (#130 review; it was 0)
     out = capsys.readouterr().out
     assert "Experiment design: The experiment design cannot be read" in out
     assert "line 2, column confirmed_on" in out
