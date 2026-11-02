@@ -12,9 +12,13 @@ copy's own header names every axis. :func:`copy_layout` works it out from the he
   one.** A size the header gives is carried only to the role the header names it for, and
   only when the user confirmed that role for that same axis. An axis the user gives
   another role than the header's letter is relabelled: its size is not written, and the
-  reason is kept for the conversion record. So a Y/X swap never exchanges the sizes of Y
-  and X (both become unknown), and a z-step is never written as a time step. A plain
-  stack's positional Y and X keep the header's Y and X sizes when confirmed Y before X.
+  reason is kept for the conversion record. One exception (owner, 2 November 2026): a Y
+  or X relabelled from the header's other one of Y and X (a Y/X swap, or a plain stack
+  confirmed X before Y) keeps the header's size when the header's X and Y sizes are
+  exactly equal, value and unit, since nothing can be exchanged; otherwise both are
+  unknown (the user states them in ``calibration.csv``). So a Y/X swap never exchanges
+  the sizes of Y and X, and a z-step is never written as a time step. A plain stack's
+  positional Y and X keep the header's Y and X sizes when confirmed Y before X.
 - **Channel names** are carried when the channel axis keeps its role and every channel is
   named; the significant bits are carried as they are.
 
@@ -184,7 +188,7 @@ def _carried_sizes(
     sizes, unknown = [], {}
     for role in SIZE_ROLES:
         found = header[role]
-        reason = _not_carried(meta, mapping, axes, role, found)
+        reason = _not_carried(meta, mapping, axes, role, header)
         if found.value is None or reason is not None:
             sizes.append(RecordedSize(role))
             if found.value is not None:
@@ -195,20 +199,39 @@ def _carried_sizes(
 
 
 def _not_carried(
-    meta: TiffMetadata, mapping: AxisMapping, axes: str, role: str, found: RecordedSize
+    meta: TiffMetadata,
+    mapping: AxisMapping,
+    axes: str,
+    role: str,
+    header: Mapping[str, RecordedSize],
 ) -> str | None:
     """Return why the header's size for ``role`` is not written, or None to write it."""
     if role not in axes:
         return "the copy has no such axis"
     letter = meta.axes[mapping.index_of(role)]
-    if letter != role:
+    if letter != role and not _y_x_equal(header, letter, role):
+        if {letter, role} == {"X", "Y"}:
+            return (
+                f"relabelled: the header names this axis {letter}, and its X and Y sizes are "
+                "not the same, so neither is taken (unknown scale)"
+            )
         return (
             f"relabelled: the header names this axis {letter}, so its size is not taken for "
             f"{role} (unknown scale)"
         )
-    if found.unit not in OME_UNITS:
-        return f"its unit {found.unit!r} cannot be written in OME-XML"
+    if header[role].unit not in OME_UNITS:
+        return f"its unit {header[role].unit!r} cannot be written in OME-XML"
     return None
+
+
+def _y_x_equal(header: Mapping[str, RecordedSize], letter: str, role: str) -> bool:
+    """Return True for Y and X relabelled as each other when the header gives them equal."""
+    x, y = header["X"], header["Y"]
+    return (
+        {letter, role} == {"X", "Y"}
+        and x.value is not None
+        and (x.value, x.unit) == (y.value, y.unit)
+    )
 
 
 def _channel_names(meta: TiffMetadata, mapping: AxisMapping) -> tuple[str, ...]:

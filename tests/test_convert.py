@@ -141,6 +141,51 @@ def test_a_y_x_swap_is_written_rows_then_columns_and_never_exchanges_sizes(tmp_p
     assert "relabelled" in entry.unknown_sizes["X"]
 
 
+@pytest.mark.parametrize(
+    ("sizes", "expected"),
+    [
+        ({"PhysicalSizeX": 0.25, "PhysicalSizeY": 0.25}, (0.25, 0.25)),
+        ({"PhysicalSizeX": 0.3, "PhysicalSizeY": 0.4}, (None, None)),
+        ({"PhysicalSizeX": 0.25, "PhysicalSizeY": 0.25, "PhysicalSizeYUnit": "nm"}, (None, None)),
+        ({"PhysicalSizeX": 0.25}, (None, None)),
+    ],
+)
+def test_a_y_x_swap_keeps_the_sizes_only_when_the_header_gives_x_and_y_equal(
+    tmp_path, sizes, expected
+):
+    # Owner decision of 2 November 2026 (plan question 59, (1)): equal X and Y sizes, same
+    # value and unit, are carried (nothing can be exchanged); otherwise both are unknown.
+    source = ome(tmp_path / "exp" / "img.tif", pixels((2, 6, 8)), "ZYX", PhysicalSizeZ=1.5, **sizes)
+    assert convert(tmp_path, ZYX_SWAPPED).written
+    copy = tmp_path / "copies" / "img.tif"
+    found = inspect_image(copy).physical_sizes
+    assert (found.x, found.y, found.z) == (*expected, 1.5)
+    entry = read_conversion_record(tmp_path / "copies")[0].entry("img.tif")
+    carried = {s.role: (s.value, s.source) for s in entry.pixel_sizes if s.value is not None}
+    if expected[0] is None:
+        assert "X" not in carried and "Y" not in carried
+        assert "Y" not in entry.unknown_sizes or "not the same" in entry.unknown_sizes["Y"]
+    else:
+        assert carried["X"] == carried["Y"] == (0.25, "header") and not entry.unknown_sizes
+    assert_bitwise_equal(source, ZYX_SWAPPED, copy)
+
+
+@pytest.mark.parametrize(("resolution", "expected"), [((2.0, 2.0), 0.5), ((2.0, 4.0), None)])
+def test_an_imagej_hyperstack_swap_keeps_equal_y_and_x_sizes_only(tmp_path, resolution, expected):
+    source = tmp_path / "exp" / "img.tif"
+    source.parent.mkdir(parents=True)
+    tifffile.imwrite(
+        source, pixels((2, 3, 6, 8)), imagej=True, resolution=resolution,
+        metadata={"axes": "ZCYX", "unit": "um"},
+    )  # fmt: skip
+    roles = AxisMapping("ZCYX", ("Z", "C", "X", "Y"))
+    assert convert(tmp_path, roles).written
+    copy = tmp_path / "copies" / "img.tif"
+    found = inspect_image(copy).physical_sizes
+    assert (found.x, found.y) == (expected, expected)
+    assert_bitwise_equal(source, roles, copy)
+
+
 def test_an_imagej_slice_stack_confirmed_as_time_drops_its_z_step(tmp_path):
     data = pixels((5, 8, 6), np.uint8)
     source = tmp_path / "exp" / "img.tif"
