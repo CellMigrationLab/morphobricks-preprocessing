@@ -1,0 +1,360 @@
+"""Step 1 of the notebook: the experiment design card."""
+
+from __future__ import annotations
+
+import html
+import logging
+from datetime import date
+from pathlib import Path
+
+import ipywidgets as widgets
+
+from . import notebook_style as ui
+from .dataset import check_dataset
+from .design import (
+    DESIGN_FILENAME,
+    DesignChanges,
+    DesignCheckError,
+    ExperimentDesign,
+    default_design,
+    load_design,
+    write_experiment_design,
+)
+from .discovery import check_output_folder, default_output_folder
+from .notebook_options import _PAIRING_COLUMNS
+from .notebook_render import _group_explanation, _group_question
+from .validation import plural
+
+
+class _DesignCard:
+    """Step 1's experiment design card: repeat groups, comparability and controls."""
+
+    # Experiment design (step 1) -------------------------------------------------------------
+
+    def _build_design_card(self) -> None:
+        self.design_status = widgets.HTML()
+        self.design_change = ui.button(
+            " Change the experiment design",
+            style="warning",
+            icon="pencil",
+            tooltip="Show the pairing, the confirmations and the controls again",
+        )
+        ui.set_visible(self.design_change, False)
+        self.pairing_grid = widgets.VBox()
+        self.pairing_box = widgets.VBox(
+            [
+                widgets.HTML("<b>1. Pair the biological repeats across conditions</b>"),
+                ui.help_text(
+                    "A repeat group is one biological repeat in every condition: the same "
+                    "preparation, imaged for each condition. Folders with the same name are "
+                    "paired by default. If a repeat has another folder name in some "
+                    "condition (acquired a day later, for example), choose its group in "
+                    "the dropdown. Each group may hold one folder per condition."
+                ),
+                self.pairing_grid,
+            ]
+        )
+        self.groups_box = widgets.VBox()
+        self.control_checks: dict[str, widgets.Checkbox] = {}
+        self.controls_grid = widgets.VBox()
+        self.controls_box = widgets.VBox(
+            [
+                widgets.HTML("<b>Controls (optional)</b>"),
+                ui.help_text(
+                    "Tick the control conditions, if any: none, one or several. This is "
+                    "recorded for later bricks; nothing uses it yet."
+                ),
+                self.controls_grid,
+            ]
+        )
+        self.design_editor = widgets.VBox([self.pairing_box, self.groups_box, self.controls_box])
+        self.design_card = ui.card(
+            "Experiment design",
+            [
+                ui.help_text(
+                    "Later bricks normalise each biological repeat over all conditions "
+                    "together, so the brick needs to know which folders are the same "
+                    "biological repeat, and that their images are comparable. The answers "
+                    f"are saved in <b>{DESIGN_FILENAME}</b> in the output folder, so they are "
+                    "not asked again while the folders stay the same."
+                ),
+                self.design_status,
+                self.design_change,
+                self.design_editor,
+            ],
+            visible=False,
+        )
+        self.design_change.on_click(lambda _: self._reopen_design())
+
+    def _design_folder(self) -> Path | None:
+        """Return the output folder the design is saved in, or None if it may not be written."""
+        folder = ui.clean_path(self.folder.value)
+        if not folder:
+            return None
+        output = Path(self._output_folder() or default_output_folder(folder))
+        return None if check_output_folder(folder, output) else output
+
+    def _open_design(self) -> None:
+        """Load the saved design, or start a new one, once the labels are confirmed.
+
+        A saved file that cannot be read is left as it is (owner decision of 31 October
+        2026): nothing is written until the user corrects it or answers a question again,
+        and the questions start unanswered, so step 3 cannot run on a guessed design.
+        """
+        repeats = self.preflight.dataset.repeats
+        output = self._design_folder()
+        changes, problem, saved = DesignChanges(), None, False
+        if output is None:
+            design = default_design(repeats)
+        else:
+            try:
+                design, changes = load_design(output, repeats)
+                saved = (output / DESIGN_FILENAME).exists()
+            except DesignCheckError as exc:
+                # Refused and left as it is; the questions start unanswered.
+                design, problem = default_design(repeats), exc.issues[0].message
+        self.design = design
+        self._design_unreadable = problem is not None
+        self._build_design_editor()
+        # A design confirmed earlier for the same folders is not asked again.
+        reopen = not (saved and design.confirmed and not changes.any)
+        ui.set_visible(self.design_editor, reopen)
+        ui.set_visible(self.design_change, not reopen)
+        self._design_note = self._design_load_note(design, changes, problem, saved)
+        ui.set_visible(self.design_card, True)
+        if self._design_unreadable:
+            self._design_saved = False
+        else:
+            self._save_design()
+        self._design_changed()
+
+    def _design_load_note(
+        self, design: ExperimentDesign, changes: DesignChanges, problem: str | None, saved: bool
+    ) -> str:
+        if problem:
+            return ui.status(
+                "error",
+                f"The saved {DESIGN_FILENAME} cannot be read. It was left unchanged.",
+                [
+                    problem,
+                    "Correct the file (a spreadsheet program may have rewritten a date such "
+                    "as 2026-10-26 as 26/10/2026; dates are written YYYY-MM-DD), then undo "
+                    "and confirm the labels again to read it.",
+                    "Or answer the questions below again: your first answer replaces the "
+                    "file with the answers shown here.",
+                ],
+            )
+        if saved and changes.any:
+            lines = []
+            if changes.added:
+                lines.append(
+                    "New biological-repeat folders: "
+                    + ", ".join(f"{c}/{b}" for c, b in changes.added)
+                    + ". Only the repeat groups they join are asked again."
+                )
+            if changes.removed:
+                lines.append(
+                    "No longer found: " + ", ".join(f"{c}/{b}" for c, b in changes.removed) + "."
+                )
+            return ui.status("info", "The folders changed since the design was saved.", lines)
+        return ""
+
+    def _close_design(self) -> None:
+        self.design = None
+        ui.set_visible(self.design_card, False)
+        if self.preflight is not None:
+            self.dataset = self.preflight.dataset
+            self._show_issue_summary()
+
+    def _reopen_design(self) -> None:
+        ui.set_visible(self.design_editor, True)
+        ui.set_visible(self.design_change, False)
+        self._refresh_design_status()
+
+    def _build_design_editor(self) -> None:
+        design = self.design
+        pairing = len(design.conditions) > 1 and not design.single_repeat
+        ui.set_visible(self.pairing_box, pairing)
+        options = sorted({row.biological_repeat for row in design.rows} | set(design.groups))
+        rows = [
+            widgets.GridBox(
+                [widgets.HTML(f"<b>{h}</b>") for h in ("Condition", "Folder", "Repeat group")],
+                layout=_PAIRING_COLUMNS,
+            )
+        ]
+        for row in design.rows if pairing else ():
+            dropdown = widgets.Dropdown(
+                options=options, value=row.repeat_group, layout=widgets.Layout(width="99%")
+            )
+            dropdown.observe(
+                lambda change, key=row.key: self._pair(key, change["new"]), names="value"
+            )
+            rows.append(
+                widgets.GridBox(
+                    [
+                        widgets.HTML(html.escape(row.condition)),
+                        widgets.HTML(f"<b>{html.escape(row.biological_repeat)}</b>"),
+                        dropdown,
+                    ],
+                    layout=_PAIRING_COLUMNS,
+                )
+            )
+        self.pairing_grid.children = rows
+        self.control_checks = {}
+        for condition in design.conditions:
+            check = widgets.Checkbox(
+                value=condition in design.controls,
+                description=condition,
+                indent=False,
+                layout=widgets.Layout(width="auto"),
+            )
+            check.observe(
+                lambda change, c=condition: self._set_control(c, change["new"]), names="value"
+            )
+            self.control_checks[condition] = check
+        self.controls_grid.children = [
+            widgets.HBox(
+                list(self.control_checks.values()), layout=widgets.Layout(flex_flow="wrap")
+            )
+        ]
+        self._build_group_questions()
+
+    def _build_group_questions(self) -> None:
+        """One yellow question per repeat group; rebuilt when the pairing changes."""
+        design = self.design
+        self.group_confirmations: dict[str, ui.ConfirmToggle] = {}
+        boxes = [
+            widgets.HTML(
+                "<b>2. Confirm that the biological repeats are comparable</b>"
+                if len(design.conditions) > 1 and not design.single_repeat
+                else "<b>Confirm that the images are comparable</b>"
+            )
+        ]
+        for group in design.groups:
+            toggle = ui.ConfirmToggle(
+                _group_question(design, group),
+                _group_explanation(design, group),
+                "Yes, they are comparable",
+                "Confirmed: these images are comparable.",
+                "Undo: they are not comparable",
+            )
+            toggle.set(design.group_confirmed(group), notify=False)
+            toggle.disabled = group in design.conflicts
+            toggle.observe(lambda value, g=group: self._confirm_group(g, value))
+            self.group_confirmations[group] = toggle
+            boxes.append(toggle.widget)
+        self.groups_box.children = boxes
+
+    def _pair(self, key: tuple[str, str], group: str) -> None:
+        if self.design is None:
+            return
+        self.design = self.design.with_group(key, group)
+        self._build_group_questions()
+        self._save_design()
+        self._design_changed()
+
+    def _confirm_group(self, group: str, confirmed: bool) -> None:
+        if self.design is None:
+            return
+        self.design = self.design.with_confirmed(
+            group, confirmed, date.today().isoformat(), self.preflight.dataset.repeats
+        )
+        self._save_design()
+        self._design_changed()
+
+    def _set_control(self, condition: str, control: bool) -> None:
+        if self.design is None:
+            return
+        self.design = self.design.with_control(condition, control)
+        self._save_design()
+        self._refresh_design_status()
+
+    def _save_design(self) -> None:
+        output = self._design_folder()
+        self._design_saved = False
+        if output is None or self.design is None:
+            return
+        try:
+            write_experiment_design(self.design, output / DESIGN_FILENAME)
+        except OSError:
+            logging.getLogger(__name__).warning("Cannot save the design", exc_info=True)
+            return
+        self._design_saved = True
+        if self._design_unreadable:
+            self._design_unreadable = False
+            self._design_note = ui.status(
+                "info", f"Your answers replaced the unreadable {DESIGN_FILENAME}."
+            )
+
+    def _design_changed(self) -> None:
+        """Update the balance, the messages, the status and the later steps after an answer."""
+        self.dataset = check_dataset(
+            self.preflight.discovery,
+            self.design.repeat_groups() if self.design is not None else None,
+            excluded=self.preflight.excluded,
+        )
+        self._show_issue_summary()
+        self._refresh_design_status()
+        if self.confirmed_mapping is not None:
+            self._refresh_axis_next()
+        self._refresh_run_step()
+
+    def _refresh_design_status(self) -> None:
+        design = self.design
+        if design is None:
+            self.design_status.value = ""
+            return
+        note = getattr(self, "_design_note", "")
+        saved = getattr(self, "_design_saved", False)
+        if saved:
+            where = f"Saved in <b>{html.escape(str(self._design_folder() / DESIGN_FILENAME))}</b>."
+        elif self._design_unreadable:
+            where = (
+                f"Not saved: the unreadable {DESIGN_FILENAME} is kept as it is until you "
+                "correct it or answer a question."
+            )
+        else:
+            where = (
+                "Not saved: the output folder is not set or cannot be written; the answers "
+                "are kept while the notebook is open and saved with the run."
+            )
+        controls = ", ".join(html.escape(c) for c in design.controls) or "none"
+        if design.confirmed:
+            dates = sorted({design.confirmed_on(g) for g in design.groups} - {""})
+            when = f" on {', '.join(dates)}" if dates else ""
+            status = ui.status(
+                "ok",
+                f"The biological repeats are confirmed{when}.",
+                [
+                    f"{plural(len(design.groups), 'repeat group')}: "
+                    + ", ".join(html.escape(g) for g in design.groups),
+                    f"Controls: {controls}",
+                    where,
+                ],
+                raw=True,
+            )
+        else:
+            waiting = [g for g in design.unconfirmed_groups if g not in design.conflicts]
+            lines = []
+            if design.conflicts:
+                lines.append(
+                    "A repeat group holds more than one folder of a condition: "
+                    + ", ".join(html.escape(g) for g in design.conflicts)
+                    + ". Move one of the folders into another group."
+                )
+            if waiting:
+                lines.append(
+                    f"Still to confirm: {plural(len(waiting), 'repeat group')} ("
+                    + ", ".join(html.escape(g) for g in waiting)
+                    + "). Step 3 runs once every group is confirmed."
+                )
+            lines.append(where)
+            status = ui.status("warn", "Please answer the questions below.", lines, raw=True)
+        self.design_status.value = note + status
+
+    def _design_confirmed(self) -> bool:
+        return self.design is not None and self.design.confirmed
+
+    def _design_pending(self) -> bool:
+        """Return True while the design shown in step 1 still has questions to answer."""
+        return self._show_design and not self._design_confirmed()
