@@ -201,7 +201,10 @@ notebook's step 3 (§4), also tells how they relate.
   axes you know better than its header is saved as a named-axis copy first. A plain stack
   of pages without axis metadata is read with the roles you confirm (a warning).
 - **OME-Zarr images:** OME-NGFF 0.4 and 0.5 (needs the `zarr` extra; 0.5 needs Python 3.11
-  or newer). Their axes (time, channel, z, y, x) come from their metadata. Only the
+  or newer). Their axes (time, channel, z, y, x) come from their metadata, and they are
+  read only with those roles: roles that give an axis another role (its depth as time,
+  say) are an error, and an image whose metadata do not name its axes is not read (the
+  axes are never guessed). Only the
   full-resolution level of a single image is read; a folder holding several images (a
   plate, or a bioformats2raw export with several series) is an error: export each image
   separately or exclude it.
@@ -913,8 +916,8 @@ continues.
 | `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. |
 | `no_images` | Error | No images to analyse (or all excluded). Check the folder. |
 | `unreadable_tiff` | Error | A TIFF file cannot be opened. Export it again, or exclude it. |
-| `unreadable_ome_zarr` | Error | A `.zarr` folder is not an OME-Zarr image that can be read. Export it again as OME-Zarr (OME-NGFF 0.4 or 0.5), or exclude it. |
-| `ome_zarr_axes_mismatch` | Error | An OME-Zarr image declares an axis with several planes that the experiment has no role for (or has no X/Y). Check the axis roles, or process it separately. |
+| `unreadable_ome_zarr` | Error | A `.zarr` folder is not an OME-Zarr image that can be read; the message says why. That includes an image whose metadata do not name its axes (OME-NGFF 0.3 to 0.5 require them), and every OME-NGFF 0.1 or 0.2 store (their metadata never name the axes): the axes are never guessed. Re-save an 0.1 or 0.2 store as OME-NGFF 0.4 or later. Export it again as OME-Zarr (OME-NGFF 0.4 or 0.5) with its axes, or exclude it. |
+| `ome_zarr_axes_mismatch` | Error | An OME-Zarr image declares an axis with several planes that the experiment has no role for (or has no X/Y), or the confirmed roles give one of its axes another role than its metadata declares (for example its depth `z` confirmed as time `T`); the message names each image with its declared axes and the confirmed roles. An OME-Zarr image is read only with the roles it declares. Check the axis roles, or process it separately. |
 | `multiple_series` | Error | A file or OME-Zarr folder holds several images (positions, scenes, series, wells or fields). Export them separately, or exclude it. |
 | `unsupported_dtype` | Error | Unsupported pixel type (e.g. float16). Convert, or exclude it. |
 | `mixed_dtypes` | Error | Images have different pixel types. Process them separately or convert. |
@@ -960,6 +963,7 @@ continues.
 | `different_pixel_sizes` | Warning | The physical pixel size or z-step (from the metadata or `calibration.csv`) differs between images by more than 0.1 % (for example different objectives). Images outside the largest group of matching sizes are listed; when sizes only change by small steps from image to image, none is listed. Check the microscope settings if this is not intended. |
 | `missing_pixel_size` | Warning | Some images have a pixel size (from the metadata or `calibration.csv`) and others do not, so it cannot be checked; images stated as measured in pixels count as without one, and the message says how many. Export them again with metadata, or state their sizes with `calibrate`, if needed. |
 | `unsupported_pixel_size_unit` | Warning | An image gives its pixel size or z-step in a unit that is not converted (for example inches); only pm, Å, nm, µm, mm, cm and m are. The message names each image, axis and unit. Those sizes are not used: the image is treated as uncalibrated on those axes. Export it again with the pixel size in a supported unit, or state it with `calibrate`, if the physical size matters. Not reported for an axis whose size is stated. |
+| `invalid_physical_calibration` | Warning | An image's metadata give a pixel size, z-step or time step that cannot be used (for OME-Zarr: `coordinateTransformations` that are malformed, of an unsupported type, stored in a separate file, or a scale that is zero, negative or not a number); the message names each image and what is wrong. The image is treated as uncalibrated on those axes; no size is made up. Correct the metadata, or state the sizes with the `calibrate` command: the warning goes once every lost pixel size and z-step is stated. A lost time step cannot be stated, so its warning stays until the metadata are corrected. |
 | `calibration_axis_absent` | Warning | `calibration.csv` states a size for an axis some images do not have (for example a Z size for 2D images or projections); the message names them. No size is recorded for an axis an image does not have. Give the statement a narrower target, or no action if it is meant for the other images. |
 | `calibration_differs_from_header` | Warning | `calibration.csv` states a pixel size (or `pixels`) that differs from an image's metadata; the message names each image and axis with both sizes. The stated size is used. Correct or remove the statement if the metadata are right. |
 | `calibration_target_not_found` | Error | `calibration.csv` names a folder or image that is not in the experiment (names are compared exactly, case included). Correct the target, or remove the line. |

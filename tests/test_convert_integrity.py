@@ -155,7 +155,10 @@ def test_an_ome_zarr_copy_changed_in_place_is_not_reused(tmp_path):
     from zarr_tree import write_ngff
 
     exp, copies = swapped_experiment(tmp_path / "exp", names=("c/a.tif",)), tmp_path / "copies"
-    write_ngff(exp / "c" / "z.zarr", np.arange(2 * 9 * 6, dtype=np.uint8).reshape(2, 9, 6), "zyx")
+    # Another arrangement than the TIFFs', so it is matched by its declared roles: a "zyx"
+    # store under the experiment's swapped roles contradicts its metadata (issue #72).
+    pixels = np.arange(2 * 9 * 6, dtype=np.uint8).reshape(1, 2, 9, 6)
+    write_ngff(exp / "c" / "z.zarr", pixels, "tzyx")
     assert convert_experiment(exp, SWAPPED, copies).written
     chunk = max(
         (p for p in (copies / "c" / "z.zarr").rglob("*") if p.is_file()),
