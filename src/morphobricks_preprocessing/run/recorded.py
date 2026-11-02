@@ -381,7 +381,7 @@ def _with_changes(
             "no row is affected; the masks are recorded again and mask_relationships.json "
             "is removed",
         ),
-        _change("mask_axes", recorded_mask_axes(before), _new_types(given, before), UNAFFECTED),
+        _change("mask_axes", *_mask_axes_change(given, before), UNAFFECTED),
         _change("image_type", before.image_type, given.image_type, UNAFFECTED),
         _change("bin_count", settings.bin_count, given.bin_count, RECOMPUTED),
         _change(
@@ -462,11 +462,19 @@ def _given_masks(folder: Path | Literal[False] | None) -> Path | str | None:
     return folder
 
 
-def _new_types(given: GivenInputs, before: RunManifest) -> dict[str, str] | None:
-    """Return the mask axes after the given statements, or None when none were given."""
+def _mask_axes_change(
+    given: GivenInputs, before: RunManifest
+) -> tuple[dict[str, str], dict[str, str] | None]:
+    """Return the recorded mask axes the run keeps, and those after the given statements.
+
+    The second is None when no statement was given. A dropped masks folder takes its
+    statements with it (:func:`resolve_inputs`); that is the ``masks_folder`` change, so
+    the statements compared are those kept.
+    """
+    kept = recorded_mask_axes(before, labels_only=given.masks_folder is False)
     if not given.mask_axes:
-        return None
-    return {**recorded_mask_axes(before), **dict(given.mask_axes)}
+        return kept, None
+    return kept, {**kept, **dict(given.mask_axes)}
 
 
 def _exclusions(paths: Iterable[str]) -> tuple[str, ...]:
