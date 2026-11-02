@@ -1,6 +1,6 @@
 {
   "noqa": {
-    "ANN": 57,
+    "ANN": 56,
     "C901": 1,
     "PLR0913": 3,
     "PLR0915": 2
@@ -13,9 +13,8 @@
     "src/morphobricks_preprocessing/axis_review.py review_axes: # executable lines (max #)": 106,
     "src/morphobricks_preprocessing/cli.py _check: private function of # lines without a docstring": 52,
     "src/morphobricks_preprocessing/cli.py _masks: private function of # lines without a docstring": 34,
-    "src/morphobricks_preprocessing/cli.py _run: # executable lines (max #)": 75,
-    "src/morphobricks_preprocessing/cli.py _run: private function of # lines without a docstring": 75,
     "src/morphobricks_preprocessing/cli.py build_parser: # executable lines (max #)": 108,
+    "src/morphobricks_preprocessing/cli_run.py run_command: # executable lines (max #)": 75,
     "src/morphobricks_preprocessing/dataset.py _missing_issues: private function of # lines without a docstring": 32,
     "src/morphobricks_preprocessing/dataset.py _unbalanced_issues: private function of # lines without a docstring": 19,
     "src/morphobricks_preprocessing/design.py _check_strict_values: private function of # lines without a docstring": 19,
