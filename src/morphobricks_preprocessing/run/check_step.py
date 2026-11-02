@@ -20,6 +20,7 @@ from ..discovery_report import RunOutcome, build_report
 from ..validation import ValidationIssue, has_errors
 from .design_file import write_design_template
 from .lock import OutputLockedError, lock_issue, output_lock
+from .output_guard import output_masks_issues
 from .preflight import Preflight, fit_calibration
 from .publish import write_report
 
@@ -119,8 +120,8 @@ def write_check_outputs(
     Returns
     -------
     CheckOutputs
-        Nothing written when the output folder is inside the experiment (the preflight
-        reports it) or another run holds its lock.
+        Nothing written when the output folder is inside the experiment or the masks folder
+        (the preflight reports it) or another run holds its lock.
     """
     return _write(pre, output_folder, review, with_design=True)
 
@@ -136,8 +137,9 @@ def _write(
     root = pre.discovery.root
     output = default_output_folder(root) if output_folder is None else Path(output_folder)
     output = output.resolve()
-    if check_output_folder(root, output):
-        return CheckOutputs()
+    masks = pre.masks.folder if pre.masks is not None else None
+    if check_output_folder(root, output) or output_masks_issues(output, masks):
+        return CheckOutputs()  # the preflight or the run reports it; nothing is written
     output.mkdir(parents=True, exist_ok=True)
     report = build_report(pre, output, pre.issues, review=review, outcome=RunOutcome("check"))
     folders_ok = not has_errors([*pre.discovery.issues, *pre.exclusion_issues])

@@ -26,6 +26,7 @@ from ..design_edit import DesignEdit, DesignEditError, apply_design_edit
 from ..manifest import RunManifest, file_sha256
 from ..validation import ValidationIssue, error
 from .lock import output_lock
+from .output_guard import refuse_output_inside_masks
 from .recorded import InputChange, design_change, usable
 
 
@@ -76,8 +77,11 @@ def write_design(design: ExperimentDesign, output_folder: str | os.PathLike) -> 
     ------
     OutputLockedError
         If a run holds the output folder's lock; nothing is written.
+    OutputInsideMasksError
+        If the run in the output folder recorded a masks folder that holds it.
     """
     output = Path(output_folder).resolve()
+    refuse_output_inside_masks(output)
     output.mkdir(parents=True, exist_ok=True)
     with output_lock(output):
         return write_experiment_design(design, output / DESIGN_FILENAME)
@@ -113,11 +117,14 @@ def edit_design(
         If the file cannot be read (the message names the line and column).
     OutputLockedError
         If a run holds the output folder's lock; nothing is read or written.
+    OutputInsideMasksError
+        If the run in the output folder recorded a masks folder that holds it.
     """
     output = Path(output_folder).resolve()
     path = output / DESIGN_FILENAME
     if not output.is_dir():
         raise DesignEditError(f"the output folder {output} does not exist: run 'check' first")
+    refuse_output_inside_masks(output)
     with output_lock(output):
         if not path.is_file():
             raise DesignEditError(

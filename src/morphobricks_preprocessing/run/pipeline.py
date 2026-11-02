@@ -56,6 +56,7 @@ from .design_file import design_for_run
 from .generation import staged_generation
 from .lock import OutputLockedError, lock_issue, output_lock
 from .modes import FULL, RESTART, check_mode
+from .output_guard import output_masks_issues
 from .preflight import Preflight, fit_calibration, preflight
 from .publish import write_report
 from .recorded import (
@@ -165,10 +166,12 @@ def run_experiment(  # noqa: PLR0913
     """
     _check_arguments(mode, image_type, missing_as_singleton)
     output, root = _folders(experiment_root, output_folder)
-    if check_output_folder(root, output):
-        # Nothing is written inside the experiment: not the lock, not the report.
+    inside_masks = output_masks_issues(output, masks_folder)
+    if check_output_folder(root, output) or inside_masks:
+        # Nothing is written inside the experiment or the masks: not the lock, not the report.
         pre = preflight(root, output, exclude=exclude or ())
-        return RunResult(output, False, _sorted(list(pre.issues)), excluded=pre.excluded)
+        issues = _sorted([*pre.issues, *inside_masks])
+        return RunResult(output, False, issues, excluded=pre.excluded)
     given = GivenInputs(
         experiment_root=root,
         mapping=mapping,

@@ -118,6 +118,7 @@ def convert_experiment(
     missing_as_singleton: bool = False,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
     progress: Callable[[int, int, str], None] | None = None,
+    masks_folder: str | os.PathLike | None = None,
 ) -> ConversionResult:
     """Write named-axis copies of an experiment's images with the roles the user confirmed.
 
@@ -140,6 +141,11 @@ def convert_experiment(
         Working-memory limit per plane while reading and writing, as the run's.
     progress
         Called as ``progress(done, total, relative_path)`` before each image is written.
+    masks_folder
+        The masks folder of the runs, if known (the CLI and the notebook give the one given
+        or recorded by the run in the output folder): the copies may be neither inside it,
+        where they would be read as masks, nor hold it (``copy_folder_overlaps_masks``).
+        Unknown here, a run refuses a masks folder holding copies (``copies_inside_masks``).
 
     Returns
     -------
@@ -153,7 +159,7 @@ def convert_experiment(
     """
     _check_arguments(missing_as_singleton, memory_limit)
     root, dest = Path(experiment_root).resolve(), Path(destination).resolve()
-    refused = copy_folder_issues(root, dest)
+    refused = copy_folder_issues(root, dest, masks_folder)
     if refused:
         return ConversionResult(dest, False, tuple(refused))
     planned, issues = plan_conversion(

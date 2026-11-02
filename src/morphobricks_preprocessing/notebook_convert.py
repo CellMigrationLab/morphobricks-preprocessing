@@ -41,6 +41,7 @@ from .notebook_options import _WIDE
 from .notebook_output import _LockCard
 from .notebook_render import issues_html
 from .planes import format_bytes
+from .run.output_guard import recorded_masks_of
 from .validation import plural
 
 _LABEL = " Make named-axis copies"
@@ -214,11 +215,19 @@ class _ConvertCard:
                 exclude=self.preflight.excluded,
                 missing_as_singleton=self.missing_as_singleton.value,
                 memory_limit=self._memory_limit(),
+                masks_folder=self._runs_masks_folder(),
             )
         self._convert_preview = preview
         self.convert_plan.value = _plan_html(preview)
         self._update_convert_button()
         return preview
+
+    def _runs_masks_folder(self) -> Path | None:
+        """Return the masks folder checked in this notebook, else the one the run recorded."""
+        masks = self.preflight.masks if self.preflight is not None else None
+        if masks is not None and masks.folder is not None:
+            return masks.folder
+        return recorded_masks_of(self._output_path(self.preflight.discovery.root))
 
     def _update_convert_button(self) -> None:
         """Enable the button once the plan shows nothing that stops the conversion."""
@@ -265,6 +274,7 @@ class _ConvertCard:
                     missing_as_singleton=self.missing_as_singleton.value,
                     memory_limit=self._memory_limit(),
                     progress=self._convert_progressed,
+                    masks_folder=self._runs_masks_folder(),
                 )
         except Exception as exc:  # unexpected failures still get a readable message
             self.log.lines.append(traceback.format_exc())
