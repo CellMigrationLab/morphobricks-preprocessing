@@ -14,13 +14,38 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..axes import AxisReview
+from ..axis_review import review_axes
 from ..discovery import check_output_folder, default_output_folder
 from ..discovery_report import RunOutcome, build_report
 from ..validation import ValidationIssue, has_errors
 from .design_file import write_design_template
 from .lock import OutputLockedError, lock_issue, output_lock
-from .preflight import Preflight
+from .preflight import Preflight, fit_calibration
 from .publish import write_report
+
+
+def suggested_review(pre: Preflight) -> tuple[Preflight, AxisReview | None]:
+    """Review the suggested axis roles, and fit the pixel sizes to them, as ``check`` does.
+
+    ``check`` runs before the user confirms the roles, so its report describes the images
+    with the roles the headers suggest: no Z or T size for an image without that axis
+    (:func:`.preflight.fit_calibration`).
+
+    Parameters
+    ----------
+    pre
+        The preflight.
+
+    Returns
+    -------
+    tuple
+        The preflight with its sizes fitted, and the review of the suggested roles; the
+        preflight unchanged and None when no roles can be suggested.
+    """
+    if pre.suggested_mapping is None:
+        return pre, None
+    review = review_axes(pre.metadata, pre.suggested_mapping)
+    return fit_calibration(pre, review)[0], review
 
 
 def write_check_report(

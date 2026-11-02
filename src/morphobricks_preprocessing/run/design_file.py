@@ -55,6 +55,34 @@ def write_design_template(output: Path, repeats: tuple[BiologicalRepeat, ...]) -
     return write_experiment_design(default_design(repeats), path)
 
 
+def write_design(design: ExperimentDesign, output_folder: str | os.PathLike) -> Path:
+    """Write a design to ``experiment_design.csv`` in the output folder, holding its lock.
+
+    The notebook saves each answer with it, so a run never reads a half-written design.
+
+    Parameters
+    ----------
+    design
+        The design to write, as answered.
+    output_folder
+        The output folder; created if needed.
+
+    Returns
+    -------
+    Path
+        The file written.
+
+    Raises
+    ------
+    OutputLockedError
+        If a run holds the output folder's lock; nothing is written.
+    """
+    output = Path(output_folder).resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    with output_lock(output):
+        return write_experiment_design(design, output / DESIGN_FILENAME)
+
+
 def edit_design(
     output_folder: str | os.PathLike, edit: DesignEdit, *, on: str | None = None
 ) -> tuple[ExperimentDesign, Path | None]:

@@ -40,6 +40,9 @@ class DesignEdit:
         Repeat groups to confirm (after the moves).
     confirm_all
         Confirm every repeat group not confirmed yet.
+    unconfirm
+        Repeat groups whose confirmation is taken back (after the moves, before the
+        confirmations); the notebook's "Undo" (PP-10).
     """
 
     repeat_groups: Mapping[tuple[str, str], str] = field(default_factory=dict)
@@ -47,10 +50,11 @@ class DesignEdit:
     not_control: tuple[str, ...] = ()
     confirm: tuple[str, ...] = ()
     confirm_all: bool = False
+    unconfirm: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "repeat_groups", MappingProxyType(dict(self.repeat_groups)))
-        for name in ("control", "not_control", "confirm"):
+        for name in ("control", "not_control", "confirm", "unconfirm"):
             object.__setattr__(self, name, tuple(getattr(self, name)))
 
 
@@ -110,6 +114,7 @@ def apply_design_edit(design: ExperimentDesign, edit: DesignEdit, on: str) -> Ex
     """
     design = _moved(design, edit.repeat_groups)
     design = _controls(design, edit.control, edit.not_control)
+    design = _unconfirmed(design, edit.unconfirm, edit.confirm)
     groups = design.unconfirmed_groups if edit.confirm_all else edit.confirm
     _known("repeat group", groups, design.groups)
     for group in dict.fromkeys(groups):
@@ -148,6 +153,19 @@ def _controls(
         design = design.with_control(condition, True)
     for condition in not_control:
         design = design.with_control(condition, False)
+    return design
+
+
+def _unconfirmed(
+    design: ExperimentDesign, unconfirm: tuple[str, ...], confirm: tuple[str, ...]
+) -> ExperimentDesign:
+    """Take back confirmations, refusing unknown groups and a group both confirmed and not."""
+    _known("repeat group", unconfirm, design.groups)
+    both = sorted(set(unconfirm) & set(confirm))
+    if both:
+        raise DesignEditError(f"{', '.join(both)} cannot be confirmed and unconfirmed at once")
+    for group in dict.fromkeys(unconfirm):
+        design = design.with_confirmed(group, False)
     return design
 
 
