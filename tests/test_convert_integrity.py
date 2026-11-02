@@ -279,3 +279,37 @@ def test_the_commands_refuse_a_bad_memory_size_before_reading_anything(
     assert exit_info.value.code == 2
     assert "not a whole number of bytes" in capsys.readouterr().err
     assert not (tmp_path / "copies").exists()
+
+
+def test_an_ome_zarr_copy_holding_a_folder_link_counts_as_changed(tmp_path):
+    # Review of PP-11c: os.walk does not enter a link to a folder, so the files behind it
+    # would be left out of the SHA-256; such a copy is never hashed in part.
+    from morphobricks_preprocessing.content_hash import content_sha256, unchanged_content
+
+    zarr = tmp_path / "z.zarr"
+    (zarr / "0").mkdir(parents=True)
+    (zarr / "0" / "c").write_bytes(b"a")
+    (zarr / "zarr.json").write_text("{}")
+    expected = content_sha256(zarr)
+    (zarr / "0").rename(tmp_path / "elsewhere")
+    try:
+        (zarr / "0").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+    except OSError:
+        pytest.skip("folder links cannot be made here")
+    with pytest.raises(OSError, match="link to a folder"):
+        content_sha256(zarr)
+    assert not unchanged_content(zarr, expected)
+
+
+def test_the_run_warning_about_an_added_copy_says_the_bricks_will_refuse_it(tmp_path):
+    # Review of PP-11c: the run goes on with the warning, but RunInputs refuses the run, so
+    # the warning must not suggest that analysing such a copy is an option.
+    exp, copies, out = swapped_experiment(tmp_path / "exp"), tmp_path / "copies", tmp_path / "o"
+    assert convert_experiment(exp, SWAPPED, copies).written
+    (copies / "ctrl" / "r1" / "n.tif").write_bytes((copies / "ctrl" / "r1" / "a.tif").read_bytes())
+    run = run_experiment(copies, NAMED, output_folder=out)
+    found = {issue.code: issue for issue in run.issues}["copy_changed_after_conversion"]
+    assert found.paths == ("ctrl/r1/n.tif",) and "refuse" in found.message
+    assert "Convert the originals again" in found.action
+    with pytest.raises(RunInputsError, match="ctrl/r1/n.tif"):
+        RunInputs.open(out)

@@ -8,7 +8,10 @@ and :class:`.run_inputs.RunInputs` check it. Sources keep the fingerprint rule (
 
 An OME-Zarr copy is hashed as the SHA-256 of its files' relative paths and SHA-256s, in
 path order. Its ``labels`` group is left out, as :func:`.manifest.source_fingerprint`
-leaves it out: label images are masks, recorded and checked one by one by the run.
+leaves it out: label images are masks, recorded and checked one by one by the run, and
+a brick may add a label image to an OME-Zarr image without changing the image. A folder
+holding a link to a folder is not hashed (:class:`OSError`): the files behind the link
+would be left out, and a copy is never hashed in part (the conversion writes no links).
 """
 
 from __future__ import annotations
@@ -36,7 +39,8 @@ def content_sha256(path: str | os.PathLike) -> str:
     Raises
     ------
     OSError
-        If the file or folder cannot be read (``FileNotFoundError`` when it is gone).
+        If the file or folder cannot be read (``FileNotFoundError`` when it is gone), or
+        the folder holds a link to a folder.
     """
     path = Path(path)
     if not path.is_dir():
@@ -54,6 +58,12 @@ def _folder_files(folder: Path) -> list[str]:
         if Path(current) == folder and LABELS_GROUP in subfolders:
             subfolders.remove(LABELS_GROUP)
         relative = Path(current).relative_to(folder)
+        # os.walk does not enter a link to a folder, so its files would not be hashed.
+        linked = [name for name in subfolders if (Path(current) / name).is_symlink()]
+        if linked:
+            raise OSError(
+                f"{folder} holds a link to a folder ({(relative / linked[0]).as_posix()})"
+            )
         found += [(relative / name).as_posix() for name in names]
     return sorted(found)
 
