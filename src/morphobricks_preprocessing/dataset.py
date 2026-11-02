@@ -34,6 +34,7 @@ CONSISTENCY_CODES = (
     "different_pixel_sizes",
     "missing_pixel_size",
     "unsupported_pixel_size_unit",
+    "invalid_physical_calibration",
     "unbalanced_images",
     "repeat_missing_conditions",
 )

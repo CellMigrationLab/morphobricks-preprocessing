@@ -23,10 +23,12 @@ import math
 import os
 import re
 from collections.abc import Hashable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from xml.etree import ElementTree
 
 import tifffile
+
+from .ngff_scale import read_scale
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +134,13 @@ class PhysicalSizes:
         converted: the axis is uncalibrated (:meth:`micrometers` is None). Recorded so
         that the unit can be named (``unsupported_pixel_size_unit``); for information
         only, not part of equality.
+    invalid
+        What is wrong with a calibration the metadata give but that cannot be used (a
+        malformed OME-NGFF ``coordinateTransformations``, :mod:`.ngff_scale`), in plain
+        words; None when the calibration is usable or not given. The sizes it would give
+        are None (never substituted), and the folder check names the image
+        (``invalid_physical_calibration``, issue #94). For information only, not part of
+        equality.
 
     Two sizes are equal when their sizes, ``space_unit`` and resolved units are.
     """
@@ -146,6 +155,7 @@ class PhysicalSizes:
     y_unit: str | None = None
     z_unit: str | None = None
     unsupported_units: tuple[tuple[str, str], ...] = ()
+    invalid: str | None = None
 
     def _space_units(self) -> tuple[str | None, str | None, str | None]:
         """Return the units of X, Y and Z, each falling back to ``space_unit``."""
@@ -480,10 +490,13 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
     :func:`read_physical_sizes` gives: common spellings such as ``"µm"``, ``"um"``
     or ``"micron"`` become ``"micrometer"``, other units are kept as written.
 
-    Nothing is guessed: without a level-0 scale (OME-NGFF 0.1 to 0.3, or a scale
-    stored in a separate file through ``path``) or with a malformed one, every
-    size is None; an axis without a ``unit`` has the unit None, and a scale that
-    is not a positive finite number is None. A scale given without a unit is
+    Nothing is guessed: without a level-0 scale (OME-NGFF 0.3) every size
+    is None. Nothing is dropped silently either (issue #94): with a malformed
+    scale (transformations that are not a list or of another type, a scale stored
+    in a separate file through ``path``, not one number per axis) every size is
+    None, and a scale value that is not a positive finite number is None, each
+    with what is wrong in :attr:`PhysicalSizes.invalid` (:mod:`.ngff_scale`). An
+    axis without a ``unit`` has the unit None. A scale given without a unit is
     kept: it may be a placeholder (some writers write 1 when the size is not
     known). This brick's OME-Zarr copies name such axes in the multiscales
     entry's ``metadata`` (``"unknown_scale": ["x", "y"]``); their sizes are None.
@@ -503,13 +516,12 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
     """
     datasets = multiscale.get("datasets") or []
     first = datasets[0] if isinstance(datasets, list) and datasets else {}
-    try:
-        scale = _ngff_scale(first, len(axes))
-        overall = _ngff_scale(multiscale, len(axes))
-    except ValueError:
-        return PhysicalSizes()
-    if scale is None:
-        return PhysicalSizes()
+    scale, problems = read_scale(first, axes, "level 0")
+    overall, more = read_scale(multiscale, axes, "the image")
+    problems += more
+    invalid = "; ".join(problems) or None
+    if scale is None or (more and overall is None):
+        return PhysicalSizes(invalid=invalid)
     if overall is not None:
         scale = [
             a * b if a is not None and b is not None else None
@@ -536,47 +548,13 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
         for letter, (_, unit) in sizes.items()
         if letter in "XYZ"
     }
-    return _sizes(
-        sizes["X"][0],
-        sizes["Y"][0],
-        sizes["Z"][0],
-        sizes["T"][0],
+    found = _sizes(
+        *(sizes[letter][0] for letter in "XYZT"),
         {letter: sizes[letter][1] for letter in "XYZ"},
         sizes["T"][1],
         _unsupported({letter: sizes[letter][0] for letter in "XYZ"}, written),
     )
-
-
-def _ngff_scale(entry: dict, ndim: int) -> list[float | None] | None:
-    """Return the ``scale`` in an entry's ``coordinateTransformations``.
-
-    None when the entry has no scale transformation; raises ValueError when its
-    transformations are not a list, or its scale cannot be used (stored in a
-    file, or not one number per axis).
-    """
-    transforms = entry.get("coordinateTransformations") if isinstance(entry, dict) else None
-    if transforms is None:
-        return None
-    if not isinstance(transforms, list):
-        raise ValueError("the coordinate transformations are not a list")
-    for transform in transforms:
-        if not isinstance(transform, dict) or transform.get("type") != "scale":
-            continue
-        values = transform.get("scale")
-        if not isinstance(values, Sequence) or isinstance(values, str) or len(values) != ndim:
-            raise ValueError("the scale is not given as one number per axis")
-        return [_scale_value(v) for v in values]
-    return None
-
-
-def _scale_value(value) -> float | None:  # noqa: ANN001
-    """Return one scale value as a float; None when it is not a usable number."""
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return None
-    try:
-        return float(value)
-    except OverflowError:  # an integer too large for a float is not a pixel size
-        return None
+    return replace(found, invalid=invalid)
 
 
 def _tiff_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
