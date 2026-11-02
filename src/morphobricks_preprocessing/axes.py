@@ -30,6 +30,7 @@ from .axis_check import (
 from .metadata import (
     MetadataReport,
     TiffMetadata,
+    dimension_issues,
 )
 from .validation import ValidationIssue, has_errors
 
@@ -63,7 +64,13 @@ _AXIS_NAMES = {
 
 # Metadata issues that the axis review checks again against the confirmed mapping.
 _SUPERSEDED_METADATA_CODES = frozenset(
-    {"missing_axes", "inconsistent_dimensions", "different_channel_counts"}
+    {
+        "missing_axes",
+        "inconsistent_dimensions",
+        "different_channel_counts",
+        "different_sizes",
+        "different_plane_counts",
+    }
 )
 
 
@@ -254,10 +261,16 @@ class AxisReview:
         The review checks the arrangement of dimensions and the numbers of
         channels again against the confirmed mapping, so the metadata's
         ``missing_axes``, ``inconsistent_dimensions`` and
-        ``different_channel_counts`` issues are replaced by the review's own.
+        ``different_channel_counts`` issues are replaced by the review's own. The
+        ``different_sizes`` and ``different_plane_counts`` warnings are computed again with
+        each image's confirmed roles (issue #74; :func:`.metadata.dimension_issues`), except
+        for an image whose roles contradict its header (:attr:`axis_error_files`, never read),
+        which is measured by the axes its header names.
         """
         kept = [i for i in metadata.issues if i.code not in _SUPERSEDED_METADATA_CODES]
-        merged = [*kept, *self.issues]
+        refused = set(self.axis_error_files)
+        roles = {p: m.roles for p, m in self.file_mappings.items() if p not in refused}
+        merged = [*kept, *dimension_issues(metadata.files, roles), *self.issues]
         return tuple(sorted(merged, key=lambda issue: not issue.is_error))
 
 

@@ -259,9 +259,9 @@ def test_channel_count_follows_the_confirmed_channel_axis():
     # A plain stack never names its axes: read with the confirmed roles, with a warning.
     assert as_time.ok and codes(as_time.issues) == ["axes_not_named"]
     as_channel = review_axes(report, prefill_mapping("IYX").with_role(0, "C"))
+    # I confirmed as C holds channels, not planes: no different_plane_counts (issue #74).
     assert codes(as_channel.combined_issues(report)) == [
         "different_channel_counts",
-        "different_plane_counts",
         "axes_not_named",
     ]
 
