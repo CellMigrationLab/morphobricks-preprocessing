@@ -406,7 +406,7 @@ masks/                         masks folder, outside the experiment folder
 | Warnings | `mask_missing` (images without a mask of a type that other images have: their objects of that type cannot be measured), `mask_without_image` (files matching no image of the experiment), `mask_of_excluded_image` (masks of excluded images, not used), `mask_outside_type_folder` (files directly in the masks folder that are not TIFF masks). |
 | Run | `run_experiment(..., masks_folder=..., mask_axes=...)` stops on a mask error and records the masks in the manifest's `masks` key (§9). Without masks, the run and its outputs are unchanged. |
 
-### 15.1 The mask step (`mask_relationships.json`, report version 1)
+### 15.1 The mask step (`mask_relationships.json`, report version 2)
 
 The optional mask step reads every image's masks, one image at a time, and describes each
 mask type and every ordered pair of types over the whole experiment. Pieces are counted with
@@ -435,7 +435,7 @@ Each child object's parent is the parent object sharing most of its pixels.
 
 | Relation of child to parent | Rule (default thresholds; the values used are written in the report) |
 |---|---|
-| `same_objects` | At least 90% of the children and 90% of the parents are matched one to one at an intersection over union of at least 0.5: two segmentations of the same objects. |
+| `same_objects` | At least 90% of the children and 90% of the parents are matched one to one at an intersection over union of at least 0.5: two segmentations of the same objects. The matches are a maximum matching of the pairs at or above the threshold, in each plane: each object is matched at most once, and as many objects as possible are matched. Two children that each cover half of one parent are one match, not two (issue #67; before report version 2 every object with any partner at the threshold counted as matched). |
 | `grouped_by` | The child is `grouped`, at least 90% of its objects are inside as below, and at least 99% of its pixels carry the label of the parent object under them. |
 | `inside` | At least 90% of the child objects have at least half of their pixels in one parent object, and that parent is larger than the child for at least 90% of them. |
 | `none` | Otherwise. |
@@ -447,7 +447,9 @@ Each child object's parent is the parent object sharing most of its pixels.
 | `split_between_parents`, `outside_parents` | Children touching parents but with less than half of their pixels in any one; children touching no parent. |
 | `parents_with_0_children`, `parents_with_1_child`, `parents_with_2_children`, `parents_with_3_or_more_children` | How many children each parent holds (two nuclei in one cell counts as 2). |
 | `child_pixels`, `child_pixels_with_parent_label` | Child pixels; those whose label equals the parent label under them. |
-| `children_matched_one_to_one`, `parents_matched_one_to_one` | Objects with a partner at an intersection over union of at least 0.5. |
+| `children_matched_one_to_one`, `parents_matched_one_to_one` | Objects matched one to one (the maximum matching above, at an intersection over union of at least 0.5); the two counts are equal. The number of matches does not depend on which of several equally large matchings is found, so it is deterministic. |
+| `children_not_matched`, `parents_not_matched` | Objects of each type left without a match. |
+| `children_over_iou_with_several_parents`, `parents_over_iou_with_several_children` | Objects with two or more partners at or above the threshold: a split or merged segmentation. Above 0.5 an object can overlap only one partner that much, so these are 0 at a threshold above 0.5. |
 
 **Thresholds.** The numbers above are defaults (`DEFAULT_THRESHOLDS`), and each may be
 changed: `inside_pixel_share` (0.5), `inside_object_share` (0.9), `parent_larger_share`
@@ -468,7 +470,7 @@ The report is UTF-8 JSON (two-space indent, LF), written atomically to the outpu
 
 | Key | Meaning |
 |---|---|
-| `report_version` | `1`. |
+| `report_version` | `2` (since issue #67: the one-to-one matches are a matching, and the four counts of unmatched and several-partner objects were added). |
 | `thresholds` | The thresholds used, all seven. |
 | `images` | Images scanned (every image with at least one mask). |
 | `masks` | Per mask type: `kind`, `images`, `objects` (labels over all images) and `median_pieces_per_label`. |
