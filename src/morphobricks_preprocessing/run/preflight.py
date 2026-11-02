@@ -24,9 +24,10 @@ from ..calibration_io import load_calibration
 from ..conversion_record import ConversionReview, review_conversion
 from ..dataset import DatasetReport, check_dataset
 from ..discovery import DiscoveryResult, default_output_folder, discover_experiment
+from ..fingerprint import Fingerprint, current_fingerprint
 from ..mask_names import MASK_NAME_CODES, mask_name_issues
 from ..masks import MaskInventory, find_masks
-from ..metadata import MetadataReport, inspect_images
+from ..metadata import MetadataReport, check_metadata, inspect_image, inspect_images
 from ..pixel_size_checks import PIXEL_SIZE_CODES, pixel_size_issues
 from ..planes import (
     DEFAULT_MEMORY_LIMIT,
@@ -70,6 +71,11 @@ class Preflight:
     conversion
         The conversion record of a tree of named-axis copies (design v0.4 §5), checked
         against the sources and copies; None for an ordinary experiment.
+    header_fingerprints
+        With ``bind_headers``: each inspected image's fingerprint, taken before and after
+        its header was read, or None when the two differ (or it went missing): the
+        header read is then not known to describe the file as fingerprinted. Empty
+        otherwise.
     """
 
     discovery: DiscoveryResult
@@ -81,6 +87,7 @@ class Preflight:
     masks: MaskInventory | None = None
     calibration: CalibrationReview = field(default_factory=CalibrationReview)
     conversion: ConversionReview | None = None
+    header_fingerprints: Mapping[str, Fingerprint | None] = field(default_factory=dict)
 
     @property
     def issues(self) -> tuple[ValidationIssue, ...]:
@@ -165,6 +172,7 @@ def preflight(
     exclude: Iterable[str] = (),
     masks_folder: str | os.PathLike | None = None,
     mask_axes: Mapping[str, str] | None = None,
+    bind_headers: bool = False,
 ) -> Preflight:
     """Pass 1: check the folder and the image headers without reading pixels.
 
@@ -184,6 +192,10 @@ def preflight(
         always used as masks, also without a masks folder (design v0.4 §2).
     mask_axes
         The axes stated per mask type, ``{type: roles}`` (:func:`.masks.find_masks`).
+    bind_headers
+        Fingerprint each image before and after its header is read
+        (:attr:`Preflight.header_fingerprints`), so a caller that writes from the headers
+        (:func:`.conversion_plan.plan_conversion`) never mixes a header with a later file.
 
     Returns
     -------
@@ -195,7 +207,8 @@ def preflight(
     excluded = tuple(sorted({normalise_relative_path(path) for path in exclude}))
     discovery = _without_excluded_masks(discovery, excluded)
     images = [path for path in discovery.images if path not in excluded]
-    metadata, calibration = _calibrated(inspect_images(root, images), discovery.images, output)
+    inspected, bound = _inspected(root, images, bind_headers)
+    metadata, calibration = _calibrated(inspected, discovery.images, output)
     return Preflight(
         discovery=discovery,
         metadata=metadata,
@@ -206,7 +219,23 @@ def preflight(
         masks=_masks(discovery, metadata, masks_folder, mask_axes, output),
         calibration=calibration,
         conversion=review_conversion(root, discovery.images),
+        header_fingerprints=bound,
     )
+
+
+def _inspected(
+    root: Path, images: list[str], bind: bool
+) -> tuple[MetadataReport, dict[str, Fingerprint | None]]:
+    """Inspect the headers; with ``bind``, fingerprint each image before and after."""
+    if not bind:
+        return inspect_images(root, images), {}
+    files, bound = [], {}
+    for rel in sorted(images):
+        before = current_fingerprint(root / rel)
+        files.append(inspect_image(root / rel, rel))
+        after = current_fingerprint(root / rel)
+        bound[rel] = before if before is not None and before == after else None
+    return MetadataReport(files=tuple(files), issues=tuple(check_metadata(files))), bound
 
 
 def remasked(

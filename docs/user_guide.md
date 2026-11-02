@@ -586,7 +586,7 @@ report names the change and its effect. Other options:
 | `--exclude PATH` | Leave out an image, relative to the experiment folder; repeat for several |
 | `--bins N` | Bins per plane |
 | `--histogram-range minmax\|robust`, `--robust-quantiles LOW HIGH` | Histogram range of histograms that are not exact (default minmax; robust quantiles 0.01 99.99) |
-| `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` |
+| `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` or `1.5GiB`: a whole number of bytes above 0 (`1.5` or `0.5B` are refused before anything is read) |
 | `--missing-as-singleton` | Confirm that images lacking some dimensions have one plane along them |
 | `--image-type fluorescence\|rgb` | The image type (default: the earlier run's, else the suggested one, printed) |
 | `--design FILE` | The confirmed experiment design (default: `experiment_design.csv` in the output folder); it is copied to the output folder |
@@ -735,13 +735,23 @@ Give `run` the output folder of your runs on the originals: the design, image ty
 stated pixel sizes are kept (the copies have the same names), the report says the
 experiment is now the folder of copies, and every row is computed again. The conversion
 record, **.morphobricks-conversion.json** in the folder of copies, lists every image with
-its original's and its copy's size and modification time, the roles and the pixel sizes;
-the run records its SHA-256 and warns when an original changes after the conversion
-(`conversion_source_changed`) or a copy is changed (`copy_changed_after_conversion`).
+its original's and its copy's size and modification time, the copy's SHA-256 (a checksum of
+its content), the roles, the pixel sizes, the channel names and the significant bits; the
+run records the record's SHA-256 and warns when an original changes after the conversion
+(`conversion_source_changed`) or a copy is changed (`copy_changed_after_conversion`, also a
+change that keeps the copy's size and time). Checking the copies reads each of them whole,
+so `check` and `run` on a folder of copies, and opening their run, take about one read of
+the copies longer. An original that changes while `convert` reads its metadata is refused
+(`source_changed_during_check`); convert again once nothing writes into the experiment.
+
+A folder of copies made by v0.4.0rc3 or earlier has a conversion record of version 1, without the
+copies' SHA-256: `convert`, `run` and the bricks refuse it (`conversion_record_unreadable`,
+naming version 1). Convert the originals again into a new folder.
 
 Running `convert` again with the same images and roles reuses the copies and only adds new
 images; when nothing is added the record is left as it was. Bricks reading the run on the
-copies (`RunInputs`) refuse it if the conversion record is changed or removed afterwards.
+copies (`RunInputs`) refuse it if the conversion record is changed or removed afterwards,
+or if a copy no longer has the SHA-256 the record gives.
 `convert` never overwrites anything else: a folder holding other files, copies of other
 images or made with other roles is refused (`copy_folder_not_empty`, `copy_differs`);
 convert into a new folder then. If it fails (`conversion_failed`), the folder is left as it
@@ -892,11 +902,12 @@ continues.
 | `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. |
 | `copy_differs` | Error | `convert`: images in the folder of copies differ from the copies this conversion would write (an original changed, other roles, a copy changed, an image no longer in the experiment), or the folder holds copies of another experiment. Nothing is overwritten; convert into a new folder, or remove those copies first. |
 | `cannot_convert_pixel_type` | Error | `convert`: images of 64-bit integers cannot be saved as OME-TIFF, and pixel values are never changed to fit. Save them again with named axes in a 32-bit type if their values fit, or correct the roles. |
+| `source_changed_during_check` | Error | `convert`: an original changed while its metadata was read, so the metadata may not describe the file that would be copied. Nothing was written; convert again when nothing writes into the experiment. |
 | `conversion_failed` | Error | `convert`: an image could not be copied (unreadable, changed while copied, or the folder cannot be written). The copies written by this conversion were removed; fix the cause and convert again, or exclude the image. |
 | `not_enough_space` | Error | `convert`: the copies would not fit on the drive. Free space or choose another drive. |
-| `conversion_record_unreadable` | Error | The conversion record of a folder of named-axis copies (**.morphobricks-conversion.json**) cannot be read, so `run` stops and `convert` refuses the folder. Convert again into a new folder. |
+| `conversion_record_unreadable` | Error | The conversion record of a folder of named-axis copies (**.morphobricks-conversion.json**) cannot be read, or is of version 1 (made by v0.4.0rc3 or earlier, without the copies' SHA-256), so `run` stops and `convert` refuses the folder. Convert again into a new folder. |
 | `conversion_source_changed` | Warning | An original changed or went missing after its named-axis copy was made; the copies hold the images as converted. If the originals were corrected, convert again into a new folder. |
-| `copy_changed_after_conversion` | Warning | An image of the folder of named-axis copies changed, went missing or was added after the conversion, so the conversion record does not describe it. Convert again, or check it is the image you want. |
+| `copy_changed_after_conversion` | Warning | An image of the folder of named-axis copies changed (its size, time or SHA-256), went missing or was added after the conversion, so the conversion record does not describe it. The run goes on, but the bricks (`RunInputs`) refuse a run on such copies: convert the originals again into a new folder. |
 | `design_unreadable` | Error | The `experiment_design.csv` an earlier run wrote cannot be read. Correct it, or delete it to confirm the design again. |
 | `no_usable_planes` | Error | No plane has finite pixel values. Check the images. |
 | `tiff_outside_leaf` | Error | Images sit in a folder that also holds subfolders, so they have no condition or repeat of their own. A folder holds either images or subfolders, never both. Move the images into a folder of their own, or out of the experiment folder. |
