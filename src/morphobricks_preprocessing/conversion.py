@@ -41,10 +41,21 @@ from ._io import free_space
 from .axes import AxisMapping, prefill_mapping
 from .axis_check import AXIS_ERROR_CODES, ConfirmedAxes, confirmation_of, header_axis_issue
 from .axis_review import review_axes
+from .conversion_issues import (
+    differs_issue,
+    failed_issue,
+    lock_issue,
+    not_a_folder_issue,
+    not_empty_issue,
+    other_experiment_issue,
+    overlap_issue,
+    pixel_type_issue,
+    record_issue,
+    space_issue,
+)
 from .conversion_record import (
     CONVERTED,
     COPIED,
-    RECORD_FILENAME,
     ConversionRecord,
     ConversionRecordError,
     CopyEntry,
@@ -59,7 +70,7 @@ from .ome_tiff_copy import CopyWriteError, copy_nbytes, write_named_copy
 from .planes import DEFAULT_MEMORY_LIMIT, PlaneReadError
 from .run.lock import LOCK_FILENAME, OutputLockedError, output_lock
 from .run.preflight import preflight
-from .validation import ValidationIssue, error, has_errors, plural
+from .validation import ValidationIssue, has_errors
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +193,7 @@ def convert_experiment(
             options = _Options(confirmation_of(mapping)[0], missing_as_singleton, memory_limit)
             return _locked_conversion(root, dest, planned, issues, options, progress)
     except OutputLockedError as exc:
-        return ConversionResult(dest, False, (_lock_issue(exc),))
+        return ConversionResult(dest, False, (lock_issue(exc),))
 
 
 @dataclass(frozen=True)
@@ -236,7 +247,7 @@ def plan_conversion(
     headers = {meta.relative_path: meta for meta in pre.metadata.files}
     wide = sorted(rel for rel in to_convert if headers[rel].dtype.name in _NOT_IN_OME)
     if wide:
-        return (), [_pixel_type_issue(wide, headers[wide[0]].dtype.name), *issues]
+        return (), [pixel_type_issue(wide, headers[wide[0]].dtype.name), *issues]
     planned = []
     for rel in pre.discovery.images:
         source = Fingerprint.of(root / rel)
@@ -279,7 +290,7 @@ def _locked_conversion(
     try:
         earlier = read_record(dest)
     except ConversionRecordError as exc:
-        return ConversionResult(dest, False, (_record_issue(exc, dest),))
+        return ConversionResult(dest, False, (record_issue(exc, dest),))
     reused, to_write, refusal = _compare(root, dest, planned, earlier)
     refusal = refusal or _space_issue(dest, to_write)
     if refusal is not None:
@@ -320,10 +331,10 @@ def _compare(
     """Split the plan into copies to reuse and to write; refuse anything else there."""
     if earlier is None:
         unknown = _unknown_content(dest, planned)
-        return [], list(planned), _not_empty_issue(dest, unknown) if unknown else None
+        return [], list(planned), not_empty_issue(dest, unknown) if unknown else None
     record = earlier[0]
     if record.source_root != root.as_posix():
-        return [], [], _other_experiment_issue(dest, record.source_root)
+        return [], [], other_experiment_issue(dest, record.source_root)
     reused, to_write, differing = [], [], []
     for item in planned:
         old = record.entry(item.relative_path)
@@ -337,7 +348,7 @@ def _compare(
     paths = [item.relative_path for item in differing]
     names = {item.relative_path for item in planned}
     paths += [e.relative_path for e in record.files if e.relative_path not in names]
-    return reused, to_write, _differs_issue(dest, sorted(paths)) if paths else None
+    return reused, to_write, differs_issue(dest, sorted(paths)) if paths else None
 
 
 def _unknown_content(dest: Path, planned: tuple[PlannedCopy, ...]) -> list[str]:
@@ -388,7 +399,7 @@ def _write_all(
         logger.debug("Conversion of %s failed", item.relative_path, exc_info=True)
         for partial in [*partials, _partial(dest, item)]:
             _remove(partial)
-        raise _ConversionFailed(_failed_issue(item.relative_path, exc)) from exc
+        raise _ConversionFailed(failed_issue(item.relative_path, exc)) from exc
     if progress is not None:
         progress(len(to_write), len(to_write), "")
     entries = []
@@ -452,26 +463,9 @@ def _suggested_axes(files: list[CopyEntry]) -> str | None:
 def _folder_issues(root: Path, dest: Path) -> list[ValidationIssue]:
     """Refuse a copy tree inside the experiment, holding it, or that is a file."""
     if dest == root or root in dest.parents or dest in root.parents:
-        return [
-            error(
-                "copy_folder_overlaps_experiment",
-                "The folder for the named-axis copies is the experiment folder, inside it, or "
-                "holds it. The copies must be kept apart from the originals, which are never "
-                "changed.",
-                [dest.as_posix()],
-                "Choose a new folder outside the experiment, for example "
-                f"{root.with_name(root.name + '_named_axes')}.",
-            )
-        ]
+        return [overlap_issue(root, dest)]
     if dest.exists() and not dest.is_dir():
-        return [
-            error(
-                "copy_folder_not_a_folder",
-                "The path given for the named-axis copies is a file, not a folder.",
-                [dest.as_posix()],
-                "Choose a new folder for the copies.",
-            )
-        ]
+        return [not_a_folder_issue(dest)]
     return []
 
 
@@ -480,98 +474,7 @@ def _space_issue(dest: Path, to_write: list[PlannedCopy]) -> ValidationIssue | N
     needed, free = sum(item.nbytes for item in to_write), free_space(dest)
     if free is None or needed <= free:
         return None
-    return error(
-        "not_enough_space",
-        f"The copies need about {needed / 2**30:.1f} GiB, but the drive holding {dest} has "
-        f"{free / 2**30:.1f} GiB free. Nothing was written.",
-        [dest.as_posix()],
-        "Free some space, or choose a folder on a drive with more space.",
-    )
-
-
-def _pixel_type_issue(paths: list[str], dtype: str) -> ValidationIssue:
-    """Refuse to convert images of a pixel type that OME-TIFF cannot hold."""
-    return error(
-        "cannot_convert_pixel_type",
-        f"{plural(len(paths), 'image')} with axis problems have the pixel type {dtype}, which "
-        "OME-TIFF cannot hold, and pixel values are never changed to fit. Nothing was "
-        "written.",
-        paths,
-        "Save these images again with their axes named in their metadata (for example as "
-        "OME-TIFF in a 32-bit type, if their values fit), or correct the roles.",
-    )
-
-
-def _not_empty_issue(dest: Path, paths: list[str]) -> ValidationIssue:
-    """Refuse a folder that holds files and no conversion record."""
-    return error(
-        "copy_folder_not_empty",
-        f"The folder for the named-axis copies already holds {plural(len(paths), 'file')} "
-        "and no conversion record, so it is not a copy tree this conversion can complete. "
-        "Nothing was overwritten.",
-        paths,
-        f"Choose a new or empty folder for the copies, or empty {dest} first.",
-    )
-
-
-def _differs_issue(dest: Path, paths: list[str]) -> ValidationIssue:
-    """Refuse to overwrite copies that differ from the ones this conversion would write."""
-    return error(
-        "copy_differs",
-        f"{plural(len(paths), 'image')} in {dest} differ from the copies this conversion "
-        "would write: their source or roles changed, the copy was changed, or the image is no "
-        "longer in the experiment. Nothing was overwritten.",
-        paths,
-        "Convert into a new, empty folder, or remove these copies first (with the conversion "
-        f"record {RECORD_FILENAME} if you remove the whole folder's contents).",
-    )
-
-
-def _other_experiment_issue(dest: Path, source_root: str) -> ValidationIssue:
-    """Refuse a copy tree of another experiment."""
-    return error(
-        "copy_differs",
-        f"{dest} holds named-axis copies of another experiment ({source_root}). Nothing was "
-        "overwritten.",
-        [RECORD_FILENAME],
-        "Choose a new, empty folder for the copies of this experiment.",
-    )
-
-
-def _record_issue(exc: ConversionRecordError, dest: Path) -> ValidationIssue:
-    """Refuse a copy tree whose conversion record cannot be read."""
-    return error(
-        "conversion_record_unreadable",
-        f"The conversion record in {dest} cannot be read ({exc}), so its copies cannot be "
-        "checked. Nothing was overwritten.",
-        [RECORD_FILENAME],
-        "Choose a new, empty folder for the copies.",
-    )
-
-
-def _failed_issue(path: str, exc: Exception) -> ValidationIssue:
-    """Say that a copy could not be written, and that nothing was kept."""
-    return error(
-        "conversion_failed",
-        f"{path} could not be copied ({exc}). The copies written so far in this conversion "
-        "were removed; the folder is as it was.",
-        [path],
-        "Check that the image can be read and is not being changed, that the folder can be "
-        "written, then convert again (or exclude the image).",
-    )
-
-
-def _lock_issue(exc: OutputLockedError) -> ValidationIssue:
-    """Refuse a conversion while another one writes into the same folder."""
-    return error(
-        "output_locked",
-        f"Another conversion is writing into this folder: {exc.holder.describe()}. Nothing "
-        "was done.",
-        [exc.path.as_posix()],
-        "Wait for it to finish. If none is going on (it was stopped or the computer "
-        "restarted), give --remove-stale-lock to the command, or call "
-        "remove_stale_lock(folder), then convert again.",
-    )
+    return space_issue(dest, needed, free)
 
 
 def _sorted(issues: Iterable[ValidationIssue]) -> tuple[ValidationIssue, ...]:
