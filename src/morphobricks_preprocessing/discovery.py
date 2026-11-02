@@ -357,7 +357,7 @@ def discover_experiment(
 class _Walker:
     """Collects leaf folders and problem paths during one walk."""
 
-    def __init__(self, root: Path):  # noqa: ANN204
+    def __init__(self, root: Path) -> None:
         self.root = root
         self.links = LinkGuard(root, "experiment folder")
         self.excluded: Path | None = None
@@ -365,8 +365,7 @@ class _Walker:
         self.issues: list[ValidationIssue] = []
         self.reserved: list[str] = []
         self.single_with_siblings: list[str] = []
-        # Every spelling of each level's folder names, by its case-folded name: names that
-        # differ only in case clash anywhere in the experiment (decision D-e).
+        # Each level's name spellings by case-folded name: case-only clashes (decision D-e).
         self.spellings: list[dict[str, dict[str, list[str]]]] = [{} for _ in LEVELS]
         self.invalid_names: list[str] = []
         self.too_deep: list[str] = []
@@ -380,6 +379,7 @@ class _Walker:
         return path.relative_to(self.root).as_posix() or ROOT
 
     def visit(self, folder: Path, names: tuple[str, ...]) -> None:
+        """Sort the entries of ``folder`` (labels ``names``), following links by the guard."""
         try:
             entries = sorted(os.scandir(folder), key=lambda entry: entry.name)
         except OSError:
