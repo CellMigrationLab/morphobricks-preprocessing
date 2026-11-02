@@ -108,6 +108,7 @@ src/morphobricks_preprocessing/
   unrecorded.py     unrecorded_files: images and masks the run neither recorded nor excluded, by
                     preprocessing's discovery and pairing; RunInputs.open raises
                     UnrecordedFilesError for them (PP-8b, contract §9.1)
+  run_inputs_text.py the texts RunInputs refuses a run with (moved from run_inputs.py in PP-12)
   mask_record.py    the manifest's masks entry with fingerprints and roles (manifest v2)
   axis_check.py     the axis check (contract §2): header_axis_issue, axis_disagreements,
                     likely_axis_cause, check_header_axes, ConfirmedAxes (a confirmation covers
