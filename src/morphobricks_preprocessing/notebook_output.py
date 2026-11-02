@@ -39,6 +39,13 @@ DRIVE_LIMIT = (
 """Why the lock is not enough on Google Drive (plan §12 question 58)."""
 
 
+_HOLDERS = (
+    "Another run, check or notebook is writing to this output folder, or one was stopped (for "
+    "example Colab disconnected) and left its lock behind. Wait for a run that is still going."
+)
+"""Who may hold the output folder's lock, for :class:`_LockCard`."""
+
+
 def holder_lines(holder: LockHolder) -> list[str]:
     """Name the holder of a lock: its computer, process ID and start time."""
     if not holder.pid:
@@ -53,9 +60,20 @@ def holder_lines(holder: LockHolder) -> list[str]:
 class _LockCard:
     """The refusal ``output_locked`` and the button that removes the lock of a stopped run."""
 
-    def __init__(self, again: str) -> None:
-        """Build the card, hidden; ``again`` names the button to press after a removal."""
-        self.again = again
+    def __init__(
+        self,
+        again: str,
+        header: str = "The output folder is locked",
+        explanation: str = _HOLDERS,
+        who: str = "Another run",
+    ) -> None:
+        """Build the card, hidden; ``again`` names the button to press after a removal.
+
+        ``header`` and ``explanation`` (HTML) name the folder and who may hold its lock;
+        the defaults are the output folder's (a run, a check or a notebook); ``who`` names
+        the holder in the refusal.
+        """
+        self.again, self.who = again, who
         self.output: Path | None = None
         self.shown: LockHolder | None = None
         self.holder = widgets.HTML()
@@ -67,15 +85,13 @@ class _LockCard:
         )
         self.result = widgets.HTML()
         self.card = ui.card(
-            "The output folder is locked",
+            header,
             [
                 self.holder,
                 ui.help_text(
-                    "Another run, check or notebook is writing to this output folder, or one "
-                    "was stopped (for example Colab disconnected) and left its lock behind. "
-                    "Wait for a run that is still going. Click the button only if you are "
-                    "sure none is: it never removes the lock of a process still running on "
-                    f"this computer. {DRIVE_LIMIT}"
+                    f"{explanation} Click the button only if you are sure none is going on: "
+                    "it never removes the lock of a process still running on this computer. "
+                    f"{DRIVE_LIMIT}"
                 ),
                 self.button,
                 self.result,
@@ -94,7 +110,7 @@ class _LockCard:
             return
         self.holder.value = ui.status(
             "error",
-            f"Another run holds the lock of {output}. Nothing was written.",
+            f"{self.who} holds the lock of {output}. Nothing was written.",
             holder_lines(holder),
         )
         self.button.disabled = False

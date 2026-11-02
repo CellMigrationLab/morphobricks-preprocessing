@@ -2,7 +2,10 @@
 
 Moved from :mod:`.conversion` (PP-11c). :func:`plan_conversion` reads only the headers: the
 axis errors and unnamed axes are what the conversion corrects; any other error stops it
-before anything is written.
+before anything is written. :func:`preview_conversion` gives the same plan, with the folder
+rule (:func:`copy_folder_issues`), the space the copies need and the free space, so the
+notebook can show what will happen before the user starts the conversion (PP-11b); it
+writes nothing.
 
 One metadata epoch (issue #96): each image is fingerprinted before and after its header is
 read (``preflight(bind_headers=True)``), and an image whose fingerprint differs is refused
@@ -13,12 +16,14 @@ still have before and after it is copied (:mod:`.conversion_write`).
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
+from ._io import free_space
 from .axes import AxisMapping
 from .axis_check import (
     AXES_NOT_NAMED,
@@ -27,8 +32,13 @@ from .axis_check import (
     header_axis_issue,
 )
 from .axis_review import review_axes
-from .conversion_issues import header_changed_issue, pixel_type_issue
-from .conversion_record import CONVERTED, COPIED, CopyEntry
+from .conversion_issues import (
+    header_changed_issue,
+    not_a_folder_issue,
+    overlap_issue,
+    pixel_type_issue,
+)
+from .conversion_record import CONVERTED, COPIED, RECORD_FILENAME, CopyEntry
 from .copy_axes import CopyLayout, copy_layout
 from .fingerprint import Fingerprint
 from .metadata import TiffMetadata
@@ -183,3 +193,128 @@ def _copied(
         significant_bits=meta.significant_bits if meta else None,
     )
     return PlannedCopy(entry, nbytes=source.size)
+
+
+def copy_folder_issues(
+    experiment_root: str | os.PathLike, destination: str | os.PathLike
+) -> list[ValidationIssue]:
+    """Refuse a folder for the copies inside the experiment, holding it, or that is a file.
+
+    The rule :func:`.conversion.convert_experiment` applies first, before anything is read.
+
+    Parameters
+    ----------
+    experiment_root
+        The experiment folder.
+    destination
+        The folder for the copies.
+
+    Returns
+    -------
+    list of ValidationIssue
+        ``copy_folder_overlaps_experiment`` or ``copy_folder_not_a_folder``; empty when the
+        folder can hold the copies.
+    """
+    root, dest = Path(experiment_root).resolve(), Path(destination).resolve()
+    if dest == root or root in dest.parents or dest in root.parents:
+        return [overlap_issue(root, dest)]
+    if dest.exists() and not dest.is_dir():
+        return [not_a_folder_issue(dest)]
+    return []
+
+
+@dataclass(frozen=True)
+class ConversionPreview:
+    """What a conversion would write, worked out before anything is written.
+
+    Attributes
+    ----------
+    destination
+        The folder for the copies (absolute).
+    issues
+        The errors that would stop the conversion (the folder rule, then the checks of
+        :func:`plan_conversion`), and the warnings.
+    converted
+        Images that would be written as named-axis OME-TIFF, with their axis code, sorted.
+    copied
+        Images that would be copied byte for byte, sorted (``"excluded"`` or None).
+    needed_bytes
+        The space all the copies take; less when unchanged copies of an earlier conversion
+        into the folder are reused.
+    free_bytes
+        The free space on the drive of the folder, or None when unknown.
+    earlier_conversion
+        True when the folder already holds a conversion record: its unchanged copies are
+        reused, and anything else that differs is refused.
+    """
+
+    destination: Path
+    issues: tuple[ValidationIssue, ...] = ()
+    converted: tuple[tuple[str, str], ...] = ()
+    copied: tuple[tuple[str, str | None], ...] = ()
+    needed_bytes: int = 0
+    free_bytes: int | None = None
+    earlier_conversion: bool = False
+
+    @property
+    def ok(self) -> bool:
+        """True when nothing found so far stops the conversion."""
+        return not has_errors(self.issues)
+
+    @property
+    def fits(self) -> bool:
+        """True when the copies fit in the free space, or the free space is unknown."""
+        return self.free_bytes is None or self.needed_bytes <= self.free_bytes
+
+
+def preview_conversion(
+    experiment_root: str | os.PathLike,
+    mapping: AxisMapping | ConfirmedAxes,
+    destination: str | os.PathLike,
+    *,
+    exclude: Iterable[str] = (),
+    missing_as_singleton: bool = False,
+    memory_limit: int = DEFAULT_MEMORY_LIMIT,
+) -> ConversionPreview:
+    """Work out what :func:`.conversion.convert_experiment` would write; write nothing.
+
+    The same folder rule and plan as the conversion, from the headers only. The conversion
+    checks everything again under the folder's lock, which decides (a copy already in the
+    folder that differs, the lock of another conversion, the space actually needed).
+
+    Parameters
+    ----------
+    experiment_root
+        The experiment folder.
+    mapping
+        The roles the user confirmed.
+    destination
+        The folder for the copies.
+    exclude
+        Images to leave unread (copied byte for byte).
+    missing_as_singleton
+        As :func:`.conversion.convert_experiment`.
+    memory_limit
+        As :func:`.conversion.convert_experiment`.
+
+    Returns
+    -------
+    ConversionPreview
+    """
+    root, dest = Path(experiment_root).resolve(), Path(destination).resolve()
+    refused = copy_folder_issues(root, dest)
+    if refused:
+        return ConversionPreview(dest, tuple(refused))
+    planned, issues = plan_conversion(
+        root, mapping, dest, exclude, missing_as_singleton, memory_limit
+    )
+    entries = [item.entry for item in planned]
+    return ConversionPreview(
+        destination=dest,
+        issues=tuple(sorted(issues, key=lambda issue: not issue.is_error)),
+        converted=tuple((e.relative_path, e.reason) for e in entries if e.action == CONVERTED),
+        copied=tuple((e.relative_path, e.reason) for e in entries if e.action == COPIED),
+        needed_bytes=sum(item.nbytes for item in planned),
+        free_bytes=free_space(dest),
+        earlier_conversion=(dest / RECORD_FILENAME).is_file(),
+    )
