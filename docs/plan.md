@@ -1465,4 +1465,33 @@ Raised during review; to be decided before the milestones that need them:
     disappeared, as for `calibration_sha256` and the design's SHA-256.
     (15) **Notebook card**: the next PR, PP-11b (§10); the axis-check card names the
     command meanwhile.
+60. How are OME-Zarr axes and calibrations checked (issues #72, #73, #94, from the audit)?
+    *Decided (2 November 2026, design v0.4 §3: nothing guessed, nothing silent):*
+    (1) **Same letters, contradictory roles (#72)**: every OME-Zarr image is matched by the
+    roles its OME-NGFF axes declare, also when its letters are the mapping's
+    (`axes.ome_zarr_mapping`, in `review_axes` and `file_mapping_for`). A confirmed role
+    that is not the declared letter (`ZYX` confirmed `TYX` or `ZXY`, `QYX` confirmed `CYX`)
+    is the error `ome_zarr_axes_mismatch`, naming each image with its declared axes and
+    the confirmed roles. It is not one of the axis-check errors (`axes_contradict_header`
+    and others) because those offer conversion, and an OME-Zarr image is never converted;
+    the fix is to correct the roles. An axis of no known type is therefore never given a
+    role, in any arrangement.
+    (2) **Missing axes (#73)**, by the version the metadata states, per the OME-NGFF
+    specifications: 0.1 and 0.2 ("all image arrays are 5-dimensional with dimension order
+    (t, c, z, y, x)") keep `TCZYX` for a 5-D array and refuse other dimensionalities; 0.3,
+    0.4 and 0.5 require `axes`, so a store without them is `unreadable_ome_zarr`; a store
+    without `axes` that states no version or another one is `unreadable_ome_zarr` too.
+    Such an image is refused rather than offered for confirmation as a plain stack: an
+    OME-Zarr image cannot be converted to a named-axis copy, and the declared-role match
+    refuses an axis of no known type. The spec-fixed axes of 0.1/0.2 are recorded as
+    `axes_from: "header"` (the metadata's version fixes them); no new `axes_from` value.
+    (3) **Malformed calibration (#94)**: a calibration given but unusable (transformations
+    not a list or of another type than scale, translation and identity, two scales, a
+    scale in a file or not one number per axis, a scale value of X, Y, Z or T that is not a
+    positive finite number) gives unknown sizes on those axes, with what is wrong in
+    `PhysicalSizes.invalid`, and the warning `invalid_physical_calibration` naming every
+    image (also when every image has it). A warning, not an error: the pixels are readable
+    and the image is uncalibrated, as design v0.4 §3 treats an image without a value. Only
+    these metadata problems are caught: any other exception while reading the scale makes
+    the image unreadable instead of being hidden by a debug log.
 

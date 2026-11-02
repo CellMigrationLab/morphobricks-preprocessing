@@ -8,15 +8,17 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 
 from .axes import (
+    CONTRADICTED,
     ROLES,
     AxisMapping,
     AxisReview,
     _axis_label,
     _embeddings,
     _sizes,
-    declared_mapping,
+    ome_zarr_mapping,
 )
 from .axis_check import (
     POSITION_AXES,
@@ -162,7 +164,10 @@ def review_axes(
         from :func:`check_mapping`, files that lack dimensions without
         confirmation (``missing_axes``) or in an ambiguous way
         (``ambiguous_missing_axes``), files the mapping does not fit
-        (``inconsistent_mapping``), files with different numbers of channels
+        (``inconsistent_mapping``), OME-Zarr images whose declared axes do not fit
+        the experiment's roles or that the confirmed roles contradict, whatever
+        their arrangement (``ome_zarr_axes_mismatch``, issue #72), files with
+        different numbers of channels
         along the C axis (``different_channel_counts``; 1 without one), and the
         axis check of every TIFF against its header (:func:`header_axis_issue`),
         each naming its files with their header axes and confirmed roles: the
@@ -175,36 +180,9 @@ def review_axes(
     if isinstance(files, MetadataReport):
         files = files.files
     readable = [f for f in files if f.readable]
-    file_mappings: dict[str, AxisMapping] = {}
-    unconfirmed: list[str] = []
-    ambiguous: list[str] = []
-    misfits: list[str] = []
-    zarr_misfits: list[str] = []
-    by_role: list[str] = []
-    for f in readable:
-        if f.axes == mapping.axes:
-            file_mappings[f.relative_path] = mapping
-            continue
-        if f.is_ome_zarr:
-            by_role.append(f.relative_path)
-            resolved, problem = declared_mapping(f, mapping)
-            if resolved is None:
-                zarr_misfits.append(f.relative_path)
-            elif problem == "missing" and not missing_as_singleton:
-                unconfirmed.append(f.relative_path)
-            else:
-                file_mappings[f.relative_path] = resolved
-            continue
-        resolved = mapping.for_axes(f.axes)
-        if resolved is None:
-            if len(_embeddings(f.axes, mapping.axes)) > 1:
-                ambiguous.append(f.relative_path)
-            else:
-                misfits.append(f.relative_path)
-        elif not missing_as_singleton:
-            unconfirmed.append(f.relative_path)
-        else:
-            file_mappings[f.relative_path] = resolved
+    found = _resolve_files(readable, mapping, missing_as_singleton)
+    file_mappings, unconfirmed, misfits = found.mappings, found.unconfirmed, found.misfits
+    ambiguous, by_role = found.ambiguous, found.by_role
 
     issues = check_mapping(
         mapping,
@@ -235,19 +213,7 @@ def review_axes(
                 "process them as a separate experiment.",
             )
         )
-    if zarr_misfits:
-        issues.append(
-            error(
-                "ome_zarr_axes_mismatch",
-                f"The axes declared in {plural(len(zarr_misfits), 'OME-Zarr image')} do not "
-                f"match the axis roles of the experiment ({mapping.describe()}): they have an "
-                "axis with several planes that the experiment has no role for, or no X or Y "
-                "axis.",
-                zarr_misfits,
-                "Check the axis roles in the axis review, or process these images as a "
-                "separate experiment.",
-            )
-        )
+    issues.extend(_ome_zarr_issues(found.zarr_misfits, found.contradicted, mapping))
     if misfits:
         issues.append(
             error(
@@ -271,7 +237,7 @@ def review_axes(
     )
     # Each file's confirmed roles against the axes its own header names. Files the mapping
     # does not fit already have their error; OME-Zarr images take their roles from their
-    # metadata.
+    # metadata, checked against the confirmed roles above (ome_zarr_mapping, issue #72).
     checked = [
         (f, file_mappings.get(f.relative_path) or mapping.for_axes(f.axes))
         for f in readable
@@ -281,6 +247,97 @@ def review_axes(
         [(f, m) for f, m in checked if m is not None], file_mappings, confirmed
     )
     return AxisReview(mapping, file_mappings, (*issues, *axis_issues), axes_from)
+
+
+@dataclass
+class _Resolved:
+    """Each readable file's mapping, or why it has none (:func:`_resolve_files`)."""
+
+    mappings: dict[str, AxisMapping] = field(default_factory=dict)
+    unconfirmed: list[str] = field(default_factory=list)
+    ambiguous: list[str] = field(default_factory=list)
+    misfits: list[str] = field(default_factory=list)
+    zarr_misfits: list[str] = field(default_factory=list)
+    contradicted: list[TiffMetadata] = field(default_factory=list)
+    by_role: list[str] = field(default_factory=list)
+
+
+def _resolve_files(
+    readable: list[TiffMetadata], mapping: AxisMapping, missing_as_singleton: bool
+) -> _Resolved:
+    """Resolve the experiment mapping for each file, sorting out those it does not fit.
+
+    Every OME-Zarr image is matched by the roles its metadata declares
+    (:func:`.axes.ome_zarr_mapping`), also with the mapping's arrangement (issue #72).
+    """
+    found = _Resolved()
+    for f in readable:
+        path = f.relative_path
+        if f.is_ome_zarr:
+            if f.axes != mapping.axes:
+                found.by_role.append(path)
+            resolved, problem = ome_zarr_mapping(f, mapping)
+            if problem == CONTRADICTED:
+                found.contradicted.append(f)
+            elif resolved is None:
+                found.zarr_misfits.append(path)
+            elif problem == "missing" and not missing_as_singleton:
+                found.unconfirmed.append(path)
+            else:
+                found.mappings[path] = resolved
+            continue
+        if f.axes == mapping.axes:
+            found.mappings[path] = mapping
+            continue
+        resolved = mapping.for_axes(f.axes)
+        if resolved is None:
+            several = len(_embeddings(f.axes, mapping.axes)) > 1
+            (found.ambiguous if several else found.misfits).append(path)
+        elif not missing_as_singleton:
+            found.unconfirmed.append(path)
+        else:
+            found.mappings[path] = resolved
+    return found
+
+
+def _ome_zarr_issues(
+    misfits: list[str], contradicted: list[TiffMetadata], mapping: AxisMapping
+) -> list[ValidationIssue]:
+    """Return the ``ome_zarr_axes_mismatch`` error naming the OME-Zarr images that do not fit.
+
+    ``misfits`` have an axis the experiment has no role for, or no X or Y; ``contradicted``
+    have the mapping's arrangement, but a confirmed role gives an axis another role than its
+    OME-NGFF metadata declares (issue #72), each named with its declared axes and roles.
+    """
+    if not misfits and not contradicted:
+        return []
+    parts = []
+    if misfits:
+        parts.append(
+            "they have an axis with several planes that the experiment has no role for, or "
+            "no X or Y axis"
+        )
+    if contradicted:
+        details = "; ".join(
+            f"declared {f.axes}, confirmed {mapping.roles_string}: {f.relative_path}"
+            for f in sorted(contradicted, key=lambda f: f.relative_path)
+        )
+        parts.append(
+            "the confirmed roles give an axis another role than their OME-NGFF metadata "
+            f"declares ({details}), and they are not read under a contradicted declaration"
+        )
+    paths = sorted([*misfits, *(f.relative_path for f in contradicted)])
+    return [
+        error(
+            "ome_zarr_axes_mismatch",
+            f"The axes declared in {plural(len(paths), 'OME-Zarr image')} do not match the "
+            f"axis roles of the experiment ({mapping.describe()}): {'; '.join(parts)}.",
+            paths,
+            "Check the axis roles in the axis review: an OME-Zarr image's roles are those "
+            "its OME-NGFF metadata declares (time, channel, and the space axes z, y, x). Or "
+            "process these images as a separate experiment.",
+        )
+    ]
 
 
 def channel_count(f: TiffMetadata, mapping: AxisMapping) -> int:

@@ -29,7 +29,6 @@ or 3.x; OME-NGFF 0.5 (Zarr format 3) needs zarr 3, which needs Python 3.11 or ne
 
 from __future__ import annotations
 
-import logging
 import os
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -39,8 +38,6 @@ from typing import Any
 import numpy as np
 
 from .physical_sizes import PhysicalSizes, ngff_physical_sizes
-
-logger = logging.getLogger(__name__)
 
 ZARR_SUFFIX = ".zarr"
 
@@ -130,7 +127,9 @@ class NgffImage:
         the OME-NGFF ``coordinateTransformations`` scale and axis units
         (:func:`.physical_sizes.ngff_physical_sizes`), in the form
         :func:`.physical_sizes.read_physical_sizes` gives for TIFF files; None
-        where the metadata does not give them.
+        where the metadata does not give them. A calibration given but malformed
+        is never dropped silently: its sizes are None and
+        :attr:`.PhysicalSizes.invalid` says what is wrong (issue #94).
     """
 
     array: Any
@@ -296,7 +295,8 @@ def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:  # n
         array = group[dataset_path]
     except KeyError as exc:
         raise NgffError(f"the level-0 array {dataset_path!r} is missing") from exc
-    axes = ngff_axes(first.get("axes"), len(array.shape))
+    version = str(meta.get("version") or first.get("version") or "")
+    axes = ngff_axes(first.get("axes"), len(array.shape), version)
     if len(axes) != len(array.shape):
         raise NgffError(f"its metadata names {len(axes)} axes but the array has {len(array.shape)}")
     omero = meta.get("omero") if isinstance(meta.get("omero"), dict) else {}
@@ -313,26 +313,13 @@ def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:  # n
     return NgffImage(
         array=array,
         axes=axes,
-        version=str(meta.get("version") or first.get("version") or ""),
+        version=version,
         image_count=image_count,
         channel_names=labels,
         channel_names_trimmed=trimmed,
         dataset_path=f"{prefix}{dataset_path}",
-        physical_sizes=_physical_sizes(first, axes, dataset_path),
+        physical_sizes=ngff_physical_sizes(first, axes),
     )
-
-
-def _physical_sizes(multiscale: dict, axes: str, where: str) -> PhysicalSizes:
-    """Return the image's physical sizes; empty when its scale metadata cannot be used.
-
-    The sizes are for information only, so metadata that cannot be understood
-    never makes the image unreadable.
-    """
-    try:
-        return ngff_physical_sizes(multiscale, axes)
-    except Exception:  # sizes are optional; never block an image over them
-        logger.debug("Cannot read the physical sizes of %s", where, exc_info=True)
-        return PhysicalSizes()
 
 
 def _labels_group(group):  # noqa: ANN001, ANN202
@@ -344,17 +331,28 @@ def _labels_group(group):  # noqa: ANN001, ANN202
     return labels if hasattr(labels, "group_keys") else None
 
 
-def ngff_axes(axes: Any, ndim: int) -> str:  # noqa: ANN401
+def ngff_axes(axes: Any, ndim: int, version: str = "") -> str:  # noqa: ANN401
     """Translate OME-NGFF axis metadata into one-letter codes.
 
     ``axes`` is the ``multiscales[0]["axes"]`` entry: a list of objects with
-    ``name`` and ``type`` (OME-NGFF 0.4 and 0.5) or of names (0.3). Without axes
-    metadata (OME-NGFF 0.1 and 0.2) the order is fixed to ``t, c, z, y, x``.
+    ``name`` and ``type`` (OME-NGFF 0.4 and 0.5) or of names (0.3). Nothing is
+    guessed when it is absent or empty (issue #73): only OME-NGFF 0.1 and 0.2,
+    whose specification fixes every image array as 5-D in the order ``t, c, z,
+    y, x``, have axes without naming them (:data:`SPEC_FIXED_AXES`, by the
+    ``version`` the metadata states). OME-NGFF 0.3 to 0.5 require the axes, and
+    a store that states another version or none does not say what its axes are:
+    both are refused.
+
+    Raises
+    ------
+    NgffError
+        If the axes are not given and the stated version does not fix them, or
+        are not a list.
     """
     if not axes:
-        if ndim != 5:
-            raise NgffError("it does not say what its axes are")
-        return "TCZYX"
+        return _spec_fixed_axes(ndim, version)
+    if not isinstance(axes, list):
+        raise NgffError("its axes metadata is not a list of axes")
     letters = []
     for axis in axes:
         name, kind = (
@@ -371,6 +369,39 @@ def ngff_axes(axes: Any, ndim: int) -> str:  # noqa: ANN401
         else:
             letters.append("Q")
     return "".join(letters)
+
+
+SPEC_FIXED_AXES = {"0.1": "TCZYX", "0.2": "TCZYX"}
+"""The OME-NGFF versions whose specification fixes the axes without naming them: "All image
+arrays are 5-dimensional with dimension order (t, c, z, y, x)"."""
+
+AXES_REQUIRED_VERSIONS = ("0.3", "0.4", "0.5")
+"""The OME-NGFF versions whose specification requires the multiscales ``axes`` field."""
+
+
+def _spec_fixed_axes(ndim: int, version: str) -> str:
+    """Return the axes the stated OME-NGFF version fixes for a store that names none.
+
+    Raises :class:`NgffError` naming what is wrong when the version does not fix them.
+    """
+    fixed = SPEC_FIXED_AXES.get(version)
+    if fixed is not None:
+        if ndim != len(fixed):
+            raise NgffError(
+                f"it does not name its axes, and OME-NGFF {version} fixes them only for "
+                f"5-D arrays (t, c, z, y, x); its array has {ndim} dimensions"
+            )
+        return fixed
+    if version in AXES_REQUIRED_VERSIONS:
+        raise NgffError(
+            f"its OME-NGFF {version} multiscales metadata has no axes, which that version "
+            "requires; add the axes (name and type of each dimension) to its metadata"
+        )
+    stated = f"states OME-NGFF version {version!r}" if version else "states no OME-NGFF version"
+    raise NgffError(
+        f"it does not name its axes and {stated}, so what its axes are is not known; add "
+        "the axes (name and type of each dimension) to its metadata"
+    )
 
 
 def read_selection(array: Any, selection: tuple) -> np.ndarray:  # noqa: ANN401
