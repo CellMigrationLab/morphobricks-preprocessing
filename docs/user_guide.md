@@ -81,15 +81,12 @@ Google Drive is wiped when it disconnects (after some idle time, or after severa
   another Colab session, or from a computer that syncs the same Drive folder, is not
   stopped. Use one session at a time per output folder on Drive.
 - **A lock left by a disconnected runtime.** If the runtime disconnects during a check or a
-  run, its lock stays in the output folder and the next check says "Another run is using
-  this output folder". When you are sure no other session uses the folder, remove it in a
-  new code cell, then check the folder again:
-
-  ```python
-  from morphobricks_preprocessing.run import remove_stale_lock
-
-  remove_stale_lock("/content/drive/MyDrive/experiment_2026_10_MorphoBricks_Preprocessing")
-  ```
+  run, its lock stays in the output folder and the next check shows **The output folder is
+  locked**, naming the run that holds it (computer, process ID, start time). When you are
+  sure no other session uses the folder, press **Remove the lock of a stopped run**, then
+  check the folder again. The button never removes the lock of a process still running on
+  the same computer; outside the notebook, `remove_stale_lock(output_folder)` or
+  `--remove-stale-lock` do the same.
 
 - **Unchanged images read again.** An image counts as unchanged when its size and
   modification time are the same as at the last run. If Google Drive reports a file's
@@ -241,7 +238,19 @@ results or comparing another grouping.
 1. **Check the experiment folder.**
    - Paste the folder path, or click **Browse…** to choose it in a dialog. Below the output
      folder, a line shows where the results will go.
-   - Click **Check folder**. Only folder names and image headers are read.
+   - Click **Check folder**. Only folder names and image headers are read. Like the command
+     line's `check`, it writes its report, **discovery_report.txt** and
+     **discovery_report.json** (§6), to the output folder; **Show the report** under the
+     status box shows it. When the output folder holds no **experiment_design.csv**, it also
+     writes one prefilled from the folders, with nothing confirmed and no control, for the
+     **Experiment design** questions below. (When another brick embeds this step without
+     the output folder, the check writes nothing.)
+   - If another run holds the output folder's lock, **The output folder is locked** names it
+     (computer, process ID, start time). Wait for it to finish. If it was stopped (on Colab,
+     the runtime disconnected) and no other session uses the folder, press **Remove the lock
+     of a stopped run**: the same rule as `--remove-stale-lock`, so the lock of a process
+     still running on this computer is kept. On Google Drive the lock cannot guard a folder
+     across computers or sessions: use one session per output folder (§1).
    - Tiles summarise the result: images to analyse, image folders, conditions, pixel type,
      skipped files, and errors and warnings.
    - The **Labels from the folder names** table shows every image folder with its condition,
@@ -262,7 +271,10 @@ results or comparing another grouping.
      - **Controls (optional).** Tick the control conditions. This is recorded for later
        bricks; nothing uses it yet.
      - The answers are saved in **experiment_design.csv** in the output folder (§6) after
-       every answer. Next time, if the folders are the same, they are loaded and the
+       every answer, holding the output folder's lock, with the rules of the `design`
+       command (§5): a repeat group is confirmed only when its folders pass the run's
+       checks, and a refused answer is shown with the reason and changes nothing. Nothing
+       is confirmed for you. Next time, if the folders are the same, they are loaded and the
        questions are folded away; **Change the experiment design** shows them again. A new
        biological-repeat folder asks again only for the group it joins.
      - If the saved **experiment_design.csv** cannot be read (for example a spreadsheet
@@ -270,6 +282,20 @@ results or comparing another grouping.
        naming the line and column, and the file is left as it is. Correct the file and
        undo and confirm the labels again to read it, or answer the questions again: the
        first answer replaces the file.
+   - **Pixel sizes (calibration)** lists the size of one pixel along X, Y, Z and T for every
+     image (images with the same sizes share a row), with its source: **header** (the image
+     metadata), **stated** (in **calibration.csv**), **pixels** (stated as deliberately
+     uncalibrated) or **uncalibrated** (nothing is guessed). To state a size, fill in **For**
+     (`.` for the whole experiment, or a folder or image relative to the experiment folder),
+     **Axes**, **Size** and **Unit** (or *pixels*) and press **State this size**; **Remove the
+     statement** goes back to the metadata. This writes **calibration.csv** in the output
+     folder with the `calibrate` command's functions, under the lock (§5), and the most
+     specific statement applies. The messages `calibration_target_not_found` (an error),
+     `calibration_differs_from_header` and `calibration_axis_absent` (warnings, §8) are
+     shown on the card. Until the axis roles are confirmed in step 2, Z and T show the
+     metadata's sizes; once they are, an image without a Z or T axis shows **no such axis**,
+     as the run records no size for it. No histogram depends on the sizes. (When another
+     brick embeds this step without the output folder, the card is left out.)
    - **Dataset consistency** shows how many images each condition (columns) and
      biological repeat (rows; the repeat groups once paired) has, with the number of technical-repeat folders. A cell is
      amber when it has fewer than half or more than twice the median number of images, or
@@ -290,7 +316,9 @@ results or comparing another grouping.
    - A line under each dropdown says what the choice means, for example *3 depth slices,
      numbered z = 0 to 2*. A blue line says how many planes each image will be split into.
    - Click **Show preview** and move the sliders to look at different slices, channels and
-     time points of any image. If the roles you choose give the images different numbers of
+     time points of any image. Until you confirm the roles, the preview is labelled
+     **Preview of the roles above, not confirmed yet**: it is drawn with the roles as you
+     edit them, nothing is written, and the run uses only the roles you confirm. If the roles you choose give the images different numbers of
      channels, a message says so and step 3 stays locked. Each picture should be a normal image of your sample;
      stripes or a smear mean X or Y is on the wrong dimension. Brightness is stretched for
      display only.
@@ -329,7 +357,10 @@ results or comparing another grouping.
 3. **Compute the histograms.**
    - **Before you run** lists anything still to do.
    - **What will happen** names the output folder and files and the image type, and says
-     whether an earlier run was found and what will be read. Once the axis roles are confirmed it also names
+     whether an earlier run was found and what will be read. It lists the inputs that differ
+     from those the earlier run recorded (for example an image excluded since, or another
+     bin count), each with its effect (*every row is recomputed*, *no row is affected*,
+     …), from the run's own rules, and the run's report names them again. Once the axis roles are confirmed it also names
      the images whose planes are too large for the memory limit and will be read in
      blocks, and, in a red box, any image that cannot be read within the limit at all
      (the run would stop; raise the limit or exclude the image).
@@ -351,11 +382,19 @@ results or comparing another grouping.
        instead, and the run reports this as a warning: the histograms are exactly the
        same, only reading takes longer. Raise the limit only if the computer has enough
        memory.
-     - *Recompute every row:* start from scratch instead of updating the earlier table.
+   - **Mode:** **Restart** (recommended) reuses the rows of unchanged images and reads new
+     or changed ones; **Full** reads every image again and recomputes every row and check.
+     Both keep your confirmations (labels, design, axis roles, image type, stated pixel
+     sizes) and write the table only when the whole run succeeds.
    - Click **Compute histograms**. A progress bar shows which image is being read. Tiles
-     then summarise planes written, images read, kept, new, changed, removed and excluded.
-     Nothing is written unless the whole run succeeds. **Technical details (log)** holds
-     the log for troubleshooting.
+     then summarise planes written, images read, kept, new, changed, removed and excluded,
+     and the status names the mode, the files replaced and the inputs that changed. The
+     table and manifest are written only when the whole run succeeds; the report
+     (**discovery_report.txt**, **Show the report**) is written either way. A run that stops
+     says *The run stopped: no table or manifest was written.*, and that its report was
+     written; a run refused before it starts (the lock) says *Nothing was written.* and
+     shows **The output folder is locked**. **Technical details (log)** holds the log for
+     troubleshooting.
    - **Intensity checks** then compares the images, using only the table just written (no
      image is read again, and nothing else is written). Each image is compared with the
      other images of its condition and biological repeat, and each biological repeat with
@@ -629,7 +668,7 @@ The default output folder is next to the experiment folder:
   provides them, and whether the image's planes were too large to read whole and are read
   in blocks. Format in [contract.md](contract.md) §9.
 - **`discovery_report.json`** and **`discovery_report.txt`:** the report of the last run (or
-  `check`), written also when the run stops: its `status` (`stopped` or `written`), the
+  `check`, or the notebook's **Check folder**), written also when the run stops: its `status` (`stopped` or `written`), the
   SHA-256 of the manifest it describes, the folders, conditions, repeats and positions, the
   channels, each image's axes (and whether they come from the header or your
   confirmation) and pixel sizes with their source (the metadata, `calibration.csv`, or

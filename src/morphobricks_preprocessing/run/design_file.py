@@ -16,13 +16,17 @@ from pathlib import Path
 from ..dataset import BiologicalRepeat
 from ..design import (
     DESIGN_FILENAME,
+    DesignFormatError,
     ExperimentDesign,
     default_design,
     read_experiment_design,
     write_experiment_design,
 )
 from ..design_edit import DesignEdit, DesignEditError, apply_design_edit
+from ..manifest import RunManifest, file_sha256
+from ..validation import ValidationIssue, error
 from .lock import output_lock
+from .recorded import InputChange, design_change, usable
 
 
 def write_design_template(output: Path, repeats: tuple[BiologicalRepeat, ...]) -> Path | None:
@@ -49,6 +53,34 @@ def write_design_template(output: Path, repeats: tuple[BiologicalRepeat, ...]) -
     if not repeats or path.exists() or path.is_symlink():
         return None
     return write_experiment_design(default_design(repeats), path)
+
+
+def write_design(design: ExperimentDesign, output_folder: str | os.PathLike) -> Path:
+    """Write a design to ``experiment_design.csv`` in the output folder, holding its lock.
+
+    The notebook saves each answer with it, so a run never reads a half-written design.
+
+    Parameters
+    ----------
+    design
+        The design to write, as answered.
+    output_folder
+        The output folder; created if needed.
+
+    Returns
+    -------
+    Path
+        The file written.
+
+    Raises
+    ------
+    OutputLockedError
+        If a run holds the output folder's lock; nothing is written.
+    """
+    output = Path(output_folder).resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    with output_lock(output):
+        return write_experiment_design(design, output / DESIGN_FILENAME)
 
 
 def edit_design(
@@ -97,3 +129,53 @@ def edit_design(
         if changed == current:
             return changed, None
         return changed, write_experiment_design(changed, path)
+
+
+def design_for_run(
+    given: ExperimentDesign | None, output: Path, previous: RunManifest | None
+) -> tuple[ExperimentDesign | None, list[ValidationIssue], tuple[InputChange, ...]]:
+    """Return the design given, else the earlier run's ``experiment_design.csv``.
+
+    Also the change from the recorded design: a design given that differs from it, or the
+    file edited since the earlier run wrote it. Moved from ``pipeline._design`` (PP-10) so
+    that the notebook names the change before the run.
+
+    Parameters
+    ----------
+    given
+        The design given to the run, or None.
+    output
+        The output folder.
+    previous
+        The earlier run's manifest, or None.
+
+    Returns
+    -------
+    tuple
+        The design the run uses (or None), the error ``design_unreadable`` when the earlier
+        run's design cannot be read and none is given, and the change of the design.
+    """
+    path = output / DESIGN_FILENAME
+    recorded = usable(previous)
+    if recorded is None or recorded.experiment_design_sha256 is None or not path.exists():
+        return given, [], ()
+    edited = file_sha256(path) != recorded.experiment_design_sha256
+    try:
+        on_file = read_experiment_design(path)
+    except DesignFormatError as exc:
+        if given is not None:
+            return given, [], design_change(None, given, edited=True)
+        return (
+            None,
+            [
+                error(
+                    "design_unreadable",
+                    f"The experiment design of the earlier run cannot be read: {exc}",
+                    [path.as_posix()],
+                    "Correct the file, or delete it to confirm the design again.",
+                )
+            ],
+            (),
+        )
+    used = on_file if given is None else given
+    return used, [], design_change(on_file, used, edited=edited)

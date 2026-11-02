@@ -187,6 +187,7 @@ class _FolderStep:
         try:
             with self.log.attached():
                 pre = preflight(folder, self._output_folder(), exclude=self._excluded())
+                self._write_check(pre)
         finally:
             self._idle(self.check_button, " Check folder", "search")
         self.preflight = pre
@@ -203,6 +204,7 @@ class _FolderStep:
         return pre
 
     def _show_folder_results(self, pre: Preflight) -> None:
+        """Show the labels, messages and pixel sizes of a new check; the design starts over."""
         self.design = None
         self.dataset = pre.dataset
         ui.set_visible(self.design_card, False)
@@ -213,6 +215,7 @@ class _FolderStep:
         self.consistency_details.selected_index = None
         self.issue_details.selected_index = None
         self._show_issue_summary()
+        self._show_calibration()
 
     def _step1_issues(self) -> list[ValidationIssue]:
         """Return the folder-check issues, with the balance warnings of the current pairing."""
@@ -302,6 +305,7 @@ class _FolderStep:
             )
 
     def _folder_edited(self) -> None:
+        """Make every later choice stale when the folder differs from the one checked."""
         self._update_output_hint()
         if self.preflight is None or ui.clean_path(self.folder.value) == self._checked_folder:
             return
@@ -320,6 +324,9 @@ class _FolderStep:
         ui.set_visible(self.labels_card, False)
         ui.set_visible(self.consistency_card, False)
         ui.set_visible(self.issues_card, False)
+        ui.set_visible(self.calibration_card, False)
+        self.folder_lock.hide()
+        self.check_report.clear()
         self._refresh_axis_step()
         self._refresh_run_step()
 

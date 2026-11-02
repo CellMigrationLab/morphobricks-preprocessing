@@ -67,6 +67,7 @@ class _AxisPreview:
             self._render_preview()
 
     def _render_preview(self) -> None:
+        """Draw the chosen plane with the roles shown, labelled confirmed or not (PP-10)."""
         header = self._preview_header()
         if header is None:
             self.preview_caption.value = ui.status("warn", "No image fits these axis roles.")
@@ -93,14 +94,29 @@ class _AxisPreview:
             )
             return
         self.preview_image.value = plane_png(plane)
-        self.preview_caption.value = preview_caption(header.relative_path, plane)
+        self.preview_caption.value = self._preview_label() + preview_caption(
+            header.relative_path, plane
+        )
         self._show_log()
+
+    def _preview_label(self) -> str:
+        """Say whether the preview shows the confirmed roles or roles still being edited."""
+        if self.confirmed_mapping is not None:
+            return ui.status("ok", "Preview with the confirmed axis roles.")
+        return ui.status(
+            "info",
+            "Preview of the roles above, not confirmed yet.",
+            [
+                "Nothing is written: the run uses only the roles you confirm below.",
+            ],
+        )
 
     def _preview_header(self):  # noqa: ANN202
         value = self.preview_file.value
         return next((f for f in self.preflight.metadata.files if f.relative_path == value), None)
 
     def _toggle_confirmation(self) -> None:
+        """Confirm the roles shown (or take the confirmation back) and update what follows."""
         if self.confirmed_mapping is None:
             if self.confirm_button.disabled:
                 return
@@ -149,6 +165,8 @@ class _AxisPreview:
             self._close_image_type()
             self._mapping_changed()
         self._update_confirm_button()
+        self._render_preview_if_shown()
+        self._show_calibration()
         self._refresh_run_step()
 
     def _open_image_type(self) -> None:

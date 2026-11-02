@@ -10,8 +10,6 @@
 import json
 import os
 import socket
-import subprocess
-import sys
 
 import numpy as np
 import pytest
@@ -38,7 +36,7 @@ from morphobricks_preprocessing.run import (
 )
 from morphobricks_preprocessing.run.lock import output_lock
 from morphobricks_preprocessing.testing import make_clean_run
-from run_files import check_outputs, only_the_report
+from run_files import check_outputs, finished_pid, only_the_report
 from tiff_tree import write_data, write_plain
 
 ZYX = prefill_mapping("ZYX")
@@ -306,12 +304,6 @@ def stale_lock(output, pid, host=None):
     output.mkdir(parents=True, exist_ok=True)
     data = {"host": host or socket.gethostname(), "pid": pid, "started_at": "2026-11-01"}
     (output / LOCK_FILENAME).write_text(json.dumps(data), encoding="utf-8")
-
-
-def finished_pid():
-    process = subprocess.Popen([sys.executable, "-c", "pass"])
-    process.wait()
-    return process.pid
 
 
 def test_a_stale_lock_is_removed_only_on_request(experiment):

@@ -223,6 +223,33 @@ def _calibrated(
     return replace(metadata, issues=(*kept, *checked, *review.issues)), review
 
 
+def recalibrated(pre: Preflight, output_folder: str | os.PathLike) -> Preflight:
+    """Return the preflight with the output folder's ``calibration.csv`` read again.
+
+    The notebook calls it after the user states a size, so the sizes, their sources and the
+    calibration and pixel-size issues follow the file without checking the folder again (the
+    answers given so far are kept). Nothing else is read.
+
+    Parameters
+    ----------
+    pre
+        The preflight, as :func:`preflight` returned it (before :func:`fit_calibration`).
+    output_folder
+        The output folder holding ``calibration.csv``.
+
+    Returns
+    -------
+    Preflight
+        With the sizes resolved again, and the calibration and pixel-size issues replaced.
+    """
+    earlier = pre.calibration.issues
+    kept = tuple(issue for issue in pre.metadata.issues if issue not in earlier)
+    metadata, calibration = _calibrated(
+        replace(pre.metadata, issues=kept), pre.discovery.images, Path(output_folder)
+    )
+    return replace(pre, metadata=metadata, calibration=calibration)
+
+
 def fit_calibration(
     pre: Preflight, review: AxisReview
 ) -> tuple[Preflight, tuple[ValidationIssue, ...]]:

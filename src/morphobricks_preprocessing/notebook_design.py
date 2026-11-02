@@ -18,11 +18,13 @@ from .design import (
     ExperimentDesign,
     default_design,
     load_design,
-    write_experiment_design,
 )
+from .design_edit import DesignEdit, DesignEditError, apply_design_edit
 from .discovery import check_output_folder, default_output_folder
 from .notebook_options import _PAIRING_COLUMNS
 from .notebook_render import _group_explanation, _group_question
+from .run import OutputLockedError
+from .run.design_file import write_design
 from .validation import plural
 
 
@@ -121,6 +123,7 @@ class _DesignCard:
         ui.set_visible(self.design_editor, reopen)
         ui.set_visible(self.design_change, not reopen)
         self._design_note = self._design_load_note(design, changes, problem, saved)
+        self._design_refusal = ""
         ui.set_visible(self.design_card, True)
         if self._design_unreadable:
             self._design_saved = False
@@ -131,6 +134,7 @@ class _DesignCard:
     def _design_load_note(
         self, design: ExperimentDesign, changes: DesignChanges, problem: str | None, saved: bool
     ) -> str:
+        """Say what was found in the output folder: an unreadable file, changes, a template."""
         if problem:
             return ui.status(
                 "error",
@@ -157,6 +161,15 @@ class _DesignCard:
                     "No longer found: " + ", ".join(f"{c}/{b}" for c, b in changes.removed) + "."
                 )
             return ui.status("info", "The folders changed since the design was saved.", lines)
+        if self._design_template is not None and not design.confirmed:
+            return ui.status(
+                "info",
+                f"Check folder wrote {DESIGN_FILENAME}, prefilled from the folders.",
+                [
+                    "Nothing is confirmed and no condition is a control until you answer the "
+                    "questions below. Each answer is saved at once."
+                ],
+            )
         return ""
 
     def _close_design(self) -> None:
@@ -248,37 +261,64 @@ class _DesignCard:
     def _pair(self, key: tuple[str, str], group: str) -> None:
         if self.design is None:
             return
-        self.design = self.design.with_group(key, group)
-        self._build_group_questions()
+        if self._edit_design(DesignEdit(repeat_groups={key: group})):
+            self._build_group_questions()
         self._save_design()
         self._design_changed()
 
     def _confirm_group(self, group: str, confirmed: bool) -> None:
         if self.design is None:
             return
-        self.design = self.design.with_confirmed(
-            group, confirmed, date.today().isoformat(), self.preflight.dataset.repeats
-        )
+        edit = DesignEdit(confirm=(group,)) if confirmed else DesignEdit(unconfirm=(group,))
+        if not self._edit_design(edit):
+            self.group_confirmations[group].set(False, notify=False)
         self._save_design()
         self._design_changed()
 
     def _set_control(self, condition: str, control: bool) -> None:
         if self.design is None:
             return
-        self.design = self.design.with_control(condition, control)
+        edit = DesignEdit(control=(condition,)) if control else DesignEdit(not_control=(condition,))
+        self._edit_design(edit)
         self._save_design()
         self._refresh_design_status()
 
+    def _edit_design(self, edit: DesignEdit) -> bool:
+        """Apply an answer with the ``design`` command's rules; False when it is refused.
+
+        :func:`.design_edit.apply_design_edit` confirms a repeat group only when its rows
+        pass the run's validator; a refused answer changes nothing and is shown.
+        """
+        try:
+            self.design = apply_design_edit(self.design, edit, date.today().isoformat())
+        except DesignEditError as exc:
+            self._design_refusal = ui.status("error", "This answer was not taken.", [str(exc)])
+            return False
+        self._design_refusal = ""
+        return True
+
     def _save_design(self) -> None:
+        """Write the design to the output folder under its lock; the log goes to the details."""
         output = self._design_folder()
         self._design_saved = False
         if output is None or self.design is None:
             return
-        try:
-            write_experiment_design(self.design, output / DESIGN_FILENAME)
-        except OSError:
-            logging.getLogger(__name__).warning("Cannot save the design", exc_info=True)
-            return
+        with self.log.attached():
+            try:
+                write_design(self.design, output)
+            except OutputLockedError:
+                self.folder_lock.show(output)
+                self._design_refusal = ui.status(
+                    "error",
+                    "Not saved: another run holds the lock of the output folder.",
+                    ["See The output folder is locked above; answer again once it is free."],
+                )
+                return
+            except OSError:
+                logging.getLogger(__name__).warning("Cannot save the design", exc_info=True)
+                return
+            finally:
+                self._show_log()
         self._design_saved = True
         if self._design_unreadable:
             self._design_unreadable = False
@@ -300,11 +340,12 @@ class _DesignCard:
         self._refresh_run_step()
 
     def _refresh_design_status(self) -> None:
+        """Show whether the design is confirmed and saved, with any note or refused answer."""
         design = self.design
         if design is None:
             self.design_status.value = ""
             return
-        note = getattr(self, "_design_note", "")
+        note = getattr(self, "_design_note", "") + getattr(self, "_design_refusal", "")
         saved = getattr(self, "_design_saved", False)
         if saved:
             where = f"Saved in <b>{html.escape(str(self._design_folder() / DESIGN_FILENAME))}</b>."

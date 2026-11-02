@@ -30,7 +30,6 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from .axis_review import review_axes
 from .cli_calibrate import add_calibrate_parser, calibrate_command, calibration_summary
 from .cli_design import add_design_parser, design_command, design_instructions
 from .cli_masks import add_masks_arguments, masks_command
@@ -58,7 +57,7 @@ from .run import (
     remove_stale_lock,
     write_check_outputs,
 )
-from .run.preflight import fit_calibration
+from .run.check_step import suggested_review
 
 __all__ = ["build_parser", "main", "parse_size"]
 
@@ -199,11 +198,7 @@ def _remove_stale_lock(args: argparse.Namespace) -> bool:
 
 def _check(args: argparse.Namespace) -> int:
     """Print what the preflight found and the suggested roles, and write the report."""
-    pre = command_preflight(args)
-    review = None
-    if pre.suggested_mapping is not None:
-        review = review_axes(pre.metadata, pre.suggested_mapping)
-        pre, _ = fit_calibration(pre, review)  # no Z or T size for images without one
+    pre, review = suggested_review(command_preflight(args))  # no Z or T size without the axis
     print(preflight_summary(pre))
     if pre.discovery.leaves:
         print()

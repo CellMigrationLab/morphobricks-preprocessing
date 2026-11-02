@@ -26,9 +26,7 @@ from ..axes import AxisMapping
 from ..axis_check import ConfirmedAxes
 from ..design import (
     DESIGN_FILENAME,
-    DesignFormatError,
     ExperimentDesign,
-    read_experiment_design,
     write_experiment_design,
 )
 from ..discovery import check_output_folder, default_output_folder
@@ -53,17 +51,16 @@ from ..manifest import (
 from ..mask_record import mask_manifest
 from ..mask_scan import MASK_REPORT_FILENAME
 from ..planes import DEFAULT_MEMORY_LIMIT
-from ..validation import ValidationIssue, error, has_errors, warning
+from ..validation import ValidationIssue, has_errors, warning
+from .design_file import design_for_run
 from .lock import OutputLockedError, lock_issue, output_lock
 from .modes import FULL, RESTART, check_mode
 from .preflight import Preflight, fit_calibration, preflight
 from .publish import _staged_outputs, write_report
 from .recorded import (
     GivenInputs,
-    InputChange,
     ResolvedInputs,
     calibration_change,
-    design_change,
     resolve_inputs,
     usable,
 )
@@ -225,7 +222,7 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
         masks_folder=inputs.masks_folder,
         mask_axes=inputs.mask_axes or None,
     )
-    design, design_problems, design_changed = _design(options.design, output, previous[0])
+    design, design_problems, design_changed = design_for_run(options.design, output, previous[0])
     checked = header_checks(pre, inputs, design, options.memory_limit)
     checked.issues.extend(design_problems)
     if checked.review is not None:
@@ -375,40 +372,6 @@ def _replaced(run: _Run, masks: dict | None) -> dict[str, str]:
         elif before is None or before.masks != masks:
             replaced[MASK_REPORT_FILENAME] = "removed: the masks changed since it was written"
     return replaced
-
-
-def _design(
-    given: ExperimentDesign | None, output: Path, previous: RunManifest | None
-) -> tuple[ExperimentDesign | None, list[ValidationIssue], tuple[InputChange, ...]]:
-    """Return the design given, else the earlier run's ``experiment_design.csv``.
-
-    Also the change from the recorded design: a design given that differs from it, or the
-    file edited since the earlier run wrote it.
-    """
-    path = output / DESIGN_FILENAME
-    recorded = usable(previous)
-    if recorded is None or recorded.experiment_design_sha256 is None or not path.exists():
-        return given, [], ()
-    edited = file_sha256(path) != recorded.experiment_design_sha256
-    try:
-        on_file = read_experiment_design(path)
-    except DesignFormatError as exc:
-        if given is not None:
-            return given, [], design_change(None, given, edited=True)
-        return (
-            None,
-            [
-                error(
-                    "design_unreadable",
-                    f"The experiment design of the earlier run cannot be read: {exc}",
-                    [path.as_posix()],
-                    "Correct the file, or delete it to confirm the design again.",
-                )
-            ],
-            (),
-        )
-    used = on_file if given is None else given
-    return used, [], design_change(on_file, used, edited=edited)
 
 
 def _check_arguments(mode: str, image_type: str | None, missing_as_singleton: object) -> None:

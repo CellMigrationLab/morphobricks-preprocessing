@@ -383,13 +383,47 @@ API, CLI). The notebook and CLI only call the API.
   35.*
 - **Release v0.3.1:** `position_id` names an image with the other image extensions bricks
   read (MorphoBricks D85, PR #33). *To be tagged, see question 36.*
-- **PP-10 (notebook cards) notes:** a button on the `output_locked` card that removes the
-  lock of a stopped run (owner, 2 November 2026, PP-8d review: Colab disconnects leave
-  locks behind). Same rule as `--remove-stale-lock`: only on that request, never the lock
-  of a process still running on the same computer. Until then the notebook's "Common
-  problems" gives a `remove_stale_lock(...)` code cell. *To do in PP-10.*
+- **PP-10 (notebook cards):** split into PP-10a (the cards) and PP-10b (the PP-9 debt below),
+  two sequential PRs.
+  **PP-10a** *(implemented, PR #120)*: the notebook catches up with PP-7, PP-8, PP-8b and
+  PP-8c, with the functions the command line uses (contract §9.2, §9.3, §12):
+  - **Check folder** writes the report and the design template like `check`
+    (`run.check_step.suggested_review`, now shared with the CLI, and `write_check_outputs`),
+    and shows the report; when an embedding brick hides the output folder
+    (`show_output=False`) the check writes nothing, and without the design card it writes
+    the report only.
+  - **Pixel sizes** card: each image's sizes with their source; statements per target, axes
+    and unit through `calibration_entry`/`update_calibration` under the lock, the file read
+    again with `run.preflight.recalibrated` (no new check, answers kept); the calibration
+    messages on the card. Z and T are shown as found until the roles are confirmed, then
+    fitted to them (`fit_calibration`): "no such axis" for an axis an image lacks.
+  - **Experiment design** answers through `apply_design_edit` (the "Undo" through the new
+    `DesignEdit.unconfirm`), saved with `run.design_file.write_design` under the lock; a
+    refused answer is shown and changes nothing; the template note says nothing is
+    confirmed. The "Cannot save the design" warning is logged inside `log.attached()`, so
+    it reaches "Technical details".
+  - Step 3: a **Mode** choice (restart/full, with what both keep) replaces "Recompute every
+    row" (no longer reset by "Use the recommended settings"); "What will happen" lists the
+    input changes the run would report (`run.planned.planned_changes`; the run's design
+    lookup moved to `run.design_file.design_for_run` for it); after the run the status
+    names the mode, the files replaced and the changes, and the report is shown; a stopped
+    run says it wrote its report (question 55), a refused one "Nothing was written."
+  - The `output_locked` card names the holder (computer, process ID, start time) with a
+    **Remove the lock of a stopped run** button (owner, 2 November 2026, PP-8d review): same
+    rule as `--remove-stale-lock`, only on that click, never the lock of a process still
+    running on the same computer; it explains the Google Drive limit (one session per
+    output folder). The "Common problems" code cell is replaced by the button.
+  - The preview drawn under roles still being edited is labelled "Preview of the roles
+    above, not confirmed yet" (nothing is written); after confirmation "Preview with the
+    confirmed axis roles".
+  - The PP-8b refusals (`UnrecordedFilesError`, the zarr refusals of `RunInputs.open`) do not
+    surface in the notebook, which never opens `RunInputs`; `zarr_not_installed` is a
+    folder-check error with its install command, shown with the other messages.
+  - Touched functions end within §9: `_build_run_step` and `run` are split, and the plan
+    moved to `notebook_run_plan`.
 
-  Left by PP-9 (a move-only split, so no logic was changed there), *to do in PP-10*:
+  Left by PP-9 (a move-only split, so no logic was changed there), *to do in PP-10b*
+  (`_build_run_step`, `run` and the design-save log were done in PP-10a):
   - UI modules that compute (§9 layers; audit finding D6): `notebook_plots.distribution_png`
     works out the cumulative share itself (`np.cumsum(pooled.counts) / pooled.pixel_count`),
     a copy of `intensity.cumulative_share` (§9: no duplicated helpers);
