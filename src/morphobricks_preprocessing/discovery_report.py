@@ -8,9 +8,10 @@ manifest it describes. It is for people: bricks never read it.
 It contains the experiment root (and whether it changed), the conditions, repeats and
 positions with image counts; the channels and their names; each image's axes with
 ``axes_from`` and pixel sizes with their source (``header``, ``stated`` in
-``calibration.csv``, or ``pixels``), or ``"uncalibrated"``; the calibration file; the design and
-image type; the mask types with paired, unpaired and ambiguous masks and the images
-without masks; every warning and error with its action; and what the mode reused,
+``calibration.csv``, or ``pixels``), or ``"uncalibrated"``; the calibration file; for a
+tree of named-axis copies, its conversion record and the folder the copies were made from;
+the design and image type; the mask types with paired, unpaired and ambiguous masks and
+the images without masks; every warning and error with its action; and what the mode reused,
 recomputed and replaced, and why. Nothing here checks anything: the issues are those the
 checks gave, with their own severities.
 """
@@ -134,6 +135,8 @@ class DiscoveryReport:
         lines.append(f"Experiment: {data['experiment_root']}")
         if data.get("experiment_root_changed"):
             lines.append(f"  changed from {self.outcome.previous_root}")
+        if data.get("conversion"):
+            lines.append(f"  named-axis copies of {data['conversion']['source_root']}")
         lines.extend(_folder_lines(data))
         lines.extend(_image_lines(data))
         lines.extend(_mask_lines(data))
@@ -181,6 +184,7 @@ def build_report(
     data = {
         "experiment_root": root,
         "experiment_root_changed": outcome.previous_root not in (None, root),
+        "conversion": _conversion(pre),
         "output_folder": output.as_posix(),
         "masks_folder": _masks_folder(pre),
         "excluded": list(pre.excluded),
@@ -194,6 +198,17 @@ def build_report(
     }
     ordered = tuple(sorted(issues, key=lambda issue: not issue.is_error))
     return DiscoveryReport(data, ordered, outcome)
+
+
+def _conversion(pre: Preflight) -> dict | None:
+    """Return the conversion record of a tree of named-axis copies, or None (design §5)."""
+    if pre.conversion is None:
+        return None
+    return {
+        "record": pre.conversion.record,
+        "sha256": pre.conversion.sha256,
+        "source_root": pre.conversion.source_root,
+    }
 
 
 def _issue_dict(issue: ValidationIssue) -> dict:

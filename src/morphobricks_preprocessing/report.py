@@ -204,7 +204,7 @@ def axis_check_summary(review: AxisReview) -> str:
         n = plural(len(review.axis_error_files), "image")
         return (
             f"Axes check: {n} cannot be read with these roles (see the errors below): correct "
-            "the axes, or save named-axis copies with your roles."
+            "the axes, or save named-axis copies with your roles (the convert command)."
         )
     if review.confirmed_files:
         n = plural(len(review.confirmed_files), "image")

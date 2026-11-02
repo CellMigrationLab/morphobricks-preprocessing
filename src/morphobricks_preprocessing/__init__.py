@@ -38,6 +38,17 @@ from .calibration import (
     review_calibration,
 )
 from .calibration_io import CalibrationFormatError, read_calibration
+from .conversion import ConversionResult, convert_experiment
+from .conversion_record import (
+    RECORD_FILENAME as CONVERSION_RECORD_FILENAME,
+)
+from .conversion_record import (
+    ConversionRecord,
+    ConversionRecordError,
+)
+from .conversion_record import (
+    read_record as read_conversion_record,
+)
 from .dataset import (
     CONSISTENCY_CODES,
     BalanceCell,
@@ -219,6 +230,7 @@ __all__ = [
     "AXIS_ERROR_CODES",
     "CALIBRATION_FILENAME",
     "CONSISTENCY_CODES",
+    "CONVERSION_RECORD_FILENAME",
     "DEFAULT_MEMORY_LIMIT",
     "DEFAULT_THRESHOLDS",
     "DESIGN_COLUMNS",
@@ -251,6 +263,9 @@ __all__ = [
     "CalibrationFormatError",
     "CalibrationReview",
     "ConfirmedDesign",
+    "ConversionRecord",
+    "ConversionRecordError",
+    "ConversionResult",
     "DatasetReport",
     "DesignChanges",
     "DesignCheckError",
@@ -320,6 +335,7 @@ __all__ = [
     "check_planes",
     "check_sources",
     "check_table",
+    "convert_experiment",
     "declared_mapping",
     "default_design",
     "default_output_folder",
@@ -365,6 +381,7 @@ __all__ = [
     "prefill_mapping",
     "preflight",
     "read_calibration",
+    "read_conversion_record",
     "read_confirmed_design",
     "read_experiment_design",
     "read_manifest",

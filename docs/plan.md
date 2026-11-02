@@ -489,6 +489,41 @@ API, CLI). The notebook and CLI only call the API.
     is unchanged.
   - The masks' texts and the new table rows moved from `report` to `mask_text` (pure), so
     `report.py` stays within §9's 600 lines.
+- **PP-11 (named-axis OME-TIFF copies, the exception path)** *(implemented, this PR; design
+  v0.4 §5; contract §17; question 59)*:
+  - `convert_experiment` (`conversion`, orchestration) and the CLI `convert EXPERIMENT --to
+    FOLDER --axes ROLES`: images with an axis error or unnamed axes are written as
+    named-axis OME-TIFF with the confirmed roles (`copy_axes`, pure; `ome_tiff_copy`, io:
+    planes from `iter_planes`, in blocks over the memory limit, each block written in
+    place; BigTIFF when large); every other image copied byte for byte; masks never
+    converted. Any error other than the axis errors stops it before anything is written.
+  - Pixel sizes follow the roles; a relabelled axis gets an unknown scale, except that a Y
+    or X relabelled as the other keeps the header's size when X and Y are exactly equal
+    (owner, question 59 (1)); never exchanged; channel names kept when C keeps its role.
+  - Safe: the copy tree's lock; the planes checked against the memory limit and the free
+    space before anything is written; `.partial` files moved into place together once all
+    are written (any failure or interruption leaves the folder as it was); unchanged copies
+    (source, roles, axes and pixel sizes as recorded) reused, anything else refused
+    (`copy_differs`, `copy_folder_not_empty`); the conversion record (`conversion_record`,
+    `.morphobricks-conversion.json`) written last, and kept as it was when every copy is
+    reused. The messages are in `conversion_issues` (pure).
+  - The run on the copy tree: `conversion_record_sha256` in the manifest, `conversion` in
+    the report, the warnings `conversion_source_changed` and `copy_changed_after_conversion`
+    (`review_conversion`, from `preflight`), every row recomputed (the read path changes);
+    `RunInputs.open` refuses a record changed or gone since the run (question 59 (14)).
+  - The axis messages (`axes_yx_swapped`, `axes_contradict_header`, `axes_x_before_y`,
+    `axes_not_named`) and the notebook's axis marks name the `convert` command.
+  - Not in this PR: the notebook card for the conversion (PP-11b).
+  - Review (2 November 2026): the obsolete issues of `convert_tiffs`/`zarr_export` had
+    acceptance criteria kept here: a memory budget that fails fast (#76), strict settings
+    (#80), no 64-bit precision loss (refused, #75), the copy's fingerprint and scales
+    checked before reuse (#87, #88, #92), no mixing of metadata epochs (#96); the run reads
+    the copies themselves, so the table describes the persisted pixels (#79).
+- **PP-11b (notebook card for the conversion)** *(next PR; owner decision of 2 November
+  2026, plan §12 question 59 (15))*: design v0.4 §5 "the notebook offers conversion only
+  for files with errors": a card offered after the axis check when images have an axis
+  error or unnamed axes, calling `convert_experiment` with the confirmed roles and a
+  folder the user names, showing the result and the next run on the copies.
 - **Release v0.4.0 (PP-13) checklist**, for every tag of v0.4.0 including release
   candidates, in the release PR before the tag is pushed:
   - set `version` in `pyproject.toml`;
@@ -1381,3 +1416,53 @@ Raised during review; to be decided before the milestones that need them:
     Colab, Step 0 installs the `notebook` and `zarr` extras (locally `notebook`, unchanged),
     so OME-Zarr images can be read there; (5) `RELEASE_TAG` stays `v0.4.0rc2`; the owner
     tags it after PP-8c and PP-8d are merged.*
+59. How are images with axis errors saved as named-axis copies (design v0.4 §5, PP-11)?
+    *Decided (owner, 2 November 2026; implemented in PP-11) as design v0.4 §5 says: images
+    only, as named-axis OME-TIFF (BigTIFF when large); copies keep the file name and folder
+    structure, so `source_relative_path`, `plane_id` and the FOV key stay the same; pixel
+    sizes follow the roles and a relabelled axis gets an unknown scale; `.partial` files, the
+    conversion record written last with source and copy fingerprints and relative paths, a
+    warning when a source changes after conversion; the run on the copies keeps the output
+    folder, reports the new experiment root and recomputes every row, keeping the design,
+    image type and calibration; the CLI and API offer it always. Contract §17.*
+    (1) **Pixel sizes after a Y/X swap (or any Y or X relabelled as the other)**: when the
+    header's X and Y sizes are exactly equal (same value and unit) they are carried to the
+    copy, since nothing can be exchanged; otherwise both are unknown and the user states
+    them in `calibration.csv`. Never exchanged, never guessed (the B2 proposal of 1 November,
+    sizes following the stored dimension, is not adopted). Other relabelled axes (a z-step
+    on an axis confirmed as T) stay unknown.
+    (2) **Where the copies go**: a folder the user names (`--to`, required; no default),
+    outside the experiment and not holding it.
+    (3) **What the copy tree holds**: the whole experiment, since it becomes the experiment
+    root: converted images, the other images copied byte for byte (OME-Zarr stores with
+    their label images), and excluded images copied unread (they stay excluded by the run).
+    Non-image files are not copied.
+    (4) **Which lock**: the copy tree's own (`.morphobricks-preprocessing.lock` there);
+    `convert` takes no output folder and writes nothing there.
+    (5) **The record's name**: `.morphobricks-conversion.json`, a dot-file (hidden), so
+    discovery skips it without a change to the discovery rules.
+    (6) **A source changed since an earlier conversion into the same folder**: refused
+    (`copy_differs`), never updated in place: convert into a new folder. New images are
+    added and unchanged copies reused.
+    (7) **A conversion killed while moving the copies into place** (copies there, no record):
+    the folder is refused (`copy_folder_not_empty`) until emptied. (A failure or an
+    interruption that Python sees removes what the conversion wrote; only a killed process
+    leaves this state.)
+    (8) **64-bit integer images**: refused (`cannot_convert_pixel_type`); OME-TIFF has no
+    such pixel type and values are never changed.
+    (9) **Byte order**: copies are written in the computer's byte order; values are
+    identical (a big-endian source gives a little-endian copy on usual computers).
+    (10) **Channel names**: written only when the C axis keeps its role and every channel is
+    named; otherwise none.
+    (11) **Compression**: none (each plane then has a fixed place, so blocks are written
+    in place within the memory limit).
+    (12) **Axes confirmed as missing single planes** (`missing_as_singleton`) are not added
+    to the copies: the run on the copies needs `--missing-as-singleton` again.
+    (13) **RGB sources** with an axis error are written with their channels as separate
+    pages (`CYX`), so the suggested image type may change; the recorded type is kept.
+    (14) **`RunInputs` checks the conversion record**: a run whose manifest records
+    `conversion_record_sha256` is refused by `RunInputs.open` when the record changed or
+    disappeared, as for `calibration_sha256` and the design's SHA-256.
+    (15) **Notebook card**: the next PR, PP-11b (§10); the axis-check card names the
+    command meanwhile.
+

@@ -697,6 +697,54 @@ statement for an axis some images lack is a warning naming them
 (`calibration_axis_absent`). In Python, `write_calibration(calibration, output_folder)`
 writes the file (see §9).
 
+### Named-axis copies (`convert`)
+
+When the metadata of some images name their axes wrongly (the errors `axes_yx_swapped`,
+`axes_contradict_header`, `axes_x_before_y`) or do not name them at all (the warning
+`axes_not_named`), and you are sure of the roles, save the images again as named-axis
+copies with your roles, then run preprocessing on the copies:
+
+```bash
+morphobricks-preprocessing convert /data/exp1 --to /data/exp1_named_axes --axes ZXY
+morphobricks-preprocessing check /data/exp1_named_axes --output /data/exp1_MorphoBricks_Preprocessing
+morphobricks-preprocessing run /data/exp1_named_axes --output /data/exp1_MorphoBricks_Preprocessing --axes ZYX
+```
+
+`--axes` gives your roles for the original images, exactly as for `run`; they are never
+taken from the metadata. `convert` writes a new folder (`--to`, outside the experiment)
+with the experiment's folders and file names: the images with axis problems as OME-TIFF
+whose metadata name your roles (Y and X are written rows then columns), every other image
+copied as it is. The originals are only read. Each plane of a copy holds exactly the pixel
+values preprocessing reads from the original with your roles: same pixel type, nothing
+rescaled. Large planes are read and written in blocks within `--memory-limit`. Masks are
+never converted: keep using your masks folder.
+
+Pixel sizes follow the roles. An axis you give another role than its metadata gets no size
+in the copy: after a Y/X swap the copy has no X or Y pixel size (the metadata's X size
+belongs to the axis you call Y), unless the metadata give X and Y exactly the same size,
+which is then kept; a depth step is never written as a time step. State the missing sizes
+in `calibration.csv` if you know them (`calibrate`). Images whose planes cannot be read
+within the memory limit, and a folder without the space for the copies, are refused
+before anything is written. The command prints what it
+wrote and the next commands, with the suggested `--axes` for the copies.
+
+Give `run` the output folder of your runs on the originals: the design, image type and
+stated pixel sizes are kept (the copies have the same names), the report says the
+experiment is now the folder of copies, and every row is computed again. The conversion
+record, **.morphobricks-conversion.json** in the folder of copies, lists every image with
+its original's and its copy's size and modification time, the roles and the pixel sizes;
+the run records its SHA-256 and warns when an original changes after the conversion
+(`conversion_source_changed`) or a copy is changed (`copy_changed_after_conversion`).
+
+Running `convert` again with the same images and roles reuses the copies and only adds new
+images; when nothing is added the record is left as it was. Bricks reading the run on the
+copies (`RunInputs`) refuse it if the conversion record is changed or removed afterwards.
+`convert` never overwrites anything else: a folder holding other files, copies of other
+images or made with other roles is refused (`copy_folder_not_empty`, `copy_differs`);
+convert into a new folder then. If it fails (`conversion_failed`), the folder is left as it
+was. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
+The notebook does not offer the conversion yet: run the command in a terminal.
+
 ## 6. Output files
 
 The default output folder is next to the experiment folder:
@@ -821,10 +869,10 @@ continues.
 | `inconsistent_dimensions`, `inconsistent_mapping` | Error | Images have their dimensions in a different order. Export them the same way or process separately. |
 | `missing_axes` | Error | Some images lack a dimension. Confirm they have one plane along it (step 2), or export them again. |
 | `ambiguous_missing_axes` | Error | It is unclear which dimension an image lacks. Export it again. |
-| `axes_not_named` | Warning | The metadata of some images does not name their axes (a plain stack of pages, `IYX` or `QYX`), so which dimension is depth, time or channel comes only from the roles you confirm. The images are read with them, and the roles are recorded as confirmed by you. Check the roles with the preview. Before segmenting these images in other tools, consider saving named-axis copies (OME-TIFF), so every tool reads the same axes. |
-| `axes_yx_swapped` | Error | The roles you confirmed give the Y and X the image header names the other way round, so the images are not read (never transposed). The message names the likely cause. Two fixes: correct the axes (if the header is right, choose its roles), or convert (save named-axis copies with your roles, then run preprocessing on the copies). |
+| `axes_not_named` | Warning | The metadata of some images does not name their axes (a plain stack of pages, `IYX` or `QYX`), so which dimension is depth, time or channel comes only from the roles you confirm. The images are read with them, and the roles are recorded as confirmed by you. Check the roles with the preview. Before segmenting these images in other tools, consider saving named-axis copies (OME-TIFF) with the `convert` command (§5), so every tool reads the same axes. |
+| `axes_yx_swapped` | Error | The roles you confirmed give the Y and X the image header names the other way round, so the images are not read (never transposed). The message names the likely cause. Two fixes: correct the axes (if the header is right, choose its roles), or convert (save named-axis copies with your roles with the `convert` command, §5, then run preprocessing on the copies). |
 | `axes_contradict_header` | Error | The roles you confirmed contradict the axes the image header names (for example the header says channels, C, and you chose time, T). The images are not read under a contradicted declaration. The message names the likely cause, often the tool that saved the files: tifffile labels a 3-D stack saved with `imagej=True` or `ome=True` as `CYX`, and an ImageJ stack of slices reads as depth even for a time-lapse. The same two fixes as `axes_yx_swapped`. |
-| `axes_x_before_y` | Error | The roles you confirmed put X before Y (for example a plain stack confirmed `TXY`). Reading them would transpose every plane, and nothing is ever read transposed. Save the images again with Y before X, or as OME-TIFF copies with Y before X; if the roles are wrong, correct them. |
+| `axes_x_before_y` | Error | The roles you confirmed put X before Y (for example a plain stack confirmed `TXY`). Reading them would transpose every plane, and nothing is ever read transposed. Save the images again with Y before X, or as OME-TIFF copies with Y before X (the `convert` command, §5); if the roles are wrong, correct them. |
 | `plain_stack_not_confirmed` | Error | Some images that do not name their axes (plain stacks) are new or changed since you confirmed the axis roles, so the confirmation does not cover them: a plain stack's roles are your statement about the images you checked, and are never applied to others. Check their roles with the preview and confirm them again (on the command line: give `--axes`). |
 | `missing_xy_axis`, `duplicate_axis_role` | Error | X/Y missing or a role used twice. Correct the axis roles. |
 | `unassigned_axis` | Error | A dimension with several planes has no role. Choose Z, C or T. |
@@ -836,6 +884,16 @@ continues.
 | `experiment_not_recorded` | Error | `run` was given no experiment folder, and the output folder holds no v0.4.0 run that records one (or no output folder was given). Give the experiment folder. |
 | `axes_not_confirmed` | Error | No axis roles were given and the output folder holds no earlier run that records them. Confirm the roles (`--axes`). |
 | `output_locked` | Error | Another run is using the output folder; it is named with its computer, process and start time. Wait for it to finish; if it was stopped or the computer restarted, remove its lock (`--remove-stale-lock`). Nothing was written. |
+| `copy_folder_overlaps_experiment` | Error | `convert`: the folder for the copies is the experiment folder, inside it, or holds it. Choose a new folder outside the experiment. |
+| `copy_folder_not_a_folder` | Error | `convert`: the path given with `--to` is a file. Choose a folder. |
+| `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. |
+| `copy_differs` | Error | `convert`: images in the folder of copies differ from the copies this conversion would write (an original changed, other roles, a copy changed, an image no longer in the experiment), or the folder holds copies of another experiment. Nothing is overwritten; convert into a new folder, or remove those copies first. |
+| `cannot_convert_pixel_type` | Error | `convert`: images of 64-bit integers cannot be saved as OME-TIFF, and pixel values are never changed to fit. Save them again with named axes in a 32-bit type if their values fit, or correct the roles. |
+| `conversion_failed` | Error | `convert`: an image could not be copied (unreadable, changed while copied, or the folder cannot be written). The copies written by this conversion were removed; fix the cause and convert again, or exclude the image. |
+| `not_enough_space` | Error | `convert`: the copies would not fit on the drive. Free space or choose another drive. |
+| `conversion_record_unreadable` | Error | The conversion record of a folder of named-axis copies (**.morphobricks-conversion.json**) cannot be read, so `run` stops and `convert` refuses the folder. Convert again into a new folder. |
+| `conversion_source_changed` | Warning | An original changed or went missing after its named-axis copy was made; the copies hold the images as converted. If the originals were corrected, convert again into a new folder. |
+| `copy_changed_after_conversion` | Warning | An image of the folder of named-axis copies changed, went missing or was added after the conversion, so the conversion record does not describe it. Convert again, or check it is the image you want. |
 | `design_unreadable` | Error | The `experiment_design.csv` an earlier run wrote cannot be read. Correct it, or delete it to confirm the design again. |
 | `no_usable_planes` | Error | No plane has finite pixel values. Check the images. |
 | `tiff_outside_leaf` | Error | Images sit in a folder that also holds subfolders, so they have no condition or repeat of their own. A folder holds either images or subfolders, never both. Move the images into a folder of their own, or out of the experiment folder. |

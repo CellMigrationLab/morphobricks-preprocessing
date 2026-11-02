@@ -330,6 +330,7 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
             intensity_checks=intensity.settings,
             narrow_ranges=tuple(rows.narrow),
             calibration_sha256=pre.calibration.sha256,
+            conversion_record_sha256=None if pre.conversion is None else pre.conversion.sha256,
         )
         manifest_sha256 = file_sha256(write_manifest(manifest, staged / MANIFEST_FILENAME))
         report = _report(run, outcome, intensity)

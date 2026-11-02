@@ -237,7 +237,7 @@ def run_command(args: argparse.Namespace) -> int:
     if recorded is not None and not args.exclude and not args.no_exclude:
         args.exclude = list(recorded.settings.exclude)  # the preflight leaves them out too
     pre = command_preflight(args)
-    mapping = _mapping_option(args, pre, recorded)
+    mapping = mapping_option(args, pre, recorded)
     settings = _settings_options(args, recorded)
     if mapping is False or settings is None:
         return 1
@@ -259,7 +259,7 @@ def run_command(args: argparse.Namespace) -> int:
         missing_as_singleton=args.missing_as_singleton,
         exclude=[] if args.no_exclude else args.exclude or None,
         mode=args.mode,
-        progress=_progress,
+        progress=print_progress,
         design=design,
         masks_folder=False if args.no_masks else args.masks,
         mask_axes=args.mask_axes or None,
@@ -283,13 +283,13 @@ def run_command(args: argparse.Namespace) -> int:
     return 0 if result.written else 1
 
 
-def _progress(done: int, total: int, path: str) -> None:
-    """Print which file is read."""
+def print_progress(done: int, total: int, path: str) -> None:
+    """Print which file is read or written, as ``[2/10] path``."""
     if path:
         print(f"[{done + 1}/{total}] {path}", flush=True)
 
 
-def _mapping_option(
+def mapping_option(
     args: argparse.Namespace, pre: Preflight, recorded: RunManifest | None
 ) -> AxisMapping | None | Literal[False]:
     """Return the mapping of ``--axes``, None for the recorded one, or False when refused."""
