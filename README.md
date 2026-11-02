@@ -100,7 +100,7 @@ LabConstrictor's
    needs ipywidgets 8). Locally Step 0 prints the Python version, platform and working folder.
    No shell or line magics are used; pip runs with the kernel's Python.
 3. When the package is missing (always on a fresh Colab runtime), Step 0 installs the release
-   named by `RELEASE_TAG` (currently `v0.4.0rc2`), never the moving `main` branch, and prints
+   named by `RELEASE_TAG` (currently `v0.4.0rc3`), never the moving `main` branch, and prints
    which source and version it uses. A checkout around the notebook, or an installed package,
    is used first.
 4. `current_version` and `notebook_name` in Step 0 are the names LabConstrictor's version check
