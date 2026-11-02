@@ -8,6 +8,8 @@ here reads masks or writes files.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 from .mask_scan import DEFAULT_THRESHOLDS, MaskReport, PairRelation
 from .masks import MaskInventory
 from .validation import plural
@@ -157,7 +159,7 @@ def _relationship_line(pair: PairRelation) -> str:
     return text + (f"; {', '.join(extra)}" if extra else "")
 
 
-def _hierarchy_lines(hierarchy) -> list[str]:  # noqa: ANN001
+def _hierarchy_lines(hierarchy: Mapping[str, Sequence[str]]) -> list[str]:
     """Return the mask types as an indented tree; a type with two parents shows twice."""
     children: dict[str, list[str]] = {name: [] for name in hierarchy}
     for name, parents in hierarchy.items():
