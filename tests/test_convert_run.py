@@ -218,6 +218,18 @@ def test_a_failure_while_moving_the_copies_into_place_removes_the_moved_ones(tmp
     assert convert_experiment(exp, SWAPPED, copies).written
 
 
+def test_a_conversion_that_would_not_fit_is_refused_before_writing(tmp_path, monkeypatch):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    needed = 3 * 2 * 6 * 9  # three converted images of 2 x 6 x 9 uint8 pixels
+    monkeypatch.setattr(conversion_module, "free_space", lambda path: needed - 1)
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert not result.written and codes(result.issues) == ["not_enough_space"]
+    assert "Nothing was written" in result.issues[0].message
+    assert [p for p in copies.rglob("*")] == []
+    monkeypatch.setattr(conversion_module, "free_space", lambda path: needed)
+    assert convert_experiment(exp, SWAPPED, copies).written
+
+
 def test_partial_files_left_by_an_interrupted_conversion_are_written_again(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     left = copies / "ctrl" / "r1" / "a.tif.partial"
