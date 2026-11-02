@@ -26,7 +26,7 @@
     "src/morphobricks_preprocessing/metadata.py _check_channel_names: private function of # lines without a docstring": 32,
     "src/morphobricks_preprocessing/metadata.py _check_dimensions: private function of # lines without a docstring": 30,
     "src/morphobricks_preprocessing/metadata.py check_metadata: # executable lines (max #)": 96,
-    "src/morphobricks_preprocessing/metadata.py: # lines (max #)": 756,
+    "src/morphobricks_preprocessing/metadata.py: # lines (max #)": 747,
     "src/morphobricks_preprocessing/physical_sizes.py _imagej_sizes: private function of # lines without a docstring": 27,
     "src/morphobricks_preprocessing/physical_sizes.py _ome_sizes: private function of # lines without a docstring": 20,
     "src/morphobricks_preprocessing/physical_sizes.py: # lines (max #)": 684,

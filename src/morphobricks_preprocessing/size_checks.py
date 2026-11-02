@@ -58,7 +58,7 @@ def image_size_issues(sizes: Mapping[str, tuple[int, int]]) -> list[ValidationIs
     """
     if len(set(sizes.values())) < 2:
         return []
-    summary, minority = _breakdown(sizes, lambda shape: " x ".join(str(n) for n in shape))
+    summary, minority = breakdown(sizes, lambda shape: " x ".join(str(n) for n in shape))
     return [
         warning(
             "different_sizes",
@@ -93,7 +93,7 @@ def plane_count_issues(counts: Mapping[str, Mapping[str, int]]) -> list[Validati
         along = {path: c.get(axis, 1) for path, c in counts.items()}
         if len(set(along.values())) < 2:
             continue
-        summary, minority = _breakdown(along, str)
+        summary, minority = breakdown(along, str)
         descriptions.append(f"{_PLANE_NAMES.get(axis, f'planes along {axis}')}: {summary}")
         differing.extend(minority)
     if not differing:
@@ -113,10 +113,24 @@ def plane_count_issues(counts: Mapping[str, Mapping[str, int]]) -> list[Validati
     ]
 
 
-def _breakdown(
+def breakdown(
     values: Mapping[str, Hashable], describe: Callable[[Hashable], str]
 ) -> tuple[str, list[str]]:
-    """Summarise the images by value, most common first; return it and the other images."""
+    """Summarise images by value, most common first.
+
+    Parameters
+    ----------
+    values
+        The value of each image, by relative path.
+    describe
+        How a value is written in the summary; groups of equal size are ordered by it.
+
+    Returns
+    -------
+    tuple of (str, list of str)
+        The summary, e.g. ``"ZCYX (10 images), ZYX (2 images)"``, and the paths of the
+        images outside the most common group.
+    """
     groups: dict[Hashable, list[str]] = {}
     for path, value in values.items():
         groups.setdefault(value, []).append(path)

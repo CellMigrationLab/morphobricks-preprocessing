@@ -32,6 +32,7 @@ from .discovery import DiscoveryResult
 from .physical_sizes import PhysicalSizes, _tiff_sizes
 from .pixel_size_checks import pixel_size_issues
 from .size_checks import (
+    breakdown,
     image_size_issues,
     lettered_plane_counts,
     plane_count_issues,
@@ -737,18 +738,8 @@ def _breakdown(
     key: Callable[[TiffMetadata], Hashable],
     describe: Callable[[Hashable], str],
 ) -> tuple[str, list[str]]:
-    """Summarise files by ``key``, most common first.
-
-    Returns the summary text, e.g. ``"ZCYX (10 images), ZYX (2 images)"``, and the
-    paths of the files outside the most common group.
-    """
-    groups: dict[Hashable, list[str]] = {}
-    for f in files:
-        groups.setdefault(key(f), []).append(f.relative_path)
-    ordered = sorted(groups.items(), key=lambda item: (-len(item[1]), describe(item[0])))
-    summary = ", ".join(f"{describe(k)} ({plural(len(paths), 'image')})" for k, paths in ordered)
-    minority = [path for _, paths in ordered[1:] for path in paths]
-    return summary, minority
+    """Summarise files by ``key``, most common first (:func:`.size_checks.breakdown`)."""
+    return breakdown({f.relative_path: key(f) for f in files}, describe)
 
 
 def _is_subsequence(short: str, long: str) -> bool:
