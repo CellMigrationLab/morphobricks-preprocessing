@@ -287,6 +287,9 @@ API, CLI). The notebook and CLI only call the API.
   *v0.4.0 (PP-8, question 49): stated calibration in the output folder's `calibration.csv`
   (experiment, folder or image; a size or `pixels`), recorded per axis with its source;
   the pixel-size checks run on the resolved sizes; CLI `calibrate` (contract §9.3).*
+  *v0.4.0 (PP-8b, questions 50 and 51): a mask whose header names X before Y is refused by
+  the run (`mask_layout`); `RunInputs.open` refuses an experiment holding images or masks
+  the run did not record (`UnrecordedFilesError`, contract §9.1).*
 - **Milestone 5 — Integration and docs:** public API, notebook, CLI, user documentation.
   *Implemented: summaries (`report`), notebook widgets (`notebook_ui`,
   `notebooks/MorphoBricks_Preprocessing.ipynb`), `check`/`run` command line (`cli`) and the
@@ -1122,3 +1125,36 @@ Raised during review; to be decided before the milestones that need them:
     (owner, 1 November 2026). The manifest records `calibration_sha256`, checked by
     `RunInputs`; a changed file is an input change that recomputes no row. Y and X are
     stated per role and never exchanged. Contract §9.3.*
+50. What happens to a mask whose own header names X before Y (PP-8b, from CellPatcher PR #69
+    question 2)?
+    *Decided (2 November 2026, owner): the run refuses it. It is the existing `mask_layout`
+    error (no new code), naming the mask with its header axes and the `numpy.swapaxes` fix,
+    from `check` and `run` as from `preflight`. Before, `run` dropped it with the header size
+    comparison it supersedes (`mask_issues`) and recorded the mask with `axes: ""`, which
+    `RunInputs.read_mask` then called "changed or missing". A manifest never records a mask
+    without roles (`mask_manifest` raises), and `RunInputs.open` refuses such an older record
+    with its own message. Images differ: an image whose header names X before Y is read in
+    canonical order (design change log, 1 November 2026); masks are never reordered.
+    Contract §9.1, §15.*
+51. How do bricks learn of images added after the run (PP-8b, from CellPatcher PR #69
+    question 1)?
+    *Decided (2 November 2026, owner): bricks never discover files and never leave an image
+    out silently; preprocessing gives the check. `unrecorded_files` lists, with
+    preprocessing's own rules, the images discovery would analyse and the masks it would pair
+    with a recorded image (masks folder, OME-Zarr label images) that the run neither recorded
+    nor excluded; files discovery ignores or refuses do not count. `RunInputs.open` always
+    runs it and raises `UnrecordedFilesError` (a `RunInputsError` with the files) telling the
+    user to run preprocessing again or exclude them. Chosen over an explicit call because it
+    reads no pixel and no TIFF header (a folder walk, plus OME-Zarr label metadata), and a
+    check bricks must remember to call could be forgotten; there is no opt-out. Contract
+    §9.1.*
+    *Also decided (2 November 2026, owner, on the PP-8b review questions): (1) a run that
+    v0.4.0rc1 recorded with a mask of empty axes is refused as a whole by `RunInputs.open`,
+    not only at `read_mask`; (2) a `masks_root` given for a run that recorded no masks
+    folder is refused: every mask there paired with a recorded image is unrecorded, and the
+    message says to run preprocessing again with the masks folder (`--masks`); (3) OME-Zarr
+    label images are never skipped: without the `zarr` extra, `RunInputs.open` refuses a run
+    holding OME-Zarr images, naming `morphobricks-preprocessing[zarr]`, and a recorded
+    OME-Zarr image whose `labels` group cannot be read is its own refusal naming the image,
+    not a silent pass and not an "unrecorded" file; (4) the version stays 0.3.4 until PP-13,
+    and v0.4.0rc2 is tagged by the owner after this PR.*
