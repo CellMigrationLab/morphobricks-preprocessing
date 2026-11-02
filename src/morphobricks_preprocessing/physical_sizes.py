@@ -21,13 +21,17 @@ from __future__ import annotations
 import logging
 import math
 import os
-import re
 from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from xml.etree import ElementTree
 
 import tifffile
 
+# The shared unit rule (contract §16), re-exported where it was before its own module.
+from .length_units import _MICROMETERS, _SPACE_UNITS, _decode_escapes, to_micrometers
+from .length_units import SPACE_UNITS as SPACE_UNITS
+from .length_units import UnsupportedUnitError as UnsupportedUnitError
+from .length_units import space_unit as space_unit
 from .ngff_scale import read_scale
 
 logger = logging.getLogger(__name__)
@@ -35,49 +39,6 @@ logger = logging.getLogger(__name__)
 UNKNOWN_SCALE_KEY = "unknown_scale"
 """Key, in an OME-NGFF multiscales entry's ``metadata``, listing the axes (``"x"``, ...)
 whose ``scale`` is a placeholder 1 because their size is not known (this brick's copies)."""
-
-# Length units in OME, ImageJ and OME-NGFF metadata, and their OME-NGFF (UDUNITS-2) names.
-# The microscopy units only (MorphoBricks decision D-a2, 30 October 2026): picometre,
-# angstrom, nanometre, micrometre, millimetre, centimetre and metre, by symbol and by name
-# in US and British spelling. Any other unit (inch, decimetre, kilometre, ...) is not
-# converted: :func:`space_unit` refuses it by name.
-_SPACE_UNITS = {
-    "pm": "picometer",
-    "Å": "angstrom",  # the OME symbol, LATIN CAPITAL LETTER A WITH RING ABOVE
-    "\u212b": "angstrom",  # ANGSTROM SIGN
-    "å": "angstrom",  # ImageJ units are compared in lower case
-    "nm": "nanometer",
-    "µm": "micrometer",
-    "μm": "micrometer",
-    "um": "micrometer",
-    "micron": "micrometer",
-    "microns": "micrometer",
-    "mm": "millimeter",
-    "cm": "centimeter",
-    "m": "meter",
-}
-for _name, _prefix in (
-    ("picometer", "pico"),
-    ("angstrom", None),
-    ("nanometer", "nano"),
-    ("micrometer", "micro"),
-    ("millimeter", "milli"),
-    ("centimeter", "centi"),
-    ("meter", ""),
-):
-    _spellings = ("angstrom",) if _prefix is None else (_prefix + "meter", _prefix + "metre")
-    for _spelling in _spellings:
-        _SPACE_UNITS[_spelling] = _name
-        _SPACE_UNITS[_spelling + "s"] = _name
-del _name, _prefix, _spellings, _spelling
-
-SPACE_UNITS = tuple(sorted(set(_SPACE_UNITS.values())))
-"""The length units this brick reads and converts, as OME-NGFF (UDUNITS-2) names."""
-
-
-class UnsupportedUnitError(ValueError):
-    """Raised for a length unit that is not one of :data:`SPACE_UNITS`."""
-
 
 _TIME_UNITS = {
     "ns": "nanosecond",
@@ -89,17 +50,6 @@ _TIME_UNITS = {
     "sec": "second",
     "min": "minute",
     "h": "hour",
-}
-
-# Micrometres per OME-NGFF space unit, to compare sizes given in different units.
-_MICROMETERS = {
-    "angstrom": 1e-4,
-    "picometer": 1e-6,
-    "nanometer": 1e-3,
-    "micrometer": 1.0,
-    "millimeter": 1e3,
-    "centimeter": 1e4,
-    "meter": 1e6,
 }
 
 # The OME schema's unit when a PhysicalSize*Unit attribute is left out.
@@ -200,94 +150,16 @@ class PhysicalSizes:
     def micrometers(self, role: str) -> float | None:
         """Return the size along ``"X"``, ``"Y"`` or ``"Z"`` in micrometres.
 
-        Uses the axis's own unit. None when the size or its unit is unknown, so
-        that sizes in different units can be compared and an unknown unit is
-        never taken for another.
+        Uses the axis's own unit, with :func:`to_micrometers`. None when the size or its
+        unit is unknown, so that sizes in different units can be compared and an unknown
+        unit is never taken for another; None too when the size is not a positive finite
+        length in micrometres (``1e308`` metres overflows: issue #93), never ``inf``.
         """
-        value = {"X": self.x, "Y": self.y, "Z": self.z}[role]
-        factor = _MICROMETERS.get(self.unit(role) or "")
-        if value is None or factor is None:
+        value, unit = {"X": self.x, "Y": self.y, "Z": self.z}[role], self.unit(role)
+        try:
+            return to_micrometers(value, unit) if unit in _MICROMETERS else None
+        except ValueError:
             return None
-        return value * factor
-
-
-def space_unit(text: str | None) -> str | None:
-    r"""Return the OME-NGFF (UDUNITS-2) name of a length unit, as every brick reads it.
-
-    The units are those of microscopy (MorphoBricks decision D-a2): ``pm``, ``Å`` or
-    ``angstrom``, ``nm``, ``µm`` (also ``um``, ``micron(s)``, ``micrometer(s)``,
-    ``micrometre(s)``), ``mm``, ``cm`` and ``m``, each also by its name in US or British
-    spelling (``nanometer``, ``nanometre``, ...). ImageJ's escaped micro sign (``\u00B5m``)
-    is decoded. Symbols of two letters or fewer are matched exactly (``"Mm"`` is not
-    ``"mm"``); longer names in any case.
-
-    Parameters
-    ----------
-    text
-        The unit as written in the metadata or by the user.
-
-    Returns
-    -------
-    str or None
-        For example ``"micrometer"`` for ``"µm"``; None when no unit is given (None or blank).
-
-    Raises
-    ------
-    UnsupportedUnitError
-        For any other unit (``"inch"``, ``"decimeter"``, ``"Mm"``, ...), named in the message:
-        a size in it is never converted.
-    """
-    if text is None:
-        return None
-    if not isinstance(text, str):
-        raise UnsupportedUnitError(f"the unit {text!r} is not text")
-    decoded = _decode_escapes(text).strip()
-    if not decoded:
-        return None
-    known = _SPACE_UNITS.get(decoded)
-    if known is None and len(decoded) > 2:
-        known = _SPACE_UNITS.get(decoded.lower())
-    if known is None:
-        raise UnsupportedUnitError(
-            f"the length unit {text!r} is not supported; use pm, Å (angstrom), nm, µm (um, "
-            "micron), mm, cm or m, or their names (micrometer or micrometre, ...)"
-        )
-    return known
-
-
-def to_micrometers(value: float | None, unit: str | None) -> float | None:
-    """Return a length in micrometres, with the units of :func:`space_unit`.
-
-    Parameters
-    ----------
-    value
-        A positive, finite length, or None when it is not known.
-    unit
-        Its unit, as :func:`space_unit` reads it; None (or blank) when not known.
-
-    Returns
-    -------
-    float or None
-        The length in micrometres; None when the value or its unit is not known, so an
-        unknown unit is never taken for another.
-
-    Raises
-    ------
-    UnsupportedUnitError
-        If the unit is not a supported length unit (:func:`space_unit`).
-    ValueError
-        If the value is not a positive finite number (a bool is refused).
-    """
-    if value is None:
-        return None
-    name = space_unit(unit)
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise ValueError(f"the length {value!r} is not a number")
-    if not math.isfinite(value) or value <= 0:
-        raise ValueError(f"the length {value!r} is not a positive finite number")
-    if name is None:
-        return None
-    return float(value) * _MICROMETERS[name]
 
 
 PIXEL_SIZE_TOLERANCE = 1e-3
@@ -393,7 +265,8 @@ def pixel_size_groups(
 
 
 def _same_length(a: float, b: float) -> bool:
-    return abs(a - b) <= PIXEL_SIZE_TOLERANCE * max(a, b)
+    finite = math.isfinite(a) and math.isfinite(b)  # inf is never equal to anything (#93)
+    return finite and abs(a - b) <= PIXEL_SIZE_TOLERANCE * max(a, b)
 
 
 def _micrometer_values(
@@ -427,12 +300,17 @@ def _sizes(
 
     ``space_unit`` is the unit of X, as before per-axis units, unless a space axis
     with a size has no unit: it would then fall back to X's unit, so ``space_unit``
-    is None.
+    is None. A size that is not a positive finite length in micrometres (``1e308``
+    metres overflows, issue #93) is None, with what is wrong in ``invalid``.
     """
+    given = {"X": x, "Y": y, "Z": z}
+    problems = {a: _unconvertible(a, size, units[a]) for a, size in given.items()}
+    x, y, z = (None if problems[a] else size for a, size in given.items())
     unitless = any(
         size is not None and units[a] is None for a, size in zip("XYZ", (x, y, z), strict=True)
     )
     return PhysicalSizes(
+        invalid="; ".join(problem for problem in problems.values() if problem) or None,
         x=x,
         y=y,
         z=z,
@@ -444,6 +322,16 @@ def _sizes(
         z_unit=units["Z"],
         unsupported_units=tuple(unsupported),
     )
+
+
+def _unconvertible(axis: str, size: float | None, unit: str | None) -> str | None:
+    """Say why a size cannot be given in micrometres (issue #93); None when it can."""
+    try:
+        if size is not None and unit in _MICROMETERS:
+            to_micrometers(size, unit)
+    except ValueError as exc:
+        return f"{axis}: {exc}"
+    return None
 
 
 def _unsupported(
@@ -519,14 +407,19 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
     scale, problems = read_scale(first, axes, "level 0")
     overall, more = read_scale(multiscale, axes, "the image")
     problems += more
-    invalid = "; ".join(problems) or None
-    if scale is None or (more and overall is None):
-        return PhysicalSizes(invalid=invalid)
-    if overall is not None:
+    if scale is not None and overall is not None:
         scale = [
             a * b if a is not None and b is not None else None
             for a, b in zip(scale, overall, strict=True)
         ]
+        problems += [  # two usable scales whose product is not (issue #93)
+            f"the scale along {letter}, level 0's times the image's, is {size!r}"
+            for letter, size in zip(axes, scale, strict=True)
+            if letter in "XYZT" and size is not None and not 0 < size < math.inf
+        ]
+    invalid = "; ".join(problems) or None
+    if scale is None or (more and overall is None):
+        return PhysicalSizes(invalid=invalid)
     declared = multiscale.get("axes")
     units: list[str | None] = [None] * len(axes)
     if isinstance(declared, list) and len(declared) == len(axes):
@@ -554,7 +447,24 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
         sizes["T"][1],
         _unsupported({letter: sizes[letter][0] for letter in "XYZ"}, written),
     )
-    return replace(found, invalid=invalid)
+    return _with_invalid(found, [invalid])
+
+
+def _with_invalid(sizes: PhysicalSizes, problems: Sequence[str | None]) -> PhysicalSizes:
+    """Return ``sizes`` with the problems found first in ``invalid`` (issues #93, #94)."""
+    return replace(sizes, invalid="; ".join(filter(None, (*problems, sizes.invalid))) or None)
+
+
+def _header_size(axis: str, value: object) -> tuple[float | None, str | None]:
+    """Read a size given in TIFF metadata, with what is wrong when it is not usable (#93).
+
+    None and no problem when it is not given; None and the problem for ``inf``, ``NaN``,
+    zero, a negative number or text that is not a number, never silently unknown.
+    """
+    number = _number(value)
+    if value is None or number is not None:
+        return number, None
+    return None, f"{axis}: the size {value!r} is not a positive finite number"
 
 
 def _tiff_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
@@ -570,6 +480,7 @@ def _tiff_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
 
 
 def _ome_sizes(xml: str) -> PhysicalSizes:
+    """Read the sizes of an OME-XML ``Pixels`` element, naming the unusable ones (#93)."""
     root = ElementTree.fromstring(xml)
     pixels = next((e for e in root.iter() if e.tag.rsplit("}", 1)[-1] == "Pixels"), None)
     if pixels is None:
@@ -577,22 +488,26 @@ def _ome_sizes(xml: str) -> PhysicalSizes:
     given = {axis: pixels.get(f"PhysicalSize{axis}Unit", _OME_DEFAULT_SPACE_UNIT) for axis in "XYZ"}
     units = {axis: _SPACE_UNITS.get(unit) for axis, unit in given.items()}
     time_unit = _TIME_UNITS.get(pixels.get("TimeIncrementUnit", _OME_DEFAULT_TIME_UNIT))
-    sizes = {axis: _number(pixels.get(f"PhysicalSize{axis}")) for axis in "XYZ"}
+    read = {axis: _header_size(axis, pixels.get(f"PhysicalSize{axis}")) for axis in "XYZ"}
+    read["T"] = _header_size("T", pixels.get("TimeIncrement")) if time_unit else (None, None)
+    sizes = {axis: size for axis, (size, _) in read.items()}
     written = {
         axis: _written(unit) if units[axis] is None else None for axis, unit in given.items()
     }
-    return _sizes(
+    found = _sizes(
         sizes["X"],
         sizes["Y"],
         sizes["Z"],
-        _number(pixels.get("TimeIncrement")) if time_unit else None,
+        sizes["T"],
         units,
         time_unit,
         _unsupported(sizes, written),
     )
+    return _with_invalid(found, [problem for _, problem in read.values()])
 
 
 def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
+    """Read the sizes of an ImageJ TIFF, naming the unusable ones of a known unit (#93)."""
     meta = tif.imagej_metadata or {}
     # ImageJ writes yunit and zunit only when they differ from the X unit.
     given = {
@@ -603,25 +518,28 @@ def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
     units = {axis: _imagej_unit(value) for axis, value in given.items()}
     page = tif.pages.first
     time_unit = _TIME_UNITS.get(_imagej_text(meta.get("tunit", "sec")))
+    spacing = _header_size("Z", meta.get("spacing"))
     given_sizes = {
         "X": _resolution(page.tags.get("XResolution")),
         "Y": _resolution(page.tags.get("YResolution")),
-        "Z": _number(meta.get("spacing")),
+        "Z": spacing[0],
     }
     # Without a unit the resolution tags are a default (often 1 pixel per inch).
     sizes = {axis: size if units[axis] else None for axis, size in given_sizes.items()}
     written = {
         axis: _written(value) if units[axis] is None else None for axis, value in given.items()
     }
-    return _sizes(
+    step = _header_size("T", meta.get("finterval")) if time_unit else (None, None)
+    found = _sizes(
         sizes["X"],
         sizes["Y"],
         sizes["Z"],
-        _number(meta.get("finterval")) if time_unit else None,
+        step[0],
         units,
         time_unit,
         _unsupported(given_sizes, written),
     )
+    return _with_invalid(found, [spacing[1] if units["Z"] else None, step[1]])
 
 
 def _ngff_unit(value, table: dict[str, str]) -> str | None:  # noqa: ANN001
@@ -659,17 +577,12 @@ def _imagej_text(value) -> str:  # noqa: ANN001
     return _decode_escapes(str(value or "")).strip().lower()
 
 
-def _decode_escapes(text: str) -> str:
-    r"""Return ``text`` with ImageJ's ``\uXXXX`` escapes decoded (``\u00B5`` is ``µ``)."""
-    return re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), text)
-
-
 def _resolution(tag) -> float | None:  # noqa: ANN001
     if tag is None:
         return None
     try:
         numerator, denominator = tag.value
-        return denominator / numerator if numerator else None
+        return denominator / numerator if numerator else math.inf  # 0 pixels per unit (#93)
     except (TypeError, ValueError):
         return None
 
@@ -679,6 +592,6 @@ def _number(value) -> float | None:  # noqa: ANN001
         return None
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # 10**400 overflows a float
         return None
     return number if math.isfinite(number) and number > 0 else None

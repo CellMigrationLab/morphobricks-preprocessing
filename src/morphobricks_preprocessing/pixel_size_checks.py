@@ -90,7 +90,7 @@ def _lost_roles(f: TiffMetadata) -> tuple[str, ...]:
 def _invalid_issue(
     files: Sequence[TiffMetadata], by_role: Mapping[str, Mapping[str, RecordedSize]]
 ) -> list[ValidationIssue]:
-    """Warn about calibrations the metadata give but that cannot be used (issue #94).
+    """Warn about calibrations the metadata give but that cannot be used (issues #93, #94).
 
     Such an image is uncalibrated on the axes concerned (never a substituted value); without
     this warning it would look merely uncalibrated. Every image is named with what is wrong,
@@ -111,15 +111,19 @@ def _invalid_issue(
     if not found:
         return []
     details = "; ".join(f"{path}: {problem}" for path, problem in found.items())
+    whose = agree(found, "this image's", "these images'")
     return [
         warning(
             "invalid_physical_calibration",
-            f"{plural(len(found), 'image')} give a calibration in their metadata that cannot "
-            f"be used ({details}). The sizes it gives are not used: these images are "
+            f"{plural(len(found), 'image')} {agree(found, 'gives', 'give')} a calibration in "
+            f"{agree(found, 'its', 'their')} metadata that cannot be used ({details}). The "
+            f"sizes it gives are not used: {agree(found, 'this image is', 'these images are')} "
             "uncalibrated on those axes, and no size is substituted.",
             list(found),
-            "Correct the coordinateTransformations in these images' OME-NGFF metadata, or "
-            "state their pixel sizes in calibration.csv (the 'calibrate' command).",
+            f"Correct the calibration in {whose} metadata (for OME-Zarr images, the "
+            "coordinateTransformations), or state "
+            f"{agree(found, 'its', 'their')} pixel sizes in calibration.csv (the 'calibrate' "
+            "command).",
         )
     ]
 

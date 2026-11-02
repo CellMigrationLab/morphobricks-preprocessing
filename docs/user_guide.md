@@ -620,8 +620,17 @@ report names the change and its effect. Other options:
 
 After writing, `run` prints the intensity checks of the table, grouped by kind, each with
 the channel, the image or biological repeat and the values compared, and what to do once
-per kind; it draws no plots (the notebook does). Both commands exit with status 1 when an
-error blocks processing; intensity warnings never do.
+per kind; it draws no plots (the notebook does).
+
+**Exit status.** Every command (`check`, `run`, `masks`, `calibrate`, `design` and
+`convert`) exits with status 1 when it prints an error, and with 0 otherwise: warnings,
+intensity warnings included, never change it. So `check` exits with 1 on every error it
+reports, also an experiment design it cannot read (it never replaces that file) or one
+with a `repeat_group_conflict` or `invalid_experiment_design`, which `run` stops on; and
+`design` exits with 1 when the design it prints has a `repeat_group_conflict` or
+`invalid_experiment_design`, also after a change it wrote (since v0.4.0; both exited with 0
+before). Options that cannot be read exit with 2. Scripts can therefore stop on any
+non-zero status.
 
 The optional `masks` command reads the masks and tells how they relate:
 
@@ -975,7 +984,7 @@ continues.
 | `different_pixel_sizes` | Warning | The physical pixel size or z-step (from the metadata or `calibration.csv`) differs between images by more than 0.1 % (for example different objectives). Images outside the largest group of matching sizes are listed; when sizes only change by small steps from image to image, none is listed. Check the microscope settings if this is not intended. |
 | `missing_pixel_size` | Warning | Some images have a pixel size (from the metadata or `calibration.csv`) and others do not, so it cannot be checked; images stated as measured in pixels count as without one, and the message says how many. Export them again with metadata, or state their sizes with `calibrate`, if needed. |
 | `unsupported_pixel_size_unit` | Warning | An image gives its pixel size or z-step in a unit that is not converted (for example inches); only pm, Å, nm, µm, mm, cm and m are. The message names each image, axis and unit. Those sizes are not used: the image is treated as uncalibrated on those axes. Export it again with the pixel size in a supported unit, or state it with `calibrate`, if the physical size matters. Not reported for an axis whose size is stated. |
-| `invalid_physical_calibration` | Warning | An image's metadata give a pixel size, z-step or time step that cannot be used (for OME-Zarr: `coordinateTransformations` that are malformed, of an unsupported type, stored in a separate file, or a scale that is zero, negative or not a number); the message names each image and what is wrong. The image is treated as uncalibrated on those axes; no size is made up. Correct the metadata, or state the sizes with the `calibrate` command: the warning goes once every lost pixel size and z-step is stated. A lost time step cannot be stated, so its warning stays until the metadata are corrected. |
+| `invalid_physical_calibration` | Warning | An image's metadata give a pixel size, z-step or time step that cannot be used (for OME-Zarr: `coordinateTransformations` that are malformed, of an unsupported type, stored in a separate file, or a scale that is zero, negative or not a number; for any image: a size too large or too small to be written in micrometres, such as `1e308 m`); the message names each image and what is wrong, with the value. The image is treated as uncalibrated on those axes; no size is made up. Correct the metadata, or state the sizes with the `calibrate` command: the warning goes once every lost pixel size and z-step is stated. A lost time step cannot be stated, so its warning stays until the metadata are corrected. |
 | `calibration_axis_absent` | Warning | `calibration.csv` states a size for an axis some images do not have (for example a Z size for 2D images or projections); the message names them. No size is recorded for an axis an image does not have. Give the statement a narrower target, or no action if it is meant for the other images. |
 | `calibration_differs_from_header` | Warning | `calibration.csv` states a pixel size (or `pixels`) that differs from an image's metadata; the message names each image and axis with both sizes. The stated size is used. Correct or remove the statement if the metadata are right. |
 | `calibration_target_not_found` | Error | `calibration.csv` names a folder or image that is not in the experiment (names are compared exactly, case included). Correct the target, or remove the line. |
