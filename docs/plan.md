@@ -1794,4 +1794,7 @@ Raised during review; to be decided before the milestones that need them:
     will refuse the images; the run is not refused. (m6) only an OME-XML parse error is
     caught when reading TIFF sizes; it sets `PhysicalSizes.invalid`, named by
     `invalid_physical_calibration`; any other error makes the header unreadable as before
-    for other header failures, never silently uncalibrated.
+    for other header failures, never silently uncalibrated. In the same PR (review of #136):
+    an ImageJ resolution tag of another type is `invalid_physical_calibration`, and an
+    OME-Zarr scale without a unit is named by `unsupported_pixel_size_unit` ("without a
+    unit"); `same_pixel_size` takes NumPy real scalars as m4 does.

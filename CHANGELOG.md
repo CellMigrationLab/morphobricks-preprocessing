@@ -107,7 +107,9 @@ and the bricks' migration).
   and `read_plane` refuse a `z` or `t` outside the image with `IndexError`, a shared 2-D
   mask included (I5); `to_micrometers` accepts NumPy real scalars (m4); OME-XML in a TIFF
   that cannot be parsed is `invalid_physical_calibration`, no longer read as uncalibrated,
-  and other errors reading TIFF sizes are no longer hidden (m6).
+  and other errors reading TIFF sizes are no longer hidden (m6). An ImageJ resolution tag
+  of another type is `invalid_physical_calibration`, and an OME-Zarr scale without a unit
+  is named by `unsupported_pixel_size_unit` (review of #136).
 - Output files get the permissions of a plain `open()` (your umask) instead of `0600`
   (PP-8c, #117).
 - A stopped run says what it wrote (PP-8c, #117).
