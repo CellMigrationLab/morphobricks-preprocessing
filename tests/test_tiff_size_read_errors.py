@@ -147,3 +147,47 @@ def test_a_defect_is_raised_not_read_as_uncalibrated(tmp_path, monkeypatch, erro
 def test_a_value_that_is_not_a_path_is_refused(path):
     with pytest.raises(TypeError, match="takes a path"):
         read_physical_sizes(path)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [OSError("I/O"), ValueError("not a TIFF"), TypeError("bad IFD"), struct.error("short")],
+)
+def test_each_documented_open_error_is_an_invalid_calibration(tmp_path, monkeypatch, error):
+    path = write_imagej(tmp_path / "a.tif")
+
+    def unopenable(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(tifffile, "TiffFile", unopenable)
+    sizes = read_physical_sizes(path)
+    assert sizes.invalid == f"the file cannot be read as a TIFF ({type(error).__name__}: {error})"
+
+
+@pytest.mark.parametrize("error", [KeyError("tag"), IndexError("pages"), RuntimeError("bug")])
+def test_another_error_while_opening_is_raised(tmp_path, monkeypatch, error):
+    path = write_imagej(tmp_path / "a.tif")
+
+    def broken(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(tifffile, "TiffFile", broken)
+    with pytest.raises(type(error)):
+        read_physical_sizes(path)
+
+
+def test_a_lone_resolution_tag_without_a_unit_is_not_a_calibration(tmp_path):
+    # Without a unit the resolution tags are a default, never a size: nothing is lost.
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(
+        path, np.zeros((8, 8), np.uint8), imagej=True, resolution=(2.0, 2.0),
+        metadata={"axes": "YX"},
+    )  # fmt: skip
+    raw = bytearray(path.read_bytes())
+    offset = tag_entry(path, 282)
+    raw[offset + 2 : offset + 4] = struct.pack("<H", 99)  # XResolution of an unknown type
+    path.write_bytes(bytes(raw))
+    with tifffile.TiffFile(path) as tif:
+        assert tif.is_imagej and tif.pages.first.tags.get("XResolution") is None
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.y, sizes.invalid) == (None, None, None)

@@ -74,8 +74,8 @@ def _imagej_unit(value: object) -> str | None:
 def _imagej_text(value: object) -> str:
     r"""Return an ImageJ unit in lower case, with its ``\uXXXX`` escapes decoded.
 
-    ImageJ writes non-ASCII characters as ``µ`` in the TIFF description, and
-    tifffile returns them as written, so ``µm`` is a micrometre.
+    ImageJ writes non-ASCII characters as ``\u00B5`` in the TIFF description, and
+    tifffile returns them as written, so ``\u00B5m`` is a micrometre.
     """
     return _decode_escapes(str(value or "")).strip().lower()
 

@@ -26,7 +26,7 @@ from morphobricks_preprocessing import (
 )
 from morphobricks_preprocessing.image_names import position_id
 from morphobricks_preprocessing.manifest_fields import recorded_position_id
-from morphobricks_preprocessing.run_inputs import RunInputs
+from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError, _fov
 from tiff_tree import write_data
 
 RC4 = Path(__file__).parent / "data" / "rc4_run_manifest.json"
@@ -89,11 +89,19 @@ def test_a_missing_or_null_position_id_is_refused(run, value):
         RunInputs.open(output)  # before the fix: the position's key ended in ""
 
 
-@pytest.mark.parametrize("value", ["", "other", "A", "a.tif", " a", 5, ["a"]])
+@pytest.mark.parametrize(
+    "value", ["", "other", str.swapcase, str.lower, " {}", "{} ", "{}.TIFF", "{}.ome", 5, ["B"]]
+)
 def test_a_position_id_that_is_not_the_names_is_refused(run, value):
     output, path = run
+    name = position_id(json.loads(path.read_text(encoding="utf-8"))["files"][0]["relative_path"])
+    assert name == "B"  # the first entry, ctrl/rep1/B.TIFF: its case is part of the identifier
+    if callable(value):
+        value = value(name)
+    elif isinstance(value, str) and "{}" in value:
+        value = value.format(name)
     relative = edited(path, position_id=value)
-    expected = position_id(relative)  # "A" differs only in case: still another identifier
+    expected = position_id(relative)  # one differing only in case is still another identifier
     with pytest.raises(ManifestFormatError, match="position_id") as raised:
         read_manifest(path)
     assert f"gives {expected!r}" in str(raised.value) or "has no position_id" in str(raised.value)
@@ -139,3 +147,11 @@ def test_a_run_after_a_manifest_without_positions_reads_every_image_again(run):
     result = run_experiment(output.parent / "exp", prefill_mapping("YX"), output_folder=output)
     assert result.written and "manifest could not be read" in result.rebuild_reason
     assert result.unchanged == () and (output / "plane_histograms.csv").read_bytes() == table
+
+
+def test_run_inputs_never_keys_a_position_by_an_empty_name(run):
+    # Unreachable through the reader, which refuses such an entry first; kept as a guard.
+    _, path = run
+    manifest = read_manifest(path)
+    with pytest.raises(RunInputsError, match="records no position_id"):
+        _fov(replace(manifest.files[0], position_id=None), [], manifest)
