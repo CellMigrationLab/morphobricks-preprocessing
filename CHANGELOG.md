@@ -106,6 +106,9 @@ and the bricks' migration).
   selected folder, is the error `mounted_folder` naming it, in discovery, OME-Zarr stores,
   the masks folder, `check`, `run`, `convert` and `RunInputs` (`mounts.MountCheck`). Where
   no mount table can be read (macOS, Windows), only a mount of another device is seen.
+- **The commit is flushed to disk** (review of rc4, I2): the output folder is flushed
+  (`fsync`, POSIX) right after the manifest's rename, so a power cut after a run returned
+  keeps the new generation. A run that finishes an earlier publication flushes it first.
 - **Hard-linked images and masks are named** (owner, 3 November 2026): a file whose link
   count is above 1 is the warning `hard_linked_file`; it is read as before.
 
