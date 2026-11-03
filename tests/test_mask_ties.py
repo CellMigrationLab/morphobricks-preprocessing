@@ -122,6 +122,36 @@ def test_every_count_is_the_same_under_any_label_numbering(share):
     assert ties > 20  # the data hold ties, so the test can fail
 
 
+def relabel_each(mask, rng):
+    """Give one mask's labels other numbers, in another order, independently of the other."""
+    labels = np.unique(mask[mask != 0])
+    new = rng.permutation(np.arange(1, 5 * labels.size + 1))[: labels.size] * 7
+    relabelled = np.zeros(mask.shape, dtype=np.int32)
+    for old, value in zip(labels.tolist(), new.tolist(), strict=True):
+        relabelled[mask == old] = value
+    return relabelled
+
+
+@pytest.mark.parametrize("share", [0.5, 1 / 3, 0.25])
+def test_the_counts_are_the_same_when_each_mask_is_numbered_on_its_own(share):
+    # Only child_pixels_with_parent_label compares label numbers across the masks.
+    rng = np.random.default_rng(143)
+    limits = {"inside_pixel_share": share}
+    ties = 0
+    for _ in range(200):
+        children, parents = random_masks(rng)
+        counts = pair_counts(children, parents, thresholds=limits)
+        del counts["child_pixels_with_parent_label"]
+        ties += counts["ambiguous_parent"]
+        for _ in range(3):
+            again = pair_counts(
+                relabel_each(children, rng), relabel_each(parents, rng), thresholds=limits
+            )
+            del again["child_pixels_with_parent_label"]
+            assert again == counts
+    assert ties > 20
+
+
 def reference_best(kid, host, shared):
     """Each child's largest overlap and how many parents have it, by plain loops."""
     found = {}

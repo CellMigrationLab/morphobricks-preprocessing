@@ -101,7 +101,8 @@ later bricks on the new run.
   `pixels`). A Z or T size is recorded only for an image that has that axis. A size that is
   not a positive finite length in micrometres is refused when stated, and unknown (with
   `invalid_physical_calibration`) when it comes from a header. So is an ImageJ unit without
-  resolution tags, and a TIFF without pages (v0.4.0rc5). Since v0.4.0rc5 a length is
+  resolution tags (v0.4.0rc5); `read_physical_sizes` gives a TIFF without pages no sizes
+  with the reason in `invalid` (in `check` and `run` it is the error `unreadable_tiff`). Since v0.4.0rc5 a length is
   converted to micrometres from its shortest decimal, so one length written in any unit is
   one double (`108.37 nm` is `0.10837 µm`): **a size in micrometres computed from another
   unit may differ by 1 ULP** (the last bit) from v0.4.0rc4. Manifests are unchanged (each

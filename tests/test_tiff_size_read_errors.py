@@ -241,3 +241,10 @@ def test_a_tiff_without_pages_is_an_invalid_calibration(tmp_path):
     sizes = read_physical_sizes(path)
     assert (sizes.x, sizes.y) == (None, None)
     assert sizes.invalid == "the TIFF file has no pages (no image)"
+
+
+def test_a_tiff_without_pages_is_unreadable_in_the_folder_check(tmp_path):
+    # check and run never reach its sizes: the header has no image (as before rc5).
+    (tmp_path / "a.tif").write_bytes(b"II*\x00" + struct.pack("<I", 0))
+    codes = {i.code for i in inspect_images(tmp_path, ["a.tif"]).issues}
+    assert "unreadable_tiff" in codes and "invalid_physical_calibration" not in codes

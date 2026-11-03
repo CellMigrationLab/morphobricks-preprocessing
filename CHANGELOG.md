@@ -29,8 +29,10 @@ item is described in full under 0.4.0 below. Decisions: [plan](docs/plan.md) §1
   SHA-256 (`RunMode(verify_content=True)`, the notebook's **Verify each image's content**).
   Turning it on or off recomputes every row; a default run's manifest has the rc4 keys.
 - **A child tied between parents has no parent** (#143, plan Q74): a child lying exactly as
-  much in two or more parents is no longer given the one with the lower label; it is
-  counted as `ambiguous_parent`, not `inside`. `mask_relationships.json` is report version
+  much in two or more parents is no longer given the one with the lower label. When that
+  share reaches `inside_pixel_share` (at the default, exactly half in each of two parents)
+  it is counted as `ambiguous_parent`, not `inside`; a tie below it stays
+  `split_between_parents`, as before. `mask_relationships.json` is report version
   3; `inside` and `parents_with_N_children` may be lower than with rc4 when masks have such
   ties. CellPatcher and MorphoFeature read neither count.
 
@@ -39,9 +41,10 @@ item is described in full under 0.4.0 below. Decisions: [plan](docs/plan.md) §1
 - `pair_counts`: an exact tie between parents gives no parent; the new evidence
   `ambiguous_parent` is shown by `masks`, the notebook's **Describe the masks** card and its
   relationship table; report version 3 (#143, plan Q74).
-- An ImageJ TIFF with a unit but neither resolution tag, and a TIFF without pages, are
-  `invalid_physical_calibration` with the reason; before, uncalibrated with no reason
-  (#143).
+- An ImageJ TIFF with a unit but neither resolution tag is `invalid_physical_calibration`
+  with the reason; before, uncalibrated with no reason. `read_physical_sizes` gives a TIFF
+  without pages no sizes with the reason in `invalid`; in `check` and `run` such a file is
+  the error `unreadable_tiff`, as before (#143).
 - A TIFF calibration that cannot be read is invalid, and defects are raised (#142, A-m6);
   `position_id` required in v2 (#142, A-m5); one length in any unit is one double (#142,
   B-m7).
@@ -161,8 +164,10 @@ and the bricks' migration) and **v0.4.0rc5** (#143, after the round-2 audit fixe
   `TypeError`. An ImageJ resolution tag that tifffile dropped because it could not read it
   (it only logs), next to the other one, is named instead of leaving that axis silently
   uncalibrated. An ImageJ unit with neither resolution tag ("a unit without a resolution")
-  and a TIFF file without pages ("no pages") are `invalid_physical_calibration` too, no
-  longer uncalibrated with no reason (owner, 3 November 2026; #143).
+  is `invalid_physical_calibration` too, no longer uncalibrated with no reason (owner, 3
+  November 2026; #143). `read_physical_sizes` gives a TIFF file without pages ("no pages")
+  no sizes with the reason in `invalid`; the folder check reports such a file as the error
+  `unreadable_tiff`, as before.
 
 - **A child lying equally in two or more parents has no parent** (owner, 3 November 2026;
   plan §12 question 74, #143): `pair_counts` gave it the parent with the lower label index,
