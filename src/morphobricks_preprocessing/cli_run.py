@@ -4,7 +4,8 @@ Every input left out is the earlier run's in the same output folder (design v0.4
 ``--axes`` is needed for the first run of plain stacks (not when every image names its
 axes, design v0.4 §3) and for plain stacks that are new or changed;
 ``--no-masks`` drops the recorded masks folder, ``--no-exclude`` the recorded exclusions;
-``--mode full`` recomputes every row. Given only ``--output``, ``run`` uses the recorded
+``--mode full`` recomputes every row; ``--verify-content`` reuses rows only for the same
+content SHA-256 (:class:`.run.modes.RunMode`). Given only ``--output``, ``run`` uses the recorded
 experiment folder (``experiment_not_recorded`` without one).
 Also the helpers every command shares: :func:`parse_size` and :func:`command_preflight`.
 """
@@ -51,7 +52,7 @@ from .report import (
     mapping_summary,
     run_summary,
 )
-from .run import MODES, RESTART, Preflight, preflight, run_experiment
+from .run import MODES, RESTART, Preflight, RunMode, preflight, run_experiment
 from .run.lock import OutputLockedError, lock_issue, output_lock
 from .run.output_guard import output_masks_issues
 from .run.recorded import usable
@@ -190,6 +191,13 @@ def _run_inputs(run: argparse.ArgumentParser) -> None:
         help="restart (default): reuse the rows of unchanged images; full: recompute every "
         "row and check. Both keep your confirmations and replace the results only on success",
     )
+    run.add_argument(
+        "--verify-content",
+        action=argparse.BooleanOptionalAction,
+        help="reuse rows only when each image's content SHA-256 is the one recorded with them, "
+        "not only its size and modification time (reads every image once more; changing it "
+        "recomputes every row; default: as in the earlier run, else no)",
+    )
 
 
 def _run_settings(run: argparse.ArgumentParser) -> None:
@@ -274,7 +282,7 @@ def run_command(args: argparse.Namespace) -> int:
         memory_limit=args.memory_limit,
         missing_as_singleton=args.missing_as_singleton,
         exclude=[] if args.no_exclude else args.exclude or None,
-        mode=args.mode,
+        mode=RunMode(args.mode, args.verify_content),
         progress=print_progress,
         design=design,
         masks_folder=False if args.no_masks else args.masks,

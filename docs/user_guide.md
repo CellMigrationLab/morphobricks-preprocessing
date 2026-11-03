@@ -91,7 +91,11 @@ Google Drive is wiped when it disconnects (after some idle time, or after severa
 - **Unchanged images read again.** An image counts as unchanged when its size and
   modification time are the same as at the last run. If Google Drive reports a file's
   time differently later (for example after the file was synced again from another
-  computer), the image is read again. That costs time but never reuses wrong rows.
+  computer), the image is read again. That costs time but never reuses wrong rows. The
+  other way round is not seen: a file rewritten with the same size and its modification
+  time set back (by a tool that restores times) counts as unchanged, and its earlier rows
+  are kept. Tick **Verify each image's content** (CLI `--verify-content`) to compare each
+  image's SHA-256 too; every image is then read once more per run.
 
 ## 2. Organising the experiment folder
 
@@ -461,6 +465,12 @@ results or comparing another grouping.
      or changed ones; **Full** reads every image again and recomputes every row and check.
      Both keep your confirmations (labels, design, axis roles, image type, stated pixel
      sizes) and write the table only when the whole run succeeds.
+   - **Verify each image's content (SHA-256) before reusing its rows** (off by default): an
+     image counts as unchanged when its size and modification time are, so a file rewritten
+     with the same size and its time set back would keep its earlier rows. With the box
+     ticked, the run records each image's SHA-256 and reuses rows only for the same content;
+     every image is read once more. The choice is recorded and kept by later runs; turning
+     it on or off reads every image again.
    - Click **Compute histograms**. A progress bar shows which image is being read. Tiles
      then summarise planes written, images read, kept, new, changed, removed and excluded,
      and the status names the mode, the files replaced and the inputs that changed. The
@@ -632,6 +642,7 @@ SHA-256 still accept it; the report records the rerun. Other options:
 | `--image-type fluorescence\|rgb` | The image type (default: the earlier run's, else the suggested one, printed) |
 | `--design FILE` | The confirmed experiment design (default: `experiment_design.csv` in the output folder); it is copied to the output folder |
 | `--mode restart\|full` | `restart` (default) reuses the rows of unchanged images; `full` recomputes every row and check. Both keep your confirmations and replace the results only when the run succeeds |
+| `--verify-content`, `--no-verify-content` | Reuse rows (earlier or staged) only when each image's content SHA-256 is the one recorded with them, not only its size and modification time; every image is read once more. Default: the earlier run's choice, else off. Turning it on or off recomputes every row |
 | `--no-masks` | Drop the masks folder an earlier run recorded, with the mask axes stated for its masks (those of OME-Zarr label images are kept) |
 | `--no-exclude` | Clear the exclusions an earlier run recorded, so every image is analysed again (not together with `--exclude`) |
 | `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks`, `design` and `calibrate`); give it only when no other run uses the output folder |
@@ -914,8 +925,8 @@ each mask's axes and size (for example `TYX` and 50 x 512 x 512 for a mask per t
 hidden folder `.staging` in the output folder. If the run is interrupted (a crash, a
 stopped kernel, a lost Colab session, a computer switched off), run again with the same
 settings: the images already read are not read again, as long as they are unchanged (same
-size, time and, for OME-Zarr, the same files) and the settings that change rows are the
-same. The report lists them as `resumed`, and lists any rows it did not reuse with the
+size, time and, for OME-Zarr, the same files; with `--verify-content` also the same
+SHA-256) and the settings that change rows are the same. The report lists them as `resumed`, and lists any rows it did not reuse with the
 reason (`staged_discarded`). A `full` run reuses none. After a killed run, remove its lock
 first (`--remove-stale-lock`). Once a run has written its results, `.staging` is deleted.
 

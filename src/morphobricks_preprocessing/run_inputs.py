@@ -15,7 +15,10 @@ Nothing is parsed from names, guessed or transposed, and no file is read once it
   listed, no pixel is read). OME-Zarr label images are never skipped: a run holding
   OME-Zarr images is refused without the ``zarr`` extra, and so is a recorded image whose
   ``labels`` group cannot be read;
-- every read checks the file's fingerprint again (:class:`.fingerprint.Fingerprint`);
+- every read checks the file's fingerprint again (:class:`.fingerprint.Fingerprint`); for a
+  run that verified content (``verify_content``), :meth:`RunInputs.open` also checks every
+  image's content SHA-256 once (:func:`.source_content.content_changed`), and refuses one
+  whose content changed even with its fingerprint kept;
 - masks are read by the recorded pairing only, with preprocessing's reader and its label
   check (:func:`.masks.check_labels`); a stated shared 2-D mask serves every plane.
 
@@ -61,6 +64,7 @@ from .run_inputs_text import (
     _unrecorded_text,
     _without_axes_text,
 )
+from .source_content import content_changed
 from .unrecorded import UnrecordedFiles, unrecorded_files
 from .validation import plural
 from .zarr_input import NgffError, ZarrUnavailableError
@@ -382,6 +386,8 @@ class RunInputs:
     def _check_files(self) -> None:
         """Refuse changed or gone files, masks without axes, unchecked labels, unrecorded files."""
         changed = [e.relative_path for e in self.manifest.files if not self._unchanged(e)]
+        if not changed and self.manifest.settings.verify_content:
+            changed = content_changed(self.manifest.files, self.experiment_root)
         if changed:
             raise RunInputsError(_changed_text(changed))
         recorded = (self.manifest.masks or {}).get("files", ())

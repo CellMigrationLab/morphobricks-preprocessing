@@ -142,6 +142,7 @@ class _RunPlan:
             missing_as_singleton=self.missing_as_singleton.value,
             intensity_settings=self.run_checks.settings(),
             histogram_settings=self._histogram_settings_or_none(),
+            verify_content=self.verify_content.value,
         )
 
     def _plan_layouts(self, review: AxisReview) -> dict[str, PlaneLayout]:

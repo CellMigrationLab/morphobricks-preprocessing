@@ -2,10 +2,13 @@
 
 ``run_manifest.json`` sits next to ``plane_histograms.csv``. It records the
 confirmed folder labels and axis mapping, the settings, the package versions,
-and each source file's size and modification time. The next run compares these
-with the experiment folder to find new, changed and deleted files, so unchanged
-images are never read again (``docs/plan.md`` §7). The format is described in
-``docs/contract.md`` §9.
+and each source file's fingerprint (size and modification time, and for an
+OME-Zarr folder its inventory). The next run compares these with the experiment
+folder to find new, changed and deleted files, and reads again only those
+(``docs/plan.md`` §7). The fingerprint is metadata: a file rewritten with the same
+size and its modification time set back is not seen as changed, unless the run
+verifies content (``verify_content``: each source's SHA-256 is recorded and must
+match). The format is described in ``docs/contract.md`` §9.
 
 The manifest also records, for information only, each file's channel names and
 significant bits when its metadata provides them, the SHA-256 of the
@@ -22,14 +25,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import platform
 from dataclasses import dataclass, field
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-import morphobricks_normalization
-import numpy as np
-import tifffile
 from morphobricks_normalization.checks import IntensityCheckSettings
 from morphobricks_normalization.csv_io import SCHEMA_VERSION
 from morphobricks_normalization.ranges import HistogramSettings
@@ -41,8 +39,11 @@ from .inventory import INVENTORY_KEY, source_signature
 from .inventory import source_fingerprint as source_fingerprint  # re-exported (moved, PP-12)
 from .narrow_ranges import NarrowRange
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
+from .versions import package_versions as package_versions  # re-exported (moved)
 
 MANIFEST_FILENAME = "run_manifest.json"
+CONTENT_KEY = "content_sha256"
+"""The key of a source's content SHA-256 in a manifest entry (``verify_content`` runs)."""
 AXES_FROM = ("header", "confirmed")
 """Where a file's roles come from (:attr:`FileEntry.axes_from`)."""
 MANIFEST_VERSION = "2"
@@ -74,6 +75,10 @@ class RunSettings:
         the range check (the normalization brick's ``HistogramSettings``).
         Manifests written before it was recorded read as the default, the
         minimum to maximum.
+    verify_content
+        Strict reuse (CLI ``--verify-content``): each source's content SHA-256 is recorded
+        (:attr:`FileEntry.content_sha256`) and must match before its staged or earlier rows
+        are reused. False (the default, and in manifests without it): the fingerprint only.
     """
 
     bin_count: int
@@ -81,6 +86,7 @@ class RunSettings:
     missing_as_singleton: bool = False
     exclude: tuple[str, ...] = ()
     histogram: HistogramSettings = field(default_factory=HistogramSettings)
+    verify_content: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "exclude", tuple(sorted(set(self.exclude))))
@@ -140,6 +146,10 @@ class FileEntry:
         size and modification time, :func:`.inventory.source_signature`); None for a
         TIFF file, and in manifests written before it was recorded (such an OME-Zarr
         image counts as changed: its fingerprint is not known to be complete).
+    content_sha256
+        The SHA-256 of the file's content (an OME-Zarr folder: of its files' paths and
+        SHA-256s, :func:`.source_content.source_content_sha256`), in a ``verify_content``
+        run only; None otherwise.
     """
 
     relative_path: str
@@ -158,6 +168,7 @@ class FileEntry:
     axes_from: str | None = None
     pixel_sizes: tuple[RecordedSize, ...] = ()
     inventory_sha256: str | None = None
+    content_sha256: str | None = None
 
     def same_source(self, other: FileEntry) -> bool:
         """Return True if ``other`` describes the same unchanged file, read the same way."""
@@ -166,6 +177,7 @@ class FileEntry:
             and self.size == other.size
             and self.mtime_ns == other.mtime_ns
             and self.inventory_sha256 == other.inventory_sha256
+            and self.content_sha256 == other.content_sha256
             and self.labels == other.labels
             and self.axes == other.axes
             and self.singleton_roles == other.singleton_roles
@@ -278,6 +290,7 @@ class RunManifest:
                 ),
                 "exclude": list(self.settings.exclude),
                 "histogram": self.settings.histogram.to_dict(),
+                "verify_content": _flag(self.settings.verify_content, "verify_content"),
             },
             "axis_mapping": {"axes": self.mapping.axes, "roles": list(self.mapping.roles)},
             "labels": [
@@ -341,6 +354,7 @@ class RunManifest:
                         if settings.get("histogram") is None
                         else HistogramSettings.from_dict(settings["histogram"])
                     ),
+                    verify_content=_flag(settings.get("verify_content", False)),
                 ),
                 mapping=AxisMapping(str(mapping["axes"]), tuple(mapping["roles"])),
                 files=tuple(_file_entry(f, strict=version != "1") for f in data["files"]),
@@ -443,22 +457,6 @@ def file_entry_with(
     )
 
 
-def package_versions() -> dict[str, str]:
-    """Versions of the packages that determine the output."""
-    try:
-        own = version("morphobricks-preprocessing")
-    except PackageNotFoundError:  # running from a source checkout without installing
-        own = "0.0.0+unknown"
-    return {
-        "morphobricks-preprocessing": own,
-        # Computes the histograms and writes the CSV.
-        "morphobricks-normalization": morphobricks_normalization.__version__,
-        "numpy": np.__version__,
-        "tifffile": tifffile.__version__,
-        "python": platform.python_version(),
-    }
-
-
 def file_sha256(path: str | os.PathLike) -> str:
     """SHA-256 of a file, read in blocks."""
     digest = hashlib.sha256()
@@ -533,6 +531,8 @@ def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
     }
     if entry.inventory_sha256 is not None:
         data[INVENTORY_KEY] = entry.inventory_sha256
+    if entry.content_sha256 is not None:
+        data[CONTENT_KEY] = entry.content_sha256
     return data
 
 
@@ -562,6 +562,7 @@ def _file_entry(data: dict, *, strict: bool = True) -> FileEntry:
         axes_from=_text(data.get("axes_from")),
         pixel_sizes=sizes_from_data(data.get("pixel_sizes")),
         inventory_sha256=_text(data.get(INVENTORY_KEY)),
+        content_sha256=_text(data.get(CONTENT_KEY)),
     )
 
 

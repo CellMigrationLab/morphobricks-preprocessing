@@ -10,8 +10,9 @@ The fingerprint is metadata only, never the pixels (design v0.4 §1):
   time stay the same.
 
 What no metadata can see is a file rewritten with the same size whose modification time
-is then set back to its earlier value (as for a TIFF file): only hashing the content would,
-and design v0.4 §1 keeps the fingerprint metadata only.
+is then set back to its earlier value (as for a TIFF file): only hashing the content would.
+Design v0.4 §1 keeps the fingerprint metadata only by default; a run that verifies content
+(``verify_content``, :mod:`.source_content`) also records and checks each source's SHA-256.
 
 Moved from :mod:`.manifest` (PP-12), which re-exports :func:`source_fingerprint`.
 """
@@ -57,6 +58,32 @@ def source_signature(path: str | os.PathLike) -> tuple[int, int, str | None]:
     if not path.is_dir():
         stat = path.stat()
         return stat.st_size, stat.st_mtime_ns, None
+    newest, found = store_files(path)
+    digest = hashlib.sha256()
+    for name, stat in found:
+        digest.update(os.fsencode(name) + f"\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode())
+    return sum(stat.st_size for _, stat in found), newest, digest.hexdigest()
+
+
+def store_files(path: Path) -> tuple[int, list[tuple[str, os.stat_result]]]:
+    """Return the newest time and the files of an OME-Zarr folder, as its fingerprint sees them.
+
+    Parameters
+    ----------
+    path
+        The OME-Zarr folder; its root's ``labels`` group is left out.
+
+    Returns
+    -------
+    tuple
+        ``(newest mtime_ns, files)``: the files as ``(path relative to the folder with
+        "/", stat)``, sorted by path; the newest time includes the folder's own.
+
+    Raises
+    ------
+    OSError
+        As :func:`source_signature`.
+    """
     found = []
     newest = path.stat().st_mtime_ns
     seen: set[str] = set()
@@ -76,10 +103,7 @@ def source_signature(path: str | os.PathLike) -> tuple[int, int, str | None]:
             found.append((name if relative == "." else f"{relative}/{name}", stat))
             newest = max(newest, stat.st_mtime_ns)
     found.sort(key=lambda item: item[0])
-    digest = hashlib.sha256()
-    for name, stat in found:
-        digest.update(os.fsencode(name) + f"\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode())
-    return sum(stat.st_size for _, stat in found), newest, digest.hexdigest()
+    return newest, found
 
 
 def source_fingerprint(path: str | os.PathLike) -> tuple[int, int]:

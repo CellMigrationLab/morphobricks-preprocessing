@@ -80,6 +80,7 @@ class _Prefill:
         self.histogram_range.value = histogram.histogram_range
         self.robust_low.value, self.robust_high.value = histogram.robust_quantiles
         self.run_checks.use(recorded.intensity_settings or IntensityCheckSettings())
+        self.verify_content.value = recorded.verify_content
 
     def _unfill(self) -> None:
         """Set back the values filled from another output folder that were not edited."""
@@ -91,6 +92,8 @@ class _Prefill:
             self.exclude.value = ""
         if now["intensity"] == self._prefilled["intensity"]:
             self.run_checks.restore_defaults()
+        if now["verify_content"] == self._prefilled["verify_content"]:
+            self.verify_content.value = False
         kept = ("recommended", "bins", "histogram")
         unedited = "bins" not in self._edited
         unedited = unedited and all(now[key] == self._prefilled[key] for key in kept)
@@ -180,6 +183,7 @@ class _Prefill:
             ),
             "intensity": self.run_checks.settings(),
             "singleton": self.missing_as_singleton.value,
+            "verify_content": self.verify_content.value,
         }
 
     def _histogram_from(

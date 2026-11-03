@@ -5,10 +5,10 @@ folder ``.staging``: the rows as a small ``plane_histograms.csv`` written with t
 normalization brick's writer (the same writer and reader as the table, so a resumed row is
 the row the run would compute), then a JSON record naming the file, its row key
 (:class:`.fingerprint.RowKey`: fingerprint, labels, axes, roles, ``axes_from``, read path,
-bins and histogram settings), the pixel type, the table's schema version, the versions of
-the two packages that compute rows, the planes whose range check failed, and the SHA-256 of
-the rows file. The record is written last, so a staged entry without one is incomplete and
-never used.
+bins and histogram settings, and in a ``verify_content`` run the content SHA-256), the
+pixel type, the table's schema version, the versions of the two packages that compute
+rows, the planes whose range check failed, and the SHA-256 of the rows file. The record is
+written last, so a staged entry without one is incomplete and never used.
 
 The next run (after a crash, a kill or a lost Colab session) reuses a staged file's rows
 only when everything its record names is what that run would read now; anything else is
@@ -83,11 +83,15 @@ def staging_key(key: RowKey, dtype: str) -> dict:
     Returns
     -------
     dict
-        The row key, the pixel type, the table's schema version and the versions of the
-        packages that compute rows, normalised through JSON so it compares with a record.
+        The row key (with the content SHA-256 only in a ``verify_content`` run), the pixel
+        type, the table's schema version and the versions of the packages that compute
+        rows, normalised through JSON so it compares with a record.
     """
+    row = asdict(key)
+    if row["content_sha256"] is None:  # not a verify_content run: the key as before
+        del row["content_sha256"]
     data = {
-        "row_key": asdict(key),
+        "row_key": row,
         "dtype": dtype,
         "schema_version": SCHEMA_VERSION,
         "versions": dict(_row_versions()),

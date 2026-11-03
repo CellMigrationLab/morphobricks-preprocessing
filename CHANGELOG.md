@@ -100,6 +100,17 @@ and the bricks' migration).
 
 ### Fixed
 
+- **The identity rule is stated, and strict reuse is offered** (review of rc4, I3; owner, 3
+  November 2026): reuse, resume and `RunInputs` identify a source by its metadata
+  fingerprint (size and `mtime_ns`; for OME-Zarr the inventory of paths, sizes and times),
+  whose known blind spot is a same-size rewrite with the time set back; the contract, the
+  user guide and the docstrings now say so. The opt-in `RunMode(verify_content=True)` (CLI
+  `--verify-content`, the notebook's "Verify each image's content" box) records each
+  source's content SHA-256 (`files[].content_sha256`, `settings.verify_content`) and
+  reuses earlier or staged rows only for the same content; `RunInputs` of such a run checks
+  it at `open`. It is a recorded input; turning it on or off recomputes every row and is
+  named. The default run is unchanged.
+
 - **Mount points below the experiment or masks folder are refused** (owner, 3 November
   2026): a bind mount is an ordinary folder to the walk, so its files from outside were
   read. A folder (or file) listed in `/proc/self/mountinfo`, or on another device than the

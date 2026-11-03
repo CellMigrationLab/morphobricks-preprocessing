@@ -198,6 +198,7 @@ from .recorded_sizes import RecordedSize
 from .report import GroupSummary, group_summaries
 from .run import (
     Preflight,
+    RunMode,
     RunResult,
     SamplePlane,
     edit_design,
@@ -302,6 +303,7 @@ __all__ = [
     "RecordedSize",
     "RepeatBox",
     "RunManifest",
+    "RunMode",
     "RunResult",
     "RunInputs",
     "RunInputsError",

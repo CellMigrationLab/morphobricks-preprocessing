@@ -6,7 +6,9 @@ as soon as it is read. Whether a file stayed the file the run checked is decided
 fingerprint (issue #90): its manifest entry records the fingerprint taken when its header
 was read (between two fingerprints that must agree), and the file must still have it just
 after its pixels are read. A file that changed is never staged or published: it is listed, and the
-run stops with ``source_changed_during_run`` (:func:`changed_issue`).
+run stops with ``source_changed_during_run`` (:func:`changed_issue`). In a ``verify_content``
+run the row key also holds the file's content SHA-256, so staged rows are resumed only for the
+same content, and a file read must still have that SHA-256 after its pixels are read.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from ..axes import AxisReview
 from ..fingerprint import Fingerprint, RowKey, current_fingerprint
 from ..manifest import FileEntry, NarrowRange, RunSettings
 from ..planes import PlaneReadError
+from ..source_content import current_content
 from ..validation import ValidationIssue, error, plural
 from .preflight import Preflight
 from .rows import _read_file
@@ -182,7 +185,10 @@ def _read_one(job: FileJob, rel: str, key: dict, found: NewRows) -> None:
         logger.warning("Cannot read the planes of %s", rel, exc_info=True)
         found.failed.append(rel)
         return
-    if current_fingerprint(root / rel) != expected:
+    if current_fingerprint(root / rel) != expected or (
+        job.settings.verify_content
+        and current_content(root / rel) != job.entries[rel].content_sha256
+    ):
         found.changed.append(rel)
         return
     stage_file(job.output, key, rows, ranges)
@@ -222,6 +228,14 @@ def _why_discarded(staged: dict, now: dict, full: bool, unchanged: bool) -> str:
         or staged.get("row_key", {}).get("fingerprint") != now["row_key"]["fingerprint"]
     ):
         return "the image changed since its rows were staged"
+    content = (
+        staged.get("row_key", {}).get("content_sha256"),
+        now["row_key"].get("content_sha256"),
+    )
+    if content[0] != content[1]:
+        if None in content:
+            return "content verification (verify_content) was turned on or off since then"
+        return "the image's content (SHA-256) changed since its rows were staged"
     if {k: staged.get(k) for k in ("versions", "schema_version")} != {
         k: now[k] for k in ("versions", "schema_version")
     }:
