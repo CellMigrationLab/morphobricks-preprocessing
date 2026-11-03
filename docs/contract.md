@@ -448,7 +448,7 @@ masks/                         masks folder, outside the experiment folder
 | Warnings | `mask_missing` (images without a mask of a type that other images have: their objects of that type cannot be measured), `mask_without_image` (files matching no image of the experiment), `mask_of_excluded_image` (masks of excluded images, not used), `mask_outside_type_folder` (files directly in the masks folder that are not TIFF masks). |
 | Run | `run_experiment(..., masks_folder=..., mask_axes=...)` stops on a mask error and records the masks in the manifest's `masks` key (§9). Without masks, the run and its outputs are unchanged. |
 
-### 15.1 The mask step (`mask_relationships.json`, report version 2)
+### 15.1 The mask step (`mask_relationships.json`, report version 3)
 
 The optional mask step reads every image's masks, one image at a time, and describes each
 mask type and every ordered pair of types over the whole experiment. Pieces are counted with
@@ -473,7 +473,12 @@ plane it is in, and `images` still counts images.
 
 For a child type and a parent type, the counts are summed over the images (and planes) with
 both masks.
-Each child object's parent is the parent object sharing most of its pixels.
+Each child object's parent is the parent object sharing most of its pixels. When two or more
+parents share exactly that many (a child lying half in each of two cells), the child has
+**no parent**, so that no count depends on how the objects are numbered (owner, 3 November
+2026; before, the parent with the lower label was taken): it is never `inside`, and when
+the tied share would have made it inside it is counted as `ambiguous_parent`. Each child is
+counted once in `inside`, `ambiguous_parent`, `split_between_parents` or `outside_parents`.
 
 | Relation of child to parent | Rule (default thresholds; the values used are written in the report) |
 |---|---|
@@ -485,9 +490,10 @@ Each child object's parent is the parent object sharing most of its pixels.
 | Evidence (per pair) | Meaning |
 |---|---|
 | `children`, `parents` | Objects of each type. |
-| `inside`, `inside_parent_larger` | Children with at least half of their pixels in one parent; of those, children whose parent is larger. |
-| `split_between_parents`, `outside_parents` | Children touching parents but with less than half of their pixels in any one; children touching no parent. |
-| `parents_with_0_children`, `parents_with_1_child`, `parents_with_2_children`, `parents_with_3_or_more_children` | How many children each parent holds (two nuclei in one cell counts as 2). |
+| `inside`, `inside_parent_larger` | Children with at least half of their pixels in one parent, which is their parent (no tie); of those, children whose parent is larger. |
+| `ambiguous_parent` | Children with at least half of their pixels in a parent, for which two or more parents share that many pixels exactly: they have no parent and are not `inside` (report version 3). `masks`, the notebook's **Describe the masks** and the relationship table name them. |
+| `split_between_parents`, `outside_parents` | Children touching parents but with less than half of their pixels in any one (tied or not); children touching no parent. |
+| `parents_with_0_children`, `parents_with_1_child`, `parents_with_2_children`, `parents_with_3_or_more_children` | How many `inside` children each parent holds (two nuclei in one cell counts as 2); a child with no parent counts for none. |
 | `child_pixels`, `child_pixels_with_parent_label` | Child pixels; those whose label equals the parent label under them. |
 | `children_matched_one_to_one`, `parents_matched_one_to_one` | Objects matched one to one (the maximum matching above, at an intersection over union of at least 0.5); the two counts are equal. The number of matches does not depend on which of several equally large matchings is found, so it is deterministic. |
 | `children_not_matched`, `parents_not_matched` | Objects of each type left without a match. |
@@ -512,7 +518,7 @@ The report is UTF-8 JSON (two-space indent, LF), written atomically to the outpu
 
 | Key | Meaning |
 |---|---|
-| `report_version` | `2` (since issue #67: the one-to-one matches are a matching, and the four counts of unmatched and several-partner objects were added). |
+| `report_version` | `3` (since v0.4.0rc5: a tie between parents gives no parent, and `ambiguous_parent` was added; plan §12 question 74). `2` since issue #67: the one-to-one matches are a matching, and the four counts of unmatched and several-partner objects were added. |
 | `thresholds` | The thresholds used, all seven. |
 | `images` | Images scanned (every image with at least one mask). |
 | `masks` | Per mask type: `kind`, `images`, `objects` (labels over all images) and `median_pieces_per_label`. |

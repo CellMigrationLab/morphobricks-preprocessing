@@ -22,7 +22,10 @@ experiment, with the evidence (counts) behind each conclusion:
   - ``none`` otherwise.
 
   Several children per parent are counted (parents with 0, 1, 2 and 3 or more children), as
-  are children outside every parent and children split between parents.
+  are children outside every parent and children split between parents. A child whose
+  largest overlap is shared exactly by two or more parents has no parent, whatever the
+  label numbers: when that share would make it inside, it is counted as
+  ``ambiguous_parent``, not ``inside`` (owner, 3 November 2026, plan §12 question 74).
 - **Hierarchy:** the direct parents of each type: a parent is left out when it is the parent
   of another parent (nucleoli inside nuclei inside cells: the nucleoli's direct parent is the
   nuclei). A type may have several direct parents (cells inside an organoid and inside a
@@ -53,11 +56,11 @@ from types import MappingProxyType
 
 import numpy as np
 from scipy import ndimage
-from scipy.sparse import csr_matrix
-from scipy.sparse.csgraph import maximum_bipartite_matching
 
 from ._io import write_text_atomic
 from .manifest import package_versions
+from .mask_pairs import best_parents, match_counts
+from .mask_pairs import one_to_one_matches as one_to_one_matches  # moved there
 from .masks import MaskInventory, check_labels, read_mask
 
 logger = logging.getLogger(__name__)
@@ -65,8 +68,9 @@ logger = logging.getLogger(__name__)
 MASK_REPORT_FILENAME = "mask_relationships.json"
 """Name of the report written to the output folder."""
 
-MASK_REPORT_VERSION = "2"
-"""Version of the report's format: 2 since the one-to-one matches are a matching (issue #67)."""
+MASK_REPORT_VERSION = "3"
+"""Version of the report's format: 2 since the one-to-one matches are a matching (issue #67),
+3 since a tie between parents gives no parent and is counted as ``ambiguous_parent``."""
 
 DEFAULT_THRESHOLDS = MappingProxyType(
     {
@@ -88,6 +92,7 @@ _COUNTS = (
     "children",
     "parents",
     "inside",
+    "ambiguous_parent",
     "inside_parent_larger",
     "split_between_parents",
     "outside_parents",
@@ -289,6 +294,11 @@ def pair_counts(
 
     Both are 2D label images of one position; label 0 is background. ``thresholds`` changes
     the default ``inside_pixel_share`` and ``same_objects_iou`` (:func:`mask_thresholds`).
+    Each child's parent is the parent sharing most of its pixels; a child for which two or
+    more parents share that many has none (:func:`.mask_pairs.best_parents`), so no count
+    depends on the label numbers. Each child is counted once in ``inside``,
+    ``ambiguous_parent`` (tied, with a share that would make it inside),
+    ``split_between_parents`` or ``outside_parents``.
 
     Raises
     ------
@@ -326,16 +336,16 @@ def pair_counts(
         return counts
     union = child_sizes[kid] + parent_sizes[host] - shared
     eligible = shared / union >= limits["same_objects_iou"]
-    counts.update(_match_counts(kid[eligible], host[eligible], child_labels.size, slots))
-    best = np.lexsort((-shared, kid))
-    lead = np.r_[True, kid[best][1:] != kid[best][:-1]]
-    best_kid, best_host, best_shared = kid[best][lead], host[best][lead], shared[best][lead]
-    inside = best_shared / child_sizes[best_kid] >= limits["inside_pixel_share"]
+    counts.update(match_counts(kid[eligible], host[eligible], child_labels.size, slots))
+    best_kid, best_host, best_shared, tied = best_parents(kid, host, shared)
+    reaches = best_shared / child_sizes[best_kid] >= limits["inside_pixel_share"]
+    inside, ambiguous = reaches & ~tied, reaches & tied
     counts["inside"] = int(inside.sum())
+    counts["ambiguous_parent"] = int(ambiguous.sum())
     counts["inside_parent_larger"] = int(
         np.count_nonzero(parent_sizes[best_host[inside]] > child_sizes[best_kid[inside]])
     )
-    counts["split_between_parents"] = int(np.count_nonzero(~inside))
+    counts["split_between_parents"] = int(np.count_nonzero(~reaches))
     counts["outside_parents"] = child_labels.size - best_kid.size
     per_parent = np.bincount(best_host[inside], minlength=slots)
     counts["parents_with_0_children"] = int(np.count_nonzero(per_parent == 0))
@@ -343,52 +353,6 @@ def pair_counts(
     counts["parents_with_2_children"] = int(np.count_nonzero(per_parent == 2))
     counts["parents_with_3_or_more_children"] = int(np.count_nonzero(per_parent >= 3))
     return counts
-
-
-def one_to_one_matches(kid: np.ndarray, host: np.ndarray, children: int, parents: int) -> int:
-    """Return the number of one-to-one matches: a maximum matching of the eligible pairs.
-
-    Each child and each parent is matched at most once, and the number of matches is the
-    largest possible (Hopcroft-Karp, :func:`scipy.sparse.csgraph.maximum_bipartite_matching`).
-    That number does not depend on which of several equally good matchings is found, so
-    the counts are deterministic. Above an intersection over union of 0.5 an object can
-    overlap only one partner that much, and every eligible pair is matched; at 0.5 or below,
-    two children covering one parent are one match, not two (issue #67).
-
-    Parameters
-    ----------
-    kid, host
-        The child and parent of each eligible pair (intersection over union at least the
-        threshold), as indices below ``children`` and ``parents``; each pair at most once.
-    children, parents
-        Numbers of child and parent objects.
-
-    Returns
-    -------
-    int
-    """
-    if kid.size == 0:
-        return 0
-    graph = csr_matrix((np.ones(kid.size, dtype=np.int8), (kid, host)), shape=(children, parents))
-    partner = maximum_bipartite_matching(graph, perm_type="column")
-    return int(np.count_nonzero(partner >= 0))
-
-
-def _match_counts(kid: np.ndarray, host: np.ndarray, children: int, parents: int) -> dict:
-    """Return the matched, unmatched and several-partner counts of the eligible pairs."""
-    matched = one_to_one_matches(kid, host, children, parents)
-    return {
-        "children_matched_one_to_one": matched,
-        "parents_matched_one_to_one": matched,
-        "children_not_matched": children - matched,
-        "parents_not_matched": parents - matched,
-        "children_over_iou_with_several_parents": int(
-            np.count_nonzero(np.bincount(kid, minlength=children) > 1)
-        ),
-        "parents_over_iou_with_several_children": int(
-            np.count_nonzero(np.bincount(host, minlength=parents) > 1)
-        ),
-    }
 
 
 def scan_masks(

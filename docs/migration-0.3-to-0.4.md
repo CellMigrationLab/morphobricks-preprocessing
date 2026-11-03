@@ -144,6 +144,11 @@ later bricks on the new run.
   - The notebook has a **Masks folder** field and a **Describe the masks** button (the
     `masks` step).
   - `same_objects` in `mask_relationships.json` is a one-to-one matching (report version 2).
+  - A child lying exactly as much in two or more parents has **no parent** (it went to
+    the parent with the lower label before, so the counts depended on the numbering):
+    it is not `inside` and is counted as `ambiguous_parent`, so `inside` and
+    `parents_with_N_children` may be lower than with v0.4.0rc4 (report version 3,
+    v0.4.0rc5).
   - The masks folder may hold only masks: an experiment, named-axis copies or the output
     folder inside it is refused (`experiment_inside_masks`, `copies_inside_masks`,
     `output_inside_masks`, before anything is written), and so is a `convert` folder

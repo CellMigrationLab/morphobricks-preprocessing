@@ -27,6 +27,7 @@ from .fingerprint import current_fingerprint
 from .manifest import MANIFEST_FILENAME
 from .mask_scan import MASK_REPORT_FILENAME
 from .mask_text import (
+    mask_ambiguous_lines,
     mask_hierarchy_lines,
     mask_relationship_rows,
     mask_thresholds_used,
@@ -249,6 +250,14 @@ class _MaskStepCard:
             parts += [
                 _heading("Two segmentations of the same objects (to check)"),
                 f"<ul>{same}</ul>",
+            ]
+        ambiguous = "".join(
+            f"<li>{html.escape(line)}</li>" for line in mask_ambiguous_lines(report)
+        )
+        if ambiguous:
+            parts += [
+                _heading("Objects given no parent (a tie, to check)"),
+                f"<ul>{ambiguous}</ul>",
             ]
         parts += [_heading("Hierarchy (direct parents only)"), f"<pre>{hierarchy}</pre>"]
         if step.issues:

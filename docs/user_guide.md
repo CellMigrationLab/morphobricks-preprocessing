@@ -513,8 +513,9 @@ results or comparing another grouping.
      time (a progress bar names the image); the card then shows each mask type (kind,
      images, objects, median pieces per label), the relationships found (which type is
      inside or grouped by which, how many objects are inside, how many objects of the
-     other type hold 0, 1, 2 or 3 or more, and how many are outside or split), masks of
-     the same objects, and the hierarchy of direct parents. These are suggestions to
+     other type hold 0, 1, 2 or 3 or more, and how many are outside or split), the
+     objects given no parent because they lie equally in two or more objects of the other
+     type, masks of the same objects, and the hierarchy of direct parents. These are suggestions to
      check, not decisions. The description is written to **mask_relationships.json** in
      the output folder (its path is shown). The output folder's lock is held from before the
      first mask is read until the file is written: when another run holds it, **The output folder is locked** is shown with **Remove the lock of a
@@ -690,7 +691,10 @@ Hierarchy (direct parents only):
 Nucleoli inside nuclei inside cells have the nuclei as their direct parent; two kinds of
 mask that segment the same objects are reported as such: at least 90% of the objects of
 both are matched one to one, each object matched at most once (two halves of one cell are
-one match, not two). These are suggestions from the
+one match, not two). An object that lies exactly as much in two or more objects of the
+other kind (a nucleus half in each of two cells) is given **no parent**, whichever has the
+lower number: it is not counted as inside, and the command lists it under "Objects given
+no parent" (`ambiguous_parent` in the report, since v0.4.0rc5). These are suggestions from the
 pixels, not decisions: you name each kind of mask and check the relationships in the bricks
 that use them. The report is written to `mask_relationships.json` in the output folder
 (§6). The command takes `--output`, `--exclude` and `--log` like the others, and exits with
