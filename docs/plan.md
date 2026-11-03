@@ -1844,8 +1844,8 @@ Raised during review; to be decided before the milestones that need them:
     always needs it. (F10) a rerun whose manifest differs only in `written_at` keeps the
     earlier time, so the manifest's bytes and SHA-256 stay the same; any other change writes
     the new time. (F11) the `output_locked` message says that a lock left by a process on
-    this computer that is no longer running looks stale, and how to remove it; it is never
-    removed automatically. A resumed run's summary says that the staged rows were resumed,
+    this computer that is no longer running looks stale, and how to remove it (also
+    `convert`'s, for the folder of the copies); it is never removed automatically. A resumed run's summary says that the staged rows were resumed,
     not that all rows were computed. (F8a) `convert` keeps each image's stored order of
     dimensions (§17): writing copies in the experiment's common order would be a pixel-exact
     transposition under named roles, but it changes §17's copy axes and is left as an open

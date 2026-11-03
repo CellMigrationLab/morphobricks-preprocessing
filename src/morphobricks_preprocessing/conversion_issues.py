@@ -147,13 +147,31 @@ def failed_issue(path: str, exc: Exception) -> ValidationIssue:
 
 
 def lock_issue(exc: OutputLockedError) -> ValidationIssue:
-    """Refuse a conversion while another one writes into the same folder."""
+    """Refuse a conversion while another one writes into the same folder.
+
+    A lock left by a conversion on this computer that is no longer running is called stale
+    (cross-brick test F11), and it is kept: only the user removes it.
+    """
+    from .run.lock import looks_stale
+
+    removal = (
+        "give --remove-stale-lock to the command, press 'Remove the lock of a stopped run' "
+        "in the notebook, or call remove_stale_lock(folder), then convert again."
+    )
+    if looks_stale(exc.holder):
+        return error(
+            "output_locked",
+            f"The lock of this folder looks stale: it was left by {exc.holder.describe()}, "
+            "which is no longer running (the conversion was probably stopped). The lock was "
+            "not removed, so nothing was done.",
+            [exc.path.as_posix()],
+            f"If no conversion is going on in this folder, remove the lock: {removal}",
+        )
     return error(
         "output_locked",
         f"Another conversion is writing into this folder: {exc.holder.describe()}. Nothing "
         "was done.",
         [exc.path.as_posix()],
         "Wait for it to finish. If none is going on (it was stopped or the computer "
-        "restarted), give --remove-stale-lock to the command, or call "
-        "remove_stale_lock(folder), then convert again.",
+        f"restarted), remove the lock: {removal}",
     )

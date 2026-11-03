@@ -186,7 +186,7 @@ def lock_issue(exc: OutputLockedError) -> ValidationIssue:
         "give --remove-stale-lock to the command, press 'Remove the lock of a stopped run' "
         "in the notebook, or call remove_stale_lock(output_folder), then run again."
     )
-    if holder.pid and holder.host == socket.gethostname() and _ended(holder.pid):
+    if looks_stale(holder):
         # Cross-brick test F11: a run killed here left its lock. It looks stale, but the
         # brick never removes a lock on its own (module docstring): the user decides.
         return error(
@@ -207,9 +207,19 @@ def lock_issue(exc: OutputLockedError) -> ValidationIssue:
     )
 
 
-def _ended(pid: int) -> bool:
-    """Return True only when this computer can tell that no process has this ID (POSIX)."""
-    return os.name == "posix" and pid > 0 and not _running(pid)
+def looks_stale(holder: LockHolder) -> bool:
+    """Return True only when the holder ran on this computer and is no longer running.
+
+    Only POSIX can tell (:func:`_running`); elsewhere, and for a holder on another computer,
+    the answer is False. It only words the refusal: the lock is never removed on its own.
+    """
+    pid = holder.pid
+    return (
+        os.name == "posix"
+        and pid > 0
+        and holder.host == socket.gethostname()
+        and (not _running(pid))
+    )
 
 
 def _running(pid: int) -> bool:

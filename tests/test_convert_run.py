@@ -9,6 +9,7 @@ SHA-256 and warns when a source or a copy changed after the conversion.
 
 import json
 import os
+import socket
 
 import numpy as np
 import pytest
@@ -457,10 +458,27 @@ def test_the_convert_command_removes_a_stale_lock_only_on_request(tmp_path, caps
     lock = copies / LOCK_FILENAME
     lock.write_text(json.dumps({"host": os.uname().nodename, "pid": finished_pid()}))
     assert main(["convert", str(exp), "--to", str(copies), "--axes", "ZXY"]) == 1
-    assert "Another conversion is writing into this folder" in capsys.readouterr().out
+    # F11 (cross-brick test, 3 November 2026): a dead holder here is called stale, as in run.
+    text = capsys.readouterr().out
+    assert "Another conversion" not in text
+    assert "lock of this folder looks stale" in text and "no longer running" in text
+    assert "--remove-stale-lock" in text and lock.exists()  # never removed on its own
     args = ["convert", str(exp), "--to", str(copies), "--axes", "ZXY", "--remove-stale-lock"]
     assert main(args) == 0
     assert "Removed the lock" in capsys.readouterr().out
+
+
+def test_a_conversion_whose_folder_a_running_process_locks_is_not_called_stale(tmp_path, capsys):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    copies.mkdir()
+    lock = copies / LOCK_FILENAME
+    lock.write_text(json.dumps({"host": "another-computer", "pid": os.getpid()}))
+    assert main(["convert", str(exp), "--to", str(copies), "--axes", "ZXY"]) == 1
+    text = capsys.readouterr().out
+    assert "Another conversion is writing into this folder" in text and "looks stale" not in text
+    lock.write_text(json.dumps({"host": socket.gethostname(), "pid": os.getpid()}))
+    assert main(["convert", str(exp), "--to", str(copies), "--axes", "ZXY"]) == 1
+    assert "looks stale" not in capsys.readouterr().out
 
 
 def test_an_ome_zarr_image_is_copied_as_it_is(tmp_path):
