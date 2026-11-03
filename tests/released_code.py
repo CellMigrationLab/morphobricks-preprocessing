@@ -23,8 +23,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 RC4 = "v0.4.0rc4"
-BEFORE_STRICT_VERSION = "1993f2b8df5f3572cfcaf78f17484545fc14825e"
-"""main before manifest version 3 (v0.4.0rc5 as merged in #143): the default shape."""
+BEFORE_STRICT_VERSION = "a6eea53a7ce63b71757b3544fb05a76a4f90feb8"
+"""main before manifest version 3 (v0.4.0rc5 with #145 merged): the default shape."""
 
 
 def extract(revision, folder):
