@@ -404,7 +404,21 @@ def _write_generation(
         calibration_sha256=pre.calibration.sha256,
         conversion_record_sha256=None if pre.conversion is None else pre.conversion.sha256,
     )
+    manifest = _kept_time(manifest, run.previous[0])
     return file_sha256(write_manifest(manifest, staged / MANIFEST_FILENAME))
+
+
+def _kept_time(manifest: RunManifest, earlier: RunManifest | None) -> RunManifest:
+    """Return the manifest with the earlier run's ``written_at`` when nothing else changed.
+
+    Later bricks pin the manifest's SHA-256 (CellPatcher, MorphoFeature): a rerun that
+    changes nothing must leave its bytes as they were (cross-brick test F10). The report
+    still records the rerun.
+    """
+    if earlier is None:
+        return manifest
+    same = replace(manifest, written_at=earlier.written_at)
+    return same if same.to_dict() == earlier.to_dict() else manifest
 
 
 def _replaced(run: _Run, masks: dict | None) -> dict[str, str]:

@@ -1,7 +1,8 @@
 """The command line's ``run``: its options and what it prints (moved from :mod:`.cli`).
 
 Every input left out is the earlier run's in the same output folder (design v0.4 §1):
-``--axes`` is needed for the first run and for plain stacks that are new or changed;
+``--axes`` is needed for the first run of plain stacks (not when every image names its
+axes, design v0.4 §3) and for plain stacks that are new or changed;
 ``--no-masks`` drops the recorded masks folder, ``--no-exclude`` the recorded exclusions;
 ``--mode full`` recomputes every row. Given only ``--output``, ``run`` uses the recorded
 experiment folder (``experiment_not_recorded`` without one).
@@ -41,6 +42,7 @@ from .discovery import check_output_folder, default_output_folder
 from .image_type import IMAGE_TYPES, RGB, ImageTypeReview, review_image_type
 from .intensity import intensity_text
 from .manifest import RunManifest
+from .metadata import header_axes
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import (
     axis_check_summary,
@@ -150,7 +152,8 @@ def _run_inputs(run: argparse.ArgumentParser) -> None:
         metavar="ROLES",
         help="role of each axis of the images, in the order of their axes: X, Y, Z, C, T, or "
         "- for none (for example ZCYX). 'check' prints the suggested value. Needed for the "
-        "first run, and again for plain stacks that are new or changed",
+        "first run unless every image names its axes, and again for plain stacks that are "
+        "new or changed",
     )
     run.add_argument(
         "--design",
@@ -310,6 +313,12 @@ def mapping_option(
     if args.axes is None:
         if recorded is not None:
             return None
+        named = _named_mapping(pre)
+        if named is not None:  # design v0.4 §3: --axes is only needed for plain stacks
+            return named
+        if axes is None:  # no arrangement to give roles to: say why, not "--axes None"
+            print(format_issues(pre.issues) or "No readable images were found.")
+            return False
         suggested = pre.suggested_mapping.roles_string if pre.suggested_mapping else axes
         print(
             "Give the role of each axis with --axes (for example --axes "
@@ -329,6 +338,20 @@ def mapping_option(
             f"--axes {pre.suggested_mapping.roles_string if pre.suggested_mapping else axes}."
         )
         return False
+
+
+def _named_mapping(pre: Preflight) -> AxisMapping | None:
+    """Return the roles every image's own metadata names, or None when any image needs them.
+
+    A plain stack names no axes, so its roles must be stated (``--axes``); when every
+    readable image names all its axes (:func:`.metadata.header_axes`) and the suggested
+    mapping gives each axis a role, the roles are the headers' and nothing is guessed.
+    """
+    suggested = pre.suggested_mapping
+    readable = [f for f in pre.metadata.files if f.readable]
+    if suggested is None or None in suggested.roles or not readable:
+        return None
+    return None if any(header_axes(f) is None for f in readable) else suggested
 
 
 def _settings_options(
@@ -375,7 +398,8 @@ def _print_inputs(
     if mapping is None:
         print(f"Axis roles: as confirmed for the earlier run ({recorded.mapping.roles_string})")
     else:
-        print("Axis roles:")
+        named = args.axes is None  # mapping_option: every image names its axes
+        print("Axis roles (as every image names them):" if named else "Axis roles:")
         print(mapping_summary(mapping, pre.metadata.files))
         print()
         print(axis_check_summary(review))

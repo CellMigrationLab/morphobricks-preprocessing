@@ -17,7 +17,13 @@ import numpy as np
 import pytest
 from morphobricks_normalization.csv_io import OUTPUT_FILENAME
 
-from morphobricks_preprocessing import PlaneReadError, RunInputs, prefill_mapping, run_experiment
+from morphobricks_preprocessing import (
+    PlaneReadError,
+    RunInputs,
+    prefill_mapping,
+    read_manifest,
+    run_experiment,
+)
 from morphobricks_preprocessing import run as run_module
 from morphobricks_preprocessing.discovery_report import REPORT_FILENAME
 from morphobricks_preprocessing.run.lock import remove_stale_lock
@@ -299,7 +305,32 @@ def test_the_summary_names_the_resumed_images(tmp_path, experiment):
     root, out = experiment
     killed_run(tmp_path, root, out, kill_at=3)
     result = run_experiment(root, ZYX, output_folder=out)
-    assert "Resumed (rows staged by an interrupted run): 2 images" in run_summary(result)
+    summary = run_summary(result)
+    assert "Resumed (rows staged by an interrupted run): 2 images" in summary
+    # F11 (cross-brick test, 3 November 2026): not "All rows were computed".
+    assert "All rows were computed" not in summary
+    assert "the rows staged by the interrupted run were resumed (2 images)" in summary
+
+
+@pytest.mark.skipif(os.name != "posix", reason="process IDs are checked on POSIX only")
+def test_a_lock_left_by_a_killed_run_is_called_stale_and_kept(tmp_path, experiment, capsys):
+    import json
+    import socket
+
+    from morphobricks_preprocessing.cli import main
+    from morphobricks_preprocessing.run.lock import LOCK_FILENAME
+    from run_files import finished_pid
+
+    root, out = experiment
+    out.mkdir(parents=True, exist_ok=True)
+    lock = out / LOCK_FILENAME
+    lock.write_text(json.dumps({"host": socket.gethostname(), "pid": finished_pid()}))
+    assert main(["run", str(root), "--output", str(out), "--axes", "ZYX"]) == 1
+    text = capsys.readouterr().out
+    assert "Another run is using" not in text
+    assert "lock looks stale" in text and "no longer running" in text
+    assert "--remove-stale-lock" in text and "Remove the lock of a stopped run" in text
+    assert lock.exists()  # never removed without the user's request
 
 
 @pytest.mark.skipif(os.name != "posix", reason="SIGKILL is POSIX only")
@@ -320,3 +351,28 @@ def test_a_discarded_record_is_reported_by_its_image_and_its_true_reason(tmp_pat
     discarded = report(out)["staged_discarded"]
     assert discarded[record["relative_path"]].startswith("the experiment's pixel type changed")
     assert discarded[named].startswith("its staged rows could not be read")
+
+
+def test_a_rerun_that_changes_nothing_keeps_the_manifest_bytes(tmp_path, monkeypatch):
+    # F10 (cross-brick test, 3 November 2026): later bricks pin the manifest's SHA-256.
+    root = tmp_path / "exp"
+    write_data(root / "ctrl/r1/a.tif", stack(0), axes="ZYX")
+    times = iter(f"2026-11-0{day}T10:00:00+00:00" for day in range(1, 9))
+
+    class Clock:
+        @staticmethod
+        def now(tz=None):
+            return __import__("datetime").datetime.fromisoformat(next(times))
+
+    monkeypatch.setattr(run_module.pipeline, "datetime", Clock)
+    first = run_experiment(root, ZYX)
+    before = first.manifest_path.read_bytes()
+    again = run_experiment(root, ZYX)
+    assert again.written and again.manifest_path.read_bytes() == before
+    assert read_manifest(again.manifest_path).written_at == "2026-11-01T10:00:00+00:00"
+    # A real change still updates it, with the time of the run that made it.
+    write_data(root / "ctrl/r1/b.tif", stack(1), axes="ZYX")
+    changed = run_experiment(root, ZYX)
+    after = read_manifest(changed.manifest_path)
+    assert changed.manifest_path.read_bytes() != before
+    assert after.written_at == "2026-11-03T10:00:00+00:00"

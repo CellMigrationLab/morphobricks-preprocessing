@@ -100,6 +100,16 @@ and the bricks' migration).
 
 ### Fixed
 
+- Cross-brick test of 3 November 2026 (plan §12 question 73): `masks` accepts per-plane masks
+  with a stated shared 2-D mask (`--mask-axes Nuclei=YX`) as `run` does, instead of
+  `mask_planes_differ` (F1); `run` needs no `--axes` when every image names its axes (F9);
+  a rerun that changes nothing leaves `run_manifest.json` byte-identical, keeping its
+  `written_at`, so pinned manifest SHA-256s stay valid (F10); `output_locked` says a lock
+  left by a process no longer running on this computer looks stale and how to remove it
+  (also `convert`'s, for the folder of the copies; it is never removed on its own), `run`
+  without `--axes` names the images' differing arrangements instead of `--axes None`, and a resumed run no longer says all rows were computed (F11); `convert --output` names
+  the runs' output folder in the printed next commands, and `inconsistent_dimensions` says
+  that named-axis copies keep each image's order (F8).
 - Preprocessing audit of 3 November 2026 (plan §12 question 72): `read_plane` and
   `RunInputs.read_plane` no longer count histogram memory, so a 5000² float32 plane is read
   within the 1 GiB limit (I2); a header size in an unsupported unit (OME `pixel`) or without

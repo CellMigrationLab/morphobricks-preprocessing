@@ -546,8 +546,10 @@ morphobricks-preprocessing run /data/exp1 --axes ZCYX
 ```
 
 `--axes` gives one role per dimension of the images, in their order: `X`, `Y`, `Z`, `C`,
-`T`, or `-` for a length-1 dimension without a role. Roles are never taken from metadata
-without being stated. A later `run` in the same output folder needs neither the roles nor
+`T`, or `-` for a length-1 dimension without a role. It is needed only when some images are
+plain stacks, whose metadata do not name their axes: when every image names all its axes,
+`run` uses those roles without `--axes` (it prints **Axis roles (as every image names
+them)**; design v0.4 §3), and they are still checked as below. A later `run` in the same output folder needs neither the roles nor
 the experiment folder again, unless plain stacks were added or changed:
 
 ```bash
@@ -609,7 +611,9 @@ A later `run` in the same output folder reuses everything the earlier run record
 axis roles (`--axes` is needed again only for plain stacks that are new or changed), the
 masks folder and mask axes, the exclusions, the image type, the bins and the histogram and
 intensity settings. An option given that differs from the recorded value is used, and the
-report names the change and its effect. Other options:
+report names the change and its effect. A rerun that changes nothing leaves
+`run_manifest.json` exactly as it was, its `written_at` included, so bricks that recorded its
+SHA-256 still accept it; the report records the rerun. Other options:
 
 | Option | Meaning |
 |---|---|
@@ -750,7 +754,7 @@ When the metadata of some images name their axes wrongly (the errors `axes_yx_sw
 copies with your roles, then run preprocessing on the copies:
 
 ```bash
-morphobricks-preprocessing convert /data/exp1 --to /data/exp1_named_axes --axes ZXY
+morphobricks-preprocessing convert /data/exp1 --to /data/exp1_named_axes --axes ZXY --output /data/exp1_MorphoBricks_Preprocessing
 morphobricks-preprocessing check /data/exp1_named_axes --output /data/exp1_MorphoBricks_Preprocessing
 morphobricks-preprocessing run /data/exp1_named_axes --output /data/exp1_MorphoBricks_Preprocessing --axes ZYX
 ```
@@ -773,7 +777,20 @@ which is then kept; a depth step is never written as a time step. State the miss
 in `calibration.csv` if you know them (`calibrate`). Images whose planes cannot be read
 within the memory limit, and a folder without the space for the copies, are refused
 before anything is written. The command prints what it
-wrote and the next commands, with the suggested `--axes` for the copies.
+wrote and the next commands, with the suggested `--axes` for the copies and the output
+folder of your runs on the originals: give it with `--output` (without it the default
+output folder is named, which only works if your runs used it). `--output` is also where
+the masks folder is looked up when `--masks` is not given.
+
+`convert` keeps each image's stored order of dimensions (`ZXY` stays three dimensions in
+that order, with your roles): it does not reorder images, so it cannot solve
+`inconsistent_dimensions` (images arranged differently, for example `CZYX` among `ZCYX`);
+export those images again in the same order, or process them as a separate experiment
+(plan §12 question 73). A plain stack that holds several dimensions in one sequence of pages
+(for example channels and depth slices interleaved, read as `IYX`) cannot be converted
+either: one role per stored dimension cannot say how the pages split, and the brick never
+guesses it. Save it again with its dimensions (for example as a hyperstack in Fiji, which
+writes ImageJ metadata naming them), then check it again.
 
 Give `run` the output folder of your runs on the originals: the design, image type and
 stated pixel sizes are kept (the copies have the same names), the report says the
@@ -919,7 +936,9 @@ with `chmod a+r <output folder>/*`, or delete them before running again.
 Only one run at a time can use an output folder: a run holds a lock file
 (`.morphobricks-preprocessing.lock`) and a second run is refused (`output_locked`). If the
 process is forcibly stopped, its lock stays; remove it with `--remove-stale-lock` once you
-are sure no run is going on (every command takes it). `check` holds the lock
+are sure no run is going on (every command takes it). When the lock was left by a process on
+this computer that is no longer running, the message says the lock looks stale; it is still
+never removed without your request. `check` holds the lock
 while it writes its report, `masks` (and **Describe the masks**) from before the first
 mask is read until `mask_relationships.json` is written (a locked folder is refused before
 any mask is read), `design` and `calibrate` while they change their files,
@@ -983,7 +1002,7 @@ continues.
 | `unsupported_dtype` | Error | Unsupported pixel type (e.g. float16). Convert, or exclude it. |
 | `mixed_dtypes` | Error | Images have different pixel types. Process them separately or convert. |
 | `different_channel_counts` | Error | Images have different numbers of channels (an image without a channel dimension has one). Every image of an experiment must have the same channels: split the others into a separate experiment, or exclude them. If a dimension got the channel role by mistake, correct the axis roles. |
-| `inconsistent_dimensions`, `inconsistent_mapping` | Error | Images have their dimensions in a different order. Export them the same way or process separately. |
+| `inconsistent_dimensions`, `inconsistent_mapping` | Error | Images have their dimensions in a different order. Export them the same way or process separately; named-axis copies (`convert`) keep each image's order, so they do not solve this. |
 | `missing_axes` | Error | Some images lack a dimension. Confirm they have one plane along it (step 2), or export them again. |
 | `ambiguous_missing_axes` | Error | It is unclear which dimension an image lacks. Export it again. |
 | `axes_not_named` | Warning | The metadata of some images does not name their axes (a plain stack of pages, `IYX` or `QYX`), so which dimension is depth, time or channel comes only from the roles you confirm. The images are read with them, and the roles are recorded as confirmed by you. Check the roles with the preview. Before segmenting these images in other tools, consider saving named-axis copies (OME-TIFF) with the `convert` command (§5), so every tool reads the same axes. |
@@ -1000,7 +1019,7 @@ continues.
 | `invalid_bin_count` | Error | Bin count outside the allowed range. Use the default or a value in range. |
 | `experiment_not_recorded` | Error | `run` was given no experiment folder, and the output folder holds no v0.4.0 run that records one (or no output folder was given). Give the experiment folder. |
 | `axes_not_confirmed` | Error | No axis roles were given and the output folder holds no earlier run that records them. Confirm the roles (`--axes`). |
-| `output_locked` | Error | Another run is using the output folder; it is named with its computer, process and start time. Wait for it to finish; if it was stopped or the computer restarted, remove its lock (`--remove-stale-lock`). Nothing was written. |
+| `output_locked` | Error | Another run is using the output folder; it is named with its computer, process and start time (a process on this computer that is no longer running is named as a lock that looks stale). Wait for it to finish; if it was stopped or the computer restarted, remove its lock (`--remove-stale-lock`). Nothing was written. |
 | `copy_folder_overlaps_experiment` | Error | `convert`: the folder for the copies is the experiment folder, inside it, or holds it. Choose a new folder outside the experiment. |
 | `copy_folder_overlaps_masks` | Error | `convert`: the folder for the copies is the masks folder, inside it, or holds it; copies there would be read as masks. Choose a folder outside the masks folder. |
 | `copy_folder_not_a_folder` | Error | `convert`: the path given with `--to` is a file. Choose a folder. |
@@ -1061,7 +1080,7 @@ continues.
 | `mask_not_2d` | Error | A mask has dimensions other than Y and X that its metadata does not name as depth (Z) or time (T), for example a plain stack. (A mask one pixel high or wide is a 2D mask, not this error.) State the axes of its mask type once (`--mask-axes Cells=TYX`), or save it as a 2D label image, or with its axes named (an ImageJ hyperstack or OME-TIFF with axes TYX or ZYX). |
 | `invalid_mask_axes`, `mask_axes_contradict_header` | Error | Axes stated for a mask type do not fit its masks (one role, Y, X, Z or T, per axis; Y and X once each), name a type that is not found, or contradict the axes a mask's metadata names. Correct the statement. |
 | `mask_layout` | Error | A mask is stored with its Y and X the other way round from its image as read (its header names X before Y, for example `XY`, named in the message with the mask; or the image's height and width swapped). Masks are never transposed: save it again with `numpy.swapaxes(mask, -1, -2)`. |
-| `mask_planes_differ` | Error | The masks of one image have different numbers of depth slices or time points. Make every mask of an image with the image's planes. |
+| `mask_planes_differ` | Error | The masks of one image have different numbers of depth slices or time points. Make every mask of an image with the image's planes. A 2-D mask stated as shared (`--mask-axes Nuclei=YX`) is one plane for every plane and is left out of this check, by `run` and by `masks` alike. |
 | `mask_planes_mismatch` | Error (`run`) | A mask does not have the depth slices and time points of its image under the confirmed axis roles: a 2D mask fits only an image with one plane (not a Z-stack or time-lapse) unless its type is stated `YX` (`--mask-axes Cells=YX`: one mask shared by every plane), and a mask with Z or T needs as many slices or time points as its image. Save one mask plane per image plane, with the axes named, or check the axis roles. |
 | `mask_size_mismatch` | Error | A mask does not have the width and height of its image. Check that it was made from that image at full resolution. |
 | `mask_pixel_type` | Error | A mask's pixels are not whole numbers (for example decimals). Save it as an integer label image. |

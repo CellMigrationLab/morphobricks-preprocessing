@@ -21,6 +21,13 @@ NOT_PLANE_AXES = frozenset("XYSC")
 """Dimensions that do not hold planes: the image itself, and channels (or RGB samples),
 which are compared by ``different_channel_counts``."""
 
+CONVERT_KEEPS_ORDER = (
+    "Export the images again with the same dimension order, or process the differently "
+    "arranged images as a separate experiment. Named-axis copies ('convert') keep each "
+    "image's stored order, so they do not solve this."
+)
+"""What to do about images arranged differently (cross-brick test F8, plan question 73)."""
+
 
 def lettered_plane_counts(axes: str, shape: Sequence[int]) -> dict[str, int]:
     """Return the planes along each header letter except X, Y, S and C; Z and T default to 1."""

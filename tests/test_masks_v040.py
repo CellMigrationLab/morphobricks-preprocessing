@@ -317,3 +317,28 @@ def test_label_images_are_left_out_of_the_image_fingerprint(tmp_path):
     assert again.read == ()  # the image's rows are reused
     data = json.loads(again.manifest_path.read_text(encoding="utf-8"))
     assert data["masks"]["types"] == ["cells", "nuclei"]
+
+
+def test_the_masks_command_scans_a_shared_2d_mask_with_per_plane_masks(tmp_path, capsys):
+    # F1 (cross-brick test, 3 November 2026): a set the run accepts (per-plane Cells and
+    # a stated shared 2-D Nuclei) was refused with mask_planes_differ.
+    root, masks = tmp_path / "exp", tmp_path / "masks"
+    write_data(root / "ctrl/r1/a.tif", np.zeros((3, 6, 8), np.uint8), "ZYX")
+    cells = np.zeros((3, 6, 8), np.uint16)
+    cells[:, 1:5, 1:7] = 1
+    nuclei = np.zeros((6, 8), np.uint16)
+    nuclei[2:4, 3:5] = 1
+    write_data(masks / "Cells/ctrl/r1/a.tif", cells, "ZYX")
+    write_plain(masks / "Nuclei/ctrl/r1/a.tif", nuclei)
+    stated = {"Nuclei": "YX"}
+    assert run_experiment(
+        root, prefill_mapping("ZYX"), masks_folder=masks, mask_axes=stated
+    ).written
+    out = tmp_path / "out"
+    args = [str(root), "--masks", str(masks), "--output", str(out), "--mask-axes", "Nuclei=YX"]
+    assert main(["masks", *args]) == 0, capsys.readouterr().out
+    report = json.loads((out / "mask_relationships.json").read_text(encoding="utf-8"))
+    (inside,) = [p for p in report["pairs"] if (p["child"], p["parent"]) == ("Nuclei", "Cells")]
+    # The shared plane is compared with each of the three planes: never across planes.
+    assert inside["relation"] == "inside"
+    assert inside["evidence"]["children"] == 3
