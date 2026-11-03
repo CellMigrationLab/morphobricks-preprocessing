@@ -68,7 +68,9 @@ class PublicationIncompleteError(RuntimeError):
 
 
 @contextmanager
-def staged_generation(output: Path, removes: Iterable[str] = ()) -> Iterator[Path]:
+def staged_generation(
+    output: Path, removes: Iterable[str] = (), before_commit: Callable[[], None] | None = None
+) -> Iterator[Path]:
     """Give a fresh publication folder to write a generation into, then publish it.
 
     Parameters
@@ -77,6 +79,12 @@ def staged_generation(output: Path, removes: Iterable[str] = ()) -> Iterator[Pat
         The output folder (its lock held).
     removes
         Output files the new generation removes (for example ``mask_relationships.json``).
+    before_commit
+        Called last before the commit, once the generation is written, flushed and
+        recorded and right before the manifest replaces the earlier one (a strict run
+        hashes its sources again, :func:`.pipeline.run_experiment`). An exception it raises
+        stops the publication as any other: the folder is removed and the earlier
+        generation is intact.
 
     Yields
     ------
@@ -91,7 +99,7 @@ def staged_generation(output: Path, removes: Iterable[str] = ()) -> Iterator[Pat
     staged.mkdir()
     try:
         yield staged
-        _commit(output, staged, tuple(removes))
+        _commit(output, staged, tuple(removes), before_commit)
     except BaseException:
         # Not committed (or interrupted right after the commit): discarded, or finished.
         try:
@@ -102,12 +110,18 @@ def staged_generation(output: Path, removes: Iterable[str] = ()) -> Iterator[Pat
     _finish_committed(output, staged)
 
 
-def _commit(output: Path, staged: Path, removes: tuple[str, ...]) -> None:
+def _commit(
+    output: Path,
+    staged: Path,
+    removes: tuple[str, ...],
+    before_commit: Callable[[], None] | None = None,
+) -> None:
     """Write the publication record, then replace the manifest: the one atomic step.
 
     Nothing in the output folder changes before the replacement, which either happens
-    whole or not at all. The output folder is flushed right after it (POSIX), so a power
-    cut after the commit returns cannot bring back the earlier manifest.
+    whole or not at all; ``before_commit`` (:func:`staged_generation`) runs right before
+    it. The output folder is flushed right after it (POSIX), so a power cut after the
+    commit returns cannot bring back the earlier manifest.
     """
     names = [name for name in (*MOVED_IN_ORDER, MANIFEST_FILENAME) if (staged / name).exists()]
     if MANIFEST_FILENAME not in names:
@@ -122,6 +136,8 @@ def _commit(output: Path, staged: Path, removes: tuple[str, ...]) -> None:
     write_text_atomic(staged / PUBLICATION_RECORD, json.dumps(record, indent=2) + "\n")
     _flush(staged / PUBLICATION_RECORD)
     _flush_folder(staged)
+    if before_commit is not None:
+        before_commit()
     give_output_mode(staged / MANIFEST_FILENAME, output / MANIFEST_FILENAME)
     os.replace(staged / MANIFEST_FILENAME, output / MANIFEST_FILENAME)
     # The rename is durable only once the output folder's entries are on the disk.
