@@ -83,8 +83,9 @@ def staged_generation(
         Called last before the commit, once the generation is written, flushed and
         recorded and right before the manifest replaces the earlier one (a strict run
         hashes its sources again, :func:`.pipeline.run_experiment`). An exception it raises
-        stops the publication as any other: the folder is removed and the earlier
-        generation is intact.
+        stops the publication as any other: the folder is removed (discarded, also when
+        the new manifest is the same as the published one) and the earlier generation is
+        intact.
 
     Yields
     ------
@@ -137,7 +138,13 @@ def _commit(
     _flush(staged / PUBLICATION_RECORD)
     _flush_folder(staged)
     if before_commit is not None:
-        before_commit()
+        try:
+            before_commit()
+        except BaseException:
+            # Not committed, whatever the output folder holds: a manifest byte-identical to
+            # the staged one (an identical rerun) must not make it look committed.
+            _discard_refused(staged)
+            raise
     give_output_mode(staged / MANIFEST_FILENAME, output / MANIFEST_FILENAME)
     os.replace(staged / MANIFEST_FILENAME, output / MANIFEST_FILENAME)
     # The rename is durable only once the output folder's entries are on the disk.
@@ -179,8 +186,7 @@ def finish_publication(output: Path) -> str | None:
         and file_sha256(manifest) == record["files"].get(MANIFEST_FILENAME)
     )
     if not committed:
-        logger.info("Discarding the unfinished publication in %s", staged)
-        shutil.rmtree(staged)
+        _discard(staged)
         return "discarded"
     logger.info("Finishing the publication an earlier run left in %s", staged)
     _flush_folder(output)  # the earlier commit on the disk before any move
@@ -269,6 +275,27 @@ def read_stable(output: Path, read: Callable[[], T], attempts: int = 3) -> T | N
         if _manifest_bytes(output) == before:
             return value
     return None
+
+
+def _discard(staged: Path) -> None:
+    """Delete a publication folder that was not committed."""
+    logger.info("Discarding the unfinished publication in %s", staged)
+    shutil.rmtree(staged)
+
+
+def _discard_refused(staged: Path) -> None:
+    """Delete a publication refused before its commit, never masking why it was refused.
+
+    The record goes first, so a folder that cannot be removed whole (a file held open on
+    Windows) is never taken for a committed one by :func:`finish_publication`, even when
+    the output folder's manifest is byte-identical to the refused one; it is discarded by
+    the next run.
+    """
+    try:
+        (staged / PUBLICATION_RECORD).unlink(missing_ok=True)
+        _discard(staged)
+    except OSError:
+        logger.warning("Cannot remove the refused publication in %s", staged, exc_info=True)
 
 
 def _manifest_bytes(output: Path) -> bytes | None:

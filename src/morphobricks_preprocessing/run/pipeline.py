@@ -270,7 +270,8 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
     )
     rows = compute_rows(pre, checked, settings, output, previous, options.mode, options.progress)
     if rows.changed:
-        checked.issues.append(changed_issue(list(rows.changed)))
+        compared = "fingerprint or content" if settings.verify_content else "fingerprint"
+        checked.issues.append(changed_issue(list(rows.changed), compared))
     if rows.failed:
         checked.issues.append(unreadable_issue(rows.failed))
     if rows.changed or rows.failed:
@@ -343,7 +344,7 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
             report = replace(_report(run, outcome, intensity), status=WRITTEN)
             write_report(replace(report, manifest_sha256=sha256), staged)
     except _SourcesChangedError as exc:
-        run.checked.issues.append(changed_issue(exc.paths))
+        run.checked.issues.append(changed_issue(exc.paths, exc.compared))
         return _stop(run, base, rows)
     clear_staging(output)
     logger.info(
@@ -388,7 +389,7 @@ def _final_content_check(
         """Raise when an image's content is not the SHA-256 its entry records."""
         changed = content_changed(rows.entries.values(), root)
         if changed:
-            raise _SourcesChangedError(changed)
+            raise _SourcesChangedError(changed, "content")
 
     return check
 
@@ -396,9 +397,10 @@ def _final_content_check(
 class _SourcesChangedError(Exception):
     """Raised inside the publication when images changed since the run checked them."""
 
-    def __init__(self, paths: list[str]) -> None:
+    def __init__(self, paths: list[str], compared: str = "fingerprint") -> None:
         super().__init__(", ".join(paths))
         self.paths = paths
+        self.compared = compared  # a key of resume.CHANGE_TEXTS
 
 
 def _write_generation(

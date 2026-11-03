@@ -24,6 +24,12 @@ from the same device; inside an OME-Zarr store, a file is held to the mount tabl
 its files are not stat'ed. macOS ``bindfs`` (FUSE) and Windows mounted folders have
 another device. On Windows a mounted folder is also a mount-point reparse point, which
 :func:`.links.is_link` treats as a link.
+
+Refused although not mounted: on an overlay file system (``overlayfs``, as in many
+containers) whose layers are on different file systems and that is mounted with
+``xino=off``, files (not folders) may report another device (``st_dev``) than the selected
+folder, and are then refused as ``mounted_folder``. Copy the experiment to an ordinary
+folder, or mount the overlay with ``xino=on`` (or ``auto``).
 """
 
 from __future__ import annotations

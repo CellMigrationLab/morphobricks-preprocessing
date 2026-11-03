@@ -211,6 +211,7 @@ from .run_inputs import Fov, LazyImage, RunInputs, RunInputsError, UnrecordedFil
 from .sources import check_sources
 from .unrecorded import UnrecordedFiles, unrecorded_files
 from .validation import Severity, ValidationIssue, has_errors
+from .write_target import write_target_refusal
 from .zarr_input import (
     NgffError,
     NgffImage,
@@ -414,5 +415,6 @@ __all__ = [
     "write_experiment_design",
     "write_manifest",
     "write_mask_report",
+    "write_target_refusal",
     "zarr_available",
 ]

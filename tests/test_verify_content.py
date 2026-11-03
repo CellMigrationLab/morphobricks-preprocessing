@@ -155,7 +155,9 @@ def test_an_image_whose_content_changes_while_it_is_read_is_never_published(
     monkeypatch.setattr(run_module.resume, "current_content", changed_after_read)
     result = run_experiment(root, output_folder=out)
     assert not result.written
-    assert "source_changed_during_run" in {issue.code for issue in result.issues}
+    (issue,) = [i for i in result.issues if i.code == "source_changed_during_run"]
+    # A strict run compared the content too, and says so (review of #147).
+    assert "(their size, time, files or content (SHA-256) are no longer" in issue.message
     assert (out / "plane_histograms.csv").read_bytes() == before
 
 

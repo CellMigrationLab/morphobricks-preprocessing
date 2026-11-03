@@ -112,3 +112,69 @@ def test_an_ome_zarr_chunk_rewritten_right_before_the_commit_is_refused(tmp_path
     (issue,) = [i for i in result.issues if i.code == "source_changed_during_run"]
     assert issue.paths == ("ctrl/r1/z.ome.zarr",)
     assert outputs(out) == earlier
+
+
+def test_an_identical_rerun_whose_final_check_fails_discards_its_publication(
+    experiment, monkeypatch, caplog
+):
+    # Review of #146: the rerun's manifest is byte-identical to the published one, so the
+    # clean-up took the refused publication for a committed one and logged "Finishing the
+    # publication an earlier run left". The refused publication is discarded instead.
+    root, out = experiment
+    assert run_experiment(root, ZYX, output_folder=out, mode=STRICT).written
+    earlier = {p.name: p.read_bytes() for p in out.iterdir() if p.is_file()}
+    rewrite_before_final_check(monkeypatch, [root / IMAGES[1]])
+    with caplog.at_level("INFO", logger="morphobricks_preprocessing"):
+        result = run_experiment(root, output_folder=out)
+    assert not result.written and result.unchanged == tuple(IMAGES)
+    (issue,) = [i for i in result.issues if i.code == "source_changed_during_run"]
+    assert "their content (SHA-256) is no longer the one the run checked" in issue.message
+    assert "size, time or files" not in issue.message
+    logged = caplog.text
+    assert "Finishing the publication" not in logged
+    assert "Discarding the unfinished publication" in logged
+    assert not (out / PUBLISH_FOLDER).exists()
+    now = {p.name: p.read_bytes() for p in out.iterdir() if p.is_file()}
+    assert {k: v for k, v in now.items() if not k.startswith("discovery_report")} == {
+        k: v for k, v in earlier.items() if not k.startswith("discovery_report")
+    }
+
+
+def test_the_change_named_by_what_the_run_compared():
+    from morphobricks_preprocessing.run.resume import changed_issue
+
+    default = changed_issue(["a.tif"]).message
+    assert "(their size, time or files are no longer those the run started with)" in default
+    read = changed_issue(["a.tif"], "fingerprint or content").message
+    assert "size, time, files or content (SHA-256)" in read
+    final = changed_issue(["a.tif"], "content").message
+    assert "content (SHA-256) is no longer the one the run checked" in final
+
+
+def test_a_refused_publication_that_cannot_be_removed_is_never_taken_for_committed(
+    experiment, monkeypatch, caplog
+):
+    # Review of #147: when the refused publication cannot be removed (a file held open on
+    # Windows), the run still refuses with source_changed_during_run, not the OSError, and
+    # the leftover has no record, so the next run discards it even though its manifest is
+    # byte-identical to the published one.
+    root, out = experiment
+    assert run_experiment(root, ZYX, output_folder=out, mode=STRICT).written
+    earlier = outputs(out)
+    with monkeypatch.context() as patch:
+        rewrite_before_final_check(patch, [root / IMAGES[1]])
+
+        def held_open(path, *args, **kwargs):
+            raise PermissionError(f"{path} is in use")
+
+        patch.setattr(run_module.generation.shutil, "rmtree", held_open)
+        result = run_experiment(root, output_folder=out)
+    assert not result.written
+    assert "source_changed_during_run" in {i.code for i in result.issues}
+    assert (out / PUBLISH_FOLDER).is_dir()
+    assert not (out / PUBLISH_FOLDER / "publication.json").exists()
+    assert outputs(out) == earlier
+    with caplog.at_level("INFO", logger="morphobricks_preprocessing"):
+        again = run_experiment(root, output_folder=out)
+    assert "Finishing the publication" not in caplog.text
+    assert again.written and not (out / PUBLISH_FOLDER).exists()
