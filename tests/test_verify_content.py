@@ -9,7 +9,6 @@ Turning the mode on or off recomputes every row and names the change.
 import json
 import os
 
-import numpy as np
 import pytest
 
 from morphobricks_preprocessing import (
@@ -27,32 +26,13 @@ from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.discovery_report import REPORT_FILENAME
 from morphobricks_preprocessing.source_content import source_content_sha256
 from morphobricks_preprocessing.testing import make_clean_run
+from strict_tree import IMAGES, STRICT, ZYX, rewrite_keeping_metadata, stack, write_experiment
 from tiff_tree import write_data
-
-ZYX = prefill_mapping("ZYX")
-IMAGES = ["ctrl/r1/a.tif", "ctrl/r1/b.tif", "drug/r1/a.tif"]
-STRICT = RunMode("restart", verify_content=True)
-
-
-def stack(seed):
-    return np.random.default_rng(seed).integers(0, 255, (2, 8, 8), dtype=np.uint8)
-
-
-def rewrite_keeping_metadata(path, seed=99):
-    """Rewrite an image with other pixels, the same size, and its modification time back."""
-    before = path.stat()
-    write_data(path, stack(seed), "ZYX")
-    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
-    after = path.stat()
-    assert (after.st_size, after.st_mtime_ns) == (before.st_size, before.st_mtime_ns)
 
 
 @pytest.fixture
 def experiment(tmp_path):
-    root = tmp_path / "exp"
-    for seed, rel in enumerate(IMAGES, start=10):
-        write_data(root / rel, stack(seed), "ZYX")
-    return root, tmp_path / "out"
+    return write_experiment(tmp_path)
 
 
 def reference_table(tmp_path, root):

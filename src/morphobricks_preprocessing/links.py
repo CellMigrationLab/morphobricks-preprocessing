@@ -12,8 +12,9 @@ masks folder, itself resolved. Nothing outside the folder the user selected is r
   same device and inode) would count one image or mask twice under two names: the error
   ``linked_twice`` names both (hard links: owner, 2 November 2026);
 - a folder (or file) below the folder that is a mount point (another file system, or a
-  bind mount of another folder) brings in files from elsewhere without being a link: it is
-  not entered, and is the error ``mounted_folder`` naming it (:mod:`.mounts`; owner,
+  bind mount of another folder) brings in files from elsewhere without being a link: one
+  listed in ``/proc/self/mountinfo``, or on another device, is not entered, and is the
+  error ``mounted_folder`` naming it (:mod:`.mounts`, which says what is not seen; owner,
   3 November 2026). The folder walked may itself be on any mount;
 - an image or mask whose link count is above 1 (``st_nlink``: it has other names, perhaps
   outside the folder, through which it can change) is the warning ``hard_linked_file``
@@ -21,8 +22,8 @@ masks folder, itself resolved. Nothing outside the folder the user selected is r
   other file.
 
 Inside an OME-Zarr store, which discovery never enters as a folder level, every link and
-mount point is held to the same rule (:meth:`LinkGuard.check_store`), since reading and
-copying the store follow its links.
+every mount point these rules find is held to the same rule (:meth:`LinkGuard.check_store`),
+since reading and copying the store follow its links.
 
 A link is what Python reports as one: a symbolic link (``os.DirEntry.is_symlink``) and, on
 Windows, also a directory junction (a mount-point reparse point), which Python 3.11 does
@@ -200,7 +201,8 @@ class LinkGuard:
         A file is known by its device and inode (from the one ``stat`` this takes), so a
         hard link to an image already found is caught like a symbolic one; by its real
         path when it cannot be stat'ed (a broken link) or has no inode. A file with other
-        names (a link count above 1) is recorded for the warning ``hard_linked_file``. An
+        names (a link count above 1) is recorded for the warning ``hard_linked_file``, and
+        one on another device than the selected folder for ``mounted_folder``. An
         OME-Zarr store (a folder) also has its links and mount points checked
         (:meth:`check_store`).
         """
@@ -211,6 +213,8 @@ class LinkGuard:
         name = self.relative(path)
         if found is not None and stat.S_ISDIR(found.st_mode):
             self.check_store(path)
+        elif found is not None and self._mounts.on_other_device(found):
+            self.mounted.append(name)  # a file mounted on its own (review of rc5)
         elif found is not None and found.st_nlink > 1:
             self.hard_linked.append(f"{name} ({found.st_nlink} names)")
         key = (found.st_dev, found.st_ino) if found is not None and found.st_ino else real

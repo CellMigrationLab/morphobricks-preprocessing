@@ -16,8 +16,9 @@ range check reports channels whose central intensity range covers too few bins
 Each row depends only on its own plane, so rows of unchanged files are kept as
 they are. Everything is recomputed when there is no usable earlier output, when
 a rebuild is requested, or when a setting that affects every row (pixel type,
-bin count, histogram range, axis mapping) changed. Nothing is written unless the whole run
-succeeds; the earlier output is then replaced.
+bin count, histogram range, axis mapping) changed. A refused run publishes no scientific
+output and leaves the sources untouched (its discovery report is written); a run that
+succeeds replaces the earlier output.
 """
 
 from __future__ import annotations

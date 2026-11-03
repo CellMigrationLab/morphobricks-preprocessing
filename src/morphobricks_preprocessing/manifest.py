@@ -37,19 +37,24 @@ from .axes import AxisMapping
 from .image_names import position_id
 from .inventory import INVENTORY_KEY, source_signature
 from .inventory import source_fingerprint as source_fingerprint  # re-exported (moved, PP-12)
-from .manifest_fields import recorded_position_id, recorded_roles
+from .manifest_fields import (
+    optional_text,
+    recorded_flag,
+    recorded_masks,
+    recorded_position_id,
+    recorded_roles,
+)
+from .manifest_versions import CONTENT_KEY, check_version, recorded_version
+from .manifest_versions import LEGACY_MANIFEST_VERSION as LEGACY_MANIFEST_VERSION
+from .manifest_versions import MANIFEST_VERSION as MANIFEST_VERSION
+from .manifest_versions import STRICT_MANIFEST_VERSION as STRICT_MANIFEST_VERSION
 from .narrow_ranges import NarrowRange
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
 from .versions import package_versions as package_versions  # re-exported (moved)
 
 MANIFEST_FILENAME = "run_manifest.json"
-CONTENT_KEY = "content_sha256"
-"""The key of a source's content SHA-256 in a manifest entry (``verify_content`` runs)."""
 AXES_FROM = ("header", "confirmed")
 """Where a file's roles come from (:attr:`FileEntry.axes_from`)."""
-MANIFEST_VERSION = "2"
-LEGACY_MANIFEST_VERSION = "1"
-"""Manifests written before v0.4.0: read for reporting, never trusted (no row is reused)."""
 
 
 class ManifestFormatError(ValueError):
@@ -240,8 +245,10 @@ class RunManifest:
     schema_version
         Version of the CSV format.
     manifest_version
-        Version of the manifest format: ``"2"`` since v0.4.0. A ``"1"`` manifest (older
-        runs) is read for reporting only; no row of such a run is reused.
+        Version of the manifest format (:mod:`.manifest_versions`): ``"2"`` since v0.4.0,
+        ``"3"`` for a ``verify_content`` run (:func:`.manifest_versions.version_for`), which
+        readers of v0.4.0rc4 and earlier refuse. A ``"1"`` manifest (older runs) is read
+        for reporting only; no row of such a run is reused.
     """
 
     experiment_root: str
@@ -276,7 +283,19 @@ class RunManifest:
         return next((f for f in self.files if f.relative_path == relative_path), None)
 
     def to_dict(self) -> dict:
-        """Return the manifest as JSON-compatible data."""
+        """Return the manifest as JSON-compatible data.
+
+        Raises
+        ------
+        ValueError
+            If its version does not match its content verification
+            (:func:`.manifest_versions.check_version`): the reader would refuse it.
+        """
+        check_version(
+            self.manifest_version,
+            recorded_flag(self.settings.verify_content, "verify_content"),
+            [(f.relative_path, f.content_sha256) for f in self.files],
+        )
         data = {
             "manifest_version": self.manifest_version,
             "schema_version": self.schema_version,
@@ -286,15 +305,15 @@ class RunManifest:
             "settings": {
                 "bin_count": self.settings.bin_count,
                 "memory_limit": self.settings.memory_limit,
-                "missing_as_singleton": _flag(
+                "missing_as_singleton": recorded_flag(
                     self.settings.missing_as_singleton, "missing_as_singleton"
                 ),
                 "exclude": list(self.settings.exclude),
                 "histogram": self.settings.histogram.to_dict(),
-                # Written only when on: a default run's manifest keeps the rc4 keys.
+                # Written only when on (version 3): a default run's manifest keeps rc4's.
                 **(
                     {"verify_content": True}
-                    if _flag(self.settings.verify_content, "verify_content")
+                    if recorded_flag(self.settings.verify_content, "verify_content")
                     else {}
                 ),
             },
@@ -315,7 +334,7 @@ class RunManifest:
             "channels_from_rgb_samples": (
                 None
                 if self.channels_from_rgb_samples is None
-                else _flag(self.channels_from_rgb_samples, "channels_from_rgb_samples")
+                else recorded_flag(self.channels_from_rgb_samples, "channels_from_rgb_samples")
             ),
             "intensity_checks": (
                 None if self.intensity_checks is None else self.intensity_checks.to_dict()
@@ -339,12 +358,7 @@ class RunManifest:
             If the data is not a manifest of this version.
         """
         try:
-            version = data["manifest_version"]
-            if version not in (MANIFEST_VERSION, LEGACY_MANIFEST_VERSION):
-                raise ManifestFormatError(
-                    f"Manifest version {version!r} is not supported "
-                    f"(this version reads {MANIFEST_VERSION!r})."
-                )
+            version = recorded_version(data)
             settings = data["settings"]
             mapping = data["axis_mapping"]
             return cls(
@@ -353,14 +367,14 @@ class RunManifest:
                 settings=RunSettings(
                     bin_count=int(settings["bin_count"]),
                     memory_limit=int(settings["memory_limit"]),
-                    missing_as_singleton=_flag(settings["missing_as_singleton"]),
+                    missing_as_singleton=recorded_flag(settings["missing_as_singleton"]),
                     exclude=tuple(str(p) for p in settings["exclude"]),
                     histogram=(
                         HistogramSettings()
                         if settings.get("histogram") is None
                         else HistogramSettings.from_dict(settings["histogram"])
                     ),
-                    verify_content=_flag(settings.get("verify_content", False)),
+                    verify_content=recorded_flag(settings.get("verify_content", False)),
                 ),
                 mapping=AxisMapping(str(mapping["axes"]), tuple(mapping["roles"])),
                 files=tuple(_file_entry(f, strict=version != "1") for f in data["files"]),
@@ -372,12 +386,12 @@ class RunManifest:
                     if data.get("experiment_design_sha256") is None
                     else str(data["experiment_design_sha256"])
                 ),
-                masks=_masks(data.get("masks")),
+                masks=recorded_masks(data.get("masks")),
                 image_type=None if data.get("image_type") is None else str(data["image_type"]),
                 channels_from_rgb_samples=(
                     None
                     if data.get("channels_from_rgb_samples") is None
-                    else _flag(data["channels_from_rgb_samples"])
+                    else recorded_flag(data["channels_from_rgb_samples"])
                 ),
                 intensity_checks=(
                     None
@@ -388,8 +402,8 @@ class RunManifest:
                     NarrowRange.from_dict(entry)
                     for entry in data.get("narrow_histogram_ranges") or ()
                 ),
-                conversion_record_sha256=_text(data.get("conversion_record_sha256")),
-                calibration_sha256=_text(data.get("calibration_sha256")),
+                conversion_record_sha256=optional_text(data.get("conversion_record_sha256")),
+                calibration_sha256=optional_text(data.get("calibration_sha256")),
                 schema_version=str(data["schema_version"]),
                 manifest_version=str(version),
             )
@@ -495,20 +509,6 @@ def read_manifest(path: str | os.PathLike) -> RunManifest:
     return RunManifest.from_dict(data)
 
 
-def _masks(data: object) -> dict | None:
-    """Check the optional ``masks`` entry of a manifest (absent in older manifests)."""
-    if data is None:
-        return None
-    if not isinstance(data, dict) or not isinstance(data.get("files"), list):
-        raise ValueError("its masks entry is not a mask list")
-    return data
-
-
-def _text(value: object) -> str | None:
-    """Return an optional text value as text, or None."""
-    return None if value is None else str(value)
-
-
 def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
     """Return a file entry as manifest data; ``strict`` (version 2) requires roles and source.
 
@@ -529,9 +529,11 @@ def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
         "plane_count": entry.plane_count,
         "channel_names": list(entry.channel_names),
         "significant_bits": entry.significant_bits,
-        "read_in_blocks": _flag(entry.read_in_blocks, "read_in_blocks"),
+        "read_in_blocks": recorded_flag(entry.read_in_blocks, "read_in_blocks"),
         "position_id": entry.position_id,
-        "channel_names_trimmed": _flag(entry.channel_names_trimmed, "channel_names_trimmed"),
+        "channel_names_trimmed": recorded_flag(
+            entry.channel_names_trimmed, "channel_names_trimmed"
+        ),
         "roles": None if entry.roles is None else list(entry.roles),
         "axes_from": entry.axes_from,
         "pixel_sizes": sizes_to_data(entry.pixel_sizes),
@@ -565,27 +567,15 @@ def _file_entry(data: dict, *, strict: bool = True) -> FileEntry:
         plane_count=int(data["plane_count"]),
         channel_names=tuple(None if n is None else str(n) for n in data.get("channel_names", [])),
         significant_bits=None if bits is None else int(bits),
-        read_in_blocks=_flag(data.get("read_in_blocks", False)),
+        read_in_blocks=recorded_flag(data.get("read_in_blocks", False)),
         position_id=recorded_position_id(data.get("position_id"), path, strict=strict),
-        channel_names_trimmed=_flag(data.get("channel_names_trimmed", False)),
+        channel_names_trimmed=recorded_flag(data.get("channel_names_trimmed", False)),
         roles=recorded_roles(data.get("roles"), str(data["axes"])),
-        axes_from=_text(data.get("axes_from")),
+        axes_from=optional_text(data.get("axes_from")),
         pixel_sizes=sizes_from_data(data.get("pixel_sizes")),
-        inventory_sha256=_text(data.get(INVENTORY_KEY)),
-        content_sha256=_text(data.get(CONTENT_KEY)),
+        inventory_sha256=optional_text(data.get(INVENTORY_KEY)),
+        content_sha256=optional_text(data.get(CONTENT_KEY)),
     )
-
-
-def _flag(value: object, key: str | None = None) -> bool:
-    """Return a boolean; anything else (``"false"``, 0, null) is malformed, not guessed.
-
-    Used both when reading and when writing a manifest, so a manifest is never written
-    with a flag its reader would refuse (or that ``bool()`` would turn around).
-    """
-    if not isinstance(value, bool):
-        where = f" for {key}" if key else ""
-        raise ValueError(f"expected true or false{where}, found {value!r}")
-    return value
 
 
 def _parent(relative_path: str) -> str:

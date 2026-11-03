@@ -9,16 +9,20 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 ## 0.4.0rc5 (since v0.4.0rc4)
 
 What changed between v0.4.0rc4 and v0.4.0rc5: PRs #139 (cross-brick test of 3 November
-2026), #140 (review of rc4), #142 (round-2 audit), #143 (this release candidate) and #145
-(normalization v0.3.3). Each item is described in full under 0.4.0 below. Decisions: [plan](docs/plan.md) §12 questions
-66, 72, 73 and 74.
+2026), #140 (review of rc4), #142 (round-2 audit), #143 (this release candidate), #145
+(normalization v0.3.3) and #146 (release review: strict manifests, the final content check).
+Each item is described in full under 0.4.0 below. Decisions: [plan](docs/plan.md) §12
+questions 66, 72, 73 and 74.
 
 ### Migration notes (from rc4)
 
-- **Mount points are refused** (#140): a mount point below the experiment or masks folder
-  is the error `mounted_folder` in discovery, `check`, `run`, `convert` and `RunInputs`.
-  Copy the files into the experiment, or select the mounted folder itself. A file with
-  several hard links is the warning `hard_linked_file`.
+- **Mount points are refused** (#140, #146): a mount point below the experiment or masks
+  folder, as listed in Linux's `/proc/self/mountinfo`, or a folder, image or mask on
+  another device than the selected folder, is the error `mounted_folder` in discovery,
+  `check`, `run`, `convert` and `RunInputs`. Not seen: a mount made after the walk started,
+  and, without a mount table (macOS, BSD, Windows), a mounted single file or a mount of the
+  same device. Copy the files into the experiment, or select the mounted folder itself. A
+  file with several hard links is the warning `hard_linked_file`.
 - **`position_id` is required in a version 2 manifest** (#142, A-m5), equal to the image's
   name without its extension; anything else is a `ManifestFormatError`. Manifests written
   by rc1 to rc4 open unchanged (rc4's is tested); a hand-edited one may not.
@@ -28,6 +32,19 @@ What changed between v0.4.0rc4 and v0.4.0rc5: PRs #139 (cross-brick test of 3 No
 - **`--verify-content`** (#140, I3), opt-in: rows are reused only for the same content
   SHA-256 (`RunMode(verify_content=True)`, the notebook's **Verify each image's content**).
   Turning it on or off recomputes every row; a default run's manifest has the rc4 keys.
+- **A strict run's manifest is version 3** (#146, release review): a `--verify-content`
+  run writes `manifest_version` `"3"`, which rc4 and earlier refuse (`ManifestFormatError:
+  Manifest version '3' is not supported`, tested by running rc4's code on it) instead of
+  opening it as a fingerprint-only run; with version 2 they ignored the new keys. Default
+  runs still write version 2, byte for byte as before. This version reads 1, 2 and 3; a
+  version 2 manifest holding `verify_content` or `content_sha256` (unreleased rc5 builds
+  only) is refused as malformed, so the next run recomputes it.
+- **A strict run hashes every source again right before its commit** (#146): after the
+  generation is staged and right before the manifest's rename, so a rewrite that restores
+  size and time after the earlier checks is `source_changed_during_run`; no scientific
+  outputs are published and sources are untouched; the discovery report is written, and
+  the earlier generation is intact. It costs one more whole read of every image per strict
+  run; the default run is unchanged.
 - **A child tied between parents has no parent** (#143, plan Q74): a child lying exactly as
   much in two or more parents is no longer given the one with the lower label. When that
   share reaches `inside_pixel_share` (at the default, exactly half in each of two parents)
@@ -65,6 +82,9 @@ What changed between v0.4.0rc4 and v0.4.0rc5: PRs #139 (cross-brick test of 3 No
   B-m7).
 - Mount points refused, hard links named (#140, B1/I1); the output folder flushed after the
   commit (#140, I2); the identity rule stated and `--verify-content` added (#140, I3).
+- Strict manifests are version 3; strict runs hash every source again right before the
+  commit; an image or mask file on another device is `mounted_folder` too; refused runs
+  are worded as what they do (no scientific output published, the report written) (#146).
 - `masks` accepts per-plane masks with a stated shared 2-D mask (F1); `run` needs no
   `--axes` when every image names its axes (F9); a rerun that changes nothing keeps the
   manifest byte-identical (F10); stale locks and resumed runs are worded (F11); `convert
@@ -228,16 +248,19 @@ and the bricks' migration) and **v0.4.0rc5** (#143, after the round-2 audit fixe
   `--verify-content`, the notebook's "Verify each image's content" box) records each
   source's content SHA-256 (`files[].content_sha256`, `settings.verify_content`) and
   reuses earlier or staged rows only for the same content; `RunInputs` of such a run checks
-  it at `open`. It is a recorded input; turning it on or off recomputes every row and is
-  named. The default run is unchanged: its manifest has neither key (`verify_content` is
-  written only when true).
+  it at `open`, and every source is hashed again right before the commit. Its manifest is
+  version 3, which v0.4.0rc4 and earlier refuse (#146). It is a recorded input; turning it
+  on or off recomputes every row and is named. The default run is unchanged: its manifest
+  is version 2 and has neither key (`verify_content` is written only when true).
 
 - **Mount points below the experiment or masks folder are refused** (owner, 3 November
   2026): a bind mount is an ordinary folder to the walk, so its files from outside were
-  read. A folder (or file) listed in `/proc/self/mountinfo`, or on another device than the
-  selected folder, is the error `mounted_folder` naming it, in discovery, OME-Zarr stores,
-  the masks folder, `check`, `run`, `convert` and `RunInputs` (`mounts.MountCheck`). Where
-  no mount table can be read (macOS, Windows), only a mount of another device is seen. The
+  read. A folder (or file) listed in Linux's `/proc/self/mountinfo`, or a folder, image or
+  mask on another device than the selected folder, is the error `mounted_folder` naming
+  it, in discovery, OME-Zarr stores, the masks folder, `check`, `run`, `convert` and
+  `RunInputs` (`mounts.MountCheck`). A mount made after the walk started is not seen.
+  Where no mount table can be read (macOS, BSD, Windows), only a mount of another device
+  is seen: not a mounted single file of the same device, nor a same-device mount. The
   device is read with `os.stat` of the path: `os.DirEntry.stat()` reports `st_dev` 0 on
   Windows, which refused every folder there (review of #140).
 - **The commit is flushed to disk** (review of rc4, I2): the output folder is flushed

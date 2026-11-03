@@ -48,9 +48,11 @@ from ..manifest import (
     package_versions,
     write_manifest,
 )
+from ..manifest_versions import version_for
 from ..mask_record import mask_manifest
 from ..mask_scan import MASK_REPORT_FILENAME
 from ..planes import DEFAULT_MEMORY_LIMIT
+from ..source_content import content_changed
 from ..validation import ValidationIssue, has_errors, warning
 from .design_file import design_for_run
 from .generation import staged_generation
@@ -303,7 +305,7 @@ def _as_warning(issue: object) -> ValidationIssue:
 
 
 def _stop(run: _Run, base: RunOutcome, rows: Rows | None) -> RunResult:
-    """Write the stopped run's report and return its result; nothing else is written."""
+    """Write the stopped run's report and return its result; no scientific output is published."""
     write_report(_report(run, outcome_of(rows, base)), run.output)
     return RunResult(
         run.output,
@@ -320,8 +322,9 @@ def _stop(run: _Run, base: RunOutcome, rows: Rows | None) -> RunResult:
 def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> RunResult:
     """Publish the table, design, manifest and report as one generation; return the result.
 
-    Every image is fingerprinted again just before the commit (issue #90): an image changed
-    since the run checked it stops the run, and nothing is published.
+    Every image is fingerprinted again just before the commit (issue #90), and in a strict
+    run hashed again as the last step before it (:func:`_final_content_check`): an image
+    changed since the run checked it stops the run, and no scientific output is published.
     """
     output, pre, design = run.output, run.pre, run.checked.design
     records = sorted(rows.records, key=_row_order)
@@ -330,8 +333,9 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
     masks = None if pre.masks is None else mask_manifest(pre.masks, pre.discovery.root)
     outcome = replace(outcome_of(rows, base), replaced=_replaced(run, masks))
     removes = [name for name in (MASK_REPORT_FILENAME,) if name in outcome.replaced]
+    final_check = _final_content_check(rows, pre.discovery.root, settings)
     try:
-        with staged_generation(output, removes) as staged:
+        with staged_generation(output, removes, final_check) as staged:
             sha256 = _write_generation(run, rows, settings, records, (masks, intensity), staged)
             changed = changed_since(rows.entries, pre.discovery.root)
             if changed:
@@ -363,6 +367,30 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
         report_written=True,
         **counts(rows),
     )
+
+
+def _final_content_check(
+    rows: Rows, root: Path, settings: RunSettings
+) -> Callable[[], None] | None:
+    """Return a strict run's last check before its commit; None for a default run.
+
+    A ``verify_content`` run hashes every recorded image once more (:func:`content_changed`,
+    the OME-Zarr store digest for a store) after its generation is staged, right before the
+    manifest is replaced (:func:`.generation.staged_generation`): an image rewritten since
+    its last check, even with its size and time set back, stops the run with
+    ``source_changed_during_run``, and the earlier generation is intact. It reads every
+    analysed image whole once more.
+    """
+    if not settings.verify_content:
+        return None
+
+    def check() -> None:
+        """Raise when an image's content is not the SHA-256 its entry records."""
+        changed = content_changed(rows.entries.values(), root)
+        if changed:
+            raise _SourcesChangedError(changed)
+
+    return check
 
 
 class _SourcesChangedError(Exception):
@@ -412,6 +440,7 @@ def _write_generation(
         narrow_ranges=tuple(rows.narrow),
         calibration_sha256=pre.calibration.sha256,
         conversion_record_sha256=None if pre.conversion is None else pre.conversion.sha256,
+        manifest_version=version_for(settings.verify_content),
     )
     manifest = _kept_time(manifest, run.previous[0])
     return file_sha256(write_manifest(manifest, staged / MANIFEST_FILENAME))

@@ -5,7 +5,8 @@ extension (:func:`.image_names.position_id`, MorphoBricks D02 and D85), never pa
 edited. Manifest version 2 records it for every image, so a version 2 entry without it, or
 with another one, is refused rather than read as an empty or a different position (round-2
 audit A-m5: ``RunInputs`` turned a missing one into ``""``). Also the check of an entry's
-axis roles, moved from :mod:`.manifest`. Pure: no I/O.
+axis roles, and of its flags, optional texts and masks entry, moved from :mod:`.manifest`.
+Pure: no I/O.
 """
 
 from __future__ import annotations
@@ -83,3 +84,71 @@ def recorded_roles(value: object, axes: str) -> tuple[str | None, ...] | None:
     roles = tuple(None if r is None else str(r) for r in value)
     AxisMapping(axes, roles)  # raises ValueError for an unknown role
     return roles
+
+
+def recorded_flag(value: object, key: str | None = None) -> bool:
+    """Return a manifest flag; anything but a boolean (``"false"``, 0, null) is malformed.
+
+    Used both when reading and when writing a manifest, so a manifest is never written
+    with a flag its reader would refuse (or that ``bool()`` would turn around). Moved from
+    :mod:`.manifest`.
+
+    Parameters
+    ----------
+    value
+        The recorded value.
+    key
+        Its key, for the message.
+
+    Returns
+    -------
+    bool
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is not ``True`` or ``False``.
+    """
+    if not isinstance(value, bool):
+        where = f" for {key}" if key else ""
+        raise ValueError(f"expected true or false{where}, found {value!r}")
+    return value
+
+
+def optional_text(value: object) -> str | None:
+    """Return an optional manifest value as text, or None when it is None.
+
+    Parameters
+    ----------
+    value
+        The recorded value.
+
+    Returns
+    -------
+    str or None
+    """
+    return None if value is None else str(value)
+
+
+def recorded_masks(data: object) -> dict | None:
+    """Check the optional ``masks`` entry of a manifest (absent in older manifests).
+
+    Parameters
+    ----------
+    data
+        The recorded entry, or None.
+
+    Returns
+    -------
+    dict or None
+
+    Raises
+    ------
+    ValueError
+        If it is not a mapping with a ``files`` list.
+    """
+    if data is None:
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("files"), list):
+        raise ValueError("its masks entry is not a mask list")
+    return data
