@@ -23,12 +23,14 @@ from morphobricks_preprocessing import (
     RunInputsError,
     convert_experiment,
     file_sha256,
+    preflight,
     read_conversion_record,
     run_experiment,
 )
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.run.lock import LOCK_FILENAME, output_lock
 from morphobricks_preprocessing.testing import _confirmed_design
+from tiff_tree import write_data
 
 SWAPPED = AxisMapping("ZYX", ("Z", "X", "Y"))
 PLAIN = AxisMapping("IYX", ("Z", "Y", "X"))
@@ -407,6 +409,35 @@ def test_the_convert_command_writes_the_copies_and_names_the_next_commands(tmp_p
     assert f"morphobricks-preprocessing run {copies} --output" in out and "--axes ZYX" in out
     assert main(["convert", str(exp), "--to", str(copies), "--axes", "ZXY"]) == 0
     assert "already there and unchanged: 3 images" in capsys.readouterr().out
+
+
+def test_the_printed_next_command_uses_the_output_folder_given_and_works(tmp_path, capsys):
+    # F8 (cross-brick test, 3 November 2026): the next command named the default output
+    # folder although the runs used another one, and was refused.
+    exp, copies, out = swapped_experiment(tmp_path / "exp"), tmp_path / "copies", tmp_path / "pre"
+    main(["check", str(exp), "--output", str(out)])  # writes the design template
+    assert main(["design", "--output", str(out), "--confirm-all"]) == 0
+    capsys.readouterr()
+    args = ["convert", str(exp), "--to", str(copies), "--axes", "ZXY", "--output", str(out)]
+    assert main(args) == 0
+    text = capsys.readouterr().out
+    (command,) = [line.split()[1:] for line in text.splitlines() if "preprocessing run " in line]
+    assert command == ["run", str(copies), "--output", str(out), "--axes", "ZYX"]
+    assert "by default" not in text
+    assert main(command) == 0, capsys.readouterr().out
+    # Without --output the default folder is named, with what to do if it is not theirs.
+    copies_b = tmp_path / "copies_b"
+    assert main(["convert", str(exp), "--to", str(copies_b), "--axes", "ZXY"]) == 0
+    assert "if your runs used another one, give it" in capsys.readouterr().out
+
+
+def test_images_arranged_differently_are_told_that_convert_keeps_the_order(tmp_path):
+    # F8: convert keeps each image's stored order, so it cannot solve this (question 73).
+    exp = tmp_path / "exp"
+    write_data(exp / "ctrl/r1/a.tif", np.zeros((2, 3, 6, 8), np.uint8), axes="ZCYX")
+    write_data(exp / "ctrl/r1/b.tif", np.zeros((3, 2, 6, 8), np.uint8), axes="CZYX")
+    (issue,) = [i for i in preflight(exp).issues if i.code == "inconsistent_dimensions"]
+    assert "('convert') keep each image's stored order" in issue.action
 
 
 def test_the_convert_command_refuses_and_exits_1(tmp_path, capsys):

@@ -5,7 +5,8 @@
 a named-axis OME-TIFF with the roles given in ``--axes`` (never taken from the headers),
 every other image copied as it is, and the conversion record last. It prints what it
 wrote and the next commands: ``check`` and ``run`` on the copy tree, with the output
-folder of the runs on the originals. The command is offered for any experiment.
+folder of the runs on the originals (``--output``, by default the experiment's default
+one). The command is offered for any experiment.
 """
 
 from __future__ import annotations
@@ -84,10 +85,16 @@ def add_convert_parser(commands: argparse._SubParsersAction) -> argparse.Argumen
         "only when you are sure no other conversion writes there",
     )
     convert.add_argument(
+        "--output",
+        metavar="FOLDER",
+        help="the output folder of your runs on the originals, named in the next commands "
+        "(default: the experiment folder's name with _MorphoBricks_Preprocessing)",
+    )
+    convert.add_argument(
         "--masks",
         metavar="FOLDER",
         help="the masks folder of your runs, which the copies may not be inside; by default "
-        "the one recorded by the run in the default output folder",
+        "the one recorded by the run in the output folder (--output)",
     )
     convert.add_argument("--log", metavar="FILE", help="write technical details to this file")
     return convert
@@ -99,7 +106,12 @@ def convert_command(args: argparse.Namespace) -> int:
     mapping = mapping_option(args, pre, None)
     if mapping is None or mapping is False:
         return 1
-    output = default_output_folder(Path(args.experiment).resolve())
+    given = args.output is not None
+    output = (
+        Path(args.output).resolve()
+        if given
+        else default_output_folder(Path(args.experiment).resolve())
+    )
     result = convert_experiment(
         args.experiment,
         mapping,
@@ -113,11 +125,11 @@ def convert_command(args: argparse.Namespace) -> int:
     if result.issues:
         print(format_issues(result.issues))
         print()
-    print(conversion_text(result, output))
+    print(conversion_text(result, output, given=given))
     return 0 if result.written else 1
 
 
-def conversion_text(result: ConversionResult, output: Path) -> str:
+def conversion_text(result: ConversionResult, output: Path, *, given: bool = True) -> str:
     """Say what a conversion wrote and what to run next, in plain ASCII-safe words.
 
     Parameters
@@ -126,6 +138,9 @@ def conversion_text(result: ConversionResult, output: Path) -> str:
         What :func:`.conversion.convert_experiment` returned.
     output
         The output folder of the runs on the originals, named in the next commands.
+    given
+        False when ``output`` is the default one, not given with ``--output``: the text then
+        says to give the folder of the runs on the originals if it is another one.
 
     Returns
     -------
@@ -134,6 +149,9 @@ def conversion_text(result: ConversionResult, output: Path) -> str:
     dest = result.destination
     if not result.written:
         return f"No copies were written in {dest}: read the messages above."
+    # Cross-brick test F8: the next commands name the output folder of the user's runs,
+    # given with --output; a default one may hold no run (the user then gives theirs).
+    where = "" if given else f" (by default {output}; if your runs used another one, give it)"
     lines = [
         f"Named-axis copies in {dest}:",
         f"  written as OME-TIFF with your roles: {plural(len(result.converted), 'image')}",
@@ -142,7 +160,7 @@ def conversion_text(result: ConversionResult, output: Path) -> str:
         f"Conversion record: {dest / RECORD_FILENAME} (SHA-256 {result.record_sha256})",
         "",
         "Next, run preprocessing on the copies with the output folder of your runs on the "
-        f"originals (by default {output}):",
+        f"originals{where}:",
         f"  morphobricks-preprocessing check {dest} --output {output}",
     ]
     axes = f" --axes {result.suggested_axes}" if result.suggested_axes else " --axes ROLES"

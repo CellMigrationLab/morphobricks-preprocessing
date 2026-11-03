@@ -27,6 +27,7 @@ from .axis_check import (
     confirmation_of,
 )
 from .metadata import (
+    CONVERT_KEEPS_ORDER,
     MetadataReport,
     TiffMetadata,
     channel_count_issues,
@@ -222,8 +223,7 @@ def review_axes(
                 f"{plural(len(misfits), 'image')}: their dimensions are arranged "
                 "differently.",
                 misfits,
-                "Export the images again with the same dimension order, or process the "
-                "differently arranged images as a separate experiment.",
+                CONVERT_KEEPS_ORDER,
             )
         )
     issues.extend(

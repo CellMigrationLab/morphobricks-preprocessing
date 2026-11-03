@@ -642,11 +642,18 @@ def _check_dimensions(files: list[TiffMetadata]) -> list[ValidationIssue]:
                 f"The images have their dimensions arranged differently: {summary}. One "
                 "axis mapping cannot describe all of them.",
                 minority,
-                "Export the images again with the same dimension order, or process the "
-                "differently arranged images as a separate experiment.",
+                CONVERT_KEEPS_ORDER,
             )
         ]
     return []
+
+
+CONVERT_KEEPS_ORDER = (
+    "Export the images again with the same dimension order, or process the differently "
+    "arranged images as a separate experiment. Named-axis copies ('convert') keep each "
+    "image's stored order, so they do not solve this."
+)
+"""What to do about images arranged differently (cross-brick test F8, plan question 73)."""
 
 
 def header_channel_count(f: TiffMetadata) -> int:
