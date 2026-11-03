@@ -117,7 +117,7 @@ def test_a_shared_mask_is_not_read_outside_the_image(tmp_path):
 )
 def test_numpy_real_scalars_are_lengths(value):
     converted = to_micrometers(value, "nm")
-    assert type(converted) is float and converted == float(value) * 1e-3
+    assert type(converted) is float and converted == float(value) / 1000
 
 
 @pytest.mark.parametrize(

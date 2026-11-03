@@ -100,6 +100,19 @@ and the bricks' migration).
 
 ### Fixed
 
+- **A length in a unit below the micrometre converts exactly** (round-2 audit, B-m7):
+  `to_micrometers` multiplied by a binary approximation of the factor, so `9` nm became
+  `0.009000000000000001` µm while `0.009` µm stayed `0.009`, and a header in nm next to a
+  `calibration.csv` in µm for the same size was not the same number (an exact comparison
+  called the pixels non-square). A unit below the micrometre now divides by its integer
+  inverse factor (`value / 1000` for nm) and a larger one multiplies by its integer factor
+  (`value * 1000` for mm): one correctly rounded step, so a value that is exact in binary
+  gives the double nearest its exact length in micrometres, the same in every unit where it
+  is exact. **Sizes in micrometres computed from pm, Å or nm may change by 1 ULP** (the last
+  bit of the double); manifests are unchanged, as they record each size in its own unit.
+  A value not exact in binary (`0.1` nm) can still differ from the same length written in
+  µm by 1 ULP; the 0.1 % rule (`same_pixel_size`) is not affected.
+
 - **The identity rule is stated, and strict reuse is offered** (review of rc4, I3; owner, 3
   November 2026): reuse, resume and `RunInputs` identify a source by its metadata
   fingerprint (size and `mtime_ns`; for OME-Zarr the inventory of paths, sizes and times),

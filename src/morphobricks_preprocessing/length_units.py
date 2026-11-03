@@ -54,15 +54,19 @@ class UnsupportedUnitError(ValueError):
     """Raised for a length unit that is not one of :data:`SPACE_UNITS`."""
 
 
-# Micrometres per OME-NGFF space unit, to compare sizes given in different units.
+# Micrometres per OME-NGFF space unit, as ``(multiplier, divisor)`` integers with one of them
+# 1, to compare sizes given in different units. A unit below the micrometre divides by its
+# integer inverse factor rather than multiply by a binary approximation of it (audit B-m7):
+# ``9 / 1000`` is the double nearest 0.009, as ``float("0.009")`` is, while ``9 * 1e-3`` is
+# 0.009000000000000001, so one size stated in nm and in µm would differ.
 _MICROMETERS = {
-    "angstrom": 1e-4,
-    "picometer": 1e-6,
-    "nanometer": 1e-3,
-    "micrometer": 1.0,
-    "millimeter": 1e3,
-    "centimeter": 1e4,
-    "meter": 1e6,
+    "angstrom": (1, 10_000),
+    "picometer": (1, 1_000_000),
+    "nanometer": (1, 1_000),
+    "micrometer": (1, 1),
+    "millimeter": (1_000, 1),
+    "centimeter": (10_000, 1),
+    "meter": (1_000_000, 1),
 }
 
 
@@ -125,7 +129,13 @@ def to_micrometers(value: float | None, unit: str | None) -> float | None:
     -------
     float or None
         The length in micrometres, always positive and finite; None when the value or its
-        unit is not known, so an unknown unit is never taken for another.
+        unit is not known, so an unknown unit is never taken for another. It is one
+        correctly rounded operation on ``value``: ``value / 1000`` for nanometres (a unit
+        below the micrometre divides by its integer inverse factor), ``value * 1000`` for
+        millimetres. So a length whose value is exact in binary (``9`` nm, ``0.5`` mm) gives
+        the double nearest its exact length in micrometres, the same double as that length
+        written in micrometres (``0.009``, ``500``) or in any other unit where it is exact:
+        ``to_micrometers(9, "nm") == to_micrometers(0.009, "µm")`` (audit B-m7).
 
     Raises
     ------
@@ -149,7 +159,8 @@ def to_micrometers(value: float | None, unit: str | None) -> float | None:
         raise ValueError(f"the length {value!r} is not a positive finite number")
     if name is None:
         return None
-    converted = number * _MICROMETERS[name]
+    multiplier, divisor = _MICROMETERS[name]
+    converted = number / divisor if divisor > 1 else number * multiplier
     if not math.isfinite(converted) or converted <= 0:
         raise ValueError(
             f"the length {value!r} {name} is not a positive finite number of micrometres "
