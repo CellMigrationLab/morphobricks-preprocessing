@@ -136,6 +136,10 @@ def v2_records(dtype):
             bin_count=bins,
             binning_min=value(row["binning_min"]),
             binning_max=value(row["binning_max"]),
+            # Normalization's next release refuses a histogram with valid pixels and no
+            # extrema (normalization#65, issue #47): passed explicitly from the v2 columns.
+            pixel_min=value(row["pixel_min"]),
+            pixel_max=value(row["pixel_max"]),
             counts=np.array([int(row[f"histogram_bin_{i:05d}"]) for i in range(bins)]),
             total_pixel_count=int(row["total_pixel_count"]),
             valid_pixel_count=int(row["valid_pixel_count"]),
