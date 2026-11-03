@@ -65,7 +65,9 @@ src/morphobricks_preprocessing/
                     position_id per image and the duplicate check; FOV_KEY, check_identity_text,
                     check_plane_index, check_identity_case (the shared identity rules, contract §16)
   links.py          LinkGuard: links followed only inside the folder walked (experiment, OME-Zarr
-                    stores, masks folder); link_outside_folder, link_loop, linked_twice (#81)
+                    stores, masks folder); link_outside_folder, link_loop, linked_twice (#81);
+                    mounted_folder (error), hard_linked_file (warning)
+  mounts.py         MountCheck: mount points below a folder (/proc/self/mountinfo, st_dev)
   folder_rules.py   which of the experiment, masks, copies and output folders may hold which:
                     experiment_inside_masks, copies_inside_masks, masks_inside_experiment,
                     output_inside_masks (audit B1/I1, plan §12 question 70)

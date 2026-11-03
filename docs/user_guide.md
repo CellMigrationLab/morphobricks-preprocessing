@@ -154,6 +154,12 @@ experiment/
   holds it. A link back to a folder above it is an error (`link_loop`), and so is one file
   reached by two paths, a link and its target or two hard links (`linked_twice`): it would
   count twice.
+- A mounted folder inside the experiment or masks folder (another disk, a network share, or
+  a Linux bind mount of another folder) is an error (`mounted_folder`) naming it: its files
+  come from outside the folder you selected. Copy the files in, or select the mounted folder
+  itself. The selected folder may itself be on any disk or share.
+- An image or mask that has other names (a hard link, perhaps outside the folder) is a
+  warning (`hard_linked_file`): it can change through a name the run does not see.
 
 To change a label, rename the folder and check again.
 
@@ -987,6 +993,8 @@ continues.
 | `unreadable_folder` | Error | A folder could not be opened. Check permissions. |
 | `link_outside_folder` | Error | A link in the experiment or masks folder leads outside it (the message names each link and its target), and nothing outside the selected folder is read. Copy or move the files in, or select a folder that holds them, then remove the link. |
 | `link_loop` | Error | A link leads back to a folder that holds it. Remove it. |
+| `mounted_folder` | Error | A folder (or file) in the experiment or masks folder is a mount point: another disk or share, or a bind mount of another folder, so its files come from outside the selected folder. It is named and not entered. Copy the files in, or select the mounted folder itself. Where the system's mount table cannot be read (macOS, Windows), only a mount of another device is seen. |
+| `hard_linked_file` | Warning | An image or mask has other names (hard links; the message gives the number), perhaps outside the folder, so it can change through a name the run does not see. It is read as usual. Replace the hard link with a copy if it may change. |
 | `linked_twice` | Error | One file is reached by two paths (a link and its target, two links, or two hard links), so it would count twice under two names; both are named. Keep one path to each file. |
 | `reserved_folder_name` | Error | A folder is named `single` in another case (`Single`), or a folder named `single` has other folders beside it. Rename it to `single` in lower case, or give it a name of its own. |
 | `case_conflict` | Error | Folders of one level have names that differ only in case, next to each other or anywhere in the experiment (`control/Rep1` and `treated/rep1`). Spell each name one way, or rename or merge them. |

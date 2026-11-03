@@ -100,6 +100,15 @@ and the bricks' migration).
 
 ### Fixed
 
+- **Mount points below the experiment or masks folder are refused** (owner, 3 November
+  2026): a bind mount is an ordinary folder to the walk, so its files from outside were
+  read. A folder (or file) listed in `/proc/self/mountinfo`, or on another device than the
+  selected folder, is the error `mounted_folder` naming it, in discovery, OME-Zarr stores,
+  the masks folder, `check`, `run`, `convert` and `RunInputs` (`mounts.MountCheck`). Where
+  no mount table can be read (macOS, Windows), only a mount of another device is seen.
+- **Hard-linked images and masks are named** (owner, 3 November 2026): a file whose link
+  count is above 1 is the warning `hard_linked_file`; it is read as before.
+
 - Cross-brick test of 3 November 2026 (plan §12 question 73): `masks` accepts per-plane masks
   with a stated shared 2-D mask (`--mask-axes Nuclei=YX`) as `run` does, instead of
   `mask_planes_differ` (F1); `run` needs no `--axes` when every image names its axes (F9);

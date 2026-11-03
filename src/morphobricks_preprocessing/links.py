@@ -10,11 +10,19 @@ masks folder, itself resolved. Nothing outside the folder the user selected is r
   followed, and is the error ``link_loop``;
 - two paths of one file (a link and its target, two links to it, or two hard links: the
   same device and inode) would count one image or mask twice under two names: the error
-  ``linked_twice`` names both (hard links: owner, 2 November 2026).
+  ``linked_twice`` names both (hard links: owner, 2 November 2026);
+- a folder (or file) below the folder that is a mount point (another file system, or a
+  bind mount of another folder) brings in files from elsewhere without being a link: it is
+  not entered, and is the error ``mounted_folder`` naming it (:mod:`.mounts`; owner,
+  3 November 2026). The folder walked may itself be on any mount;
+- an image or mask whose link count is above 1 (``st_nlink``: it has other names, perhaps
+  outside the folder, through which it can change) is the warning ``hard_linked_file``
+  naming it and its count (owner, 3 November 2026). It is read and fingerprinted as any
+  other file.
 
-Inside an OME-Zarr store, which discovery never enters as a folder level, every link is
-held to the same rule (:meth:`LinkGuard.check_store`), since reading and copying the store
-follow its links.
+Inside an OME-Zarr store, which discovery never enters as a folder level, every link and
+mount point is held to the same rule (:meth:`LinkGuard.check_store`), since reading and
+copying the store follow its links.
 
 A link is what Python reports as one: a symbolic link (``os.DirEntry.is_symlink``) and, on
 Windows, also a directory junction (a mount-point reparse point), which Python 3.11 does
@@ -30,21 +38,25 @@ import stat
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
-from .validation import ValidationIssue, agree, error, plural
+from .mounts import MountCheck
+from .validation import ValidationIssue, agree, error, plural, warning
 
 logger = logging.getLogger(__name__)
 
 LINK_OUTSIDE = "link_outside_folder"
 LINK_LOOP = "link_loop"
 LINKED_TWICE = "linked_twice"
-LINK_CODES = frozenset({LINK_OUTSIDE, LINK_LOOP, LINKED_TWICE})
-"""The codes of the errors about links (all errors)."""
+MOUNTED = "mounted_folder"
+HARD_LINKED = "hard_linked_file"
+LINK_CODES = frozenset({LINK_OUTSIDE, LINK_LOOP, LINKED_TWICE, MOUNTED})
+"""The codes of the errors about links and mount points (all errors; the warning
+``hard_linked_file`` is not one of them)."""
 
 _JUNCTION = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", None)
 
 
 class LinkRefusedError(ValueError):
-    """A folder holds links that are refused; the message names them."""
+    """A folder holds links or mount points that are refused; the message names them."""
 
 
 def is_link(entry: os.DirEntry) -> bool:
@@ -146,19 +158,22 @@ class LinkGuard:
         # The real paths of the folders above each folder entered, the folder's own last.
         self._stacks: dict[Path, tuple[Path, ...]] = {root: (self.real_root,)}
         self._owners: dict[Path | tuple[int, int], str] = {}
+        self._mounts = MountCheck(self.real_root)
         self.outside: list[str] = []
         self.loops: list[str] = []
         self.twice: list[str] = []
+        self.mounted: list[str] = []
+        self.hard_linked: list[str] = []
 
     def relative(self, path: Path) -> str:
         """Return a path of the walk relative to the root, with ``/`` separators."""
         return path.relative_to(self.root).as_posix() or "."
 
     def real(self, entry: os.DirEntry, folder: Path) -> Path | None:
-        """Return the real path of an entry of ``folder``, or None for a refused link.
+        """Return the real path of an entry of ``folder``, or None when it is refused.
 
         ``folder`` is the root or a folder this guard let through. A folder let through can
-        be walked next.
+        be walked next. Refused: a link that leaves the root or loops, and a mount point.
         """
         stack = self._stacks[folder]
         if not is_link(entry):
@@ -172,6 +187,9 @@ class LinkGuard:
             if target in stack:
                 self.loops.append(shown)
                 return None
+        if self._mounts.is_mount(target, entry):
+            self.mounted.append(self.relative(Path(entry.path)))
+            return None
         if entry.is_dir():
             self._stacks[Path(entry.path)] = (*stack, target)
         return target
@@ -181,17 +199,21 @@ class LinkGuard:
 
         A file is known by its device and inode (from the one ``stat`` this takes), so a
         hard link to an image already found is caught like a symbolic one; by its real
-        path when it cannot be stat'ed (a broken link) or has no inode. An OME-Zarr store
-        (a folder) also has its links checked (:meth:`check_store`).
+        path when it cannot be stat'ed (a broken link) or has no inode. A file with other
+        names (a link count above 1) is recorded for the warning ``hard_linked_file``. An
+        OME-Zarr store (a folder) also has its links and mount points checked
+        (:meth:`check_store`).
         """
         try:
             found = os.stat(path)
         except OSError:  # a broken link: refused or reported unreadable by its reader
             found = None
+        name = self.relative(path)
         if found is not None and stat.S_ISDIR(found.st_mode):
             self.check_store(path)
+        elif found is not None and found.st_nlink > 1:
+            self.hard_linked.append(f"{name} ({found.st_nlink} names)")
         key = (found.st_dev, found.st_ino) if found is not None and found.st_ino else real
-        name = self.relative(path)
         first = self._owners.setdefault(key, name)
         if first != name:
             self.twice.append(f"{name} (the same file as {first})")
@@ -220,10 +242,11 @@ class LinkGuard:
                 yield Path(entry.path), real
 
     def check_store(self, store: Path) -> None:
-        """Hold every link inside an OME-Zarr store (a folder let through) to the rule.
+        """Hold every link and mount point inside an OME-Zarr store (let through) to the rule.
 
         A store can hold millions of chunk files: only its folders and its links are
-        followed up, so a file costs no more than its listing.
+        followed up, so a file costs no more than its listing (its files are looked up
+        among the mount points only when one is below the root).
         """
         pending = [store]
         while pending:
@@ -234,12 +257,9 @@ class LinkGuard:
                 logger.debug("Cannot list %s", folder, exc_info=True)
                 continue
             for entry in entries:
-                if is_link(entry):
-                    if self.real(entry, folder) is not None and entry.is_dir():
-                        pending.append(Path(entry.path))
-                elif entry.is_dir(follow_symlinks=False):
-                    stack = self._stacks[folder]
-                    self._stacks[Path(entry.path)] = (*stack, stack[-1] / entry.name)
+                if not (self._mounts.below or is_link(entry) or entry.is_dir()):
+                    continue  # a plain file: nothing to resolve
+                if self.real(entry, folder) is not None and entry.is_dir():
                     pending.append(Path(entry.path))
 
     def issues(self) -> list[ValidationIssue]:
@@ -280,11 +300,42 @@ class LinkGuard:
                     "replace it with a copy if both are really meant.",
                 )
             )
+        return issues + self._mount_issues()
+
+    def _mount_issues(self) -> list[ValidationIssue]:
+        """Return the error about mount points and the warning about hard-linked files."""
+        issues = []
+        if self.mounted:
+            issues.append(
+                error(
+                    MOUNTED,
+                    f"{plural(len(self.mounted), 'path')} in the {self.what} "
+                    f"{agree(self.mounted, 'is a mount point', 'are mount points')} (another "
+                    "file system, or a bind mount of another folder), so the files there "
+                    "come from outside the selected folder; not entered.",
+                    self.mounted,
+                    f"Copy the files into the {self.what}, or select the mounted folder "
+                    "itself, then unmount it from inside the folder.",
+                )
+            )
+        if self.hard_linked:
+            issues.append(
+                warning(
+                    HARD_LINKED,
+                    f"{plural(len(self.hard_linked), 'file')} in the {self.what} "
+                    f"{agree(self.hard_linked, 'has', 'have')} other names (hard links), "
+                    "perhaps outside it: the file can change through a name the run does not "
+                    "see. It is read and checked as any other file.",
+                    self.hard_linked,
+                    "Replace the hard link with a copy if the file may change through its "
+                    "other names.",
+                )
+            )
         return issues
 
 
 def refuse_links(issues: list[ValidationIssue] | tuple[ValidationIssue, ...]) -> None:
-    """Raise :class:`LinkRefusedError` when the issues hold an error about links.
+    """Raise :class:`LinkRefusedError` when the issues hold an error about links or mounts.
 
     Parameters
     ----------
@@ -294,7 +345,7 @@ def refuse_links(issues: list[ValidationIssue] | tuple[ValidationIssue, ...]) ->
     Raises
     ------
     LinkRefusedError
-        Naming every refused link.
+        Naming every refused link and mount point.
     """
     found = [issue for issue in issues if issue.code in LINK_CODES]
     if found:
