@@ -9,6 +9,11 @@ when it decides which rows to reuse, and by the bricks' checks:
 - :class:`RowKey`: everything a row depends on. A row is reused only when its file is
   unchanged and its roles, ``axes_from`` and every setting that changes rows are unchanged
   (bins, histogram range, robust quantiles, range-check limit, the path it is read from).
+
+"Unchanged" means the same fingerprint: the identity rule is metadata. Its known blind spot
+is a file rewritten with the same size whose modification time (for an OME-Zarr folder,
+every file's) is set back: its earlier rows would be reused. A run with ``verify_content``
+closes it: the key then also holds the content SHA-256 (:mod:`.source_content`).
 """
 
 from __future__ import annotations
@@ -113,6 +118,8 @@ class RowKey:
         Bins per plane.
     histogram
         The histogram settings (range, robust quantiles, range-check limit), as data.
+    content_sha256
+        The file's content SHA-256 in a ``verify_content`` run; None otherwise.
     """
 
     relative_path: str
@@ -125,6 +132,7 @@ class RowKey:
     read_path: str
     bin_count: int
     histogram: tuple
+    content_sha256: str | None = None
 
     @classmethod
     def of(cls, entry: FileEntry, settings: RunSettings, experiment_root: str) -> RowKey:
@@ -150,6 +158,7 @@ class RowKey:
             read_path=(Path(experiment_root) / entry.relative_path).as_posix(),
             bin_count=settings.bin_count,
             histogram=tuple(sorted(_frozen(settings.histogram.to_dict()).items())),
+            content_sha256=entry.content_sha256,
         )
 
 

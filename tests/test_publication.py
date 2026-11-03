@@ -202,6 +202,32 @@ def test_a_cleanup_failure_does_not_fail_a_published_run(tmp_path, monkeypatch, 
     assert "Cannot remove the publication folder" in caplog.text
 
 
+def test_the_output_folder_is_flushed_right_after_the_commit(tmp_path, monkeypatch):
+    # Review of rc4 (I2): the manifest's rename was not followed by an fsync of the folder,
+    # so a power cut after a run returned could bring back the earlier manifest.
+    root, out = first_generation(tmp_path)
+    generation = run_module.generation
+    calls = []
+    original_replace, original_flush = os.replace, generation._flush_folder
+
+    def replace(source, destination):
+        calls.append(("replace", Path(destination)))
+        return original_replace(source, destination)
+
+    def flush_folder(folder):
+        calls.append(("flush_folder", Path(folder)))
+        return original_flush(folder)
+
+    monkeypatch.setattr(os, "replace", replace)
+    monkeypatch.setattr(generation, "_flush_folder", flush_folder)
+    assert run_experiment(root, output_folder=out, **NEXT).written
+    commit = calls.index(("replace", out / MANIFEST_FILENAME))
+    assert calls[commit - 1] == ("flush_folder", out / PUBLISH_FOLDER)
+    assert calls[commit + 1] == ("flush_folder", out)
+    moves = [i for i, call in enumerate(calls) if call[0] == "replace" and i > commit]
+    assert moves and all(i > commit + 1 for i in moves)
+
+
 # Killed between any two steps (POSIX) ----------------------------------------------------
 
 CHILD = """

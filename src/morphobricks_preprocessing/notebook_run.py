@@ -23,12 +23,13 @@ from .notebook_options import (
     HISTOGRAM_RANGE_OPTIONS,
     MODE_HELP,
     MODE_OPTIONS,
+    VERIFY_CONTENT_HELP,
 )
 from .notebook_plots import IntensityPanel
 from .notebook_render import _bins_help, _label, change_lines, issues_html
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import issue_counts, rebuild_line
-from .run import RESTART, Preflight, RunResult, run_experiment
+from .run import RESTART, Preflight, RunMode, RunResult, run_experiment
 from .validation import has_errors, plural
 
 
@@ -81,6 +82,7 @@ class _RunStep:
             self.robust_high,
             self.memory_gib,
             self.mode,
+            self.verify_content,
         ):
             control.observe(lambda _: self._refresh_run_step(), names="value")
         self.histogram_range.observe(
@@ -124,6 +126,12 @@ class _RunStep:
         self.mode = widgets.RadioButtons(
             options=MODE_OPTIONS, value=RESTART, layout=widgets.Layout(**_WIDE)
         )
+        self.verify_content = widgets.Checkbox(
+            value=False,
+            description="Verify each image's content (SHA-256) before reusing its rows",
+            indent=False,
+            layout=widgets.Layout(**_WIDE),
+        )
         self.settings_card = ui.card(
             "Settings",
             [
@@ -133,6 +141,8 @@ class _RunStep:
                 widgets.HTML("<b>Mode</b>"),
                 self.mode,
                 ui.help_text(MODE_HELP),
+                self.verify_content,
+                ui.help_text(VERIFY_CONTENT_HELP),
             ],
         )
 
@@ -308,7 +318,7 @@ class _RunStep:
             exclude=given.exclude,
             masks_folder=given.masks_folder,
             mask_axes=given.mask_axes,
-            mode=self.mode.value,
+            mode=RunMode(self.mode.value, given.verify_content),
             progress=self._progress,
             design=self.design,
             image_type=given.image_type,

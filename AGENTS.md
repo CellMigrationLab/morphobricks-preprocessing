@@ -65,7 +65,9 @@ src/morphobricks_preprocessing/
                     position_id per image and the duplicate check; FOV_KEY, check_identity_text,
                     check_plane_index, check_identity_case (the shared identity rules, contract §16)
   links.py          LinkGuard: links followed only inside the folder walked (experiment, OME-Zarr
-                    stores, masks folder); link_outside_folder, link_loop, linked_twice (#81)
+                    stores, masks folder); link_outside_folder, link_loop, linked_twice (#81);
+                    mounted_folder (error), hard_linked_file (warning)
+  mounts.py         MountCheck: mount points below a folder (/proc/self/mountinfo, st_dev)
   folder_rules.py   which of the experiment, masks, copies and output folders may hold which:
                     experiment_inside_masks, copies_inside_masks, masks_inside_experiment,
                     output_inside_masks (audit B1/I1, plan §12 question 70)
@@ -99,7 +101,11 @@ src/morphobricks_preprocessing/
                     applied to every file, missing axes as singletons only when confirmed)
   axis_review.py    review_axes and check_mapping (moved from axes.py in PP-4)
   inventory.py      source_signature/source_fingerprint: a file's size and mtime, an OME-Zarr
-                    folder's total size, newest mtime and inventory digest (issue #86; PP-12)
+                    folder's total size, newest mtime and inventory digest (issue #86; PP-12);
+                    store_files (the files an OME-Zarr fingerprint covers)
+  source_content.py verify_content: a source's content SHA-256 (TIFF bytes; OME-Zarr per-file
+                    SHA-256s), with_content, content_changed (RunInputs of a strict run)
+  versions.py       package_versions (moved from manifest.py, which re-exports it)
   fingerprint.py    Fingerprint (size, mtime, inventory) and RowKey: when a file's rows are reused (D5);
                     confirm_axes/unchanged_confirmation (a confirmation of the files as they are)
   recorded_sizes.py RecordedSize: pixel sizes by role with unit and source (manifest v2):
@@ -132,7 +138,7 @@ src/morphobricks_preprocessing/
   run/              the run (a package since PP-3; `morphobricks_preprocessing.run` re-exports
                     its public names): preflight.py (Preflight, preflight, sample_planes),
                     pipeline.py (run_experiment, incremental), steps.py (header checks,
-                    rows, outcome), modes.py (restart/full), recorded.py (inputs reused from
+                    rows, outcome), modes.py (restart/full, RunMode with verify_content), recorded.py (inputs reused from
                     the earlier run, InputChange), lock.py (the output folder's O_EXCL lock,
                     remove_stale_lock), output_guard.py (the output folder against the
                     masks folder, given or recorded, before anything is written),
@@ -442,17 +448,21 @@ functions the tests use.
 - **A file is unchanged** when its size, mtime (an OME-Zarr image: also its inventory digest,
   `inventory_sha256`, issue #86), labels and axis layout match and the table
   still holds all its rows. Unchanged rows are reused; new and changed files are read;
-  deleted, renamed or excluded files lose their rows.
+  deleted, renamed or excluded files lose their rows. The fingerprint is metadata: a
+  same-size rewrite with its mtime set back is not seen (the stated blind spot). The opt-in
+  `RunMode(verify_content=True)` / `--verify-content` adds each source's content SHA-256 to
+  the entry and the row key (`source_content`); a recorded input, and changing it rebuilds.
 - **Full rebuild** happens in `mode="full"` (PP-7; `force_rebuild` was removed), when there
   is no readable manifest, when
-  the dtype, bin count, histogram settings (`RunSettings.histogram`) or axis mapping
-  changed, or when the CSV's hash no longer matches.
+  the dtype, bin count, histogram settings (`RunSettings.histogram`), `verify_content` or
+  axis mapping changed, or when the CSV's hash no longer matches.
   Changing only the memory limit or the exclusions recomputes nothing.
 - **Writes (PP-12, contract §9.4):** each image's rows are staged in `.staging` as soon
   as it is read (an interrupted run resumes from the staged rows whose key still matches;
   anything else is discarded and reported). The outputs are one generation, written into
   `.publish` and committed by the manifest's `os.replace` (the one atomic step), then moved
-  into place; the next holder of the lock finishes or discards an interrupted publication.
+  into place (the output folder is fsynced right after the commit); the next holder of the
+  lock finishes or discards an interrupted publication.
   Every image is fingerprinted when its header is read, before and after its pixels are
   read, and before the commit (`source_changed_during_run`, issue #90). Nothing is
   published if any error is found.

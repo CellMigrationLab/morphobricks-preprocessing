@@ -25,6 +25,7 @@ from ..image_type import ImageTypeReview, image_type_issues, review_image_type
 from ..manifest import FileEntry, NarrowRange, RunManifest, RunSettings
 from ..mask_checks import mask_issues
 from ..planes import check_planes
+from ..source_content import with_content
 from ..validation import ValidationIssue, error, has_errors, plural
 from .entries import Comparison, compare_with_previous, file_entries
 from .modes import FULL
@@ -219,6 +220,8 @@ def compute_rows(
     earlier, reason = _load_previous(output, previous, settings, review.mapping, dtype, mode)
     in_blocks = {p for i in checked.issues if i.code == "planes_read_in_blocks" for p in i.paths}
     entries = file_entries(pre, review, root, in_blocks)
+    # Strict reuse: each image's content SHA-256 joins its row key; an unreadable one fails.
+    entries, unhashed = with_content(entries, root) if settings.verify_content else (entries, [])
     found = compare_with_previous(entries, previous[0], earlier, reason is not None, settings, root)
     records: list[PlaneRecord] = []
     narrow: list[NarrowRange] = []
@@ -233,7 +236,7 @@ def compute_rows(
     to_read = [
         rel
         for rel in sorted([*found.new, *found.changed, *(found.unchanged if reason else ())])
-        if rel not in changed
+        if rel not in changed and rel not in unhashed
     ]
     kept = set(found.unchanged) if not reason else set()
     new = new_rows(job, to_read, kept, progress)
@@ -243,7 +246,7 @@ def compute_rows(
         found,
         tuple(new.read),
         reason,
-        tuple(new.failed),
+        tuple(sorted({*unhashed, *new.failed})),
         entries,
         resumed=tuple(new.resumed),
         changed=tuple(sorted({*changed, *new.changed})),

@@ -55,7 +55,7 @@ from ..validation import ValidationIssue, has_errors, warning
 from .design_file import design_for_run
 from .generation import staged_generation
 from .lock import OutputLockedError, lock_issue, output_lock
-from .modes import FULL, RESTART, check_mode
+from .modes import FULL, RESTART, RunMode, run_mode
 from .output_guard import output_masks_issues
 from .preflight import Preflight, fit_calibration, preflight
 from .publish import write_report
@@ -85,7 +85,7 @@ def run_experiment(  # noqa: PLR0913
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
     missing_as_singleton: bool | None = None,
     exclude: Iterable[str] | None = None,
-    mode: str = RESTART,
+    mode: str | RunMode = RESTART,
     progress: Callable[[int, int, str], None] | None = None,
     design: ExperimentDesign | None = None,
     masks_folder: str | os.PathLike | Literal[False] | None = None,
@@ -125,7 +125,12 @@ def run_experiment(  # noqa: PLR0913
         removed.
     mode
         ``"restart"`` (default) reuses the rows of unchanged files; ``"full"`` recomputes
-        every row. Both keep the user's confirmations and publish only on success.
+        every row. Both keep the user's confirmations and publish only on success. A file
+        is unchanged when its fingerprint is (size and modification time; for OME-Zarr its
+        inventory): a rewrite of the same size with the time set back is not seen. A
+        :class:`.modes.RunMode` with ``verify_content=True`` also records each source's
+        content SHA-256 and reuses rows only for the same content (``None``: as recorded;
+        turning it on or off recomputes every row).
     progress
         Called as ``progress(done, total, relative_path)`` before each file is
         read, and as ``progress(total, total, "")`` when reading is finished.
@@ -165,6 +170,8 @@ def run_experiment(  # noqa: PLR0913
         False, or no experiment folder given or recorded.
     """
     _check_arguments(mode, image_type, missing_as_singleton)
+    chosen = run_mode(mode)
+    mode = chosen.name
     output, root = _folders(experiment_root, output_folder)
     inside_masks = output_masks_issues(output, masks_folder)
     if check_output_folder(root, output) or inside_masks:
@@ -183,6 +190,7 @@ def run_experiment(  # noqa: PLR0913
         missing_as_singleton=missing_as_singleton,
         intensity_settings=intensity_settings,
         histogram_settings=histogram_settings,
+        verify_content=chosen.verify_content,
     )
     output.mkdir(parents=True, exist_ok=True)
     try:
@@ -256,6 +264,7 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
         inputs.missing_as_singleton,
         pre.excluded,
         histogram=inputs.histogram_settings,
+        verify_content=inputs.verify_content,
     )
     rows = compute_rows(pre, checked, settings, output, previous, options.mode, options.progress)
     if rows.changed:
@@ -440,9 +449,9 @@ def _replaced(run: _Run, masks: dict | None) -> dict[str, str]:
     return replaced
 
 
-def _check_arguments(mode: str, image_type: str | None, missing_as_singleton: object) -> None:
+def _check_arguments(mode: object, image_type: str | None, missing_as_singleton: object) -> None:
     """Refuse arguments that are not allowed, before anything is read or written."""
-    check_mode(mode)
+    run_mode(mode)
     if image_type is not None:
         check_image_type(image_type)
     # The manifest records it as a JSON boolean (contract §9).

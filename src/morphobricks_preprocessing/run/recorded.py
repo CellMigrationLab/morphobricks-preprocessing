@@ -3,7 +3,7 @@
 One output folder belongs to one experiment. A run given no value for an input uses the
 value its folder's manifest records: the experiment root, masks folder, exclusions,
 plain-stack confirmations, mask-axis statements, image type, bins, histogram and
-intensity settings, and ``missing_as_singleton`` (the design is the
+intensity settings, ``missing_as_singleton`` and ``verify_content`` (the design is the
 ``experiment_design.csv`` in the folder, and the stated calibration its ``calibration.csv``,
 which a run never writes). A value given explicitly that differs from the
 recorded one is used, and an :class:`InputChange` names the change and its effect. The
@@ -53,6 +53,8 @@ class GivenInputs:
         Mask axes stated per mask type; they add to (and replace per type) the recorded ones.
     image_type, bin_count, missing_as_singleton, intensity_settings, histogram_settings
         As :func:`.pipeline.run_experiment`.
+    verify_content
+        Strict reuse by content SHA-256 (:class:`.modes.RunMode`).
     """
 
     experiment_root: Path | None = None
@@ -65,6 +67,7 @@ class GivenInputs:
     missing_as_singleton: bool | None = None
     intensity_settings: IntensityCheckSettings | None = None
     histogram_settings: HistogramSettings | None = None
+    verify_content: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -111,6 +114,8 @@ class ResolvedInputs:
     bins_recorded_for
         The pixel type the recorded bin count was for, when it is the recorded one (a
         bin count is not reused for another pixel type); None when given or default.
+    verify_content
+        Whether rows are reused only for the same content SHA-256 (False by default).
     changes
         The inputs given that differ from the recorded ones.
     """
@@ -126,6 +131,7 @@ class ResolvedInputs:
     intensity_settings: IntensityCheckSettings | None
     histogram_settings: HistogramSettings
     bins_recorded_for: str | None = None
+    verify_content: bool = False
     changes: tuple[InputChange, ...] = field(default=())
 
 
@@ -181,6 +187,7 @@ def resolve_inputs(given: GivenInputs, previous: RunManifest | None) -> Resolved
         intensity_settings=given.intensity_settings or before.intensity_checks,
         histogram_settings=given.histogram_settings or settings.histogram,
         bins_recorded_for=before.dtype if given.bin_count is None else None,
+        verify_content=_first(given.verify_content, settings.verify_content),
     )
     return _with_changes(resolved, given, before)
 
@@ -362,6 +369,7 @@ def _defaults(given: GivenInputs) -> ResolvedInputs:
         missing_as_singleton=bool(given.missing_as_singleton),
         intensity_settings=given.intensity_settings,
         histogram_settings=given.histogram_settings or HistogramSettings(),
+        verify_content=bool(given.verify_content),
     )
 
 
@@ -394,6 +402,7 @@ def _with_changes(
             "intensity_settings", before.intensity_checks, given.intensity_settings, UNAFFECTED
         ),
         _change("histogram_settings", settings.histogram, given.histogram_settings, RECOMPUTED),
+        _change("verify_content", settings.verify_content, given.verify_content, RECOMPUTED),
     ]
     changes = tuple(change for change in found if change is not None)
     return replace(resolved, changes=changes)

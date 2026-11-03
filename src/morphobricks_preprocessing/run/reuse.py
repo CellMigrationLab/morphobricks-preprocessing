@@ -118,17 +118,9 @@ def _load_previous(
         return {}, "the earlier table uses a different format version"
     if manifest.dtype != dtype:
         return {}, f"the pixel type changed from {manifest.dtype} to {dtype}"
-    if manifest.settings.bin_count != settings.bin_count:
-        return (
-            {},
-            f"the bin count changed from {manifest.settings.bin_count:,} to {settings.bin_count:,}",
-        )
-    if manifest.settings.histogram != settings.histogram:
-        before = _describe_histogram(manifest.settings.histogram)
-        now = _describe_histogram(settings.histogram)
-        if before == now:
-            return {}, "the limit of the histogram range check changed"
-        return {}, f"the histogram range changed from {before} to {now}"
+    changed = _settings_changed(manifest.settings, settings)
+    if changed is not None:
+        return {}, changed
     if (manifest.mapping.axes, manifest.mapping.roles) != (mapping.axes, mapping.roles):
         return {}, "the axis mapping changed"
     if not csv_path.exists() or file_sha256(csv_path) != manifest.csv_sha256:
@@ -142,6 +134,25 @@ def _load_previous(
     for record in rows:
         by_file.setdefault(record.source_relative_path, []).append(record)
     return by_file, None
+
+
+def _settings_changed(before: RunSettings, now: RunSettings) -> str | None:
+    """Say which setting that changes every row (or how rows are reused) changed, or None.
+
+    Turning content verification on or off recomputes every row: rows recorded without a
+    content SHA-256 cannot be verified, and reuse never changes its rule silently.
+    """
+    if before.bin_count != now.bin_count:
+        return f"the bin count changed from {before.bin_count:,} to {now.bin_count:,}"
+    if before.histogram != now.histogram:
+        was, will = _describe_histogram(before.histogram), _describe_histogram(now.histogram)
+        if was == will:
+            return "the limit of the histogram range check changed"
+        return f"the histogram range changed from {was} to {will}"
+    if before.verify_content != now.verify_content:
+        state = "turned on" if now.verify_content else "turned off"
+        return f"content verification (verify_content) was {state}"
+    return None
 
 
 def _describe_histogram(settings: HistogramSettings) -> str:

@@ -56,6 +56,13 @@ MODE_HELP = (
     "sizes) and write the table only when the whole run succeeds: a run that stops leaves the "
     "earlier results as they are. Full takes longer; use it to start from scratch."
 )
+VERIFY_CONTENT_HELP = (
+    "An image counts as unchanged when its size and modification time are (for OME-Zarr, "
+    "those of every file). A file rewritten with the same size and its time set back would "
+    "not be seen. Verifying the content also compares each image's SHA-256 before its earlier "
+    "rows are reused: every image is read once more. Turning it on or off reads every image "
+    "again."
+)
 
 _MAX_PLOTTED_GROUPS = 12
 # Short names of the intensity checks, for the tiles and the table's first column.

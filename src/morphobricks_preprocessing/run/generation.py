@@ -9,9 +9,10 @@ crash-consistent (owner decision of 2 November 2026, PP-12):
    ``.publish/publication.json`` naming every file with its SHA-256 (and the files the
    generation removes, such as ``mask_relationships.json``).
 2. **Commit, the one atomic step:** the new ``run_manifest.json`` replaces the old one
-   (:func:`os.replace`). Before it nothing in the output folder has changed: a run
-   killed then leaves the earlier generation exactly as it was, and the next run discards
-   the publication folder. After it the new generation is the current one.
+   (:func:`os.replace`), and the output folder is flushed to disk (POSIX), so a power cut
+   after the commit keeps the new generation. Before it nothing in the output folder has
+   changed: a run killed then leaves the earlier generation exactly as it was, and the
+   next run discards the publication folder. After it the new generation is the current one.
 3. The other files are moved into place (:func:`os.replace` each), the removed files
    removed, and the publication folder deleted.
 
@@ -105,7 +106,8 @@ def _commit(output: Path, staged: Path, removes: tuple[str, ...]) -> None:
     """Write the publication record, then replace the manifest: the one atomic step.
 
     Nothing in the output folder changes before the replacement, which either happens
-    whole or not at all.
+    whole or not at all. The output folder is flushed right after it (POSIX), so a power
+    cut after the commit returns cannot bring back the earlier manifest.
     """
     names = [name for name in (*MOVED_IN_ORDER, MANIFEST_FILENAME) if (staged / name).exists()]
     if MANIFEST_FILENAME not in names:
@@ -122,6 +124,8 @@ def _commit(output: Path, staged: Path, removes: tuple[str, ...]) -> None:
     _flush_folder(staged)
     give_output_mode(staged / MANIFEST_FILENAME, output / MANIFEST_FILENAME)
     os.replace(staged / MANIFEST_FILENAME, output / MANIFEST_FILENAME)
+    # The rename is durable only once the output folder's entries are on the disk.
+    _flush_folder(output)
 
 
 def finish_publication(output: Path) -> str | None:
@@ -163,6 +167,7 @@ def finish_publication(output: Path) -> str | None:
         shutil.rmtree(staged)
         return "discarded"
     logger.info("Finishing the publication an earlier run left in %s", staged)
+    _flush_folder(output)  # the earlier commit on the disk before any move
     _finish_committed(output, staged)
     return "finished"
 
@@ -171,7 +176,6 @@ def _finish_committed(output: Path, staged: Path) -> None:
     """Move a committed generation's files into place, remove what it removes, clean up."""
     record = _record(staged) or {"removes": []}
     try:
-        _flush_folder(output)
         for name in MOVED_IN_ORDER:
             if (staged / name).exists():
                 give_output_mode(staged / name, output / name)

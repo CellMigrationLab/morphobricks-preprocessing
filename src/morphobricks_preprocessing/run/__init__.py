@@ -34,7 +34,7 @@ from .mask_step import (
     prepare_mask_step,
     recorded_masks,
 )
-from .modes import FULL, MODES, RESTART
+from .modes import FULL, MODES, RESTART, RunMode
 from .pipeline import run_experiment
 from .preflight import Preflight, SamplePlane, preflight, sample_planes
 from .result import RunResult
@@ -51,6 +51,7 @@ __all__ = [
     "OutputLockedError",
     "Preflight",
     "RecordedMasks",
+    "RunMode",
     "RunResult",
     "SamplePlane",
     "describe_masks",
