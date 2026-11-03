@@ -1834,3 +1834,28 @@ Raised during review; to be decided before the milestones that need them:
     an ImageJ resolution tag of another type is `invalid_physical_calibration`, and an
     OME-Zarr scale without a unit is named by `unsupported_pixel_size_unit` ("without a
     unit"); `same_pixel_size` takes NumPy real scalars as m4 does.
+73. How are the findings F1, F8, F9, F10 and F11 of the cross-brick test of 3 November 2026
+    fixed? *Decided (3 November 2026, owner: fix before the round-2 audit; the choices in
+    F8 are the conservative ones, within design v0.4 §3 and §5; contract §9, §15, §17):*
+    (F1) `scan_masks` leaves a stated shared 2-D mask out of the comparison of an image's
+    masks' planes, as `run` does, and compares it with each plane of the other masks; never
+    across planes. (F9) `run` needs no `--axes` when every readable image names all its axes
+    and the suggested mapping gives each a role; a plain stack still needs it; `convert`
+    always needs it. (F10) a rerun whose manifest differs only in `written_at` keeps the
+    earlier time, so the manifest's bytes and SHA-256 stay the same; any other change writes
+    the new time. (F11) the `output_locked` message says that a lock left by a process on
+    this computer that is no longer running looks stale, and how to remove it; it is never
+    removed automatically. A resumed run's summary says that the staged rows were resumed,
+    not that all rows were computed. (F8a) `convert` keeps each image's stored order of
+    dimensions (§17): writing copies in the experiment's common order would be a pixel-exact
+    transposition under named roles, but it changes §17's copy axes and is left as an open
+    question for the owner; for now `inconsistent_dimensions` and `inconsistent_mapping` say
+    that named-axis copies do not solve them. (F8b) `convert --output FOLDER` names the output
+    folder of the runs on the originals in the printed next commands (and is where the
+    recorded masks folder is looked up); without it, the default folder is named with what
+    to do if the runs used another one. (F8c) a plain stack whose pages interleave several
+    dimensions (`IYX`, no shape metadata) cannot be converted: a reshape is not a role, and
+    the spec has no way to state one, so the user guide says to save the image again with
+    its dimensions (for example as a Fiji hyperstack). Follow-up for the owner: whether
+    `convert` should accept a stated reshape (for example `--pages CZ=2x3`) or reorder copies
+    into the common order.

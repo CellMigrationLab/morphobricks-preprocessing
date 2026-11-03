@@ -256,6 +256,11 @@ later bricks on the new run.
   is refused).
 - `different_sizes` and `different_plane_counts` compare the images by their confirmed roles
   once the roles are confirmed.
+- `run` needs `--axes` only when some images are plain stacks; images that all name their
+  axes are run with those roles. A rerun that changes nothing keeps `run_manifest.json`
+  byte-identical (its `written_at` too). `convert` takes `--output`, the output folder of
+  your runs on the originals, for the next commands it prints (cross-brick test, plan §12
+  question 73).
 - The notebook runs on Google Colab and in JupyterLab. It installs the pinned release
   (`RELEASE_TAG`), never `main`.
 
