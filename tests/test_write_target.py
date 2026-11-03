@@ -133,3 +133,9 @@ def test_log_refusal_words_the_shared_reason(tree):
         f"({(tree / 'exp').resolve()}). Nothing was written. Give --log another file, outside "
         "the experiment and masks folders, for example run.log in the output folder."
     )
+
+
+def test_a_lone_output_name_is_refused(tree):
+    # Review of #147: a string is a collection of letters; "r" would have been protected.
+    with pytest.raises(TypeError, match="not one name"):
+        _refusal(tree, tree / "out/r", output=tree / "out", output_names="results.csv")

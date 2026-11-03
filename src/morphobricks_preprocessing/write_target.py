@@ -16,7 +16,10 @@ output. :func:`write_target_refusal` refuses a path
 Paths are compared resolved, so a link to a protected file or folder is refused as it; a
 folder that exists also by device and inode (another spelling of it on a file system that
 ignores case, macOS and Windows); a protected file by :func:`os.path.samefile`. The rule
-reads the file system (``stat``) and writes nothing.
+reads the file system (``stat``) and writes nothing. It is a check made before the caller
+opens the file, not a lock: what changes in between is not seen (a file or hard link
+created at the path, the path or a folder above it replaced by a link into a protected
+folder, a protected folder created).
 """
 
 from __future__ import annotations
@@ -68,7 +71,14 @@ def write_target_refusal(
         The reason as a clause for the caller's own message, for example ``"it is inside the
         masks folder (/data/masks)"``; None when the file may be written. Folders and files
         are named resolved.
+
+    Raises
+    ------
+    TypeError
+        If ``output_names`` is a single string rather than a collection of names.
     """
+    if isinstance(output_names, str):  # a lone name would be compared letter by letter
+        raise TypeError("output_names is a collection of names, not one name")
     for what, file in protected_files.items():
         if file is not None and same_file(path, file):
             return f"it is the {what} ({Path(file).resolve()})"

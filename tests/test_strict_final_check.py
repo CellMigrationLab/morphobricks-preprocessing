@@ -149,3 +149,32 @@ def test_the_change_named_by_what_the_run_compared():
     assert "size, time, files or content (SHA-256)" in read
     final = changed_issue(["a.tif"], "content").message
     assert "content (SHA-256) is no longer the one the run checked" in final
+
+
+def test_a_refused_publication_that_cannot_be_removed_is_never_taken_for_committed(
+    experiment, monkeypatch, caplog
+):
+    # Review of #147: when the refused publication cannot be removed (a file held open on
+    # Windows), the run still refuses with source_changed_during_run, not the OSError, and
+    # the leftover has no record, so the next run discards it even though its manifest is
+    # byte-identical to the published one.
+    root, out = experiment
+    assert run_experiment(root, ZYX, output_folder=out, mode=STRICT).written
+    earlier = outputs(out)
+    with monkeypatch.context() as patch:
+        rewrite_before_final_check(patch, [root / IMAGES[1]])
+
+        def held_open(path, *args, **kwargs):
+            raise PermissionError(f"{path} is in use")
+
+        patch.setattr(run_module.generation.shutil, "rmtree", held_open)
+        result = run_experiment(root, output_folder=out)
+    assert not result.written
+    assert "source_changed_during_run" in {i.code for i in result.issues}
+    assert (out / PUBLISH_FOLDER).is_dir()
+    assert not (out / PUBLISH_FOLDER / "publication.json").exists()
+    assert outputs(out) == earlier
+    with caplog.at_level("INFO", logger="morphobricks_preprocessing"):
+        again = run_experiment(root, output_folder=out)
+    assert "Finishing the publication" not in caplog.text
+    assert again.written and not (out / PUBLISH_FOLDER).exists()

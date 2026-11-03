@@ -37,6 +37,11 @@ Small changes for the final v0.4.0 since v0.4.0rc5 (#147). No version bump yet.
   "Finishing the publication an earlier run left". The publication is now discarded as
   soon as the check fails ("Discarding the unfinished publication"); the outputs are the
   same as before.
+- **Review of #147:** a refused publication that cannot be removed (a file held open) no
+  longer turns the refusal into an `OSError`; its record is removed first, so the next run
+  discards the leftover rather than finishing it. `write_target_refusal` refuses a single
+  string as `output_names` (`TypeError`), and its docs name what can change between the
+  check and the write.
 
 ## 0.4.0rc5 (since v0.4.0rc4)
 

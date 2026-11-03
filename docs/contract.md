@@ -157,8 +157,10 @@ the folder `output` itself or a path that is, or is inside, one of its `output_n
 folder"); a path whose folder does not exist ("its folder {folder} does not exist"); and an
 existing file with more than one name ("it is a file that has another name too (a hard
 link)"). Mapping keys name what is protected; None values are left out. It only reads the
-file system (`stat`) and writes nothing; the caller writes right after, so a file created
-in between is not seen.
+file system (`stat`) and writes nothing; the caller writes right after, so what changes in
+between is not seen: a file or hard link created at the path, the path or a folder above it
+replaced by a link into a protected folder, or a protected folder created. A single string
+as `output_names` is refused (`TypeError`), not compared letter by letter.
 
 In notebook step 1, message details start collapsed with orange warning and red error
 counts visible outside the dropdown. Collapsing details does not change severity or

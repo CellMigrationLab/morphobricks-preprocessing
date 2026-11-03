@@ -143,7 +143,7 @@ def _commit(
         except BaseException:
             # Not committed, whatever the output folder holds: a manifest byte-identical to
             # the staged one (an identical rerun) must not make it look committed.
-            _discard(staged)
+            _discard_refused(staged)
             raise
     give_output_mode(staged / MANIFEST_FILENAME, output / MANIFEST_FILENAME)
     os.replace(staged / MANIFEST_FILENAME, output / MANIFEST_FILENAME)
@@ -281,6 +281,21 @@ def _discard(staged: Path) -> None:
     """Delete a publication folder that was not committed."""
     logger.info("Discarding the unfinished publication in %s", staged)
     shutil.rmtree(staged)
+
+
+def _discard_refused(staged: Path) -> None:
+    """Delete a publication refused before its commit, never masking why it was refused.
+
+    The record goes first, so a folder that cannot be removed whole (a file held open on
+    Windows) is never taken for a committed one by :func:`finish_publication`, even when
+    the output folder's manifest is byte-identical to the refused one; it is discarded by
+    the next run.
+    """
+    try:
+        (staged / PUBLICATION_RECORD).unlink(missing_ok=True)
+        _discard(staged)
+    except OSError:
+        logger.warning("Cannot remove the refused publication in %s", staged, exc_info=True)
 
 
 def _manifest_bytes(output: Path) -> bytes | None:
