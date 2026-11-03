@@ -290,7 +290,12 @@ class RunManifest:
                 ),
                 "exclude": list(self.settings.exclude),
                 "histogram": self.settings.histogram.to_dict(),
-                "verify_content": _flag(self.settings.verify_content, "verify_content"),
+                # Written only when on: a default run's manifest keeps the rc4 keys.
+                **(
+                    {"verify_content": True}
+                    if _flag(self.settings.verify_content, "verify_content")
+                    else {}
+                ),
             },
             "axis_mapping": {"axes": self.mapping.axes, "roles": list(self.mapping.roles)},
             "labels": [

@@ -95,7 +95,9 @@ class MountCheck:
         real
             The entry's real path, below the selected folder.
         entry
-            The entry; a folder's device is read from it (``entry.stat()``).
+            The entry; a folder's device is read with :func:`os.stat` of its path, which
+            follows a link (``entry.stat()`` would not do: on Windows it reports
+            ``st_dev`` 0 for every entry).
 
         Returns
         -------
@@ -106,6 +108,6 @@ class MountCheck:
         if self.device is None or not entry.is_dir():
             return False
         try:
-            return entry.stat().st_dev != self.device
+            return os.stat(entry.path).st_dev != self.device
         except OSError:  # cannot be read: its reader reports it
             return False

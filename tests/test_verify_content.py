@@ -20,6 +20,7 @@ from morphobricks_preprocessing import (
     prefill_mapping,
     read_manifest,
     run_experiment,
+    source_content,
 )
 from morphobricks_preprocessing import run as run_module
 from morphobricks_preprocessing.cli import main
@@ -75,6 +76,10 @@ def test_the_default_rule_does_not_see_a_rewrite_with_its_metadata_kept(experime
     manifest = read_manifest(out / "run_manifest.json")
     assert not manifest.settings.verify_content
     assert all(entry.content_sha256 is None for entry in manifest.files)
+    # A default run's manifest has no new key (review of #140): rc4's shape is kept.
+    data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
+    assert "verify_content" not in data["settings"]
+    assert not any("content_sha256" in entry for entry in data["files"])
 
 
 def test_a_strict_run_records_each_content_sha256(experiment):
@@ -172,6 +177,29 @@ def test_an_image_whose_content_changes_while_it_is_read_is_never_published(
     assert not result.written
     assert "source_changed_during_run" in {issue.code for issue in result.issues}
     assert (out / "plane_histograms.csv").read_bytes() == before
+
+
+def test_an_image_that_cannot_be_hashed_is_unreadable_and_never_read(experiment, monkeypatch):
+    # Review of #140: a strict run never reads or reuses an image without its SHA-256.
+    root, out = experiment
+    hashed = source_content.current_content
+
+    def unhashable(path):
+        return None if path.as_posix().endswith(IMAGES[1]) else hashed(path)
+
+    read, opened = run_module.resume._read_file, []
+
+    def recording(path, rel, *args):
+        opened.append(rel)
+        return read(path, rel, *args)
+
+    monkeypatch.setattr(source_content, "current_content", unhashable)
+    monkeypatch.setattr(run_module.resume, "_read_file", recording)
+    result = run_experiment(root, ZYX, output_folder=out, mode=STRICT)
+    assert not result.written and IMAGES[1] not in opened
+    assert sorted(opened) == [IMAGES[0], IMAGES[2]]
+    issue = next(issue for issue in result.issues if issue.code == "unreadable_planes")
+    assert issue.paths == (IMAGES[1],)
 
 
 def test_run_inputs_of_a_strict_run_refuse_a_rewrite_with_its_metadata_kept(experiment):

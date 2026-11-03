@@ -109,14 +109,17 @@ and the bricks' migration).
   source's content SHA-256 (`files[].content_sha256`, `settings.verify_content`) and
   reuses earlier or staged rows only for the same content; `RunInputs` of such a run checks
   it at `open`. It is a recorded input; turning it on or off recomputes every row and is
-  named. The default run is unchanged.
+  named. The default run is unchanged: its manifest has neither key (`verify_content` is
+  written only when true).
 
 - **Mount points below the experiment or masks folder are refused** (owner, 3 November
   2026): a bind mount is an ordinary folder to the walk, so its files from outside were
   read. A folder (or file) listed in `/proc/self/mountinfo`, or on another device than the
   selected folder, is the error `mounted_folder` naming it, in discovery, OME-Zarr stores,
   the masks folder, `check`, `run`, `convert` and `RunInputs` (`mounts.MountCheck`). Where
-  no mount table can be read (macOS, Windows), only a mount of another device is seen.
+  no mount table can be read (macOS, Windows), only a mount of another device is seen. The
+  device is read with `os.stat` of the path: `os.DirEntry.stat()` reports `st_dev` 0 on
+  Windows, which refused every folder there (review of #140).
 - **The commit is flushed to disk** (review of rc4, I2): the output folder is flushed
   (`fsync`, POSIX) right after the manifest's rename, so a power cut after a run returned
   keeps the new generation. A run that finishes an earlier publication flushes it first.

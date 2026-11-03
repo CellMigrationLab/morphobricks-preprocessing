@@ -138,25 +138,51 @@ def test_a_mounted_folder_inside_an_ome_zarr_store_is_refused(tree, mounted):
     assert _issue(found.issues, "mounted_folder").paths == ("ctrl/rep1/z.ome.zarr/0",)
 
 
+def test_a_mounted_file_inside_an_ome_zarr_store_is_refused(tree, mounted):
+    # Review of #140: a store's plain files are looked up among the mount points too (a
+    # bind mount of one chunk file brings in another file's bytes).
+    pytest.importorskip("zarr")
+    from zarr_tree import write_ngff
+
+    root, _ = tree
+    store = write_ngff(root / "ctrl/rep1/z.ome.zarr", np.zeros((1, 1, 4, 4), np.uint8))
+    chunk = next(path for path in sorted(store.rglob("*")) if path.is_file() and "0" in path.parts)
+    mounted(chunk)
+    found = discover_experiment(root)
+    assert _issue(found.issues, "mounted_folder").paths == (chunk.relative_to(root).as_posix(),)
+
+
 def test_a_folder_on_another_device_is_a_mount_point(tmp_path, monkeypatch):
     # The portable rule, where no mount table can be read (macOS, Windows).
     monkeypatch.setattr(mounts_module, "mount_points", lambda *_: frozenset())
     (tmp_path / "sub").mkdir()
     check = MountCheck(tmp_path)
+    (entry,) = os.scandir(tmp_path)
+    assert check.device is not None
+    assert not check.is_mount(tmp_path / "sub", entry)
+    check.device += 1  # the selected folder on another device than its subfolder
+    assert check.is_mount(tmp_path / "sub", entry)
 
-    class Entry:
-        def __init__(self, device):
-            self.device = device
+
+def test_the_device_is_read_from_the_path_not_the_folder_entry(tmp_path, monkeypatch):
+    # Review of #140: on Windows os.DirEntry.stat() reports st_dev 0, so reading the
+    # device from the entry refused every folder of every experiment there.
+    monkeypatch.setattr(mounts_module, "mount_points", lambda *_: frozenset())
+    (tmp_path / "sub").mkdir()
+    check = MountCheck(tmp_path)
+
+    class WindowsEntry:
+        """A folder entry as Windows gives it: its stat() has no device."""
+
+        path = str(tmp_path / "sub")
 
         def is_dir(self):
             return True
 
         def stat(self):
-            return os.stat_result((0o40755, 1, self.device, 2, 0, 0, 0, 0, 0, 0))
+            return os.stat_result((0o40755, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 
-    assert check.device is not None
-    assert not check.is_mount(tmp_path / "sub", Entry(check.device))
-    assert check.is_mount(tmp_path / "sub", Entry(check.device + 1))
+    assert not check.is_mount(tmp_path / "sub", WindowsEntry())
 
 
 def test_the_mount_table_is_read_with_its_escapes(tmp_path):
