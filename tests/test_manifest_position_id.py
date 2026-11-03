@@ -126,3 +126,16 @@ def test_a_name_that_is_only_an_extension_is_refused():
         recorded_position_id(".tif", "ctrl/.tif")
     assert recorded_position_id("img.01", "ctrl/img.01.ome.tif") == "img.01"
     assert recorded_position_id(None, "ctrl/a.tif", strict=False) is None
+
+
+def test_a_run_after_a_manifest_without_positions_reads_every_image_again(run):
+    # A v2 manifest without them is not trusted: no row of it is reused.
+    output, path = run
+    table = (output / "plane_histograms.csv").read_bytes()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for entry in data["files"]:
+        del entry["position_id"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    result = run_experiment(output.parent / "exp", prefill_mapping("YX"), output_folder=output)
+    assert result.written and "manifest could not be read" in result.rebuild_reason
+    assert result.unchanged == () and (output / "plane_histograms.csv").read_bytes() == table

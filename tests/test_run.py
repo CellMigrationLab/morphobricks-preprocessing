@@ -374,12 +374,10 @@ def test_images_with_the_same_position_id_are_refused(experiment):
 def test_table_without_position_ids_is_filled_without_reading(experiment, reads):
     first = run_experiment(experiment, ZYX)
     table = csv_bytes(first)
-    # A table and manifest written before position identifiers were recorded.
+    # A table written before position identifiers were recorded.
     blank = [replace(r, position_id=None) for r in read_plane_histograms(first.csv_path)]
     write_plane_histograms(blank, first.csv_path)
-    data = json.loads(first.manifest_path.read_text(encoding="utf-8"))
-    for f in data["files"]:
-        del f["position_id"]
+    data = json.loads(first.manifest_path.read_text(encoding="utf-8"))  # v2 keeps them (A-m5)
     data["csv_sha256"] = hashlib.sha256(first.csv_path.read_bytes()).hexdigest()
     first.manifest_path.write_text(json.dumps(data), encoding="utf-8")
     reads.clear()
