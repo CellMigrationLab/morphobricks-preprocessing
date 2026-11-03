@@ -165,7 +165,9 @@ src/morphobricks_preprocessing/
                     manifest SHA-256, what was found, reused, recomputed and replaced
   cli.py, __main__  `morphobricks-preprocessing check|run|masks|calibrate|design|convert` (also `python -m morphobricks_preprocessing`);
                     cli_run.py holds `run`'s options and output; cli_calibrate.py `calibrate`;
-                    cli_convert.py `convert`; log_target.py where `--log` may write (#99)
+                    cli_convert.py `convert`; log_target.py where `--log` may write (#99),
+                    by write_target.py's write_target_refusal (the shared rule other bricks
+                    call for files their users name; contract §8)
   masks/           masks (Q32; a package since PP-5: model, files, header, layout, read,
                     checks, labels): find_masks pairs every image with its masks (masks folder with one
                     folder per type mirroring the experiment, or <image>_<type>.tif in the

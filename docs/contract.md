@@ -141,6 +141,25 @@ device and inode (another spelling of a folder on a file system that ignores cas
 names ignore case; an existing file with a second name (a hard link) is refused. Any other
 name in the output folder is allowed.
 
+**Write-target rule for other bricks (owner, 3 November 2026).** That rule is public as
+`write_target_refusal(path, *, protected_folders, protected_files={}, output=None,
+output_names=())` (`morphobricks_preprocessing.write_target`, exported by the package), so
+another brick that writes a file its user names (MorphoFeature's `--to-segment`) applies
+preprocessing's rule rather than a copy of it. It returns None when `path` may be written,
+else the reason as a clause for the caller's own message (`"it is inside the masks folder
+(/data/masks)"`; `--log` words it as above, byte for byte as before). It refuses, in this
+order, and the first refusal is returned: a path that is one of `protected_files` (by
+resolved path, or `os.path.samefile`: "it is the {name} ({file})"); a path inside, or equal
+to, one of `protected_folders` (by resolved path, and for a folder that exists by device
+and inode of each existing folder above the path: "it is inside the {name} ({folder})");
+the folder `output` itself or a path that is, or is inside, one of its `output_names`
+(ignoring case: "it would write over the run's {name}"); an existing folder ("it is a
+folder"); a path whose folder does not exist ("its folder {folder} does not exist"); and an
+existing file with more than one name ("it is a file that has another name too (a hard
+link)"). Mapping keys name what is protected; None values are left out. It only reads the
+file system (`stat`) and writes nothing; the caller writes right after, so a file created
+in between is not seen.
+
 In notebook step 1, message details start collapsed with orange warning and red error
 counts visible outside the dropdown. Collapsing details does not change severity or
 whether processing is blocked. The consistency issues of §11 are shown in their own
