@@ -100,6 +100,45 @@ and the bricks' migration).
 
 ### Fixed
 
+- **A TIFF calibration that cannot be read is invalid, not absent** (round-2 audit, A-m6):
+  `read_physical_sizes` caught every exception and logged it at debug level, so a file
+  it could not read, or a programming error, read as an uncalibrated image. Now a file that
+  cannot be opened as a TIFF (`TIFF_OPEN_ERRORS`: `OSError`, `ValueError` including
+  `TiffFileError`, and the `TypeError` and `struct.error` tifffile raises on some damaged
+  headers) and metadata whose bytes cannot be read (`METADATA_READ_ERRORS`: `OSError`,
+  `struct.error`, `TiffFileError`; module `tiff_size_values`) give no sizes with the reason
+  in `PhysicalSizes.invalid`, named by `invalid_physical_calibration`; no metadata is still
+  no calibration; any other exception is raised, and a value that is not a path is a
+  `TypeError`. An ImageJ resolution tag that tifffile dropped because it could not read it
+  (it only logs), next to the other one, is named instead of leaving that axis silently
+  uncalibrated.
+
+- **A version 2 manifest names every image's position by its name** (round-2 audit, A-m5):
+  the reader accepted a file entry without `position_id`, or with null, and `RunInputs`
+  then keyed that position by `""`; an edited `position_id` was read as given. Version 2
+  now requires it, equal to `position_id(relative_path)` (the image's name without its
+  extension, D85), and refuses anything else naming the entry and the identifier its name
+  gives (`ManifestFormatError`); the writer refuses the same, so a written manifest always
+  opens. Every v0.4.0 writer recorded it this way, rc4 included (a committed rc4 manifest
+  is read in the tests). Version 1 manifests are read for reporting as before.
+
+- **One length written in any unit is one double in micrometres** (round-2 audit, B-m7):
+  `to_micrometers` multiplied by a binary approximation of the factor, so `9` nm became
+  `0.009000000000000001` µm while `0.009` µm stayed `0.009`, and a header in nm next to a
+  `calibration.csv` in µm for the same size was not the same number (an exact comparison
+  called the pixels non-square). Dividing by the integer factor would still leave about a
+  fifth of such decimals 1 ULP apart (`108.37 / 1000` is `0.10837000000000001`). A length is
+  now converted from the shortest decimal of its double (`repr`), its point moved by the
+  unit's power of ten and rounded once by `float` (no binary factor, no `decimal` context):
+  for a value parsed from a decimal of at most 15 significant digits that is the decimal
+  written, so the same length in pm, Å, nm, µm, mm, cm or m gives the double `float` gives
+  for it written in µm (`108.37` nm is `0.10837`). At 16 or 17 digits two decimals can give
+  one double and the one written is not known. The result is still always positive and
+  finite, and an overflow or underflow is still refused. **Sizes in micrometres computed
+  from a unit other than µm may change by 1 ULP** (the last bit of the double); manifests
+  are unchanged, as they record each size in its own unit; the 0.1 % rule
+  (`same_pixel_size`) is not affected.
+
 - **The identity rule is stated, and strict reuse is offered** (review of rc4, I3; owner, 3
   November 2026): reuse, resume and `RunInputs` identify a source by its metadata
   fingerprint (size and `mtime_ns`; for OME-Zarr the inventory of paths, sizes and times),

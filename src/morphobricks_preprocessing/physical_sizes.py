@@ -18,7 +18,6 @@ compared between the images of an experiment in the folder check (§11).
 
 from __future__ import annotations
 
-import logging
 import math
 import numbers
 import os
@@ -29,13 +28,23 @@ from xml.etree import ElementTree
 import tifffile
 
 # The shared unit rule (contract §16), re-exported where it was before its own module.
-from .length_units import _MICROMETERS, _SPACE_UNITS, _decode_escapes, to_micrometers
+from .length_units import _MICROMETERS, _SPACE_UNITS, to_micrometers
 from .length_units import SPACE_UNITS as SPACE_UNITS
 from .length_units import UnsupportedUnitError as UnsupportedUnitError
 from .length_units import space_unit as space_unit
 from .ngff_scale import read_scale
-
-logger = logging.getLogger(__name__)
+from .tiff_size_values import (
+    METADATA_READ_ERRORS,
+    TIFF_OPEN_ERRORS,
+    _header_size,
+    _imagej_text,
+    _imagej_unit,
+    _missing_resolution,
+    _ngff_unit,
+    _number,
+    _resolution,
+    _written,
+)
 
 UNKNOWN_SCALE_KEY = "unknown_scale"
 """Key, in an OME-NGFF multiscales entry's ``metadata``, listing the axes (``"x"``, ...)
@@ -358,15 +367,26 @@ def read_physical_sizes(path: str | os.PathLike) -> PhysicalSizes:
     ``PhysicalSizeZUnit`` is used for Y or Z (the OME default, micrometres, when
     left out), and ImageJ's ``yunit`` and ``zunit`` when given.
 
-    Returns all-None sizes when the file has no such metadata or it cannot be
-    parsed; sizes are never guessed.
+    Returns all-None sizes when the file has no such metadata; sizes are never guessed.
+    A calibration that cannot be read is never taken for none (round-2 audit A-m6): a file
+    that cannot be opened as a TIFF (:data:`.tiff_size_values.TIFF_OPEN_ERRORS`), metadata
+    whose bytes cannot be read (:data:`.tiff_size_values.METADATA_READ_ERRORS`) or OME-XML
+    that cannot be parsed give all-None sizes with the reason in
+    :attr:`PhysicalSizes.invalid`. Any other exception is a defect and is raised.
+
+    Raises
+    ------
+    TypeError
+        If ``path`` is not a path.
     """
+    if not isinstance(path, str | os.PathLike):
+        raise TypeError(f"read_physical_sizes takes a path, not {type(path).__name__}")
     try:
-        with tifffile.TiffFile(path) as tif:
-            return _tiff_sizes(tif)
-    except Exception:  # metadata is optional; a damaged header is reported elsewhere
-        logger.debug("Cannot read physical sizes of %s", path, exc_info=True)
-    return PhysicalSizes()
+        tif = tifffile.TiffFile(path)
+    except TIFF_OPEN_ERRORS as exc:
+        return PhysicalSizes(invalid=f"the file cannot be read as a TIFF ({_error(exc)})")
+    with tif:
+        return _tiff_sizes(tif)
 
 
 def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
@@ -459,30 +479,28 @@ def _with_invalid(sizes: PhysicalSizes, problems: Sequence[str | None]) -> Physi
     return replace(sizes, invalid="; ".join(filter(None, (*problems, sizes.invalid))) or None)
 
 
-def _header_size(axis: str, value: object) -> tuple[float | None, str | None]:
-    """Read a size given in TIFF metadata, with what is wrong when it is not usable (#93).
-
-    None and no problem when it is not given; None and the problem for ``inf``, ``NaN``,
-    zero, a negative number or text that is not a number, never silently unknown.
-    """
-    number = _number(value)
-    if value is None or number is not None:
-        return number, None
-    return None, f"{axis}: the size {value!r} is not a positive finite number"
-
-
 def _tiff_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
     """Return the physical sizes of an open TIFF file (all None when not given).
 
-    OME-XML that cannot be parsed gives no sizes, with what is wrong in ``invalid``
-    (audit m6, the TIFF twin of issue #94): never read as merely uncalibrated.
+    OME-XML that cannot be parsed, or metadata whose bytes cannot be read
+    (:data:`.tiff_size_values.METADATA_READ_ERRORS`), gives no sizes, with what is wrong in
+    ``invalid`` (audits m6 and A-m6, the TIFF twin of issue #94): never read as merely
+    uncalibrated.
     """
-    if tif.is_ome and tif.ome_metadata:
-        try:
-            return _ome_sizes(tif.ome_metadata)
-        except ElementTree.ParseError as exc:
-            return PhysicalSizes(invalid=f"the OME-XML metadata cannot be read ({exc})")
-    return _imagej_sizes(tif) if tif.is_imagej else PhysicalSizes()
+    try:
+        if tif.is_ome and tif.ome_metadata:
+            try:
+                return _ome_sizes(tif.ome_metadata)
+            except ElementTree.ParseError as exc:
+                return PhysicalSizes(invalid=f"the OME-XML metadata cannot be read ({exc})")
+        return _imagej_sizes(tif) if tif.is_imagej else PhysicalSizes()
+    except METADATA_READ_ERRORS as exc:
+        return PhysicalSizes(invalid=f"the TIFF metadata cannot be read ({_error(exc)})")
+
+
+def _error(exc: BaseException) -> str:
+    """Name an exception for a message: its type and text."""
+    return f"{type(exc).__name__}: {exc}"
 
 
 def _ome_sizes(xml: str) -> PhysicalSizes:
@@ -544,57 +562,5 @@ def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
     )
     # A malformed tag or spacing is named when its axis has a unit, so that it is a size.
     named = [problem for axis, (_, problem) in read.items() if units[axis] or written[axis]]
-    return _with_invalid(found, [*named, step[1]])
-
-
-def _ngff_unit(value, table: dict[str, str]) -> str | None:  # noqa: ANN001
-    """Return an OME-NGFF axis unit with common spellings as UDUNITS-2 names.
-
-    ``"µm"``, ``"um"`` and ``"micron"`` become ``"micrometer"``, ``"s"``
-    becomes ``"second"``; other units are kept as written, and spellings of two
-    letters or fewer are matched exactly (``"Mm"`` is not ``"mm"``).
-    """
-    if not isinstance(value, str) or not value.strip():
-        return None
-    text = value.strip()
-    known = table.get(text) or (table.get(text.lower()) if len(text) > 2 else None)
-    return known or text
-
-
-def _written(value) -> str | None:  # noqa: ANN001
-    """Return a unit as the metadata write it (escapes decoded); None when blank."""
-    if value is None:
-        return None
-    text = _decode_escapes(str(value)).strip()
-    return text or None
-
-
-def _imagej_unit(value) -> str | None:  # noqa: ANN001
-    return _SPACE_UNITS.get(_imagej_text(value))
-
-
-def _imagej_text(value) -> str:  # noqa: ANN001
-    r"""Return an ImageJ unit in lower case, with its ``\uXXXX`` escapes decoded.
-
-    ImageJ writes non-ASCII characters as ``\u00B5`` in the TIFF description, and
-    tifffile returns them as written, so ``\u00B5m`` is a micrometre.
-    """
-    return _decode_escapes(str(value or "")).strip().lower()
-
-
-def _resolution(axis: str, tag: tifffile.TiffTag | None) -> tuple[float | None, str | None]:
-    """Read a resolution tag as a pixel size, with what is wrong when it is malformed."""
-    value = None if tag is None else tag.value
-    if isinstance(value, tuple) and len(value) == 2 and all(isinstance(n, int) for n in value):
-        return value[1] / value[0] if value[0] else math.inf, None  # 0 pixels per unit (#93)
-    return None, None if tag is None else f"{axis}: the {tag.name} tag {value!r} is malformed"
-
-
-def _number(value) -> float | None:  # noqa: ANN001
-    if isinstance(value, bool):  # True would otherwise read as a size of 1
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError, OverflowError):  # 10**400 overflows a float
-        return None
-    return number if math.isfinite(number) and number > 0 else None
+    lost = _missing_resolution(page.tags) if units["X"] or units["Y"] else None
+    return _with_invalid(found, [*named, lost, step[1]])

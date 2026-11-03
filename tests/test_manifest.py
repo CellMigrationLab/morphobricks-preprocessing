@@ -15,6 +15,7 @@ from morphobricks_preprocessing import (
     read_manifest,
     write_manifest,
 )
+from morphobricks_preprocessing.image_names import position_id
 from morphobricks_preprocessing.manifest import file_entry_for, file_sha256, package_versions
 from tiff_tree import write_tiff
 
@@ -29,6 +30,7 @@ def entry(path="cond/rep/a.tif", **kwargs):
         "plane_count": 3,
         "roles": ("Z", "Y", "X"),
         "axes_from": "header",
+        "position_id": position_id(path),
     }
     return FileEntry(**{**values, **kwargs})
 
@@ -136,13 +138,14 @@ def test_read_in_blocks_round_trips_and_defaults_to_false(tmp_path):
     assert not read_manifest(path).files[0].read_in_blocks
 
 
-def test_position_id_round_trips_and_is_none_when_absent(tmp_path):
+def test_position_id_round_trips_and_is_none_when_absent_from_a_v1_manifest(tmp_path):
     original = manifest(files=(entry(position_id="a"), entry("cond/rep/b.tif", position_id="b")))
     path = write_manifest(original, tmp_path / "m.json")
     assert read_manifest(path) == original
     data = json.loads(path.read_bytes())
     assert [f["position_id"] for f in data["files"]] == ["a", "b"]
     del data["files"][0]["position_id"]  # written before position identifiers were recorded
+    data["manifest_version"] = "1"  # only a v1 manifest may lack it (audit A-m5)
     path.write_text(json.dumps(data), encoding="utf-8")
     assert read_manifest(path).files[0].position_id is None
 

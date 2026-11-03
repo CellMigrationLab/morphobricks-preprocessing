@@ -79,6 +79,8 @@ src/morphobricks_preprocessing/
                     for comparing), re-exports length_units' space_unit/to_micrometers,
                     read_physical_sizes (OME / ImageJ TIFF metadata; also importable
                     ) and ngff_physical_sizes (OME-NGFF scale and axis units)
+  tiff_size_values.py one size or unit as metadata write it; TIFF_OPEN_ERRORS and
+                    METADATA_READ_ERRORS, the read failures that are an invalid calibration (A-m6)
   length_units.py   space_unit/to_micrometers, SPACE_UNITS (the shared unit rule, contract
                     §16): a conversion is always a positive finite length, else ValueError (#93)
   ngff_scale.py     read_scale: an OME-NGFF coordinateTransformations scale, checked; what
@@ -118,6 +120,8 @@ src/morphobricks_preprocessing/
   pixel_size_checks.py the §11 pixel-size checks on resolved sizes (moved from metadata.py)
   narrow_ranges.py  NarrowRange (moved from manifest.py)
   sources.py        check_sources (moved from manifest.py in PP-4)
+  manifest_fields.py a file entry's position_id (required in v2, the name's: A-m5) and roles,
+                    checked as written and as read (pure)
   unrecorded.py     unrecorded_files: images and masks the run neither recorded nor excluded, by
                     preprocessing's discovery and pairing; RunInputs.open raises
                     UnrecordedFilesError for them (PP-8b, contract §9.1)

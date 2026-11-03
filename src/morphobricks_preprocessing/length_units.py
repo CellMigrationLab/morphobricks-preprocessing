@@ -54,15 +54,20 @@ class UnsupportedUnitError(ValueError):
     """Raised for a length unit that is not one of :data:`SPACE_UNITS`."""
 
 
-# Micrometres per OME-NGFF space unit, to compare sizes given in different units.
+# Micrometres per OME-NGFF space unit, as the power of ten that converts to them, to compare
+# sizes given in different units. A length is converted by moving the decimal point of the
+# shortest decimal that gives its double (``repr``), then rounding once (audit B-m7): so one
+# length written in any of these units, as a decimal of at most 15 significant digits, gives
+# one double. ``9 * 1e-3`` is 0.009000000000000001 and ``108.37 / 1000`` is
+# 0.10837000000000001, where ``float("0.009")`` and ``float("0.10837")`` are not.
 _MICROMETERS = {
-    "angstrom": 1e-4,
-    "picometer": 1e-6,
-    "nanometer": 1e-3,
-    "micrometer": 1.0,
-    "millimeter": 1e3,
-    "centimeter": 1e4,
-    "meter": 1e6,
+    "angstrom": -4,
+    "picometer": -6,
+    "nanometer": -3,
+    "micrometer": 0,
+    "millimeter": 3,
+    "centimeter": 4,
+    "meter": 6,
 }
 
 
@@ -125,7 +130,17 @@ def to_micrometers(value: float | None, unit: str | None) -> float | None:
     -------
     float or None
         The length in micrometres, always positive and finite; None when the value or its
-        unit is not known, so an unknown unit is never taken for another.
+        unit is not known, so an unknown unit is never taken for another. It is the double
+        nearest the decimal :func:`repr` writes ``value`` as, with its point moved by the
+        unit's power of ten (rounded once, by ``float``, never by a binary factor nor by the
+        :mod:`decimal` context). For a value parsed from a decimal of at most 15
+        significant digits (OME-XML, ImageJ ``spacing``, OME-NGFF JSON, ``calibration.csv``)
+        that decimal is the one written, so the same length written in any unit gives the
+        same double, the one ``float`` gives for it written in micrometres:
+        ``to_micrometers(108.37, "nm") == 0.10837`` and ``to_micrometers(9, "nm") ==
+        to_micrometers(0.009, "µm")`` (audit B-m7). At 16 or 17 digits two decimals can give
+        one double, and the one written is not known; a size computed rather than written
+        (an ImageJ resolution tag's ratio) is converted from its shortest decimal all the same.
 
     Raises
     ------
@@ -149,13 +164,25 @@ def to_micrometers(value: float | None, unit: str | None) -> float | None:
         raise ValueError(f"the length {value!r} is not a positive finite number")
     if name is None:
         return None
-    converted = number * _MICROMETERS[name]
+    converted = _shifted(number, _MICROMETERS[name])
     if not math.isfinite(converted) or converted <= 0:
         raise ValueError(
             f"the length {value!r} {name} is not a positive finite number of micrometres "
             f"(it converts to {converted!r})"
         )
     return converted
+
+
+def _shifted(number: float, power: int) -> float:
+    """Return ``number`` times ``10**power``, rounded once from its shortest decimal.
+
+    The point of ``repr(number)`` (``"108.37"``, ``"1e-05"``) is moved by ``power`` in the
+    text and ``float`` rounds the result correctly, so no binary factor and no
+    :mod:`decimal` context is involved. Beyond the float range it is ``inf`` or ``0.0``,
+    which :func:`to_micrometers` refuses.
+    """
+    mantissa, _, exponent = repr(number).partition("e")
+    return float(f"{mantissa}e{int(exponent or 0) + power}")
 
 
 def _decode_escapes(text: str) -> str:
