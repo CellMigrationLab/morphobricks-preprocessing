@@ -77,7 +77,8 @@ def test_the_checks_are_the_normalization_bricks(table):
     summaries = image_summaries(table)
     assert report.summaries == tuple(summaries)
     assert report.issues == tuple(intensity_checks(summaries))
-    assert set(codes(report.issues)) == set(INTENSITY_CODES)
+    # Every channel has finite pixels, so the fifth code (normalization #57) is absent.
+    assert set(codes(report.issues)) == set(INTENSITY_CODES) - {"channel_without_finite_pixels"}
     assert report.channel_count == 2 and report.high_percentile == 99.8
 
 
