@@ -17,7 +17,13 @@ import numpy as np
 import pytest
 from morphobricks_normalization.csv_io import OUTPUT_FILENAME
 
-from morphobricks_preprocessing import PlaneReadError, RunInputs, prefill_mapping, run_experiment
+from morphobricks_preprocessing import (
+    PlaneReadError,
+    RunInputs,
+    prefill_mapping,
+    read_manifest,
+    run_experiment,
+)
 from morphobricks_preprocessing import run as run_module
 from morphobricks_preprocessing.discovery_report import REPORT_FILENAME
 from morphobricks_preprocessing.run.lock import remove_stale_lock
@@ -345,3 +351,28 @@ def test_a_discarded_record_is_reported_by_its_image_and_its_true_reason(tmp_pat
     discarded = report(out)["staged_discarded"]
     assert discarded[record["relative_path"]].startswith("the experiment's pixel type changed")
     assert discarded[named].startswith("its staged rows could not be read")
+
+
+def test_a_rerun_that_changes_nothing_keeps_the_manifest_bytes(tmp_path, monkeypatch):
+    # F10 (cross-brick test, 3 November 2026): later bricks pin the manifest's SHA-256.
+    root = tmp_path / "exp"
+    write_data(root / "ctrl/r1/a.tif", stack(0), axes="ZYX")
+    times = iter(f"2026-11-0{day}T10:00:00+00:00" for day in range(1, 9))
+
+    class Clock:
+        @staticmethod
+        def now(tz=None):
+            return __import__("datetime").datetime.fromisoformat(next(times))
+
+    monkeypatch.setattr(run_module.pipeline, "datetime", Clock)
+    first = run_experiment(root, ZYX)
+    before = first.manifest_path.read_bytes()
+    again = run_experiment(root, ZYX)
+    assert again.written and again.manifest_path.read_bytes() == before
+    assert read_manifest(again.manifest_path).written_at == "2026-11-01T10:00:00+00:00"
+    # A real change still updates it, with the time of the run that made it.
+    write_data(root / "ctrl/r1/b.tif", stack(1), axes="ZYX")
+    changed = run_experiment(root, ZYX)
+    after = read_manifest(changed.manifest_path)
+    assert changed.manifest_path.read_bytes() != before
+    assert after.written_at == "2026-11-03T10:00:00+00:00"

@@ -27,11 +27,11 @@ from .axis_check import (
     confirmation_of,
 )
 from .metadata import (
-    CONVERT_KEEPS_ORDER,
     MetadataReport,
     TiffMetadata,
     channel_count_issues,
 )
+from .size_checks import CONVERT_KEEPS_ORDER
 from .validation import ValidationIssue, error, plural
 
 

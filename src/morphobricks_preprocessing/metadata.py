@@ -32,6 +32,7 @@ from .discovery import DiscoveryResult
 from .physical_sizes import PhysicalSizes, _tiff_sizes
 from .pixel_size_checks import pixel_size_issues
 from .size_checks import (
+    CONVERT_KEEPS_ORDER,
     breakdown,
     image_size_issues,
     lettered_plane_counts,
@@ -646,14 +647,6 @@ def _check_dimensions(files: list[TiffMetadata]) -> list[ValidationIssue]:
             )
         ]
     return []
-
-
-CONVERT_KEEPS_ORDER = (
-    "Export the images again with the same dimension order, or process the differently "
-    "arranged images as a separate experiment. Named-axis copies ('convert') keep each "
-    "image's stored order, so they do not solve this."
-)
-"""What to do about images arranged differently (cross-brick test F8, plan question 73)."""
 
 
 def header_channel_count(f: TiffMetadata) -> int:
