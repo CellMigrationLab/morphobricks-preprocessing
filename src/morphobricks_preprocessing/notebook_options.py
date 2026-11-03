@@ -71,6 +71,7 @@ _CHECK_LABELS = {
     "repeat_intensity_shift": "Shifted repeat",
     "saturated_image": "Saturated",
     "no_intensity_spread": "No spread",
+    "channel_without_finite_pixels": "Not checked",
 }
 _PACKAGE_LOGGER = "morphobricks_preprocessing"
 _WIDE = {"width": "99%"}

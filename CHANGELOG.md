@@ -9,8 +9,8 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 ## 0.4.0rc5 (since v0.4.0rc4)
 
 What changed between v0.4.0rc4 and v0.4.0rc5: PRs #139 (cross-brick test of 3 November
-2026), #140 (review of rc4), #142 (round-2 audit) and #143 (this release candidate). Each
-item is described in full under 0.4.0 below. Decisions: [plan](docs/plan.md) §12 questions
+2026), #140 (review of rc4), #142 (round-2 audit), #143 (this release candidate) and #145
+(normalization v0.3.3). Each item is described in full under 0.4.0 below. Decisions: [plan](docs/plan.md) §12 questions
 66, 72, 73 and 74.
 
 ### Migration notes (from rc4)
@@ -36,8 +36,23 @@ item is described in full under 0.4.0 below. Decisions: [plan](docs/plan.md) §1
   3; `inside` and `parents_with_N_children` may be lower than with rc4 when masks have such
   ties. CellPatcher and MorphoFeature read neither count.
 
+- **The normalization brick is pinned to v0.3.3** (#145). It refuses corrupt or ambiguous
+  statistics and parameters instead of using them (its README, "Migrating to v0.3.3"):
+  among others a `plane_histograms.csv` with the header but no rows or with two rows of one
+  `plane_id`, and `z` or `t` that are not whole numbers 0 or above. Valid inputs give
+  bit-identical results, so tables written by rc4 read unchanged; the full test suite
+  needed no change for the new refusals. A hand-edited table may now be refused.
+- **A new intensity warning, `channel_without_finite_pixels`** (#145, normalization #57):
+  an image channel whose pixels are all NaN or infinite has blank summaries, which the four
+  intensity checks cannot see. It is now named, after the other intensity warnings, in
+  `check_intensities`, `check_table`, `run` (its report and the command line) and the
+  notebook (its own tile, **channels not checked**). `INTENSITY_CODES` has five codes;
+  code that expects four should list the new one.
+
 ### Changed and fixed
 
+- Normalization brick v0.3.3; `channel_without_finite_pixels` from its `unchecked_channels`
+  is an intensity warning (#145, normalization #57).
 - `pair_counts`: an exact tie between parents gives no parent; the new evidence
   `ambiguous_parent` is shown by `masks`, the notebook's **Describe the masks** card and its
   relationship table; report version 3 (#143, plan Q74).
@@ -111,6 +126,9 @@ and the bricks' migration) and **v0.4.0rc5** (#143, after the round-2 audit fixe
 
 ### Added
 
+- The intensity warning `channel_without_finite_pixels`, from the normalization brick's
+  `unchecked_channels` (v0.3.3, normalization #57): an image channel without finite pixels,
+  which the four intensity checks cannot see (#145).
 - `RunInputs.open(output, experiment_root=None, masks_root=None)`, with `fovs()`,
   `pixel_sizes()`, `read_plane()`, `read_image()` (lazy), `mask_types()`, `read_mask()`
   (labels checked), `histograms()`, `design()` and `image_type()`. It is picklable.
