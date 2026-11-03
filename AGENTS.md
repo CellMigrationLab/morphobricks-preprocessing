@@ -118,6 +118,8 @@ src/morphobricks_preprocessing/
   pixel_size_checks.py the §11 pixel-size checks on resolved sizes (moved from metadata.py)
   narrow_ranges.py  NarrowRange (moved from manifest.py)
   sources.py        check_sources (moved from manifest.py in PP-4)
+  manifest_fields.py a file entry's position_id (required in v2, the name's: A-m5) and roles,
+                    checked as written and as read (pure)
   unrecorded.py     unrecorded_files: images and masks the run neither recorded nor excluded, by
                     preprocessing's discovery and pairing; RunInputs.open raises
                     UnrecordedFilesError for them (PP-8b, contract §9.1)

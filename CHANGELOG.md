@@ -100,6 +100,15 @@ and the bricks' migration).
 
 ### Fixed
 
+- **A version 2 manifest names every image's position by its name** (round-2 audit, A-m5):
+  the reader accepted a file entry without `position_id`, or with null, and `RunInputs`
+  then keyed that position by `""`; an edited `position_id` was read as given. Version 2
+  now requires it, equal to `position_id(relative_path)` (the image's name without its
+  extension, D85), and refuses anything else naming the entry and the identifier its name
+  gives (`ManifestFormatError`); the writer refuses the same, so a written manifest always
+  opens. Every v0.4.0 writer recorded it this way, rc4 included (a committed rc4 manifest
+  is read in the tests). Version 1 manifests are read for reporting as before.
+
 - **A length in a unit below the micrometre converts exactly** (round-2 audit, B-m7):
   `to_micrometers` multiplied by a binary approximation of the factor, so `9` nm became
   `0.009000000000000001` µm while `0.009` µm stayed `0.009`, and a header in nm next to a

@@ -37,6 +37,7 @@ from .axes import AxisMapping
 from .image_names import position_id
 from .inventory import INVENTORY_KEY, source_signature
 from .inventory import source_fingerprint as source_fingerprint  # re-exported (moved, PP-12)
+from .manifest_fields import recorded_position_id, recorded_roles
 from .narrow_ranges import NarrowRange
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
 from .versions import package_versions as package_versions  # re-exported (moved)
@@ -126,8 +127,8 @@ class FileEntry:
         read in blocks. For information only: the rows are the same either way.
     position_id
         The image's position identifier, its name without the extension
-        (:func:`~morphobricks_preprocessing.image_names.position_id`); None in
-        manifests written before it was recorded.
+        (:func:`~morphobricks_preprocessing.image_names.position_id`). Required in manifest
+        version 2, and equal to that rule (round-2 audit A-m5); None in older manifests.
     roles
         The role of each of the file's axes (``"X"``, ``"Y"``, ``"Z"``, ``"C"``,
         ``"T"`` or None), from its own mapping: for an OME-Zarr image whose
@@ -515,6 +516,7 @@ def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
     """
     if strict and (entry.roles is None or entry.axes_from not in AXES_FROM):
         raise ValueError(f"the entry of {entry.relative_path!r} has no roles or axes_from")
+    recorded_position_id(entry.position_id, entry.relative_path, strict=strict)
     data = {
         "relative_path": entry.relative_path,
         "size": entry.size,
@@ -542,12 +544,15 @@ def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
 
 
 def _file_entry(data: dict, *, strict: bool = True) -> FileEntry:
-    """Read a file entry; ``strict`` (manifest version 2) requires its roles and their source."""
-    bits = data.get("significant_bits")
+    """Read a file entry; ``strict`` (manifest version 2) requires roles, source and position.
+
+    The ``position_id`` must be the one the entry's name gives (round-2 audit A-m5).
+    """
+    bits, path = data.get("significant_bits"), str(data["relative_path"])
     if strict and (data.get("roles") is None or data.get("axes_from") not in AXES_FROM):
-        raise ValueError(f"the entry of {data.get('relative_path')!r} has no roles or axes_from")
+        raise ValueError(f"the entry of {path!r} has no roles or axes_from")
     return FileEntry(
-        relative_path=str(data["relative_path"]),
+        relative_path=path,
         size=int(data["size"]),
         mtime_ns=int(data["mtime_ns"]),
         labels=(
@@ -561,25 +566,14 @@ def _file_entry(data: dict, *, strict: bool = True) -> FileEntry:
         channel_names=tuple(None if n is None else str(n) for n in data.get("channel_names", [])),
         significant_bits=None if bits is None else int(bits),
         read_in_blocks=_flag(data.get("read_in_blocks", False)),
-        position_id=None if data.get("position_id") is None else str(data["position_id"]),
+        position_id=recorded_position_id(data.get("position_id"), path, strict=strict),
         channel_names_trimmed=_flag(data.get("channel_names_trimmed", False)),
-        roles=_roles(data.get("roles"), str(data["axes"])),
+        roles=recorded_roles(data.get("roles"), str(data["axes"])),
         axes_from=_text(data.get("axes_from")),
         pixel_sizes=sizes_from_data(data.get("pixel_sizes")),
         inventory_sha256=_text(data.get(INVENTORY_KEY)),
         content_sha256=_text(data.get(CONTENT_KEY)),
     )
-
-
-def _roles(value: object, axes: str) -> tuple[str | None, ...] | None:
-    """Check a file's recorded axis roles: one role or null per axis (absent in older manifests)."""
-    if value is None:
-        return None
-    if not isinstance(value, list) or len(value) != len(axes):
-        raise ValueError(f"the roles {value!r} do not fit the axes {axes!r}")
-    roles = tuple(None if r is None else str(r) for r in value)
-    AxisMapping(axes, roles)  # raises ValueError for an unknown role
-    return roles
 
 
 def _flag(value: object, key: str | None = None) -> bool:

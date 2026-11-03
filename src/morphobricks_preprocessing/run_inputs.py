@@ -568,8 +568,10 @@ def _fov(entry: FileEntry, rows: list[PlaneRecord], manifest: RunManifest) -> Fo
     zs = {r.z for r in rows} or {0}
     ts = {r.t for r in rows} or {0}
     channels = rows[0].channel_count if rows else len(entry.channel_names) or 1
+    if entry.position_id is None:  # never an empty name in the key (round-2 audit A-m5)
+        raise RunInputsError(f"The run records no position_id for {entry.relative_path}.")
     return Fov(
-        key=(*entry.labels, entry.position_id or ""),
+        key=(*entry.labels, entry.position_id),
         relative_path=entry.relative_path,
         plane_ids=tuple(r.plane_id for r in rows),
         axes=entry.axes,

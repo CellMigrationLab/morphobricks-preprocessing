@@ -1,0 +1,348 @@
+{
+  "manifest_version": "2",
+  "schema_version": "4",
+  "written_at": "2026-11-03T12:32:06+00:00",
+  "experiment_root": "/data/exp",
+  "dtype": "uint8",
+  "settings": {
+    "bin_count": 256,
+    "memory_limit": 1073741824,
+    "missing_as_singleton": false,
+    "exclude": [],
+    "histogram": {
+      "library_version": "0.3.2",
+      "histogram_range": "minmax",
+      "robust_quantiles": [
+        0.01,
+        99.99
+      ],
+      "min_central_bins": 100
+    }
+  },
+  "axis_mapping": {
+    "axes": "YX",
+    "roles": [
+      "Y",
+      "X"
+    ]
+  },
+  "labels": [
+    {
+      "folder": "ctrl/rep1",
+      "condition": "ctrl",
+      "biological_repeat": "rep1",
+      "technical_repeat": "single"
+    },
+    {
+      "folder": "treated/rep1",
+      "condition": "treated",
+      "biological_repeat": "rep1",
+      "technical_repeat": "single"
+    }
+  ],
+  "files": [
+    {
+      "relative_path": "ctrl/rep1/B.TIFF",
+      "size": 336,
+      "mtime_ns": 1793709126282451485,
+      "condition": "ctrl",
+      "biological_repeat": "rep1",
+      "technical_repeat": "single",
+      "axes": "YX",
+      "singleton_roles": [],
+      "plane_count": 1,
+      "channel_names": [],
+      "significant_bits": null,
+      "read_in_blocks": false,
+      "position_id": "B",
+      "channel_names_trimmed": false,
+      "roles": [
+        "Y",
+        "X"
+      ],
+      "axes_from": "header",
+      "pixel_sizes": [
+        {
+          "role": "X",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "Y",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "Z",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "T",
+          "value": null,
+          "unit": null,
+          "source": null
+        }
+      ]
+    },
+    {
+      "relative_path": "ctrl/rep1/a.tif",
+      "size": 336,
+      "mtime_ns": 1793709126282171577,
+      "condition": "ctrl",
+      "biological_repeat": "rep1",
+      "technical_repeat": "single",
+      "axes": "YX",
+      "singleton_roles": [],
+      "plane_count": 1,
+      "channel_names": [],
+      "significant_bits": null,
+      "read_in_blocks": false,
+      "position_id": "a",
+      "channel_names_trimmed": false,
+      "roles": [
+        "Y",
+        "X"
+      ],
+      "axes_from": "header",
+      "pixel_sizes": [
+        {
+          "role": "X",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "Y",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "Z",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "T",
+          "value": null,
+          "unit": null,
+          "source": null
+        }
+      ]
+    },
+    {
+      "relative_path": "ctrl/rep1/c d.tif",
+      "size": 336,
+      "mtime_ns": 1793709126283070330,
+      "condition": "ctrl",
+      "biological_repeat": "rep1",
+      "technical_repeat": "single",
+      "axes": "YX",
+      "singleton_roles": [],
+      "plane_count": 1,
+      "channel_names": [],
+      "significant_bits": null,
+      "read_in_blocks": false,
+      "position_id": "c d",
+      "channel_names_trimmed": false,
+      "roles": [
+        "Y",
+        "X"
+      ],
+      "axes_from": "header",
+      "pixel_sizes": [
+        {
+          "role": "X",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "Y",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "Z",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "T",
+          "value": null,
+          "unit": null,
+          "source": null
+        }
+      ]
+    },
+    {
+      "relative_path": "ctrl/rep1/img.01.ome.tif",
+      "size": 926,
+      "mtime_ns": 1793709126282704598,
+      "condition": "ctrl",
+      "biological_repeat": "rep1",
+      "technical_repeat": "single",
+      "axes": "YX",
+      "singleton_roles": [],
+      "plane_count": 1,
+      "channel_names": [],
+      "significant_bits": null,
+      "read_in_blocks": false,
+      "position_id": "img.01",
+      "channel_names_trimmed": false,
+      "roles": [
+        "Y",
+        "X"
+      ],
+      "axes_from": "header",
+      "pixel_sizes": [
+        {
+          "role": "X",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "Y",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "Z",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "T",
+          "value": null,
+          "unit": null,
+          "source": null
+        }
+      ]
+    },
+    {
+      "relative_path": "treated/rep1/a.tif",
+      "size": 336,
+      "mtime_ns": 1793709126283282326,
+      "condition": "treated",
+      "biological_repeat": "rep1",
+      "technical_repeat": "single",
+      "axes": "YX",
+      "singleton_roles": [],
+      "plane_count": 1,
+      "channel_names": [],
+      "significant_bits": null,
+      "read_in_blocks": false,
+      "position_id": "a",
+      "channel_names_trimmed": false,
+      "roles": [
+        "Y",
+        "X"
+      ],
+      "axes_from": "header",
+      "pixel_sizes": [
+        {
+          "role": "X",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "Y",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "Z",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "T",
+          "value": null,
+          "unit": null,
+          "source": null
+        }
+      ]
+    },
+    {
+      "relative_path": "treated/rep1/z.ome.zarr",
+      "size": 898,
+      "mtime_ns": 1793709126494461336,
+      "condition": "treated",
+      "biological_repeat": "rep1",
+      "technical_repeat": "single",
+      "axes": "YX",
+      "singleton_roles": [],
+      "plane_count": 1,
+      "channel_names": [],
+      "significant_bits": null,
+      "read_in_blocks": false,
+      "position_id": "z",
+      "channel_names_trimmed": false,
+      "roles": [
+        "Y",
+        "X"
+      ],
+      "axes_from": "header",
+      "pixel_sizes": [
+        {
+          "role": "X",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "Y",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "Z",
+          "value": null,
+          "unit": null,
+          "source": null
+        },
+        {
+          "role": "T",
+          "value": null,
+          "unit": null,
+          "source": null
+        }
+      ],
+      "inventory_sha256": "d0310508d8cee4f0ad524b59d4bdb408cad0abb612502867e0f493046f04464f"
+    }
+  ],
+  "csv_sha256": "2613398fc559a1ca99a20008266b0006ccc976df384505ea0bf5c15d694e09ba",
+  "experiment_design_sha256": null,
+  "image_type": null,
+  "channels_from_rgb_samples": false,
+  "intensity_checks": {
+    "library_version": "0.3.2",
+    "outlier_limit": 3.0,
+    "saturation_limit": 0.01,
+    "min_images": 5
+  },
+  "narrow_histogram_ranges": [],
+  "conversion_record_sha256": null,
+  "calibration_sha256": null,
+  "versions": {
+    "morphobricks-preprocessing": "0.4.0rc4",
+    "morphobricks-normalization": "0.3.2",
+    "numpy": "2.5.4",
+    "tifffile": "2026.10.15",
+    "python": "3.13.18"
+  }
+}
