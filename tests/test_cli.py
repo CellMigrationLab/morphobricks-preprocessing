@@ -251,6 +251,20 @@ def test_axes_are_needed_for_the_first_run_of_plain_stacks_only(tmp_path, capsys
     assert "as confirmed for the earlier run (ZYX)" in capsys.readouterr().out
 
 
+def test_a_plain_stack_among_named_images_still_needs_axes(tmp_path, capsys):
+    # F9 review: one plain stack is enough for the roles not to be taken from the headers;
+    # images that no mapping describes are named instead of "--axes None".
+    root = tmp_path / "exp"
+    write_data(root / "ctrl/rep1/a.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
+    write_plain(root / "ctrl/rep1/b.tif", np.zeros((2, 8, 8), np.uint8))
+    confirm_design(root)
+    assert main(["run", str(root)]) == 1
+    out = capsys.readouterr().out
+    assert "--axes None" not in out and "Axis roles" not in out
+    assert "arranged differently: IYX (1 image), ZYX (1 image)" in out
+    assert not (root.parent / "exp_MorphoBricks_Preprocessing" / "run_manifest.json").exists()
+
+
 def test_images_that_name_their_axes_need_no_axes_option(experiment, capsys):
     # F9 (cross-brick test, 3 November 2026; design v0.4 §3): --axes is for plain stacks.
     confirm_design(experiment)

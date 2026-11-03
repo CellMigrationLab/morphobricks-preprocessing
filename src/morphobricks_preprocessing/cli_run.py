@@ -152,7 +152,8 @@ def _run_inputs(run: argparse.ArgumentParser) -> None:
         metavar="ROLES",
         help="role of each axis of the images, in the order of their axes: X, Y, Z, C, T, or "
         "- for none (for example ZCYX). 'check' prints the suggested value. Needed for the "
-        "first run, and again for plain stacks that are new or changed",
+        "first run unless every image names its axes, and again for plain stacks that are "
+        "new or changed",
     )
     run.add_argument(
         "--design",
@@ -315,6 +316,9 @@ def mapping_option(
         named = _named_mapping(pre)
         if named is not None:  # design v0.4 §3: --axes is only needed for plain stacks
             return named
+        if axes is None:  # no arrangement to give roles to: say why, not "--axes None"
+            print(format_issues(pre.issues) or "No readable images were found.")
+            return False
         suggested = pre.suggested_mapping.roles_string if pre.suggested_mapping else axes
         print(
             "Give the role of each axis with --axes (for example --axes "

@@ -105,8 +105,9 @@ and the bricks' migration).
   `mask_planes_differ` (F1); `run` needs no `--axes` when every image names its axes (F9);
   a rerun that changes nothing leaves `run_manifest.json` byte-identical, keeping its
   `written_at`, so pinned manifest SHA-256s stay valid (F10); `output_locked` says a lock
-  left by a process no longer running on this computer looks stale and how to remove it,
-  and a resumed run no longer says all rows were computed (F11); `convert --output` names
+  left by a process no longer running on this computer looks stale and how to remove it
+  (also `convert`'s, for the folder of the copies; it is never removed on its own), `run`
+  without `--axes` names the images' differing arrangements instead of `--axes None`, and a resumed run no longer says all rows were computed (F11); `convert --output` names
   the runs' output folder in the printed next commands, and `inconsistent_dimensions` says
   that named-axis copies keep each image's order (F8).
 - Preprocessing audit of 3 November 2026 (plan §12 question 72): `read_plane` and
