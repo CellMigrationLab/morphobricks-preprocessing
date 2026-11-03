@@ -100,6 +100,19 @@ and the bricks' migration).
 
 ### Fixed
 
+- **A TIFF calibration that cannot be read is invalid, not absent** (round-2 audit, A-m6):
+  `read_physical_sizes` caught every exception and logged it at debug level, so a file
+  it could not read, or a programming error, read as an uncalibrated image. Now a file that
+  cannot be opened as a TIFF (`TIFF_OPEN_ERRORS`: `OSError`, `ValueError` including
+  `TiffFileError`, and the `TypeError` and `struct.error` tifffile raises on some damaged
+  headers) and metadata whose bytes cannot be read (`METADATA_READ_ERRORS`: `OSError`,
+  `struct.error`, `TiffFileError`; module `tiff_size_values`) give no sizes with the reason
+  in `PhysicalSizes.invalid`, named by `invalid_physical_calibration`; no metadata is still
+  no calibration; any other exception is raised, and a value that is not a path is a
+  `TypeError`. An ImageJ resolution tag that tifffile dropped because it could not read it
+  (it only logs), next to the other one, is named instead of leaving that axis silently
+  uncalibrated.
+
 - **A version 2 manifest names every image's position by its name** (round-2 audit, A-m5):
   the reader accepted a file entry without `position_id`, or with null, and `RunInputs`
   then keyed that position by `""`; an edited `position_id` was read as given. Version 2
