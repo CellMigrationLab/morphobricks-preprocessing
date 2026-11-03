@@ -58,10 +58,10 @@ def test_inside_a_protected_folder_by_device_and_inode(tree, monkeypatch):
     # Another spelling of the folder that resolves elsewhere (case on macOS and Windows):
     # the folder is found above the path by its device and inode.
     other = tree / "elsewhere"
-    real = os.stat
+    spelling, real = os.fspath(other.resolve()), os.stat  # resolved before stat is patched
 
     def stat(path, *args, **kwargs):
-        if os.fspath(path) == os.fspath(other.resolve()):
+        if os.fspath(path) == spelling:
             return real(tree / "exp")
         return real(path, *args, **kwargs)
 
