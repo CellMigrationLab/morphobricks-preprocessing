@@ -65,7 +65,7 @@ Pre-alpha. Implemented and tested:
   `design` / `convert`)
 
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
-to its release v0.3.2): per-plane histograms with the robust range and the range check
+to its release v0.3.3): per-plane histograms with the robust range and the range check
 (`histogram`, `ranges`), the histogram table (`csv_io`, schema version 4), pooled group statistics
 (`pooling`) and normalization parameters (`normalization`); import them from
 `morphobricks_normalization` (the deprecated paths through `morphobricks_preprocessing` were
