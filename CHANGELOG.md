@@ -6,15 +6,67 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature. The 
 are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 [migration guide](docs/migration-0.3-to-0.4.md).
 
-## 0.4.0 (unreleased; release candidates rc1 to rc4)
+## 0.4.0rc5 (since v0.4.0rc4)
+
+What changed between v0.4.0rc4 and v0.4.0rc5: PRs #139 (cross-brick test of 3 November
+2026), #140 (review of rc4), #142 (round-2 audit) and #143 (this release candidate). Each
+item is described in full under 0.4.0 below. Decisions: [plan](docs/plan.md) §12 questions
+66, 72, 73 and 74.
+
+### Migration notes (from rc4)
+
+- **Mount points are refused** (#140): a mount point below the experiment or masks folder
+  is the error `mounted_folder` in discovery, `check`, `run`, `convert` and `RunInputs`.
+  Copy the files into the experiment, or select the mounted folder itself. A file with
+  several hard links is the warning `hard_linked_file`.
+- **`position_id` is required in a version 2 manifest** (#142, A-m5), equal to the image's
+  name without its extension; anything else is a `ManifestFormatError`. Manifests written
+  by rc1 to rc4 open unchanged (rc4's is tested); a hand-edited one may not.
+- **Sizes in micrometres may change by up to 1 ULP** (#142, B-m7) when computed from a unit
+  other than µm (`9 nm` is now `0.009`, not `0.009000000000000001`). Manifests are
+  unchanged; exact comparisons of the same length in two units now agree.
+- **`--verify-content`** (#140, I3), opt-in: rows are reused only for the same content
+  SHA-256 (`RunMode(verify_content=True)`, the notebook's **Verify each image's content**).
+  Turning it on or off recomputes every row; a default run's manifest has the rc4 keys.
+- **A child tied between parents has no parent** (#143, plan Q74): a child lying exactly as
+  much in two or more parents is no longer given the one with the lower label. When that
+  share reaches `inside_pixel_share` (at the default, exactly half in each of two parents)
+  it is counted as `ambiguous_parent`, not `inside`; a tie below it stays
+  `split_between_parents`, as before. `mask_relationships.json` is report version
+  3; `inside` and `parents_with_N_children` may be lower than with rc4 when masks have such
+  ties. CellPatcher and MorphoFeature read neither count.
+
+### Changed and fixed
+
+- `pair_counts`: an exact tie between parents gives no parent; the new evidence
+  `ambiguous_parent` is shown by `masks`, the notebook's **Describe the masks** card and its
+  relationship table; report version 3 (#143, plan Q74).
+- An ImageJ TIFF with a unit but neither resolution tag is `invalid_physical_calibration`
+  with the reason; before, uncalibrated with no reason. `read_physical_sizes` gives a TIFF
+  without pages no sizes with the reason in `invalid`; in `check` and `run` such a file is
+  the error `unreadable_tiff`, as before (#143).
+- A TIFF calibration that cannot be read is invalid, and defects are raised (#142, A-m6);
+  `position_id` required in v2 (#142, A-m5); one length in any unit is one double (#142,
+  B-m7).
+- Mount points refused, hard links named (#140, B1/I1); the output folder flushed after the
+  commit (#140, I2); the identity rule stated and `--verify-content` added (#140, I3).
+- `masks` accepts per-plane masks with a stated shared 2-D mask (F1); `run` needs no
+  `--axes` when every image names its axes (F9); a rerun that changes nothing keeps the
+  manifest byte-identical (F10); stale locks and resumed runs are worded (F11); `convert
+  --output` and the order of copies are explained (F8) (#139, plan Q73).
+- Plan Q66 confirmed by the owner; Q73's follow-up (a stated page reshape or reordered
+  copies) is not in v0.4 (issue #144).
+- Version 0.4.0rc5; the notebook installs `v0.4.0rc5`.
+
+## 0.4.0 (unreleased; release candidates rc1 to rc5)
 
 Preprocessing becomes the one step that discovers, validates, records and serves an
 experiment. Every later brick reads the run through `RunInputs`. Nothing is guessed: axes,
 calibration, masks and design come from the headers or from the user's recorded answers.
 
 Release candidates: **v0.4.0rc1** (after PP-6, #112), **v0.4.0rc2** (after PP-8d, #118),
-**v0.4.0rc3** (#125, after PP-10d) and **v0.4.0rc4** (PP-13, for the round-2 data-flow audit
-and the bricks' migration).
+**v0.4.0rc3** (#125, after PP-10d), **v0.4.0rc4** (PP-13, for the round-2 data-flow audit
+and the bricks' migration) and **v0.4.0rc5** (#143, after the round-2 audit fixes).
 
 ### Breaking
 
@@ -111,7 +163,18 @@ and the bricks' migration).
   no calibration; any other exception is raised, and a value that is not a path is a
   `TypeError`. An ImageJ resolution tag that tifffile dropped because it could not read it
   (it only logs), next to the other one, is named instead of leaving that axis silently
-  uncalibrated.
+  uncalibrated. An ImageJ unit with neither resolution tag ("a unit without a resolution")
+  is `invalid_physical_calibration` too, no longer uncalibrated with no reason (owner, 3
+  November 2026; #143). `read_physical_sizes` gives a TIFF file without pages ("no pages")
+  no sizes with the reason in `invalid`; the folder check reports such a file as the error
+  `unreadable_tiff`, as before.
+
+- **A child lying equally in two or more parents has no parent** (owner, 3 November 2026;
+  plan §12 question 74, #143): `pair_counts` gave it the parent with the lower label index,
+  so `inside` and `parents_with_N_children` depended on the label numbering. An exact equal
+  largest overlap now gives no parent; when the share would make the child inside it is
+  counted as `ambiguous_parent` (new evidence), shown by `masks`, the notebook and the
+  relationship table. `mask_relationships.json` is report version 3.
 
 - **A version 2 manifest names every image's position by its name** (round-2 audit, A-m5):
   the reader accepted a file entry without `position_id`, or with null, and `RunInputs`

@@ -60,6 +60,10 @@ def mask_report_summary(report: MaskReport) -> str:
     if report.same_objects:
         lines += ["", "Masks that look like two segmentations of the same objects:"]
         lines += [f"  {first} and {second}" for first, second in report.same_objects]
+    ambiguous = mask_ambiguous_lines(report)
+    if ambiguous:
+        lines += ["", "Objects given no parent (equally in two or more objects of the other mask):"]
+        lines += [f"  {line}" for line in ambiguous]
     lines += ["", "Hierarchy (direct parents only):"]
     lines += _hierarchy_lines(report.hierarchy)
     lines += ["", f"Thresholds: {mask_thresholds_used(report)}"]
@@ -108,6 +112,7 @@ def mask_relationship_rows(report: MaskReport) -> list[list[str]]:
             "Other mask's objects with 0/1/2/3+",
             "Outside the other mask",
             "Split between two of its objects",
+            "Equally in two or more of its objects (no parent)",
         ]
     ]
     for pair in report.relationships:
@@ -130,9 +135,25 @@ def mask_relationship_rows(report: MaskReport) -> list[list[str]]:
                 "/".join(f"{n:,}" for n in counts),
                 f"{e['outside_parents']:,}",
                 f"{e['split_between_parents']:,}",
+                f"{e['ambiguous_parent']:,}",
             ]
         )
     return rows
+
+
+def mask_ambiguous_lines(report: MaskReport) -> list[str]:
+    """Return one line per pair of types with objects given no parent because of a tie.
+
+    Such a child lies equally in two or more parent objects, with a share that would make
+    it inside (``ambiguous_parent``, contract §15.1): it is never given one of them, whatever
+    the relation of the pair, so every pair is listed, ``none`` included.
+    """
+    return [
+        f"{pair.child} in {pair.parent}: {plural(pair.evidence['ambiguous_parent'], 'object')}"
+        f" of {pair.evidence['children']:,} equally in two or more {pair.parent}"
+        for pair in report.pairs
+        if pair.evidence.get("ambiguous_parent")
+    ]
 
 
 def mask_hierarchy_lines(report: MaskReport) -> list[str]:
@@ -156,6 +177,10 @@ def _relationship_line(pair: PairRelation) -> str:
         extra.append(f"{e['outside_parents']} outside every {pair.parent}")
     if e["split_between_parents"]:
         extra.append(f"{e['split_between_parents']} split between {pair.parent}")
+    if e["ambiguous_parent"]:
+        extra.append(
+            f"{e['ambiguous_parent']} equally in two or more {pair.parent} (no parent given)"
+        )
     return text + (f"; {', '.join(extra)}" if extra else "")
 
 

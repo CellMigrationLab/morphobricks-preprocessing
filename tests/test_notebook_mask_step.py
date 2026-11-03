@@ -130,6 +130,25 @@ def test_describe_the_masks_writes_the_report_and_shows_the_cards(tmp_path, caps
     }
 
 
+def test_a_child_equally_in_two_parents_is_shown_with_no_parent(tmp_path):
+    # Plan §12 question 74: a tie gives no parent, and the card names the objects.
+    root = experiment(tmp_path)
+    masks = nested_masks(tmp_path)
+    cells = np.zeros((16, 16), np.uint16)
+    cells[0:8, 0:8], cells[0:8, 8:16] = 1, 2
+    nuclei = np.zeros((16, 16), np.uint16)
+    nuclei[3:5, 7:9] = 1  # two pixels in each cell
+    for rel in IMAGES:
+        write_data(masks / "cells" / rel, cells)
+        write_data(masks / "nuclei" / rel, nuclei)
+    nb, _ = ran(root, masks)
+    assert nb.run().written
+    nb.mask_step_button.click()
+    shown = nb.mask_step_result.value
+    assert "<b>Objects given no parent (a tie, to check)</b>" in shown
+    assert "<li>nuclei in cells: 4 objects of 4 equally in two or more cells</li>" in shown
+
+
 def test_a_locked_output_folder_shows_the_lock_card_and_writes_nothing(tmp_path):
     root = experiment(tmp_path)
     nb, _ = ran(root, nested_masks(tmp_path))

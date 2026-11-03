@@ -617,7 +617,8 @@ API, CLI). The notebook and CLI only call the API.
   - **Follow-ups recorded for the audit (coordinator, 2 November 2026; not changed here):**
     (a) `pair_counts` breaks an exact-half tie by the lower parent index, so `inside` and
     `parents_with_N_children` can depend on label numbering when a child lies exactly half in
-    each of two parents (the `same_objects` counts do not, question 67); (b) masks are not
+    each of two parents (the `same_objects` counts do not, question 67) (*done in v0.4.0rc5:
+    a tie gives no parent, `ambiguous_parent`, question 74*); (b) masks are not
     bound to a fingerprint during a run: they are fingerprinted when the manifest is written
     (PP-12 follow-up (a)); (c) a run killed while an atomic write's temporary file is open
     leaves a hidden `.<name>.<random>.tmp` in the output folder, for example after the
@@ -644,6 +645,8 @@ API, CLI). The notebook and CLI only call the API.
     (the tests run it in a local kernel).
   - v0.4.0rc4 (PP-13): version and pin set; the owner tags it. The data-flow audit and
     MorphoFeature's migration run against it.
+  - v0.4.0rc5: version and pin set, the changelog's rc5 section (PRs #139, #140, #142 and
+    the rc5 PR: questions 66, 73 and 74, the round-2 audit fixes); the owner tags it.
 
 ## 11. Tests and acceptance criteria
 
@@ -1695,9 +1698,9 @@ Raised during review; to be decided before the milestones that need them:
     (it was appended to). Contract §8; user guide §5.
 66. What happens to a size that does not fit in micrometres, and what is the exit status of
     a command that reports an error (issue #93, review of #130)?
-    *Decided, pending the owner's confirmation (2 November 2026, design v0.4 §3: nothing
-    guessed, nothing silent; the coordinator's answers in the review of #133, recorded for
-    the owner to confirm: a header size that overflows or cannot be converted is a
+    *Decided (2 November 2026, design v0.4 §3: nothing guessed, nothing silent; the
+    coordinator's answers in the review of #133); **confirmed by the owner (3 November
+    2026)**: a header size that overflows or cannot be converted is a
     warning, the image uncalibrated with the reason, as the owner decided for #94; and
     `design` exiting with 1 after a write that leaves a conflict is accepted):* (1) every conversion to micrometres goes through
     `to_micrometers`, whose result is always a positive finite number: a length that
@@ -1858,4 +1861,22 @@ Raised during review; to be decided before the milestones that need them:
     the spec has no way to state one, so the user guide says to save the image again with
     its dimensions (for example as a Fiji hyperstack). Follow-up for the owner: whether
     `convert` should accept a stated reshape (for example `--pages CZ=2x3`) or reorder copies
-    into the common order.
+    into the common order. *Decided (owner, 3 November 2026):* neither in v0.4, neither a
+    stated reshape nor a reorder; F8a and F8c stay as above, and the post-matrix issue #144
+    keeps both options.
+74. When a child object lies equally in two or more parent objects, which is its parent
+    (`pair_counts`; PP-13 follow-up (a), §10)? *Decided (owner, 3 November 2026; contract
+    §15.1, implemented in v0.4.0rc5):* none. Before, the parent with the lower label index
+    was taken, so `inside` and `parents_with_N_children` depended on the label numbering
+    when a child lay exactly half in each of two parents. Every tie path is an exact equal
+    largest overlap of two or more parents (`mask_pairs.best_parents`); such a child is
+    never `inside` and counts for no parent, and when the tied share would make it inside
+    (at least `inside_pixel_share`) it is counted in the new evidence `ambiguous_parent`,
+    which `masks`, the notebook's **Describe the masks** and the relationship table show. A
+    tie below that share is `split_between_parents`, as before (no parent either way). Each
+    child is counted once in `inside`, `ambiguous_parent`, `split_between_parents` or
+    `outside_parents`. The `same_objects` counts were already independent of the numbering
+    (question 67). `mask_relationships.json` is report version 3. Consumers checked
+    read-only on 3 November 2026 (CellPatcher `79adc3a`, MorphoFeature `142c448`, their
+    main branches): neither reads `inside`, `parents_with_N_children`,
+    `mask_relationships.json` or `scan_masks`; the change reaches no brick's numbers (#143).

@@ -485,9 +485,12 @@ def _tiff_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
     OME-XML that cannot be parsed, or metadata whose bytes cannot be read
     (:data:`.tiff_size_values.METADATA_READ_ERRORS`), gives no sizes, with what is wrong in
     ``invalid`` (audits m6 and A-m6, the TIFF twin of issue #94): never read as merely
-    uncalibrated.
+    uncalibrated. So does a file without pages (rc5), which tifffile opens with a log
+    message only.
     """
     try:
+        if not tif.pages:  # tifffile opens it, but there is no image to have a size
+            return PhysicalSizes(invalid="the TIFF file has no pages (no image)")
         if tif.is_ome and tif.ome_metadata:
             try:
                 return _ome_sizes(tif.ome_metadata)
@@ -562,5 +565,6 @@ def _imagej_sizes(tif: tifffile.TiffFile) -> PhysicalSizes:
     )
     # A malformed tag or spacing is named when its axis has a unit, so that it is a size.
     named = [problem for axis, (_, problem) in read.items() if units[axis] or written[axis]]
-    lost = _missing_resolution(page.tags) if units["X"] or units["Y"] else None
+    unit = next((_written(given[a]) for a in "XY" if units[a]), None)
+    lost = _missing_resolution(page.tags, unit) if unit else None
     return _with_invalid(found, [*named, lost, step[1]])
