@@ -191,3 +191,53 @@ def test_a_lone_resolution_tag_without_a_unit_is_not_a_calibration(tmp_path):
         assert tif.is_imagej and tif.pages.first.tags.get("XResolution") is None
     sizes = read_physical_sizes(path)
     assert (sizes.x, sizes.y, sizes.invalid) == (None, None, None)
+
+
+def drop_resolution_tags(path):
+    """Renumber both resolution tags as private tags, so the file has neither."""
+    raw = bytearray(path.read_bytes())
+    for code, private in ((282, 65000), (283, 65001)):
+        offset = tag_entry(path, code)
+        raw[offset : offset + 2] = struct.pack("<H", private)
+    path.write_bytes(bytes(raw))
+    with tifffile.TiffFile(path) as tif:
+        tags = tif.pages.first.tags
+        assert tags.get("XResolution") is None and tags.get("YResolution") is None
+    return path
+
+
+def test_a_unit_without_either_resolution_tag_is_an_invalid_calibration(tmp_path):
+    # Owner, 3 November 2026: before, read as uncalibrated with no reason.
+    path = drop_resolution_tags(write_imagej(tmp_path / "a.tif", spacing=0.25))
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.y) == (None, None)
+    assert sizes.invalid == (
+        "X, Y: the unit 'um' is given but neither the XResolution nor the YResolution tag "
+        "is (a unit without a resolution)"
+    )
+    message = invalid_issue(tmp_path, "a.tif").message
+    assert "a unit without a resolution" in message
+
+
+def test_the_unit_named_is_the_one_written(tmp_path):
+    path = drop_resolution_tags(write_imagej(tmp_path / "a.tif", unit="\\u00B5m"))
+    assert "the unit 'µm' is given" in read_physical_sizes(path).invalid  # escapes decoded
+
+
+def test_no_unit_and_no_resolution_is_still_uncalibrated(tmp_path):
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(path, np.zeros((8, 8), np.uint8), imagej=True, metadata={"axes": "YX"})
+    drop_resolution_tags(path)
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.y, sizes.invalid) == (None, None, None)
+
+
+def test_a_tiff_without_pages_is_an_invalid_calibration(tmp_path):
+    # tifffile opens it with only a log message; before, it read as uncalibrated.
+    path = tmp_path / "a.tif"
+    path.write_bytes(b"II*\x00" + struct.pack("<I", 0))
+    with tifffile.TiffFile(path) as tif:
+        assert len(tif.pages) == 0
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.y) == (None, None)
+    assert sizes.invalid == "the TIFF file has no pages (no image)"

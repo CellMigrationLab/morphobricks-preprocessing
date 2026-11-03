@@ -88,15 +88,22 @@ def _resolution(axis: str, tag: tifffile.TiffTag | None) -> tuple[float | None, 
     return None, None if tag is None else f"{axis}: the {tag.name} tag {value!r} is malformed"
 
 
-def _missing_resolution(tags: tifffile.TiffTags) -> str | None:
-    """Say which resolution tag is missing when only one of the pair is there (audit A-m6).
+def _missing_resolution(tags: tifffile.TiffTags, unit: str | None = None) -> str | None:
+    """Say which resolution tag is missing when the unit is given (audit A-m6, rc5).
 
     ImageJ writes both. tifffile drops a tag it cannot read (a value beyond the end of the
     file, an unknown type) with only a log message, so a lone one means the other was lost:
-    never read as an axis that is merely uncalibrated.
+    never read as an axis that is merely uncalibrated. A unit with neither tag (owner, 3
+    November 2026) is a calibration without its sizes, never read as no calibration
+    either; ``unit`` is the unit as written, for the message.
     """
     present = {axis: tags.get(f"{axis}Resolution") is not None for axis in "XY"}
-    if present["X"] == present["Y"]:
+    if not any(present.values()):
+        return (
+            f"X, Y: the unit {unit!r} is given but neither the XResolution nor the "
+            "YResolution tag is (a unit without a resolution)"
+        )
+    if all(present.values()):
         return None
     lost, kept = ("Y", "X") if present["X"] else ("X", "Y")
     return f"{lost}: the {lost}Resolution tag is missing or unreadable, {kept}Resolution is given"
