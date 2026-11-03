@@ -10,7 +10,7 @@ This guide lists every breaking change from v0.3.4. Each item gives **what chang
 (the scientific rule) and **what to do**. The first section is for people who run
 preprocessing (notebook, command line or Python). The second is for brick authors. The full
 rules are in the [contract](contract.md) and the [user guide](user_guide.md). The decisions
-are in the [plan](plan.md), §12 questions 45 to 69. The complete list of changes is in the
+are in the [plan](plan.md), §12 questions 45 to 74. The complete list of changes is in the
 [CHANGELOG](../CHANGELOG.md).
 
 **In short, for users:** install v0.4.0 and run preprocessing again on every experiment,
@@ -100,7 +100,12 @@ later bricks on the new run.
   sizes** card or by hand. Each axis is recorded with its source (`header`, `stated` or
   `pixels`). A Z or T size is recorded only for an image that has that axis. A size that is
   not a positive finite length in micrometres is refused when stated, and unknown (with
-  `invalid_physical_calibration`) when it comes from a header.
+  `invalid_physical_calibration`) when it comes from a header. So is an ImageJ unit without
+  resolution tags, and a TIFF without pages (v0.4.0rc5). Since v0.4.0rc5 a length is
+  converted to micrometres from its shortest decimal, so one length written in any unit is
+  one double (`108.37 nm` is `0.10837 µm`): **a size in micrometres computed from another
+  unit may differ by 1 ULP** (the last bit) from v0.4.0rc4. Manifests are unchanged (each
+  size is recorded in its own unit), and the 0.1 % comparison is not affected.
 - **Why.** Pixel sizes belong to the experiment, not to each brick's configuration. A size
   nobody gave is uncalibrated, never a default.
 - **What to do.** Move the pixel sizes you gave to bricks (run files, FOV-table columns,
@@ -217,6 +222,10 @@ later bricks on the new run.
     only when its real path stays inside that folder. Otherwise it is `link_outside_folder`.
     One file reached by two paths, hard links included, is `linked_twice`. A loop is
     `link_loop`.
+  - **Mount points below the experiment or masks folder are refused** (v0.4.0rc5): a folder
+    or file listed in `/proc/self/mountinfo`, or on another device than the folder
+    selected, is the error `mounted_folder`, in discovery, `check`, `run`, `convert` and
+    `RunInputs`. A file with more than one hard link is the warning `hard_linked_file`.
   - `--log` is checked before the file is opened. It is refused inside the experiment, the
     masks folder or the folder of copies, and as or inside a protected output file (the
     table, manifest, reports, design, `calibration.csv`, `mask_relationships.json`, lock,
@@ -227,8 +236,8 @@ later bricks on the new run.
 - **Why.** A link that leaves the experiment brings in images that are not part of it, and
   one file seen twice is counted twice. A log must never overwrite a result. Scripts must be
   able to trust the exit status.
-- **What to do.** Copy images into the experiment rather than linking to them from
-  elsewhere. Write logs next to the output folder. In scripts, check the exit status.
+- **What to do.** Copy images into the experiment rather than linking to them or mounting
+  them from elsewhere. Write logs next to the output folder. In scripts, check the exit status.
 
 ### 11. Staging, resume and crash-consistent publication
 
@@ -247,6 +256,13 @@ later bricks on the new run.
     `experiment_design.csv` (with a design), the reports, `mask_relationships.json`,
     `.publish` and `.staging`. It never touches `calibration.csv`, source images or masks.
   - New output files get your umask's permissions; existing files keep theirs.
+  - A source is identified by its fingerprint (size and modification time; for OME-Zarr the
+    inventory of its files), which misses a rewrite of the same size with the time set
+    back. The opt-in `--verify-content` (notebook: **Verify each image's content**,
+    `RunMode(verify_content=True)`, v0.4.0rc5) records each source's content SHA-256 and
+    reuses rows only for the same content; `RunInputs` checks it at `open`. Turning it on
+    or off recomputes every row; a default run's manifest is unchanged.
+  - The output folder is flushed to disk right after the manifest's rename (POSIX).
 - **Why.** A reader must see the old run or the new one, never a mix. A row is reused only
   when it is certainly the same row.
 - **What to do.** Nothing, except: read the outputs through `RunInputs` (bricks), or check
@@ -299,6 +315,13 @@ brick refuses and gives the preprocessing command; there are no standalone excep
   for length features (audit m5). `read_plane`'s memory limit counts only reading (I2).
 - `histograms()`, `design()` (the strict `read_confirmed_design`, checked against the
   manifest's SHA-256) and `image_type()`.
+- A version 2 manifest **requires** each file entry's `position_id`, equal to the image's
+  name without its extension (`position_id(relative_path)`); a missing, null or edited one
+  is a `ManifestFormatError` (v0.4.0rc5, audit A-m5). Every v0.4.0 writer wrote it, so runs
+  of rc1 to rc4 still open; a hand-edited manifest may not.
+- `mask_relationships.json` is report version 3 (v0.4.0rc5): a child lying exactly as much
+  in two or more parents has no parent and is counted as `ambiguous_parent`, never
+  `inside`; `inside` and `parents_with_N_children` no longer depend on label numbers.
 - `RunInputs` is picklable for worker processes. `morphobricks_preprocessing.testing.
   make_clean_run(folder, ...)` writes a small clean run for tests.
 
