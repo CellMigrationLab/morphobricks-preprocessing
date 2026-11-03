@@ -281,7 +281,7 @@ def run_summary(result: RunResult, *, design_template: bool = False) -> str:
     if result.image_type is not None:
         lines.append(f"Image type: {result.image_type}")
     if result.rebuild_reason:
-        lines.append(f"All rows were computed because {result.rebuild_reason}.")
+        lines.append(rebuild_line(result))
     for label, files in (
         ("Read", result.read),
         ("Resumed (rows staged by an interrupted run)", result.resumed),
@@ -437,3 +437,14 @@ def _number(value: float | None) -> str:
     if value is None:
         return "–"
     return f"{value:.6g}"
+
+
+def rebuild_line(result: RunResult) -> str:
+    """Say why no earlier row was kept; a resumed run names the rows it resumed (F11)."""
+    if result.resumed:
+        return (
+            f"No earlier run's rows were kept because {result.rebuild_reason}; the rows "
+            f"staged by the interrupted run were resumed ({plural(len(result.resumed), 'image')})"
+            " and the others computed."
+        )
+    return f"All rows were computed because {result.rebuild_reason}."

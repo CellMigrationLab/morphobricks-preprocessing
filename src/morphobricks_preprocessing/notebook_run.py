@@ -27,7 +27,7 @@ from .notebook_options import (
 from .notebook_plots import IntensityPanel
 from .notebook_render import _bins_help, _label, change_lines, issues_html
 from .planes import DEFAULT_MEMORY_LIMIT
-from .report import issue_counts
+from .report import issue_counts, rebuild_line
 from .run import RESTART, Preflight, RunResult, run_experiment
 from .validation import has_errors, plural
 
@@ -360,7 +360,7 @@ class _RunStep:
             lines.append(html.escape(f"Experiment design: {result.design_path}"))
         lines.append(f"Mode: <b>{result.mode}</b>")
         if result.rebuild_reason:
-            lines.append(html.escape(f"Every image was read because {result.rebuild_reason}."))
+            lines.append(html.escape(rebuild_line(result)))
         if result.replaced:
             lines.append("Replaced: " + html.escape(", ".join(result.replaced)))
         changes = change_lines(result.input_changes)

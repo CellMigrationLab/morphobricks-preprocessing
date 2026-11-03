@@ -299,7 +299,32 @@ def test_the_summary_names_the_resumed_images(tmp_path, experiment):
     root, out = experiment
     killed_run(tmp_path, root, out, kill_at=3)
     result = run_experiment(root, ZYX, output_folder=out)
-    assert "Resumed (rows staged by an interrupted run): 2 images" in run_summary(result)
+    summary = run_summary(result)
+    assert "Resumed (rows staged by an interrupted run): 2 images" in summary
+    # F11 (cross-brick test, 3 November 2026): not "All rows were computed".
+    assert "All rows were computed" not in summary
+    assert "the rows staged by the interrupted run were resumed (2 images)" in summary
+
+
+@pytest.mark.skipif(os.name != "posix", reason="process IDs are checked on POSIX only")
+def test_a_lock_left_by_a_killed_run_is_called_stale_and_kept(tmp_path, experiment, capsys):
+    import json
+    import socket
+
+    from morphobricks_preprocessing.cli import main
+    from morphobricks_preprocessing.run.lock import LOCK_FILENAME
+    from run_files import finished_pid
+
+    root, out = experiment
+    out.mkdir(parents=True, exist_ok=True)
+    lock = out / LOCK_FILENAME
+    lock.write_text(json.dumps({"host": socket.gethostname(), "pid": finished_pid()}))
+    assert main(["run", str(root), "--output", str(out), "--axes", "ZYX"]) == 1
+    text = capsys.readouterr().out
+    assert "Another run is using" not in text
+    assert "lock looks stale" in text and "no longer running" in text
+    assert "--remove-stale-lock" in text and "Remove the lock of a stopped run" in text
+    assert lock.exists()  # never removed without the user's request
 
 
 @pytest.mark.skipif(os.name != "posix", reason="SIGKILL is POSIX only")

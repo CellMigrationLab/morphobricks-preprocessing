@@ -181,15 +181,35 @@ def lock_issue(exc: OutputLockedError) -> ValidationIssue:
     ValidationIssue
         The error ``output_locked``, naming the holder and the lock file.
     """
+    holder = exc.holder
+    removal = (
+        "give --remove-stale-lock to the command, press 'Remove the lock of a stopped run' "
+        "in the notebook, or call remove_stale_lock(output_folder), then run again."
+    )
+    if holder.pid and holder.host == socket.gethostname() and _ended(holder.pid):
+        # Cross-brick test F11: a run killed here left its lock. It looks stale, but the
+        # brick never removes a lock on its own (module docstring): the user decides.
+        return error(
+            "output_locked",
+            f"The output folder's lock looks stale: it was left by {holder.describe()}, "
+            "which is no longer running (the run was probably stopped). The lock was not "
+            "removed, so nothing was done.",
+            [exc.path.as_posix()],
+            f"If no run is going on in this output folder, remove the lock: {removal}",
+        )
     return error(
         "output_locked",
-        f"Another run is using this output folder: {exc.holder.describe()}. Two runs must "
+        f"Another run is using this output folder: {holder.describe()}. Two runs must "
         "not write the same results at once, so nothing was done.",
         [exc.path.as_posix()],
         "Wait for the other run to finish. If no run is going on (it was stopped or the "
-        "computer restarted), remove the lock: give --remove-stale-lock to the command, or "
-        "call remove_stale_lock(output_folder), then run again.",
+        f"computer restarted), remove the lock: {removal}",
     )
+
+
+def _ended(pid: int) -> bool:
+    """Return True only when this computer can tell that no process has this ID (POSIX)."""
+    return os.name == "posix" and pid > 0 and not _running(pid)
 
 
 def _running(pid: int) -> bool:
