@@ -33,6 +33,10 @@ READ_VERSIONS = (LEGACY_MANIFEST_VERSION, MANIFEST_VERSION, STRICT_MANIFEST_VERS
 """The versions this package reads."""
 
 
+class UnsupportedVersionError(ValueError):
+    """Raised for a ``manifest_version`` this package does not read (a later version's)."""
+
+
 def version_for(verify_content: bool) -> str:
     """Return the manifest version a run with these settings writes.
 
@@ -65,16 +69,18 @@ def check_version(
 
     Raises
     ------
+    UnsupportedVersionError
+        If the version is not one of :data:`READ_VERSIONS`.
     ValueError
-        If the version is not one of :data:`READ_VERSIONS`; if a version 3 manifest does
+        If a version 3 manifest does
         not verify content or lacks a file's ``content_sha256``; or if an older version
         records content verification (a strict run must be version 3, which older
         readers refuse).
     """
     if version not in READ_VERSIONS:
-        raise ValueError(
-            f"manifest version {version!r} is not supported (this version reads "
-            f"{', '.join(repr(v) for v in READ_VERSIONS)})"
+        raise UnsupportedVersionError(
+            f"Manifest version {version!r} is not supported (this version reads "
+            f"{', '.join(repr(v) for v in READ_VERSIONS)})."
         )
     content = list(content)
     hashed = [path for path, sha in content if sha is not None]
@@ -107,10 +113,16 @@ def recorded_version(data: dict) -> str:
 
     Raises
     ------
+    UnsupportedVersionError
+        If the version is not one this package reads (checked first);
+        :meth:`.manifest.RunManifest.from_dict` reports it as a ``ManifestFormatError``
+        with the same message.
     KeyError, TypeError, ValueError, AttributeError
         If a key is missing or malformed, or :func:`check_version` refuses it;
         :meth:`.manifest.RunManifest.from_dict` reports each as a ``ManifestFormatError``.
     """
+    if data["manifest_version"] not in READ_VERSIONS:  # before any other key is read
+        check_version(data["manifest_version"], False, ())
     files = data["files"]
     check_version(
         data["manifest_version"],

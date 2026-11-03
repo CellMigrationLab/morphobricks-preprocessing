@@ -206,3 +206,21 @@ def test_version_for_and_check_version():
         check_version("99", False, [])
     with pytest.raises(ValueError, match="'a.tif'"):
         check_version("1", False, [("a.tif", "0" * 64)])
+
+
+@pytest.mark.parametrize("files", [[], "not a list"])
+def test_an_unknown_later_version_is_plainly_not_supported(experiment, files):
+    # Review of #146: a later version was reported as "incomplete or malformed"; whatever
+    # else it holds, it is refused as a version this package does not read.
+    root, out = experiment
+    assert run_experiment(root, ZYX, output_folder=out, mode=STRICT).written
+    data = _strict_data(out)
+    data["manifest_version"] = "4"
+    data["files"] = files
+    path = out / "run_manifest.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ManifestFormatError) as refused:
+        read_manifest(path)
+    assert str(refused.value) == (
+        "Manifest version '4' is not supported (this version reads '1', '2', '3')."
+    )

@@ -245,13 +245,30 @@ def _why_discarded(staged: dict, now: dict, full: bool, unchanged: bool) -> str:
     return "its axis roles, labels, folder or row settings changed since its rows were staged"
 
 
-def changed_issue(paths: list[str]) -> ValidationIssue:
+CHANGE_TEXTS = {
+    "fingerprint": "their size, time or files are no longer those the run started with",
+    "fingerprint or content": (
+        "their size, time, files or content (SHA-256) are no longer those the run started with"
+    ),
+    "content": (
+        "their content (SHA-256) is no longer the one the run checked, even if their size "
+        "and time are"
+    ),
+}
+"""What changed, by what the run compared (:func:`changed_issue`)."""
+
+
+def changed_issue(paths: list[str], compared: str = "fingerprint") -> ValidationIssue:
     """Return the error naming the images that changed while the run checked or read them.
 
     Parameters
     ----------
     paths
         The images, sorted.
+    compared
+        What was compared, a key of :data:`CHANGE_TEXTS`: ``"fingerprint"`` (size, time,
+        files), ``"fingerprint or content"`` (an image read in a ``verify_content`` run) or
+        ``"content"`` (a ``verify_content`` run's last check before the commit).
 
     Returns
     -------
@@ -261,8 +278,8 @@ def changed_issue(paths: list[str]) -> ValidationIssue:
     return error(
         SOURCE_CHANGED,
         f"{plural(len(paths), 'image')} changed or went missing while the run was checking "
-        "or reading them (their size, time or files are no longer those the run started "
-        "with), so their rows would not describe them. Nothing was published.",
+        f"or reading them ({CHANGE_TEXTS[compared]}), so their rows would not describe "
+        "them. Nothing was published.",
         paths,
         "Wait until nothing is writing to these images (an acquisition or a copy still "
         "running), then run again: the images already read resume from their staged rows.",

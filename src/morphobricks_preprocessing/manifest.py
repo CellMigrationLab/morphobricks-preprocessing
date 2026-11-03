@@ -44,7 +44,12 @@ from .manifest_fields import (
     recorded_position_id,
     recorded_roles,
 )
-from .manifest_versions import CONTENT_KEY, check_version, recorded_version
+from .manifest_versions import (
+    CONTENT_KEY,
+    UnsupportedVersionError,
+    check_version,
+    recorded_version,
+)
 from .manifest_versions import LEGACY_MANIFEST_VERSION as LEGACY_MANIFEST_VERSION
 from .manifest_versions import MANIFEST_VERSION as MANIFEST_VERSION
 from .manifest_versions import STRICT_MANIFEST_VERSION as STRICT_MANIFEST_VERSION
@@ -409,6 +414,8 @@ class RunManifest:
             )
         except ManifestFormatError:
             raise
+        except UnsupportedVersionError as exc:  # a later version's manifest: plainly refused
+            raise ManifestFormatError(str(exc)) from exc
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             raise ManifestFormatError(f"The manifest is incomplete or malformed: {exc}") from exc
 
