@@ -6,6 +6,38 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature. The 
 are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 [migration guide](docs/migration-0.3-to-0.4.md).
 
+## Unreleased (for 0.4.0)
+
+Small changes for the final v0.4.0 since v0.4.0rc5 (#147). No version bump yet.
+
+- **Shared write-target rule** (owner decision of 3 November 2026): `--log`'s rule is
+  public as `write_target_refusal(path, *, protected_folders, protected_files={},
+  output=None, output_names=())` (`morphobricks_preprocessing.write_target`, exported by
+  the package; contract §8), so another brick that writes a file its user names
+  (MorphoFeature's `--to-segment`) calls preprocessing's rule rather than a copy of it. It
+  returns the reason as a clause, or None. `--log` uses it, with the same messages and
+  behaviour (compared with rc5 over 238 cases).
+- **Compatible with normalization's next release** (normalization#65, issue #47): the
+  schema-version-2 equivalence test passes `pixel_min` and `pixel_max` to `PlaneHistogram`
+  from the version-2 columns; it passes with normalization v0.3.3 (still the pin) and with
+  its main at 534c63d. No package code builds a `PlaneHistogram`.
+- **`mounted_folder` on overlayfs** (review of #146): the contract and `mounts` say that on
+  an overlay file system whose layers are on different file systems, mounted with
+  `xino=off`, files may report another `st_dev` and are then refused.
+- **`source_changed_during_run` names a content change** (review of #146): the last
+  content check of a strict run says "their content (SHA-256) is no longer the one the
+  run checked"; an image read in a strict run "their size, time, files or content
+  (SHA-256)"; a default run's message is unchanged.
+- **An unknown manifest version is "not supported" again** (review of #146):
+  `ManifestFormatError: Manifest version '4' is not supported (this version reads '1',
+  '2', '3').`, not "The manifest is incomplete or malformed: ...".
+- **A refused identical strict rerun discards its publication** (review of #146): when the
+  last content check before the commit failed and the new manifest was byte-identical to
+  the published one, the clean-up took the publication for a committed one and logged
+  "Finishing the publication an earlier run left". The publication is now discarded as
+  soon as the check fails ("Discarding the unfinished publication"); the outputs are the
+  same as before.
+
 ## 0.4.0rc5 (since v0.4.0rc4)
 
 What changed between v0.4.0rc4 and v0.4.0rc5: PRs #139 (cross-brick test of 3 November
