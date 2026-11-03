@@ -180,11 +180,15 @@ def test_a_file_on_another_device_is_a_mount_point(tree, monkeypatch):
     # one stat its walk takes (LinkGuard.claim), so a file mounted on its own is seen too.
     monkeypatch.setattr(mounts_module, "mount_points", lambda *_: frozenset())
     root, _ = tree
-    target, real_stat = os.path.realpath(root / "drug/rep1/a.tif"), os.stat
+    # Compared without resolving: os.path.realpath may itself call os.stat (Windows).
+    target, real_stat = os.path.normcase(os.path.abspath(root / "drug/rep1/a.tif")), os.stat
 
     def stat(path, *args, **kwargs):
         found = real_stat(path, *args, **kwargs)
-        return _OnAnotherDevice(found) if os.path.realpath(path) == target else found
+        same = isinstance(path, (str, os.PathLike)) and (
+            os.path.normcase(os.path.abspath(path)) == target
+        )
+        return _OnAnotherDevice(found) if same else found
 
     assert _errors(discover_experiment(root).issues) == []
     monkeypatch.setattr(os, "stat", stat)
