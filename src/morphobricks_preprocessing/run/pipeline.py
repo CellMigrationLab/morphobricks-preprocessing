@@ -305,7 +305,7 @@ def _as_warning(issue: object) -> ValidationIssue:
 
 
 def _stop(run: _Run, base: RunOutcome, rows: Rows | None) -> RunResult:
-    """Write the stopped run's report and return its result; nothing else is written."""
+    """Write the stopped run's report and return its result; no scientific output is published."""
     write_report(_report(run, outcome_of(rows, base)), run.output)
     return RunResult(
         run.output,

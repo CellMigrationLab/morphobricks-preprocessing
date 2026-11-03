@@ -224,9 +224,11 @@ later bricks on the new run.
     One file reached by two paths, hard links included, is `linked_twice`. A loop is
     `link_loop`.
   - **Mount points below the experiment or masks folder are refused** (v0.4.0rc5): a folder
-    or file listed in `/proc/self/mountinfo`, or on another device than the folder
-    selected, is the error `mounted_folder`, in discovery, `check`, `run`, `convert` and
-    `RunInputs`. A file with more than one hard link is the warning `hard_linked_file`.
+    or file listed in Linux's `/proc/self/mountinfo`, or a folder, image or mask on another
+    device than the folder selected, is the error `mounted_folder`, in discovery, `check`,
+    `run`, `convert` and `RunInputs`. A mount made after the walk started is not seen, and
+    without a mount table (macOS, BSD, Windows) neither is a mounted single file nor a
+    mount of the same device. A file with more than one hard link is the warning `hard_linked_file`.
   - `--log` is checked before the file is opened. It is refused inside the experiment, the
     masks folder or the folder of copies, and as or inside a protected output file (the
     table, manifest, reports, design, `calibration.csv`, `mask_relationships.json`, lock,
@@ -251,8 +253,8 @@ later bricks on the new run.
     `os.replace` of `run_manifest.json` commits them, then they are moved into place. The
     next holder of the lock finishes or discards an interrupted publication. The v0.3
     backup-and-restore files are gone.
-  - An image that changes during the run is `source_changed_during_run`, and nothing is
-    published.
+  - An image that changes during the run is `source_changed_during_run`: no scientific
+    outputs are published and sources are untouched; the discovery report is written.
   - A run replaces or removes only `plane_histograms.csv`, `run_manifest.json`,
     `experiment_design.csv` (with a design), the reports, `mask_relationships.json`,
     `.publish` and `.staging`. It never touches `calibration.csv`, source images or masks.
@@ -261,8 +263,13 @@ later bricks on the new run.
     inventory of its files), which misses a rewrite of the same size with the time set
     back. The opt-in `--verify-content` (notebook: **Verify each image's content**,
     `RunMode(verify_content=True)`, v0.4.0rc5) records each source's content SHA-256 and
-    reuses rows only for the same content; `RunInputs` checks it at `open`. Turning it on
-    or off recomputes every row; a default run's manifest is unchanged.
+    reuses rows only for the same content, and hashes every source again right before the
+    commit; `RunInputs` checks it at `open`. Turning it on or off recomputes every row; a
+    default run's manifest is unchanged (version 2).
+  - **A strict run's manifest is version 3** (v0.4.0rc5): v0.4.0rc4 and earlier refuse it
+    (`ManifestFormatError`), so a reader that does not verify content never opens a strict
+    run as a fingerprint-only one. A brick that checks `manifest_version == "2"` should
+    accept `"3"` too, or go through `RunInputs`.
   - The output folder is flushed to disk right after the manifest's rename (POSIX).
 - **Why.** A reader must see the old run or the new one, never a mix. A row is reused only
   when it is certainly the same row.

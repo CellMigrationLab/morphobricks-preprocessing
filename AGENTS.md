@@ -107,6 +107,7 @@ src/morphobricks_preprocessing/
                     store_files (the files an OME-Zarr fingerprint covers)
   source_content.py verify_content: a source's content SHA-256 (TIFF bytes; OME-Zarr per-file
                     SHA-256s), with_content, content_changed (RunInputs of a strict run)
+  manifest_versions.py manifest versions 1/2/3: a strict run writes 3, which rc4 refuses
   versions.py       package_versions (moved from manifest.py, which re-exports it)
   fingerprint.py    Fingerprint (size, mtime, inventory) and RowKey: when a file's rows are reused (D5);
                     confirm_axes/unchanged_confirmation (a confirmation of the files as they are)

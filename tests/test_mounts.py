@@ -164,6 +164,35 @@ def test_a_folder_on_another_device_is_a_mount_point(tmp_path, monkeypatch):
     assert check.is_mount(tmp_path / "sub", entry)
 
 
+class _OnAnotherDevice:
+    """A file's stat result as a file mounted on its own from another device gives it."""
+
+    def __init__(self, found):
+        self._found = found
+        self.st_dev = found.st_dev + 1
+
+    def __getattr__(self, name):
+        return getattr(self._found, name)
+
+
+def test_a_file_on_another_device_is_a_mount_point(tree, monkeypatch):
+    # Review of rc5: the device rule held for folders only; a file's device comes from the
+    # one stat its walk takes (LinkGuard.claim), so a file mounted on its own is seen too.
+    monkeypatch.setattr(mounts_module, "mount_points", lambda *_: frozenset())
+    root, _ = tree
+    target, real_stat = os.path.realpath(root / "drug/rep1/a.tif"), os.stat
+
+    def stat(path, *args, **kwargs):
+        found = real_stat(path, *args, **kwargs)
+        return _OnAnotherDevice(found) if os.path.realpath(path) == target else found
+
+    assert _errors(discover_experiment(root).issues) == []
+    monkeypatch.setattr(os, "stat", stat)
+    found = discover_experiment(root)
+    assert _errors(found.issues) == ["mounted_folder"]
+    assert _issue(found.issues, "mounted_folder").paths == ("drug/rep1/a.tif",)
+
+
 def test_the_device_is_read_from_the_path_not_the_folder_entry(tmp_path, monkeypatch):
     # Review of #140: on Windows os.DirEntry.stat() reports st_dev 0, so reading the
     # device from the entry refused every folder of every experiment there.

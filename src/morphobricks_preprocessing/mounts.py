@@ -3,24 +3,27 @@
 A mount point below the folder the user selected brings in the files of another place:
 another file system, or (a Linux bind mount) another folder of the same file system. To
 the walk it is an ordinary folder, not a link, so the rule of :mod:`.links` ("nothing
-outside the selected folder is read") would not see it. Every folder (and file) below the
-experiment folder or the masks folder that is a mount point is therefore refused, and
-named: the error ``mounted_folder`` (:class:`.links.LinkGuard`). The selected folder
+outside the selected folder is read") would not see it. A folder (or file) below the
+experiment folder or the masks folder that these rules find to be a mount point is refused
+and named: the error ``mounted_folder`` (:class:`.links.LinkGuard`). The selected folder
 itself may be on any mount.
 
-A path is a mount point (:class:`MountCheck`) when
+A path below the selected folder is a mount point (:class:`MountCheck`) when
 
 - it is listed as one in ``/proc/self/mountinfo`` (Linux): this is the only way to see a
   bind mount of the same file system, whose device and inode look like any folder's
   (:func:`os.path.ismount` reports False for it); or
-- it is a folder whose device (``st_dev``) is not the selected folder's: another file
-  system (on Windows, another volume), or a Btrfs subvolume, which is refused too.
+- it is a folder, or an image or mask file, whose device (``st_dev``) is not the selected
+  folder's: another file system (on Windows, another volume), or a Btrfs subvolume, which
+  is refused too.
 
-Limits: where ``/proc/self/mountinfo`` cannot be read (macOS, BSD, Windows, a Linux without
-``/proc``), a mount of the same device is not detected (a BSD ``nullfs`` mount); macOS
-``bindfs`` (FUSE) and Windows mounted folders have another device. On Windows a mounted
-folder is also a mount-point reparse point, which :func:`.links.is_link` treats as a link.
-The mounts are read once per walk: a mount made after the walk is not seen.
+What is not seen: a mount made after the walk started (the table is read once per walk);
+and where ``/proc/self/mountinfo`` cannot be read (macOS, BSD, Windows, a Linux without
+``/proc``), a mount of the same device (a BSD ``nullfs`` mount) and a single file mounted
+from the same device; inside an OME-Zarr store, a file is held to the mount table only, as
+its files are not stat'ed. macOS ``bindfs`` (FUSE) and Windows mounted folders have
+another device. On Windows a mounted folder is also a mount-point reparse point, which
+:func:`.links.is_link` treats as a link.
 """
 
 from __future__ import annotations
@@ -111,3 +114,22 @@ class MountCheck:
             return os.stat(entry.path).st_dev != self.device
         except OSError:  # cannot be read: its reader reports it
             return False
+
+    def on_other_device(self, found: os.stat_result) -> bool:
+        """Return True when a file's ``stat`` (taken by its walk) is on another device.
+
+        The device rule of :meth:`is_mount` for files, which the walk stats once
+        anyway (:meth:`.links.LinkGuard.claim`): a file mounted on its own from another
+        file system or volume. A file inside an OME-Zarr store is not stat'ed, so it
+        is seen only through the mount table.
+
+        Parameters
+        ----------
+        found
+            The file's :func:`os.stat` (links followed).
+
+        Returns
+        -------
+        bool
+        """
+        return self.device is not None and found.st_dev != self.device
