@@ -268,6 +268,7 @@ class IntensityPanel:
                 ("📈", f"{counts['repeat_intensity_shift']:,}", "shifted repeats"),
                 ("☀️", f"{counts['saturated_image']:,}", "saturated"),
                 ("➖", f"{counts['no_intensity_spread']:,}", "without spread"),
+                ("❔", f"{counts['channel_without_finite_pixels']:,}", "channels not checked"),
             ]
         )
         self.findings.value = intensity_findings_html(report)

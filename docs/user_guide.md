@@ -488,9 +488,10 @@ results or comparing another grouping.
      - Tiles count the images checked and each kind of warning; a table lists every
        warning with the check, the channel (**C0**, **C1**, …), the image or biological
        repeat, and what was found (the values compared and the limit), followed by what to
-       do about each kind. The four kinds are images far from the others of their
+       do about each kind. The four checks find images far from the others of their
        biological repeat, biological repeats shifted from the others of their condition,
-       saturated images, and images without intensity spread (see §8).
+       saturated images, and images without intensity spread; a fifth kind names each
+       image channel without finite pixels, which the checks cannot see (see §8).
      - **Check settings** (collapsed) holds the limits: how many robust deviations count as
        far (default 3), the share of saturated pixels (default 1 %), and the fewest images a
        comparison needs (default 5). Changing them updates the warnings and plots at once;
@@ -1089,6 +1090,7 @@ continues.
 | `repeat_intensity_shift` | Warning (intensity check) | A biological repeat is brighter or darker than the other repeats of its condition. Check whether it was prepared or acquired differently; normalising per biological repeat in later bricks removes such differences. |
 | `saturated_image` | Warning (intensity check) | More than the limit (default 1 %) of an image's pixels in a channel are at the largest value of its pixel type, so their true intensity is lost. Check the exposure, gain or laser power. |
 | `no_intensity_spread` | Warning (intensity check) | An image's channel has the same 1st and 99.8th percentile (empty or blank), so it cannot be normalised on its own. Check the channel, or exclude the image. |
+| `channel_without_finite_pixels` | Warning (intensity check) | An image's channel has no finite pixels (every value NaN or infinite), so its intensities were not checked and it cannot be normalised from its own pixels. Exclude the image, or fix the channel in the source data and run again. |
 | `channel_names_differ` | Error | Channel names differ between images at the same channel number, so different stains would be pooled as one channel. Spaces at the start or end of a name are ignored (and noted in the manifest); otherwise names must match exactly, and names that differ only in inner spaces are quoted and reported as such. Check the channel order; export the images again with the same channel order and names, or exclude the images whose channels differ. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
 | `no_finite_pixels` | Warning | Some planes have a channel without finite pixels; those channels are left out of group statistics. |

@@ -6,9 +6,12 @@ Z and T planes per channel, and
 :func:`~morphobricks_normalization.checks.intensity_checks` compares the images
 (normalization contract §7, N38): images far from the others of their condition
 and biological repeat, biological repeats shifted from the other repeats of their
-condition, saturated images and images without intensity spread. Comparisons
-stay within a condition, so a treatment effect is never reported. Everything is
-computed from the table's rows; no image is read and nothing is written.
+condition, saturated images and images without intensity spread. Its
+:func:`~morphobricks_normalization.checks.unchecked_channels` names each image
+channel without finite pixels, which those checks cannot see (normalization
+issue #57). Comparisons stay within a condition, so a treatment effect is never
+reported. Everything is computed from the table's rows; no image is read and
+nothing is written.
 
 This module also prepares what the notebook plots, channel by channel: the
 image medians and high percentiles per condition and biological repeat, with the
@@ -24,9 +27,14 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 import numpy as np
-from morphobricks_normalization.checks import IntensityCheckSettings, intensity_checks
+from morphobricks_normalization.checks import (
+    IntensityCheckSettings,
+    intensity_checks,
+    unchecked_channels,
+)
 from morphobricks_normalization.csv_io import read_plane_histograms
 from morphobricks_normalization.issues import (
+    CHANNEL_WITHOUT_FINITE_PIXELS,
     IMAGE_INTENSITY_OUTLIER,
     NO_INTENSITY_SPREAD,
     REPEAT_INTENSITY_SHIFT,
@@ -44,6 +52,7 @@ INTENSITY_CODES = (
     REPEAT_INTENSITY_SHIFT,
     SATURATED_IMAGE,
     NO_INTENSITY_SPREAD,
+    CHANNEL_WITHOUT_FINITE_PIXELS,
 )
 # Findings about one image, which the plots mark on that image.
 IMAGE_CODES = (IMAGE_INTENSITY_OUTLIER, SATURATED_IMAGE, NO_INTENSITY_SPREAD)
@@ -60,8 +69,9 @@ class IntensityReport:
         and path.
     issues
         The normalization brick's warnings, in its order: image outliers, repeat
-        shifts, saturated images, images without spread. Each has the channel it
-        is about (``Issue.channel``).
+        shifts, saturated images, images without spread; then the image channels
+        without finite pixels, which were not checked. Each has the channel it is
+        about (``Issue.channel``).
     settings
         The limits used.
     """
@@ -141,7 +151,13 @@ class RepeatBox:
 def check_intensities(
     records: Iterable[PlaneRecord], settings: IntensityCheckSettings | None = None
 ) -> IntensityReport:
-    """Summarise every image of the table and run the four intensity checks.
+    """Summarise every image of the table and run the intensity checks.
+
+    An image channel without finite pixels (every value NaN or infinite) has blank
+    summaries, so the four checks cannot see it; the normalization brick's
+    :func:`~morphobricks_normalization.checks.unchecked_channels` names each one as a
+    ``channel_without_finite_pixels`` warning (normalization issue #57), after the
+    four checks' warnings.
 
     Parameters
     ----------
@@ -158,7 +174,8 @@ def check_intensities(
     """
     settings = IntensityCheckSettings() if settings is None else settings
     summaries = tuple(image_summaries(records))
-    return IntensityReport(summaries, tuple(intensity_checks(summaries, settings)), settings)
+    issues = (*intensity_checks(summaries, settings), *unchecked_channels(summaries))
+    return IntensityReport(summaries, issues, settings)
 
 
 def check_table(
@@ -236,6 +253,7 @@ CHECK_TITLES = {
     REPEAT_INTENSITY_SHIFT: "Biological repeats shifted from the others of their condition",
     SATURATED_IMAGE: "Saturated images",
     NO_INTENSITY_SPREAD: "Images without intensity spread",
+    CHANNEL_WITHOUT_FINITE_PIXELS: "Image channels without finite pixels, not checked",
 }
 
 
