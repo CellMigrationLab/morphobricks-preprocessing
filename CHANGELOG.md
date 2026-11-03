@@ -122,18 +122,22 @@ and the bricks' migration).
   opens. Every v0.4.0 writer recorded it this way, rc4 included (a committed rc4 manifest
   is read in the tests). Version 1 manifests are read for reporting as before.
 
-- **A length in a unit below the micrometre converts exactly** (round-2 audit, B-m7):
+- **One length written in any unit is one double in micrometres** (round-2 audit, B-m7):
   `to_micrometers` multiplied by a binary approximation of the factor, so `9` nm became
   `0.009000000000000001` µm while `0.009` µm stayed `0.009`, and a header in nm next to a
   `calibration.csv` in µm for the same size was not the same number (an exact comparison
-  called the pixels non-square). A unit below the micrometre now divides by its integer
-  inverse factor (`value / 1000` for nm) and a larger one multiplies by its integer factor
-  (`value * 1000` for mm): one correctly rounded step, so a value that is exact in binary
-  gives the double nearest its exact length in micrometres, the same in every unit where it
-  is exact. **Sizes in micrometres computed from pm, Å or nm may change by 1 ULP** (the last
-  bit of the double); manifests are unchanged, as they record each size in its own unit.
-  A value not exact in binary (`0.1` nm) can still differ from the same length written in
-  µm by 1 ULP; the 0.1 % rule (`same_pixel_size`) is not affected.
+  called the pixels non-square). Dividing by the integer factor would still leave about a
+  fifth of such decimals 1 ULP apart (`108.37 / 1000` is `0.10837000000000001`). A length is
+  now converted from the shortest decimal of its double (`repr`), its point moved by the
+  unit's power of ten and rounded once by `float` (no binary factor, no `decimal` context):
+  for a value parsed from a decimal of at most 15 significant digits that is the decimal
+  written, so the same length in pm, Å, nm, µm, mm, cm or m gives the double `float` gives
+  for it written in µm (`108.37` nm is `0.10837`). At 16 or 17 digits two decimals can give
+  one double and the one written is not known. The result is still always positive and
+  finite, and an overflow or underflow is still refused. **Sizes in micrometres computed
+  from a unit other than µm may change by 1 ULP** (the last bit of the double); manifests
+  are unchanged, as they record each size in its own unit; the 0.1 % rule
+  (`same_pixel_size`) is not affected.
 
 - **The identity rule is stated, and strict reuse is offered** (review of rc4, I3; owner, 3
   November 2026): reuse, resume and `RunInputs` identify a source by its metadata
