@@ -15,7 +15,7 @@ from morphobricks_preprocessing import (
 )
 from morphobricks_preprocessing.cli import main, parse_size
 from run_files import check_outputs
-from tiff_tree import write_data, write_file
+from tiff_tree import write_data, write_file, write_plain
 
 
 @pytest.fixture
@@ -239,13 +239,25 @@ def test_different_channel_counts_stop_check_and_run(tmp_path, capsys):
     assert "no table or manifest was written" in out
 
 
-def test_axes_are_needed_for_the_first_run_only(experiment, capsys):
+def test_axes_are_needed_for_the_first_run_of_plain_stacks_only(tmp_path, capsys):
+    root = tmp_path / "exp"
+    write_plain(root / "ctrl/rep1/a.tif", np.zeros((2, 8, 8), np.uint8))
+    confirm_design(root)
+    assert main(["run", str(root)]) == 1
+    assert "Give the role of each axis with --axes" in capsys.readouterr().out
+    assert main(["run", str(root), "--axes", "ZYX"]) == 0
+    capsys.readouterr()
+    assert main(["run", str(root)]) == 0
+    assert "as confirmed for the earlier run (ZYX)" in capsys.readouterr().out
+
+
+def test_images_that_name_their_axes_need_no_axes_option(experiment, capsys):
+    # F9 (cross-brick test, 3 November 2026; design v0.4 §3): --axes is for plain stacks.
     confirm_design(experiment)
-    assert main(["run", str(experiment)]) == 1
-    assert "Give the role of each axis with --axes (for example --axes ZCYX)" in (
-        capsys.readouterr().out
-    )
-    assert main(["run", str(experiment), "--axes", "ZCYX"]) == 0
+    assert main(["run", str(experiment)]) == 0
+    out = capsys.readouterr().out
+    assert "Axis roles (as every image names them):" in out
+    assert "Give the role of each axis" not in out
     capsys.readouterr()
     # A later run in the same output folder reuses the confirmed roles.
     assert main(["run", str(experiment)]) == 0
