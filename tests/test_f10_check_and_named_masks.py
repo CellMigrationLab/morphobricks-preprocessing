@@ -441,3 +441,6 @@ def test_only_a_stated_shared_mask_record_is_trusted():
         text = unstated_shared_text([stated, record])
         assert text is not None and "C/a.tif" in text and "--mask-axes C=YX" in text
         assert "N/a.tif" not in text
+    # A type name with a space is quoted for the shell, as in the check's hint.
+    spaced = {"path": "Cell bodies/a.tif", "type": "Cell bodies", "shared": True}
+    assert "--mask-axes 'Cell bodies=YX'" in unstated_shared_text([spaced])

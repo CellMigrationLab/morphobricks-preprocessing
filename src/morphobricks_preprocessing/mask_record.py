@@ -13,6 +13,7 @@ fingerprint, left out of its image's (:func:`.inventory.source_signature`).
 from __future__ import annotations
 
 import os
+import shlex
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
@@ -90,7 +91,7 @@ def unstated_shared_text(records: Iterable[Mapping]) -> str | None:
         return None
     paths = ", ".join(str(r.get("path")) for r in unstated)
     types = sorted({str(r.get("type")) for r in unstated})
-    options = " ".join(f"--mask-axes {name}=YX" for name in types)
+    options = " ".join(f"--mask-axes {shlex.quote(f'{name}=YX')}" for name in types)
     return (
         "The run recorded 2-D masks as shared by every plane of their image without a "
         f"statement, because their metadata names YX: {paths}. A mask is shared only when "
