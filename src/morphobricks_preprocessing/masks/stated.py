@@ -7,8 +7,9 @@ the user states them once per mask type. A statement may not contradict a named 
 2-D mask stated ``YX`` for an image with several planes is one plane shared by all of them,
 as is a 2-D mask whose own metadata names its axes ``YX`` for an image whose own metadata
 names several depth slices or time points (F10, owner decision of 4 November 2026); a plain
-2-D TIFF names nothing, so it is shared only when stated. A mask stored with Y and X the other way round from its image is refused, with a
-``numpy.swapaxes`` hint, never transposed.
+2-D TIFF names nothing, so it is shared only when stated. A mask stored with Y and X the
+other way round from its image is refused, with a ``numpy.swapaxes`` hint, never
+transposed.
 """
 
 from __future__ import annotations

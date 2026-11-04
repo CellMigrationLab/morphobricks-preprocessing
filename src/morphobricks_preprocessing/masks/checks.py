@@ -40,8 +40,8 @@ def _header_issues(
     The mask's roles are the axes its metadata names, or those stated for its mask type
     (``stated``) where the metadata names none (:func:`.stated.mask_roles`); ``files`` is
     updated in place with them. Also check that the masks of one image have the same depth
-    slices and time points (a stated shared 2-D mask aside). ``unreadable`` are paths
-    already known not to open (OME-Zarr ``labels`` groups).
+    slices and time points (a shared 2-D mask aside, :attr:`MaskFile.shared`).
+    ``unreadable`` are paths already known not to open (OME-Zarr ``labels`` groups).
     """
     found: list[tuple[str, str, str]] = [("unreadable_mask", path, "") for path in unreadable]
     for index, mask in enumerate(files):
@@ -173,8 +173,10 @@ def mask_plane_issues(
     """Check that every mask has the depth slices and time points of its image (issue #36).
 
     An image's depth slices and time points come from its confirmed axis roles; a mask's
-    from its own metadata (:attr:`MaskFile.planes`). They must be equal: a 2D mask belongs
-    to an image with one plane, never to every plane of a Z-stack or time-lapse.
+    from its own metadata (:attr:`MaskFile.planes`). They must be equal, except for a shared
+    2-D mask (:attr:`MaskFile.shared`: stated ``YX``, or named ``YX`` by its metadata for an
+    image whose metadata names its depth or time axis, F10); any other 2D mask belongs to an
+    image with one plane, never to every plane of a Z-stack or time-lapse.
 
     Parameters
     ----------
@@ -221,7 +223,10 @@ def mask_plane_issues(
             "or time points as its image.",
             mismatched,
             "Save one mask plane for every depth slice and time point of the image, with the "
-            "axes named in the mask's metadata, or check the image's axis roles.",
+            "axes named in the mask's metadata, or check the image's axis roles. For one 2D "
+            "mask shared by every plane of its image, state its type YX (for example "
+            "--mask-axes Cells=YX); without it, only a mask whose metadata names its axes YX "
+            "is shared, and only by an image whose metadata names its depth or time axis.",
         )
     ]
 

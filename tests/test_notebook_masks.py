@@ -190,6 +190,22 @@ def test_a_plain_2d_mask_of_a_stack_is_shared_only_when_stated(tmp_path):
     assert {(f["roles"], f["axes_from"]) for f in files} == {("YX", "stated")}
 
 
+def test_a_named_2d_mask_of_a_stack_is_shared_without_a_question(tmp_path):
+    # F10: the mask's metadata names YX and the images' metadata names Z.
+    root = experiment(tmp_path, (2, 16, 16), "ZYX")
+    masks = tmp_path / "masks"
+    for rel in IMAGES:
+        write_data(masks / "Cells" / rel, labels((16, 16)), axes="YX")
+    nb = notebook(root, masks)
+    assert nb.mask_axes_box.children == ()
+    confirm_everything(nb)
+    assert nb.masks_issues.value == "" and "Cells" not in nb._mask_choices
+    result = nb.run()
+    assert result.written
+    files = read_manifest(result.manifest_path).masks["files"]
+    assert {(f["roles"], f["axes_from"], f["shared"]) for f in files} == {("YX", "header", True)}
+
+
 # 3. Recorded masks: reused, named when changed, dropped only explicitly ----------------
 
 

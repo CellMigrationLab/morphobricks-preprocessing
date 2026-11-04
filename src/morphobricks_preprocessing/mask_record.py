@@ -5,8 +5,10 @@ fingerprint (``size``, ``mtime_ns``, and ``inventory_sha256`` for an OME-Zarr la
 issue #86), so a brick can tell a mask changed since the run, and
 how it is read: ``roles`` (one per axis of ``axes``), ``axes_from`` (``"header"``: the
 mask's metadata names them; ``"stated"``: the user stated them for its mask type) and
-``shared`` (a 2-D mask stated as shared by every plane of its image; never without a
-statement). A label image of an OME-Zarr image has its own fingerprint, left out of its
+``shared`` (a 2-D mask shared by every plane of its image: stated ``YX`` for its type,
+or, with ``axes_from: "header"``, named ``YX`` by its own metadata for an image whose
+metadata names several depth slices or time points, F10; never for a plain 2-D TIFF without
+a statement). A label image of an OME-Zarr image has its own fingerprint, left out of its
 image's (:func:`.inventory.source_signature`).
 """
 
