@@ -22,7 +22,7 @@ from ..zarr_input import (
 from .header import _mask_header
 from .layout import _yx
 from .model import FOLDER, PLANE_AXES, MaskFile, MaskInventory
-from .stated import mask_named_axes, mask_roles, size_code
+from .stated import mask_named_axes, mask_names_its_axes, mask_roles, size_code
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +40,8 @@ def _header_issues(
     The mask's roles are the axes its metadata names, or those stated for its mask type
     (``stated``) where the metadata names none (:func:`.stated.mask_roles`); ``files`` is
     updated in place with them. Also check that the masks of one image have the same depth
-    slices and time points (a stated shared 2-D mask aside). ``unreadable`` are paths
-    already known not to open (OME-Zarr ``labels`` groups).
+    slices and time points (a shared 2-D mask aside, :attr:`MaskFile.shared`).
+    ``unreadable`` are paths already known not to open (OME-Zarr ``labels`` groups).
     """
     found: list[tuple[str, str, str]] = [("unreadable_mask", path, "") for path in unreadable]
     for index, mask in enumerate(files):
@@ -85,6 +85,9 @@ def _check_header(
         return header, [(code, mask.path, detail)]
     how = "stated" if mask.mask_type in stated else "header"
     checked = replace(header, axes=roles, axes_from=how)
+    if how == "header" and roles == "YX" and _named_planes(image):
+        tiff = Path(folder) / mask.path if mask.source == FOLDER else None
+        checked = replace(checked, named_shared=mask_names_its_axes(tiff))
     problems = []
     expected = _image_yx(image)
     if expected is not None and _yx(roles, shape) != expected:
@@ -170,8 +173,10 @@ def mask_plane_issues(
     """Check that every mask has the depth slices and time points of its image (issue #36).
 
     An image's depth slices and time points come from its confirmed axis roles; a mask's
-    from its own metadata (:attr:`MaskFile.planes`). They must be equal: a 2D mask belongs
-    to an image with one plane, never to every plane of a Z-stack or time-lapse.
+    from its own metadata (:attr:`MaskFile.planes`). They must be equal, except for a shared
+    2-D mask (:attr:`MaskFile.shared`: stated ``YX``, or named ``YX`` by its metadata for an
+    image whose metadata names its depth or time axis, F10); any other 2D mask belongs to an
+    image with one plane, never to every plane of a Z-stack or time-lapse.
 
     Parameters
     ----------
@@ -218,9 +223,25 @@ def mask_plane_issues(
             "or time points as its image.",
             mismatched,
             "Save one mask plane for every depth slice and time point of the image, with the "
-            "axes named in the mask's metadata, or check the image's axis roles.",
+            "axes named in the mask's metadata, or check the image's axis roles. For one 2D "
+            "mask shared by every plane of its image, state its type YX (for example "
+            "--mask-axes Cells=YX); without it, only a mask whose metadata names its axes YX "
+            "is shared, and only by an image whose metadata names its depth or time axis.",
         )
     ]
+
+
+def _named_planes(meta: TiffMetadata) -> bool:
+    """Return True when the image's own metadata names a Z or T axis longer than 1.
+
+    Used before the axis roles are confirmed (F10): a plain stack names no axis, so a 2-D
+    mask of it is shared by its planes only when stated ``YX`` for its type. Once named,
+    the confirmed roles must agree with these axes (the axis check, contract §2).
+    """
+    named = named_axes(meta)
+    if not meta.readable or "?" in named:
+        return False
+    return any(a in PLANE_AXES and n > 1 for a, n in zip(named, meta.shape, strict=True))
 
 
 def _image_yx(meta: TiffMetadata) -> tuple[int, int] | None:

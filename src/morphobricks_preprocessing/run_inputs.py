@@ -20,7 +20,8 @@ Nothing is parsed from names, guessed or transposed, and no file is read once it
   image's content SHA-256 once (:func:`.source_content.content_changed`), and refuses one
   whose content changed even with its fingerprint kept;
 - masks are read by the recorded pairing only, with preprocessing's reader and its label
-  check (:func:`.masks.check_labels`); a stated shared 2-D mask serves every plane.
+  check (:func:`.masks.check_labels`); a shared 2-D mask (stated, or named ``YX`` by its
+  metadata for an image whose metadata names several planes) serves every plane.
 
 A :class:`RunInputs` is picklable: it holds paths and the records read when it opened (its
 snapshot of the table), and opens files only to read them.
@@ -312,7 +313,9 @@ class RunInputs:
     ) -> np.ndarray:
         """Read one mask plane by the recorded pairing, checking its labels.
 
-        A stated shared 2-D mask is the same plane for every ``z`` and ``t`` of the image.
+        A shared 2-D mask (``shared`` in the manifest: stated ``YX``, or named ``YX`` by its
+        own metadata for an image whose metadata names several planes) is the same plane for
+        every ``z`` and ``t`` of the image.
 
         Raises
         ------
@@ -348,6 +351,9 @@ class RunInputs:
             str(recorded["roles"]),
             str(recorded["axes"]),
             str(recorded["axes_from"]),
+            # A 2-D mask the run recorded as shared by its image's planes because its own
+            # metadata names YX (F10); a stated one is shared by its axes_from.
+            named_shared=recorded.get("shared") is True and recorded["axes_from"] == "header",
         )
         return read_mask(mask, folder, self.experiment_root, z=z, t=t)
 

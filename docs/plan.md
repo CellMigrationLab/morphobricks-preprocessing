@@ -1880,3 +1880,17 @@ Raised during review; to be decided before the milestones that need them:
     read-only on 3 November 2026 (CellPatcher `79adc3a`, MorphoFeature `142c448`, their
     main branches): neither reads `inside`, `parents_with_N_children`,
     `mask_relationships.json` or `scan_masks`; the change reaches no brick's numbers (#143).
+75. Matrix finding F10 (matrix run of 3 November 2026): `check` had no
+    `--missing-as-singleton`, so it always stopped on an experiment of 2-D images and
+    Z-stacks that `run` accepts with the option; and a 2-D mask whose OME header names its
+    axes `YX` was refused for a Z image unless stated `--mask-axes Nuclei=YX`, an option
+    for files that do not name their axes. *Decided (owner, 4 November 2026; contract §2,
+    §9, §15):* `check` takes `run`'s option, with the same default (the earlier run's
+    answer, else no) and the same review of the missing axes, so both report the same
+    errors for the same roles; the notebook's check report takes step 2's answer. A 2-D
+    mask whose own metadata names `YX` (OME, ImageJ, shaped with axes, OME-NGFF) is one
+    plane shared by every plane of an image whose own metadata names a Z or T axis longer
+    than 1, without a statement, recorded `shared: true` with the stated mask's `axes`,
+    `roles` and `shape` and `axes_from: "header"` (not `"stated"`: the next run would take
+    that as the user's statement). A plain 2-D TIFF, and any 2-D mask of a plain-stack
+    image, still needs `--mask-axes TYPE=YX`: never guessed.

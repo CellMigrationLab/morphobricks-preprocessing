@@ -212,7 +212,11 @@ class _FolderStep:
                     masks_folder=masks,
                     mask_axes=mask_axes,
                 )
-                self._write_check(pre)
+                self._note_edits()  # a check fills only what the user left as filled
+                self.missing_as_singleton.set(self._recorded_missing_as_singleton(), notify=False)
+                # The report reads images lacking some axes by that answer, as 'check
+                # --missing-as-singleton' does (F10); step 2 asks again before the run.
+                self._write_check(pre, self.missing_as_singleton.value)
         finally:
             self._idle(self.check_button, " Check folder", "search")
         self.preflight = pre
@@ -220,8 +224,6 @@ class _FolderStep:
         self.mapping = pre.suggested_mapping
         self.confirmed_mapping = None
         self.result = None
-        self._note_edits()  # a check fills only what the user left as filled
-        self.missing_as_singleton.set(self._recorded_missing_as_singleton(), notify=False)
         self._show_folder_results(pre)
         self._reset_settings(pre)
         self._refresh_axis_step()

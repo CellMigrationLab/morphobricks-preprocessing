@@ -68,6 +68,11 @@ class MaskFile:
         ``"header"`` when the axes are those the mask's metadata names, ``"stated"`` when
         the user stated the axes of its mask type (a plain stack, or a 2-D mask shared by
         every plane of its image); empty when unknown.
+    named_shared
+        True for a 2-D mask whose own metadata names its axes ``YX`` (OME, ImageJ, shaped
+        with axes, OME-NGFF; not a plain TIFF page) paired with an image whose own metadata
+        names several depth slices or time points: one plane shared by all of them, as if
+        stated ``YX`` for its type (F10, owner decision of 4 November 2026).
     """
 
     image: str
@@ -80,11 +85,12 @@ class MaskFile:
     header_axes: str = ""
     axes_from: str = ""
     named_axes: str = ""
+    named_shared: bool = False
 
     @property
     def shared(self) -> bool:
-        """True for a 2-D mask stated for its type: one plane shared by every image plane."""
-        return self.axes == "YX" and self.axes_from == "stated"
+        """True for one 2-D plane shared by every image plane: stated, or named (F10)."""
+        return self.axes == "YX" and (self.axes_from == "stated" or self.named_shared)
 
     @property
     def planes(self) -> dict[str, int]:

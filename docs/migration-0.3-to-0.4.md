@@ -314,8 +314,8 @@ brick refuses and gives the preprocessing command; there are no standalone excep
   `(T, Z, C, Y, X)` `LazyImage`. Both are in canonical order. `z` and `t` must be integers
   (a `plane_id` is a `TypeError`).
 - `mask_types()` and `read_mask(fov, type, z=None, t=None)`: the recorded pairing only, read
-  as stored with `check_labels` (labels 0 to int32 max). A stated shared 2-D mask serves
-  every plane of the image; a `z` or `t` outside the image is an `IndexError`, for
+  as stored with `check_labels` (labels 0 to int32 max). A shared 2-D mask (stated, or,
+  since F10, named `YX`) serves every plane of the image; a `z` or `t` outside the image is an `IndexError`, for
   `read_plane` too (audit I5).
 - A header size in an unsupported unit (OME `pixel`, `inch`) or without a unit is unknown
   in `pixel_sizes` (audit I3). `to_micrometers` takes NumPy scalars (audit m4). The

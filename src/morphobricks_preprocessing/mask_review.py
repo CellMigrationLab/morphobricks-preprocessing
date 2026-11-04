@@ -10,8 +10,11 @@ confirmed, :func:`.mask_checks.mask_issues`: the same functions as ``check --mas
   the type, each checked by :func:`.masks.stated.mask_roles` (the rule ``--mask-axes`` is
   checked by). A statement is asked for only where it is needed: masks whose files do not
   name their axes (``mask_not_2d``) or whose statement does not fit, and 2-D masks of
-  images with several planes, which are one plane shared by all of them only when stated
-  ``YX`` (``mask_planes_mismatch``). Nothing is suggested or applied: the user chooses.
+  images with several planes that are not shared by them (``mask_planes_mismatch``: a plain
+  2-D TIFF, or an image whose metadata does not name its planes), which are one plane
+  shared by all of them when stated ``YX``; a 2-D mask whose metadata names ``YX`` for an
+  image whose metadata names its planes is shared without a statement (F10).
+  Nothing is suggested or applied: the user chooses.
 """
 
 from __future__ import annotations

@@ -383,7 +383,7 @@ def scan_masks(
     ------
     ValueError
         For an invalid threshold, before any mask is read; for an image whose masks have
-        different depth slices or time points (a stated shared 2-D mask aside); for a mask
+        different depth slices or time points (a shared 2-D mask aside); for a mask
         that cannot be read as the planes its header gave, or holds a label outside 0 to
         2,147,483,647 (:func:`.masks.read_mask`).
     """
@@ -398,8 +398,8 @@ def scan_masks(
         if progress is not None:
             progress(done, len(images), image)
         found_masks = inventory.for_image(image)
-        # A stated shared 2-D mask is one plane for every plane of its image, as in the
-        # run (masks.checks): it is left out of the comparison and read for every plane.
+        # A shared 2-D mask (stated, or named YX, F10) is one plane for every plane of its
+        # image, as in the run (masks.checks): left out of the comparison, read for every plane.
         planes = {tuple(m.planes.items()) for m in found_masks.values() if not m.shared}
         planes = planes or {tuple(m.planes.items()) for m in found_masks.values()}
         if len(planes) != 1:
