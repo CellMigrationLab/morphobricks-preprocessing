@@ -65,6 +65,14 @@ Small changes for the final v0.4.0 since v0.4.0rc5 (#147). No version bump yet.
   discards the leftover rather than finishing it. `write_target_refusal` refuses a single
   string as `output_names` (`TypeError`), and its docs name what can change between the
   check and the write.
+- **A publication is committed only once its manifest has left `.publish`** (external
+  audit of #147): when the refused publication's record could not be removed, the
+  clean-up found the record beside a byte-identical published manifest and took the
+  refused generation for a committed one, so a strict `full` rerun refused by its last
+  content check removed `mask_relationships.json`. `finish_publication` now finishes a
+  publication only when `.publish/run_manifest.json` is gone and the manifest in place is
+  the record's; anything else is discarded, record first (a `.publish` whose record cannot
+  be removed is left whole, still uncommitted). The refused run keeps every output.
 
 ## 0.4.0rc5 (since v0.4.0rc4)
 

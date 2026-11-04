@@ -9,16 +9,22 @@ reused or freshly read (an OME-Zarr store by its store digest), and refuses with
 """
 
 import os
+from pathlib import Path
 
 import pytest
 
+from morphobricks_preprocessing import RunMode, run_experiment
 from morphobricks_preprocessing import run as run_module
-from morphobricks_preprocessing import run_experiment
-from morphobricks_preprocessing.run.generation import PUBLISH_FOLDER
+from morphobricks_preprocessing.run.generation import (
+    PUBLICATION_RECORD,
+    PUBLISH_FOLDER,
+    finish_publication,
+)
 from strict_tree import IMAGES, STRICT, ZYX, rewrite_keeping_metadata, stack, write_experiment
 from tiff_tree import write_data
 
 OUTPUTS = ("run_manifest.json", "plane_histograms.csv")
+MASK_REPORT = "mask_relationships.json"
 
 
 @pytest.fixture
@@ -178,3 +184,47 @@ def test_a_refused_publication_that_cannot_be_removed_is_never_taken_for_committ
         again = run_experiment(root, output_folder=out)
     assert "Finishing the publication" not in caplog.text
     assert again.written and not (out / PUBLISH_FOLDER).exists()
+
+
+def test_a_refused_publication_whose_record_cannot_be_removed_is_never_committed(
+    experiment, monkeypatch, caplog
+):
+    # External audit of #147: the refused publication's record could not be removed (its
+    # unlink raised), so it stayed beside the staged manifest. The clean-up then found the
+    # record and a byte-identical published manifest, took the refused generation for a
+    # committed one and ran its removals: a strict full rerun deleted the mask report. A
+    # generation is committed only once its manifest has left the publication folder.
+    root, out = experiment
+    full = RunMode("full", verify_content=True)
+    assert run_experiment(root, ZYX, output_folder=out, mode=full).written
+    (out / MASK_REPORT).write_text("{}\n", encoding="utf-8")  # a full run removes it
+    earlier = outputs(out)
+    record = out / PUBLISH_FOLDER / PUBLICATION_RECORD
+    with monkeypatch.context() as patch:
+        rewrite_before_final_check(patch, [root / IMAGES[1]])
+        unlink = Path.unlink
+
+        def record_held_open(path, *args, **kwargs):
+            if Path(path) == record:
+                raise PermissionError(f"{path} is in use")
+            return unlink(path, *args, **kwargs)
+
+        patch.setattr(Path, "unlink", record_held_open)
+        with caplog.at_level("INFO", logger="morphobricks_preprocessing"):
+            result = run_experiment(root, output_folder=out, mode=full)
+        assert not result.written
+        assert "source_changed_during_run" in {i.code for i in result.issues}
+        # Nothing the refused generation would remove or replace was touched.
+        assert (out / MASK_REPORT).read_text(encoding="utf-8") == "{}\n"
+        assert outputs(out) == earlier
+        assert "Finishing the publication" not in caplog.text
+        # The leftover keeps its staged manifest, so it is never taken for committed; while
+        # its record cannot be removed, nothing else of it is.
+        assert record.exists() and (out / PUBLISH_FOLDER / "run_manifest.json").exists()
+        with pytest.raises(PermissionError):
+            finish_publication(out)
+        assert record.exists() and (out / PUBLISH_FOLDER / "run_manifest.json").exists()
+        assert (out / MASK_REPORT).exists() and outputs(out) == earlier
+    assert finish_publication(out) == "discarded"
+    assert not (out / PUBLISH_FOLDER).exists() and (out / MASK_REPORT).exists()
+    assert outputs(out) == earlier
