@@ -287,3 +287,61 @@ def test_the_notebooks_check_report_takes_the_recorded_answer(mixed, capsys):
     again = checked()  # step 2 shows the recorded answer, and the report follows it
     assert again.missing_as_singleton.value
     assert error_codes(out) == []
+
+
+# Review of PR #148: the reused answer is shown, and nothing else is hidden ---------------
+
+
+def test_check_and_run_say_when_the_recorded_answer_is_reused(mixed, tmp_path, capsys):
+    root, masks = mixed
+    out = tmp_path / "out"
+    confirm_design(root, out)
+    common = [str(root), "--masks", str(masks), "--output", str(out)]
+    assert main(["run", *common, "--axes", "ZCYX", "--missing-as-singleton"]) == 0
+    assert "as confirmed for the earlier run (give" not in capsys.readouterr().out
+    for command in (["check", *common], ["run", *common, "--axes", "ZCYX"]):
+        assert main(command) == 0
+        printed = capsys.readouterr().out
+        assert "Images lacking some axes: read with one plane along them, as confirmed" in printed
+    assert main(["check", *common, "--missing-as-singleton"]) == 0  # given: nothing reused
+    assert "Images lacking some axes" not in capsys.readouterr().out
+
+
+def test_check_suggests_the_option_only_for_images_lacking_axes(z_stack, tmp_path, capsys):
+    root, masks = z_stack
+    out = tmp_path / "out"
+    args = ["check", str(root), "--masks", str(masks), "--output", str(out)]
+    assert main([*args, "--missing-as-singleton"]) == 0
+    assert "Suggested option for 'run': --axes ZCYX (axes" in capsys.readouterr().out
+
+
+def test_check_keeps_the_other_errors_of_a_confirmed_mixed_experiment(mixed, tmp_path, capsys):
+    root, masks = mixed
+    (root / "drug/r1/broken.tif").write_bytes(b"not a TIFF file")
+    checked, ran = tmp_path / "checked", tmp_path / "ran"
+    common = [str(root), "--masks", str(masks), "--missing-as-singleton"]
+    assert main(["check", *common, "--output", str(checked)]) == 1
+    confirm_design(root, ran)
+    assert main(["run", *common, "--output", str(ran), "--axes", "ZCYX"]) == 1
+    capsys.readouterr()
+    found = error_codes(checked)
+    assert found and "missing_axes" not in found
+    assert found == error_codes(ran)
+
+
+def test_a_named_2d_mask_of_a_partly_unnamed_image_is_not_shared(tmp_path):
+    # Shaped axes QZYX: the Q is not named, so the image's planes are not all named.
+    root, masks = tmp_path / "exp", tmp_path / "masks"
+    write_data(root / "ctrl/a.tif", np.zeros((2, 3, 6, 8), np.uint8), "QZYX")
+    ome(masks / "Cells/ctrl/a.tif", labels((6, 8)), "YX")
+    (mask,) = preflight(root, masks_folder=masks).masks.files
+    assert (mask.axes_from, mask.named_shared, mask.shared) == ("header", False, False)
+
+
+def test_a_label_image_of_a_one_plane_ome_zarr_is_not_marked_shared(tmp_path):
+    from zarr_tree import write_labels, write_ngff
+
+    image = write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", np.zeros((1, 6, 8), np.uint16), "zyx")
+    write_labels(image, {"cells": labels((6, 8))}, "yx")
+    (mask,) = preflight(tmp_path / "exp").masks.files
+    assert (mask.axes_from, mask.named_shared, mask.shared) == ("header", False, False)

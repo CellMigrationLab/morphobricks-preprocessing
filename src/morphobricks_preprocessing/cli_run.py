@@ -169,6 +169,32 @@ def missing_as_singleton(args: argparse.Namespace, recorded: RunManifest | None)
     return recorded.settings.missing_as_singleton if recorded is not None else False
 
 
+def reused_missing_as_singleton(args: argparse.Namespace, recorded: RunManifest | None) -> str:
+    """Return the line saying that the earlier run's ``--missing-as-singleton`` is reused.
+
+    Parameters
+    ----------
+    args
+        The ``check`` or ``run`` command's arguments.
+    recorded
+        The earlier run in the output folder (:func:`recorded_run`), or None.
+
+    Returns
+    -------
+    str
+        Empty unless the option is not given and the earlier run recorded yes: then
+        ``check`` and ``run`` print it, so an answer read from the folder is never silent.
+    """
+    if args.missing_as_singleton is not None or recorded is None:
+        return ""
+    if not recorded.settings.missing_as_singleton:
+        return ""
+    return (
+        "Images lacking some axes: read with one plane along them, as confirmed for the "
+        "earlier run (give --no-missing-as-singleton to ask again)"
+    )
+
+
 def recorded_run(args: argparse.Namespace) -> RunManifest | None:
     """Return the earlier run in the command's output folder, or None when none is usable.
 
@@ -454,6 +480,9 @@ def _print_inputs(
         print(mapping_summary(mapping, pre.metadata.files))
         print()
         print(axis_check_summary(review))
+    reused = reused_missing_as_singleton(args, recorded)
+    if reused:
+        print(reused)
     print()
     type_review = review_image_type(pre.metadata, review)
     given = args.image_type or (recorded.image_type if recorded else None)

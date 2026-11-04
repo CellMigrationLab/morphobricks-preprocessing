@@ -17,7 +17,9 @@ Small changes for the final v0.4.0 since v0.4.0rc5 (#147). No version bump yet.
   (`run.check_step.suggested_review(pre, missing_as_singleton=)`), so an experiment of 2-D
   images and Z-stacks passes `check` once confirmed (it always exited 1) and `check` and
   `run` report the same errors for the same roles. The suggested option then reads
-  `--axes ZCYX --missing-as-singleton`. The notebook's check report takes the answer step 2
+  `--axes ZCYX --missing-as-singleton` when some image lacks an axis; an answer taken from
+  the earlier run is printed by `check` and `run` ("Images lacking some axes: read with one
+  plane along them, as confirmed for the earlier run"). The notebook's check report takes the answer step 2
   shows (the earlier run's), which step 2 still asks for before the run.
 - **A 2-D mask whose metadata names `YX` is shared by a Z-stack or time-lapse** (F10, owner
   decision of 4 November 2026; contract §9, §15): without `--mask-axes`, when its image's

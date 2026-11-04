@@ -43,6 +43,7 @@ from .cli_run import (
     missing_as_singleton,
     parse_size,
     recorded_run,
+    reused_missing_as_singleton,
     run_command,
     use_recorded_experiment,
 )
@@ -231,7 +232,8 @@ def _remove_stale_lock(args: argparse.Namespace) -> bool:
 def _check(args: argparse.Namespace) -> int:
     """Print what the preflight found and the suggested roles, and write the report."""
     # As 'run' reads images lacking some axes (F10); no Z or T size without the axis.
-    missing = missing_as_singleton(args, recorded_run(args))
+    recorded = recorded_run(args)
+    missing = missing_as_singleton(args, recorded)
     pre, review = suggested_review(command_preflight(args), missing_as_singleton=missing)
     print(preflight_summary(pre))
     if pre.discovery.leaves:
@@ -257,11 +259,16 @@ def _check(args: argparse.Namespace) -> int:
         axis_errors = review.axis_errors
         print()
         print(axis_check_summary(review))
+        reused = reused_missing_as_singleton(args, recorded)
+        if reused:
+            print(reused)
         if review.axis_check:
             print()
             print(format_issues(review.axis_check))
         print()
-        singleton = " --missing-as-singleton" if missing else ""
+        # Suggested only where an image lacks some of the axes and is read with one plane.
+        lacking = any(found.singleton_roles for found in review.file_mappings.values())
+        singleton = " --missing-as-singleton" if missing and lacking else ""
         print(
             f"Suggested option for 'run': --axes {pre.suggested_mapping.roles_string}"
             f"{singleton} (axes in the files: {pre.suggested_mapping.axes})"
