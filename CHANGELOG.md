@@ -10,6 +10,23 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 Small changes for the final v0.4.0 since v0.4.0rc5 (#147). No version bump yet.
 
+- **`check --missing-as-singleton`** (matrix finding F10, owner decision of 4 November
+  2026; plan §12 question 75): `check` takes `run`'s option (`--missing-as-singleton`,
+  `--no-missing-as-singleton`), with the same default (the earlier run's answer in the
+  output folder, else no) and the same review of images lacking some axes
+  (`run.check_step.suggested_review(pre, missing_as_singleton=)`), so an experiment of 2-D
+  images and Z-stacks passes `check` once confirmed (it always exited 1) and `check` and
+  `run` report the same errors for the same roles. The suggested option then reads
+  `--axes ZCYX --missing-as-singleton`. The notebook's check report takes the answer step 2
+  shows (the earlier run's), which step 2 still asks for before the run.
+- **A 2-D mask whose metadata names `YX` is shared by a Z-stack or time-lapse** (F10, owner
+  decision of 4 November 2026; contract §9, §15): without `--mask-axes`, when its image's
+  metadata names a depth or time axis longer than 1. It is recorded as a stated shared mask
+  is (`axes` and `roles` `YX`, its `shape`, `shared: true`), with `axes_from: "header"`
+  (`MaskFile.named_shared`), and `RunInputs.read_mask` and `masks` read it for every plane.
+  A plain 2-D TIFF, or a 2-D mask of a plain-stack image, still needs
+  `--mask-axes TYPE=YX`; the `mask_planes_mismatch` action now says so. A 2-D mask of an
+  image with one plane is recorded as before (`shared: false`).
 - **Shared write-target rule** (owner decision of 3 November 2026): `--log`'s rule is
   public as `write_target_refusal(path, *, protected_folders, protected_files={},
   output=None, output_names=())` (`morphobricks_preprocessing.write_target`, exported by
