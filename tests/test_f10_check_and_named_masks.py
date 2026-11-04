@@ -345,3 +345,22 @@ def test_a_label_image_of_a_one_plane_ome_zarr_is_not_marked_shared(tmp_path):
     write_labels(image, {"cells": labels((6, 8))}, "yx")
     (mask,) = preflight(tmp_path / "exp").masks.files
     assert (mask.axes_from, mask.named_shared, mask.shared) == ("header", False, False)
+
+
+def test_a_yx_label_image_of_an_ome_zarr_z_stack_is_shared_by_every_plane(tmp_path):
+    # OME-NGFF axes are always the metadata's: a "yx" label image of a zyx image is named.
+    from zarr_tree import write_labels, write_ngff
+
+    root = tmp_path / "exp"
+    image = write_ngff(root / "ctrl/a.ome.zarr", np.zeros((3, 6, 8), np.uint16), "zyx")
+    write_labels(image, {"cells": labels((6, 8))}, "yx")
+    (mask,) = preflight(root).masks.files
+    assert (mask.axes_from, mask.named_shared, mask.shared) == ("header", True, True)
+    result = run_experiment(root, prefill_mapping("ZYX"))
+    assert result.written, result.issues
+    (entry,) = read_manifest(result.manifest_path).masks["files"]
+    assert (entry["shared"], entry["axes_from"], entry["roles"]) == (True, "header", "YX")
+    inputs = RunInputs.open(result.output_folder)
+    (fov,) = inputs.fovs()
+    for z in range(3):
+        np.testing.assert_array_equal(inputs.read_mask(fov, "cells", z=z), labels((6, 8)))
