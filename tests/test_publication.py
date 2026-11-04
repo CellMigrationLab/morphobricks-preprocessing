@@ -31,6 +31,7 @@ from morphobricks_preprocessing.run.generation import (
     PUBLICATION_RECORD,
     PUBLISH_FOLDER,
     PublicationIncompleteError,
+    finish_publication,
 )
 from morphobricks_preprocessing.run.lock import output_lock, remove_stale_lock
 from morphobricks_preprocessing.testing import _confirmed_design
@@ -184,6 +185,61 @@ def test_an_unfinished_uncommitted_publication_is_discarded(tmp_path):
     with output_lock(out):
         pass
     assert not leftover.exists() and outputs(out) == before
+
+
+def staged_copy(out, removes):
+    """Leave a publication folder whose staged manifest is byte-identical to the one in place."""
+    leftover = out / PUBLISH_FOLDER
+    leftover.mkdir()
+    shutil.copy2(out / MANIFEST_FILENAME, leftover / MANIFEST_FILENAME)
+    record = {
+        "publication_version": "1",
+        "files": {MANIFEST_FILENAME: file_sha256(out / MANIFEST_FILENAME)},
+        "removes": removes,
+    }
+    (leftover / PUBLICATION_RECORD).write_text(json.dumps(record), encoding="utf-8")
+    return leftover
+
+
+def test_a_publication_whose_manifest_is_still_staged_is_never_committed(tmp_path):
+    # External audit of #147: a record and a published manifest byte-identical to the
+    # record's made a publication look committed although its manifest never left
+    # .publish (an identical rerun refused before its commit); finishing it ran its
+    # removals. Committed means the staged manifest was moved: this one is discarded.
+    root, out = first_generation(tmp_path)
+    before = outputs(out)
+    leftover = staged_copy(out, [MASK_REPORT])
+    assert finish_publication(out) == "discarded"
+    assert not leftover.exists() and (out / MASK_REPORT).exists() and outputs(out) == before
+
+
+def test_a_committed_publication_is_finished_once_its_manifest_left_the_folder(tmp_path):
+    # The same leftover after the commit (the manifest moved, a kill before the removals).
+    root, out = first_generation(tmp_path)
+    leftover = staged_copy(out, [MASK_REPORT])
+    (leftover / MANIFEST_FILENAME).unlink()
+    assert finish_publication(out) == "finished"
+    assert not leftover.exists() and not (out / MASK_REPORT).exists()
+
+
+def test_a_discarded_publication_loses_its_record_first(tmp_path, monkeypatch):
+    # A removal that stops halfway must never leave a record without its staged manifest.
+    root, out = first_generation(tmp_path)
+    leftover = staged_copy(out, [MASK_REPORT])
+    seen = []
+
+    def stops_halfway(path, *args, **kwargs):
+        seen.append(sorted(p.name for p in Path(path).iterdir()))
+        (Path(path) / MANIFEST_FILENAME).unlink()
+        raise PermissionError("simulated file in use")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(shutil, "rmtree", stops_halfway)
+        with pytest.raises(PermissionError):
+            finish_publication(out)
+    assert seen == [[MANIFEST_FILENAME]]  # the record was already gone
+    assert finish_publication(out) == "discarded"
+    assert not leftover.exists() and (out / MASK_REPORT).exists()
 
 
 def test_a_cleanup_failure_does_not_fail_a_published_run(tmp_path, monkeypatch, caplog):

@@ -16,6 +16,13 @@ crash-consistent (owner decision of 2 November 2026, PP-12):
 3. The other files are moved into place (:func:`os.replace` each), the removed files
    removed, and the publication folder deleted.
 
+A generation is **committed** exactly when its manifest has left the publication folder:
+the record is there, ``.publish/run_manifest.json`` is not, and the output folder's
+manifest is the one the record names. Anything else is not committed and is discarded,
+also when the output folder's manifest is byte-identical to the staged one (an identical
+rerun refused before its commit). A publication folder is discarded record first, so a
+removal that stops halfway never leaves a record without its staged manifest.
+
 A run killed during step 3 leaves the new manifest with some files still in ``.publish``.
 The next run, ``check``, ``masks``, ``design`` or ``calibrate`` (whatever takes the output
 folder's lock) finishes the moves first (:func:`finish_publication`). Readers that go
@@ -155,10 +162,12 @@ def finish_publication(output: Path) -> str | None:
     """Finish or discard a publication an earlier run left in the output folder.
 
     Called by everything that takes the output folder's lock, before it reads or writes
-    the outputs. A publication whose manifest is in place (committed) is finished: its
-    remaining files are moved into place and the files it removes removed. Any other
-    publication folder (not committed: the run was killed before its manifest replaced
-    the earlier one) is deleted; the earlier generation is then intact.
+    the outputs. A publication whose manifest was moved into place (committed: its record
+    is there, its staged manifest is not, and the output folder's manifest is the one the
+    record names) is finished: its remaining files are moved into place and the files it
+    removes removed. Any other publication folder (not committed: the run was killed or
+    refused before its manifest replaced the earlier one) is deleted, record first; the
+    earlier generation is then intact.
 
     Parameters
     ----------
@@ -174,24 +183,34 @@ def finish_publication(output: Path) -> str | None:
     ------
     PublicationIncompleteError
         If a committed generation's files cannot be moved into place.
+    OSError
+        If a publication that was not committed cannot be removed (its record stays
+        with its staged manifest, so it is still not committed).
     """
     staged = output / PUBLISH_FOLDER
     if not staged.exists():
         return None
-    record = _record(staged)
-    manifest = output / MANIFEST_FILENAME
-    committed = (
-        record is not None
-        and manifest.is_file()
-        and file_sha256(manifest) == record["files"].get(MANIFEST_FILENAME)
-    )
-    if not committed:
+    if not _committed(output, staged):
         _discard(staged)
         return "discarded"
     logger.info("Finishing the publication an earlier run left in %s", staged)
     _flush_folder(output)  # the earlier commit on the disk before any move
     _finish_committed(output, staged)
     return "finished"
+
+
+def _committed(output: Path, staged: Path) -> bool:
+    """Return True when the publication in ``staged`` was committed.
+
+    Only the commit moves the staged manifest out of the publication folder, so a staged
+    manifest still there means not committed, whatever the output folder holds: an
+    identical rerun refused before its commit has a byte-identical manifest in place.
+    """
+    record = _record(staged)
+    if record is None or (staged / MANIFEST_FILENAME).exists():
+        return False
+    manifest = output / MANIFEST_FILENAME
+    return manifest.is_file() and file_sha256(manifest) == record["files"].get(MANIFEST_FILENAME)
 
 
 def _finish_committed(output: Path, staged: Path) -> None:
@@ -278,21 +297,26 @@ def read_stable(output: Path, read: Callable[[], T], attempts: int = 3) -> T | N
 
 
 def _discard(staged: Path) -> None:
-    """Delete a publication folder that was not committed."""
+    """Delete a publication folder that was not committed, its record first.
+
+    Without its record a leftover is never taken for committed. When the record cannot be
+    removed, nothing else is (the error propagates): the staged manifest stays beside it,
+    which still marks the folder as not committed (:func:`_committed`).
+    """
     logger.info("Discarding the unfinished publication in %s", staged)
+    (staged / PUBLICATION_RECORD).unlink(missing_ok=True)
     shutil.rmtree(staged)
 
 
 def _discard_refused(staged: Path) -> None:
     """Delete a publication refused before its commit, never masking why it was refused.
 
-    The record goes first, so a folder that cannot be removed whole (a file held open on
-    Windows) is never taken for a committed one by :func:`finish_publication`, even when
-    the output folder's manifest is byte-identical to the refused one; it is discarded by
-    the next run.
+    The folder holds its staged manifest, so it is not committed (:func:`_committed`)
+    even when the output folder's manifest is byte-identical to the refused one, and
+    :func:`_discard` removes the record before anything else; a folder that cannot be
+    removed whole (a file held open on Windows) is discarded by the next run.
     """
     try:
-        (staged / PUBLICATION_RECORD).unlink(missing_ok=True)
         _discard(staged)
     except OSError:
         logger.warning("Cannot remove the refused publication in %s", staged, exc_info=True)
