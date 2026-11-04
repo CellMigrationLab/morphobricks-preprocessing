@@ -21,14 +21,18 @@ Small changes for the final v0.4.0 since v0.4.0rc5 (#147). No version bump yet.
   the earlier run is printed by `check` and `run` ("Images lacking some axes: read with one
   plane along them, as confirmed for the earlier run"). The notebook's check report takes the answer step 2
   shows (the earlier run's), which step 2 still asks for before the run.
-- **A 2-D mask whose metadata names `YX` is shared by a Z-stack or time-lapse** (F10, owner
-  decision of 4 November 2026; contract §9, §15): without `--mask-axes`, when its image's
-  metadata names a depth or time axis longer than 1. It is recorded as a stated shared mask
-  is (`axes` and `roles` `YX`, its `shape`, `shared: true`), with `axes_from: "header"`
-  (`MaskFile.named_shared`), and `RunInputs.read_mask` and `masks` read it for every plane.
-  A plain 2-D TIFF, or a 2-D mask of a plain-stack image, still needs
-  `--mask-axes TYPE=YX`; the `mask_planes_mismatch` action now says so. A 2-D mask of an
-  image with one plane is recorded as before (`shared: false`).
+- **A 2-D mask is shared by a Z-stack or time-lapse only when stated** (owner decision of
+  4 November 2026, reversing the mask half of F10/#148; plan §12 question 75; contract §9,
+  §15): a 2-D mask whose metadata names `YX` (TIFF, OME-TIFF, also OME metadata tifffile
+  writes by itself, and OME-Zarr label images) is no longer shared by its image's planes
+  without `--mask-axes TYPE=YX` (or YX under the notebook's Mask axes), recorded
+  `shared: true`, `axes_from: "stated"`, as in rc5. The header-derived path
+  (`MaskFile.named_shared`, `masks.stated.mask_names_its_axes`) is removed. Without the
+  statement, `mask_planes_mismatch` and `mask_planes_differ` name it for each mask type with
+  2-D masks among them (for example `--mask-axes Nuclei=YX`), and the notebook asks for YX
+  in the `mask_planes_differ` case too. `RunInputs.open` refuses a manifest that records a
+  mask `shared: true` without `axes_from: "stated"` (only main at #148 wrote it; no tag),
+  naming the masks, the statement and "Run preprocessing again".
 - **Shared write-target rule** (owner decision of 3 November 2026): `--log`'s rule is
   public as `write_target_refusal(path, *, protected_folders, protected_files={},
   output=None, output_names=())` (`morphobricks_preprocessing.write_target`, exported by

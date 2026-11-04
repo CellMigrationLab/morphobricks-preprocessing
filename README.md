@@ -52,9 +52,9 @@ Pre-alpha. Implemented and tested:
   it, such as cells with two nuclei) and their hierarchy, in `mask_relationships.json`
   (`mask_scan`, command `masks`). A mask is 2D, or has depth (Z) and/or time (T) planes
   named in its own metadata (or stated once per mask type), one per image plane; a 2D mask
-  of a Z-stack or time-lapse is refused (`mask_planes_mismatch`) unless it is one mask shared
-  by every plane: stated so for its type (`--mask-axes Cells=YX`), or named `YX` by its own
-  metadata for an image whose metadata names its depth or time axis; masks are checked as stored
+  of a Z-stack or time-lapse is refused (`mask_planes_mismatch`) unless its type is stated
+  as one mask shared by every plane (`--mask-axes Cells=YX`), whatever its metadata names;
+  masks are checked as stored
   and never converted, and the manifest records each mask's axes, roles and size
 - Reading a run from another brick: `RunInputs.open(output_folder)` gives the FOVs, pixel
   sizes, planes, masks, design and image type the run recorded, and refuses a run whose

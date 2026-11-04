@@ -128,10 +128,14 @@ def test_axes_stated_for_an_unknown_mask_type(timelapse):
     assert "Nuclei" in issue.message and "found: Cells" in issue.message
 
 
-def test_a_2d_mask_on_a_stack_needs_a_shared_statement(timelapse):
+@pytest.mark.parametrize("named", [False, True])
+def test_a_2d_mask_on_a_stack_needs_a_shared_statement(timelapse, named):
     root, masks = timelapse
-    # A plain 2-D TIFF: no metadata names its axes, so it is shared only when stated (F10).
-    write_plain(masks / "Cells/ctrl/r1/a.tif", labels((6, 8)))
+    # Plain, or named YX by its metadata: shared only when stated (owner, 4 November 2026).
+    if named:
+        write_data(masks / "Cells/ctrl/r1/a.tif", labels((6, 8)), "YX")
+    else:
+        write_plain(masks / "Cells/ctrl/r1/a.tif", labels((6, 8)))
     refused = run_experiment(root, prefill_mapping("TYX"), masks_folder=masks)
     assert "mask_planes_mismatch" in errors(refused.issues)
     # Stated YX for the type: one plane shared by every plane of the image.
