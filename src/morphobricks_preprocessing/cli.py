@@ -37,9 +37,12 @@ from .cli_convert import add_convert_parser, convert_command
 from .cli_design import add_design_parser, design_command, design_errors, design_instructions
 from .cli_masks import add_masks_arguments, masks_command
 from .cli_run import (
+    add_missing_as_singleton,
     add_run_arguments,
     command_preflight,
+    missing_as_singleton,
     parse_size,
+    recorded_run,
     run_command,
     use_recorded_experiment,
 )
@@ -86,6 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="check the folder and image headers, suggest axis roles and write the report",
     )
     _common(check)
+    add_missing_as_singleton(check)
 
     run = commands.add_parser("run", help="compute or update the histogram table")
     _common(run, recorded=True)
@@ -224,7 +228,9 @@ def _remove_stale_lock(args: argparse.Namespace) -> bool:
 
 def _check(args: argparse.Namespace) -> int:
     """Print what the preflight found and the suggested roles, and write the report."""
-    pre, review = suggested_review(command_preflight(args))  # no Z or T size without the axis
+    # As 'run' reads images lacking some axes (F10); no Z or T size without the axis.
+    missing = missing_as_singleton(args, recorded_run(args))
+    pre, review = suggested_review(command_preflight(args), missing_as_singleton=missing)
     print(preflight_summary(pre))
     if pre.discovery.leaves:
         print()
@@ -253,9 +259,10 @@ def _check(args: argparse.Namespace) -> int:
             print()
             print(format_issues(review.axis_check))
         print()
+        singleton = " --missing-as-singleton" if missing else ""
         print(
-            f"Suggested option for 'run': --axes {pre.suggested_mapping.roles_string} "
-            f"(axes in the files: {pre.suggested_mapping.axes})"
+            f"Suggested option for 'run': --axes {pre.suggested_mapping.roles_string}"
+            f"{singleton} (axes in the files: {pre.suggested_mapping.axes})"
         )
         type_review = review_image_type(pre.metadata, review)
         print(

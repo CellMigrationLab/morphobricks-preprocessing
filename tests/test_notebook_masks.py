@@ -167,11 +167,12 @@ def test_plain_stack_masks_get_their_axes_stated_never_guessed(tmp_path):
     assert {(f["roles"], f["axes_from"]) for f in files} == {("TYX", "stated")}
 
 
-def test_a_2d_mask_of_a_stack_is_shared_only_when_stated(tmp_path):
+def test_a_plain_2d_mask_of_a_stack_is_shared_only_when_stated(tmp_path):
     root = experiment(tmp_path, (2, 16, 16), "ZYX")
     masks = tmp_path / "masks"
     for rel in IMAGES:
-        write_data(masks / "Cells" / rel, labels((16, 16)), axes="YX")
+        # No metadata names the plain TIFF's axes: shared only when stated (F10).
+        write_plain(masks / "Cells" / rel, labels((16, 16)))
     nb = notebook(root, masks)
     assert nb.mask_axes_box.children == ()  # the planes are known once the roles are
     confirm_everything(nb)

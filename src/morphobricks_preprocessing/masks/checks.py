@@ -22,7 +22,7 @@ from ..zarr_input import (
 from .header import _mask_header
 from .layout import _yx
 from .model import FOLDER, PLANE_AXES, MaskFile, MaskInventory
-from .stated import mask_named_axes, mask_roles, size_code
+from .stated import mask_named_axes, mask_names_its_axes, mask_roles, size_code
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +85,9 @@ def _check_header(
         return header, [(code, mask.path, detail)]
     how = "stated" if mask.mask_type in stated else "header"
     checked = replace(header, axes=roles, axes_from=how)
+    if how == "header" and roles == "YX" and _named_planes(image):
+        tiff = Path(folder) / mask.path if mask.source == FOLDER else None
+        checked = replace(checked, named_shared=mask_names_its_axes(tiff))
     problems = []
     expected = _image_yx(image)
     if expected is not None and _yx(roles, shape) != expected:
@@ -221,6 +224,19 @@ def mask_plane_issues(
             "axes named in the mask's metadata, or check the image's axis roles.",
         )
     ]
+
+
+def _named_planes(meta: TiffMetadata) -> bool:
+    """Return True when the image's own metadata names a Z or T axis longer than 1.
+
+    Used before the axis roles are confirmed (F10): a plain stack names no axis, so a 2-D
+    mask of it is shared by its planes only when stated ``YX`` for its type. Once named,
+    the confirmed roles must agree with these axes (the axis check, contract §2).
+    """
+    named = named_axes(meta)
+    if not meta.readable or "?" in named:
+        return False
+    return any(a in PLANE_AXES and n > 1 for a, n in zip(named, meta.shape, strict=True))
 
 
 def _image_yx(meta: TiffMetadata) -> tuple[int, int] | None:

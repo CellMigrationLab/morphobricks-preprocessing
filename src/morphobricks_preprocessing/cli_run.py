@@ -133,6 +133,59 @@ def use_recorded_experiment(args: argparse.Namespace) -> bool:
     return True
 
 
+def add_missing_as_singleton(parser: argparse.ArgumentParser) -> None:
+    """Add ``--missing-as-singleton``, which ``check`` and ``run`` take alike (F10).
+
+    Parameters
+    ----------
+    parser
+        The ``check`` or ``run`` command's parser; :func:`missing_as_singleton` reads it.
+    """
+    parser.add_argument(
+        "--missing-as-singleton",
+        action=argparse.BooleanOptionalAction,
+        help="confirm that images lacking some axes have one plane along them (default: as "
+        "in the earlier run, else no)",
+    )
+
+
+def missing_as_singleton(args: argparse.Namespace, recorded: RunManifest | None) -> bool:
+    """Return the answer of ``--missing-as-singleton``: given, else the earlier run's, else no.
+
+    Parameters
+    ----------
+    args
+        The ``check`` or ``run`` command's arguments.
+    recorded
+        The earlier run in the output folder (:func:`recorded_run`), or None.
+
+    Returns
+    -------
+    bool
+        Whether images lacking some axes are read with one plane along them.
+    """
+    if args.missing_as_singleton is not None:
+        return args.missing_as_singleton
+    return recorded.settings.missing_as_singleton if recorded is not None else False
+
+
+def recorded_run(args: argparse.Namespace) -> RunManifest | None:
+    """Return the earlier run in the command's output folder, or None when none is usable.
+
+    Parameters
+    ----------
+    args
+        The command's arguments: ``output``, else the default next to ``experiment``.
+
+    Returns
+    -------
+    RunManifest or None
+    """
+    root = Path(args.experiment).resolve()
+    output = Path(args.output) if args.output else default_output_folder(root)
+    return usable(read_previous(output.resolve())[0])
+
+
 def add_run_arguments(run: argparse.ArgumentParser) -> None:
     """Add the options of ``run`` after the shared ones.
 
@@ -178,12 +231,7 @@ def _run_inputs(run: argparse.ArgumentParser) -> None:
         help="clear the exclusions of the earlier run: analyse every image again "
         "(not with --exclude)",
     )
-    run.add_argument(
-        "--missing-as-singleton",
-        action=argparse.BooleanOptionalAction,
-        help="confirm that images lacking some axes have one plane along them (default: as "
-        "in the earlier run, else no)",
-    )
+    add_missing_as_singleton(run)
     run.add_argument(
         "--mode",
         choices=MODES,
@@ -254,10 +302,7 @@ def run_command(args: argparse.Namespace) -> int:
     """Run pass 2 with the command's options, print what it did and return the status."""
     if not use_recorded_experiment(args):
         return 1
-    output = (
-        Path(args.output) if args.output else default_output_folder(Path(args.experiment).resolve())
-    )
-    recorded = usable(read_previous(output.resolve())[0])
+    recorded = recorded_run(args)
     if recorded is not None and not args.exclude and not args.no_exclude:
         args.exclude = list(recorded.settings.exclude)  # the preflight leaves them out too
     pre = command_preflight(args)
@@ -399,9 +444,7 @@ def _print_inputs(
     recorded: RunManifest | None,
 ) -> str:
     """Print the axis roles, image type and design the run uses; return the image type."""
-    missing = args.missing_as_singleton
-    if missing is None:
-        missing = recorded.settings.missing_as_singleton if recorded else False
+    missing = missing_as_singleton(args, recorded)
     review = review_axes(pre.metadata, mapping or recorded.mapping, missing_as_singleton=missing)
     if mapping is None:
         print(f"Axis roles: as confirmed for the earlier run ({recorded.mapping.roles_string})")

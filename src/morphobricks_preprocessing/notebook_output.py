@@ -214,19 +214,21 @@ class _OutputCards:
         output = self._output_folder()
         return (Path(output) if output else default_output_folder(root)).resolve()
 
-    def _write_check(self, pre: Preflight) -> None:
+    def _write_check(self, pre: Preflight, missing_as_singleton: bool = False) -> None:
         """Write the check's report, and the design template, as the command line's ``check``.
 
         Only for this notebook's own output folder: an embedding brick that hides it
         (``show_output=False``) gets the check alone. The template is written with the
         design card only, and never over a design (:func:`.run.write_check_outputs`).
+        Images lacking some axes are read by ``missing_as_singleton``, the answer step 2
+        shows (the earlier run's, else no), as ``check --missing-as-singleton`` reads them.
         """
         self.folder_lock.hide()
         self.check_report.clear()
         self._design_template = None
         if not self._show_output:
             return
-        checked, review = suggested_review(pre)
+        checked, review = suggested_review(pre, missing_as_singleton=missing_as_singleton)
         output = self._output_path(pre.discovery.root)
         try:
             if self._show_design:
