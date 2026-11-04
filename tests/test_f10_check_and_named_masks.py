@@ -3,10 +3,11 @@
 1. ``check`` takes ``--missing-as-singleton`` as ``run`` does (same option, same default,
    same review), so an experiment mixing 2-D images and Z-stacks passes ``check`` once it
    is confirmed, and ``check`` and ``run`` report the same errors for the same inputs.
-2. A 2-D mask whose own metadata names its axes ``YX`` is one plane shared by every plane of
-   an image whose own metadata names its depth or time axis, without ``--mask-axes``; it is
-   recorded ``shared: true`` and ``RunInputs.read_mask`` reads it for every plane. A plain
-   2-D TIFF names nothing and still needs ``--mask-axes TYPE=YX``.
+2. Owner decision of 4 November 2026, reversing #148: a 2-D mask whose own metadata names
+   its axes ``YX`` (TIFF, OME-TIFF, OME-Zarr label image) is NOT shared by the planes of a
+   Z-stack or time-lapse without a statement. Only ``--mask-axes TYPE=YX`` (or YX under
+   the notebook's Mask axes) shares it, recorded ``shared: true``, ``axes_from:
+   "stated"``; without it the error names exactly that statement.
 """
 
 import json
@@ -27,7 +28,7 @@ from morphobricks_preprocessing import (
 )
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.run.check_step import suggested_review
-from morphobricks_preprocessing.run_inputs import RunInputs
+from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError
 from tiff_tree import write_data, write_plain
 
 
@@ -121,7 +122,7 @@ def test_suggested_review_answers_the_missing_axes_as_the_run_does(mixed):
     assert review.file_mappings["ctrl/r1/a.tif"].singleton_roles == ("Z",)
 
 
-# 2. A 2-D mask whose metadata names YX ---------------------------------------------------
+# 2. A 2-D mask whose metadata names YX: shared only when stated -------------------------
 
 
 @pytest.fixture
@@ -135,18 +136,25 @@ def z_stack(tmp_path):
     return root, masks
 
 
-def test_a_named_2d_mask_of_a_z_stack_is_shared_through_check_and_run(z_stack, tmp_path, capsys):
+STATE_NUCLEI = "--mask-axes Nuclei=YX"
+
+
+def test_a_named_2d_mask_of_a_z_stack_is_refused_until_stated(z_stack, tmp_path, capsys):
     root, masks = z_stack
     out = tmp_path / "out"
     common = [str(root), "--masks", str(masks), "--output", str(out)]
-    assert main(["check", *common]) == 0, capsys.readouterr().out
-    assert error_codes(out) == []
+    assert main(["check", *common]) == 1
+    printed = capsys.readouterr().out
+    assert error_codes(out) == ["mask_planes_differ"]
+    assert STATE_NUCLEI in printed  # the error says exactly what to add
+    stated = [*common, "--mask-axes", "Nuclei=YX"]
+    assert main(["check", *stated]) == 0, capsys.readouterr().out
     confirm_design(root, out)
-    assert main(["run", *common, "--axes", "ZCYX"]) == 0, capsys.readouterr().out
+    assert main(["run", *stated, "--axes", "ZCYX"]) == 0, capsys.readouterr().out
     entries = {e["type"]: e for e in read_manifest(out / "run_manifest.json").masks["files"]}
     nuclei = entries["Nuclei"]
     assert (nuclei["axes"], nuclei["roles"], nuclei["shape"]) == ("YX", "YX", [6, 8])
-    assert (nuclei["shared"], nuclei["axes_from"]) == (True, "header")
+    assert (nuclei["shared"], nuclei["axes_from"]) == (True, "stated")
     assert (entries["Cells"]["shared"], entries["Cells"]["roles"]) == (False, "ZYX")
     inputs = RunInputs.open(out)
     (fov,) = inputs.fovs()
@@ -158,39 +166,33 @@ def test_a_named_2d_mask_of_a_z_stack_is_shared_through_check_and_run(z_stack, t
         inputs.read_mask(fov, "Nuclei", z=3)  # outside the image, even for a shared mask
 
 
-def test_it_is_recorded_as_a_stated_shared_mask_is(z_stack, tmp_path):
+def test_without_a_statement_nothing_is_recorded_shared(z_stack, tmp_path):
     root, masks = z_stack
     named = run_experiment(
         root, prefill_mapping("ZCYX"), output_folder=tmp_path / "named", masks_folder=masks
     )
-    stated = run_experiment(
-        root,
-        prefill_mapping("ZCYX"),
-        output_folder=tmp_path / "stated",
-        masks_folder=masks,
-        mask_axes={"Nuclei": "YX"},
-    )
-    assert named.written and stated.written
-
-    def nuclei(result):
-        (entry,) = [
-            e for e in read_manifest(result.manifest_path).masks["files"] if e["type"] == "Nuclei"
-        ]
-        return entry
-
-    by_header, by_statement = nuclei(named), nuclei(stated)
-    assert by_statement["axes_from"] == "stated" and by_header["axes_from"] == "header"
-    for key in ("axes", "roles", "shape", "shared", "size", "mtime_ns", "path", "source"):
-        assert by_header[key] == by_statement[key], key
+    assert not named.written
+    (differ,) = [i for i in named.issues if i.code == "mask_planes_differ"]
+    assert STATE_NUCLEI in differ.action
+    (nuclei,) = [m for m in preflight(root, masks_folder=masks).masks.files if m.axes == "YX"]
+    assert (nuclei.axes_from, nuclei.shared) == ("header", False)
+    assert not hasattr(nuclei, "named_shared")  # the header-derived path is gone
 
 
-def test_a_named_2d_mask_of_a_time_lapse_is_shared(tmp_path):
+def test_a_named_2d_mask_of_a_time_lapse_needs_its_statement(tmp_path):
     root, masks = tmp_path / "exp", tmp_path / "masks"
     write_data(root / "ctrl/a.tif", np.zeros((4, 6, 8), np.uint8), "TYX")
     write_data(masks / "Cells/ctrl/a.tif", labels((6, 8)), "YX")  # shaped metadata names YX
     (mask,) = preflight(root, masks_folder=masks).masks.files
-    assert mask.shared and (mask.axes_from, mask.named_shared) == ("header", True)
-    result = run_experiment(root, prefill_mapping("TYX"), masks_folder=masks)
+    assert (mask.axes_from, mask.shared) == ("header", False)
+    refused = run_experiment(root, prefill_mapping("TYX"), masks_folder=masks)
+    assert not refused.written
+    (mismatch,) = [i for i in refused.issues if i.code == "mask_planes_mismatch"]
+    assert "--mask-axes Cells=YX" in mismatch.action
+    assert "choose YX for the type under Mask axes" in mismatch.action
+    result = run_experiment(
+        root, prefill_mapping("TYX"), masks_folder=masks, mask_axes={"Cells": "YX"}
+    )
     assert result.written, result.issues
     inputs = RunInputs.open(result.output_folder)
     (fov,) = inputs.fovs()
@@ -205,6 +207,26 @@ def test_a_named_2d_mask_of_a_single_plane_image_is_not_marked_shared(tmp_path):
     result = run_experiment(root, prefill_mapping("CYX"), masks_folder=masks)
     (entry,) = read_manifest(result.manifest_path).masks["files"]
     assert (entry["shared"], entry["axes_from"]) == (False, "header")  # as before F10
+
+
+def test_a_mask_with_auto_generated_ome_metadata_needs_its_statement(tmp_path):
+    # tifffile writes OME metadata into any .ome.tif, naming a 2-D page YX by itself: that
+    # is not the user saying the mask is meant for every plane.
+    root, masks = tmp_path / "exp", tmp_path / "masks"
+    ome(root / "ctrl/a.ome.tif", np.zeros((3, 6, 8), np.uint16), "ZYX")
+    path = masks / "Cells/ctrl/a.ome.tif"
+    path.parent.mkdir(parents=True)
+    tifffile.imwrite(path, labels((6, 8)))  # no axes given: tifffile's own OME header
+    with tifffile.TiffFile(path) as tif:
+        assert tif.is_ome and tif.series[0].axes == "YX"
+    (mask,) = preflight(root, masks_folder=masks).masks.files
+    assert (mask.axes, mask.axes_from, mask.shared) == ("YX", "header", False)
+    refused = run_experiment(root, prefill_mapping("ZYX"), masks_folder=masks)
+    assert "mask_planes_mismatch" in {i.code for i in refused.issues}
+    stated = run_experiment(
+        root, prefill_mapping("ZYX"), masks_folder=masks, mask_axes={"Cells": "YX"}
+    )
+    assert stated.written, stated.issues
 
 
 # Never guessed: a mask or an image whose metadata names nothing -------------------------
@@ -226,9 +248,8 @@ def test_an_unnamed_2d_mask_of_a_z_stack_still_needs_mask_axes(z_stack, tmp_path
         root, prefill_mapping("ZCYX"), output_folder=tmp_path / "run", masks_folder=masks
     )
     assert not refused.written
-    mismatch = next(i for i in refused.issues if i.code == "mask_planes_mismatch")
-    assert mismatch.paths == ("Nuclei/ctrl/r1/a.tif",)
-    assert "--mask-axes Cells=YX" in mismatch.action
+    differ = next(i for i in refused.issues if i.code == "mask_planes_differ")
+    assert STATE_NUCLEI in differ.action
     assert main(["check", *common, "--mask-axes", "Nuclei=YX"]) == 0, capsys.readouterr().out
     stated = run_experiment(
         root,
@@ -311,7 +332,7 @@ def test_check_suggests_the_option_only_for_images_lacking_axes(z_stack, tmp_pat
     root, masks = z_stack
     out = tmp_path / "out"
     args = ["check", str(root), "--masks", str(masks), "--output", str(out)]
-    assert main([*args, "--missing-as-singleton"]) == 0
+    assert main([*args, "--missing-as-singleton", "--mask-axes", "Nuclei=YX"]) == 0
     assert "Suggested option for 'run': --axes ZCYX (axes" in capsys.readouterr().out
 
 
@@ -335,7 +356,7 @@ def test_a_named_2d_mask_of_a_partly_unnamed_image_is_not_shared(tmp_path):
     write_data(root / "ctrl/a.tif", np.zeros((2, 3, 6, 8), np.uint8), "QZYX")
     ome(masks / "Cells/ctrl/a.tif", labels((6, 8)), "YX")
     (mask,) = preflight(root, masks_folder=masks).masks.files
-    assert (mask.axes_from, mask.named_shared, mask.shared) == ("header", False, False)
+    assert (mask.axes_from, mask.shared) == ("header", False)
 
 
 def test_a_label_image_of_a_one_plane_ome_zarr_is_not_marked_shared(tmp_path):
@@ -344,23 +365,79 @@ def test_a_label_image_of_a_one_plane_ome_zarr_is_not_marked_shared(tmp_path):
     image = write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", np.zeros((1, 6, 8), np.uint16), "zyx")
     write_labels(image, {"cells": labels((6, 8))}, "yx")
     (mask,) = preflight(tmp_path / "exp").masks.files
-    assert (mask.axes_from, mask.named_shared, mask.shared) == ("header", False, False)
+    assert (mask.axes_from, mask.shared) == ("header", False)
 
 
-def test_a_yx_label_image_of_an_ome_zarr_z_stack_is_shared_by_every_plane(tmp_path):
-    # OME-NGFF axes are always the metadata's: a "yx" label image of a zyx image is named.
+def test_a_yx_label_image_of_an_ome_zarr_z_stack_is_shared_only_when_stated(tmp_path):
+    # OME-NGFF axes are always the metadata's, and still not a statement (owner, 4 November
+    # 2026): a "yx" label image of a zyx image is refused until its type is stated YX.
     from zarr_tree import write_labels, write_ngff
 
     root = tmp_path / "exp"
     image = write_ngff(root / "ctrl/a.ome.zarr", np.zeros((3, 6, 8), np.uint16), "zyx")
     write_labels(image, {"cells": labels((6, 8))}, "yx")
     (mask,) = preflight(root).masks.files
-    assert (mask.axes_from, mask.named_shared, mask.shared) == ("header", True, True)
-    result = run_experiment(root, prefill_mapping("ZYX"))
+    assert (mask.axes_from, mask.shared) == ("header", False)
+    refused = run_experiment(root, prefill_mapping("ZYX"))
+    assert not refused.written
+    (mismatch,) = [i for i in refused.issues if i.code == "mask_planes_mismatch"]
+    assert mismatch.paths == (mask.path,) and "--mask-axes cells=YX" in mismatch.action
+    result = run_experiment(root, prefill_mapping("ZYX"), mask_axes={"cells": "YX"})
     assert result.written, result.issues
     (entry,) = read_manifest(result.manifest_path).masks["files"]
-    assert (entry["shared"], entry["axes_from"], entry["roles"]) == (True, "header", "YX")
+    assert (entry["shared"], entry["axes_from"], entry["roles"]) == (True, "stated", "YX")
     inputs = RunInputs.open(result.output_folder)
     (fov,) = inputs.fovs()
     for z in range(3):
         np.testing.assert_array_equal(inputs.read_mask(fov, "cells", z=z), labels((6, 8)))
+
+
+# A manifest #148 wrote (main after v0.4.0rc5, no tag) is never trusted -------------------
+
+F10_MAIN = "f7c54bd2985ec3bd72e59938270cb2f398247fee"
+"""main with #148 merged: it recorded a named 2-D mask as shared with ``axes_from: "header"``."""
+
+WRITE_WITH_F10 = """
+from morphobricks_preprocessing import prefill_mapping, run_experiment
+root, masks, out = (Path(a) for a in sys.argv[2:5])
+result = run_experiment(root, prefill_mapping("TYX"), output_folder=out, masks_folder=masks)
+print(json.dumps(result.written))
+"""
+
+
+def test_a_mask_shared_by_its_header_in_an_f10_manifest_is_refused(tmp_path):
+    from released_code import PRELUDE, extract, run_with
+
+    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    write_data(root / "ctrl/a.tif", np.zeros((4, 6, 8), np.uint8), "TYX")
+    write_data(masks / "Cells/ctrl/a.tif", labels((6, 8)), "YX")
+    src = extract(F10_MAIN, tmp_path / "f10")
+    assert run_with(src, PRELUDE + WRITE_WITH_F10, root, masks, out) is True
+    (entry,) = read_manifest(out / "run_manifest.json").masks["files"]
+    assert (entry["shared"], entry["axes_from"]) == (True, "header")  # as #148 wrote it
+    with pytest.raises(RunInputsError, match="without a statement") as refused:
+        RunInputs.open(out)
+    text = str(refused.value)
+    assert "Cells/ctrl/a.tif" in text and "Run preprocessing again" in text
+    assert "--mask-axes Cells=YX" in text
+    # The rerun the refusal asks for: refused without the statement, recorded with it.
+    assert not run_experiment(root, output_folder=out, masks_folder=masks).written
+    stated = run_experiment(root, output_folder=out, masks_folder=masks, mask_axes={"Cells": "YX"})
+    assert stated.written, stated.issues
+    (entry,) = read_manifest(out / "run_manifest.json").masks["files"]
+    assert (entry["shared"], entry["axes_from"]) == (True, "stated")
+    (fov,) = RunInputs.open(out).fovs()
+    assert fov.t_count == 4
+
+
+def test_only_a_stated_shared_mask_record_is_trusted():
+    from morphobricks_preprocessing.mask_record import unstated_shared_text
+
+    stated = {"path": "N/a.tif", "type": "N", "shared": True, "axes_from": "stated"}
+    plain = {"path": "C/a.tif", "type": "C", "shared": False, "axes_from": "header"}
+    assert unstated_shared_text([stated, plain]) is None
+    for how in ("header", "", None):
+        record = {"path": "C/a.tif", "type": "C", "shared": True, "axes_from": how}
+        text = unstated_shared_text([stated, record])
+        assert text is not None and "C/a.tif" in text and "--mask-axes C=YX" in text
+        assert "N/a.tif" not in text

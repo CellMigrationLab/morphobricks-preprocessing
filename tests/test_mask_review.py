@@ -41,3 +41,18 @@ def test_masks_of_one_type_stored_differently_have_no_statement(tmp_path):
     found = inventory(root, masks)
     (question,) = mask_axes_questions(found, found.issues, {})
     assert question.choices == ()
+
+
+def test_a_named_2d_mask_beside_a_mask_with_planes_is_asked_for_yx(tmp_path):
+    # Owner, 4 November 2026: a 2-D mask named YX is shared only when stated, also when its
+    # image's other mask has planes (mask_planes_differ before the roles are confirmed).
+    root, masks = tmp_path / "exp", tmp_path / "masks"
+    write_data(root / "ctrl/r1/a.tif", np.zeros((3, 8, 8), np.uint8), "ZYX")
+    write_data(masks / "Cells/ctrl/r1/a.tif", np.ones((3, 8, 8), np.uint16), "ZYX")
+    write_data(masks / "Nuclei/ctrl/r1/a.tif", np.ones((8, 8), np.uint16), "YX")
+    found = inventory(root, masks)
+    assert "mask_planes_differ" in {i.code for i in found.issues}
+    (question,) = mask_axes_questions(found, found.issues, {})
+    assert question.mask_type == "Nuclei" and question.shared and question.choices == ("YX",)
+    stated = inventory(root, masks, mask_axes={"Nuclei": "YX"})
+    assert stated.ok and {m.mask_type for m in stated.files if m.shared} == {"Nuclei"}

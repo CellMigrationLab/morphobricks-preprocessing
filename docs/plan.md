@@ -1894,3 +1894,14 @@ Raised during review; to be decided before the milestones that need them:
     `roles` and `shape` and `axes_from: "header"` (not `"stated"`: the next run would take
     that as the user's statement). A plain 2-D TIFF, and any 2-D mask of a plain-stack
     image, still needs `--mask-axes TYPE=YX`: never guessed.
+    *Revised (owner, 4 November 2026, after the external audit of #147/#148; reverses the
+    mask half of the decision above):* a 2-D mask whose header names `YX` is NOT shared
+    by the Z/T planes of a multi-plane image without a statement, for TIFF, OME-TIFF and
+    OME-Zarr label images alike. It is shared only when the user states it once per mask
+    type (`--mask-axes TYPE=YX`, or YX under the notebook's Mask axes), recorded
+    `axes_from: "stated"`, `shared: true`; without it `mask_planes_mismatch` (or
+    `mask_planes_differ`) names that statement for each type. The header-derived path
+    (`MaskFile.named_shared`, `mask_names_its_axes`) is removed, and `RunInputs.open`
+    refuses a manifest recording `shared: true` with `axes_from: "header"` (written only
+    by main at #148; no tag) with a re-run hint. The `check --missing-as-singleton` half
+    stands.

@@ -199,11 +199,10 @@ def _mask_axes_option(parser: argparse.ArgumentParser) -> None:
         action="append",
         default=[],
         metavar="TYPE=ROLES",
-        help="the axes of a mask type whose files do not name them, one role (Y, X, Z or T) "
-        "per axis as stored: Cells=TYX for plain stacks of time points, Cells=YX for one "
-        "plain 2D mask shared by every plane of its image; a 2D mask whose metadata (OME, "
-        "ImageJ) names its axes YX is shared without it when its image's metadata names its "
-        "depth or time axis (repeatable)",
+        help="the axes of a mask type, one role (Y, X, Z or T) per axis as stored, stated "
+        "once per type: Cells=TYX for plain stacks of time points whose files do not name "
+        "their axes; Cells=YX for one 2D mask shared by every plane of its image, needed "
+        "even when the mask's metadata names YX (repeatable)",
     )
 
 

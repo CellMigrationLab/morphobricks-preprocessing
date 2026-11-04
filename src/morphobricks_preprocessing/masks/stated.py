@@ -4,12 +4,9 @@ Masks are never converted or reordered; they are checked as stored against their
 read (design v0.4 §3). The roles are the axes the mask's metadata names (the rule of
 :func:`.axis_names.named_letters`, the one images use); where it names none (a plain stack),
 the user states them once per mask type. A statement may not contradict a named axis. A
-2-D mask stated ``YX`` for an image with several planes is one plane shared by all of them,
-as is a 2-D mask whose own metadata names its axes ``YX`` for an image whose own metadata
-names several depth slices or time points (F10, owner decision of 4 November 2026); a plain
-2-D TIFF names nothing, so it is shared only when stated. A mask stored with Y and X the
-other way round from its image is refused, with a ``numpy.swapaxes`` hint, never
-transposed.
+2-D mask stated ``YX`` for an image with several planes is one plane shared by all of them.
+A mask stored with Y and X the other way round from its image is refused, with a
+``numpy.swapaxes`` hint, never transposed.
 """
 
 from __future__ import annotations
@@ -48,29 +45,6 @@ def mask_named_axes(axes: str, tiff: Path | None = None) -> str:
         with tifffile.TiffFile(tiff) as tif:
             from_metadata = series_axes_from_metadata(tif.series[0])
     return named_letters(axes, from_metadata)
-
-
-def mask_names_its_axes(tiff: Path | None) -> bool:
-    """Return True when a mask's axes come from its metadata, not from where it is stored.
-
-    Parameters
-    ----------
-    tiff
-        The mask's TIFF file; None for an OME-Zarr label image, whose OME-NGFF axes are
-        always its metadata's.
-
-    Returns
-    -------
-    bool
-        False for a plain TIFF (no OME, ImageJ or shaped axes,
-        :func:`.metadata.series_axes_from_metadata`): its ``YX`` only says where a page's
-        rows and columns are, so it is never taken as shared by an image's planes unless
-        stated ``YX`` for its type.
-    """
-    if tiff is None:
-        return True
-    with tifffile.TiffFile(tiff) as tif:
-        return series_axes_from_metadata(tif.series[0])
 
 
 def mask_roles(header: str, named: str, stated: str | None) -> tuple[str, str | None, str]:

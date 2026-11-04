@@ -20,8 +20,7 @@ Nothing is parsed from names, guessed or transposed, and no file is read once it
   image's content SHA-256 once (:func:`.source_content.content_changed`), and refuses one
   whose content changed even with its fingerprint kept;
 - masks are read by the recorded pairing only, with preprocessing's reader and its label
-  check (:func:`.masks.check_labels`); a shared 2-D mask (stated, or named ``YX`` by its
-  metadata for an image whose metadata names several planes) serves every plane.
+  check (:func:`.masks.check_labels`); a stated shared 2-D mask serves every plane.
 
 A :class:`RunInputs` is picklable: it holds paths and the records read when it opened (its
 snapshot of the table), and opens files only to read them.
@@ -53,6 +52,7 @@ from .manifest import (
     file_sha256,
     read_manifest,
 )
+from .mask_record import unstated_shared_text
 from .masks import FOLDER, MaskFile, read_mask
 from .masks.header import _mask_header
 from .planes import DEFAULT_MEMORY_LIMIT, read_plane
@@ -313,9 +313,7 @@ class RunInputs:
     ) -> np.ndarray:
         """Read one mask plane by the recorded pairing, checking its labels.
 
-        A shared 2-D mask (``shared`` in the manifest: stated ``YX``, or named ``YX`` by its
-        own metadata for an image whose metadata names several planes) is the same plane for
-        every ``z`` and ``t`` of the image.
+        A stated shared 2-D mask is the same plane for every ``z`` and ``t`` of the image.
 
         Raises
         ------
@@ -351,9 +349,6 @@ class RunInputs:
             str(recorded["roles"]),
             str(recorded["axes"]),
             str(recorded["axes_from"]),
-            # A 2-D mask the run recorded as shared by its image's planes because its own
-            # metadata names YX (F10); a stated one is shared by its axes_from.
-            named_shared=recorded.get("shared") is True and recorded["axes_from"] == "header",
         )
         return read_mask(mask, folder, self.experiment_root, z=z, t=t)
 
@@ -390,7 +385,7 @@ class RunInputs:
         return self.manifest.image_type
 
     def _check_files(self) -> None:
-        """Refuse changed or gone files, masks without axes, unchecked labels, unrecorded files."""
+        """Refuse changed or gone files, masks without axes or shared unstated, unrecorded files."""
         changed = [e.relative_path for e in self.manifest.files if not self._unchanged(e)]
         if not changed and self.manifest.settings.verify_content:
             changed = content_changed(self.manifest.files, self.experiment_root)
@@ -403,6 +398,9 @@ class RunInputs:
         without_axes = [m["path"] for m in recorded if not m.get("axes") or not m.get("roles")]
         if without_axes:
             raise RunInputsError(_without_axes_text(without_axes))
+        unstated = unstated_shared_text(recorded)
+        if unstated:
+            raise RunInputsError(unstated)
         try:
             unrecorded = unrecorded_files(
                 self.manifest, self.experiment_root, self.masks_root, self.output_folder

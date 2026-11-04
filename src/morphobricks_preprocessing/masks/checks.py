@@ -6,6 +6,7 @@ Moved from ``masks.py`` (PP-5).
 from __future__ import annotations
 
 import logging
+import shlex
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -22,7 +23,7 @@ from ..zarr_input import (
 from .header import _mask_header
 from .layout import _yx
 from .model import FOLDER, PLANE_AXES, MaskFile, MaskInventory
-from .stated import mask_named_axes, mask_names_its_axes, mask_roles, size_code
+from .stated import mask_named_axes, mask_roles, size_code
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +41,9 @@ def _header_issues(
     The mask's roles are the axes its metadata names, or those stated for its mask type
     (``stated``) where the metadata names none (:func:`.stated.mask_roles`); ``files`` is
     updated in place with them. Also check that the masks of one image have the same depth
-    slices and time points (a shared 2-D mask aside, :attr:`MaskFile.shared`).
-    ``unreadable`` are paths already known not to open (OME-Zarr ``labels`` groups).
+    slices and time points (a stated shared 2-D mask aside; for 2-D masks among them the
+    error names the statement that would share them). ``unreadable`` are paths already
+    known not to open (OME-Zarr ``labels`` groups).
     """
     found: list[tuple[str, str, str]] = [("unreadable_mask", path, "") for path in unreadable]
     for index, mask in enumerate(files):
@@ -53,10 +55,17 @@ def _header_issues(
     for mask in files:
         if mask.axes and not mask.shared:
             by_image.setdefault(mask.image, []).append(mask)
+    flat_types = set()
     for masks in by_image.values():
         if len({tuple(m.planes.items()) for m in masks}) > 1:
             found.extend(("mask_planes_differ", m.path, "") for m in masks)
-    return _grouped(found)
+            flat_types.update(m.mask_type for m in masks if m.axes == "YX")
+    return [
+        replace(issue, action=issue.action + _shared_hint(flat_types))
+        if issue.code == "mask_planes_differ"
+        else issue
+        for issue in _grouped(found)
+    ]
 
 
 def _check_header(
@@ -85,9 +94,6 @@ def _check_header(
         return header, [(code, mask.path, detail)]
     how = "stated" if mask.mask_type in stated else "header"
     checked = replace(header, axes=roles, axes_from=how)
-    if how == "header" and roles == "YX" and _named_planes(image):
-        tiff = Path(folder) / mask.path if mask.source == FOLDER else None
-        checked = replace(checked, named_shared=mask_names_its_axes(tiff))
     problems = []
     expected = _image_yx(image)
     if expected is not None and _yx(roles, shape) != expected:
@@ -173,10 +179,11 @@ def mask_plane_issues(
     """Check that every mask has the depth slices and time points of its image (issue #36).
 
     An image's depth slices and time points come from its confirmed axis roles; a mask's
-    from its own metadata (:attr:`MaskFile.planes`). They must be equal, except for a shared
-    2-D mask (:attr:`MaskFile.shared`: stated ``YX``, or named ``YX`` by its metadata for an
-    image whose metadata names its depth or time axis, F10); any other 2D mask belongs to an
-    image with one plane, never to every plane of a Z-stack or time-lapse.
+    from its own metadata (:attr:`MaskFile.planes`). They must be equal: a 2D mask belongs
+    to an image with one plane, never to every plane of a Z-stack or time-lapse, unless its
+    mask type is stated ``YX`` (:attr:`MaskFile.shared`). Its metadata naming ``YX`` is not
+    such a statement (owner decision of 4 November 2026, reversing F10): the error then
+    names the statement to add for each such type.
 
     Parameters
     ----------
@@ -197,7 +204,7 @@ def mask_plane_issues(
     """
     headers = {meta.relative_path: meta for meta in images}
     skip = set(skip)
-    mismatched = []
+    mismatched, flat_types = [], set()
     for mask in inventory.files:
         mapping = file_mappings.get(mask.image)
         unchecked = not mask.axes or mask.shared or mask.image in skip
@@ -210,6 +217,8 @@ def mask_plane_issues(
             planes[axis] = 1 if index is None else int(shape[index])
         if planes != mask.planes:
             mismatched.append(mask.path)
+            if mask.axes == "YX":
+                flat_types.add(mask.mask_type)
     if not mismatched:
         return []
     return [
@@ -223,25 +232,23 @@ def mask_plane_issues(
             "or time points as its image.",
             mismatched,
             "Save one mask plane for every depth slice and time point of the image, with the "
-            "axes named in the mask's metadata, or check the image's axis roles. For one 2D "
-            "mask shared by every plane of its image, state its type YX (for example "
-            "--mask-axes Cells=YX); without it, only a mask whose metadata names its axes YX "
-            "is shared, and only by an image whose metadata names its depth or time axis.",
+            "axes named in the mask's metadata, or check the image's axis roles."
+            + _shared_hint(flat_types),
         )
     ]
 
 
-def _named_planes(meta: TiffMetadata) -> bool:
-    """Return True when the image's own metadata names a Z or T axis longer than 1.
-
-    Used before the axis roles are confirmed (F10): a plain stack names no axis, so a 2-D
-    mask of it is shared by its planes only when stated ``YX`` for its type. Once named,
-    the confirmed roles must agree with these axes (the axis check, contract §2).
-    """
-    named = named_axes(meta)
-    if not meta.readable or "?" in named:
-        return False
-    return any(a in PLANE_AXES and n > 1 for a, n in zip(named, meta.shape, strict=True))
+def _shared_hint(types: Iterable[str]) -> str:
+    """Say which statements make the 2-D masks of these types shared, or ``""``."""
+    types = sorted(types)
+    if not types:
+        return ""
+    options = " ".join(f"--mask-axes {shlex.quote(f'{name}=YX')}" for name in types)
+    return (
+        " If one 2D mask is meant for every plane of its image, state it once per mask "
+        f"type, also when the mask's metadata names its axes YX: {options} (in the notebook, "
+        "choose YX for the type under Mask axes in step 1)."
+    )
 
 
 def _image_yx(meta: TiffMetadata) -> tuple[int, int] | None:
