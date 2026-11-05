@@ -37,8 +37,9 @@ class _FolderStep:
             placeholder="control/bio_rep1/tech_rep1/damaged_image.tif",
             layout=widgets.Layout(width="99%", height="5em"),
         )
-        self.exclude_box = widgets.Accordion(
-            children=[
+        self.exclude_box = ui.accordion(
+            "Exclude images (optional)",
+            [
                 widgets.VBox(
                     [
                         self.exclude,
@@ -52,8 +53,6 @@ class _FolderStep:
                     ]
                 )
             ],
-            titles=("Exclude images (optional)",),
-            selected_index=None,
         )
         self.check_button = ui.button(
             " Check folder",
@@ -147,10 +146,8 @@ class _FolderStep:
         self.balance_table = widgets.HTML()
         self.consistency_counts = widgets.HTML()
         self.consistency_issues = widgets.HTML()
-        self.consistency_details = widgets.Accordion(
-            children=[self.consistency_issues],
-            titles=("Show consistency warnings",),
-            selected_index=None,
+        self.consistency_details = ui.accordion(
+            "Show consistency warnings", [self.consistency_issues]
         )
         self.consistency_card = ui.card(
             "Dataset consistency",
@@ -182,10 +179,8 @@ class _FolderStep:
         )
         ui.set_visible(self.exclude_button, False)
         self.issue_counts = widgets.HTML()
-        self.issue_details = widgets.Accordion(
-            children=[widgets.VBox([self.folder_issues, self.exclude_button])],
-            titles=("Show warnings and errors",),
-            selected_index=None,
+        self.issue_details = ui.accordion(
+            "Show warnings and errors", [widgets.VBox([self.folder_issues, self.exclude_button])]
         )
         self.issues_card = ui.card(
             "Messages", [self.issue_counts, self.issue_details], visible=False
