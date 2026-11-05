@@ -99,6 +99,8 @@ download installs from GitHub if needed (internet access and Git required).
 
 ### Notebook: Google Colab and JupyterLab
 
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CellMigrationLab/morphobricks-preprocessing/blob/main/notebooks/MorphoBricks_Preprocessing.ipynb)
+
 [`notebooks/MorphoBricks_Preprocessing.ipynb`](notebooks/MorphoBricks_Preprocessing.ipynb)
 is one portable widget app for Google Colab, JupyterLab and LabConstrictor. It follows
 LabConstrictor's
