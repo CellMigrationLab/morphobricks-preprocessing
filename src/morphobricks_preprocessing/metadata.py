@@ -39,6 +39,7 @@ from .size_checks import (
     plane_count_issues,
     role_plane_counts,
     role_size,
+    z_stack_issues,
 )
 from .validation import ValidationIssue, error, has_errors, plural
 from .zarr_input import (
@@ -381,8 +382,10 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     dimensions are arranged differently, and images with different numbers of
     channels (``different_channel_counts``; the C axis, or the RGB samples
     without one, until the axis roles are confirmed), and channel names that differ at the
-    same channel (``channel_names_differ``). OME-Zarr images declare their axes,
-    so their arrangement is checked by role during the axis review instead.
+    same channel (``channel_names_differ``), and images whose header names a Z axis of
+    more than one depth slice (``z_stack_not_supported``: MorphoBricks v1 analyses 2-D
+    planes; a plain stack is checked once its roles are confirmed). OME-Zarr images declare
+    their axes, so their arrangement is checked by role during the axis review instead.
 
     Reports, as warnings: images of different widths or heights
     (``different_sizes``), different numbers of depth slices, time points
@@ -501,7 +504,7 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
 
     issues.extend(_check_dimensions([f for f in readable if not f.is_ome_zarr]))
     issues.extend(_check_channel_names(readable))
-    issues.extend(_check_channel_counts(readable))
+    issues.extend(_check_counts(readable))
     issues.extend(dimension_issues(readable))
     issues.extend(pixel_size_issues(readable))
     return issues
@@ -694,8 +697,18 @@ def channel_count_issues(counts: Mapping[str, int]) -> list[ValidationIssue]:
     ]
 
 
-def _check_channel_counts(files: list[TiffMetadata]) -> list[ValidationIssue]:
-    return channel_count_issues({f.relative_path: header_channel_count(f) for f in files})
+def header_depth_slices(f: TiffMetadata) -> int:
+    """Return the depth slices of the Z axis the header names; 1 when it names none."""
+    named = named_axes(f)
+    return f.shape[named.index("Z")] if "Z" in named else 1
+
+
+def _check_counts(files: list[TiffMetadata]) -> list[ValidationIssue]:
+    """Report different channel counts and Z-stacks, by the axes the headers name."""
+    return [
+        *channel_count_issues({f.relative_path: header_channel_count(f) for f in files}),
+        *z_stack_issues({f.relative_path: header_depth_slices(f) for f in files}),
+    ]
 
 
 def dimension_issues(
