@@ -3,17 +3,17 @@
 Every mask entry adds to what :meth:`.masks.MaskInventory.to_manifest` gives its
 fingerprint (``size``, ``mtime_ns``, and ``inventory_sha256`` for an OME-Zarr label image,
 issue #86), so a brick can tell a mask changed since the run, and
-how it is read: ``roles`` (one per axis of ``axes``), ``axes_from`` (``"header"``: the
-mask's metadata names them; ``"stated"``: the user stated them for its mask type) and
-``shared`` (a 2-D mask stated as shared by every plane of its image; never without a
-statement, :func:`unstated_shared_text`). A label image of an OME-Zarr image has its own
-fingerprint, left out of its image's (:func:`.inventory.source_signature`).
+how it is read: ``roles`` (one per axis of ``axes``) and ``axes_from`` (``"header"``: the
+mask's metadata names them; ``"stated"``: the user stated them for its mask type). The key
+``shared`` of a 2-D mask shared by every plane of its image (v0.4.0 release candidates) is
+no longer written, and a manifest recording ``shared: true`` is refused
+(:func:`shared_mask_text`, owner decision of 5 November 2026). A label image of an OME-Zarr
+image has its own fingerprint, left out of its image's (:func:`.inventory.source_signature`).
 """
 
 from __future__ import annotations
 
 import os
-import shlex
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
@@ -35,7 +35,7 @@ def mask_manifest(inventory: MaskInventory, experiment_root: str | os.PathLike) 
     -------
     dict
         :meth:`.masks.MaskInventory.to_manifest` with, per file, ``size``, ``mtime_ns``,
-        ``roles``, ``axes_from`` and ``shared``. ``axes`` are the mask's axes as stored
+        ``roles`` and ``axes_from``. ``axes`` are the mask's axes as stored
         (its header's letters, ``"IYX"`` for a plain stack), ``roles`` what they are read as
         (``"TYX"`` when stated), so a brick reads the mask as stored, never reordered.
 
@@ -58,7 +58,6 @@ def mask_manifest(inventory: MaskInventory, experiment_root: str | os.PathLike) 
             **fingerprint.to_data(),
             roles=mask.axes,
             axes_from=mask.axes_from or "header",
-            shared=mask.shared,
         )
     return data
 
@@ -68,13 +67,13 @@ def _mask_path(mask: MaskFile, folder: Path | None, root: Path) -> Path:
     return (folder / mask.path) if mask.source == FOLDER else (root / mask.path)
 
 
-def unstated_shared_text(records: Iterable[Mapping]) -> str | None:
-    """Say why recorded masks shared without a statement are refused, or return None.
+def shared_mask_text(records: Iterable[Mapping]) -> str | None:
+    """Say why recorded masks shared by every plane of their image are refused, or None.
 
-    Only a 2-D mask whose type the user stated ``YX`` is shared by every plane of its
-    image (owner decision of 4 November 2026). Main between v0.4.0rc5 and that decision
-    (#148, F10) also recorded a 2-D mask whose own metadata names ``YX`` as shared
-    (``shared: true`` with ``axes_from: "header"``); such a record is never trusted.
+    The v0.4.0 release candidates recorded a 2-D mask stated ``YX`` for its type as one
+    plane shared by every plane of its image (``shared: true``; main at #148 also without
+    a statement). The option was removed (owner decision of 5 November 2026): every mask
+    has its image's time points, so such a record is never trusted, stated or not.
 
     Parameters
     ----------
@@ -84,18 +83,15 @@ def unstated_shared_text(records: Iterable[Mapping]) -> str | None:
     Returns
     -------
     str or None
-        The refusal, naming the masks and the statement to add per mask type, or None.
+        The refusal, naming the masks, or None.
     """
-    unstated = [r for r in records if r.get("shared") is True and r.get("axes_from") != "stated"]
-    if not unstated:
+    shared = [r for r in records if r.get("shared") is True]
+    if not shared:
         return None
-    paths = ", ".join(str(r.get("path")) for r in unstated)
-    types = sorted({str(r.get("type")) for r in unstated})
-    options = " ".join(f"--mask-axes {shlex.quote(f'{name}=YX')}" for name in types)
+    paths = ", ".join(str(r.get("path")) for r in shared)
     return (
-        "The run recorded 2-D masks as shared by every plane of their image without a "
-        f"statement, because their metadata names YX: {paths}. A mask is shared only when "
-        "its type is stated YX. Run preprocessing again, stating it if one 2-D mask is "
-        f"meant for every plane ({options}; in the notebook, YX under Mask axes), or save "
-        "one mask plane per depth slice and time point."
+        "The run recorded 2-D masks as shared by every plane of their image: "
+        f"{paths}. That option was removed: MorphoBricks v1 analyses 2-D planes, and a "
+        "mask must have the same time points (T) as its image. Save one mask plane per "
+        "time point (TYX), then run preprocessing again."
     )

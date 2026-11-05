@@ -4,10 +4,11 @@ The **Masks folder (optional)** field takes the folder ``check --masks`` and ``r
 take. **Check folder** pairs the masks with the same functions as the command line
 (:func:`.run.preflight`, :func:`.masks.find_masks`); the **Masks** card shows the mask
 types found, the images without masks and the masks' messages. Masks whose files do not
-name their axes, and 2-D masks of images with several planes, need their axes stated once
-per mask type, as with ``--mask-axes TYPE=ROLES``: the card asks only for those
-(:func:`.mask_review.mask_axes_questions`), with the statements that fit, and applies
-nothing until **Check the masks** is clicked. The run is given the same masks folder and
+name their axes need their axes stated once per mask type (never ``YX``: a 2-D mask is not
+shared by several planes, owner decision of 5 November 2026), as with
+``--mask-axes TYPE=ROLES``: the card asks only for those
+(:func:`.mask_review.mask_axes_questions`), with the statements that fit, and applies nothing
+until **Check the masks** is clicked. The run is given the same masks folder and
 mask axes (:meth:`_RunPlan._given_inputs`). Without a masks folder the run reuses the one
 the earlier run in the output folder recorded (design v0.4 §1,
 :func:`.run.planned.planned_masks`); **Drop the recorded masks** is the notebook's
@@ -300,7 +301,7 @@ class _MasksCard:
         self._mask_choices, rows = {}, []
         for question in questions:
             options = [("Not stated: choose the axes", _NOT_STATED)] + [
-                (_choice_text(roles, question.shared), roles) for roles in question.choices
+                (_choice_text(roles), roles) for roles in question.choices
             ]
             value = earlier.get(question.mask_type) or question.stated or _NOT_STATED
             if value not in {roles for _, roles in options}:
@@ -339,21 +340,13 @@ def _question_html(question: MaskAxesQuestion) -> str:
             "an axis no mask can have). Save the masks of the type alike, as 2D label images "
             "or with their axes named."
         )
-    elif question.shared:
-        why = (
-            "these 2-D masks belong to images with several planes. Choose YX only if one "
-            "mask is meant for every plane of its image; otherwise save one mask plane per "
-            "depth slice and time point."
-        )
     else:
         why = "their files do not name what their axes are."
     return f"<div class='mb-help'>{name} (axes in the files: {stored}): {why}</div>"
 
 
-def _choice_text(roles: str, shared: bool) -> str:
+def _choice_text(roles: str) -> str:
     """Describe a statement, e.g. ``"TYX: time (T), height (Y), width (X)"``."""
-    if roles == "YX" and shared:
-        return "YX: one 2-D mask shared by every plane of its image"
     return f"{roles}: " + ", ".join(_ROLE_WORDS[role] for role in roles)
 
 

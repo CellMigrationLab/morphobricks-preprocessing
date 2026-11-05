@@ -54,8 +54,7 @@ def read_mask(
         or ``t`` is missing or outside the mask, or the plane holds a label outside 0 to
         :data:`LARGEST_LABEL` (:func:`check_labels`).
     """
-    # A shared 2-D mask (stated for its type) is one plane for every plane of its image.
-    wanted = {"Z": None, "T": None} if mask.shared else {"Z": z, "T": t}
+    wanted = {"Z": z, "T": t}
     for axis, index in wanted.items():
         length = mask.planes[axis] if mask.axes else 1
         if index is None and length > 1:

@@ -4,8 +4,10 @@ Masks are never converted or reordered; they are checked as stored against their
 read (design v0.4 §3). The roles are the axes the mask's metadata names (the rule of
 :func:`.axis_names.named_letters`, the one images use); where it names none (a plain stack),
 the user states them once per mask type. A statement may not contradict a named axis. A
-2-D mask stated ``YX`` for an image with several planes is one plane shared by all of them.
-A mask stored with Y and X the other way round from its image is refused, with a
+statement ``YX`` is refused (``shared_mask_not_supported``): it was the option of one 2-D
+mask shared by every plane of its image, removed with the owner decision of 5 November
+2026 (MorphoBricks v1 analyses 2-D planes; a mask has its image's time points). A mask stored
+with Y and X the other way round from its image is refused, with a
 ``numpy.swapaxes`` hint, never transposed.
 """
 
@@ -19,6 +21,9 @@ import tifffile
 from ..axis_names import PLACEHOLDER_AXES, named_letters
 from ..metadata import series_axes_from_metadata
 from .header import _known_axes
+
+SHARED_REMOVED_CODE = "shared_mask_not_supported"
+"""The error of a statement ``YX``: the removed shared 2-D mask (owner, 5 November 2026)."""
 
 MASK_ROLES = frozenset("YXZT")
 """The roles of a mask's axes: its plane (Y, X) and at most a depth (Z) and time (T) axis."""
@@ -64,8 +69,10 @@ def mask_roles(header: str, named: str, stated: str | None) -> tuple[str, str | 
     tuple
         ``(roles, None, "")`` when the roles are known, or ``("", code, detail)`` with the
         error code (``mask_not_2d``, ``invalid_mask_axes``, ``mask_axes_contradict_header``,
-        ``mask_layout``) and what is wrong.
+        ``mask_layout``, ``shared_mask_not_supported``) and what is wrong.
     """
+    if stated is not None and stated.strip().upper() == "YX":
+        return "", SHARED_REMOVED_CODE, f"header axes {header}, stated {stated}"
     if stated is None:
         if "?" in named or not _known_axes(header):
             return "", "mask_not_2d", f"header axes {header}"

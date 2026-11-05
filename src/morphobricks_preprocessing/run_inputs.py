@@ -20,7 +20,8 @@ Nothing is parsed from names, guessed or transposed, and no file is read once it
   image's content SHA-256 once (:func:`.source_content.content_changed`), and refuses one
   whose content changed even with its fingerprint kept;
 - masks are read by the recorded pairing only, with preprocessing's reader and its label
-  check (:func:`.masks.check_labels`); a stated shared 2-D mask serves every plane.
+  check (:func:`.masks.check_labels`); a run that recorded a 2-D mask shared by every
+  plane (``shared: true``, v0.4.0 release candidates) is refused.
 
 A :class:`RunInputs` is picklable: it holds paths and the records read when it opened (its
 snapshot of the table), and opens files only to read them.
@@ -52,7 +53,7 @@ from .manifest import (
     file_sha256,
     read_manifest,
 )
-from .mask_record import unstated_shared_text
+from .mask_record import shared_mask_text
 from .masks import FOLDER, MaskFile, read_mask
 from .masks.header import _mask_header
 from .planes import DEFAULT_MEMORY_LIMIT, read_plane
@@ -313,8 +314,6 @@ class RunInputs:
     ) -> np.ndarray:
         """Read one mask plane by the recorded pairing, checking its labels.
 
-        A stated shared 2-D mask is the same plane for every ``z`` and ``t`` of the image.
-
         Raises
         ------
         TypeError
@@ -385,7 +384,7 @@ class RunInputs:
         return self.manifest.image_type
 
     def _check_files(self) -> None:
-        """Refuse changed or gone files, masks without axes or shared unstated, unrecorded files."""
+        """Refuse changed or gone files, masks without axes or shared, unrecorded files."""
         changed = [e.relative_path for e in self.manifest.files if not self._unchanged(e)]
         if not changed and self.manifest.settings.verify_content:
             changed = content_changed(self.manifest.files, self.experiment_root)
@@ -398,9 +397,9 @@ class RunInputs:
         without_axes = [m["path"] for m in recorded if not m.get("axes") or not m.get("roles")]
         if without_axes:
             raise RunInputsError(_without_axes_text(without_axes))
-        unstated = unstated_shared_text(recorded)
-        if unstated:
-            raise RunInputsError(unstated)
+        shared = shared_mask_text(recorded)
+        if shared:
+            raise RunInputsError(shared)
         try:
             unrecorded = unrecorded_files(
                 self.manifest, self.experiment_root, self.masks_root, self.output_folder
@@ -498,7 +497,7 @@ class LazyImage:
 
 
 def _check_planes(relative_path: str, fov: Fov, z: int | None, t: int | None) -> None:
-    """Refuse a ``z`` or ``t`` outside the image, even for a shared 2-D mask (audit I5)."""
+    """Refuse a ``z`` or ``t`` outside the image (audit I5)."""
     for name, index, count in (("z", z, fov.z_count), ("t", t, fov.t_count)):
         if index is not None and not 0 <= index < count:
             raise IndexError(
