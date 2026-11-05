@@ -67,7 +67,26 @@ def setup_environment(tmp_path, monkeypatch):
         state.imports.append(name)
         if name == "morphobricks_preprocessing":
             return SimpleNamespace(__file__="/tmp/morphobricks_preprocessing/__init__.py")
-        return SimpleNamespace(PreprocessingNotebook=lambda: SimpleNamespace())
+
+        import ipywidgets as widgets
+
+        class FakeNotebook:
+            def welcome(self):
+                return widgets.HTML("welcome")
+
+            def folder_step(self):
+                return widgets.HTML("folder")
+
+            def axis_step(self):
+                return widgets.HTML("axes")
+
+            def run_step(self):
+                return widgets.HTML("run")
+
+            def results_step(self):
+                return widgets.HTML("results")
+
+        return SimpleNamespace(PreprocessingNotebook=FakeNotebook)
 
     monkeypatch.setattr(importlib, "import_module", import_interface)
 
