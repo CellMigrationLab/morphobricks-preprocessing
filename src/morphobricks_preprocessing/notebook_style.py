@@ -113,6 +113,15 @@ def card(header: str, children: Sequence[widgets.Widget], *, visible: bool = Tru
     return box
 
 
+def accordion(
+    title: str, children: Sequence[widgets.Widget], *, selected_index: int | None = None
+) -> widgets.Accordion:
+    """Build an accordion using the ipywidgets 7/8-compatible title API."""
+    box = widgets.Accordion(children=list(children), selected_index=selected_index)
+    box.set_title(0, title)
+    return box
+
+
 def intro(text: str) -> widgets.HTML:
     """Blue box at the top of a step saying what it does (``text`` is HTML)."""
     return widgets.HTML(f"<div class='mb-intro'>{text}</div>")
