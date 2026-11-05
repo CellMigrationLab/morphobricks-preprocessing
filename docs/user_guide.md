@@ -14,8 +14,8 @@ its own output folder, which is never inside the experiment folder.
 
 You need Python 3.11 or newer and JupyterLab (or Google Colab). Download
 [`notebooks/MorphoBricks_Preprocessing.ipynb`](../notebooks/MorphoBricks_Preprocessing.ipynb),
-open it and run its two code cells from top to bottom. The first cell prepares the environment;
-the second displays the complete preprocessing widget app.
+open it and run its single code cell. That cell prepares the environment and displays the
+complete preprocessing widget app.
 
 The setup chooses one source:
 
@@ -50,7 +50,7 @@ paste the path instead.
 ### Google Colab
 
 Open the notebook in Google Colab (**File › Open notebook › GitHub**, or upload the file) and
-run **Step 0**. On Colab it:
+run the notebook's single code cell. On Colab it:
 
 - connects your Google Drive: allow access in the window that opens. Your Drive is then the
   folder `/content/drive/MyDrive`;
