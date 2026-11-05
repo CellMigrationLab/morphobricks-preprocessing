@@ -33,7 +33,10 @@ def test_notebook_is_small_and_has_no_saved_outputs():
     assert len(notebook["cells"]) == 4
     assert len(code) == 2
     assert all(cell["outputs"] == [] and cell["execution_count"] is None for cell in code)
-    assert all(cell["metadata"] == {} for cell in code)
+    for cell in code:
+        first_line = "".join(cell["source"]).splitlines()[0]
+        assert first_line.startswith("# @title "), first_line
+        assert cell["metadata"].get("jupyter", {}).get("source_hidden") is True
 
 
 def test_setup_cell_needs_no_notebook_dependencies_before_installing():
@@ -81,7 +84,7 @@ def test_version_metadata_matches_labconstrictor_index():
 def test_the_only_app_cell_uses_explicit_display():
     app = _code_cells()[1].strip()
     assert app == (
-        "# Open the preprocessing app\n"
+        "# @title Open the preprocessing app\n"
         "from IPython.display import display\n\n"
         "display(notebook.app())"
     )
