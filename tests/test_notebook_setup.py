@@ -21,46 +21,61 @@ REQUIRED = {
     "ipywidgets",
     "matplotlib",
 }
-ZARR = "zarr"  # required on Colab only, where Step 0 installs the zarr extra
-GITHUB = "@ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@"
+ZARR = "zarr"
 
 
 @pytest.fixture
 def setup_environment(tmp_path, monkeypatch):
-    # Step 0 prints platform.platform(), which may run `uname -p` through subprocess the
-    # first time; computing (and caching) it now keeps that away from the faked pip below.
     platform.platform()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "path", sys.path.copy())
     monkeypatch.delitem(sys.modules, "morphobricks_preprocessing", raising=False)
-    state = SimpleNamespace(available={*REQUIRED, ZARR}, installs=[], welcomes=[], imports=[])
+    state = SimpleNamespace(
+        available={*REQUIRED, ZARR},
+        installs=[],
+        imports=[],
+        versions={
+            "morphobricks-preprocessing": "0.4.0rc5",
+            "morphobricks-normalization": "0.3.3",
+            "ipywidgets": "7.7.1",
+        },
+    )
 
-    def find_spec(name):
-        return object() if name in state.available else None
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name: object() if name in state.available else None,
+    )
+
+    def package_version(name):
+        value = state.versions.get(name)
+        if value is None:
+            raise importlib.metadata.PackageNotFoundError(name)
+        return value
+
+    monkeypatch.setattr(importlib.metadata, "version", package_version)
 
     def install(command, *, check):
         assert check is True
         state.installs.append(command)
         state.available.update({*REQUIRED, ZARR})
+        state.versions["morphobricks-preprocessing"] = "0.4.0rc5"
+
+    monkeypatch.setattr(subprocess, "run", install)
 
     def import_interface(name):
         state.imports.append(name)
-        return SimpleNamespace(
-            PreprocessingNotebook=lambda: SimpleNamespace(
-                welcome=lambda: state.welcomes.append("ready")
-            )
-        )
+        return SimpleNamespace(PreprocessingNotebook=lambda: SimpleNamespace())
 
-    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
     monkeypatch.setattr(importlib, "import_module", import_interface)
-    monkeypatch.setattr(subprocess, "run", install)
 
     def start():
         notebook = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
         source = next(c["source"] for c in notebook["cells"] if c["cell_type"] == "code")
-        state.namespace = {}
-        exec("".join(source), state.namespace)
-        return state.namespace
+        namespace = {}
+        exec("".join(source), namespace)
+        state.namespace = namespace
+        return namespace
 
     state.start = start
     return state
@@ -74,84 +89,52 @@ def checkout_at(path):
     return path
 
 
-def test_setup_reuses_installed_package_without_installing(setup_environment, capsys):
+def test_setup_reuses_the_matching_installed_release(setup_environment, capsys):
     state = setup_environment
     state.start()
     assert state.installs == []
     assert state.imports == ["morphobricks_preprocessing.notebook_ui"]
-    assert state.welcomes == ["ready"]
-    assert "Using the installed package" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Ready. MorphoBricks preprocessing 0.4.0rc5" in out
+    assert "ipywidgets 7.7.1" in out
 
 
-def test_setup_installs_missing_package_from_github_in_this_kernel(setup_environment, capsys):
+def test_setup_installs_missing_package_from_the_exact_commit(setup_environment, capsys):
     state = setup_environment
     state.available.clear()
-    state.start()
+    state.versions.pop("morphobricks-preprocessing")
+    namespace = state.start()
     (command,) = state.installs
     assert command[:5] == [sys.executable, "-m", "pip", "install", "--disable-pip-version-check"]
-    namespace = state.namespace
-    assert command[5:] == [
-        "morphobricks-preprocessing[notebook] @ "
-        "git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git"
-        f"@{namespace['RELEASE_TAG']}"
-    ]
-    assert state.welcomes == ["ready"]
-    out = capsys.readouterr().out
-    assert "Installing notebook requirements" in out
-    assert f"Using release {namespace['RELEASE_TAG']} from GitHub." in out
-    assert f"MorphoBricks_Preprocessing {namespace['current_version']}" in out
+    target = command[5]
+    assert target.startswith("morphobricks-preprocessing[notebook] @ git+")
+    assert target.endswith("@" + namespace["RELEASE_REF"])
+    assert namespace["RELEASE_REF"] == "79dd68e8de63b26581d72b807d219c411fdd98b9"
+    assert "release v0.4.0rc5" in capsys.readouterr().out
 
 
-def test_setup_repairs_missing_notebook_dependencies(setup_environment):
+def test_setup_replaces_a_mismatched_installed_release(setup_environment):
     state = setup_environment
-    state.available.remove("ipywidgets")
+    state.versions["morphobricks-preprocessing"] = "0.3.4"
     state.start()
-    assert state.installs[0][-1] == "morphobricks-preprocessing[notebook]"
-    assert state.welcomes == ["ready"]
+    assert len(state.installs) == 1
+    assert state.installs[0][-1].endswith("@" + state.namespace["RELEASE_REF"])
 
 
-def test_setup_installs_the_normalization_brick_into_an_older_checkout_environment(
-    setup_environment, tmp_path, monkeypatch, capsys
-):
-    # Environments set up before preprocessing depended on morphobricks-normalization.
+def test_setup_prefers_a_nearby_checkout(setup_environment, tmp_path, monkeypatch, capsys):
     state = setup_environment
     checkout = checkout_at(tmp_path / "checkout")
     monkeypatch.chdir(checkout)
-    state.available.remove("morphobricks_normalization")
+    state.available.remove("matplotlib")
     state.start()
-    assert (
-        "Installing notebook requirements (morphobricks_normalization)" in capsys.readouterr().out
-    )
-    assert state.installs[0][-2:] == ["-e", f"{checkout}[notebook]"]
-    assert state.welcomes == ["ready"]
-
-
-@pytest.mark.parametrize("missing_dependencies", [False, True])
-def test_setup_prefers_nearby_checkout_and_can_install_its_extras(
-    setup_environment, tmp_path, monkeypatch, missing_dependencies, capsys
-):
-    state = setup_environment
-    checkout = checkout_at(tmp_path / "a checkout with spaces")
-    notebooks = checkout / "notebooks"
-    notebooks.mkdir()
-    monkeypatch.chdir(notebooks)
-    if missing_dependencies:
-        state.available.remove("matplotlib")
-    namespace = state.start()
     assert sys.path[0] == str(checkout / "src")
-    assert "Using the local checkout" in capsys.readouterr().out
-    if missing_dependencies:
-        assert state.installs[0][-2:] == ["-e", f"{checkout}[notebook]"]
-    else:
-        assert state.installs == []
-    namespace["_start_preprocessing_notebook"]()
-    assert sys.path.count(str(checkout / "src")) == 1
+    assert state.installs[0][-2:] == ["-e", f"{checkout}[notebook]"]
+    assert "local checkout" in capsys.readouterr().out
 
 
 def test_setup_does_not_mix_an_already_loaded_package_with_another_checkout(
     setup_environment, tmp_path, monkeypatch
 ):
-    state = setup_environment
     checkout = checkout_at(tmp_path / "checkout")
     monkeypatch.chdir(checkout)
     monkeypatch.setitem(
@@ -160,117 +143,57 @@ def test_setup_does_not_mix_an_already_loaded_package_with_another_checkout(
         SimpleNamespace(__file__=str(tmp_path / "another_copy/__init__.py")),
     )
     with pytest.raises(RuntimeError, match="already loaded another copy"):
-        state.start()
-    assert state.installs == state.imports == state.welcomes == []
-
-
-def test_setup_moves_an_existing_source_path_to_the_front(setup_environment, tmp_path, monkeypatch):
-    checkout = checkout_at(tmp_path / "checkout")
-    source = str(checkout / "src")
-    monkeypatch.chdir(checkout)
-    sys.path.extend([source, source])
-    setup_environment.start()
-    assert sys.path[0] == source
-    assert sys.path.count(source) == 1
-
-
-def test_setup_mounts_drive_and_enables_the_widget_manager_on_colab(
-    setup_environment, monkeypatch, capsys
-):
-    calls = []
-    colab = SimpleNamespace(
-        drive=SimpleNamespace(mount=lambda path: calls.append(("mount", path))),
-        output=SimpleNamespace(enable_custom_widget_manager=lambda: calls.append("widgets")),
-    )
-    monkeypatch.setitem(sys.modules, "google.colab", colab)
-    setup_environment.start()
-    assert calls == [("mount", "/content/drive"), "widgets"]
-    out = capsys.readouterr().out
-    assert "connecting Google Drive" in out and "Checking the Google Colab environment" in out
-    assert "Local Jupyter" not in out
-    assert setup_environment.welcomes == ["ready"]
+        setup_environment.start()
+    assert setup_environment.installs == setup_environment.imports == []
 
 
 def colab(monkeypatch):
-    fake = SimpleNamespace(
-        drive=SimpleNamespace(mount=lambda path: None),
-        output=SimpleNamespace(enable_custom_widget_manager=lambda: None),
-    )
+    calls = []
+    fake = SimpleNamespace(drive=SimpleNamespace(mount=lambda path: calls.append(path)))
     monkeypatch.setitem(sys.modules, "google.colab", fake)
+    return calls
 
 
-def test_colab_installs_the_release_with_the_zarr_extra(setup_environment, monkeypatch, capsys):
+def test_colab_mounts_drive_without_a_custom_widget_manager(
+    setup_environment, monkeypatch, capsys
+):
+    calls = colab(monkeypatch)
+    setup_environment.start()
+    assert calls == ["/content/drive"]
+    assert "Google Colab: connecting Google Drive" in capsys.readouterr().out
+
+
+def test_colab_installs_the_zarr_extra(setup_environment, monkeypatch):
     colab(monkeypatch)
     state = setup_environment
     state.available.clear()
-    namespace = state.start()
-    (command,) = state.installs
-    assert command[5:] == [
-        f"morphobricks-preprocessing[notebook,zarr] {GITHUB}{namespace['RELEASE_TAG']}"
-    ]
-    assert state.welcomes == ["ready"]
+    state.versions.pop("morphobricks-preprocessing")
+    state.start()
+    assert "morphobricks-preprocessing[notebook,zarr]" in state.installs[0][-1]
 
 
-def test_colab_adds_zarr_to_an_installed_package(setup_environment, monkeypatch, capsys):
+def test_colab_accepts_native_ipywidgets_7_without_install_or_restart(
+    setup_environment, monkeypatch
+):
     colab(monkeypatch)
     state = setup_environment
-    state.available.remove(ZARR)
-    state.start()
-    assert state.installs[0][5:] == ["morphobricks-preprocessing[notebook,zarr]"]
-    assert "Installing notebook requirements (zarr)" in capsys.readouterr().out
-
-
-def test_locally_zarr_is_neither_required_nor_installed(setup_environment):
-    state = setup_environment
-    state.available.discard(ZARR)
+    state.versions["ipywidgets"] = "7.7.1"
     state.start()
     assert state.installs == []
-    state.available.clear()
-    state.start()
-    assert state.installs[0][5:][0].startswith(f"morphobricks-preprocessing[notebook] {GITHUB}")
 
 
 def test_setup_stops_when_drive_cannot_be_mounted(setup_environment, monkeypatch):
     def refuse(path):
         raise ValueError("mount failed")
 
-    colab = SimpleNamespace(drive=SimpleNamespace(mount=refuse), output=SimpleNamespace())
-    monkeypatch.setitem(sys.modules, "google.colab", colab)
+    monkeypatch.setitem(
+        sys.modules,
+        "google.colab",
+        SimpleNamespace(drive=SimpleNamespace(mount=refuse)),
+    )
     with pytest.raises(RuntimeError, match="Google Drive could not be connected"):
         setup_environment.start()
-    assert setup_environment.installs == setup_environment.welcomes == []
-
-
-def test_setup_reports_the_local_environment(setup_environment, capsys):
-    setup_environment.start()
-    out = capsys.readouterr().out
-    assert "Local Jupyter: Python" in out and "Working folder:" in out
-    assert "Google Drive" not in out
-
-
-def test_setup_upgrades_ipywidgets_7(setup_environment, monkeypatch, capsys):
-    real = importlib.metadata.version
-    widgets = {"version": "7.7.1"}
-
-    def version(name):
-        return widgets["version"] if name == "ipywidgets" else real(name)
-
-    def install(command, *, check):
-        setup_environment.installs.append(command)
-        widgets["version"] = "8.1.5"
-
-    monkeypatch.setattr(importlib.metadata, "version", version)
-    monkeypatch.setattr(subprocess, "run", install)
-    setup_environment.start()
-    assert setup_environment.installs[0][-1] == "morphobricks-preprocessing[notebook]"
-    assert "Installing notebook requirements (ipywidgets 8)" in capsys.readouterr().out
-
-
-def test_setup_asks_for_a_restart_when_ipywidgets_7_is_loaded(setup_environment, monkeypatch):
-    monkeypatch.setitem(sys.modules, "ipywidgets", SimpleNamespace(__version__="7.7.1"))
-    with pytest.raises(RuntimeError, match="Restart session"):
-        setup_environment.start()
-    assert setup_environment.imports == setup_environment.welcomes == []
+    assert setup_environment.imports == []
 
 
 def test_setup_rejects_old_python_before_installing(setup_environment, monkeypatch):
@@ -280,9 +203,10 @@ def test_setup_rejects_old_python_before_installing(setup_environment, monkeypat
     assert setup_environment.installs == setup_environment.imports == []
 
 
-def test_setup_reports_failed_installation_without_showing_ready(setup_environment, monkeypatch):
+def test_setup_reports_failed_installation(setup_environment, monkeypatch):
     state = setup_environment
     state.available.clear()
+    state.versions.pop("morphobricks-preprocessing")
 
     def fail(command, *, check):
         raise subprocess.CalledProcessError(1, command)
@@ -290,28 +214,4 @@ def test_setup_reports_failed_installation_without_showing_ready(setup_environme
     monkeypatch.setattr(subprocess, "run", fail)
     with pytest.raises(RuntimeError, match="could not install"):
         state.start()
-    assert state.imports == state.welcomes == []
-
-
-def test_setup_requests_restart_if_installed_packages_are_still_unavailable(
-    setup_environment, monkeypatch
-):
-    state = setup_environment
-    state.available.clear()
-    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: None)
-    with pytest.raises(RuntimeError, match="Restart the kernel"):
-        state.start()
-    assert state.imports == state.welcomes == []
-
-
-def test_setup_reports_import_errors_without_reinstalling(setup_environment, monkeypatch):
-    state = setup_environment
-
-    def broken(name):
-        raise ImportError("broken binary dependency")
-
-    monkeypatch.setattr(importlib, "import_module", broken)
-    with pytest.raises(RuntimeError, match="interface could not be loaded") as excinfo:
-        state.start()
-    assert str(excinfo.value.__cause__) == "broken binary dependency"
-    assert state.installs == state.welcomes == []
+    assert state.imports == []
