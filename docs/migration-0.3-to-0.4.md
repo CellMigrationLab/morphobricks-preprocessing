@@ -24,8 +24,8 @@ later bricks on the new run.
 
 - **What changed.** `run_manifest.json` is version 2 (contract §9). Each image records its
   `roles`, where they come from (`axes_from`: `header` or `confirmed`) and its pixel sizes by
-  role, with a unit and a source. Each mask records its `size`, `mtime_ns`, `roles`,
-  `axes_from` and whether it is a stated shared 2-D mask. The manifest also records the SHA-256
+  role, with a unit and a source. Each mask records its `size`, `mtime_ns`, `roles` and
+  `axes_from`. The manifest also records the SHA-256
   of `calibration.csv` and, for a run on named-axis copies, of the conversion record.
 - **Why.** A v1 manifest does not say which axis is which, or whether the user or the header
   decided it. A row computed under unknown roles cannot be trusted as the same row.
@@ -47,6 +47,12 @@ later bricks on the new run.
     confirm it again (CLI `--axes`).
   - An image whose own header names X before Y (for example ImageJ `ZXY`) is still read, in
     the canonical Y-before-X order, because its metadata names the axes.
+  - **Z-stacks are refused** (`z_stack_not_supported`, owner decision of 5 November 2026):
+    MorphoBricks v1 analyses 2-D planes. Every image with more than one depth slice is named,
+    from its header's Z axis and again from the confirmed roles (a plain stack given a Z
+    role). A Z axis of one slice is accepted. v0.3 analysed every depth slice as a plane.
+    Project each Z-stack first (for example a maximum-intensity projection in Fiji) and use
+    the projected image; v0.4.0 has no projection step. Time-lapses are still analysed.
 - **Why.** A guessed or contradicted axis gives wrong pixels with no error. The roles must
   come from the header or from an explicit answer.
 - **What to do.** Correct the roles to match the header. If the header itself is wrong, make
@@ -143,13 +149,14 @@ later bricks on the new run.
     or stated axes, put X before Y is refused (`mask_layout`, with a `numpy.swapaxes` hint).
   - A plain-stack mask needs its axes stated once per mask type: `--mask-axes Cells=TYX`, or
     **Mask axes** in the notebook.
-  - A 2-D mask of an image with several Z or T planes is refused (`mask_planes_mismatch`)
-    unless its type is stated `YX` (`--mask-axes Cells=YX`): one mask shared by every plane.
-    This holds also when the mask's metadata names its axes `YX` (OME-TIFF, ImageJ, an
-    OME-Zarr label image): only the statement shares it (owner decision of 4 November 2026).
-    A run folder written by main between v0.4.0rc5 and that decision (#148; no release)
-    that recorded such a mask as shared without a statement is refused by
-    `RunInputs.open`: run preprocessing again with `--mask-axes TYPE=YX`.
+  - A 2-D mask of a time-lapse is refused (`mask_planes_mismatch`): the masks of an image
+    with T > 1 need the same T, one mask plane per time point, whatever a 2-D mask's
+    metadata names (owner decision of 5 November 2026). The release candidates' stated
+    shared 2-D mask (`--mask-axes Cells=YX`, YX under the notebook's Mask axes) is removed:
+    a `YX` statement is the error `shared_mask_not_supported`, a `YX` statement recorded by
+    an earlier run is not applied again, and `RunInputs.open` refuses a run folder that
+    recorded a mask `shared: true`: save one mask plane per time point and run
+    preprocessing again.
   - OME-Zarr `labels/` are always used as masks when present. `find_masks(ome_zarr_labels=)`
     is **removed**.
   - The notebook has a **Masks folder** field and a **Describe the masks** button (the
@@ -319,7 +326,9 @@ brick refuses and gives the preprocessing command; there are no standalone excep
   `(T, Z, C, Y, X)` `LazyImage`. Both are in canonical order. `z` and `t` must be integers
   (a `plane_id` is a `TypeError`).
 - `mask_types()` and `read_mask(fov, type, z=None, t=None)`: the recorded pairing only, read
-  as stored with `check_labels` (labels 0 to int32 max). A stated shared 2-D mask serves every plane of the image; a `z` or `t` outside the image is an `IndexError`, for
+  as stored with `check_labels` (labels 0 to int32 max). A run that recorded a 2-D mask
+  shared by every plane (`shared: true`, release candidates only) is refused at `open`. A
+  `z` or `t` outside the image is an `IndexError`, for
   `read_plane` too (audit I5).
 - A header size in an unsupported unit (OME `pixel`, `inch`) or without a unit is unknown
   in `pixel_sizes` (audit I3). `to_micrometers` takes NumPy scalars (audit m4). The

@@ -334,6 +334,12 @@ functions the tests use.
 
 - **Roles:** X, Y, Z, C, T. Exactly one X and one Y; each role at most once; every axis
   longer than 1 needs a role. One confirmed mapping per experiment.
+- **2-D planes only (owner, 5 November 2026; plan §12 question 76):** an image with more
+  than one depth slice is the error `z_stack_not_supported` (`size_checks.z_stack_issues`),
+  from the header's named Z in `check_metadata` and again under the confirmed roles in
+  `review_axes` (superseding it); Z = 1 is accepted as it is, nothing is projected or
+  squeezed. A mask of a time-lapse has the image's T; the stated shared 2-D mask
+  (`--mask-axes TYPE=YX`, `MaskFile.shared`) is removed (`shared_mask_not_supported`).
 - **Prefill from tifffile axis labels:**
   - X/Y/Z/C/T keep their role;
   - `S` (RGB samples) becomes C when there is no other C;
