@@ -40,7 +40,7 @@ dependencies = [
 
 [project.optional-dependencies]
 notebook = [
-    "ipywidgets>=8",
+    "ipywidgets>=7.7,<9",
     "matplotlib>=3.7",
 ]
 zarr = [
