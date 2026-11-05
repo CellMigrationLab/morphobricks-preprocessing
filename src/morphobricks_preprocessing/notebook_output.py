@@ -165,9 +165,7 @@ class _ReportView:
         """Build the view, empty."""
         self.where = widgets.HTML()
         self.text = widgets.HTML()
-        self.box = widgets.Accordion(
-            children=[self.text], titles=("Show the report",), selected_index=None
-        )
+        self.box = ui.accordion("Show the report", [self.text])
         self.widget = widgets.VBox([self.where, self.box])
         ui.set_visible(self.box, False)
 

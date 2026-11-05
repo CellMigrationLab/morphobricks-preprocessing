@@ -12,24 +12,25 @@ its own output folder, which is never inside the experiment folder.
 
 ## 1. Installation
 
-You need Python 3.11 or newer and JupyterLab (or Jupyter Notebook). Download
-[`notebooks/MorphoBricks_Preprocessing.ipynb`](../notebooks/MorphoBricks_Preprocessing.ipynb), open it in Jupyter and
-run **Step 0**. It detects local Jupyter or Google Colab and checks these options:
+You need Python 3.11 or newer and JupyterLab (or Google Colab). Download
+[`notebooks/MorphoBricks_Preprocessing.ipynb`](../notebooks/MorphoBricks_Preprocessing.ipynb),
+open it and run its two code cells from top to bottom. The first cell prepares the environment;
+the second displays the complete preprocessing widget app.
 
-1. **Nearby checkout:** if the kernel is running in this repository or one of its
-   subfolders, use that checkout's source code, including local edits.
-2. **Installed package:** otherwise, use the package already available to this kernel.
-3. **GitHub installation:** if the package is missing, install it with the notebook
-   dependencies from the project's GitHub repository, at the release the notebook names
-   (`RELEASE_TAG` in Step 0, for example `v0.4.0rc5`), never the changing `main` branch.
+The setup chooses one source:
 
-Missing notebook dependencies are installed into the same Python environment as the
-kernel. A local checkout is installed in editable mode when it needs dependencies;
-an installed package's notebook extra is used when its UI dependencies are missing.
-Setup prints the selected source with its version or release, the notebook's version and the
-Python executable. It does not upgrade an already
-usable installation. Installation needs internet access, and the GitHub option needs Git.
-If another copy of the package is already loaded, restart the kernel to switch checkouts.
+1. **Nearby checkout:** when the kernel is running in this repository or one of its subfolders,
+   use that checkout's source code, including local edits.
+2. **Matching installed package:** otherwise, reuse an installed preprocessing package only
+   when its version matches the notebook.
+3. **Pinned GitHub source:** otherwise install the notebook's immutable `RELEASE_REF`, never
+   moving `main`.
+
+Missing notebook dependencies are installed into the same Python environment as the kernel.
+A local checkout is installed in editable mode when it needs dependencies. Setup prints the
+preprocessing, normalization and ipywidgets versions, the notebook version and the selected
+source. Installation needs internet access, and the GitHub option needs Git. If another copy
+of the package is already loaded, restart the kernel before switching source checkouts.
 
 To install everything manually instead, run these commands in the environment used by
 your notebook kernel:
@@ -53,11 +54,10 @@ run **Step 0**. On Colab it:
 
 - connects your Google Drive: allow access in the window that opens. Your Drive is then the
   folder `/content/drive/MyDrive`;
-- installs MorphoBricks preprocessing at the release the notebook names, with its notebook
-  dependencies and the `zarr` extra (to read OME-Zarr images), which takes a minute or two
-  (ipywidgets 8 replaces Colab's ipywidgets 7; if a message asks you to, choose
-  **Runtime › Restart session** and run Step 0 again);
-- enables Colab's widget support for these widgets.
+- installs the notebook's pinned preprocessing revision, with its notebook dependencies and
+  the `zarr` extra when needed;
+- uses Colab's native core ipywidgets support. The notebook accepts ipywidgets 7.7 or 8 and
+  does not force a widget upgrade, runtime restart or custom-widget manager.
 
 **Where to keep the data.** A Colab runtime is a temporary computer: everything on it except
 Google Drive is wiped when it disconnects (after some idle time, or after several hours).

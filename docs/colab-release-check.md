@@ -1,13 +1,12 @@
-# Colab hand check for the major release
+# Colab and JupyterLab release smoke check
 
-**Until this check is done, the notebook is verified headless only.** The tests
-(`tests/test_notebook_file.py`, `tests/test_notebook_*.py`) run the whole notebook in a local
-kernel and drive its widgets without a browser, and they fake `google.colab`. No release
-candidate of v0.4.0 has been run by hand on Google Colab.
+Automated tests execute the notebook in a local kernel and fake `google.colab`, but they
+cannot prove that a browser frontend renders or reacts to widgets correctly. Any release
+candidate that changes the notebook, bootstrap, ipywidgets support or notebook UI must be
+smoke-tested in both a fresh Google Colab runtime and JupyterLab/LabConstrictor before tagging.
 
-The owner runs this check by hand on Google Colab **once, for the major release (v0.4.0)**,
-after the round-2 data-flow audit and the matrix run (owner, 2 November 2026). Release
-candidates are not checked on Colab. The list collects the hand-check lists of PR #118
+This is a release gate, not an optional final-major-release check. A frontend failure is a
+release blocker even when all headless notebook tests pass. The list collects the hand-check lists of PR #118
 (PP-8d, Colab readiness), PR #123 (PP-10d, Describe the masks) and PR #127 (PP-11b, Make
 named-axis copies). Items were updated for later changes: PP-10a replaced the stale-lock code
 cell with a button, and PP-12 replaced the `.run-*` backup folders with `.publish` and
@@ -17,18 +16,20 @@ Use a dataset on Google Drive with a masks folder, and a second small experiment
 Y/X-swapped OME-TIFFs for section F. Note the tag, the date and any failure next to each item.
 Report a failure as an issue before the final tag.
 
-## A. Step 0 on a fresh runtime (PR #118)
+## A. Fresh runtime and app rendering
 
-1. Open the notebook from the release tag on a fresh runtime and run Step 0.
-   - [ ] The Drive authorisation window appears and the mount succeeds.
-   - [ ] Step 0 prints "Using release v0.4.0 from GitHub" and installs
-     `morphobricks-preprocessing[notebook,zarr]`.
-   - [ ] The green ready card shows the expected package version.
-   - [ ] No "Restart session" request appears. If one does, restart, run Step 0 again and
-     note it.
-2. - [ ] Run Steps 1–4. Every widget renders and reacts: buttons, dropdowns, accordions, the
-     preview image, sliders, progress bars and matplotlib plots. If anything is blank, try
-     without `enable_custom_widget_manager()` and report it.
+1. Open the notebook on a fresh Google Colab runtime and run the first setup cell.
+   - [ ] Drive authorisation appears and the mount succeeds.
+   - [ ] Setup reports the expected notebook, preprocessing, normalization and ipywidgets
+     versions and the pinned source revision.
+   - [ ] No ipywidgets upgrade or runtime restart is requested.
+2. Run the second cell.
+   - [ ] The complete preprocessing app renders inline; Colab does not open the Code snippets
+     pane instead of the widget.
+   - [ ] Buttons, dropdowns, accordions, preview image, sliders, progress bars and matplotlib
+     plots render and react.
+3. Repeat the same two-cell smoke test in JupyterLab/LabConstrictor.
+   - [ ] The same app renders and uses local paths without executing Colab-only setup.
 
 ## B. Step 1 (PR #118)
 

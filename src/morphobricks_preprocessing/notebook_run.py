@@ -63,9 +63,7 @@ class _RunStep:
         self.details = widgets.Textarea(
             layout=widgets.Layout(width="99%", height="14em"), disabled=True
         )
-        self.details_box = widgets.Accordion(
-            children=[self.details], titles=("Technical details (log)",), selected_index=None
-        )
+        self.details_box = ui.accordion("Technical details (log)", [self.details])
         self.run_checks = IntensityPanel(
             "Intensity checks",
             "Computed from the table just written, without reading the images again. Each "
