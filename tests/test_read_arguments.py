@@ -21,7 +21,7 @@ def flat(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def stack(tmp_path_factory):
-    clean = make_clean_run(tmp_path_factory.mktemp("stack"), axes="ZCYX", shape=(3, 2, 8, 8))
+    clean = make_clean_run(tmp_path_factory.mktemp("stack"), axes="TCYX", shape=(3, 2, 8, 8))
     return RunInputs.open(clean.output)
 
 
@@ -41,7 +41,7 @@ def test_read_plane_refuses_a_plane_id_given_as_z(stack):
 
 def test_read_plane_takes_numpy_integers(stack):
     fov = stack.fovs()[0]
-    assert np.array_equal(stack.read_plane(fov, np.int64(2)), stack.read_plane(fov, 2))
+    assert np.array_equal(stack.read_plane(fov, t=np.int64(2)), stack.read_plane(fov, t=2))
 
 
 @pytest.mark.parametrize("value", ["ctrl/rep1/a.ome.tif::z=0,t=0", 0.0, True])

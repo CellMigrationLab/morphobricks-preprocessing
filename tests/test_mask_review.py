@@ -21,7 +21,7 @@ def test_only_masks_without_named_axes_are_asked_about(tmp_path):
     found = inventory(root, masks)
     (question,) = mask_axes_questions(found, found.issues, {})
     assert question.mask_type == "Cells" and question.header_axes == ("IYX",)
-    assert question.stated is None and not question.shared
+    assert question.stated is None
     assert question.choices[:2] == ("TYX", "ZYX")
     assert all(c.index("Y") < c.index("X") for c in question.choices)  # never X before Y
     rows = {row.mask_type: row for row in mask_type_rows(found, ["ctrl/r1/a.tif", "x.tif"])}
@@ -43,16 +43,15 @@ def test_masks_of_one_type_stored_differently_have_no_statement(tmp_path):
     assert question.choices == ()
 
 
-def test_a_named_2d_mask_beside_a_mask_with_planes_is_asked_for_yx(tmp_path):
-    # Owner, 4 November 2026: a 2-D mask named YX is shared only when stated, also when its
-    # image's other mask has planes (mask_planes_differ before the roles are confirmed).
+def test_a_named_2d_mask_beside_a_mask_with_planes_is_not_asked_for_yx(tmp_path):
+    # Owner, 5 November 2026: a 2-D mask is never shared by several planes, so YX is no
+    # statement to ask for (until then it was the only choice here); the mask is refused.
     root, masks = tmp_path / "exp", tmp_path / "masks"
-    write_data(root / "ctrl/r1/a.tif", np.zeros((3, 8, 8), np.uint8), "ZYX")
-    write_data(masks / "Cells/ctrl/r1/a.tif", np.ones((3, 8, 8), np.uint16), "ZYX")
+    write_data(root / "ctrl/r1/a.tif", np.zeros((3, 8, 8), np.uint8), "TYX")
+    write_data(masks / "Cells/ctrl/r1/a.tif", np.ones((3, 8, 8), np.uint16), "TYX")
     write_data(masks / "Nuclei/ctrl/r1/a.tif", np.ones((8, 8), np.uint16), "YX")
     found = inventory(root, masks)
     assert "mask_planes_differ" in {i.code for i in found.issues}
-    (question,) = mask_axes_questions(found, found.issues, {})
-    assert question.mask_type == "Nuclei" and question.shared and question.choices == ("YX",)
+    assert mask_axes_questions(found, found.issues, {}) == []
     stated = inventory(root, masks, mask_axes={"Nuclei": "YX"})
-    assert stated.ok and {m.mask_type for m in stated.files if m.shared} == {"Nuclei"}
+    assert "shared_mask_not_supported" in {i.code for i in stated.issues if i.is_error}

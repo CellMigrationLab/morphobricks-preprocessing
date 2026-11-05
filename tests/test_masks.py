@@ -367,10 +367,10 @@ def test_a_2d_mask_of_a_time_lapse_or_z_stack_is_refused(tmp_path):
         write_data(masks / "Cells" / "ctrl" / "a.tif", label_image(0))
         assert preflight(root, masks_folder=masks).masks.ok  # the roles are not confirmed yet
         result = run_with_masks(root, masks, roles, tmp_path / roles)
-        assert not result.written
         mismatch = next(i for i in result.issues if i.code == "mask_planes_mismatch")
         assert mismatch.paths == ("Cells/ctrl/a.tif",)
-        assert "a 2D mask fits only an image with one plane" in mismatch.message
+        assert "a 2-D mask fits only an image with one plane" in mismatch.message
+        assert not result.written and ("z_stack" in str(codes(result.issues))) == (roles == "ZYX")
 
 
 def test_a_mask_with_the_images_time_points_is_accepted_and_recorded(tmp_path, no_pixel_reads):

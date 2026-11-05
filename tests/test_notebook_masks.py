@@ -168,10 +168,10 @@ def test_plain_stack_masks_get_their_axes_stated_never_guessed(tmp_path):
 
 
 @pytest.mark.parametrize("named", [False, True])
-def test_a_2d_mask_of_a_stack_is_shared_only_when_stated(tmp_path, named):
-    # Plain, or named YX by its metadata: the same question, YX the only answer (owner,
-    # 4 November 2026, reversing F10's sharing without a question).
-    root = experiment(tmp_path, (2, 16, 16), "ZYX")
+def test_a_2d_mask_of_a_time_lapse_is_refused_without_a_question(tmp_path, named):
+    # Plain, or named YX by its metadata: refused, and YX is never offered (owner,
+    # 5 November 2026; until then YX, one mask shared by every plane, was the answer).
+    root = experiment(tmp_path, (2, 16, 16), "TYX")
     masks = tmp_path / "masks"
     for rel in IMAGES:
         if named:
@@ -179,20 +179,12 @@ def test_a_2d_mask_of_a_stack_is_shared_only_when_stated(tmp_path, named):
         else:
             write_plain(masks / "Cells" / rel, labels((16, 16)))
     nb = notebook(root, masks)
-    assert nb.mask_axes_box.children == ()  # the planes are known once the roles are
     confirm_everything(nb)
     assert "mask planes mismatch" in nb.masks_issues.value
-    choice = nb._mask_choices["Cells"]
-    assert [value for _, value in choice.options] == ["", "YX"]
-    assert "shared by every plane" in choice.options[1][0]
+    assert "same T as their image" in nb.masks_issues.value
+    assert "Cells" not in nb._mask_choices and nb.mask_axes_box.children == ()
     assert still_to_do(nb) == "fix any mask errors (step 1, Masks)"
-    choice.value = "YX"
-    nb.masks_button.click()
-    assert nb.preflight.masks.ok and not nb.run_button.disabled
-    result = nb.run()
-    assert result.written
-    files = read_manifest(result.manifest_path).masks["files"]
-    assert {(f["roles"], f["axes_from"]) for f in files} == {("YX", "stated")}
+    assert nb.run_button.disabled
 
 
 # 3. Recorded masks: reused, named when changed, dropped only explicitly ----------------

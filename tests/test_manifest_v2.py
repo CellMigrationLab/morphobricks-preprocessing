@@ -54,16 +54,16 @@ def test_version_2_records_roles_their_source_and_pixel_sizes(tmp_path):
         stack(),
         ome=True,
         photometric="minisblack",
-        metadata={"axes": "ZYX", "PhysicalSizeX": 0.5, "PhysicalSizeY": 0.25},
+        metadata={"axes": "TYX", "PhysicalSizeX": 0.5, "PhysicalSizeY": 0.25},
     )
     write_plain(root / "ctrl/b.tif", stack(1))
-    result = run_experiment(root, AxisMapping("ZYX", "ZYX"))
-    assert not result.written  # one arrangement per experiment: ZYX and IYX differ
-    result = run_experiment(root, prefill_mapping("ZYX"), exclude=["ctrl/b.tif"])
+    result = run_experiment(root, AxisMapping("TYX", "TYX"))
+    assert not result.written  # one arrangement per experiment: TYX and IYX differ
+    result = run_experiment(root, prefill_mapping("TYX"), exclude=["ctrl/b.tif"])
     data = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     assert data["manifest_version"] == MANIFEST_VERSION == "2"
     (entry,) = data["files"]
-    assert entry["roles"] == ["Z", "Y", "X"] and entry["axes_from"] == "header"
+    assert entry["roles"] == ["T", "Y", "X"] and entry["axes_from"] == "header"
     sizes = {size["role"]: size for size in entry["pixel_sizes"]}
     assert sizes["X"] == {"role": "X", "value": 0.5, "unit": "micrometer", "source": "header"}
     assert sizes["Y"]["value"] == 0.25
@@ -98,14 +98,13 @@ def test_masks_record_their_fingerprint_and_roles(tmp_path):
         "mtime_ns": mtime_ns,
         "roles": "YX",
         "axes_from": "header",
-        "shared": False,
     }
 
 
 def test_the_reader_requires_roles_and_their_source_in_version_2(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "ctrl/a.tif", stack(), "ZYX")
-    path = run_experiment(root, prefill_mapping("ZYX")).manifest_path
+    write_data(root / "ctrl/a.tif", stack(), "TYX")
+    path = run_experiment(root, prefill_mapping("TYX")).manifest_path
     data = json.loads(path.read_text(encoding="utf-8"))
     del data["files"][0]["axes_from"]
     path.write_text(json.dumps(data), encoding="utf-8")
@@ -115,8 +114,8 @@ def test_the_reader_requires_roles_and_their_source_in_version_2(tmp_path):
 
 def test_the_writer_refuses_an_entry_without_roles(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "ctrl/a.tif", stack(), "ZYX")
-    manifest = read_manifest(run_experiment(root, prefill_mapping("ZYX")).manifest_path)
+    write_data(root / "ctrl/a.tif", stack(), "TYX")
+    manifest = read_manifest(run_experiment(root, prefill_mapping("TYX")).manifest_path)
     broken = replace(manifest, files=(replace(manifest.files[0], axes_from=None),))
     with pytest.raises(ValueError, match="has no roles or axes_from"):
         write_manifest(broken, tmp_path / "m.json")
@@ -135,15 +134,15 @@ def test_recorded_sizes_are_checked():
 
 def test_a_version_1_run_gives_no_reusable_row(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "ctrl/a.tif", stack(), "ZYX")
-    first = run_experiment(root, prefill_mapping("ZYX"))
+    write_data(root / "ctrl/a.tif", stack(), "TYX")
+    first = run_experiment(root, prefill_mapping("TYX"))
     data = json.loads(first.manifest_path.read_text(encoding="utf-8"))
     data["manifest_version"] = "1"
     for entry in data["files"]:
         del entry["axes_from"], entry["pixel_sizes"]
     first.manifest_path.write_text(json.dumps(data), encoding="utf-8")
     assert read_manifest(first.manifest_path).manifest_version == "1"
-    again = run_experiment(root, prefill_mapping("ZYX"))
+    again = run_experiment(root, prefill_mapping("TYX"))
     assert (
         again.rebuild_reason == "the earlier run was written before v0.4.0, without the axis check"
     )
@@ -153,13 +152,13 @@ def test_a_version_1_run_gives_no_reusable_row(tmp_path):
 
 def test_rows_are_reused_only_for_the_same_row_key(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "ctrl/a.tif", stack(), "ZYX")
-    first = run_experiment(root, prefill_mapping("ZYX"))
-    assert run_experiment(root, prefill_mapping("ZYX")).read == ()
+    write_data(root / "ctrl/a.tif", stack(), "TYX")
+    first = run_experiment(root, prefill_mapping("TYX"))
+    assert run_experiment(root, prefill_mapping("TYX")).read == ()
     # The same experiment moved elsewhere: its rows are read again from the new place.
     moved = tmp_path / "moved"
     root.rename(moved)
-    again = run_experiment(moved, prefill_mapping("ZYX"), output_folder=first.output_folder)
+    again = run_experiment(moved, prefill_mapping("TYX"), output_folder=first.output_folder)
     assert again.changed == ("ctrl/a.tif",) and again.read == ("ctrl/a.tif",)
 
 
@@ -167,7 +166,7 @@ def test_the_row_key():
     settings = RunSettings(256, 2**30)
 
     entry = FileEntry(
-        "a.tif", 10, 20, ("c", "b", "t"), "ZYX", roles=("Z", "Y", "X"), axes_from="header"
+        "a.tif", 10, 20, ("c", "b", "t"), "TYX", roles=("Z", "Y", "X"), axes_from="header"
     )
     key = RowKey.of(entry, settings, "/exp")
     assert key == RowKey.of(entry, settings, "/exp")
@@ -184,7 +183,7 @@ def test_the_row_key():
 
 
 def test_fingerprint_of_a_file(tmp_path):
-    path = write_data(tmp_path / "a.tif", stack(), "ZYX")
+    path = write_data(tmp_path / "a.tif", stack(), "TYX")
     assert Fingerprint.of(path) == Fingerprint(*source_fingerprint(path))
 
 
@@ -208,10 +207,10 @@ def test_a_confirmation_covers_only_the_files_it_was_given_for(tmp_path):
 
 def test_named_images_need_no_confirmation(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "ctrl/a.tif", stack(), "ZYX")
-    write_data(root / "ctrl/b.tif", stack(1), "ZYX")
-    assert review_axes([], ConfirmedAxes(prefill_mapping("ZYX"), {})).ok
-    confirmed = confirm_axes(prefill_mapping("ZYX"), root, ["ctrl/a.tif"])
+    write_data(root / "ctrl/a.tif", stack(), "TYX")
+    write_data(root / "ctrl/b.tif", stack(1), "TYX")
+    assert review_axes([], ConfirmedAxes(prefill_mapping("TYX"), {})).ok
+    confirmed = confirm_axes(prefill_mapping("TYX"), root, ["ctrl/a.tif"])
     assert run_experiment(root, confirmed).written
 
 

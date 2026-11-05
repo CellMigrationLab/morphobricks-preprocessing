@@ -23,7 +23,7 @@ def experiment(tmp_path):
     root = tmp_path / "exp"
     rng = np.random.default_rng(0)
     for rel in ["ctrl/rep1/a.tif", "ctrl/rep1/b.tif", "drug/rep1/a.tif"]:
-        write_data(root / rel, rng.integers(0, 200, (2, 3, 8, 8), dtype=np.uint8), axes="ZCYX")
+        write_data(root / rel, rng.integers(0, 200, (2, 3, 8, 8), dtype=np.uint8), axes="TCYX")
     return root
 
 
@@ -56,7 +56,7 @@ def test_check_prints_summary_and_suggested_axes(experiment, capsys):
     out = capsys.readouterr().out
     assert "Images to analyse: 3 in 2 leaf folders" in out
     assert "ctrl/" in out and "rep1/  (2 images; technical repeat: single)" in out
-    assert "Suggested option for 'run': --axes ZCYX (axes in the files: ZCYX)" in out
+    assert "Suggested option for 'run': --axes TCYX (axes in the files: TCYX)" in out
     # 'check' is the run's step stopped after the report: it writes the report, and the
     # design template prefilled from the folders (PP-8c).
     output = experiment.parent / "exp_MorphoBricks_Preprocessing"
@@ -73,20 +73,20 @@ def test_check_exits_with_1_on_errors(experiment, capsys):
 
 def test_run_writes_the_table(experiment, capsys):
     confirm_design(experiment)
-    assert main(["run", str(experiment), "--axes", "ZCYX"]) == 0
+    assert main(["run", str(experiment), "--axes", "TCYX"]) == 0
     out = capsys.readouterr().out
     assert "[1/3] ctrl/rep1/a.tif" in out
     assert "Wrote 6 planes" in out
     output = experiment.parent / "exp_MorphoBricks_Preprocessing"
     records = read_plane_histograms(output / "plane_histograms.csv")
-    assert {(r.z, r.channel_count) for r in records} == {(0, 3), (1, 3)}
+    assert {(r.t, r.channel_count) for r in records} == {(0, 3), (1, 3)}
 
 
 def rgb_experiment(root):
     rng = np.random.default_rng(0)
     for rel in ["ctrl/rep1/a.tif", "drug/rep1/a.tif"]:
         data = rng.integers(0, 200, (2, 8, 8, 3), dtype=np.uint8)
-        write_data(root / rel, data, axes="ZYXS", photometric="rgb")
+        write_data(root / rel, data, axes="TYXS", photometric="rgb")
     return root
 
 
@@ -103,13 +103,13 @@ def test_check_suggests_the_image_type(experiment, tmp_path, capsys):
 def test_run_uses_and_prints_the_suggested_image_type(tmp_path, capsys):
     root = rgb_experiment(tmp_path / "exp")
     confirm_design(root)
-    assert main(["run", str(root), "--axes", "ZYXC"]) == 0
+    assert main(["run", str(root), "--axes", "TYXC"]) == 0
     out = capsys.readouterr().out
     assert "Image type: rgb\n  suggested, because the images are stored as RGB colour" in out
     assert "Give --image-type fluorescence if these are fluorescence images." in out
     manifest = read_manifest(default_output_folder(root) / "run_manifest.json")
     assert manifest.image_type == "rgb" and manifest.channels_from_rgb_samples
-    assert main(["run", str(root), "--axes", "ZYXC", "--image-type", "fluorescence"]) == 0
+    assert main(["run", str(root), "--axes", "TYXC", "--image-type", "fluorescence"]) == 0
     out = capsys.readouterr().out
     assert "Image type: fluorescence\n  given with --image-type" in out
     assert "Read: " not in out  # changing the type reads nothing again
@@ -119,13 +119,13 @@ def test_run_uses_and_prints_the_suggested_image_type(tmp_path, capsys):
 
 def test_rgb_is_refused_for_images_that_cannot_be_rgb(experiment, capsys):
     confirm_design(experiment)
-    assert main(["run", str(experiment), "--axes", "ZCYX"]) == 0
+    assert main(["run", str(experiment), "--axes", "TCYX"]) == 0
     out = capsys.readouterr().out
     assert "Image type: fluorescence" in out
     assert "Give --image-type rgb if these are rgb images." in out
-    assert main(["run", str(experiment), "--axes", "ZCYX", "--image-type", "rgb"]) == 0
+    assert main(["run", str(experiment), "--axes", "TCYX", "--image-type", "rgb"]) == 0
     capsys.readouterr()
-    assert main(["run", str(experiment), "--axes", "ZYCX", "--image-type", "rgb"]) == 1
+    assert main(["run", str(experiment), "--axes", "TYCX", "--image-type", "rgb"]) == 1
     out = capsys.readouterr().out
     assert "contradict their header" in out
     assert "RGB images need exactly three colour channels" in out
@@ -134,7 +134,7 @@ def test_rgb_is_refused_for_images_that_cannot_be_rgb(experiment, capsys):
 
 def test_image_type_must_be_known(experiment):
     with pytest.raises(SystemExit) as excinfo:
-        main(["run", str(experiment), "--axes", "ZCYX", "--image-type", "brightfield"])
+        main(["run", str(experiment), "--axes", "TCYX", "--image-type", "brightfield"])
     assert excinfo.value.code == 2
 
 
@@ -171,14 +171,14 @@ def test_run_prints_the_intensity_checks(tmp_path, capsys):
 
 
 def test_invalid_check_limits_are_refused(experiment, capsys):
-    assert main(["run", str(experiment), "--axes", "ZCYX", "--min-images", "1"]) == 1
+    assert main(["run", str(experiment), "--axes", "TCYX", "--min-images", "1"]) == 1
     assert "min_images must be at least 2" in capsys.readouterr().out
 
 
 def test_run_options_reach_the_run(experiment, tmp_path, capsys):
     out_dir = tmp_path / "results"
     log = tmp_path / "run.log"
-    args = ["run", str(experiment), "--axes", "ZCYX", "--output", str(out_dir)]
+    args = ["run", str(experiment), "--axes", "TCYX", "--output", str(out_dir)]
     args += ["--bins", "16", "--memory-limit", "256MiB", "--exclude", "drug/rep1/a.tif"]
     args += ["--log", str(log)]
     confirm_design(experiment, out_dir)
@@ -187,7 +187,7 @@ def test_run_options_reach_the_run(experiment, tmp_path, capsys):
     assert manifest.settings.bin_count == 16
     assert manifest.settings.memory_limit == 256 * 2**20
     assert manifest.settings.exclude == ("drug/rep1/a.tif",)
-    assert manifest.mapping.roles == ("Z", "C", "Y", "X")
+    assert manifest.mapping.roles == ("T", "C", "Y", "X")
     assert "Wrote" in log.read_text(encoding="utf-8")
     capsys.readouterr()
     assert main(args + ["--mode", "full"]) == 0
@@ -195,10 +195,10 @@ def test_run_options_reach_the_run(experiment, tmp_path, capsys):
 
 
 def test_run_rejects_axes_of_the_wrong_length(experiment, capsys):
-    assert main(["run", str(experiment), "--axes", "ZYX"]) == 1
+    assert main(["run", str(experiment), "--axes", "TYX"]) == 1
     out = capsys.readouterr().out
-    assert "does not fit the images, whose axes are ZCYX" in out
-    assert "--axes ZCYX" in out
+    assert "does not fit the images, whose axes are TCYX" in out
+    assert "--axes TCYX" in out
 
 
 def test_run_reports_blocking_errors(experiment, capsys):
@@ -217,23 +217,24 @@ def test_run_without_readable_images(tmp_path, capsys):
 
 def test_missing_axes_option(tmp_path, capsys):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZTYX")
-    write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
+    # b.tif lacks a C axis of one channel (it lacked Z until Z-stacks were refused).
+    write_data(root / "a.tif", np.zeros((3, 1, 8, 8), np.uint8), axes="TCYX")
+    write_data(root / "b.tif", np.zeros((3, 8, 8), np.uint8), axes="TYX")
     confirm_design(root)
-    assert main(["run", str(root), "--axes", "ZTYX"]) == 1
-    assert main(["run", str(root), "--axes", "ZTYX", "--missing-as-singleton"]) == 0
+    assert main(["run", str(root), "--axes", "TCYX"]) == 1
+    assert main(["run", str(root), "--axes", "TCYX", "--missing-as-singleton"]) == 0
 
 
 def test_different_channel_counts_stop_check_and_run(tmp_path, capsys):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZCYX")
-    write_data(root / "b.tif", np.zeros((2, 2, 8, 8), np.uint8), axes="ZCYX")
-    write_data(root / "c.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZCYX")
+    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="TCYX")
+    write_data(root / "b.tif", np.zeros((2, 2, 8, 8), np.uint8), axes="TCYX")
+    write_data(root / "c.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="TCYX")
     assert main(["check", str(root)]) == 1
     out = capsys.readouterr().out
     assert "different numbers of channels: 3 channels (2 images), 2 channels (1 image)" in out
     confirm_design(root)
-    assert main(["run", str(root), "--axes", "ZCYX"]) == 1
+    assert main(["run", str(root), "--axes", "TCYX"]) == 1
     out = capsys.readouterr().out
     assert "different numbers of channels" in out and "b.tif" in out
     assert "no table or manifest was written" in out
@@ -245,23 +246,23 @@ def test_axes_are_needed_for_the_first_run_of_plain_stacks_only(tmp_path, capsys
     confirm_design(root)
     assert main(["run", str(root)]) == 1
     assert "Give the role of each axis with --axes" in capsys.readouterr().out
-    assert main(["run", str(root), "--axes", "ZYX"]) == 0
+    assert main(["run", str(root), "--axes", "TYX"]) == 0
     capsys.readouterr()
     assert main(["run", str(root)]) == 0
-    assert "as confirmed for the earlier run (ZYX)" in capsys.readouterr().out
+    assert "as confirmed for the earlier run (TYX)" in capsys.readouterr().out
 
 
 def test_a_plain_stack_among_named_images_still_needs_axes(tmp_path, capsys):
     # F9 review: one plain stack is enough for the roles not to be taken from the headers;
     # images that no mapping describes are named instead of "--axes None".
     root = tmp_path / "exp"
-    write_data(root / "ctrl/rep1/a.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
+    write_data(root / "ctrl/rep1/a.tif", np.zeros((2, 8, 8), np.uint8), axes="TYX")
     write_plain(root / "ctrl/rep1/b.tif", np.zeros((2, 8, 8), np.uint8))
     confirm_design(root)
     assert main(["run", str(root)]) == 1
     out = capsys.readouterr().out
     assert "--axes None" not in out and "Axis roles" not in out
-    assert "arranged differently: IYX (1 image), ZYX (1 image)" in out
+    assert "arranged differently: IYX (1 image), TYX (1 image)" in out
     assert not (root.parent / "exp_MorphoBricks_Preprocessing" / "run_manifest.json").exists()
 
 
@@ -276,7 +277,7 @@ def test_images_that_name_their_axes_need_no_axes_option(experiment, capsys):
     # A later run in the same output folder reuses the confirmed roles.
     assert main(["run", str(experiment)]) == 0
     out = capsys.readouterr().out
-    assert "Axis roles: as confirmed for the earlier run (ZCYX)" in out
+    assert "Axis roles: as confirmed for the earlier run (TCYX)" in out
     assert "Unchanged (rows kept): 3 images" in out
 
 
@@ -290,4 +291,4 @@ def test_python_dash_m(experiment):
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
-    assert "--axes ZCYX" in completed.stdout
+    assert "--axes TCYX" in completed.stdout

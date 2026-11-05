@@ -99,26 +99,28 @@ def test_a_run_refuses_ngff_depth_confirmed_as_time(zyx_store, tmp_path):
     assert not (tmp_path / "o" / "run_manifest.json").exists()
 
 
-def test_roles_that_agree_with_ngff_axes_are_read_as_declared(zyx_store, tmp_path):
-    write_data(tmp_path / "exp/ctrl/b.tif", data((3, 6, 8)), axes="ZYX", imagej=True)
-    mapping = AxisMapping("ZYX", "ZYX")
+def test_roles_that_agree_with_ngff_axes_are_read_as_declared(tmp_path):
+    # A zyx store until Z-stacks were refused (owner decision of 5 November 2026).
+    store = write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", data((3, 6, 8)), "tyx")
+    write_data(tmp_path / "exp/ctrl/b.tif", data((3, 6, 8)), axes="TYX", imagej=True)
+    mapping = AxisMapping("TYX", "TYX")
     result = run_experiment(tmp_path / "exp", mapping, output_folder=tmp_path / "o")
     assert result.written, result.issues
     assert "ome_zarr_axes_mismatch" not in codes(result.issues)
-    meta = inspect_image(zyx_store, "ctrl/a.ome.zarr")
+    meta = inspect_image(store, "ctrl/a.ome.zarr")
     assert file_mapping_for(meta, mapping) == mapping
 
 
 def test_another_arrangement_is_still_matched_by_role(tmp_path):
     tiff = tmp_path / "exp/ctrl/a.tif"
-    write_data(tiff, data((3, 2, 6, 8)), axes="ZCYX", imagej=True)
-    store = write_ngff(tmp_path / "exp/ctrl/b.ome.zarr", data((2, 3, 6, 8)), "czyx")
-    mapping = AxisMapping("ZCYX", "ZCYX")
+    write_data(tiff, data((3, 2, 6, 8)), axes="TCYX", imagej=True)
+    store = write_ngff(tmp_path / "exp/ctrl/b.ome.zarr", data((2, 3, 6, 8)), "ctyx")
+    mapping = AxisMapping("TCYX", "TCYX")
     review = review_axes(
         [inspect_image(tiff, "a.tif"), inspect_image(store, "b.ome.zarr")], mapping
     )
     assert not review.issues
-    assert review.file_mappings["b.ome.zarr"].roles == ("C", "Z", "Y", "X")
+    assert review.file_mappings["b.ome.zarr"].roles == ("C", "T", "Y", "X")
 
 
 # Issue #73: missing axes are never guessed -------------------------------------------------
@@ -250,7 +252,7 @@ def test_every_image_with_a_malformed_calibration_is_named_and_kept_in_the_repor
     malformed = {"type": "scale", "scale": [2.0, 0.5, 0.25]}  # a dict, not a list
     for name in ("a", "b"):
         write_ngff(
-            root / f"ctrl/{name}.ome.zarr", data((3, 6, 8)), "zyx", dataset_transforms=malformed
+            root / f"ctrl/{name}.ome.zarr", data((3, 6, 8)), "tyx", dataset_transforms=malformed
         )
     pre = preflight(root, tmp_path / "o")
     assert pre.ok
@@ -260,7 +262,7 @@ def test_every_image_with_a_malformed_calibration_is_named_and_kept_in_the_repor
     assert (
         "ctrl/a.ome.zarr: the coordinateTransformations of level 0 are not a list" in found.message
     )
-    result = run_experiment(root, AxisMapping("ZYX", "ZYX"), output_folder=tmp_path / "o")
+    result = run_experiment(root, AxisMapping("TYX", "TYX"), output_folder=tmp_path / "o")
     assert result.written, result.issues
     assert "invalid_physical_calibration" in codes(result.issues)
     report = json.loads((tmp_path / "o/discovery_report.json").read_text(encoding="utf-8"))

@@ -39,7 +39,7 @@ from morphobricks_preprocessing.testing import make_clean_run
 from run_files import check_outputs, finished_pid, only_the_report
 from tiff_tree import write_data, write_plain
 
-ZYX = prefill_mapping("ZYX")
+TYX = prefill_mapping("TYX")
 
 
 def stack(seed=0, shape=(3, 6, 8)):
@@ -50,7 +50,7 @@ def stack(seed=0, shape=(3, 6, 8)):
 def experiment(tmp_path):
     root = tmp_path / "exp"
     for seed, rel in enumerate(["ctrl/r1/a.tif", "ctrl/r1/b.tif", "drug/r1/a.tif"]):
-        write_data(root / rel, stack(seed), "ZYX")
+        write_data(root / rel, stack(seed), "TYX")
     return root
 
 
@@ -67,19 +67,19 @@ def codes(issues):
 
 def test_an_unknown_mode_is_refused_before_anything_is_written(experiment):
     with pytest.raises(ValueError, match="mode must be one of restart, full"):
-        run_experiment(experiment, ZYX, mode="rebuild")
+        run_experiment(experiment, TYX, mode="rebuild")
     assert not default_output_folder(experiment).exists()
 
 
 def test_the_removed_force_rebuild_is_refused(experiment):
     with pytest.raises(TypeError):
-        run_experiment(experiment, ZYX, force_rebuild=True)
+        run_experiment(experiment, TYX, force_rebuild=True)
 
 
 def test_a_restart_that_changes_nothing_leaves_the_table_byte_identical(experiment):
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     table = first.csv_path.read_bytes()
-    again = run_experiment(experiment, ZYX)
+    again = run_experiment(experiment, TYX)
     assert again.written and again.read == () and again.reused == again.unchanged
     assert again.csv_path.read_bytes() == table
     assert report(again)["reused"] == list(again.unchanged) and report(again)["recomputed"] == {}
@@ -138,7 +138,7 @@ def test_a_later_run_keeps_the_masks_and_dropping_them_must_be_asked_for(tmp_pat
 def test_a_later_run_reuses_the_recorded_inputs_and_settings(experiment):
     first = run_experiment(
         experiment,
-        ZYX,
+        TYX,
         bin_count=64,
         exclude=["drug/r1/a.tif"],
         image_type="fluorescence",
@@ -149,11 +149,11 @@ def test_a_later_run_reuses_the_recorded_inputs_and_settings(experiment):
     manifest = read_manifest(again.manifest_path)
     assert manifest.settings.bin_count == 64 and manifest.settings.exclude == ("drug/r1/a.tif",)
     assert manifest.settings.missing_as_singleton and manifest.image_type == "fluorescence"
-    assert manifest.mapping == ZYX
+    assert manifest.mapping == TYX
 
 
 def test_a_value_given_that_differs_is_used_and_the_report_names_its_effect(experiment):
-    first = run_experiment(experiment, ZYX, exclude=["drug/r1/a.tif"])
+    first = run_experiment(experiment, TYX, exclude=["drug/r1/a.tif"])
     again = run_experiment(experiment, bin_count=32, exclude=[], output_folder=first.output_folder)
     assert again.written and again.read == ("ctrl/r1/a.tif", "ctrl/r1/b.tif", "drug/r1/a.tif")
     changes = {change.name: change for change in again.input_changes}
@@ -174,7 +174,7 @@ def test_without_roles_given_or_recorded_the_run_stops(experiment):
 
 
 def test_a_version_1_manifest_gives_no_inputs(experiment):
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     data = json.loads(first.manifest_path.read_text(encoding="utf-8"))
     data["manifest_version"] = "1"
     first.manifest_path.write_text(json.dumps(data), encoding="utf-8")
@@ -250,10 +250,10 @@ def test_a_changed_design_is_named_with_its_effect(tmp_path):
 
 def test_a_second_run_is_refused_and_names_the_holder(experiment):
     output = default_output_folder(experiment)
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     before = {p.name: p.read_bytes() for p in output.iterdir()}
     with output_lock(output) as holder:
-        result = run_experiment(experiment, ZYX)
+        result = run_experiment(experiment, TYX)
         assert read_lock(output) == holder
     assert not result.written and codes(result.issues) == ["output_locked"]
     (issue,) = result.issues
@@ -272,7 +272,7 @@ def test_the_lock_is_released_when_a_run_fails(experiment, monkeypatch):
 
     monkeypatch.setattr(run_module.pipeline, "write_plane_histograms", broken)
     with pytest.raises(OSError, match="simulated"):
-        run_experiment(experiment, ZYX)
+        run_experiment(experiment, TYX)
     assert read_lock(default_output_folder(experiment)) is None
 
 
@@ -309,10 +309,10 @@ def stale_lock(output, pid, host=None):
 def test_a_stale_lock_is_removed_only_on_request(experiment):
     output = default_output_folder(experiment)
     stale_lock(output, finished_pid(), host="another-computer")
-    assert codes(run_experiment(experiment, ZYX).issues) == ["output_locked"]
+    assert codes(run_experiment(experiment, TYX).issues) == ["output_locked"]
     removed = remove_stale_lock(output)
     assert removed.host == "another-computer" and read_lock(output) is None
-    assert run_experiment(experiment, ZYX).written
+    assert run_experiment(experiment, TYX).written
     assert remove_stale_lock(output) is None
 
 
@@ -365,9 +365,9 @@ def test_uncalibrated_images_are_reported(tmp_path):
 
 
 def test_a_stopped_run_writes_its_report_and_keeps_the_last_good_run(experiment):
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     kept = {p.name: p.read_bytes() for p in (first.csv_path, first.manifest_path)}
-    stopped = run_experiment(experiment, ZYX, bin_count=0)
+    stopped = run_experiment(experiment, TYX, bin_count=0)
     assert not stopped.written
     data = report(stopped)
     assert data["status"] == "stopped" and data["manifest_sha256"] is None
@@ -383,16 +383,16 @@ def test_the_report_is_provisional_while_the_pixels_are_read(experiment):
         output = default_output_folder(experiment)
         seen.append(json.loads((output / REPORT_FILENAME).read_text(encoding="utf-8")))
 
-    result = run_experiment(experiment, ZYX, progress=progress)
+    result = run_experiment(experiment, TYX, progress=progress)
     assert seen and all(r["provisional"] and r["status"] == "stopped" for r in seen)
     assert report(result)["status"] == "written" and not report(result)["provisional"]
 
 
 def test_the_report_names_why_files_were_recomputed(experiment):
-    first = run_experiment(experiment, ZYX)
-    write_data(experiment / "ctrl/r1/a.tif", stack(9), "ZYX")
-    write_data(experiment / "drug/r1/c.tif", stack(7), "ZYX")
-    data = report(run_experiment(experiment, ZYX, output_folder=first.output_folder))
+    first = run_experiment(experiment, TYX)
+    write_data(experiment / "ctrl/r1/a.tif", stack(9), "TYX")
+    write_data(experiment / "drug/r1/c.tif", stack(7), "TYX")
+    data = report(run_experiment(experiment, TYX, output_folder=first.output_folder))
     assert data["recomputed"] == {
         "ctrl/r1/a.tif": "changed since the earlier run",
         "drug/r1/c.tif": "new since the earlier run",
@@ -402,7 +402,7 @@ def test_the_report_names_why_files_were_recomputed(experiment):
 
 
 def test_a_moved_experiment_is_reported(experiment, tmp_path):
-    first = run_experiment(experiment, ZYX, output_folder=tmp_path / "out")
+    first = run_experiment(experiment, TYX, output_folder=tmp_path / "out")
     moved = experiment.rename(tmp_path / "moved")
     again = run_experiment(moved, output_folder=first.output_folder)
     data = report(again)
@@ -416,11 +416,11 @@ def test_check_writes_the_report_and_the_design_template(experiment):
     assert check_outputs(output)
     data = json.loads((output / REPORT_FILENAME).read_text(encoding="utf-8"))
     assert data["step"] == "check" and data["mode"] is None
-    assert data["images"]["ctrl/r1/a.tif"]["roles"] == "ZYX"
+    assert data["images"]["ctrl/r1/a.tif"]["roles"] == "TYX"
 
 
 def test_nothing_is_written_inside_the_experiment(experiment):
-    result = run_experiment(experiment, ZYX, output_folder=experiment / "results")
+    result = run_experiment(experiment, TYX, output_folder=experiment / "results")
     assert codes([i for i in result.issues if i.is_error]) == ["output_inside_experiment"]
     assert not (experiment / "results").exists()
 
@@ -443,7 +443,7 @@ def confirmed_design(root, output):
 def test_no_exclude_clears_the_recorded_exclusions(experiment, tmp_path, capsys):
     out = tmp_path / "out"
     confirmed_design(experiment, out)
-    assert cli_run(experiment, "--axes", "ZYX", "--output", out, "--exclude", "ctrl/r1/b.tif") == 0
+    assert cli_run(experiment, "--axes", "TYX", "--output", out, "--exclude", "ctrl/r1/b.tif") == 0
     # Left out, the recorded exclusions are kept.
     assert cli_run(experiment, "--output", out) == 0
     assert read_manifest(out / "run_manifest.json").settings.exclude == ("ctrl/r1/b.tif",)
@@ -457,7 +457,7 @@ def test_no_exclude_clears_the_recorded_exclusions(experiment, tmp_path, capsys)
 
 def test_exclude_and_no_exclude_together_are_refused(experiment, capsys):
     with pytest.raises(SystemExit) as excinfo:
-        cli_run(experiment, "--axes", "ZYX", "--exclude", "drug/r1/a.tif", "--no-exclude")
+        cli_run(experiment, "--axes", "TYX", "--exclude", "drug/r1/a.tif", "--no-exclude")
     assert excinfo.value.code == 2
     assert "--exclude and --no-exclude cannot be given together" in capsys.readouterr().err
     assert not default_output_folder(experiment).exists()
@@ -466,7 +466,7 @@ def test_exclude_and_no_exclude_together_are_refused(experiment, capsys):
 def test_the_cli_runs_from_the_output_folder_alone(experiment, tmp_path, capsys):
     out = tmp_path / "out"
     confirmed_design(experiment, out)
-    assert cli_run(experiment, "--axes", "ZYX", "--output", out) == 0
+    assert cli_run(experiment, "--axes", "TYX", "--output", out) == 0
     capsys.readouterr()
     assert cli_run("--output", out) == 0
     text = capsys.readouterr().out
@@ -476,7 +476,7 @@ def test_the_cli_runs_from_the_output_folder_alone(experiment, tmp_path, capsys)
 def test_the_cli_names_a_changed_experiment_and_its_effect(experiment, tmp_path, capsys):
     out = tmp_path / "out"
     confirmed_design(experiment, out)
-    assert cli_run(experiment, "--axes", "ZYX", "--output", out) == 0
+    assert cli_run(experiment, "--axes", "TYX", "--output", out) == 0
     moved = experiment.rename(tmp_path / "moved")
     capsys.readouterr()
     assert cli_run(moved, "--output", out) == 0
@@ -491,7 +491,7 @@ def test_without_a_recorded_experiment_the_cli_names_what_is_missing(
 ):
     out = tmp_path / "out"
     if folder == "version 1":
-        run_experiment(experiment, ZYX, output_folder=out)
+        run_experiment(experiment, TYX, output_folder=out)
         data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
         data["manifest_version"] = "1"
         (out / "run_manifest.json").write_text(json.dumps(data), encoding="utf-8")

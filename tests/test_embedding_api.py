@@ -156,8 +156,8 @@ def test_notebook_style_builds_what_an_embedding_page_uses():
 
 def test_steps_one_and_two_embed_as_morphorelate_does(tmp_path):
     root = tmp_path / "images"
-    write_data(root / "ctrl" / "rep1" / "a.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
-    write_data(root / "drug" / "rep1" / "a.tif", np.ones((2, 8, 8), np.uint8), axes="ZYX")
+    write_data(root / "ctrl" / "rep1" / "a.tif", np.zeros((2, 8, 8), np.uint8), axes="TYX")
+    write_data(root / "drug" / "rep1" / "a.tif", np.ones((2, 8, 8), np.uint8), axes="TYX")
     notebook = PreprocessingNotebook(str(root))
     assert notebook.preflight is None and notebook.confirmed_mapping is None
     assert isinstance(notebook.check_button, widgets.Button)
@@ -191,4 +191,4 @@ def test_steps_one_and_two_embed_as_morphorelate_does(tmp_path):
     notebook.preview_checked.button.click()
     notebook.confirm_button.click()
     assert confirmed and confirmed[0] is notebook.confirmed_mapping
-    assert "".join(notebook.confirmed_mapping.roles) == "ZYX"
+    assert "".join(notebook.confirmed_mapping.roles) == "TYX"

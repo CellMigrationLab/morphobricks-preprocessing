@@ -7,7 +7,8 @@ wrote for them, one row per plane and channel. Here the same images go through
 the current code, read whole and in blocks; every value of every channel must be
 the same text as in the version-2 row of that channel. Version 4 (follow-up P6) adds
 underflow and overflow columns, which the default minimum-to-maximum range leaves
-at zero.
+at zero. The reference's uint16 Z-stacks are written as time-lapses of the same pixels
+since Z-stacks are refused (owner decision of 5 November 2026): its ``z`` is read as ``t``.
 """
 
 import csv
@@ -30,7 +31,7 @@ from morphobricks_preprocessing import (
 )
 from morphobricks_preprocessing.manifest import file_sha256
 from morphobricks_preprocessing.report import group_summaries, group_table
-from v2_fixture import DATA, EXPERIMENTS, PIXELS, write_experiment
+from v2_fixture import DATA, EXPERIMENTS, PIXELS, TIME_FOR_DEPTH, write_experiment
 
 # Version-2 column -> version-3 column of channel c.
 CHANNEL_COLUMNS = {
@@ -98,9 +99,13 @@ def test_histograms_equal_those_of_version_2(tmp_path, pixels, dtype, blocks):
         assert len(in_blocks[0].paths) == len(EXPERIMENTS[dtype][2])
 
     old = {}
+    as_time = EXPERIMENTS[dtype][1] in TIME_FOR_DEPTH  # the reference's z is now t
     for row in read_rows(DATA / f"v2_{dtype}.csv"):
         assert row["schema_version"] == "2"
-        old[(f"{row['source_relative_path']}::z={row['z']},t={row['t']}", int(row["c"]))] = row
+        z, t = ("0", row["z"]) if as_time else (row["z"], row["t"])
+        assert not as_time or row["t"] == "0"
+        plane_id = f"{row['source_relative_path']}::z={z},t={t}"
+        old[(plane_id, int(row["c"]))] = {**row, "z": z, "t": t, "plane_id": plane_id}
     new = read_rows(result.csv_path)
     matched = 0
     for row in new:

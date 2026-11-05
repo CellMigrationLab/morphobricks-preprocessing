@@ -313,8 +313,8 @@ def test_different_arrangement_is_an_error(tmp_path):
 
 
 def test_different_axis_order_is_an_error(tmp_path):
-    write_tiff(tmp_path / "a.tif", (2, 3, 6, 7), axes="ZCYX")
-    write_tiff(tmp_path / "b.tif", (3, 2, 6, 7), axes="CZYX")
+    write_tiff(tmp_path / "a.tif", (2, 3, 6, 7), axes="TCYX")
+    write_tiff(tmp_path / "b.tif", (3, 2, 6, 7), axes="CTYX")
     report = inspect_images(tmp_path, ["a.tif", "b.tif"])
     assert codes(report.issues) == ["inconsistent_dimensions"]
 
@@ -330,8 +330,8 @@ def test_missing_axis_is_reported_separately(tmp_path):
 
 def test_missing_axes_with_two_longest_arrangements_is_inconsistent():
     files = [
-        meta("a.tif", (2, 3, 6, 7), axes="ZCYX"),
-        meta("b.tif", (3, 2, 6, 7), axes="CZYX"),
+        meta("a.tif", (2, 3, 6, 7), axes="TCYX"),
+        meta("b.tif", (3, 2, 6, 7), axes="CTYX"),
         meta("c.tif", (6, 7), axes="YX"),
     ]
     assert codes(check_metadata(files)) == [
@@ -342,18 +342,18 @@ def test_missing_axes_with_two_longest_arrangements_is_inconsistent():
 
 
 def test_different_sizes_are_a_warning(tmp_path):
-    write_tiff(tmp_path / "a.tif", (3, 6, 7), axes="ZYX")
-    write_tiff(tmp_path / "b.tif", (3, 6, 7), axes="ZYX")
-    write_tiff(tmp_path / "c.tif", (5, 8, 9), axes="ZYX")
+    write_tiff(tmp_path / "a.tif", (3, 6, 7), axes="TYX")
+    write_tiff(tmp_path / "b.tif", (3, 6, 7), axes="TYX")
+    write_tiff(tmp_path / "c.tif", (5, 8, 9), axes="TYX")
     report = inspect_images(tmp_path, ["a.tif", "b.tif", "c.tif"])
     assert report.ok
     found = issue(report.issues, "different_sizes")
     assert found.severity is Severity.WARNING
     assert found.paths == ("c.tif",)
-    # Width and height only; the depth is reported as a different number of planes.
+    # Width and height only; the time points are reported as a different number of planes.
     assert "6 x 7 (2 images), 8 x 9 (1 image)" in found.message
     planes = issue(report.issues, "different_plane_counts")
-    assert "depth slices (Z): 3 (2 images), 5 (1 image)" in planes.message
+    assert "time points: 3 (2 images), 5 (1 image)" in planes.message
 
 
 def test_check_metadata_errors_before_warnings():
@@ -398,7 +398,7 @@ def test_consistent_images_give_no_warnings(tmp_path, no_pixel_reads):
         write_ome(
             tmp_path / f"{name}.ome.tif",
             (3, 8, 8),
-            "ZYX",
+            "TYX",
             PhysicalSizeX=0.5,
             PhysicalSizeY=0.5,
             PhysicalSizeZ=2.0,
@@ -498,7 +498,7 @@ def test_plane_counts_compare_rgb_samples_and_unlabelled_dimensions():
     channels = issue(check_metadata(files), "different_channel_counts")
     assert "1 channel (1 image), 2 channels (1 image), 3 channels (1 image)" in channels.message
     assert channels.paths == ("rgb.tif", "two.tif")
-    same = [meta("a.tif", (3, 8, 8), axes="ZYX"), meta("b.tif", (3, 8, 8), axes="ZYX")]
+    same = [meta("a.tif", (3, 8, 8), axes="TYX"), meta("b.tif", (3, 8, 8), axes="TYX")]
     assert check_metadata(same) == []
 
 
@@ -550,7 +550,7 @@ def test_ome_tiff_pixel_size_in_an_unsupported_unit_is_named(tmp_path):
     write_ome(
         tmp_path / "a.ome.tif",
         (3, 8, 8),
-        "ZYX",
+        "TYX",
         PhysicalSizeX=0.01,
         PhysicalSizeXUnit="in",
         PhysicalSizeY=0.01,

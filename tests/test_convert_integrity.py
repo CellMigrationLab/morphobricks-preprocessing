@@ -37,7 +37,7 @@ from morphobricks_preprocessing.metadata import inspect_image
 from morphobricks_preprocessing.ome_tiff_copy import CopyWriteError, write_named_copy
 from test_convert_run import SWAPPED, codes, snapshot, swapped_experiment
 
-NAMED = AxisMapping("ZYX", tuple("ZYX"))
+NAMED = AxisMapping("TYX", tuple("TYX"))
 
 
 def change_in_place(path):
@@ -77,7 +77,7 @@ def test_an_image_changed_while_its_header_is_read_is_refused_and_nothing_writte
             changed.append(path)  # new pixels and a new calibration, after the header read
             tifffile.imwrite(
                 target, np.ones((2, 6, 9), np.uint8), ome=True,
-                metadata={"axes": "ZYX", "PhysicalSizeZ": 5.0, "PhysicalSizeX": 0.1},
+                metadata={"axes": "TYX", "PhysicalSizeZ": 5.0, "PhysicalSizeX": 0.1},
             )  # fmt: skip
         return meta
 
@@ -158,7 +158,7 @@ def test_an_ome_zarr_copy_changed_in_place_is_not_reused(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp", names=("c/a.tif",)), tmp_path / "copies"
     # Another arrangement than the TIFFs', so it is matched by its declared roles: a "zyx"
     # store under the experiment's swapped roles contradicts its metadata (issue #72).
-    pixels = np.arange(2 * 9 * 6, dtype=np.uint8).reshape(1, 2, 9, 6)
+    pixels = np.arange(2 * 9 * 6, dtype=np.uint8).reshape(2, 1, 9, 6)  # one z: not a Z-stack
     write_ngff(exp / "c" / "z.zarr", pixels, "tzyx")
     assert convert_experiment(exp, SWAPPED, copies).written
     chunk = max(
@@ -275,7 +275,7 @@ def test_the_commands_refuse_a_bad_memory_size_before_reading_anything(
     exp = swapped_experiment(tmp_path / "exp")
     for module in (cli_run, cli_convert):
         monkeypatch.setattr(module, "preflight", lambda *a, **k: pytest.fail("read"))
-    args = [command, str(exp), "--axes", "ZXY", "--memory-limit", "1.5"]
+    args = [command, str(exp), "--axes", "TXY", "--memory-limit", "1.5"]
     if command == "convert":
         args += ["--to", str(tmp_path / "copies")]
     with pytest.raises(SystemExit) as exit_info:

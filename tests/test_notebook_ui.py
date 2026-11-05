@@ -34,7 +34,7 @@ def experiment(tmp_path):
     root = tmp_path / "exp"
     rng = np.random.default_rng(0)
     for rel in ["ctrl/rep1/a.tif", "ctrl/rep1/b.tif", "drug/rep1/a.tif"]:
-        write_data(root / rel, rng.integers(0, 200, (3, 2, 16, 16), dtype=np.uint8), axes="ZCYX")
+        write_data(root / rel, rng.integers(0, 200, (3, 2, 16, 16), dtype=np.uint8), axes="TCYX")
     return root
 
 
@@ -92,7 +92,7 @@ def test_check_shows_status_tiles_labels_and_roles(experiment):
     assert "<b>ctrl</b>" in nb.labels_table.value and "mb-pill-single" in nb.labels_table.value
     assert not nb.labels_confirmed.disabled and not nb.labels_confirmed.value
     assert not ui.is_visible(nb.issues_card)
-    assert [d.value for d in nb.role_dropdowns] == ["Z", "C", "Y", "X"]
+    assert [d.value for d in nb.role_dropdowns] == ["T", "C", "Y", "X"]
     assert nb.bins.value == 256 and nb.bins.max == 256
 
 
@@ -155,10 +155,10 @@ def test_consistency_warnings_are_in_their_own_panel(experiment):
         write_data(
             experiment / f"drug/rep1/{name}.tif",
             rng.integers(0, 9, (3, 2, 16, 16), dtype=np.uint8),
-            "ZCYX",
+            "TCYX",
         )
     write_data(
-        experiment / "drug/rep2/a.tif", rng.integers(0, 9, (3, 2, 20, 16), dtype=np.uint8), "ZCYX"
+        experiment / "drug/rep2/a.tif", rng.integers(0, 9, (3, 2, 20, 16), dtype=np.uint8), "TCYX"
     )
     write_file(experiment / "ctrl/notes.txt")
     nb = checked(experiment)
@@ -182,7 +182,7 @@ def test_consistency_warnings_are_in_their_own_panel(experiment):
 def test_different_channel_counts_are_an_error_in_the_consistency_panel(experiment):
     rng = np.random.default_rng(1)
     three = rng.integers(0, 9, (3, 3, 16, 16), dtype=np.uint8)
-    write_data(experiment / "drug/rep1/b.tif", three, "ZCYX")
+    write_data(experiment / "drug/rep1/b.tif", three, "TCYX")
     nb = checked(experiment)
     assert "mb-error'>1 error" in nb.consistency_counts.value
     assert "different channel counts" in nb.consistency_issues.value
@@ -486,7 +486,7 @@ def test_check_button_is_restored_after_checking(experiment):
 def test_role_notes_and_plane_summary(experiment):
     nb = checked(experiment)
     notes = [n.value for n in nb.role_notes]
-    assert "3 depth slices, numbered z = 0 to 2" in notes[0]
+    assert "3 time points, numbered t = 0 to 2" in notes[0]
     assert "2 channels, numbered c = 0 to 1" in notes[1]
     assert "16 pixels in height" in notes[2]
     assert "split into 6 plane(s) of 16 × 16 pixels" in nb.plane_summary.value
@@ -509,7 +509,7 @@ def test_confirm_needs_valid_roles_and_a_checked_preview(experiment):
     assert nb.confirm_button.disabled  # new roles: the preview must be checked again
     nb.preview_checked.button.click()
     assert not nb.confirm_button.disabled
-    assert nb.mapping.roles == ("Z", "C", "Y", "X")
+    assert nb.mapping.roles == ("T", "C", "Y", "X")
 
 
 def test_confirmations_are_buttons_that_can_be_undone(experiment):
@@ -535,7 +535,7 @@ def test_changing_a_role_asks_for_the_preview_again(experiment):
     nb.preview_button.click()
     nb.preview_checked.button.click()
     assert not nb.confirm_button.disabled
-    nb.role_dropdowns[0].value = "T"
+    nb.role_dropdowns[0].value = "Z"
     assert not nb.preview_checked.value
     assert nb.confirm_button.disabled
 
@@ -546,7 +546,7 @@ def test_confirmation_locks_and_unlocks(experiment):
     assert all(d.disabled for d in nb.role_dropdowns)
     assert nb.confirm_button.description == " Change axis roles"
     assert "Axes checked: they are correct for every image" in nb.confirmed_status.value
-    assert "Z (depth) → Z" in nb.confirmed_status.value
+    assert "T (time) → T" in nb.confirmed_status.value
     nb.confirm_button.click()
     assert nb.confirmed_mapping is None
     assert not any(d.disabled for d in nb.role_dropdowns)
@@ -559,13 +559,13 @@ def test_preview_sliders_browse_planes(experiment):
     nb.preview_button.click()
     assert bytes(nb.preview_image.value).startswith(b"\x89PNG")
     assert "ctrl/rep1/a.tif" in nb.preview_caption.value
-    assert "z = 1, c = 0" in nb.preview_caption.value  # the middle slice first
+    assert "c = 0, t = 0" in nb.preview_caption.value  # the first time point first
     z, c, t = (nb.preview_sliders[r] for r in "ZCT")
-    assert (z.max, c.max) == (2, 1) and ui.is_visible(z) and ui.is_visible(c)
-    assert not ui.is_visible(t)
-    z.value = 2
+    assert (t.max, c.max) == (2, 1) and ui.is_visible(t) and ui.is_visible(c)
+    assert not ui.is_visible(z)
+    t.value = 2
     c.value = 1
-    assert "z = 2, c = 1" in nb.preview_caption.value
+    assert "c = 1, t = 2" in nb.preview_caption.value
     nb.preview_file.value = "drug/rep1/a.tif"
     assert "drug/rep1/a.tif" in nb.preview_caption.value
 
@@ -573,9 +573,9 @@ def test_preview_sliders_browse_planes(experiment):
 def test_preview_follows_role_changes(experiment):
     nb = checked(experiment)
     nb.preview_button.click()
-    nb.role_dropdowns[0].value = "T"
-    assert "c = 0, t = 0" in nb.preview_caption.value
-    assert ui.is_visible(nb.preview_sliders["T"]) and not ui.is_visible(nb.preview_sliders["Z"])
+    nb.role_dropdowns[0].value = "Z"  # still previewed; the check refuses Z-stacks
+    assert "z = 0, c = 0" in nb.preview_caption.value
+    assert ui.is_visible(nb.preview_sliders["Z"]) and not ui.is_visible(nb.preview_sliders["T"])
 
 
 def test_preview_reports_planes_it_cannot_read(experiment):
@@ -592,27 +592,27 @@ def test_preview_and_roles_with_an_ome_zarr_image(tmp_path):
     from zarr_tree import write_ngff
 
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((3, 2, 8, 8), np.uint8), axes="ZCYX", imagej=True)
+    write_data(root / "a.tif", np.zeros((3, 2, 8, 8), np.uint8), axes="TCYX", imagej=True)
     data = np.arange(2 * 3 * 8 * 8, dtype=np.uint8).reshape(2, 3, 8, 8)
-    write_ngff(root / "b.ome.zarr", data, "czyx")
+    write_ngff(root / "b.ome.zarr", data, "ctyx")
     nb = checked(root)
     assert "OME-Zarr images" in nb.folder_tiles.value
     # Same roles in another order: nothing is missing.
     assert not ui.is_visible(nb.missing_card)
     labels = [label for label, _ in nb.preview_file.options]
-    assert any("b.ome.zarr" in label and "OME-Zarr, CZYX" in label for label in labels)
+    assert any("b.ome.zarr" in label and "OME-Zarr, CTYX" in label for label in labels)
     nb.preview_file.value = "b.ome.zarr"
     nb.preview_button.click()
-    assert "b.ome.zarr" in nb.preview_caption.value and "z = 1, c = 0" in nb.preview_caption.value
+    assert "b.ome.zarr" in nb.preview_caption.value and "c = 0, t = 0" in nb.preview_caption.value
 
 
 def test_missing_axes_card(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZTYX")
-    write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
+    write_data(root / "a.tif", np.zeros((2, 1, 8, 8), np.uint8), axes="TCYX")  # was ZTYX
+    write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="TYX")
     nb = checked(root)
     assert ui.is_visible(nb.missing_card)
-    assert "1 image with axes <b>ZYX</b> lack T (time)" in nb.missing_note.value
+    assert "1 image with axes <b>TYX</b> lack C (channel)" in nb.missing_note.value
     nb.preview_button.click()
     nb.preview_checked.button.click()
     assert nb.confirm_button.disabled
@@ -623,8 +623,8 @@ def test_missing_axes_card(tmp_path):
 @pytest.mark.parametrize("blocking_file", [False, True])
 def test_confirmed_missing_axes_allow_running_unless_other_errors_remain(tmp_path, blocking_file):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZTYX")
-    write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
+    write_data(root / "a.tif", np.zeros((2, 1, 8, 8), np.uint8), axes="TCYX")  # was ZTYX
+    write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="TYX")
     if blocking_file:
         write_file(root / "bad.tif", b"garbage")
     nb = checked(root)
@@ -645,13 +645,13 @@ def test_confirmed_missing_axes_allow_running_unless_other_errors_remain(tmp_pat
         result = nb.run()
         assert result.written
         rows = read_plane_histograms(result.csv_path)
-        assert [(r.z, r.t) for r in rows if r.source_relative_path == "b.tif"] == [(0, 0), (1, 0)]
+        assert [(r.z, r.t) for r in rows if r.source_relative_path == "b.tif"] == [(0, 0), (0, 1)]
 
 
 def test_undoing_missing_axes_confirmation_blocks_running_again(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((2, 3, 8, 8), np.uint8), axes="ZTYX")
-    write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
+    write_data(root / "a.tif", np.zeros((2, 1, 8, 8), np.uint8), axes="TCYX")  # was ZTYX
+    write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="TYX")
     nb = checked(root)
     nb.labels_confirmed.button.click()
     confirm_repeats(nb)
@@ -685,7 +685,7 @@ def rgb_tree(root, dtype=np.uint8):
     rng = np.random.default_rng(0)
     for rel in ["ctrl/rep1/a.tif", "drug/rep1/a.tif"]:
         data = rng.integers(0, 200, (2, 8, 8, 3)).astype(dtype)
-        write_data(root / rel, data, axes="ZYXS", photometric="rgb")
+        write_data(root / rel, data, axes="TYXS", photometric="rgb")
     return root
 
 
@@ -836,7 +836,7 @@ def test_intensity_plots_mark_flagged_images_and_skip_empty_input():
 
 
 def test_conflicting_axes_explain_why_no_roles_are_offered(tmp_path):
-    write_data(tmp_path / "exp/a.tif", np.zeros((2, 8, 8), np.uint8), axes="ZYX")
+    write_data(tmp_path / "exp/a.tif", np.zeros((2, 8, 8), np.uint8), axes="TYX")
     write_data(tmp_path / "exp/b.tif", np.zeros((2, 8, 8), np.uint8), axes="CYX")
     nb = checked(tmp_path / "exp")
     (message,) = nb.axis_box.children
@@ -1108,9 +1108,9 @@ def large_planes_experiment(tmp_path, **big_kwargs):
     root = tmp_path / "exp"
     rng = np.random.default_rng(0)
     big = rng.integers(0, 4000, (2, 64, 64), dtype=np.uint16)
-    write_data(root / "ctrl/rep1/big.tif", big, axes="ZYX", **big_kwargs)
+    write_data(root / "ctrl/rep1/big.tif", big, axes="TYX", **big_kwargs)
     small = rng.integers(0, 4000, (2, 8, 8), dtype=np.uint16)
-    write_data(root / "ctrl/rep1/small.tif", small, axes="ZYX")
+    write_data(root / "ctrl/rep1/small.tif", small, axes="TYX")
     return root
 
 
@@ -1122,7 +1122,7 @@ def set_memory_limit(nb, limit):
 
 
 def small_estimate(root):
-    mapping = AxisMapping("ZYX", ("Z", "Y", "X"))
+    mapping = AxisMapping("TYX", ("T", "Y", "X"))
     return plane_layout(root / "ctrl/rep1/small.tif", mapping, bin_count=65_536).memory_estimate
 
 
@@ -1450,10 +1450,10 @@ def test_role_effect(role, low, high, text):
 
 
 def test_plane_summary_with_ranges():
-    mapping = AxisMapping("ZYX", "ZYX")
+    mapping = AxisMapping("TYX", "TYX")
     text = plane_summary_html(mapping, [(2, 5), (8, 8), (9, 10)])
     assert "2 to 5 plane(s) of 8–8 × 9–10 pixels" in text
-    assert plane_summary_html(AxisMapping("ZYX", "Z-X"), [(2, 2), (8, 8), (9, 9)]) == ""
+    assert plane_summary_html(AxisMapping("TYX", "T-X"), [(2, 2), (8, 8), (9, 9)]) == ""
 
 
 def test_display_range_ignores_non_finite_values():

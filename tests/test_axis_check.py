@@ -57,8 +57,18 @@ def data(shape, dtype=np.uint8):
     return (np.arange(np.prod(shape)) % 251).reshape(shape).astype(dtype)
 
 
+Z_STACK = "z_stack_not_supported"
+"""Refused beside these checks since the owner decision of 5 November 2026 (2-D planes only);
+tested in ``test_2d_planes_only.py``. These tests check the axis codes, so they set it aside."""
+
+
 def codes(issues):
-    return [i.code for i in issues]
+    return [i.code for i in issues if i.code != Z_STACK]
+
+
+def axes_ok(review):
+    """True when no error but a Z-stack's stops the review: the axis check passes."""
+    return not any(i.is_error and i.code != Z_STACK for i in review.issues)
 
 
 def one(issues, code):
@@ -99,7 +109,7 @@ def test_named_headers(tmp_path, kind, header, roles, expected):
     assert header_axis_issue(meta, mapping) == expected
     review = review_axes([meta], mapping)
     if expected is None:
-        assert review.ok and not review.axis_errors
+        assert axes_ok(review) and not review.axis_errors
     else:
         assert codes(review.issues) == [expected]
         assert review.axis_error_files == ("a.tif",)
@@ -118,7 +128,7 @@ def test_plain_stacks_never_name_their_axes(tmp_path, writer, roles):
     review = review_axes([meta], AxisMapping(meta.axes, roles))
     found = one(review.issues, "axes_not_named")
     assert not found.is_error and found.paths == ("a.tif",)
-    assert review.ok and review.axes_from == {"a.tif": "confirmed"}
+    assert axes_ok(review) and review.axes_from == {"a.tif": "confirmed"}
     assert review.confirmed_files == ("a.tif",)
     assert f"header {meta.axes}, confirmed {roles}: a.tif" in found.message
     assert "read with the roles you confirmed" in found.message
@@ -192,7 +202,7 @@ def test_ome_zarr_images_never_have_an_axis_error(tmp_path):
     assert meta.is_ome_zarr
     assert header_axis_issue(meta, AxisMapping("ZYX", "ZYX")) is None
     assert header_axis_issue(meta, AxisMapping("ZYX", "TXY")) is None
-    assert review_axes([meta], prefill_mapping("ZYX")).ok
+    assert axes_ok(review_axes([meta], prefill_mapping("ZYX")))
 
 
 def test_every_file_is_named_with_its_header_and_confirmed_axes(tmp_path):
@@ -282,7 +292,7 @@ def test_run_stops_naming_every_file(tmp_path, reads, write, axes, roles, code):
 def test_a_plain_stack_runs_with_a_warning(tmp_path):
     root = tmp_path / "exp"
     plain(root / "ctrl/a.tif", data((3, 6, 8)))
-    result = run_experiment(root, AxisMapping("IYX", "ZYX"))
+    result = run_experiment(root, AxisMapping("IYX", "TYX"))  # ZYX: a Z-stack is refused
     assert result.written and one(result.issues, "axes_not_named").paths == ("ctrl/a.tif",)
 
 

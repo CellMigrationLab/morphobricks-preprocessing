@@ -33,8 +33,8 @@ from morphobricks_preprocessing.run.lock import LOCK_FILENAME, output_lock
 from morphobricks_preprocessing.testing import _confirmed_design
 from tiff_tree import write_data
 
-SWAPPED = AxisMapping("ZYX", ("Z", "X", "Y"))
-PLAIN = AxisMapping("IYX", ("Z", "Y", "X"))
+SWAPPED = AxisMapping("TYX", ("T", "X", "Y"))
+PLAIN = AxisMapping("IYX", ("T", "Y", "X"))
 
 
 def swapped_experiment(root, names=("ctrl/r1/a.tif", "ctrl/r1/b.tif", "drug/r1/a.tif")):
@@ -46,7 +46,7 @@ def swapped_experiment(root, names=("ctrl/r1/a.tif", "ctrl/r1/b.tif", "drug/r1/a
         data = rng.integers(0, 255, (2, 6, 9), dtype=np.uint8)
         tifffile.imwrite(
             path, data, ome=True, photometric="minisblack",
-            metadata={"axes": "ZYX", "PhysicalSizeZ": 2.0},
+            metadata={"axes": "TYX", "PhysicalSizeZ": 2.0},
         )  # fmt: skip
     return root
 
@@ -104,12 +104,12 @@ def test_a_different_existing_copy_is_never_overwritten(tmp_path):
     assert convert_experiment(exp, SWAPPED, copies).written
     before = snapshot(copies)
     # Other roles for the same images: the copies would differ.
-    other = convert_experiment(exp, AxisMapping("ZYX", ("T", "X", "Y")), copies)
+    other = convert_experiment(exp, AxisMapping("TYX", ("C", "X", "Y")), copies)
     assert not other.written and codes(other.issues)[0] == "copy_differs"
     assert set(other.issues[0].paths) == {"ctrl/r1/a.tif", "ctrl/r1/b.tif", "drug/r1/a.tif"}
     # A source changed since: refused too.
     source = exp / "ctrl" / "r1" / "a.tif"
-    tifffile.imwrite(source, np.ones((2, 6, 9), np.uint8), ome=True, metadata={"axes": "ZYX"})
+    tifffile.imwrite(source, np.ones((2, 6, 9), np.uint8), ome=True, metadata={"axes": "TYX"})
     changed = convert_experiment(exp, SWAPPED, copies)
     assert not changed.written and changed.issues[0].paths == ("ctrl/r1/a.tif",)
     assert snapshot(copies) == before
@@ -123,7 +123,7 @@ def test_a_copy_recorded_with_other_pixel_sizes_is_not_reused(tmp_path):
     path.parent.mkdir(parents=True)
     tifffile.imwrite(
         path, np.zeros((2, 6, 9), np.uint8), ome=True, photometric="minisblack",
-        metadata={"axes": "ZYX", "PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5},
+        metadata={"axes": "TYX", "PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5},
     )  # fmt: skip
     assert convert_experiment(exp, SWAPPED, copies).written
     record = json.loads((copies / CONVERSION_RECORD_FILENAME).read_text())
@@ -263,7 +263,7 @@ def test_the_run_on_the_copies_reads_them_with_their_named_axes(tmp_path):
     assert not first.written and "axes_yx_swapped" in codes(first.issues)
     result = convert_experiment(exp, SWAPPED, tmp_path / "copies")
     copies = tmp_path / "copies"
-    run = run_experiment(copies, AxisMapping("ZYX", tuple("ZYX")), output_folder=out)
+    run = run_experiment(copies, AxisMapping("TYX", tuple("TYX")), output_folder=out)
     assert run.written, run.issues
     manifest = json.loads((out / "run_manifest.json").read_text())
     assert manifest["experiment_root"] == copies.as_posix()
@@ -279,7 +279,7 @@ def test_the_run_on_the_copies_reads_them_with_their_named_axes(tmp_path):
         p.relative_to(exp).as_posix() for p in exp.rglob("*.tif")
     )
     np.testing.assert_array_equal(
-        inputs.read_plane(inputs.fovs()[0], z=1)[0],
+        inputs.read_plane(inputs.fovs()[0], t=1)[0],
         tifffile.imread(exp / "ctrl" / "r1" / "a.tif")[1].T,
     )
 
@@ -290,7 +290,7 @@ def test_run_inputs_refuses_a_conversion_record_changed_or_gone_since_the_run(tm
     exp, out = swapped_experiment(tmp_path / "exp"), tmp_path / "out"
     copies = tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
-    assert run_experiment(copies, AxisMapping("ZYX", tuple("ZYX")), output_folder=out).written
+    assert run_experiment(copies, AxisMapping("TYX", tuple("TYX")), output_folder=out).written
     record = copies / CONVERSION_RECORD_FILENAME
     RunInputs.open(out)  # the record as the run read it
     moved = tmp_path / "moved"
@@ -315,7 +315,7 @@ def test_a_conversion_reusing_every_copy_keeps_the_record_so_the_run_stays_valid
     copies = tmp_path / "copies"
     first = convert_experiment(exp, PLAIN, copies)
     assert first.written and "axes_not_named" not in codes(first.issues)
-    assert run_experiment(copies, AxisMapping("ZYX", tuple("ZYX")), output_folder=out).written
+    assert run_experiment(copies, AxisMapping("TYX", tuple("TYX")), output_folder=out).written
     record = (copies / CONVERSION_RECORD_FILENAME).read_bytes()
     again = convert_experiment(exp, PLAIN, copies)
     assert again.written and again.reused == first.converted
@@ -331,7 +331,7 @@ def test_every_row_is_recomputed_and_equals_the_originals_rows(tmp_path):
     assert first.written and "axes_not_named" in codes(first.issues)
     rows = (out / "plane_histograms.csv").read_text()
     assert convert_experiment(exp, PLAIN, tmp_path / "copies").written
-    run = run_experiment(tmp_path / "copies", AxisMapping("ZYX", tuple("ZYX")), output_folder=out)
+    run = run_experiment(tmp_path / "copies", AxisMapping("TYX", tuple("TYX")), output_folder=out)
     assert run.written and "axes_not_named" not in codes(run.issues)
     assert len(run.read) == 2 and run.unchanged == ()
     assert "experiment_root" in [c.name for c in run.input_changes]
@@ -345,7 +345,7 @@ def test_the_run_warns_when_a_source_changed_after_the_conversion(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
     (exp / "ctrl" / "r1" / "a.tif").unlink()
-    run = run_experiment(copies, AxisMapping("ZYX", tuple("ZYX")), output_folder=tmp_path / "o")
+    run = run_experiment(copies, AxisMapping("TYX", tuple("TYX")), output_folder=tmp_path / "o")
     assert run.written
     found = {issue.code: issue for issue in run.issues}
     assert found["conversion_source_changed"].paths == ("ctrl/r1/a.tif",)
@@ -358,7 +358,7 @@ def test_a_copy_changed_after_the_conversion_stops_the_run_before_it_writes(tmp_
     assert convert_experiment(exp, SWAPPED, copies).written
     copy = copies / "drug" / "r1" / "a.tif"
     os.utime(copy, ns=(copy.stat().st_atime_ns, copy.stat().st_mtime_ns + 10**9))
-    run = run_experiment(copies, AxisMapping("ZYX", tuple("ZYX")), output_folder=out)
+    run = run_experiment(copies, AxisMapping("TYX", tuple("TYX")), output_folder=out)
     assert not run.written and run.read == ()
     found = {issue.code: issue for issue in run.issues}["copy_changed_after_conversion"]
     assert found.is_error and found.paths == ("drug/r1/a.tif",)
@@ -373,7 +373,7 @@ def test_an_unreadable_conversion_record_stops_the_run(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
     (copies / CONVERSION_RECORD_FILENAME).write_text("{not json")
-    run = run_experiment(copies, AxisMapping("ZYX", tuple("ZYX")), output_folder=tmp_path / "o")
+    run = run_experiment(copies, AxisMapping("TYX", tuple("TYX")), output_folder=tmp_path / "o")
     assert not run.written and "conversion_record_unreadable" in codes(run.issues)
 
 
@@ -403,12 +403,12 @@ def test_masks_are_never_converted_and_are_checked_against_the_copies(tmp_path):
 def test_the_convert_command_writes_the_copies_and_names_the_next_commands(tmp_path, capsys):
     exp = swapped_experiment(tmp_path / "exp")
     copies = tmp_path / "copies"
-    assert main(["convert", str(exp), "--to", str(copies), "--axes", "ZXY"]) == 0
+    assert main(["convert", str(exp), "--to", str(copies), "--axes", "TXY"]) == 0
     out = capsys.readouterr().out
     assert "[1/3] ctrl/r1/a.tif" in out
     assert "written as OME-TIFF with your roles: 3 images" in out
-    assert f"morphobricks-preprocessing run {copies} --output" in out and "--axes ZYX" in out
-    assert main(["convert", str(exp), "--to", str(copies), "--axes", "ZXY"]) == 0
+    assert f"morphobricks-preprocessing run {copies} --output" in out and "--axes TYX" in out
+    assert main(["convert", str(exp), "--to", str(copies), "--axes", "TXY"]) == 0
     assert "already there and unchanged: 3 images" in capsys.readouterr().out
 
 
@@ -419,31 +419,31 @@ def test_the_printed_next_command_uses_the_output_folder_given_and_works(tmp_pat
     main(["check", str(exp), "--output", str(out)])  # writes the design template
     assert main(["design", "--output", str(out), "--confirm-all"]) == 0
     capsys.readouterr()
-    args = ["convert", str(exp), "--to", str(copies), "--axes", "ZXY", "--output", str(out)]
+    args = ["convert", str(exp), "--to", str(copies), "--axes", "TXY", "--output", str(out)]
     assert main(args) == 0
     text = capsys.readouterr().out
     (command,) = [line.split()[1:] for line in text.splitlines() if "preprocessing run " in line]
-    assert command == ["run", str(copies), "--output", str(out), "--axes", "ZYX"]
+    assert command == ["run", str(copies), "--output", str(out), "--axes", "TYX"]
     assert "by default" not in text
     assert main(command) == 0, capsys.readouterr().out
     # Without --output the default folder is named, with what to do if it is not theirs.
     copies_b = tmp_path / "copies_b"
-    assert main(["convert", str(exp), "--to", str(copies_b), "--axes", "ZXY"]) == 0
+    assert main(["convert", str(exp), "--to", str(copies_b), "--axes", "TXY"]) == 0
     assert "if your runs used another one, give it" in capsys.readouterr().out
 
 
 def test_images_arranged_differently_are_told_that_convert_keeps_the_order(tmp_path):
     # F8: convert keeps each image's stored order, so it cannot solve this (question 73).
     exp = tmp_path / "exp"
-    write_data(exp / "ctrl/r1/a.tif", np.zeros((2, 3, 6, 8), np.uint8), axes="ZCYX")
-    write_data(exp / "ctrl/r1/b.tif", np.zeros((3, 2, 6, 8), np.uint8), axes="CZYX")
+    write_data(exp / "ctrl/r1/a.tif", np.zeros((2, 3, 6, 8), np.uint8), axes="TCYX")
+    write_data(exp / "ctrl/r1/b.tif", np.zeros((3, 2, 6, 8), np.uint8), axes="CTYX")
     (issue,) = [i for i in preflight(exp).issues if i.code == "inconsistent_dimensions"]
     assert "('convert') keep each image's stored order" in issue.action
 
 
 def test_the_convert_command_refuses_and_exits_1(tmp_path, capsys):
     exp = swapped_experiment(tmp_path / "exp")
-    assert main(["convert", str(exp), "--to", str(exp / "inside"), "--axes", "ZXY"]) == 1
+    assert main(["convert", str(exp), "--to", str(exp / "inside"), "--axes", "TXY"]) == 1
     assert "The copies must be kept apart from the originals" in capsys.readouterr().out
     assert main(["convert", str(exp), "--to", str(tmp_path / "c"), "--axes", "ZX"]) == 1
     assert "does not fit the images" in capsys.readouterr().out
@@ -457,13 +457,13 @@ def test_the_convert_command_removes_a_stale_lock_only_on_request(tmp_path, caps
     copies.mkdir()
     lock = copies / LOCK_FILENAME
     lock.write_text(json.dumps({"host": os.uname().nodename, "pid": finished_pid()}))
-    assert main(["convert", str(exp), "--to", str(copies), "--axes", "ZXY"]) == 1
+    assert main(["convert", str(exp), "--to", str(copies), "--axes", "TXY"]) == 1
     # F11 (cross-brick test, 3 November 2026): a dead holder here is called stale, as in run.
     text = capsys.readouterr().out
     assert "Another conversion" not in text
     assert "lock of this folder looks stale" in text and "no longer running" in text
     assert "--remove-stale-lock" in text and lock.exists()  # never removed on its own
-    args = ["convert", str(exp), "--to", str(copies), "--axes", "ZXY", "--remove-stale-lock"]
+    args = ["convert", str(exp), "--to", str(copies), "--axes", "TXY", "--remove-stale-lock"]
     assert main(args) == 0
     assert "Removed the lock" in capsys.readouterr().out
 
@@ -473,11 +473,11 @@ def test_a_conversion_whose_folder_a_running_process_locks_is_not_called_stale(t
     copies.mkdir()
     lock = copies / LOCK_FILENAME
     lock.write_text(json.dumps({"host": "another-computer", "pid": os.getpid()}))
-    assert main(["convert", str(exp), "--to", str(copies), "--axes", "ZXY"]) == 1
+    assert main(["convert", str(exp), "--to", str(copies), "--axes", "TXY"]) == 1
     text = capsys.readouterr().out
     assert "Another conversion is writing into this folder" in text and "looks stale" not in text
     lock.write_text(json.dumps({"host": socket.gethostname(), "pid": os.getpid()}))
-    assert main(["convert", str(exp), "--to", str(copies), "--axes", "ZXY"]) == 1
+    assert main(["convert", str(exp), "--to", str(copies), "--axes", "TXY"]) == 1
     assert "looks stale" not in capsys.readouterr().out
 
 
@@ -485,7 +485,7 @@ def test_an_ome_zarr_image_is_copied_as_it_is(tmp_path):
     from zarr_tree import write_ngff
 
     exp = plain_experiment(tmp_path / "exp")
-    store = write_ngff(exp / "ctrl" / "r1" / "z.zarr", np.ones((3, 7, 5), np.uint8), "zyx")
+    store = write_ngff(exp / "ctrl" / "r1" / "z.zarr", np.ones((3, 7, 5), np.uint8), "tyx")
     result = convert_experiment(exp, PLAIN, tmp_path / "copies")
     assert result.written and result.copied == ("ctrl/r1/z.zarr",)
     copy = tmp_path / "copies" / "ctrl" / "r1" / "z.zarr"
@@ -494,6 +494,6 @@ def test_an_ome_zarr_image_is_copied_as_it_is(tmp_path):
         p.relative_to(store).as_posix(): p.read_bytes() for p in store.rglob("*") if p.is_file()
     }
     run = run_experiment(
-        tmp_path / "copies", AxisMapping("ZYX", tuple("ZYX")), output_folder=tmp_path / "o"
+        tmp_path / "copies", AxisMapping("TYX", tuple("TYX")), output_folder=tmp_path / "o"
     )
     assert run.written, run.issues

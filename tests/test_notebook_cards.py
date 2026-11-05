@@ -35,7 +35,7 @@ def experiment(tmp_path):
     root = tmp_path / "exp"
     rng = np.random.default_rng(0)
     for rel in ["ctrl/rep1/a.tif", "ctrl/rep2/a.tif", "drug/rep1/a.tif", "drug/rep2/a.tif"]:
-        write_data(root / rel, rng.integers(0, 200, (2, 16, 16), dtype=np.uint8), axes="ZYX")
+        write_data(root / rel, rng.integers(0, 200, (2, 16, 16), dtype=np.uint8), axes="TYX")
     return root
 
 
@@ -362,7 +362,7 @@ def test_the_plan_names_the_mask_changes_the_run_names(experiment, tmp_path):
         step()
     nb.masks_folder.value = str(first)
     nb.check_button.click()
-    nb._mask_choices["cells"].value = "ZYX"  # stated as --mask-axes cells=ZYX
+    nb._mask_choices["cells"].value = "TYX"  # stated as --mask-axes cells=TYX
     nb.masks_button.click()
     nb.labels_confirmed.button.click()
     for toggle in nb.group_confirmations.values():
@@ -373,7 +373,7 @@ def test_the_plan_names_the_mask_changes_the_run_names(experiment, tmp_path):
     output = output_of(experiment).resolve()
     assert nb._planned_changes(output) == ()
     nb.masks_folder.value = str(second)  # a new masks folder: its statements start over
-    nb._mask_choices["cells"].value = "ZYX"
+    nb._mask_choices["cells"].value = "TYX"
     nb.masks_button.click()
     planned = nb._planned_changes(output)
     assert [change.name for change in planned] == ["masks_folder"]

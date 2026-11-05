@@ -28,7 +28,7 @@ from morphobricks_preprocessing import (
 )
 from morphobricks_preprocessing.copy_axes import CopyLayout, copy_layout
 
-ZYX_SWAPPED = AxisMapping("ZYX", ("Z", "X", "Y"))
+TYX_SWAPPED = AxisMapping("TYX", ("T", "X", "Y"))
 
 
 def ome(path, data, axes, **metadata):
@@ -108,35 +108,35 @@ def convert(tmp_path, mapping, **kwargs):
 
 def test_a_plain_stack_is_written_with_the_confirmed_roles(tmp_path):
     source = plain(tmp_path / "exp" / "a" / "img.tif", pixels((4, 9, 13)))
-    mapping = AxisMapping("IYX", ("Z", "Y", "X"))
+    mapping = AxisMapping("IYX", ("T", "Y", "X"))
     result = convert(tmp_path, mapping)
     assert result.written and result.converted == ("a/img.tif",)
     copy = tmp_path / "copies" / "a" / "img.tif"
     with tifffile.TiffFile(copy) as tif:
-        assert tif.is_ome and tif.series[0].axes == "ZYX" and tif.series[0].shape == (4, 9, 13)
+        assert tif.is_ome and tif.series[0].axes == "TYX" and tif.series[0].shape == (4, 9, 13)
     assert_bitwise_equal(source, mapping, copy)
-    assert result.suggested_axes == "ZYX"
+    assert result.suggested_axes == "TYX"
 
 
 def test_a_y_x_swap_is_written_rows_then_columns_and_never_exchanges_sizes(tmp_path):
     data = pixels((3, 10, 14))
     source = ome(
-        tmp_path / "exp" / "img.tif", data, "ZYX", PhysicalSizeX=0.3, PhysicalSizeY=0.4,
-        PhysicalSizeZ=1.5,
+        tmp_path / "exp" / "img.tif", data, "TYX", PhysicalSizeX=0.3, PhysicalSizeY=0.4,
+        TimeIncrement=1.5,
     )  # fmt: skip
-    result = convert(tmp_path, ZYX_SWAPPED)
+    result = convert(tmp_path, TYX_SWAPPED)
     copy = tmp_path / "copies" / "img.tif"
     assert result.written and result.converted == ("img.tif",)
     with tifffile.TiffFile(copy) as tif:
-        assert tif.series[0].axes == "ZYX" and tif.series[0].shape == (3, 14, 10)
+        assert tif.series[0].axes == "TYX" and tif.series[0].shape == (3, 14, 10)
         np.testing.assert_array_equal(tif.series[0].asarray(), data.transpose(0, 2, 1))
-    assert_bitwise_equal(source, ZYX_SWAPPED, copy)
+    assert_bitwise_equal(source, TYX_SWAPPED, copy)
     sizes = inspect_image(copy).physical_sizes
     # The header's X size describes what the user calls Y: it is not taken for either.
-    assert (sizes.x, sizes.y, sizes.z) == (None, None, 1.5)
+    assert (sizes.x, sizes.y, sizes.t) == (None, None, 1.5)
     entry = read_conversion_record(tmp_path / "copies")[0].entry("img.tif")
-    assert entry.reason == "axes_yx_swapped" and entry.copy_axes == "ZYX"
-    assert entry.roles == ("Z", "X", "Y") and entry.source_axes == "ZYX"
+    assert entry.reason == "axes_yx_swapped" and entry.copy_axes == "TYX"
+    assert entry.roles == ("T", "X", "Y") and entry.source_axes == "TYX"
     assert set(entry.unknown_sizes) == {"X", "Y"}
     assert "relabelled" in entry.unknown_sizes["X"]
 
@@ -155,11 +155,11 @@ def test_a_y_x_swap_keeps_the_sizes_only_when_the_header_gives_x_and_y_equal(
 ):
     # Owner decision of 2 November 2026 (plan question 59, (1)): equal X and Y sizes, same
     # value and unit, are carried (nothing can be exchanged); otherwise both are unknown.
-    source = ome(tmp_path / "exp" / "img.tif", pixels((2, 6, 8)), "ZYX", PhysicalSizeZ=1.5, **sizes)
-    assert convert(tmp_path, ZYX_SWAPPED).written
+    source = ome(tmp_path / "exp" / "img.tif", pixels((2, 6, 8)), "TYX", TimeIncrement=1.5, **sizes)
+    assert convert(tmp_path, TYX_SWAPPED).written
     copy = tmp_path / "copies" / "img.tif"
     found = inspect_image(copy).physical_sizes
-    assert (found.x, found.y, found.z) == (*expected, 1.5)
+    assert (found.x, found.y, found.t) == (*expected, 1.5)
     entry = read_conversion_record(tmp_path / "copies")[0].entry("img.tif")
     carried = {s.role: (s.value, s.source) for s in entry.pixel_sizes if s.value is not None}
     if expected[0] is None:
@@ -167,7 +167,7 @@ def test_a_y_x_swap_keeps_the_sizes_only_when_the_header_gives_x_and_y_equal(
         assert "Y" not in entry.unknown_sizes or "not the same" in entry.unknown_sizes["Y"]
     else:
         assert carried["X"] == carried["Y"] == (0.25, "header") and not entry.unknown_sizes
-    assert_bitwise_equal(source, ZYX_SWAPPED, copy)
+    assert_bitwise_equal(source, TYX_SWAPPED, copy)
 
 
 @pytest.mark.parametrize(("resolution", "expected"), [((2.0, 2.0), 0.5), ((2.0, 4.0), None)])
@@ -176,9 +176,9 @@ def test_an_imagej_hyperstack_swap_keeps_equal_y_and_x_sizes_only(tmp_path, reso
     source.parent.mkdir(parents=True)
     tifffile.imwrite(
         source, pixels((2, 3, 6, 8)), imagej=True, resolution=resolution,
-        metadata={"axes": "ZCYX", "unit": "um"},
+        metadata={"axes": "TCYX", "unit": "um"},
     )  # fmt: skip
-    roles = AxisMapping("ZCYX", ("Z", "C", "X", "Y"))
+    roles = AxisMapping("TCYX", ("T", "C", "X", "Y"))
     assert convert(tmp_path, roles).written
     copy = tmp_path / "copies" / "img.tif"
     found = inspect_image(copy).physical_sizes
@@ -207,24 +207,25 @@ def test_an_imagej_slice_stack_confirmed_as_time_drops_its_z_step(tmp_path):
     assert entry.reason == "axes_contradict_header" and set(entry.unknown_sizes) == {"Z"}
 
 
-def test_an_imagej_hyperstack_with_channels_depth_and_time(tmp_path):
-    data = pixels((2, 3, 2, 7, 5))  # TZCYX
-    source = imagej(tmp_path / "exp" / "img.tif", data, "TZCYX")
+def test_an_imagej_hyperstack_with_channels_and_time(tmp_path):
+    # With depth too (TZCYX) until Z-stacks were refused (owner decision, 5 November 2026).
+    data = pixels((2, 2, 7, 5))  # TCYX
+    source = imagej(tmp_path / "exp" / "img.tif", data, "TCYX")
     # Confirmed with the header's Y and X the other way round.
-    mapping = AxisMapping("TZCYX", ("T", "Z", "C", "X", "Y"))
+    mapping = AxisMapping("TCYX", ("T", "C", "X", "Y"))
     result = convert(tmp_path, mapping)
     copy = tmp_path / "copies" / "img.tif"
-    assert result.written and inspect_image(copy).axes == "TZCYX"
-    assert inspect_image(copy).shape == (2, 3, 2, 5, 7)
+    assert result.written and inspect_image(copy).axes == "TCYX"
+    assert inspect_image(copy).shape == (2, 2, 5, 7)
     assert_bitwise_equal(source, mapping, copy)
 
 
 def test_channel_names_are_kept_when_the_channel_axis_keeps_its_role(tmp_path):
     source = ome(
-        tmp_path / "exp" / "img.tif", pixels((2, 3, 6, 9)), "CZYX",
+        tmp_path / "exp" / "img.tif", pixels((2, 3, 6, 9)), "CTYX",
         Channel={"Name": ["DAPI", "actin"]},
     )  # fmt: skip
-    mapping = AxisMapping("CZYX", ("C", "Z", "X", "Y"))
+    mapping = AxisMapping("CTYX", ("C", "T", "X", "Y"))
     result = convert(tmp_path, mapping)
     copy = tmp_path / "copies" / "img.tif"
     assert result.written
@@ -236,10 +237,10 @@ def test_tifffiles_cyx_default_confirmed_as_depth_loses_the_channel_names(tmp_pa
     source = ome(
         tmp_path / "exp" / "img.tif", pixels((3, 6, 8)), "CYX", Channel={"Name": list("abc")}
     )
-    mapping = AxisMapping("CYX", ("Z", "Y", "X"))
+    mapping = AxisMapping("CYX", ("T", "Y", "X"))
     result = convert(tmp_path, mapping)
     copy = tmp_path / "copies" / "img.tif"
-    assert result.written and inspect_image(copy).axes == "ZYX"
+    assert result.written and inspect_image(copy).axes == "TYX"
     assert inspect_image(copy).channel_names == ()
     assert_bitwise_equal(source, mapping, copy)
 
@@ -261,7 +262,7 @@ def test_a_plain_stack_confirmed_x_before_y_is_written_y_first(tmp_path):
 def test_every_pixel_type_is_kept_value_for_value(tmp_path, dtype):
     data = pixels((2, 5, 7), np.dtype(dtype).newbyteorder("=")).astype(dtype)
     source = plain(tmp_path / "exp" / "img.tif", data)
-    mapping = AxisMapping("IYX", ("Z", "Y", "X"))
+    mapping = AxisMapping("IYX", ("T", "Y", "X"))
     assert convert(tmp_path, mapping).written
     copy = tmp_path / "copies" / "img.tif"
     found = tifffile.imread(copy)
@@ -273,13 +274,13 @@ def test_every_pixel_type_is_kept_value_for_value(tmp_path, dtype):
 
 def test_planes_over_the_memory_limit_are_read_and_written_in_blocks(tmp_path, monkeypatch):
     data = pixels((2, 64, 48))
-    source = ome(tmp_path / "exp" / "img.tif", data, "ZYX")
+    source = ome(tmp_path / "exp" / "img.tif", data, "TYX")
     tifffile.imwrite(
         source, data, ome=True, photometric="minisblack", rowsperstrip=4,
-        metadata={"axes": "ZYX"},
+        metadata={"axes": "TYX"},
     )  # fmt: skip
-    limit = plane_layout(source, ZYX_SWAPPED, memory_limit=1).block_memory_estimate
-    assert limit < plane_layout(source, ZYX_SWAPPED).memory_estimate
+    limit = plane_layout(source, TYX_SWAPPED, memory_limit=1).block_memory_estimate
+    assert limit < plane_layout(source, TYX_SWAPPED).memory_estimate
     reads = []
     original = planes_module._read_segment
     monkeypatch.setattr(
@@ -287,7 +288,7 @@ def test_planes_over_the_memory_limit_are_read_and_written_in_blocks(tmp_path, m
     )
     for cls in (tifffile.TiffFile, tifffile.TiffPage, tifffile.TiffFrame, tifffile.TiffPageSeries):
         monkeypatch.setattr(cls, "asarray", lambda *a, **k: pytest.fail("decoded whole"))
-    result = convert(tmp_path, ZYX_SWAPPED, memory_limit=limit)
+    result = convert(tmp_path, TYX_SWAPPED, memory_limit=limit)
     assert result.written and len(reads) >= 2 * 64 // 4
     monkeypatch.undo()
     np.testing.assert_array_equal(
@@ -298,7 +299,7 @@ def test_planes_over_the_memory_limit_are_read_and_written_in_blocks(tmp_path, m
 @pytest.mark.parametrize("dtype", [np.int64, np.uint64])
 def test_64_bit_integers_which_ome_tiff_cannot_hold_are_refused(tmp_path, dtype):
     plain(tmp_path / "exp" / "img.tif", pixels((2, 4, 5), dtype))
-    result = convert(tmp_path, AxisMapping("IYX", ("Z", "Y", "X")))
+    result = convert(tmp_path, AxisMapping("IYX", ("T", "Y", "X")))
     assert not result.written
     assert [i.code for i in result.issues if i.is_error] == ["cannot_convert_pixel_type"]
     assert not (tmp_path / "copies").exists()
@@ -307,7 +308,7 @@ def test_64_bit_integers_which_ome_tiff_cannot_hold_are_refused(tmp_path, dtype)
 def test_a_large_copy_is_written_as_bigtiff(tmp_path, monkeypatch):
     monkeypatch.setattr(copy_module, "BIGTIFF_FROM", 0)
     source = plain(tmp_path / "exp" / "img.tif", pixels((2, 5, 6)))
-    mapping = AxisMapping("IYX", ("Z", "Y", "X"))
+    mapping = AxisMapping("IYX", ("T", "Y", "X"))
     assert convert(tmp_path, mapping).written
     copy = tmp_path / "copies" / "img.tif"
     with tifffile.TiffFile(copy) as tif:
@@ -322,7 +323,7 @@ def test_many_small_pages_that_would_overflow_a_classic_tiff_make_a_bigtiff():
     many = CopyLayout("TYX", (2**18, 127, 128))
     assert copy_module.copy_nbytes(many, np.dtype(np.uint8)) == copy_module.BIGTIFF_FROM
     assert copy_module.needs_bigtiff(many, np.dtype(np.uint8))
-    few = CopyLayout("ZYX", (16, 4096, 8192))
+    few = CopyLayout("TYX", (16, 4096, 8192))
     assert not copy_module.needs_bigtiff(few, np.dtype(np.uint16))
     assert copy_module.needs_bigtiff(few, np.dtype(np.float64))
 
@@ -336,7 +337,7 @@ def test_images_with_named_agreeing_axes_and_excluded_images_are_copied_byte_for
     plain(tmp_path / "exp" / "a" / "stack.tif", pixels((3, 5, 6)))
     damaged = tmp_path / "exp" / "a" / "damaged.tif"
     damaged.write_bytes(b"not a tiff at all")
-    mapping = AxisMapping("IYX", ("Z", "Y", "X"))
+    mapping = AxisMapping("IYX", ("T", "Y", "X"))
     before = fingerprints(tmp_path / "exp")
     result = convert(tmp_path, mapping, exclude=["a/damaged.tif"], missing_as_singleton=True)
     assert result.written, result.issues
@@ -359,7 +360,7 @@ def test_new_copies_get_the_mode_a_plain_open_gives(tmp_path):
     plain(tmp_path / "exp" / "img.tif", pixels((2, 4, 4)))
     old = os.umask(0o027)
     try:
-        assert convert(tmp_path, AxisMapping("IYX", ("Z", "Y", "X"))).written
+        assert convert(tmp_path, AxisMapping("IYX", ("T", "Y", "X"))).written
     finally:
         os.umask(old)
     for name in ("img.tif", ".morphobricks-conversion.json"):
@@ -369,7 +370,7 @@ def test_new_copies_get_the_mode_a_plain_open_gives(tmp_path):
 
 def test_the_copy_tree_must_be_outside_the_experiment_and_not_hold_it(tmp_path):
     plain(tmp_path / "exp" / "img.tif", pixels((2, 4, 4)))
-    mapping = AxisMapping("IYX", ("Z", "Y", "X"))
+    mapping = AxisMapping("IYX", ("T", "Y", "X"))
     for target in (tmp_path / "exp", tmp_path / "exp" / "copies", tmp_path):
         result = convert_experiment(tmp_path / "exp", mapping, target)
         assert not result.written
@@ -413,14 +414,14 @@ def test_an_rgb_image_with_swapped_y_and_x_is_written_as_channel_pages(tmp_path)
 def test_planes_that_cannot_be_read_within_the_memory_limit_stop_it_before_writing(tmp_path):
     # Review of PP-11 (issue #76's criterion): the memory budget fails fast. It used to be
     # found while writing, after the copies before it were written.
-    ome(tmp_path / "exp" / "a.tif", pixels((2, 8, 9)), "ZYX")
+    ome(tmp_path / "exp" / "a.tif", pixels((2, 8, 9)), "TYX")
     compressed = pixels((2, 64, 48))
     tifffile.imwrite(
         tmp_path / "exp" / "b.tif", compressed, ome=True, photometric="minisblack",
-        compression="zlib", rowsperstrip=64, metadata={"axes": "ZYX"},
+        compression="zlib", rowsperstrip=64, metadata={"axes": "TYX"},
     )  # fmt: skip
-    limit = plane_layout(tmp_path / "exp" / "a.tif", ZYX_SWAPPED).memory_estimate
-    result = convert(tmp_path, ZYX_SWAPPED, memory_limit=limit)
+    limit = plane_layout(tmp_path / "exp" / "a.tif", TYX_SWAPPED).memory_estimate
+    result = convert(tmp_path, TYX_SWAPPED, memory_limit=limit)
     assert not result.written
     assert [i.code for i in result.issues if i.is_error] == ["plane_over_memory_limit"]
     assert result.issues[0].paths == ("b.tif",)
@@ -438,5 +439,5 @@ def test_settings_that_are_not_allowed_are_refused_before_anything_is_read(
     # Review of PP-11 (issue #80's criterion): strict settings, never coerced.
     plain(tmp_path / "exp" / "img.tif", pixels((2, 4, 5)))
     with pytest.raises(ValueError, match=keyword):
-        convert(tmp_path, AxisMapping("IYX", ("Z", "Y", "X")), **{keyword: value})
+        convert(tmp_path, AxisMapping("IYX", ("T", "Y", "X")), **{keyword: value})
     assert not (tmp_path / "copies").exists()

@@ -112,15 +112,15 @@ def test_the_table_is_schema_version_4(hot_experiment):
 def test_the_robust_range_changes_no_8_or_16_bit_table(tmp_path):
     root = tmp_path / "ints"
     rng = np.random.default_rng(2)
-    write_data(root / "a/r/u8.tif", rng.integers(0, 256, (2, 32, 32), dtype=np.uint8), axes="ZYX")
-    zyx = prefill_mapping("ZYX")
+    write_data(root / "a/r/u8.tif", rng.integers(0, 256, (2, 32, 32), dtype=np.uint8), axes="TYX")
+    zyx = prefill_mapping("TYX")
     minmax = run_experiment(root, zyx, output_folder=tmp_path / "minmax")
     robust = run_experiment(root, zyx, output_folder=tmp_path / "robust", histogram_settings=ROBUST)
     assert minmax.csv_path.read_bytes() == robust.csv_path.read_bytes()
 
     root16 = tmp_path / "ints16"
     write_data(
-        root16 / "a/r/u16.tif", rng.integers(0, 65536, (2, 32, 32), dtype=np.uint16), axes="ZYX"
+        root16 / "a/r/u16.tif", rng.integers(0, 65536, (2, 32, 32), dtype=np.uint16), axes="TYX"
     )
     minmax = run_experiment(root16, zyx, output_folder=tmp_path / "minmax16")
     robust = run_experiment(
