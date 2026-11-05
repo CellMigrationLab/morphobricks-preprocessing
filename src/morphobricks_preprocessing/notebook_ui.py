@@ -198,19 +198,6 @@ class PreprocessingNotebook(
 
     # Pages -------------------------------------------------------------------------------
 
-    def app(self) -> widgets.VBox:
-        """Return the complete preprocessing notebook as one continuous widget app."""
-        return widgets.VBox(
-            [
-                self.welcome(),
-                self.folder_step(),
-                self.axis_step(),
-                self.run_step(),
-                self.results_step(),
-            ],
-            layout=widgets.Layout(width="99%"),
-        )
-
     def welcome(self) -> widgets.Widget:
         """Confirm that the notebook started, with the package version and what to do next."""
         from . import __version__
