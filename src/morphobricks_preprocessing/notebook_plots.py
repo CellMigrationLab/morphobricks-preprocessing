@@ -94,8 +94,9 @@ class IntensityPanel:
             icon="undo",
             tooltip="3 robust deviations, 1 % saturated pixels, at least 5 images",
         )
-        self.settings_box = widgets.Accordion(
-            children=[
+        self.settings_box = ui.accordion(
+            "Check settings",
+            [
                 widgets.VBox(
                     [
                         self.outlier_limit,
@@ -121,8 +122,6 @@ class IntensityPanel:
                     ]
                 )
             ],
-            titles=("Check settings",),
-            selected_index=None,
         )
 
     def _build_limits(self) -> None:
