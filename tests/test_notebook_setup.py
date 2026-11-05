@@ -169,7 +169,9 @@ def test_setup_does_not_mix_an_already_loaded_package_with_another_checkout(
         "morphobricks_preprocessing",
         SimpleNamespace(__file__=str(tmp_path / "another_copy/__init__.py")),
     )
-    with pytest.raises(RuntimeError, match="already loaded another copy"):
+    with pytest.raises(
+        RuntimeError, match="already loaded another MorphoBricks preprocessing copy"
+    ):
         setup_environment.start()
     assert setup_environment.installs == setup_environment.imports == []
 
@@ -181,9 +183,7 @@ def colab(monkeypatch):
     return calls
 
 
-def test_colab_mounts_drive_without_a_custom_widget_manager(
-    setup_environment, monkeypatch, capsys
-):
+def test_colab_mounts_drive_without_a_custom_widget_manager(setup_environment, monkeypatch, capsys):
     calls = colab(monkeypatch)
     setup_environment.start()
     assert calls == ["/content/drive"]

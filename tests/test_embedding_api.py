@@ -78,6 +78,11 @@ STYLE_FUNCTIONS = {
         ("children", POSITIONAL, EMPTY),
         ("visible", KEYWORD, True),
     ],
+    "accordion": [
+        ("title", POSITIONAL, EMPTY),
+        ("children", POSITIONAL, EMPTY),
+        ("selected_index", KEYWORD, None),
+    ],
     "intro": [("text", POSITIONAL, EMPTY)],
     "help_text": [("text", POSITIONAL, EMPTY)],
     "set_visible": [("widget", POSITIONAL, EMPTY), ("visible", POSITIONAL, EMPTY)],
