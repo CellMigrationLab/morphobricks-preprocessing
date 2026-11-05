@@ -6,9 +6,22 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature. The 
 are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 [migration guide](docs/migration-0.3-to-0.4.md).
 
-## Unreleased (for 0.4.0)
+## v0.4.0 (5 November 2026)
 
-Small changes for the final v0.4.0 since v0.4.0rc5 (#147). No version bump yet.
+The final v0.4.0, with the small changes since v0.4.0rc5 (#147) and the release step: the
+version is 0.4.0, the notebook installs `v0.4.0`, and **the normalization brick is pinned at
+v0.3.4** (it was v0.3.3 in the release candidates).
+
+- **Normalization v0.3.4** (its README, "Migrating to v0.3.4"). The pooled `mean` and `std`
+  and the `zscore` offset and scale change **in their last bits** (normalization#67): they can
+  differ from v0.3.3 by a few units in the last place (at most 3.7e-14 relative on its
+  reference dump). A run, cached z-score parameters or features computed with v0.3.3 or a
+  release candidate are not bitwise reproducible with v0.3.4; recompute them rather than
+  mixing the two. Histograms, `plane_histograms.csv`, minimum, maximum, percentiles, median,
+  MAD and the other normalization methods are bitwise unchanged. A `PlaneHistogram` of a
+  plane with valid pixels but no `pixel_min` or `pixel_max` is now refused (no code of this
+  package builds one). No preprocessing test or frozen fixture compares these values with
+  v0.3.3 output bit for bit.
 
 - **MorphoBricks v1 is 2-D per plane** (owner decision of 5 November 2026, tracker row 36;
   plan §12 question 76; contract §2, §9, §15). 3-D feature extraction will be a separate
@@ -68,8 +81,7 @@ Small changes for the final v0.4.0 since v0.4.0rc5 (#147). No version bump yet.
   behaviour (compared with rc5 over 238 cases).
 - **Compatible with normalization's next release** (normalization#65, issue #47): the
   schema-version-2 equivalence test passes `pixel_min` and `pixel_max` to `PlaneHistogram`
-  from the version-2 columns; it passes with normalization v0.3.3 (still the pin) and with
-  its main at 534c63d. No package code builds a `PlaneHistogram`.
+  from the version-2 columns; it passes with normalization v0.3.3 and with v0.3.4 (the final pin). No package code builds a `PlaneHistogram`.
 - **`mounted_folder` on overlayfs** (review of #146): the contract and `mounts` say that on
   an overlay file system whose layers are on different file systems, mounted with
   `xino=off`, files may report another `st_dev` and are then refused.
