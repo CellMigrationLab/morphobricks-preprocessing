@@ -66,8 +66,9 @@ class MaskFile:
         (:func:`.stated.mask_named_axes`), e.g. ``"?YX"``; empty when unknown.
     axes_from
         ``"header"`` when the axes are those the mask's metadata names, ``"stated"`` when
-        the user stated the axes of its mask type (a plain stack, or a 2-D mask shared by
-        every plane of its image); empty when unknown.
+        the user stated the axes of its mask type (a plain stack, e.g. ``TYX``); empty when
+        unknown. A 2-D mask is never shared by several planes of its image (owner decision
+        of 5 November 2026): every mask has the image's time points.
     """
 
     image: str
@@ -80,11 +81,6 @@ class MaskFile:
     header_axes: str = ""
     axes_from: str = ""
     named_axes: str = ""
-
-    @property
-    def shared(self) -> bool:
-        """True for a 2-D mask stated for its type: one plane shared by every image plane."""
-        return self.axes == "YX" and self.axes_from == "stated"
 
     @property
     def planes(self) -> dict[str, int]:

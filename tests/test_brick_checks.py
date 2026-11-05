@@ -148,13 +148,13 @@ def test_a_mask_added_after_the_run_is_named(clean):
 def test_a_label_image_added_after_the_run_is_named(tmp_path):
     pytest.importorskip("zarr")
     image = np.arange(40, dtype=np.uint8).reshape(2, 4, 5)
-    path = write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", image, "zyx")
-    write_labels(path, {"cells": _labels((2, 4, 5))}, "zyx")
-    result = run_experiment(tmp_path / "exp", prefill_mapping("ZYX"))
+    path = write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", image, "tyx")
+    write_labels(path, {"cells": _labels((2, 4, 5))}, "tyx")
+    result = run_experiment(tmp_path / "exp", prefill_mapping("TYX"))
     assert result.written, result.issues
     RunInputs.open(result.output_folder)
     # Written as the only listed label image: the recorded cells label image is unchanged.
-    write_labels(path, {"nuclei": _labels((2, 4, 5))}, "zyx")
+    write_labels(path, {"nuclei": _labels((2, 4, 5))}, "tyx")
     with pytest.raises(UnrecordedFilesError) as raised:
         RunInputs.open(result.output_folder)
     assert raised.value.files.masks == ("ctrl/a.ome.zarr/labels/nuclei",)
@@ -167,9 +167,9 @@ def test_a_label_image_added_after_the_run_is_named(tmp_path):
 def labelled(tmp_path):
     pytest.importorskip("zarr")
     image = np.arange(40, dtype=np.uint8).reshape(2, 4, 5)
-    path = write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", image, "zyx")
-    write_labels(path, {"cells": _labels((2, 4, 5))}, "zyx")
-    result = run_experiment(tmp_path / "exp", prefill_mapping("ZYX"))
+    path = write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", image, "tyx")
+    write_labels(path, {"cells": _labels((2, 4, 5))}, "tyx")
+    result = run_experiment(tmp_path / "exp", prefill_mapping("TYX"))
     assert result.written, result.issues
     RunInputs.open(result.output_folder)
     return result.output_folder, path

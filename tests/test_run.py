@@ -32,7 +32,7 @@ from run_files import only_the_report
 from simulation import simulate_plane
 from tiff_tree import write_data, write_file
 
-ZYX = prefill_mapping("ZYX")
+TYX = prefill_mapping("TYX")
 IMAGES = [
     "control/bio_rep1/tech_rep1/img_01.tif",
     "control/bio_rep1/tech_rep1/img_02.tif",
@@ -54,7 +54,7 @@ def stack(seed, dtype="uint8", n_z=2, shape=(24, 24), brightness=1.0):
 def touch(path, data):
     """Rewrite ``path`` with ``data`` and make sure its modification time changes."""
     before = os.stat(path).st_mtime_ns
-    write_data(path, data, axes="ZYX")
+    write_data(path, data, axes="TYX")
     stat = os.stat(path)
     os.utime(path, ns=(stat.st_atime_ns, max(stat.st_mtime_ns, before) + 10**9))
 
@@ -63,7 +63,7 @@ def touch(path, data):
 def experiment(tmp_path):
     root = tmp_path / "exp"
     for seed, rel in enumerate(IMAGES):
-        write_data(root / rel, stack(seed, brightness=1 + 0.5 * rel.startswith("treated")), "ZYX")
+        write_data(root / rel, stack(seed, brightness=1 + 0.5 * rel.startswith("treated")), "TYX")
     return root
 
 
@@ -120,8 +120,8 @@ def test_the_run_checks_the_intensities_of_its_table(tmp_path, reads):
     rng = np.random.default_rng(5)
     for i, level in enumerate([100, 101, 99, 102, 98, 190]):
         image = np.clip(rng.normal(level, 8, (2, 16, 16)), 0, 254).astype(np.uint8)
-        write_data(root / f"ctrl/rep1/img_{i}.tif", image, axes="ZYX")
-    result = run_experiment(root, ZYX)
+        write_data(root / f"ctrl/rep1/img_{i}.tif", image, axes="TYX")
+    result = run_experiment(root, TYX)
     assert result.written and result.intensity is not None
     _, from_table = check_table(result.csv_path)
     assert result.intensity.issues == from_table.issues
@@ -133,7 +133,7 @@ def test_the_run_checks_the_intensities_of_its_table(tmp_path, reads):
     # New limits change the warnings and the manifest, and read no image again.
     reads.clear()
     loose = IntensityCheckSettings(outlier_limit=100)
-    again = run_experiment(root, ZYX, intensity_settings=loose)
+    again = run_experiment(root, TYX, intensity_settings=loose)
     assert reads == [] and again.intensity.issues == ()
     assert read_manifest(again.manifest_path).intensity_checks == loose
 
@@ -144,7 +144,7 @@ def test_a_failed_run_has_no_intensity_checks(experiment):
 
 
 def test_first_run_writes_table_and_manifest(experiment):
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     assert result.written and result.ok
     assert result.output_folder == experiment.parent / "exp_MorphoBricks_Preprocessing"
     assert result.csv_path.name == OUTPUT_FILENAME
@@ -156,10 +156,10 @@ def test_first_run_writes_table_and_manifest(experiment):
 
 
 def test_labels_and_coordinates_in_the_table(experiment):
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     records = read_plane_histograms(result.csv_path)
     assert [r.plane_id for r in records] == [
-        f"{rel}::z={z},t=0" for rel in sorted(IMAGES) for z in (0, 1)
+        f"{rel}::z=0,t={t}" for rel in sorted(IMAGES) for t in (0, 1)
     ]
     by_path = {r.source_relative_path: r for r in records}
     short = by_path["treated/bio_rep1/img_01.tif"]
@@ -168,16 +168,16 @@ def test_labels_and_coordinates_in_the_table(experiment):
         "bio_rep1",
         SINGLE,
     )
-    assert {r.z for r in records} == {0, 1}
-    assert all(r.t == 0 and r.channel_count == 1 for r in records)
+    assert {r.t for r in records} == {0, 1}
+    assert all(r.z == 0 and r.channel_count == 1 for r in records)
 
 
 def test_table_matches_the_pixels(experiment):
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     records = read_plane_histograms(result.csv_path)
     pixels = {rel: tifffile.imread(experiment / rel) for rel in IMAGES}
     for record in records:
-        plane = pixels[record.source_relative_path][record.z]
+        plane = pixels[record.source_relative_path][record.t]
         assert record.channel_histogram(0).pixel_min == plane.min()
         assert record.channel_histogram(0).pixel_max == plane.max()
         assert record.channel_histogram(0).total_pixel_count == plane.size
@@ -190,7 +190,7 @@ def test_table_matches_the_pixels(experiment):
     for level in ("condition", "biological_repeat", "technical_repeat", "image"):
         for members in group_records(records, level).values():
             values = np.concatenate(
-                [pixels[r.source_relative_path][r.z].ravel() for r in members]
+                [pixels[r.source_relative_path][r.t].ravel() for r in members]
             ).astype(np.float64)
             pooled = PooledHistogram(members)
             assert pooled.mean == pytest.approx(values.mean(), rel=1e-12)
@@ -199,10 +199,10 @@ def test_table_matches_the_pixels(experiment):
 
 
 def test_manifest_records_labels_mapping_settings_and_files(experiment):
-    result = run_experiment(experiment, ZYX, bin_count=100, memory_limit=2**28)
+    result = run_experiment(experiment, TYX, bin_count=100, memory_limit=2**28)
     manifest = read_manifest(result.manifest_path)
     assert manifest.dtype == "uint8"
-    assert manifest.mapping == ZYX
+    assert manifest.mapping == TYX
     assert manifest.settings.bin_count == 100 and manifest.settings.memory_limit == 2**28
     assert manifest.leaves["treated/bio_rep1"] == ("treated", "bio_rep1", SINGLE)
     assert [f.relative_path for f in manifest.files] == sorted(IMAGES)
@@ -299,7 +299,7 @@ def test_differing_channel_names_stop_the_run(tmp_path):
 
 
 def test_every_row_has_its_position_id(experiment):
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     records = read_plane_histograms(result.csv_path)
     assert {r.position_id for r in records} == {"img_01", "img_02"}
     # The same file name in two technical repeats gives two distinct positions.
@@ -333,9 +333,9 @@ def test_folder_named_single_runs_as_a_one_member_level(tmp_path):
     # <condition>/single/<images>: the repeat level exists with one member.
     root = tmp_path / "exp"
     for seed, rel in enumerate(["ctrl/single/a.tif", "ctrl/single/b.tif", "drug/single/a.tif"]):
-        write_data(root / rel, stack(seed), "ZYX")
+        write_data(root / rel, stack(seed), "TYX")
     assert preflight(root).ok
-    records = read_plane_histograms(run_experiment(root, ZYX).csv_path)
+    records = read_plane_histograms(run_experiment(root, TYX).csv_path)
     assert {
         (r.condition, r.biological_repeat, r.technical_repeat, r.position_id) for r in records
     } == {
@@ -354,15 +354,15 @@ def test_position_ids_that_are_text_stay_text(tmp_path):
     root = tmp_path / "exp"
     # "NA" and "null" are refused by discovery since decision D-e; "FALSE" and "1e3" stay text.
     for seed, rel in enumerate(["ctrl/001.tif", "ctrl/FALSE.tif", "ctrl/1e3.tif", "drug/TRUE.tif"]):
-        write_data(root / rel, stack(seed), "ZYX")
-    result = run_experiment(root, ZYX)
+        write_data(root / rel, stack(seed), "TYX")
+    result = run_experiment(root, TYX)
     records = read_plane_histograms(result.csv_path)
     assert sorted({r.position_id for r in records}) == ["001", "1e3", "FALSE", "TRUE"]
 
 
 def test_images_with_the_same_position_id_are_refused(experiment):
-    write_data(experiment / "control/bio_rep1/tech_rep1/img_01.ome.tif", stack(9), "ZYX")
-    result = run_experiment(experiment, ZYX)
+    write_data(experiment / "control/bio_rep1/tech_rep1/img_01.ome.tif", stack(9), "TYX")
+    result = run_experiment(experiment, TYX)
     assert not result.written and only_the_report(result.output_folder)
     assert issue(result.issues, "duplicate_position_id").paths == (
         "control/bio_rep1/tech_rep1/img_01.ome.tif",
@@ -372,7 +372,7 @@ def test_images_with_the_same_position_id_are_refused(experiment):
 
 
 def test_table_without_position_ids_is_filled_without_reading(experiment, reads):
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     table = csv_bytes(first)
     # A table written before position identifiers were recorded.
     blank = [replace(r, position_id=None) for r in read_plane_histograms(first.csv_path)]
@@ -381,7 +381,7 @@ def test_table_without_position_ids_is_filled_without_reading(experiment, reads)
     data["csv_sha256"] = hashlib.sha256(first.csv_path.read_bytes()).hexdigest()
     first.manifest_path.write_text(json.dumps(data), encoding="utf-8")
     reads.clear()
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     assert result.written and result.rebuild_reason is None
     assert result.unchanged == tuple(sorted(IMAGES)) and reads == []
     assert csv_bytes(result) == table
@@ -389,7 +389,7 @@ def test_table_without_position_ids_is_filled_without_reading(experiment, reads)
 
 
 def test_custom_output_folder(experiment, tmp_path):
-    result = run_experiment(experiment, ZYX, output_folder=tmp_path / "out" / "nested")
+    result = run_experiment(experiment, TYX, output_folder=tmp_path / "out" / "nested")
     assert result.written and result.csv_path == tmp_path / "out" / "nested" / OUTPUT_FILENAME
 
 
@@ -397,10 +397,10 @@ def test_custom_output_folder(experiment, tmp_path):
 
 
 def test_rerun_is_idempotent_and_reads_nothing(experiment, reads):
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     table = csv_bytes(first)
     reads.clear()
-    second = run_experiment(experiment, ZYX)
+    second = run_experiment(experiment, TYX)
     assert second.written and second.rebuild_reason is None
     assert second.unchanged == tuple(sorted(IMAGES))
     assert second.new == second.changed == second.removed == second.read == ()
@@ -409,13 +409,13 @@ def test_rerun_is_idempotent_and_reads_nothing(experiment, reads):
 
 
 def test_only_changed_file_is_read(experiment, reads):
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     before = {r.plane_id: r for r in read_plane_histograms(first.csv_path)}
     changed = IMAGES[1]
     touch(experiment / changed, stack(99) // 2)
     reads.clear()
 
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     assert result.changed == (changed,) and result.read == (changed,)
     assert reads.relative(experiment) == [changed]
     after = {r.plane_id: r for r in read_plane_histograms(result.csv_path)}
@@ -428,21 +428,21 @@ def test_only_changed_file_is_read(experiment, reads):
 
 
 def test_new_file_is_added(experiment, reads):
-    run_experiment(experiment, ZYX)
+    run_experiment(experiment, TYX)
     added = "control/bio_rep1/tech_rep2/img_02.tif"
-    write_data(experiment / added, stack(50), "ZYX")
+    write_data(experiment / added, stack(50), "TYX")
     reads.clear()
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     assert result.new == (added,) and reads.relative(experiment) == [added]
     assert result.plane_count == 2 * (len(IMAGES) + 1)
     assert added in {r.source_relative_path for r in read_plane_histograms(result.csv_path)}
 
 
 def test_deleted_file_rows_are_removed(experiment, reads):
-    run_experiment(experiment, ZYX)
+    run_experiment(experiment, TYX)
     (experiment / IMAGES[0]).unlink()
     reads.clear()
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     assert result.removed == (IMAGES[0],) and result.read == () and reads == []
     paths = {r.source_relative_path for r in read_plane_histograms(result.csv_path)}
     assert IMAGES[0] not in paths and len(paths) == len(IMAGES) - 1
@@ -450,20 +450,20 @@ def test_deleted_file_rows_are_removed(experiment, reads):
 
 
 def test_renamed_file_is_a_delete_plus_an_add(experiment, reads):
-    run_experiment(experiment, ZYX)
+    run_experiment(experiment, TYX)
     old = experiment / IMAGES[0]
     old.rename(old.with_name("renamed.tif"))
     renamed = IMAGES[0].rsplit("/", 1)[0] + "/renamed.tif"
     reads.clear()
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     assert result.removed == (IMAGES[0],) and result.new == (renamed,)
     assert reads.relative(experiment) == [renamed]
 
 
 def test_full_mode_reads_everything(experiment, reads):
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     reads.clear()
-    result = run_experiment(experiment, ZYX, mode="full")
+    result = run_experiment(experiment, TYX, mode="full")
     assert result.rebuild_reason == "a full run was asked for (mode full)"
     assert result.unchanged == tuple(sorted(IMAGES)) and result.read == tuple(sorted(IMAGES))
     assert sorted(reads.relative(experiment)) == sorted(IMAGES)
@@ -471,9 +471,9 @@ def test_full_mode_reads_everything(experiment, reads):
 
 
 def test_changed_bin_count_rebuilds(experiment, reads):
-    run_experiment(experiment, ZYX)
+    run_experiment(experiment, TYX)
     reads.clear()
-    result = run_experiment(experiment, ZYX, bin_count=100)
+    result = run_experiment(experiment, TYX, bin_count=100)
     assert result.rebuild_reason == "the bin count changed from 256 to 100"
     assert len(reads) == len(IMAGES)
     assert {r.channel_histogram(0).bin_count for r in read_plane_histograms(result.csv_path)} == {
@@ -482,40 +482,40 @@ def test_changed_bin_count_rebuilds(experiment, reads):
 
 
 def test_changed_axis_mapping_rebuilds(experiment):
-    run_experiment(experiment, ZYX)
-    # The same images saved again as time-lapses: their headers now name T.
+    run_experiment(experiment, TYX)
+    # The same pixels saved again with their planes as channels: their headers now name C.
     for seed, rel in enumerate(IMAGES):
-        write_data(experiment / rel, stack(seed), "TYX")
-    result = run_experiment(experiment, AxisMapping("TYX", "TYX"))
+        write_data(experiment / rel, stack(seed), "CYX")
+    result = run_experiment(experiment, AxisMapping("CYX", "CYX"))
     assert result.rebuild_reason == "the axis mapping changed"
     records = read_plane_histograms(result.csv_path)
-    assert {r.t for r in records} == {0, 1} and {r.z for r in records} == {0}
+    assert {r.t for r in records} == {0} and {r.channel_count for r in records} == {2}
 
 
 def test_table_of_an_earlier_format_version_is_recomputed(experiment, reads):
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     manifest = json.loads(first.manifest_path.read_text(encoding="utf-8"))
     manifest["schema_version"] = "1"
     first.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     reads.clear()
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     assert result.rebuild_reason == "the earlier table uses a different format version"
     assert sorted(reads.relative(experiment)) == sorted(IMAGES)
     assert csv_bytes(result) == csv_bytes(first)
 
 
 def test_memory_limit_change_keeps_rows(experiment, reads):
-    run_experiment(experiment, ZYX)
+    run_experiment(experiment, TYX)
     reads.clear()
-    result = run_experiment(experiment, ZYX, memory_limit=2**29)
+    result = run_experiment(experiment, TYX, memory_limit=2**29)
     assert result.rebuild_reason is None and reads == []
 
 
 def test_edited_table_is_rebuilt(experiment):
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     original = csv_bytes(first)
     first.csv_path.write_bytes(original.replace(b"control", b"CONTROL"))
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     assert result.rebuild_reason == (
         "the histogram table was changed or replaced after the earlier run"
     )
@@ -523,30 +523,30 @@ def test_edited_table_is_rebuilt(experiment):
 
 
 def test_missing_table_is_rebuilt(experiment):
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     first.csv_path.unlink()
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     assert result.written and "changed or replaced" in result.rebuild_reason
 
 
 def test_unreadable_manifest_is_rebuilt(experiment):
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     first.manifest_path.write_text("{not json", encoding="utf-8")
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     assert result.rebuild_reason == "the earlier run manifest could not be read"
     assert result.new == tuple(sorted(IMAGES))
     assert read_manifest(result.manifest_path).files
 
 
 def test_table_with_missing_rows_rereads_the_file(experiment, reads):
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     manifest = read_manifest(first.manifest_path)
     # Make the manifest claim more planes than the table holds for one file.
     data = manifest.to_dict()
     data["files"][0]["plane_count"] = 3
     first.manifest_path.write_text(json.dumps(data), encoding="utf-8")
     reads.clear()
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     assert result.changed == (sorted(IMAGES)[0],)
     assert reads.relative(experiment) == [sorted(IMAGES)[0]]
 
@@ -555,10 +555,10 @@ def test_table_with_missing_rows_rereads_the_file(experiment, reads):
 
 
 def test_errors_write_nothing_and_keep_earlier_output(experiment):
-    first = run_experiment(experiment, ZYX)
+    first = run_experiment(experiment, TYX)
     table, manifest = csv_bytes(first), first.manifest_path.read_bytes()
     write_file(experiment / "control/bio_rep1/tech_rep1/bad.tif", b"garbage")
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     assert not result.written and not result.ok
     assert issue(result.issues, "unreadable_tiff").paths == ("control/bio_rep1/tech_rep1/bad.tif",)
     assert csv_bytes(first) == table and first.manifest_path.read_bytes() == manifest
@@ -566,37 +566,37 @@ def test_errors_write_nothing_and_keep_earlier_output(experiment):
 
 def test_first_run_with_errors_writes_only_the_report(experiment):
     write_file(experiment / "control/bio_rep1/tech_rep1/bad.tif", b"garbage")
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     assert not result.written and only_the_report(result.output_folder)
 
 
 def test_output_inside_experiment_is_refused(experiment):
-    result = run_experiment(experiment, ZYX, output_folder=experiment / "results")
+    result = run_experiment(experiment, TYX, output_folder=experiment / "results")
     assert "output_inside_experiment" in codes(result.issues)
     assert not (experiment / "results").exists()
 
 
 def test_unconfirmed_mapping_errors_block(experiment):
-    result = run_experiment(experiment, AxisMapping("ZYX", "-YX"))
+    result = run_experiment(experiment, AxisMapping("TYX", "-YX"))
     assert other_codes(result.issues) == ["unassigned_axis"] and not result.written
 
 
 def test_invalid_bin_count_blocks(experiment):
-    result = run_experiment(experiment, ZYX, bin_count=0)
+    result = run_experiment(experiment, TYX, bin_count=0)
     found = issue(result.issues, "invalid_bin_count")
     assert "between 1 and 256" in found.message and not result.written
 
 
 def test_plane_over_memory_limit_blocks(experiment, reads):
-    result = run_experiment(experiment, ZYX, memory_limit=1000)
+    result = run_experiment(experiment, TYX, memory_limit=1000)
     assert other_codes(result.issues) == ["plane_over_memory_limit"]
     assert not result.written and reads == []
 
 
 def test_planes_over_the_memory_limit_are_read_in_blocks(experiment, tmp_path, reads):
-    whole = run_experiment(experiment, ZYX, output_folder=tmp_path / "whole")
-    limit = plane_layout(experiment / IMAGES[0], ZYX, memory_limit=1).block_memory_estimate
-    blocks = run_experiment(experiment, ZYX, output_folder=tmp_path / "blocks", memory_limit=limit)
+    whole = run_experiment(experiment, TYX, output_folder=tmp_path / "whole")
+    limit = plane_layout(experiment / IMAGES[0], TYX, memory_limit=1).block_memory_estimate
+    blocks = run_experiment(experiment, TYX, output_folder=tmp_path / "blocks", memory_limit=limit)
     assert blocks.written and other_codes(blocks.issues) == ["planes_read_in_blocks"]
     found = issue(blocks.issues, "planes_read_in_blocks")
     assert found.severity is Severity.WARNING and found.paths == tuple(sorted(IMAGES))
@@ -605,7 +605,7 @@ def test_planes_over_the_memory_limit_are_read_in_blocks(experiment, tmp_path, r
     assert not any(f.read_in_blocks for f in read_manifest(whole.manifest_path).files)
     # Changing only the limit reads nothing again; the manifest records the new way.
     reads.clear()
-    again = run_experiment(experiment, ZYX, output_folder=tmp_path / "blocks")
+    again = run_experiment(experiment, TYX, output_folder=tmp_path / "blocks")
     assert again.read == () and reads == [] and csv_bytes(again) == csv_bytes(whole)
     assert not any(f.read_in_blocks for f in read_manifest(again.manifest_path).files)
 
@@ -620,40 +620,40 @@ def test_pixel_data_that_cannot_be_decoded_blocks(experiment, monkeypatch):
 
     with monkeypatch.context() as patch:
         patch.setattr(planes_module, "_read_page", broken)
-        result = run_experiment(experiment, ZYX)
+        result = run_experiment(experiment, TYX)
     found = issue(result.issues, "unreadable_planes")
     assert found.paths == ("control/bio_rep1/tech_rep1/img_02.tif",)
     assert "exclude" in found.action
     assert not result.written and only_the_report(result.output_folder, staged=True)
     # The images that could be read were staged: the next run resumes them (PP-12).
-    again = run_experiment(experiment, ZYX)
+    again = run_experiment(experiment, TYX)
     assert again.written and again.read == ("control/bio_rep1/tech_rep1/img_02.tif",)
     assert len(again.resumed) == len(IMAGES) - 1
 
 
 def test_missing_axes_need_confirmation(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", stack(0, n_z=2)[None].repeat(2, axis=0), axes="TZYX")
-    write_data(root / "b.tif", stack(1, n_z=2), axes="ZYX")
-    mapping = prefill_mapping("TZYX")
+    write_data(root / "a.tif", stack(0, n_z=2)[:, None], axes="TCYX")
+    write_data(root / "b.tif", stack(1, n_z=2), axes="TYX")
+    mapping = prefill_mapping("TCYX")
     blocked = run_experiment(root, mapping)
-    assert codes(blocked.issues) == ["missing_axes", "different_plane_counts"]
+    assert codes(blocked.issues) == ["missing_axes"]
     result = run_experiment(root, mapping, missing_as_singleton=True)
     assert result.written
     rows = [r for r in read_plane_histograms(result.csv_path) if r.source_relative_path == "b.tif"]
-    assert [(r.z, r.t) for r in rows] == [(0, 0), (1, 0)]
-    assert read_manifest(result.manifest_path).file("b.tif").singleton_roles == ("T",)
+    assert [(r.z, r.t) for r in rows] == [(0, 0), (0, 1)]
+    assert read_manifest(result.manifest_path).file("b.tif").singleton_roles == ("C",)
 
 
 def test_missing_channel_axis_next_to_several_channels_is_an_error(tmp_path, reads):
     # A file without a C axis has one channel; the others have two (N43).
     root = tmp_path / "exp"
-    write_data(root / "a.tif", stack(0, n_z=2)[:, None].repeat(2, axis=1), axes="ZCYX")
-    write_data(root / "b.tif", stack(1, n_z=2), axes="ZYX")
-    write_data(root / "c.tif", stack(2, n_z=2), axes="ZYX")
+    write_data(root / "a.tif", stack(0, n_z=2)[:, None].repeat(2, axis=1), axes="TCYX")
+    write_data(root / "b.tif", stack(1, n_z=2), axes="TYX")
+    write_data(root / "c.tif", stack(2, n_z=2), axes="TYX")
     pre = preflight(root)
     assert issue(pre.issues, "different_channel_counts").paths == ("a.tif",)
-    result = run_experiment(root, prefill_mapping("ZCYX"), missing_as_singleton=True)
+    result = run_experiment(root, prefill_mapping("TCYX"), missing_as_singleton=True)
     found = issue(result.issues, "different_channel_counts")
     assert found.severity is Severity.ERROR and found.paths == ("a.tif",)
     assert "1 channel (2 images), 2 channels (1 image)" in found.message
@@ -663,16 +663,16 @@ def test_missing_channel_axis_next_to_several_channels_is_an_error(tmp_path, rea
 
 def test_one_row_per_xyc_plane_with_every_channel(tmp_path):
     root = tmp_path / "exp"
-    data = np.stack([stack(seed, n_z=3) for seed in range(2)], axis=1)  # Z, C, Y, X
-    write_data(root / "a.tif", data, axes="ZCYX")
-    result = run_experiment(root, prefill_mapping("ZCYX"))
+    data = np.stack([stack(seed, n_z=3) for seed in range(2)], axis=1)  # T, C, Y, X
+    write_data(root / "a.tif", data, axes="TCYX")
+    result = run_experiment(root, prefill_mapping("TCYX"))
     assert result.written and result.plane_count == 3
     rows = read_plane_histograms(result.csv_path)
-    assert [r.plane_id for r in rows] == [f"a.tif::z={z},t=0" for z in range(3)]
+    assert [r.plane_id for r in rows] == [f"a.tif::z=0,t={t}" for t in range(3)]
     for row in rows:
         assert row.channel_count == 2
         for c in range(2):
-            plane = data[row.z, c]
+            plane = data[row.t, c]
             hist = row.channel_histogram(c)
             assert (hist.pixel_min, hist.pixel_max) == (plane.min(), plane.max())
             np.testing.assert_array_equal(
@@ -687,7 +687,7 @@ def test_one_row_per_xyc_plane_with_every_channel(tmp_path):
 def test_excluding_a_corrupt_file_lets_the_run_continue(experiment):
     bad = "control/bio_rep1/tech_rep1/bad.tif"
     write_file(experiment / bad, b"garbage")
-    result = run_experiment(experiment, ZYX, exclude=[bad.replace("/", "\\")])
+    result = run_experiment(experiment, TYX, exclude=[bad.replace("/", "\\")])
     assert result.written and result.excluded == (bad,)
     found = issue(result.issues, "excluded_images")
     assert found.severity is Severity.WARNING and found.paths == (bad,)
@@ -695,21 +695,21 @@ def test_excluding_a_corrupt_file_lets_the_run_continue(experiment):
 
 
 def test_excluding_an_analysed_file_removes_its_rows(experiment, reads):
-    run_experiment(experiment, ZYX)
+    run_experiment(experiment, TYX)
     reads.clear()
-    result = run_experiment(experiment, ZYX, exclude=[IMAGES[2]])
+    result = run_experiment(experiment, TYX, exclude=[IMAGES[2]])
     assert result.removed == (IMAGES[2],) and reads == []
     assert IMAGES[2] not in {r.source_relative_path for r in read_plane_histograms(result.csv_path)}
 
 
 def test_unknown_excluded_path_is_a_warning(experiment):
-    result = run_experiment(experiment, ZYX, exclude=["./control/nope.tif"])
+    result = run_experiment(experiment, TYX, exclude=["./control/nope.tif"])
     assert result.written
     assert issue(result.issues, "excluded_path_not_found").paths == ("control/nope.tif",)
 
 
 def test_excluding_everything_is_an_error(experiment):
-    result = run_experiment(experiment, ZYX, exclude=IMAGES)
+    result = run_experiment(experiment, TYX, exclude=IMAGES)
     assert "no_images" in codes(result.issues) and not result.written
 
 
@@ -720,8 +720,8 @@ def test_non_finite_pixels_are_a_warning(tmp_path):
     root = tmp_path / "exp"
     data = stack(0, dtype="float32")
     data[0, 0, :4] = [np.nan, np.inf, -np.inf, np.nan]
-    write_data(root / "a.tif", data, "ZYX")
-    result = run_experiment(root, ZYX)
+    write_data(root / "a.tif", data, "TYX")
+    result = run_experiment(root, TYX)
     assert result.written
     found = issue(result.issues, "non_finite_pixels")
     assert "4 pixels" in found.message and found.paths == ("a.tif",)
@@ -736,8 +736,8 @@ def test_empty_plane_is_a_warning(tmp_path):
     root = tmp_path / "exp"
     data = stack(0, dtype="float64")
     data[1] = np.nan
-    write_data(root / "a.tif", data, "ZYX")
-    result = run_experiment(root, ZYX)
+    write_data(root / "a.tif", data, "TYX")
+    result = run_experiment(root, TYX)
     assert result.written
     assert issue(result.issues, "no_finite_pixels").paths == ("a.tif",)
     rows = read_plane_histograms(result.csv_path)
@@ -746,8 +746,8 @@ def test_empty_plane_is_a_warning(tmp_path):
 
 def test_no_usable_planes_is_an_error(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.full((2, 8, 8), np.nan, np.float32), "ZYX")
-    result = run_experiment(root, ZYX)
+    write_data(root / "a.tif", np.full((2, 8, 8), np.nan, np.float32), "TYX")
+    result = run_experiment(root, TYX)
     assert codes(result.issues)[0] == "no_usable_planes" and not result.written
 
 
@@ -758,8 +758,8 @@ def test_every_integer_dtype_runs(tmp_path, dtype):
     root = tmp_path / "exp"
     info = np.iinfo(dtype)
     data = np.random.default_rng(0).integers(info.min, info.max, (2, 8, 8), dtype=dtype)
-    write_data(root / "a.tif", data, "ZYX")
-    result = run_experiment(root, ZYX)
+    write_data(root / "a.tif", data, "TYX")
+    result = run_experiment(root, TYX)
     assert result.written
     rows = read_plane_histograms(result.csv_path)
     assert [r.channel_histogram(0).pixel_max for r in rows] == [data[0].max(), data[1].max()]
@@ -771,7 +771,7 @@ def test_every_integer_dtype_runs(tmp_path, dtype):
 def test_preflight_suggests_a_mapping(experiment):
     result = preflight(experiment)
     assert result.ok
-    assert result.suggested_mapping == ZYX
+    assert result.suggested_mapping == TYX
     assert result.discovery.images == tuple(sorted(IMAGES))
 
 
@@ -787,36 +787,36 @@ def test_preflight_leaves_excluded_files_out(experiment):
 
 def test_progress_reports_each_file_read(experiment):
     calls = []
-    run_experiment(experiment, ZYX, progress=lambda *args: calls.append(args))
+    run_experiment(experiment, TYX, progress=lambda *args: calls.append(args))
     total = len(IMAGES)
     assert calls == [(i, total, rel) for i, rel in enumerate(sorted(IMAGES))] + [(total, total, "")]
     calls.clear()
-    run_experiment(experiment, ZYX, progress=lambda *args: calls.append(args))
+    run_experiment(experiment, TYX, progress=lambda *args: calls.append(args))
     assert calls == [(0, 0, "")]
 
 
 def test_sample_planes_one_per_axis_arrangement(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", stack(0, n_z=3)[:, None].repeat(2, axis=1), axes="ZCYX")
-    write_data(root / "b.tif", stack(1, n_z=3)[:, None].repeat(2, axis=1), axes="ZCYX")
-    write_data(root / "c.tif", stack(2, n_z=3), axes="ZYX")
+    write_data(root / "a.tif", stack(0, n_z=3)[:, None].repeat(2, axis=1), axes="TCYX")
+    write_data(root / "b.tif", stack(1, n_z=3)[:, None].repeat(2, axis=1), axes="TCYX")
+    write_data(root / "c.tif", stack(2, n_z=3), axes="TYX")
     write_file(root / "d.tif", b"garbage")
     pre = preflight(root)
-    samples = run_module.sample_planes(pre, prefill_mapping("ZCYX"))
-    assert [(s.relative_path, s.axes) for s in samples] == [("a.tif", "ZCYX"), ("c.tif", "ZYX")]
-    assert (samples[0].plane.z, samples[0].plane.c) == (1, 0)
-    assert (samples[1].plane.z, samples[1].plane.c) == (1, 0)  # missing C read as length 1
-    np.testing.assert_array_equal(samples[1].plane.pixels, tifffile.imread(root / "c.tif")[1])
+    samples = run_module.sample_planes(pre, prefill_mapping("TCYX"))
+    assert [(s.relative_path, s.axes) for s in samples] == [("a.tif", "TCYX"), ("c.tif", "TYX")]
+    assert (samples[0].plane.t, samples[0].plane.c) == (0, 0)
+    assert (samples[1].plane.t, samples[1].plane.c) == (0, 0)  # missing C read as length 1
+    np.testing.assert_array_equal(samples[1].plane.pixels, tifffile.imread(root / "c.tif")[0])
 
 
 def test_sample_planes_report_problems(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", stack(0), axes="ZYX")
+    write_data(root / "a.tif", stack(0), axes="TYX")
     write_data(root / "b.tif", stack(1), axes="CYX")
     pre = preflight(root)
-    misfit, fits = sorted(run_module.sample_planes(pre, ZYX), key=lambda s: s.plane is not None)
+    misfit, fits = sorted(run_module.sample_planes(pre, TYX), key=lambda s: s.plane is not None)
     assert misfit.relative_path == "b.tif" and "does not fit" in misfit.error
-    too_big = run_module.sample_planes(pre, ZYX, memory_limit=10)
+    too_big = run_module.sample_planes(pre, TYX, memory_limit=10)
     assert "limit" in too_big[0].error and too_big[0].plane is None
 
 
@@ -826,7 +826,7 @@ def test_run_refuses_flags_that_are_not_booleans_before_reading(experiment, tmp_
     # Review of #44: the run refuses such flags before reading, as the manifest writer does.
     output = tmp_path / "out"
     with pytest.raises(ValueError, match=f"{flag} must be True or False"):
-        run_experiment(experiment, ZYX, output_folder=output, **{flag: value})
+        run_experiment(experiment, TYX, output_folder=output, **{flag: value})
     assert not output.exists()
 
 
@@ -846,7 +846,7 @@ def test_a_row_whose_plane_id_disagrees_with_its_columns_is_refused(experiment):
     # plane_id, image_file and bit_depth against the row's other columns.
     from morphobricks_normalization.csv_io import CsvFormatError
 
-    result = run_experiment(experiment, ZYX)
+    result = run_experiment(experiment, TYX)
     _tamper_plane_id(result.csv_path)
     with pytest.raises(CsvFormatError, match="plane_id"):
         read_plane_histograms(result.csv_path)
@@ -855,6 +855,6 @@ def test_a_row_whose_plane_id_disagrees_with_its_columns_is_refused(experiment):
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     data["csv_sha256"] = hashlib.sha256(result.csv_path.read_bytes()).hexdigest()
     manifest_path.write_text(json.dumps(data), encoding="utf-8")
-    rerun = run_experiment(experiment, ZYX)
+    rerun = run_experiment(experiment, TYX)
     assert rerun.rebuild_reason == "the earlier histogram table could not be read"
     assert rerun.written and read_plane_histograms(rerun.csv_path)

@@ -38,7 +38,7 @@ from morphobricks_preprocessing.testing import _confirmed_design
 from run_files import outputs
 from tiff_tree import write_data
 
-ZYX = prefill_mapping("ZYX")
+TYX = prefill_mapping("TYX")
 IMAGES = ["ctrl/r1/a.tif", "ctrl/r1/b.tif", "drug/r1/a.tif"]
 MASK_REPORT = "mask_relationships.json"
 
@@ -58,8 +58,8 @@ def first_generation(base):
     """
     root, out = base / "exp", base / "out"
     for seed, rel in enumerate(IMAGES):
-        write_data(root / rel, stack(seed), "ZYX")
-    assert run_experiment(root, ZYX, output_folder=out, design=_confirmed_design(root)).written
+        write_data(root / rel, stack(seed), "TYX")
+    assert run_experiment(root, TYX, output_folder=out, design=_confirmed_design(root)).written
     (out / MASK_REPORT).write_text("{}\n", encoding="utf-8")  # a full run removes it
     return root, out
 

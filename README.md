@@ -5,7 +5,9 @@
 The preprocessing brick of MorphoBricks. It reads an experiment folder of
 microscopy TIFFs, computes one intensity histogram per channel of every plane, and writes
 them, with each plane's experimental labels, to `plane_histograms.csv`: one row per plane
-(an image at one depth slice and time point), each channel in its own columns. Later bricks
+(an image at one time point), each channel in its own columns. MorphoBricks v1 analyses 2-D
+planes: a Z-stack (more than one depth slice) is refused (`z_stack_not_supported`); project
+it first, for example a maximum-intensity projection in Fiji, and use the projected image. Later bricks
 (for example patch extraction) use that table to calculate normalization
 parameters for any group of images without rereading the pixels.
 
@@ -51,9 +53,10 @@ Pre-alpha. Implemented and tested:
   and tells how the kinds relate (inside, grouped by, same objects, with the counts behind
   it, such as cells with two nuclei) and their hierarchy, in `mask_relationships.json`
   (`mask_scan`, command `masks`). A mask is 2D, or has depth (Z) and/or time (T) planes
-  named in its own metadata (or stated once per mask type), one per image plane; a 2D mask
-  of a Z-stack or time-lapse is refused (`mask_planes_mismatch`) unless its type is stated
-  as one mask shared by every plane (`--mask-axes Cells=YX`), whatever its metadata names;
+  named in its own metadata (or stated once per mask type, `--mask-axes Cells=TYX`), one
+  per image plane; the masks of a time-lapse must have its time points, so a 2D mask of a
+  time-lapse is refused (`mask_planes_mismatch`), whatever its metadata names (the shared
+  2D mask option `--mask-axes Cells=YX` was removed: `shared_mask_not_supported`);
   masks are checked as stored
   and never converted, and the manifest records each mask's axes, roles and size
 - Reading a run from another brick: `RunInputs.open(output_folder)` gives the FOVs, pixel

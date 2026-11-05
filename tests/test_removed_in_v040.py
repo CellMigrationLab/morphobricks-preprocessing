@@ -62,23 +62,23 @@ def test_removed_modules_are_gone(module):
 
 
 def test_the_run_takes_no_conversion(tmp_path):
-    write_data(tmp_path / "exp/a.tif", np.zeros((2, 6, 8), np.uint8), "ZYX")
+    write_data(tmp_path / "exp/a.tif", np.zeros((2, 6, 8), np.uint8), "TYX")
     with pytest.raises(TypeError, match="convert_tiffs"):
-        run_experiment(tmp_path / "exp", prefill_mapping("ZYX"), convert_tiffs=True)
+        run_experiment(tmp_path / "exp", prefill_mapping("TYX"), convert_tiffs=True)
     with pytest.raises(TypeError, match="conversion"):
-        run_experiment(tmp_path / "exp", prefill_mapping("ZYX"), conversion=None)
+        run_experiment(tmp_path / "exp", prefill_mapping("TYX"), conversion=None)
 
 
 def test_the_cli_takes_no_conversion(tmp_path):
     with pytest.raises(SystemExit) as stopped:
-        main(["run", str(tmp_path), "--axes", "ZYX", "--convert-tiff"])
+        main(["run", str(tmp_path), "--axes", "TYX", "--convert-tiff"])
     assert stopped.value.code == 2
 
 
 def test_a_v03_manifest_with_conversion_keys_is_still_read(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((2, 6, 8), np.uint8), "ZYX")
-    result = run_experiment(root, prefill_mapping("ZYX"))
+    write_data(root / "a.tif", np.zeros((2, 6, 8), np.uint8), "TYX")
+    result = run_experiment(root, prefill_mapping("TYX"))
     data = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     data["settings"]["convert_tiffs"] = True
     data["settings"]["conversion"] = {"chunk_size": 1024}
@@ -88,7 +88,7 @@ def test_a_v03_manifest_with_conversion_keys_is_still_read(tmp_path):
     assert manifest.file("a.tif") is not None
     assert "convert_tiffs" not in json.dumps(manifest.to_dict())
     # The rows of the earlier run are kept: they were the TIFF's own.
-    again = run_experiment(root, prefill_mapping("ZYX"))
+    again = run_experiment(root, prefill_mapping("TYX"))
     assert again.unchanged == ("a.tif",) and again.read == ()
 
 

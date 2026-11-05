@@ -35,7 +35,7 @@ def experiment(tmp_path):
     for i, rel in enumerate(
         ["ctrl/rep1/t1/a.tif", "ctrl/rep1/t1/b.tif", "ctrl/rep2/a.tif", "drug/rep1/t1/a.tif"]
     ):
-        write_data(root / rel, stack(i), axes="ZYX")
+        write_data(root / rel, stack(i), axes="TYX")
     write_file(root / "notes.txt")
     write_file(root / "ctrl/readme.md")
     return root
@@ -91,13 +91,13 @@ def test_preflight_summary(experiment):
     assert "Excluded at your request: 1 image" in text
     assert "Skipped: 2 files that are not images" in text
     assert "Pixel type: uint8" in text
-    assert "Axes in the files: ZYX (3 images)" in text
-    assert "Z (depth), length 2 -> Z" in text
+    assert "Axes in the files: TYX (3 images)" in text
+    assert "T (time), length 2 -> T" in text
     assert "Checks: 2 warnings" in text
 
 
 def test_preflight_summary_with_conflicting_axes(tmp_path):
-    write_tiff(tmp_path / "a.tif", (3, 6, 7), axes="ZYX")
+    write_tiff(tmp_path / "a.tif", (3, 6, 7), axes="TYX")
     write_tiff(tmp_path / "b.tif", (3, 6, 7), axes="CYX")
     text = preflight_summary(preflight(tmp_path))
     assert "No axis mapping can be suggested" in text
@@ -106,24 +106,24 @@ def test_preflight_summary_with_conflicting_axes(tmp_path):
 
 
 def test_run_summaries(experiment):
-    first = run_experiment(experiment, prefill_mapping("ZYX"))
+    first = run_experiment(experiment, prefill_mapping("TYX"))
     text = run_summary(first)
     assert "Wrote 8 planes to" in text and "Read: 4 images" in text
     assert "because there is no earlier run" in text
     (experiment / "ctrl/rep2/a.tif").unlink()
-    second = run_summary(run_experiment(experiment, prefill_mapping("ZYX")))
+    second = run_summary(run_experiment(experiment, prefill_mapping("TYX")))
     assert "Unchanged (rows kept): 3 images" in second
     assert "Removed from the table: 1 image" in second
     assert "Read:" not in second
 
 
 def test_run_summary_when_blocked(experiment):
-    result = run_experiment(experiment, prefill_mapping("ZYX"), bin_count=0)
+    result = run_experiment(experiment, prefill_mapping("TYX"), bin_count=0)
     assert run_summary(result).startswith("The run stopped (1 error")
 
 
 def test_group_summaries_pool_the_planes(experiment):
-    result = run_experiment(experiment, prefill_mapping("ZYX"))
+    result = run_experiment(experiment, prefill_mapping("TYX"))
     records = read_plane_histograms(result.csv_path)
     summaries = group_summaries(records, "biological_repeat", percentiles=(5, 95))
     assert [s.labels for s in summaries] == [("ctrl", "rep1"), ("ctrl", "rep2"), ("drug", "rep1")]
@@ -138,7 +138,7 @@ def test_group_summaries_pool_the_planes(experiment):
 
 
 def test_group_table_and_text(experiment):
-    result = run_experiment(experiment, prefill_mapping("ZYX"))
+    result = run_experiment(experiment, prefill_mapping("TYX"))
     records = read_plane_histograms(result.csv_path)
     rows = group_table(group_summaries(records, "condition"), "condition")
     assert rows[0] == ["condition", "planes", "pixels", "min", "max", "mean", "std", "median"] + [
@@ -153,9 +153,9 @@ def test_group_table_and_text(experiment):
 
 def test_group_without_finite_pixels(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "a/x.tif", np.ones((2, 4, 4), np.float32), axes="ZYX")
-    write_data(root / "b/x.tif", np.full((2, 4, 4), np.nan, np.float32), axes="ZYX")
-    result = run_experiment(root, prefill_mapping("ZYX"))
+    write_data(root / "a/x.tif", np.ones((2, 4, 4), np.float32), axes="TYX")
+    write_data(root / "b/x.tif", np.full((2, 4, 4), np.nan, np.float32), axes="TYX")
+    result = run_experiment(root, prefill_mapping("TYX"))
     summaries = group_summaries(read_plane_histograms(result.csv_path), "condition")
     empty = summaries[1]
     assert empty.labels == ("b",) and empty.pixel_count == 0 and empty.mean is None

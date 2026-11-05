@@ -29,9 +29,14 @@ from .axis_check import (
 from .metadata import (
     MetadataReport,
     TiffMetadata,
-    channel_count_issues,
+    header_depth_slices,
 )
-from .size_checks import CONVERT_KEEPS_ORDER
+from .size_checks import (
+    CONVERT_KEEPS_ORDER,
+    channel_count_issues,
+    role_plane_counts,
+    z_stack_issues,
+)
 from .validation import ValidationIssue, error, plural
 
 
@@ -169,7 +174,9 @@ def review_axes(
         the experiment's roles or that the confirmed roles contradict, whatever
         their arrangement (``ome_zarr_axes_mismatch``, issue #72), files with
         different numbers of channels
-        along the C axis (``different_channel_counts``; 1 without one), and the
+        along the C axis (``different_channel_counts``; 1 without one), images with more
+        than one depth slice (``z_stack_not_supported``; MorphoBricks v1 analyses 2-D
+        planes), and the
         axis check of every TIFF against its header (:func:`header_axis_issue`),
         each naming its files with their header axes and confirmed roles: the
         errors ``axes_yx_swapped`` and ``axes_contradict_header`` (with the likely
@@ -226,15 +233,7 @@ def review_axes(
                 CONVERT_KEEPS_ORDER,
             )
         )
-    issues.extend(
-        channel_count_issues(
-            {
-                f.relative_path: channel_count(f, file_mappings[f.relative_path])
-                for f in readable
-                if f.relative_path in file_mappings
-            }
-        )
-    )
+    issues.extend(_count_issues(readable, file_mappings))
     # Each file's confirmed roles against the axes its own header names. Files the mapping
     # does not fit already have their error; OME-Zarr images take their roles from their
     # metadata, checked against the confirmed roles above (ome_zarr_mapping, issue #72).
@@ -338,6 +337,28 @@ def _ome_zarr_issues(
             "process these images as a separate experiment.",
         )
     ]
+
+
+def _count_issues(
+    readable: list[TiffMetadata], file_mappings: dict[str, AxisMapping]
+) -> list[ValidationIssue]:
+    """Report different channel counts and Z-stacks under each file's confirmed roles.
+
+    An image is a Z-stack when its confirmed Z role has more than one slice (a plain stack
+    confirmed ``ZYX`` too; owner decision of 5 November 2026); a file the mapping does not
+    fit is measured by the Z its header names. An ImageJ time-lapse whose header names Z
+    and whose roles are confirmed ``T`` is the axis error ``axes_contradict_header``, never
+    read, whose fix (named-axis copies, ``convert``) this error would otherwise block.
+    """
+    channels, slices = {}, {}
+    for f in readable:
+        mapping = file_mappings.get(f.relative_path)
+        if mapping is None:
+            slices[f.relative_path] = header_depth_slices(f)
+            continue
+        slices[f.relative_path] = role_plane_counts(f.shape, mapping.roles)["Z"]
+        channels[f.relative_path] = channel_count(f, mapping)
+    return [*channel_count_issues(channels), *z_stack_issues(slices)]
 
 
 def channel_count(f: TiffMetadata, mapping: AxisMapping) -> int:

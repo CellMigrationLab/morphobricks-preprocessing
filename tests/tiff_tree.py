@@ -54,9 +54,9 @@ def make_tree(root, relative_paths):
 
 
 def design_tree(root, folders):
-    """Write one 8-bit ZCYX image, ``a.tif``, into each folder (the notebook design tests)."""
+    """Write one 8-bit TCYX image, ``a.tif``, into each folder (the notebook design tests)."""
     rng = np.random.default_rng(2)
     for folder in folders:
         data = rng.integers(0, 200, (3, 2, 16, 16), dtype=np.uint8)
-        write_data(root / folder / "a.tif", data, axes="ZCYX")
+        write_data(root / folder / "a.tif", data, axes="TCYX")
     return root

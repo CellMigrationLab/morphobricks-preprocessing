@@ -389,8 +389,8 @@ def test_several_images_in_a_store_are_blocked(tmp_path):
 
 
 def test_mixed_formats_with_different_axis_orders_are_not_a_dimension_conflict(tmp_path):
-    write_data(tmp_path / "a.tif", random_data((3, 2, 8, 8)), axes="ZCYX", imagej=True)
-    write_ngff(tmp_path / "b.ome.zarr", random_data((2, 3, 8, 8)), "czyx")
+    write_data(tmp_path / "a.tif", random_data((3, 2, 8, 8)), axes="TCYX", imagej=True)
+    write_ngff(tmp_path / "b.ome.zarr", random_data((2, 3, 8, 8)), "ctyx")
     report = inspect_images(tmp_path, ["a.tif", "b.ome.zarr"])
     assert codes(report.issues) == ["unsupported_pixel_size_unit"]  # its scale 1 has no unit
 
@@ -398,13 +398,13 @@ def test_mixed_formats_with_different_axis_orders_are_not_a_dimension_conflict(t
 def test_the_manifest_records_each_files_own_axis_roles(tmp_path):
     # Issue #39: an OME-Zarr image in another order than the experiment mapping has its own
     # roles; a consumer must not rebuild them from the experiment mapping.
-    write_data(tmp_path / "exp" / "a.tif", random_data((3, 2, 8, 8)), axes="ZCYX", imagej=True)
-    write_ngff(tmp_path / "exp" / "b.ome.zarr", random_data((2, 3, 8, 8)), "czyx")
-    result = run_experiment(tmp_path / "exp", prefill_mapping("ZCYX"), output_folder=tmp_path / "o")
+    write_data(tmp_path / "exp" / "a.tif", random_data((3, 2, 8, 8)), axes="TCYX", imagej=True)
+    write_ngff(tmp_path / "exp" / "b.ome.zarr", random_data((2, 3, 8, 8)), "ctyx")
+    result = run_experiment(tmp_path / "exp", prefill_mapping("TCYX"), output_folder=tmp_path / "o")
     assert result.written, result.issues
     manifest = read_manifest(result.manifest_path)
-    assert manifest.file("a.tif").roles == ("Z", "C", "Y", "X")
-    assert manifest.file("b.ome.zarr").roles == ("C", "Z", "Y", "X")
+    assert manifest.file("a.tif").roles == ("T", "C", "Y", "X")
+    assert manifest.file("b.ome.zarr").roles == ("C", "T", "Y", "X")
 
 
 # Axes ------------------------------------------------------------------------------------
@@ -468,7 +468,7 @@ def test_review_of_a_mixed_experiment():
     assert confirmed.file_mappings["c.ome.zarr"].singleton_roles == ("C",)
     # Read as one channel, c.ome.zarr differs from the two channels of the others (N43).
     assert issue(confirmed.issues, "different_channel_counts").paths == ("c.ome.zarr",)
-    assert len(confirmed.issues) == 1
+    assert sorted(codes(confirmed.issues)) == ["different_channel_counts", "z_stack_not_supported"]
 
 
 # Reading planes ------------------------------------------------------------------------
@@ -642,24 +642,24 @@ def zarr_experiment(tmp_path):
     for i, rel in enumerate(
         ["ctrl/rep1/a.ome.zarr", "ctrl/rep1/b.ome.zarr", "drug/rep1/a.ome.zarr"]
     ):
-        write_ngff(root / rel, random_data((2, 3, 12, 12), "uint8", seed=i), "czyx")
+        write_ngff(root / rel, random_data((2, 3, 12, 12), "uint8", seed=i), "ctyx")
     return root
 
 
 def test_ome_zarr_experiment_end_to_end(zarr_experiment):
     pre = preflight(zarr_experiment)
-    assert pre.ok and pre.suggested_mapping == prefill_mapping("CZYX")
+    assert pre.ok and pre.suggested_mapping == prefill_mapping("CTYX")
     result = run_experiment(zarr_experiment, pre.suggested_mapping)
     assert result.written
     records = read_plane_histograms(result.csv_path)
-    assert len(records) == 9  # 3 stores x 3 depth slices, each row with 2 channels
+    assert len(records) == 9  # 3 stores x 3 time points, each row with 2 channels
     import zarr
 
     for record in records:
         data = zarr.open_group(str(zarr_experiment / record.source_relative_path), mode="r")["0"]
-        assert record.channel_count == 2 and record.t == 0
+        assert record.channel_count == 2 and record.z == 0
         for c in range(2):
-            expected = compute_plane_histogram(np.asarray(data[c, record.z]))
+            expected = compute_plane_histogram(np.asarray(data[c, record.t]))
             np.testing.assert_array_equal(record.channel_histogram(c).counts, expected.counts)
     assert records[0].plane_id == "ctrl/rep1/a.ome.zarr::z=0,t=0"
     assert {(r.condition, r.position_id) for r in records} == {
@@ -670,7 +670,7 @@ def test_ome_zarr_experiment_end_to_end(zarr_experiment):
 
 
 def test_rerun_detects_a_changed_store(zarr_experiment):
-    mapping = prefill_mapping("CZYX")
+    mapping = prefill_mapping("CTYX")
     first = run_experiment(zarr_experiment, mapping)
     table = first.csv_path.read_bytes()
     assert run_experiment(zarr_experiment, mapping).read == ()
@@ -694,32 +694,32 @@ def test_mixed_tiff_and_ome_zarr_experiment(tmp_path):
     root = tmp_path / "exp"
     tiff_data = random_data((3, 2, 8, 8), "uint8")
     zarr_data = random_data((2, 3, 8, 8), "uint8", seed=1)
-    write_data(root / "ctrl/a.tif", tiff_data, axes="ZCYX", imagej=True)
-    write_ngff(root / "ctrl/b.ome.zarr", zarr_data, "czyx")
-    write_ngff(root / "drug/c.ome.zarr", random_data((3, 8, 8), "uint8", seed=2), "zyx")
+    write_data(root / "ctrl/a.tif", tiff_data, axes="TCYX", imagej=True)
+    write_ngff(root / "ctrl/b.ome.zarr", zarr_data, "ctyx")
+    write_ngff(root / "drug/c.ome.zarr", random_data((3, 8, 8), "uint8", seed=2), "tyx")
     pre = preflight(root)
-    assert pre.suggested_mapping == prefill_mapping("ZCYX")
+    assert pre.suggested_mapping == prefill_mapping("TCYX")
     blocked = run_experiment(root, pre.suggested_mapping)
     assert codes(blocked.issues)[0] == "missing_axes"
     # Its missing channel axis is read as one channel, but the others have two (N43).
     one_channel = run_experiment(root, pre.suggested_mapping, missing_as_singleton=True)
     assert issue(one_channel.issues, "different_channel_counts").paths == ("drug/c.ome.zarr",)
-    write_ngff(root / "drug/d.ome.zarr", random_data((3, 2, 8, 8), "uint8", seed=3), "zcyx")
+    write_ngff(root / "drug/d.ome.zarr", random_data((3, 2, 8, 8), "uint8", seed=3), "tcyx")
     result = run_experiment(
         root, pre.suggested_mapping, missing_as_singleton=True, exclude=["drug/c.ome.zarr"]
     )
     assert result.written
     rows = {r.plane_id: r for r in read_plane_histograms(result.csv_path)}
     # The same coordinates mean the same plane, whatever the storage order.
-    b = rows["ctrl/b.ome.zarr::z=2,t=0"]
+    b = rows["ctrl/b.ome.zarr::z=0,t=2"]
     np.testing.assert_array_equal(
         b.channel_histogram(1).counts, compute_plane_histogram(zarr_data[1, 2]).counts
     )
-    a = rows["ctrl/a.tif::z=2,t=0"]
+    a = rows["ctrl/a.tif::z=0,t=2"]
     np.testing.assert_array_equal(
         a.channel_histogram(1).counts, compute_plane_histogram(tiff_data[2, 1]).counts
     )
-    assert {r.z for r in rows.values() if r.source_relative_path == "drug/d.ome.zarr"} == {0, 1, 2}
+    assert {r.t for r in rows.values() if r.source_relative_path == "drug/d.ome.zarr"} == {0, 1, 2}
 
 
 def test_sample_planes_cover_both_formats(tmp_path):
@@ -737,27 +737,27 @@ def test_sample_planes_cover_both_formats(tmp_path):
 @pytest.mark.skipif(zarr_major() < 3, reason="OME-NGFF 0.5 needs zarr 3")
 def test_ome_ngff_0_5_experiment(tmp_path):
     root = tmp_path / "exp"
-    write_ngff(root / "a.ome.zarr", random_data((2, 3, 8, 8), "uint8"), "czyx", version="0.5")
-    result = run_experiment(root, prefill_mapping("CZYX"))
+    write_ngff(root / "a.ome.zarr", random_data((2, 3, 8, 8), "uint8"), "ctyx", version="0.5")
+    result = run_experiment(root, prefill_mapping("CTYX"))
     assert result.written and result.plane_count == 3
 
 
 def test_cli_check_names_the_formats(tmp_path, capsys):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", random_data((3, 2, 8, 8), "uint8"), axes="ZCYX", imagej=True)
-    write_ngff(root / "b.ome.zarr", random_data((2, 3, 8, 8), "uint8"), "czyx")
+    write_data(root / "a.tif", random_data((3, 2, 8, 8), "uint8"), axes="TCYX", imagej=True)
+    write_ngff(root / "b.ome.zarr", random_data((2, 3, 8, 8), "uint8"), "ctyx")
     assert main(["check", str(root)]) == 0
     out = capsys.readouterr().out
-    assert "Formats: 1 TIFF, 1 OME-Zarr" in out and "--axes ZCYX" in out
+    assert "Formats: 1 TIFF, 1 OME-Zarr" in out and "--axes TCYX" in out
 
 
 def test_unreadable_store_can_be_excluded(tmp_path):
     root = tmp_path / "exp"
-    write_ngff(root / "a.ome.zarr", random_data((2, 8, 8), "uint8"), "zyx")
+    write_ngff(root / "a.ome.zarr", random_data((2, 8, 8), "uint8"), "tyx")
     (root / "bad.ome.zarr").mkdir()
     write_file(root / "bad.ome.zarr" / "junk.txt")
     assert "unreadable_ome_zarr" in codes(preflight(root).issues)
-    result = run_experiment(root, prefill_mapping("ZYX"), exclude=["bad.ome.zarr"])
+    result = run_experiment(root, prefill_mapping("TYX"), exclude=["bad.ome.zarr"])
     assert result.written and result.excluded == ("bad.ome.zarr",)
 
 
@@ -776,7 +776,7 @@ def test_scale_too_large_for_a_float_is_unknown_and_does_not_block(tmp_path):
     path = write_ngff(
         root / "ctrl/a.ome.zarr",
         np.zeros((2, 8, 8), np.uint8),
-        "zyx",
+        "tyx",
         scale=[10**400, 0.5, 0.25],
         units={"z": "micrometer", "y": "micrometer", "x": "micrometer"},
     )

@@ -28,7 +28,7 @@ from morphobricks_preprocessing.manifest_versions import (
     version_for,
 )
 from released_code import BEFORE_STRICT_VERSION, PRELUDE, RC4, extract, run_with
-from strict_tree import IMAGES, STRICT, ZYX, write_experiment
+from strict_tree import IMAGES, STRICT, TYX, write_experiment
 
 RC4_READS = (
     PRELUDE
@@ -45,7 +45,7 @@ try:
     found["run_inputs"] = "opened"
 except Exception as exc:
     found["run_inputs"] = type(exc).__name__ + ": " + str(exc)
-result = package.run_experiment(root, package.prefill_mapping("ZYX"), output_folder=out)
+result = package.run_experiment(root, package.prefill_mapping("TYX"), output_folder=out)
 found["run"] = {
     "written": result.written,
     "read": list(result.read),
@@ -60,7 +60,7 @@ DEFAULT_RUN = (
     PRELUDE
     + """
 root, out = Path(sys.argv[2]), Path(sys.argv[3])
-result = package.run_experiment(root, package.prefill_mapping("ZYX"), output_folder=out)
+result = package.run_experiment(root, package.prefill_mapping("TYX"), output_folder=out)
 print(json.dumps({"written": result.written}))
 """
 )
@@ -73,7 +73,7 @@ def experiment(tmp_path):
 
 def test_a_strict_run_writes_version_3_and_a_default_run_version_2(experiment):
     root, out = experiment
-    assert run_experiment(root, ZYX, output_folder=out, mode=STRICT).written
+    assert run_experiment(root, TYX, output_folder=out, mode=STRICT).written
     data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
     assert data["manifest_version"] == STRICT_MANIFEST_VERSION == "3"
     assert data["settings"]["verify_content"] is True
@@ -93,7 +93,7 @@ def test_a_strict_run_writes_version_3_and_a_default_run_version_2(experiment):
 
 def test_a_strict_restart_reuses_the_rows_of_a_version_3_run(experiment):
     root, out = experiment
-    assert run_experiment(root, ZYX, output_folder=out, mode=STRICT).written
+    assert run_experiment(root, TYX, output_folder=out, mode=STRICT).written
     again = run_experiment(root, output_folder=out)
     assert again.written and again.read == () and again.unchanged == tuple(IMAGES)
     assert read_manifest(out / "run_manifest.json").manifest_version == "3"
@@ -101,7 +101,7 @@ def test_a_strict_restart_reuses_the_rows_of_a_version_3_run(experiment):
 
 def test_v0_4_0rc4_refuses_a_strict_manifest(experiment, tmp_path):
     root, out = experiment
-    assert run_experiment(root, ZYX, output_folder=out, mode=STRICT).written
+    assert run_experiment(root, TYX, output_folder=out, mode=STRICT).written
     copy = tmp_path / "rc4-out"
     shutil.copytree(out, copy)
     src = extract(RC4, tmp_path / "rc4")
@@ -123,7 +123,7 @@ def test_v0_4_0rc4_opened_a_strict_run_written_as_version_2(experiment, tmp_path
     # The defect itself: rc5 before this change wrote a strict run as version 2, and rc4
     # opened it as a fingerprint-only run (it reused the rows without hashing anything).
     root, out = experiment
-    assert run_experiment(root, ZYX, output_folder=out, mode=STRICT).written
+    assert run_experiment(root, TYX, output_folder=out, mode=STRICT).written
     data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
     data["manifest_version"] = "2"
     (out / "run_manifest.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -135,7 +135,7 @@ def test_v0_4_0rc4_opened_a_strict_run_written_as_version_2(experiment, tmp_path
 
 def test_a_default_manifest_is_byte_identical_to_the_one_before_version_3(experiment, tmp_path):
     root, out = experiment
-    assert run_experiment(root, ZYX, output_folder=out).written
+    assert run_experiment(root, TYX, output_folder=out).written
     src = extract(BEFORE_STRICT_VERSION, tmp_path / "before")
     before_out = tmp_path / "before-out"
     assert run_with(src, DEFAULT_RUN, root, before_out) == {"written": True}
@@ -160,7 +160,7 @@ def _strict_data(out):
 
 def test_the_reader_refuses_a_version_that_does_not_match_its_content_check(experiment):
     root, out = experiment
-    assert run_experiment(root, ZYX, output_folder=out, mode=STRICT).written
+    assert run_experiment(root, TYX, output_folder=out, mode=STRICT).written
     path = out / "run_manifest.json"
     cases = []
     data = _strict_data(out)
@@ -187,7 +187,7 @@ def test_the_reader_refuses_a_version_that_does_not_match_its_content_check(expe
 
 def test_the_writer_refuses_what_the_reader_refuses(experiment, tmp_path):
     root, out = experiment
-    assert run_experiment(root, ZYX, output_folder=out, mode=STRICT).written
+    assert run_experiment(root, TYX, output_folder=out, mode=STRICT).written
     strict = read_manifest(out / "run_manifest.json")
     with pytest.raises(ValueError, match="records content verification"):
         write_manifest(replace(strict, manifest_version="2"), tmp_path / "m.json")
@@ -213,7 +213,7 @@ def test_an_unknown_later_version_is_plainly_not_supported(experiment, files):
     # Review of #146: a later version was reported as "incomplete or malformed"; whatever
     # else it holds, it is refused as a version this package does not read.
     root, out = experiment
-    assert run_experiment(root, ZYX, output_folder=out, mode=STRICT).written
+    assert run_experiment(root, TYX, output_folder=out, mode=STRICT).written
     data = _strict_data(out)
     data["manifest_version"] = "4"
     data["files"] = files

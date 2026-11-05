@@ -194,19 +194,16 @@ masks/
 - A mask is a TIFF label image with the width and height of its image: background 0,
   each object its own whole number (or a true/false mask). The extension may differ from
   the image's (`img_01.tiff` for `img_01.ome.tif`).
-- A 2D mask belongs to an image with one plane. For a Z-stack or a time-lapse, the mask needs
-  one plane per depth slice or time point, with its axes named in its metadata (an ImageJ
-  hyperstack or OME-TIFF with axes `ZYX` or `TYX`); a 2D mask for such an image, or a plain
-  stack whose axis could be depth or time, is refused by `run`/`check` unless its axes are
-  stated once for its kind of mask (`--mask-axes`, §5, or **Mask axes** in the notebook's
-  step 1, §4): `TYX` for a plain stack of time points, `YX` for one 2D mask shared by every
-  plane of its image.
-- The statement is needed for every 2D mask meant for all the planes of a Z-stack or
-  time-lapse, also when the mask's own metadata names its axes `YX` (an OME-TIFF or ImageJ
-  TIFF, OME metadata your software wrote by itself, or a label image of an OME-Zarr image):
-  the metadata says the mask is 2D, not that it belongs to every plane. Without it,
-  `check`/`run` stop and say exactly what to add, for example `--mask-axes Nuclei=YX` (or
-  **YX** for Nuclei under **Mask axes** in step 1). It is stated once per kind of mask.
+- A 2D mask belongs to an image with one plane. For a time-lapse, the mask needs the same
+  time points as its image, one plane per time point, with its axes named in its metadata
+  (an ImageJ hyperstack or OME-TIFF with axes `TYX`), or stated once for its kind of mask
+  when its file does not name them (`--mask-axes Cells=TYX`, §5, or **Mask axes** in the
+  notebook's step 1, §4). A plain stack whose axis could be depth or time is refused until
+  its axes are stated.
+- A 2D mask is never used for every plane of a time-lapse, whatever its metadata says:
+  `run` stops with `mask_planes_mismatch`. Save one mask plane per time point. (The release
+  candidates of v0.4.0 offered `--mask-axes Nuclei=YX` for one 2D mask shared by every
+  plane; that option was removed and is now the error `shared_mask_not_supported`.)
 - You may have any number of kinds of mask. Their folder names (or the part after the image
   name) are their names: they must differ by more than upper/lower case. If one image's name
   starts another's (`a.tif` and `a_b.tif`), a mask named `a_b_cells.tif` could belong to
@@ -236,8 +233,13 @@ notebook's step 3 (§4), also tells how they relate.
   separately or exclude it.
 - **Pixel types:** 8-, 16-, 32- and 64-bit signed or unsigned integers, 32- and 64-bit
   floats. All images of an experiment must have the same pixel type.
-- **Dimensions:** every image is split into planes along Z (depth) and T (time); a plane
-  holds every channel (C) of the image at that Z and T, one row of the table. All TIFF
+- **2-D planes only:** MorphoBricks v1 analyses 2-D planes. An image with more than one
+  depth slice (a Z-stack) is refused (`z_stack_not_supported`), every such image named:
+  project it first, for example a maximum-intensity projection in Fiji (Image > Stacks >
+  Z Project...), and use the projected image. A Z axis of one slice is fine. Time-lapses
+  are supported.
+- **Dimensions:** every image is split into planes along T (time); a plane holds every
+  channel (C) of the image at that time point, one row of the table. All TIFF
   images must have their dimensions in the same order; the number of slices, time points
   and the size may differ. OME-Zarr images may store them in another order: they are
   matched by role, so z = 2, c = 1 means the same slice and channel in every image.
@@ -360,11 +362,10 @@ results or comparing another grouping.
      masks' errors and warnings too.
      - **Mask axes** appears only for kinds of mask that need their axes stated, as the
        command line's `--mask-axes TYPE=ROLES`: masks whose files do not name their axes (a
-       plain stack, `mask_not_2d`), or whose statement does not fit; and, once the axis roles
-       are confirmed, 2D masks of images with several depth slices or time points
-       (`mask_planes_mismatch`, or `mask_planes_differ` beside a mask with planes; whatever
-       the mask's metadata names), for which the only choice is **YX: one 2-D mask shared by
-       every plane of its image**. The dropdown lists only the statements that fit every
+       plain stack, `mask_not_2d`), or whose statement does not fit. A 2D mask needs no
+       statement and is never shared by several planes, so a 2D mask of a time-lapse is not
+       asked about: it is refused (`mask_planes_mismatch`) until it is saved with the
+       image's time points. The dropdown lists only the statements that fit every
        mask of that kind (one role per axis as stored, never X before Y), starts at **Not
        stated**, and nothing is applied until you press **Check the masks**. If no statement
        fits (masks of one kind stored differently), it says so: save them alike.
@@ -658,7 +659,7 @@ SHA-256 still accept it; the report records the rerun. Other options:
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
 | `--log FILE` | Write technical details to a file (`run`, `masks`, `convert`). It is checked before anything is written and opened only once the other options are checked: a file inside the experiment or masks folder (given or recorded by the earlier run), inside the folder of the copies (`convert`), the design file given with `--design`, or named as one of the run's files in the output folder (`plane_histograms.csv`, `run_manifest.json`, the reports, `experiment_design.csv`, `calibration.csv`, `mask_relationships.json`, the lock) is refused and nothing is written; so is a file that is a hard link (it has another name). Any other name in the output folder is fine, for example `run.log` |
 | `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json` |
-| `--mask-axes TYPE=ROLES` | The axes of a mask type, one role (Y, X, Z or T) per axis as stored, stated once per type: `Cells=TYX` for plain stacks of time points whose files do not name their axes, `Cells=YX` for one 2D mask shared by every plane of its image, needed even when the mask's metadata names `YX` (repeatable; `check`, `run`, `masks`). Masks are never reordered. |
+| `--mask-axes TYPE=ROLES` | The axes of a mask type, one role (Y, X, Z or T) per axis as stored, stated once per type: `Cells=TYX` for plain stacks of time points whose files do not name their axes; a 2D mask needs none, and `Cells=YX` (the removed shared 2D mask) is the error `shared_mask_not_supported` (repeatable; `check`, `run`, `masks`). Masks are never reordered. |
 
 After writing, `run` prints the intensity checks of the table, grouped by kind, each with
 the channel, the image or biological repeat and the values compared, and what to do once
@@ -1045,6 +1046,7 @@ continues.
 | `missing_xy_axis`, `duplicate_axis_role` | Error | X/Y missing or a role used twice. Correct the axis roles. |
 | `unassigned_axis` | Error | A dimension with several planes has no role. Choose Z, C or T. |
 | `unsupported_axis` | Error | A position or tile dimension. Export each position separately. |
+| `z_stack_not_supported` | Error | Images have more than one depth slice (Z-stacks); every such image is named with its number of slices. MorphoBricks v1 analyses 2-D planes. Project each Z-stack first, for example a maximum-intensity projection in Fiji (Image > Stacks > Z Project...), and use the projected image; or exclude it. A Z axis of one slice is accepted. Found from the header's Z axis, and again from the axis roles you confirm (a plain stack given a Z role). |
 | `plane_over_memory_limit` | Error | A plane cannot be read within the memory limit, not even in blocks (for example, it is stored compressed in one piece). Raise the limit, or save the images again as tiled or uncompressed TIFF files or as OME-Zarr with smaller chunks. |
 | `unsupported_layout` | Error | The image cannot be read one plane at a time. Check the axis roles or export again. |
 | `unreadable_planes` | Error | Pixel data cannot be decoded. Export again, or exclude the image. |
@@ -1111,10 +1113,11 @@ continues.
 | `duplicate_mask` | Error | An image has two masks of one kind (two extensions, or a file and an OME-Zarr label image of the same name). Keep one. |
 | `unreadable_mask` | Error | A mask cannot be opened, or holds several images, or the `labels` group of an OME-Zarr image cannot be read (it must list its label images). Save the mask again as a TIFF label image, or repair the OME-Zarr labels. |
 | `mask_not_2d` | Error | A mask has dimensions other than Y and X that its metadata does not name as depth (Z) or time (T), for example a plain stack. (A mask one pixel high or wide is a 2D mask, not this error.) State the axes of its mask type once (`--mask-axes Cells=TYX`), or save it as a 2D label image, or with its axes named (an ImageJ hyperstack or OME-TIFF with axes TYX or ZYX). |
+| `shared_mask_not_supported` | Error | A mask type is stated `YX` (`--mask-axes Nuclei=YX`): one 2D mask shared by every plane of its image. That option was removed: MorphoBricks v1 analyses 2-D planes, and a mask has the time points of its image. Remove the statement (a 2D mask needs none); for a time-lapse, save one mask plane per time point (`TYX`, named or stated). |
 | `invalid_mask_axes`, `mask_axes_contradict_header` | Error | Axes stated for a mask type do not fit its masks (one role, Y, X, Z or T, per axis; Y and X once each), name a type that is not found, or contradict the axes a mask's metadata names. Correct the statement. |
 | `mask_layout` | Error | A mask is stored with its Y and X the other way round from its image as read (its header names X before Y, for example `XY`, named in the message with the mask; or the image's height and width swapped). Masks are never transposed: save it again with `numpy.swapaxes(mask, -1, -2)`. |
-| `mask_planes_differ` | Error | The masks of one image have different numbers of depth slices or time points. Make every mask of an image with the image's planes. A 2-D mask stated as shared (`--mask-axes Nuclei=YX`) is one plane for every plane and is left out of this check, by `check`, `run` and `masks` alike; for 2-D masks among them the message names that statement. |
-| `mask_planes_mismatch` | Error (`run`) | A mask does not have the depth slices and time points of its image under the confirmed axis roles: a 2D mask fits only an image with one plane (not a Z-stack or time-lapse) unless its type is stated `YX` (`--mask-axes Cells=YX`, or YX under Mask axes: one mask shared by every plane), also when its metadata names its axes `YX`; the message names the statement for each such type. A mask with Z or T needs as many slices or time points as its image. Save one mask plane per image plane, with the axes named, or check the axis roles. |
+| `mask_planes_differ` | Error | The masks of one image have different numbers of depth slices or time points. Make every mask of an image with the image's time points. A 2-D mask is never shared by several planes. |
+| `mask_planes_mismatch` | Error (`run`) | A mask does not have the time points and depth slices of its image under the confirmed axis roles: the masks of a time-lapse must have the same T as their image, one plane per time point, and a 2D mask fits only an image with one plane, whatever its metadata names (it is never shared by several planes). Save one mask plane per time point, with the axes named (`TYX`) or stated (`--mask-axes Cells=TYX`), or check the axis roles. |
 | `mask_size_mismatch` | Error | A mask does not have the width and height of its image. Check that it was made from that image at full resolution. |
 | `mask_pixel_type` | Error | A mask's pixels are not whole numbers (for example decimals). Save it as an integer label image. |
 | `mask_missing` | Warning | Some images have no mask of a kind that other images have; their objects of that kind cannot be measured. Add the masks, or exclude the images. |

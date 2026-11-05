@@ -34,7 +34,7 @@ IMAGE = "ctrl/a.ome.zarr"
 def two_chunks(path):
     """Write a 2-plane image whose planes are one chunk each, of the same size."""
     data = np.stack([np.full((8, 8), 5, np.uint8), np.full((8, 8), 9, np.uint8)])
-    image = write_ngff(path, data, "zyx", chunks=(1, 8, 8))
+    image = write_ngff(path, data, "tyx", chunks=(1, 8, 8))
     first, second = chunk_files(image)
     assert first.stat().st_size == second.stat().st_size
     # Fixed times: the chunks are older than the metadata, so neither is the newest file.
@@ -139,7 +139,7 @@ def zarr_run(tmp_path):
     root = tmp_path / "exp"
     image = two_chunks(root / IMAGE)
     output = tmp_path / "out"
-    result = run_experiment(root, prefill_mapping("ZYX"), output_folder=output)
+    result = run_experiment(root, prefill_mapping("TYX"), output_folder=output)
     assert result.written, result.issues
     return root, image, output
 

@@ -6,13 +6,17 @@ other dimension. :mod:`.metadata` measures each image by the letters its header 
 after the axis review, :meth:`.axes.AxisReview.combined_issues` measures each image by its
 confirmed roles instead (issue #74): the header letters of a plain stack are only where its
 pages, rows and columns are stored, so they are never used for these warnings.
+
+The error ``z_stack_not_supported`` (:func:`z_stack_issues`, owner decision of 5 November
+2026) refuses every image with more than one depth slice, measured the same two ways:
+MorphoBricks v1 analyses 2-D planes, and a projection is the user's step, never this brick's.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Mapping, Sequence
 
-from .validation import ValidationIssue, plural, warning
+from .validation import ValidationIssue, agree, error, plural, warning
 
 _PLANE_NAMES = {"Z": "depth slices (Z)", "T": "time points"}
 """What the planes along each dimension are called in messages."""
@@ -36,6 +40,87 @@ def lettered_plane_counts(axes: str, shape: Sequence[int]) -> dict[str, int]:
         {axis: n for axis, n in zip(axes, shape, strict=True) if axis not in NOT_PLANE_AXES}
     )
     return counts
+
+
+Z_STACK_CODE = "z_stack_not_supported"
+"""The error of an image with more than one depth slice (owner decision of 5 November 2026)."""
+
+
+def z_stack_issues(slices: Mapping[str, int]) -> list[ValidationIssue]:
+    """Refuse every image with more than one depth slice (Z): v1 analyses 2-D planes.
+
+    A Z axis of one slice, or none, is accepted as it is. Nothing is projected or squeezed:
+    the user projects each Z-stack (owner decision of 5 November 2026; contract §2).
+
+    Parameters
+    ----------
+    slices
+        The depth slices of each image, by relative path (its header's named Z, or its
+        confirmed Z role; 1 without one).
+
+    Returns
+    -------
+    list of ValidationIssue
+        The error :data:`Z_STACK_CODE` naming every image with more than one slice, with
+        its number of slices, or nothing.
+    """
+    stacks = sorted((path, n) for path, n in slices.items() if n > 1)
+    if not stacks:
+        return []
+    listed = "; ".join(f"{path}: {n} slices" for path, n in stacks[:5])
+    more = f"; and {len(stacks) - 5} more" if len(stacks) > 5 else ""
+    return [
+        error(
+            Z_STACK_CODE,
+            f"{plural(len(stacks), 'image')} {agree(stacks, 'is a Z-stack', 'are Z-stacks')} "
+            f"(more than one depth slice, Z): {listed}{more}. MorphoBricks v1 analyses 2-D "
+            "planes, so Z-stacks are not analysed.",
+            [path for path, _ in stacks],
+            "Project each Z-stack first, for example a maximum-intensity projection in Fiji "
+            "(Image > Stacks > Z Project...), and use the projected image instead; or exclude "
+            "these images.",
+        )
+    ]
+
+
+def channel_count_issues(counts: Mapping[str, int]) -> list[ValidationIssue]:
+    """Report images with different numbers of channels (normalization plan N43).
+
+    Each row of ``plane_histograms.csv`` holds every channel of a plane, so all
+    images of an experiment must have the same number of channels.
+
+    Parameters
+    ----------
+    counts
+        Number of channels of each image, by relative path.
+
+    Returns
+    -------
+    list of ValidationIssue
+        The error ``different_channel_counts`` naming the images not having the
+        most common number, or nothing.
+    """
+    groups: dict[int, list[str]] = {}
+    for path, count in sorted(counts.items()):
+        groups.setdefault(count, []).append(path)
+    if len(groups) < 2:
+        return []
+    ordered = sorted(groups.items(), key=lambda item: (-len(item[1]), item[0]))
+    summary = ", ".join(
+        f"{plural(count, 'channel')} ({plural(len(paths), 'image')})" for count, paths in ordered
+    )
+    return [
+        error(
+            "different_channel_counts",
+            f"The images have different numbers of channels: {summary}. Each row of the "
+            "histogram table holds every channel of a plane, so every image of an experiment "
+            "must have the same channels. The images listed are those without the most "
+            "common number of channels.",
+            sorted(path for _, paths in ordered[1:] for path in paths),
+            "Split the images with other channels into a separate experiment, or exclude "
+            "them. If a channel axis was assigned the wrong role, correct the axis roles.",
+        )
+    ]
 
 
 def role_size(shape: Sequence[int], roles: Sequence[str | None]) -> tuple[int, int]:

@@ -48,7 +48,7 @@ def main() -> None:
     for dtype in EXPERIMENTS:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "exp"
-            bins, axes = write_experiment(root, dtype, pixels)
+            bins, axes = write_experiment(root, dtype, pixels, as_made=True)
             result = run_experiment(root, prefill_mapping(axes), bin_count=bins)
             if not result.written:
                 sys.exit(f"{dtype}: {[issue.message for issue in result.issues]}")

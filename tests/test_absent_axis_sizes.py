@@ -66,11 +66,13 @@ def test_a_projection_records_no_z_or_t_size_from_its_header(tmp_path):
 
 
 def test_an_image_with_the_role_keeps_its_header_size(tmp_path):
+    # A Z-stack (TZYX) until Z-stacks were refused (owner decision of 5 November 2026); an
+    # OME-TIFF's Z of one slice is no axis, so its z-step is not recorded.
     root, output = tmp_path / "exp", tmp_path / "out"
-    write(root / "ctrl" / "a.ome.tif", "TZYX", (2, 3, 8, 8), **HEADER)
-    assert run_experiment(root, prefill_mapping("TZYX"), output_folder=output).written
+    write(root / "ctrl" / "a.ome.tif", "TZYX", (2, 1, 8, 8), **HEADER)
+    assert run_experiment(root, prefill_mapping("TYX"), output_folder=output).written
     found = sizes(output, "ctrl/a.ome.tif")
-    assert found["Z"]["value"] == 0.43 and found["Z"]["source"] == "header"
+    assert found["Z"] == none("Z")
     assert found["T"]["value"] == 2.0 and found["T"]["source"] == "header"
 
 
@@ -91,19 +93,24 @@ def test_a_z_statement_is_not_recorded_for_images_without_z(tmp_path):
     assert "calibration_axis_absent" in codes
 
 
-def test_a_statement_for_the_whole_experiment_sizes_only_the_images_with_the_axis(tmp_path):
+def test_a_z_statement_sizes_no_image_of_one_slice(tmp_path):
+    # Sized the Z-stack among the images until Z-stacks were refused (owner decision of
+    # 5 November 2026). A Z of one slice, kept as an axis by shaped metadata, has no
+    # z-step, so the statement is recorded for no image and the warning names both.
     root, output = tmp_path / "exp", tmp_path / "out"
-    write(root / "ctrl" / "stack.ome.tif", "ZYX", (3, 8, 8))
+    (root / "ctrl").mkdir(parents=True)
+    stack = np.zeros((1, 8, 8), np.uint16)
+    tifffile.imwrite(root / "ctrl/stack.ome.tif", stack, metadata={"axes": "ZYX"})
     write(root / "ctrl" / "flat.ome.tif", "YX", (8, 8))
     state(output, ".,Z,2,um\n")
     result = run_experiment(
         root, prefill_mapping("ZYX"), output_folder=output, missing_as_singleton=True
     )
-    assert result.written
-    assert sizes(output, "ctrl/stack.ome.tif")["Z"]["source"] == "stated"
+    assert result.written, result.issues
+    assert sizes(output, "ctrl/stack.ome.tif")["Z"] == none("Z")
     assert sizes(output, "ctrl/flat.ome.tif")["Z"] == none("Z")
     (absent,) = [issue for issue in result.issues if issue.code == "calibration_axis_absent"]
-    assert absent.paths == ("ctrl/flat.ome.tif",)
+    assert absent.paths == ("ctrl/flat.ome.tif", "ctrl/stack.ome.tif")
 
 
 def test_rows_recorded_with_a_z_size_from_an_earlier_version_are_reused(tmp_path):
@@ -130,14 +137,16 @@ def test_check_reports_no_z_size_for_a_projection(tmp_path, capsys):
     assert set(report(output)["images"]["ctrl/a.ome.tif"]["pixel_sizes"]) == {"X", "Y"}
 
 
-def test_the_text_report_counts_z_sizes_only_for_images_with_z(tmp_path):
+def test_the_text_report_counts_t_sizes_only_for_images_with_t(tmp_path):
+    # Counted the z-steps of a Z-stack until Z-stacks were refused (owner decision of
+    # 5 November 2026); the same rule, for the time step.
     root, output = tmp_path / "exp", tmp_path / "out"
-    write(root / "ctrl" / "stack.ome.tif", "ZYX", (3, 8, 8), **HEADER)
+    write(root / "ctrl" / "stack.ome.tif", "TYX", (3, 8, 8), **HEADER)
     write(root / "ctrl" / "flat.ome.tif", "YX", (8, 8), **HEADER)
     result = run_experiment(
-        root, prefill_mapping("ZYX"), output_folder=output, missing_as_singleton=True
+        root, prefill_mapping("TYX"), output_folder=output, missing_as_singleton=True
     )
     assert result.written
     text = (output / "discovery_report.txt").read_text(encoding="utf-8")
-    assert "  Z step: 1 from the header, 0 stated, 0 in pixels, 0 unknown; 1 without Z" in text
-    assert "Time step" not in text  # no image has T: no T size is recorded
+    assert "  Time step: 1 from the header, 0 stated, 0 in pixels, 0 unknown; 1 without T" in text
+    assert "Z step" not in text  # no image has Z: no Z size is recorded

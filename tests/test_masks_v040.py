@@ -1,10 +1,11 @@
 """Masks in v0.4.0: stated axes, layout, pairing, names and label images (design v0.4 §2, §3).
 
 Masks are never converted or reordered: they are checked as stored against the images as
-read. Plain-stack masks get their axes stated once per mask type; a 2-D mask is shared by
-every plane of its image only when stated; a mask stored with Y and X the other way round
-is refused with a ``swapaxes`` hint; files named like masks are blocked as images; the
-label images of OME-Zarr images are always used and fingerprinted apart from their image.
+read. Plain-stack masks get their axes stated once per mask type; a 2-D mask fits only an
+image with one plane (the shared 2-D mask was removed, owner decision of 5 November 2026);
+a mask stored with Y and X the other way round is refused with a ``swapaxes`` hint; files
+named like masks are blocked as images; the label images of OME-Zarr images are always used
+and fingerprinted apart from their image.
 """
 
 import json
@@ -85,11 +86,8 @@ def test_the_run_checks_stated_mask_planes_against_the_image(timelapse):
     )
     assert ok.written
     (recorded,) = read_manifest(ok.manifest_path).masks["files"]
-    assert (recorded["roles"], recorded["axes_from"], recorded["shared"]) == (
-        "TYX",
-        "stated",
-        False,
-    )
+    assert (recorded["roles"], recorded["axes_from"]) == ("TYX", "stated")
+    assert "shared" not in recorded  # no longer written (owner, 5 November 2026)
     # The axes as stored, beside the roles they are read as: nothing is reordered.
     assert (recorded["axes"], recorded["shape"]) == ("IYX", [3, 6, 8])
     # Stated as depth, the mask's planes are not the time-lapse's.
@@ -129,26 +127,21 @@ def test_axes_stated_for_an_unknown_mask_type(timelapse):
 
 
 @pytest.mark.parametrize("named", [False, True])
-def test_a_2d_mask_on_a_stack_needs_a_shared_statement(timelapse, named):
+def test_a_2d_mask_on_a_stack_is_refused_and_cannot_be_shared(timelapse, named):
     root, masks = timelapse
-    # Plain, or named YX by its metadata: shared only when stated (owner, 4 November 2026).
+    # Plain, or named YX by its metadata: never shared (owner, 5 November 2026).
     if named:
         write_data(masks / "Cells/ctrl/r1/a.tif", labels((6, 8)), "YX")
     else:
         write_plain(masks / "Cells/ctrl/r1/a.tif", labels((6, 8)))
     refused = run_experiment(root, prefill_mapping("TYX"), masks_folder=masks)
     assert "mask_planes_mismatch" in errors(refused.issues)
-    # Stated YX for the type: one plane shared by every plane of the image.
-    shared = run_experiment(
+    # The removed statement YX is refused, not a way to share the mask.
+    stated = run_experiment(
         root, prefill_mapping("TYX"), masks_folder=masks, mask_axes={"Cells": "YX"}
     )
-    assert shared.written
-    (recorded,) = read_manifest(shared.manifest_path).masks["files"]
-    assert (recorded["axes_from"], recorded["shared"]) == ("stated", True)
-    pre = preflight(root, masks_folder=masks, mask_axes={"Cells": "YX"})
-    (mask,) = pre.masks.files
-    assert mask.shared and mask.axes_from == "stated"
-    np.testing.assert_array_equal(read_mask(mask, pre.masks.folder, root, t=2), labels((6, 8)))
+    assert not stated.written
+    assert "shared_mask_not_supported" in errors(stated.issues)
 
 
 def test_a_2d_mask_on_a_single_plane_image_needs_no_statement(tmp_path):
@@ -158,7 +151,7 @@ def test_a_2d_mask_on_a_single_plane_image_needs_no_statement(tmp_path):
     result = run_experiment(root, prefill_mapping("YX"), masks_folder=tmp_path / "masks")
     assert result.written
     (recorded,) = read_manifest(result.manifest_path).masks["files"]
-    assert (recorded["axes_from"], recorded["shared"]) == ("header", False)
+    assert recorded["axes_from"] == "header" and "shared" not in recorded
 
 
 def test_a_named_tyx_mask_keeps_its_own_axes(timelapse):
@@ -324,26 +317,23 @@ def test_label_images_are_left_out_of_the_image_fingerprint(tmp_path):
     assert data["masks"]["types"] == ["cells", "nuclei"]
 
 
-def test_the_masks_command_scans_a_shared_2d_mask_with_per_plane_masks(tmp_path, capsys):
-    # F1 (cross-brick test, 3 November 2026): a set the run accepts (per-plane Cells and
-    # a stated shared 2-D Nuclei) was refused with mask_planes_differ.
+def test_the_masks_command_refuses_a_2d_mask_beside_per_plane_masks(tmp_path, capsys):
+    # F1 (cross-brick test, 3 November 2026) scanned a stated shared 2-D Nuclei with each
+    # plane of the Cells; with the shared mask removed (owner, 5 November 2026) the set is
+    # refused by the run and the masks step alike, and YX is no statement.
     root, masks = tmp_path / "exp", tmp_path / "masks"
-    write_data(root / "ctrl/r1/a.tif", np.zeros((3, 6, 8), np.uint8), "ZYX")
+    write_data(root / "ctrl/r1/a.tif", np.zeros((3, 6, 8), np.uint8), "TYX")
     cells = np.zeros((3, 6, 8), np.uint16)
     cells[:, 1:5, 1:7] = 1
     nuclei = np.zeros((6, 8), np.uint16)
     nuclei[2:4, 3:5] = 1
-    write_data(masks / "Cells/ctrl/r1/a.tif", cells, "ZYX")
+    write_data(masks / "Cells/ctrl/r1/a.tif", cells, "TYX")
     write_plain(masks / "Nuclei/ctrl/r1/a.tif", nuclei)
-    stated = {"Nuclei": "YX"}
-    assert run_experiment(
-        root, prefill_mapping("ZYX"), masks_folder=masks, mask_axes=stated
-    ).written
+    refused = run_experiment(root, prefill_mapping("TYX"), masks_folder=masks)
+    assert "mask_planes_differ" in errors(refused.issues)
     out = tmp_path / "out"
-    args = [str(root), "--masks", str(masks), "--output", str(out), "--mask-axes", "Nuclei=YX"]
-    assert main(["masks", *args]) == 0, capsys.readouterr().out
-    report = json.loads((out / "mask_relationships.json").read_text(encoding="utf-8"))
-    (inside,) = [p for p in report["pairs"] if (p["child"], p["parent"]) == ("Nuclei", "Cells")]
-    # The shared plane is compared with each of the three planes: never across planes.
-    assert inside["relation"] == "inside"
-    assert inside["evidence"]["children"] == 3
+    args = [str(root), "--masks", str(masks), "--output", str(out)]
+    assert main(["masks", *args]) == 1
+    assert main(["masks", *args, "--mask-axes", "Nuclei=YX"]) == 1
+    capsys.readouterr()
+    assert not (out / "mask_relationships.json").exists()

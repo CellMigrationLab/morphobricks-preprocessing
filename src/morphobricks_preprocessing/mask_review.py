@@ -9,11 +9,10 @@ confirmed, :func:`.mask_checks.mask_issues`: the same functions as ``check --mas
   counterpart of ``--mask-axes TYPE=ROLES``), with the statements that fit every mask of
   the type, each checked by :func:`.masks.stated.mask_roles` (the rule ``--mask-axes`` is
   checked by). A statement is asked for only where it is needed: masks whose files do not
-  name their axes (``mask_not_2d``) or whose statement does not fit, and 2-D masks of
-  images with several planes, which are one plane shared by all of them only when stated
-  ``YX`` (``mask_planes_mismatch``, or ``mask_planes_differ`` beside a mask with planes),
-  also when their metadata names ``YX`` (owner decision of 4 November 2026). Nothing is
-  suggested or applied: the user chooses.
+  name their axes (``mask_not_2d``) or whose statement does not fit. A statement always
+  names a depth (Z) or time (T) axis: ``YX``, the removed shared 2-D mask, is never offered
+  (owner decision of 5 November 2026; a 2-D mask of a time-lapse is saved again with the
+  image's time points). Nothing is suggested or applied: the user chooses.
 """
 
 from __future__ import annotations
@@ -28,11 +27,6 @@ from .validation import ValidationIssue
 
 UNNAMED_CODES = frozenset({"mask_not_2d", "invalid_mask_axes", "mask_axes_contradict_header"})
 """Errors of masks whose axes their files do not name, or whose stated axes do not fit."""
-
-SHARED_CODE = "mask_planes_mismatch"
-"""The error of a 2-D mask of an image with several planes, unless stated ``YX`` (shared)."""
-SHARED_CODES = frozenset({SHARED_CODE, "mask_planes_differ"})
-"""Errors of 2-D masks that a ``YX`` statement for their type would make shared."""
 
 
 @dataclass(frozen=True)
@@ -80,16 +74,12 @@ class MaskAxesQuestion:
         channel): the masks must then be saved again.
     stated
         The statement in use for the type (given or recorded), or None.
-    shared
-        True when its masks are 2-D masks of images with several planes: the only
-        statement is ``YX``, one plane shared by every plane of the image.
     """
 
     mask_type: str
     header_axes: tuple[str, ...]
     choices: tuple[str, ...]
     stated: str | None
-    shared: bool
 
 
 def mask_type_rows(inventory: MaskInventory, images: Collection[str]) -> list[MaskTypeRow]:
@@ -137,7 +127,7 @@ def mask_axes_questions(
         The masks found, paired with the statements in ``stated``.
     issues
         The masks' issues: the inventory's own before the axis roles are confirmed, then
-        :func:`.mask_checks.mask_issues` (which adds ``mask_planes_mismatch``).
+        :func:`.mask_checks.mask_issues`.
     stated
         The statements in use, ``{type: roles}`` (given in this session or recorded by the
         earlier run); their types are asked again, so a statement can be changed.
@@ -150,15 +140,8 @@ def mask_axes_questions(
     issues = list(issues)
     by_path = {f.path: f for f in inventory.files}
     unnamed = _types_of(issues, UNNAMED_CODES, by_path)
-    flat = {
-        by_path[path].mask_type
-        for issue in issues
-        if issue.code in SHARED_CODES
-        for path in issue.paths
-        if path in by_path and by_path[path].axes == "YX"
-    }
     questions = []
-    for mask_type in sorted((unnamed | flat | set(stated)) & set(inventory.types)):
+    for mask_type in sorted((unnamed | set(stated)) & set(inventory.types)):
         masks = [f for f in inventory.files if f.mask_type == mask_type and f.header_axes]
         headers = tuple(sorted({f.header_axes for f in masks}))
         roles = stated.get(mask_type)
@@ -168,7 +151,6 @@ def mask_axes_questions(
                 header_axes=headers,
                 choices=_fitting(masks),
                 stated=roles,
-                shared=(mask_type in flat or roles == "YX") and mask_type not in unnamed,
             )
         )
     return questions
@@ -201,9 +183,13 @@ def _fitting(masks: list) -> tuple[str, ...]:
 
 
 def _statements(count: int) -> list[str]:
-    """Return every statement for ``count`` axes: Y and X once, Z and T at most once each."""
+    """Return every statement for ``count`` axes: Y and X once, Z and/or T once each.
+
+    ``YX`` alone is no statement: a 2-D mask needs none, and is never shared by several
+    planes (owner decision of 5 November 2026).
+    """
     found = set()
-    for extra in ("", "Z", "T", "ZT"):
+    for extra in ("Z", "T", "ZT"):
         if len(extra) + 2 == count:
             found.update("".join(order) for order in permutations("YX" + extra))
     usable = [roles for roles in found if roles.index("Y") < roles.index("X")]

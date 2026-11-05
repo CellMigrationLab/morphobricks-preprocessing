@@ -68,15 +68,31 @@ def make_pixels(seed: int = 0) -> dict[str, np.ndarray]:
     return pixels
 
 
-def write_experiment(root: Path, dtype: str, pixels: dict[str, np.ndarray]) -> tuple[int, str]:
+TIME_FOR_DEPTH = {"ZCYX": "TCYX", "czyx": "tcyx"}
+"""The reference's Z-stacks, written as time-lapses of the same pixels.
+
+MorphoBricks v1 analyses 2-D planes (owner decision of 5 November 2026): a Z-stack is
+refused, so the tests write each uint16 image with its planes along T instead. The pixels
+and every histogram are the reference's; only the reference's ``z`` is now ``t``.
+``make_v2_fixture.py`` writes them as the reference was made (``as_made=True``).
+"""
+
+
+def write_experiment(
+    root: Path, dtype: str, pixels: dict[str, np.ndarray], *, as_made: bool = False
+) -> tuple[int, str]:
     """Write the images of one experiment under ``root``; return its bin count and axes."""
     bins, axes, images = EXPERIMENTS[dtype]
     for rel, image_axes, kwargs in images:
         data = pixels[f"{dtype}/{rel}"]
+        if not as_made and image_axes in TIME_FOR_DEPTH:
+            if image_axes == "czyx":  # OME-NGFF puts time first
+                data = np.ascontiguousarray(data.transpose(1, 0, 2, 3))
+            image_axes = TIME_FOR_DEPTH[image_axes]
         if rel.endswith(".ome.zarr"):
             from zarr_tree import write_ngff
 
             write_ngff(root / rel, data, image_axes, chunks=(1, 1, 8, 8))
         else:
             write_data(root / rel, data, axes=image_axes, **kwargs)
-    return bins, axes
+    return bins, axes if as_made else TIME_FOR_DEPTH.get(axes, axes)

@@ -1350,7 +1350,8 @@ Raised during review; to be decided before the milestones that need them:
     PP-4)?
     *Decided (1 November 2026, owner, design revision 4): `manifest_version` "2"; per file
     `roles` and `axes_from` (`header` or `confirmed`) are required, with `pixel_sizes` by role
-    (value, unit, source); per mask `size`, `mtime_ns`, `roles`, `axes_from` and `shared`; an
+    (value, unit, source); per mask `size`, `mtime_ns`, `roles`, `axes_from` and `shared`
+    (`shared` no longer written since question 76); an
     optional `conversion_record_sha256`. A version 1 manifest gives no reusable row. A row is
     reused only when its `RowKey` (fingerprint, labels, axes, roles, `axes_from`, read path and
     the row-changing settings) is the earlier run's. A plain stack's confirmation covers only
@@ -1905,3 +1906,25 @@ Raised during review; to be decided before the milestones that need them:
     refuses a manifest recording `shared: true` with `axes_from: "header"` (written only
     by main at #148; no tag) with a re-run hint. The `check --missing-as-singleton` half
     stands.
+    *Superseded (owner, 5 November 2026; question 76):* the stated shared 2-D mask is
+    removed too.
+76. Should MorphoBricks v1 analyse Z-stacks, and may one 2-D mask stand for every plane of
+    a multi-plane image (tracker row 36)? *Decided (owner, 5 November 2026; contract §2,
+    §9, §15):* for the first release MorphoBricks is 2-D per plane; 3-D feature extraction
+    will be a separate project. (1) An image with more than one depth slice is refused at
+    preprocessing, before anything but the report is written: the error
+    `z_stack_not_supported` names every such image with its number of slices, from the Z
+    axis its header names (`check_metadata`) and again under the confirmed roles
+    (`review_axes`, which supersedes it; a header Z confirmed as T stays the axis error
+    `axes_contradict_header`, which `convert` fixes), and says to project the stack first (for example
+    a maximum-intensity projection in Fiji) and use the projected image. Z = 1, named or
+    not, stays allowed; nothing is squeezed, guessed or projected (an explicit, recorded
+    projection step is post-release). (2) T > 1 is allowed only when the masks have the
+    same T: the stated shared 2-D mask (`--mask-axes TYPE=YX`, recorded `axes_from:
+    "stated"`, `shared: true`, and the notebook's YX choice) is removed; a 2-D mask of a
+    time-lapse is `mask_planes_mismatch`, and a `YX` statement is the error
+    `shared_mask_not_supported`. A `YX` statement recorded by an earlier run is not applied
+    again (it could not be withdrawn), the manifest no longer writes `shared`, and
+    `RunInputs.open` refuses a manifest recording `shared: true`. Plain-stack masks with
+    stated axes (`Cells=TYX`) remain and are checked against the image. (3) The other
+    bricks are not changed: their own Z-plane policies stay as a second defence.

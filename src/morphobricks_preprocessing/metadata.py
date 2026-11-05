@@ -34,11 +34,13 @@ from .pixel_size_checks import pixel_size_issues
 from .size_checks import (
     CONVERT_KEEPS_ORDER,
     breakdown,
+    channel_count_issues,
     image_size_issues,
     lettered_plane_counts,
     plane_count_issues,
     role_plane_counts,
     role_size,
+    z_stack_issues,
 )
 from .validation import ValidationIssue, error, has_errors, plural
 from .zarr_input import (
@@ -381,8 +383,10 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     dimensions are arranged differently, and images with different numbers of
     channels (``different_channel_counts``; the C axis, or the RGB samples
     without one, until the axis roles are confirmed), and channel names that differ at the
-    same channel (``channel_names_differ``). OME-Zarr images declare their axes,
-    so their arrangement is checked by role during the axis review instead.
+    same channel (``channel_names_differ``), and images whose header names a Z axis of
+    more than one depth slice (``z_stack_not_supported``: MorphoBricks v1 analyses 2-D
+    planes; a plain stack is checked once its roles are confirmed). OME-Zarr images declare
+    their axes, so their arrangement is checked by role during the axis review instead.
 
     Reports, as warnings: images of different widths or heights
     (``different_sizes``), different numbers of depth slices, time points
@@ -501,7 +505,7 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
 
     issues.extend(_check_dimensions([f for f in readable if not f.is_ome_zarr]))
     issues.extend(_check_channel_names(readable))
-    issues.extend(_check_channel_counts(readable))
+    issues.extend(_check_counts(readable))
     issues.extend(dimension_issues(readable))
     issues.extend(pixel_size_issues(readable))
     return issues
@@ -654,48 +658,18 @@ def header_channel_count(f: TiffMetadata) -> int:
     return f.length("C") if "C" in f.axes else f.length("S")
 
 
-def channel_count_issues(counts: Mapping[str, int]) -> list[ValidationIssue]:
-    """Report images with different numbers of channels (normalization plan N43).
+def header_depth_slices(f: TiffMetadata) -> int:
+    """Return the depth slices of the Z axis the header names; 1 when it names none."""
+    named = named_axes(f)
+    return f.shape[named.index("Z")] if "Z" in named else 1
 
-    Each row of ``plane_histograms.csv`` holds every channel of a plane, so all
-    images of an experiment must have the same number of channels.
 
-    Parameters
-    ----------
-    counts
-        Number of channels of each image, by relative path.
-
-    Returns
-    -------
-    list of ValidationIssue
-        The error ``different_channel_counts`` naming the images not having the
-        most common number, or nothing.
-    """
-    groups: dict[int, list[str]] = {}
-    for path, count in sorted(counts.items()):
-        groups.setdefault(count, []).append(path)
-    if len(groups) < 2:
-        return []
-    ordered = sorted(groups.items(), key=lambda item: (-len(item[1]), item[0]))
-    summary = ", ".join(
-        f"{plural(count, 'channel')} ({plural(len(paths), 'image')})" for count, paths in ordered
-    )
+def _check_counts(files: list[TiffMetadata]) -> list[ValidationIssue]:
+    """Report different channel counts and Z-stacks, by the axes the headers name."""
     return [
-        error(
-            "different_channel_counts",
-            f"The images have different numbers of channels: {summary}. Each row of the "
-            "histogram table holds every channel of a plane, so every image of an experiment "
-            "must have the same channels. The images listed are those without the most "
-            "common number of channels.",
-            sorted(path for _, paths in ordered[1:] for path in paths),
-            "Split the images with other channels into a separate experiment, or exclude "
-            "them. If a channel axis was assigned the wrong role, correct the axis roles.",
-        )
+        *channel_count_issues({f.relative_path: header_channel_count(f) for f in files}),
+        *z_stack_issues({f.relative_path: header_depth_slices(f) for f in files}),
     ]
-
-
-def _check_channel_counts(files: list[TiffMetadata]) -> list[ValidationIssue]:
-    return channel_count_issues({f.relative_path: header_channel_count(f) for f in files})
 
 
 def dimension_issues(

@@ -26,8 +26,8 @@ def stack(seed):
 def run(tmp_path):
     root = tmp_path / "exp"
     for seed, rel in enumerate(IMAGES):
-        write_data(root / rel, stack(seed), "ZYX")
-    result = run_experiment(root, prefill_mapping("ZYX"), output_folder=tmp_path / "out")
+        write_data(root / rel, stack(seed), "TYX")
+    result = run_experiment(root, prefill_mapping("TYX"), output_folder=tmp_path / "out")
     assert result.written, result.issues
     return root, read_manifest(tmp_path / "out" / MANIFEST_FILENAME)
 
@@ -48,7 +48,7 @@ def test_unchanged_images_pass(run):
             manifest,
             root,
             IMAGES,
-            image_axes=dict.fromkeys(IMAGES, "ZYX"),
+            image_axes=dict.fromkeys(IMAGES, "TYX"),
             identities={path: identity(path) for path in IMAGES},
         )
         == []
@@ -57,7 +57,7 @@ def test_unchanged_images_pass(run):
 
 def test_images_not_analysed_by_the_run(run):
     root, manifest = run
-    write_data(root / "drug/rep1/c.tif", stack(9), "ZYX")
+    write_data(root / "drug/rep1/c.tif", stack(9), "TYX")
     issues = check_sources(manifest, root, [*IMAGES, "drug/rep1/c.tif"])
     assert codes(issues) == {"images_not_in_manifest": ("drug/rep1/c.tif",)}
     assert all(issue.is_error for issue in issues)
@@ -65,7 +65,7 @@ def test_images_not_analysed_by_the_run(run):
 
 def test_changed_and_missing_images(run):
     root, manifest = run
-    write_data(root / "ctrl/rep1/a.tif", stack(5)[:2], "ZYX")  # rewritten, another size
+    write_data(root / "ctrl/rep1/a.tif", stack(5)[:2], "TYX")  # rewritten, another size
     (root / "drug/rep1/a.tif").unlink()
     found = codes(check_sources(manifest, root, IMAGES))
     assert found == {
@@ -89,8 +89,8 @@ def test_a_rewritten_chunk_of_an_ome_zarr_image_is_a_change(tmp_path):
     from zarr_tree import write_ngff
 
     root = tmp_path / "exp"
-    image = write_ngff(root / "ctrl" / "a.ome.zarr", stack(1), "zyx")
-    result = run_experiment(root, prefill_mapping("ZYX"), output_folder=tmp_path / "out")
+    image = write_ngff(root / "ctrl" / "a.ome.zarr", stack(1), "tyx")
+    result = run_experiment(root, prefill_mapping("TYX"), output_folder=tmp_path / "out")
     assert result.written, result.issues
     manifest = read_manifest(tmp_path / "out" / MANIFEST_FILENAME)
     assert check_sources(manifest, root, ["ctrl/a.ome.zarr"]) == []
@@ -138,13 +138,13 @@ def test_axes_must_have_the_confirmed_roles(run, roles_recorded):
     root, manifest = run
     if not roles_recorded:
         manifest = replace(manifest, files=tuple(replace(f, roles=None) for f in manifest.files))
-    axes = dict.fromkeys(IMAGES, "zyx")
+    axes = dict.fromkeys(IMAGES, "tyx")
     assert check_sources(manifest, root, IMAGES, image_axes=axes) == []
-    axes["drug/rep1/a.tif"] = "TYX"
+    axes["drug/rep1/a.tif"] = "ZYX"
     axes["ctrl/rep1/b.tif"] = "YX"
     issues = check_sources(manifest, root, IMAGES, image_axes=axes)
     assert codes(issues) == {"axis_mapping_mismatch": ("ctrl/rep1/b.tif", "drug/rep1/a.tif")}
-    assert "drug/rep1/a.tif: given TYX, preprocessing ZYX" in issues[0].message
+    assert "drug/rep1/a.tif: given ZYX, preprocessing TYX" in issues[0].message
 
 
 def test_an_axis_without_a_role_fits_any_letter(run):
@@ -157,7 +157,7 @@ def test_an_axis_without_a_role_fits_any_letter(run):
 def test_every_path_needs_its_axes_and_identity(run):
     root, manifest = run
     with pytest.raises(ValueError, match="image_axes has no entry for drug/rep1/a.tif"):
-        check_sources(manifest, root, IMAGES, image_axes=dict.fromkeys(IMAGES[:2], "ZYX"))
+        check_sources(manifest, root, IMAGES, image_axes=dict.fromkeys(IMAGES[:2], "TYX"))
     with pytest.raises(ValueError, match="identities has no entry"):
         check_sources(manifest, root, IMAGES, identities={})
 

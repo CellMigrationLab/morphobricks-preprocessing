@@ -72,6 +72,7 @@ _SUPERSEDED_METADATA_CODES = frozenset(
         "different_channel_counts",
         "different_sizes",
         "different_plane_counts",
+        "z_stack_not_supported",
     }
 )
 
@@ -262,8 +263,8 @@ class AxisReview:
 
         The review checks the arrangement of dimensions and the numbers of
         channels again against the confirmed mapping, so the metadata's
-        ``missing_axes``, ``inconsistent_dimensions`` and
-        ``different_channel_counts`` issues are replaced by the review's own. The
+        ``missing_axes``, ``inconsistent_dimensions``, ``different_channel_counts`` and
+        ``z_stack_not_supported`` issues are replaced by the review's own. The
         ``different_sizes`` and ``different_plane_counts`` warnings are computed again with
         each image's confirmed roles (issue #74; :func:`.metadata.dimension_issues`), except
         for an image whose roles contradict its header (:attr:`axis_error_files`, never read),

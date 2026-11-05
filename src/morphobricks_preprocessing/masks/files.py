@@ -50,8 +50,8 @@ def find_masks(
     mask_axes
         The axes the user states for the masks of a mask type, ``{type: roles}``: one role
         (``Y``, ``X``, ``Z`` or ``T``) per axis of the mask's header, length-1 axes other
-        than Y and X left out (``"TYX"`` for a plain ``QYX`` stack of time points; ``"YX"``
-        for a 2-D mask shared by every plane of its image). A statement may not contradict
+        than Y and X left out (``"TYX"`` for a plain ``QYX`` stack of time points; ``"YX"`` is
+        refused, ``shared_mask_not_supported``). A statement may not contradict
         an axis the metadata names (``mask_axes_contradict_header``). Never a reordering: a
         mask is read as stored.
     output_folder

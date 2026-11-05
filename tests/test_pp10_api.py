@@ -16,14 +16,14 @@ from morphobricks_preprocessing.run.preflight import recalibrated
 from morphobricks_preprocessing.run.recorded import GivenInputs
 from tiff_tree import write_data
 
-ZYX = prefill_mapping("ZYX")
+TYX = prefill_mapping("TYX")
 
 
 @pytest.fixture
 def experiment(tmp_path):
     root = tmp_path / "exp"
     for rel in ["ctrl/rep1/a.tif", "drug/rep1/a.tif", "drug/rep2/a.tif"]:
-        write_data(root / rel, np.ones((2, 8, 8), np.uint8), axes="ZYX")
+        write_data(root / rel, np.ones((2, 8, 8), np.uint8), axes="TYX")
     return root
 
 
@@ -74,17 +74,17 @@ def test_recalibrated_reads_calibration_again_and_replaces_its_issues(experiment
 def test_planned_changes_name_what_the_run_then_reports(experiment, tmp_path):
     output = tmp_path / "out"
     assert planned_changes(GivenInputs(experiment_root=experiment), output) == ()
-    assert run_experiment(experiment, ZYX, output_folder=output).written
+    assert run_experiment(experiment, TYX, output_folder=output).written
     given = GivenInputs(experiment_root=experiment, exclude=("drug/rep2/a.tif",), bin_count=16)
     planned = planned_changes(given, output)
     assert [change.name for change in planned] == ["exclude", "bin_count"]
     result = run_experiment(
-        experiment, ZYX, output_folder=output, exclude=["drug/rep2/a.tif"], bin_count=16
+        experiment, TYX, output_folder=output, exclude=["drug/rep2/a.tif"], bin_count=16
     )
     assert result.input_changes == planned
 
 
 def test_suggested_review_fits_the_sizes_as_check_does(experiment):
     pre, review = suggested_review(preflight(experiment))
-    assert review is not None and "".join(review.mapping.roles) == "ZYX"
+    assert review is not None and "".join(review.mapping.roles) == "TYX"
     assert pre.calibration.sizes["ctrl/rep1/a.tif"][2].source is None  # no header size

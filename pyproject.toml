@@ -116,7 +116,9 @@ required-imports = ["from __future__ import annotations"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D", "ANN", "I002"]
 "experiments/**" = ["D", "E501", "B905", "ANN", "C90", "PLR", "I002"]  # study scripts kept as they were run
-"notebooks/**" = ["I002"]  # notebook cells are not modules
+# Notebook cells are not modules; the one bootstrap cell checks the kernel's Python at
+# run time (UP036) and imports ipywidgets only after it may have installed it (E402).
+"notebooks/**" = ["I002", "E402", "UP036"]
 
 [tool.morphobricks.code-rules]
 # The shared tools/code_rules.py (spec §9), configured for this repository.

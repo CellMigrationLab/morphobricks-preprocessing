@@ -88,19 +88,21 @@ def test_a_header_size_in_an_unsupported_unit_is_not_recorded(tmp_path, unit):
     assert f"X and Y in {unit!r}" in issue(result.issues, "unsupported_pixel_size_unit").message
 
 
-# I5: z and t are checked against the image, for a shared mask too ------------------------------
+# I5: z and t are checked against the image ----------------------------------------------------
 
 
-def test_a_shared_mask_is_not_read_outside_the_image(tmp_path):
+def test_a_mask_is_not_read_outside_the_image(tmp_path):
+    # A shared 2-D mask until the owner decision of 5 November 2026; a mask of every time
+    # point since.
     root, masks = tmp_path / "exp", tmp_path / "masks"
     write_plain(root / "ctrl/a.tif", np.zeros((3, 6, 8), np.uint8))
-    write_data(masks / "Cells/ctrl/a.tif", np.ones((6, 8), np.uint16), "YX")
+    write_plain(masks / "Cells/ctrl/a.tif", np.ones((3, 6, 8), np.uint16))
     result = run_experiment(
-        root, AxisMapping("IYX", "TYX"), masks_folder=masks, mask_axes={"Cells": "YX"}
+        root, AxisMapping("IYX", "TYX"), masks_folder=masks, mask_axes={"Cells": "TYX"}
     )
     inputs = RunInputs.open(result.output_folder)
     assert inputs.read_mask("ctrl/a.tif", "Cells", t=2).shape == (6, 8)
-    for z, t in ((None, 7), (99, None), (0, -1), (1, 0)):
+    for z, t in ((None, 7), (99, 0), (0, -1), (1, 0)):
         with pytest.raises(IndexError, match="outside"):
             inputs.read_mask("ctrl/a.tif", "Cells", z=z, t=t)
     with pytest.raises(IndexError):

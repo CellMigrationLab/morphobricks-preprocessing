@@ -6,7 +6,6 @@ Moved from ``masks.py`` (PP-5).
 from __future__ import annotations
 
 import logging
-import shlex
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -23,7 +22,7 @@ from ..zarr_input import (
 from .header import _mask_header
 from .layout import _yx
 from .model import FOLDER, PLANE_AXES, MaskFile, MaskInventory
-from .stated import mask_named_axes, mask_roles, size_code
+from .stated import SHARED_REMOVED_CODE, mask_named_axes, mask_roles, size_code
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +40,9 @@ def _header_issues(
     The mask's roles are the axes its metadata names, or those stated for its mask type
     (``stated``) where the metadata names none (:func:`.stated.mask_roles`); ``files`` is
     updated in place with them. Also check that the masks of one image have the same depth
-    slices and time points (a stated shared 2-D mask aside; for 2-D masks among them the
-    error names the statement that would share them). ``unreadable`` are paths already
-    known not to open (OME-Zarr ``labels`` groups).
+    slices and time points: a 2-D mask is never shared by the planes of its image (owner
+    decision of 5 November 2026). ``unreadable`` are paths already known not to open
+    (OME-Zarr ``labels`` groups).
     """
     found: list[tuple[str, str, str]] = [("unreadable_mask", path, "") for path in unreadable]
     for index, mask in enumerate(files):
@@ -53,19 +52,12 @@ def _header_issues(
             files[index] = checked
     by_image: dict[str, list[MaskFile]] = {}
     for mask in files:
-        if mask.axes and not mask.shared:
+        if mask.axes:
             by_image.setdefault(mask.image, []).append(mask)
-    flat_types = set()
     for masks in by_image.values():
         if len({tuple(m.planes.items()) for m in masks}) > 1:
             found.extend(("mask_planes_differ", m.path, "") for m in masks)
-            flat_types.update(m.mask_type for m in masks if m.axes == "YX")
-    return [
-        replace(issue, action=issue.action + _shared_hint(flat_types))
-        if issue.code == "mask_planes_differ"
-        else issue
-        for issue in _grouped(found)
-    ]
+    return _grouped(found)
 
 
 def _check_header(
@@ -137,6 +129,14 @@ _TEXTS = {
         "its axes named in its metadata (an ImageJ hyperstack or OME-TIFF with axes TYX or "
         "ZYX).",
     ),
+    SHARED_REMOVED_CODE: (
+        "Some mask types are stated YX: one 2-D mask shared by every plane of its image. That "
+        "option was removed: MorphoBricks v1 analyses 2-D planes, and a mask must have the "
+        "same time points (T) as its image.",
+        "Remove the statement (a 2-D mask needs none). For a time-lapse, save one mask plane "
+        "per time point, with its axes named in its metadata (TYX) or stated for its type "
+        "(for example --mask-axes Cells=TYX).",
+    ),
     "invalid_mask_axes": (
         "The axes stated for some masks do not fit them.",
         "State one role per axis of the mask's header (length-1 axes left out): Y and X once "
@@ -154,8 +154,10 @@ _TEXTS = {
     ),
     "mask_planes_differ": (
         "The masks of some images have different numbers of depth slices or time points, so "
-        "they cannot all belong to the same planes of their image.",
-        "Make every mask of an image with the image's depth slices and time points.",
+        "they cannot all belong to the same planes of their image. A 2-D mask is never "
+        "shared by several planes.",
+        "Make every mask of an image with the image's time points (T): one mask plane per "
+        "time point.",
     ),
     "mask_size_mismatch": (
         "Some masks do not have the size (Y and X) of their image.",
@@ -179,11 +181,10 @@ def mask_plane_issues(
     """Check that every mask has the depth slices and time points of its image (issue #36).
 
     An image's depth slices and time points come from its confirmed axis roles; a mask's
-    from its own metadata (:attr:`MaskFile.planes`). They must be equal: a 2D mask belongs
-    to an image with one plane, never to every plane of a Z-stack or time-lapse, unless its
-    mask type is stated ``YX`` (:attr:`MaskFile.shared`). Its metadata naming ``YX`` is not
-    such a statement (owner decision of 4 November 2026, reversing F10): the error then
-    names the statement to add for each such type.
+    from its own metadata or the axes stated for its type (:attr:`MaskFile.planes`). They
+    must be equal: a 2D mask belongs to an image with one plane, never to every plane of a
+    time-lapse (owner decision of 5 November 2026: the stated shared 2-D mask was removed;
+    a mask of a time-lapse has the same T as its image).
 
     Parameters
     ----------
@@ -204,10 +205,10 @@ def mask_plane_issues(
     """
     headers = {meta.relative_path: meta for meta in images}
     skip = set(skip)
-    mismatched, flat_types = [], set()
+    mismatched = []
     for mask in inventory.files:
         mapping = file_mappings.get(mask.image)
-        unchecked = not mask.axes or mask.shared or mask.image in skip
+        unchecked = not mask.axes or mask.image in skip
         if unchecked or mapping is None or mask.image not in headers:
             continue
         shape = headers[mask.image].shape
@@ -217,38 +218,23 @@ def mask_plane_issues(
             planes[axis] = 1 if index is None else int(shape[index])
         if planes != mask.planes:
             mismatched.append(mask.path)
-            if mask.axes == "YX":
-                flat_types.add(mask.mask_type)
     if not mismatched:
         return []
     return [
         error(
             "mask_planes_mismatch",
             f"{plural(len(mismatched), 'mask')} "
-            f"{agree(mismatched, 'does', 'do')} not have the depth slices "
-            f"and time points of "
-            f"{agree(mismatched, 'its', 'their')} image: a 2D mask fits only an image with "
-            "one plane, and a mask with depth (Z) or time (T) needs the same number of slices "
-            "or time points as its image.",
+            f"{agree(mismatched, 'does', 'do')} not have the time points (T) and depth "
+            f"slices (Z) of {agree(mismatched, 'its', 'their')} image. MorphoBricks v1 "
+            "analyses 2-D planes: the masks of a time-lapse must have the same T as their "
+            "image, one mask plane per time point, and a 2-D mask fits only an image with one "
+            "plane (it is never shared by several planes).",
             mismatched,
-            "Save one mask plane for every depth slice and time point of the image, with the "
-            "axes named in the mask's metadata, or check the image's axis roles."
-            + _shared_hint(flat_types),
+            "Save one mask plane for every time point of the image, with the axes named in "
+            "the mask's metadata (TYX) or stated for its type (for example --mask-axes "
+            "Cells=TYX), or check the image's axis roles.",
         )
     ]
-
-
-def _shared_hint(types: Iterable[str]) -> str:
-    """Say which statements make the 2-D masks of these types shared, or ``""``."""
-    types = sorted(types)
-    if not types:
-        return ""
-    options = " ".join(f"--mask-axes {shlex.quote(f'{name}=YX')}" for name in types)
-    return (
-        " If one 2D mask is meant for every plane of its image, state it once per mask "
-        f"type, also when the mask's metadata names its axes YX: {options} (in the notebook, "
-        "choose YX for the type under Mask axes in step 1)."
-    )
 
 
 def _image_yx(meta: TiffMetadata) -> tuple[int, int] | None:

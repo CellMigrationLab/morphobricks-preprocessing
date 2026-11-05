@@ -25,7 +25,7 @@ def rgb_image(path, shape=(2, 8, 8, 3), dtype=np.uint8, **kwargs):
     rng = np.random.default_rng(len(str(path)))
     data = rng.integers(0, 200, shape).astype(dtype)
     kwargs.setdefault("photometric", "rgb")
-    return write_data(path, data, axes="ZYXS" if len(shape) == 4 else None, **kwargs)
+    return write_data(path, data, axes="TYXS" if len(shape) == 4 else None, **kwargs)
 
 
 def rgb_experiment(root):
@@ -38,7 +38,7 @@ def fluorescence_experiment(root, channels=2, dtype=np.uint8):
     rng = np.random.default_rng(0)
     for rel in ("ctrl/rep1/a.tif", "drug/rep1/a.tif"):
         data = rng.integers(0, 200, (2, channels, 8, 8)).astype(dtype)
-        write_data(root / rel, data, axes="ZCYX")
+        write_data(root / rel, data, axes="TCYX")
     return root
 
 
@@ -171,7 +171,7 @@ def reads(monkeypatch):
 
 def test_the_manifest_records_the_image_type(tmp_path):
     root = rgb_experiment(tmp_path / "exp")
-    result = run_experiment(root, prefill_mapping("ZYXS"), image_type="rgb")
+    result = run_experiment(root, prefill_mapping("TYXS"), image_type="rgb")
     assert result.written and result.image_type == "rgb"
     manifest = read_manifest(result.manifest_path)
     assert manifest.image_type == "rgb" and manifest.channels_from_rgb_samples is True
@@ -180,17 +180,17 @@ def test_the_manifest_records_the_image_type(tmp_path):
 def test_without_an_image_type_none_is_recorded(tmp_path):
     # The suggestion is never applied without the user's confirmation.
     root = rgb_experiment(tmp_path / "exp")
-    result = run_experiment(root, prefill_mapping("ZYXS"))
+    result = run_experiment(root, prefill_mapping("TYXS"))
     manifest = read_manifest(result.manifest_path)
     assert manifest.image_type is None and manifest.channels_from_rgb_samples is True
 
 
 def test_changing_the_image_type_recomputes_nothing(tmp_path, reads):
     root = rgb_experiment(tmp_path / "exp")
-    first = run_experiment(root, prefill_mapping("ZYXS"), image_type="rgb")
+    first = run_experiment(root, prefill_mapping("TYXS"), image_type="rgb")
     table = first.csv_path.read_bytes()
     reads.clear()
-    second = run_experiment(root, prefill_mapping("ZYXS"), image_type="fluorescence")
+    second = run_experiment(root, prefill_mapping("TYXS"), image_type="fluorescence")
     assert second.written and reads == [] and second.rebuild_reason is None
     assert second.csv_path.read_bytes() == table
     assert read_manifest(second.manifest_path).image_type == "fluorescence"
@@ -198,7 +198,7 @@ def test_changing_the_image_type_recomputes_nothing(tmp_path, reads):
 
 def test_rgb_is_refused_for_images_that_are_not_rgb(tmp_path):
     root = fluorescence_experiment(tmp_path / "exp", channels=2)
-    result = run_experiment(root, prefill_mapping("ZCYX"), image_type="rgb")
+    result = run_experiment(root, prefill_mapping("TCYX"), image_type="rgb")
     assert not result.written and "rgb_not_possible" in codes(result.issues)
     (issue,) = [i for i in result.issues if i.code == "rgb_not_possible"]
     assert "2 channels of type uint8" in issue.message and "fluorescence" in issue.action
@@ -207,7 +207,7 @@ def test_rgb_is_refused_for_images_that_are_not_rgb(tmp_path):
 
 def test_rgb_for_three_grey_channels_is_allowed(tmp_path):
     root = fluorescence_experiment(tmp_path / "exp", channels=3)
-    result = run_experiment(root, prefill_mapping("ZCYX"), image_type="rgb")
+    result = run_experiment(root, prefill_mapping("TCYX"), image_type="rgb")
     assert result.written
     manifest = read_manifest(result.manifest_path)
     assert manifest.image_type == "rgb" and manifest.channels_from_rgb_samples is False
@@ -216,4 +216,4 @@ def test_rgb_for_three_grey_channels_is_allowed(tmp_path):
 def test_unknown_image_type_is_a_programming_error(tmp_path):
     root = fluorescence_experiment(tmp_path / "exp")
     with pytest.raises(ValueError, match="does not exist"):
-        run_experiment(root, prefill_mapping("ZCYX"), image_type="RGB")
+        run_experiment(root, prefill_mapping("TCYX"), image_type="RGB")

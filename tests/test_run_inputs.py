@@ -138,25 +138,26 @@ def test_a_moved_experiment_is_opened_where_it_is(clean, tmp_path):
 # Plain stacks, stated masks and labels -------------------------------------------------------
 
 
-def test_a_confirmed_plain_stack_and_a_shared_mask(tmp_path):
+def test_a_confirmed_plain_stack_and_a_stated_plain_stack_mask(tmp_path):
     root, masks = tmp_path / "exp", tmp_path / "masks"
     stack = np.arange(3 * 6 * 8, dtype=np.uint8).reshape(3, 6, 8)
     write_plain(root / "ctrl/a.tif", stack)
-    labels = np.zeros((6, 8), np.uint16)
-    labels[2:4, 2:5] = 7
-    write_data(masks / "Cells/ctrl/a.tif", labels, "YX")
+    # A shared 2-D mask until the owner decision of 5 November 2026 removed it.
+    labels = np.zeros((3, 6, 8), np.uint16)
+    labels[:, 2:4, 2:5] = 7
+    write_plain(masks / "Cells/ctrl/a.tif", labels)
     result = run_experiment(
         root,
         AxisMapping("IYX", "TYX"),
         masks_folder=masks,
-        mask_axes={"Cells": "YX"},
+        mask_axes={"Cells": "TYX"},
     )
     inputs = RunInputs.open(result.output_folder)
     (fov,) = inputs.fovs()
     assert (fov.axes_from, fov.t_count, fov.c_count) == ("confirmed", 3, 1)
     np.testing.assert_array_equal(inputs.read_plane(fov, t=2), stack[2:3])
     for t in range(3):
-        np.testing.assert_array_equal(inputs.read_mask(fov, "Cells", t=t), labels)
+        np.testing.assert_array_equal(inputs.read_mask(fov, "Cells", t=t), labels[t])
 
 
 def test_labels_are_checked_on_every_read(tmp_path):
@@ -233,34 +234,35 @@ def test_the_design_is_read_with_the_strict_reader(tmp_path):
 
 def test_a_header_naming_x_before_y_is_read_y_before_x(tmp_path):
     # Owner rule (design v0.4 change log): the header names the axes, so reordering is exact.
-    stored = np.arange(2 * 2 * 5 * 7, dtype=np.uint16).reshape(2, 2, 5, 7)  # Z, C, X, Y
-    write_data(tmp_path / "exp/ctrl/a.tif", stored, "ZCXY")
-    result = run_experiment(tmp_path / "exp", prefill_mapping("ZCXY"))
+    stored = np.arange(2 * 2 * 5 * 7, dtype=np.uint16).reshape(2, 2, 5, 7)  # T, C, X, Y
+    write_data(tmp_path / "exp/ctrl/a.tif", stored, "TCXY")
+    result = run_experiment(tmp_path / "exp", prefill_mapping("TCXY"))
     assert result.written, result.issues
     inputs = RunInputs.open(result.output_folder)
     (fov,) = inputs.fovs()
-    canonical = stored.transpose(0, 1, 3, 2)  # Z, C, Y, X
-    np.testing.assert_array_equal(inputs.read_plane(fov, z=1), canonical[1])
+    canonical = stored.transpose(0, 1, 3, 2)  # T, C, Y, X
+    np.testing.assert_array_equal(inputs.read_plane(fov, t=1), canonical[1])
     image = inputs.read_image(fov)
-    assert image.shape == (1, 2, 2, 7, 5)
-    np.testing.assert_array_equal(np.asarray(image)[0], canonical)
+    assert image.shape == (2, 1, 2, 7, 5)
+    np.testing.assert_array_equal(np.asarray(image)[:, 0], canonical)
 
 
 def test_read_image_is_t_z_c_y_x_whatever_the_stored_order(tmp_path):
-    stored = np.random.default_rng(1).integers(0, 999, (3, 2, 2, 6, 8), dtype=np.uint16)
+    # Channels stored before time points (Z-stacks are refused since 5 November 2026).
+    stored = np.random.default_rng(1).integers(0, 999, (2, 3, 6, 8), dtype=np.uint16)
     path = tmp_path / "exp/ctrl/a.ome.tif"
     path.parent.mkdir(parents=True)
-    tifffile.imwrite(path, stored, ome=True, photometric="minisblack", metadata={"axes": "ZTCYX"})
+    tifffile.imwrite(path, stored, ome=True, photometric="minisblack", metadata={"axes": "CTYX"})
     with tifffile.TiffFile(path) as tif:
-        assert tif.series[0].axes == "ZTCYX"
-    result = run_experiment(tmp_path / "exp", prefill_mapping("ZTCYX"))
+        assert tif.series[0].axes == "CTYX"
+    result = run_experiment(tmp_path / "exp", prefill_mapping("CTYX"))
     inputs = RunInputs.open(result.output_folder)
     (fov,) = inputs.fovs()
-    assert (fov.z_count, fov.t_count, fov.c_count) == (3, 2, 2)
+    assert (fov.z_count, fov.t_count, fov.c_count) == (1, 3, 2)
     np.testing.assert_array_equal(
-        np.asarray(inputs.read_image(fov)), stored.transpose(1, 0, 2, 3, 4)
+        np.asarray(inputs.read_image(fov)), stored.transpose(1, 0, 2, 3)[:, None]
     )
-    np.testing.assert_array_equal(inputs.read_plane(fov, z=2, t=1), stored[2, 1])
+    np.testing.assert_array_equal(inputs.read_plane(fov, t=1), stored[:, 1])
 
 
 @pytest.fixture
@@ -316,13 +318,13 @@ def test_a_mask_changed_or_moved_before_opening_is_refused(stated, tmp_path):
 def test_ome_zarr_label_images_are_read_by_their_pairing(tmp_path):
     pytest.importorskip("zarr")
     image = np.random.default_rng(2).integers(0, 99, (2, 4, 5)).astype(np.uint8)
-    path = write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", image, "zyx")
+    path = write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", image, "tyx")
     labels = np.zeros((2, 4, 5), np.uint16)
     labels[1, 1:3, 1:3] = 3
-    write_labels(path, {"cells": labels}, "zyx")
-    result = run_experiment(tmp_path / "exp", prefill_mapping("ZYX"))
+    write_labels(path, {"cells": labels}, "tyx")
+    result = run_experiment(tmp_path / "exp", prefill_mapping("TYX"))
     assert result.written, result.issues
     inputs = RunInputs.open(result.output_folder)
     assert inputs.mask_types() == ("cells",)
-    np.testing.assert_array_equal(inputs.read_mask("ctrl/a.ome.zarr", "cells", z=1), labels[1])
-    np.testing.assert_array_equal(np.asarray(inputs.read_image("ctrl/a.ome.zarr"))[0, :, 0], image)
+    np.testing.assert_array_equal(inputs.read_mask("ctrl/a.ome.zarr", "cells", t=1), labels[1])
+    np.testing.assert_array_equal(np.asarray(inputs.read_image("ctrl/a.ome.zarr"))[:, 0, 0], image)

@@ -201,8 +201,8 @@ def _mask_axes_option(parser: argparse.ArgumentParser) -> None:
         metavar="TYPE=ROLES",
         help="the axes of a mask type, one role (Y, X, Z or T) per axis as stored, stated "
         "once per type: Cells=TYX for plain stacks of time points whose files do not name "
-        "their axes; Cells=YX for one 2D mask shared by every plane of its image, needed "
-        "even when the mask's metadata names YX (repeatable)",
+        "their axes; a 2D mask needs none, and Cells=YX (one 2D mask shared by every plane "
+        "of its image) is refused: a mask has its image's time points (repeatable)",
     )
 
 

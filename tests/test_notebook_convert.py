@@ -37,7 +37,7 @@ PreprocessingNotebook = importlib.import_module(
 ).PreprocessingNotebook
 
 NAMES = ("ctrl/r1/a.tif", "ctrl/r1/b.tif", "drug/r1/a.tif")
-SWAPPED = AxisMapping("ZYX", ("Z", "X", "Y"))
+SWAPPED = AxisMapping("TYX", ("T", "X", "Y"))
 
 
 def swapped_experiment(root, names=NAMES, sizes=(0.5, 0.7)):
@@ -47,7 +47,7 @@ def swapped_experiment(root, names=NAMES, sizes=(0.5, 0.7)):
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         data = rng.integers(0, 255, (2, 6, 9), dtype=np.uint8)
-        metadata = {"axes": "ZYX", "PhysicalSizeX": sizes[0], "PhysicalSizeY": sizes[1]}
+        metadata = {"axes": "TYX", "PhysicalSizeX": sizes[0], "PhysicalSizeY": sizes[1]}
         tifffile.imwrite(path, data, ome=True, photometric="minisblack", metadata=metadata)
     return root
 
@@ -112,7 +112,7 @@ def test_the_card_is_offered_under_the_axis_check_for_swapped_axes(tmp_path):
 def test_the_card_is_offered_for_plain_stacks_and_uses_the_confirmed_roles(tmp_path):
     root = plain_experiment(tmp_path / "exp")
     nb, _ = checked(root)
-    nb.role_dropdowns[0].value = "Z"
+    nb.role_dropdowns[0].value = "T"  # was Z: Z-stacks are refused (5 November 2026)
     assert ui.is_visible(nb.convert_card)  # axes_not_named: a warning, the roles can be confirmed
     nb.preview_button.click()
     nb.preview_checked.button.click()
@@ -126,7 +126,7 @@ def test_the_card_is_offered_for_plain_stacks_and_uses_the_confirmed_roles(tmp_p
     nb.convert_button.click()
     record, _ = read_conversion_record(tmp_path / "copies")
     assert {e.reason for e in record.files} == {"axes_not_named"}
-    assert record.mapping.roles == ("Z", "Y", "X")
+    assert record.mapping.roles == ("T", "Y", "X")
 
 
 def test_an_embedding_brick_that_hides_the_output_folder_does_not_get_the_card(tmp_path):
@@ -157,7 +157,7 @@ def test_the_button_waits_for_the_roles_and_the_folder(tmp_path):
     shown = text(nb.convert_roles)
     assert "Y (height) in the file → X" in shown and "X (width) in the file → Y" in shown
     # Changing a role takes the answer back: the copies are never written with other roles.
-    nb.role_dropdowns[0].value = "T"
+    nb.role_dropdowns[0].value = "C"
     assert not nb.convert_roles_checked.value and nb.convert_button.disabled
     assert not (tmp_path / "copies").exists()
 
@@ -393,7 +393,7 @@ def test_end_to_end_convert_check_the_copies_with_header_axes_and_run(tmp_path):
     assert nb.folder.value == str(copies) and nb.output.value == str(output)
     assert nb.preflight is not None and nb.preflight.discovery.root == copies
     assert nb.preflight.ok
-    assert "".join(nb.mapping.roles) == "ZYX"  # suggested from the copies' named axes
+    assert "".join(nb.mapping.roles) == "TYX"  # suggested from the copies' named axes
     assert not ui.is_visible(nb.convert_card)  # nothing to convert any more
     nb.labels_confirmed.button.click()
     assert not nb._design_pending()  # the design answered on the originals is kept

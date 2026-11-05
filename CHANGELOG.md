@@ -10,6 +10,31 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 Small changes for the final v0.4.0 since v0.4.0rc5 (#147). No version bump yet.
 
+- **MorphoBricks v1 is 2-D per plane** (owner decision of 5 November 2026, tracker row 36;
+  plan §12 question 76; contract §2, §9, §15). 3-D feature extraction will be a separate
+  project.
+  - **Z-stacks are refused:** an image with more than one depth slice is the new error
+    `z_stack_not_supported`, naming every such image with its number of slices and saying
+    to project the stack first (for example a maximum-intensity projection in Fiji) and use
+    the projected image. It is found from the Z axis the header names (ImageJ, OME-TIFF,
+    shaped TIFF, OME-Zarr; `check_metadata`) and again under the confirmed roles (a plain
+    stack given a Z role; `review_axes`, which supersedes it), before any pixel is read, so
+    `check`, `run` and `convert` stop before writing anything but the report. A header Z
+    confirmed as another role (an ImageJ time-lapse tifffile reads as Z) stays the axis
+    error `axes_contradict_header`, so `convert` can still fix it. A Z axis of
+    one slice is accepted as it is. Nothing is projected or squeezed; a recorded projection
+    step is planned after the release.
+  - **The stated shared 2-D mask is removed:** `--mask-axes TYPE=YX` (and YX under the
+    notebook's Mask axes), which made one 2-D mask stand for every plane of its image, is
+    the new error `shared_mask_not_supported`; the notebook no longer offers it, and a
+    `YX` statement recorded by an earlier run is not applied again. A 2-D mask of a
+    time-lapse is `mask_planes_mismatch`, whose message now says that the masks must have
+    the image's time points (T); `mask_planes_differ` no longer names a statement.
+    `MaskFile.shared` and `mask_review.SHARED_CODE(S)` are removed, the manifest no longer
+    writes a mask's `shared` key, and `RunInputs.open` refuses a manifest recording
+    `shared: true` (`mask_record.shared_mask_text`, replacing `unstated_shared_text`).
+    Plain-stack masks with stated axes (`--mask-axes Cells=TYX`) are unchanged.
+  - The other bricks are not changed; their own Z-plane policies stay as a second defence.
 - **`check --missing-as-singleton`** (matrix finding F10, owner decision of 4 November
   2026; plan §12 question 75): `check` takes `run`'s option (`--missing-as-singleton`,
   `--no-missing-as-singleton`), with the same default (the earlier run's answer in the
@@ -21,7 +46,8 @@ Small changes for the final v0.4.0 since v0.4.0rc5 (#147). No version bump yet.
   the earlier run is printed by `check` and `run` ("Images lacking some axes: read with one
   plane along them, as confirmed for the earlier run"). The notebook's check report takes the answer step 2
   shows (the earlier run's), which step 2 still asks for before the run.
-- **A 2-D mask is shared by a Z-stack or time-lapse only when stated** (owner decision of
+- **A 2-D mask is shared by a Z-stack or time-lapse only when stated** (superseded by
+  the removal above; owner decision of
   4 November 2026, reversing the mask half of F10/#148; plan §12 question 75; contract §9,
   §15): a 2-D mask whose metadata names `YX` (TIFF, OME-TIFF, also OME metadata tifffile
   writes by itself, and OME-Zarr label images) is no longer shared by its image's planes

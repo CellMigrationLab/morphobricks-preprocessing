@@ -21,12 +21,12 @@ names may not differ only in case. Only headers are read here, never pixels: a m
 image's Y and X sizes and integer or boolean pixels. Its other dimensions (length-1 axes
 aside; Y and X are kept whatever their length, so a mask one pixel high is a 2D ``YX`` mask)
 must be labelled depth (Z) or time (T) in its own metadata, or stated once per mask type
-(``--mask-axes Cells=TYX``; ``Cells=YX`` for one 2D mask shared by every plane), never
-guessed. Masks are never converted or reordered (design v0.4 §3), and every
-mask of one image has the same depth slices and time points. Whether those are the image's
-planes needs the confirmed axis roles: :func:`mask_plane_issues`, run by
-:func:`.run.run_experiment` (issue #36). Reading the pixels and relating the masks to each
-other is :mod:`.mask_scan`.
+(``--mask-axes Cells=TYX``), never guessed; a 2D mask is never shared by several planes
+(``Cells=YX`` is refused, owner decision of 5 November 2026). Masks are never converted or
+reordered (design v0.4 §3), and every mask of one image has the same depth slices and time
+points. Whether those are the image's planes needs the confirmed axis roles:
+:func:`mask_plane_issues`, run by :func:`.run.run_experiment` (issue #36). Reading the pixels
+and relating the masks to each other is :mod:`.mask_scan`.
 """
 
 from __future__ import annotations

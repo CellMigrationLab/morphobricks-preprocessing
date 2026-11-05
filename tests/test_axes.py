@@ -21,8 +21,18 @@ def meta(path, shape, axes, dtype="uint16"):
     return TiffMetadata(path, True, tuple(shape), np.dtype(dtype), axes, 1, 1)
 
 
+Z_STACK = "z_stack_not_supported"
+"""Refused beside the axis rules tested here since the owner decision of 5 November 2026
+(``test_2d_planes_only.py``); these tests set it aside."""
+
+
 def codes(issues):
-    return [issue.code for issue in issues]
+    return [issue.code for issue in issues if issue.code != Z_STACK]
+
+
+def axes_ok(review):
+    """True when no error but a Z-stack's stops the review."""
+    return not any(i.is_error and i.code != Z_STACK for i in review.issues)
 
 
 def issue(issues, code):
@@ -205,7 +215,7 @@ def test_review_assigns_the_mapping_to_every_file():
     files = [meta("a.tif", (2, 3, 8, 8), "ZCYX"), meta("b.tif", (4, 3, 9, 9), "ZCYX")]
     mapping = prefill_mapping("ZCYX")
     review = review_axes(files, mapping)
-    assert review.ok and review.issues == ()
+    assert axes_ok(review) and codes(review.issues) == []
     assert dict(review.file_mappings) == {"a.tif": mapping, "b.tif": mapping}
 
 
@@ -234,7 +244,7 @@ def test_missing_axis_blocks_until_confirmed():
 def test_confirmed_missing_axis_is_read_as_singleton():
     files = [meta("a.tif", (2, 3, 8, 8), "ZTYX"), meta("b.tif", (2, 8, 8), "ZYX")]
     review = review_axes(files, prefill_mapping("ZTYX"), missing_as_singleton=True)
-    assert review.ok
+    assert axes_ok(review)
     b = review.file_mappings["b.tif"]
     assert b == AxisMapping("ZYX", "ZYX", singleton_roles=("T",))
     assert b.plane_roles == ("Z", "T")

@@ -339,6 +339,9 @@ def recorded_mask_axes(manifest: RunManifest, *, labels_only: bool = False) -> d
     Returns
     -------
     dict
+        Without ``YX``: a release candidate's shared 2-D mask, an option removed by the
+        owner decision of 5 November 2026. Reapplied, it would refuse every later run with
+        no way to withdraw it; left out, each such mask is checked as the 2-D mask it is.
     """
     masks = manifest.masks or {}
     return {
@@ -346,6 +349,7 @@ def recorded_mask_axes(manifest: RunManifest, *, labels_only: bool = False) -> d
         for entry in masks.get("files", ())
         if entry.get("axes_from") == "stated"
         and entry.get("roles")
+        and str(entry["roles"]) != "YX"
         and (not labels_only or entry.get("source") == OME_ZARR)
     }
 
