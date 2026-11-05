@@ -115,3 +115,36 @@ corrected or re-annotated automatically.
 
 After v0.4.0 and after the MorphoEmbed and MorphoObjects migrations to `RunInputs` (phase 1
 of the MorphoBricks sequence). In the phase 2 triage, the owner places it in a bucket.
+
+## P1. Explicit projection step (owner, 2026-11-05)
+
+**Context:** v1 analyses 2-D planes only. Preprocessing refuses Z>1 and allows Z=1
+(#173, plan question 76); the stated shared 2-D mask is removed. A Z-stack can still be
+analysed in 2-D if the user projects it first, as a step of its own. 3-D analysis is a separate
+project: [MorphoFeature#157](https://github.com/CellMigrationLab/MorphoFeature/issues/157).
+
+**What it does:**
+- writes new 2-D images; the source image is never changed;
+- the user chooses the method: `max`, `mean` or `sum`, or keep one stated slice. There is no
+  default;
+- the manifest records the method and the source image's SHA-256;
+- the projected image becomes the FOV, linked to its stack;
+- a stack with 3-D masks is refused.
+
+**Acceptance:**
+- the output is deterministic: the same stack and method give the same bytes;
+- the projection is recorded and visible in the run manifest;
+- nothing is projected implicitly: a Z>1 image without a projection step is still refused.
+
+## P2. Experiment schema (MorphoBricks-Spec#1)
+
+An experiment-schema RFC is open at
+[MorphoBricks-Spec#1](https://github.com/CellMigrationLab/MorphoBricks-Spec/issues/1). Its
+feasibility audit is
+[rfc1-feasibility-2026-11-05.md](https://github.com/CellMigrationLab/MorphoBricks-Spec/blob/claude/youthful-carson-klzm3w/docs/audits/rfc1-feasibility-2026-11-05.md).
+It recommends a reduced version after the release, in TOML or strict JSON rather than YAML.
+
+Staged plan from the audit:
+- **Stage 0:** owner decisions, then M0 (docs, schema, fixtures);
+- **Stage 1:** an additive preprocessing v0.5 with a semantic channel API;
+- **Stage 2:** mixed channel layouts, only if datasets need them.
