@@ -619,7 +619,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | RGB `S` axis (Q3) | Prefilled as C, confirmed like any role |
 | Significant bits (Q4) | Manifest only, information only; `bit_depth` and binning unchanged |
 | Corrupt files (Q6) | Explicit exclusion list, recorded in manifest, rows removed |
-| Notebook target | Google Colab and JupyterLab from one file, following LabConstrictor's notebook portability guide (plan Q58; was local Jupyter only): `# @title` cells, Colab-only code (Drive mount, custom widget manager) inside `if "google.colab" in sys.modules:`, no magics, GitHub install pinned to `RELEASE_TAG` |
+| Notebook target | Google Colab and JupyterLab/LabConstrictor from one file, following LabConstrictor's notebook portability guide: two `# @title` code cells, explicit `display(notebook.app())`, Colab-only Drive mount inside `if "google.colab" in sys.modules:`, no magics, core ipywidgets 7.7/8 compatibility, no forced widget restart/custom manager, remote install pinned to immutable `RELEASE_REF` |
 | CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--histogram-range`, `--robust-quantiles`, `--memory-limit 2GiB`, `--missing-as-singleton` (also on `check`, F10), `--mode restart|full`, `--no-masks`, `--no-exclude`, `--remove-stale-lock`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata (amended 3 November 2026, plan §12 question 73: when every image names all its axes, `run` uses those roles without `--axes` and prints them as the images name them; plain stacks still need `--axes`). Exit 1 on errors |
 | Large planes (Q15) | Planes over the memory limit are read in blocks automatically, announced by the warning `planes_read_in_blocks` and `read_in_blocks` in the manifest. Block size derived from the limit (whole strips/tiles/chunks, uncompressed pieces and chunks also by rows). Compressed single-strip/tile planes keep the `plane_over_memory_limit` error. Two-pass histograms identical to whole planes. (Up to v0.3, OME-Zarr copies were written block by block; conversion was removed in v0.4.0.) Axis preview reduced (every n-th pixel) with a caption saying so |
 | Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Up to v0.3 their public names stayed importable from `morphobricks_preprocessing` and the old submodules, with a `DeprecationWarning`; those stand-ins (`_moved.py`) were removed in v0.4.0 (plan Q46). The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, now §6.2 for the CSV) |
@@ -720,8 +720,9 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 The lab's standard is the notebooks in
 [CellMigrationLab/nucleisky](https://github.com/CellMigrationLab/nucleisky) and
 [CellMigrationLab/LabChronicle](https://github.com/CellMigrationLab/LabChronicle). They use
-plain ipywidgets 8 with injected CSS and copy their helpers into each notebook; here the
-helpers live in `notebook_style.py` so all steps stay consistent. The user found the first,
+plain core ipywidgets with injected CSS and copy their helpers into each notebook; here the
+helpers live in `notebook_style.py` so all steps stay consistent. The notebook UI must remain
+compatible with both ipywidgets 7.7 (Colab) and 8 (modern JupyterLab). The user found the first,
 plainer version "not interactive enough". Descriptive, guided and forgiving is the bar.
 
 ### Notebook file (`notebooks/MorphoBricks_Preprocessing.ipynb`)
