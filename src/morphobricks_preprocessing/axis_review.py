@@ -29,10 +29,14 @@ from .axis_check import (
 from .metadata import (
     MetadataReport,
     TiffMetadata,
-    channel_count_issues,
     header_depth_slices,
 )
-from .size_checks import CONVERT_KEEPS_ORDER, role_plane_counts, z_stack_issues
+from .size_checks import (
+    CONVERT_KEEPS_ORDER,
+    channel_count_issues,
+    role_plane_counts,
+    z_stack_issues,
+)
 from .validation import ValidationIssue, error, plural
 
 
@@ -340,17 +344,20 @@ def _count_issues(
 ) -> list[ValidationIssue]:
     """Report different channel counts and Z-stacks under each file's confirmed roles.
 
-    An image is a Z-stack when its confirmed Z role, or the Z axis its header names, has
-    more than one slice: a plain stack confirmed ``ZYX`` and an image whose roles
-    contradict its header are refused alike (owner decision of 5 November 2026).
+    An image is a Z-stack when its confirmed Z role has more than one slice (a plain stack
+    confirmed ``ZYX`` too; owner decision of 5 November 2026); a file the mapping does not
+    fit is measured by the Z its header names. An ImageJ time-lapse whose header names Z
+    and whose roles are confirmed ``T`` is the axis error ``axes_contradict_header``, never
+    read, whose fix (named-axis copies, ``convert``) this error would otherwise block.
     """
     channels, slices = {}, {}
     for f in readable:
         mapping = file_mappings.get(f.relative_path)
-        by_role = 1 if mapping is None else role_plane_counts(f.shape, mapping.roles)["Z"]
-        slices[f.relative_path] = max(by_role, header_depth_slices(f))
-        if mapping is not None:
-            channels[f.relative_path] = channel_count(f, mapping)
+        if mapping is None:
+            slices[f.relative_path] = header_depth_slices(f)
+            continue
+        slices[f.relative_path] = role_plane_counts(f.shape, mapping.roles)["Z"]
+        channels[f.relative_path] = channel_count(f, mapping)
     return [*channel_count_issues(channels), *z_stack_issues(slices)]
 
 

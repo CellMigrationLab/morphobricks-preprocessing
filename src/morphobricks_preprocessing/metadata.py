@@ -34,6 +34,7 @@ from .pixel_size_checks import pixel_size_issues
 from .size_checks import (
     CONVERT_KEEPS_ORDER,
     breakdown,
+    channel_count_issues,
     image_size_issues,
     lettered_plane_counts,
     plane_count_issues,
@@ -655,46 +656,6 @@ def _check_dimensions(files: list[TiffMetadata]) -> list[ValidationIssue]:
 def header_channel_count(f: TiffMetadata) -> int:
     """Return the channel count the header suggests: the C axis, else the RGB samples."""
     return f.length("C") if "C" in f.axes else f.length("S")
-
-
-def channel_count_issues(counts: Mapping[str, int]) -> list[ValidationIssue]:
-    """Report images with different numbers of channels (normalization plan N43).
-
-    Each row of ``plane_histograms.csv`` holds every channel of a plane, so all
-    images of an experiment must have the same number of channels.
-
-    Parameters
-    ----------
-    counts
-        Number of channels of each image, by relative path.
-
-    Returns
-    -------
-    list of ValidationIssue
-        The error ``different_channel_counts`` naming the images not having the
-        most common number, or nothing.
-    """
-    groups: dict[int, list[str]] = {}
-    for path, count in sorted(counts.items()):
-        groups.setdefault(count, []).append(path)
-    if len(groups) < 2:
-        return []
-    ordered = sorted(groups.items(), key=lambda item: (-len(item[1]), item[0]))
-    summary = ", ".join(
-        f"{plural(count, 'channel')} ({plural(len(paths), 'image')})" for count, paths in ordered
-    )
-    return [
-        error(
-            "different_channel_counts",
-            f"The images have different numbers of channels: {summary}. Each row of the "
-            "histogram table holds every channel of a plane, so every image of an experiment "
-            "must have the same channels. The images listed are those without the most "
-            "common number of channels.",
-            sorted(path for _, paths in ordered[1:] for path in paths),
-            "Split the images with other channels into a separate experiment, or exclude "
-            "them. If a channel axis was assigned the wrong role, correct the axis roles.",
-        )
-    ]
 
 
 def header_depth_slices(f: TiffMetadata) -> int:

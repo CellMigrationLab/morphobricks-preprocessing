@@ -19,7 +19,9 @@ Small changes for the final v0.4.0 since v0.4.0rc5 (#147). No version bump yet.
     the projected image. It is found from the Z axis the header names (ImageJ, OME-TIFF,
     shaped TIFF, OME-Zarr; `check_metadata`) and again under the confirmed roles (a plain
     stack given a Z role; `review_axes`, which supersedes it), before any pixel is read, so
-    `check`, `run` and `convert` stop before writing anything but the report. A Z axis of
+    `check`, `run` and `convert` stop before writing anything but the report. A header Z
+    confirmed as another role (an ImageJ time-lapse tifffile reads as Z) stays the axis
+    error `axes_contradict_header`, so `convert` can still fix it. A Z axis of
     one slice is accepted as it is. Nothing is projected or squeezed; a recorded projection
     step is planned after the release.
   - **The stated shared 2-D mask is removed:** `--mask-axes TYPE=YX` (and YX under the

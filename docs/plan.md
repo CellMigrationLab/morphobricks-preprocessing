@@ -1915,7 +1915,8 @@ Raised during review; to be decided before the milestones that need them:
     preprocessing, before anything but the report is written: the error
     `z_stack_not_supported` names every such image with its number of slices, from the Z
     axis its header names (`check_metadata`) and again under the confirmed roles
-    (`review_axes`, which supersedes it), and says to project the stack first (for example
+    (`review_axes`, which supersedes it; a header Z confirmed as T stays the axis error
+    `axes_contradict_header`, which `convert` fixes), and says to project the stack first (for example
     a maximum-intensity projection in Fiji) and use the projected image. Z = 1, named or
     not, stays allowed; nothing is squeezed, guessed or projected (an explicit, recorded
     projection step is post-release). (2) T > 1 is allowed only when the masks have the

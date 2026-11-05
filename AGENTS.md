@@ -371,7 +371,7 @@ functions the tests use.
   C axis, 1 without one, also for a confirmed missing C), else the error
   `different_channel_counts`: from the headers in `metadata.check_metadata` (C, or S
   without C) and from the confirmed roles in `review_axes`, which supersedes it
-  (`axes._SUPERSEDED_METADATA_CODES`). Shared builder `metadata.channel_count_issues`.
+  (`axes._SUPERSEDED_METADATA_CODES`). Shared builder `size_checks.channel_count_issues`.
 - **OME-Zarr axes:** translated from OME-NGFF metadata (`zarr_input.ngff_axes`: time -> T,
   channel -> C, space z/y/x -> Z/Y/X, anything else -> Q). The experiment mapping is
   defined on the TIFF arrangement if there are TIFFs; every OME-Zarr image, also one with
