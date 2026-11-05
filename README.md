@@ -99,6 +99,8 @@ download installs from GitHub if needed (internet access and Git required).
 
 ### Notebook: Google Colab and JupyterLab
 
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CellMigrationLab/morphobricks-preprocessing/blob/main/notebooks/MorphoBricks_Preprocessing.ipynb)
+
 [`notebooks/MorphoBricks_Preprocessing.ipynb`](notebooks/MorphoBricks_Preprocessing.ipynb)
 runs unchanged in Google Colab and in JupyterLab (also as a LabConstrictor app). It follows
 LabConstrictor's
