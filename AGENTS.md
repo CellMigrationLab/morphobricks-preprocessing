@@ -708,7 +708,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
   - Colab-only code and `/content` paths only inside the Colab guard; no magics;
   - the GitHub install pinned to `RELEASE_TAG`, equal to `current_version` and the
     version index;
-  - Step 0 bootstraps the environment; later code cells only call `notebook_ui`;
+  - The single runnable cell bootstraps the environment and then displays only widgets built by `notebook_ui`;
   - the buttons it names exist;
   - its cells execute, by `exec` and in a real kernel (`nbclient`, `tests/test_notebook_file.py`;
     Step 0's alternatives in `tests/test_notebook_setup.py`).
@@ -744,8 +744,8 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
     or GitHub installation of the release `RELEASE_TAG`, with missing requirements
     installed using the kernel's Python (`subprocess`, never `!pip`); on Colab with the
     `zarr` extra too. Colab-only code
-    (Drive mount, `output.enable_custom_widget_manager()`) stays inside
-    `if "google.colab" in sys.modules:`; no `/content` path outside it. `current_version`
+    (Drive mount) stays inside `if "google.colab" in sys.modules:`; no `/content` path
+    outside it, and no custom widget manager is enabled. `current_version`
     and `notebook_name` are LabConstrictor's names; at each release the pin moves
     (plan §10, release checklist).
   - Later cells are one call each, e.g. `notebook.folder_step()`.
