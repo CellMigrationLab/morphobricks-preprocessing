@@ -181,7 +181,9 @@ def colab(monkeypatch):
     return calls
 
 
-def test_colab_mounts_drive_without_a_custom_widget_manager(setup_environment, monkeypatch, capsys):
+def test_colab_mounts_drive_without_a_custom_widget_manager(
+    setup_environment, monkeypatch, capsys
+):
     calls = colab(monkeypatch)
     setup_environment.start()
     assert calls == ["/content/drive"]
