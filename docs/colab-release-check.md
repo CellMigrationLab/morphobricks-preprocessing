@@ -18,17 +18,17 @@ Report a failure as an issue before the final tag.
 
 ## A. Fresh runtime and app rendering
 
-1. Open the notebook on a fresh Google Colab runtime and run the first setup cell.
+1. Open the notebook on a fresh Google Colab runtime and run its single code cell.
    - [ ] Drive authorisation appears and the mount succeeds.
    - [ ] Setup reports the expected notebook, preprocessing, normalization and ipywidgets
      versions and the pinned source revision.
    - [ ] No ipywidgets upgrade or runtime restart is requested.
-2. Run the second cell.
+2. In the same cell output:
    - [ ] The complete preprocessing app renders inline; Colab does not open the Code snippets
      pane instead of the widget.
    - [ ] Buttons, dropdowns, accordions, preview image, sliders, progress bars and matplotlib
      plots render and react.
-3. Repeat the same two-cell smoke test in JupyterLab/LabConstrictor.
+3. Repeat the same single-cell smoke test in JupyterLab/LabConstrictor.
    - [ ] The same app renders and uses local paths without executing Colab-only setup.
 
 ## B. Step 1 (PR #118)
