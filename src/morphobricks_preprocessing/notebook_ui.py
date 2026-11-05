@@ -1,7 +1,7 @@
 """Widgets for the biologist-facing notebook.
 
-The notebook ``notebooks/MorphoBricks_Preprocessing.ipynb`` shows the four steps of
-:class:`PreprocessingNotebook`, one per cell:
+The notebook ``notebooks/MorphoBricks_Preprocessing.ipynb`` displays the four steps of
+:class:`PreprocessingNotebook` together in one widget application:
 
 1. **Folder** - choose the experiment folder, check it, confirm the labels
    taken from the folder names, and confirm the experiment design: which
@@ -197,19 +197,6 @@ class PreprocessingNotebook(
         self._refresh_run_step()
 
     # Pages -------------------------------------------------------------------------------
-
-    def app(self) -> widgets.VBox:
-        """Return the complete preprocessing notebook as one continuous widget app."""
-        return widgets.VBox(
-            [
-                self.welcome(),
-                self.folder_step(),
-                self.axis_step(),
-                self.run_step(),
-                self.results_step(),
-            ],
-            layout=widgets.Layout(width="99%"),
-        )
 
     def welcome(self) -> widgets.Widget:
         """Confirm that the notebook started, with the package version and what to do next."""

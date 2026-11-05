@@ -65,7 +65,28 @@ def setup_environment(tmp_path, monkeypatch):
 
     def import_interface(name):
         state.imports.append(name)
-        return SimpleNamespace(PreprocessingNotebook=lambda: SimpleNamespace())
+        if name == "morphobricks_preprocessing":
+            return SimpleNamespace(__file__="/tmp/morphobricks_preprocessing/__init__.py")
+
+        import ipywidgets as widgets
+
+        class FakeNotebook:
+            def welcome(self):
+                return widgets.HTML("welcome")
+
+            def folder_step(self):
+                return widgets.HTML("folder")
+
+            def axis_step(self):
+                return widgets.HTML("axes")
+
+            def run_step(self):
+                return widgets.HTML("run")
+
+            def results_step(self):
+                return widgets.HTML("results")
+
+        return SimpleNamespace(PreprocessingNotebook=FakeNotebook)
 
     monkeypatch.setattr(importlib, "import_module", import_interface)
 
@@ -85,7 +106,10 @@ def checkout_at(path):
     package = path / "src/morphobricks_preprocessing"
     package.mkdir(parents=True)
     (package / "__init__.py").write_text("", encoding="utf-8")
-    (path / "pyproject.toml").write_text("", encoding="utf-8")
+    (path / "pyproject.toml").write_text(
+        '[project]\nname = "morphobricks-preprocessing"\nversion = "0.4.0rc6"\n',
+        encoding="utf-8",
+    )
     return path
 
 
@@ -93,9 +117,12 @@ def test_setup_reuses_the_matching_installed_release(setup_environment, capsys):
     state = setup_environment
     state.start()
     assert state.installs == []
-    assert state.imports == ["morphobricks_preprocessing.notebook_ui"]
+    assert state.imports == [
+        "morphobricks_preprocessing.notebook_ui",
+        "morphobricks_preprocessing",
+    ]
     out = capsys.readouterr().out
-    assert "Ready. MorphoBricks preprocessing 0.4.0rc6" in out
+    assert "Ready: preprocessing 0.4.0rc6" in out
     assert "ipywidgets 7.7.1" in out
 
 
@@ -110,7 +137,7 @@ def test_setup_installs_missing_package_from_the_exact_commit(setup_environment,
     assert target.startswith("morphobricks-preprocessing[notebook] @ git+")
     assert target.endswith("@" + namespace["RELEASE_REF"])
     assert namespace["RELEASE_REF"] == "d6930b80f26bce1b12762940d3c9ed44b038949f"
-    assert "release v0.4.0rc6" in capsys.readouterr().out
+    assert "pinned v0.4.0rc6 candidate" in capsys.readouterr().out
 
 
 def test_setup_replaces_a_mismatched_installed_release(setup_environment):

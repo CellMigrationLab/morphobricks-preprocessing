@@ -619,7 +619,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | RGB `S` axis (Q3) | Prefilled as C, confirmed like any role |
 | Significant bits (Q4) | Manifest only, information only; `bit_depth` and binning unchanged |
 | Corrupt files (Q6) | Explicit exclusion list, recorded in manifest, rows removed |
-| Notebook target | Google Colab and JupyterLab/LabConstrictor from one file, following LabConstrictor's notebook portability guide: two `# @title` code cells, explicit `display(notebook.app())`, Colab-only Drive mount inside `if "google.colab" in sys.modules:`, no magics, core ipywidgets 7.7/8 compatibility, no forced widget restart/custom manager, remote install pinned to immutable `RELEASE_REF` |
+| Notebook target | Google Colab and JupyterLab/LabConstrictor from one file, following LabConstrictor's notebook portability guide: one `# @title` runnable cell, explicit `display()` of the existing notebook pages, Colab-only Drive mount inside `if "google.colab" in sys.modules:`, no magics, core ipywidgets 7.7/8 compatibility, no forced widget restart/custom manager, remote install pinned to immutable `RELEASE_REF` |
 | CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--histogram-range`, `--robust-quantiles`, `--memory-limit 2GiB`, `--missing-as-singleton` (also on `check`, F10), `--mode restart|full`, `--no-masks`, `--no-exclude`, `--remove-stale-lock`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata (amended 3 November 2026, plan §12 question 73: when every image names all its axes, `run` uses those roles without `--axes` and prints them as the images name them; plain stacks still need `--axes`). Exit 1 on errors |
 | Large planes (Q15) | Planes over the memory limit are read in blocks automatically, announced by the warning `planes_read_in_blocks` and `read_in_blocks` in the manifest. Block size derived from the limit (whole strips/tiles/chunks, uncompressed pieces and chunks also by rows). Compressed single-strip/tile planes keep the `plane_over_memory_limit` error. Two-pass histograms identical to whole planes. (Up to v0.3, OME-Zarr copies were written block by block; conversion was removed in v0.4.0.) Axis preview reduced (every n-th pixel) with a caption saying so |
 | Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Up to v0.3 their public names stayed importable from `morphobricks_preprocessing` and the old submodules, with a `DeprecationWarning`; those stand-ins (`_moved.py`) were removed in v0.4.0 (plan Q46). The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, now §6.2 for the CSV) |
@@ -708,7 +708,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
   - Colab-only code and `/content` paths only inside the Colab guard; no magics;
   - the GitHub install pinned to `RELEASE_TAG`, equal to `current_version` and the
     version index;
-  - Step 0 bootstraps the environment; later code cells only call `notebook_ui`;
+  - The single runnable cell bootstraps the environment and then displays only widgets built by `notebook_ui`;
   - the buttons it names exist;
   - its cells execute, by `exec` and in a real kernel (`nbclient`, `tests/test_notebook_file.py`;
     Step 0's alternatives in `tests/test_notebook_setup.py`).
@@ -744,8 +744,8 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
     or GitHub installation of the release `RELEASE_TAG`, with missing requirements
     installed using the kernel's Python (`subprocess`, never `!pip`); on Colab with the
     `zarr` extra too. Colab-only code
-    (Drive mount, `output.enable_custom_widget_manager()`) stays inside
-    `if "google.colab" in sys.modules:`; no `/content` path outside it. `current_version`
+    (Drive mount) stays inside `if "google.colab" in sys.modules:`; no `/content` path
+    outside it, and no custom widget manager is enabled. `current_version`
     and `notebook_name` are LabConstrictor's names; at each release the pin moves
     (plan §10, release checklist).
   - Later cells are one call each, e.g. `notebook.folder_step()`.

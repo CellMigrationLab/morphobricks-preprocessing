@@ -1,6 +1,5 @@
-"""The standalone notebook file: simple, pinned and executable in a real kernel."""
+"""The standalone notebook file: portable, readable and executable in a real kernel."""
 
-import ast
 import json
 import re
 from pathlib import Path
@@ -16,55 +15,70 @@ def _notebook():
     return json.loads(NOTEBOOK.read_text(encoding="utf-8"))
 
 
-def _code_cells():
-    return ["".join(c["source"]) for c in _notebook()["cells"] if c["cell_type"] == "code"]
+def _code_cell():
+    cells = [cell for cell in _notebook()["cells"] if cell["cell_type"] == "code"]
+    assert len(cells) == 1
+    return cells[0]
+
+
+def _source():
+    return "".join(_code_cell()["source"])
 
 
 def _setting(name):
-    match = re.search(rf'^{name} = "([^"]*)"$', _code_cells()[0], re.M)
+    match = re.search(rf'^{name} = "([^"]*)"$', _source(), re.M)
     assert match is not None, f"the setup cell sets no {name}"
     return match.group(1)
 
 
-def test_notebook_is_small_and_has_no_saved_outputs():
+def test_notebook_is_one_readable_markdown_cell_and_one_runnable_cell():
     notebook = _notebook()
-    code = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
     assert notebook["nbformat"] == 4
-    assert len(notebook["cells"]) == 4
-    assert len(code) == 2
-    assert all(cell["outputs"] == [] and cell["execution_count"] is None for cell in code)
-    for cell in code:
-        first_line = "".join(cell["source"]).splitlines()[0]
-        assert first_line.startswith("# @title "), first_line
-        assert cell["metadata"].get("jupyter", {}).get("source_hidden") is True
+    assert [cell["cell_type"] for cell in notebook["cells"]] == ["markdown", "code"]
+
+    markdown = "".join(notebook["cells"][0]["source"])
+    assert "What it does" in markdown
+    assert "Before you start" in markdown
+    assert "Google Colab" in markdown
+    assert "JupyterLab / LabConstrictor" in markdown
+    assert "\\n" not in markdown
+
+    code = _code_cell()
+    assert code["outputs"] == []
+    assert code["execution_count"] is None
+    assert _source().splitlines()[0].startswith("# @title ")
+    assert code["metadata"].get("jupyter", {}).get("source_hidden") is True
 
 
-def test_setup_cell_needs_no_notebook_dependencies_before_installing():
-    setup = _code_cells()[0]
-    imports = set()
-    for node in ast.walk(ast.parse(setup)):
-        if isinstance(node, ast.Import):
-            imports.update(alias.name.split(".")[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            imports.add(node.module.split(".")[0])
-    assert imports <= {"subprocess", "sys", "importlib", "pathlib", "platform", "google"}
+def test_notebook_uses_stable_page_api_not_a_new_app_method():
+    source = _source()
+    assert "notebook.app(" not in source
+    for call in (
+        "notebook.welcome()",
+        "notebook.folder_step()",
+        "notebook.axis_step()",
+        "notebook.run_step()",
+        "notebook.results_step()",
+    ):
+        assert call in source
+    assert "display(app)" in source
 
 
-def test_colab_setup_mounts_drive_but_does_not_enable_a_custom_widget_manager():
-    setup = _code_cells()[0]
-    assert 'drive.mount("/content/drive")' in setup
-    assert "enable_custom_widget_manager" not in setup
-    assert "ipywidgets 8" not in setup
-    assert "Restart session" not in setup
+def test_colab_setup_mounts_drive_without_custom_widget_manager_or_restart():
+    source = _source()
+    assert 'if "google.colab" in sys.modules:' in source
+    assert 'drive.mount("/content/drive")' in source
+    assert "enable_custom_widget_manager" not in source
+    assert "Restart session" not in source
 
 
 def test_remote_install_is_pinned_to_one_exact_commit():
-    setup = _code_cells()[0]
+    source = _source()
     tag = _setting("RELEASE_TAG")
     ref = _setting("RELEASE_REF")
     assert re.fullmatch(r"v\d+\.\d+\.\d+(rc\d+)?", tag), tag
     assert re.fullmatch(r"[0-9a-f]{40}", ref), ref
-    assert f"@{{RELEASE_REF}}" in setup
+    assert "@{RELEASE_REF}" in source
     assert _setting("current_version") == tag.removeprefix("v")
     assert _setting("REPOSITORY") == (
         "https://github.com/CellMigrationLab/morphobricks-preprocessing.git"
@@ -79,28 +93,6 @@ def test_version_metadata_matches_labconstrictor_index():
         if line and not line.startswith("#")
     )
     assert index == {NOTEBOOK.stem: _setting("current_version")}
-
-
-def test_the_only_app_cell_uses_explicit_display():
-    app = _code_cells()[1].strip()
-    assert app == (
-        "# @title Open the preprocessing app\n"
-        "from IPython.display import display\n\n"
-        "display(notebook.app())"
-    )
-
-
-def test_notebook_app_contains_the_complete_workflow():
-    pytest.importorskip("ipywidgets")
-    pytest.importorskip("matplotlib")
-    import ipywidgets as widgets
-
-    from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook
-
-    notebook = PreprocessingNotebook()
-    app = notebook.app()
-    assert isinstance(app, widgets.VBox)
-    assert len(app.children) == 5
 
 
 def test_notebook_runs_in_a_kernel():
@@ -118,16 +110,12 @@ def test_notebook_runs_in_a_kernel():
         resources={"metadata": {"path": str(NOTEBOOK.parent)}},
     )
     client.execute()
-    code = [cell for cell in notebook.cells if cell.cell_type == "code"]
-    assert not [
-        output
-        for cell in code
-        for output in cell.outputs
-        if output.output_type == "error"
-    ]
-    setup_text = "".join(output.get("text", "") for output in code[0].outputs)
-    assert "Ready. MorphoBricks preprocessing" in setup_text
+
+    code = next(cell for cell in notebook.cells if cell.cell_type == "code")
+    assert not [output for output in code.outputs if output.output_type == "error"]
+    text = "".join(output.get("text", "") for output in code.outputs)
+    assert "Ready: preprocessing" in text
     assert any(
         "application/vnd.jupyter.widget-view+json" in output.get("data", {})
-        for output in code[1].outputs
+        for output in code.outputs
     )
