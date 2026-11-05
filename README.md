@@ -69,7 +69,7 @@ Pre-alpha. Implemented and tested:
   `design` / `convert`)
 
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
-to its release v0.3.3): per-plane histograms with the robust range and the range check
+to its release v0.3.4): per-plane histograms with the robust range and the range check
 (`histogram`, `ranges`), the histogram table (`csv_io`, schema version 4), pooled group statistics
 (`pooling`) and normalization parameters (`normalization`); import them from
 `morphobricks_normalization` (the deprecated paths through `morphobricks_preprocessing` were
@@ -85,7 +85,7 @@ and the [CHANGELOG](CHANGELOG.md).
 ## Installation
 
 ```bash
-pip install "git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git"
+pip install "git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.4.0"
 ```
 
 For development, from a clone:
@@ -95,7 +95,7 @@ pip install -e ".[dev]"
 ```
 
 The optional `notebook` extra installs the widget dependencies for the notebook
-(`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git"`).
+(`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.4.0"`).
 The notebook's single runnable cell can set this up automatically: it uses a compatible nearby
 checkout or installed package, and installs missing requirements into the active kernel. A standalone
 download installs from GitHub if needed (internet access and Git required).
