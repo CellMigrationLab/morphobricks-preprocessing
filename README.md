@@ -93,8 +93,8 @@ pip install -e ".[dev]"
 
 The optional `notebook` extra installs the widget dependencies for the notebook
 (`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git"`).
-The notebook's Step 0 can set this up automatically: it uses a nearby checkout or an
-installed package, and installs missing requirements into the active kernel. A standalone
+The notebook's single runnable cell can set this up automatically: it uses a compatible nearby
+checkout or installed package, and installs missing requirements into the active kernel. A standalone
 download installs from GitHub if needed (internet access and Git required).
 
 ### Notebook: Google Colab and JupyterLab
@@ -106,9 +106,9 @@ is one portable widget app for Google Colab, JupyterLab and LabConstrictor. It f
 LabConstrictor's
 [notebook portability guide](https://github.com/CellMigrationLab/LabConstrictor/blob/main/.tools/docs/notebook_portability.md):
 
-1. The notebook is intentionally small: one setup cell and one cell that explicitly
-   `display()`s the complete preprocessing app. Both start with `# @title …`; users never edit
-   code, so LabConstrictor may hide the code cells.
+1. The notebook is intentionally small: one short Markdown introduction and one `# @title …`
+   runnable cell. That cell prepares the environment and explicitly displays the complete
+   preprocessing UI; users never edit code, so LabConstrictor may hide it.
 2. Colab-only setup stays inside `if "google.colab" in sys.modules:` and mounts Google Drive.
    The UI uses only core ipywidgets supported by both ipywidgets 7.7 and 8; it does not force an
    ipywidgets upgrade/restart or enable Colab's custom-widget manager. Locally the same notebook
