@@ -92,6 +92,8 @@ def shared_mask_text(records: Iterable[Mapping]) -> str | None:
     return (
         "The run recorded 2-D masks as shared by every plane of their image: "
         f"{paths}. That option was removed: MorphoBricks v1 analyses 2-D planes, and a "
-        "mask must have the same time points (T) as its image. Save one mask plane per "
-        "time point (TYX), then run preprocessing again."
+        "mask must have the same time points (T) as its image. To use this output folder, "
+        "run preprocessing again without the statement (no --mask-axes TYPE=YX): a 2-D "
+        "mask of an image with one plane needs none, and for a time-lapse save one mask "
+        "plane per time point (TYX) first."
     )

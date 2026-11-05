@@ -330,3 +330,28 @@ def test_a_yx_statement_recorded_by_an_earlier_run_is_not_applied_again():
         }
 
     assert recorded_mask_axes(Manifest()) == {"Cells": "TYX"}
+
+
+def test_a_run_folder_recording_a_shared_mask_is_refused_until_run_again(tmp_path):
+    # A v0.4.0 release candidate recorded a stated YX mask as shared (also on a 2-D image).
+    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    write_data(root / "ctrl/a.tif", np.zeros((6, 8), np.uint8), "YX")
+    write_plain(masks / "Cells/ctrl/a.tif", labels((6, 8)))
+    mapping = AxisMapping("YX", "YX")
+    assert run_experiment(root, mapping, masks_folder=masks, output_folder=out).written
+    path = out / "run_manifest.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    (entry,) = data["masks"]["files"]
+    entry.update(roles="YX", axes_from="stated", shared=True)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    from morphobricks_preprocessing.run_inputs import RunInputsError
+
+    with pytest.raises(RunInputsError, match="Cells/ctrl/a.tif") as refused:
+        RunInputs.open(out)
+    assert "run preprocessing again without" in str(refused.value)
+    assert "--mask-axes TYPE=YX" in str(refused.value)
+    # Doing what it says, the recorded statement is not reapplied and the folder opens.
+    assert run_experiment(root, mapping, masks_folder=masks, output_folder=out).written
+    (entry,) = read_manifest(path).masks["files"]
+    assert "shared" not in entry and entry["axes_from"] == "header"
+    assert RunInputs.open(out).fovs()
