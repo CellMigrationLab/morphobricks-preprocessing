@@ -35,7 +35,7 @@ def setup_environment(tmp_path, monkeypatch):
         installs=[],
         imports=[],
         versions={
-            "morphobricks-preprocessing": "0.4.0rc5",
+            "morphobricks-preprocessing": "0.4.0rc6",
             "morphobricks-normalization": "0.3.3",
             "ipywidgets": "7.7.1",
         },
@@ -59,7 +59,7 @@ def setup_environment(tmp_path, monkeypatch):
         assert check is True
         state.installs.append(command)
         state.available.update({*REQUIRED, ZARR})
-        state.versions["morphobricks-preprocessing"] = "0.4.0rc5"
+        state.versions["morphobricks-preprocessing"] = "0.4.0rc6"
 
     monkeypatch.setattr(subprocess, "run", install)
 
@@ -95,7 +95,7 @@ def test_setup_reuses_the_matching_installed_release(setup_environment, capsys):
     assert state.installs == []
     assert state.imports == ["morphobricks_preprocessing.notebook_ui"]
     out = capsys.readouterr().out
-    assert "Ready. MorphoBricks preprocessing 0.4.0rc5" in out
+    assert "Ready. MorphoBricks preprocessing 0.4.0rc6" in out
     assert "ipywidgets 7.7.1" in out
 
 
@@ -109,8 +109,8 @@ def test_setup_installs_missing_package_from_the_exact_commit(setup_environment,
     target = command[5]
     assert target.startswith("morphobricks-preprocessing[notebook] @ git+")
     assert target.endswith("@" + namespace["RELEASE_REF"])
-    assert namespace["RELEASE_REF"] == "79dd68e8de63b26581d72b807d219c411fdd98b9"
-    assert "release v0.4.0rc5" in capsys.readouterr().out
+    assert namespace["RELEASE_REF"] == "d6930b80f26bce1b12762940d3c9ed44b038949f"
+    assert "release v0.4.0rc6" in capsys.readouterr().out
 
 
 def test_setup_replaces_a_mismatched_installed_release(setup_environment):
