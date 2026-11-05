@@ -100,33 +100,31 @@ download installs from GitHub if needed (internet access and Git required).
 ### Notebook: Google Colab and JupyterLab
 
 [`notebooks/MorphoBricks_Preprocessing.ipynb`](notebooks/MorphoBricks_Preprocessing.ipynb)
-runs unchanged in Google Colab and in JupyterLab (also as a LabConstrictor app). It follows
+is one portable widget app for Google Colab, JupyterLab and LabConstrictor. It follows
 LabConstrictor's
 [notebook portability guide](https://github.com/CellMigrationLab/LabConstrictor/blob/main/.tools/docs/notebook_portability.md):
 
-1. Every code cell starts with `# @title …` (Colab's cell header) and is hidden: the notebook is
-   driven by widgets, so no code is edited. Explanations are in Markdown cells.
-2. Colab-only setup runs in Step 0 inside `if "google.colab" in sys.modules:`: it mounts
-   Google Drive at `/content/drive` and enables Colab's custom widget manager (the notebook
-   needs ipywidgets 8). Locally Step 0 prints the Python version, platform and working folder.
-   No shell or line magics are used; pip runs with the kernel's Python.
-3. When the package is missing (always on a fresh Colab runtime), Step 0 installs the release
-   named by `RELEASE_TAG` (currently `v0.4.0rc5`), never the moving `main` branch, and prints
-   which source and version it uses. A checkout around the notebook, or an installed package,
-   is used first.
-4. `current_version` and `notebook_name` in Step 0 are the names LabConstrictor's version check
-   reads; [`notebooks/notebook_latest_versions.yaml`](notebooks/notebook_latest_versions.yaml)
-   lists the latest version. At each release, `RELEASE_TAG`, `current_version`, the index and
-   the tag named in the Step 0 Colab callout move to the new tag before it is tagged
-   ([plan](docs/plan.md) §10, release checklist); `tests/test_notebook_file.py` checks that
-   they agree, that the rules above hold, and runs the notebook in a local kernel. Until the
-   major release the notebook is verified headless only; the Colab run is checked by hand on
-   the major release with [docs/colab-release-check.md](docs/colab-release-check.md).
-5. On Colab, Step 0 installs the `notebook` and `zarr` extras; locally it installs `notebook`.
-6. Steps 0 and 1 have *Colab users* / *JupyterLab users* callouts. On Colab, keep the data and
-   the output folder on Google Drive; the [user guide](docs/user_guide.md) §1 explains why, and
-   the limits of Google Drive: on Drive the lock cannot guard an output folder across machines
-   or sessions, so use one session at a time per output folder.
+1. The notebook is intentionally small: one setup cell and one cell that explicitly
+   `display()`s the complete preprocessing app. Both start with `# @title …`; users never edit
+   code, so LabConstrictor may hide the code cells.
+2. Colab-only setup stays inside `if "google.colab" in sys.modules:` and mounts Google Drive.
+   The UI uses only core ipywidgets supported by both ipywidgets 7.7 and 8; it does not force an
+   ipywidgets upgrade/restart or enable Colab's custom-widget manager. Locally the same notebook
+   uses the Jupyter kernel and normal local paths. No shell or line magics are used.
+3. A downloaded/Colab notebook installs one immutable preprocessing commit, recorded as
+   `RELEASE_REF`, rather than moving `main`. A nearby source checkout is preferred for local
+   development. A pre-existing remote installation is reused only when its package version
+   matches the notebook.
+4. `current_version` and `notebook_name` are the variables LabConstrictor reads;
+   [`notebooks/notebook_latest_versions.yaml`](notebooks/notebook_latest_versions.yaml) tracks
+   the published notebook version. The setup output also reports preprocessing, normalization
+   and ipywidgets versions and the selected source.
+5. On Colab the setup installs the `notebook` and `zarr` extras; locally it installs the
+   `notebook` extra when needed. The scientific processing remains in the package:
+   the widget app ultimately calls the same `run_experiment()` pipeline as the CLI.
+6. Notebook/bootstrap changes must be smoke-tested in both a fresh Google Colab runtime and
+   JupyterLab/LabConstrictor before their release candidate is tagged; see
+   [docs/colab-release-check.md](docs/colab-release-check.md).
 
 From a terminal:
 
