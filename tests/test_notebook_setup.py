@@ -122,7 +122,7 @@ def test_setup_reuses_the_matching_installed_release(setup_environment, capsys):
         "morphobricks_preprocessing",
     ]
     out = capsys.readouterr().out
-    assert "Ready. MorphoBricks preprocessing 0.4.0rc6" in out
+    assert "Ready: preprocessing 0.4.0rc6" in out
     assert "ipywidgets 7.7.1" in out
 
 
@@ -137,7 +137,7 @@ def test_setup_installs_missing_package_from_the_exact_commit(setup_environment,
     assert target.startswith("morphobricks-preprocessing[notebook] @ git+")
     assert target.endswith("@" + namespace["RELEASE_REF"])
     assert namespace["RELEASE_REF"] == "d6930b80f26bce1b12762940d3c9ed44b038949f"
-    assert "release v0.4.0rc6" in capsys.readouterr().out
+    assert "pinned v0.4.0rc6 candidate" in capsys.readouterr().out
 
 
 def test_setup_replaces_a_mismatched_installed_release(setup_environment):
