@@ -65,6 +65,8 @@ def setup_environment(tmp_path, monkeypatch):
 
     def import_interface(name):
         state.imports.append(name)
+        if name == "morphobricks_preprocessing":
+            return SimpleNamespace(__file__="/tmp/morphobricks_preprocessing/__init__.py")
         return SimpleNamespace(PreprocessingNotebook=lambda: SimpleNamespace())
 
     monkeypatch.setattr(importlib, "import_module", import_interface)
@@ -85,7 +87,10 @@ def checkout_at(path):
     package = path / "src/morphobricks_preprocessing"
     package.mkdir(parents=True)
     (package / "__init__.py").write_text("", encoding="utf-8")
-    (path / "pyproject.toml").write_text("", encoding="utf-8")
+    (path / "pyproject.toml").write_text(
+        '[project]\nname = "morphobricks-preprocessing"\nversion = "0.4.0rc6"\n',
+        encoding="utf-8",
+    )
     return path
 
 
@@ -93,7 +98,10 @@ def test_setup_reuses_the_matching_installed_release(setup_environment, capsys):
     state = setup_environment
     state.start()
     assert state.installs == []
-    assert state.imports == ["morphobricks_preprocessing.notebook_ui"]
+    assert state.imports == [
+        "morphobricks_preprocessing.notebook_ui",
+        "morphobricks_preprocessing",
+    ]
     out = capsys.readouterr().out
     assert "Ready. MorphoBricks preprocessing 0.4.0rc6" in out
     assert "ipywidgets 7.7.1" in out
