@@ -40,7 +40,6 @@ from .notebook_options import _CHECK_LABELS, _MAX_PLOTTED_GROUPS
 from .notebook_render import _label
 from .notebook_values import display_range
 from .planes import Plane
-from .report import channel_histograms
 from .validation import plural
 
 
@@ -433,33 +432,45 @@ def plane_png(plane: Plane, size: float = 4.2) -> bytes:
 
 
 def distribution_png(groups: dict[tuple[str, ...], list]) -> bytes | None:
-    """Plot the cumulative intensity distribution of each group (up to 12 groups)."""
-    curves = []
-    for key, members in list(groups.items())[:_MAX_PLOTTED_GROUPS]:
-        try:
-            pooled = PooledHistogram(channel_histograms(members))
-        except NoValidPixelsError:
-            continue
-        cumulative = cumulative_share(pooled)
-        label = " / ".join(key[-2:]) if len(key) > 1 else key[0]
-        curves.append((label, pooled, cumulative))
-    if not curves:
+    """Plot the cumulative intensity distribution of each group, one panel per channel.
+
+    Channels are never pooled together (issue #104): each panel holds one channel's
+    curves, one per group (up to 12 groups), each with its own intensity axis.
+    """
+    shown = list(groups.items())[:_MAX_PLOTTED_GROUPS]
+    channels = max((r.channel_count for _, members in shown for r in members), default=0)
+    panels = []
+    for channel in range(channels):
+        curves = []
+        for key, members in shown:
+            try:
+                pooled = PooledHistogram([r.channel_histogram(channel) for r in members])
+            except NoValidPixelsError:
+                continue
+            label = " / ".join(key[-2:]) if len(key) > 1 else key[0]
+            curves.append((label, pooled, cumulative_share(pooled)))
+        if curves:
+            panels.append((channel, curves))
+    if not panels:
         return None
-    low = min(p.percentile(0.1) for _, p, _ in curves)
-    high = max(p.percentile(99.9) for _, p, _ in curves)
-    figure = Figure(figsize=(7.2, 3.4))
-    axes = figure.add_subplot()
-    for label, pooled, cumulative in curves:
-        axes.step(pooled.values, cumulative, where="post", label=label, linewidth=1.4)
-    if high > low:
-        axes.set_xlim(low, high)
-    axes.set_ylim(0, 1)
-    axes.set_xlabel("Intensity")
-    axes.set_ylabel("Share of pixels at or below")
-    axes.grid(alpha=0.3)
-    axes.legend(fontsize=8, loc="lower right", frameon=False)
-    if len(groups) > _MAX_PLOTTED_GROUPS:
-        axes.set_title(f"First {_MAX_PLOTTED_GROUPS} of {len(groups)} groups", fontsize=9)
+    figure = Figure(figsize=(7.2, 3.4 * len(panels)))
+    for index, (channel, curves) in enumerate(panels):
+        axes = figure.add_subplot(len(panels), 1, index + 1)
+        low = min(p.percentile(0.1) for _, p, _ in curves)
+        high = max(p.percentile(99.9) for _, p, _ in curves)
+        for label, pooled, cumulative in curves:
+            axes.step(pooled.values, cumulative, where="post", label=label, linewidth=1.4)
+        if high > low:
+            axes.set_xlim(low, high)
+        axes.set_ylim(0, 1)
+        axes.set_xlabel(f"Intensity, channel C{channel}")
+        axes.set_ylabel("Share of pixels at or below")
+        axes.grid(alpha=0.3)
+        axes.legend(fontsize=8, loc="lower right", frameon=False)
+        title = f"Channel C{channel}"
+        if len(groups) > _MAX_PLOTTED_GROUPS:
+            title += f": first {_MAX_PLOTTED_GROUPS} of {len(groups)} groups"
+        axes.set_title(title, fontsize=9)
     figure.tight_layout()
     buffer = io.BytesIO()
     figure.savefig(buffer, format="png", dpi=100)

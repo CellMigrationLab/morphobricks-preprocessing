@@ -1,8 +1,11 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from morphobricks_normalization.csv_io import read_plane_histograms
+from morphobricks_normalization.histogram import compute_plane_histogram
 from morphobricks_normalization.pooling import PooledHistogram
-from morphobricks_normalization.records import group_records
+from morphobricks_normalization.records import PlaneRecord, group_records
 
 from morphobricks_preprocessing import (
     discover_experiment,
@@ -12,6 +15,7 @@ from morphobricks_preprocessing import (
     run_experiment,
 )
 from morphobricks_preprocessing.report import (
+    ALL_CHANNELS,
     format_issues,
     format_table,
     group_table,
@@ -123,6 +127,7 @@ def test_run_summary_when_blocked(experiment):
 
 
 def test_group_summaries_pool_the_planes(experiment):
+    # One channel: one summary per group, the same numbers as before issue #104.
     result = run_experiment(experiment, prefill_mapping("TYX"))
     records = read_plane_histograms(result.csv_path)
     summaries = group_summaries(records, "biological_repeat", percentiles=(5, 95))
@@ -131,24 +136,124 @@ def test_group_summaries_pool_the_planes(experiment):
         summaries, group_records(records, "biological_repeat").values(), strict=True
     ):
         pooled = PooledHistogram(members)
-        assert summary.plane_count == len(members)
+        assert summary.channel == 0
+        assert summary.xyc_plane_count == summary.channel_histogram_count == len(members)
         assert summary.pixel_count == pooled.pixel_count
         assert summary.mean == pooled.mean and summary.median == pooled.median
         assert summary.percentiles == {5: pooled.percentile(5), 95: pooled.percentile(95)}
+    # One channel pooled "across channels" is the same summary, labelled as an aggregate.
+    pooled = group_summaries(records, "biological_repeat", (5, 95), pool_channels=True)
+    assert [replace(s, channel=0) for s in pooled] == summaries
 
 
 def test_group_table_and_text(experiment):
     result = run_experiment(experiment, prefill_mapping("TYX"))
     records = read_plane_histograms(result.csv_path)
     rows = group_table(group_summaries(records, "condition"), "condition")
-    assert rows[0] == ["condition", "planes", "pixels", "min", "max", "mean", "std", "median"] + [
+    assert rows[0] == [
+        "condition",
+        "channel",
+        "XYC planes",
+        "channel histograms",
+        "pixels",
+        "min",
+        "max",
+        "mean",
+        "std",
+        "median",
         "p1",
         "p99.8",
     ]
     assert [row[0] for row in rows[1:]] == ["ctrl", "drug"]
-    assert rows[1][1:3] == ["6", "864"]
+    assert rows[1][1:5] == ["C0", "6", "6", "864"]
     text = format_table(rows)
-    assert text.splitlines()[0].startswith("condition  planes")
+    assert text.splitlines()[0].startswith("condition  channel  XYC planes")
+
+
+def channel_records(levels, condition="c", repeat="r", planes=2, size=8, seed=0):
+    """Records of ``planes`` XYC planes whose channel ``c`` holds values around ``levels[c]``."""
+    rng = np.random.default_rng(seed)
+    records = []
+    for i in range(planes):
+        histograms = tuple(
+            compute_plane_histogram(
+                (level + rng.integers(0, 3, (size, size))).astype(np.uint16), 256
+            )
+            for level in levels
+        )
+        records.append(
+            PlaneRecord(f"{condition}/{repeat}/x.tif", condition, repeat, "single", histograms, t=i)
+        )
+    return records
+
+
+@pytest.mark.parametrize(
+    "levels", [(10, 1000), (10, 1000, 30000), (5, 60000, 200, 4000)], ids=["2", "3", "4"]
+)
+def test_group_summaries_keep_fluorescence_channels_apart(levels):
+    # Issue #104: strongly separated channels are summarised one by one, never mixed.
+    records = channel_records(levels) + channel_records(levels, condition="d", seed=1)
+    summaries = group_summaries(records, "condition", percentiles=(50,))
+    assert [(s.labels, s.channel) for s in summaries] == [
+        ((condition,), c) for condition in ("c", "d") for c in range(len(levels))
+    ]
+    for s in summaries:
+        level = levels[s.channel]
+        assert level <= s.minimum and s.maximum <= level + 2
+        assert level <= s.mean <= level + 2
+        # Two XYC planes, one histogram of this channel each: not planes x channels.
+        assert s.xyc_plane_count == s.channel_histogram_count == 2
+        assert s.pixel_count == 2 * 64
+    rows = group_table(summaries, "condition")
+    assert [row[1] for row in rows[1:]] == [f"C{c}" for c in range(len(levels))] * 2
+    assert {row[2] for row in rows[1:]} == {"2"}
+
+
+def test_an_all_channel_aggregate_is_explicit_and_labelled():
+    records = channel_records((10, 1000))
+    (summary,) = group_summaries(records, "condition", pool_channels=True)
+    assert summary.channel is ALL_CHANNELS
+    assert (summary.xyc_plane_count, summary.channel_histogram_count) == (2, 4)
+    assert 10 < summary.mean < 1000  # the mixed value the default never reports
+    row = group_table([summary], "condition")[1]
+    assert row[1:4] == ["all channels (pooled)", "2", "4"]
+
+
+def test_a_channel_without_finite_pixels_is_reported_alone():
+    finite = compute_plane_histogram(np.full((8, 8), 5.0, np.float32), 16)
+    empty = compute_plane_histogram(np.full((8, 8), np.nan, np.float32), 16)
+    records = [PlaneRecord("c/r/x.tif", "c", "r", "single", (finite, empty), t=t) for t in range(2)]
+    first, second = group_summaries(records, "condition")
+    assert first.channel == 0 and first.mean == 5.0 and first.pixel_count == 128
+    assert second.channel == 1 and second.pixel_count == 0 and second.mean is None
+    assert second.xyc_plane_count == 2
+    assert group_table([first, second], "condition")[2][1:] == ["C1", "2", "2", "0"] + ["–"] * 7
+
+
+def test_rgb_channels_are_summarised_one_by_one(tmp_path):
+    root = tmp_path / "exp"
+    rgb = np.stack([np.full((8, 8), v, np.uint8) for v in (20, 120, 240)])
+    write_data(root / "a/x.tif", rgb, axes="CYX")
+    result = run_experiment(root, prefill_mapping("CYX"), image_type="rgb")
+    assert result.written
+    summaries = group_summaries(read_plane_histograms(result.csv_path), "condition")
+    assert [(s.channel, s.mean, s.xyc_plane_count) for s in summaries] == [
+        (0, 20.0, 1),
+        (1, 120.0, 1),
+        (2, 240.0, 1),
+    ]
+
+
+def test_a_group_with_different_channel_counts_is_refused():
+    records = channel_records((10, 1000)) + channel_records((10,), seed=1)
+    with pytest.raises(ValueError, match="different numbers of channels"):
+        group_summaries(records, "condition")
+
+
+def test_plane_count_is_a_deprecated_alias_of_the_histogram_count():
+    (summary,) = group_summaries(channel_records((10, 1000)), "condition", pool_channels=True)
+    with pytest.warns(DeprecationWarning, match="xyc_plane_count"):
+        assert summary.plane_count == 4
 
 
 def test_group_without_finite_pixels(tmp_path):
@@ -159,4 +264,4 @@ def test_group_without_finite_pixels(tmp_path):
     summaries = group_summaries(read_plane_histograms(result.csv_path), "condition")
     empty = summaries[1]
     assert empty.labels == ("b",) and empty.pixel_count == 0 and empty.mean is None
-    assert group_table(summaries, "condition")[2][3:] == ["–"] * 7
+    assert group_table(summaries, "condition")[2][5:] == ["–"] * 7

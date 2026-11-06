@@ -7,6 +7,7 @@ masks have theirs in :mod:`.mask_text`.
 
 from __future__ import annotations
 
+import warnings
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -317,27 +318,39 @@ def _stopped_summary(result: RunResult, design_template: bool) -> str:
     return "\n".join(lines)
 
 
+ALL_CHANNELS = None
+"""The ``channel`` of a deliberate all-channel aggregate (``pool_channels=True``)."""
+
+
 @dataclass(frozen=True)
 class GroupSummary:
-    """Pooled statistics of one group of planes.
+    """Pooled statistics of one channel of one group of XYC planes (issue #104).
 
     Attributes
     ----------
     labels
         The group's labels, from condition down to the chosen level.
-    plane_count
-        Planes in the group, each channel of an XYC plane counted as one plane,
-        including planes without finite pixels.
+    channel
+        The channel summarised (0 for C0), or :data:`ALL_CHANNELS` (None) for a
+        deliberate aggregate of every channel, asked for with ``pool_channels=True``.
+    xyc_plane_count
+        XYC planes (rows of the table: an image at one Z and T) in the group, including
+        planes without finite pixels.
+    channel_histogram_count
+        Channel histograms pooled: equal to ``xyc_plane_count`` for one channel, and the
+        planes times their channels for an all-channel aggregate.
     pixel_count
         Finite pixels pooled.
     minimum, maximum, mean, std, median
-        Pooled statistics; None if the group has no finite pixels.
+        Pooled statistics; None if the group has no finite pixels in that channel.
     percentiles
         ``{q: value}`` for the requested percentiles.
     """
 
     labels: tuple[str, ...]
-    plane_count: int
+    channel: int | None
+    xyc_plane_count: int
+    channel_histogram_count: int
     pixel_count: int
     minimum: float | None = None
     maximum: float | None = None
@@ -346,13 +359,34 @@ class GroupSummary:
     median: float | None = None
     percentiles: dict[float, float] | None = None
 
+    @property
+    def plane_count(self) -> int:
+        """Deprecated name of ``channel_histogram_count`` (before issue #104).
+
+        It counted each channel of an XYC plane as one plane; use ``xyc_plane_count`` for
+        planes and ``channel_histogram_count`` for histograms.
+        """
+        warnings.warn(
+            "GroupSummary.plane_count is deprecated: use xyc_plane_count (XYC planes) or "
+            "channel_histogram_count (channel histograms pooled).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.channel_histogram_count
+
 
 def group_summaries(
     records: Sequence[PlaneRecord],
     level: str,
     percentiles: Sequence[float] = (1.0, 99.8),
+    *,
+    pool_channels: bool = False,
 ) -> list[GroupSummary]:
-    """Pool the planes of every group at ``level`` and summarise them.
+    """Summarise every channel of every group at ``level``, each channel on its own.
+
+    Distinct channels are different measurements (two fluorescence markers, or the red,
+    green and blue of an RGB image), so by default each group has one summary per
+    channel, channels in order, and nothing is pooled across channels (issue #104).
 
     Parameters
     ----------
@@ -363,49 +397,96 @@ def group_summaries(
         ``"image"``.
     percentiles
         Percentiles to report, from 0 to 100.
+    pool_channels
+        True pools every channel of a group into one summary whose ``channel`` is
+        :data:`ALL_CHANNELS`, the behaviour before issue #104. Only on explicit request:
+        the table labels it as an aggregate of all channels.
+
+    Raises
+    ------
+    ValueError
+        If the rows of one group have different numbers of channels: which channel is
+        which cannot be known, so nothing is summarised.
     """
     summaries = []
     for key, members in group_records(list(records), level).items():
-        histograms = channel_histograms(members)
-        try:
-            pooled = PooledHistogram(histograms)
-        except NoValidPixelsError:
-            summaries.append(GroupSummary(key, len(histograms), 0))
-            continue
-        summaries.append(
-            GroupSummary(
-                labels=key,
-                plane_count=len(histograms),
-                pixel_count=pooled.pixel_count,
-                minimum=pooled.minimum,
-                maximum=pooled.maximum,
-                mean=pooled.mean,
-                std=pooled.std,
-                median=pooled.median,
-                percentiles={q: pooled.percentile(q) for q in percentiles},
+        counts = {record.channel_count for record in members}
+        if len(counts) > 1:
+            raise ValueError(
+                f"The planes of group {' / '.join(key)} have different numbers of channels "
+                f"({', '.join(map(str, sorted(counts)))}); their statistics cannot be "
+                "matched channel by channel."
             )
-        )
+        if pool_channels:
+            selections = [(ALL_CHANNELS, channel_histograms(members))]
+        else:
+            selections = [
+                (c, [record.channel_histogram(c) for record in members])
+                for c in range(counts.pop())
+            ]
+        summaries += [
+            _summary(key, channel, len(members), histograms, percentiles)
+            for channel, histograms in selections
+        ]
     return summaries
+
+
+def _summary(
+    labels: tuple[str, ...],
+    channel: int | None,
+    planes: int,
+    histograms: list[PlaneHistogram],
+    percentiles: Sequence[float],
+) -> GroupSummary:
+    """Pool ``histograms`` (one channel of a group, or all of them) and summarise them."""
+    try:
+        pooled = PooledHistogram(histograms)
+    except NoValidPixelsError:
+        return GroupSummary(labels, channel, planes, len(histograms), 0)
+    return GroupSummary(
+        labels=labels,
+        channel=channel,
+        xyc_plane_count=planes,
+        channel_histogram_count=len(histograms),
+        pixel_count=pooled.pixel_count,
+        minimum=pooled.minimum,
+        maximum=pooled.maximum,
+        mean=pooled.mean,
+        std=pooled.std,
+        median=pooled.median,
+        percentiles={q: pooled.percentile(q) for q in percentiles},
+    )
 
 
 def channel_histograms(records: Iterable[PlaneRecord]) -> list[PlaneHistogram]:
     """Return the histogram of every channel of every row, rows first.
 
-    The group statistics pool every channel of a group together, as they did
-    when the table had one row per channel (schema version 2), so the table and
-    plot of step 4 are unchanged.
+    Only for a deliberate all-channel aggregate (``pool_channels=True``): the default
+    statistics keep each channel apart (issue #104).
     """
     return [histogram for record in records for histogram in record.histograms]
 
 
+def channel_label(channel: int | None) -> str:
+    """Return how the tables name a channel: ``C0``, or ``all channels (pooled)``."""
+    return "all channels (pooled)" if channel is ALL_CHANNELS else f"C{channel}"
+
+
 def group_table(summaries: Sequence[GroupSummary], level: str) -> list[list[str]]:
-    """Turn the summaries into rows of text, with a header row, for printing or HTML."""
+    """Turn the summaries into rows of text, with a header row, for printing or HTML.
+
+    One row per group and channel: the labels, the ``channel`` (``C0``, or ``all
+    channels (pooled)`` for a deliberate aggregate), the ``XYC planes`` and the ``channel
+    histograms`` pooled, then the statistics.
+    """
     label_columns = [LEVEL_NAMES[name] for name in (*LEVELS, "image")]
     depth = (*LEVELS, "image").index(level) + 1
     qs = next((list(s.percentiles) for s in summaries if s.percentiles), [])
     header = [
         *label_columns[:depth],
-        "planes",
+        "channel",
+        "XYC planes",
+        "channel histograms",
         "pixels",
         "min",
         "max",
@@ -418,7 +499,15 @@ def group_table(summaries: Sequence[GroupSummary], level: str) -> list[list[str]
     for s in summaries:
         values = [s.minimum, s.maximum, s.mean, s.std, s.median]
         values += [None if not s.percentiles else s.percentiles[q] for q in qs]
-        rows.append([*s.labels, f"{s.plane_count:,}", f"{s.pixel_count:,}", *map(_number, values)])
+        counts = (s.xyc_plane_count, s.channel_histogram_count, s.pixel_count)
+        rows.append(
+            [
+                *s.labels,
+                channel_label(s.channel),
+                *(f"{n:,}" for n in counts),
+                *map(_number, values),
+            ]
+        )
     return rows
 
 

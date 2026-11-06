@@ -1248,8 +1248,8 @@ def test_full_run_and_statistics(experiment, tmp_path):
     assert "The table from step 3 is selected" in nb.stats_status.value
     assert not ui.is_visible(nb.statistics_card)
     nb.statistics_button.click()
-    assert ui.is_visible(nb.statistics_card) and "<td>ctrl</td>" in nb.statistics.value
-    assert "Statistics of 2 conditions calculated" in nb.stats_status.value
+    assert ui.is_visible(nb.statistics_card) and nb.statistics.value.count("<td>ctrl</td>") == 2
+    assert "Statistics of 2 conditions calculated" in nb.stats_status.value  # 2 channels: #104
     assert "plane_histograms.csv" in nb.stats_status.value
     assert ui.is_visible(nb.distribution_card)
     assert bytes(nb.distribution.value).startswith(b"\x89PNG")

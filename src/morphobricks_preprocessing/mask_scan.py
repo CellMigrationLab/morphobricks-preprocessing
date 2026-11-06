@@ -49,7 +49,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -196,6 +196,16 @@ class MaskReport:
         return MappingProxyType({name: tuple(sorted(found)) for name, found in parents.items()})
 
     @property
+    def hierarchy_cycles(self) -> tuple[tuple[str, ...], ...]:
+        """The groups of mask types whose direct parents form a cycle (issue #105).
+
+        Pairwise evidence from different images can make A inside B, B inside C and C
+        inside A: no parent-child hierarchy can then be inferred for them. Each group is
+        sorted, and the groups too; empty when the hierarchy has no cycle.
+        """
+        return hierarchy_cycles(self.hierarchy)
+
+    @property
     def same_objects(self) -> tuple[tuple[str, str], ...]:
         """Pairs of types that segment the same objects, each pair once."""
         found = {
@@ -226,6 +236,34 @@ class MaskReport:
             "pairs": [_pair_dict(pair) for pair in self.pairs],
             "versions": package_versions(),
         }
+
+
+def hierarchy_cycles(hierarchy: Mapping[str, Sequence[str]]) -> tuple[tuple[str, ...], ...]:
+    """Return the groups of names whose parents form a cycle, in ``{child: parents}``.
+
+    A group is a strongly connected set of two or more names, or one name that is its own
+    parent. Each group is sorted, and the groups too; empty for an acyclic hierarchy.
+    """
+    names = {*hierarchy, *(parent for parents in hierarchy.values() for parent in parents)}
+    reach = {name: _ancestors(hierarchy, name) for name in names}
+    groups = {
+        tuple(sorted(other for other in found if name in reach[other]))
+        for name, found in reach.items()
+        if name in found
+    }
+    return tuple(sorted(groups))
+
+
+def _ancestors(hierarchy: Mapping[str, Sequence[str]], name: str) -> set[str]:
+    """Return the names reached from ``name`` through one or more parent links."""
+    found: set[str] = set()
+    todo = list(hierarchy.get(name, ()))
+    while todo:
+        parent = todo.pop()
+        if parent not in found:
+            found.add(parent)
+            todo.extend(hierarchy.get(parent, ()))
+    return found
 
 
 def mask_thresholds(changes: Mapping[str, float] | None = None) -> Mapping[str, float]:

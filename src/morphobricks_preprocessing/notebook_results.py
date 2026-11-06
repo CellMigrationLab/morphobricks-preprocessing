@@ -217,16 +217,18 @@ class _ResultsStep:
         first = records[0].channel_histogram(0) if records else None
         self.stats_tiles.value = ui.tiles(
             [
-                ("🧪", f"{len(summaries):,}", f"{LEVEL_NAMES[level]} groups"),
+                ("🧪", f"{len(groups):,}", f"{LEVEL_NAMES[level]} groups"),
                 ("🖼️", f"{len(images):,}", "images"),
-                ("🧩", f"{len(records):,}", "planes"),
+                ("🧩", f"{len(records):,}", "XYC planes"),
+                ("🎨", f"{records[0].channel_count:,}" if records else "-", "channels"),
                 ("🔢", first.dtype.name if first else "-", "pixel type"),
                 ("📊", f"{first.bin_count:,}" if first else "-", "bins per plane"),
             ]
         )
         rows = group_table(summaries, level)
         depth = len(summaries[0].labels) if summaries else 1
-        self.statistics.value = ui.table(rows, numeric_from=depth)
+        # The labels and the channel column are text; the counts and statistics numbers.
+        self.statistics.value = ui.table(rows, numeric_from=depth + 1)
         ui.set_visible(self.statistics_card, True)
         self.stats_status.value = ui.working("Drawing the intensity distributions…")
         png = distribution_png(groups)
@@ -236,7 +238,7 @@ class _ResultsStep:
         self.table_checks.show(records)
         self.stats_status.value = ui.status(
             "ok",
-            f"Statistics of {plural(len(summaries), LEVEL_NAMES[level])} calculated.",
+            f"Statistics of {plural(len(groups), LEVEL_NAMES[level])} calculated.",
             [f"From the table {path}"],
         )
         self.stats_next.value = ui.next_steps(

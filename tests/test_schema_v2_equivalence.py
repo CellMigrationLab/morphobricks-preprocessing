@@ -14,6 +14,7 @@ since Z-stacks are refused (owner decision of 5 November 2026): its ``z`` is rea
 import csv
 import json
 import shutil
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -161,10 +162,33 @@ def test_step_4_statistics_are_those_of_version_2(tmp_path, pixels, dtype, level
     root = tmp_path / "exp"
     bins, axes = write_experiment(root, dtype, pixels)
     result = run_experiment(root, prefill_mapping(axes), bin_count=bins)
-    now = group_summaries(read_plane_histograms(result.csv_path), level, (1.0, 99.8))
-    before = group_summaries(v2_records(dtype), level, (1.0, 99.8))
+    records = read_plane_histograms(result.csv_path)
+    # Issue #104: each channel on its own, from the version-2 rows of that channel.
+    now = group_summaries(records, level, (1.0, 99.8))
+    before = group_summaries(v2_planes(dtype), level, (1.0, 99.8))
     assert now == before
     assert group_table(now, level) == group_table(before, level)
+    # The all-channel aggregate, asked for, has the numbers step 4 showed before #104.
+    pooled = group_summaries(records, level, (1.0, 99.8), pool_channels=True)
+    legacy = group_summaries(v2_records(dtype), level, (1.0, 99.8), pool_channels=True)
+    statistics = ("pixel_count", "minimum", "maximum", "mean", "std", "median", "percentiles")
+    for p, old in zip(pooled, legacy, strict=True):
+        assert p.labels == old.labels
+        assert p.channel_histogram_count == old.xyc_plane_count  # a v2 row was one channel
+        assert [getattr(p, f) for f in statistics] == [getattr(old, f) for f in statistics]
+
+
+def v2_planes(dtype):
+    """The version-2 rows gathered into XYC planes, channels in order (``c``)."""
+    planes = {}
+    for record, row in zip(v2_records(dtype), read_rows(DATA / f"v2_{dtype}.csv"), strict=True):
+        key = (record.source_relative_path, row["z"], row["t"])
+        planes.setdefault(key, {})[int(row["c"])] = record
+    return [
+        replace(first, histograms=tuple(channels[c].histograms[0] for c in sorted(channels)))
+        for channels in planes.values()
+        for first in [channels[min(channels)]]
+    ]
 
 
 def test_a_version_2_table_is_recomputed_on_the_next_run(tmp_path, pixels):

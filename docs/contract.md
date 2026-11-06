@@ -116,6 +116,14 @@ on the next run without reading pixels.
 Defined by the [normalization brick's contract][normalization contract] §1.2.3: groups
 pool their planes' (representative, count) pairs and never average per-plane statistics.
 
+This brick's optional group statistics (`group_summaries`, the notebook's step 4) pool
+**one channel at a time** (issue #104): one summary per group and channel, with
+`xyc_plane_count` (XYC planes) and `channel_histogram_count` (histograms pooled) reported
+apart. Channels are pooled together only when asked (`pool_channels=True`), and the
+summary then says so (`channel` None, shown as `all channels (pooled)`). A group whose
+planes have different numbers of channels is refused (`ValueError`). These statistics are
+shown only; no file is written, so no file schema depends on them.
+
 ## 7. Normalization parameters
 
 Defined by the [normalization brick's contract][normalization contract] §1.2.4: every
@@ -537,6 +545,15 @@ between: nucleoli inside nuclei inside cells have the direct parent nuclei, and 
 relation nucleoli inside cells is kept in the report but not in the hierarchy. A type may
 have several direct parents (cells inside an organoid and inside a region of the slide), and
 two types that are the same objects are both kept.
+
+**Cycles (issue #105).** Relations come from pairwise evidence summed over the images with
+both masks, so types seen together in different images can form a cycle (A inside B, B
+inside C, C inside A). No parent-child hierarchy can then be inferred, and none is guessed:
+`MaskReport.hierarchy_cycles` names each group of types in a cycle, and the hierarchy text
+(`mask_report_summary`, `mask_hierarchy_lines`, the notebook) starts with the named warning
+`mask_hierarchy_cycle` listing every type and link of the cycle, then shows the group as one
+`[cycle: A, B, C]` entry; every type is listed. `mask_relationships.json` is unchanged
+(report version 1): its `hierarchy` keeps every direct link, cycles included.
 
 The report is UTF-8 JSON (two-space indent, LF), written atomically to the output folder:
 

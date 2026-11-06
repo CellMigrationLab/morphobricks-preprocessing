@@ -10,7 +10,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from .mask_scan import DEFAULT_THRESHOLDS, MaskReport, PairRelation
+from .mask_scan import (
+    DEFAULT_THRESHOLDS,
+    MaskReport,
+    PairRelation,
+    hierarchy_cycles,
+)
 from .masks import MaskInventory
 from .validation import plural
 
@@ -185,18 +190,47 @@ def _relationship_line(pair: PairRelation) -> str:
 
 
 def _hierarchy_lines(hierarchy: Mapping[str, Sequence[str]]) -> list[str]:
-    """Return the mask types as an indented tree; a type with two parents shows twice."""
-    children: dict[str, list[str]] = {name: [] for name in hierarchy}
+    """Return the mask types as an indented tree; a type with two parents shows twice.
+
+    Every type is listed. Types whose direct parents form a cycle (issue #105) have no
+    parent-child hierarchy: a named warning ``mask_hierarchy_cycle`` comes first, with
+    every type and link of the cycle, and the tree shows them together as one
+    ``[cycle: ...]`` entry (the strongly connected components), never guessing a direction.
+    """
+    cycles = hierarchy_cycles(hierarchy)
+    group = {name: (name,) for name in hierarchy}
+    group.update({parent: (parent,) for parents in hierarchy.values() for parent in parents})
+    group.update({name: cycle for cycle in cycles for name in cycle})
+    children: dict[tuple[str, ...], set[tuple[str, ...]]] = {g: set() for g in group.values()}
+    has_parent: set[tuple[str, ...]] = set()
     for name, parents in hierarchy.items():
         for parent in parents:
-            children[parent].append(name)
-    lines: list[str] = []
+            if group[parent] != group[name]:
+                children[group[parent]].add(group[name])
+                has_parent.add(group[name])
+    lines = [_cycle_warning(cycle, hierarchy) for cycle in cycles]
 
-    def show(name: str, depth: int) -> None:
-        lines.append(f"{'    ' * (depth + 1)}{name}")
-        for child in sorted(children[name]):
+    def show(node: tuple[str, ...], depth: int) -> None:
+        label = f"[cycle: {', '.join(node)}]" if node in cycles else node[0]
+        lines.append(f"{'    ' * (depth + 1)}{label}")
+        for child in sorted(children[node]):
             show(child, depth + 1)
 
-    for name in sorted(n for n, parents in hierarchy.items() if not parents):
-        show(name, 0)
+    for node in sorted(set(group.values()) - has_parent):
+        show(node, 0)
     return lines
+
+
+def _cycle_warning(cycle: tuple[str, ...], hierarchy: Mapping[str, Sequence[str]]) -> str:
+    """Name a cycle's types and links, and say no hierarchy can be inferred for them."""
+    links = [
+        f"{name} in {parent}"
+        for name in cycle
+        for parent in hierarchy.get(name, ())
+        if parent in cycle
+    ]
+    return (
+        f"  Warning (mask_hierarchy_cycle): the direct parents of {', '.join(cycle)} form a "
+        f"cycle ({'; '.join(links)}), so no parent-child hierarchy can be inferred for "
+        "them; they are shown together below. Check these masks."
+    )

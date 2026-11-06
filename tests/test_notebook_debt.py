@@ -76,3 +76,30 @@ def test_the_unused_pyramid_options_are_removed():
 
     assert not hasattr(notebook_options, "PYRAMID_OPTIONS")
     assert "PYRAMID_OPTIONS" not in notebook_ui.__all__
+
+
+def test_distribution_png_draws_one_panel_per_channel(monkeypatch):
+    # Issue #104: the curves are drawn per channel, never from every channel pooled.
+    from morphobricks_normalization.histogram import compute_plane_histogram
+    from morphobricks_normalization.records import PlaneRecord
+
+    from morphobricks_preprocessing import notebook_plots
+
+    channels = (np.full((8, 8), 10, np.uint16), np.full((8, 8), 1000, np.uint16))
+    record = PlaneRecord(
+        "c/r/t/a.tif",
+        "c",
+        "r",
+        "t",
+        histograms=tuple(compute_plane_histogram(p, 16) for p in channels),
+    )
+    used = []
+    real = notebook_plots.cumulative_share
+
+    def spy(pooled):
+        used.append(pooled)
+        return real(pooled)
+
+    monkeypatch.setattr(notebook_plots, "cumulative_share", spy)
+    assert notebook_plots.distribution_png({("c",): [record]}) is not None
+    assert [(p.minimum, p.maximum, p.pixel_count) for p in used] == [(10, 10, 64), (1000, 1000, 64)]

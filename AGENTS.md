@@ -160,7 +160,8 @@ src/morphobricks_preprocessing/
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
   mask_text.py      the masks' texts (mask_summary, mask_report_summary) and the notebook's
                     tables of the mask step (mask_type_rows, mask_relationship_rows,
-                    mask_hierarchy_lines); moved from report.py in PP-10d
+                    mask_hierarchy_lines, with the mask_hierarchy_cycle warning, #105);
+                    moved from report.py in PP-10d
   discovery_report.py the run report (discovery_report.json and .txt, design v0.4 §4): status,
                     manifest SHA-256, what was found, reused, recomputed and replaced
   cli.py, __main__  `morphobricks-preprocessing check|run|masks|calibrate|design|convert` (also `python -m morphobricks_preprocessing`);
@@ -230,7 +231,7 @@ src/morphobricks_preprocessing/
   notebook_axis_step.py     step 2: role dropdowns, axis check, missing-axes card (_AxisStep)
   notebook_axis_preview.py  step 2: preview, confirmation, image type (_AxisPreview)
   notebook_run.py           step 3: settings, what will happen, the run (_RunStep)
-  notebook_results.py       step 4: pooled statistics per group (_ResultsStep)
+  notebook_results.py       step 4: pooled statistics per group and channel (_ResultsStep)
   notebook_plots.py         the PNG plots and IntensityPanel (the intensity checks card)
   notebook_render.py        HTML helpers: issues, balance, labels, role effect, captions, tiles
   notebook_options.py       the steps' choices and fixed settings (ROLE_OPTIONS, ...)
@@ -444,8 +445,12 @@ functions the tests use.
   histogram equals the version-2 row's, whole and in blocks
   (`tests/test_schema_v2_equivalence.py` with the committed fixture in `tests/data`,
   written by `tests/data/make_v2_fixture.py` with the pre-P3b code).
-- **Step 4** pools every channel of a group together, as with version 2
-  (`report.channel_histograms`), so its table and plot are unchanged.
+- **Step 4** summarises each channel of a group on its own (issue #104): one
+  `GroupSummary` per group and channel (`channel`, `xyc_plane_count`,
+  `channel_histogram_count`), a `channel` column in the table and one plot panel per
+  channel. Pooling every channel together (as with version 2) only with
+  `group_summaries(..., pool_channels=True)`, labelled `all channels (pooled)`;
+  `GroupSummary.plane_count` is a deprecated alias of `channel_histogram_count`.
 - **`position_id`** is filled in every row (D02, plan §12 question 20). Earlier tables with
   it blank are filled on the next run without reading pixels.
 - **Reading:** labels are always read back as text (`NA`, `001`, `TRUE` stay as typed).
