@@ -10,7 +10,9 @@ holding its lock, and shows each mask type, the relationships between the types 
 hierarchy, as suggestions to check (contract §15). The thresholds are the defaults; the
 command line's ``masks`` can change them. A refusal is shown on the card (the locked output
 folder with :class:`.notebook_output._LockCard`), and an embedding brick that hides the
-output folder (``show_output=False``) does not get the card.
+output folder (``show_output=False``) does not get the card. Masks that changed while they
+were read (``mask_changed_during_scan``, issue #165) get their error card, which says to wait
+until nothing writes to them, not to correct them.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from . import notebook_style as ui
 from .discovery import default_output_folder
 from .fingerprint import current_fingerprint
 from .manifest import MANIFEST_FILENAME
+from .mask_binding import MaskChangedError
 from .mask_scan import MASK_REPORT_FILENAME
 from .mask_text import (
     mask_ambiguous_lines,
@@ -173,6 +176,13 @@ class _MaskStepCard:
         self.mask_step_progress.value, self.mask_step_progress.bar_style = 0, "info"
         try:
             result = mask_step.describe_masks(step, progress=self._mask_step_progressed)
+        except MaskChangedError as exc:  # still being written: wait, nothing to correct
+            self._mask_step_failed(
+                "The masks changed while they were read: no report was written.",
+                ["Read the message below; it names the masks and what to do."],
+            )
+            self.mask_step_result.value = issues_html([exc.issue])
+            return None
         except ValueError as exc:  # masks whose pixels cannot be used (planes, labels)
             self._mask_step_failed(
                 "The masks cannot be used.",

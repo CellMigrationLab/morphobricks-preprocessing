@@ -55,7 +55,7 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   mask step fingerprints each mask with its header (`prepare_mask_step`) and each image's
   masks before and after their planes are read; a mask that changed or went missing raises
   `MaskChangedError` (a `ValueError`; the new error `mask_changed_during_scan`, which the
-  `masks` command prints), no report is written and an earlier one is left as it was. With
+  `masks` command and the notebook's **Describe the masks** show with what to do), no report is written and an earlier one is left as it was. With
   `verify_content` (`prepare_mask_step(verify_content=...)`, new `masks --verify-content`;
   by default the recorded run's setting) the masks' content SHA-256 is compared too.
   *Records:* `mask_relationships.json` is unchanged (report version 3) and unchanged masks
