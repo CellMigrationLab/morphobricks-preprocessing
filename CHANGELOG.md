@@ -6,6 +6,29 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature. The 
 are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 [migration guide](docs/migration-0.3-to-0.4.md).
 
+## Unreleased
+
+- **Group statistics per channel (#104).** `group_summaries` and the notebook's step 4 no
+  longer pool distinct channels together: each group has one summary per channel, and the
+  intensity curves are drawn in one panel per channel. Single-channel tables give the same
+  numbers as before.
+  - `GroupSummary` gains `channel` (the channel index, or `ALL_CHANNELS`/None for an
+    aggregate), `xyc_plane_count` (XYC planes) and `channel_histogram_count` (histograms
+    pooled). `plane_count`, which counted each channel of a plane as a plane, remains as a
+    deprecated property equal to `channel_histogram_count` and warns
+    (`DeprecationWarning`). The positional constructor changed: build summaries by
+    keyword, or use `group_summaries`.
+  - `group_table` adds the columns `channel`, `XYC planes` and `channel histograms` (in
+    place of `planes`).
+  - The earlier all-channel aggregate is available on request,
+    `group_summaries(..., pool_channels=True)`, and is labelled `all channels (pooled)`.
+  - A group whose planes have different numbers of channels is refused (`ValueError`).
+  - **Migration:** no file changes. `plane_histograms.csv` (schema 4), the manifest and
+    the other outputs are unchanged; step 4 writes no file. Code reading
+    `GroupSummary.plane_count` should read `xyc_plane_count` or `channel_histogram_count`
+    and select rows by `channel`; to reproduce a pre-#104 table, pass
+    `pool_channels=True`. No other MorphoBricks repository uses these names.
+
 ## v0.4.0 (5 November 2026)
 
 The final v0.4.0, with the small changes since v0.4.0rc5 (#147) and the release step: the

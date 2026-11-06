@@ -543,11 +543,14 @@ results or comparing another grouping.
    - A spinning wheel shows that work is in progress while the table is read, statistics
      are calculated and the plot is drawn. The button says **Calculating…** and stays
      disabled until the calculation finishes or an error is shown; you can then try again.
-   - The table lists pooled statistics per group: minimum, maximum, mean, standard
-     deviation, median and percentiles. Every channel of a group is pooled together, as
-     before; its **planes** column counts each channel of a plane as one plane.
-   - The plot compares the groups' intensity distributions: curves further right are
-     brighter.
+   - The table lists pooled statistics per group **and channel**: minimum, maximum, mean,
+     standard deviation, median and percentiles. Each channel (**C0**, **C1**, …) has its
+     own row, since different fluorescence markers (or the red, green and blue of an RGB
+     image) are different measurements and are never mixed. **XYC planes** counts the
+     planes (an image at one time point) and **channel histograms** the histograms pooled
+     in that row.
+   - The plot compares the groups' intensity distributions, one panel per channel: curves
+     further right are brighter.
    - **Intensity checks** shows the same warnings, settings and plots as step 3 for the
      chosen table, so tables of other experiments can be checked too. It needs only the
      table, not the images.

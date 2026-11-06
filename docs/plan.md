@@ -1000,7 +1000,13 @@ Raised during review; to be decided before the milestones that need them:
     schema version 1 or 2 is recomputed completely on the next run; the manifest stays
     version 1, records schema version 3, and a file's `plane_count` counts its XYC planes.
     Step 4 reads the new layout and, as before, pools every channel of a group together,
-    so its table (whose "planes" still counts channel planes) and plot do not change. The
+    so its table (whose "planes" still counts channel planes) and plot do not change.
+    *Amended (6 November 2026, issue #104): step 4 no longer pools channels. Distinct
+    channels are different measurements (two fluorescence markers, or red, green and
+    blue), so each group is summarised and plotted channel by channel; the table has a
+    `channel` column, counts `XYC planes` and `channel histograms` apart, and an
+    all-channel aggregate is only made on explicit request (`pool_channels=True`) and
+    labelled `all channels (pooled)`. No file changes: step 4 writes nothing.* The
     warning `no_finite_pixels` counts the planes with a channel without finite pixels. The
     deprecated re-exports of the moved names (question 19) keep pointing at the brick's
     current objects, now with its Milestone 2b signatures; names it added later are not

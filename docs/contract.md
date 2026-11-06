@@ -116,6 +116,14 @@ on the next run without reading pixels.
 Defined by the [normalization brick's contract][normalization contract] §1.2.3: groups
 pool their planes' (representative, count) pairs and never average per-plane statistics.
 
+This brick's optional group statistics (`group_summaries`, the notebook's step 4) pool
+**one channel at a time** (issue #104): one summary per group and channel, with
+`xyc_plane_count` (XYC planes) and `channel_histogram_count` (histograms pooled) reported
+apart. Channels are pooled together only when asked (`pool_channels=True`), and the
+summary then says so (`channel` None, shown as `all channels (pooled)`). A group whose
+planes have different numbers of channels is refused (`ValueError`). These statistics are
+shown only; no file is written, so no file schema depends on them.
+
 ## 7. Normalization parameters
 
 Defined by the [normalization brick's contract][normalization contract] §1.2.4: every
