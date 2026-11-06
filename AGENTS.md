@@ -160,7 +160,8 @@ src/morphobricks_preprocessing/
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
   mask_text.py      the masks' texts (mask_summary, mask_report_summary) and the notebook's
                     tables of the mask step (mask_type_rows, mask_relationship_rows,
-                    mask_hierarchy_lines); moved from report.py in PP-10d
+                    mask_hierarchy_lines, with the mask_hierarchy_cycle warning, #105);
+                    moved from report.py in PP-10d
   discovery_report.py the run report (discovery_report.json and .txt, design v0.4 §4): status,
                     manifest SHA-256, what was found, reused, recomputed and replaced
   cli.py, __main__  `morphobricks-preprocessing check|run|masks|calibrate|design|convert` (also `python -m morphobricks_preprocessing`);

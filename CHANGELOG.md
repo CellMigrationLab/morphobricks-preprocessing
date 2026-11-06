@@ -29,6 +29,14 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
     and select rows by `channel`; to reproduce a pre-#104 table, pass
     `pool_channels=True`. No other MorphoBricks repository uses these names.
 
+- **Cyclic mask hierarchies are named (#105).** When the direct-parent relations of the mask
+  step form a cycle (possible because pairs of types may be seen together in different
+  images), the hierarchy text no longer prints an empty or truncated tree: it starts with
+  the warning `mask_hierarchy_cycle`, naming every type and link of the cycle, and shows
+  the group as one `[cycle: …]` entry; every type is listed, and no direction is guessed.
+  New `MaskReport.hierarchy_cycles` and `mask_scan.hierarchy_cycles`. Acyclic hierarchies
+  print as before; `mask_relationships.json` is unchanged (report version 1).
+
 ## v0.4.0 (5 November 2026)
 
 The final v0.4.0, with the small changes since v0.4.0rc5 (#147) and the release step: the

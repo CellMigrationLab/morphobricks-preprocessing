@@ -1105,6 +1105,7 @@ continues.
 | `channel_without_finite_pixels` | Warning (intensity check) | An image's channel has no finite pixels (every value NaN or infinite), so its intensities were not checked and it cannot be normalised from its own pixels. Exclude the image, or fix the channel in the source data and run again. |
 | `channel_names_differ` | Error | Channel names differ between images at the same channel number, so different stains would be pooled as one channel. Spaces at the start or end of a name are ignored (and noted in the manifest); otherwise names must match exactly, and names that differ only in inner spaces are quoted and reported as such. Check the channel order; export the images again with the same channel order and names, or exclude the images whose channels differ. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
+| `mask_hierarchy_cycle` | Warning (mask step) | The direct parents of some mask types form a cycle (for example A inside B in some images, B inside C in others and C inside A), so no parent-child hierarchy can be inferred for them. The hierarchy lists them together as `[cycle: …]` with every link. Check those masks; nothing is guessed. |
 | `no_finite_pixels` | Warning | Some planes have a channel without finite pixels; those channels are left out of group statistics. |
 | `excluded_images`, `excluded_path_not_found` | Warning | Images excluded as requested, or an excluded path that matches no image. |
 | `masks_folder_not_found` | Error | The masks folder does not exist. Select the folder that holds one folder per kind of mask. |
@@ -1233,6 +1234,7 @@ masks = check.masks  # MaskInventory: types, files, issues
 cells = masks.for_image("control/bio_rep1/tech_rep1/img_01.tif")["Cells"]  # MaskFile
 report = scan_masks(masks, "/data/exp1")  # reads the pixels, one image at a time
 report.hierarchy  # {"Nuclei": ("Cells",), "Cells": (), ...}: direct parents
+report.hierarchy_cycles  # (): types whose direct parents form a cycle, if any
 write_mask_report(report, "/data/exp1_MorphoBricks_Preprocessing/mask_relationships.json")
 ```
 

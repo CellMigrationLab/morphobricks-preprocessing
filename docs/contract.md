@@ -546,6 +546,15 @@ relation nucleoli inside cells is kept in the report but not in the hierarchy. A
 have several direct parents (cells inside an organoid and inside a region of the slide), and
 two types that are the same objects are both kept.
 
+**Cycles (issue #105).** Relations come from pairwise evidence summed over the images with
+both masks, so types seen together in different images can form a cycle (A inside B, B
+inside C, C inside A). No parent-child hierarchy can then be inferred, and none is guessed:
+`MaskReport.hierarchy_cycles` names each group of types in a cycle, and the hierarchy text
+(`mask_report_summary`, `mask_hierarchy_lines`, the notebook) starts with the named warning
+`mask_hierarchy_cycle` listing every type and link of the cycle, then shows the group as one
+`[cycle: A, B, C]` entry; every type is listed. `mask_relationships.json` is unchanged
+(report version 1): its `hierarchy` keeps every direct link, cycles included.
+
 The report is UTF-8 JSON (two-space indent, LF), written atomically to the output folder:
 
 | Key | Meaning |
