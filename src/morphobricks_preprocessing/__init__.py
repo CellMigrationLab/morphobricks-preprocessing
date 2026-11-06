@@ -211,7 +211,7 @@ from .run_inputs import Fov, LazyImage, RunInputs, RunInputsError, UnrecordedFil
 from .sources import check_sources
 from .unrecorded import UnrecordedFiles, unrecorded_files
 from .validation import Severity, ValidationIssue, has_errors
-from .write_target import write_target_refusal
+from .write_target import same_file, write_target_refusal
 from .zarr_input import (
     NgffError,
     NgffImage,
@@ -404,6 +404,7 @@ __all__ = [
     "review_calibration",
     "review_image_type",
     "run_experiment",
+    "same_file",
     "same_pixel_size",
     "sample_planes",
     "scan_masks",

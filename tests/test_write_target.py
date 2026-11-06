@@ -32,6 +32,13 @@ def test_it_is_public():
     assert "write_target_refusal" in pp.__all__
 
 
+def test_same_file_is_public():
+    from morphobricks_preprocessing.write_target import same_file
+
+    assert pp.same_file is same_file
+    assert "same_file" in pp.__all__
+
+
 def test_a_file_elsewhere_may_be_written(tree):
     assert _refusal(tree, tree / "elsewhere/new.csv") is None
     (tree / "elsewhere/old.csv").write_text("old", encoding="utf-8")
