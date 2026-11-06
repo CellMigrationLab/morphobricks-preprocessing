@@ -149,6 +149,17 @@ def test_missing_x_or_y_is_an_error(roles, missing):
     assert found.paths == ("a.tif",)
 
 
+def test_a_one_dimensional_array_is_refused_as_having_no_xy_axes():
+    """Plan question 44 (issue #158): say it is 1-D, not that X/Y roles are unassigned."""
+    files = [meta("a.tif", (64,), "X")]
+    found = issue(check_mapping(AxisMapping("X", "-"), files), "missing_xy_axis")
+    assert found.severity is Severity.ERROR
+    assert "one-dimensional" in found.message
+    assert "no X (width) and Y (height) axes" in found.message
+    assert "at least two dimensions" in found.action
+    assert found.paths == ("a.tif",)
+
+
 @pytest.mark.parametrize("roles", ["ZZYX", "ZCXX", "ZCYY", "CCYX"])
 def test_duplicate_roles_are_an_error(roles):
     found = issue(check_mapping(AxisMapping("ZCYX", roles)), "duplicate_axis_role")

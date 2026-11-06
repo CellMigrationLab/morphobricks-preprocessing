@@ -40,6 +40,37 @@ from .size_checks import (
 from .validation import ValidationIssue, error, plural
 
 
+def _one_dimensional(mapping: AxisMapping, paths: list[str]) -> ValidationIssue:
+    """Refuse a one-dimensional array: it has no X and Y axes to split into planes (#158)."""
+    return error(
+        "missing_xy_axis",
+        f"The image is a one-dimensional array ({mapping.describe()}): it has no "
+        "X (width) and Y (height) axes, so it cannot be split into planes.",
+        paths,
+        "This brick reads images of at least two dimensions. If the data are an "
+        "image, export it again with its width and height as two axes; a "
+        "one-dimensional signal is not an image and is out of scope.",
+    )
+
+
+def _missing_xy(mapping: AxisMapping, paths: list[str]) -> list[ValidationIssue]:
+    """Return the ``missing_xy_axis`` error when X or Y has no axis (plan question 44, #158)."""
+    missing = [role for role in ("X", "Y") if role not in mapping.roles]
+    if not missing:
+        return []
+    if mapping.ndim == 1:
+        return [_one_dimensional(mapping, paths)]
+    return [
+        error(
+            "missing_xy_axis",
+            f"The axis mapping has no {' or '.join(missing)} axis. Every image needs "
+            "exactly one X (width) and one Y (height) axis to be split into planes.",
+            paths,
+            f"Assign the {' and '.join(missing)} role to the image's width and height axes.",
+        )
+    ]
+
+
 def check_mapping(
     mapping: AxisMapping, files: Iterable[TiffMetadata] = ()
 ) -> list[ValidationIssue]:
@@ -67,17 +98,7 @@ def check_mapping(
     lengths = _dimension_lengths(mapping, files)
     issues: list[ValidationIssue] = []
 
-    missing = [role for role in ("X", "Y") if role not in mapping.roles]
-    if missing:
-        issues.append(
-            error(
-                "missing_xy_axis",
-                f"The axis mapping has no {' or '.join(missing)} axis. Every image needs "
-                "exactly one X (width) and one Y (height) axis to be split into planes.",
-                paths,
-                f"Assign the {' and '.join(missing)} role to the image's width and height axes.",
-            )
-        )
+    issues += _missing_xy(mapping, paths)
 
     duplicates = sorted(
         {r for r in mapping.roles if r is not None and mapping.roles.count(r) > 1},
