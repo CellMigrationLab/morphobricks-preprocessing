@@ -131,7 +131,8 @@ src/morphobricks_preprocessing/
                     fingerprint is the one bound to the mask's header (issue #160)
   mask_binding.py   masks bound to their fingerprints (issues #160, #165): changed_masks,
                     mask_contents/content_changed_masks (verify_content),
-                    mask_changed_issue (mask_changed_during_run)
+                    mask_changed_issue (mask_changed_during_run, mask_changed_during_scan),
+                    scan_fingerprints/check_scanned and MaskChangedError (scan_masks)
   axis_check.py     the axis check (contract §2): header_axis_issue, axis_disagreements,
                     likely_axis_cause, check_header_axes, ConfirmedAxes (a confirmation covers
                     only its files as fingerprinted, plain_stack_not_confirmed); AXIS_ERROR_CODES, AXIS_CHECK_CODES
@@ -185,7 +186,8 @@ src/morphobricks_preprocessing/
                     mask_axes_questions (the types whose axes must be stated, with the
                     statements mask_roles accepts)
   mask_scan.py      the optional mask step (Q32): piece_counts (scipy.ndimage), pair_counts,
-                    scan_masks -> MaskReport (kinds, relations, direct-parent hierarchy, evidence),
+                    scan_masks -> MaskReport (kinds, relations, direct-parent hierarchy, evidence;
+                    each image's masks fingerprinted before and after they are read, #165),
                     write_mask_report (mask_relationships.json); DEFAULT_THRESHOLDS,
                     mask_thresholds (checked changes)
   mask_pairs.py     pair_counts' pure helpers: best_parents (a tie between parents gives no

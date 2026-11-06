@@ -51,6 +51,15 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
     recorded is the same, so an unchanged rerun keeps the manifest byte for byte. The masks'
     content SHA-256 is compared in memory and not recorded. Earlier manifests read as
     before.
+- **No mask relationship report from masks that change while they are scanned** (#165). The
+  mask step fingerprints each mask with its header (`prepare_mask_step`) and each image's
+  masks before and after their planes are read; a mask that changed or went missing raises
+  `MaskChangedError` (a `ValueError`; the new error `mask_changed_during_scan`, which the
+  `masks` command prints), no report is written and an earlier one is left as it was. With
+  `verify_content` (`prepare_mask_step(verify_content=...)`, new `masks --verify-content`;
+  by default the recorded run's setting) the masks' content SHA-256 is compared too.
+  *Records:* `mask_relationships.json` is unchanged (report version 3) and unchanged masks
+  give the same report.
 
 ## v0.4.0 (5 November 2026)
 

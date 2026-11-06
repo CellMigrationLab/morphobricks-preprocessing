@@ -655,7 +655,7 @@ SHA-256 still accept it; the report records the rerun. Other options:
 | `--image-type fluorescence\|rgb` | The image type (default: the earlier run's, else the suggested one, printed) |
 | `--design FILE` | The confirmed experiment design (default: `experiment_design.csv` in the output folder); it is copied to the output folder |
 | `--mode restart\|full` | `restart` (default) reuses the rows of unchanged images; `full` recomputes every row and check. Both keep your confirmations and replace the results only when the run succeeds |
-| `--verify-content`, `--no-verify-content` | Reuse rows (earlier or staged) only when each image's content SHA-256 is the one recorded with them, not only its size and modification time; every image is read once more. Default: the earlier run's choice, else off. Turning it on or off recomputes every row |
+| `--verify-content`, `--no-verify-content` | Reuse rows (earlier or staged) only when each image's content SHA-256 is the one recorded with them, not only its size and modification time; every image is read once more. Default: the earlier run's choice, else off. Turning it on or off recomputes every row. With `masks`: also compare each mask's content SHA-256 before and after it is read (same default) |
 | `--no-masks` | Drop the masks folder an earlier run recorded, with the mask axes stated for its masks (those of OME-Zarr label images are kept) |
 | `--no-exclude` | Clear the exclusions an earlier run recorded, so every image is analysed again (not together with `--exclude`) |
 | `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks`, `design` and `calibrate`); give it only when no other run uses the output folder |
@@ -727,7 +727,12 @@ objects have positive labels: a mask with a negative value stops the command wit
 naming the mask, and no report is written.
 The output folder's lock is held from before the first mask is read until the report is
 written: when another run holds it, the command stops with `output_locked` before reading
-any mask.
+any mask. A mask that changes after the command read its header or while its pixels are read
+(a segmentation still writing it) stops the command with `mask_changed_during_scan`, naming
+the mask: no report is written, and an earlier `mask_relationships.json` is left as it was.
+`--verify-content` also compares each mask's content (SHA-256) before and after it is read
+(each mask is read whole twice more); given neither it nor `--no-verify-content`, the run's
+own setting is used.
 
 The rules behind each suggestion use thresholds you can change, for example
 `--inside-object-share 0.8` to call a kind of mask "inside" another when 80% of its objects
@@ -1076,6 +1081,7 @@ continues.
 | `source_changed_during_run` | Error | An image changed or went missing while the run was checking or reading it, so its rows would not describe it. No scientific outputs are published and sources are untouched; the discovery report is written. Wait until nothing writes to the experiment (an acquisition or a copy still running), then run again: the images already read resume from their staged rows. |
 | `mask_changed_during_check` | Error | A mask changed while its header was read, so the check cannot tell which version it describes. Wait until nothing writes to the masks (a segmentation or a copy still running), then check or run again. |
 | `mask_changed_during_run` | Error | A mask changed or went missing after the run checked its header and before it published its results (its size or time, or for an OME-Zarr label image its files; with `--verify-content` also its content). Nothing is published; the discovery report is written. Wait until nothing writes to the masks, then run again: the images already read resume from their staged rows. |
+| `mask_changed_during_scan` | Error | The `masks` command (or **Describe the masks**): a mask changed or went missing after its header was read or while its pixels were read. No report is written; an earlier `mask_relationships.json` is left as it was. Wait until nothing writes to the masks, then describe them again. |
 | `design_unreadable` | Error | The `experiment_design.csv` an earlier run wrote cannot be read. Correct it, or delete it to confirm the design again. |
 | `no_usable_planes` | Error | No plane has finite pixel values. Check the images. |
 | `tiff_outside_leaf` | Error | Images sit in a folder that also holds subfolders, so they have no condition or repeat of their own. A folder holds either images or subfolders, never both. Move the images into a folder of their own, or out of the experiment folder. |

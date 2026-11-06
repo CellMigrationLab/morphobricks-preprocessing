@@ -492,6 +492,19 @@ the user names the masks and confirms or corrects the relationships. The step ho
 output folder's lock (§9.2) from before the first mask is read to the write of the report;
 another run holding it refuses the step (`output_locked`) before any mask is read.
 
+The masks are bound to their fingerprints (issue #165, as a run's sources, §9.4): the step
+fingerprints each mask before and after its header is read (`prepare_mask_step`;
+`mask_changed_during_check` when they differ), and the scan fingerprints each image's masks
+before their first plane is read and again after their last. A mask that no longer has the
+fingerprint taken with its header, that went missing, or whose fingerprint changed during
+its scan raises `MaskChangedError` (a `ValueError`; the error `mask_changed_during_scan`,
+naming the masks and what changed): no report is written, nothing half-written is left (the
+report is written whole, by one rename, only after every image is scanned), and an earlier
+`mask_relationships.json` is left as it was. With `verify_content` (`prepare_mask_step(...,
+verify_content=True)`, CLI `masks --verify-content`; by default the recorded run's setting)
+each mask's content SHA-256 is also taken before and after its scan and must not change.
+Unchanged masks give the same report as before.
+
 | Kind of mask | Rule |
 |---|---|
 | `empty` | No foreground in any image. |

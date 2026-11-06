@@ -59,6 +59,8 @@ from scipy import ndimage
 
 from ._io import write_text_atomic
 from .manifest import package_versions
+from .mask_binding import MaskChangedError as MaskChangedError  # raised by the scan
+from .mask_binding import check_scanned, scan_fingerprints
 from .mask_pairs import best_parents, match_counts
 from .mask_pairs import one_to_one_matches as one_to_one_matches  # moved there
 from .masks import MaskInventory, check_labels, read_mask
@@ -399,8 +401,17 @@ def scan_masks(
     *,
     progress: Callable[[int, int, str], None] | None = None,
     thresholds: Mapping[str, float] | None = None,
+    verify_content: bool = False,
 ) -> MaskReport:
     """Read every image's masks and describe the mask types and their relationships.
+
+    Each image's masks are bound to their fingerprints while they are read (issue #165):
+    every mask is fingerprinted before its first plane is read and again after its last,
+    and must have the same fingerprint both times, the one taken with its header when it
+    was found with ``bind=True`` (:attr:`.masks.MaskFile.bound`). With ``verify_content``
+    its content SHA-256 is also taken before and after and must not change. A mask that
+    changed raises :class:`.mask_binding.MaskChangedError` (``mask_changed_during_scan``):
+    no report is returned, so none is written from masks of mixed versions.
 
     Parameters
     ----------
@@ -412,6 +423,8 @@ def scan_masks(
         Called as ``progress(done, total, image)`` before each image is read.
     thresholds
         Thresholds to change from their defaults, by name (:func:`mask_thresholds`).
+    verify_content
+        Also compare each mask's content SHA-256 before and after it is read.
 
     Returns
     -------
@@ -419,6 +432,9 @@ def scan_masks(
 
     Raises
     ------
+    MaskChangedError
+        A ``ValueError``: for masks that changed or went missing before or while their image's
+        planes were read.
     ValueError
         For an invalid threshold, before any mask is read; for an image whose masks have
         different depth slices or time points; for a mask
@@ -443,6 +459,7 @@ def scan_masks(
                 "(mask_planes_differ)"
             )
         counts_of = dict(next(iter(planes)))
+        before = scan_fingerprints(found_masks.values(), inventory.folder, root, verify_content)
         for name in found_masks:
             seen[name] += 1
         # A mask with depth slices or time points is scanned one plane at a time, as if
@@ -460,6 +477,7 @@ def scan_masks(
                     for name, mask in found_masks.items()
                 }
                 _scan_plane(masks, pieces, single, totals, limits)
+        check_scanned(found_masks.values(), inventory.folder, root, before, verify_content)
     if progress is not None:
         progress(len(images), len(images), "")
     types = {
