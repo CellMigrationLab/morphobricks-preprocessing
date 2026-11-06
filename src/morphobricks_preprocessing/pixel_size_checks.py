@@ -343,8 +343,8 @@ def _unit_issue(
     return [
         warning(
             "unsupported_pixel_size_unit",
-            f"{plural(len(found), 'image')} {agree(found, 'gives', 'give')} a pixel size or "
-            f"z-step in a length unit that is not supported, or without a unit: {details}. "
+            f"{plural(len(found), 'image')} {agree(found, 'gives', 'give')} a pixel size, "
+            f"z-step or time step in a unit that is not supported, or without a unit: {details}. "
             "Only pm, angstrom, nm, micrometre (um, micron), mm, cm and m are converted. These "
             "sizes are not converted: the images are treated as uncalibrated on those axes.",
             list(found),

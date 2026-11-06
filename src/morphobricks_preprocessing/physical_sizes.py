@@ -88,7 +88,7 @@ class PhysicalSizes:
         None means ``space_unit``. :meth:`unit` resolves them, so they stay
         consistent under :func:`dataclasses.replace` and pickling.
     unsupported_units
-        The space axes whose size the metadata give in a length unit that is not one
+        The axes whose size the metadata give in a length unit that is not one
         of :data:`SPACE_UNITS` (decision D-a2), as ``(axis letter, unit as written)``
         pairs, for example ``(("X", "inch"), ("Y", "inch"))``; ``""`` for an OME-Zarr
         axis whose scale has no unit. Such a size is never
@@ -465,11 +465,17 @@ def ngff_physical_sizes(multiscale: dict, axes: str) -> PhysicalSizes:
         for letter, (_, unit) in sizes.items()
         if letter in "XYZ"
     }
+    # A time step without a unit is never taken as seconds (issue #155): named like the
+    # space axes, so that the folder check warns about it.
+    t_size, t_unit = sizes["T"]
     found = _sizes(
         *(sizes[letter][0] for letter in "XYZT"),
         {letter: sizes[letter][1] for letter in "XYZ"},
         sizes["T"][1],
-        _unsupported({letter: sizes[letter][0] for letter in "XYZ"}, written),
+        [
+            *_unsupported({letter: sizes[letter][0] for letter in "XYZ"}, written),
+            *([("T", "")] if t_size is not None and t_unit is None else []),
+        ],
     )
     return _with_invalid(found, [invalid])
 
