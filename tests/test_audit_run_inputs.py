@@ -216,6 +216,23 @@ def test_a_well_formed_imagej_resolution_is_not_invalid(tmp_path):
     assert (sizes.x, sizes.y, sizes.invalid) == (0.5, 0.5, None)
 
 
+def test_an_ome_zarr_time_scale_without_a_unit_is_named_not_taken_as_seconds(tmp_path):
+    """Issue #155: a time step without a unit warns, like a space axis without one."""
+    root = tmp_path / "exp"
+    write_ngff(
+        root / "c/a.ome.zarr", np.zeros((2, 8, 8), np.uint16), "tyx", scale=[3.0, 0.5, 0.5],
+        units={"y": "micrometer", "x": "micrometer"},
+    )  # fmt: skip
+    write_ngff(
+        root / "c/b.ome.zarr", np.zeros((2, 8, 8), np.uint16), "tyx", scale=[3.0, 0.5, 0.5],
+        units={"t": "second", "y": "micrometer", "x": "micrometer"},
+    )  # fmt: skip
+    result = run_experiment(root, prefill_mapping("TYX"))
+    found = issue(result.issues, "unsupported_pixel_size_unit")
+    assert found.paths == ("c/a.ome.zarr",)
+    assert "c/a.ome.zarr (T without a unit)" in found.message
+
+
 def test_an_ome_zarr_scale_without_a_unit_is_unknown_and_named(tmp_path):
     root = tmp_path / "exp"
     write_ngff(root / "c/a.ome.zarr", np.zeros((8, 8), np.uint16), "yx", scale=[0.5, 0.5])
