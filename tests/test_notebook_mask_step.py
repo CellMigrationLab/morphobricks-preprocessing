@@ -9,10 +9,12 @@ the existing cards, and is hidden when an embedding brick hides the output folde
 
 import importlib
 import json
+import os
 
 import numpy as np
 import pytest
 
+from morphobricks_preprocessing import mask_scan
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.mask_scan import MASK_REPORT_FILENAME
 from morphobricks_preprocessing.run.lock import output_lock
@@ -186,6 +188,32 @@ def test_masks_whose_labels_cannot_be_used_get_a_red_card(tmp_path):
     assert "The masks cannot be used." in nb.mask_step_status.value
     assert "Nothing was written." in nb.mask_step_status.value
     assert nb.mask_step_progress.bar_style == "danger"
+
+
+def test_a_mask_changed_while_it_is_described_says_to_wait_not_to_correct_it(tmp_path, monkeypatch):
+    # Issue #165 (review of #180): a mask still being written is not a mask to correct.
+    root = experiment(tmp_path)
+    masks = nested_masks(tmp_path)
+    nb, _ = ran(root, masks)
+    assert nb.run().written
+    read, changed = mask_scan.read_mask, masks / "cells" / IMAGES[0]
+
+    def read_then_rewrite(mask, *args, **kwargs):
+        pixels = read(mask, *args, **kwargs)
+        stat = changed.stat()
+        write_data(changed, np.zeros((16, 16), np.uint16))
+        os.utime(changed, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**9))
+        return pixels
+
+    monkeypatch.setattr(mask_scan, "read_mask", read_then_rewrite)
+    assert nb._on_describe_masks() is None
+    status = nb.mask_step_status.value
+    assert "changed while they were read" in status and "Nothing was written." in status
+    assert "Correct or replace" not in status
+    assert "mask changed during scan" in nb.mask_step_result.value
+    assert "Wait until nothing is writing to these masks" in nb.mask_step_result.value
+    assert nb.mask_step_progress.bar_style == "danger"
+    assert not (output_of(root) / MASK_REPORT_FILENAME).exists()
 
 
 def test_a_new_run_clears_the_description(tmp_path):

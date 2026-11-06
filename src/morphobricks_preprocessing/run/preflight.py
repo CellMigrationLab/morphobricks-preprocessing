@@ -196,6 +196,7 @@ def preflight(
         Fingerprint each image before and after its header is read
         (:attr:`Preflight.header_fingerprints`), so a caller that writes from the headers
         (:func:`.conversion_plan.plan_conversion`) never mixes a header with a later file.
+        Each mask is bound the same way (:attr:`.masks.MaskFile.bound`, issue #160).
 
     Returns
     -------
@@ -216,7 +217,7 @@ def preflight(
         exclusion_issues=tuple(_exclusion_issues(discovery, excluded)),
         suggested_mapping=prefill_experiment_mapping(metadata),
         dataset=check_dataset(discovery, excluded=excluded),
-        masks=_masks(discovery, metadata, masks_folder, mask_axes, output),
+        masks=_masks(discovery, metadata, masks_folder, mask_axes, output, bind_headers),
         calibration=calibration,
         conversion=review_conversion(root, discovery.images),
         header_fingerprints=bound,
@@ -274,10 +275,16 @@ def _masks(
     masks_folder: str | os.PathLike | None,
     mask_axes: Mapping[str, str] | None,
     output: Path,
+    bind: bool = False,
 ) -> MaskInventory | None:
     """Pair the analysed images with their masks; None without masks folder or label image."""
     masks = find_masks(
-        masks_folder, discovery, metadata.files, mask_axes=mask_axes, output_folder=output
+        masks_folder,
+        discovery,
+        metadata.files,
+        mask_axes=mask_axes,
+        output_folder=output,
+        bind=bind,
     )
     if masks_folder is None and not masks.files and not masks.issues:
         return None  # no masks folder and no label images: the run has no masks

@@ -13,6 +13,7 @@ from pathlib import Path
 import tifffile
 
 from ..axes import AxisMapping
+from ..fingerprint import Fingerprint
 from ..metadata import TiffMetadata, named_axes
 from ..validation import ValidationIssue, agree, error, plural
 from ..zarr_input import (
@@ -34,6 +35,7 @@ def _header_issues(
     root: Path,
     unreadable: Iterable[str] = (),
     stated: Mapping[str, str] | None = None,
+    bind: bool = False,
 ) -> list[ValidationIssue]:
     """Read each mask's header (axes, shape, pixel type) and check it against its image.
 
@@ -42,11 +44,21 @@ def _header_issues(
     updated in place with them. Also check that the masks of one image have the same depth
     slices and time points: a 2-D mask is never shared by the planes of its image (owner
     decision of 5 November 2026). ``unreadable`` are paths already known not to open
-    (OME-Zarr ``labels`` groups).
+    (OME-Zarr ``labels`` groups). With ``bind``, each mask is fingerprinted before and
+    after its header is read (:attr:`.model.MaskFile.bound`, issue #160); a mask whose two
+    fingerprints differ is ``mask_changed_during_check``.
     """
     found: list[tuple[str, str, str]] = [("unreadable_mask", path, "") for path in unreadable]
     for index, mask in enumerate(files):
+        where = mask.location(folder, root) if bind else None
+        before = _fingerprint(where)
         checked, problems = _check_header(mask, images[mask.image], folder, root, stated or {})
+        if bind and checked is not None:
+            after = _fingerprint(where)
+            if before is None or before != after:
+                problems.append(("mask_changed_during_check", mask.path, ""))
+            else:
+                checked = replace(checked, bound=before)
         found.extend(problems)
         if checked is not None:
             files[index] = checked
@@ -58,6 +70,16 @@ def _header_issues(
         if len({tuple(m.planes.items()) for m in masks}) > 1:
             found.extend(("mask_planes_differ", m.path, "") for m in masks)
     return _grouped(found)
+
+
+def _fingerprint(path: Path | None) -> Fingerprint | None:
+    """Return a mask's fingerprint now; None without a path, or when it is gone."""
+    if path is None:
+        return None
+    try:
+        return Fingerprint.of(path)
+    except OSError:
+        return None
 
 
 def _check_header(
@@ -158,6 +180,13 @@ _TEXTS = {
         "shared by several planes.",
         "Make every mask of an image with the image's time points (T): one mask plane per "
         "time point.",
+    ),
+    "mask_changed_during_check": (
+        "Some masks changed while their headers were being read (their size or time, or "
+        "for a label image its files, differed before and after), so the check cannot tell "
+        "which version of each it describes.",
+        "Wait until nothing is writing to these masks (a segmentation or a copy still "
+        "running), then check or run again.",
     ),
     "mask_size_mismatch": (
         "Some masks do not have the size (Y and X) of their image.",

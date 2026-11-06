@@ -34,6 +34,7 @@ def find_masks(
     *,
     mask_axes: Mapping[str, str] | None = None,
     output_folder: str | os.PathLike | None = None,
+    bind: bool = False,
 ) -> MaskInventory:
     """Pair every image with its masks and check them from their headers, without pixels.
 
@@ -59,6 +60,11 @@ def find_masks(
         ``output_inside_masks`` (the run's files would be read as masks). The folder rules
         (:mod:`..folder_rules`) also refuse a masks folder inside the experiment, holding it
         or holding named-axis copies.
+    bind
+        Fingerprint each mask before and after its header is read and keep the
+        fingerprint with it (:attr:`.model.MaskFile.bound`, issue #160), so a run or the
+        mask step refuses a mask that is no longer the one its header described; a mask
+        that changed while its header was read is the error ``mask_changed_during_check``.
 
     Returns
     -------
@@ -82,7 +88,7 @@ def find_masks(
     files.sort(key=lambda f: (f.image, f.mask_type))
     issues.extend(_duplicate_issues(files))
     stated = dict(mask_axes or {})
-    issues.extend(_header_issues(files, images, folder, discovery.root, unreadable, stated))
+    issues.extend(_header_issues(files, images, folder, discovery.root, unreadable, stated, bind))
     types = tuple(sorted({f.mask_type for f in files}))
     issues.extend(_unknown_type_issues(stated, types))
     issues.extend(_missing_issues(types, files, images))

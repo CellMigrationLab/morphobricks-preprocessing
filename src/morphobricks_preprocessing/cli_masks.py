@@ -8,13 +8,16 @@ experiment folder (``experiment_not_recorded`` without one), the masks folder, t
 axes and the exclusions; a value given that differs is used and named. The pairing, the
 scan and the write are :mod:`.run.mask_step`'s, shared with the notebook: the output
 folder's lock is held from before the first mask is read to the write, so a locked folder
-is refused before any mask is read.
+is refused before any mask is read. A mask that changes after its header is read or while it
+is read refuses the step (``mask_changed_during_scan``, issue #165); ``--verify-content``
+also compares each mask's content SHA-256.
 """
 
 from __future__ import annotations
 
 import argparse
 
+from .mask_binding import MaskChangedError
 from .mask_scan import DEFAULT_THRESHOLDS, mask_thresholds
 from .mask_text import mask_report_summary, mask_summary
 from .report import format_issues
@@ -46,6 +49,12 @@ def add_masks_arguments(masks: argparse.ArgumentParser) -> None:
         help="clear the exclusions of the earlier run for this scan (not with --exclude)",
     )
     masks.add_argument("--log", metavar="FILE", help="write technical details to this file")
+    masks.add_argument(
+        "--verify-content",
+        action=argparse.BooleanOptionalAction,
+        help="also compare each mask's content SHA-256 before and after it is read (reads "
+        "each mask whole twice more; default: as in the earlier run, else no)",
+    )
     limits = masks.add_argument_group(
         "relationship thresholds", "change the defaults (contract §15.1); shares are 0 to 1"
     )
@@ -73,6 +82,7 @@ def masks_command(args: argparse.Namespace) -> int:
         exclude=() if args.no_exclude else (tuple(args.exclude) or None),
         masks_folder=args.masks,
         mask_axes=args.mask_axes or None,
+        verify_content=args.verify_content,
     )
     if step.refusal is not None:
         print(format_issues([step.refusal]))
@@ -96,6 +106,9 @@ def masks_command(args: argparse.Namespace) -> int:
     print()
     try:
         result = describe_masks(step, progress=progress, thresholds=thresholds)
+    except MaskChangedError as exc:  # changed since its header was read, or while read
+        print(format_issues([exc.issue]))
+        return 1
     except ValueError as exc:  # masks whose pixels cannot be used (planes, labels)
         print(f"The masks cannot be used: {exc}")
         return 1

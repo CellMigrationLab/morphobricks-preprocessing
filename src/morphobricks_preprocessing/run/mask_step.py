@@ -14,6 +14,12 @@ run the same two functions (contract §15):
   report, holding the output folder's lock from the first mask read to the write: a run
   may be replacing or removing the same file. A locked folder is refused before any mask
   is read.
+
+Every mask is bound to its fingerprint from its header read to the end of its scan (issue
+#165, :mod:`..mask_binding`): :func:`prepare_mask_step` fingerprints each mask before and
+after its header is read, and the scan refuses a mask that no longer has that fingerprint
+or changes while it is read (``mask_changed_during_scan``, also its content SHA-256 when
+``verify_content`` is on: given, else the run's recorded setting). Nothing is written then.
 """
 
 from __future__ import annotations
@@ -54,6 +60,9 @@ class MaskStep:
         exclusions' and the masks'.
     refusal
         ``experiment_not_recorded`` when no experiment folder was given or recorded.
+    verify_content
+        Compare each mask's content SHA-256 before and after it is read, not only its
+        fingerprint (given, else the run's recorded setting).
     """
 
     preflight: Preflight | None
@@ -61,6 +70,7 @@ class MaskStep:
     changes: tuple[InputChange, ...] = ()
     issues: tuple[ValidationIssue, ...] = ()
     refusal: ValidationIssue | None = None
+    verify_content: bool = False
 
     @property
     def masks(self) -> MaskInventory:
@@ -127,8 +137,13 @@ def prepare_mask_step(
     exclude: Sequence[str] | None = None,
     masks_folder: str | os.PathLike | None = None,
     mask_axes: Mapping[str, str] | None = None,
+    verify_content: bool | None = None,
 ) -> MaskStep:
     """Pair the masks the mask step reads, with the inputs the earlier run recorded.
+
+    Each mask is fingerprinted before and after its header is read
+    (:attr:`.masks.MaskFile.bound`); :func:`describe_masks` reads only masks that still
+    have that fingerprint.
 
     Parameters
     ----------
@@ -142,6 +157,9 @@ def prepare_mask_step(
         The masks folder; None takes the recorded one.
     mask_axes
         Mask axes stated per mask type; they add to (and replace per type) the recorded ones.
+    verify_content
+        Also compare each mask's content SHA-256 while it is read; None takes the run's
+        recorded setting (False without one).
 
     Returns
     -------
@@ -162,6 +180,7 @@ def prepare_mask_step(
         exclude=None if exclude is None else tuple(exclude),
         masks_folder=Path(masks_folder).resolve() if masks_folder else None,
         mask_axes=mask_axes or None,
+        verify_content=verify_content,
     )
     resolved = resolve_inputs(given, read_previous(output.resolve())[0])
     changes = tuple(
@@ -173,6 +192,7 @@ def prepare_mask_step(
         exclude=list(resolved.exclude),
         masks_folder=resolved.masks_folder,
         mask_axes=resolved.mask_axes,
+        bind_headers=True,
     )
     pre = replace(pre, masks=pre.masks or MaskInventory(folder=None))  # none found
     return MaskStep(
@@ -180,6 +200,7 @@ def prepare_mask_step(
         output_folder=output,
         changes=changes,
         issues=(*pre.discovery.issues, *pre.exclusion_issues, *pre.masks.issues),
+        verify_content=resolved.verify_content,
     )
 
 
@@ -211,7 +232,10 @@ def describe_masks(
     ------
     ValueError
         For a step that is not ready, and for masks whose pixels cannot be used (planes,
-        labels; :func:`.mask_scan.scan_masks`).
+        labels; :func:`.mask_scan.scan_masks`); :class:`..mask_binding.MaskChangedError`
+        (``mask_changed_during_scan``) for masks that changed since their headers were read
+        or while they were read. No report is written then, and an earlier one is left as
+        it was.
     """
     if not step.ready or step.preflight is None or step.output_folder is None:
         raise ValueError("the masks cannot be described: the step has errors or no masks")
@@ -222,7 +246,11 @@ def describe_masks(
         # recorded inputs or removing the report; a locked folder is refused before any read.
         with output_lock(output):
             report = scan_masks(
-                step.masks, step.preflight.discovery.root, progress=progress, thresholds=thresholds
+                step.masks,
+                step.preflight.discovery.root,
+                progress=progress,
+                thresholds=thresholds,
+                verify_content=step.verify_content,
             )
             path = write_mask_report(report, output / MASK_REPORT_FILENAME)
     except OutputLockedError as exc:

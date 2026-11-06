@@ -2,7 +2,8 @@
 
 Every mask entry adds to what :meth:`.masks.MaskInventory.to_manifest` gives its
 fingerprint (``size``, ``mtime_ns``, and ``inventory_sha256`` for an OME-Zarr label image,
-issue #86), so a brick can tell a mask changed since the run, and
+issue #86), so a brick can tell a mask changed since the run (the fingerprint bound to the
+header the run checked, :attr:`.masks.MaskFile.bound`, issue #160), and
 how it is read: ``roles`` (one per axis of ``axes``) and ``axes_from`` (``"header"``: the
 mask's metadata names them; ``"stated"``: the user stated them for its mask type). The key
 ``shared`` of a 2-D mask shared by every plane of its image (v0.4.0 release candidates) is
@@ -18,7 +19,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from .fingerprint import Fingerprint
-from .masks import FOLDER, MaskFile, MaskInventory
+from .masks import MaskInventory
 
 
 def mask_manifest(inventory: MaskInventory, experiment_root: str | os.PathLike) -> dict:
@@ -52,7 +53,10 @@ def mask_manifest(inventory: MaskInventory, experiment_root: str | os.PathLike) 
     by_path = {mask.path: mask for mask in inventory.files}
     for entry in data["files"]:
         mask = by_path[entry["path"]]
-        fingerprint = Fingerprint.of(_mask_path(mask, inventory.folder, Path(experiment_root)))
+        # The fingerprint bound to the header the run checked (issue #160), else as it is now.
+        fingerprint = mask.bound or Fingerprint.of(
+            mask.location(inventory.folder, Path(experiment_root))
+        )
         entry.update(
             axes=mask.header_axes or mask.axes,
             **fingerprint.to_data(),
@@ -60,11 +64,6 @@ def mask_manifest(inventory: MaskInventory, experiment_root: str | os.PathLike) 
             axes_from=mask.axes_from or "header",
         )
     return data
-
-
-def _mask_path(mask: MaskFile, folder: Path | None, root: Path) -> Path:
-    """Return where a mask is on disk: in the masks folder, or inside its OME-Zarr image."""
-    return (folder / mask.path) if mask.source == FOLDER else (root / mask.path)
 
 
 def shared_mask_text(records: Iterable[Mapping]) -> str | None:

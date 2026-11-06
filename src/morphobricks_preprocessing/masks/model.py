@@ -9,10 +9,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from ..validation import ValidationIssue, has_errors
+
+if TYPE_CHECKING:
+    from ..fingerprint import Fingerprint
 
 FOLDER = "folder"
 """Source of a mask kept as a TIFF file in the masks folder."""
@@ -69,6 +73,12 @@ class MaskFile:
         the user stated the axes of its mask type (a plain stack, e.g. ``TYX``); empty when
         unknown. A 2-D mask is never shared by several planes of its image (owner decision
         of 5 November 2026): every mask has the image's time points.
+    bound
+        The mask's fingerprint taken before and after its header was read, when they agree
+        (``find_masks(bind=True)``, issue #160): the header describes the mask as it was
+        then, and a run or scan refuses the mask once it no longer has it. None when the
+        masks were found without binding (or the header could not be bound: the error
+        ``mask_changed_during_check``).
     """
 
     image: str
@@ -81,6 +91,25 @@ class MaskFile:
     header_axes: str = ""
     axes_from: str = ""
     named_axes: str = ""
+    bound: Fingerprint | None = None
+
+    def location(self, masks_folder: Path | None, experiment_root: Path) -> Path:
+        """Return where the mask is on disk: in the masks folder, or inside its OME-Zarr image.
+
+        Parameters
+        ----------
+        masks_folder
+            The masks folder (:attr:`MaskInventory.folder`) for a TIFF mask.
+        experiment_root
+            The experiment folder, holding the label images of OME-Zarr images.
+
+        Returns
+        -------
+        Path
+        """
+        if self.source == FOLDER:
+            return Path(masks_folder) / self.path
+        return Path(experiment_root) / self.path
 
     @property
     def planes(self) -> dict[str, int]:
