@@ -959,7 +959,11 @@ that program and run again. This needs temporary disk space for the new outputs.
 **Images that change during the run.** If an image changes or disappears while the run
 checks or reads it (an acquisition or a copy still writing into the experiment), the run
 stops with `source_changed_during_run` and publishes nothing. Wait until nothing writes to
-the experiment, then run again: the images already read resume.
+the experiment, then run again: the images already read resume. Masks are checked the same
+way: a mask that changes while the run checks its header, or at any time before the run
+publishes its results (a segmentation still writing it), stops the run with
+`mask_changed_during_check` or `mask_changed_during_run`, naming the mask and what changed,
+and nothing is published. With `--verify-content` the masks' content is compared too.
 
 Every output file gets the permissions a file you save yourself would get (your umask;
 usually readable by everyone, writable by you), so colleagues can open the results in a
@@ -1070,6 +1074,8 @@ continues.
 | `conversion_source_changed` | Warning | An original changed or went missing after its named-axis copy was made; the copies hold the images as converted. If the originals were corrected, convert again into a new folder. |
 | `copy_changed_after_conversion` | Error | An image of the folder of named-axis copies changed (its size, time or SHA-256), went missing or was added after the conversion, so the conversion record does not describe it, and the bricks (`RunInputs`) would refuse a run on it. The run stops before it writes anything but the report: convert the originals again into a new folder, and run preprocessing on that one (same output folder). |
 | `source_changed_during_run` | Error | An image changed or went missing while the run was checking or reading it, so its rows would not describe it. No scientific outputs are published and sources are untouched; the discovery report is written. Wait until nothing writes to the experiment (an acquisition or a copy still running), then run again: the images already read resume from their staged rows. |
+| `mask_changed_during_check` | Error | A mask changed while its header was read, so the check cannot tell which version it describes. Wait until nothing writes to the masks (a segmentation or a copy still running), then check or run again. |
+| `mask_changed_during_run` | Error | A mask changed or went missing after the run checked its header and before it published its results (its size or time, or for an OME-Zarr label image its files; with `--verify-content` also its content). Nothing is published; the discovery report is written. Wait until nothing writes to the masks, then run again: the images already read resume from their staged rows. |
 | `design_unreadable` | Error | The `experiment_design.csv` an earlier run wrote cannot be read. Correct it, or delete it to confirm the design again. |
 | `no_usable_planes` | Error | No plane has finite pixel values. Check the images. |
 | `tiff_outside_leaf` | Error | Images sit in a folder that also holds subfolders, so they have no condition or repeat of their own. A folder holds either images or subfolders, never both. Move the images into a folder of their own, or out of the experiment folder. |

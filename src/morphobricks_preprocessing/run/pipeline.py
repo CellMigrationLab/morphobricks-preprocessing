@@ -13,7 +13,7 @@ import logging
 import os
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -49,6 +49,12 @@ from ..manifest import (
     write_manifest,
 )
 from ..manifest_versions import version_for
+from ..mask_binding import (
+    changed_masks,
+    content_changed_masks,
+    mask_changed_issue,
+    mask_contents,
+)
 from ..mask_record import mask_manifest
 from ..mask_scan import MASK_REPORT_FILENAME
 from ..planes import DEFAULT_MEMORY_LIMIT
@@ -224,6 +230,8 @@ class _Run:
     previous: tuple[RunManifest | None, str | None]
     found: frozenset[str]
     """The names in the output folder before the run wrote anything."""
+    mask_content: Mapping[str, str | None] = field(default_factory=dict)
+    """In a ``verify_content`` run, each mask's content SHA-256 taken after the header checks."""
 
 
 def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResult:
@@ -259,6 +267,10 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
     )
     if has_errors(checked.issues):
         return _stop(run, base, None)
+    if inputs.verify_content and pre.masks is not None:
+        run = _with_mask_content(run)
+        if has_errors(checked.issues):
+            return _stop(run, base, None)
     write_report(replace(_report(run, base), provisional=True), output)
     settings = RunSettings(
         checked.bins,
@@ -282,6 +294,22 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
     if has_errors(checked.issues):
         return _stop(run, base, rows)
     return _publish(run, base, rows, settings)
+
+
+def _with_mask_content(run: _Run) -> _Run:
+    """Return the run with each mask's content SHA-256 (``verify_content``, issue #160).
+
+    Taken once the header checks pass, of the masks as fingerprinted with their headers: a
+    mask that cannot be hashed, or no longer has that fingerprint, adds
+    ``mask_changed_during_run`` to the run's issues.
+    """
+    masks, root = run.pre.masks, run.pre.discovery.root
+    run = replace(run, mask_content=mask_contents(masks, root))
+    unsettled = {path for path, sha in run.mask_content.items() if sha is None}
+    unsettled.update(changed_masks(masks, root))
+    if unsettled:
+        run.checked.issues.append(mask_changed_issue(sorted(unsettled), "fingerprint or content"))
+    return run
 
 
 def _report(
@@ -326,6 +354,7 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
     Every image is fingerprinted again just before the commit (issue #90), and in a strict
     run hashed again as the last step before it (:func:`_final_content_check`): an image
     changed since the run checked it stops the run, and no scientific output is published.
+    Every mask likewise (issue #160): ``mask_changed_during_run``.
     """
     output, pre, design = run.output, run.pre, run.checked.design
     records = sorted(rows.records, key=_row_order)
@@ -334,17 +363,22 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
     masks = None if pre.masks is None else mask_manifest(pre.masks, pre.discovery.root)
     outcome = replace(outcome_of(rows, base), replaced=_replaced(run, masks))
     removes = [name for name in (MASK_REPORT_FILENAME,) if name in outcome.replaced]
-    final_check = _final_content_check(rows, pre.discovery.root, settings)
+    final_check = _final_content_check(run, rows, settings)
     try:
         with staged_generation(output, removes, final_check) as staged:
             sha256 = _write_generation(run, rows, settings, records, (masks, intensity), staged)
             changed = changed_since(rows.entries, pre.discovery.root)
             if changed:
                 raise _SourcesChangedError(changed)
+            # Every mask still the one whose header the run checked (issue #160).
+            changed = [] if pre.masks is None else changed_masks(pre.masks, pre.discovery.root)
+            if changed:
+                raise _SourcesChangedError(changed, masks=True)
             report = replace(_report(run, outcome, intensity), status=WRITTEN)
             write_report(replace(report, manifest_sha256=sha256), staged)
     except _SourcesChangedError as exc:
-        run.checked.issues.append(changed_issue(exc.paths, exc.compared))
+        issue = (mask_changed_issue if exc.masks else changed_issue)(exc.paths, exc.compared)
+        run.checked.issues.append(issue)
         return _stop(run, base, rows)
     clear_staging(output)
     logger.info(
@@ -370,37 +404,43 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
     )
 
 
-def _final_content_check(
-    rows: Rows, root: Path, settings: RunSettings
-) -> Callable[[], None] | None:
+def _final_content_check(run: _Run, rows: Rows, settings: RunSettings) -> Callable[[], None] | None:
     """Return a strict run's last check before its commit; None for a default run.
 
     A ``verify_content`` run hashes every recorded image once more (:func:`content_changed`,
     the OME-Zarr store digest for a store) after its generation is staged, right before the
     manifest is replaced (:func:`.generation.staged_generation`): an image rewritten since
     its last check, even with its size and time set back, stops the run with
-    ``source_changed_during_run``, and the earlier generation is intact. It reads every
-    analysed image whole once more.
+    ``source_changed_during_run``, and the earlier generation is intact. Every mask is hashed
+    again too (``mask_changed_during_run``, issue #160). It reads every analysed image and
+    mask whole once more.
     """
     if not settings.verify_content:
         return None
+    root, masks = run.pre.discovery.root, run.pre.masks
 
     def check() -> None:
-        """Raise when an image's content is not the SHA-256 its entry records."""
+        """Raise when an image's or mask's content is not the SHA-256 taken earlier."""
         changed = content_changed(rows.entries.values(), root)
         if changed:
             raise _SourcesChangedError(changed, "content")
+        changed = [] if masks is None else content_changed_masks(masks, root, run.mask_content)
+        if changed:
+            raise _SourcesChangedError(changed, "content", masks=True)
 
     return check
 
 
 class _SourcesChangedError(Exception):
-    """Raised inside the publication when images changed since the run checked them."""
+    """Raised inside the publication when images or masks changed since the run checked them."""
 
-    def __init__(self, paths: list[str], compared: str = "fingerprint") -> None:
+    def __init__(
+        self, paths: list[str], compared: str = "fingerprint", *, masks: bool = False
+    ) -> None:
         super().__init__(", ".join(paths))
         self.paths = paths
-        self.compared = compared  # a key of resume.CHANGE_TEXTS
+        self.compared = compared  # a key of resume.CHANGE_TEXTS (mask_binding's for masks)
+        self.masks = masks
 
 
 def _write_generation(

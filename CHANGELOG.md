@@ -37,6 +37,21 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   New `MaskReport.hierarchy_cycles` and `mask_scan.hierarchy_cycles`. Acyclic hierarchies
   print as before; `mask_relationships.json` is unchanged (report version 1).
 
+- **Masks are bound to their fingerprints for the whole run** (#160). Each mask's header is
+  read between two fingerprints that must agree (`find_masks(bind=True)`,
+  `MaskFile.bound`; else the new error `mask_changed_during_check`), the manifest records
+  that fingerprint (before, it was taken when the manifest was written, so a mask rewritten
+  during the run was recorded under headers checked on another version), and every mask
+  must still have it right before the commit; otherwise the new error
+  `mask_changed_during_run` names the mask and what changed, and nothing is published. A
+  `verify_content` run also hashes every mask after the header checks and again as the last
+  step before the commit. Content hashing stays opt-in (#159).
+  - *Records and migration:* no schema change. The manifest (versions 2 and 3) and its mask
+    entries keep their keys and values: for masks unchanged during the run the fingerprint
+    recorded is the same, so an unchanged rerun keeps the manifest byte for byte. The masks'
+    content SHA-256 is compared in memory and not recorded. Earlier manifests read as
+    before.
+
 ## v0.4.0 (5 November 2026)
 
 The final v0.4.0, with the small changes since v0.4.0rc5 (#147) and the release step: the
