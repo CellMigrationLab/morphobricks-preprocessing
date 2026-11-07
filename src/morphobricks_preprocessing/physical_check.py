@@ -19,7 +19,7 @@ from __future__ import annotations
 import unicodedata
 from collections import Counter
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 
 from .axis_names import OPEN_AXIS
@@ -128,8 +128,11 @@ class PhysicalReport:
     """
 
     issues: tuple[PhysicalIssue, ...] = ()
-    layouts: Mapping[UnitKey, Layout] = MappingProxyType({})
-    image_type_verified: Mapping[UnitKey, bool] = MappingProxyType({})
+    # default_factory: Python 3.11 refuses an unhashable mappingproxy as a dataclass default.
+    layouts: Mapping[UnitKey, Layout] = field(default_factory=lambda: MappingProxyType({}))
+    image_type_verified: Mapping[UnitKey, bool] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
     unchecked: tuple[str, ...] = ()
 
     @property
