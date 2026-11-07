@@ -8,6 +8,16 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **The records append is rolled back with the description (K4 of external review batch 26).**
+  `_append_records` appended straight to the live `morphobricks.records.jsonl`; a `write`,
+  `flush` or `fsync` that failed after bytes were written left a torn line, or records naming a
+  hash of a description that was rolled back, because only the TOML was restored. The new file
+  (old bytes plus new lines) is now written in full to a synced temporary file and replaced
+  atomically, and a failed publication puts back both the description and the records bytes.
+  `read_records` now also refuses any line that is not one of the three Spec record types
+  (`reconfirmation`, `image_count_changed`, `removed`) with exactly that type's keys (`{}`
+  was accepted before). A record's hashes are history: a reader never compares them with the
+  published file.
 - **The Spec test gate holds module-level skips and missing modules (#203).** A `test_spec_*.py`
   module skipped while it is collected (`pytest.skip(..., allow_module_level=True)`, a module-level
   `importorskip`) is now a failed collection, and a run over the whole tests folder fails when no
