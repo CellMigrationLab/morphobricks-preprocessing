@@ -104,6 +104,14 @@ src/morphobricks_preprocessing/
                     RGB rules, display names, used_ids, one folder one ID, reference graph;
                     description_warnings.py the three warnings; description_walk.py members/units
                     (read_description_bytes in description_read.py runs phases 1-5 and warnings)
+  description.py        the model (Description, Condition, Channel, Repeat, Member, Unit, Mask)
+                    built from a reader-accepted document; description_from_bytes -> DescriptionError
+  description_write.py  the canonical writer (Spec experiment-v1 9.1) and section digests (9.3)
+  description_transition.py the R_* comparison of a candidate with the published file (4.4a, 4.6, 4.9),
+                    Reconfirmation (the user's recorded acceptance of a changed ID)
+  description_file.py   read_description(path): symlink refusal (R_FILE_SYMLINK), bytes -> Description
+  run/description_file.py publish_description: lock, base SHA-256, strict re-read, transitions,
+                    atomic write, append-only morphobricks.records.jsonl (Spec experiment-v1 4.6, 10)
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)

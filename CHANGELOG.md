@@ -25,6 +25,29 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   120/480"). Not used by the notebook or the command line yet. Tests:
   `tests/test_spec_discovery.py` (conformance P21, P26 recorded names, P29) and
   `tests/test_preflight_progress.py`.
+- **Experiment-description publication (Stage 1, PR 5).** `description_file.read_description(path)`
+  reads and validates a `morphobricks.toml` (a symbolic link is `R_FILE_SYMLINK`, never followed);
+  `description_transition` compares a candidate with the published file and reports every `R_*`
+  that applies (`R_CONFIRMED_ID_CHANGED`, `R_USED_ID_DROPPED`, `R_USED_ID_REUSED`,
+  `R_CONFIRMED_ON_CHANGED`), accepting a changed ID only with the user's recorded
+  `Reconfirmation`; `run.description_file.publish_description` does it under the output folder's
+  lock: base SHA-256 or `absent` (`R_DRAFT_BASE_MISSING`, `R_PUBLISHED_FILE_CHANGED`), canonical
+  bytes re-read by the strict reader, atomic write, and the re-confirmations appended to the
+  append-only `morphobricks.records.jsonl` (old ID, new ID, date, SHA-256 before and after).
+  All twelve Spec transitions and scenarios P09, P16-P20 and P22 pass. A new `confirmed_on` beside
+  a changed image count alone is refused (new FOVs do not reopen a confirmation, section 10); the
+  Spec's validator accepts it. Copying the records into the run manifest is a later pull request.
+  Not used by any run, notebook or CLI command yet.
+- **Experiment-description model, canonical writer and section digests (Stage 1, PR 4).** New
+  modules `description` (the `Description` model; `description_from_bytes` reads with the strict
+  reader and raises `DescriptionError` with every issue of the first failing phase) and
+  `description_write` (`canonical_bytes`, `section_digests`): deterministic bytes of Spec
+  experiment-v1 section 9.1, the round trip `parse(write(parse(F))) = parse(F)` on every valid and
+  transition fixture, idempotent writing, and the SHA-256 of the `conditions`, `channels`,
+  `repeats` and `masks` sections with `display_name`, `target` and `treatment_key` omitted
+  (`v18` = `v01`; `v16` and `v21` have the digests of `v01`). Section 9.3 does not define the
+  byte form of one section; here it is the section's table blocks as the file writes them. Not
+  used by any run, notebook or CLI command yet.
 - **Spec pin moved to MorphoBricks-Spec `745259b` (Stage 1, PR A).** The vendored fixtures,
   `experiment-v1.md` and the reference validator are the Spec's at that commit (new fixtures
   `i131`-`i134`; 36 valid, 134 invalid, 12 transition). The reader now applies the condition

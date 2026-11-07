@@ -65,6 +65,22 @@ class Code(StrEnum):
     W_REFERENCE_UNPAIRED = "W_REFERENCE_UNPAIRED"
 
 
+class Refusal(StrEnum):
+    """The ``R_*`` refusals of the file and of publication (experiment-v1 section 8).
+
+    Only the ones the file, the symbolic-link rule and the comparison of a candidate with the
+    published file raise are here; the physical checks against the folder are another module's.
+    """
+
+    R_FILE_SYMLINK = "R_FILE_SYMLINK"
+    R_CONFIRMED_ID_CHANGED = "R_CONFIRMED_ID_CHANGED"
+    R_USED_ID_REUSED = "R_USED_ID_REUSED"
+    R_USED_ID_DROPPED = "R_USED_ID_DROPPED"
+    R_CONFIRMED_ON_CHANGED = "R_CONFIRMED_ON_CHANGED"
+    R_PUBLISHED_FILE_CHANGED = "R_PUBLISHED_FILE_CHANGED"
+    R_DRAFT_BASE_MISSING = "R_DRAFT_BASE_MISSING"
+
+
 @dataclass(frozen=True)
 class TableSpec:
     """The closed set of fields of one table, in the order of the Spec's table.
