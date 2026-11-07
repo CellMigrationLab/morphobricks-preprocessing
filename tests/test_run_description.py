@@ -25,7 +25,15 @@ from spec_pin import fixtures
 
 V01 = next(f for f in fixtures("valid") if f.name.startswith("v01_"))
 DESCRIPTION = description_from_bytes(V01.data)
-RECORD = {"type": "reconfirmation", "old_id": "rep1", "new_id": "Day1", "id_kind": "repeats"}
+RECORD = {
+    "type": "reconfirmation",
+    "confirmed_on": "2026-01-01",
+    "id_kind": "repeats",
+    "old_id": "rep1",
+    "new_id": "Day1",
+    "old_sha256": "a" * 64,
+    "new_sha256": "b" * 64,
+}
 
 
 def _folder(tmp_path):
