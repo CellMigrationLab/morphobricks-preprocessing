@@ -351,7 +351,9 @@ def test_a_legacy_repeat_group_that_is_not_an_allowed_id_opens_a_question(tmp_pa
     assert repeat.id.proposed is None and repeat.id.confirmed is None
     assert repeat.confirmed and repeat.confirmed_on == "2026-10-30"  # the legacy answer is kept
     assert [m.source_repeat for m in repeat.members] == ["rep1", "rep1"]
-    assert ("id_pending", f"repeat {group}") in {(q.code, q.subject) for q in draft.open_questions()}
+    assert ("id_pending", f"repeat {group}") in {
+        (q.code, q.subject) for q in draft.open_questions()
+    }
     assert not draft.publishable
     with pytest.raises(DraftError) as refused:  # the user cannot adopt it unchanged
         draft.confirm_id("repeats", group, group)
