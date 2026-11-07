@@ -8,6 +8,22 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Derived `experiment_design.csv` and the cross-version parity suite (Stage 1, PR 10).** New
+  module `design_derive`: `derive_design(description)` and `write_derived_design(description,
+  path)` derive the legacy design file from a published description (Spec section 11): source
+  folder labels as `condition` and `biological_repeat`, the repeat ID as `repeat_group`,
+  `control` true for a condition another one references, `technical_repeat_count` 0 for the
+  single unit, `confirmed` true and the repeat's `confirmed_on`. It writes with today's
+  `write_experiment_design`, so the bytes equal the Spec's golden files for `v13`, `v33` and
+  `v34` and the reference validator's derivation of every valid fixture; renaming a condition or
+  technical-repeat ID never changes the file. `tests/test_parity_v0_4_0.py` runs the same
+  confirm-run-rerun script under the `v0.4.0` tag and under this code (`tests/released_code.py`)
+  on six legacy homogeneous datasets (one repeat, two conditions by two repeats, technical
+  repeats, flat, OME names, RGB): `plane_histograms.csv` and `experiment_design.csv` are
+  byte-identical, manifest file entries keep every v0.4.0 key and value (only the optional
+  `raw_channel_names` is added), a rerun over a v0.4.0 output folder recomputes no row, and the
+  derived design of each dataset's description equals the bytes v0.4.0 wrote. Not used by any
+  run, notebook or CLI command yet. Stacked on the Spec re-pin.
 - **Re-pin the vendored Spec to 7dbae0c (MorphoBricks-Spec PR 9).** New in the pin: the byte
   rules and golden files of the derived `experiment_design.csv` (section 11; `fixtures/expected/`
   for `v13`, `v33`, `v34`, not yet derived by any code: Stage 1 PR 10), the byte form of one
