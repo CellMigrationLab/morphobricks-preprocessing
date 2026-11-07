@@ -24,7 +24,7 @@ def _name(item):
 
 
 def test_the_fixture_counts_are_the_catalogue_s():
-    assert (len(VALID), len(INVALID), len(TRANSITIONS)) == (36, 134, 12)
+    assert (len(VALID), len(INVALID), len(TRANSITIONS)) == (36, 134, 13)
 
 
 @pytest.mark.parametrize("item", VALID, ids=_name)

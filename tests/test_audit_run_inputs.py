@@ -246,3 +246,17 @@ def test_an_ome_zarr_scale_without_a_unit_is_unknown_and_named(tmp_path):
     assert "c/a.ome.zarr (X and Y without a unit)" in found.message
     sizes = RunInputs.open(result.output_folder).pixel_sizes("c/a.ome.zarr")
     assert (sizes["X"].value, sizes["Y"].value, sizes["X"].source) == (None, None, None)
+
+
+def test_a_time_step_without_a_unit_is_not_sent_to_calibration_csv(tmp_path):
+    root = tmp_path / "exp"
+    write_ngff(root / "c/a.ome.zarr", np.zeros((2, 8, 8), np.uint16), "tyx", scale=[3.0, 0.5, 0.5])
+    write_ngff(
+        root / "c/b.ome.zarr", np.zeros((2, 8, 8), np.uint16), "tyx", scale=[3.0, 0.5, 0.5],
+        units={"t": "second", "y": "micrometer", "x": "micrometer"},
+    )  # fmt: skip
+    result = run_experiment(root, prefill_mapping("TYX"))
+    found = issue(result.issues, "unsupported_pixel_size_unit")
+    assert "T metadata" in found.action and "export the images again" in found.action
+    assert "T without a unit" in found.message
+    assert "state it in calibration.csv" not in found.action

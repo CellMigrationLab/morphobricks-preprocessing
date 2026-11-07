@@ -120,6 +120,10 @@ src/morphobricks_preprocessing/
   description_file.py   read_description(path): symlink refusal (R_FILE_SYMLINK), bytes -> Description
   run/description_file.py publish_description: lock, base SHA-256, strict re-read, transitions,
                     atomic write, append-only morphobricks.records.jsonl (Spec experiment-v1 4.6, 10)
+  draft_ids.py         proposed IDs: the folder label or raw header name only when the reader would
+                    accept it as written, else none (never repaired); draft.py the draft
+                    (IdSlot proposed/confirmed, open questions, unit_rows with condition_id,
+                    repeat_group, technical_repeat_id) and migrate_legacy_design
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)
@@ -164,6 +168,12 @@ src/morphobricks_preprocessing/
   axis_check.py     the axis check (contract §2): header_axis_issue, axis_disagreements,
                     likely_axis_cause, check_header_axes, ConfirmedAxes (a confirmation covers
                     only its files as fingerprinted, plain_stack_not_confirmed); AXIS_ERROR_CODES, AXIS_CHECK_CODES
+  preview.py        safe display (Stage 1, PR 13): read_plane(max_side) (reduced, read in blocks under a
+                    64 MiB budget, 256 px thumbnail / 1024 px detail), channel_strip (only through
+                    the confirmed AxisReview; no channel axis guessed), mask_thumbnail, PreviewCache;
+                    preview_render.py display_panel (float32 after the reduction, percentile contrast
+                    of the finite values; flat / no-finite / non-finite shown as such), stdlib PNG,
+                    strip_png, mask_overlay_png (declared representation only)
   planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), table rows as
                     XYC planes whose channels are read one at a time (iter_xyc_planes, XycPlane),
                     memory estimate,

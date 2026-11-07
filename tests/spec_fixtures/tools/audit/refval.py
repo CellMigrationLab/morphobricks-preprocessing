@@ -14,7 +14,9 @@ Usage:
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import re
 import sys
@@ -625,26 +627,39 @@ def _block(header: str, tbl: dict, order, sort_arrays=()) -> list[str]:
     return lines + [""]
 
 
+def section_lines(doc: dict, sec: str) -> list[str]:
+    """The table blocks of one section, each followed by a blank line (section 9.1)."""
+    out: list[str] = []
+    if sec == "conditions":
+        for cid in sorted(doc["conditions"]):
+            out += _block("conditions." + _key(cid), doc["conditions"][cid], COND)
+    elif sec == "channels":
+        for chid in sorted(doc["channels"]):
+            out += _block("channels." + _key(chid), doc["channels"][chid], CHAN,
+                          ("header_names",))
+    elif sec == "repeats":
+        for rid in sorted(doc["repeats"]):
+            rep = doc["repeats"][rid]
+            rh = "repeats." + _key(rid)
+            out += _block(rh, rep, REP)
+            for cid in sorted(rep["members"]):
+                m = rep["members"][cid]
+                mh = rh + ".members." + _key(cid)
+                out += _block(mh, m, MEM)
+                for tid in sorted(m["technical_repeats"]):
+                    out += _block(mh + ".technical_repeats." + _key(tid),
+                                  m["technical_repeats"][tid], UNIT)
+    else:
+        for mid in sorted(doc.get("masks", {})):
+            out += _block("masks." + _key(mid), doc["masks"][mid], MASK, ("source_channels",))
+    return out
+
+
 def write(doc: dict) -> bytes:
     """Canonical bytes of a valid document (experiment-v1 section 9.1)."""
     out = [f"schema = {_str(doc['schema'])}", f"schema_version = {doc['schema_version']}", ""]
-    for cid in sorted(doc["conditions"]):
-        out += _block("conditions." + _key(cid), doc["conditions"][cid], COND)
-    for chid in sorted(doc["channels"]):
-        out += _block("channels." + _key(chid), doc["channels"][chid], CHAN, ("header_names",))
-    for rid in sorted(doc["repeats"]):
-        rep = doc["repeats"][rid]
-        rh = "repeats." + _key(rid)
-        out += _block(rh, rep, REP)
-        for cid in sorted(rep["members"]):
-            m = rep["members"][cid]
-            mh = rh + ".members." + _key(cid)
-            out += _block(mh, m, MEM)
-            for tid in sorted(m["technical_repeats"]):
-                out += _block(mh + ".technical_repeats." + _key(tid),
-                              m["technical_repeats"][tid], UNIT)
-    for mid in sorted(doc.get("masks", {})):
-        out += _block("masks." + _key(mid), doc["masks"][mid], MASK, ("source_channels",))
+    for sec in ("conditions", "channels", "repeats", "masks"):
+        out += section_lines(doc, sec)
     out.append("[used_ids]")
     for k in USED:
         out.append(f"{k} = {_val(sorted(doc['used_ids'][k]))}")
@@ -677,19 +692,45 @@ def _strip(x):
 
 
 def section_digests(doc: dict) -> dict[str, str]:
-    """SHA-256 of the canonical serialization of each stripped section.
+    """SHA-256 of one section's table blocks as the canonical writer emits them (section 9.3).
 
-    AMBIGUITY: section 9.3 does not define the byte form of a section alone; the canonical writer
-    is applied to a document holding only that section (other required sections empty).
+    The blocks of the stripped section (no `display_name`, `target`, `treatment_key`), each
+    followed by one blank line, nothing before or after; an absent section is the empty bytes.
     """
-    out = {}
     s = _strip(doc)
-    for sec in ("conditions", "channels", "repeats", "masks"):
-        part = {"schema": "", "schema_version": 1, "conditions": {}, "channels": {},
-                "repeats": {}, "masks": {}, "used_ids": {k: [] for k in USED}}
-        part[sec] = s.get(sec, {})
-        out[sec] = hashlib.sha256(write(part)).hexdigest()
-    return out
+    return {sec: hashlib.sha256("".join(f"{line}\n" for line in section_lines(s, sec))
+                                .encode("utf-8")).hexdigest()
+            for sec in ("conditions", "channels", "repeats", "masks")}
+
+
+# ------------------------------------------------------------------ derived CSV (section 11)
+CSV_COLUMNS = ("condition", "biological_repeat", "repeat_group", "control", "image_count",
+               "technical_repeat_count", "confirmed", "confirmed_on", "schema_version")
+
+
+def derive_csv(doc: dict) -> bytes:
+    """The derived experiment_design.csv of a valid document (experiment-v1 section 11).
+
+    AMBIGUITY: the contract (section 12) fixes UTF-8, LF, the header row, the column order,
+    `true`/`false` and the sort; it does not state the delimiter, the quoting, a final line
+    terminator or a byte-order mark. Here: comma, minimal quoting, LF after every row including
+    the last, no byte-order mark (as today's writer does).
+    """
+    referenced = {c["reference"] for c in doc["conditions"].values() if "reference" in c}
+    rows = []
+    for rid, cid, m in members(doc):
+        tr = m["technical_repeats"]
+        single = len(tr) == 1 and next(iter(tr.values()))["source_folder"] == "single"
+        rows.append([doc["conditions"][cid]["source_folder"], m["source_repeat"], rid,
+                     "true" if cid in referenced else "false", str(m["image_count"]),
+                     "0" if single else str(len(tr)), "true",
+                     doc["repeats"][rid]["confirmed_on"], "1"])
+    rows.sort(key=lambda r: (r[0], r[1]))
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(CSV_COLUMNS)
+    w.writerows(rows)
+    return buf.getvalue().encode("utf-8")
 
 
 # ------------------------------------------------------------------ transitions (R_*)
@@ -772,10 +813,15 @@ def transition(old: dict, new: dict) -> set[str]:
                 not set(old["channels"][ch].get("header_names", [])) <= \
                 set(new["channels"][ch].get("header_names", [])):
             codes.add("R_CONFIRMED_ID_CHANGED")
-    # confirmed_on of a repeat whose confirmation is not reopened
+    # confirmed_on of a repeat whose confirmation is not reopened (section 10: members, units and
+    # channel lists unchanged; a changed image_count alone does not reopen it)
+    def layout(rep):
+        return {c: {k: v for k, v in _strip(m).items() if k != "image_count"}
+                for c, m in rep["members"].items()}
+
     for rid in set(old["repeats"]) & set(new["repeats"]):
         o, n = old["repeats"][rid], new["repeats"][rid]
-        if _strip(o["members"]) == _strip(n["members"]) and o["confirmed_on"] != n["confirmed_on"]:
+        if layout(o) == layout(n) and o["confirmed_on"] != n["confirmed_on"]:
             codes.add("R_CONFIRMED_ON_CHANGED")
     return codes
 
@@ -832,6 +878,16 @@ def run_fixtures(root: Path) -> int:
             bad += 1
             print(f"MISMATCH transition {f.stem} vs {pred}: got {sorted(got)} expected {sorted(exp)}")
         counts["transition-checks"] = counts.get("transition-checks", 0) + 1
+    # derived CSV golden files (section 11): each is listed in the README and equals the derivation
+    for f in sorted((fx / "expected").glob("*.csv")):
+        key = f.stem.split("_")[0]
+        if f"`{f.name}`" not in readme:
+            bad += 1
+            print(f"NO-CATALOGUE-ROW expected/{f.name}")
+        if key not in docs or derive_csv(docs[key]) != f.read_bytes():
+            bad += 1
+            print(f"MISMATCH expected/{f.name}: not the derivation of {key}")
+        counts["expected"] = counts.get("expected", 0) + 1
     # round trip and digests
     for k, d in docs.items():
         if k.startswith("v") or k.startswith("t"):
