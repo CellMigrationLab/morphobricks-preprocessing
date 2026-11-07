@@ -120,6 +120,10 @@ src/morphobricks_preprocessing/
   description_file.py   read_description(path): symlink refusal (R_FILE_SYMLINK), bytes -> Description
   run/description_file.py publish_description: lock, base SHA-256, strict re-read, transitions,
                     atomic write, append-only morphobricks.records.jsonl (Spec experiment-v1 4.6, 10)
+  draft_ids.py         proposed IDs: the folder label or raw header name only when the reader would
+                    accept it as written, else none (never repaired); draft.py the draft
+                    (IdSlot proposed/confirmed, open questions, unit_rows with condition_id,
+                    repeat_group, technical_repeat_id) and migrate_legacy_design
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)

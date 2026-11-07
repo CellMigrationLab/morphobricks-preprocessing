@@ -608,7 +608,7 @@ def read_confirmed_design(
         )
     try:
         data = path.read_bytes()
-        design = _parse_strict(data, path.name)
+        design = parse_design_bytes(data, path.name)
     except (OSError, DesignFormatError) as exc:
         raise _unreadable(path, exc, rerun) from exc
     issues = design_issues(design)
@@ -740,8 +740,8 @@ def _unreadable(path: Path, exc: Exception, action: str) -> DesignCheckError:
     )
 
 
-def _parse_strict(data: bytes, name: str) -> ExperimentDesign:
-    """Parse a design as :func:`write_experiment_design` writes it, refusing anything else."""
+def parse_design_bytes(data: bytes, name: str = DESIGN_FILENAME) -> ExperimentDesign:
+    """Parse a design as :func:`write_experiment_design` writes it; confirmation not required."""
     if data.startswith(b"\xef\xbb\xbf"):
         raise DesignFormatError(
             f"{name} starts with a byte-order mark: it was saved by another program, not "
