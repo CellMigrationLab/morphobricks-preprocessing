@@ -128,6 +128,14 @@ def _default_version(node: ast.AST) -> bool:
     return False
 
 
+def test_the_scan_sees_the_reader_modules():
+    # Not vacuous: the modules it exists to scan are there (and the rules module is the one
+    # table the other scans leave out).
+    names = {path.name for path in reader_modules()}
+    assert {"description_rules.py", "description_read.py", "description_structure.py"} <= names
+    assert RULES_MODULE in names and RULES_MODULE not in {p.name for p in other_modules()}
+
+
 def test_no_table_of_codes_outside_the_rules_module():
     found = {}
     for path in sorted(PACKAGE.rglob("*.py")):
