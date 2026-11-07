@@ -101,6 +101,23 @@ is pinned to the release in `RELEASE_TAG` (plan §12 question 58);
 - Every acceptance check in the plan has a test.
 - A bug fix comes with a test that fails without it.
 
+## Spec conformance tests
+
+The experiment-description reader is tested against the fixtures of
+[MorphoBricks-Spec](https://github.com/CellMigrationLab/MorphoBricks-Spec)
+(conformance plan, sections 1 and 2). They are vendored in `tests/spec_fixtures/` at the full
+commit SHA in its `PIN.toml`, never a branch.
+
+- **Pin integrity:** `tests/test_spec_pin.py` fails when one byte of the vendored `fixtures/`
+  differs, or a file is added or missing (git tree hash against the pin), so a local edit
+  of a fixture cannot make a reader pass. Never edit the vendored files; updating the pin
+  is a reviewed change (`tests/spec_fixtures/README.md`).
+- **Skip is failure:** every test module named `tests/test_spec_*.py` is held by
+  `tests/spec_gate.py`: a skipped or xfailed test there fails the run.
+- **No second copy of the rules:** `tests/test_spec_no_fallback.py` scans the reader's
+  modules (`description*.py`) for a second table of codes or names and for lenient, older or
+  default-version paths.
+
 ## Versioning
 
 - Semantic versioning for the package.

@@ -8,6 +8,11 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Spec fixtures vendored (Stage 1, PR 1).** `tests/spec_fixtures/` holds the
+  MorphoBricks-Spec conformance fixtures at a pinned commit, with a git tree-hash pin test,
+  a gate that makes a skipped `tests/test_spec_*.py` test a failure, and the "no fallback
+  rules" scan (conformance plan sections 1 and 2). Tests only: no change to the package,
+  the CLI, the notebook or any output.
 - **Group statistics per channel (#104).** `group_summaries` and the notebook's step 4 no
   longer pool distinct channels together: each group has one summary per channel, and the
   intensity curves are drawn in one panel per channel. Single-channel tables give the same
