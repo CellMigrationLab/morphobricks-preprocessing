@@ -571,15 +571,19 @@ def _relations(
     limits: Mapping[str, float],
 ) -> tuple[PairRelation, ...]:
     """Return every pair's relation, marking the direct ones (module docstring)."""
-    found = {
-        (child, parent): _relation(types[child], counts, limits)
-        for (child, parent), counts in totals.items()
-    }
+    found = {pair: _relation(types[pair[0]], counts, limits) for pair, counts in totals.items()}
     nested = {pair for pair, relation in found.items() if relation in ("inside", "grouped_by")}
+    # Cycles first (a reduction can remove every edge of one): edges inside a strongly
+    # connected set stay direct, and the reduction runs only between the sets.
+    up = {n: [p for c, p in nested if c == n] for n in types}
+    reach = {n: _ancestors(up, n) for n in types}
+    group = {n: frozenset({n, *(o for o in reach[n] if n in reach[o])}) for n in types}
+    links = {(group[c], group[p]) for c, p in nested if group[c] != group[p]}
     pairs = []
     for (child, parent), relation in sorted(found.items()):
-        between = any((child, other) in nested and (other, parent) in nested for other in types)
-        direct = (child, parent) in nested and not between
+        low, high = group[child], group[parent]
+        between = any((low, g) in links and (g, high) in links for g in group.values())
+        direct = (child, parent) in nested and (low == high or not between)
         evidence = MappingProxyType(dict(totals[(child, parent)]))
         pairs.append(PairRelation(child, parent, relation, direct, evidence))
     return tuple(pairs)

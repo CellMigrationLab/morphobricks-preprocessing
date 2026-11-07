@@ -405,22 +405,31 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
 
 
 def _final_content_check(run: _Run, rows: Rows, settings: RunSettings) -> Callable[[], None] | None:
-    """Return a strict run's last check before its commit; None for a default run.
+    """Return a run's last check before its commit, or None when there is nothing to check.
 
-    A ``verify_content`` run hashes every recorded image once more (:func:`content_changed`,
-    the OME-Zarr store digest for a store) after its generation is staged, right before the
-    manifest is replaced (:func:`.generation.staged_generation`): an image rewritten since
-    its last check, even with its size and time set back, stops the run with
-    ``source_changed_during_run``, and the earlier generation is intact. Every mask is hashed
-    again too (``mask_changed_during_run``, issue #160). It reads every analysed image and
-    mask whole once more.
+    Every run fingerprints each mask once more after its generation is staged, right before
+    the manifest is replaced (:func:`.generation.staged_generation`; issue #198): a mask
+    changed since the check in :func:`_publish` stops the run with
+    ``mask_changed_during_run``, also when ``verify_content`` is off.
+
+    A ``verify_content`` run also hashes every recorded image (:func:`content_changed`, the
+    OME-Zarr store digest for a store) and every mask (``mask_changed_during_run``, issue
+    #160): one rewritten since its last check, even with its size and time set back, stops
+    the run with ``source_changed_during_run``, and the earlier generation is intact. It
+    reads every analysed image and mask whole once more.
     """
-    if not settings.verify_content:
-        return None
     root, masks = run.pre.discovery.root, run.pre.masks
+    if masks is None and not settings.verify_content:
+        return None
 
     def check() -> None:
-        """Raise when an image's or mask's content is not the SHA-256 taken earlier."""
+        """Raise when an image's or mask's fingerprint or content is not the one taken earlier."""
+        if masks is not None:
+            changed = changed_masks(masks, root)
+            if changed:
+                raise _SourcesChangedError(changed, masks=True)
+        if not settings.verify_content:
+            return
         changed = content_changed(rows.entries.values(), root)
         if changed:
             raise _SourcesChangedError(changed, "content")

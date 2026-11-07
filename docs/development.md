@@ -113,7 +113,10 @@ commit SHA in its `PIN.toml`, never a branch.
   of a fixture cannot make a reader pass. Never edit the vendored files; updating the pin
   is a reviewed change (`tests/spec_fixtures/README.md`).
 - **Skip is failure:** every test module named `tests/test_spec_*.py` is held by
-  `tests/spec_gate.py`: a skipped or xfailed test there fails the run.
+  `tests/spec_gate.py`: a skipped or xfailed test there fails the run, and so does a module
+  skipped while it is collected (module-level `skip` or `importorskip`). A run over the whole
+  tests folder also fails when no test was collected from a module of `EXPECTED_MODULES` in
+  that file (a deleted or emptied Spec module); a new Spec module is added to that list.
 - **No second copy of the rules:** `tests/test_spec_no_fallback.py` scans the reader's
   modules (`description*.py`) for a second table of codes or names and for lenient, older or
   default-version paths.
