@@ -63,7 +63,15 @@ def test_the_records_file_bytes_are_those_of_section_4_6(tmp_path):
 
 def test_non_ascii_text_is_written_unescaped_and_read_back_whole(tmp_path):
     # U+2028 and U+0085 are line breaks to str.splitlines but not to the file format.
-    record = {"type": "reconfirmation", "old_id": "café x\u0085y", "new_id": None}
+    record = {
+        "type": "reconfirmation",
+        "id_kind": "repeats",
+        "old_id": "café x\u0085y",
+        "new_id": None,
+        "confirmed_on": "2026-11-07",
+        "old_sha256": "absent",
+        "new_sha256": "0" * 64,
+    }
     _append_records(tmp_path, (record,))
     data = (tmp_path / RECORDS_FILENAME).read_bytes()
     assert "café x\u0085y".encode() in data and b"\\u" not in data

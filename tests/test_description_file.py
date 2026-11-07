@@ -154,8 +154,41 @@ def test_a_torn_records_file_refuses_before_anything_is_written(tmp_path):
     assert _snapshot(tmp_path) == before
 
 
-@pytest.mark.parametrize("content", [b"not json\n", b"[1, 2]\n"])
-def test_a_records_file_that_is_not_lines_of_objects_is_refused(tmp_path, content):
+SEEDED = (
+    b'{"confirmed_on": "2026-01-01", "id_kind": "repeats", "new_id": "b", "new_sha256": "'
+    + b"b" * 64
+    + b'", "old_id": "a", "old_sha256": "'
+    + b"a" * 64
+    + b'", "type": "reconfirmation"}\n'
+)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"not json\n",
+        b"[1, 2]\n",
+        b"{}\n",  # an object, but no record
+        b'{"type": "reconfirmation"}\n',  # the right type, none of its keys
+        b'{"type": "unknown", "old_id": "a"}\n',  # a type the Spec does not define
+        b'{"old_id": "a", "new_id": "b"}\n',  # no type
+        SEEDED.replace(b'"type"', b'"extra": 1, "type"'),  # a key of no type
+        SEEDED.replace(b'"old_sha256"', b'"old_sha"'),  # one key renamed
+        b'{"type": "removed", "entity": "unit", "confirmed_on": "2026-01-01"}\n',
+    ],
+    ids=[
+        "not_json",
+        "array",
+        "empty_object",
+        "type_only",
+        "unknown_type",
+        "no_type",
+        "extra_key",
+        "wrong_key",
+        "removed_partial",
+    ],
+)
+def test_a_records_file_that_is_not_lines_of_spec_records_is_refused(tmp_path, content):
     (tmp_path / RECORDS_FILENAME).write_bytes(content)
     with pytest.raises(RecordsFileError):
         read_records(tmp_path)
@@ -191,6 +224,95 @@ def test_a_failed_append_puts_the_previous_file_back(tmp_path, monkeypatch):
             confirmations=RENAMES,
         )
     assert _snapshot(tmp_path) == before and not (tmp_path / LOCK_FILENAME).exists()
+
+
+def _fail_binary_writes(monkeypatch, *, after_full_bytes: bool) -> None:
+    """Make a binary write stream opened with ``os.fdopen`` raise once it is written to.
+
+    The records file is the only binary write stream a publication opens (the description goes
+    through a text stream). With ``after_full_bytes`` false, only half of the bytes are written.
+    """
+    real = os.fdopen
+
+    class Failing:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self.stream.close()
+
+        def fileno(self):
+            return self.stream.fileno()
+
+        def flush(self):
+            self.stream.flush()
+
+        def write(self, data):
+            self.stream.write(data if after_full_bytes else data[: len(data) // 2])
+            self.stream.flush()
+            raise OSError("disk full")
+
+    def fdopen(fd, mode="r", *args, **kwargs):
+        stream = real(fd, mode, *args, **kwargs)
+        return Failing(stream) if "b" in mode and ("w" in mode or "a" in mode) else stream
+
+    monkeypatch.setattr(publication.os, "fdopen", fdopen)
+
+
+@pytest.mark.parametrize("after_full_bytes", [False, True], ids=["partial_bytes", "full_bytes"])
+@pytest.mark.parametrize("seeded", [False, True], ids=["no_records_file", "existing_records"])
+def test_a_write_that_fails_inside_the_append_leaves_file_and_records_as_before(
+    tmp_path, monkeypatch, after_full_bytes, seeded
+):
+    base = _published(tmp_path)
+    if seeded:
+        (tmp_path / RECORDS_FILENAME).write_bytes(SEEDED)
+    before = _snapshot(tmp_path)
+    _fail_binary_writes(monkeypatch, after_full_bytes=after_full_bytes)
+    with pytest.raises(OSError, match="disk full"):
+        publish_description(
+            tmp_path,
+            description_from_bytes(BY_NAME["t01"].data),
+            base_sha256=base,
+            confirmations=RENAMES,
+        )
+    assert _snapshot(tmp_path) == before  # file, records, no temporary file, no lock
+
+
+def test_a_failed_fsync_of_the_records_leaves_file_and_records_as_before(tmp_path, monkeypatch):
+    base = _published(tmp_path)
+    (tmp_path / RECORDS_FILENAME).write_bytes(SEEDED)
+    before = _snapshot(tmp_path)
+
+    def broken(fd):
+        raise OSError("fsync failed")
+
+    monkeypatch.setattr(publication.os, "fsync", broken)
+    with pytest.raises(OSError, match="fsync failed"):
+        publish_description(
+            tmp_path,
+            description_from_bytes(BY_NAME["t01"].data),
+            base_sha256=base,
+            confirmations=RENAMES,
+        )
+    assert _snapshot(tmp_path) == before
+
+
+def test_a_record_whose_hash_is_not_the_published_file_is_history_not_an_error(tmp_path):
+    base = _published(tmp_path)
+    (tmp_path / RECORDS_FILENAME).write_bytes(SEEDED)  # names two hashes that were never published
+    assert read_records(tmp_path)[0]["new_sha256"] == "b" * 64
+    done = publish_description(
+        tmp_path,
+        description_from_bytes(BY_NAME["t01"].data),
+        base_sha256=base,
+        confirmations=RENAMES,
+    )
+    assert read_records(tmp_path)[1:] == done.records  # appended after it, the first unchanged
+    assert (tmp_path / RECORDS_FILENAME).read_bytes().startswith(SEEDED)
 
 
 def test_a_failed_append_removes_a_first_publication(tmp_path, monkeypatch):
