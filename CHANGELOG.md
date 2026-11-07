@@ -18,6 +18,23 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   is not recomputed. Cost on 60 OME-TIFF images of 25 MB (1.5 GB), cold cache: a fresh run
   15.9 s without and 19.8 s with hashing (+25 %); a rerun that reuses every row 5.4 s without
   and 8.3 s with (+3 s). The standalone `masks` command is unchanged.
+- **Experiment-description model, canonical writer and section digests (Stage 1, PR 4).** New
+  modules `description` (the `Description` model; `description_from_bytes` reads with the strict
+  reader and raises `DescriptionError` with every issue of the first failing phase) and
+  `description_write` (`canonical_bytes`, `section_digests`): deterministic bytes of Spec
+  experiment-v1 section 9.1, the round trip `parse(write(parse(F))) = parse(F)` on every valid and
+  transition fixture, idempotent writing, and the SHA-256 of the `conditions`, `channels`,
+  `repeats` and `masks` sections with `display_name`, `target` and `treatment_key` omitted
+  (`v18` = `v01`; `v16` and `v21` have the digests of `v01`). Section 9.3 does not define the
+  byte form of one section; here it is the section's table blocks as the file writes them. Not
+  used by any run, notebook or CLI command yet.
+- **Spec pin moved to MorphoBricks-Spec `745259b` (Stage 1, PR A).** The vendored fixtures,
+  `experiment-v1.md` and the reference validator are the Spec's at that commit (new fixtures
+  `i131`-`i134`; 36 valid, 134 invalid, 12 transition). The reader now applies the condition
+  `single` rule (a condition ID is `single` if and only if its `source_folder` is `single`, and
+  such a condition is the only one): `E_SINGLE_MISUSE`, phase 4. A key written twice inside an
+  inline table was already `E_DUPLICATE_KEY`. Reader and reference validator agree on every
+  fixture and mutation. Not used by any run, notebook or CLI command yet.
 - **Experiment-description reader, phases 4-5 and warnings (Stage 1, PR 3).** New modules
   `description_identity`, `description_semantics`, `description_warnings` and
   `description_walk`; `description_read.read_description_bytes(data: bytes)` runs all five
