@@ -8,6 +8,12 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Experiment-description reader, phases 1-3 (Stage 1, PR 2).** New modules
+  `description_rules`, `description_report`, `description_read` and `description_structure`:
+  `read_structure(data: bytes)` runs the strict phases 1 to 3 of Spec experiment-v1 (bytes and
+  encoding, duplicate keys, header and version, structure, forbidden fields) and reports every
+  error of the first failing phase with its code, table path and value. Not used by any run,
+  notebook or CLI command yet.
 - **Spec fixtures vendored (Stage 1, PR 1).** `tests/spec_fixtures/` holds the
   MorphoBricks-Spec conformance fixtures at a pinned commit, with a git tree-hash pin test,
   a gate that makes a skipped `tests/test_spec_*.py` test a failure, and the "no fallback

@@ -48,23 +48,25 @@ def section(prefix: str) -> list[str]:
     return out
 
 
-def table_rows(lines: list[str], header_start: str) -> list[list[str]]:
-    """Return the body rows (cells, stripped) of the first table whose header starts so."""
-    out: list[list[str]] = []
-    inside = False
-    for line in lines:
-        line = line.strip()
+def table_rows(lines: list[str], header_start: str, nth: int = 0) -> list[list[str]]:
+    """Return the body rows (cells, stripped) of the nth table whose header starts so."""
+    tables: list[list[list[str]]] = []
+    current: list[list[str]] | None = None
+    for raw in lines:
+        line = raw.strip()
         if not line.startswith("|"):
-            if inside:
-                break
+            current = None
             continue
         cells = [cell.strip() for cell in line.strip("|").split("|")]
-        if not inside:
-            inside = cells[0].startswith(header_start)
-            continue
-        if not set(line) <= set("|- :"):
-            out.append(cells)
-    return out
+        if current is None:
+            current = []
+            if cells[0].startswith(header_start):
+                tables.append(current)
+        elif not set(line) <= set("|- :"):
+            current.append(cells)
+    if nth >= len(tables):
+        raise SpecPinError(f"the section has no table {nth} headed {header_start!r}")
+    return tables[nth]
 
 
 def spec_codes() -> frozenset[str]:

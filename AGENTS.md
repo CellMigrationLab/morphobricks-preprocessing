@@ -92,6 +92,13 @@ src/morphobricks_preprocessing/
                     read_confirmed_design/ConfirmedDesign (the strict reader other bricks use, §16)
   design_values.py  the design file's header check (no column twice or unnamed, #83), booleans,
                     counts, dates and DesignFormatError (pure; re-exported by design.py)
+  description_rules.py  the one table of the experiment-description rules (Stage 1, Spec
+                    experiment-v1): codes, field tables, forbidden names, enumerations; compared
+                    with the vendored text by tests/test_spec_rules_table.py
+  description_report.py DescriptionIssue (code, table path, value), DescriptionReport
+  description_read.py   the reference reader's bytes -> phases: decode (1), header (2), the
+                    driver (read_structure: phases 1-3)
+  description_structure.py phase 3: closed fields, forbidden names, exact types, ranges, enums
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)
