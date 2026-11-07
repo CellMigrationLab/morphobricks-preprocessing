@@ -28,6 +28,8 @@ requests, normalization, statistics, histogram or model settings. Those stay in
 
 v1 analyses 2-D planes only. A Z stack is projected by a recorded preprocessing step
 (preprocessing #176) before it is described; the file has no Z, axes or shared-plane field.
+Time-lapses (T > 1) are allowed: the file has no T field, and the homogeneity of an imaging unit
+(§8, `R_UNIT_NOT_HOMOGENEOUS`) compares what each axis means, never the number of time points.
 
 ## 2. File, encoding and parsing
 
@@ -58,8 +60,8 @@ v1 analyses 2-D planes only. A Z stack is projected by a recorded preprocessing 
 | Identity | Where | Canonical or source | Rule set |
 |---|---|---|---|
 | Condition ID | key of `conditions` | Canonical (user-confirmed; proposed = the source folder label when allowed, §4.6a) | Label |
-| Condition source folder | `conditions.<ID>.source_folder` | Source (condition folder label; not an identity key) | Label |
-| Canonical repeat ID | key of `repeats` | Canonical (user-confirmed; default the source folder label) | Label |
+| Condition source folder | `conditions.<ID>.source_folder` | Source (condition folder label, or `single`; not an identity key) | Label |
+| Canonical repeat ID | key of `repeats` | Canonical (user-confirmed; proposed = the source folder label when allowed, §4.6a) | Label |
 | Source repeat | `source_repeat` | Source (biological-repeat folder label) | Label |
 | Technical repeat ID | key of `technical_repeats` | Canonical (user-confirmed; proposed = the source folder label when allowed, §4.6a; or `single`) | Label |
 | Technical-repeat source folder | `technical_repeats.<ID>.source_folder` | Source (technical-repeat folder label, or `single`; not an identity key) | Label |
@@ -100,7 +102,10 @@ v1 analyses 2-D planes only. A Z stack is projected by a recorded preprocessing 
   repeat of its member; a member with `source_repeat = "single"` MUST be the only member of its
   condition in the file. A technical repeat ID is `single` if and only if its `source_folder` is
   `single` (`single` stands for "no technical-repeat folder level"; `E_SINGLE_MISUSE`;
-  preprocessing contract §1).
+  preprocessing contract §1). Conditions follow the same rule: a condition ID is `single` if and
+  only if its `source_folder` is `single` (`single` stands for "no condition folder level", an
+  experiment folder that is itself the leaf), and a condition whose `source_folder` is `single`
+  MUST be the only condition in the file (`E_SINGLE_MISUSE`).
 
 ### 3.3 Normalization, uniqueness and case
 
@@ -156,8 +161,8 @@ v1 analyses 2-D planes only. A Z stack is projected by a recorded preprocessing 
   FOV key, `condition` and `technical_repeat` stay the **source folder labels**
   (`conditions.<ID>.source_folder`, `technical_repeats.<ID>.source_folder`); a consumer MUST NOT
   replace them by the canonical IDs in FOV, patch or object identities, fitted-scaling keys,
-  caches or exports. The canonical IDs are **added** next to the key (proposed field names
-  `condition_id` and `technical_repeat_id`; the consumer contracts fix the spelling in Stage 1).
+  caches or exports. The canonical IDs are **added** next to the key, beside `repeat_group`, under
+  the names `condition_id` and `technical_repeat_id`, which Stage 1 fixes for every consumer.
   Each is a function of the FOV key (one folder, one ID, §4.6a), so adding them creates no new
   identity. Everything that names a condition by identity (`reference`, families, pairing,
   contrasts, `used_ids`) uses the canonical condition ID, and a consumer MUST NOT group, pair or
@@ -186,7 +191,7 @@ real calendar day (`E_DATE_FORMAT`); a TOML date literal is `E_TYPE`. "Non-empty
 
 | Key | Type | Req | Rule |
 |---|---|---|---|
-| `source_folder` | text | yes | Exact condition folder label as read from disk (Label rules, NFC); a source value, **not an identity key**; not restricted by the reserved or forbidden names (§4.6a) |
+| `source_folder` | text | yes | Exact condition folder label as read from disk, or `single` when the experiment has no condition folder level (Label rules, NFC); a source value, **not an identity key**; not restricted by the reserved or forbidden names (§4.6a) |
 | `display_name` | non-empty text | no | Display only (§4.8); MAY be the folder label |
 | `reference` | text | no | One condition ID: the primary reference (§5) |
 | `target` | non-empty text | no | Descriptive plain string, e.g. `SRC` (§4.2a) |
@@ -375,8 +380,12 @@ stays in the brick that owns it.
   renamed or replaced on disk under an existing ID is a removed folder plus a new pending one
   (§7), and giving the existing ID the new `source_folder` is a reassignment under (c).
 - A mistyped ID is fixed only by an explicit, recorded re-confirmation: a user action that
-  writes a new file and records old ID, new ID, date and both file SHA-256 in the run manifest.
-  Products keyed on that ID are invalidated. Nothing about it is stored in the file.
+  writes a new file and records old ID, new ID, date and both file SHA-256. The record is made
+  at publication, which happens outside a run: preprocessing appends it, under the output
+  folder's publication lock (§10), to the append-only file `morphobricks.records.jsonl` next to
+  `morphobricks.toml`, and copies the records unchanged into the manifest of the next run. The
+  records file is never rewritten or truncated, and nothing about a re-confirmation is stored in
+  `morphobricks.toml`. Products keyed on that ID are invalidated.
 - **A case-only correction needs a new ID (AQ2).** `ACTIN` cannot be corrected to `Actin`: the
   retired spelling stays in `used_ids` and the new one collides with it
   (`E_ID_CASE_COLLISION`, §4.9). The correction is a new, non-colliding ID (for example
@@ -414,11 +423,20 @@ discovered under is recorded separately in the required field `source_folder`.
   is allowed, and the user confirms it or types another; the user MAY also set `display_name` to
   the folder label. A proposal is never adopted unconfirmed, and no ID is repaired or derived by
   a reader (§3.3).
+- **Repeat IDs follow the same rule.** For a new biological-repeat folder the proposed repeat ID is
+  the folder label if it is allowed in the same sense (Label rules, not an exact forbidden name,
+  no exact or case-folded collision with a declared or `used_ids` repeat ID). If it is not
+  allowed (for example the folder `z`), preprocessing makes **no proposal**: it never repairs or
+  derives an ID from the label (§3.3), and the user names the repeat ID. The reader validates what
+  the user typed like any ID; `source_repeat` keeps the folder label.
 - **Existing ID, other folder.** Giving an existing condition or technical repeat ID another
   `source_folder` is a reassignment (§4.6): `R_CONFIRMED_ID_CHANGED` without the recorded user
   confirmation. A new folder next to the existing ones is a new pending member or unit (§10).
 - **`single`.** The technical repeat `single` has `source_folder = "single"`: the label denotes
-  "no technical-repeat folder level", not a folder (§3.2).
+  "no technical-repeat folder level", not a folder (§3.2). The same holds for a condition: the
+  condition `single` has `source_folder = "single"`, which denotes "no condition folder level" (an
+  experiment folder that is itself the leaf, with the member `source_repeat = "single"` and the
+  technical repeat `single`), and it is the only condition of the file (§3.2).
 - A folder label that breaks the Label rules (for example `NA`) is still refused at discovery as
   today; this decision adds no new code for it.
 
@@ -545,7 +563,7 @@ for NFC only (phase 4) before it is resolved (phase 5).
 | 4 | `E_ID_RESERVED` | Name on the reserved list of §3.2 (channel and mask IDs), or a mask ID with an `in` part |
 | 4 | `E_ID_NOT_NFC` | An identity (key, reference, source repeat, `source_folder`, unit `channels` or `source_channels` entry, `used_ids` entry) is not Unicode NFC; never normalized |
 | 4 | `E_ID_CASE_COLLISION` | Two identities of one scope equal ignoring case (`used_ids` entries share the scope of their kind; source folders have their own scopes, §3.3) |
-| 4 | `E_SINGLE_MISUSE` | `single` in another case or not alone, or a technical repeat ID `single` whose `source_folder` is not `single` (or the reverse) |
+| 4 | `E_SINGLE_MISUSE` | `single` in another case or not alone, or a technical repeat ID or condition ID `single` whose `source_folder` is not `single` (or the reverse) |
 | 5 Semantics | `E_UNKNOWN_CONDITION` | Member key is not a declared condition ID |
 | 5 | `E_UNKNOWN_CHANNEL` | Unit or `source_channels` names an undeclared channel ID |
 | 5 | `E_DUPLICATE_CHANNEL_IN_UNIT` | A channel twice in one unit |

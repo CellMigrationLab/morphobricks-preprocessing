@@ -81,10 +81,18 @@ class Identities:
 
 
 def _conditions(doc: Table, ids: Identities) -> None:
+    """Check condition IDs and folders, and the ``single`` rule of conditions."""
+    count = len(doc["conditions"])
     for identifier, table in doc["conditions"].items():
         path = key_path("conditions", identifier)
         ids.label_id(identifier, path, "conditions")
         ids.label_id(table["source_folder"], f"{path}.source_folder", "condition_folders")
+        folder = table["source_folder"]
+        if (identifier == SINGLE) != (folder == SINGLE):  # `single` iff no condition folder level
+            ids.out.add(Code.E_SINGLE_MISUSE, f"{path}.source_folder", folder)
+        elif folder == SINGLE and count > 1:
+            message = "single is not the only condition"
+            ids.out.add(Code.E_SINGLE_MISUSE, f"{path}.source_folder", message)
         if "reference" in table:  # a reference is checked for NFC only, then resolved (phase 5)
             ids.nfc(table["reference"], f"{path}.reference")
 
