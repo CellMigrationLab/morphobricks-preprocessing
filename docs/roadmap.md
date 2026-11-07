@@ -1,8 +1,9 @@
 # Preprocessing roadmap
 
 Planned work after v0.4.0. The v0.4.0 work itself (PP-0 to PP-13) is in
-[plan.md](plan.md) §10 and in the frozen design (`preprocessing-design-v0.4.md` on
-`CellMigrationLab/MorphoFeature`, branch `claude/restart-doc`).
+[the archived milestones](archive/plan-milestones-v0.1-v0.4.md) and in the frozen design
+([`preprocessing-design-v0.4.md`](https://github.com/CellMigrationLab/MorphoFeature/blob/ff19de8938d5ed8c4143cff563715551ee874a05/docs/restart/preprocessing-design-v0.4.md)
+on `CellMigrationLab/MorphoFeature`, branch `claude/restart-doc`, commit ff19de8).
 
 ## Quick quality checks before analysis (owner, 2026-11-02)
 
@@ -141,7 +142,7 @@ project: [MorphoFeature#157](https://github.com/CellMigrationLab/MorphoFeature/i
 An experiment-schema RFC is open at
 [MorphoBricks-Spec#1](https://github.com/CellMigrationLab/MorphoBricks-Spec/issues/1). Its
 feasibility audit is
-[rfc1-feasibility-2026-11-05.md](https://github.com/CellMigrationLab/MorphoBricks-Spec/blob/claude/youthful-carson-klzm3w/docs/audits/rfc1-feasibility-2026-11-05.md).
+[rfc1-feasibility-2026-11-05.md](https://github.com/CellMigrationLab/MorphoBricks-Spec/blob/65283b3dbfb53e8c5d22941a1bd82cf57764d35e/docs/audits/rfc1-feasibility-2026-11-05.md).
 It recommends a reduced version after the release, in TOML or strict JSON rather than YAML.
 
 Staged plan from the audit:

@@ -350,14 +350,9 @@ the bricks' tests.
 | What readers see | **Through the manifest** (`RunInputs`): exactly one generation, the old or the new one, never a mix: each file the manifest names is read by its SHA-256 from the output folder or, while a publication is unfinished, from `.publish` (`run.generation.published_path`), and the read is repeated if the manifest changed meanwhile (`read_stable`). **A plain reader of `plane_histograms.csv` alone** always reads one whole table of one generation (each move is one rename): the old one until it is moved. A reader that opens several output files without the manifest can pair files of two generations while a publication's step 3 runs or after a kill in it, until the next holder of the lock finishes it: read several files through `RunInputs`, or check `csv_sha256` and `experiment_design_sha256`. |
 | Windows | The same protocol. `os.replace` replaces a file atomically on NTFS too, but fails while another program has the file open: at the commit nothing has changed then (the run raises, the earlier generation is kept); after it, `PublicationIncompleteError` as above. Folders are not flushed (Windows cannot open them; NTFS journals the rename itself, but a power cut right after the commit may bring back the earlier manifest, which is then a whole earlier generation); the kill tests (SIGKILL at every step) run on POSIX only. |
 
-## 10. Converting TIFF images to OME-Zarr (removed in v0.4.0)
+## 10. Removed in v0.4.0
 
-Up to v0.3, a run could convert every TIFF image to OME-Zarr in `<output>/ome_zarr` and
-compute its rows from the copies (`convert_tiffs`, `zarr_export`, CLI `--convert-tiff`, the
-notebook's "(Optional) Image conversion" card). The bricks never read those copies, and v0.4
-reads every image through the run's own readers, so the option was removed (spec revision 4,
-§8 PP-2). Its rows were the TIFF's own, so a later run keeps them. Saving images with axis
-errors as named-axis copies is a separate step, `convert` (OME-TIFF, §17).
+Converting TIFF images to OME-Zarr in `<output>/ome_zarr` (`convert_tiffs`, `zarr_export`, CLI `--convert-tiff`, the notebook's "(Optional) Image conversion" card) was removed (spec revision 4, §8 PP-2): the bricks never read those copies, and earlier rows were the TIFF's own, so a later run keeps them. Named-axis copies are a separate step, `convert` (§17). The section number stays because other sections refer to it.
 
 ## 11. Dataset consistency (folder check)
 

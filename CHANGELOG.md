@@ -2,7 +2,7 @@
 
 All notable changes to `morphobricks-preprocessing`. Numbers are pull requests (PR) and
 issues of [CellMigrationLab/morphobricks-preprocessing](https://github.com/CellMigrationLab/morphobricks-preprocessing).
-The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature. The decisions
+The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on branch `claude/restart-doc` ([commit ff19de8](https://github.com/CellMigrationLab/MorphoFeature/blob/ff19de8938d5ed8c4143cff563715551ee874a05/docs/restart/preprocessing-design-v0.4.md); not on `main`). The decisions
 are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 [migration guide](docs/migration-0.3-to-0.4.md).
 
