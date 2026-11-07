@@ -28,6 +28,7 @@ MARKER = "spec_conformance"
 MODULE_PREFIX = "test_spec_"
 EXPECTED_MODULES = (
     "test_spec_catalogue.py",
+    "test_spec_derived_design.py",
     "test_spec_discovery.py",
     "test_spec_encoding.py",
     "test_spec_gate.py",
