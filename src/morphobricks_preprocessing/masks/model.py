@@ -6,7 +6,7 @@ Moved from ``masks.py`` (PP-5).
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -120,6 +120,9 @@ class MaskFile:
         }
 
 
+_NO_MASKS: Mapping[str, MaskFile] = MappingProxyType({})
+
+
 @dataclass(frozen=True)
 class MaskInventory:
     """Every mask found for the images of an experiment.
@@ -140,6 +143,21 @@ class MaskInventory:
     types: tuple[str, ...] = ()
     files: tuple[MaskFile, ...] = ()
     issues: tuple[ValidationIssue, ...] = ()
+    _by_image: Mapping[str, Mapping[str, MaskFile]] = field(
+        init=False, repr=False, compare=False, default_factory=dict
+    )
+
+    def __post_init__(self) -> None:
+        """Index the masks by image and type once (issue #70), so lookups never scan ``files``.
+
+        Same result as scanning ``files`` in order: for a duplicate (image, type), which
+        ``find_masks`` reports as an error, the later file is the one returned.
+        """
+        grouped: dict[str, dict[str, MaskFile]] = {}
+        for f in self.files:
+            grouped.setdefault(f.image, {})[f.mask_type] = f
+        index = {image: MappingProxyType(by_type) for image, by_type in grouped.items()}
+        object.__setattr__(self, "_by_image", MappingProxyType(index))
 
     @property
     def ok(self) -> bool:
@@ -149,11 +167,11 @@ class MaskInventory:
     @property
     def images(self) -> tuple[str, ...]:
         """Images with at least one mask, sorted."""
-        return tuple(sorted({f.image for f in self.files}))
+        return tuple(sorted(self._by_image))
 
     def for_image(self, image: str) -> Mapping[str, MaskFile]:
         """Return the masks of one image, by type (empty when it has none)."""
-        return MappingProxyType({f.mask_type: f for f in self.files if f.image == image})
+        return self._by_image.get(image, _NO_MASKS)
 
     def to_manifest(self) -> dict:
         """Return the inventory as recorded in the run manifest (contract §9)."""
