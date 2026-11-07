@@ -9,6 +9,8 @@ ambiguous, a point to take to the Spec: it is never settled by editing the oracl
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from morphobricks_preprocessing.description_read import PHASES, read_structure
@@ -41,7 +43,7 @@ def test_the_reader_and_the_oracle_agree_on_a_fixture(item):
 
 def test_the_oracle_is_the_pinned_one():
     # Loaded from the vendored copy, whose hash test_spec_pin.py holds to the pin.
-    assert refval().__file__.endswith("tools/audit/refval.py")
+    assert Path(refval().__file__).as_posix().endswith("tools/audit/refval.py")
 
 
 def _mine(doc: dict):
