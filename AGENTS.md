@@ -107,6 +107,9 @@ src/morphobricks_preprocessing/
   description.py        the model (Description, Condition, Channel, Repeat, Member, Unit, Mask)
                     built from a reader-accepted document; description_from_bytes -> DescriptionError
   description_write.py  the canonical writer (Spec experiment-v1 9.1) and section digests (9.3)
+  physical_check.py the physical R_* checks of a description against the folder and image headers
+                    (units found/declared, homogeneity, header evidence, image type, mask types
+                    declared); layout_groups (header-named layouts are batch-confirmable, Q3)
   description_reconcile.py reconcile(published, observed): units unchanged/new/removed by exact folder
                     labels, N35 reopening (confirmed_on kept), stated renames (FolderRename),
                     confirm_repeat; description_removal.py candidate (the draft), removal_questions
