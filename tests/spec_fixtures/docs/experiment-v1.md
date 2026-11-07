@@ -82,7 +82,8 @@ Time-lapses (T > 1) are allowed: the file has no T field, and the homogeneity of
   both is reported with both codes (§6, one code per broken rule).
 - **Reserved list** (one list, shared by channel IDs and mask IDs; AQ4). A channel ID or a mask ID
   whose case-folded form (`str.casefold()`) is in the list is `E_ID_RESERVED`; `ring`, `Ring` and
-  `RING` are all refused. The list is closed: a new entry needs a new `schema_version`.
+  `RING` are all refused. An entry of `used_ids.channels` is refused the same way, since a listed
+  ID reserves that ID (§4.9). The list is closed: a new entry needs a new `schema_version`.
 
   | Names | Source |
   |---|---|
@@ -375,7 +376,7 @@ stays in the brick that owns it.
   files names a changed entity (some member folder, position or alias it held is removed or
   reassigned, or its `source_folder` is another folder). Removing or reassigning is accepted only with an explicit, recorded user
   confirmation (the same record as for a mistyped ID, below); the confirmation of a removal that
-  §10 requires is that record. An ID that was removed and comes back is `R_USED_ID_REUSED`
+  §10 requires is that record, and every removal is also written as a `removed` record (below). An ID that was removed and comes back is `R_USED_ID_REUSED`
   (§4.9). A condition or technical repeat ID is not its folder label (§4.6a): a folder that is
   renamed or replaced on disk under an existing ID is a removed folder plus a new pending one
   (§7), and giving the existing ID the new `source_folder` is a reassignment under (c).
@@ -387,13 +388,38 @@ stays in the brick that owns it.
   records file is never rewritten or truncated, and nothing about a re-confirmation is stored in
   `morphobricks.toml`. Products keyed on that ID are invalidated.
 - **Encoding of the records file.** UTF-8, one JSON object per line, each line ending in LF, keys
-  in code point order, non-ASCII characters unescaped. Keys: `type` (`"reconfirmation"`),
+  in code point order, non-ASCII characters unescaped. The key `type` tells the record types
+  apart: `"reconfirmation"`, `"image_count_changed"` and `"removed"`. Each type has its own fixed
+  key set; a line of one type carries no key of another. The first type is the only one written
+  before this addition, and its lines are unchanged. Keys of `reconfirmation`: `type`,
   `id_kind` (`conditions`, `channels`, `repeats` or `technical_repeats`), `old_id`, `new_id`
   (`null` when the same ID lost or was reassigned something), `confirmed_on` (`YYYY-MM-DD`, the
   date of the user's action), `old_sha256` (of the published file replaced, or `absent`) and
   `new_sha256` (of the file written). The records are appended after the file is replaced. A records
-  file whose last line lacks its LF, or that holds a line that is not a JSON object, is refused
-  before anything is published.
+  file whose last line lacks its LF, that holds a line that is not a JSON object, or that holds an
+  object whose `type` is none of the three, is refused before anything is published.
+- **Record of a removal (`removed`, owner decision RR2).** Written for **every** removal of an
+  imaging unit, technical repeat, repeat or condition that the user confirms (§10), including a
+  removal whose ID is held nowhere else afterwards; it is written in addition to a
+  `reconfirmation` where §4.6 requires one. Keys: `type`, `entity` (`unit`, `technical_repeat`,
+  `repeat` or `condition`), `condition_id`, `condition_source_folder`, `repeat_id`,
+  `source_repeat`, `technical_repeat_id`, `technical_repeat_source_folder`, and `confirmed_on`
+  (`YYYY-MM-DD`, the date of the user's confirmation; a `removed` line is itself that
+  confirmation). A key that the entity does not name is `null`: a `unit` (one technical repeat
+  entry of one member of one repeat) names all six; a `technical_repeat` names its two keys; a
+  `repeat` its `repeat_id`; a `condition` its two condition keys. The source folder labels are the
+  exact labels of the removed published file. A removed member folder is written as one `unit`
+  record per imaging unit it held, and an entity that held units is followed by the `unit`
+  records of those units, so every removed folder label appears in a record. Removing an entity
+  never removes its ID from `used_ids` (§4.9).
+- **Record of an image-count change (`image_count_changed`, owner decision RR1).** Written when
+  the `image_count` of a confirmed member changes and nothing else about the published file does
+  (§10); it needs no confirmation and reopens nothing. Keys: `type`, `condition_id`,
+  `condition_source_folder`, `repeat_id`, `source_repeat`, `technical_repeats` (the member's
+  imaging units as an array of objects `{"id", "source_folder"}`, sorted by `id` in code point
+  order), `old_image_count`, `new_image_count` (integers, each at least 1) and `recorded_on`
+  (`YYYY-MM-DD`, the date the change was recorded at publication; it is not a confirmation and is
+  never copied into `confirmed_on`).
 - **A case-only correction needs a new ID (AQ2).** `ACTIN` cannot be corrected to `Actin`: the
   retired spelling stays in `used_ids` and the new one collides with it
   (`E_ID_CASE_COLLISION`, §4.9). The correction is a new, non-colliding ID (for example
@@ -506,6 +532,11 @@ date or a reason.
   repeats, Token for channels; NFC, §3.3), have no duplicates (`E_DUPLICATE_VALUE`), and share the case-collision
   scope of the kind's declared IDs (`E_ID_CASE_COLLISION`): a retired `ctrl` cannot come back as
   `CTRL`. At least one entry per kind (`E_EMPTY`).
+- **Reserved names in `used_ids.channels`** (owner decision UR1, 7 November 2026). A channel entry
+  follows the reserved list of §3.2 like a declared channel ID: an entry whose case-folded form is
+  in the list is `E_ID_RESERVED`. A listed ID reserves that ID, so a name no channel may bear
+  cannot be reserved by being listed. The registry has no list for mask IDs (it holds the four
+  kinds above), so the list applies to channels only; the other three kinds are unchanged.
 - Source folder labels are not IDs and are never listed. Every declared ID of a kind MUST be
   listed (`E_USED_ID_MISSING`). A listed ID that is not
   declared is a **retired** ID: its entity was removed.
@@ -568,7 +599,7 @@ for NFC only (phase 4) before it is resolved (phase 5).
 | 3 | `E_REPEAT_UNCONFIRMED` | `confirmed = false` in a published file |
 | 4 Identity | `E_ID_TEXT` | Label rule violated |
 | 4 | `E_ID_SYNTAX` | Token regular expression violated |
-| 4 | `E_ID_RESERVED` | Name on the reserved list of §3.2 (channel and mask IDs), or a mask ID with an `in` part |
+| 4 | `E_ID_RESERVED` | Name on the reserved list of §3.2 (channel and mask IDs, and entries of `used_ids.channels`, §4.9), or a mask ID with an `in` part |
 | 4 | `E_ID_NOT_NFC` | An identity (key, reference, source repeat, `source_folder`, unit `channels` or `source_channels` entry, `used_ids` entry) is not Unicode NFC; never normalized |
 | 4 | `E_ID_CASE_COLLISION` | Two identities of one scope equal ignoring case (`used_ids` entries share the scope of their kind; source folders have their own scopes, §3.3) |
 | 4 | `E_SINGLE_MISUSE` | `single` in another case or not alone, or a technical repeat ID or condition ID `single` whose `source_folder` is not `single` (or the reverse) |
@@ -749,6 +780,8 @@ silently; edits go to a separate draft and are published atomically after valida
   channels, layout or grouping change: a new or removed unit or member, a unit's ordered channel
   list, or the pairing of folders into repeats. New FOVs (or removed ones) inside an existing unit
   whose confirmed layout still holds do **not** reopen it; they are reported and recorded. A
+  changed `image_count` of a confirmed member, when nothing else changes, is recorded as an
+  `image_count_changed` record (§4.6). A
   changed `image_count` alone is therefore not a reopening: a new `confirmed_on` beside only a
   changed `image_count` is `R_CONFIRMED_ON_CHANGED` (§4.4a).
 - **Adding a member is allowed (AQ1).** A new member folder or unit joins an existing repeat or
@@ -756,7 +789,9 @@ silently; edits go to a separate draft and are published atomically after valida
   confirmation of that repeat, and it never changes an existing ID. Only removing or reassigning
   existing members counts as a changed entity.
 - A removed member is reported and removed only on user confirmation, which is the recorded
-  confirmation of §4.6 (without it the candidate is `R_CONFIRMED_ID_CHANGED`); a repeat left
+  confirmation of §4.6 (without it the candidate is `R_CONFIRMED_ID_CHANGED`); every confirmed
+  removal of a unit, technical repeat, repeat or condition, whether or not an ID survives it, is
+  also written as a `removed` record (§4.6); a repeat left
   without members is removed from the file, and its ID stays in `used_ids` and is never reused
   (`R_USED_ID_REUSED`, `R_USED_ID_DROPPED`; §4.9).
 - A new folder whose label equals an existing repeat ID is proposed for that repeat but stays

@@ -8,6 +8,12 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Re-pin the vendored Spec to b197ac1 (MorphoBricks-Spec PR 12, owner decision UR1).** The
+  reserved names of section 3.2 now also apply to `used_ids.channels`: an entry whose case-folded
+  form is on the list is `E_ID_RESERVED`, as for a declared channel ID (a listed ID reserves it).
+  The other three `used_ids` kinds are unchanged. New fixtures `i135` (invalid) and `v37`
+  (valid); the reference validator is updated. Every fixture is exact and the cross-check against
+  the reference validator has 0 differences. Before this change the reader accepted `i135`.
 - **The records append is rolled back with the description (K4 of external review batch 26).**
   `_append_records` appended straight to the live `morphobricks.records.jsonl`; a `write`,
   `flush` or `fsync` that failed after bytes were written left a torn line, or records naming a

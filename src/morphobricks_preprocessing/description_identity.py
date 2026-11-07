@@ -157,14 +157,16 @@ def _masks(doc: Table, ids: Identities) -> None:
 def _used_ids(doc: Table, ids: Identities) -> None:
     """Entries follow the identity rules of their kind and share its collision scope.
 
-    The reserved list is not applied to ``used_ids`` entries: the text says "the identity rules
-    of their kind" and no fixture decides it (the reference validator does the same).
+    The reserved list of section 3.2 applies to ``used_ids.channels`` entries like a declared
+    channel ID (owner decision UR1, Spec 4.9): a listed ID reserves it. The registry has no list
+    for mask IDs, so the other three kinds are unchanged.
     """
     for kind in USED_KINDS:
         for index, value in enumerate(doc["used_ids"][kind]):
             path = f"used_ids.{kind}[{index}]"
             if kind == "channels":
                 ids.token(value, path)
+                ids.reserved(value, path)
             else:
                 ids.label(value, path)
             ids.nfc(value, path)
