@@ -5,7 +5,14 @@ from types import MappingProxyType
 import numpy as np
 
 from morphobricks_preprocessing import preflight, scan_masks
-from morphobricks_preprocessing.mask_scan import MaskReport, MaskTypeSummary, PairRelation
+from morphobricks_preprocessing.mask_scan import (
+    MaskReport,
+    MaskTypeSummary,
+    PairRelation,
+    _relations,
+    hierarchy_cycles,
+    mask_thresholds,
+)
 from morphobricks_preprocessing.mask_text import mask_hierarchy_lines, mask_report_summary
 from tiff_tree import write_data
 
@@ -110,3 +117,46 @@ def test_sparse_pairwise_evidence_from_a_scan_makes_a_named_cycle(tmp_path):
     assert scanned.hierarchy_cycles == (("A", "B", "C"),)
     lines = mask_hierarchy_lines(scanned)
     assert len(warnings(lines)) == 1 and lines[1:] == ["    [cycle: A, B, C]"]
+
+
+def relations(*links, names=None):
+    """The pairs ``_relations`` marks when every ``(child, parent)`` link is ``inside``."""
+    names = names or sorted({name for link in links for name in link})
+    types = {name: MaskTypeSummary(name, "instances", 1, 1, 1.0) for name in names}
+    none = {"children": 1, "parents": 1, "children_matched_one_to_one": 0}
+    none |= {"parents_matched_one_to_one": 0, "inside": 0, "inside_parent_larger": 0}
+    inside = none | {"inside": 1, "inside_parent_larger": 1}
+    totals = {
+        (c, p): inside if (c, p) in links else none for c in names for p in names if c != p
+    }
+    return _relations(types, totals, mask_thresholds())
+
+
+def test_a_complete_three_cycle_keeps_its_edges_and_warns():
+    links = [(c, p) for c in "ABC" for p in "ABC" if c != p]
+    pairs = relations(*links)
+    assert all(pair.direct for pair in pairs)
+    r = MaskReport(images=1, types=MappingProxyType(
+        {n: MaskTypeSummary(n, "instances", 1, 1, 1.0) for n in "ABC"}), pairs=pairs)
+    assert r.hierarchy_cycles == (("A", "B", "C"),)
+    assert len(warnings(mask_hierarchy_lines(r))) == 1
+
+
+def test_a_cycle_with_a_chord_keeps_its_edges_and_warns():
+    pairs = relations(("A", "B"), ("B", "C"), ("C", "A"), ("A", "C"))
+    assert all(pair.direct for pair in pairs if pair.relation == "inside")
+    hierarchy = {p.child: [] for p in pairs}
+    for p in pairs:
+        if p.direct:
+            hierarchy[p.child].append(p.parent)
+    assert hierarchy_cycles(hierarchy) == (("A", "B", "C"),)
+
+
+def test_the_reduction_runs_between_cycles_and_acyclic_edges_are_unchanged():
+    # Dots in X in Y in Z (chain): Dots-Y and X-Z and Dots-Z are implied, not direct.
+    chain = relations(("D", "X"), ("X", "Y"), ("Y", "Z"), ("D", "Y"), ("X", "Z"), ("D", "Z"))
+    assert {(p.child, p.parent) for p in chain if p.direct} == {("D", "X"), ("X", "Y"), ("Y", "Z")}
+    # A and B nested in each other, both inside Top; Dots inside A (and so inside Top).
+    mixed = relations(("A", "B"), ("B", "A"), ("A", "T"), ("B", "T"), ("D", "A"), ("D", "T"))
+    direct = {(p.child, p.parent) for p in mixed if p.direct}
+    assert direct == {("A", "B"), ("B", "A"), ("A", "T"), ("B", "T"), ("D", "A")}
