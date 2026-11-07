@@ -373,7 +373,9 @@ def _defaults(given: GivenInputs) -> ResolvedInputs:
         missing_as_singleton=bool(given.missing_as_singleton),
         intensity_settings=given.intensity_settings,
         histogram_settings=given.histogram_settings or HistogramSettings(),
-        verify_content=bool(given.verify_content),
+        # Content hashing is on unless the caller opted out (#159); an earlier run's choice is
+        # kept by _with_changes, so an existing output is not silently recomputed.
+        verify_content=True if given.verify_content is None else bool(given.verify_content),
     )
 
 

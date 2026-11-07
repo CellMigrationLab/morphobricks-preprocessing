@@ -88,6 +88,9 @@ def test_a_version_1_run_is_refused(clean):
     path = clean.output / MANIFEST_FILENAME
     data = json.loads(path.read_text(encoding="utf-8"))
     data["manifest_version"] = "1"
+    del data["settings"]["verify_content"]  # a version 1 run never hashed content
+    for entry in data["files"]:
+        del entry["content_sha256"]
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(RunInputsError, match="before v0.4.0"):
         RunInputs.open(clean.output)

@@ -19,6 +19,7 @@ import pytest
 from morphobricks_preprocessing import (
     ManifestFormatError,
     RunManifest,
+    RunMode,
     prefill_mapping,
     read_manifest,
     run_experiment,
@@ -39,7 +40,9 @@ def run(tmp_path):
     pixels = np.arange(64, dtype=np.uint8).reshape(8, 8)
     for name in NAMES:
         write_data(root / "ctrl/rep1" / name, pixels, "YX")
-    result = run_experiment(root, prefill_mapping("YX"))
+    result = run_experiment(
+        root, prefill_mapping("YX"), mode=RunMode("restart", verify_content=False)
+    )
     return Path(result.output_folder), Path(result.manifest_path)
 
 

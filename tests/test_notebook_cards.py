@@ -324,20 +324,21 @@ def test_the_run_step_names_the_mode_and_the_input_changes(experiment):
     assert "<b>exclude</b>" in nb.run_status.value and "Mode: <b>full</b>" in nb.run_status.value
 
 
-def test_the_content_verification_box_is_run_recorded_and_filled_again(experiment):
-    # Review of rc4 (I3): the notebook exposes the strict reuse rule of the run.
+def test_the_content_verification_box_is_on_by_default_and_an_opt_out_is_recorded(experiment):
+    # Review of rc4 (I3): the notebook exposes the strict reuse rule of the run; on by default
+    # (#159), and unticking it is an explicit opt-out the manifest records.
     nb = ready(experiment)
-    assert not nb.verify_content.value
-    nb.verify_content.value = True
+    assert nb.verify_content.value
+    nb.verify_content.value = False
     assert "<b>verify_content</b>" not in nb.plan.value  # no earlier run yet
     result = nb.run()
     assert result.written
     manifest = json.loads((output_of(experiment) / "run_manifest.json").read_text("utf-8"))
-    assert manifest["settings"]["verify_content"] is True
-    assert all(entry["content_sha256"] for entry in manifest["files"])
-    nb.verify_content.value = False
-    assert "<b>verify_content</b>: True → False" in nb.plan.value
-    assert checked(experiment).verify_content.value  # filled from the earlier run
+    assert manifest["settings"]["verify_content"] is False
+    assert not any("content_sha256" in entry for entry in manifest["files"])
+    nb.verify_content.value = True
+    assert "<b>verify_content</b>: False → True" in nb.plan.value
+    assert not checked(experiment).verify_content.value  # filled from the earlier run
 
 
 def test_the_plan_reads_the_calibration_the_run_reads(experiment):

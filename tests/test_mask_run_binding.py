@@ -149,8 +149,9 @@ def test_a_strict_run_refuses_a_mask_rewritten_with_its_size_and_time_kept(clean
     assert outputs(out) == before and not (out / PUBLISH_FOLDER).exists()
 
 
-def test_a_default_run_does_not_see_a_rewrite_with_size_and_time_kept(clean, monkeypatch):
-    # The stated blind spot of the metadata identity: content hashing stays opt-in (#159).
+def test_a_run_that_opted_out_does_not_see_a_rewrite_with_size_and_time_kept(clean, monkeypatch):
+    # The stated blind spot of the metadata identity, for a run that opted out of the content
+    # hashing that is on by default (#159).
     mask = clean.masks / MASK
     changed_since = run_module.pipeline.changed_since
 
@@ -159,7 +160,12 @@ def test_a_default_run_does_not_see_a_rewrite_with_size_and_time_kept(clean, mon
         return changed_since(entries, root)
 
     monkeypatch.setattr(run_module.pipeline, "changed_since", meanwhile)
-    result = run_experiment(clean.experiment, output_folder=clean.output, masks_folder=clean.masks)
+    result = run_experiment(
+        clean.experiment,
+        output_folder=clean.output,
+        masks_folder=clean.masks,
+        mode=RunMode("restart", verify_content=False),
+    )
     assert result.written
 
 

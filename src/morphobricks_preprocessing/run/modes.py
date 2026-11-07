@@ -60,8 +60,9 @@ class RunMode:
         ``"restart"`` or ``"full"``.
     verify_content
         True: record each source's content SHA-256 and reuse a row only for the same
-        content; False: the fingerprint only (the default); None: as the earlier run
-        recorded (False without one).
+        content; False: the fingerprint only (an explicit opt-out, recorded in the manifest's
+        ``settings.verify_content``); None (the default): as the earlier run recorded, True
+        without one (#159).
     """
 
     name: str = RESTART

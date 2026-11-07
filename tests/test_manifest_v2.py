@@ -16,6 +16,7 @@ import tifffile
 
 from morphobricks_preprocessing import (
     AxisMapping,
+    RunMode,
     prefill_mapping,
     read_manifest,
     review_axes,
@@ -59,7 +60,12 @@ def test_version_2_records_roles_their_source_and_pixel_sizes(tmp_path):
     write_plain(root / "ctrl/b.tif", stack(1))
     result = run_experiment(root, AxisMapping("TYX", "TYX"))
     assert not result.written  # one arrangement per experiment: TYX and IYX differ
-    result = run_experiment(root, prefill_mapping("TYX"), exclude=["ctrl/b.tif"])
+    result = run_experiment(
+        root,
+        prefill_mapping("TYX"),
+        exclude=["ctrl/b.tif"],
+        mode=RunMode("restart", verify_content=False),
+    )
     data = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     assert data["manifest_version"] == MANIFEST_VERSION == "2"
     (entry,) = data["files"]
@@ -135,7 +141,9 @@ def test_recorded_sizes_are_checked():
 def test_a_version_1_run_gives_no_reusable_row(tmp_path):
     root = tmp_path / "exp"
     write_data(root / "ctrl/a.tif", stack(), "TYX")
-    first = run_experiment(root, prefill_mapping("TYX"))
+    first = run_experiment(
+        root, prefill_mapping("TYX"), mode=RunMode("restart", verify_content=False)
+    )
     data = json.loads(first.manifest_path.read_text(encoding="utf-8"))
     data["manifest_version"] = "1"
     for entry in data["files"]:
@@ -147,7 +155,8 @@ def test_a_version_1_run_gives_no_reusable_row(tmp_path):
         again.rebuild_reason == "the earlier run was written before v0.4.0, without the axis check"
     )
     assert again.read == ("ctrl/a.tif",)
-    assert read_manifest(again.manifest_path).manifest_version == "2"
+    # The rebuild hashes content, as every run does unless it opts out (#159).
+    assert read_manifest(again.manifest_path).manifest_version == "3"
 
 
 def test_rows_are_reused_only_for_the_same_row_key(tmp_path):
