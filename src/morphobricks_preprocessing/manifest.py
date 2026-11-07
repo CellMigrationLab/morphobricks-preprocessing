@@ -22,7 +22,6 @@ reports them.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -32,8 +31,11 @@ from morphobricks_normalization.checks import IntensityCheckSettings
 from morphobricks_normalization.csv_io import SCHEMA_VERSION
 from morphobricks_normalization.ranges import HistogramSettings
 
+from ._io import file_sha256 as file_sha256  # re-exported (moved)
 from ._io import write_text_atomic
 from .axes import AxisMapping
+from .description_record import KEY as DESCRIPTION_KEY
+from .description_record import recorded_description
 from .image_names import position_id
 from .inventory import INVENTORY_KEY, source_signature
 from .inventory import source_fingerprint as source_fingerprint  # re-exported (moved, PP-12)
@@ -249,6 +251,9 @@ class RunManifest:
     calibration_sha256
         SHA-256 of the output folder's ``calibration.csv`` as the run read it (the pixel
         sizes the user stated, design v0.4 §3); None when there was none.
+    experiment_description
+        What a run with a published ``morphobricks.toml`` records about it
+        (:mod:`.description_record`); None, and the key left out, for a run without one.
     schema_version
         Version of the CSV format.
     manifest_version
@@ -274,6 +279,7 @@ class RunManifest:
     narrow_ranges: tuple[NarrowRange, ...] = ()
     conversion_record_sha256: str | None = None
     calibration_sha256: str | None = None
+    experiment_description: dict | None = None
     schema_version: str = SCHEMA_VERSION
     manifest_version: str = MANIFEST_VERSION
 
@@ -357,8 +363,8 @@ class RunManifest:
             "calibration_sha256": self.calibration_sha256,
             "versions": dict(self.versions),
         }
-        if self.masks is not None:
-            data["masks"] = self.masks
+        optional = {"masks": self.masks, DESCRIPTION_KEY: self.experiment_description}
+        data.update({key: value for key, value in optional.items() if value is not None})
         return data
 
     @classmethod
@@ -417,6 +423,7 @@ class RunManifest:
                 ),
                 conversion_record_sha256=optional_text(data.get("conversion_record_sha256")),
                 calibration_sha256=optional_text(data.get("calibration_sha256")),
+                experiment_description=recorded_description(data.get(DESCRIPTION_KEY)),
                 schema_version=str(data["schema_version"]),
                 manifest_version=str(version),
             )
@@ -490,15 +497,6 @@ def file_entry_with(
         inventory_sha256=inventory,
         **header,
     )
-
-
-def file_sha256(path: str | os.PathLike) -> str:
-    """SHA-256 of a file, read in blocks."""
-    digest = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for block in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def write_manifest(manifest: RunManifest, path: str | os.PathLike) -> Path:

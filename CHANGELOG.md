@@ -8,6 +8,24 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **A run with a published experiment description (Stage 1, PR 11).** When the output folder
+  holds a published `morphobricks.toml`, `run` reads it with the strict reader (a refusal is
+  reported with its Spec code, table path and a plain message), runs the physical checks
+  against the folder and headers, and records `experiment_description` in `run_manifest.json`:
+  the SHA-256 of the exact bytes read, the section digests, which units' image type was checked
+  against a header, the status of every declared mask file (`checked` or `not yet checked`,
+  with how many images have one) and the publication records of `morphobricks.records.jsonl`
+  copied unchanged. Units that declare more than one channel layout are refused with
+  `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`, naming the layouts and units; nothing is processed. The
+  mask step (`masks` command, `describe_masks`) checks each declared mask's representation:
+  a `binary` mask holding more than two values is `R_MASK_CONTRADICTS_REPRESENTATION` (the
+  command exits 1; the file stays `not yet checked`), and what it checked is written to
+  `mask_representation.json`, each file bound to the fingerprint it had when read, so a new
+  batch of files is `not yet checked` again. A run without a description is the v0.4 run, byte
+  for byte, with no new manifest key, and issues a `UserWarning` (owner decision Q1). New
+  modules `description_layouts`, `description_record`, `description_run_text`,
+  `mask_representation` and `run/description_run`; `file_sha256` moved to `_io` (re-exported by
+  `manifest`). Conformance P04, P05, P11, P28 in `tests/test_spec_run_description.py`.
 - **The Spec test gate holds module-level skips and missing modules (#203).** A `test_spec_*.py`
   module skipped while it is collected (`pytest.skip(..., allow_module_level=True)`, a module-level
   `importorskip`) is now a failed collection, and a run over the whole tests folder fails when no
