@@ -107,6 +107,9 @@ src/morphobricks_preprocessing/
   description.py        the model (Description, Condition, Channel, Repeat, Member, Unit, Mask)
                     built from a reader-accepted document; description_from_bytes -> DescriptionError
   description_write.py  the canonical writer (Spec experiment-v1 9.1) and section digests (9.3)
+  physical_check.py the physical R_* checks of a description against the folder and image headers
+                    (units found/declared, homogeneity, header evidence, image type, mask types
+                    declared); layout_groups (header-named layouts are batch-confirmable, Q3)
   description_transition.py the R_* comparison of a candidate with the published file (4.4a, 4.6, 4.9),
                     Reconfirmation (the user's recorded acceptance of a changed ID)
   description_file.py   read_description(path): symlink refusal (R_FILE_SYMLINK), bytes -> Description

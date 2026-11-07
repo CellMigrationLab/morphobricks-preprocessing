@@ -8,6 +8,20 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Physical `R_*` checks of an experiment description (Stage 1, PR 8; stacked on the
+  discovery and header additions, which provide the raw header names).** New module
+  `physical_check`: `check_physical(description, discovery, metadata, ...)` reports
+  `R_UNIT_NOT_FOUND`, `R_UNIT_NOT_DECLARED`, `R_UNIT_NOT_HOMOGENEOUS` (names the FOV, path and C
+  index; it replaces the count and header checks of its unit), `R_CHANNEL_COUNT_MISMATCH`,
+  `R_HEADER_CONTRADICTION` (raw names, NFC of both sides, no trimming, no case folding),
+  `R_IMAGE_TYPE_CONTRADICTS_HEADER` (both directions, header only; OME-Zarr states no colour
+  interpretation and is recorded as not header-verified) and `R_MASK_TYPE_NOT_DECLARED`. Pixels
+  are never read and no mask representation is defaulted or inferred. Homogeneity compares the
+  axes with `T` left out, so time-lapses of different lengths are one layout. An image whose
+  channel count the header does not state (a plain stack without confirmed roles) or whose header
+  cannot be read is listed in `unchecked`, not passed. `layout_groups` groups units by identical
+  layout; only groups whose channels are all header-named are batch-confirmable. Not used by any
+  run, notebook or CLI command yet.
 - **Discovery and header additions for the experiment description (Stage 1, PR 6).**
   Additive; a run without a description behaves as before. (1) `preflight` and `remasked`
   take `with_description=False`; with it, a condition, repeat or technical-repeat folder that
