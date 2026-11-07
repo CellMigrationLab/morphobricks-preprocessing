@@ -126,9 +126,7 @@ def relations(*links, names=None):
     none = {"children": 1, "parents": 1, "children_matched_one_to_one": 0}
     none |= {"parents_matched_one_to_one": 0, "inside": 0, "inside_parent_larger": 0}
     inside = none | {"inside": 1, "inside_parent_larger": 1}
-    totals = {
-        (c, p): inside if (c, p) in links else none for c in names for p in names if c != p
-    }
+    totals = {(c, p): inside if (c, p) in links else none for c in names for p in names if c != p}
     return _relations(types, totals, mask_thresholds())
 
 
@@ -136,8 +134,11 @@ def test_a_complete_three_cycle_keeps_its_edges_and_warns():
     links = [(c, p) for c in "ABC" for p in "ABC" if c != p]
     pairs = relations(*links)
     assert all(pair.direct for pair in pairs)
-    r = MaskReport(images=1, types=MappingProxyType(
-        {n: MaskTypeSummary(n, "instances", 1, 1, 1.0) for n in "ABC"}), pairs=pairs)
+    r = MaskReport(
+        images=1,
+        types=MappingProxyType({n: MaskTypeSummary(n, "instances", 1, 1, 1.0) for n in "ABC"}),
+        pairs=pairs,
+    )
     assert r.hierarchy_cycles == (("A", "B", "C"),)
     assert len(warnings(mask_hierarchy_lines(r))) == 1
 
