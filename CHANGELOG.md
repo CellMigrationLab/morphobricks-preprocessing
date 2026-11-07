@@ -8,6 +8,19 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Experiment-description publication (Stage 1, PR 5).** `description_file.read_description(path)`
+  reads and validates a `morphobricks.toml` (a symbolic link is `R_FILE_SYMLINK`, never followed);
+  `description_transition` compares a candidate with the published file and reports every `R_*`
+  that applies (`R_CONFIRMED_ID_CHANGED`, `R_USED_ID_DROPPED`, `R_USED_ID_REUSED`,
+  `R_CONFIRMED_ON_CHANGED`), accepting a changed ID only with the user's recorded
+  `Reconfirmation`; `run.description_file.publish_description` does it under the output folder's
+  lock: base SHA-256 or `absent` (`R_DRAFT_BASE_MISSING`, `R_PUBLISHED_FILE_CHANGED`), canonical
+  bytes re-read by the strict reader, atomic write, and the re-confirmations appended to the
+  append-only `morphobricks.records.jsonl` (old ID, new ID, date, SHA-256 before and after).
+  All twelve Spec transitions and scenarios P09, P16-P20 and P22 pass. A new `confirmed_on` beside
+  a changed image count alone is refused (new FOVs do not reopen a confirmation, section 10); the
+  Spec's validator accepts it. Copying the records into the run manifest is a later pull request.
+  Not used by any run, notebook or CLI command yet.
 - **Experiment-description model, canonical writer and section digests (Stage 1, PR 4).** New
   modules `description` (the `Description` model; `description_from_bytes` reads with the strict
   reader and raises `DescriptionError` with every issue of the first failing phase) and
