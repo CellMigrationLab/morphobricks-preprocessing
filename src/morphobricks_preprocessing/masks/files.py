@@ -10,11 +10,22 @@ import os
 from collections.abc import Collection, Iterable, Mapping
 from pathlib import Path
 
-from ..discovery import DiscoveryResult, is_system_name, is_tiff_name
+from ..discovery import (
+    DiscoveryResult,
+    IdentityError,
+    check_identity_text,
+    is_system_name,
+    is_tiff_name,
+)
 from ..folder_rules import masks_folder_issues
 from ..image_names import position_id
 from ..links import LinkGuard
 from ..metadata import TiffMetadata
+from ..name_issues import (
+    invalid_mask_types_issue,
+    is_nfc,
+    non_nfc_mask_types_issue,
+)
 from ..validation import ValidationIssue, agree, error, has_errors, plural, warning
 from ..zarr_input import (
     NgffError,
@@ -35,6 +46,7 @@ def find_masks(
     mask_axes: Mapping[str, str] | None = None,
     output_folder: str | os.PathLike | None = None,
     bind: bool = False,
+    with_description: bool = False,
 ) -> MaskInventory:
     """Pair every image with its masks and check them from their headers, without pixels.
 
@@ -65,6 +77,12 @@ def find_masks(
         fingerprint with it (:attr:`.model.MaskFile.bound`, issue #160), so a run or the
         mask step refuses a mask that is no longer the one its header described; a mask
         that changed while its header was read is the error ``mask_changed_during_check``.
+    with_description
+        True when an experiment description is in use: a discovered mask type name that
+        breaks the Label rules (``NA``, `` cells``) is then the error
+        ``R_MASK_TYPE_NAME_INVALID``, and one that is not Unicode NFC the error
+        ``R_FOLDER_NOT_NFC`` (Spec experiment-v1 §6; never normalized or renamed). Without a
+        description, mask type names are accepted as before (owner decision Q1).
 
     Returns
     -------
@@ -85,6 +103,8 @@ def find_masks(
     found, unreadable = _label_masks(discovery.root, images)
     files.extend(found)
     issues.extend(_name_issues(files))
+    if with_description:
+        issues.extend(_description_name_issues(files))
     files.sort(key=lambda f: (f.image, f.mask_type))
     issues.extend(_duplicate_issues(files))
     stated = dict(mask_axes or {})
@@ -285,6 +305,19 @@ def _name_issues(files: list[MaskFile]) -> list[ValidationIssue]:
             "Give every mask type its own name.",
         )
     ]
+
+
+def _description_name_issues(files: list[MaskFile]) -> list[ValidationIssue]:
+    """Refuse the discovered mask types that cannot be a ``source_type`` of a description."""
+    invalid, not_nfc = [], []
+    for name in sorted({f.mask_type for f in files}):
+        try:
+            check_identity_text(name, "mask type")
+        except IdentityError:
+            invalid.append(name)
+        if not is_nfc(name):
+            not_nfc.append(name)
+    return [*invalid_mask_types_issue(invalid), *non_nfc_mask_types_issue(not_nfc)]
 
 
 def _duplicate_issues(files: list[MaskFile]) -> list[ValidationIssue]:
