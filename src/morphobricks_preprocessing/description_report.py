@@ -11,7 +11,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from .description_rules import Code
+from .description_rules import Code, Refusal
 
 BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
 
@@ -26,7 +26,7 @@ def key_path(base: str, key: str) -> str:
 class DescriptionIssue:
     """One error or warning: its code, table path and the offending value (None if absent)."""
 
-    code: Code
+    code: Code | Refusal
     path: str
     value: object = None
 
