@@ -8,6 +8,26 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Reconciliation of the published description with the folder (Stage 1, PR 9; conformance
+  P07, P08, P15, P33).** New modules `description_reconcile`, `description_removal` and
+  `reconcile_observe`. Each unit is `unchanged`, `new` or `removed`, matched only by its exact
+  source folder labels. A unit that is new beside a confirmed member, a removed unit, channel
+  evidence that no longer fits the declared list and a folder the user stated was renamed
+  (`FolderRename`) reopen the N35 confirmation of that repeat only (`confirmed = false` in the
+  draft, `confirmed_on` copied from the published file, a new date only from the user's
+  `confirm_repeat`). A change of `image_count` alone reopens nothing (it is reported as
+  `CountChange` and the member's count follows the folder). A renamed folder is a removed unit
+  plus a new pending one, never paired by name; a new folder is proposed only for an existing
+  repeat ID equal to its label. A removal needs the user's confirmation, asked once per
+  condition (`removal_questions`: every lost repeat, technical repeat and channel in one
+  question); a removed ID stays in `used_ids`, and a `reference` to a removed condition is never
+  cleared silently. Fix in the merged transition check: `confirmed_on` may now move with the
+  user's new confirmation when a condition ID holds another folder (conformance P33 b); the
+  layout it compares (`repeat_layout`) includes the condition's source folder. Not used by any
+  run, notebook or CLI command yet. Not done here: the pending new units are not in the draft
+  (they need channels and IDs, which are the draft model's), and image-count changes are
+  reported but not appended to `morphobricks.records.jsonl` (the file defines only
+  re-confirmation records).
 - **Content hashing of the sources is on by default (#159; owner decision of 7 November 2026).**
   A run records each image's content SHA-256 and reuses a row only for the same content, so an
   image edited in place with its size and modification time kept is read again (manifest
