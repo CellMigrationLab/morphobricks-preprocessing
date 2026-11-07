@@ -640,7 +640,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Significant bits (Q4) | Manifest only, information only; `bit_depth` and binning unchanged |
 | Corrupt files (Q6) | Explicit exclusion list, recorded in manifest, rows removed |
 | Notebook target | Google Colab and JupyterLab/LabConstrictor from one file, following LabConstrictor's notebook portability guide: one `# @title` runnable cell, explicit `display()` of the existing notebook pages, Colab-only Drive mount inside `if "google.colab" in sys.modules:`, no magics, core ipywidgets 7.7/8 compatibility, no forced widget restart/custom manager, remote install pinned to immutable `RELEASE_REF` |
-| CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--histogram-range`, `--robust-quantiles`, `--memory-limit 2GiB`, `--missing-as-singleton` (also on `check`, F10), `--mode restart|full`, `--no-masks`, `--no-exclude`, `--remove-stale-lock`, `--log`, and the conversion options above. Axis roles are always stated explicitly, never taken silently from metadata (amended 3 November 2026, plan §12 question 73: when every image names all its axes, `run` uses those roles without `--axes` and prints them as the images name them; plain stacks still need `--axes`). Exit 1 on errors |
+| CLI | `check <folder>` (summary, label tree, issues, suggested `--axes`) and `run <folder> --axes ROLES` with `--output`, `--exclude`, `--bins`, `--histogram-range`, `--robust-quantiles`, `--memory-limit 2GiB`, `--missing-as-singleton` (also on `check`, F10), `--mode restart|full`, `--no-masks`, `--no-exclude`, `--remove-stale-lock` and `--log`; also `masks`, `calibrate`, `design` and `convert` (the TIFF conversion options of v0.3, `--convert-tiff` and `--chunk-size`, were removed in v0.4.0). Axis roles are always stated explicitly, never taken silently from metadata (amended 3 November 2026, plan §12 question 73: when every image names all its axes, `run` uses those roles without `--axes` and prints them as the images name them; plain stacks still need `--axes`). Exit 1 on errors |
 | Large planes (Q15) | Planes over the memory limit are read in blocks automatically, announced by the warning `planes_read_in_blocks` and `read_in_blocks` in the manifest. Block size derived from the limit (whole strips/tiles/chunks, uncompressed pieces and chunks also by rows). Compressed single-strip/tile planes keep the `plane_over_memory_limit` error. Two-pass histograms identical to whole planes. (Up to v0.3, OME-Zarr copies were written block by block; conversion was removed in v0.4.0.) Axis preview reduced (every n-th pixel) with a caption saying so |
 | Normalization brick (P1) | The modules `dtypes`, `histogram`, `records`, `csv_io`, `pooling` and `normalization` moved unchanged to `morphobricks_normalization` (normalization plan N1, N2, N6) and are imported from there. Up to v0.3 their public names stayed importable from `morphobricks_preprocessing` and the old submodules, with a `DeprecationWarning`; those stand-ins (`_moved.py`) were removed in v0.4.0 (plan Q46). The package's own code never uses the old paths. Outputs unchanged (CSV schema 2); the manifest's `versions` adds `morphobricks-normalization`; Step 0 checks for it; contract §3–§7 text moved to the normalization contract (§1.2, now §6.2 for the CSV) |
 | Dataset consistency (Q21, P2) | Step 1 "Dataset consistency" panel: balance table (images and technical-repeat folders per condition x biological repeat), `unbalanced_images` (< 0.5 or > 2 x median), `repeat_missing_conditions`, `different_pixel_sizes`, `missing_pixel_size` (OME-Zarr scale included), `different_plane_counts`; `different_sizes` narrowed to width/height; consistency issues shown only in that panel, not in Messages. Warnings only; outputs unchanged |
@@ -935,79 +935,20 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 
 ---
 
-## 11. Status (October 2026)
+## 11. Status (current state, v0.4.0)
 
-- **Done:** Milestones 0–5 (contract, scanner and validator, axis review, histogram engine,
-  CSV and reruns, notebook + CLI + user guide), the notebook redesign plus feedback
-  round (PRs #6 and #7), OME-Zarr input with optional TIFF -> OME-Zarr conversion
-  (PR #5), planes over the memory limit read in blocks (PR #12, plan §12 question 15),
-  naming those images before the run (PR #13, question 16), plane coordinates always
-  written (PR #14, question 17), OME-NGFF label readers (PR #15, question 18), and
-  follow-up P1 of the normalization plan: the dependency on `morphobricks-normalization`
-  v0.1.0 with deprecated re-exports, its version in the manifest, Step 0 checking for it,
-  and contract §3–§7 moved to the normalization contract (PRs #16 and #17, question 19),
-  and `position_id` filled per cross-brick decision D02 (question 20), and follow-ups
-  P2 (dataset consistency warnings, question 21) and P3 (experiment design, question 22),
-  and P3b (`plane_histograms.csv` schema version 3 with the channels in columns, question
-  27).
-- **Input support for MorphoRelate milestone M3:** folders named `single` read as a
-  one-member level (question 23), a unit per axis in `PhysicalSizes` and physical sizes in
-  `inspect_image` (question 24), OME-Zarr physical sizes from the OME-NGFF scale (question
-  25), and notebook steps 1 and 2 embeddable with their own words (question 26).
-- **Released as v0.1.0** (27 October 2026), with everything above; the normalization brick
-  is pinned to its v0.2.0 (question 28).
-- **Released as v0.2.0** (27 October 2026, question 33): follow-ups P4 (the image type,
-  question 29) and P5 (intensity checks and plots, question 30) of the normalization plan
-  (PRs #28 and #29), step 1 embeddable without the experiment design,
-  `folder_step(show_design=False)` (question 31, PR #27), and masks: pairing every image
-  with its masks, header checks, the manifest's `masks` key, and the mask step with
-  `mask_relationships.json`, as library, command line and documentation (question 32,
-  PR #26). The normalization brick stays pinned to its v0.2.0.
-- **Released as v0.3.0** (28 October 2026, question 35): follow-up P6 of the
-  normalization plan (question 34, PR #31): the histogram range in step 3 and the
-  `narrow_histogram_range` warning, `plane_histograms.csv` schema version 4, the
-  normalization brick pinned to its v0.3.1.
-- **v0.3.1** (to be tagged, question 36): `discovery.position_id`, the one function every
-  MorphoBricks brick names positions with (D85), also removes `.png`, `.jpg`, `.jpeg`,
-  `.bmp`, `.gif` and `.npy` (naming only) and refuses a name that is only an extension
-  (PR #33). Outputs unchanged. Released 29 October 2026.
-- **v0.3.2** (to be tagged, question 37): the fixes from the data-flow audit of
-  29 October 2026 (#35–#39): negative mask labels refused (PR #40); a malformed OME-Zarr
-  labels group is `unreadable_mask` (PR #41); differing channel names are an error,
-  compared exactly after trimming leading and trailing whitespace, recorded as
-  `channel_names_trimmed` (PRs #42, #45); masks get Z/T plane identity and a 2D mask for a
-  multi-plane image is refused (PR #43); strict manifest flags, per-file roles and uint64
-  labels (PR #44); a folder holding images and subfolders is an error (PR #46); the
-  normalization brick pinned to v0.3.2 (PR #47). Released 30 October 2026.
-- **v0.3.3** (question 39): the shared rules other bricks call instead of
-  copying them (MorphoBricks D86, question 38, contract §16), PRs #49–#55: length units,
-  int32 labels, header axes, identity text and case, source checks against a run's
-  manifest, masks named as images, pixel sizes within 0.1 %; and the
-  `unsupported_pixel_size_unit` warning (PR #56). Released 31 October 2026.
-- **v0.3.4** (to be tagged, question 41): core fixes for the other bricks. Declared axes
-  (PR #58): a plain stack's positional Y and X are left open, so a plain `QYX` stack
-  declared `YXC` is accepted; the named Y and X declared swapped are accepted and read
-  transposed (`declared_axes_transposed` reports it); any other disagreement is refused;
-  new `named_axes`, `series_axes_from_metadata`, `TiffMetadata.axes_from_metadata`. One
-  strict experiment-design reader for every brick (PR #59, question 40):
-  `read_confirmed_design`; edits to `experiment_design.csv` with an empty or NA-like
-  `repeat_group`, repeat groups differing only in case, or a `confirmed_on` that is not
-  `YYYY-MM-DD` are refused, naming the line and column.
-- **Notebook masks field (PP-10c):** step 1 takes the masks folder and the mask axes per
-  mask type (design v0.4 §2), see plan §10.
-- **Notebook masks step (PP-10d):** step 3's **Describe the masks** runs the `masks` step
-  (`mask_relationships.json`) with the run's recorded inputs, through `run.mask_step`, which
-  the CLI calls too; see plan §10.
-- **Named-axis copies (PP-11):** `convert` / `convert_experiment` writes OME-TIFF copies of
-  the images with axis errors or unnamed axes with the confirmed roles into a new folder
-  (contract §17, plan §10 and question 59).
-- **Notebook conversion card (PP-11b):** step 2's **Make named-axis copies (optional)** card,
-  under the axis check when it reports these images: the folder for the copies, the
-  confirmed roles, the plan (`preview_conversion`), the copies (`convert_experiment`) with a
-  progress bar, the lock card, and **Check the copies in step 1**; see plan §10.
-- **Next (not started):** the notebook step for the masks (name each mask, confirm or
-  correct the relationships) and a file saving those answers for the other bricks
-  (question 32); 3D and time-lapse masks later.
+- **Released:** v0.4.0 (5 November 2026), with the normalization brick pinned at v0.3.4. The
+  per-release history is in [CHANGELOG.md](CHANGELOG.md); the milestones PP-0 to PP-13 are in
+  [docs/archive/plan-milestones-v0.1-v0.4.md](docs/archive/plan-milestones-v0.1-v0.4.md); the older
+  status log of this file is in
+  [docs/archive/agents-status-history-v0.1-v0.3.md](docs/archive/agents-status-history-v0.1-v0.3.md).
+- **Unreleased:** see the changelog's "Unreleased" section.
+- **Scope:** 2-D per plane (a Z-stack is refused as `z_stack_not_supported`); TIFF and OME-Zarr
+  input read directly (TIFF to OME-Zarr conversion and the `_moved.py` re-exports were removed);
+  optional masks, the mask step and the notebook's **Describe the masks**; named-axis copies
+  (`convert`, notebook card); calibration; resumable, crash-consistent runs.
+- **Command line:** `check`, `run`, `masks`, `calibrate`, `design`, `convert`.
+- **Next:** [docs/roadmap.md](docs/roadmap.md).
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;
   - the optional `jl-hidecode` JupyterLab extension, which keeps code cells collapsed. It

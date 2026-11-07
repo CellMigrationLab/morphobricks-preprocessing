@@ -19,54 +19,23 @@ from there.
 
 ## Status
 
-Pre-alpha. Implemented and tested:
+Pre-alpha; the current release is v0.4.0 (what is planned next is in
+[docs/roadmap.md](docs/roadmap.md)). Implemented and tested:
 
-- Folder discovery and validation (`discovery`, `validation`)
-- TIFF header inspection without reading pixels (`metadata`)
-- Dataset consistency warnings in the folder check: images per condition and biological
-  repeat, repeats missing from some conditions, differing plane counts and pixel sizes,
-  and an error for differing numbers of channels (`dataset`, `metadata`,
-  `physical_sizes`)
-- Calibration: pixel sizes and z-steps from the metadata, or stated by the user for the
-  whole experiment, a folder or an image in `calibration.csv` (or as measured in pixels),
-  recorded per axis with their source; never guessed (`calibration`, command `calibrate`)
-- Axis mapping: prefill from metadata, validation, applying one mapping to every
-  file (`axes`)
-- Named-axis copies: images whose metadata name their axes wrongly or not at all saved as
-  OME-TIFF with the confirmed roles, pixel for pixel, in a new folder with a conversion
-  record (`conversion`, command `convert`)
-- Reading TIFFs one 2D plane at a time, with a memory limit and a preview plane, and the
-  channels of a table row one after another; planes too large for the limit are read in
-  blocks with identical results (`planes`)
-- The experiment design: pairing biological repeats across conditions, confirming they
-  are comparable, and marking controls, in `experiment_design.csv` (`design`)
-- The image type, fluorescence or RGB: suggested from the metadata (RGB colour samples),
-  confirmed by the user and recorded in the run manifest (`image_type`)
-- Running an experiment end to end and updating earlier output incrementally, with a
-  run manifest (`run`, `manifest`)
-- Intensity checks of the written table: images far from the others of their biological
-  repeat, shifted biological repeats, saturated images and images without spread, with
-  plots per channel in the notebook (`intensity`)
-- Masks (optional): pairing every image with its masks of any number of kinds (a masks
-  folder with one folder per kind, and OME-Zarr label images), checking them from their
-  headers and recording them in the run manifest (`masks`); and a mask step that reads them
-  and tells how the kinds relate (inside, grouped by, same objects, with the counts behind
-  it, such as cells with two nuclei) and their hierarchy, in `mask_relationships.json`
-  (`mask_scan`, command `masks`). A mask is 2D, or has depth (Z) and/or time (T) planes
-  named in its own metadata (or stated once per mask type, `--mask-axes Cells=TYX`), one
-  per image plane; the masks of a time-lapse must have its time points, so a 2D mask of a
-  time-lapse is refused (`mask_planes_mismatch`), whatever its metadata names (the shared
-  2D mask option `--mask-axes Cells=YX` was removed: `shared_mask_not_supported`);
-  masks are checked as stored
-  and never converted, and the manifest records each mask's axes, roles and size
-- Reading a run from another brick: `RunInputs.open(output_folder)` gives the FOVs, pixel
-  sizes, planes, masks, design and image type the run recorded, and refuses a run whose
-  files changed or that misses files (`run_inputs`)
-- Interrupted runs resume, and results are published in one crash-consistent step
-  (`run.staging`, `run.resume`, `run.generation`)
+- Folder discovery and validation, TIFF and OME-Zarr header inspection without reading pixels
+- Dataset consistency warnings, calibration (never guessed) and axis mapping, with named-axis
+  OME-TIFF copies for images whose axes are wrong or unnamed (command `convert`)
+- Reading images one 2D plane at a time within a memory limit
+- The experiment design, the image type and intensity checks of the written table
+- Optional masks: pairing, header checks, and a mask step that writes `mask_relationships.json`
+- Running an experiment end to end, updating earlier output incrementally, resuming
+  interrupted runs and publishing results in one crash-consistent step
+- Reading a run from another brick: `RunInputs.open(output_folder)`
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
   and a command line (`morphobricks-preprocessing check` / `run` / `masks` / `calibrate` /
   `design` / `convert`)
+
+Every feature, message code and output file is described in the [user guide](docs/user_guide.md).
 
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
 to its release v0.3.4): per-plane histograms with the robust range and the range check
