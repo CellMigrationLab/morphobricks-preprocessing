@@ -107,6 +107,11 @@ src/morphobricks_preprocessing/
   description.py        the model (Description, Condition, Channel, Repeat, Member, Unit, Mask)
                     built from a reader-accepted document; description_from_bytes -> DescriptionError
   description_write.py  the canonical writer (Spec experiment-v1 9.1) and section digests (9.3)
+  description_transition.py the R_* comparison of a candidate with the published file (4.4a, 4.6, 4.9),
+                    Reconfirmation (the user's recorded acceptance of a changed ID)
+  description_file.py   read_description(path): symlink refusal (R_FILE_SYMLINK), bytes -> Description
+  run/description_file.py publish_description: lock, base SHA-256, strict re-read, transitions,
+                    atomic write, append-only morphobricks.records.jsonl (Spec experiment-v1 4.6, 10)
   draft_ids.py         proposed IDs: the folder label or raw header name only when the reader would
                     accept it as written, else none (never repaired); draft.py the draft
                     (IdSlot proposed/confirmed, open questions, unit_rows with condition_id,

@@ -299,7 +299,7 @@ def test_differing_channel_names_stop_the_run(tmp_path):
 
 
 def test_every_row_has_its_position_id(experiment):
-    result = run_experiment(experiment, TYX)
+    result = run_experiment(experiment, TYX, mode=run_module.RunMode("restart", False))
     records = read_plane_histograms(result.csv_path)
     assert {r.position_id for r in records} == {"img_01", "img_02"}
     # The same file name in two technical repeats gives two distinct positions.

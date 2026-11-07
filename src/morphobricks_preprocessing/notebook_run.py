@@ -125,7 +125,7 @@ class _RunStep:
             options=MODE_OPTIONS, value=RESTART, layout=widgets.Layout(**_WIDE)
         )
         self.verify_content = widgets.Checkbox(
-            value=False,
+            value=True,
             description="Verify each image's content (SHA-256) before reusing its rows",
             indent=False,
             layout=widgets.Layout(**_WIDE),
