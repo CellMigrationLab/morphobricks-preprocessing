@@ -19,6 +19,38 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   holding such a character (written unescaped as the Spec requires) was refused as "not JSON";
   lines now end at LF only. Test helper: the catalogue no longer reads the golden-file rows as
   fixtures.
+- **Safe display of planes (Stage 1, PR 13; part of #169).** New modules `preview` and
+  `preview_render`, not used by the notebook yet. `preview.read_plane(path, mapping, max_side=...)`
+  returns at most `max_side` pixels per side (`THUMBNAIL_SIDE` 256, `DETAIL_SIDE` 1024), every
+  n-th source pixel, read in blocks under a 64 MiB budget whatever the run's memory limit: a
+  20,000 x 20,000 uint16 plane peaks at about 64 MiB where `read_sample_plane` peaked at about
+  1 GiB. A plane the file cannot be split for is read whole only within the run's limit, else
+  refused (`plane_too_large_to_show`). `channel_strip` shows one panel per channel (middle Z,
+  first T, stated) only through the roles the user confirmed (`AxisReview`): no review, a file the
+  review does not cover or a file with an axis error is refused (`axis_roles_not_confirmed`), a
+  file without a `C` axis is one channel whatever its shape, and a file that changed since its
+  fingerprint is refused (`file_changed_while_shown`). `mask_thumbnail` uses the image's step and
+  refuses a mask of another size. Rendering follows NucleiSky's order (reduce, float32, percentile
+  contrast p0.5-p99.5 of the finite values, per channel): a flat image is mid-grey labelled
+  `flat: every finite value is v`, an image without finite values is magenta, non-finite pixels
+  are magenta and counted, never zeros. PNGs are written with the standard library (no
+  matplotlib); `mask_overlay_png` draws only a representation the caller declares (`instances`
+  outlines, `binary` tint) and never infers it. Not done here: `representative_fovs`, the caption
+  text with unit and header name (`notebook_render`), and any widget.
+- **Physical `R_*` checks of an experiment description (Stage 1, PR 8; stacked on the
+  discovery and header additions, which provide the raw header names).** New module
+  `physical_check`: `check_physical(description, discovery, metadata, ...)` reports
+  `R_UNIT_NOT_FOUND`, `R_UNIT_NOT_DECLARED`, `R_UNIT_NOT_HOMOGENEOUS` (names the FOV, path and C
+  index; it replaces the count and header checks of its unit), `R_CHANNEL_COUNT_MISMATCH`,
+  `R_HEADER_CONTRADICTION` (raw names, NFC of both sides, no trimming, no case folding),
+  `R_IMAGE_TYPE_CONTRADICTS_HEADER` (both directions, header only; OME-Zarr states no colour
+  interpretation and is recorded as not header-verified) and `R_MASK_TYPE_NOT_DECLARED`. Pixels
+  are never read and no mask representation is defaulted or inferred. Homogeneity compares the
+  axes with `T` left out, so time-lapses of different lengths are one layout. An image whose
+  channel count the header does not state (a plain stack without confirmed roles) or whose header
+  cannot be read is listed in `unchecked`, not passed. `layout_groups` groups units by identical
+  layout; only groups whose channels are all header-named are batch-confirmable. Not used by any
+  run, notebook or CLI command yet.
 - **Reconciliation of the published description with the folder (Stage 1, PR 9; conformance
   P07, P08, P15, P33).** New modules `description_reconcile`, `description_removal` and
   `reconcile_observe`. Each unit is `unchanged`, `new` or `removed`, matched only by its exact
