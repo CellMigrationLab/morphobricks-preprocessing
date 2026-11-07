@@ -193,3 +193,35 @@ def test_a_label_image_changed_during_the_run_is_refused(tmp_path, monkeypatch):
     assert [(i.code, i.paths) for i in result.issues if i.is_error] == [
         ("mask_changed_during_run", ("ctrl/a.ome.zarr/labels/cells",))
     ]
+
+
+def rewrite_after_the_staged_body(monkeypatch, mask, *, keep_metadata=False):
+    """Rewrite ``mask`` once the generation is staged, right before the manifest is replaced.
+
+    The publication record is the last staged file; the staged-body checks of the pipeline
+    are all done by then, and only the commit's own ``before_commit`` callback is left.
+    """
+    write = run_module.generation.write_text_atomic
+
+    def record_then_rewrite(path, text, *args, **kwargs):
+        write(path, text, *args, **kwargs)
+        if path.name == run_module.generation.PUBLICATION_RECORD:
+            rewrite_mask(mask, keep_metadata=keep_metadata)
+
+    monkeypatch.setattr(run_module.generation, "write_text_atomic", record_then_rewrite)
+
+
+@pytest.mark.parametrize("mode", [RunMode("restart", verify_content=False), STRICT])
+def test_a_mask_rewritten_after_the_staged_checks_is_not_published(clean, monkeypatch, mode):
+    # Issue #198: the last fingerprint check ran before the commit; with the content hashing
+    # opted out there was no callback after it, and the manifest was replaced regardless.
+    out, mask = clean.output, clean.masks / MASK
+    before = outputs(out)
+    rewrite_after_the_staged_body(monkeypatch, mask)
+    result = run_experiment(
+        clean.experiment, output_folder=out, masks_folder=clean.masks, mode=mode
+    )
+    assert not result.written and result.report_written
+    (issue,) = [i for i in result.issues if i.is_error]
+    assert issue.code == "mask_changed_during_run" and issue.paths == (MASK,)
+    assert outputs(out) == before and not (out / PUBLISH_FOLDER).exists()

@@ -8,6 +8,11 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **A mask changed after the last check is no longer published (#198).** Every run, also one
+  with `verify_content` off, fingerprints each mask again in the commit's `before_commit`
+  callback, right before the manifest is replaced; a changed mask stops the run with
+  `mask_changed_during_run` and the earlier generation is intact. Strict runs do this plus their
+  existing SHA-256 check.
 - **Derived `experiment_design.csv` and the cross-version parity suite (Stage 1, PR 10).** New
   module `design_derive`: `derive_design(description)` and `write_derived_design(description,
   path)` derive the legacy design file from a published description (Spec section 11): source
