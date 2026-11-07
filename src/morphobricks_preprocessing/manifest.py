@@ -321,10 +321,16 @@ class RunManifest:
                 ),
                 "exclude": list(self.settings.exclude),
                 "histogram": self.settings.histogram.to_dict(),
-                # Written only when on (version 3): a default run's manifest keeps rc4's.
+                # Written by every version 2 and 3 manifest (#159): a run that opted out of
+                # content hashing says so. Manifests written before it have no key and read
+                # as not verified; version 1 is unchanged.
                 **(
-                    {"verify_content": True}
-                    if recorded_flag(self.settings.verify_content, "verify_content")
+                    {
+                        "verify_content": recorded_flag(
+                            self.settings.verify_content, "verify_content"
+                        )
+                    }
+                    if self.manifest_version != "1"
                     else {}
                 ),
             },

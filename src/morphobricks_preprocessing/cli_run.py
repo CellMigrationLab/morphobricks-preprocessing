@@ -4,9 +4,9 @@ Every input left out is the earlier run's in the same output folder (design v0.4
 ``--axes`` is needed for the first run of plain stacks (not when every image names its
 axes, design v0.4 §3) and for plain stacks that are new or changed;
 ``--no-masks`` drops the recorded masks folder, ``--no-exclude`` the recorded exclusions;
-``--mode full`` recomputes every row; ``--verify-content`` reuses rows only for the same
-content SHA-256 (:class:`.run.modes.RunMode`). Given only ``--output``, ``run`` uses the recorded
-experiment folder (``experiment_not_recorded`` without one).
+``--mode full`` recomputes every row; rows are reused only for the same content SHA-256 unless
+``--no-verify-content`` opts out (:class:`.run.modes.RunMode`). Given only ``--output``, ``run``
+uses the recorded experiment folder (``experiment_not_recorded`` without one).
 Also the helpers every command shares: :func:`parse_size` and :func:`command_preflight`.
 """
 
@@ -270,7 +270,8 @@ def _run_inputs(run: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         help="reuse rows only when each image's content SHA-256 is the one recorded with them, "
         "not only its size and modification time (reads every image once more; changing it "
-        "recomputes every row; default: as in the earlier run, else no)",
+        "recomputes every row; on by default: as in the earlier run, else yes; "
+        "--no-verify-content opts out and the manifest records that)",
     )
 
 
