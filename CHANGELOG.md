@@ -26,6 +26,23 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   matplotlib); `mask_overlay_png` draws only a representation the caller declares (`instances`
   outlines, `binary` tint) and never infers it. Not done here: `representative_fovs`, the caption
   text with unit and header name (`notebook_render`), and any widget.
+- **Discovery and header additions for the experiment description (Stage 1, PR 6).**
+  Additive; a run without a description behaves as before. (1) `preflight` and `remasked`
+  take `with_description=False`; with it, a condition, repeat or technical-repeat folder that
+  is not Unicode NFC is the error `R_FOLDER_NOT_NFC`, a discovered mask type that breaks the
+  Label rules (`NA`, ` cells`) is `R_MASK_TYPE_NAME_INVALID` and one that is not NFC is
+  `R_FOLDER_NOT_NFC` (new module `name_issues`, also used by `find_masks(with_description=)`);
+  nothing is renamed or normalized (owner decision Q1: without a description these names are
+  accepted as in v0.4). (2) `TiffMetadata.raw_channel_names` and `FileEntry.raw_channel_names`
+  hold the header channel names exactly as read, untrimmed; `channel_names` stays trimmed,
+  `same_source` ignores them, and the manifest file entry gains the optional key
+  `raw_channel_names`, written only when the header names a channel. The OME header reading
+  moved from `metadata` to `ome_header`. (3) `preflight(progress=...)` calls
+  `progress(phase, done, total, path)` for the phases `folders`, `headers` (one call per
+  image), `masks` and `acquisitions`; `run.phases.progress_text` words them ("2/4 headers
+  120/480"). Not used by the notebook or the command line yet. Tests:
+  `tests/test_spec_discovery.py` (conformance P21, P26 recorded names, P29) and
+  `tests/test_preflight_progress.py`.
 - **Content hashing of the sources is on by default (#159; owner decision of 7 November 2026).**
   A run records each image's content SHA-256 and reuses a row only for the same content, so an
   image edited in place with its size and modification time kept is read again (manifest

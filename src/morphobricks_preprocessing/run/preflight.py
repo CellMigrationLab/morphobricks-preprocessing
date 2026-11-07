@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -28,6 +28,7 @@ from ..fingerprint import Fingerprint, current_fingerprint
 from ..mask_names import MASK_NAME_CODES, mask_name_issues
 from ..masks import MaskInventory, find_masks
 from ..metadata import MetadataReport, check_metadata, inspect_image, inspect_images
+from ..name_issues import non_nfc_folders_issue
 from ..pixel_size_checks import PIXEL_SIZE_CODES, pixel_size_issues
 from ..planes import (
     DEFAULT_MEMORY_LIMIT,
@@ -173,6 +174,8 @@ def preflight(
     masks_folder: str | os.PathLike | None = None,
     mask_axes: Mapping[str, str] | None = None,
     bind_headers: bool = False,
+    with_description: bool = False,
+    progress: Callable[[str, int, int, str], None] | None = None,
 ) -> Preflight:
     """Pass 1: check the folder and the image headers without reading pixels.
 
@@ -197,45 +200,87 @@ def preflight(
         (:attr:`Preflight.header_fingerprints`), so a caller that writes from the headers
         (:func:`.conversion_plan.plan_conversion`) never mixes a header with a later file.
         Each mask is bound the same way (:attr:`.masks.MaskFile.bound`, issue #160).
+    with_description
+        True when an experiment description is in use: folder names that are not Unicode NFC
+        (``R_FOLDER_NOT_NFC``) and mask type names that break the Label rules
+        (``R_MASK_TYPE_NAME_INVALID``) or are not NFC are then errors. Without one (the
+        default) they are accepted as in v0.4 (owner decision Q1).
+    progress
+        Called as ``progress(phase, done, total, path)`` while the check runs, with a phase of
+        :data:`.phases.PHASES` (``folders``, ``headers``, ``masks``, ``acquisitions``): a phase
+        is announced as ``(phase, 0, total, "")`` and ends with ``(phase, total, total, "")``;
+        the headers phase also reports ``(phase, done, total, path)`` before each image.
+        :func:`.phases.progress_text` words it. It changes nothing about the result.
 
     Returns
     -------
     Preflight
     """
+    report = progress or _no_progress
     root = Path(experiment_root).resolve()
     output = default_output_folder(root) if output_folder is None else Path(output_folder)
+    report("folders", 0, 1, "")
     discovery = discover_experiment(root, output)
+    if with_description:
+        discovery = replace(
+            discovery, issues=(*discovery.issues, *non_nfc_folders_issue(discovery.leaves))
+        )
+    report("folders", 1, 1, "")
     excluded = tuple(sorted({normalise_relative_path(path) for path in exclude}))
     discovery = _without_excluded_masks(discovery, excluded)
     images = [path for path in discovery.images if path not in excluded]
-    inspected, bound = _inspected(root, images, bind_headers)
+    inspected, bound = _inspected(root, images, bind_headers, progress)
     metadata, calibration = _calibrated(inspected, discovery.images, output)
-    return Preflight(
+    report("masks", 0, 1, "")
+    masks = _masks(
+        discovery, metadata, masks_folder, mask_axes, output, bind_headers, with_description
+    )
+    report("masks", 1, 1, "")
+    report("acquisitions", 0, 1, "")
+    result = Preflight(
         discovery=discovery,
         metadata=metadata,
         excluded=excluded,
         exclusion_issues=tuple(_exclusion_issues(discovery, excluded)),
         suggested_mapping=prefill_experiment_mapping(metadata),
         dataset=check_dataset(discovery, excluded=excluded),
-        masks=_masks(discovery, metadata, masks_folder, mask_axes, output, bind_headers),
+        masks=masks,
         calibration=calibration,
         conversion=review_conversion(root, discovery.images),
         header_fingerprints=bound,
     )
+    report("acquisitions", 1, 1, "")
+    return result
+
+
+def _no_progress(phase: str, done: int, total: int, path: str) -> None:
+    """Report nothing (the default of :func:`preflight`'s ``progress``)."""
 
 
 def _inspected(
-    root: Path, images: list[str], bind: bool
+    root: Path,
+    images: list[str],
+    bind: bool,
+    progress: Callable[[str, int, int, str], None] | None = None,
 ) -> tuple[MetadataReport, dict[str, Fingerprint | None]]:
-    """Inspect the headers; with ``bind``, fingerprint each image before and after."""
-    if not bind:
+    """Inspect the headers; with ``bind``, fingerprint each image before and after.
+
+    With ``progress``, each image is reported before its header is read (phase ``headers``).
+    """
+    if not bind and progress is None:
         return inspect_images(root, images), {}
+    report = progress or _no_progress
     files, bound = [], {}
-    for rel in sorted(images):
-        before = current_fingerprint(root / rel)
+    ordered = sorted(images)
+    report("headers", 0, len(ordered), "")
+    for done, rel in enumerate(ordered):
+        report("headers", done, len(ordered), rel)
+        before = current_fingerprint(root / rel) if bind else None
         files.append(inspect_image(root / rel, rel))
-        after = current_fingerprint(root / rel)
-        bound[rel] = before if before is not None and before == after else None
+        if bind:
+            after = current_fingerprint(root / rel)
+            bound[rel] = before if before is not None and before == after else None
+    report("headers", len(ordered), len(ordered), "")
     return MetadataReport(files=tuple(files), issues=tuple(check_metadata(files))), bound
 
 
@@ -244,6 +289,8 @@ def remasked(
     masks_folder: str | os.PathLike | None,
     mask_axes: Mapping[str, str] | None,
     output_folder: str | os.PathLike,
+    *,
+    with_description: bool = False,
 ) -> Preflight:
     """Return the preflight with its masks paired again, as :func:`preflight` pairs them.
 
@@ -259,13 +306,22 @@ def remasked(
         As :func:`preflight`.
     output_folder
         The output folder (it may not be inside the masks folder).
+    with_description
+        As :func:`preflight`: the mask type name refusals of a description.
 
     Returns
     -------
     Preflight
         With :attr:`Preflight.masks` replaced.
     """
-    masks = _masks(pre.discovery, pre.metadata, masks_folder, mask_axes, Path(output_folder))
+    masks = _masks(
+        pre.discovery,
+        pre.metadata,
+        masks_folder,
+        mask_axes,
+        Path(output_folder),
+        with_description=with_description,
+    )
     return replace(pre, masks=masks)
 
 
@@ -276,6 +332,7 @@ def _masks(
     mask_axes: Mapping[str, str] | None,
     output: Path,
     bind: bool = False,
+    with_description: bool = False,
 ) -> MaskInventory | None:
     """Pair the analysed images with their masks; None without masks folder or label image."""
     masks = find_masks(
@@ -285,6 +342,7 @@ def _masks(
         mask_axes=mask_axes,
         output_folder=output,
         bind=bind,
+        with_description=with_description,
     )
     if masks_folder is None and not masks.files and not masks.issues:
         return None  # no masks folder and no label images: the run has no masks

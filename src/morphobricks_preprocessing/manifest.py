@@ -38,10 +38,12 @@ from .image_names import position_id
 from .inventory import INVENTORY_KEY, source_signature
 from .inventory import source_fingerprint as source_fingerprint  # re-exported (moved, PP-12)
 from .manifest_fields import (
+    RAW_NAMES_KEY,
     optional_text,
     recorded_flag,
     recorded_masks,
     recorded_position_id,
+    recorded_raw_names,
     recorded_roles,
 )
 from .manifest_versions import (
@@ -130,21 +132,19 @@ class FileEntry:
     significant_bits
         Significant bits from metadata; None when not given.
     channel_names_trimmed
-        True when leading or trailing whitespace was removed from the image's
-        channel names as they were read (names are recorded trimmed).
+        True when whitespace was removed around the channel names (names are recorded trimmed).
     read_in_blocks
-        True when the image's planes are too large for the memory limit and are
-        read in blocks. For information only: the rows are the same either way.
+        True when the planes are too large for the memory limit and are read in blocks.
+        For information only: the rows are the same either way.
     position_id
         The image's position identifier, its name without the extension
         (:func:`~morphobricks_preprocessing.image_names.position_id`). Required in manifest
         version 2, and equal to that rule (round-2 audit A-m5); None in older manifests.
     roles
-        The role of each of the file's axes (``"X"``, ``"Y"``, ``"Z"``, ``"C"``,
-        ``"T"`` or None), from its own mapping: for an OME-Zarr image whose
-        declared order differs from the experiment mapping's, these are its
-        roles, not the experiment's. Required in manifest version 2; None in older
-        manifests.
+        The role of each of the file's axes (``"X"``, ``"Y"``, ``"Z"``, ``"C"``, ``"T"`` or
+        None), from its own mapping: for an OME-Zarr image whose declared order differs from
+        the experiment mapping's, these are its roles, not the experiment's. Required in
+        manifest version 2; None in older manifests.
     axes_from
         Where the roles come from: ``"header"`` (the metadata names every axis and
         the roles agree) or ``"confirmed"`` (a plain stack: the user confirmed them).
@@ -158,9 +158,10 @@ class FileEntry:
         TIFF file, and in manifests written before it was recorded (such an OME-Zarr
         image counts as changed: its fingerprint is not known to be complete).
     content_sha256
-        The SHA-256 of the file's content (an OME-Zarr folder: of its files' paths and
-        SHA-256s, :func:`.source_content.source_content_sha256`), in a ``verify_content``
-        run only; None otherwise.
+        The SHA-256 of the file's content (an OME-Zarr folder: of its files' paths and SHA-256s,
+        :func:`.source_content.source_content_sha256`) in a ``verify_content`` run; else None.
+    raw_channel_names
+        Header channel names, untrimmed; written only when not empty; not in :meth:`same_source`.
     """
 
     relative_path: str
@@ -180,6 +181,7 @@ class FileEntry:
     pixel_sizes: tuple[RecordedSize, ...] = ()
     inventory_sha256: str | None = None
     content_sha256: str | None = None
+    raw_channel_names: tuple[str | None, ...] = ()
 
     def same_source(self, other: FileEntry) -> bool:
         """Return True if ``other`` describes the same unchanged file, read the same way."""
@@ -555,6 +557,8 @@ def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
         data[INVENTORY_KEY] = entry.inventory_sha256
     if entry.content_sha256 is not None:
         data[CONTENT_KEY] = entry.content_sha256
+    if entry.raw_channel_names:
+        data[RAW_NAMES_KEY] = list(entry.raw_channel_names)
     return data
 
 
@@ -588,6 +592,7 @@ def _file_entry(data: dict, *, strict: bool = True) -> FileEntry:
         pixel_sizes=sizes_from_data(data.get("pixel_sizes")),
         inventory_sha256=optional_text(data.get(INVENTORY_KEY)),
         content_sha256=optional_text(data.get(CONTENT_KEY)),
+        raw_channel_names=recorded_raw_names(data.get(RAW_NAMES_KEY), path),
     )
 
 
