@@ -107,6 +107,9 @@ src/morphobricks_preprocessing/
   description.py        the model (Description, Condition, Channel, Repeat, Member, Unit, Mask)
                     built from a reader-accepted document; description_from_bytes -> DescriptionError
   description_write.py  the canonical writer (Spec experiment-v1 9.1) and section digests (9.3)
+  physical_check.py the physical R_* checks of a description against the folder and image headers
+                    (units found/declared, homogeneity, header evidence, image type, mask types
+                    declared); layout_groups (header-named layouts are batch-confirmable, Q3)
   description_reconcile.py reconcile(published, observed): units unchanged/new/removed by exact folder
                     labels, N35 reopening (confirmed_on kept), stated renames (FolderRename),
                     confirm_repeat; description_removal.py candidate (the draft), removal_questions
@@ -165,6 +168,12 @@ src/morphobricks_preprocessing/
   axis_check.py     the axis check (contract §2): header_axis_issue, axis_disagreements,
                     likely_axis_cause, check_header_axes, ConfirmedAxes (a confirmation covers
                     only its files as fingerprinted, plain_stack_not_confirmed); AXIS_ERROR_CODES, AXIS_CHECK_CODES
+  preview.py        safe display (Stage 1, PR 13): read_plane(max_side) (reduced, read in blocks under a
+                    64 MiB budget, 256 px thumbnail / 1024 px detail), channel_strip (only through
+                    the confirmed AxisReview; no channel axis guessed), mask_thumbnail, PreviewCache;
+                    preview_render.py display_panel (float32 after the reduction, percentile contrast
+                    of the finite values; flat / no-finite / non-finite shown as such), stdlib PNG,
+                    strip_png, mask_overlay_png (declared representation only)
   planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), table rows as
                     XYC planes whose channels are read one at a time (iter_xyc_planes, XycPlane),
                     memory estimate,
