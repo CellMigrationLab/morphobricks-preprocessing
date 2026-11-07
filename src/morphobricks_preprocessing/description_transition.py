@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from datetime import date
 
-from .description import USED_KINDS, Description, Repeat
+from .description import USED_KINDS, Description
 from .description_rules import Refusal
 
 CONDITIONS, CHANNELS, REPEATS, TECHNICAL = USED_KINDS
@@ -195,13 +195,24 @@ def _lost(old: Description, new: Description) -> list[TransitionIssue]:
     return out
 
 
-def _layout(repeat: Repeat) -> frozenset:
+def repeat_layout(description: Description, key: str) -> frozenset:
     """Return what reopens a repeat's confirmation (section 10): members, units, channels, type.
 
-    The image count is not part of it: new FOVs in an existing unit do not reopen it.
+    A member is its condition's source folder and ID, its source repeat folder, and each unit's
+    technical-repeat ID and folder, ordered channels and image type. The image count is not part
+    of it: new FOVs in an existing unit do not reopen it.
     """
+    repeat = description.repeats[key]
     return frozenset(
-        (cond, member.source_repeat, tid, unit.source_folder, unit.channels, unit.image_type)
+        (
+            cond,
+            description.conditions[cond].source_folder,
+            member.source_repeat,
+            tid,
+            unit.source_folder,
+            unit.channels,
+            unit.image_type,
+        )
         for cond, member in repeat.members.items()
         for tid, unit in member.technical_repeats.items()
     )
@@ -213,7 +224,7 @@ def _dates(old: Description, new: Description) -> list[TransitionIssue]:
         TransitionIssue(Refusal.R_CONFIRMED_ON_CHANGED, REPEATS, key)
         for key in old.repeats.keys() & new.repeats.keys()
         if old.repeats[key].confirmed_on != new.repeats[key].confirmed_on
-        and _layout(old.repeats[key]) == _layout(new.repeats[key])
+        and repeat_layout(old, key) == repeat_layout(new, key)
     ]
 
 
