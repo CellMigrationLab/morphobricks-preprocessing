@@ -22,6 +22,26 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   cannot be read is listed in `unchecked`, not passed. `layout_groups` groups units by identical
   layout; only groups whose channels are all header-named are batch-confirmable. Not used by any
   run, notebook or CLI command yet.
+- **Reconciliation of the published description with the folder (Stage 1, PR 9; conformance
+  P07, P08, P15, P33).** New modules `description_reconcile`, `description_removal` and
+  `reconcile_observe`. Each unit is `unchanged`, `new` or `removed`, matched only by its exact
+  source folder labels. A unit that is new beside a confirmed member, a removed unit, channel
+  evidence that no longer fits the declared list and a folder the user stated was renamed
+  (`FolderRename`) reopen the N35 confirmation of that repeat only (`confirmed = false` in the
+  draft, `confirmed_on` copied from the published file, a new date only from the user's
+  `confirm_repeat`). A change of `image_count` alone reopens nothing (it is reported as
+  `CountChange` and the member's count follows the folder). A renamed folder is a removed unit
+  plus a new pending one, never paired by name; a new folder is proposed only for an existing
+  repeat ID equal to its label. A removal needs the user's confirmation, asked once per
+  condition (`removal_questions`: every lost repeat, technical repeat and channel in one
+  question); a removed ID stays in `used_ids`, and a `reference` to a removed condition is never
+  cleared silently. Fix in the merged transition check: `confirmed_on` may now move with the
+  user's new confirmation when a condition ID holds another folder (conformance P33 b); the
+  layout it compares (`repeat_layout`) includes the condition's source folder. Not used by any
+  run, notebook or CLI command yet. Not done here: the pending new units are not in the draft
+  (they need channels and IDs, which are the draft model's), and image-count changes are
+  reported but not appended to `morphobricks.records.jsonl` (the file defines only
+  re-confirmation records).
 - **Discovery and header additions for the experiment description (Stage 1, PR 6).**
   Additive; a run without a description behaves as before. (1) `preflight` and `remasked`
   take `with_description=False`; with it, a condition, repeat or technical-repeat folder that
@@ -39,6 +59,16 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   120/480"). Not used by the notebook or the command line yet. Tests:
   `tests/test_spec_discovery.py` (conformance P21, P26 recorded names, P29) and
   `tests/test_preflight_progress.py`.
+- **Content hashing of the sources is on by default (#159; owner decision of 7 November 2026).**
+  A run records each image's content SHA-256 and reuses a row only for the same content, so an
+  image edited in place with its size and modification time kept is read again (manifest
+  version 3). Opt out with `RunMode(verify_content=False)`, `--no-verify-content` or by
+  unticking the notebook's box; the manifest then records `settings.verify_content: false`
+  (version 2 and 3 manifests now always write the key; one written before has none and reads
+  as not verified). An output folder keeps the choice of its earlier run, so an existing one
+  is not recomputed. Cost on 60 OME-TIFF images of 25 MB (1.5 GB), cold cache: a fresh run
+  15.9 s without and 19.8 s with hashing (+25 %); a rerun that reuses every row 5.4 s without
+  and 8.3 s with (+3 s). The standalone `masks` command is unchanged.
 - **Experiment-description publication (Stage 1, PR 5).** `description_file.read_description(path)`
   reads and validates a `morphobricks.toml` (a symbolic link is `R_FILE_SYMLINK`, never followed);
   `description_transition` compares a candidate with the published file and reports every `R_*`

@@ -93,7 +93,7 @@ class _Prefill:
         if now["intensity"] == self._prefilled["intensity"]:
             self.run_checks.restore_defaults()
         if now["verify_content"] == self._prefilled["verify_content"]:
-            self.verify_content.value = False
+            self.verify_content.value = True
         kept = ("recommended", "bins", "histogram")
         unedited = "bins" not in self._edited
         unedited = unedited and all(now[key] == self._prefilled[key] for key in kept)

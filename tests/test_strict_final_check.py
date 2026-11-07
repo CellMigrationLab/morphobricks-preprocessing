@@ -87,7 +87,9 @@ def test_the_next_strict_run_reads_the_rewritten_images_and_publishes(experiment
 
 def test_a_default_run_has_no_final_content_check(experiment, monkeypatch):
     root, out = experiment
-    assert run_experiment(root, TYX, output_folder=out).written
+    assert run_experiment(
+        root, TYX, output_folder=out, mode=RunMode("restart", verify_content=False)
+    ).written
     calls = rewrite_before_final_check(monkeypatch, [root / IMAGES[1]])
     result = run_experiment(root, TYX, output_folder=out, mode="full")
     assert result.written and calls == []

@@ -45,10 +45,13 @@ def report(out):
     return json.loads((out / REPORT_FILENAME).read_text(encoding="utf-8"))
 
 
-def test_the_default_rule_does_not_see_a_rewrite_with_its_metadata_kept(experiment):
-    # The documented blind spot of the metadata fingerprint: the earlier rows are reused.
+def test_an_opt_out_does_not_see_a_rewrite_with_its_metadata_kept(experiment):
+    # The documented blind spot of the metadata fingerprint, now only for a run that opted out
+    # of content hashing (#159): the earlier rows are reused.
     root, out = experiment
-    assert run_experiment(root, TYX, output_folder=out).written
+    assert run_experiment(
+        root, TYX, output_folder=out, mode=RunMode("restart", verify_content=False)
+    ).written
     rewrite_keeping_metadata(root / IMAGES[0])
     again = run_experiment(root, output_folder=out)
     assert again.written and again.read == () and IMAGES[0] in again.unchanged
@@ -56,9 +59,9 @@ def test_the_default_rule_does_not_see_a_rewrite_with_its_metadata_kept(experime
     manifest = read_manifest(out / "run_manifest.json")
     assert not manifest.settings.verify_content
     assert all(entry.content_sha256 is None for entry in manifest.files)
-    # A default run's manifest has no new key (review of #140): rc4's shape is kept.
+    # The opt-out is recorded in the manifest, not left to be read from a missing key (#159).
     data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
-    assert "verify_content" not in data["settings"]
+    assert data["settings"]["verify_content"] is False
     assert not any("content_sha256" in entry for entry in data["files"])
 
 
@@ -86,7 +89,9 @@ def test_a_strict_restart_reads_an_image_rewritten_with_its_metadata_kept(tmp_pa
 
 def test_turning_verification_on_or_off_recomputes_every_row_and_says_so(experiment):
     root, out = experiment
-    assert run_experiment(root, TYX, output_folder=out).written
+    assert run_experiment(
+        root, TYX, output_folder=out, mode=RunMode("restart", verify_content=False)
+    ).written
     on = run_experiment(root, output_folder=out, mode=STRICT)
     assert on.written and on.read == tuple(IMAGES)
     assert on.rebuild_reason == "content verification (verify_content) was turned on"
@@ -132,7 +137,9 @@ def test_staged_rows_of_the_other_mode_are_discarded_with_the_reason(experiment,
 
     with monkeypatch.context() as patch:
         patch.setattr(run_module.resume, "_read_file", unreadable)
-        assert not run_experiment(root, TYX, output_folder=out).written
+        assert not run_experiment(
+            root, TYX, output_folder=out, mode=RunMode("restart", verify_content=False)
+        ).written
     result = run_experiment(root, TYX, output_folder=out, mode=STRICT)
     assert result.written and result.resumed == () and result.read == tuple(IMAGES)
     assert set(report(out)["staged_discarded"].values()) == {

@@ -87,7 +87,7 @@ def test_a_strict_run_writes_version_3_and_a_default_run_version_2(experiment):
     assert off.rebuild_reason == "content verification (verify_content) was turned off"
     data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
     assert data["manifest_version"] == MANIFEST_VERSION == "2"
-    assert "verify_content" not in data["settings"]
+    assert data["settings"]["verify_content"] is False  # the opt-out is recorded (#159)
     assert not any("content_sha256" in entry for entry in data["files"])
 
 
@@ -135,7 +135,8 @@ def test_v0_4_0rc4_opened_a_strict_run_written_as_version_2(experiment, tmp_path
 
 def test_a_default_manifest_is_byte_identical_to_the_one_before_version_3(experiment, tmp_path):
     root, out = experiment
-    assert run_experiment(root, TYX, output_folder=out).written
+    off = RunMode("restart", verify_content=False)
+    assert run_experiment(root, TYX, output_folder=out, mode=off).written
     src = extract(BEFORE_STRICT_VERSION, tmp_path / "before")
     before_out = tmp_path / "before-out"
     assert run_with(src, DEFAULT_RUN, root, before_out) == {"written": True}
@@ -144,6 +145,9 @@ def test_a_default_manifest_is_byte_identical_to_the_one_before_version_3(experi
     # Only the time of writing and the versions may differ (the extracted code reports the
     # installed package's version); everything else is the same bytes.
     data, earlier = json.loads(now), json.loads(before)
+    # The opt-out is the one new key (#159); everything else is as before.
+    assert data["settings"].pop("verify_content") is False
+    now = (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     assert data.keys() == earlier.keys()
     earlier["written_at"], earlier["versions"] = data["written_at"], data["versions"]
     text = json.dumps(earlier, indent=2, ensure_ascii=False) + "\n"
