@@ -28,7 +28,7 @@ is executed by this repository.
   fixtures that do not exercise the rule it equals the ID (the key), `single` for `single`;
   `v33`, `v34` and `t10`-`t12` separate the two. The eight undecodable
   or unparsable phase-1 fixtures (`i01`-`i08`) are unchanged and fail before it matters.
-- `transitions/` holds twelve files that are valid alone and are checked against a named published
+- `transitions/` holds thirteen files that are valid alone and are checked against a named published
   predecessor: refused with an exact set of publication codes (`R_CONFIRMED_ID_CHANGED`,
   `R_USED_ID_REUSED`, `R_USED_ID_DROPPED`, `R_CONFIRMED_ON_CHANGED`; experiment-v1 §4.4a, §4.6,
   §4.9; a changed or reassigned `source_folder` counts, §4.6a) or, for `t06`, **accepted** (adding members is not a changed entity, §4.6). They need the
@@ -40,7 +40,8 @@ is executed by this repository.
   plan on a named fixture, listed in the coverage tables below.
 - A copy of this tree vendored by a reader MUST hash to the pinned SHA's `fixtures` tree
   (conformance plan §1).
-- Expected `experiment_design.csv` outputs (golden files) are deferred to Stage 1. The fixed-SHA
+- Expected `experiment_design.csv` outputs (golden files, experiment-v1 §11) are in `expected/`,
+  one per file listed under "Expected outputs" below; the other valid files have none yet. The fixed-SHA
   consumer audit (roadmap S0.1) is done (PR #5); its questions are answered by the third round of
   owner decisions (ADR 0001) and the fixtures `v28`-`v32`, `t06`-`t09`, `i100`-`i119` follow from
   them; the fourth round (FR1, FR2) adds `v33`, `v34`, `t10`-`t12` and `i120`-`i127`.
@@ -255,7 +256,18 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | [`v35_flat_experiment`](valid/v35_flat_experiment.toml) | Matrix audit 2026-11-07, case F01 | pass | yes | The experiment folder is itself the leaf: condition, repeat and technical repeat are all `single`. The condition `single` has `source_folder = "single"` ("no condition folder level", 4.2, 3.2) and is the only condition (owner decision SQ6, matrix audit MS-1). |
 | [`v36_repeat_folder_forbidden_name`](valid/v36_repeat_folder_forbidden_name.toml) | Matrix audit 2026-11-07, case F16 | pass | yes | Biological-repeat folders `z` paired into repeat `R1`; `source_repeat` is never restricted. The folder label `z` is not an allowed repeat ID (`i130`), so no ID is proposed and the user names `R1` (4.6a; owner decision SQ6, matrix audit MS-2). |
 
-## Transition fixtures (12)
+## Expected outputs (3)
+
+Golden `experiment_design.csv` files (experiment-v1 §11), byte for byte. Each is the derivation of the
+named valid file by the stated rules; `tools/audit/refval.py` compares them.
+
+| Golden file | Derived from | Notes |
+|---|---|---|
+| [`v13_homogeneous_legacy.experiment_design.csv`](expected/v13_homogeneous_legacy.experiment_design.csv) | `valid/v13` | One control (`CTRL`, referenced by DrugA and DrugB); every `technical_repeat_count` 0 (only `single`). |
+| [`v33_condition_folder_on_forbidden_list.experiment_design.csv`](expected/v33_condition_folder_on_forbidden_list.experiment_design.csv) | `valid/v33` | `condition` holds the folder label `control`, never the ID `ctrl`; `DrugA` sorts before `control` (code point order). |
+| [`v34_technical_repeat_folder_on_forbidden_list.experiment_design.csv`](expected/v34_technical_repeat_folder_on_forbidden_list.experiment_design.csv) | `valid/v34` | Two technical repeats (folders `files`, `overrides`) give `technical_repeat_count` 2; `rep2` has only `single`, so 0. |
+
+## Transition fixtures (13)
 
 Valid alone; checked against the named published predecessor (refused with the listed set, or accepted).
 
@@ -273,6 +285,7 @@ Valid alone; checked against the named published predecessor (refused with the l
 | [`t10_condition_id_changed_same_folder`](transitions/t10_condition_id_changed_same_folder.toml) | `valid/v33` | R_CONFIRMED_ID_CHANGED (against predecessor valid/v33, without a recorded re-confirmation) | The folder `control` was confirmed as condition `ctrl` in v33 and now carries the ID `control_cells`. A confirmed ID never changes in place, also when the folder is the same (experiment-v1 4.6, 4.6a). `ctrl` stays listed in used_ids, so only the changed ID is refused. Valid alone. |
 | [`t11_technical_repeat_id_changed_same_folder`](transitions/t11_technical_repeat_id_changed_same_folder.toml) | `valid/v34` | R_CONFIRMED_ID_CHANGED (against predecessor valid/v34, without a recorded re-confirmation) | The folder `files` was confirmed as technical repeat `acq1` in v34 and now carries the ID `acqA` in both members. A confirmed technical repeat ID never changes in place (experiment-v1 4.6, 4.6a). `acq1` stays listed in used_ids. Valid alone. |
 | [`t12_condition_folder_reassigned`](transitions/t12_condition_folder_reassigned.toml) | `valid/v33` | R_CONFIRMED_ID_CHANGED (against predecessor valid/v33, without a recorded confirmation) | The ID `ctrl` held the folder `control` in v33 and now holds the folder `ctl` (a folder renamed on disk and attached to the same ID without a recorded confirmation). A folder change for an existing ID is a reassignment, so a changed entity (experiment-v1 4.6, 7). Valid alone. |
+| [`t13_confirmed_on_with_image_count_only`](transitions/t13_confirmed_on_with_image_count_only.toml) | `valid/v01` | `R_CONFIRMED_ON_CHANGED` (N35 not reopened) | Against v01 only CTRL/rep1 `image_count` (12 to 17, new FOVs) and rep1 `confirmed_on` (2026-11-07) change: new FOVs do not reopen the confirmation (experiment-v1 10), so the new date is refused. |
 
 ## Invalid fixtures (134)
 

@@ -8,6 +8,17 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Re-pin the vendored Spec to 7dbae0c (MorphoBricks-Spec PR 9).** New in the pin: the byte
+  rules and golden files of the derived `experiment_design.csv` (section 11; `fixtures/expected/`
+  for `v13`, `v33`, `v34`, not yet derived by any code: Stage 1 PR 10), the byte form of one
+  section digest (9.3), `t13` (a changed `image_count` alone does not reopen a confirmation) and
+  the encoding of `morphobricks.records.jsonl` (4.6). The reader, writer and publication agree
+  with every fixture and the reference validator (0 differences, no exception for `image_count`
+  any more; the oracle's section digests equal ours on every fixture). Fix: `read_records` split
+  the records file with `str.splitlines`, which also cuts at U+2028 and U+0085, so a record
+  holding such a character (written unescaped as the Spec requires) was refused as "not JSON";
+  lines now end at LF only. Test helper: the catalogue no longer reads the golden-file rows as
+  fixtures.
 - **Safe display of planes (Stage 1, PR 13; part of #169).** New modules `preview` and
   `preview_render`, not used by the notebook yet. `preview.read_plane(path, mapping, max_side=...)`
   returns at most `max_side` pixels per side (`THUMBNAIL_SIDE` 256, `DETAIL_SIDE` 1024), every

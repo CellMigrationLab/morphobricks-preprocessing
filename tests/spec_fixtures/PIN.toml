@@ -1,13 +1,13 @@
 # The MorphoBricks-Spec commit these files are copied from (conformance plan section 1).
 # Updating the pin is a reviewed change: see README.md in this folder.
 repository = "https://github.com/CellMigrationLab/MorphoBricks-Spec"
-commit = "745259b72d4252f3ddaa563302d3343a1fa2ed49"
+commit = "7dbae0c600ac051b492f4d5fe41dd0b6008649db"
 
 # `git rev-parse <commit>:fixtures`, the git tree-object ID of the fixtures/ folder. The
 # vendored folder must hash to it, so one changed, added or missing byte fails a test.
-fixtures_tree = "d26daf758c914bdb0f6bfde1bba278d99cc33bb8"
+fixtures_tree = "bb336c9494c371e0ba188f9be31832fdf19b0a14"
 
 # `git rev-parse <commit>:<path>`, the git blob ID of each other vendored file.
 [files]
-"docs/experiment-v1.md" = "6de05a197caf7b57c6ce0409f9593a9c56d23b7c"
-"tools/audit/refval.py" = "2ce3a512fecafeb954aff32308f925ce23b8cd59"
+"docs/experiment-v1.md" = "73662c0b76a18250958beb885b016e4ced56d019"
+"tools/audit/refval.py" = "0c8274429919108bf013e32e8dd0563e081c47b3"

@@ -386,6 +386,14 @@ stays in the brick that owns it.
   `morphobricks.toml`, and copies the records unchanged into the manifest of the next run. The
   records file is never rewritten or truncated, and nothing about a re-confirmation is stored in
   `morphobricks.toml`. Products keyed on that ID are invalidated.
+- **Encoding of the records file.** UTF-8, one JSON object per line, each line ending in LF, keys
+  in code point order, non-ASCII characters unescaped. Keys: `type` (`"reconfirmation"`),
+  `id_kind` (`conditions`, `channels`, `repeats` or `technical_repeats`), `old_id`, `new_id`
+  (`null` when the same ID lost or was reassigned something), `confirmed_on` (`YYYY-MM-DD`, the
+  date of the user's action), `old_sha256` (of the published file replaced, or `absent`) and
+  `new_sha256` (of the file written). The records are appended after the file is replaced. A records
+  file whose last line lacks its LF, or that holds a line that is not a JSON object, is refused
+  before anything is published.
 - **A case-only correction needs a new ID (AQ2).** `ACTIN` cannot be corrected to `Actin`: the
   retired spelling stays in `used_ids` and the new one collides with it
   (`E_ID_CASE_COLLISION`, §4.9). The correction is a new, non-colliding ID (for example
@@ -702,7 +710,11 @@ standard/inline/dotted tables, never changes meaning.
 
 The whole-file SHA-256 is provenance. Preprocessing SHOULD also record per-section digests (SHA-256
 of the canonical serialization of `conditions`, `channels`, `repeats`, `masks`) so that consumers
-key derived products only on the sections they use. `source_folder` is part of the `conditions` and
+key derived products only on the sections they use. **The bytes of one section digest** are the
+section's table blocks exactly as the canonical writer emits them in the file (§9.1), each block
+followed by one blank line, with `display_name`, `target` and `treatment_key` left out and nothing
+before or after; a section with no tables (no `masks`) is the SHA-256 of the empty byte string.
+`source_folder` is part of the `conditions` and
 `repeats` digests (it fixes which folder an ID names; a reassignment changes them). Digests are computed with every `display_name`,
 `target` and `treatment_key` omitted (descriptive fields are never cache keys, §4.2a), and
 `used_ids` is not a section: a change to any of them MUST NOT change any digest, a change to `reference` MUST NOT
@@ -736,7 +748,9 @@ silently; edits go to a separate draft and are published atomically after valida
 - **N35 reopening.** The confirmation of a repeat is reopened (draft `confirmed = false`) only when
   channels, layout or grouping change: a new or removed unit or member, a unit's ordered channel
   list, or the pairing of folders into repeats. New FOVs (or removed ones) inside an existing unit
-  whose confirmed layout still holds do **not** reopen it; they are reported and recorded.
+  whose confirmed layout still holds do **not** reopen it; they are reported and recorded. A
+  changed `image_count` alone is therefore not a reopening: a new `confirmed_on` beside only a
+  changed `image_count` is `R_CONFIRMED_ON_CHANGED` (§4.4a).
 - **Adding a member is allowed (AQ1).** A new member folder or unit joins an existing repeat or
   condition without a changed-ID refusal (§4.6); it is a grouping change, so it reopens the N35
   confirmation of that repeat, and it never changes an existing ID. Only removing or reassigning
@@ -774,7 +788,13 @@ deterministically from a published file, with the contract's byte rules:
 | `schema_version` | `1` |
 
 One row per member, sorted by `condition` (the source folder label), then `biological_repeat`, in
-code point order. The CSV carries the **source folder labels exactly as today** and no technical
+code point order. **Bytes** (preprocessing contract §12, rule `Rows`, and the `confirmed_on`
+row): UTF-8, LF line endings, one header row naming the nine columns in the order of the table
+above, booleans written `true` and `false`, `confirmed_on` written as the repeat's `confirmed_on`
+(`YYYY-MM-DD`). The contract does not state the delimiter, the quoting, the final line terminator
+or a byte-order mark, so these four are not yet normative; the golden files use a comma, no
+quoting (no golden value needs it), LF after every row including the last, and no byte-order
+mark, as today's writer does. The CSV carries the **source folder labels exactly as today** and no technical
 repeat or condition ID, so the choice of a condition or technical repeat ID (for example `ctrl` for
 the folder `control`) never changes it. For a legacy dataset whose `repeat_group` values migrate
 to the canonical repeat IDs and whose controls migrate deterministically, the derived file MUST be
@@ -786,8 +806,8 @@ latest, on every row. **Byte-identity is guaranteed only for repeat groups with 
 `confirmed_on`**; for a group with several dates the earlier per-row dates are the only difference
 and are recorded in the migration note, which is their only record.
 
-Expected `experiment_design.csv` outputs (golden files) are **deferred to Stage 1**; Stage 0 fixes
-only the derivation rules above.
+Expected `experiment_design.csv` outputs (golden files) for `v13`, `v33` and `v34` are in
+`fixtures/expected/`; a derived file MUST equal the golden file byte for byte.
 
 ## 12. Drafts
 
