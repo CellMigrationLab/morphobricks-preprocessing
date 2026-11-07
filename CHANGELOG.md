@@ -13,6 +13,33 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   callback, right before the manifest is replaced; a changed mask stops the run with
   `mask_changed_during_run` and the earlier generation is intact. Strict runs do this plus their
   existing SHA-256 check.
+- **Derived `experiment_design.csv` and the cross-version parity suite (Stage 1, PR 10).** New
+  module `design_derive`: `derive_design(description)` and `write_derived_design(description,
+  path)` derive the legacy design file from a published description (Spec section 11): source
+  folder labels as `condition` and `biological_repeat`, the repeat ID as `repeat_group`,
+  `control` true for a condition another one references, `technical_repeat_count` 0 for the
+  single unit, `confirmed` true and the repeat's `confirmed_on`. It writes with today's
+  `write_experiment_design`, so the bytes equal the Spec's golden files for `v13`, `v33` and
+  `v34` and the reference validator's derivation of every valid fixture; renaming a condition or
+  technical-repeat ID never changes the file. `tests/test_parity_v0_4_0.py` runs the same
+  confirm-run-rerun script under the `v0.4.0` tag and under this code (`tests/released_code.py`)
+  on six legacy homogeneous datasets (one repeat, two conditions by two repeats, technical
+  repeats, flat, OME names, RGB): `plane_histograms.csv` and `experiment_design.csv` are
+  byte-identical, manifest file entries keep every v0.4.0 key and value (only the optional
+  `raw_channel_names` is added), a rerun over a v0.4.0 output folder recomputes no row, and the
+  derived design of each dataset's description equals the bytes v0.4.0 wrote. Not used by any
+  run, notebook or CLI command yet. Stacked on the Spec re-pin.
+- **Re-pin the vendored Spec to 7dbae0c (MorphoBricks-Spec PR 9).** New in the pin: the byte
+  rules and golden files of the derived `experiment_design.csv` (section 11; `fixtures/expected/`
+  for `v13`, `v33`, `v34`, not yet derived by any code: Stage 1 PR 10), the byte form of one
+  section digest (9.3), `t13` (a changed `image_count` alone does not reopen a confirmation) and
+  the encoding of `morphobricks.records.jsonl` (4.6). The reader, writer and publication agree
+  with every fixture and the reference validator (0 differences, no exception for `image_count`
+  any more; the oracle's section digests equal ours on every fixture). Fix: `read_records` split
+  the records file with `str.splitlines`, which also cuts at U+2028 and U+0085, so a record
+  holding such a character (written unescaped as the Spec requires) was refused as "not JSON";
+  lines now end at LF only. Test helper: the catalogue no longer reads the golden-file rows as
+  fixtures.
 - **Safe display of planes (Stage 1, PR 13; part of #169).** New modules `preview` and
   `preview_render`, not used by the notebook yet. `preview.read_plane(path, mapping, max_side=...)`
   returns at most `max_side` pixels per side (`THUMBNAIL_SIDE` 256, `DETAIL_SIDE` 1024), every
@@ -105,6 +132,24 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   a changed image count alone is refused (new FOVs do not reopen a confirmation, section 10); the
   Spec's validator accepts it. Copying the records into the run manifest is a later pull request.
   Not used by any run, notebook or CLI command yet.
+- **Draft description, proposed IDs and legacy design migration (Stage 1, PR 7).** New
+  modules `draft_ids` and `draft`, and `design.parse_design_bytes` (the
+  former private `_parse_strict`, now public: the strict parse, no confirmation required). A folder label is proposed as a condition,
+  technical-repeat or biological-repeat ID only when the reader would accept it as written
+  (Spec 4.6a; the same rule for repeat IDs): `control`, `files` or `z` get no proposal, nothing is
+  repaired, derived or renamed. A raw header name is proposed as a channel ID only when it is a
+  valid ID as it stands (never trimmed or repaired; `R`, `G`, `B` never). A draft keeps IDs as
+  *proposed* until `confirm_id`, lists its open questions, and offers the added `condition_id`,
+  `repeat_group` and `technical_repeat_id` beside the unchanged source labels.
+  `migrate_legacy_design` reads `experiment_design.csv` strictly (`yes`/`no`/empty refused),
+  carries `repeat_group` as the proposed repeat ID, takes the latest `confirmed_on` of a group
+  with several dates and lists the original dates in a note (never the clock), maps 0, 1 or 2+
+  marked controls to no reference, one reference per condition or an open question, and refuses a
+  design that breaks a Spec rule with the reader's code. A legacy `repeat_group` that is not an
+  allowed repeat ID (`z`, `files`) is not refused: it migrates with no proposed ID and an open
+  question, so the user names the repeat (Spec 4.6a; owner decision of 7 November 2026). Where the Spec says "another allowed
+  ID" for a forbidden folder there is no proposal: no rule for making one was given. Nothing is
+  written and no run, notebook or CLI command uses it yet.
 - **Experiment-description model, canonical writer and section digests (Stage 1, PR 4).** New
   modules `description` (the `Description` model; `description_from_bytes` reads with the strict
   reader and raises `DescriptionError` with every issue of the first failing phase) and

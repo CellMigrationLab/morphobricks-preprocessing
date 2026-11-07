@@ -1,14 +1,12 @@
-"""The transition fixtures t01-t12 and the Spec's oracle, for the ``R_*`` comparison.
+"""The transition fixtures t01-t13 and the Spec's oracle, for the ``R_*`` comparison.
 
 Each transition file is offered over its named predecessor and must give exactly the listed set
 of ``R_*`` codes (or none); the oracle (``refval.transition``) must agree on every ordered pair
 of valid and transition files, which also covers the used-ID and ``confirmed_on`` rules in
-combinations the 12 fixtures do not reach.
+combinations the 13 fixtures do not reach.
 
-One deliberate difference: the oracle takes a changed ``image_count`` as reopening a repeat's
-confirmation (so it accepts a new ``confirmed_on`` beside it). Section 10 says new FOVs in an
-existing unit do not reopen it, so the reader refuses that date change (``R_CONFIRMED_ON_CHANGED``);
-the pairs are compared with every ``image_count`` set to 1 and the difference has its own test.
+Since Spec 7dbae0c the oracle agrees that a changed ``image_count`` alone does not reopen a
+confirmation (section 10, t13), so the pairs are compared as they are.
 """
 
 from __future__ import annotations
@@ -35,14 +33,6 @@ VALID = {item.name.split("_")[0]: item for item in fixtures("valid")}
 TRANSITIONS = fixtures("transitions")
 ALL = [*fixtures("valid"), *TRANSITIONS]
 PREDECESSOR = re.compile(r"predecessor valid/(v\d+)")
-
-
-def _counts_equal(doc: dict) -> dict:
-    """Return the oracle's model with every member's image count set to 1."""
-    for repeat in doc["repeats"].values():
-        for member in repeat["members"].values():
-            member["image_count"] = 1
-    return doc
 
 
 def _codes(old, new) -> set[str]:
@@ -75,10 +65,10 @@ def test_nothing_is_refused_when_the_candidate_is_the_published_file():
 def test_the_oracle_agrees_on_every_ordered_pair(old):
     oracle = refval()
     old_model = description_from_bytes(old.data)
-    old_doc = _counts_equal(oracle.model(tomllib.loads(old.data.decode("utf-8"))))
+    old_doc = oracle.model(tomllib.loads(old.data.decode("utf-8")))
     differences = []
     for new in ALL:
-        new_doc = _counts_equal(oracle.model(tomllib.loads(new.data.decode("utf-8"))))
+        new_doc = oracle.model(tomllib.loads(new.data.decode("utf-8")))
         ours = _codes(old_model, description_from_bytes(new.data))
         theirs = oracle.transition(old_doc, new_doc)
         if ours != theirs:

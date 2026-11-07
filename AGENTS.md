@@ -90,6 +90,8 @@ src/morphobricks_preprocessing/
   design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
                     the folders on reruns, design_issues, read/write experiment_design.csv, load_design;
                     read_confirmed_design/ConfirmedDesign (the strict reader other bricks use, §16)
+  design_derive.py  derive_design/write_derived_design: experiment_design.csv from a published
+                    description (Spec experiment-v1 11), written by design.write_experiment_design
   design_values.py  the design file's header check (no column twice or unnamed, #83), booleans,
                     counts, dates and DesignFormatError (pure; re-exported by design.py)
   description_rules.py  the one table of the experiment-description rules (Stage 1, Spec
@@ -120,6 +122,10 @@ src/morphobricks_preprocessing/
   description_file.py   read_description(path): symlink refusal (R_FILE_SYMLINK), bytes -> Description
   run/description_file.py publish_description: lock, base SHA-256, strict re-read, transitions,
                     atomic write, append-only morphobricks.records.jsonl (Spec experiment-v1 4.6, 10)
+  draft_ids.py         proposed IDs: the folder label or raw header name only when the reader would
+                    accept it as written, else none (never repaired); draft.py the draft
+                    (IdSlot proposed/confirmed, open questions, unit_rows with condition_id,
+                    repeat_group, technical_repeat_id) and migrate_legacy_design
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)
