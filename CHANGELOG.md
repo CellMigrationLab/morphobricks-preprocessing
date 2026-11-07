@@ -8,6 +8,16 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Experiment-description model, canonical writer and section digests (Stage 1, PR 4).** New
+  modules `description` (the `Description` model; `description_from_bytes` reads with the strict
+  reader and raises `DescriptionError` with every issue of the first failing phase) and
+  `description_write` (`canonical_bytes`, `section_digests`): deterministic bytes of Spec
+  experiment-v1 section 9.1, the round trip `parse(write(parse(F))) = parse(F)` on every valid and
+  transition fixture, idempotent writing, and the SHA-256 of the `conditions`, `channels`,
+  `repeats` and `masks` sections with `display_name`, `target` and `treatment_key` omitted
+  (`v18` = `v01`; `v16` and `v21` have the digests of `v01`). Section 9.3 does not define the
+  byte form of one section; here it is the section's table blocks as the file writes them. Not
+  used by any run, notebook or CLI command yet.
 - **Experiment-description reader, phases 4-5 and warnings (Stage 1, PR 3).** New modules
   `description_identity`, `description_semantics`, `description_warnings` and
   `description_walk`; `description_read.read_description_bytes(data: bytes)` runs all five
