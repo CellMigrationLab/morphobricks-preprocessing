@@ -1,7 +1,7 @@
 # Fixture v36_repeat_folder_forbidden_name
 # Expected: PASS
 # Source: Matrix audit 2026-11-07 (case F16)
-# Biological-repeat folders named `z` (a forbidden ID key, 4.7) in both conditions are paired into the repeat `R1`; `source_repeat` is never restricted. The default repeat ID would be `z` (3.1), which is refused (i130): 4.6a's 'propose another ID' rule names conditions and technical repeats only, so the repeat case is an open spec question (matrix audit MS-2). The condition folder `control` is the condition `ctrl` (as v33).
+# Biological-repeat folders named `z` (a forbidden ID key, 4.7) in both conditions are paired into the repeat `R1`; `source_repeat` is never restricted. The proposed repeat ID would be the folder label `z`, which is not allowed (a forbidden name, 4.7; i130), so preprocessing makes no proposal and the user names the repeat ID `R1` (4.6a; owner decision SQ6, matrix audit MS-2). The condition folder `control` is the condition `ctrl` (as v33).
 schema = "morphobricks-experiment"
 schema_version = 1
 
