@@ -90,6 +90,8 @@ src/morphobricks_preprocessing/
   design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
                     the folders on reruns, design_issues, read/write experiment_design.csv, load_design;
                     read_confirmed_design/ConfirmedDesign (the strict reader other bricks use, §16)
+  design_derive.py  derive_design/write_derived_design: experiment_design.csv from a published
+                    description (Spec experiment-v1 11), written by design.write_experiment_design
   design_values.py  the design file's header check (no column twice or unnamed, #83), booleans,
                     counts, dates and DesignFormatError (pure; re-exported by design.py)
   description_rules.py  the one table of the experiment-description rules (Stage 1, Spec
