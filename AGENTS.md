@@ -107,6 +107,10 @@ src/morphobricks_preprocessing/
   description.py        the model (Description, Condition, Channel, Repeat, Member, Unit, Mask)
                     built from a reader-accepted document; description_from_bytes -> DescriptionError
   description_write.py  the canonical writer (Spec experiment-v1 9.1) and section digests (9.3)
+  draft_ids.py         proposed IDs: the folder label or raw header name only when the reader would
+                    accept it as written, else none (never repaired); draft.py the draft
+                    (IdSlot proposed/confirmed, open questions, unit_rows with condition_id,
+                    repeat_group, technical_repeat_id) and migrate_legacy_design
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)

@@ -8,6 +8,22 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Draft description, proposed IDs and legacy design migration (Stage 1, PR 7).** New
+  modules `draft_ids` and `draft`, and `design.parse_design_bytes` (the
+  former private `_parse_strict`, now public: the strict parse, no confirmation required). A folder label is proposed as a condition,
+  technical-repeat or biological-repeat ID only when the reader would accept it as written
+  (Spec 4.6a; the same rule for repeat IDs): `control`, `files` or `z` get no proposal, nothing is
+  repaired, derived or renamed. A raw header name is proposed as a channel ID only when it is a
+  valid ID as it stands (never trimmed or repaired; `R`, `G`, `B` never). A draft keeps IDs as
+  *proposed* until `confirm_id`, lists its open questions, and offers the added `condition_id`,
+  `repeat_group` and `technical_repeat_id` beside the unchanged source labels.
+  `migrate_legacy_design` reads `experiment_design.csv` strictly (`yes`/`no`/empty refused),
+  carries `repeat_group` as the proposed repeat ID, takes the latest `confirmed_on` of a group
+  with several dates and lists the original dates in a note (never the clock), maps 0, 1 or 2+
+  marked controls to no reference, one reference per condition or an open question, and refuses a
+  design that breaks a Spec rule with the reader's code. Where the Spec says "another allowed
+  ID" for a forbidden folder there is no proposal: no rule for making one was given. Nothing is
+  written and no run, notebook or CLI command uses it yet.
 - **Experiment-description model, canonical writer and section digests (Stage 1, PR 4).** New
   modules `description` (the `Description` model; `description_from_bytes` reads with the strict
   reader and raises `DescriptionError` with every issue of the first failing phase) and
