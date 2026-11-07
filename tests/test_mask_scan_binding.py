@@ -110,7 +110,8 @@ def test_content_is_compared_only_with_verify_content(clean, monkeypatch):
     # A rewrite keeping size and time is the metadata identity's stated blind spot.
     out = clean.output
     rewrite_while_read(monkeypatch, clean.masks / MASK, keep_metadata=True)
-    assert describe_masks(prepare_mask_step(None, out)).path.exists()
+    off = prepare_mask_step(None, out, verify_content=False)
+    assert describe_masks(off).path.exists()
     (out / MASK_REPORT_FILENAME).unlink()
     step = prepare_mask_step(None, out, verify_content=True)
     assert step.verify_content
@@ -125,16 +126,16 @@ def test_the_step_verifies_content_when_the_run_did(tmp_path):
     from morphobricks_preprocessing import RunMode
 
     clean = make_clean_run(tmp_path, axes="YX", shape=(8, 8), mask_types=("Cells",))
-    assert not prepare_mask_step(None, clean.output).verify_content
-    strict = run_experiment(
+    assert prepare_mask_step(None, clean.output).verify_content  # on by default (#159)
+    off = run_experiment(
         clean.experiment,
         output_folder=clean.output,
         masks_folder=clean.masks,
-        mode=RunMode("restart", verify_content=True),
+        mode=RunMode("restart", verify_content=False),
     )
-    assert strict.written
-    assert prepare_mask_step(None, clean.output).verify_content
-    assert not prepare_mask_step(None, clean.output, verify_content=False).verify_content
+    assert off.written
+    assert not prepare_mask_step(None, clean.output).verify_content
+    assert prepare_mask_step(None, clean.output, verify_content=True).verify_content
 
 
 def test_unchanged_masks_give_the_same_report_with_and_without_content(clean):

@@ -8,6 +8,16 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Content hashing of the sources is on by default (#159; owner decision of 7 November 2026).**
+  A run records each image's content SHA-256 and reuses a row only for the same content, so an
+  image edited in place with its size and modification time kept is read again (manifest
+  version 3). Opt out with `RunMode(verify_content=False)`, `--no-verify-content` or by
+  unticking the notebook's box; the manifest then records `settings.verify_content: false`
+  (version 2 and 3 manifests now always write the key; one written before has none and reads
+  as not verified). An output folder keeps the choice of its earlier run, so an existing one
+  is not recomputed. Cost on 60 OME-TIFF images of 25 MB (1.5 GB), cold cache: a fresh run
+  15.9 s without and 19.8 s with hashing (+25 %); a rerun that reuses every row 5.4 s without
+  and 8.3 s with (+3 s). The standalone `masks` command is unchanged.
 - **Experiment-description publication (Stage 1, PR 5).** `description_file.read_description(path)`
   reads and validates a `morphobricks.toml` (a symbolic link is `R_FILE_SYMLINK`, never followed);
   `description_transition` compares a candidate with the published file and reports every `R_*`

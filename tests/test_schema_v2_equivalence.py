@@ -23,6 +23,7 @@ from morphobricks_normalization.histogram import PlaneHistogram
 from morphobricks_normalization.records import PlaneRecord
 
 from morphobricks_preprocessing import (
+    RunMode,
     plane_layout,
     prefill_mapping,
     preflight,
@@ -195,7 +196,9 @@ def test_a_version_2_table_is_recomputed_on_the_next_run(tmp_path, pixels):
     root = tmp_path / "exp"
     bins, axes = write_experiment(root, "float32", pixels)
     mapping = prefill_mapping(axes)
-    first = run_experiment(root, mapping, bin_count=bins)
+    first = run_experiment(
+        root, mapping, bin_count=bins, mode=RunMode("restart", verify_content=False)
+    )
     table = first.csv_path.read_bytes()
     # Leave the output as a run of version 2 did: its table, and a manifest naming it.
     shutil.copyfile(DATA / "v2_float32.csv", first.csv_path)

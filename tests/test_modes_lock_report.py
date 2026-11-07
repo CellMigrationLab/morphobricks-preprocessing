@@ -16,6 +16,7 @@ import pytest
 
 from morphobricks_preprocessing import (
     AxisMapping,
+    RunMode,
     default_design,
     default_output_folder,
     prefill_mapping,
@@ -174,7 +175,7 @@ def test_without_roles_given_or_recorded_the_run_stops(experiment):
 
 
 def test_a_version_1_manifest_gives_no_inputs(experiment):
-    first = run_experiment(experiment, TYX)
+    first = run_experiment(experiment, TYX, mode=RunMode("restart", verify_content=False))
     data = json.loads(first.manifest_path.read_text(encoding="utf-8"))
     data["manifest_version"] = "1"
     first.manifest_path.write_text(json.dumps(data), encoding="utf-8")
@@ -491,7 +492,9 @@ def test_without_a_recorded_experiment_the_cli_names_what_is_missing(
 ):
     out = tmp_path / "out"
     if folder == "version 1":
-        run_experiment(experiment, TYX, output_folder=out)
+        run_experiment(
+            experiment, TYX, output_folder=out, mode=RunMode("restart", verify_content=False)
+        )
         data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
         data["manifest_version"] = "1"
         (out / "run_manifest.json").write_text(json.dumps(data), encoding="utf-8")
