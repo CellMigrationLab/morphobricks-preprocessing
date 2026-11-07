@@ -349,8 +349,13 @@ def _unit_issue(
             "sizes are not converted: the images are treated as uncalibrated on those axes.",
             list(found),
             "No action needed if the physical size does not matter. Otherwise export these "
-            "images again with the pixel size in a supported unit, or state it in "
-            "calibration.csv (the 'calibrate' command).",
+            "images again with the pixel size in a supported unit"
+            + (
+                ". The time step (T) cannot be stated in calibration.csv ('calibrate' fixes "
+                "only the spatial axes): correct the T metadata and export the images again."
+                if any(axis == "T" for units in found.values() for axis, _ in units)
+                else ", or state it in calibration.csv (the 'calibrate' command)."
+            ),
         )
     ]
 
