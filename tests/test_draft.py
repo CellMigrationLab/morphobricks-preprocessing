@@ -335,14 +335,29 @@ def test_a_legacy_design_that_breaks_a_rule_is_refused_with_the_code(tmp_path):
     with pytest.raises(LegacyMigrationRefused) as refused:
         migrate_legacy_design(swapped, discovery)
     assert refused.value.codes == ("E_REPEAT_ID_SHADOWS_SOURCE",)
-    forbidden = legacy(tmp_path, [row("A", "rep1", "z"), row("B", "rep1", "z")])
-    with pytest.raises(LegacyMigrationRefused) as refused:
-        migrate_legacy_design(forbidden, folders(tmp_path / "two", "A/rep1", "B/rep1"))
-    assert "E_FORBIDDEN_FIELD" in refused.value.codes
     twice = legacy(tmp_path, [row("A", "rep1", "G"), row("A", "rep2", "G")])
     with pytest.raises(LegacyMigrationRefused) as refused:
         migrate_legacy_design(twice, discovery)
     assert refused.value.codes == ("repeat_group_conflict",)
+
+
+@pytest.mark.parametrize("group", ["z", "files", "overrides"])
+def test_a_legacy_repeat_group_that_is_not_an_allowed_id_opens_a_question(tmp_path, group):
+    """Owner decision 2026-11-07, Spec 4.6a: not refused, no proposal, never repaired."""
+    discovery = folders(tmp_path / "exp", "A/rep1", "B/rep1")
+    data = legacy(tmp_path, [row("A", "rep1", group), row("B", "rep1", group)])
+    draft = migrate_legacy_design(data, discovery)  # not refused
+    repeat = draft.repeats[group]
+    assert repeat.id.proposed is None and repeat.id.confirmed is None
+    assert repeat.confirmed and repeat.confirmed_on == "2026-10-30"  # the legacy answer is kept
+    assert [m.source_repeat for m in repeat.members] == ["rep1", "rep1"]
+    assert ("id_pending", f"repeat {group}") in {(q.code, q.subject) for q in draft.open_questions()}
+    assert not draft.publishable
+    with pytest.raises(DraftError) as refused:  # the user cannot adopt it unchanged
+        draft.confirm_id("repeats", group, group)
+    assert "E_FORBIDDEN_FIELD" in refused.value.codes
+    named = draft.confirm_id("repeats", group, "R1")
+    assert named.repeats[group].id.confirmed == "R1"
 
 
 def test_new_and_missing_folders_are_never_merged_silently(tmp_path):

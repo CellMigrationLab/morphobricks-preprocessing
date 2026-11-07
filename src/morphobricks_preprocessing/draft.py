@@ -349,13 +349,19 @@ def _legacy_groups(legacy: ExperimentDesign) -> dict[tuple[str, str], str]:
 def _probe(draft: Draft) -> dict[str, object]:
     """Return the draft as a document for the reader's rules only; stand-ins fill missing IDs.
 
-    Condition and technical-repeat folders that are not allowed IDs get a stand-in ID, and
-    one channel stands in for the layouts the draft does not know. Nothing of it is stored.
+    Condition, technical-repeat and repeat folders that are not allowed IDs get a stand-in ID
+    (their question stays open, section 4.6a), and one channel stands in for the layouts the
+    draft does not know. Nothing of it is stored.
     """
     stand_in = {}
-    for kind, slots in (("conditions", draft.conditions), ("technical", draft.technical_repeats)):
+    repeat_slots = {group: repeat.id for group, repeat in draft.repeats.items()}
+    for kind, slots in (
+        ("conditions", draft.conditions),
+        ("technical", draft.technical_repeats),
+        ("repeats", repeat_slots),
+    ):
         for folder, slot in slots.items():
-            name = folder if folder == SINGLE else slot.proposed
+            name = folder if folder == SINGLE and kind != "repeats" else slot.proposed
             number = len(stand_in) + 1
             while name is None or (kind, name) in stand_in.values():
                 name = f"{kind} {number}"
@@ -363,13 +369,14 @@ def _probe(draft: Draft) -> dict[str, object]:
             stand_in[(kind, folder)] = (kind, name)
     cid = {folder: name for (kind, folder), (_, name) in stand_in.items() if kind == "conditions"}
     tid = {folder: name for (kind, folder), (_, name) in stand_in.items() if kind == "technical"}
+    rid = {folder: name for (kind, folder), (_, name) in stand_in.items() if kind == "repeats"}
     return {
         "schema": SCHEMA_ID,
         "schema_version": 1,
         "conditions": {cid[f]: {"source_folder": f} for f in draft.conditions},
         "channels": {"Probe": {}},
         "repeats": {
-            group: {
+            rid[group]: {
                 "confirmed": True,
                 "confirmed_on": repeat.confirmed_on or PLACEHOLDER_DATE,
                 "members": {
@@ -392,7 +399,7 @@ def _probe(draft: Draft) -> dict[str, object]:
         "used_ids": {
             "conditions": sorted(cid.values()),
             "channels": ["Probe"],
-            "repeats": sorted(draft.repeats),
+            "repeats": sorted(rid.values()),
             "technical_repeats": sorted(tid.values()),
         },
     }
@@ -448,7 +455,9 @@ def migrate_legacy_design(
     from ``discovery``; channels are not part of a legacy file. A group is confirmed only if
     every one of its folders is; with several dates it takes the latest and a
     :class:`MigrationNote` lists each folder's date; the clock is never read, and a confirmed
-    group without any date stays open (``confirmed_on_missing``). Controls: none marked, no
+    group without any date stays open (``confirmed_on_missing``). A ``repeat_group`` that is not
+    an allowed repeat ID (for example ``z``) is not refused: it migrates with no proposed ID and
+    an open question, so the user names the repeat (section 4.6a). Controls: none marked, no
     reference; one marked, every other condition references it; two or more, an unresolved
     question and no reference. A folder found now but not in the file is a new pending member
     of the group named after it, which therefore is not confirmed. A legacy folder no longer
