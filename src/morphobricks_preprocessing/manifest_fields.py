@@ -14,6 +14,22 @@ from __future__ import annotations
 from .axes import AxisMapping
 from .image_names import position_id
 
+RAW_NAMES_KEY = "raw_channel_names"
+"""The file entry's key for the channel names as the header gave them (written when not empty)."""
+
+
+def recorded_raw_names(value: object, relative_path: str) -> tuple[str | None, ...]:
+    """Read a recorded ``raw_channel_names`` (a list of text or null), or refuse it.
+
+    Absent (a manifest written before it was recorded, or an image whose header names no
+    channel) reads as empty. A name is kept exactly as written, never trimmed.
+    """
+    if value is None:
+        return ()
+    if not isinstance(value, list) or any(n is not None and not isinstance(n, str) for n in value):
+        raise ValueError(f"the raw channel names of {relative_path!r} are not text or null")
+    return tuple(value)
+
 
 def recorded_position_id(value: object, relative_path: str, *, strict: bool = True) -> str | None:
     """Check the ``position_id`` of a manifest file entry against its image's name.
