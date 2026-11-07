@@ -71,6 +71,19 @@ def read_channel_names(raw: Iterable[Any]) -> tuple[tuple[str | None, ...], bool
     return (tuple(names) if any(names) else ()), trimmed
 
 
+def raw_channel_names(raw: Iterable[Any]) -> tuple[str | None, ...]:
+    """Return channel names exactly as the header gives them, untrimmed (Spec experiment-v1 §4.3).
+
+    The counterpart of :func:`read_channel_names` for the record of what the header said: a
+    name that is text is kept as read, with its outer whitespace (``" DAPI"`` stays), and one
+    that is not text is None. Empty when no channel has a text name. Nothing is trimmed,
+    normalized or compared here: the description's header evidence is compared exactly, after
+    NFC of both sides, by the checks that read this record.
+    """
+    names = tuple(value if isinstance(value, str) else None for value in raw)
+    return names if any(name is not None for name in names) else ()
+
+
 def is_zarr_name(name: str) -> bool:
     """Return True if a folder name marks a Zarr store (``.zarr``, any case)."""
     return name.lower().endswith(ZARR_SUFFIX)
@@ -120,6 +133,8 @@ class NgffImage:
         whitespace (:func:`read_channel_names`); empty when not given.
     channel_names_trimmed
         True when leading or trailing whitespace was removed from a label.
+    raw_channel_names
+        The labels exactly as read, untrimmed (:func:`raw_channel_names`); empty when not given.
     dataset_path
         Path of the level-0 array inside the store, e.g. ``"0"`` or ``"0/0"``.
     physical_sizes
@@ -140,6 +155,7 @@ class NgffImage:
     dataset_path: str = ""
     channel_names_trimmed: bool = False
     physical_sizes: PhysicalSizes = PhysicalSizes()
+    raw_channel_names: tuple[str | None, ...] = ()
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -317,6 +333,7 @@ def _level0(group, meta: dict, prefix: str, image_count: int) -> NgffImage:  # n
         image_count=image_count,
         channel_names=labels,
         channel_names_trimmed=trimmed,
+        raw_channel_names=raw_channel_names(raw_labels),
         dataset_path=f"{prefix}{dataset_path}",
         physical_sizes=ngff_physical_sizes(first, axes),
     )

@@ -25,7 +25,7 @@
     "src/morphobricks_preprocessing/metadata.py _check_channel_names: private function of # lines without a docstring": 32,
     "src/morphobricks_preprocessing/metadata.py _check_dimensions: private function of # lines without a docstring": 29,
     "src/morphobricks_preprocessing/metadata.py check_metadata: # executable lines (max #)": 96,
-    "src/morphobricks_preprocessing/metadata.py: # lines (max #)": 721,
+    "src/morphobricks_preprocessing/metadata.py: # lines (max #)": 700,
     "src/morphobricks_preprocessing/planes.py _layout: private function of # lines without a docstring": 45,
     "src/morphobricks_preprocessing/planes.py _tiff_block_plane: private function of # lines without a docstring": 14,
     "src/morphobricks_preprocessing/planes.py _zarr_layout: private function of # lines without a docstring": 40,

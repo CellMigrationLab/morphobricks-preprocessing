@@ -21,7 +21,6 @@ import os
 from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from xml.etree import ElementTree
 
 import numpy as np
 import tifffile
@@ -29,6 +28,7 @@ from morphobricks_normalization.dtypes import UnsupportedDtypeError, check_suppo
 
 from .axis_names import OPEN_AXIS, named_letters
 from .discovery import DiscoveryResult
+from .ome_header import ome_details
 from .physical_sizes import PhysicalSizes, _tiff_sizes
 from .pixel_size_checks import pixel_size_issues
 from .size_checks import (
@@ -48,7 +48,6 @@ from .zarr_input import (
     ZarrUnavailableError,
     is_zarr_name,
     open_ngff,
-    read_channel_names,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,6 +92,11 @@ class TiffMetadata:
     channel_names_trimmed
         True when leading or trailing whitespace was removed from a channel name
         (recorded in the run manifest).
+    raw_channel_names
+        The channel names exactly as the header gives them, untrimmed (a name that is not
+        text is None); empty when the header names no channel. The evidence an experiment
+        description's header names are compared with (Spec experiment-v1 §4.3); recorded in
+        the run manifest as read.
     significant_bits
         Bits per pixel that carry data (e.g. 12 for a 12-bit camera in 16-bit
         files), from OME metadata; None when not given. For information only.
@@ -132,6 +136,7 @@ class TiffMetadata:
     rgb_samples: bool = False
     channel_names_trimmed: bool = False
     axes_from_metadata: bool = True
+    raw_channel_names: tuple[str | None, ...] = ()
 
     def length(self, axis: str) -> int:
         """Return the length of the dimension labelled ``axis``, 1 if there is none."""
@@ -281,7 +286,7 @@ def inspect_tiff(path: str | os.PathLike, relative_path: str | None = None) -> T
                 axes=str(first.axes),
                 series_count=len(series),
                 page_count=len(tif.pages),
-                **_ome_details(tif),
+                **ome_details(tif),
                 physical_sizes=_tiff_sizes(tif),
                 rgb_samples=_rgb_samples(first),
                 axes_from_metadata=series_axes_from_metadata(first),
@@ -317,6 +322,7 @@ def inspect_ome_zarr(path: str | os.PathLike, relative_path: str | None = None) 
             page_count=0,
             channel_names=image.channel_names,
             channel_names_trimmed=image.channel_names_trimmed,
+            raw_channel_names=image.raw_channel_names,
             kind=OME_ZARR,
             physical_sizes=image.physical_sizes,
         )
@@ -511,29 +517,6 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     return issues
 
 
-def _ome_details(tif: tifffile.TiffFile) -> dict:
-    """Channel names and significant bits of the first OME image, if present."""
-    if not tif.is_ome:
-        return {}
-    try:
-        root = ElementTree.fromstring(tif.ome_metadata)
-    except (ElementTree.ParseError, TypeError, ValueError):
-        logger.debug("Cannot parse the OME metadata of %s", tif.filename, exc_info=True)
-        return {}
-    pixels = next((e for e in root.iter() if _local_name(e.tag) == "Pixels"), None)
-    if pixels is None:
-        return {}
-    names, trimmed = read_channel_names(
-        channel.get("Name") for channel in pixels if _local_name(channel.tag) == "Channel"
-    )
-    bits = pixels.get("SignificantBits")
-    return {
-        "channel_names": names,
-        "channel_names_trimmed": trimmed,
-        "significant_bits": int(bits) if bits and bits.isdigit() else None,
-    }
-
-
 def _rgb_samples(series: tifffile.TiffPageSeries) -> bool:
     """Return True if the series stores RGB colour: photometric RGB, three samples per pixel."""
     keyframe = series.keyframe
@@ -575,10 +558,6 @@ def series_axes_from_metadata(series: tifffile.TiffPageSeries) -> bool:
             return False
         return isinstance(shaped, dict) and "axes" in shaped
     return True
-
-
-def _local_name(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]
 
 
 def _check_channel_names(files: list[TiffMetadata]) -> list[ValidationIssue]:

@@ -62,6 +62,7 @@ def file_entries(
             significant_bits=header.significant_bits,
             read_in_blocks=rel in in_blocks,
             channel_names_trimmed=header.channel_names_trimmed,
+            raw_channel_names=tuple(header.raw_channel_names),
         )
         entries[rel] = replace(
             entry,
