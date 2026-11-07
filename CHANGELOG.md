@@ -8,6 +8,11 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **The Spec test gate holds module-level skips and missing modules (#203).** A `test_spec_*.py`
+  module skipped while it is collected (`pytest.skip(..., allow_module_level=True)`, a module-level
+  `importorskip`) is now a failed collection, and a run over the whole tests folder fails when no
+  test was collected from a module of `EXPECTED_MODULES` in `tests/spec_gate.py` (deleted or
+  emptied module). Regression tests in `tests/test_spec_gate.py`.
 - **A mask changed after the last check is no longer published (#198).** Every run, also one
   with `verify_content` off, fingerprints each mask again in the commit's `before_commit`
   callback, right before the manifest is replaced; a changed mask stops the run with
