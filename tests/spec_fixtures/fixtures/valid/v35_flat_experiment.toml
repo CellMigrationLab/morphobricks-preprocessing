@@ -1,7 +1,7 @@
 # Fixture v35_flat_experiment
 # Expected: PASS
 # Source: Matrix audit 2026-11-07 (case F01)
-# An experiment folder that is itself the leaf: no condition, biological-repeat or technical-repeat folder. Preprocessing labels all three levels `single` (contract 1). Valid as written under 3.2 and 4.6a, but 4.2 defines `source_folder` as the condition folder label read from disk, which does not exist here: whether `single` is the condition's `source_folder` (and its proposed ID) is an open spec question (matrix audit MS-1).
+# An experiment folder that is itself the leaf: no condition, biological-repeat or technical-repeat folder. Preprocessing labels all three levels `single` (contract 1). The condition `single` has `source_folder = "single"` ("no condition folder level", 3.2, 4.2, 4.6a) and is the only condition; see i131-i133 for the refused misuses (owner decision SQ6, matrix audit MS-1).
 schema = "morphobricks-experiment"
 schema_version = 1
 
