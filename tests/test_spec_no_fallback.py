@@ -132,7 +132,14 @@ def test_the_scan_sees_the_reader_modules():
     # Not vacuous: the modules it exists to scan are there (and the rules module is the one
     # table the other scans leave out).
     names = {path.name for path in reader_modules()}
-    assert {"description_rules.py", "description_read.py", "description_structure.py"} <= names
+    assert {
+        "description_rules.py",
+        "description_read.py",
+        "description_structure.py",
+        "description_identity.py",
+        "description_semantics.py",
+        "description_warnings.py",
+    } <= names
     assert RULES_MODULE in names and RULES_MODULE not in {p.name for p in other_modules()}
 
 

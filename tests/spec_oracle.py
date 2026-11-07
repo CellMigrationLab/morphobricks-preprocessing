@@ -28,23 +28,50 @@ def refval() -> ModuleType:
     return module
 
 
-def normal(path: str) -> str:
-    """Return a table path without the leading dot the oracle gives top-level fields."""
-    return path.lstrip(".")
+# The oracle's paths for these are the table (``conditions``, ``repeats``, ``masks``), a bare ID
+# or a list of IDs; the reader names each offending field, so only the codes are compared.
+COARSE = frozenset(
+    {
+        "E_SOURCE_FOLDER_REUSED",
+        "E_SOURCE_FOLDER_CONFLICT",
+        "E_SOURCE_REPEAT_REUSED",
+        "E_MASK_SOURCE_TYPE_REUSED",
+        "E_REFERENCE_CYCLE",
+    }
+)
+# The oracle abbreviates the table in the path of a display-name collision.
+ABBREVIATED = {"c.": "conditions.", "ch.": "channels.", "r.": "repeats.", "m.": "masks."}
 
 
-def oracle_verdict(data: bytes) -> tuple[int, frozenset[str], frozenset[str], frozenset[str]]:
-    """Return (phase, error codes, error paths, warning codes) the oracle gives for bytes."""
+def normal(path: str, code: str = "") -> str:
+    """Return a table path as the reader writes it: no leading dot, no abbreviated table."""
+    path = path.lstrip(".")
+    if code == "E_DISPLAY_NAME_COLLISION":
+        for short, table in ABBREVIATED.items():
+            if path.startswith(short):
+                return table + path[len(short) :]
+    return path
+
+
+def verdict(errors: list[tuple[str, str]]) -> tuple[frozenset[str], frozenset[tuple[str, str]]]:
+    """Return the code set and the (code, path) pairs of the codes whose path is compared."""
+    codes = frozenset(code for code, _ in errors)
+    pairs = frozenset((code, normal(path, code)) for code, path in errors if code not in COARSE)
+    return codes, pairs
+
+
+def oracle_verdict(data: bytes) -> tuple[int, frozenset[str], frozenset, frozenset[str]]:
+    """Return (phase, error codes, compared (code, path) pairs, warning codes) for bytes."""
     report, _ = refval().validate(data)
-    paths = frozenset(normal(path) for _, path, _ in report.errors)
-    return report.phase, frozenset(report.codes), paths, frozenset(report.warning_codes)
+    codes, pairs = verdict([(code, path) for code, path, _ in report.errors])
+    return report.phase, codes, pairs, frozenset(report.warning_codes)
 
 
 def oracle_document_verdict(doc: dict, phases: tuple[int, ...]) -> tuple[int, set, set]:
     """Run the oracle's document phases (2 to 5) on a parsed document.
 
     Returns the first failing phase (the last one given when none fails), its error codes and
-    their normalized paths.
+    their compared (code, path) pairs.
     """
     module = refval()
     functions = {2: module.phase2, 3: module.phase3, 4: module.phase4, 5: module.phase5}
@@ -54,7 +81,8 @@ def oracle_document_verdict(doc: dict, phases: tuple[int, ...]) -> tuple[int, se
         functions[phase](doc, report)
         if report.errors:
             break
-    return phase, set(report.codes), {normal(path) for _, path, _ in report.errors}
+    codes, pairs = verdict([(code, path) for code, path, _ in report.errors])
+    return phase, set(codes), set(pairs)
 
 
 REPLACEMENTS = (
@@ -83,6 +111,16 @@ REPLACEMENTS = (
 )
 
 
+WIDE = frozenset({"source_type", "source_folder", "reference", "source_repeat", "display_name"})
+INSERTIONS = (
+    ("header_names", ["x"]),
+    ("header_names", ["x", "x"]),
+    ("display_name", "x"),
+    ("image_type", "rgb"),
+    ("source_channels", ["x"]),
+)
+
+
 def _paths(node: object, trail: tuple = ()) -> Iterator[tuple]:
     """Yield the trail (keys and indexes) of every node below the root."""
     if isinstance(node, dict):
@@ -101,35 +139,94 @@ def _parent(doc: object, trail: tuple) -> object:
     return doc
 
 
+def _texts(node: object) -> list[str]:
+    """Return the distinct text values and keys of a document, sorted (donor values)."""
+    found: set[str] = set()
+    if isinstance(node, dict):
+        for key, child in node.items():
+            found.add(key)
+            found.update(_texts(child))
+    elif isinstance(node, list):
+        for child in node:
+            found.update(_texts(child))
+    elif isinstance(node, str):
+        found.add(node)
+    return sorted(found)
+
+
+def _edit(doc: dict, trail: tuple, change) -> dict:
+    """Return a copy of the document with ``change(parent, last)`` applied at the trail."""
+    copied = copy.deepcopy(doc)
+    change(_parent(copied, trail), trail[-1])
+    return copied
+
+
+def _duplicate_first(parent: object, last: object) -> None:
+    parent[last] = [*parent[last], parent[last][0]]
+
+
+def _replacements(doc: dict, trail: tuple, value: object, borrowed: list) -> Iterator[tuple]:
+    for index, replacement in enumerate((*REPLACEMENTS, *borrowed)):
+        if replacement == value and type(replacement) is type(value):
+            continue
+
+        def put(parent: object, last: object, new: object = replacement) -> None:
+            parent[last] = copy.deepcopy(new)
+
+        yield f"set #{index}", _edit(doc, trail, put)
+
+
+def _renames(doc: dict, trail: tuple, borrowed: list) -> Iterator[tuple]:
+    last = trail[-1]
+    names = ("files", "colour", "ring", "Cells_in_x", "b", str(last).swapcase(), str(last) + "x")
+    for name in (*names, *borrowed[:3]):
+        if name == last or name in _parent(doc, trail):
+            continue
+
+        def move(parent: dict, key: str, new: str = name) -> None:
+            parent[new] = parent.pop(key)
+
+        yield f"rename to {name}", _edit(doc, trail, move)
+
+
+def _insertions(doc: dict, trail: tuple, value: dict, donors: list) -> Iterator[tuple]:
+    extras = [(key, extra) for key, extra in INSERTIONS if key not in value]
+    for donor in donors[:8]:
+        extras += [(key, donor) for key in ("reference", "source_type", "source_folder")]
+    for key, extra in extras:
+        if key in value:
+            continue
+
+        def add(parent: dict, last: str, key: str = key, extra: object = extra) -> None:
+            parent[last][key] = copy.deepcopy(extra)
+
+        yield f"insert {key}={extra!r}", _edit(doc, trail, add)
+
+
 def mutations(doc: dict) -> Iterator[tuple[str, dict]]:
     """Yield (label, mutated copy) of a document, one change at a time, in a fixed order.
 
     Every node is deleted, replaced by each of ``REPLACEMENTS`` and, for a table key, renamed
-    to a forbidden, an unknown and a case-changed name; a text array entry is duplicated.
+    to a forbidden, a reserved, an unknown and a case-changed name; a table gains fields; a text
+    array entry is duplicated. Each node also takes a few values and key names of the same
+    document (donors), which is what makes two identities collide or a reference dangle.
     """
-    for trail in _paths(doc):
+    donors = _texts(doc)
+    for number, trail in enumerate(_paths(doc)):
         label = ".".join(str(step) for step in trail)
-        copied = copy.deepcopy(doc)
-        parent, last = _parent(copied, trail), trail[-1]
+        parent, last = _parent(doc, trail), trail[-1]
         value = parent[last]
+        borrowed = [donors[(number * 7 + step * 13) % len(donors)] for step in range(6)]
+        if last in WIDE:
+            borrowed = donors[:40]
         if isinstance(parent, dict):
-            del parent[last]
-            yield f"delete {label}", copied
-        for index, replacement in enumerate(REPLACEMENTS):
-            if replacement == value and type(replacement) is type(value):
-                continue
-            copied = copy.deepcopy(doc)
-            _parent(copied, trail)[last] = copy.deepcopy(replacement)
-            yield f"set {label} #{index}", copied
-        if isinstance(parent, dict):
-            for name in ("files", "colour", str(last).swapcase(), str(last) + "x"):
-                if name == last or name in parent:
-                    continue
-                copied = copy.deepcopy(doc)
-                holder = _parent(copied, trail)
-                holder[name] = holder.pop(last)
-                yield f"rename {label} to {name}", copied
+            yield f"delete {label}", _edit(doc, trail, lambda p, k: p.pop(k))
+            for text, mutated in _renames(doc, trail, borrowed):
+                yield f"{text} ({label})", mutated
+        for text, mutated in _replacements(doc, trail, value, borrowed):
+            yield f"{text} ({label})", mutated
+        if isinstance(value, dict):
+            for text, mutated in _insertions(doc, trail, value, donors):
+                yield f"{text} into {label}", mutated
         if isinstance(value, list) and value:
-            copied = copy.deepcopy(doc)
-            _parent(copied, trail)[last] = [*value, value[0]]
-            yield f"duplicate first of {label}", copied
+            yield f"duplicate first of {label}", _edit(doc, trail, _duplicate_first)

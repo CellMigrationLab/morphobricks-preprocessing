@@ -89,3 +89,28 @@ def spec_reserved() -> frozenset[str]:
     for cells in table_rows(section("3.2"), "Names"):
         names.update(BACKTICKED.findall(cells[0]))
     return frozenset(names)
+
+
+def _rule_text(name: str) -> str:
+    """Return the bullet of section 3.2 that starts with ``- **name**`` as one line."""
+    lines = section("3.2")
+    start = next(i for i, line in enumerate(lines) if line.startswith(f"- **{name}"))
+    bullet = [lines[start]]
+    for line in lines[start + 1 :]:
+        if line.startswith(("- ", "  |")) or not line.strip():
+            break
+        bullet.append(line)
+    return " ".join(part.strip() for part in bullet)
+
+
+def spec_label_sentinels() -> frozenset[str]:
+    """Return the names the Label rule refuses in any case (section 3.2), case-folded."""
+    match = re.search(r"not (.*?) in any case", _rule_text("Label"))
+    names = BACKTICKED.findall(match.group(1))
+    return frozenset(("" if name == '""' else name).casefold() for name in names)
+
+
+def spec_token_pattern() -> str:
+    """Return the regular expression of the Token rule (section 3.2) without its anchors."""
+    match = re.search(r"`\^(\[A-Za-z\].*?)\$`", _rule_text("Token"))
+    return match.group(1)

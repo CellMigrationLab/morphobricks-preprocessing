@@ -13,7 +13,17 @@ import pytest
 
 from morphobricks_preprocessing import description_rules as rules
 from morphobricks_preprocessing.description_rules import Code, TableSpec
-from spec_text import BACKTICKED, section, spec_codes, spec_forbidden, table_rows
+from morphobricks_preprocessing.discovery import MISSING_TEXT
+from spec_text import (
+    BACKTICKED,
+    section,
+    spec_codes,
+    spec_forbidden,
+    spec_label_sentinels,
+    spec_reserved,
+    spec_token_pattern,
+    table_rows,
+)
 
 
 def _fields(heading: str, nth: int = 0) -> tuple[tuple[str, ...], frozenset[str]]:
@@ -66,3 +76,20 @@ def test_the_enumerations_and_the_schema_header_are_the_text():
     assert f"`{rules.SCHEMA_ID}`" in top["`schema`"][3]
     assert rules.SUPPORTED_VERSIONS == {1}
     assert "Exactly `1`" in top["`schema_version`"][3]
+
+
+def test_the_reserved_list_is_the_table_of_section_3_2():
+    assert rules.RESERVED == spec_reserved()
+
+
+def test_the_token_pattern_and_the_rgb_tokens_are_the_text():
+    assert rules.TOKEN.pattern == spec_token_pattern()
+    rgb = section("4.4")
+    assert any('exactly `["R", "G", "B"]`' in line for line in rgb)
+    assert rules.RGB_TOKENS == ("R", "G", "B")
+
+
+def test_the_label_rule_the_reader_calls_refuses_the_names_of_the_text():
+    # The Label rule is the brick's check_identity_text (decision D-e), not a copy: its list
+    # of refused names must be the one section 3.2 states.
+    assert MISSING_TEXT == spec_label_sentinels()
