@@ -132,21 +132,19 @@ class FileEntry:
     significant_bits
         Significant bits from metadata; None when not given.
     channel_names_trimmed
-        True when leading or trailing whitespace was removed from the image's
-        channel names as they were read (names are recorded trimmed).
+        True when whitespace was removed around the channel names (names are recorded trimmed).
     read_in_blocks
-        True when the image's planes are too large for the memory limit and are
-        read in blocks. For information only: the rows are the same either way.
+        True when the planes are too large for the memory limit and are read in blocks.
+        For information only: the rows are the same either way.
     position_id
         The image's position identifier, its name without the extension
         (:func:`~morphobricks_preprocessing.image_names.position_id`). Required in manifest
         version 2, and equal to that rule (round-2 audit A-m5); None in older manifests.
     roles
-        The role of each of the file's axes (``"X"``, ``"Y"``, ``"Z"``, ``"C"``,
-        ``"T"`` or None), from its own mapping: for an OME-Zarr image whose
-        declared order differs from the experiment mapping's, these are its
-        roles, not the experiment's. Required in manifest version 2; None in older
-        manifests.
+        The role of each of the file's axes (``"X"``, ``"Y"``, ``"Z"``, ``"C"``, ``"T"`` or
+        None), from its own mapping: for an OME-Zarr image whose declared order differs from
+        the experiment mapping's, these are its roles, not the experiment's. Required in
+        manifest version 2; None in older manifests.
     axes_from
         Where the roles come from: ``"header"`` (the metadata names every axis and
         the roles agree) or ``"confirmed"`` (a plain stack: the user confirmed them).
@@ -160,12 +158,10 @@ class FileEntry:
         TIFF file, and in manifests written before it was recorded (such an OME-Zarr
         image counts as changed: its fingerprint is not known to be complete).
     content_sha256
-        The SHA-256 of the file's content (an OME-Zarr folder: of its files' paths and
-        SHA-256s, :func:`.source_content.source_content_sha256`), in a ``verify_content``
-        run only; None otherwise.
+        The SHA-256 of the file's content (an OME-Zarr folder: of its files' paths and SHA-256s,
+        :func:`.source_content.source_content_sha256`) in a ``verify_content`` run; else None.
     raw_channel_names
-        The channel names as the header gave them, untrimmed; written only when not empty
-        and not part of :meth:`same_source` (``channel_names`` stays trimmed).
+        Header channel names, untrimmed; written only when not empty; not in :meth:`same_source`.
     """
 
     relative_path: str
