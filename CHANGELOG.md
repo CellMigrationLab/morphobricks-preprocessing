@@ -8,6 +8,17 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Re-pin the vendored Spec to 7dbae0c (MorphoBricks-Spec PR 9).** New in the pin: the byte
+  rules and golden files of the derived `experiment_design.csv` (section 11; `fixtures/expected/`
+  for `v13`, `v33`, `v34`, not yet derived by any code: Stage 1 PR 10), the byte form of one
+  section digest (9.3), `t13` (a changed `image_count` alone does not reopen a confirmation) and
+  the encoding of `morphobricks.records.jsonl` (4.6). The reader, writer and publication agree
+  with every fixture and the reference validator (0 differences, no exception for `image_count`
+  any more; the oracle's section digests equal ours on every fixture). Fix: `read_records` split
+  the records file with `str.splitlines`, which also cuts at U+2028 and U+0085, so a record
+  holding such a character (written unescaped as the Spec requires) was refused as "not JSON";
+  lines now end at LF only. Test helper: the catalogue no longer reads the golden-file rows as
+  fixtures.
 - **Discovery and header additions for the experiment description (Stage 1, PR 6).**
   Additive; a run without a description behaves as before. (1) `preflight` and `remasked`
   take `with_description=False`; with it, a condition, repeat or technical-repeat folder that

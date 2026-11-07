@@ -20,7 +20,7 @@ VENDORED = Path(__file__).parent / "spec_fixtures"
 ROOT_ENV = "MORPHOBRICKS_SPEC_ROOT"
 KINDS = ("valid", "invalid", "transitions")
 CODE = re.compile(r"\b([EWRA]_[A-Z0-9_]+)\b")
-ROW = re.compile(r"\| \[`([vit]\d+[^`]*)`\]\([^)]+\) \|(.*)")
+ROW = re.compile(r"\| \[`([vit]\d+[^`]*)`\]\((?:valid|invalid|transitions)/[^)]+\) \|(.*)")
 
 
 class SpecPinError(Exception):

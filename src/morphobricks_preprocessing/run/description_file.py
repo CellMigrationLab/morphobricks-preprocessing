@@ -126,7 +126,8 @@ def read_records(output_folder: str | os.PathLike) -> tuple[dict, ...]:
     if not data.endswith(b"\n"):
         raise RecordsFileError(f"{RECORDS_FILENAME} ends in the middle of a line")
     try:
-        rows = tuple(json.loads(line) for line in data.decode("utf-8").splitlines())
+        # Lines end at LF only (Spec 4.6): str.splitlines would also cut at U+2028, U+0085, ...
+        rows = tuple(json.loads(line) for line in data.decode("utf-8").split("\n")[:-1])
     except ValueError as error:
         raise RecordsFileError(f"{RECORDS_FILENAME} holds a line that is not JSON") from error
     if not all(isinstance(row, dict) for row in rows):
