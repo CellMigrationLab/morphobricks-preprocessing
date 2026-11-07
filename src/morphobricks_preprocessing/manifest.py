@@ -38,10 +38,12 @@ from .image_names import position_id
 from .inventory import INVENTORY_KEY, source_signature
 from .inventory import source_fingerprint as source_fingerprint  # re-exported (moved, PP-12)
 from .manifest_fields import (
+    RAW_NAMES_KEY,
     optional_text,
     recorded_flag,
     recorded_masks,
     recorded_position_id,
+    recorded_raw_names,
     recorded_roles,
 )
 from .manifest_versions import (
@@ -161,6 +163,9 @@ class FileEntry:
         The SHA-256 of the file's content (an OME-Zarr folder: of its files' paths and
         SHA-256s, :func:`.source_content.source_content_sha256`), in a ``verify_content``
         run only; None otherwise.
+    raw_channel_names
+        The channel names as the header gave them, untrimmed; written only when not empty
+        and not part of :meth:`same_source` (``channel_names`` stays trimmed).
     """
 
     relative_path: str
@@ -180,6 +185,7 @@ class FileEntry:
     pixel_sizes: tuple[RecordedSize, ...] = ()
     inventory_sha256: str | None = None
     content_sha256: str | None = None
+    raw_channel_names: tuple[str | None, ...] = ()
 
     def same_source(self, other: FileEntry) -> bool:
         """Return True if ``other`` describes the same unchanged file, read the same way."""
@@ -549,6 +555,8 @@ def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
         data[INVENTORY_KEY] = entry.inventory_sha256
     if entry.content_sha256 is not None:
         data[CONTENT_KEY] = entry.content_sha256
+    if entry.raw_channel_names:
+        data[RAW_NAMES_KEY] = list(entry.raw_channel_names)
     return data
 
 
@@ -582,6 +590,7 @@ def _file_entry(data: dict, *, strict: bool = True) -> FileEntry:
         pixel_sizes=sizes_from_data(data.get("pixel_sizes")),
         inventory_sha256=optional_text(data.get(INVENTORY_KEY)),
         content_sha256=optional_text(data.get(CONTENT_KEY)),
+        raw_channel_names=recorded_raw_names(data.get(RAW_NAMES_KEY), path),
     )
 
 
