@@ -8,6 +8,11 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **The Spec test gate holds module-level skips and missing modules (#203).** A `test_spec_*.py`
+  module skipped while it is collected (`pytest.skip(..., allow_module_level=True)`, a module-level
+  `importorskip`) is now a failed collection, and a run over the whole tests folder fails when no
+  test was collected from a module of `EXPECTED_MODULES` in `tests/spec_gate.py` (deleted or
+  emptied module). Regression tests in `tests/test_spec_gate.py`.
 - **Re-pin the vendored Spec to 7dbae0c (MorphoBricks-Spec PR 9).** New in the pin: the byte
   rules and golden files of the derived `experiment_design.csv` (section 11; `fixtures/expected/`
   for `v13`, `v33`, `v34`, not yet derived by any code: Stage 1 PR 10), the byte form of one
