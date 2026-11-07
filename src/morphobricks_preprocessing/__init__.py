@@ -194,6 +194,7 @@ from .planes import (
     read_plane,
     read_sample_plane,
 )
+from .projection import Projection, ProjectionRefused
 from .recorded_sizes import RecordedSize
 from .report import GroupSummary, group_summaries
 from .run import (
@@ -301,6 +302,8 @@ __all__ = [
     "PlaneMemoryError",
     "PlaneReadError",
     "Preflight",
+    "Projection",
+    "ProjectionRefused",
     "RecordedSize",
     "RepeatBox",
     "RunManifest",
