@@ -8,6 +8,11 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **A mask changed after the last check is no longer published (#198).** Every run, also one
+  with `verify_content` off, fingerprints each mask again in the commit's `before_commit`
+  callback, right before the manifest is replaced; a changed mask stops the run with
+  `mask_changed_during_run` and the earlier generation is intact. Strict runs do this plus their
+  existing SHA-256 check.
 - **Safe display of planes (Stage 1, PR 13; part of #169).** New modules `preview` and
   `preview_render`, not used by the notebook yet. `preview.read_plane(path, mapping, max_side=...)`
   returns at most `max_side` pixels per side (`THUMBNAIL_SIDE` 256, `DETAIL_SIDE` 1024), every
