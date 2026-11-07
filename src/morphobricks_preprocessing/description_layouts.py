@@ -13,9 +13,6 @@ from string import ascii_uppercase
 
 from .description import Description
 
-HETEROGENEOUS = "R_HETEROGENEOUS_LAYOUT_NOT_ENABLED"
-"""The code of the refusal (experiment-v1 section 8)."""
-
 
 @dataclass(frozen=True)
 class UnitName:

@@ -9,7 +9,6 @@ the reader, the physical checks and the layouts, never here.
 from __future__ import annotations
 
 from .description_layouts import (
-    HETEROGENEOUS,
     DeclaredLayout,
     heterogeneous_message,
     heterogeneous_units,
@@ -18,7 +17,9 @@ from .description_report import DescriptionIssue
 from .physical_check import (
     CHANNEL_COUNT_MISMATCH,
     HEADER_CONTRADICTION,
+    HETEROGENEOUS_LAYOUT,
     IMAGE_TYPE_CONTRADICTS_HEADER,
+    MASK_CONTRADICTS_REPRESENTATION,
     MASK_TYPE_NOT_DECLARED,
     UNIT_NOT_DECLARED,
     UNIT_NOT_FOUND,
@@ -28,8 +29,6 @@ from .physical_check import (
 )
 from .validation import ValidationIssue, error
 
-MASK_CONTRADICTS = "R_MASK_CONTRADICTS_REPRESENTATION"
-"""Raised by the mask step, never at publication (experiment-v1 section 4.5a)."""
 FIX = (
     "Open the experiment description in the notebook, correct it, publish it again, and run again."
 )
@@ -91,7 +90,7 @@ def heterogeneous_issue(layouts: tuple[DeclaredLayout, ...]) -> ValidationIssue:
         "Process the layouts as separate experiments, or wait for mixed-layout support. "
         "Units: " + "; ".join(heterogeneous_units(layouts)) + "."
     )
-    return error(HETEROGENEOUS, heterogeneous_message(layouts), (), action)
+    return error(HETEROGENEOUS_LAYOUT, heterogeneous_message(layouts), (), action)
 
 
 def representation_issue(
@@ -103,4 +102,4 @@ def representation_issue(
         "different values. A binary mask has at most two."
     )
     action = "Declare the mask as instances in the description if each value is an object."
-    return error(MASK_CONTRADICTS, message, (path,), action)
+    return error(MASK_CONTRADICTS_REPRESENTATION, message, (path,), action)
