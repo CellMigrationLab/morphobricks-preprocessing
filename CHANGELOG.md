@@ -8,6 +8,13 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Experiment-description reader, phases 4-5 and warnings (Stage 1, PR 3).** New modules
+  `description_identity`, `description_semantics`, `description_warnings` and
+  `description_walk`; `description_read.read_description_bytes(data: bytes)` runs all five
+  phases and the three warnings of Spec experiment-v1 and reports every error of the first
+  failing phase. Every Spec `valid/` fixture passes with its exact warnings and every
+  `invalid/` fixture fails with its exact code set; the Spec's reference validator is the test
+  oracle. Not used by any run, notebook or CLI command yet.
 - **Experiment-description reader, phases 1-3 (Stage 1, PR 2).** New modules
   `description_rules`, `description_report`, `description_read` and `description_structure`:
   `read_structure(data: bytes)` runs the strict phases 1 to 3 of Spec experiment-v1 (bytes and

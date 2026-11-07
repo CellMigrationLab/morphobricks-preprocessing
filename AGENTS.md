@@ -99,6 +99,11 @@ src/morphobricks_preprocessing/
   description_read.py   the reference reader's bytes -> phases: decode (1), header (2), the
                     driver (read_structure: phases 1-3)
   description_structure.py phase 3: closed fields, forbidden names, exact types, ranges, enums
+  description_identity.py phase 4: Label (check_identity_text), Token, reserved, NFC, single,
+                    case-collision scopes; description_semantics.py phase 5: references,
+                    RGB rules, display names, used_ids, one folder one ID, reference graph;
+                    description_warnings.py the three warnings; description_walk.py members/units
+                    (read_description_bytes in description_read.py runs phases 1-5 and warnings)
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)

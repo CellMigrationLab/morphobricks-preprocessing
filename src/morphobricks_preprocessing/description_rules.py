@@ -8,6 +8,7 @@ a rule that changes in the Spec changes here in the same pull request, with its 
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -80,6 +81,13 @@ SUPPORTED_VERSIONS = frozenset({1})
 """The schema versions this reader implements: a constant, checked against nothing fetched
 (experiment-v1 section 7)."""
 
+TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*")
+"""The Token rule (section 3.2): the regular expression a channel or mask ID must match whole."""
+OBJECT_SET_PART = "in"
+"""A mask ID with this ``_``-separated, case-folded part is reserved (the object-set rule)."""
+RGB_TOKENS = ("R", "G", "B")
+"""The fixed channel IDs of an RGB unit, in order (section 4.4b)."""
+
 REPRESENTATIONS = ("instances", "binary")
 IMAGE_TYPES = ("rgb",)
 
@@ -128,3 +136,13 @@ FORBIDDEN = frozenset(
 )  # fmt: skip
 """Field names and ID keys refused as ``E_FORBIDDEN_FIELD``, in any table, compared exactly
 and case-sensitively (experiment-v1 section 4.7)."""
+
+RESERVED = frozenset(
+    {
+        "whole", "cell", "nucleus", "cytoplasm", "ring", "expanded_nucleus",
+        "condition", "biological_repeat", "repeat", "technical_repeat", "position_id",
+        "image_file", "image_path", "mask_file", "patch_file", "patch_id", "label_id",
+        "z", "z0", "z1", "c", "t",
+    }
+)  # fmt: skip
+"""The one reserved list of channel IDs and mask IDs, compared case-folded (section 3.2)."""
