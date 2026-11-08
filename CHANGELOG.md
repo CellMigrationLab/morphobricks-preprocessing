@@ -8,6 +8,16 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **A described run writes manifest version `"4"` (Stage 2 design question 9, owner answer 9).**
+  When the run manifest carries `experiment_description`, `manifest_version` is `"4"`; an
+  undescribed run keeps `"2"` or `"3"`, byte for byte (the v0.4.0 parity suite is unchanged).
+  A v0.4.0 reader skips keys it does not know, so it opened a described run and silently ignored
+  the description (channels by header name, pairing by folder name, no mask checks); it now
+  refuses version `"4"` (`ManifestFormatError`, tested with the code of the `v0.4.0` tag).
+  `read_manifest` and `RunInputs.open` read version 4. They refuse a version 4 manifest without
+  `experiment_description` and a version 1, 2 or 3 manifest with one; the writer applies the
+  same rule. Version 4 keeps the content rule of 2 and 3: a `content_sha256` in every entry
+  exactly when `settings.verify_content` is true. Contract §9 (`manifest_version`).
 - **Images without header channel names are listed in a described run (follow-up of #218, owner
   decision 2026-11-08).** An image whose header names no channel, or not every one, still passes
   the per-unit header checks (§4.3, fixture v12: no evidence needed, the confirmed layout is
