@@ -18,6 +18,12 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   (`mask_planes_mismatch`). `RunInputs.open` refuses a manifest whose `projection` is not
   what the conversion record gives, projected copies recorded without it, and a `projection`
   without a record: nothing is read as a plain image.
+- **`projection_record_missing` (owner decision, 8 November 2026).** `check` and `run` read the
+  OME `Image/Description` header (the first page's description tag, no pixels) of every
+  analysed TIFF the conversion record does not list as `projected`. A description that begins
+  "MorphoBricks Z projection:" in a tree with no record, or whose record does not list the
+  image as projected, is an error naming the images and saying to rerun `convert --project`
+  or restore the record. Plain images are unaffected.
 - **`make_clean_run(description=...)` builds a described run for the bricks' Stage 2 tests (Stage 2
   design PR 1).** `description` is a published experiment description (bytes, text or a
   `Description`). The helper writes the declared tree (`image_count` images per member, RGB colour

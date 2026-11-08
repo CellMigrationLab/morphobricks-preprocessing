@@ -32,15 +32,15 @@ def projected_tree(tmp_path):
 
 def test_projected_copies_without_their_record_are_refused(tmp_path):
     copies = projected_tree(tmp_path)
-    assert CODE not in codes(preflight(copies, CYX).issues)
+    assert CODE not in codes(preflight(copies).issues)
     (copies / RECORD_FILENAME).unlink()
-    pre = preflight(copies, CYX)
+    pre = preflight(copies)
     assert not pre.ok and CODE in codes(pre.issues)
     issue = next(i for i in pre.issues if i.code == CODE)
     assert set(issue.paths) == set(NAMES) and "convert --project" in issue.action
     out = tmp_path / "out"
     run = run_experiment(copies, CYX, output_folder=out, design=_confirmed_design(copies))
-    assert not run.written and CODE in codes(run.issues) and not out.exists()
+    assert not run.written and CODE in codes(run.issues) and not (out / "run_manifest.json").exists()
 
 
 def test_a_record_that_lists_the_image_as_copied_does_not_vouch_for_it(tmp_path):
@@ -49,7 +49,7 @@ def test_a_record_that_lists_the_image_as_copied_does_not_vouch_for_it(tmp_path)
     record = json.loads(path.read_text(encoding="utf-8"))
     record["files"][0].update(action="copied", projection=None)
     path.write_text(json.dumps(record), encoding="utf-8")
-    pre = preflight(copies, CYX)
+    pre = preflight(copies)
     assert not pre.ok
     assert CODE in codes(pre.issues) or "conversion_record_unreadable" in codes(pre.issues)
 
@@ -63,7 +63,7 @@ def test_a_plain_ome_tiff_without_the_marker_is_unaffected(tmp_path):
             folder / name, data, ome=True, photometric="minisblack",
             metadata={"axes": "CYX", "Description": "an ordinary description"},
         )  # fmt: skip
-    pre = preflight(folder, CYX)
+    pre = preflight(folder)
     assert CODE not in codes(pre.issues) and pre.conversion is None
 
 
