@@ -254,8 +254,7 @@ class RunManifest:
         What a run with a published ``morphobricks.toml`` records about it
         (:mod:`.description_record`); None, and the key left out, for a run without one.
     projection
-        The Z projection of the images (:mod:`.projection_run`); None, and the key left out,
-        for a run on images that are not projected copies.
+        The Z projection of the images (:mod:`.projection_run`); None (key left out) if none.
     schema_version
         Version of the CSV format.
     manifest_version
@@ -367,8 +366,11 @@ class RunManifest:
             "calibration_sha256": self.calibration_sha256,
             "versions": dict(self.versions),
         }
-        optional = {"masks": self.masks, DESCRIPTION_KEY: self.experiment_description}
-        optional[PROJECTION_KEY] = self.projection
+        optional = {
+            "masks": self.masks,
+            DESCRIPTION_KEY: self.experiment_description,
+            PROJECTION_KEY: self.projection,
+        }
         data.update({key: value for key, value in optional.items() if value is not None})
         return data
 
