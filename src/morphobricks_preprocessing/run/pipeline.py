@@ -505,7 +505,7 @@ def _write_generation(
             if described is None
             else manifest_entry(described, masks, run.output, len(rows.entries))
         ),
-        manifest_version=version_for(settings.verify_content),
+        manifest_version=version_for(settings.verify_content, described is not None),
     )
     manifest = _kept_time(manifest, run.previous[0])
     return file_sha256(write_manifest(manifest, staged / MANIFEST_FILENAME))
