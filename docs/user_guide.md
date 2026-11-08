@@ -20,7 +20,10 @@ complete preprocessing widget app.
 The setup chooses one source:
 
 1. **Nearby checkout:** when the kernel is running in this repository or one of its subfolders,
-   use that checkout's source code, including local edits.
+   use that checkout's source code. The checkout must be the commit the notebook pins
+   (`RELEASE_REF`) with no uncommitted changes, and setup prints its commit and tree state. Any
+   other commit or edited tree is refused; developers set `DEVELOPMENT_OVERRIDE = True` at the
+   top of the cell to use it, and the printed header then says so.
 2. **Matching installed package:** otherwise, reuse an installed preprocessing package only
    when its version matches the notebook.
 3. **Pinned GitHub source:** otherwise install the notebook's immutable `RELEASE_REF`, never
