@@ -100,6 +100,8 @@ class ConversionResult:
         ``{image: roles}`` for each copy in the tree whose source header gives pixel sizes
         that the copy does not carry (a relabelled axis gets an unknown scale), sorted; the
         user states them (``calibration.csv``) if known.
+    projection
+        The method and slice range of a tree of projections (the record's), else None.
     """
 
     destination: Path
@@ -112,6 +114,7 @@ class ConversionResult:
     record_sha256: str | None = None
     suggested_axes: str | None = field(default=None)
     unknown_sizes: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    projection: Projection | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "unknown_sizes", MappingProxyType(dict(self.unknown_sizes)))
@@ -283,6 +286,7 @@ def _locked_conversion(
         unknown_sizes={
             e.relative_path: tuple(sorted(e.unknown_sizes)) for e in files if e.unknown_sizes
         },
+        projection=options.projection,
     )
 
 

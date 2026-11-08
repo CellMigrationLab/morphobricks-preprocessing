@@ -240,9 +240,8 @@ notebook's step 3 (§4), also tells how they relate.
   floats. All images of an experiment must have the same pixel type.
 - **2-D planes only:** MorphoBricks v1 analyses 2-D planes. An image with more than one
   depth slice (a Z-stack) is refused (`z_stack_not_supported`), every such image named:
-  project it first, for example a maximum-intensity projection in Fiji (Image > Stacks >
-  Z Project...), and use the projected image. A Z axis of one slice is fine. Time-lapses
-  are supported.
+  make recorded 2-D projected copies first with `convert --project max|mean|sum` (below),
+  and use the copies. A Z axis of one slice is fine. Time-lapses are supported.
 - **Dimensions:** every image is split into planes along T (time); a plane holds every
   channel (C) of the image at that time point, one row of the table. All TIFF
   images must have their dimensions in the same order; the number of slices, time points
@@ -907,12 +906,13 @@ images or made with other roles is refused (`copy_folder_not_empty`, `copy_diffe
 convert into a new folder then. If it fails (`conversion_failed`), the folder is left as it
 was. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
 
-**Z-stacks: recorded 2-D projections (Python API; the command and the notebook card follow).**
+**Z-stacks: recorded 2-D projections.**
 A Z-stack is still refused by `check` and `run` (`z_stack_not_supported`). To analyse one,
 make a projected copy first:
-`convert_experiment(EXP, mapping, FOLDER, projection=Projection("max"))` (or `"mean"` or
-`"sum"`; there is no default, and an optional slice range `Projection("max", (2, 10))` for the
-whole experiment, zero-based with the end excluded, refused if any image is shorter).
+`convert EXPERIMENT --to FOLDER --axes ZCYX --project max` (or `mean` or `sum`; there is no
+default method; `--z-range 2:10` uses only those slices of every image, zero-based with the
+end excluded, `4:5` is the single slice 4, and every image must have them), or in Python
+`convert_experiment(EXP, mapping, FOLDER, projection=Projection("max", (2, 10)))`.
 Every image of the experiment is written as a 2-D OME-TIFF of the same folders and names:
 its axes are your roles without Z (`ZCYX` becomes `CYX`), each (t, c) is projected on its own,
 and the Z size is not written to the copy (it is recorded in the conversion record as
@@ -926,7 +926,10 @@ the conversion record (version 3) holds the method, the slices used, the source'
 the types, the rounding and the dropped Z size for every image. Masks are never projected:
 masks with depth slices stop the projection (`projection_masks_3d`); 2-D masks stay where
 they are. OME-Zarr images are not projected yet (`projection_zarr_not_supported`; exclude
-them). One folder holds one method and one slice range (`copy_differs` otherwise).
+them). One folder holds one method and one slice range (`copy_differs` otherwise). The command prints the next commands with a
+new output folder (by default the copy folder's name with `_MorphoBricks_Preprocessing`):
+the projected copies are a different source, so the description starts again there (the
+design and the stated pixel sizes are entered again). The notebook card follows.
 
 **In the notebook.** When step 2's axis check reports these images, a **Make named-axis
 copies (optional)** card appears under it, calling the same functions as the command:
@@ -1138,7 +1141,7 @@ continues.
 | `missing_xy_axis`, `duplicate_axis_role` | Error | X/Y missing or a role used twice. Correct the axis roles. |
 | `unassigned_axis` | Error | A dimension with several planes has no role. Choose Z, C or T. |
 | `unsupported_axis` | Error | A position or tile dimension. Export each position separately. |
-| `z_stack_not_supported` | Error | Images have more than one depth slice (Z-stacks); every such image is named with its number of slices. MorphoBricks v1 analyses 2-D planes. Project each Z-stack first, for example a maximum-intensity projection in Fiji (Image > Stacks > Z Project...), and use the projected image; or exclude it. A Z axis of one slice is accepted. Found from the header's Z axis, and again from the axis roles you confirm (a plain stack given a Z role). |
+| `z_stack_not_supported` | Error | Images have more than one depth slice (Z-stacks); every such image is named with its number of slices. MorphoBricks v1 analyses 2-D planes. Make 2-D projected copies first (`convert EXPERIMENT --to FOLDER --axes ROLES --project max|mean|sum`; the originals are only read) and run on the copies; or exclude the images. A Z axis of one slice is accepted. Found from the header's Z axis, and again from the axis roles you confirm (a plain stack given a Z role). |
 | `plane_over_memory_limit` | Error | A plane cannot be read within the memory limit, not even in blocks (for example, it is stored compressed in one piece). Raise the limit, or save the images again as tiled or uncompressed TIFF files or as OME-Zarr with smaller chunks. |
 | `unsupported_layout` | Error | The image cannot be read one plane at a time. Check the axis roles or export again. |
 | `unreadable_planes` | Error | Pixel data cannot be decoded. Export again, or exclude the image. |
