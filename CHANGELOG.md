@@ -21,7 +21,7 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   exits with status 1; since no answers live outside the notebook yet, it publishes nothing
   from a draft of folders (open question to the owner), and says `Nothing to publish` for a
   published description that matches the folders. Docs: contract §12 and §16, user guide
-  "Describe your experiment", plan §12 question 77 (the owner's answers Q1 to Q8),
+  "Describe your experiment", plan §12 question 78 (the owner's answers Q1 to Q8),
   `docs/conformance.md` (the recorded run of the suite with no Spec skip).
 - **Z-projection arithmetic (part of #176).** New pure module `projection.py`: `Projection`
   (method `max`, `mean` or `sum`, no default; optional zero-based half-open slice range),

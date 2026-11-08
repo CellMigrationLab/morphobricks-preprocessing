@@ -1554,7 +1554,7 @@ Raised during review; to be decided before the milestones that need them:
     `RunInputs.open` refuses a manifest recording `shared: true`. Plain-stack masks with
     stated axes (`Cells=TYX`) remain and are checked against the image. (3) The other
     bricks are not changed: their own Z-plane policies stay as a second defence.
-77. Stage 1: the experiment description (`morphobricks.toml`, Spec experiment-v1) and the
+78. Stage 1: the experiment description (`morphobricks.toml`, Spec experiment-v1) and the
     notebook that writes it. *Decided (owner, 7 November 2026; all eight recommendations of
     the Stage 1 design, section 6, accepted):* (Q1) the notebook always writes the
     description; the command line and `run_experiment` without one keep the v0.4 behaviour
