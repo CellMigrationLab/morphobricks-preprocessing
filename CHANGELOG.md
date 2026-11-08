@@ -17,6 +17,22 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   alone differs). A draft saved under the previous pin is refused at resume with
   `spec_commit_mismatch` (see the draft file contract) and must be started again from the folders.
   Every fixture is exact and the cross-check against the reference validator has 0 differences.
+- **The run side of the Z projection (part of #176).** A run on projected copies records a
+  `projection` summary in its manifest (method, slices requested, and for every image the
+  slices used, types, dtype rule, rounding and the source's content SHA-256, with the
+  conversion record it comes from), `RunInputs.projection` returns it (None for an unprojected
+  run, whose manifest is byte for byte as before), and the report says "max projections of
+  slices 1:4". 2-D masks next to projected images are paired as usual and the run warns
+  `masks_on_projected_images` (report and manifest); 3-D masks still stop the run
+  (`mask_planes_mismatch`). `RunInputs.open` refuses a manifest whose `projection` is not
+  what the conversion record gives, projected copies recorded without it, and a `projection`
+  without a record: nothing is read as a plain image.
+- **`projection_record_missing` (owner decision, 8 November 2026).** `check` and `run` read the
+  OME `Image/Description` header (the first page's description tag, no pixels) of every
+  analysed TIFF the conversion record does not list as `projected`. A description that begins
+  "MorphoBricks Z projection:" in a tree with no record, or whose record does not list the
+  image as projected, is an error naming the images and saying to rerun `convert --project`
+  or restore the record. Plain images are unaffected.
 - **`A_*` error classes and `RunInputs.section_digests()` (Stage 2 design PR 2, owner answer 2).**
   `ChannelNotFoundError` now has `code = "A_SCOPE_INCOMPLETE"`: one rule and one code for a channel
   no image has and for one some images lack; the message names the image and ends with the code.

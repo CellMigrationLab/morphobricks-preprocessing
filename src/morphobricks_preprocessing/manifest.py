@@ -1,23 +1,20 @@
 """The run manifest: what a run read, with which settings, and what it wrote.
 
-``run_manifest.json`` sits next to ``plane_histograms.csv``. It records the
-confirmed folder labels and axis mapping, the settings, the package versions,
-and each source file's fingerprint (size and modification time, and for an
-OME-Zarr folder its inventory). The next run compares these with the experiment
-folder to find new, changed and deleted files, and reads again only those
-(``docs/plan.md`` §7). The fingerprint is metadata: a file rewritten with the same
-size and its modification time set back is not seen as changed, unless the run
-verifies content (``verify_content``: each source's SHA-256 is recorded and must
-match). The format is described in ``docs/contract.md`` §9.
+``run_manifest.json`` sits next to ``plane_histograms.csv``. It records the confirmed folder
+labels and axis mapping, the settings, the package versions, and each source file's
+fingerprint (size and modification time, and for an OME-Zarr folder its inventory). The next
+run compares these with the experiment folder to find new, changed and deleted files, and
+reads again only those (``docs/plan.md`` §7). The fingerprint is metadata: a file rewritten
+with the same size and its modification time set back is not seen as changed, unless the run
+verifies content (``verify_content``: each source's SHA-256 is recorded and must match). The
+format is described in ``docs/contract.md`` §9.
 
 The manifest also records, for information only, each file's channel names and
-significant bits when its metadata provides them, the SHA-256 of the
-experiment design used, so later bricks can check that it was not changed, and
-the image type the user confirmed, which later bricks normalize by, and the
-limits of the intensity checks run on the table. It also records the histogram
-range the table was binned with, and the planes whose central intensity range
-was too narrow (follow-up P6), so a later run that keeps their rows still
-reports them.
+significant bits, the SHA-256 of the experiment design used (so later bricks can check it
+was not changed), the image type the user confirmed (which later bricks normalize by), the
+limits of the intensity checks, the histogram range the table was binned with, and the
+planes whose central intensity range was too narrow (follow-up P6), so a later run that
+keeps their rows still reports them. For projected copies it records the projection.
 """
 
 from __future__ import annotations
@@ -58,11 +55,14 @@ from .manifest_versions import LEGACY_MANIFEST_VERSION as LEGACY_MANIFEST_VERSIO
 from .manifest_versions import MANIFEST_VERSION as MANIFEST_VERSION
 from .manifest_versions import STRICT_MANIFEST_VERSION as STRICT_MANIFEST_VERSION
 from .narrow_ranges import NarrowRange
+from .projection_run import KEY as PROJECTION_KEY
+from .projection_run import recorded_projection
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
 from .versions import package_versions as package_versions  # re-exported (moved)
 
 MANIFEST_FILENAME = "run_manifest.json"
 AXES_FROM = ("header", "confirmed")
+_LABEL_KEYS = ("folder", "condition", "biological_repeat", "technical_repeat")
 """Where a file's roles come from (:attr:`FileEntry.axes_from`)."""
 
 
@@ -254,6 +254,8 @@ class RunManifest:
     experiment_description
         What a run with a published ``morphobricks.toml`` records about it
         (:mod:`.description_record`); None, and the key left out, for a run without one.
+    projection
+        The Z projection of the images (:mod:`.projection_run`); None (key left out) if none.
     schema_version
         Version of the CSV format.
     manifest_version
@@ -280,6 +282,7 @@ class RunManifest:
     conversion_record_sha256: str | None = None
     calibration_sha256: str | None = None
     experiment_description: dict | None = None
+    projection: dict | None = None
     schema_version: str = SCHEMA_VERSION
     manifest_version: str = MANIFEST_VERSION
 
@@ -339,12 +342,7 @@ class RunManifest:
             },
             "axis_mapping": {"axes": self.mapping.axes, "roles": list(self.mapping.roles)},
             "labels": [
-                {
-                    "folder": folder,
-                    "condition": labels[0],
-                    "biological_repeat": labels[1],
-                    "technical_repeat": labels[2],
-                }
+                dict(zip(_LABEL_KEYS, (folder, *labels), strict=True))
                 for folder, labels in self.leaves.items()
             ],
             "files": [_file_dict(f, strict=self.manifest_version != "1") for f in self.files],
@@ -365,6 +363,7 @@ class RunManifest:
             "versions": dict(self.versions),
         }
         optional = {"masks": self.masks, DESCRIPTION_KEY: self.experiment_description}
+        optional[PROJECTION_KEY] = self.projection
         data.update({key: value for key, value in optional.items() if value is not None})
         return data
 
@@ -425,6 +424,7 @@ class RunManifest:
                 conversion_record_sha256=optional_text(data.get("conversion_record_sha256")),
                 calibration_sha256=optional_text(data.get("calibration_sha256")),
                 experiment_description=recorded_description(data.get(DESCRIPTION_KEY)),
+                projection=recorded_projection(data.get(PROJECTION_KEY)),
                 schema_version=str(data["schema_version"]),
                 manifest_version=str(version),
             )
@@ -471,15 +471,9 @@ def file_entry_with(
 ) -> FileEntry:
     """Describe a source image with a fingerprint already taken, as :func:`file_entry_for`.
 
-    Parameters
-    ----------
-    signature
-        ``(size, mtime_ns, inventory)`` (:func:`.inventory.source_signature`), for example
-        the one taken when its header was read.
-    relative_path, labels, mapping
-        As :func:`file_entry_for`.
-    **header
-        The keyword arguments of :func:`file_entry_for` (channel names, bits, ...).
+    ``signature`` is ``(size, mtime_ns, inventory)`` (:func:`.inventory.source_signature`), for
+    example the one taken when the header was read; ``relative_path``, ``labels``, ``mapping``
+    and the ``header`` keywords (channel names, bits, ...) are those of :func:`file_entry_for`.
 
     Returns
     -------

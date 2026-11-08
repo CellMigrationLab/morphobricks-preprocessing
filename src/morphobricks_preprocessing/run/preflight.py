@@ -26,7 +26,7 @@ from ..dataset import DatasetReport, check_dataset
 from ..discovery import DiscoveryResult, default_output_folder, discover_experiment
 from ..fingerprint import Fingerprint, current_fingerprint
 from ..mask_names import MASK_NAME_CODES, mask_name_issues
-from ..masks import MaskInventory, find_masks
+from ..masks import MaskFile, MaskInventory, find_masks
 from ..metadata import MetadataReport, check_metadata, inspect_image, inspect_images
 from ..name_issues import non_nfc_folders_issue
 from ..pixel_size_checks import PIXEL_SIZE_CODES, pixel_size_issues
@@ -246,11 +246,18 @@ def preflight(
         dataset=check_dataset(discovery, excluded=excluded),
         masks=masks,
         calibration=calibration,
-        conversion=review_conversion(root, discovery.images),
+        conversion=review_conversion(
+            root, discovery.images, images, [(m.image, m.path) for m in _mask_files(masks)]
+        ),
         header_fingerprints=bound,
     )
     report("acquisitions", 1, 1, "")
     return result
+
+
+def _mask_files(masks: MaskInventory | None) -> tuple[MaskFile, ...]:
+    """Return the masks found for the analysed images (none when masks were not asked for)."""
+    return () if masks is None else masks.files
 
 
 def _no_progress(phase: str, done: int, total: int, path: str) -> None:

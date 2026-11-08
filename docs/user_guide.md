@@ -929,7 +929,7 @@ they are. OME-Zarr images are not projected yet (`projection_zarr_not_supported`
 them). One folder holds one method and one slice range (`copy_differs` otherwise). The command prints the next commands with a
 new output folder (by default the copy folder's name with `_MorphoBricks_Preprocessing`):
 the projected copies are a different source, so the description starts again there (the
-design and the stated pixel sizes are entered again). The notebook card follows.
+design and the stated pixel sizes are entered again). A run on the copies records the projection in its manifest (`projection`: the method, the slices used, the source SHA-256 of every image) and the report says "max projections of slices 1:4". Masks next to projected images are used as they are, with the warning `masks_on_projected_images`: check that they were made on, or for, the projection. A run on projected copies reads the conversion record strictly: a record that is missing or does not match the run is refused, never read as a plain image. The notebook card follows.
 
 **In the notebook.** When step 2's axis check reports these images, a **Make named-axis
 copies (optional)** card appears under it, calling the same functions as the command:

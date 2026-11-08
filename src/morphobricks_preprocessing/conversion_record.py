@@ -32,7 +32,9 @@ from .content_hash import unchanged_content
 from .fingerprint import Fingerprint, current_fingerprint
 from .manifest import file_sha256
 from .projection import Projection
+from .projection_marker import marked_images, marker_issue
 from .projection_record import ProjectionEntry, projection_from_data, projection_to_data
+from .projection_run import RunProjection, masks_issue, run_projection
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
 from .validation import ValidationIssue, error, plural, warning
 
@@ -369,9 +371,15 @@ class ConversionReview:
     source_root: str | None
     issues: tuple[ValidationIssue, ...] = ()
     record: str = RECORD_FILENAME
+    projection: RunProjection | None = None
 
 
-def review_conversion(root: str | os.PathLike, images: Iterable[str]) -> ConversionReview | None:
+def review_conversion(
+    root: str | os.PathLike,
+    images: Iterable[str],
+    analysed: Iterable[str] | None = None,
+    masks: Iterable[tuple[str, str]] = (),
+) -> ConversionReview | None:
     """Check a copy tree against its conversion record; None for an ordinary experiment.
 
     Parameters
@@ -380,18 +388,26 @@ def review_conversion(root: str | os.PathLike, images: Iterable[str]) -> Convers
         The experiment folder of the run.
     images
         The images discovery found in it, relative to it.
+    analysed
+        The images the run analyses (not excluded); by default ``images``.
+    masks
+        ``(image, mask path)`` of every mask found, for ``masks_on_projected_images``.
 
     Returns
     -------
     ConversionReview or None
-        None when the folder holds no conversion record.
+        None when the folder holds no conversion record. For projected copies it carries
+        the :class:`.projection_run.RunProjection` and, with masks, the warning.
     """
+    images = list(images)
     try:
         found = read_record(root)
     except ConversionRecordError as exc:
         return ConversionReview(None, None, (_unreadable(exc),))
-    if found is None:
-        return None
+    analysed = images if analysed is None else list(analysed)
+    if found is None:  # a projected copy needs its record: refuse it, nothing is guessed
+        marked = marked_images(root, analysed)
+        return ConversionReview(None, None, (marker_issue(marked),)) if marked else None
     record, sha256 = found
     sources = Path(record.source_root)
     changed = [
@@ -402,7 +418,14 @@ def review_conversion(root: str | os.PathLike, images: Iterable[str]) -> Convers
     listed = {e.relative_path for e in record.files}
     copies = sorted(set(changed_copies(root, record)) | (set(images) - listed))
     issues = [*_source_issue(changed, record.source_root), *_copy_issue(copies)]
-    return ConversionReview(sha256, record.source_root, tuple(issues))
+    done = {e.relative_path for e in record.files if e.action == PROJECTED}
+    marked = marked_images(root, [name for name in analysed if name not in done])
+    if marked:
+        issues.append(marker_issue(marked))
+    projection = run_projection(record, sha256, analysed, masks)
+    if projection is not None:
+        issues.extend(masks_issue(projection))
+    return ConversionReview(sha256, record.source_root, tuple(issues), projection=projection)
 
 
 def changed_copies(
