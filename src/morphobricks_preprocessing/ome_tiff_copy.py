@@ -11,15 +11,19 @@ has a fixed place in the file, and BigTIFF when it would not fit a classic TIFF.
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from pathlib import Path
 from typing import BinaryIO
+from uuid import UUID, uuid5
 
 import numpy as np
 import tifffile
 
 from .axes import AxisMapping
 from .copy_axes import CopyLayout
-from .planes import DEFAULT_MEMORY_LIMIT, Block, iter_planes
+from .planes import DEFAULT_MEMORY_LIMIT, Block, iter_planes, read_plane
+from .projection import PlaneAccumulator
+from .projection_record import ProjectionEntry, projection_description
 
 BIGTIFF_FROM = 2**32 - 2**25
 """Copies whose file would take more bytes than this are written as BigTIFF (a classic
@@ -29,6 +33,11 @@ PAGE_OVERHEAD = 1024
 """Bytes allowed per page for its directory and tags besides its pixels (``tifffile``
 writes about 170 in an uncompressed OME-TIFF), so that many small pages cannot overflow a
 classic TIFF whose pixels alone would fit."""
+
+
+UUID_NAMESPACE = UUID("6d6f7270-686f-4272-6963-6b7350726f6a")
+"""The namespace of the OME-XML UUID of a projected copy (a name-based UUID of its
+description: the same projection of the same source is the same file)."""
 
 
 class CopyWriteError(OSError):
@@ -127,6 +136,88 @@ def write_named_copy(
             start = offset + layout.plane_index(plane.coordinates) * plane_nbytes
             for block in plane.blocks():
                 _write_block(stream, start, block, cols, dtype)
+
+
+def write_projected_copy(
+    source: str | os.PathLike,
+    target: str | os.PathLike,
+    layout: CopyLayout,
+    mapping: AxisMapping,
+    details: ProjectionEntry,
+    *,
+    memory_limit: int = DEFAULT_MEMORY_LIMIT,
+) -> None:
+    """Write the projection of ``source`` to ``target`` as a 2-D named-axis OME-TIFF.
+
+    Each page of the copy is one (t, c): its slices ``details.z_range`` are read in
+    ascending order with :func:`.planes.read_plane` and added into one running plane
+    (:class:`.projection.PlaneAccumulator`), so only one input plane and the running plane
+    are held. The copy is uncompressed, so every page has a fixed place in the file; its
+    ``Image/Description`` says how it was made.
+
+    Parameters
+    ----------
+    source
+        The TIFF image.
+    target
+        The file to write (the caller's ``.partial`` file); replaced if it exists.
+    layout
+        The projected copy's layout (:func:`.projection_layout.projected_layout`: no Z).
+    mapping
+        The image's own confirmed mapping.
+    details
+        How it is projected, with the source's content SHA-256.
+    memory_limit
+        Working-memory limit for one plane, as the run's.
+
+    Raises
+    ------
+    PlaneReadError
+        If the source cannot be read under ``mapping``.
+    CopyWriteError
+        If a plane is over the memory limit, or the pages do not lie where planned.
+    ProjectionRefused
+        If the sum overflows to infinity or is undefined (nothing is written to keep).
+    OSError
+        If the file cannot be written.
+    """
+    start, stop = details.z_range
+    out = np.dtype(details.output_dtype)
+    description = projection_description(details)
+    layout = replace(layout, description=description)
+    # A fixed UUID, from the description, so the same projection is the same bytes.
+    uuid = uuid5(UUID_NAMESPACE, description)
+    offset, _ = tifffile.imwrite(
+        target,
+        shape=layout.shape,
+        dtype=out,
+        ome=True,
+        photometric="minisblack",
+        bigtiff=needs_bigtiff(layout, out),
+        metadata={**layout.ome_metadata(), "UUID": f"urn:uuid:{uuid}"},
+        returnoffset=True,
+    )
+    rows, cols = layout.plane_shape
+    plane_nbytes = rows * cols * out.itemsize
+    _check_contiguous(Path(target), offset, plane_nbytes, layout.plane_count)
+    roles = [role.lower() for role in layout.axes[:-2]]
+    has_z = mapping.index_of("Z") is not None
+    with open(target, "r+b") as stream:
+        for page, position in enumerate(np.ndindex(*layout.shape[:-2])):
+            where = dict(zip(roles, position, strict=True))
+            running = PlaneAccumulator(
+                layout.plane_shape, details.source_dtype, details.method, stop - start
+            )
+            for z in range(start, stop):
+                plane = read_plane(
+                    source, mapping, z=z if has_z else None, c=where.get("c"), t=where.get("t"),
+                    memory_limit=memory_limit,
+                )  # fmt: skip
+                if plane.pixels is None:
+                    raise CopyWriteError(f"a plane of {source} does not fit the memory limit")
+                running.add(plane.pixels)
+            block = Block(0, 0, running.result())
+            _write_block(stream, offset + page * plane_nbytes, block, cols, out)
 
 
 def _check_contiguous(path: Path, offset: int, plane_nbytes: int, count: int) -> None:

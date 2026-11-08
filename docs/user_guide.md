@@ -20,7 +20,10 @@ complete preprocessing widget app.
 The setup chooses one source:
 
 1. **Nearby checkout:** when the kernel is running in this repository or one of its subfolders,
-   use that checkout's source code, including local edits.
+   use that checkout's source code. The checkout must be the commit the notebook pins
+   (`RELEASE_REF`) with no uncommitted changes, and setup prints its commit and tree state. Any
+   other commit or edited tree is refused; developers set `DEVELOPMENT_OVERRIDE = True` at the
+   top of the cell to use it, and the printed header then says so.
 2. **Matching installed package:** otherwise, reuse an installed preprocessing package only
    when its version matches the notebook.
 3. **Pinned GitHub source:** otherwise install the notebook's immutable `RELEASE_REF`, never
@@ -237,9 +240,8 @@ notebook's step 3 (§4), also tells how they relate.
   floats. All images of an experiment must have the same pixel type.
 - **2-D planes only:** MorphoBricks v1 analyses 2-D planes. An image with more than one
   depth slice (a Z-stack) is refused (`z_stack_not_supported`), every such image named:
-  project it first, for example a maximum-intensity projection in Fiji (Image > Stacks >
-  Z Project...), and use the projected image. A Z axis of one slice is fine. Time-lapses
-  are supported.
+  make recorded 2-D projected copies first with `convert --project max|mean|sum` (below),
+  and use the copies. A Z axis of one slice is fine. Time-lapses are supported.
 - **Dimensions:** every image is split into planes along T (time); a plane holds every
   channel (C) of the image at that time point, one row of the table. All TIFF
   images must have their dimensions in the same order; the number of slices, time points
@@ -670,7 +672,7 @@ After writing, `run` prints the intensity checks of the table, grouped by kind, 
 the channel, the image or biological repeat and the values compared, and what to do once
 per kind; it draws no plots (the notebook does).
 
-**Exit status.** Every command (`check`, `run`, `masks`, `calibrate`, `design` and
+**Exit status.** Every command (`check`, `run`, `masks`, `calibrate`, `design`, `describe` and
 `convert`) exits with status 1 when it prints an error, and with 0 otherwise: warnings,
 intensity warnings included, never change it. So `check` exits with 1 on every error it
 reports, also an experiment design it cannot read (it never replaces that file) or one
@@ -742,6 +744,49 @@ The rules behind each suggestion use thresholds you can change, for example
 kinds of mask count as the same objects. `morphobricks-preprocessing masks --help` lists
 all seven with their defaults; the values used are printed and written in the report.
 `python -m morphobricks_preprocessing` works the same way.
+
+### Describe your experiment (`describe`)
+
+```bash
+morphobricks-preprocessing describe /data/exp1
+```
+
+prints, in plain language, the draft description of the experiment that the folders (and,
+when there is one, the output folder) allow: the ID proposed for each condition, technical
+repeat and biological repeat (a folder such as `control` or `z`, whose name cannot be an ID,
+gets no proposal and is never repaired), each repeat with its folders and image counts, and
+every question still open, each with what you have to do: choose or accept an ID, confirm
+that the folders of a repeat were prepared and acquired under the same circumstances, say
+what each of two controls is compared against.
+
+- It reads the folder structure only (no image is opened) and **writes nothing**: no output
+  folder, no draft, no description. `--output FOLDER` names the output folder to read (default:
+  next to the experiment), `--exclude PATH` leaves an image out, as in `check`.
+- If the output folder holds an `experiment_design.csv` from an earlier version and no
+  published `morphobricks.toml`, the draft is that design migrated: its confirmed repeats
+  and their dates are shown as you gave them, and the IDs are still only proposals. A design
+  that cannot be read, or breaks the rules of the description, is refused with the reason and
+  left as it is.
+- If a `morphobricks.toml` is published, `describe` compares it with the folders instead: how
+  many acquisitions are as published, which are new or gone, which image counts changed and
+  which repeats must be confirmed again. Only folders and counts are compared; the channels
+  are not (no header is read).
+- **Nothing is confirmed by the command.** An ID, the comparability of a repeat, a reference
+  and the removal of a folder are your answers, given in the notebook; the command never
+  answers for you and never fills in a date.
+
+```bash
+morphobricks-preprocessing describe /data/exp1 --publish
+```
+
+publishes the description only when no question is open and every decision is confirmed;
+otherwise it prints `Not published. What is missing:` with every item and exits with status 1.
+In this version the command line holds none of your answers (they are given in the notebook),
+so `--publish` publishes nothing from a draft made of folders: it lists what is missing. For
+a published description that matches the folders it says `Nothing to publish` and exits with
+status 0; for one that no longer matches, it lists the new, gone or changed folders and leaves
+the file as it is. Like the other commands, `describe` exits with status 1 when it reports an
+error (an experiment folder that is not found, an unreadable description) and 0 otherwise.
 
 ### Stating pixel sizes (`calibrate`)
 
@@ -860,6 +905,31 @@ or if a copy no longer has the SHA-256 the record gives.
 images or made with other roles is refused (`copy_folder_not_empty`, `copy_differs`);
 convert into a new folder then. If it fails (`conversion_failed`), the folder is left as it
 was. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
+
+**Z-stacks: recorded 2-D projections.**
+A Z-stack is still refused by `check` and `run` (`z_stack_not_supported`). To analyse one,
+make a projected copy first:
+`convert EXPERIMENT --to FOLDER --axes ZCYX --project max` (or `mean` or `sum`; there is no
+default method; `--z-range 2:10` uses only those slices of every image, zero-based with the
+end excluded, `4:5` is the single slice 4, and every image must have them), or in Python
+`convert_experiment(EXP, mapping, FOLDER, projection=Projection("max", (2, 10)))`.
+Every image of the experiment is written as a 2-D OME-TIFF of the same folders and names:
+its axes are your roles without Z (`ZCYX` becomes `CYX`), each (t, c) is projected on its own,
+and the Z size is not written to the copy (it is recorded in the conversion record as
+dropped). Your originals are only read. The pixel type is decided by the input type and the
+method, never by the data: a maximum keeps it; a sum of 8-bit or 16-bit images is 32-bit and
+exact (`int32` for signed ones; 32-bit images give 64-bit floats holding the exact integer);
+a mean is a 64-bit float; a sum or mean that could not be exact is refused
+(`projection_cannot_be_exact`), never wrapped or clipped. A NaN stays NaN; a sum that overflows
+to infinity is refused (`projection_overflow`). The copy's OME-XML says how it was made, and
+the conversion record (version 3) holds the method, the slices used, the source's SHA-256,
+the types, the rounding and the dropped Z size for every image. Masks are never projected:
+masks with depth slices stop the projection (`projection_masks_3d`); 2-D masks stay where
+they are. OME-Zarr images are not projected yet (`projection_zarr_not_supported`; exclude
+them). One folder holds one method and one slice range (`copy_differs` otherwise). The command prints the next commands with a
+new output folder (by default the copy folder's name with `_MorphoBricks_Preprocessing`):
+the projected copies are a different source, so the description starts again there (the
+design and the stated pixel sizes are entered again). The notebook card follows.
 
 **In the notebook.** When step 2's axis check reports these images, a **Make named-axis
 copies (optional)** card appears under it, calling the same functions as the command:
@@ -1071,7 +1141,7 @@ continues.
 | `missing_xy_axis`, `duplicate_axis_role` | Error | X/Y missing or a role used twice. Correct the axis roles. |
 | `unassigned_axis` | Error | A dimension with several planes has no role. Choose Z, C or T. |
 | `unsupported_axis` | Error | A position or tile dimension. Export each position separately. |
-| `z_stack_not_supported` | Error | Images have more than one depth slice (Z-stacks); every such image is named with its number of slices. MorphoBricks v1 analyses 2-D planes. Project each Z-stack first, for example a maximum-intensity projection in Fiji (Image > Stacks > Z Project...), and use the projected image; or exclude it. A Z axis of one slice is accepted. Found from the header's Z axis, and again from the axis roles you confirm (a plain stack given a Z role). |
+| `z_stack_not_supported` | Error | Images have more than one depth slice (Z-stacks); every such image is named with its number of slices. MorphoBricks v1 analyses 2-D planes. Make 2-D projected copies first (`convert EXPERIMENT --to FOLDER --axes ROLES --project max|mean|sum`; the originals are only read) and run on the copies; or exclude the images. A Z axis of one slice is accepted. Found from the header's Z axis, and again from the axis roles you confirm (a plain stack given a Z role). |
 | `plane_over_memory_limit` | Error | A plane cannot be read within the memory limit, not even in blocks (for example, it is stored compressed in one piece). Raise the limit, or save the images again as tiled or uncompressed TIFF files or as OME-Zarr with smaller chunks. |
 | `unsupported_layout` | Error | The image cannot be read one plane at a time. Check the axis roles or export again. |
 | `unreadable_planes` | Error | Pixel data cannot be decoded. Export again, or exclude the image. |
@@ -1085,6 +1155,15 @@ continues.
 | `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. |
 | `copy_differs` | Error | `convert`: images in the folder of copies differ from the copies this conversion would write (an original changed, other roles, a copy changed, an image no longer in the experiment), or the folder holds copies of another experiment. Nothing is overwritten; convert into a new folder, or remove those copies first. |
 | `cannot_convert_pixel_type` | Error | `convert`: images of 64-bit integers cannot be saved as OME-TIFF, and pixel values are never changed to fit. Save them again with named axes in a 32-bit type if their values fit, or correct the roles. |
+| `nothing_to_project` | Error | `convert` with a projection: no image has a depth axis (Z) under the roles you gave. Check the roles; nothing was written. |
+| `projection_z_range_outside` | Error | `convert` with a projection: the slice range does not fit every image; the shorter images are named. Give a range every image has, or leave it out. |
+| `projection_cannot_be_exact` | Error | `convert` with a projection: a sum or mean of that many slices of that pixel type could not be held exactly. Use max or mean, or a shorter slice range. |
+| `projection_overflow` | Error | `convert` with a projection: a sum overflows to infinity (float64) at the pixels named. Use max, or mean if the values allow it. |
+| `projection_undefined` | Error | `convert` with a projection: a sum adds an infinity to its opposite at the pixels named, which is undefined. Use max. |
+| `projection_over_memory_limit` | Error | `convert` with a projection: one input plane and its running total do not fit the memory limit. Raise `--memory-limit`. |
+| `projection_masks_3d` | Error | `convert` with a projection: masks of the images have depth slices (Z), and masks are never projected. Make 2-D masks on the projected images, or move these masks out of the masks folder. |
+| `projection_masks_axes_unknown` | Error | `convert` with a projection: masks have more than Y and X and their axes are not named, so it is not known whether they have depth slices. Name the axes in the masks' metadata, or move them out. |
+| `projection_zarr_not_supported` | Error | `convert` with a projection: OME-Zarr images are not projected yet. Exclude them. |
 | `source_changed_during_check` | Error | `convert`: an original changed while its metadata was read, so the metadata may not describe the file that would be copied. Nothing was written; convert again when nothing writes into the experiment. |
 | `conversion_failed` | Error | `convert`: an image could not be copied (unreadable, changed while copied, or the folder cannot be written). The copies written by this conversion were removed; fix the cause and convert again, or exclude the image. |
 | `not_enough_space` | Error | `convert`: the copies would not fit on the drive. Free space or choose another drive. |

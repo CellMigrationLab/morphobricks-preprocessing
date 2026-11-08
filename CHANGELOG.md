@@ -17,7 +17,100 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   `image_count` alone writes `image_count_changed` with the old and new counts and `recorded_on`
   (required then, never read from the clock). All lines go in the same single atomic append as
   the re-confirmations, so the publication is whole or absent.
+- **`convert --project max|mean|sum [--z-range START:STOP]` (part of #176).** The command line of
+  the recorded Z projection: no default method (`--project` alone or an unknown method is a
+  parser error naming the three), `--z-range` zero-based and half-open for the whole
+  experiment (`4:5` is a single slice; `--z-range` without `--project` is refused), the memory
+  limit, `--exclude` and `--masks` as for any conversion (the recorded masks of the output
+  folder are scanned for 3-D masks). It prints what was written and the next commands for a
+  new output folder, `<--to>_MorphoBricks_Preprocessing` (the projected copies are a
+  different source), with `--axes` of the copies. `z_stack_not_supported` now names the
+  command ("Make 2-D projected copies first: convert EXPERIMENT --to FOLDER --axes ROLES
+  --project max|mean|sum ...") instead of Fiji. `ConversionResult.projection` holds the
+  record's method and range.
+- **`convert_experiment(projection=Projection(...))` writes recorded 2-D copies of Z-stacks
+  (part of #176).** Every image is projected with the method (`max`, `mean` or `sum`; no
+  default) over all slices or one slice range for the experiment; the copy's axes are the
+  confirmed roles without Z, each (t, c) is projected in ascending z into one running plane,
+  the Z size goes to the record's `dropped_sizes`, and the copy's OME-XML says how it was
+  made. Refused before anything is written: `nothing_to_project`, `projection_z_range_outside`,
+  `projection_cannot_be_exact`, 64-bit integers (`cannot_convert_pixel_type`),
+  `projection_over_memory_limit`, OME-Zarr images (`projection_zarr_not_supported`, for now),
+  3-D masks (`projection_masks_3d`, `projection_masks_axes_unknown`, from the headers of the
+  masks folder); a sum overflowing to infinity is `projection_overflow`. The source's content
+  SHA-256 is taken before and after, and recorded. Another method or range into the same
+  tree is `copy_differs`, naming both. A copy's OME-XML UUID is derived from its description,
+  so one projection is the same bytes twice. `convert_experiment` takes its keyword options as
+  a `ConversionOptions` group (same keywords; an unknown one is a `TypeError`) because it would
+  have had nine parameters. `PlannedCopy` moved to `planned_copy.py`. No command or notebook
+  card yet.
+- **Description draft file and draft to description (Stage 1).** New `morphobricks.draft.json`
+  in the output folder: a versioned, strictly read JSON file with the user's answers so far
+  (IDs, the date of each repeat's confirmation, the channel of every C index of every unit,
+  masks, references, display names), `base_sha256` (the published bytes, or `absent`) and the
+  pinned Spec commit. `run/draft_file.py`: `save_draft` (atomic, under the output lock, an answer
+  the rules refuse is never saved), `load_draft` (`R_PUBLISHED_FILE_CHANGED` when the published
+  file is no longer the base; a malformed, unknown-version or extra-key file is refused, never
+  repaired), `publish_draft` (builds the description, publishes it and deletes the draft under
+  one hold of the lock; any refusal writes nothing). `draft_answers.description_from_draft` is
+  pure and refuses with every missing confirmation listed; nothing is confirmed on the user's
+  behalf and the clock is never read. `run/description_file.publish_locked` is
+  `publish_description` for a caller that holds the lock. Contract §18.
 
+- **`describe` command, docs and a recorded conformance run (Stage 1, PR 17).**
+  `morphobricks-preprocessing describe EXPERIMENT [--output FOLDER] [--exclude PATH]
+  [--publish]` prints the draft experiment description in plain language: the proposed IDs
+  (none, never repaired, for a folder that cannot be an ID), the repeats with their folders and
+  image counts, the references and every open question with what the user has to do. The draft
+  is the legacy `experiment_design.csv` of the output folder migrated, or the folders alone;
+  against a published `morphobricks.toml` it compares the folders (new, gone, image counts,
+  repeats to confirm again; no header is read). It reads no image and writes nothing, and
+  **confirms nothing**: confirmations are the user's (owner rule). `--publish` publishes only
+  a draft with no open question and every decision confirmed, else it lists what is missing and
+  exits with status 1; since no answers live outside the notebook yet, it publishes nothing
+  from a draft of folders (open question to the owner), and says `Nothing to publish` for a
+  published description that matches the folders. Docs: contract §12 and §16, user guide
+  "Describe your experiment", plan §12 question 78 (the owner's answers Q1 to Q8),
+  `docs/conformance.md` (the recorded run of the suite with no Spec skip).
+- **Reader owns its rule vocabulary; five refusals pinned by path (#204).**
+  `description_identity` no longer imports `check_identity_text` from `discovery` or `SINGLE`
+  from normalization (Spec §2.7): `description_rules` holds `MISSING_TEXT`, `SINGLE` and
+  `label_refused`, and `tests/test_description_rules_copy.py` keeps them equal to the shared
+  values. Behaviour is unchanged. `tests/test_spec_reader_refusal_paths.py` pins the path and
+  value of `E_SOURCE_FOLDER_REUSED`, `E_SOURCE_FOLDER_CONFLICT`, `E_SOURCE_REPEAT_REUSED`,
+  `E_MASK_SOURCE_TYPE_REUSED` and `E_REFERENCE_CYCLE`, which the oracle compares by code only.
+  The reader's paths were already correct for all five.
+- **Per-unit header evidence for a described run (Stage 1, PR 13; conformance P26).** When the
+  output folder holds a published `morphobricks.toml`, `run` no longer applies the
+  experiment-wide v0.4 checks `channel_names_differ` and `different_channel_counts`: units may
+  spell a channel's header differently through the aliases the description confirms. The
+  per-unit checks decide instead: a header name must be, after NFC of both sides and with no
+  trimming or case folding, a confirmed name of the unit's channel at that C index
+  (`R_HEADER_CONTRADICTION`), the count must match the unit's list
+  (`R_CHANNEL_COUNT_MISMATCH`), and units with different lists are refused as before
+  (`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`). The refusal names the unit folders, the image, the
+  image's header names and the channel's confirmed names. An image without header names needs
+  no evidence (experiment-v1 section 4.3). A run without a description is unchanged (the global
+  checks still apply). Tests: `tests/test_spec_run_aliases.py`.
+- **Conversion record version 3 holds a Z projection (part of #176).** `RECORD_VERSION` is `"3"`:
+  a record-level `projection` (null, or `{method, z_range}`), the entry action `projected`
+  and a strictly read `projection` object per projected entry (source content SHA-256, Z axis
+  and size, slices used, method, types, `dtype_rule`, `rounding`, `nan_policy`,
+  `dropped_sizes`, `significant_bits_dropped`; new pure module `projection_record.py`).
+  An entry that contradicts itself, the record or the dtype table is refused, and the projection
+  is part of the reuse key. Version 2 records are still read; version 1 is still refused. Nothing
+  writes a projection yet (plan §12 question 77, contract §17 "Projected copies").
+- **Z-projection arithmetic (part of #176).** New pure module `projection.py`: `Projection`
+  (method `max`, `mean` or `sum`, no default; optional zero-based half-open slice range),
+  `projection_dtype` (the output type from the input type, method and slice count only: max
+  keeps the type; integer sums widen to `uint32`/`int32`, or to `float64` holding the exact
+  integer for 32-bit inputs; means and float sums are `float64`; 64-bit integers are refused
+  as `cannot_convert_pixel_type`; a sum or mean whose worst case could not be exact is refused
+  as `projection_cannot_be_exact`, never wrapped or clipped), and `PlaneAccumulator` (slices
+  added in ascending z into one running plane; NaN propagates, infinities are kept, a finite
+  sum that overflows to infinity is `projection_overflow`, `inf + -inf` is
+  `projection_undefined`). No I/O and no command yet: `convert --project` follows in later
+  pull requests (design in MorphoFeature `docs/restart/designs/pp176-z-projection-design-2026-11-07.md`).
 - **Semantic `RunInputs` (Stage 1, PR 12; stacked on PR 11).** For a run with a published
   description, each `Fov` carries `repeat_group`, `condition_id`, `technical_repeat_id` and
   `channel_ids` beside the unchanged key (owner decision Q8: the key keeps the source folder
@@ -49,6 +142,7 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   modules `description_layouts`, `description_record`, `description_run_text`,
   `mask_representation` and `run/description_run`; `file_sha256` moved to `_io` (re-exported by
   `manifest`). Conformance P04, P05, P11, P28 in `tests/test_spec_run_description.py`.
+- **The notebook bootstrap shows and checks the Git identity of a local checkout ([#103](https://github.com/CellMigrationLab/morphobricks-preprocessing/issues/103)).** A nearby checkout was accepted when its `pyproject.toml` version equalled `current_version`, and the header showed only the version and path, so an edited checkout that kept the version number passed the `RELEASE_REF` pin. In local-checkout mode the cell now reads the checkout's commit and whether its tree has changes, prints both (also in the final header) and records them in `SETUP_RECORD`. A checkout whose commit differs from `RELEASE_REF`, whose tree has changes, or whose state cannot be read (not a Git work tree rooted there, or no Git) is refused, unless `DEVELOPMENT_OVERRIDE = True` is set in the cell; the header then says "DEVELOPMENT OVERRIDE". Installed-package and pinned-install modes are unchanged. Tests: `tests/test_notebook_setup.py`, `tests/test_notebook_file.py`.
 - **Re-pin the vendored Spec to b197ac1 (MorphoBricks-Spec PR 12, owner decision UR1).** The
   reserved names of section 3.2 now also apply to `used_ids.channels`: an entry whose case-folded
   form is on the list is `E_ID_RESERVED`, as for a declared channel ID (a listed ID reserves it).

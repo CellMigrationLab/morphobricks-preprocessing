@@ -6,8 +6,8 @@ The preprocessing brick of MorphoBricks. It reads an experiment folder of
 microscopy TIFFs, computes one intensity histogram per channel of every plane, and writes
 them, with each plane's experimental labels, to `plane_histograms.csv`: one row per plane
 (an image at one time point), each channel in its own columns. MorphoBricks v1 analyses 2-D
-planes: a Z-stack (more than one depth slice) is refused (`z_stack_not_supported`); project
-it first, for example a maximum-intensity projection in Fiji, and use the projected image. Later bricks
+planes: a Z-stack (more than one depth slice) is refused (`z_stack_not_supported`); make
+recorded 2-D projected copies first with `convert --project max|mean|sum`, and use the copies. Later bricks
 (for example patch extraction) use that table to calculate normalization
 parameters for any group of images without rereading the pixels.
 
@@ -33,7 +33,7 @@ Pre-alpha; the current release is v0.4.0 (what is planned next is in
 - Reading a run from another brick: `RunInputs.open(output_folder)`
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
   and a command line (`morphobricks-preprocessing check` / `run` / `masks` / `calibrate` /
-  `design` / `convert`)
+  `design` / `describe` / `convert`)
 
 Every feature, message code and output file is described in the [user guide](docs/user_guide.md).
 
@@ -87,7 +87,9 @@ LabConstrictor's
    uses the Jupyter kernel and normal local paths. No shell or line magics are used.
 3. A downloaded/Colab notebook installs one immutable preprocessing commit, recorded as
    `RELEASE_REF`, rather than moving `main`. A nearby source checkout is preferred for local
-   development. A pre-existing remote installation is reused only when its package version
+   development, but only when it is exactly the `RELEASE_REF` commit with a clean tree; the setup
+   shows its commit and tree state, and `DEVELOPMENT_OVERRIDE = True` is the explicit, printed
+   way to use another commit or local edits. A pre-existing remote installation is reused only when its package version
    matches the notebook.
 4. `current_version` and `notebook_name` are the variables LabConstrictor reads;
    [`notebooks/notebook_latest_versions.yaml`](notebooks/notebook_latest_versions.yaml) tracks

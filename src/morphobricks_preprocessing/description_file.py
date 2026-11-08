@@ -20,6 +20,7 @@ from .description_rules import Refusal
 
 DESCRIPTION_FILENAME = "morphobricks.toml"
 RECORDS_FILENAME = "morphobricks.records.jsonl"
+DRAFT_FILENAME = "morphobricks.draft.json"
 FILE_PHASE = 0
 """The ``phase`` of a ``DescriptionError`` about the file itself, before any byte is parsed."""
 

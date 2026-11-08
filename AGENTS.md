@@ -235,9 +235,19 @@ src/morphobricks_preprocessing/
   copy_axes.py      convert (PP-11, contract §17): the axes, shape, pixel sizes (by role; a
                     relabelled axis gets an unknown scale; equal X and Y kept through a Y/X
                     swap, question 59) and OME metadata of a named-axis copy
-  ome_tiff_copy.py  write_named_copy: one image as uncompressed OME-TIFF, planes from iter_planes
+  projection.py     Z projections (issue #176), pure: Projection (max/mean/sum, optional slice range),
+                    projection_dtype (output type and exactness bound from input type, method and
+                    slice count; refused rather than wrapped), PlaneAccumulator (running plane,
+                    z ascending)
+  projection_layout.py projected_layout: a converted copy's layout without Z, the dropped Z size
+  projection_plan.py plan_projection: every refusal before a write, PlannedCopy per image;
+                    projection_issues.py its messages; projection_masks.py the 3-D mask scan
+  planned_copy.py   PlannedCopy (moved from conversion_plan.py)
+  projection_record.py ProjectionEntry: a projected copy's provenance in the conversion record
+                    (version 3), read strictly against the dtype table (pure)
+  ome_tiff_copy.py  write_projected_copy (a Z projection, page by page); write_named_copy: one image as uncompressed OME-TIFF, planes from iter_planes
                     under the confirmed roles, blocks written in place (BigTIFF when large)
-  conversion_record.py the copy tree's .morphobricks-conversion.json (version 2: fingerprints,
+  conversion_record.py the copy tree's .morphobricks-conversion.json (version 3, 2 still read: fingerprints,
                     copy SHA-256, roles, sizes, channel names, bits), review_conversion (the
                     run's conversion_source_changed warning and copy_changed_after_conversion
                     error, PP-12), changed_copies

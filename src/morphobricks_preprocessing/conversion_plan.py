@@ -21,14 +21,13 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
-
 from ._io import free_space
-from .axes import AxisMapping
+from .axes import AxisMapping, AxisReview
 from .axis_check import (
     AXES_NOT_NAMED,
     AXIS_ERROR_CODES,
     ConfirmedAxes,
+    confirmation_of,
     header_axis_issue,
 )
 from .axis_review import review_axes
@@ -40,47 +39,22 @@ from .conversion_issues import (
     pixel_type_issue,
 )
 from .conversion_record import CONVERTED, COPIED, RECORD_FILENAME, CopyEntry
-from .copy_axes import CopyLayout, copy_layout
+from .copy_axes import copy_layout
 from .fingerprint import Fingerprint
 from .links import relative_inside
 from .metadata import TiffMetadata
 from .ome_tiff_copy import copy_nbytes
 from .planes import DEFAULT_MEMORY_LIMIT, check_planes
-from .run.preflight import preflight
+from .planned_copy import PlannedCopy
+from .projection import Projection
+from .projection_masks import projection_mask_issues
+from .projection_plan import plan_projection
+from .run.preflight import Preflight, preflight
+from .size_checks import Z_STACK_CODE
 from .validation import ValidationIssue, has_errors
 
 _NOT_IN_OME = frozenset({"int64", "uint64"})
 """Pixel types the brick reads that OME-TIFF cannot hold: they are never changed to fit."""
-
-
-@dataclass(frozen=True)
-class PlannedCopy:
-    """One image of the copy tree, before it is written.
-
-    Attributes
-    ----------
-    entry
-        Its conversion-record entry, without the copy's fingerprint.
-    layout
-        The named-axis copy of a converted image, else None.
-    mapping
-        The roles a converted image is read with, else None.
-    nbytes
-        The bytes the copy takes (pixels only for a converted image).
-    dtype
-        The pixel type a converted image's header gives (native byte order), else None.
-    """
-
-    entry: CopyEntry
-    layout: CopyLayout | None = None
-    mapping: AxisMapping | None = None
-    nbytes: int = 0
-    dtype: np.dtype | None = None
-
-    @property
-    def relative_path(self) -> str:
-        """The image, relative to the experiment and to the copy tree."""
-        return self.entry.relative_path
 
 
 def plan_conversion(
@@ -90,6 +64,8 @@ def plan_conversion(
     exclude: Iterable[str] = (),
     missing_as_singleton: bool = False,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
+    projection: Projection | None = None,
+    masks_folder: str | os.PathLike | None = None,
 ) -> tuple[tuple[PlannedCopy, ...], list[ValidationIssue]]:
     """Check the experiment with the confirmed roles and plan each image's copy.
 
@@ -114,6 +90,13 @@ def plan_conversion(
         As :func:`convert_experiment`.
     memory_limit
         As :func:`convert_experiment`.
+    projection
+        As :func:`convert_experiment`: every image is planned as a projected copy, and
+        ``z_stack_not_supported`` no longer stops the plan (the projection is what it asks
+        for); the refusals of :func:`.projection_plan.plan_projection` and of the masks
+        (``masks_folder``, :func:`.projection_masks.projection_mask_issues`) do.
+    masks_folder
+        The masks folder, scanned for 3-D masks when ``projection`` is given.
 
     Returns
     -------
@@ -128,12 +111,18 @@ def plan_conversion(
     review = review_axes(pre.metadata, mapping, missing_as_singleton=missing_as_singleton)
     others = [issue for issue in pre.issues if issue not in pre.metadata.issues]
     issues = [*others, *review.combined_issues(pre.metadata)]
+    if projection is not None:
+        issues = [i for i in issues if not (i.is_error and i.code == Z_STACK_CODE)]
     if any(i.is_error and i.code not in AXIS_ERROR_CODES for i in issues):
         return (), [i for i in issues if not (i.is_error and i.code in AXIS_ERROR_CODES)]
     # The axis errors and unnamed axes are what is corrected (each entry records its code).
     issues = [i for i in issues if not i.is_error and i.code != AXES_NOT_NAMED]
     to_convert = set(review.axis_error_files) | set(review.confirmed_files)
     headers = {meta.relative_path: meta for meta in pre.metadata.files}
+    if projection is not None:
+        return _plan_projected(
+            pre, review, mapping, projection, issues, (memory_limit, masks_folder)
+        )
     issues += _cannot_convert(root, to_convert, headers, review.file_mappings, memory_limit)
     if has_errors(issues):
         return (), issues
@@ -145,6 +134,43 @@ def plan_conversion(
             planned.append(_converted(headers[rel], review.file_mappings[rel], source))
         else:
             planned.append(_copied(rel, headers.get(rel), source, rel in pre.excluded))
+    return tuple(planned), issues
+
+
+def _plan_projected(
+    pre: Preflight,
+    review: AxisReview,
+    mapping: AxisMapping | ConfirmedAxes,
+    projection: Projection,
+    issues: list[ValidationIssue],
+    limits: tuple[int, str | os.PathLike | None],
+) -> tuple[tuple[PlannedCopy, ...], list[ValidationIssue]]:
+    """Plan every image that is read as a projected copy, the excluded ones as plain copies."""
+    memory_limit, masks_folder = limits
+    headers = {meta.relative_path: meta for meta in pre.metadata.files}
+    issues = [
+        *issues,
+        *projection_mask_issues(masks_folder, pre.discovery, pre.metadata.files, set(headers)),
+    ]
+    sources = {rel: pre.header_fingerprints.get(rel) for rel in headers}
+    projected, refused = plan_projection(
+        pre.discovery.root,
+        headers,
+        review.file_mappings,
+        sources,
+        projection,
+        roles=confirmation_of(mapping)[0].roles_string,
+        memory_limit=memory_limit,
+    )
+    issues = [*issues, *refused]
+    if has_errors(issues):
+        return (), issues
+    planned = []
+    for rel in pre.discovery.images:
+        if rel in projected:
+            planned.append(projected[rel])
+        else:  # excluded: never read, copied byte for byte
+            planned.append(_copied(rel, None, Fingerprint.of(pre.discovery.root / rel), True))
     return tuple(planned), issues
 
 

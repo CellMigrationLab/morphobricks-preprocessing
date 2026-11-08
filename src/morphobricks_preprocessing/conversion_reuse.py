@@ -12,10 +12,10 @@ from pathlib import Path
 
 from .content_hash import unchanged_content
 from .conversion_issues import differs_issue, not_empty_issue, other_experiment_issue
-from .conversion_plan import PlannedCopy
 from .conversion_record import ConversionRecord, CopyEntry
 from .conversion_write import PARTIAL_SUFFIX
 from .fingerprint import current_fingerprint
+from .planned_copy import PlannedCopy
 from .run.lock import LOCK_FILENAME
 from .validation import ValidationIssue
 

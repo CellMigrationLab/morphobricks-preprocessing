@@ -130,7 +130,7 @@ def _transition_refusal(issue: TransitionIssue) -> DescriptionIssue:
     return DescriptionIssue(issue.code, key_path(issue.kind, issue.old_id), issue.new_id)
 
 
-def _check_base(base: str | None, current: bytes | None) -> str:
+def check_base(base: str | None, current: bytes | None) -> str:
     """Return the current file's identity (hex SHA-256 or ``absent``) after checking the base."""
     if base is None or not (base == ABSENT or BASE.fullmatch(base)):
         raise _refuse(Refusal.R_DRAFT_BASE_MISSING, "base_sha256", base)
@@ -293,33 +293,59 @@ def publish_description(
         removal names a unit the candidate keeps, or ``recorded_on`` is missing when needed.
     """
     folder = Path(output_folder)
-    path = folder / DESCRIPTION_FILENAME
     with output_lock(folder):
-        try:
-            published = read_file_bytes(path)
-            read_records(folder)  # a symbolic or torn records file refuses before anything
-            records_before = read_file_bytes(folder / RECORDS_FILENAME)
-        except DescriptionError as error:
-            raise PublicationRefused(error.issues) from error
-        base = _check_base(base_sha256, published)
-        data = canonical_bytes(candidate)
-        description_from_bytes(data)  # the exact bytes to be written pass the strict reader
-        old = _compare(published, candidate, confirmations)
-        new_sha = sha256_hex(data)
-        records = tuple(_record(c, base, new_sha) for c in sorted(confirmations, key=_order))
-        if old is not None:
-            records += removal_records(old, candidate, removals, confirmations)
-            records += image_count_records(old, candidate, recorded_on)
-        elif removals:
-            raise ValueError("a removal needs a published file to remove from")
-        write_text_atomic(path, data.decode("utf-8"))
-        try:
-            _append_records(folder, records)
-        except BaseException:
-            _restore(path, published)
-            _restore(folder / RECORDS_FILENAME, records_before)
-            raise
-        return Publication(path, new_sha, base, records)
+        return publish_locked(
+            folder,
+            candidate,
+            base_sha256=base_sha256,
+            confirmations=confirmations,
+            removals=removals,
+            recorded_on=recorded_on,
+        )
+
+
+def publish_locked(
+    folder: Path,
+    candidate: Description,
+    *,
+    base_sha256: str | None,
+    confirmations: tuple[Reconfirmation, ...] = (),
+    removals: tuple[Removal, ...] = (),
+    recorded_on: str | None = None,
+) -> Publication:
+    """Publish like :func:`publish_description` for a caller that already holds the lock.
+
+    The caller holds :func:`.lock.output_lock` on ``folder`` for the whole call (the lock is not
+    re-entrant), so it can do more under the same lock, such as deleting the draft that was
+    published (:mod:`.draft_file`). The refusals and effects are those of
+    :func:`publish_description`.
+    """
+    path = folder / DESCRIPTION_FILENAME
+    try:
+        published = read_file_bytes(path)
+        read_records(folder)  # a symbolic or torn records file refuses before anything
+        records_before = read_file_bytes(folder / RECORDS_FILENAME)
+    except DescriptionError as error:
+        raise PublicationRefused(error.issues) from error
+    base = check_base(base_sha256, published)
+    data = canonical_bytes(candidate)
+    description_from_bytes(data)  # the exact bytes to be written pass the strict reader
+    old = _compare(published, candidate, confirmations)
+    new_sha = sha256_hex(data)
+    records = tuple(_record(c, base, new_sha) for c in sorted(confirmations, key=_order))
+    if old is not None:
+        records += removal_records(old, candidate, removals, confirmations)
+        records += image_count_records(old, candidate, recorded_on)
+    elif removals:
+        raise ValueError("a removal needs a published file to remove from")
+    write_text_atomic(path, data.decode("utf-8"))
+    try:
+        _append_records(folder, records)
+    except BaseException:
+        _restore(path, published)
+        _restore(folder / RECORDS_FILENAME, records_before)
+        raise
+    return Publication(path, new_sha, base, records)
 
 
 def _restore(path: Path, before: bytes | None) -> None:
