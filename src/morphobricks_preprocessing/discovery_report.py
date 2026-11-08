@@ -145,6 +145,8 @@ class DiscoveryReport:
             lines.append(f"  changed from {self.outcome.previous_root}")
         if data.get("conversion"):
             lines.append(f"  named-axis copies of {data['conversion']['source_root']}")
+            if "projection" in data["conversion"]:
+                lines.extend(_projection_lines(data["conversion"]["projection"]))
         lines.extend(_folder_lines(data))
         lines.extend(_image_lines(data))
         lines.extend(_mask_lines(data))
@@ -212,11 +214,26 @@ def _conversion(pre: Preflight) -> dict | None:
     """Return the conversion record of a tree of named-axis copies, or None (design §5)."""
     if pre.conversion is None:
         return None
-    return {
+    found = pre.conversion.projection
+    data = {
         "record": pre.conversion.record,
         "sha256": pre.conversion.sha256,
         "source_root": pre.conversion.source_root,
     }
+    if found is not None:  # the key is left out for copies that are not projected
+        data["projection"] = {**found.to_dict(), "summary": found.describe()}
+    return data
+
+
+def _projection_lines(projection: dict) -> list[str]:
+    """Return the report lines of projected copies: the method and what masks are paired."""
+    lines = [f"  {projection['summary']} of {projection['source_root']}"]
+    if projection["masks_paired"]:
+        lines.append(
+            f"  {len(projection['masks_paired'])} masks are paired with the {projection['method']} "
+            "projections (masks_on_projected_images; masks are never projected)"
+        )
+    return lines
 
 
 def _issue_dict(issue: ValidationIssue) -> dict:

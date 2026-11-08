@@ -500,6 +500,7 @@ def _write_generation(
         narrow_ranges=tuple(rows.narrow),
         calibration_sha256=pre.calibration.sha256,
         conversion_record_sha256=None if pre.conversion is None else pre.conversion.sha256,
+        projection=_projection(pre),
         experiment_description=(
             None
             if described is None
@@ -509,6 +510,12 @@ def _write_generation(
     )
     manifest = _kept_time(manifest, run.previous[0])
     return file_sha256(write_manifest(manifest, staged / MANIFEST_FILENAME))
+
+
+def _projection(pre: Preflight) -> dict | None:
+    """Return the manifest's ``projection`` entry for projected copies, else None."""
+    found = None if pre.conversion is None else pre.conversion.projection
+    return None if found is None else found.to_dict()
 
 
 def _kept_time(manifest: RunManifest, earlier: RunManifest | None) -> RunManifest:

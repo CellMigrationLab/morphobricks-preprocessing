@@ -8,6 +8,16 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **The run side of the Z projection (part of #176).** A run on projected copies records a
+  `projection` summary in its manifest (method, slices requested, and for every image the
+  slices used, types, dtype rule, rounding and the source's content SHA-256, with the
+  conversion record it comes from), `RunInputs.projection` returns it (None for an unprojected
+  run, whose manifest is byte for byte as before), and the report says "max projections of
+  slices 1:4". 2-D masks next to projected images are paired as usual and the run warns
+  `masks_on_projected_images` (report and manifest); 3-D masks still stop the run
+  (`mask_planes_mismatch`). `RunInputs.open` refuses a manifest whose `projection` is not
+  what the conversion record gives, projected copies recorded without it, and a `projection`
+  without a record: nothing is read as a plain image.
 - **`convert --project max|mean|sum [--z-range START:STOP]` (part of #176).** The command line of
   the recorded Z projection: no default method (`--project` alone or an unknown method is a
   parser error naming the three), `--z-range` zero-based and half-open for the whole
