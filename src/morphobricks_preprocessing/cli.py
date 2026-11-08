@@ -1,10 +1,12 @@
-"""Command-line interface: ``check``, ``run``, ``masks``, ``calibrate``, ``design``, ``convert``.
+"""Command-line interface: ``check``, ``run``, ``masks``, ``calibrate``, ``design``, ``describe``.
 
 ``check`` runs the preflight (folders and image headers, no pixels) and prints
 what will be analysed, the problems found and the suggested axis roles; it writes the
 report (``discovery_report.json`` and ``.txt``) to the output folder, and the experiment
 design template, prefilled from the folders, when the folder holds no design.
 ``design`` (:mod:`.cli_design`) shows, checks and changes that design without editing it.
+``describe`` (:mod:`.cli_describe`) prints the draft experiment description in plain language;
+it writes nothing and confirms nothing. ``convert`` is described below.
 ``run`` (:mod:`.cli_run`) processes the experiment with the axis roles given in ``--axes``,
 or those of the earlier run in the same output folder; roles are never taken from metadata
 without being stated. It also needs the
@@ -34,6 +36,7 @@ from pathlib import Path
 
 from .cli_calibrate import add_calibrate_parser, calibrate_command, calibration_summary
 from .cli_convert import add_convert_parser, convert_command
+from .cli_describe import add_describe_parser, describe_command
 from .cli_design import add_design_parser, design_command, design_errors, design_instructions
 from .cli_masks import add_masks_arguments, masks_command
 from .cli_run import (
@@ -104,6 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_masks_arguments(masks)
     for command in (add_calibrate_parser(commands), add_design_parser(commands)):
         _remove_stale_lock_option(command)
+    add_describe_parser(commands)
     add_convert_parser(commands)
     return parser
 
@@ -113,6 +117,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     _safe_output()
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "describe":
+        return describe_command(args)
     if args.command in ("calibrate", "design"):
         if args.remove_stale_lock and not _remove_stale_lock(args):
             return 1

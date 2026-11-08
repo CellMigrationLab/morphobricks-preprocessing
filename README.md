@@ -33,7 +33,7 @@ Pre-alpha; the current release is v0.4.0 (what is planned next is in
 - Reading a run from another brick: `RunInputs.open(output_folder)`
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
   and a command line (`morphobricks-preprocessing check` / `run` / `masks` / `calibrate` /
-  `design` / `convert`)
+  `design` / `describe` / `convert`)
 
 Every feature, message code and output file is described in the [user guide](docs/user_guide.md).
 
