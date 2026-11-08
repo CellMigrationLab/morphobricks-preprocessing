@@ -53,7 +53,9 @@ class _DesignCard:
                     "preparation, imaged for each condition. Folders with the same name are "
                     "paired by default. If a repeat has another folder name in some "
                     "condition (acquired a day later, for example), choose its group in "
-                    "the dropdown. Each group may hold one folder per condition."
+                    "the dropdown. Each group may hold one folder per condition. The dropdown "
+                    "offers "
+                    "folder names only; the repeat's own ID is set in the Names card."
                 ),
                 self.pairing_grid,
             ]
@@ -411,7 +413,7 @@ class _DesignCard:
                 [
                     f"{plural(len(design.groups), 'repeat group')}: "
                     + ", ".join(html.escape(g) for g in design.groups),
-                    f"Controls: {controls}",
+                    self._compared_line(controls),
                     where,
                 ],
                 raw=True,
@@ -434,6 +436,15 @@ class _DesignCard:
             lines.append(where)
             status = ui.status("warn", "Please answer the questions below.", lines, raw=True)
         self.design_status.value = note + status
+
+    def _compared_line(self, controls: str) -> str:
+        """Return the status line about controls: the references' own words once answered."""
+        if not self._references_answered():
+            return f"Controls: {controls}"
+        pairs = [
+            f"{html.escape(c)} → {html.escape(t)}" for c, t in sorted(self.draft.references.items())
+        ]
+        return "Compared against (from references): " + (", ".join(pairs) or "nothing")
 
     def _design_confirmed(self) -> bool:
         return self.design is not None and self.design.confirmed

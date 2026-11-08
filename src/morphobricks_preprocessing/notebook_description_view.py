@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import ipywidgets as widgets
 
 from . import notebook_style as ui
+from .description_identity import nfc
 from .draft import DraftError, DraftMember, IdSlot
 from .draft_ids import IdKind, id_problems
 
@@ -152,4 +153,39 @@ def header_row(*titles: str, layout: widgets.Layout = ID_COLUMNS) -> widgets.Gri
     """Build the bold header line of a grid."""
     return widgets.GridBox(
         [widgets.HTML(f"<b>{html.escape(t)}</b>") for t in titles], layout=layout
+    )
+
+
+def same_name(first: str, second: str) -> bool:
+    """Return True when two shown-as names are equal ignoring case (empty names never are)."""
+    return bool(first) and nfc(first).casefold() == nfc(second).casefold()
+
+
+def duplicate_hint(kind: str, text: str, others: list[str]) -> str:
+    """HTML of the small orange hint for a shown-as name another one of its kind has."""
+    if not others:
+        return ""
+    names = ", ".join(html.escape(o) for o in others)
+    return (
+        "<div class='mb-help' style='color:#C2410C'>"
+        f"The name {html.escape(repr(text))} is also shown for {KIND_NAMES[kind]} {names}. "
+        "Names shown in plots must differ (the review refuses duplicates).</div>"
+    )
+
+
+def single_note(entries: list[Entry]) -> str:
+    """HTML in bold naming the folder levels that do not exist (they get ``single``), or empty."""
+    missing = [
+        text
+        for kind, text in (
+            ("conditions", "no condition folders"),
+            ("technical_repeats", "no technical-repeat folders"),
+        )
+        if any(e.kind == kind and e.fixed for e in entries)
+    ]
+    if not missing:
+        return ""
+    return (
+        "<div class='mb-question'><b>Your experiment has "
+        f"{' and '.join(missing)}: they get the ID single.</b></div>"
     )

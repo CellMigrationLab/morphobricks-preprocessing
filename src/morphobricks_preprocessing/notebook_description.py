@@ -21,32 +21,38 @@ from __future__ import annotations
 import html
 import logging
 from dataclasses import replace
-from pathlib import Path
 
 import ipywidgets as widgets
 
 from . import notebook_style as ui
-from .description import DescriptionError
 from .description_file import DRAFT_FILENAME
 from .draft import Draft, DraftError, draft_from_discovery
-from .draft_answers import ConditionAnswer, DraftAnswers, RepeatAnswer, apply_answers
-from .draft_format import ABSENT, SPEC_COMMIT, DraftFileError
+from .draft_answers import (
+    ConditionAnswer,
+    DraftAnswers,
+    RepeatAnswer,
+    apply_answers,
+)
+from .draft_format import DraftFileError
+from .notebook_description_saved import _SavedDraft
 from .notebook_description_view import (
     ID_COLUMNS,
     KIND_NAMES,
     KIND_TITLES,
     REFERENCE_COLUMNS,
     Entry,
+    duplicate_hint,
     header_row,
     id_state,
     members_text,
     refusal_card,
+    same_name,
+    single_note,
     text_box,
     why_no_proposal,
 )
 from .run import OutputLockedError
-from .run.description_file import PublicationRefused
-from .run.draft_file import load_draft, new_answers, save_draft
+from .run.draft_file import save_draft
 from .run.output_guard import OutputInsideMasksError
 
 IDS_QUESTION = "Are these IDs right?"
@@ -59,7 +65,7 @@ IDS_EXPLANATION = (
 )
 
 
-class _DescriptionCard:
+class _DescriptionCard(_SavedDraft):
     """Step 1's names and references cards: the user's answers to the draft description."""
 
     def _build_description_cards(self) -> None:
@@ -71,10 +77,13 @@ class _DescriptionCard:
         self._names_refusal = ""
         self._references_refusal = ""
         self._draft_saved = False
+        self._keep_old_draft = False
         self._refreshing = False
         self._refusal: DraftError | None = None
         self.id_inputs: dict[tuple[str, str], widgets.Text] = {}
         self.name_inputs: dict[tuple[str, str], widgets.Text] = {}
+        self.name_hints: dict[tuple[str, str], widgets.HTML] = {}
+        self.single_note = widgets.HTML()
         self.reference_boxes: dict[str, widgets.Dropdown] = {}
         self._id_states: dict[tuple[str, str], widgets.HTML] = {}
         self.names_status = widgets.HTML()
@@ -97,6 +106,7 @@ class _DescriptionCard:
                 ),
                 self.names_status,
                 self.names_grid,
+                self.single_note,
                 self.ids_confirmed.widget,
             ],
             visible=False,
@@ -139,6 +149,7 @@ class _DescriptionCard:
         """
         pre = self.preflight
         self._draft_base = draft_from_discovery(pre.discovery, pre.excluded)
+        self._keep_old_draft = False
         output = self._design_output
         answers, note = None, ""
         if output is not None:
@@ -151,47 +162,6 @@ class _DescriptionCard:
         self._draft_note = note
         self._names_refusal = self._references_refusal = ""
         self.ids_confirmed.set(self._ids_all_confirmed(), notify=False)
-
-    def _read_saved_draft(self, output: Path) -> tuple[DraftAnswers | None, str]:
-        """Return the saved answers and a note, or None and the reason they are not used."""
-        try:
-            resumed = load_draft(output, self._draft_base)
-        except (DraftFileError, DraftError, PublicationRefused) as exc:
-            return None, ui.status(
-                "warn",
-                f"The saved {DRAFT_FILENAME} was not used.",
-                [
-                    str(exc),
-                    "It was left as it is. Your next answer replaces it with the answers shown "
-                    "here.",
-                ],
-            )
-        if resumed is None:
-            return None, ""
-        if dict(resumed.answers.pairing) != self._design_pairing():
-            return None, ui.status(
-                "warn",
-                f"The saved {DRAFT_FILENAME} was not used.",
-                [
-                    "It was made for another pairing of the repeats than the one in the "
-                    "experiment design above. It was left as it is; your next answer "
-                    "replaces it.",
-                ],
-            )
-        return resumed.answers, ui.status(
-            "info",
-            "Your saved answers were read.",
-            [f"From {DRAFT_FILENAME} in the output folder."],
-        )
-
-    def _new_answers(self, output: Path | None) -> DraftAnswers:
-        """Return empty answers based on the published file (or ``absent`` with no folder)."""
-        if output is None:
-            return DraftAnswers(ABSENT, SPEC_COMMIT)
-        try:
-            return new_answers(output)
-        except DescriptionError:
-            return DraftAnswers(ABSENT, SPEC_COMMIT)
 
     # Answers -----------------------------------------------------------------------------
 
@@ -222,10 +192,11 @@ class _DescriptionCard:
         else:
             self._refresh_description()
 
-    def _answer(self, answers: DraftAnswers) -> bool:
+    def _answer(self, answers: DraftAnswers, *, rebuild: bool = True) -> bool:
         """Apply new answers to the draft and save them; False when they are refused.
 
-        A refused answer changes nothing and is shown by the card that asked for it.
+        A refused answer changes nothing and is shown by the card that asked for it. With
+        ``rebuild`` False the boxes are left as they are (a name being typed keeps its focus).
         """
         try:
             draft = apply_answers(self._draft_base, answers)
@@ -235,7 +206,10 @@ class _DescriptionCard:
         self._refusal = None
         self.draft, self.draft_answers = draft, answers
         self._save_description()
-        self._refresh_description()
+        if rebuild:
+            self._refresh_description()
+        else:
+            self._show_names_status()
         return True
 
     def _save_description(self) -> None:
@@ -243,6 +217,8 @@ class _DescriptionCard:
         output = self._design_folder()
         self._draft_saved = False
         if output is None:
+            return
+        if self._keep_old_draft and not self._keep_unused_draft(output):
             return
         with self.log.attached():
             try:
@@ -307,6 +283,8 @@ class _DescriptionCard:
         try:
             self._build_names()
             self._build_references()
+            for kind in ("conditions", "repeats"):
+                self._update_name_hints(kind)
             self.ids_confirmed.set(self._ids_all_confirmed(), notify=False)
             self._show_names_status()
         finally:
@@ -318,6 +296,7 @@ class _DescriptionCard:
         """Rebuild the ID and shown-as boxes, keeping what was typed and not yet confirmed."""
         typed = {key: box.value for key, box in self.id_inputs.items()}
         self.id_inputs, self.name_inputs, self._id_states = {}, {}, {}
+        self.name_hints = {}
         entries = self._entries()
         blocks: list[widgets.Widget] = []
         for kind, title in KIND_TITLES.items():
@@ -331,13 +310,7 @@ class _DescriptionCard:
             for entry in shown:
                 rows += self._entry_row(entry, typed, asks_name=asks_name)
             blocks.append(widgets.VBox(rows))
-        if any(e.fixed for e in entries):
-            blocks.append(
-                ui.help_text(
-                    "A folder level that does not exist in your experiment (shown as "
-                    "<b>single</b>) is given the ID <b>single</b>."
-                )
-            )
+        self.single_note.value = single_note(entries)
         self.names_grid.children = blocks
 
     def _entry_row(self, entry: Entry, typed: dict, *, asks_name: bool) -> list[widgets.Widget]:
@@ -353,7 +326,7 @@ class _DescriptionCard:
         self.id_inputs[key], self._id_states[key] = box, state
         cells: list[widgets.Widget] = [widgets.HTML(entry.where), box]
         if asks_name:
-            name = text_box(entry.shown or "", "same as the ID", live=False)
+            name = text_box(entry.shown or "", "same as the ID")
             name.observe(lambda change, e=entry: self._name_typed(e, change["new"]), names="value")
             self.name_inputs[key] = name
             cells.append(name)
@@ -361,6 +334,9 @@ class _DescriptionCard:
             cells.append(widgets.HTML(""))
         cells.append(state)
         row: list[widgets.Widget] = [widgets.GridBox(cells, layout=ID_COLUMNS)]
+        if asks_name:
+            self.name_hints[key] = widgets.HTML()
+            row.append(self.name_hints[key])
         if why := why_no_proposal(entry):
             row.append(widgets.HTML(why))
         return row
@@ -388,18 +364,33 @@ class _DescriptionCard:
 
     def _id_typed(self, entry: Entry, state: widgets.HTML, text: str) -> None:
         state.value = id_state(entry, text)
+        if entry.kind == "conditions" and not self._refreshing:
+            self._relabel_references()
 
     def _name_typed(self, entry: Entry, text: str) -> None:
-        """Save the name shown in plots and tables; an empty box means the ID is shown."""
+        """Save the name shown in plots and tables; an empty box means the ID is shown.
+
+        The hint about a duplicate follows every keystroke; the answer is saved without
+        rebuilding the boxes, so typing is never interrupted. A duplicate is still saved: the
+        reader refuses it when the description is reviewed.
+        """
         if self._refreshing or self.draft is None:
             return
+        self._update_name_hints(entry.kind)
         self._draft_note = ""
         answers = self.draft_answers
         kind = "conditions" if entry.kind == "conditions" else "repeats"
         new = _updated(answers, kind, entry.key, display_name=text or None)
         if new != answers:
             self._names_refusal = ""
-            self._answer(new)
+            self._answer(new, rebuild=False)
+
+    def _update_name_hints(self, kind: str) -> None:
+        """Show a small orange hint beside every shown-as name that another one of its kind has."""
+        boxes = {key: box.value for key, box in self.name_inputs.items() if key[0] == kind}
+        for key, text in boxes.items():
+            same = [k for k, other in boxes.items() if k != key and same_name(text, other)]
+            self.name_hints[key].value = duplicate_hint(kind, text, [k[1] for k in same])
 
     def _ids_toggled(self, confirmed: bool) -> None:
         if self.draft is None:
@@ -444,10 +435,9 @@ class _DescriptionCard:
         ]
         self.reference_boxes = {}
         for condition in conditions:
-            options = [("nothing", None)] + [(c, c) for c in conditions if c != condition]
             box = widgets.Dropdown(
-                options=options,
-                value=references.get(condition),
+                options=self._reference_options(condition),
+                value=self._chosen_reference(condition),
                 layout=widgets.Layout(width="99%"),
             )
             box.observe(
@@ -469,13 +459,50 @@ class _DescriptionCard:
         self.references_grid.children = rows
         self.references_status.value = self._references_refusal
 
+    def _chosen_reference(self, condition: str) -> str | None:
+        """Return the saved choice: None if not answered, ``""`` for no comparison, a folder."""
+        answer = self.draft_answers.conditions.get(condition, ConditionAnswer()).reference
+        return self.draft.references.get(condition) if answer is None else answer
+
+    def _references_answered(self) -> bool:
+        """Return True once any condition was answered (including "no comparison")."""
+        answers = self.draft_answers
+        return answers is not None and any(
+            a.reference is not None for a in answers.conditions.values()
+        )
+
+    def _reference_label(self, condition: str) -> str:
+        """Return ``ID (folder name)`` with the ID entered or confirmed now, else the folder."""
+        box = self.id_inputs.get(("conditions", condition))
+        entered = box.value if box is not None else self.draft.conditions[condition].confirmed
+        return f"{entered} (folder {condition})" if entered else f"folder {condition}"
+
+    def _reference_options(self, condition: str) -> list[tuple[str, str | None]]:
+        """Return the options: not answered, no comparison (``""``) and each other condition."""
+        others = sorted(c for c in self.draft.conditions if c != condition)
+        return [("— choose —", None), ("no comparison", "")] + [
+            (self._reference_label(c), c) for c in others
+        ]
+
+    def _relabel_references(self) -> None:
+        """Update the dropdown texts after an ID was typed, keeping each choice."""
+        if self.draft is None:
+            return
+        self._refreshing = True
+        try:
+            for condition, box in self.reference_boxes.items():
+                chosen = box.value
+                box.options = self._reference_options(condition)
+                box.value = chosen
+        finally:
+            self._refreshing = False
+
     def _reference_chosen(self, condition: str, target: str | None) -> None:
         """Save the choice of what ``condition`` is compared against; a loop is refused."""
         if self._refreshing or self.draft is None:
             return
         answers = self.draft_answers
-        old = answers.conditions.get(condition, ConditionAnswer())
-        if old.reference == target:
+        if self._chosen_reference(condition) == target:
             return
         self._draft_note = ""
         new = _updated(answers, "conditions", condition, reference=target)
@@ -488,6 +515,7 @@ class _DescriptionCard:
                 [(f"{condition} compared against {target}", self._refusal)],
             )
         self._refresh_description()
+        self._refresh_design_status()
 
     def _sync_controls(self) -> None:
         """Mark as controls (design card, ``experiment_design.csv``) the conditions referenced.

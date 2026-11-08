@@ -138,7 +138,8 @@ def save_draft(output_folder: str | os.PathLike, draft: Draft, answers: DraftAns
         return write_text_atomic(folder / DRAFT_FILENAME, data.decode("utf-8"))
 
 
-def _resume(folder: Path, draft: Draft) -> ResumedDraft:
+def _read_answers(folder: Path) -> DraftAnswers:
+    """Read the saved answers strictly and check the Spec commit and the base; apply nothing."""
     data = _read_draft_bytes(folder)
     if data is None:
         raise DraftFileError(f"{folder / DRAFT_FILENAME} does not exist", "no_draft")
@@ -148,6 +149,23 @@ def _resume(folder: Path, draft: Draft) -> ResumedDraft:
         check_base(answers.base_sha256, read_file_bytes(folder / DESCRIPTION_FILENAME))
     except DescriptionError as error:
         raise PublicationRefused(error.issues) from error
+    return answers
+
+
+def read_answers(output_folder: str | os.PathLike) -> DraftAnswers | None:
+    """Return the saved answers as the file holds them, or None when none is saved.
+
+    The same refusals as :func:`load_draft` (malformed file, other Spec commit, changed
+    published file) but the answers are not applied to a draft: the caller, which knows the
+    folders as they are now, decides which answers still apply (the notebook keeps those of
+    repeats that still exist and says which it dropped).
+    """
+    folder = Path(output_folder)
+    return None if _read_draft_bytes(folder) is None else _read_answers(folder)
+
+
+def _resume(folder: Path, draft: Draft) -> ResumedDraft:
+    answers = _read_answers(folder)
     return ResumedDraft(apply_answers(draft, answers), answers)
 
 

@@ -143,7 +143,7 @@ def _unknown_keys(draft: Draft, answers: DraftAnswers) -> list[str]:
     out += [
         f"condition {a.reference!r} (reference)"
         for a in answers.conditions.values()
-        if a.reference is not None and a.reference not in draft.conditions
+        if a.reference and a.reference not in draft.conditions
     ]
     out += [
         f"technical repeat {k!r}"
@@ -236,6 +236,53 @@ def apply_answers(draft: Draft, answers: DraftAnswers) -> Draft:
     if problem is not None:
         raise problem
     return replace(draft, references=MappingProxyType(references))
+
+
+def carry_over(
+    draft: Draft, answers: DraftAnswers, pairing: Mapping[tuple[str, str], str]
+) -> tuple[DraftAnswers, tuple[str, ...]]:
+    """Return the saved answers that still apply to the folders as they are now, and what dropped.
+
+    ``draft`` is derived from the folders now and ``pairing`` is the pairing that holds now (the
+    design's). An answer for a condition, technical repeat, repeat or unit the folders no longer
+    have is dropped and named in the second result, as is a reference to a condition that is
+    gone and a pairing of a folder that is gone; every other answer is kept exactly. The saved
+    answers' pairing is replaced by ``pairing``. Nothing is moved to another folder or guessed.
+    """
+    now = draft.paired(pairing)
+    members = {m.key for r in now.repeats.values() for m in r.members}
+    dropped = [
+        f"folder {'/'.join(key)} (paired with {label})"
+        for key, label in sorted(answers.pairing.items())
+        if key not in members
+    ]
+    conditions = {}
+    for folder, answer in sorted(answers.conditions.items()):
+        if folder not in now.conditions:
+            dropped.append(f"condition {folder}")
+            continue
+        if answer.reference and answer.reference not in now.conditions:
+            dropped.append(f"{folder} compared against {answer.reference}")
+            answer = replace(answer, reference=None)
+        if answer != ConditionAnswer():
+            conditions[folder] = answer
+    technical = {k: v for k, v in answers.technical_repeats.items() if k in now.technical_repeats}
+    repeats = {k: v for k, v in answers.repeats.items() if k in now.repeats}
+    units = {k: v for k, v in answers.units.items() if k in _unit_keys(now)}
+    dropped += [
+        f"technical repeat {k}" for k in sorted(set(answers.technical_repeats) - set(technical))
+    ]
+    dropped += [f"repeat {k}" for k in sorted(set(answers.repeats) - set(repeats))]
+    dropped += [f"unit {' / '.join(k)}" for k in sorted(set(answers.units) - set(units))]
+    kept = replace(
+        answers,
+        conditions=conditions,
+        technical_repeats=technical,
+        repeats=repeats,
+        units=units,
+        pairing=dict(pairing),
+    )
+    return kept, tuple(dropped)
 
 
 def missing_confirmations(draft: Draft, answers: DraftAnswers) -> tuple[OpenQuestion, ...]:
@@ -356,6 +403,7 @@ __all__ = [
     "UnitAnswer",
     "UnitKey",
     "apply_answers",
+    "carry_over",
     "confirm_repeat",
     "description_from_draft",
     "missing_confirmations",

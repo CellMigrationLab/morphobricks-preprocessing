@@ -17,6 +17,10 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   the pairing of differently named folders and the date of each comparable-repeat click are saved to
   `morphobricks.draft.json`, which is resumed on reopening. The draft file is now version 2 with a
   `pairing` table (version 1 is refused); contract §18.
+  On reopening, saved answers are kept for what still exists in the folders (a removed folder or
+  condition is listed, never silently lost) and an unusable draft is copied to
+  `morphobricks.draft.unused-N.json` before it is replaced (`run.draft_file.read_answers`,
+  `draft_answers.carry_over`). References have an explicit "no comparison" answer.
 - **Re-pin the vendored Spec to c8f6852 (MorphoBricks-Spec PR 15, owner decisions RC1 and SI1).**
   Text only: RC1 adds the optional boolean `rgb_support` key of a brick's provider manifest
   (absent or `false` is unsupported; a non-boolean is a manifest error), and SI1 makes a channel or
