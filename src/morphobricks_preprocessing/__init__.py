@@ -209,6 +209,13 @@ from .run import (
     write_calibration,
 )
 from .run_inputs import Fov, LazyImage, RunInputs, RunInputsError, UnrecordedFilesError
+from .run_inputs_error import (
+    ChannelNotFoundError,
+    DraftRefusedError,
+    MaskNotInstancesError,
+    MaskUncheckedError,
+    RgbNotSupportedError,
+)
 from .sources import check_sources
 from .unrecorded import UnrecordedFiles, unrecorded_files
 from .validation import Severity, ValidationIssue, has_errors
@@ -311,6 +318,11 @@ __all__ = [
     "RunResult",
     "RunInputs",
     "RunInputsError",
+    "ChannelNotFoundError",
+    "DraftRefusedError",
+    "MaskNotInstancesError",
+    "MaskUncheckedError",
+    "RgbNotSupportedError",
     "UnrecordedFiles",
     "UnrecordedFilesError",
     "unrecorded_files",

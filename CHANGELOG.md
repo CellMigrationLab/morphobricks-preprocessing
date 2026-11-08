@@ -8,6 +8,15 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **`A_*` error classes and `RunInputs.section_digests()` (Stage 2 design PR 2, owner answer 2).**
+  `ChannelNotFoundError` now has `code = "A_SCOPE_INCOMPLETE"`: one rule and one code for a channel
+  no image has and for one some images lack; the message names the image and ends with the code.
+  New `MaskNotInstancesError` (`A_MASK_NOT_INSTANCES`) and `RgbNotSupportedError`
+  (`A_RGB_NOT_SUPPORTED`), both `RunInputsError` subclasses for the bricks to raise (preprocessing
+  checks neither). The five analysis codes' classes (also `DraftRefusedError` and
+  `MaskUncheckedError`) are exported at the package top level. `RunInputs.section_digests()` returns
+  a copy of the manifest's `section_digests` of the description (None without one), read from the
+  manifest only. Contract §9.1 and §16.
 - **Images without header channel names are listed in a described run (follow-up of #218, owner
   decision 2026-11-08).** An image whose header names no channel, or not every one, still passes
   the per-unit header checks (§4.3, fixture v12: no evidence needed, the confirmed layout is
