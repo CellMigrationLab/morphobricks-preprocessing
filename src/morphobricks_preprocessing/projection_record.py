@@ -216,7 +216,7 @@ class ProjectionEntry:
 
 
 MARKER = "MorphoBricks Z projection:"
-"""How the ``Image/Description`` of every projected copy begins (read by :mod:`.projection_marker`)."""
+"""How the OME ``Image/Description`` of a projected copy begins (:mod:`.projection_marker`)."""
 
 
 def projection_description(entry: ProjectionEntry) -> str:

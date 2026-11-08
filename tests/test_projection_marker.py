@@ -40,7 +40,9 @@ def test_projected_copies_without_their_record_are_refused(tmp_path):
     assert set(issue.paths) == set(NAMES) and "convert --project" in issue.action
     out = tmp_path / "out"
     run = run_experiment(copies, CYX, output_folder=out, design=_confirmed_design(copies))
-    assert not run.written and CODE in codes(run.issues) and not (out / "run_manifest.json").exists()
+    assert (
+        not run.written and CODE in codes(run.issues) and not (out / "run_manifest.json").exists()
+    )
 
 
 def test_a_record_that_lists_the_image_as_copied_does_not_vouch_for_it(tmp_path):

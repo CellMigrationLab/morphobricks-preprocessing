@@ -32,7 +32,7 @@ from .content_hash import unchanged_content
 from .fingerprint import Fingerprint, current_fingerprint
 from .manifest import file_sha256
 from .projection import Projection
-from .projection_marker import marker_issue, marked_images
+from .projection_marker import marked_images, marker_issue
 from .projection_record import ProjectionEntry, projection_from_data, projection_to_data
 from .projection_run import RunProjection, masks_issue, run_projection
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
