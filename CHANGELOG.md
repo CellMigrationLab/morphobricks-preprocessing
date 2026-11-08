@@ -8,6 +8,15 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Re-pin the vendored Spec to c8f6852 (MorphoBricks-Spec PR 15, owner decisions RC1 and SI1).**
+  Text only: RC1 adds the optional boolean `rgb_support` key of a brick's provider manifest
+  (absent or `false` is unsupported; a non-boolean is a manifest error), and SI1 makes a channel or
+  mask that no image has the same `A_SCOPE_INCOMPLETE` refusal as one that some images lack.
+  Both are behaviour of the bricks, not of the description reader, so no code here changes
+  except `SPEC_COMMIT`. Fixtures and the reference validator are unchanged (the fixtures README
+  alone differs). A draft saved under the previous pin is refused at resume with
+  `spec_commit_mismatch` (see the draft file contract) and must be started again from the folders.
+  Every fixture is exact and the cross-check against the reference validator has 0 differences.
 - **`A_*` error classes and `RunInputs.section_digests()` (Stage 2 design PR 2, owner answer 2).**
   `ChannelNotFoundError` now has `code = "A_SCOPE_INCOMPLETE"`: one rule and one code for a channel
   no image has and for one some images lack; the message names the image and ends with the code.
