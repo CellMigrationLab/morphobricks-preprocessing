@@ -215,6 +215,23 @@ class ProjectionEntry:
         )
 
 
+def projection_description(entry: ProjectionEntry) -> str:
+    """Return the text written as the copy's OME-XML ``Image/Description``.
+
+    It says how the copy was made, so the file describes itself: the method, the slices
+    used, the source, its content SHA-256 and the types. The conversion record holds the
+    same facts.
+    """
+    start, stop = entry.z_range
+    return (
+        f"MorphoBricks Z projection: {entry.method} of slices {start}:{stop} "
+        f"(of {entry.source_z_size}) of {entry.source_relative_path}; "
+        f"source content SHA-256 {entry.source_content_sha256}; "
+        f"{entry.source_dtype} to {entry.output_dtype} ({entry.dtype_rule}; "
+        f"rounding: {entry.rounding}; NaN: {entry.nan_policy}); Z size dropped."
+    )
+
+
 def _check_shape(entry: ProjectionEntry) -> None:
     """Refuse an entry whose own fields do not fit each other."""
     name = entry.source_relative_path
