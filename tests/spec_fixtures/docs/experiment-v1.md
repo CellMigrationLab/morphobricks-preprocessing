@@ -284,10 +284,22 @@ accepted, **declared** image type, per imaging unit:
   contradict the declaration, which then stands on user confirmation and is recorded in the
   manifest as not header-verified.
 - The spec gives RGB **no scientific meaning**: no grey conversion, luminance, stain separation
-  or joint-channel rule. Each brick owns the meaning and MUST declare, in its own documented
-  capabilities, whether it supports RGB; undeclared means unsupported. An analysis request that
-  includes an RGB unit's channels for a brick without RGB support is refused at analysis
-  (`A_RGB_NOT_SUPPORTED`, §8), never converted or split into grey channels silently.
+  or joint-channel rule. Each brick owns the meaning and MUST declare whether it supports RGB;
+  undeclared means unsupported. An analysis request that includes an RGB unit's channels for a
+  brick without RGB support is refused at analysis (`A_RGB_NOT_SUPPORTED`, §8), never converted or
+  split into grey channels silently.
+- **Machine-readable declaration (`rgb_support`).** A brick that publishes a provider manifest
+  declares RGB support there, as the optional top-level key `rgb_support`, whose value is a
+  boolean. `true` declares support (the brick owns what RGB means for it); `false` and an absent key
+  both mean unsupported, so a manifest written before this key existed is read as unsupported and
+  needs no edit. A value that is not a boolean is a manifest error: it is never read as `true`. A
+  brick without a provider manifest states the same declaration in its documented capabilities.
+  The key declares support only; it gives RGB no meaning (the bullet above), and it does not
+  change a description: `image_type = "rgb"` is still user-declared and never inferred.
+- The refusal applies to a **described** run (one opened from a published description). A run
+  without a description has no declared image type to refuse on; what a brick does with colour
+  images there is the brick's own behaviour (owner decision RC1: such runs keep working as today,
+  with a warning), not a Spec rule.
 - A file MAY hold RGB and non-RGB units; their lists differ, so that layout is heterogeneous
   (`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` in Stage 1-2). A unit's `image_type` is part of the
   `repeats` section digest (§9.3).
@@ -718,9 +730,12 @@ Undetectable by any layer: identical-shape, unnamed images with physically swapp
 Representative previews and explicit confirmation are the guard; image-based checks are advisory.
 
 Required analysis-layer refusals (`A_*`): `A_SCOPE_INCOMPLETE` (a requested canonical channel or
-mask is absent from part of the requested scope; refuse unless the user selects and records an
-eligible subset; never drop FOVs, impute, re-weight technical repeats or change biological N);
-`A_MASK_NOT_INSTANCES` (a `binary` mask requested as an object set without the explicit recorded per-request conversion of §4.5c); `A_MASK_UNCHECKED` (a run uses a mask file whose representation check is `not yet checked`, §4.5a); `A_RGB_NOT_SUPPORTED` (a request includes the channels of an RGB unit, §4.4b, for a brick that does not declare RGB support); `A_DRAFT_REFUSED` (§10: `RunInputs` given a draft or an unconfirmed file). Each biological repeat is
+mask is absent from part of the requested scope, **or from all of it**: one rule, one code, no
+separate code for "no image has it" (owner decision SI1); the refusal names the channel or mask and
+the images that lack it, as "present in k of n acquisitions" (`k` may be 0); refuse unless the user
+selects and records an eligible subset; never drop FOVs, impute, re-weight technical repeats or
+change biological N);
+`A_MASK_NOT_INSTANCES` (a `binary` mask requested as an object set without the explicit recorded per-request conversion of §4.5c); `A_MASK_UNCHECKED` (a run uses a mask file whose representation check is `not yet checked`, §4.5a); `A_RGB_NOT_SUPPORTED` (a request on a described run includes the channels of an RGB unit, §4.4b, for a brick whose manifest does not declare `rgb_support = true`, or that does not declare it at all); `A_DRAFT_REFUSED` (§10: `RunInputs` given a draft or an unconfirmed file). Each biological repeat is
 classified **fully represented**, **partially represented** or **unavailable** per request and
 recorded in the run manifest. Consumers resolve channels by canonical ID per unit, never by C
 index alone, and group by canonical repeat ID (`repeat_group`, §3.4) while keeping the source label
