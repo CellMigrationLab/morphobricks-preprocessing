@@ -8,6 +8,16 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Publication writes the `removed` and `image_count_changed` records (owner decisions RR2 and
+  RR1).** `publish_description` takes the user's `removals` (each with its confirmation date) and
+  `recorded_on`. Every unit the candidate drops must be named by a removal (else `ValueError`,
+  nothing written) and is appended to `morphobricks.records.jsonl` as a `removed` line with all
+  six keys; a condition, repeat or technical repeat whose ID the removal leaves held nowhere gets
+  its own line first (keys it does not name are `null`). A change of a confirmed member's
+  `image_count` alone writes `image_count_changed` with the old and new counts and `recorded_on`
+  (required then, never read from the clock). All lines go in the same single atomic append as
+  the re-confirmations, so the publication is whole or absent.
+
 - **A run with a published experiment description (Stage 1, PR 11).** When the output folder
   holds a published `morphobricks.toml`, `run` reads it with the strict reader (a refusal is
   reported with its Spec code, table path and a plain message), runs the physical checks
