@@ -66,9 +66,13 @@ STYLE_CSS = """
 .mb-root .mb-table.mb-labels th, .mb-root .mb-table.mb-labels td { text-align: center; }
 .mb-root .mb-table td.mb-cell-warn { background: #FFFBEB; color: #92400E;
   box-shadow: inset 3px 0 0 #D97706; }
-.mb-pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px;
+.mb-pill { display: inline-block; white-space: nowrap; padding: 1px 8px; border-radius: 999px;
+  font-size: 12px;
   background: #E2E8F0; color: #475569; }
 .mb-pill-single { background: #F1F5F9; color: #64748B; font-style: italic; }
+.mb-pill-ok { background: #DCFCE7; color: #166534; }
+.mb-pill-info { background: #DBEAFE; color: #1E3A8A; }
+.mb-pill-warn { background: #FEF3C7; color: #92400E; }
 .mb-check { list-style: none; padding-left: 0; margin: 4px 0; }
 .mb-check li { margin: 2px 0; }
 .mb-confirm { border: 2px solid #F59E0B; background: #FFFBEB; border-radius: 8px;

@@ -142,6 +142,7 @@ class _DesignCard:
             self._design_waiting = output_changed and not self._design_saved
         else:
             self._save_design()
+        self._load_description()
         self._design_changed()
 
     def _design_load_note(
@@ -199,6 +200,7 @@ class _DesignCard:
     def _close_design(self) -> None:
         self.design = None
         ui.set_visible(self.design_card, False)
+        self._hide_description()
         if self.preflight is not None:
             self.dataset = self.preflight.dataset
             self._show_issue_summary()
@@ -231,7 +233,10 @@ class _DesignCard:
                 widgets.GridBox(
                     [
                         widgets.HTML(html.escape(row.condition)),
-                        widgets.HTML(f"<b>{html.escape(row.biological_repeat)}</b>"),
+                        widgets.HTML(
+                            f"<b>{html.escape(row.biological_repeat)}</b> "
+                            f"<span class='mb-help'>{plural(row.image_count, 'image')}</span>"
+                        ),
                         dropdown,
                     ],
                     layout=_PAIRING_COLUMNS,
@@ -363,6 +368,7 @@ class _DesignCard:
         )
         self._show_issue_summary()
         self._refresh_design_status()
+        self._sync_description()
         if self.confirmed_mapping is not None:
             self._refresh_axis_next()
         self._refresh_run_step()

@@ -8,6 +8,15 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Notebook Step 1 cards: names, IDs, pairing and references (Stage 1 PR 14, draft).** After the
+  labels are confirmed, *Names for your experiment* proposes the folder names as IDs (only where
+  valid as they are), takes an optional shown-as name, and adopts the IDs only when the user clicks
+  *Yes, use these IDs* (a refused ID is listed with the reader's code and message; nothing is
+  confirmed). *What is each condition compared against?* takes the references (a loop is refused at
+  once) and marks the referenced conditions as controls in `experiment_design.csv`. Every answer,
+  the pairing of differently named folders and the date of each comparable-repeat click are saved to
+  `morphobricks.draft.json`, which is resumed on reopening. The draft file is now version 2 with a
+  `pairing` table (version 1 is refused); contract §18.
 - **`A_*` error classes and `RunInputs.section_digests()` (Stage 2 design PR 2, owner answer 2).**
   `ChannelNotFoundError` now has `code = "A_SCOPE_INCOMPLETE"`: one rule and one code for a channel
   no image has and for one some images lack; the message names the image and ends with the code.

@@ -53,6 +53,7 @@ from .notebook_axis_preview import _AxisPreview
 from .notebook_axis_step import _AxisStep
 from .notebook_calibration import _CalibrationCard
 from .notebook_convert import _ConvertCard
+from .notebook_description import _DescriptionCard
 from .notebook_design import _DesignCard
 from .notebook_folder import _FolderStep
 from .notebook_mask_step import _MaskStepCard
@@ -122,6 +123,7 @@ class PreprocessingNotebook(
     _FolderStep,
     _MasksCard,
     _DesignCard,
+    _DescriptionCard,
     _CalibrationCard,
     _OutputCards,
     _AxisStep,
@@ -305,7 +307,7 @@ class PreprocessingNotebook(
                 self.check_report.widget,
                 self.folder_tiles,
                 self.labels_card,
-                *([self.design_card] if show_design else []),
+                *([self.design_card, self.names_card, self.references_card] if show_design else []),
                 *([self.calibration_card] if show_output else []),
                 self.consistency_card,
                 *([self.masks_card] if show_output else []),

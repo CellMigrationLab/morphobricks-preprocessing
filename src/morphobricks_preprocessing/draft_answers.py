@@ -88,7 +88,10 @@ class DraftAnswers:
 
     ``base_sha256`` is the hex SHA-256 of the published ``morphobricks.toml`` the draft was
     derived from, or ``"absent"``; ``spec_commit`` the Spec commit the rules are pinned to.
-    ``technical_repeats`` maps a technical-repeat folder to its confirmed ID.
+    ``technical_repeats`` maps a technical-repeat folder to its confirmed ID. ``pairing`` maps
+    ``(condition folder, source repeat folder)`` to the label of the repeat the user paired the
+    folder with, only for a folder that is not in the repeat of its own name; it is applied to
+    the draft first, so the repeat answers are keyed by the paired labels.
     """
 
     base_sha256: str
@@ -99,6 +102,7 @@ class DraftAnswers:
     units: Mapping[UnitKey, UnitAnswer] = field(default_factory=dict)
     channels: Mapping[str, ChannelAnswer] = field(default_factory=dict)
     masks: Mapping[str, MaskAnswer] = field(default_factory=dict)
+    pairing: Mapping[tuple[str, str], str] = field(default_factory=dict)
 
 
 class DraftIncomplete(DraftError):
@@ -176,12 +180,35 @@ def confirm_repeat(draft: Draft, label: str, confirmed_on: str) -> Draft:
     return replace(draft, repeats=MappingProxyType(repeats))
 
 
+def _reference_problem(references: Mapping[str, str]) -> DraftError | None:
+    """Return the refusal for a condition compared against itself or a loop, else None."""
+    for folder, target in sorted(references.items()):
+        if folder == target:
+            return DraftError(
+                f"condition {folder!r} cannot be compared against itself", ("E_REFERENCE_SELF",)
+            )
+    for start in sorted(references):
+        trail = [start]
+        while trail[-1] in references and references[trail[-1]] not in trail:
+            trail.append(references[trail[-1]])
+        if trail[-1] in references:  # the next step is a folder already on the trail
+            loop = [*trail[trail.index(references[trail[-1]]) :], references[trail[-1]]]
+            return DraftError(
+                f"{' → '.join(loop)} is a loop: a condition cannot be compared, even through "
+                "others, against itself",
+                ("E_REFERENCE_CYCLE",),
+            )
+    return None
+
+
 def apply_answers(draft: Draft, answers: DraftAnswers) -> Draft:
     """Return the draft with the answers applied, or refuse the first one the rules refuse.
 
     IDs go through :meth:`.draft.Draft.confirm_id`, so each is checked as the reader would; an
     answer for a folder or repeat the draft does not have is refused. Applying the same answers
-    twice gives the same draft. Channels, units and masks are not part of the draft and are not
+    twice gives the same draft. The pairing is applied first (:meth:`.draft.Draft.paired`); a
+    reference to the condition itself or one that closes a loop is refused (``E_REFERENCE_SELF``,
+    ``E_REFERENCE_CYCLE``). Channels, units and masks are not part of the draft and are not
     checked here (:func:`missing_confirmations`, then the strict reader at publication).
 
     Raises
@@ -189,6 +216,7 @@ def apply_answers(draft: Draft, answers: DraftAnswers) -> Draft:
     DraftError
         With the codes of the refusal (``unknown_key`` lists every unknown key at once).
     """
+    draft = draft.paired(answers.pairing)
     unknown = _unknown_keys(draft, answers)
     if unknown:
         raise DraftError(f"the draft has no {', '.join(unknown)}", ("unknown_key",))
@@ -204,6 +232,9 @@ def apply_answers(draft: Draft, answers: DraftAnswers) -> Draft:
             draft = confirm_repeat(draft, label, repeat.confirmed_on)
     references = dict(draft.references)
     references.update({f: a.reference for f, a in answers.conditions.items() if a.reference})
+    problem = _reference_problem(references)
+    if problem is not None:
+        raise problem
     return replace(draft, references=MappingProxyType(references))
 
 
