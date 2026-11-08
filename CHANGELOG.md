@@ -21,6 +21,41 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   behalf and the clock is never read. `run/description_file.publish_locked` is
   `publish_description` for a caller that holds the lock. Contract §18.
 
+- **`describe` command, docs and a recorded conformance run (Stage 1, PR 17).**
+  `morphobricks-preprocessing describe EXPERIMENT [--output FOLDER] [--exclude PATH]
+  [--publish]` prints the draft experiment description in plain language: the proposed IDs
+  (none, never repaired, for a folder that cannot be an ID), the repeats with their folders and
+  image counts, the references and every open question with what the user has to do. The draft
+  is the legacy `experiment_design.csv` of the output folder migrated, or the folders alone;
+  against a published `morphobricks.toml` it compares the folders (new, gone, image counts,
+  repeats to confirm again; no header is read). It reads no image and writes nothing, and
+  **confirms nothing**: confirmations are the user's (owner rule). `--publish` publishes only
+  a draft with no open question and every decision confirmed, else it lists what is missing and
+  exits with status 1; since no answers live outside the notebook yet, it publishes nothing
+  from a draft of folders (open question to the owner), and says `Nothing to publish` for a
+  published description that matches the folders. Docs: contract §12 and §16, user guide
+  "Describe your experiment", plan §12 question 78 (the owner's answers Q1 to Q8),
+  `docs/conformance.md` (the recorded run of the suite with no Spec skip).
+- **Reader owns its rule vocabulary; five refusals pinned by path (#204).**
+  `description_identity` no longer imports `check_identity_text` from `discovery` or `SINGLE`
+  from normalization (Spec §2.7): `description_rules` holds `MISSING_TEXT`, `SINGLE` and
+  `label_refused`, and `tests/test_description_rules_copy.py` keeps them equal to the shared
+  values. Behaviour is unchanged. `tests/test_spec_reader_refusal_paths.py` pins the path and
+  value of `E_SOURCE_FOLDER_REUSED`, `E_SOURCE_FOLDER_CONFLICT`, `E_SOURCE_REPEAT_REUSED`,
+  `E_MASK_SOURCE_TYPE_REUSED` and `E_REFERENCE_CYCLE`, which the oracle compares by code only.
+  The reader's paths were already correct for all five.
+- **Per-unit header evidence for a described run (Stage 1, PR 13; conformance P26).** When the
+  output folder holds a published `morphobricks.toml`, `run` no longer applies the
+  experiment-wide v0.4 checks `channel_names_differ` and `different_channel_counts`: units may
+  spell a channel's header differently through the aliases the description confirms. The
+  per-unit checks decide instead: a header name must be, after NFC of both sides and with no
+  trimming or case folding, a confirmed name of the unit's channel at that C index
+  (`R_HEADER_CONTRADICTION`), the count must match the unit's list
+  (`R_CHANNEL_COUNT_MISMATCH`), and units with different lists are refused as before
+  (`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`). The refusal names the unit folders, the image, the
+  image's header names and the channel's confirmed names. An image without header names needs
+  no evidence (experiment-v1 section 4.3). A run without a description is unchanged (the global
+  checks still apply). Tests: `tests/test_spec_run_aliases.py`.
 - **Conversion record version 3 holds a Z projection (part of #176).** `RECORD_VERSION` is `"3"`:
   a record-level `projection` (null, or `{method, z_range}`), the entry action `projected`
   and a strictly read `projection` object per projected entry (source content SHA-256, Z axis

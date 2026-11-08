@@ -1,6 +1,6 @@
 """Validation phase 4, identity (experiment-v1 sections 3 and 6).
 
-The Label rules (the brick's ``check_identity_text``, decision D-e), the Token rule, the reserved
+The Label rules (the reader's own ``label_refused``, decision D-e), the Token rule, the reserved
 list, NFC, ``single`` and the case-collision scopes. Each broken rule has its own code and every
 rule an identity breaks is reported (one code per broken rule). Nothing is trimmed, normalized or
 repaired: the NFC form of a value is a comparison key only and never leaves this module.
@@ -11,12 +11,9 @@ from __future__ import annotations
 import unicodedata
 from collections.abc import Mapping
 
-from morphobricks_normalization.records import SINGLE
-
 from .description_report import Issues, key_path
-from .description_rules import OBJECT_SET_PART, RESERVED, TOKEN, Code
+from .description_rules import OBJECT_SET_PART, RESERVED, SINGLE, TOKEN, Code, label_refused
 from .description_walk import Table, member_path, members, unit_path
-from .discovery import IdentityError, check_identity_text
 
 USED_KINDS = ("conditions", "channels", "repeats", "technical_repeats")
 
@@ -35,9 +32,7 @@ class Identities:
 
     def label(self, value: str, path: str) -> None:
         """Apply the Label rules (``E_ID_TEXT``)."""
-        try:
-            check_identity_text(value, "identity")
-        except IdentityError:
+        if label_refused(value):
             self.out.add(Code.E_ID_TEXT, path, value)
 
     def token(self, value: str, path: str) -> None:
