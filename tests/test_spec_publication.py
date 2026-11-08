@@ -19,6 +19,8 @@ from morphobricks_preprocessing.description_file import (
     RECORDS_FILENAME,
     read_description,
 )
+from morphobricks_preprocessing.description_reconcile import UnitFolders
+from morphobricks_preprocessing.description_removal import Removal
 from morphobricks_preprocessing.description_rules import Refusal
 from morphobricks_preprocessing.description_transition import Reconfirmation
 from morphobricks_preprocessing.description_write import canonical_bytes, section_digests
@@ -170,10 +172,20 @@ def test_p20_removing_the_last_member_of_a_condition_needs_the_recorded_confirma
     lost = [("repeats", "rep1"), ("repeats", "rep2"), ("channels", "ACTIN"), ("channels", "DNA")]
     lost.append(("technical_repeats", "single"))
     removals = tuple(Reconfirmation(kind, i, None, DAY) for kind, i in lost)
-    done = publish_description(folder, candidate, base_sha256=base, confirmations=removals)
+    with pytest.raises(ValueError, match="no removal confirms"):  # every removal is confirmed
+        publish_description(folder, candidate, base_sha256=base, confirmations=removals)
+    units = tuple(UnitFolders("DrugA", rep, "single") for rep in ("rep1", "rep2"))
+    done = publish_description(
+        folder,
+        candidate,
+        base_sha256=base,
+        confirmations=removals,
+        removals=(Removal(units, DAY),),
+    )
     published = read_description(folder / DESCRIPTION_FILENAME)
     assert "DrugA" not in published.conditions and "DrugA" in published.used_ids["conditions"]
-    assert len(done.records) == 5 and {r["new_id"] for r in done.records} == {None}
+    assert len(done.records) == 5 + 3  # five re-confirmations, the condition, its two units
+    assert {r["new_id"] for r in done.records if r["type"] == "reconfirmation"} == {None}
 
 
 def test_p22_confirmed_on_stays_byte_for_byte_through_an_unrelated_publication(folder):

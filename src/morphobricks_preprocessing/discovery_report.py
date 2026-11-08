@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .description_unnamed import FIELD as UNNAMED_FIELD
+from .description_unnamed import listed_units, text_lines
 from .image_names import position_id
 from .recorded_sizes import HEADER, PIXELS, STATED, RecordedSize
 from .validation import ValidationIssue, plural
@@ -150,6 +152,7 @@ class DiscoveryReport:
         lines.extend(_folder_lines(data))
         lines.extend(_image_lines(data))
         lines.extend(_mask_lines(data))
+        lines.extend(text_lines(data.get(UNNAMED_FIELD, ())))
         lines.extend(_outcome_lines(self.outcome))
         lines.extend(_issue_lines(self.issues))
         return "\n".join(lines) + "\n"
@@ -164,6 +167,7 @@ def build_report(
     design: ExperimentDesign | None = None,
     image_type: str | None = None,
     outcome: RunOutcome | None = None,
+    unit_records: Sequence[Mapping[str, object]] | None = None,
 ) -> DiscoveryReport:
     """Build the report of one run from what it found and did.
 
@@ -183,6 +187,10 @@ def build_report(
         The image type, or None.
     outcome
         What the run did with the earlier results.
+    unit_records
+        The manifest's unit records of a run with a published description, or None. Their
+        images without header channel names are listed under ``images_without_header_channel_names``
+        (:mod:`.description_unnamed`); the key is left out for a run without a description.
 
     Returns
     -------
@@ -206,6 +214,11 @@ def build_report(
         "image_type": image_type,
         "masks": _masks(pre),
     }
+    if unit_records is not None:
+        data[UNNAMED_FIELD] = [
+            {k: v for k, v in unit.items() if k != "image_type_header_verified"}
+            for unit in listed_units(unit_records)
+        ]
     ordered = tuple(sorted(issues, key=lambda issue: not issue.is_error))
     return DiscoveryReport(data, ordered, outcome)
 

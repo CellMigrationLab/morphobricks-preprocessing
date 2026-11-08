@@ -215,7 +215,8 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | AQ13 | Forbidden names apply to ID keys; NFC of channel references; one code per broken rule | `i113`-`i118` |
 | FR1 | Folder labels are never restricted by the reserved or forbidden names: conditions and technical repeats have a canonical ID separate from the required `source_folder`; one folder, one ID; a folder change for an existing ID is a reassignment; the derived CSV keeps the folder labels | `v33`, `v34`, `i113`, `i115`, `i120`-`i127`, `t10`-`t12`; P32, P33 |
 | FR2 | Derived CSV byte-identity is guaranteed only for repeat groups with a single `confirmed_on`; a legacy group with several dates gets the latest, the migration note keeps the per-row dates | `v13`; P30 |
-| RR1 | Record type `image_count_changed` (a confirmed unit's image count changes and nothing else does; nothing reopens) | P34 |
+| RR1 | Record type `image_count_changed` (a confirmed member's image count changes; nothing reopens) | P34 |
+| RR3 | `image_count_changed` is written for every confirmed member whose count changed, also when the publication changes other things | P34 |
 | RR2 | Record type `removed` for every confirmed removal of a unit, technical repeat, repeat or condition | P35 |
 
 ## Valid fixtures (37)

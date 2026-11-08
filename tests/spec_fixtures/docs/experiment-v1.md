@@ -412,14 +412,23 @@ stays in the brick that owns it.
   record per imaging unit it held, and an entity that held units is followed by the `unit`
   records of those units, so every removed folder label appears in a record. Removing an entity
   never removes its ID from `used_ids` (§4.9).
-- **Record of an image-count change (`image_count_changed`, owner decision RR1).** Written when
-  the `image_count` of a confirmed member changes and nothing else about the published file does
-  (§10); it needs no confirmation and reopens nothing. Keys: `type`, `condition_id`,
+- **Record of an image-count change (`image_count_changed`, owner decisions RR1 and RR3).**
+  Written for **every** confirmed member whose `image_count` changes at a publication, including
+  a publication that also changes something else (a removal, a new member, an ID correction,
+  §10); the other changes do not suppress it and it suppresses none of their records. It needs no
+  confirmation and reopens nothing: a count change alone is not a reopening, and
+  `R_CONFIRMED_ON_CHANGED` (§4.4a) is unchanged. Keys: `type`, `condition_id`,
   `condition_source_folder`, `repeat_id`, `source_repeat`, `technical_repeats` (the member's
   imaging units as an array of objects `{"id", "source_folder"}`, sorted by `id` in code point
   order), `old_image_count`, `new_image_count` (integers, each at least 1) and `recorded_on`
   (`YYYY-MM-DD`, the date the change was recorded at publication; it is not a confirmation and is
   never copied into `confirmed_on`).
+- **Order and content of the `removed` lines of one publication (RR2, clarified with RR3).** Each
+  vanished ID is one entity line; the `unit` lines of the units those entities held are written
+  once, after all entity lines of the publication, each unit once. An entity takes the
+  `confirmed_on` date of the first removal answer that touches it. When a removal is combined
+  with an ID correction in the same publication, the lines carry the IDs as published (before the
+  correction).
 - **A case-only correction needs a new ID (AQ2).** `ACTIN` cannot be corrected to `Actin`: the
   retired spelling stays in `used_ids` and the new one collides with it
   (`E_ID_CASE_COLLISION`, §4.9). The correction is a new, non-colliding ID (for example
@@ -780,9 +789,10 @@ silently; edits go to a separate draft and are published atomically after valida
   channels, layout or grouping change: a new or removed unit or member, a unit's ordered channel
   list, or the pairing of folders into repeats. New FOVs (or removed ones) inside an existing unit
   whose confirmed layout still holds do **not** reopen it; they are reported and recorded. A
-  changed `image_count` of a confirmed member, when nothing else changes, is recorded as an
-  `image_count_changed` record (§4.6). A
-  changed `image_count` alone is therefore not a reopening: a new `confirmed_on` beside only a
+  changed `image_count` of a confirmed member is recorded as an
+  `image_count_changed` record (§4.6) whether or not anything else changes in the same
+  publication (RR3). A
+  changed `image_count` alone is not a reopening: a new `confirmed_on` beside only a
   changed `image_count` is `R_CONFIRMED_ON_CHANGED` (§4.4a).
 - **Adding a member is allowed (AQ1).** A new member folder or unit joins an existing repeat or
   condition without a changed-ID refusal (§4.6); it is a grouping change, so it reopens the N35

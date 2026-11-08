@@ -18,6 +18,61 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   (`mask_planes_mismatch`). `RunInputs.open` refuses a manifest whose `projection` is not
   what the conversion record gives, projected copies recorded without it, and a `projection`
   without a record: nothing is read as a plain image.
+- **`make_clean_run(description=...)` builds a described run for the bricks' Stage 2 tests (Stage 2
+  design PR 1).** `description` is a published experiment description (bytes, text or a
+  `Description`). The helper writes the declared tree (`image_count` images per member, RGB colour
+  for an `rgb` unit), writes the declared masks named in `mask_types` (now mask IDs in that case),
+  publishes the bytes as `morphobricks.toml`, runs preprocessing and the mask step, and returns a
+  `CleanRun` whose new `description` field holds the model (None otherwise).
+  `testing.make_described_run(folder, description, masks=..., mask_step=...)` is the same with
+  the mask step optional (masks left `not yet checked`). `axes`, `shape`, `pixel_size`, `design`
+  and `seed` raise `ValueError` with a description. Tested on the Spec fixtures `v03 v08 v13 v28
+  v30 v33 v34`: each builds, opens with `RunInputs`, and `fovs()` gives its condition IDs, repeat
+  groups, technical repeat IDs, channel IDs and image count. Without `description`, behaviour is
+  unchanged.
+- **A described run writes manifest version `"4"` (Stage 2 design question 9, owner answer 9).**
+  When the run manifest carries `experiment_description`, `manifest_version` is `"4"`; an
+  undescribed run keeps `"2"` or `"3"`, byte for byte (the v0.4.0 parity suite is unchanged).
+  A v0.4.0 reader skips keys it does not know, so it opened a described run and silently ignored
+  the description (channels by header name, pairing by folder name, no mask checks); it now
+  refuses version `"4"` (`ManifestFormatError`, tested with the code of the `v0.4.0` tag).
+  `read_manifest` and `RunInputs.open` read version 4. They refuse a version 4 manifest without
+  `experiment_description` and a version 1, 2 or 3 manifest with one; the writer applies the
+  same rule. Version 4 keeps the content rule of 2 and 3: a `content_sha256` in every entry
+  exactly when `settings.verify_content` is true. Contract §9 (`manifest_version`).
+- **Images without header channel names are listed in a described run (follow-up of #218, owner
+  decision 2026-11-08).** An image whose header names no channel, or not every one, still passes
+  the per-unit header checks (§4.3, fixture v12: no evidence needed, the confirmed layout is
+  used), with no warning, but is now recorded: the unit's record in the manifest's
+  `experiment_description` entry gets `images_without_header_channel_names` (image, `none` or
+  `partial`, and the zero-based channel positions without a name; omitted for a unit whose images
+  are all named), `read_manifest` reads it strictly, `RunInputs.images_without_header_channel_names()`
+  returns it read-only (None without a description), and the report text and JSON list the images.
+  A run without a description is unchanged: no new manifest or report key.
+- **A draft written under another Spec commit is refused at resume (#223, owner decision of
+  2026-11-08).** `load_draft` and `publish_draft` raise `DraftFileError` with the new code
+  `spec_commit_mismatch` when the draft's `spec_commit` is not the pinned `SPEC_COMMIT`;
+  `save_draft` refuses answers carrying another commit. Before, any valid 40-digit commit was
+  accepted and the stored confirmations were published as current. The message names both
+  commits, says `morphobricks.toml` is untouched and says to start a fresh draft from the folders.
+  The stored commit is never rewritten and the stale draft is neither deleted nor repaired.
+- **Re-pin the vendored Spec to 2975e0e (MorphoBricks-Spec PR 13, owner decision RR3).** Text only: the
+  `image_count_changed` record is written for every confirmed member whose count changed, also
+  beside other changes, and the order of the `removed` lines is stated; fixtures and the reference
+  validator are unchanged (the fixtures README alone differs). Every fixture is exact and the
+  cross-check against the reference validator has 0 differences.
+- **Publication writes the `removed` and `image_count_changed` records (owner decisions RR2 and
+  RR1).** `publish_description` takes the user's `removals` (each with its confirmation date) and
+  `recorded_on`. Every unit the candidate drops must be named by a removal (else `ValueError`,
+  nothing written) and is appended to `morphobricks.records.jsonl` as a `removed` line with all
+  six keys; a condition, repeat or technical repeat whose ID the removal leaves held nowhere gets
+  its own line first (keys it does not name are `null`). A change of a confirmed member's
+  `image_count` writes `image_count_changed` with the old and new counts and `recorded_on`
+  (required then, never read from the clock), also when the same publication changes other
+  things (RR3). Entity lines come first, each unit line once after them; the date of an entity
+  is the first removal answer that touches it; with an ID correction the lines carry the
+  published IDs. All lines go in the same single atomic append as
+  the re-confirmations, so the publication is whole or absent.
 - **`convert --project max|mean|sum [--z-range START:STOP]` (part of #176).** The command line of
   the recorded Z projection: no default method (`--project` alone or an unknown method is a
   parser error naming the three), `--z-range` zero-based and half-open for the whole

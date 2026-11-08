@@ -7,7 +7,9 @@ candidate with the canonical writer, reads those exact bytes back with the stric
 compares the candidate with the published file (:mod:`..description_transition`), and only then
 replaces the file atomically. Every refusal is reported as a set and writes nothing.
 
-The user's re-confirmations that the candidate needed are appended, in the same publication, to
+The user's re-confirmations that the candidate needed, a ``removed`` record for every removal
+the user confirmed and an ``image_count_changed`` record for a changed image count
+(:mod:`.description_records`) are appended, in the same publication, to
 the append-only ``morphobricks.records.jsonl`` next to the file (one JSON object per line, of one
 of the three Spec record types, each with its fixed key set). The records are never edited or
 dropped: the new file is the old bytes plus the new lines, written in full to a temporary file and
@@ -40,6 +42,7 @@ from ..description_file import (
     read_file_bytes,
     sha256_hex,
 )
+from ..description_removal import Removal
 from ..description_report import DescriptionIssue, key_path
 from ..description_rules import Refusal
 from ..description_transition import (
@@ -50,6 +53,7 @@ from ..description_transition import (
     unwaived,
 )
 from ..description_write import canonical_bytes
+from .description_records import image_count_records, removal_records
 from .lock import output_lock
 
 ABSENT = "absent"
@@ -222,8 +226,11 @@ def _compare(
     published: bytes | None,
     candidate: Description,
     confirmations: tuple[Reconfirmation, ...],
-) -> None:
-    """Refuse every ``R_*`` that applies, or a re-confirmation the candidate does not need."""
+) -> Description | None:
+    """Refuse every ``R_*`` that applies, or a re-confirmation the candidate does not need.
+
+    Returns the published description (None when there was none), parsed once.
+    """
     old = description_from_bytes(published) if published is not None else None
     issues = transition_issues(old, candidate) if old is not None else ()
     left = unwaived(issues, confirmations)
@@ -232,6 +239,7 @@ def _compare(
     if unused(issues, confirmations):
         names = ", ".join(f"{c.kind} {c.old_id}" for c in unused(issues, confirmations))
         raise ValueError(f"a re-confirmation names a change the candidate does not make: {names}")
+    return old
 
 
 def publish_description(
@@ -240,6 +248,8 @@ def publish_description(
     *,
     base_sha256: str | None,
     confirmations: tuple[Reconfirmation, ...] = (),
+    removals: tuple[Removal, ...] = (),
+    recorded_on: str | None = None,
 ) -> Publication:
     """Publish ``candidate`` as ``morphobricks.toml``, or refuse and write nothing.
 
@@ -254,6 +264,14 @@ def publish_description(
         (a draft that recorded none) is ``R_DRAFT_BASE_MISSING``.
     confirmations
         The user's recorded re-confirmations of changed IDs; each must be needed.
+    removals
+        The user's confirmations of the removed units (each with its date). Every unit the
+        candidate drops must be named by one; each is written as a ``removed`` record, with the
+        records of the condition, repeat and technical repeat that no longer exist.
+    recorded_on
+        The date (``YYYY-MM-DD``) of the ``image_count_changed`` records: required when any
+        confirmed member's ``image_count`` changes, alone or with other changes; never
+        defaulted and never read from the clock.
 
     Returns
     -------
@@ -271,12 +289,18 @@ def publish_description(
     DescriptionError
         When the candidate's canonical bytes, or the published file, is not a valid description.
     ValueError
-        When a re-confirmation is not needed by the candidate.
+        When a re-confirmation is not needed by the candidate, a dropped unit has no removal, a
+        removal names a unit the candidate keeps, or ``recorded_on`` is missing when needed.
     """
     folder = Path(output_folder)
     with output_lock(folder):
         return publish_locked(
-            folder, candidate, base_sha256=base_sha256, confirmations=confirmations
+            folder,
+            candidate,
+            base_sha256=base_sha256,
+            confirmations=confirmations,
+            removals=removals,
+            recorded_on=recorded_on,
         )
 
 
@@ -286,6 +310,8 @@ def publish_locked(
     *,
     base_sha256: str | None,
     confirmations: tuple[Reconfirmation, ...] = (),
+    removals: tuple[Removal, ...] = (),
+    recorded_on: str | None = None,
 ) -> Publication:
     """Publish like :func:`publish_description` for a caller that already holds the lock.
 
@@ -304,9 +330,14 @@ def publish_locked(
     base = check_base(base_sha256, published)
     data = canonical_bytes(candidate)
     description_from_bytes(data)  # the exact bytes to be written pass the strict reader
-    _compare(published, candidate, confirmations)
+    old = _compare(published, candidate, confirmations)
     new_sha = sha256_hex(data)
     records = tuple(_record(c, base, new_sha) for c in sorted(confirmations, key=_order))
+    if old is not None:
+        records += removal_records(old, candidate, removals, confirmations)
+        records += image_count_records(old, candidate, recorded_on, confirmations)
+    elif removals:
+        raise ValueError("a removal needs a published file to remove from")
     write_text_atomic(path, data.decode("utf-8"))
     try:
         _append_records(folder, records)

@@ -182,18 +182,24 @@ def mask_records(
     return out
 
 
+def unit_entries(found: RunDescription) -> list[dict[str, object]]:
+    """Return the manifest's unit records: image type verification and unnamed header images."""
+    report = found.physical
+    if report is None:
+        return unit_records(found.description, {})
+    verified = {astuple(k): v for k, v in report.image_type_verified.items()}
+    unnamed = {astuple(k): v for k, v in report.unnamed.items()}
+    return unit_records(found.description, verified, unnamed)
+
+
 def manifest_entry(
     found: RunDescription, masks: Mapping | None, output: Path, images: int
 ) -> dict[str, object]:
     """Return the manifest's ``experiment_description`` entry of a run."""
-    report = found.physical
-    verified = (
-        {} if report is None else {astuple(k): v for k, v in report.image_type_verified.items()}
-    )
     return description_record(
         found.description,
         found.sha256,
-        unit_records(found.description, verified),
+        unit_entries(found),
         mask_records(found.description, masks, output, images),
         found.records,
     )
