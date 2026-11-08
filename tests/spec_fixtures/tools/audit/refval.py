@@ -398,10 +398,12 @@ def phase4(doc: dict, r: Report) -> None:
         for i, v in enumerate(doc["used_ids"][kind]):
             p = f"used_ids.{kind}[{i}]"
             if kind == "channels":
-                # AMBIGUITY: "the identity rules of their kind" -- Label + Token + NFC applied;
-                # the reserved list is not applied to used_ids entries (no fixture decides it).
+                # Owner decision of 7 Nov 2026 (Spec issue 11): a listed channel ID reserves it,
+                # so the reserved list of 3.2 applies as to a declared channel ID (4.9).
                 _token(v, p, r)
                 _nfc(v, p, r)
+                if v.casefold() in RESERVED:
+                    r.e("E_ID_RESERVED", p, v)
             else:
                 _label(v, p, r)
                 _nfc(v, p, r)
