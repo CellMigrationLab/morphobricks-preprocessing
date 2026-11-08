@@ -75,6 +75,7 @@ class _FolderStep:
         self.output.observe(lambda _: self._output_edited(), names="value")
         self.labels_confirmed.observe(lambda _: self._labels_changed())
         self._build_design_card()
+        self._build_description_cards()
         self._update_output_hint()
 
     def _build_folder_inputs(self, folder: str, output: str) -> None:
@@ -231,6 +232,7 @@ class _FolderStep:
         self.design = None
         self.dataset = pre.dataset
         ui.set_visible(self.design_card, False)
+        self._hide_description()
         self.labels_table.value = labels_html(pre)
         self.labels_confirmed.set(False, notify=False)
         self.labels_confirmed.disabled = not pre.discovery.leaves
@@ -348,6 +350,7 @@ class _FolderStep:
         self.labels_confirmed.set(False, notify=False)
         self.design = None
         ui.set_visible(self.design_card, False)
+        self._hide_description()
         ui.set_visible(self.labels_card, False)
         ui.set_visible(self.consistency_card, False)
         ui.set_visible(self.issues_card, False)

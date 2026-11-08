@@ -238,6 +238,47 @@ class Draft:
         slots[key] = replace(slots[key], confirmed=value)
         return replace(self, **{kind: MappingProxyType(slots)})
 
+    def paired(self, pairing: Mapping[tuple[str, str], str]) -> Draft:
+        """Return the draft with folders moved into the repeats the user paired them with.
+
+        ``pairing`` maps ``(condition folder, source repeat folder)`` to the pairing label of
+        the repeat the folder joins (the folder name of the other condition's folder, or a
+        label the user chose); a folder not in it stays in its repeat. Repeat IDs are proposed
+        again for the new repeats. Pairing is an answer that comes first: it is refused once
+        any repeat ID or confirmation exists, because those answers belong to the old repeats.
+
+        Raises
+        ------
+        DraftError
+            ``unknown_key`` for a folder the draft does not have, ``pairing_label_empty`` for
+            an empty label, ``pairing_after_confirmation`` when a repeat is already answered.
+        """
+        if not pairing:
+            return self
+        current = {m.key: group for group, r in self.repeats.items() for m in r.members}
+        unknown = sorted(set(pairing) - set(current))
+        if unknown:
+            raise DraftError(
+                "the draft has no folder " + ", ".join("/".join(key) for key in unknown),
+                ("unknown_key",),
+            )
+        if any(not label or label != label.strip() for label in pairing.values()):
+            raise DraftError(
+                "a repeat is paired under a name, not an empty one", ("pairing_label_empty",)
+            )
+        if any(r.confirmed or not r.id.pending for r in self.repeats.values()):
+            raise DraftError(
+                "the pairing is applied before any repeat is named or confirmed",
+                ("pairing_after_confirmation",),
+            )
+        grouped: dict[str, list[DraftMember]] = {}
+        for key, group in sorted(current.items()):
+            member = next(m for m in self.repeats[group].members if m.key == key)
+            grouped.setdefault(pairing.get(key, group), []).append(member)
+        slots = _slots("repeats", grouped, self.used_ids.get("repeats", ()))
+        repeats = {g: DraftRepeat(slots[g], tuple(found)) for g, found in sorted(grouped.items())}
+        return replace(self, repeats=MappingProxyType(repeats))
+
     def unit_rows(self) -> tuple[UnitRow, ...]:
         """Return one row per unit: the source labels and the confirmed IDs beside them."""
         rows = [

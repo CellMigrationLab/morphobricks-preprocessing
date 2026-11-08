@@ -70,14 +70,15 @@ REFUSED = {
     "list": (b"[]", "malformed"),
     "nan": (b'{"format": NaN}', "malformed"),
     "duplicate": (
-        answers_to_bytes(complete()).replace(b'"version": 1,', b'"version": 1, "version": 1,'),
+        answers_to_bytes(complete()).replace(b'"version": 2,', b'"version": 2, "version": 2,'),
         "malformed",
     ),
     "wrong_format": (broken(lambda d: d.update(format="other")), "malformed"),
-    "version_2": (broken(lambda d: d.update(version=2)), "unknown_version"),
-    "version_text": (broken(lambda d: d.update(version="1")), "unknown_version"),
+    "version_1": (broken(lambda d: d.update(version=1)), "unknown_version"),
+    "version_3": (broken(lambda d: d.update(version=3)), "unknown_version"),
+    "version_text": (broken(lambda d: d.update(version="2")), "unknown_version"),
     "version_bool": (broken(lambda d: d.update(version=True)), "unknown_version"),
-    "version_float": (broken(lambda d: d.update(version=1.0)), "unknown_version"),
+    "version_float": (broken(lambda d: d.update(version=2.0)), "unknown_version"),
     "version_missing": (broken(lambda d: d.pop("version")), "unknown_version"),
     "extra_top": (broken(lambda d: d.update(extra=1)), "unknown_key"),
     "extra_condition": (
@@ -91,6 +92,12 @@ REFUSED = {
     "extra_mask": (broken(lambda d: d["masks"]["Nuclei"].update(x=1)), "unknown_key"),
     "extra_schema": (broken(lambda d: d.update(schema="morphobricks-experiment")), "unknown_key"),
     "missing_section": (broken(lambda d: d.pop("masks")), "malformed"),
+    "missing_pairing": (broken(lambda d: d.pop("pairing")), "malformed"),
+    "pairing_not_nested": (broken(lambda d: d.update(pairing={"DrugA": "rep1"})), "malformed"),
+    "pairing_label_type": (
+        broken(lambda d: d.update(pairing={"DrugA": {"rep2": 1}})),
+        "malformed",
+    ),
     "missing_commit": (broken(lambda d: d.pop("spec_commit")), "malformed"),
     "bad_commit": (broken(lambda d: d.update(spec_commit="main")), "malformed"),
     "unit_without_channels": (

@@ -1,13 +1,13 @@
 """The bytes of ``morphobricks.draft.json``: written canonically, read strictly (contract 18).
 
 A draft file is one JSON object: ``format``, ``version``, ``base_sha256``, ``spec_commit`` and
-six tables of the user's answers (``conditions``, ``technical_repeats``, ``repeats``,
-``units``, ``channels``, ``masks``), every key required. Reading never repairs: bytes that are
-not UTF-8 JSON, a duplicate key, ``NaN``, an unknown ``version``, a key the format does not
-have, a missing key, a value of the wrong type or a date that is not a real ``YYYY-MM-DD`` day
-are refused with :class:`DraftFileError`, whose ``code`` says which. Writing is deterministic
-(sorted keys, two-space indent, LF, a final newline), so saving the same answers twice gives the
-same bytes.
+seven tables of the user's answers (``conditions``, ``technical_repeats``, ``repeats``,
+``pairing``, ``units``, ``channels``, ``masks``), every key required. Reading never repairs:
+bytes that are not UTF-8 JSON, a duplicate key, ``NaN``, an unknown ``version``, a key the
+format does not have, a missing key, a value of the wrong type or a date that is not a real
+``YYYY-MM-DD`` day are refused with :class:`DraftFileError`, whose ``code`` says which.
+Writing is deterministic (sorted keys, two-space indent, LF, a final newline), so saving the
+same answers twice gives the same bytes.
 
 The file is not a description and is never read as one: it is not named ``morphobricks.toml``
 and holds no ``schema`` key (experiment-v1 section 12).
@@ -32,7 +32,7 @@ from .draft_answers import (
 from .run.description_file import ABSENT
 
 DRAFT_FORMAT = "morphobricks-description-draft"
-DRAFT_VERSION = 1
+DRAFT_VERSION = 2
 SPEC_COMMIT = "c8f68526c08633526395ca0180fd6bd1a182fc84"
 """The MorphoBricks-Spec commit the rules of this brick are pinned to (``tests/spec_fixtures``)."""
 BASE_MISSING = "R_DRAFT_BASE_MISSING"
@@ -47,6 +47,7 @@ TOP = (
     "conditions",
     "technical_repeats",
     "repeats",
+    "pairing",
     "units",
     "channels",
     "masks",
@@ -140,6 +141,15 @@ def _units(value: object) -> dict[tuple[str, str, str], UnitAnswer]:
                     _optional(item, "image_type", where),
                     _optional(item, "display_name", where),
                 )
+    return out
+
+
+def _pairing(value: object) -> dict[tuple[str, str], str]:
+    """Read ``pairing`` (condition folder, source repeat folder, label) into answers."""
+    out = {}
+    for condition, folders in _entries(value, "pairing").items():
+        for folder, label in _entries(folders, f"pairing.{condition}").items():
+            out[(condition, folder)] = _text(label, f"pairing.{condition}.{folder}")
     return out
 
 
@@ -239,6 +249,7 @@ def answers_from_bytes(data: bytes) -> DraftAnswers:
         _units(doc["units"]),
         {k: _channel(v, f"channels.{k}") for k, v in _entries(doc["channels"], "channels").items()},
         {k: _mask(v, f"masks.{k}") for k, v in _entries(doc["masks"], "masks").items()},
+        _pairing(doc["pairing"]),
     )
 
 
@@ -268,6 +279,9 @@ def answers_to_bytes(answers: DraftAnswers) -> bytes:
                 "display_name": unit.display_name,
             }
         )
+    pairing: dict[str, dict[str, str]] = {}
+    for (condition, folder), label in sorted(answers.pairing.items()):
+        pairing.setdefault(condition, {})[folder] = label
     doc = {
         "format": DRAFT_FORMAT,
         "version": DRAFT_VERSION,
@@ -282,6 +296,7 @@ def answers_to_bytes(answers: DraftAnswers) -> bytes:
             k: _given({f: getattr(v, f) for f in REPEAT_KEYS})
             for k, v in sorted(answers.repeats.items())
         },
+        "pairing": pairing,
         "units": units,
         "channels": {
             k: _lists({f: getattr(v, f) for f in CHANNEL_KEYS})

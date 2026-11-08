@@ -774,9 +774,9 @@ def test_intensity_checks_follow_a_successful_run(tmp_path):
     nb = confirmed(bright_tree(tmp_path / "exp"), output_folder=str(out))
     assert not ui.is_visible(nb.run_checks.card)
     nb.run()
-    # The checks and plots write no file.
     assert sorted(p.name for p in out.iterdir() if "report" not in p.name) == [
         "experiment_design.csv",
+        "morphobricks.draft.json",
         "plane_histograms.csv",
         "run_manifest.json",
     ]
@@ -947,7 +947,7 @@ def test_folder_step_shows_the_design_by_default(tmp_path):
             nb.check_report.widget,
             nb.folder_tiles,
             nb.labels_card,
-            nb.design_card,
+            *(nb.design_card, nb.names_card, nb.references_card),
             nb.calibration_card,
             nb.consistency_card,
             nb.masks_card,

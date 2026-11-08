@@ -88,7 +88,10 @@ class DraftAnswers:
 
     ``base_sha256`` is the hex SHA-256 of the published ``morphobricks.toml`` the draft was
     derived from, or ``"absent"``; ``spec_commit`` the Spec commit the rules are pinned to.
-    ``technical_repeats`` maps a technical-repeat folder to its confirmed ID.
+    ``technical_repeats`` maps a technical-repeat folder to its confirmed ID. ``pairing`` maps
+    ``(condition folder, source repeat folder)`` to the label of the repeat the user paired the
+    folder with, only for a folder that is not in the repeat of its own name; it is applied to
+    the draft first, so the repeat answers are keyed by the paired labels.
     """
 
     base_sha256: str
@@ -99,6 +102,7 @@ class DraftAnswers:
     units: Mapping[UnitKey, UnitAnswer] = field(default_factory=dict)
     channels: Mapping[str, ChannelAnswer] = field(default_factory=dict)
     masks: Mapping[str, MaskAnswer] = field(default_factory=dict)
+    pairing: Mapping[tuple[str, str], str] = field(default_factory=dict)
 
 
 class DraftIncomplete(DraftError):
@@ -139,7 +143,7 @@ def _unknown_keys(draft: Draft, answers: DraftAnswers) -> list[str]:
     out += [
         f"condition {a.reference!r} (reference)"
         for a in answers.conditions.values()
-        if a.reference is not None and a.reference not in draft.conditions
+        if a.reference and a.reference not in draft.conditions
     ]
     out += [
         f"technical repeat {k!r}"
@@ -176,12 +180,35 @@ def confirm_repeat(draft: Draft, label: str, confirmed_on: str) -> Draft:
     return replace(draft, repeats=MappingProxyType(repeats))
 
 
+def _reference_problem(references: Mapping[str, str]) -> DraftError | None:
+    """Return the refusal for a condition compared against itself or a loop, else None."""
+    for folder, target in sorted(references.items()):
+        if folder == target:
+            return DraftError(
+                f"condition {folder!r} cannot be compared against itself", ("E_REFERENCE_SELF",)
+            )
+    for start in sorted(references):
+        trail = [start]
+        while trail[-1] in references and references[trail[-1]] not in trail:
+            trail.append(references[trail[-1]])
+        if trail[-1] in references:  # the next step is a folder already on the trail
+            loop = [*trail[trail.index(references[trail[-1]]) :], references[trail[-1]]]
+            return DraftError(
+                f"{' → '.join(loop)} is a loop: a condition cannot be compared, even through "
+                "others, against itself",
+                ("E_REFERENCE_CYCLE",),
+            )
+    return None
+
+
 def apply_answers(draft: Draft, answers: DraftAnswers) -> Draft:
     """Return the draft with the answers applied, or refuse the first one the rules refuse.
 
     IDs go through :meth:`.draft.Draft.confirm_id`, so each is checked as the reader would; an
     answer for a folder or repeat the draft does not have is refused. Applying the same answers
-    twice gives the same draft. Channels, units and masks are not part of the draft and are not
+    twice gives the same draft. The pairing is applied first (:meth:`.draft.Draft.paired`); a
+    reference to the condition itself or one that closes a loop is refused (``E_REFERENCE_SELF``,
+    ``E_REFERENCE_CYCLE``). Channels, units and masks are not part of the draft and are not
     checked here (:func:`missing_confirmations`, then the strict reader at publication).
 
     Raises
@@ -189,6 +216,7 @@ def apply_answers(draft: Draft, answers: DraftAnswers) -> Draft:
     DraftError
         With the codes of the refusal (``unknown_key`` lists every unknown key at once).
     """
+    draft = draft.paired(answers.pairing)
     unknown = _unknown_keys(draft, answers)
     if unknown:
         raise DraftError(f"the draft has no {', '.join(unknown)}", ("unknown_key",))
@@ -204,7 +232,57 @@ def apply_answers(draft: Draft, answers: DraftAnswers) -> Draft:
             draft = confirm_repeat(draft, label, repeat.confirmed_on)
     references = dict(draft.references)
     references.update({f: a.reference for f, a in answers.conditions.items() if a.reference})
+    problem = _reference_problem(references)
+    if problem is not None:
+        raise problem
     return replace(draft, references=MappingProxyType(references))
+
+
+def carry_over(
+    draft: Draft, answers: DraftAnswers, pairing: Mapping[tuple[str, str], str]
+) -> tuple[DraftAnswers, tuple[str, ...]]:
+    """Return the saved answers that still apply to the folders as they are now, and what dropped.
+
+    ``draft`` is derived from the folders now and ``pairing`` is the pairing that holds now (the
+    design's). An answer for a condition, technical repeat, repeat or unit the folders no longer
+    have is dropped and named in the second result, as is a reference to a condition that is
+    gone and a pairing of a folder that is gone; every other answer is kept exactly. The saved
+    answers' pairing is replaced by ``pairing``. Nothing is moved to another folder or guessed.
+    """
+    now = draft.paired(pairing)
+    members = {m.key for r in now.repeats.values() for m in r.members}
+    dropped = [
+        f"folder {'/'.join(key)} (paired with {label})"
+        for key, label in sorted(answers.pairing.items())
+        if key not in members
+    ]
+    conditions = {}
+    for folder, answer in sorted(answers.conditions.items()):
+        if folder not in now.conditions:
+            dropped.append(f"condition {folder}")
+            continue
+        if answer.reference and answer.reference not in now.conditions:
+            dropped.append(f"{folder} compared against {answer.reference}")
+            answer = replace(answer, reference=None)
+        if answer != ConditionAnswer():
+            conditions[folder] = answer
+    technical = {k: v for k, v in answers.technical_repeats.items() if k in now.technical_repeats}
+    repeats = {k: v for k, v in answers.repeats.items() if k in now.repeats}
+    units = {k: v for k, v in answers.units.items() if k in _unit_keys(now)}
+    dropped += [
+        f"technical repeat {k}" for k in sorted(set(answers.technical_repeats) - set(technical))
+    ]
+    dropped += [f"repeat {k}" for k in sorted(set(answers.repeats) - set(repeats))]
+    dropped += [f"unit {' / '.join(k)}" for k in sorted(set(answers.units) - set(units))]
+    kept = replace(
+        answers,
+        conditions=conditions,
+        technical_repeats=technical,
+        repeats=repeats,
+        units=units,
+        pairing=dict(pairing),
+    )
+    return kept, tuple(dropped)
 
 
 def missing_confirmations(draft: Draft, answers: DraftAnswers) -> tuple[OpenQuestion, ...]:
@@ -325,6 +403,7 @@ __all__ = [
     "UnitAnswer",
     "UnitKey",
     "apply_answers",
+    "carry_over",
     "confirm_repeat",
     "description_from_draft",
     "missing_confirmations",
