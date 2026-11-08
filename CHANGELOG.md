@@ -8,6 +8,14 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Reader owns its rule vocabulary; five refusals pinned by path (#204).**
+  `description_identity` no longer imports `check_identity_text` from `discovery` or `SINGLE`
+  from normalization (Spec §2.7): `description_rules` holds `MISSING_TEXT`, `SINGLE` and
+  `label_refused`, and `tests/test_description_rules_copy.py` keeps them equal to the shared
+  values. Behaviour is unchanged. `tests/test_spec_reader_refusal_paths.py` pins the path and
+  value of `E_SOURCE_FOLDER_REUSED`, `E_SOURCE_FOLDER_CONFLICT`, `E_SOURCE_REPEAT_REUSED`,
+  `E_MASK_SOURCE_TYPE_REUSED` and `E_REFERENCE_CYCLE`, which the oracle compares by code only.
+  The reader's paths were already correct for all five.
 - **Per-unit header evidence for a described run (Stage 1, PR 13; conformance P26).** When the
   output folder holds a published `morphobricks.toml`, `run` no longer applies the
   experiment-wide v0.4 checks `channel_names_differ` and `different_channel_counts`: units may
