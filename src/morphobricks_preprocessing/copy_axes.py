@@ -84,6 +84,9 @@ class CopyLayout:
         The channel names written, or ``()`` for none.
     significant_bits
         The significant bits written, or None.
+    description
+        The text written as the OME-XML ``Image/Description`` (a projected copy says how it
+        was made, issue #176), or None for no description.
     """
 
     axes: str
@@ -92,6 +95,7 @@ class CopyLayout:
     unknown: Mapping[str, str] = field(default_factory=dict)
     channel_names: tuple[str, ...] = ()
     significant_bits: int | None = None
+    description: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "unknown", MappingProxyType(dict(self.unknown)))
@@ -139,6 +143,8 @@ class CopyLayout:
             metadata["Channel"] = {"Name": list(self.channel_names)}
         if self.significant_bits is not None:
             metadata["SignificantBits"] = self.significant_bits
+        if self.description:
+            metadata["Description"] = self.description
         return metadata
 
 

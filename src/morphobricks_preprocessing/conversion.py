@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
+from typing import TypedDict, Unpack
 
 from ._io import free_space
 from .axes import AxisMapping, prefill_mapping
@@ -45,10 +46,11 @@ from .conversion_issues import (
     record_issue,
     space_issue,
 )
-from .conversion_plan import PlannedCopy, copy_folder_issues, plan_conversion
+from .conversion_plan import copy_folder_issues, plan_conversion
 from .conversion_record import (
     CONVERTED,
     COPIED,
+    PROJECTED,
     ConversionRecord,
     ConversionRecordError,
     CopyEntry,
@@ -59,6 +61,9 @@ from .conversion_reuse import compare
 from .conversion_write import ConversionFailed, write_all
 from .manifest import package_versions
 from .planes import DEFAULT_MEMORY_LIMIT
+from .planned_copy import PlannedCopy
+from .projection import Projection
+from .projection_issues import projection_differs_issue
 from .run.lock import OutputLockedError, output_lock
 from .validation import ValidationIssue, has_errors
 
@@ -82,6 +87,8 @@ class ConversionResult:
         Images written as named-axis OME-TIFF copies in this conversion, sorted.
     copied
         Images copied byte for byte in this conversion, sorted.
+    projected
+        Images written as 2-D projections of their Z-stacks in this conversion, sorted.
     reused
         Images whose copy was already there, unchanged, sorted.
     record_sha256
@@ -100,6 +107,7 @@ class ConversionResult:
     issues: tuple[ValidationIssue, ...] = ()
     converted: tuple[str, ...] = ()
     copied: tuple[str, ...] = ()
+    projected: tuple[str, ...] = ()
     reused: tuple[str, ...] = ()
     record_sha256: str | None = None
     suggested_axes: str | None = field(default=None)
@@ -109,16 +117,27 @@ class ConversionResult:
         object.__setattr__(self, "unknown_sizes", MappingProxyType(dict(self.unknown_sizes)))
 
 
+class ConversionOptions(TypedDict, total=False):
+    """The keyword options of :func:`convert_experiment` besides ``exclude``.
+
+    They are keywords of the function, listed here because it takes them as one group (the
+    code rules allow eight parameters). Any other keyword is a ``TypeError``.
+    """
+
+    missing_as_singleton: bool
+    memory_limit: int
+    progress: Callable[[int, int, str], None] | None
+    masks_folder: str | os.PathLike | None
+    projection: Projection | None
+
+
 def convert_experiment(
     experiment_root: str | os.PathLike,
     mapping: AxisMapping | ConfirmedAxes,
     destination: str | os.PathLike,
     *,
     exclude: Iterable[str] = (),
-    missing_as_singleton: bool = False,
-    memory_limit: int = DEFAULT_MEMORY_LIMIT,
-    progress: Callable[[int, int, str], None] | None = None,
-    masks_folder: str | os.PathLike | None = None,
+    **options: Unpack[ConversionOptions],
 ) -> ConversionResult:
     """Write named-axis copies of an experiment's images with the roles the user confirmed.
 
@@ -135,6 +154,9 @@ def convert_experiment(
     exclude
         Images to leave unread; they are copied byte for byte, so the copy tree mirrors
         the experiment, and stay excluded by the run.
+    **options
+        The keywords of :class:`ConversionOptions`:
+
     missing_as_singleton
         The user confirmed that images lacking some axes have one plane along them.
     memory_limit
@@ -146,6 +168,15 @@ def convert_experiment(
         or recorded by the run in the output folder): the copies may be neither inside it,
         where they would be read as masks, nor hold it (``copy_folder_overlaps_masks``).
         Unknown here, a run refuses a masks folder holding copies (``copies_inside_masks``).
+        With ``projection`` it is also scanned, from the headers, for masks with depth
+        slices (``projection_masks_3d``), which stop the projection.
+    projection
+        Write every image as a 2-D projection of its Z-stack (:class:`.projection.Projection`:
+        a method, no default, and an optional slice range for the whole experiment) instead
+        of a plain copy: the copy's axes are the confirmed roles without Z, its type is
+        decided by the dtype table (:func:`.projection.projection_dtype`), and the record
+        says how every copy was made (record version 3). Masks are never projected.
+        Excluded images are still copied byte for byte. None converts as before.
 
     Returns
     -------
@@ -157,27 +188,40 @@ def convert_experiment(
         If ``missing_as_singleton`` is not True or False, or ``memory_limit`` is not a
         whole number of bytes above 0 (nothing is read or written then).
     """
-    _check_arguments(missing_as_singleton, memory_limit)
+    unknown = sorted(set(options) - set(ConversionOptions.__annotations__))
+    if unknown:
+        raise TypeError(f"convert_experiment() got unexpected keyword arguments {unknown}")
+    missing_as_singleton = options.get("missing_as_singleton", False)
+    memory_limit = options.get("memory_limit", DEFAULT_MEMORY_LIMIT)
+    masks_folder, projection = options.get("masks_folder"), options.get("projection")
+    progress = options.get("progress")
+    _check_arguments(missing_as_singleton, memory_limit, projection)
     root, dest = Path(experiment_root).resolve(), Path(destination).resolve()
     refused = copy_folder_issues(root, dest, masks_folder)
     if refused:
         return ConversionResult(dest, False, tuple(refused))
     planned, issues = plan_conversion(
-        root, mapping, dest, exclude, missing_as_singleton, memory_limit
+        root, mapping, dest, exclude, missing_as_singleton, memory_limit, projection, masks_folder
     )
     if has_errors(issues):
         return ConversionResult(dest, False, _sorted(issues))
     dest.mkdir(parents=True, exist_ok=True)
     try:
         with output_lock(dest):
-            options = _Options(confirmation_of(mapping)[0], missing_as_singleton, memory_limit)
+            options = _Options(
+                confirmation_of(mapping)[0], missing_as_singleton, memory_limit, projection
+            )
             return _locked_conversion(root, dest, planned, issues, options, progress)
     except OutputLockedError as exc:
         return ConversionResult(dest, False, (lock_issue(exc),))
 
 
-def _check_arguments(missing_as_singleton: object, memory_limit: object) -> None:
+def _check_arguments(
+    missing_as_singleton: object, memory_limit: object, projection: object = None
+) -> None:
     """Refuse arguments that are not allowed, before anything is read or written."""
+    if projection is not None and not isinstance(projection, Projection):
+        raise ValueError(f"projection must be a Projection or None, found {projection!r}")
     if not isinstance(missing_as_singleton, bool):
         raise ValueError(
             f"missing_as_singleton must be True or False, found {missing_as_singleton!r}"
@@ -195,6 +239,7 @@ class _Options:
     mapping: AxisMapping
     missing_as_singleton: bool
     memory_limit: int
+    projection: Projection | None = None
 
 
 def _locked_conversion(
@@ -211,6 +256,10 @@ def _locked_conversion(
     except ConversionRecordError as exc:
         return ConversionResult(dest, False, (record_issue(exc, dest),))
     reused, to_write, refusal = compare(root, dest, planned, earlier)
+    if refusal is not None and earlier is not None and earlier[0].projection != options.projection:
+        refusal = projection_differs_issue(
+            dest, refusal.paths, earlier[0].projection, options.projection
+        )
     refusal = refusal or _space_issue(dest, to_write)
     if refusal is not None:
         return ConversionResult(dest, False, (refusal, *issues))
@@ -227,6 +276,7 @@ def _locked_conversion(
         issues=_sorted(issues),
         converted=tuple(e.relative_path for e in written if e.action == CONVERTED),
         copied=tuple(e.relative_path for e in written if e.action == COPIED),
+        projected=tuple(e.relative_path for e in written if e.action == PROJECTED),
         reused=tuple(e.relative_path for e in reused),
         record_sha256=sha256,
         suggested_axes=_suggested_axes(files),
@@ -250,10 +300,11 @@ def _publish_record(
     """
     if earlier is not None:
         old, sha256 = earlier
-        same = (old.files, old.mapping, old.missing_as_singleton) == (
+        same = (old.files, old.mapping, old.missing_as_singleton, old.projection) == (
             tuple(files),
             options.mapping,
             options.missing_as_singleton,
+            options.projection,
         )
         if same:
             return sha256
@@ -264,6 +315,7 @@ def _publish_record(
         files=tuple(files),
         versions=package_versions(),
         written_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        projection=options.projection,
     )
     return write_record(record, dest)
 
@@ -271,7 +323,7 @@ def _publish_record(
 def _suggested_axes(files: list[CopyEntry]) -> str | None:
     """Return the roles for ``run --axes`` on the copies when they all have the same axes."""
     axes = {
-        e.copy_axes if e.action == CONVERTED else e.source_axes
+        e.copy_axes if e.action in (CONVERTED, PROJECTED) else e.source_axes
         for e in files
         if e.reason != "excluded"
     }

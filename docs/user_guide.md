@@ -861,6 +861,27 @@ images or made with other roles is refused (`copy_folder_not_empty`, `copy_diffe
 convert into a new folder then. If it fails (`conversion_failed`), the folder is left as it
 was. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
 
+**Z-stacks: recorded 2-D projections (Python API; the command and the notebook card follow).**
+A Z-stack is still refused by `check` and `run` (`z_stack_not_supported`). To analyse one,
+make a projected copy first:
+`convert_experiment(EXP, mapping, FOLDER, projection=Projection("max"))` (or `"mean"` or
+`"sum"`; there is no default, and an optional slice range `Projection("max", (2, 10))` for the
+whole experiment, zero-based with the end excluded, refused if any image is shorter).
+Every image of the experiment is written as a 2-D OME-TIFF of the same folders and names:
+its axes are your roles without Z (`ZCYX` becomes `CYX`), each (t, c) is projected on its own,
+and the Z size is not written to the copy (it is recorded in the conversion record as
+dropped). Your originals are only read. The pixel type is decided by the input type and the
+method, never by the data: a maximum keeps it; a sum of 8-bit or 16-bit images is 32-bit and
+exact (`int32` for signed ones; 32-bit images give 64-bit floats holding the exact integer);
+a mean is a 64-bit float; a sum or mean that could not be exact is refused
+(`projection_cannot_be_exact`), never wrapped or clipped. A NaN stays NaN; a sum that overflows
+to infinity is refused (`projection_overflow`). The copy's OME-XML says how it was made, and
+the conversion record (version 3) holds the method, the slices used, the source's SHA-256,
+the types, the rounding and the dropped Z size for every image. Masks are never projected:
+masks with depth slices stop the projection (`projection_masks_3d`); 2-D masks stay where
+they are. OME-Zarr images are not projected yet (`projection_zarr_not_supported`; exclude
+them). One folder holds one method and one slice range (`copy_differs` otherwise).
+
 **In the notebook.** When step 2's axis check reports these images, a **Make named-axis
 copies (optional)** card appears under it, calling the same functions as the command:
 
@@ -1074,6 +1095,15 @@ continues.
 | `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. |
 | `copy_differs` | Error | `convert`: images in the folder of copies differ from the copies this conversion would write (an original changed, other roles, a copy changed, an image no longer in the experiment), or the folder holds copies of another experiment. Nothing is overwritten; convert into a new folder, or remove those copies first. |
 | `cannot_convert_pixel_type` | Error | `convert`: images of 64-bit integers cannot be saved as OME-TIFF, and pixel values are never changed to fit. Save them again with named axes in a 32-bit type if their values fit, or correct the roles. |
+| `nothing_to_project` | Error | `convert` with a projection: no image has a depth axis (Z) under the roles you gave. Check the roles; nothing was written. |
+| `projection_z_range_outside` | Error | `convert` with a projection: the slice range does not fit every image; the shorter images are named. Give a range every image has, or leave it out. |
+| `projection_cannot_be_exact` | Error | `convert` with a projection: a sum or mean of that many slices of that pixel type could not be held exactly. Use max or mean, or a shorter slice range. |
+| `projection_overflow` | Error | `convert` with a projection: a sum overflows to infinity (float64) at the pixels named. Use max, or mean if the values allow it. |
+| `projection_undefined` | Error | `convert` with a projection: a sum adds an infinity to its opposite at the pixels named, which is undefined. Use max. |
+| `projection_over_memory_limit` | Error | `convert` with a projection: one input plane and its running total do not fit the memory limit. Raise `--memory-limit`. |
+| `projection_masks_3d` | Error | `convert` with a projection: masks of the images have depth slices (Z), and masks are never projected. Make 2-D masks on the projected images, or move these masks out of the masks folder. |
+| `projection_masks_axes_unknown` | Error | `convert` with a projection: masks have more than Y and X and their axes are not named, so it is not known whether they have depth slices. Name the axes in the masks' metadata, or move them out. |
+| `projection_zarr_not_supported` | Error | `convert` with a projection: OME-Zarr images are not projected yet. Exclude them. |
 | `source_changed_during_check` | Error | `convert`: an original changed while its metadata was read, so the metadata may not describe the file that would be copied. Nothing was written; convert again when nothing writes into the experiment. |
 | `conversion_failed` | Error | `convert`: an image could not be copied (unreadable, changed while copied, or the folder cannot be written). The copies written by this conversion were removed; fix the cause and convert again, or exclude the image. |
 | `not_enough_space` | Error | `convert`: the copies would not fit on the drive. Free space or choose another drive. |

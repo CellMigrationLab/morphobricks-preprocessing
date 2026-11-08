@@ -15,11 +15,14 @@ from pathlib import Path
 
 from .content_hash import content_sha256
 from .conversion_issues import failed_issue
-from .conversion_plan import PlannedCopy
 from .conversion_record import CopyEntry
 from .fingerprint import Fingerprint, current_fingerprint
-from .ome_tiff_copy import CopyWriteError, write_named_copy
+from .ome_tiff_copy import CopyWriteError, write_named_copy, write_projected_copy
 from .planes import PlaneReadError
+from .planned_copy import PlannedCopy
+from .projection import ProjectionRefused
+from .projection_issues import projection_failed_issue
+from .source_content import source_content_sha256
 from .validation import ValidationIssue
 
 logger = logging.getLogger(__name__)
@@ -58,13 +61,16 @@ def write_all(
     """
     made = _missing_folders(dest, to_write)
     written: list[Path] = []
+    contents: dict[str, str] = {}
     current = to_write[0].relative_path if to_write else ""
     try:
         for done, item in enumerate(to_write):
             current = item.relative_path
             if progress is not None:
                 progress(done, len(to_write), current)
-            _write_partial(root, dest, item, memory_limit)
+            found = _write_partial(root, dest, item, memory_limit)
+            if found is not None:
+                contents[item.relative_path] = found
         if progress is not None:
             progress(len(to_write), len(to_write), "")
         entries = []
@@ -73,12 +79,18 @@ def write_all(
             os.replace(partial_path(dest, item), target)
             written.append(target)
             copy, sha256 = Fingerprint.of(target), content_sha256(target)
-            entries.append(replace(item.entry, copy=copy, copy_sha256=sha256))
+            entry = replace(item.entry, copy=copy, copy_sha256=sha256)
+            if item.relative_path in contents:
+                done = entry.projection.with_content(contents[item.relative_path])
+                entry = replace(entry, projection=done)
+            entries.append(entry)
     except BaseException as exc:
         logger.debug("Conversion of %s failed", current, exc_info=True)
         for path in [*written, *(partial_path(dest, item) for item in to_write)]:
             _remove(path)
         _remove_empty(made)
+        if isinstance(exc, ProjectionRefused):
+            raise ConversionFailed(projection_failed_issue(current, exc)) from exc
         if isinstance(exc, (*_FAILURES, _SourceChanged)):
             raise ConversionFailed(failed_issue(current, exc)) from exc
         raise
@@ -109,14 +121,27 @@ class _SourceChanged(Exception):
     """A source image changed since it was checked, or while it was copied."""
 
 
-def _write_partial(root: Path, dest: Path, item: PlannedCopy, memory_limit: int) -> None:
-    """Write one copy as ``<name>.partial``, refusing a source that changes meanwhile."""
+def _write_partial(root: Path, dest: Path, item: PlannedCopy, memory_limit: int) -> str | None:
+    """Write one copy as ``<name>.partial``, refusing a source that changes meanwhile.
+
+    Returns the source's content SHA-256 for a projected copy (taken before and after the
+    projection, which must agree), else None.
+    """
     source, partial = root / item.relative_path, partial_path(dest, item)
     partial.parent.mkdir(parents=True, exist_ok=True)
     _remove(partial)  # left by an interrupted conversion: it is never reused
     if current_fingerprint(source) != item.entry.source:
         raise _SourceChanged("it changed since it was checked")
-    if item.layout is not None:
+    content = None
+    if item.entry.projection is not None:
+        content = source_content_sha256(source)
+        details = item.entry.projection.with_content(content)
+        write_projected_copy(
+            source, partial, item.layout, item.mapping, details, memory_limit=memory_limit
+        )
+        if source_content_sha256(source) != content:
+            raise _SourceChanged("its content changed while it was projected")
+    elif item.layout is not None:
         write_named_copy(
             source, partial, item.layout, item.mapping, dtype=item.dtype, memory_limit=memory_limit
         )
@@ -126,6 +151,7 @@ def _write_partial(root: Path, dest: Path, item: PlannedCopy, memory_limit: int)
         shutil.copyfile(source, partial)
     if current_fingerprint(source) != item.entry.source:
         raise _SourceChanged("it changed while it was copied")
+    return content
 
 
 def partial_path(dest: Path, item: PlannedCopy) -> Path:

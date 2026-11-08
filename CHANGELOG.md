@@ -8,6 +8,22 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **`convert_experiment(projection=Projection(...))` writes recorded 2-D copies of Z-stacks
+  (part of #176).** Every image is projected with the method (`max`, `mean` or `sum`; no
+  default) over all slices or one slice range for the experiment; the copy's axes are the
+  confirmed roles without Z, each (t, c) is projected in ascending z into one running plane,
+  the Z size goes to the record's `dropped_sizes`, and the copy's OME-XML says how it was
+  made. Refused before anything is written: `nothing_to_project`, `projection_z_range_outside`,
+  `projection_cannot_be_exact`, 64-bit integers (`cannot_convert_pixel_type`),
+  `projection_over_memory_limit`, OME-Zarr images (`projection_zarr_not_supported`, for now),
+  3-D masks (`projection_masks_3d`, `projection_masks_axes_unknown`, from the headers of the
+  masks folder); a sum overflowing to infinity is `projection_overflow`. The source's content
+  SHA-256 is taken before and after, and recorded. Another method or range into the same
+  tree is `copy_differs`, naming both. A copy's OME-XML UUID is derived from its description,
+  so one projection is the same bytes twice. `convert_experiment` takes its keyword options as
+  a `ConversionOptions` group (same keywords; an unknown one is a `TypeError`) because it would
+  have had nine parameters. `PlannedCopy` moved to `planned_copy.py`. No command or notebook
+  card yet.
 - **Conversion record version 3 holds a Z projection (part of #176).** `RECORD_VERSION` is `"3"`:
   a record-level `projection` (null, or `{method, z_range}`), the entry action `projected`
   and a strictly read `projection` object per projected entry (source content SHA-256, Z axis
