@@ -8,6 +8,18 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **`make_clean_run(description=...)` builds a described run for the bricks' Stage 2 tests (Stage 2
+  design PR 1).** `description` is a published experiment description (bytes, text or a
+  `Description`). The helper writes the declared tree (`image_count` images per member, RGB colour
+  for an `rgb` unit), writes the declared masks named in `mask_types` (now mask IDs in that case),
+  publishes the bytes as `morphobricks.toml`, runs preprocessing and the mask step, and returns a
+  `CleanRun` whose new `description` field holds the model (None otherwise).
+  `testing.make_described_run(folder, description, masks=..., mask_step=...)` is the same with
+  the mask step optional (masks left `not yet checked`). `axes`, `shape`, `pixel_size`, `design`
+  and `seed` raise `ValueError` with a description. Tested on the Spec fixtures `v03 v08 v13 v28
+  v30 v33 v34`: each builds, opens with `RunInputs`, and `fovs()` gives its condition IDs, repeat
+  groups, technical repeat IDs, channel IDs and image count. Without `description`, behaviour is
+  unchanged.
 - **A described run writes manifest version `"4"` (Stage 2 design question 9, owner answer 9).**
   When the run manifest carries `experiment_description`, `manifest_version` is `"4"`; an
   undescribed run keeps `"2"` or `"3"`, byte for byte (the v0.4.0 parity suite is unchanged).

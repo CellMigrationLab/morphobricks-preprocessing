@@ -326,6 +326,12 @@ A `RunInputs` is picklable, so worker processes can use it.
 `morphobricks_preprocessing.testing.make_clean_run(folder, ...)` writes a tiny experiment of
 named-axis OME-TIFFs (optionally with masks and a confirmed design) and its clean run, for
 the bricks' tests.
+`make_clean_run(folder, description=<bytes, text or Description>)` (also `testing.make_described_run`)
+writes instead the tree a published experiment description declares (`image_count` tiny images per
+member, `rgb` units as RGB colour, one mask per image for each declared mask ID in `mask_types`),
+publishes the bytes as `morphobricks.toml`, runs preprocessing and the mask step, and returns
+the same `CleanRun` with `description` set; `axes`, `shape`, `pixel_size`, `design` and `seed` then
+raise `ValueError`. Tested for the Spec fixtures `v03 v08 v13 v28 v30 v33 v34`.
 
 ### 9.2 Modes, recorded inputs, lock and report (v0.4.0, design v0.4 §1, §4)
 
