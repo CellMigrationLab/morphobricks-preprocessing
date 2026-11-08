@@ -1569,3 +1569,28 @@ Raised during review; to be decided before the milestones that need them:
     written to the copy; it and its source go to the record's `dropped_sizes`. The record
     version is 3. Built in stages: the pure arithmetic (`projection`), the record, then
     the plan and writer, the command, the run side and the notebook card.
+78. Stage 1: the experiment description (`morphobricks.toml`, Spec experiment-v1) and the
+    notebook that writes it. *Decided (owner, 7 November 2026; all eight recommendations of
+    the Stage 1 design, section 6, accepted):* (Q1) the notebook always writes the
+    description; the command line and `run_experiment` without one keep the v0.4 behaviour
+    with a warning, so the NFC and mask-type-name refusals and the raw header-name checks
+    apply only with a description; a description is required from Stage 3. (Q2) The
+    publication records (re-confirmations, removals, image-count changes) live in the
+    append-only `morphobricks.records.jsonl` written under the lock at publication and copied
+    unchanged into the next run's manifest; Spec §4.6 says so. (Q3) Layouts whose units are
+    identical and header-named are one confirmation; unnamed layouts are pre-filled but need
+    one tick per acquisition beside its thumbnails. (Q4) A raw header name is proposed as a
+    channel ID only when it is valid as it stands (never repaired), and nothing is adopted
+    without the user's confirmation. (Q5) A mask has no default representation: `instances`
+    or `binary` is the user's answer, and the dtype and the values seen are evidence only.
+    (Q6) A Spec change before PR 7: a condition gets the `single` rule and the ID proposal
+    rule of §4.6a covers repeat IDs. (Q7) Time-lapses are allowed as before; homogeneity
+    compares axis semantics, not the number of time points; previews show t = 0 with a T
+    slider. (Q8) The added fields are `condition_id` and `technical_repeat_id` beside
+    `repeat_group`, the source folder labels staying in `Fov.key` (contract §9.1, §16).
+    *Implemented in PR 17:* the command `describe` (contract §12) prints the draft and
+    confirms nothing (the owner's rule: confirmations are given only by the user); its
+    `--publish` publishes only a draft with no open question and every decision confirmed.
+    The draft file that would hold the user's answers outside the notebook is not part of the
+    package yet, so `--publish` cannot complete a draft built from folders (open question to
+    the owner, PR 17).
