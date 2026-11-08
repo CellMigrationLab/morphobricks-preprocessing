@@ -121,6 +121,9 @@ commit SHA in its `PIN.toml`, never a branch.
   modules (`description*.py`) for a second table of codes or names and for lenient, older or
   default-version paths.
 
+The result of the last recorded whole-suite run, with its skips, is in
+[conformance.md](conformance.md).
+
 ## Versioning
 
 - Semantic versioning for the package.

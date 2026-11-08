@@ -8,6 +8,21 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **`describe` command, docs and a recorded conformance run (Stage 1, PR 17).**
+  `morphobricks-preprocessing describe EXPERIMENT [--output FOLDER] [--exclude PATH]
+  [--publish]` prints the draft experiment description in plain language: the proposed IDs
+  (none, never repaired, for a folder that cannot be an ID), the repeats with their folders and
+  image counts, the references and every open question with what the user has to do. The draft
+  is the legacy `experiment_design.csv` of the output folder migrated, or the folders alone;
+  against a published `morphobricks.toml` it compares the folders (new, gone, image counts,
+  repeats to confirm again; no header is read). It reads no image and writes nothing, and
+  **confirms nothing**: confirmations are the user's (owner rule). `--publish` publishes only
+  a draft with no open question and every decision confirmed, else it lists what is missing and
+  exits with status 1; since no answers live outside the notebook yet, it publishes nothing
+  from a draft of folders (open question to the owner), and says `Nothing to publish` for a
+  published description that matches the folders. Docs: contract §12 and §16, user guide
+  "Describe your experiment", plan §12 question 77 (the owner's answers Q1 to Q8),
+  `docs/conformance.md` (the recorded run of the suite with no Spec skip).
 - **Z-projection arithmetic (part of #176).** New pure module `projection.py`: `Projection`
   (method `max`, `mean` or `sum`, no default; optional zero-based half-open slice range),
   `projection_dtype` (the output type from the input type, method and slice count only: max
