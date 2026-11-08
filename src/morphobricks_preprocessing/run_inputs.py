@@ -62,6 +62,7 @@ from .recorded_sizes import RecordedSize
 from .run.generation import published_path, read_stable
 from .run_inputs_error import RunInputsError as RunInputsError  # re-exported (moved)
 from .run_inputs_image import LazyImage as LazyImage  # re-exported (moved)
+from .run_inputs_projection import ProjectionInputs
 from .run_inputs_semantic import SemanticInputs, check_description, with_identity
 from .run_inputs_text import (
     _ZARR_MISSING,
@@ -149,7 +150,7 @@ class Fov:
 
 
 @dataclass(frozen=True)
-class RunInputs(SemanticInputs):
+class RunInputs(SemanticInputs, ProjectionInputs):
     """The inputs of a clean preprocessing run, read as the run recorded them.
 
     Use :meth:`open`; the attributes are the snapshot taken then.
@@ -527,10 +528,14 @@ def _check_calibration(path: Path, expected: str | None) -> None:
 
 def _check_conversion(root: Path, manifest: RunManifest) -> None:
     """Refuse a changed or gone conversion record, or a copy changed since it was written."""
-    if manifest.conversion_record_sha256 is None:
-        return
     paths = [e.relative_path for e in manifest.files]
-    problem = conversion_problem(root, manifest.conversion_record_sha256, paths)
+    problem = conversion_problem(
+        root,
+        manifest.conversion_record_sha256,
+        paths,
+        manifest.projection,
+        [(m["image"], m["path"]) for m in (manifest.masks or {}).get("files", [])],
+    )
     if problem is not None:
         raise RunInputsError(problem)
 

@@ -215,6 +215,10 @@ class ProjectionEntry:
         )
 
 
+MARKER = "MorphoBricks Z projection:"
+"""How the OME ``Image/Description`` of a projected copy begins (:mod:`.projection_marker`)."""
+
+
 def projection_description(entry: ProjectionEntry) -> str:
     """Return the text written as the copy's OME-XML ``Image/Description``.
 
@@ -224,7 +228,7 @@ def projection_description(entry: ProjectionEntry) -> str:
     """
     start, stop = entry.z_range
     return (
-        f"MorphoBricks Z projection: {entry.method} of slices {start}:{stop} "
+        f"{MARKER} {entry.method} of slices {start}:{stop} "
         f"(of {entry.source_z_size}) of {entry.source_relative_path}; "
         f"source content SHA-256 {entry.source_content_sha256}; "
         f"{entry.source_dtype} to {entry.output_dtype} ({entry.dtype_rule}; "
