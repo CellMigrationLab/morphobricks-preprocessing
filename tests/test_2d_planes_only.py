@@ -116,7 +116,7 @@ def test_check_refuses_a_z_stack_and_writes_only_the_report(tmp_path, capsys):
     write_named("ome", root / "ctrl/r1/a.ome.tif", 3)
     assert main(["check", str(root), "--output", str(out)]) == 1
     printed = capsys.readouterr().out
-    assert "1 image is a Z-stack" in printed and "Z Project" in printed
+    assert "1 image is a Z-stack" in printed and "--project max|mean|sum" in printed
     report = json.loads((out / "discovery_report.json").read_text(encoding="utf-8"))
     assert Z_STACK in {i["code"] for i in report["issues"] if i["severity"] == "error"}
     assert "plane_histograms.csv" not in written_outputs(out)

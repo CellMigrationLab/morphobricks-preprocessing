@@ -9,7 +9,8 @@ pages, rows and columns are stored, so they are never used for these warnings.
 
 The error ``z_stack_not_supported`` (:func:`z_stack_issues`, owner decision of 5 November
 2026) refuses every image with more than one depth slice, measured the same two ways:
-MorphoBricks v1 analyses 2-D planes, and a projection is the user's step, never this brick's.
+MorphoBricks v1 analyses 2-D planes, and a projection is an explicit, recorded step
+(``convert --project``), never made implicitly when an image is read.
 """
 
 from __future__ import annotations
@@ -50,7 +51,8 @@ def z_stack_issues(slices: Mapping[str, int]) -> list[ValidationIssue]:
     """Refuse every image with more than one depth slice (Z): v1 analyses 2-D planes.
 
     A Z axis of one slice, or none, is accepted as it is. Nothing is projected or squeezed:
-    the user projects each Z-stack (owner decision of 5 November 2026; contract §2).
+    the user makes recorded 2-D projected copies first with ``convert --project`` (owner
+    decisions of 5 and 7 November 2026; contract §2, §17).
 
     Parameters
     ----------
@@ -76,9 +78,9 @@ def z_stack_issues(slices: Mapping[str, int]) -> list[ValidationIssue]:
             f"(more than one depth slice, Z): {listed}{more}. MorphoBricks v1 analyses 2-D "
             "planes, so Z-stacks are not analysed.",
             [path for path, _ in stacks],
-            "Project each Z-stack first, for example a maximum-intensity projection in Fiji "
-            "(Image > Stacks > Z Project...), and use the projected image instead; or exclude "
-            "these images.",
+            "Make 2-D projected copies first: convert EXPERIMENT --to FOLDER --axes ROLES "
+            "--project max|mean|sum (the originals are only read), then run on the copies; "
+            "or exclude these images.",
         )
     ]
 

@@ -8,6 +8,17 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **`convert --project max|mean|sum [--z-range START:STOP]` (part of #176).** The command line of
+  the recorded Z projection: no default method (`--project` alone or an unknown method is a
+  parser error naming the three), `--z-range` zero-based and half-open for the whole
+  experiment (`4:5` is a single slice; `--z-range` without `--project` is refused), the memory
+  limit, `--exclude` and `--masks` as for any conversion (the recorded masks of the output
+  folder are scanned for 3-D masks). It prints what was written and the next commands for a
+  new output folder, `<--to>_MorphoBricks_Preprocessing` (the projected copies are a
+  different source), with `--axes` of the copies. `z_stack_not_supported` now names the
+  command ("Make 2-D projected copies first: convert EXPERIMENT --to FOLDER --axes ROLES
+  --project max|mean|sum ...") instead of Fiji. `ConversionResult.projection` holds the
+  record's method and range.
 - **`convert_experiment(projection=Projection(...))` writes recorded 2-D copies of Z-stacks
   (part of #176).** Every image is projected with the method (`max`, `mean` or `sum`; no
   default) over all slices or one slice range for the experiment; the copy's axes are the

@@ -6,8 +6,8 @@ The preprocessing brick of MorphoBricks. It reads an experiment folder of
 microscopy TIFFs, computes one intensity histogram per channel of every plane, and writes
 them, with each plane's experimental labels, to `plane_histograms.csv`: one row per plane
 (an image at one time point), each channel in its own columns. MorphoBricks v1 analyses 2-D
-planes: a Z-stack (more than one depth slice) is refused (`z_stack_not_supported`); project
-it first, for example a maximum-intensity projection in Fiji, and use the projected image. Later bricks
+planes: a Z-stack (more than one depth slice) is refused (`z_stack_not_supported`); make
+recorded 2-D projected copies first with `convert --project max|mean|sum`, and use the copies. Later bricks
 (for example patch extraction) use that table to calculate normalization
 parameters for any group of images without rereading the pixels.
 
