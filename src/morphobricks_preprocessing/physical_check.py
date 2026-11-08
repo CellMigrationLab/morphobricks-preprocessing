@@ -131,6 +131,7 @@ class PhysicalReport:
     colour interpretation (TIFF), False for a format that states none (OME-Zarr: it stands on
     the user's confirmation). ``unchecked`` lists images whose header could not be read or
     whose channel count is not stated by the header: they were not checked, which is not a pass.
+    ``unnamed`` lists the images that pass without header channel names (:attr:`unnamed`).
     """
 
     issues: tuple[PhysicalIssue, ...] = ()
@@ -140,6 +141,12 @@ class PhysicalReport:
         default_factory=lambda: MappingProxyType({})
     )
     unchecked: tuple[str, ...] = ()
+    unnamed: Mapping[UnitKey, Mapping[str, tuple[int, ...]]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    """Per unit that passed, the images whose header names not every channel, each with the C
+    positions without a name (all of them when the header names none). Such an image passes
+    (§4.3: it needs no evidence, the user's confirmed layout is used) and is listed, not warned."""
 
     @property
     def codes(self) -> frozenset[str]:
@@ -289,6 +296,19 @@ def _evidence_issues(
     return out
 
 
+def _unnamed(unit: Unit, layouts: Mapping[str, Layout]) -> dict[str, tuple[int, ...]]:
+    """Return per image the declared channel positions its header gives no name (not RGB)."""
+    if unit.image_type == RGB:  # R, G and B take no header names (§4.4b)
+        return {}
+    found = {
+        path: tuple(
+            i for i in range(len(unit.channels)) if i >= len(layout.names) or not layout.names[i]
+        )
+        for path, layout in layouts.items()
+    }
+    return {path: positions for path, positions in found.items() if positions}
+
+
 def _check_unit(
     key: UnitKey,
     repeat_unit: tuple[str, Unit],
@@ -296,25 +316,30 @@ def _check_unit(
     paths: Sequence[str],
     metas: Mapping[str, TiffMetadata],
     roles: Mapping[str, Sequence[str | None]],
-) -> tuple[list[PhysicalIssue], Layout | None, bool, list[str]]:
-    """Check one declared unit that has images; return issues, layout, verified, unchecked."""
+) -> tuple[list[PhysicalIssue], Layout | None, bool, list[str], dict[str, tuple[int, ...]]]:
+    """Check one declared unit that has images.
+
+    Returns the issues, the common layout, verified, the unchecked images and, for a unit
+    without issues, the images whose header names not every channel (:func:`_unnamed`).
+    """
     _, unit = repeat_unit
     readable = [p for p in paths if p in metas and metas[p].readable]
     layouts = {p: layout_of(metas[p], roles.get(p)) for p in readable}
     unchecked = [p for p in paths if p not in layouts]
     verified = bool(readable) and all(metas[p].kind != OME_ZARR for p in readable)
     if not layouts:
-        return [], None, verified, unchecked
+        return [], None, verified, unchecked, {}
     reference, issues = _homogeneity(key, layouts)
     if issues:
-        return issues, None, verified, unchecked
+        return issues, None, verified, unchecked, {}
     issues = _type_issues(key, unit, layouts, metas)
     if issues:
-        return issues, None, verified, unchecked
+        return issues, None, verified, unchecked, {}
     issues = _evidence_issues(key, unit, description, layouts)
     if reference.channels is None:  # the header does not say; never a guessed count
         unchecked += [p for p in layouts if p not in unchecked]
-    return issues, None if issues else reference, verified, unchecked
+    unnamed = {} if issues else _unnamed(unit, layouts)
+    return issues, None if issues else reference, verified, unchecked, unnamed
 
 
 def check_physical(
@@ -361,15 +386,18 @@ def check_physical(
     layouts: dict[UnitKey, Layout] = {}
     verified: dict[UnitKey, bool] = {}
     unchecked: list[str] = []
+    unnamed: dict[UnitKey, Mapping[str, tuple[int, ...]]] = {}
     for key, paths in found.items():
         if key not in declared:
             continue
-        found_issues, layout, ok, missing = _check_unit(
+        found_issues, layout, ok, missing, nameless = _check_unit(
             key, declared[key], description, sorted(paths), metas, roles or {}
         )
         issues += found_issues
         unchecked += missing
         verified[key] = ok
+        if nameless:
+            unnamed[key] = MappingProxyType(nameless)
         if layout is not None:
             layouts[key] = layout
     if mask_types is not None:
@@ -383,6 +411,7 @@ def check_physical(
         MappingProxyType(layouts),
         MappingProxyType(verified),
         tuple(dict.fromkeys(unchecked)),
+        MappingProxyType(unnamed),
     )
 
 

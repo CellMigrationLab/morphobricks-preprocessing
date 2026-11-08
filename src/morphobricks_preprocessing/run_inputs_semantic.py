@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 from .description import Description
 from .description_consume import read_published_description
 from .description_file import DESCRIPTION_FILENAME
+from .description_unnamed import FIELD as UNNAMED_FIELD
 from .fov_identity import FovIdentity, fov_identity
 from .manifest import FileEntry, RunManifest
 from .mask_representation import CHECKED, file_status, read_checked
@@ -121,6 +122,22 @@ class SemanticInputs:
             When the file is gone, invalid, or changed since the run.
         """
         return check_description(self.output_folder, self.manifest)
+
+    def images_without_header_channel_names(self) -> dict[str, tuple[int, ...]] | None:
+        """Return the images the run passed without header channel names, as it recorded them.
+
+        Each image's relative path maps to its zero-based C positions whose header gives no
+        name (all of them when the header names none). Empty when every header names all its
+        channels; None when the run had no description. Read from the manifest only.
+        """
+        recorded = self.manifest.experiment_description
+        if recorded is None:
+            return None
+        return {
+            item["image"]: tuple(item["channel_positions"])
+            for unit in recorded["units"]
+            for item in unit.get(UNNAMED_FIELD, ())
+        }
 
     def channel_index(self, fov: object, channel_id: str) -> int:
         """Return the C index of a canonical channel in one position's image.

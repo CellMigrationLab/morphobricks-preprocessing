@@ -181,8 +181,8 @@ def test_the_reader_refuses_a_version_that_does_not_match_its_content_check(expe
     del data["settings"]["verify_content"]  # a content_sha256 left in a version 2 entry
     cases.append((data, "version 2 manifest records content verification"))
     data = _strict_data(out)
-    data["manifest_version"] = "4"
-    cases.append((data, "(?i)manifest version '4' is not supported"))
+    data["manifest_version"] = "5"
+    cases.append((data, "(?i)manifest version '5' is not supported"))
     for data, message in cases:
         path.write_text(json.dumps(data), encoding="utf-8")
         with pytest.raises(ManifestFormatError, match=message):
@@ -219,12 +219,12 @@ def test_an_unknown_later_version_is_plainly_not_supported(experiment, files):
     root, out = experiment
     assert run_experiment(root, TYX, output_folder=out, mode=STRICT).written
     data = _strict_data(out)
-    data["manifest_version"] = "4"
+    data["manifest_version"] = "5"
     data["files"] = files
     path = out / "run_manifest.json"
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ManifestFormatError) as refused:
         read_manifest(path)
     assert str(refused.value) == (
-        "Manifest version '4' is not supported (this version reads '1', '2', '3')."
+        "Manifest version '5' is not supported (this version reads '1', '2', '3', '4')."
     )

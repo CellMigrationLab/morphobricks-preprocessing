@@ -64,6 +64,7 @@ from .description_run import (
     RunDescription,
     checked_description,
     manifest_entry,
+    unit_entries,
 )
 from .design_file import design_for_run
 from .generation import staged_generation
@@ -333,6 +334,7 @@ def _report(
         design=run.checked.design,
         image_type=run.inputs.image_type,
         outcome=outcome,
+        unit_records=None if run.description is None else unit_entries(run.description),
     )
 
 
@@ -505,7 +507,7 @@ def _write_generation(
             if described is None
             else manifest_entry(described, masks, run.output, len(rows.entries))
         ),
-        manifest_version=version_for(settings.verify_content),
+        manifest_version=version_for(settings.verify_content, described is not None),
     )
     manifest = _kept_time(manifest, run.previous[0])
     return file_sha256(write_manifest(manifest, staged / MANIFEST_FILENAME))
