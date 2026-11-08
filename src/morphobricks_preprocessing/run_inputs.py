@@ -41,6 +41,7 @@ from morphobricks_normalization.records import PlaneRecord
 from .axes import AxisMapping
 from .calibration import CALIBRATION_FILENAME
 from .conversion_check import conversion_problem
+from .description import Description
 from .design import DESIGN_FILENAME, DesignCheckError, ExperimentDesign, read_confirmed_design
 from .fingerprint import Fingerprint
 from .folder_rules import masks_folder_issues
@@ -59,6 +60,9 @@ from .masks.header import _mask_header
 from .planes import DEFAULT_MEMORY_LIMIT, read_plane
 from .recorded_sizes import RecordedSize
 from .run.generation import published_path, read_stable
+from .run_inputs_error import RunInputsError as RunInputsError  # re-exported (moved)
+from .run_inputs_image import LazyImage as LazyImage  # re-exported (moved)
+from .run_inputs_semantic import SemanticInputs, check_description, with_identity
 from .run_inputs_text import (
     _ZARR_MISSING,
     _changed_text,
@@ -70,10 +74,6 @@ from .source_content import content_changed
 from .unrecorded import UnrecordedFiles, unrecorded_files
 from .validation import plural
 from .zarr_input import NgffError, ZarrUnavailableError
-
-
-class RunInputsError(ValueError):
-    """The run cannot be used as it is: run preprocessing again (the message says why)."""
 
 
 class UnrecordedFilesError(RunInputsError):
@@ -122,6 +122,12 @@ class Fov:
         Significant bits from the metadata, or None.
     z_count, t_count, c_count
         Depth slices, time points and channels.
+    repeat_group, condition_id, technical_repeat_id
+        The canonical repeat, condition and technical repeat IDs of the position, added
+        beside the unchanged ``key`` (experiment-v1 §3.4). None for a run without a
+        published description.
+    channel_ids
+        The canonical channel ID of each C index, in order; None without a description.
     """
 
     key: tuple[str, str, str, str]
@@ -136,10 +142,14 @@ class Fov:
     z_count: int
     t_count: int
     c_count: int
+    repeat_group: str | None = None
+    condition_id: str | None = None
+    technical_repeat_id: str | None = None
+    channel_ids: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
-class RunInputs:
+class RunInputs(SemanticInputs):
     """The inputs of a clean preprocessing run, read as the run recorded them.
 
     Use :meth:`open`; the attributes are the snapshot taken then.
@@ -224,6 +234,7 @@ class RunInputs:
             design = published_path(output, DESIGN_FILENAME, manifest.experiment_design_sha256)
             _check_sha(design, manifest.experiment_design_sha256, "design")
         _check_calibration(output / CALIBRATION_FILENAME, manifest.calibration_sha256)
+        check_description(output, manifest)  # A_DRAFT_REFUSED, or changed since the run
         root = Path(experiment_root or manifest.experiment_root).resolve()
         _check_conversion(root, manifest)
         masks = masks_root or (manifest.masks or {}).get("folder")
@@ -244,7 +255,10 @@ class RunInputs:
         rows: dict[str, list[PlaneRecord]] = {}
         for record in self.records:
             rows.setdefault(record.source_relative_path, []).append(record)
-        return tuple(_fov(e, rows.get(e.relative_path, []), self.manifest) for e in self.files)
+        described = self.description()
+        return tuple(
+            _fov(e, rows.get(e.relative_path, []), self.manifest, described) for e in self.files
+        )
 
     @property
     def files(self) -> tuple[FileEntry, ...]:
@@ -330,6 +344,7 @@ class RunInputs:
         entry = self._checked(fov)
         _check_planes(entry.relative_path, self._fov(entry), z, t)
         recorded = self._mask_entry(entry.relative_path, mask_type)
+        self.require_checked(recorded, mask_type)  # A_MASK_UNCHECKED (a described run)
         if not self._mask_unchanged(recorded):
             raise RunInputsError(_changed_text([recorded["path"]], "mask"))
         mask = MaskFile(recorded["image"], recorded["type"], recorded["path"], recorded["source"])
@@ -454,47 +469,6 @@ class RunInputs:
         except FileNotFoundError:
             return False
 
-    def _mask_entry(self, image: str, mask_type: str) -> Mapping:
-        """Return the recorded mask of an image and type."""
-        for recorded in (self.manifest.masks or {}).get("files", ()):
-            if recorded["image"] == image and recorded["type"] == mask_type:
-                return recorded
-        raise RunInputsError(f"The run recorded no {mask_type} mask for {image}.")
-
-
-@dataclass(frozen=True)
-class LazyImage:
-    """An image of a clean run as a ``(T, Z, C, Y, X)`` array whose planes are read on demand.
-
-    Attributes
-    ----------
-    inputs
-        The run.
-    relative_path
-        The image.
-    shape
-        ``(T, Z, C, Y, X)``.
-    dtype
-        The stored pixel type.
-    """
-
-    inputs: RunInputs
-    relative_path: str
-    shape: tuple[int, ...]
-    dtype: np.dtype
-
-    def __getitem__(self, index: tuple[int, int]) -> np.ndarray:
-        """Read the ``(C, Y, X)`` plane at ``[t, z]``."""
-        t, z = index
-        return self.inputs.read_plane(self.relative_path, z=z, t=t)
-
-    def __array__(self, dtype: np.dtype | None = None, copy: bool | None = None) -> np.ndarray:
-        """Read every plane into one array."""
-        data = np.stack(
-            [np.stack([self[t, z] for z in range(self.shape[1])]) for t in range(self.shape[0])]
-        )
-        return data if dtype is None else data.astype(dtype)
-
 
 def _check_planes(relative_path: str, fov: Fov, z: int | None, t: int | None) -> None:
     """Refuse a ``z`` or ``t`` outside the image (audit I5)."""
@@ -566,14 +540,23 @@ def _mapping(entry: FileEntry) -> AxisMapping:
     return AxisMapping(entry.axes, tuple(entry.roles or ()), entry.singleton_roles)
 
 
-def _fov(entry: FileEntry, rows: list[PlaneRecord], manifest: RunManifest) -> Fov:
-    """Describe one position from its manifest entry and its table rows."""
+def _fov(
+    entry: FileEntry,
+    rows: list[PlaneRecord],
+    manifest: RunManifest,
+    description: Description | None = None,
+) -> Fov:
+    """Describe one position from its manifest entry and its table rows.
+
+    With the published ``description`` the canonical identity is added beside the key; the
+    unit's channels must be the image's channels (nothing is guessed when they are not).
+    """
     zs = {r.z for r in rows} or {0}
     ts = {r.t for r in rows} or {0}
     channels = rows[0].channel_count if rows else len(entry.channel_names) or 1
     if entry.position_id is None:  # never an empty name in the key (round-2 audit A-m5)
         raise RunInputsError(f"The run records no position_id for {entry.relative_path}.")
-    return Fov(
+    fov = Fov(
         key=(*entry.labels, entry.position_id),
         relative_path=entry.relative_path,
         plane_ids=tuple(r.plane_id for r in rows),
@@ -587,3 +570,4 @@ def _fov(entry: FileEntry, rows: list[PlaneRecord], manifest: RunManifest) -> Fo
         t_count=max(ts) + 1,
         c_count=channels,
     )
+    return fov if description is None else with_identity(fov, entry, description)

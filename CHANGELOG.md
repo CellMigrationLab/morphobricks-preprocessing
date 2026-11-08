@@ -18,6 +18,19 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   (required then, never read from the clock). All lines go in the same single atomic append as
   the re-confirmations, so the publication is whole or absent.
 
+- **Semantic `RunInputs` (Stage 1, PR 12; stacked on PR 11).** For a run with a published
+  description, each `Fov` carries `repeat_group`, `condition_id`, `technical_repeat_id` and
+  `channel_ids` beside the unchanged key (owner decision Q8: the key keeps the source folder
+  labels); `RunInputs.channel_index(fov, id)` finds a channel by canonical ID and refuses an
+  absent one; `references()` gives the condition reference graph, `mask_semantics()` and
+  `mask_check_status()` the masks' meaning and check status. `RunInputs.open` and
+  `description()` read only the published `morphobricks.toml`, check it is the file the run
+  recorded, and refuse a draft or an unconfirmed file with `A_DRAFT_REFUSED`; `read_mask` of a
+  file the mask step has not checked is `A_MASK_UNCHECKED`. A run without a description is
+  unchanged. New modules `fov_identity`, `description_consume`, `run_inputs_error`,
+  `run_inputs_semantic`; `LazyImage` moved to `run_inputs_image` (still exported from
+  `run_inputs`). Conformance P14, P25 and the `A_MASK_UNCHECKED` part of P28 in
+  `tests/test_spec_run_inputs_semantic.py`.
 - **A run with a published experiment description (Stage 1, PR 11).** When the output folder
   holds a published `morphobricks.toml`, `run` reads it with the strict reader (a refusal is
   reported with its Spec code, table path and a plain message), runs the physical checks

@@ -42,6 +42,7 @@ EXPECTED_MODULES = (
     "test_spec_refval_crosscheck.py",
     "test_spec_rules_table.py",
     "test_spec_run_description.py",
+    "test_spec_run_inputs_semantic.py",
     "test_spec_transitions.py",
     "test_spec_vendored_missing.py",
 )

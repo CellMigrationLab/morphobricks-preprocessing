@@ -301,7 +301,26 @@ It gives:
   reads `experiment_design.csv` with the strict `read_confirmed_design` (§16) and the
   manifest's `experiment_design_sha256` (issue #83, plan §12 question 62; it used the lenient
   reader before): a design that reader refuses raises `RunInputsError`, with the refusal
-  as its `__cause__`.
+  as its `__cause__`;
+- **semantics of a published description** (Stage 1 PR 12; only for a run whose manifest has
+  `experiment_description`, §9; a run without one is unchanged: the fields below are `None`,
+  `description()`, `references()` and `mask_semantics()` return `None`, and `read_mask` is as
+  before). `Fov.repeat_group`, `Fov.condition_id`, `Fov.technical_repeat_id` (the canonical
+  IDs, added beside the unchanged `Fov.key`, whose condition, repeat and technical repeat stay
+  the source folder labels: owner decision Q8, experiment-v1 §3.4) and `Fov.channel_ids` (the
+  canonical channel ID of each C index, as the unit declares them; a unit whose channel count
+  is not the image's, or folders that name no declared unit, is a `RunInputsError`: nothing is
+  guessed). `channel_index(fov, channel_id)` gives the C index, `ChannelNotFoundError` for a
+  channel the image lacks (never a default). `references()` is the condition reference graph
+  (condition ID to the ID it references, or `None`); `mask_semantics()` maps mask ID to
+  `MaskSemantics(source_type, representation, source_channels)`; `mask_check_status(mask_id,
+  fov)` is `checked` or `not yet checked`. `description()` reads the published
+  `morphobricks.toml` again and returns it only if it is the file whose SHA-256 the run
+  recorded (`RunInputsError` otherwise, also at `open`); a draft, a file not named
+  `morphobricks.toml` (`description_consume.read_published_description`) or a published file
+  with an unconfirmed repeat is refused with `DraftRefusedError` (`A_DRAFT_REFUSED`). `read_mask`
+  of a mask file the mask step has not checked (§15; `mask_representation.json`) is refused with
+  `MaskUncheckedError` (`A_MASK_UNCHECKED`); the error classes carry the Spec code as `code`.
 
 A `RunInputs` is picklable, so worker processes can use it.
 `morphobricks_preprocessing.testing.make_clean_run(folder, ...)` writes a tiny experiment of
