@@ -119,4 +119,7 @@ def masks_command(args: argparse.Namespace) -> int:
     print(mask_report_summary(result.report))
     print()
     print(f"Report written to {result.path}")
-    return 0
+    if result.issues:
+        print()
+        print(format_issues(result.issues))
+    return 1 if has_errors(result.issues) else 0

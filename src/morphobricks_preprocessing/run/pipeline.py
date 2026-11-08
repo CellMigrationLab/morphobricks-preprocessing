@@ -60,6 +60,11 @@ from ..mask_scan import MASK_REPORT_FILENAME
 from ..planes import DEFAULT_MEMORY_LIMIT
 from ..source_content import content_changed
 from ..validation import ValidationIssue, has_errors, warning
+from .description_run import (
+    RunDescription,
+    checked_description,
+    manifest_entry,
+)
 from .design_file import design_for_run
 from .generation import staged_generation
 from .lock import OutputLockedError, lock_issue, output_lock
@@ -232,6 +237,8 @@ class _Run:
     """The names in the output folder before the run wrote anything."""
     mask_content: Mapping[str, str | None] = field(default_factory=dict)
     """In a ``verify_content`` run, each mask's content SHA-256 taken after the header checks."""
+    description: RunDescription | None = None
+    """The published experiment description the run works with, or None (a v0.4 run)."""
 
 
 def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResult:
@@ -252,12 +259,13 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
     design, design_problems, design_changed = design_for_run(options.design, output, previous[0])
     checked = header_checks(pre, inputs, design, options.memory_limit)
     checked.issues.extend(design_problems)
+    described = checked_description(output, pre, checked)
     if checked.review is not None:
         pre, absent = fit_calibration(pre, checked.review)
         checked.issues.extend(absent)
     calibrated = calibration_change(usable(previous[0]), pre.calibration)
     inputs = replace(inputs, changes=(*inputs.changes, *design_changed, *calibrated))
-    run = _Run(output, pre, inputs, options.mode, checked, previous, found)
+    run = _Run(output, pre, inputs, options.mode, checked, previous, found, description=described)
     recorded = usable(previous[0])
     base = RunOutcome(
         step="run",
@@ -467,6 +475,7 @@ def _write_generation(
     """
     pre, design = run.pre, run.checked.design
     masks, intensity = checks
+    described = run.description
     per_file = Counter(record.source_relative_path for record in records)
     csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME)
     design_sha256 = None
@@ -491,6 +500,11 @@ def _write_generation(
         narrow_ranges=tuple(rows.narrow),
         calibration_sha256=pre.calibration.sha256,
         conversion_record_sha256=None if pre.conversion is None else pre.conversion.sha256,
+        experiment_description=(
+            None
+            if described is None
+            else manifest_entry(described, masks, run.output, len(rows.entries))
+        ),
         manifest_version=version_for(settings.verify_content),
     )
     manifest = _kept_time(manifest, run.previous[0])

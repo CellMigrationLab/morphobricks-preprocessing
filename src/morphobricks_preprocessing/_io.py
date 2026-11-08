@@ -14,6 +14,7 @@ folder. On Windows, where files have no such modes, nothing is changed.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import stat
@@ -130,3 +131,12 @@ def free_space(path: str | os.PathLike) -> int | None:
             except OSError:
                 return None
     return None
+
+
+def file_sha256(path: str | os.PathLike) -> str:
+    """SHA-256 of a file, read in blocks (moved from :mod:`.manifest`, which re-exports it)."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
