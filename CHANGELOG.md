@@ -8,6 +8,19 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Description draft file and draft to description (Stage 1).** New `morphobricks.draft.json`
+  in the output folder: a versioned, strictly read JSON file with the user's answers so far
+  (IDs, the date of each repeat's confirmation, the channel of every C index of every unit,
+  masks, references, display names), `base_sha256` (the published bytes, or `absent`) and the
+  pinned Spec commit. `run/draft_file.py`: `save_draft` (atomic, under the output lock, an answer
+  the rules refuse is never saved), `load_draft` (`R_PUBLISHED_FILE_CHANGED` when the published
+  file is no longer the base; a malformed, unknown-version or extra-key file is refused, never
+  repaired), `publish_draft` (builds the description, publishes it and deletes the draft under
+  one hold of the lock; any refusal writes nothing). `draft_answers.description_from_draft` is
+  pure and refuses with every missing confirmation listed; nothing is confirmed on the user's
+  behalf and the clock is never read. `run/description_file.publish_locked` is
+  `publish_description` for a caller that holds the lock. Contract §18.
+
 - **Conversion record version 3 holds a Z projection (part of #176).** `RECORD_VERSION` is `"3"`:
   a record-level `projection` (null, or `{method, z_range}`), the entry action `projected`
   and a strictly read `projection` object per projected entry (source content SHA-256, Z axis
