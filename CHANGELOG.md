@@ -20,6 +20,25 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   image's header names and the channel's confirmed names. An image without header names needs
   no evidence (experiment-v1 section 4.3). A run without a description is unchanged (the global
   checks still apply). Tests: `tests/test_spec_run_aliases.py`.
+- **Conversion record version 3 holds a Z projection (part of #176).** `RECORD_VERSION` is `"3"`:
+  a record-level `projection` (null, or `{method, z_range}`), the entry action `projected`
+  and a strictly read `projection` object per projected entry (source content SHA-256, Z axis
+  and size, slices used, method, types, `dtype_rule`, `rounding`, `nan_policy`,
+  `dropped_sizes`, `significant_bits_dropped`; new pure module `projection_record.py`).
+  An entry that contradicts itself, the record or the dtype table is refused, and the projection
+  is part of the reuse key. Version 2 records are still read; version 1 is still refused. Nothing
+  writes a projection yet (plan §12 question 77, contract §17 "Projected copies").
+- **Z-projection arithmetic (part of #176).** New pure module `projection.py`: `Projection`
+  (method `max`, `mean` or `sum`, no default; optional zero-based half-open slice range),
+  `projection_dtype` (the output type from the input type, method and slice count only: max
+  keeps the type; integer sums widen to `uint32`/`int32`, or to `float64` holding the exact
+  integer for 32-bit inputs; means and float sums are `float64`; 64-bit integers are refused
+  as `cannot_convert_pixel_type`; a sum or mean whose worst case could not be exact is refused
+  as `projection_cannot_be_exact`, never wrapped or clipped), and `PlaneAccumulator` (slices
+  added in ascending z into one running plane; NaN propagates, infinities are kept, a finite
+  sum that overflows to infinity is `projection_overflow`, `inf + -inf` is
+  `projection_undefined`). No I/O and no command yet: `convert --project` follows in later
+  pull requests (design in MorphoFeature `docs/restart/designs/pp176-z-projection-design-2026-11-07.md`).
 - **Semantic `RunInputs` (Stage 1, PR 12; stacked on PR 11).** For a run with a published
   description, each `Fov` carries `repeat_group`, `condition_id`, `technical_repeat_id` and
   `channel_ids` beside the unchanged key (owner decision Q8: the key keeps the source folder
