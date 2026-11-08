@@ -8,7 +8,6 @@ their inputs through :class:`.run_inputs.RunInputs` exactly as a user's run woul
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -16,42 +15,27 @@ import tifffile
 
 from .axes import prefill_mapping
 from .dataset import biological_repeats
+from .description import Description
 from .design import ExperimentDesign, default_design
 from .discovery import discover_experiment
-from .run import RunResult, run_experiment
+from .run import run_experiment
+from .testing_described import CleanRun as CleanRun
+from .testing_described import make_described_run as make_described_run
 
-
-@dataclass(frozen=True)
-class CleanRun:
-    """A clean run made by :func:`make_clean_run`.
-
-    Attributes
-    ----------
-    experiment
-        The experiment folder.
-    output
-        The run's output folder.
-    masks
-        The masks folder, or None.
-    result
-        What :func:`.run.run_experiment` returned.
-    """
-
-    experiment: Path
-    output: Path
-    masks: Path | None
-    result: RunResult
+DEFAULTS = {"axes": "CYX", "shape": (2, 16, 20), "pixel_size": 0.5, "design": False}
+"""The defaults of the arguments a ``description`` replaces (changing one then raises)."""
 
 
 def make_clean_run(
     folder: str | os.PathLike,
     *,
-    axes: str = "CYX",
-    shape: tuple[int, ...] = (2, 16, 20),
+    axes: str = DEFAULTS["axes"],
+    shape: tuple[int, ...] = DEFAULTS["shape"],
     mask_types: tuple[str, ...] = (),
-    pixel_size: float | None = 0.5,
-    design: bool = False,
+    pixel_size: float | None = DEFAULTS["pixel_size"],
+    design: bool = DEFAULTS["design"],
     seed: int = 0,
+    description: Description | bytes | str | None = None,
 ) -> CleanRun:
     """Write a two-condition experiment of named-axis TIFFs and run preprocessing on it.
 
@@ -74,6 +58,15 @@ def make_clean_run(
         repeat group), so the run writes ``experiment_design.csv``.
     seed
         The random seed of the pixels.
+    description
+        A published experiment description (its bytes or text, published unchanged, or a
+        :class:`.description.Description`): the run is then a described run built by
+        :func:`.testing_described.make_described_run`, the tree is the one the description
+        declares (``image_count`` images per member) and ``mask_types`` are IDs of the
+        description's masks, written and checked by the mask step. ``axes``, ``shape``,
+        ``pixel_size``, ``design`` and ``seed`` come from the description or are not used, and
+        changing one raises ``ValueError``. For masks left unchecked, call
+        :func:`.testing_described.make_described_run` with ``mask_step=False``.
 
     Returns
     -------
@@ -81,9 +74,17 @@ def make_clean_run(
 
     Raises
     ------
+    ValueError
+        If a ``description`` is given with an argument it replaces, or with an unknown mask ID.
     RuntimeError
         If the run does not write its outputs (its issues are in the message).
     """
+    if description is not None:
+        given = {"axes": axes, "shape": shape, "pixel_size": pixel_size, "design": design}
+        changed = sorted(k for k, v in given.items() if v != DEFAULTS[k]) + (["seed"] * bool(seed))
+        if changed:
+            raise ValueError(f"{changed} cannot be set together with a description")
+        return make_described_run(folder, description, masks=tuple(mask_types))
     root = Path(folder)
     experiment, masks = root / "experiment", (root / "masks" if mask_types else None)
     rng = np.random.default_rng(seed)
