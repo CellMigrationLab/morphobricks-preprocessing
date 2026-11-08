@@ -162,3 +162,20 @@ RESERVED = frozenset(
     }
 )  # fmt: skip
 """The one reserved list of channel IDs and mask IDs, compared case-folded (section 3.2)."""
+
+MISSING_TEXT = frozenset({"", "na", "nan", "none", "null", "n/a", "<na>"})
+"""The names the Label rule refuses, compared case-folded: table readers read them as a missing
+value (section 3.2). The reader's own copy; ``tests/test_description_rules_copy.py`` keeps it
+equal to the value discovery uses."""
+SINGLE = "single"
+"""The one lower-case label of a level with a single member (section 3.3). The reader's own
+copy; a test keeps it equal to the value normalization uses."""
+
+
+def label_refused(value: str) -> bool:
+    """Return whether the Label rule (section 3.2) refuses a text value.
+
+    A label is refused when it starts or ends with whitespace or, case-folded, is one of
+    :data:`MISSING_TEXT`. Nothing is trimmed or repaired.
+    """
+    return value != value.strip() or value.casefold() in MISSING_TEXT

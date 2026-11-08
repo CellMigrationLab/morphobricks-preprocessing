@@ -20,7 +20,10 @@ complete preprocessing widget app.
 The setup chooses one source:
 
 1. **Nearby checkout:** when the kernel is running in this repository or one of its subfolders,
-   use that checkout's source code, including local edits.
+   use that checkout's source code. The checkout must be the commit the notebook pins
+   (`RELEASE_REF`) with no uncommitted changes, and setup prints its commit and tree state. Any
+   other commit or edited tree is refused; developers set `DEVELOPMENT_OVERRIDE = True` at the
+   top of the cell to use it, and the printed header then says so.
 2. **Matching installed package:** otherwise, reuse an installed preprocessing package only
    when its version matches the notebook.
 3. **Pinned GitHub source:** otherwise install the notebook's immutable `RELEASE_REF`, never
@@ -669,7 +672,7 @@ After writing, `run` prints the intensity checks of the table, grouped by kind, 
 the channel, the image or biological repeat and the values compared, and what to do once
 per kind; it draws no plots (the notebook does).
 
-**Exit status.** Every command (`check`, `run`, `masks`, `calibrate`, `design` and
+**Exit status.** Every command (`check`, `run`, `masks`, `calibrate`, `design`, `describe` and
 `convert`) exits with status 1 when it prints an error, and with 0 otherwise: warnings,
 intensity warnings included, never change it. So `check` exits with 1 on every error it
 reports, also an experiment design it cannot read (it never replaces that file) or one
@@ -741,6 +744,49 @@ The rules behind each suggestion use thresholds you can change, for example
 kinds of mask count as the same objects. `morphobricks-preprocessing masks --help` lists
 all seven with their defaults; the values used are printed and written in the report.
 `python -m morphobricks_preprocessing` works the same way.
+
+### Describe your experiment (`describe`)
+
+```bash
+morphobricks-preprocessing describe /data/exp1
+```
+
+prints, in plain language, the draft description of the experiment that the folders (and,
+when there is one, the output folder) allow: the ID proposed for each condition, technical
+repeat and biological repeat (a folder such as `control` or `z`, whose name cannot be an ID,
+gets no proposal and is never repaired), each repeat with its folders and image counts, and
+every question still open, each with what you have to do: choose or accept an ID, confirm
+that the folders of a repeat were prepared and acquired under the same circumstances, say
+what each of two controls is compared against.
+
+- It reads the folder structure only (no image is opened) and **writes nothing**: no output
+  folder, no draft, no description. `--output FOLDER` names the output folder to read (default:
+  next to the experiment), `--exclude PATH` leaves an image out, as in `check`.
+- If the output folder holds an `experiment_design.csv` from an earlier version and no
+  published `morphobricks.toml`, the draft is that design migrated: its confirmed repeats
+  and their dates are shown as you gave them, and the IDs are still only proposals. A design
+  that cannot be read, or breaks the rules of the description, is refused with the reason and
+  left as it is.
+- If a `morphobricks.toml` is published, `describe` compares it with the folders instead: how
+  many acquisitions are as published, which are new or gone, which image counts changed and
+  which repeats must be confirmed again. Only folders and counts are compared; the channels
+  are not (no header is read).
+- **Nothing is confirmed by the command.** An ID, the comparability of a repeat, a reference
+  and the removal of a folder are your answers, given in the notebook; the command never
+  answers for you and never fills in a date.
+
+```bash
+morphobricks-preprocessing describe /data/exp1 --publish
+```
+
+publishes the description only when no question is open and every decision is confirmed;
+otherwise it prints `Not published. What is missing:` with every item and exits with status 1.
+In this version the command line holds none of your answers (they are given in the notebook),
+so `--publish` publishes nothing from a draft made of folders: it lists what is missing. For
+a published description that matches the folders it says `Nothing to publish` and exits with
+status 0; for one that no longer matches, it lists the new, gone or changed folders and leaves
+the file as it is. Like the other commands, `describe` exits with status 1 when it reports an
+error (an experiment folder that is not found, an unreadable description) and 0 otherwise.
 
 ### Stating pixel sizes (`calibrate`)
 
