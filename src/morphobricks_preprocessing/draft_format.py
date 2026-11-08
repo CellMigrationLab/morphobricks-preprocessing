@@ -62,8 +62,8 @@ class DraftFileError(ValueError):
     """Raised when draft bytes (or the draft file) are refused; ``code`` says why.
 
     ``code`` is ``malformed``, ``unknown_version``, ``unknown_key`` (a key the format does not
-    have), ``R_DRAFT_BASE_MISSING`` (no usable ``base_sha256``), ``R_FILE_SYMLINK`` or
-    ``no_draft``.
+    have), ``R_DRAFT_BASE_MISSING`` (no usable ``base_sha256``), ``R_FILE_SYMLINK``,
+    ``no_draft`` or ``spec_commit_mismatch`` (raised by :mod:`.run.draft_file`).
     """
 
     def __init__(self, message: str, code: str = "malformed") -> None:
