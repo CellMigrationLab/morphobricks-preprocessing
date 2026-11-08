@@ -1554,6 +1554,21 @@ Raised during review; to be decided before the milestones that need them:
     `RunInputs.open` refuses a manifest recording `shared: true`. Plain-stack masks with
     stated axes (`Cells=TYX`) remain and are checked against the image. (3) The other
     bricks are not changed: their own Z-plane policies stay as a second defence.
+77. How is a Z-stack turned into a 2-D image deliberately (preprocessing #176)? *Decided
+    (owner, 7 November 2026; contract §17, "Projected copies"):* by `convert`, not a new
+    command: `convert EXP --to FOLDER --axes ROLES --project max|mean|sum [--z-range A:B]`
+    writes a recorded 2-D OME-TIFF copy of every image, never a projection at read time.
+    (1) There is no default method. (2) Every image goes through the method (a Z=1 image or
+    one without a Z role is one slice), so a tree has one pixel type and one provenance per
+    image. (3) The output type depends only on the input type, the method and the slice
+    count; a sum or mean that could not be exact is refused, never wrapped or clipped;
+    64-bit integers are refused. (4) Masks are never projected: 3-D masks stop the
+    projection before anything is written, 2-D masks pair as usual with the recorded warning
+    `masks_on_projected_images`. (5) One optional `--z-range` for the whole experiment (one
+    slice is a one-slice range), refused if any image is shorter. (6) The Z size is never
+    written to the copy; it and its source go to the record's `dropped_sizes`. The record
+    version is 3. Built in stages: the pure arithmetic (`projection`), the record, then
+    the plan and writer, the command, the run side and the notebook card.
 78. Stage 1: the experiment description (`morphobricks.toml`, Spec experiment-v1) and the
     notebook that writes it. *Decided (owner, 7 November 2026; all eight recommendations of
     the Stage 1 design, section 6, accepted):* (Q1) the notebook always writes the

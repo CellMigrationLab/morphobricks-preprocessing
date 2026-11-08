@@ -116,7 +116,7 @@ def test_each_copys_sha256_is_recorded(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
     data = json.loads((copies / CONVERSION_RECORD_FILENAME).read_text())
-    assert data["record_version"] == "2"
+    assert data["record_version"] == "3"
     for entry in data["files"]:
         assert entry["copy_sha256"] == file_sha256(copies / entry["relative_path"])
 
