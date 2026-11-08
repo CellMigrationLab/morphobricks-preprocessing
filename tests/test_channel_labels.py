@@ -181,7 +181,7 @@ def tagged_answers():
     units = dict(answers.units)
     key = sorted(units)[0]
     units[key] = UnitAnswer(("DNA", None), "channels")
-    units[sorted(units)[1]] = UnitAnswer(("", "ACTIN"), "rgb")
+    units[sorted(units)[1]] = UnitAnswer((None, "ACTIN"), "rgb")
     return replace(answers, units=units)
 
 

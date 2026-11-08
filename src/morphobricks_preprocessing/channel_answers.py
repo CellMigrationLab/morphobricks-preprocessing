@@ -77,7 +77,8 @@ def with_type(answers: DraftAnswers, layout: UnitLayout, image_type: str | None)
 def with_labels(answers: DraftAnswers, labels: Mapping[str, str | None]) -> DraftAnswers:
     """Return the answers with exactly these labels (ID -> shown-as name or None).
 
-    A tag of a label that is gone becomes untagged (never moved to another label). The colour tokens of declared colour units stay.
+    A tag of a label that is gone becomes untagged (never moved to another label).
+    The colour tokens of declared colour units stay.
     """
     kept = {k: v for k, v in answers.channels.items() if k in RGB_IDS}
     channels = {

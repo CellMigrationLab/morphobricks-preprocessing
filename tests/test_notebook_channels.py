@@ -170,14 +170,14 @@ def test_the_label_list_is_saved_with_shown_as_names_only_on_confirmation(plain,
 # --- step B: the tag grid ------------------------------------------------------------------------
 
 
-def test_each_dropdown_offers_the_labels_and_not_imaged_only(plain, out):
+def test_each_dropdown_offers_the_labels_only(plain, out):
     nb = open_screen(plain, out)
     set_labels(nb, [DNA, ACTIN, PHASE])
     grid = nb.channel_grid
     assert ui.is_visible(grid.widget)
     assert len(grid.cells) == 4 * 3  # one dropdown per unit and C index
     for drop in grid.cells.values():
-        assert [value for _, value in drop.options] == [None, ACTIN, DNA, PHASE, ""]
+        assert [value for _, value in drop.options] == [None, ACTIN, DNA, PHASE]
     assert all(drop.value is None for drop in grid.cells.values())  # nothing chosen for you
 
 
@@ -215,7 +215,7 @@ def test_the_dropdown_has_no_empty_option_and_an_unused_slot_needs_a_label(plain
     set_labels(nb, [DNA, ACTIN, "unused"])
     grid = nb.channel_grid
     for drop in grid.cells.values():
-        assert [label for _, label in drop.options] == [None, DNA, ACTIN, "unused"]
+        assert [label for _, label in drop.options] == [None, ACTIN, DNA, "unused"]
     assert "unused" in nb.channel_labels.widget.children[1].value  # the Step A hint
     tag_all(nb, (DNA, ACTIN, "unused"))
     assert grid.complete
@@ -243,7 +243,9 @@ def test_a_chip_shows_the_id_and_the_shown_as_name_only_as_tooltip(plain, out):
     card.confirm.button.click()
     tag_all(nb, (DNA, ACTIN, "unused"))
     html_texts = [w.value for w in _all(nb.channel_grid.widget) if hasattr(w, "value")]
-    assert any(">DNA</span>" in v and "title='DAPI stain'" in v for v in html_texts if isinstance(v, str))
+    assert any(
+        ">DNA</span>" in v and "title='DAPI stain'" in v for v in html_texts if isinstance(v, str)
+    )
     assert not any("DAPI stain</span>" in v for v in html_texts if isinstance(v, str))
 
 
@@ -431,7 +433,7 @@ def test_a_removed_unit_drops_only_its_own_answer(plain, out):
     assert grid.complete and len(grid.layouts) == 3
     assert all(d.value == (DNA, ACTIN, PHASE)[k[1]] for k, d in grid.cells.items())
     assert len(saved(out).units) == 4  # the file is read, not rewritten, until the next answer
-    grid.cells[(("ctrl", "rep1", "single"), 2)].value = ""  # the next answer saves what remains
+    grid.cells[(("ctrl", "rep1", "single"), 2)].value = None  # the next answer saves what remains
     assert set(saved(out).units) == {
         ("ctrl", "rep1", "single"),
         ("ctrl", "rep2", "single"),

@@ -60,8 +60,9 @@ class UnitAnswer:
     """The channel ID of each C index of one imaging unit, in order, and its image type.
 
     An entry of ``channels`` is a declared channel ID or None while that position is not
-    tagged (every position needs a label the user declared, for example ``unused``). ``image_type`` is ``"rgb"``, ``"channels"`` (an ordinary channel
-    image, the description's absent type) or None while not answered.
+    tagged (every position needs a label the user declared, for example ``unused``).
+    ``image_type`` is ``"rgb"``, ``"channels"`` (an ordinary channel image,
+    the description's absent type) or None while not answered.
     """
 
     channels: tuple[str | None, ...]
