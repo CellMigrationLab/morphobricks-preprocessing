@@ -13,6 +13,7 @@ import re
 from collections.abc import Mapping
 
 from .description import Description
+from .description_unnamed import FIELD, checked_items, unnamed_items
 from .description_write import section_digests
 
 KEY = "experiment_description"
@@ -22,7 +23,9 @@ _FIELDS = ("sha256", "schema_version", "section_digests", "units", "masks", "rec
 
 
 def unit_records(
-    description: Description, verified: Mapping[tuple[str, str, str], bool]
+    description: Description,
+    verified: Mapping[tuple[str, str, str], bool],
+    unnamed: Mapping[tuple[str, str, str], Mapping[str, tuple[int, ...]]] | None = None,
 ) -> list[dict[str, object]]:
     """Return every declared unit with whether its image type was checked against a header.
 
@@ -30,25 +33,30 @@ def unit_records(
     check's outcome; a unit it does not name is not verified. It is False for a unit whose
     format states no colour interpretation (OME-Zarr: the declaration stands on the user's
     confirmation) and for a unit with no readable image.
+
+    ``unnamed`` maps the same keys to the images whose header names not every channel and the
+    positions without a name (:mod:`.description_unnamed`); a unit with such images gets the
+    list under ``images_without_header_channel_names``, any other unit has no such key.
     """
-    return [
-        {
-            "repeat": repeat_id,
-            "condition": condition_id,
-            "technical_repeat": unit_id,
-            "image_type_header_verified": verified.get(
-                (
+    out = []
+    for repeat_id, repeat in sorted(description.repeats.items()):
+        for condition_id, member in sorted(repeat.members.items()):
+            for unit_id, unit in sorted(member.technical_repeats.items()):
+                key = (
                     description.conditions[condition_id].source_folder,
                     member.source_repeat,
                     unit.source_folder,
-                ),
-                False,
-            ),
-        }
-        for repeat_id, repeat in sorted(description.repeats.items())
-        for condition_id, member in sorted(repeat.members.items())
-        for unit_id, unit in sorted(member.technical_repeats.items())
-    ]
+                )
+                record: dict[str, object] = {
+                    "repeat": repeat_id,
+                    "condition": condition_id,
+                    "technical_repeat": unit_id,
+                    "image_type_header_verified": verified.get(key, False),
+                }
+                if (unnamed or {}).get(key):
+                    record[FIELD] = unnamed_items(unnamed[key], len(unit.channels))
+                out.append(record)
+    return out
 
 
 def description_record(
@@ -94,4 +102,7 @@ def recorded_description(value: object) -> dict | None:
     ):
         if not isinstance(value[name], kind):
             raise ValueError(f"{KEY}.{name} is not a {kind.__name__}")
+    for index, unit in enumerate(value["units"]):
+        if isinstance(unit, dict) and FIELD in unit:
+            checked_items(unit[FIELD], f"{KEY}.units[{index}]")
     return value
