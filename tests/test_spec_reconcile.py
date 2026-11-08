@@ -101,8 +101,11 @@ def test_p15_new_fovs_in_an_existing_unit_keep_the_confirmation_and_its_date(tmp
     }
     assert layout_changed(published, draft) == ()
     output, base = published_in(tmp_path, published)
-    result = publish_description(output, draft, base_sha256=base)
-    assert result.records == ()  # the change is reported, and needs no re-confirmation
+    with pytest.raises(ValueError, match="recorded_on"):  # the date is the user's, never defaulted
+        publish_description(output, draft, base_sha256=base)
+    result = publish_description(output, draft, base_sha256=base, recorded_on=DAY)
+    assert [r["type"] for r in result.records] == ["image_count_changed"]  # no re-confirmation
+    assert (result.records[0]["old_image_count"], result.records[0]["new_image_count"]) == (10, 15)
     assert b'confirmed_on = "2026-10-30"' in (output / "morphobricks.toml").read_bytes()
 
 
@@ -265,8 +268,10 @@ def test_p08_the_removal_is_one_grouped_question_and_publishes_only_when_answere
     found = reconfirmations(published, draft, rec, [answer])
     assert found.open == () and {c.confirmed_on for c in found.accepted} == {DAY}
     assert len(found.accepted) == 5
-    publish_description(output, draft, base_sha256=base, confirmations=found.accepted)
-    assert len(read_records(output)) == 5
+    publish_description(
+        output, draft, base_sha256=base, confirmations=found.accepted, removals=[answer]
+    )
+    assert [r["type"] for r in read_records(output)] == ["reconfirmation"] * 5 + ["removed"]
     assert (output / RECORDS_FILENAME).exists()
 
 
@@ -287,7 +292,9 @@ def test_removing_a_condition_asks_once_for_every_lost_channel_and_technical_rep
     output, base = published_in(tmp_path, published)
     found = reconfirmations(published, draft, rec, [answer])
     assert {(c.kind, c.old_id) for c in found.accepted} == {(k, i) for k, i, _ in question.needs}
-    publish_description(output, draft, base_sha256=base, confirmations=found.accepted)
+    publish_description(
+        output, draft, base_sha256=base, confirmations=found.accepted, removals=[answer]
+    )
     again = replace(published, used_ids=draft.used_ids)
     assert Refusal.R_USED_ID_REUSED in {i.code for i in transition_issues(draft, again)}
 

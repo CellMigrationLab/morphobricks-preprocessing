@@ -33,7 +33,7 @@ from .run.description_file import ABSENT
 
 DRAFT_FORMAT = "morphobricks-description-draft"
 DRAFT_VERSION = 1
-SPEC_COMMIT = "b197ac19d7a577cabe5281a81fa0fa59aef37146"
+SPEC_COMMIT = "2975e0ee09d408d4a87da49d953f7988d4f9cd30"
 """The MorphoBricks-Spec commit the rules of this brick are pinned to (``tests/spec_fixtures``)."""
 BASE_MISSING = "R_DRAFT_BASE_MISSING"
 SHA256 = re.compile(r"[0-9a-f]{64}")
