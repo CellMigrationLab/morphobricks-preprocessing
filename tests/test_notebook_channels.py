@@ -210,14 +210,41 @@ def test_incomplete_tagging_blocks_completion(plain, out):
     assert grid.complete and "Every channel of every one of the 4 units" in grid.status.value
 
 
-def test_not_imaged_is_an_answer_but_the_description_cannot_hold_it(plain, out):
+def test_the_dropdown_has_no_empty_option_and_an_unused_slot_needs_a_label(plain, out):
     nb = open_screen(plain, out)
-    set_labels(nb, [DNA, ACTIN, PHASE])
-    tag_all(nb, (DNA, ACTIN, ""))
+    set_labels(nb, [DNA, ACTIN, "unused"])
     grid = nb.channel_grid
+    for drop in grid.cells.values():
+        assert [label for _, label in drop.options] == [None, DNA, ACTIN, "unused"]
+    assert "unused" in nb.channel_labels.widget.children[1].value  # the Step A hint
+    tag_all(nb, (DNA, ACTIN, "unused"))
     assert grid.complete
-    assert "unit_channel_empty" in grid.status.value
-    assert all(u.channels == (DNA, ACTIN, "") for u in saved(out).units.values())
+    assert all(u.channels == (DNA, ACTIN, "unused") for u in saved(out).units.values())
+
+
+def test_the_step_b_is_incomplete_while_one_position_has_no_label(plain, out):
+    nb = open_screen(plain, out)
+    set_labels(nb, [DNA, ACTIN, "unused"])
+    tag_all(nb, (DNA, ACTIN, "unused"), skip=[("drug", "rep2", "single")])
+    assert not nb.channel_grid.complete
+
+
+def test_a_chip_shows_the_id_and_the_shown_as_name_only_as_tooltip(plain, out):
+    nb = open_screen(plain, out)
+    card = nb.channel_labels
+    while len(card.rows) < 3:
+        card.add_button.click()
+    for row, text in zip(card.rows, [DNA, ACTIN, "unused"], strict=True):
+        row.id_box.value = text
+    card.rows[0].name_box.value = "DAPI stain"
+    assert ">DNA</span>" in card.rows[0].state.value
+    assert "DAPI stain</span>" not in card.rows[0].state.value
+    assert "title='DAPI stain'" in card.rows[0].state.value
+    card.confirm.button.click()
+    tag_all(nb, (DNA, ACTIN, "unused"))
+    html_texts = [w.value for w in _all(nb.channel_grid.widget) if hasattr(w, "value")]
+    assert any(">DNA</span>" in v and "title='DAPI stain'" in v for v in html_texts if isinstance(v, str))
+    assert not any("DAPI stain</span>" in v for v in html_texts if isinstance(v, str))
 
 
 def test_a_label_cannot_stand_at_two_positions_of_a_unit(plain, out):

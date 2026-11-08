@@ -111,7 +111,9 @@ class LabelsCard:
                     "Name what was stained, once per stain. The number of slots is the largest "
                     "number of channels found in any image; <b>Add label</b> adds more. Header "
                     "names are offered only when they are valid labels as they are and not "
-                    "generic."
+                    "generic. "
+                    "Every channel position of every unit needs a label, so an unused slot "
+                    "needs one too: declare it here (for example <i>unused</i>)."
                 ),
                 self.note,
                 self.groups_box,

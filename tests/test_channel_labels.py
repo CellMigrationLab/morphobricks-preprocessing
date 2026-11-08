@@ -149,9 +149,9 @@ def test_remaining_counts_untagged_cells_and_unanswered_types():
     half = {lay[0].key: UnitAnswer(("DNA", None), None)}
     left = remaining(lay, half, ["DNA"])
     assert (left.cells, left.types, left.done) == (1, 1, False)
-    full = {lay[0].key: UnitAnswer(("DNA", ""), "channels")}
-    assert remaining(lay, full, ["DNA"]).done  # "not imaged / empty" is an answer
-    assert not remaining(lay, {lay[0].key: UnitAnswer(("GONE", ""), "channels")}, ["DNA"]).done
+    full = {lay[0].key: UnitAnswer(("DNA", "unused"), "channels")}
+    assert remaining(lay, full, ["DNA", "unused"]).done  # an unused slot has a label too
+    assert not remaining(lay, {lay[0].key: UnitAnswer(("GONE", "DNA"), "channels")}, ["DNA"]).done
 
 
 def test_tags_labels_and_types_change_one_slice_and_keep_the_rest():
@@ -185,13 +185,21 @@ def tagged_answers():
     return replace(answers, units=units)
 
 
-def test_the_file_holds_untagged_and_empty_positions_and_the_image_type():
+def test_the_file_holds_untagged_positions_and_the_image_type():
     answers = tagged_answers()
     data = answers_to_bytes(answers)
     assert b"null" in data
     back = answers_from_bytes(data)
     assert back.units == answers.units
     assert answers_to_bytes(back) == data
+
+
+def test_an_empty_text_tag_is_refused_in_the_file():
+    data = answers_to_bytes(complete())
+    bad = data.replace(b'"DNA",\n', b'"",\n', 1)
+    assert bad != data
+    with pytest.raises(DraftFileError, match="channel ID"):
+        answers_from_bytes(bad)
 
 
 def test_the_file_is_version_3_and_older_versions_are_refused():
@@ -218,7 +226,7 @@ def test_a_tag_that_is_neither_text_nor_null_is_refused():
     data = answers_to_bytes(complete())
     bad = data.replace(b'"DNA",\n', b"7,\n", 1)
     assert bad != data
-    with pytest.raises(DraftFileError, match="text or null"):
+    with pytest.raises(DraftFileError, match="channel ID"):
         answers_from_bytes(bad)
 
 
@@ -230,14 +238,11 @@ def exp(tmp_path):
     return discover_experiment(tmp_path / "exp")
 
 
-def test_an_untagged_or_empty_position_blocks_the_description(exp):
+def test_an_untagged_position_blocks_the_description(exp):
     base = draft_from_discovery(exp)
     answers = complete()
     key = sorted(UNITS)[0]
-    for tags, code in (
-        (("DNA", None), "unit_channel_untagged"),
-        (("DNA", ""), "unit_channel_empty"),
-    ):
+    for tags, code in ((("DNA", None), "unit_channel_untagged"),):
         units = {**answers.units, key: UnitAnswer(tags)}
         new = replace(answers, units=units)
         codes = {q.code for q in missing_confirmations(base, new)}

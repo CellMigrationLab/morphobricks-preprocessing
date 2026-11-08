@@ -59,9 +59,8 @@ class RepeatAnswer:
 class UnitAnswer:
     """The channel ID of each C index of one imaging unit, in order, and its image type.
 
-    An entry of ``channels`` is a declared channel ID, ``""`` for "not imaged / empty" (an
-    answer, but one the description cannot hold: it blocks publication) or None while that
-    position is not tagged. ``image_type`` is ``"rgb"``, ``"channels"`` (an ordinary channel
+    An entry of ``channels`` is a declared channel ID or None while that position is not
+    tagged (every position needs a label the user declared, for example ``unused``). ``image_type`` is ``"rgb"``, ``"channels"`` (an ordinary channel
     image, the description's absent type) or None while not answered.
     """
 
@@ -296,9 +295,8 @@ def missing_confirmations(draft: Draft, answers: DraftAnswers) -> tuple[OpenQues
 
     The draft's own open questions (IDs, repeats, controls, legacy folders), plus the channels
     of every imaging unit that has none (``unit_channels_missing``), every position not tagged
-    (``unit_channel_untagged``) or answered "not imaged / empty" (``unit_channel_empty``: the
-    description cannot hold an empty position) and every channel a unit names that is not
-    declared (``channel_undeclared``).
+    (``unit_channel_untagged``) and every channel a unit names that is not declared
+    (``channel_undeclared``).
     """
     out = list(draft.open_questions())
     declared = set(answers.channels)
@@ -314,11 +312,6 @@ def missing_confirmations(draft: Draft, answers: DraftAnswers) -> tuple[OpenQues
             OpenQuestion("unit_channel_untagged", f"{where} / C{i}")
             for i, c in enumerate(answer.channels)
             if c is None
-        ]
-        out += [
-            OpenQuestion("unit_channel_empty", f"{where} / C{i}")
-            for i, c in enumerate(answer.channels)
-            if c == ""
         ]
         undeclared.update(c for c in answer.channels if c and c not in declared)
     return tuple(out + [OpenQuestion("channel_undeclared", c) for c in sorted(undeclared)])

@@ -30,8 +30,6 @@ from .draft_ids import id_problems
 
 RGB_IDS = ("R", "G", "B")
 """The fixed channel IDs of a colour (RGB) unit (experiment-v1 section 4.4b): never labels."""
-EMPTY = ""
-"""The answer "not imaged / empty" in a unit's ``channels``."""
 
 GENERIC_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"(?:ch|chan|channel|c)[\s_\-=:.]*\d+", "a slot name of the microscope"),
@@ -342,7 +340,7 @@ def remaining(
             types += 1
         if answer is None or answer.image_type != "rgb":
             tags = tags_of(layout, answer)
-            missing = sum(1 for t in tags if t is None or (t != EMPTY and t not in labels))
+            missing = sum(1 for t in tags if t is None or t not in labels)
             cells += missing
             left += missing
         if left:
@@ -351,7 +349,6 @@ def remaining(
 
 
 __all__ = [
-    "EMPTY",
     "GENERIC",
     "GENERIC_PATTERNS",
     "NOT_VALID",

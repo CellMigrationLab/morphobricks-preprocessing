@@ -3,7 +3,8 @@
 An image-first grid: one row per imaging unit (condition / biological repeat / technical repeat),
 one column per C index. Each cell is a safe thumbnail of the unit's representative image (about
 160 px, **Enlarge** for the 1024 px view), the C index, the header name quoted exactly as read and
-a dropdown limited to the labels of step A plus *not imaged / empty*; there is no free text. A
+a dropdown limited to the labels of step A (an unused slot needs a label too, for example
+*unused*); there is no free text. A
 unit whose header names equal the labels exactly is pre-tagged, but the pre-tag is only a
 suggestion until the user confirms it once per layout (units with the same header names), beside
 the thumbnails. Step B is complete only when every channel position of every unit is tagged and
@@ -24,7 +25,6 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .channel_answers import synced, with_tags
 from .channel_labels import (
-    EMPTY,
     UnitLayout,
     positions,
     proposal_for,
@@ -37,7 +37,6 @@ from .notebook_channel_thumbs import CONTRAST_TEXT, Thumbnails
 from .notebook_channels_type import ImageTypeColumn
 from .notebook_channels_view import (
     CHOOSE,
-    NOT_IMAGED,
     AnswerStore,
     blank_chip,
     chip,
@@ -147,7 +146,7 @@ class TagGrid:
             return
         answers = self.store.answers()
         tags = list(tags_of(layout, answers.units.get(layout.key)))
-        if value and value != EMPTY and value in [t for i, t in enumerate(tags) if i != index]:
+        if value and value in [t for i, t in enumerate(tags) if i != index]:
             other = tags.index(value) + 1
             self.message = ui.status(
                 "error",
@@ -312,18 +311,16 @@ class TagGrid:
     def _dropdown(
         self, layout: UnitLayout, index: int, tag: str | None, proposed: bool
     ) -> widgets.Widget:
-        """Build the dropdown of one cell: the labels, not imaged, and what is shown now."""
-        options = [(CHOOSE, None), *((label, label) for label in self.labels), (NOT_IMAGED, EMPTY)]
+        """Build the dropdown of one cell: the labels and what is shown now."""
+        options = [(CHOOSE, None), *((label, label) for label in self.labels)]
         value = tag if tag in {o[1] for o in options} else None
         drop = widgets.Dropdown(options=options, value=value, layout=widgets.Layout(width="99%"))
         drop.observe(lambda change, u=layout, i=index: self._tagged(u, i, change["new"]), "value")
         self.cells[(layout.key, index)] = drop
         if tag is None:
             mark = blank_chip("not tagged")
-        elif tag == EMPTY:
-            mark = blank_chip(NOT_IMAGED)
         else:
-            mark = chip(tag, self.labels)
+            mark = chip(tag, self.labels, self._shown_as(tag))
             if proposed:
                 mark += " <span class='mb-help'>proposed, not confirmed</span>"
         return widgets.VBox([drop, widgets.HTML(mark)])
@@ -367,9 +364,14 @@ class TagGrid:
         self.problem.value = self.message
         self.status.value = self._progress(total)
 
+    def _shown_as(self, label: str) -> str | None:
+        """Return the shown-as name of a saved label (the chip's tooltip), if it has one."""
+        saved = self.store.answers().channels.get(label)
+        return None if saved is None else saved.display_name
+
     def _usage_line(self, label: str, used: int, total: int) -> str:
         """Return the usage line of a label; one used in only some units is orange."""
-        mark = chip(label, self.labels)
+        mark = chip(label, self.labels, self._shown_as(label))
         if used == total:
             return f"<div>{mark} used in all {total} units</div>"
         if used == 0:
@@ -384,24 +386,8 @@ class TagGrid:
         """Return the status: what is still to answer, or that every channel is tagged."""
         answers = self.store.answers()
         left = remaining(self.layouts, answers.units, self.labels)
-        empty = sum(1 for u in answers.units.values() for t in u.channels if t == EMPTY)
-        extra = (
-            ui.status(
-                "warn",
-                f"{empty} position(s) answered “not imaged / empty”.",
-                [
-                    "The experiment description has no empty channel position yet, so it cannot "
-                    "be saved while one is left (unit_channel_empty)."
-                ],
-            )
-            if empty
-            else ""
-        )
         if left.done:
-            return (
-                ui.status("ok", f"Every channel of every one of the {total} units is tagged.")
-                + extra
-            )
+            return ui.status("ok", f"Every channel of every one of the {total} units is tagged.")
         parts = []
         if left.cells:
             parts.append(f"{left.cells} channel(s) still to tag")
@@ -409,7 +395,7 @@ class TagGrid:
             parts.append(f"{left.types} image type(s) still to choose")
         if left.blocked:
             parts.append(f"{left.blocked} unit(s) cannot be tagged")
-        return ui.status("warn", "Not finished: " + ", ".join(parts) + ".") + extra
+        return ui.status("warn", "Not finished: " + ", ".join(parts) + ".")
 
 
 __all__ = ["TagGrid", "partial_text"]

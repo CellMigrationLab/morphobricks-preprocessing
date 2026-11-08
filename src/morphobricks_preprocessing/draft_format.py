@@ -110,11 +110,11 @@ def _texts(value: object, where: str) -> tuple[str, ...]:
 
 
 def _tags(value: object, where: str) -> tuple[str | None, ...]:
-    """Read the channels of a unit: a channel ID, ``""`` (empty) or null (not tagged yet)."""
+    """Read the channels of a unit: a channel ID or null (not tagged yet)."""
     if not isinstance(value, list):
         raise _bad(where, "a list is expected")
-    if not all(item is None or isinstance(item, str) for item in value):
-        raise _bad(where, "each entry is text or null")
+    if not all(item is None or (isinstance(item, str) and item) for item in value):
+        raise _bad(where, "each entry is a channel ID (text) or null")
     return tuple(value)
 
 

@@ -29,7 +29,6 @@ PALETTE = (
 )
 ORANGE = "#D97706"
 ORANGE_FILL = "#FFFBEB"
-NOT_IMAGED = "not imaged / empty"
 CHOOSE = "— tag this channel —"
 COLUMNS_PREFIX = "minmax(150px, 190px)"
 
@@ -65,12 +64,12 @@ def colour(label: str, labels: Sequence[str]) -> str:
     return PALETTE[(order.index(label) if label in order else 0) % len(PALETTE)]
 
 
-def chip(label: str, labels: Sequence[str], shown: str | None = None) -> str:
-    """Return the colour chip of a label as HTML (the ID, or ``shown`` instead)."""
-    text = html.escape(shown if shown is not None else label)
+def chip(label: str, labels: Sequence[str], display: str | None = None) -> str:
+    """Return the colour chip of a label as HTML: always the ID, the shown-as name as tooltip."""
+    tip = f" title='{html.escape(display, quote=True)}'" if display else ""
     return (
-        f"<span style='display:inline-block;padding:1px 9px;border-radius:999px;color:#fff;"
-        f"font-weight:600;background:{colour(label, labels)}'>{text}</span>"
+        f"<span{tip} style='display:inline-block;padding:1px 9px;border-radius:999px;color:#fff;"
+        f"font-weight:600;background:{colour(label, labels)}'>{html.escape(label)}</span>"
     )
 
 
@@ -109,7 +108,6 @@ def unit_name(key: tuple[str, str, str]) -> str:
 __all__ = [
     "CHOOSE",
     "AnswerStore",
-    "NOT_IMAGED",
     "ORANGE",
     "ORANGE_FILL",
     "PALETTE",

@@ -15,7 +15,7 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   and *Tag each channel* shows one row per unit with a safe thumbnail, the quoted header name and a
   dropdown of the labels per channel, plus a per-unit image type with nothing preselected. Labels
   used in only some units say so (`A_SCOPE_INCOMPLETE`). Every answer is saved to the draft, which is
-  now version 3 (a unit's `channels` may hold `null` for not tagged and `""` for not imaged;
+  now version 3 (a unit's `channels` may hold `null` for not tagged, never `""`: every position needs a declared label, e.g. `unused`;
   `image_type` may be `channels`; versions 1 and 2 are refused); contract §18.
 - **Notebook Step 1 cards: names, IDs, pairing and references (Stage 1 PR 14, draft).** After the
   labels are confirmed, *Names for your experiment* proposes the folder names as IDs (only where
