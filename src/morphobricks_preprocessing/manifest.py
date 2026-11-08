@@ -62,6 +62,7 @@ from .versions import package_versions as package_versions  # re-exported (moved
 
 MANIFEST_FILENAME = "run_manifest.json"
 AXES_FROM = ("header", "confirmed")
+_LABEL_KEYS = ("folder", "condition", "biological_repeat", "technical_repeat")
 """Where a file's roles come from (:attr:`FileEntry.axes_from`)."""
 
 
@@ -341,12 +342,7 @@ class RunManifest:
             },
             "axis_mapping": {"axes": self.mapping.axes, "roles": list(self.mapping.roles)},
             "labels": [
-                {
-                    "folder": folder,
-                    "condition": labels[0],
-                    "biological_repeat": labels[1],
-                    "technical_repeat": labels[2],
-                }
+                dict(zip(_LABEL_KEYS, (folder, *labels), strict=True))
                 for folder, labels in self.leaves.items()
             ],
             "files": [_file_dict(f, strict=self.manifest_version != "1") for f in self.files],
@@ -366,11 +362,8 @@ class RunManifest:
             "calibration_sha256": self.calibration_sha256,
             "versions": dict(self.versions),
         }
-        optional = {
-            "masks": self.masks,
-            DESCRIPTION_KEY: self.experiment_description,
-            PROJECTION_KEY: self.projection,
-        }
+        optional = {"masks": self.masks, DESCRIPTION_KEY: self.experiment_description}
+        optional[PROJECTION_KEY] = self.projection
         data.update({key: value for key, value in optional.items() if value is not None})
         return data
 
