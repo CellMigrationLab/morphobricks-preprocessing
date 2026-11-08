@@ -27,8 +27,13 @@ def _expected(description):
     found: Counter = Counter()
     for repeat_id, repeat in description.repeats.items():
         for condition_id, member in repeat.members.items():
-            for unit_id, unit in member.technical_repeats.items():
-                found[(condition_id, repeat_id, unit_id, unit.channels)] += member.image_count
+            # image_count is the member's total: earlier units (sorted ID) take the remainder.
+            base, extra = divmod(member.image_count, len(member.technical_repeats))
+            for position, unit_id in enumerate(sorted(member.technical_repeats)):
+                unit = member.technical_repeats[unit_id]
+                found[(condition_id, repeat_id, unit_id, unit.channels)] += base + (
+                    position < extra
+                )
     return found
 
 
@@ -47,6 +52,33 @@ def test_each_fixture_builds_opens_and_gives_its_canonical_ids(tmp_path, name):
     )
     assert got == _expected(description)
     assert len({f.key for f in fovs}) == len(fovs)
+
+
+def test_v34_member_image_count_is_the_total_over_its_technical_repeats(tmp_path):
+    description = description_from_bytes(VALID["v34"].data)
+    run = make_clean_run(tmp_path / "run", description=VALID["v34"].data)
+    fovs = RunInputs.open(run.output).fovs()
+    per_member = Counter((f.condition_id, f.repeat_group) for f in fovs)
+    per_unit = Counter((f.condition_id, f.repeat_group, f.technical_repeat_id) for f in fovs)
+    # Counts read straight from the parsed description (v34: CTRL/rep1 12, DrugA/rep1 11).
+    assert description.repeats["rep1"].members["CTRL"].image_count == 12
+    assert description.repeats["rep1"].members["DrugA"].image_count == 11
+    assert per_member[("CTRL", "rep1")] == 12
+    assert per_member[("DrugA", "rep1")] == 11
+    assert per_unit[("CTRL", "rep1", "acq1")] == 6 and per_unit[("CTRL", "rep1", "acq2")] == 6
+    assert per_unit[("DrugA", "rep1", "acq1")] == 6 and per_unit[("DrugA", "rep1", "acq2")] == 5
+    for repeat_id, repeat in description.repeats.items():
+        for condition_id, member in repeat.members.items():
+            assert per_member[(condition_id, repeat_id)] == member.image_count
+    assert {f.technical_repeat_id for f in fovs if f.repeat_group == "rep1"} == {"acq1", "acq2"}
+    assert sum(per_member.values()) == len(fovs) == 43
+
+
+def test_a_member_with_fewer_images_than_technical_repeats_is_refused(tmp_path):
+    data = VALID["v34"].data.decode().replace("image_count = 11", "image_count = 1")
+    with pytest.raises(ValueError, match=r"'DrugA'.*image_count 1 for 2 technical repeats"):
+        make_described_run(tmp_path / "run", data)
+    assert not (tmp_path / "run" / "experiment").exists()
 
 
 def test_a_description_object_is_published_canonically(tmp_path):
