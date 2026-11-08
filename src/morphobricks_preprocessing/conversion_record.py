@@ -11,7 +11,11 @@ since it was written (its fingerprint or its SHA-256).
 
 Record version 2 (PP-11c) added the copies' SHA-256, channel names and significant bits;
 a version 1 record is refused with a message to convert again
-(:class:`ConversionRecordError`), since its copies cannot be checked.
+(:class:`ConversionRecordError`), since its copies cannot be checked. Record version 3
+(issue #176) adds the record-level ``projection`` (the method and slice range of a tree of
+Z-projected copies, or null) and the entry action ``"projected"`` with its
+:class:`.projection_record.ProjectionEntry`; version 2 records are still read, as trees
+without a projection.
 """
 
 from __future__ import annotations
@@ -27,20 +31,31 @@ from .axes import AxisMapping
 from .content_hash import unchanged_content
 from .fingerprint import Fingerprint, current_fingerprint
 from .manifest import file_sha256
+from .projection import Projection
+from .projection_record import ProjectionEntry, projection_from_data, projection_to_data
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
 from .validation import ValidationIssue, error, plural, warning
 
 RECORD_FILENAME = ".morphobricks-conversion.json"
 """The conversion record, in the root of the copy tree."""
 
-RECORD_VERSION = "2"
-"""Version 2 (PP-11c): each copy's SHA-256, channel names and significant bits."""
+RECORD_VERSION = "3"
+"""Version 3 (issue #176): the record-level projection and projected entries. Version 2
+(PP-11c: each copy's SHA-256, channel names and significant bits) is still read."""
+
+_READABLE_VERSIONS = ("2", RECORD_VERSION)
 
 _OLD_VERSIONS = ("1",)
 """Record versions written before the copies' SHA-256: refused, convert again."""
 
 CONVERTED = "converted"
 """An image written as a named-axis OME-TIFF with the confirmed roles."""
+
+EXCLUDED = "excluded"
+"""The reason of an excluded image: copied without being read."""
+
+PROJECTED = "projected"
+"""An image written as a 2-D copy: its Z-stack projected with the record's method."""
 
 COPIED = "copied"
 """An image copied byte for byte: its header already names its axes as confirmed, it is
@@ -60,7 +75,7 @@ class CopyEntry:
     relative_path
         The image, relative to the experiment root and to the copy tree (the same path).
     action
-        :data:`CONVERTED` or :data:`COPIED`.
+        :data:`CONVERTED`, :data:`PROJECTED` or :data:`COPIED`.
     reason
         Why: the axis-check code of a converted image (``"axes_yx_swapped"``,
         ``"axes_contradict_header"``, ``"axes_x_before_y"``, ``"axes_not_named"``),
@@ -87,6 +102,8 @@ class CopyEntry:
         image's from its header); empty for none.
     significant_bits
         The significant bits the copy holds, or None.
+    projection
+        How a projected image was made (:data:`PROJECTED` only), else None.
     """
 
     relative_path: str
@@ -102,6 +119,14 @@ class CopyEntry:
     copy_sha256: str | None = None
     channel_names: tuple[str | None, ...] = ()
     significant_bits: int | None = None
+    projection: ProjectionEntry | None = None
+
+    def __post_init__(self) -> None:
+        """Refuse a projection on an entry that is not projected, and the reverse."""
+        if (self.action == PROJECTED) != (self.projection is not None):
+            raise ValueError(
+                f"{self.relative_path!r}: a projected copy needs its projection, and no other does"
+            )
 
     def same_plan(self, other: CopyEntry) -> bool:
         """Return True if ``other`` copies the same source the same way (copies aside).
@@ -127,6 +152,7 @@ class CopyEntry:
             tuple(sorted(self.unknown_sizes.items())),
             tuple(self.channel_names),
             self.significant_bits,
+            None if self.projection is None else self.projection.plan_key(),
         )
 
     def to_dict(self) -> dict:
@@ -145,6 +171,7 @@ class CopyEntry:
             "copy_sha256": self.copy_sha256,
             "channel_names": list(self.channel_names),
             "significant_bits": self.significant_bits,
+            "projection": None if self.projection is None else self.projection.to_dict(),
         }
 
     @classmethod
@@ -156,7 +183,7 @@ class CopyEntry:
             raise ValueError(f"{data.get('relative_path')!r} has no copy fingerprint or SHA-256")
         return cls(
             relative_path=str(data["relative_path"]),
-            action=_choice(data["action"], (CONVERTED, COPIED), "action"),
+            action=_choice(data["action"], (CONVERTED, PROJECTED, COPIED), "action"),
             reason=None if data.get("reason") is None else str(data["reason"]),
             source=Fingerprint.recorded(data["source"]),
             copy=None if copy is None else Fingerprint.recorded(copy),
@@ -168,6 +195,11 @@ class CopyEntry:
             copy_sha256=str(data["copy_sha256"]),
             channel_names=tuple(None if n is None else str(n) for n in data["channel_names"]),
             significant_bits=_bits(data["significant_bits"]),
+            projection=(
+                None
+                if data.get("projection") is None
+                else ProjectionEntry.from_dict(data["projection"])
+            ),
         )
 
 
@@ -189,6 +221,9 @@ class ConversionRecord:
         The package versions that wrote the copies.
     written_at
         When the record was written (UTC, ISO 8601).
+    projection
+        The method and slice range of a tree of Z-projected copies (every image of it is
+        projected with them), or None for a tree without a projection.
     """
 
     source_root: str
@@ -197,6 +232,12 @@ class ConversionRecord:
     files: tuple[CopyEntry, ...]
     versions: Mapping[str, str] = field(default_factory=dict)
     written_at: str = ""
+    projection: Projection | None = None
+
+    def __post_init__(self) -> None:
+        """Refuse entries that do not fit the record's projection (or its absence)."""
+        for entry in self.files:
+            _check_projection(self.projection, entry)
 
     def to_dict(self) -> dict:
         """Return the record as JSON-compatible data."""
@@ -207,6 +248,7 @@ class ConversionRecord:
             "missing_as_singleton": self.missing_as_singleton,
             "written_at": self.written_at,
             "versions": dict(self.versions),
+            "projection": None if self.projection is None else projection_to_data(self.projection),
             "files": [entry.to_dict() for entry in self.files],
         }
 
@@ -226,8 +268,12 @@ class ConversionRecord:
                 "copies' SHA-256 was recorded, so the copies cannot be checked; convert the "
                 "originals again into a new folder"
             )
-        if not isinstance(data, Mapping) or data.get("record_version") != RECORD_VERSION:
+        if not isinstance(data, Mapping) or data.get("record_version") not in _READABLE_VERSIONS:
             raise ConversionRecordError(f"not a conversion record of version {RECORD_VERSION}")
+        if data["record_version"] != RECORD_VERSION and (
+            "projection" in data or any("projection" in f for f in data.get("files") or [])
+        ):
+            raise ConversionRecordError("a version 2 record cannot hold a projection")
         try:
             mapping = data["mapping"]
             return cls(
@@ -237,6 +283,11 @@ class ConversionRecord:
                 files=tuple(CopyEntry.from_dict(item) for item in data["files"]),
                 versions={str(k): str(v) for k, v in (data.get("versions") or {}).items()},
                 written_at=str(data.get("written_at", "")),
+                projection=(
+                    None
+                    if data.get("projection") is None
+                    else projection_from_data(data["projection"])
+                ),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ConversionRecordError(f"not a valid conversion record: {exc}") from exc
@@ -438,6 +489,27 @@ def _unreadable(exc: ConversionRecordError) -> ValidationIssue:
         [RECORD_FILENAME],
         "Convert the originals again into a new folder, and run preprocessing on that one.",
     )
+
+
+def _check_projection(projection: Projection | None, entry: CopyEntry) -> None:
+    """Refuse an entry that does not fit the record's projection, or its absence."""
+    if projection is None:
+        if entry.action == PROJECTED:
+            raise ValueError(
+                f"{entry.relative_path!r} is projected, but the record has no projection"
+            )
+        return
+    if entry.action == COPIED and entry.reason == EXCLUDED:
+        return
+    done = entry.projection
+    if done is None:
+        raise ValueError(f"{entry.relative_path!r} is not projected in a tree of projections")
+    full = (0, done.source_z_size)
+    if done.method != projection.method or done.z_range != (projection.z_range or full):
+        raise ValueError(
+            f"{entry.relative_path!r} was projected with {done.method} {done.z_range}, not the "
+            f"record's {projection.method} {projection.z_range or 'all slices'}"
+        )
 
 
 def _fingerprint_data(fingerprint: Fingerprint) -> dict:

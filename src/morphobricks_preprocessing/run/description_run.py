@@ -19,7 +19,7 @@ It reads no mask pixels: a mask file is ``checked`` only when the mask step reco
 from __future__ import annotations
 
 import warnings
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import astuple, dataclass, replace
 from pathlib import Path
 
@@ -113,6 +113,20 @@ def check_description(
     return replace(found, physical=report), [physical_issue(i) for i in report.issues]
 
 
+GLOBAL_CHANNEL_CODES = frozenset({"channel_names_differ", "different_channel_counts"})
+"""The v0.4 checks that compare channels across the whole experiment.
+
+A description states each unit's channels and the header names confirmed for each, so for a
+described run they are replaced by the per-unit checks (``R_CHANNEL_COUNT_MISMATCH``,
+``R_UNIT_NOT_HOMOGENEOUS``, ``R_HEADER_CONTRADICTION``; experiment-v1 section 4.3 and 8),
+and by ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` for units with different channel lists."""
+
+
+def without_global_channel_checks(issues: Iterable[ValidationIssue]) -> list[ValidationIssue]:
+    """Return ``issues`` without the experiment-wide channel checks (described runs only)."""
+    return [issue for issue in issues if issue.code not in GLOBAL_CHANNEL_CODES]
+
+
 def checked_description(output: Path, pre: Preflight, checked: Checked) -> RunDescription | None:
     """Read the published description, add every refusal to ``checked.issues``, return it.
 
@@ -124,6 +138,7 @@ def checked_description(output: Path, pre: Preflight, checked: Checked) -> RunDe
         if not problems:
             warnings.warn(NO_DESCRIPTION, UserWarning, stacklevel=4)
         return None
+    checked.issues[:] = without_global_channel_checks(checked.issues)
     roles = None if checked.review is None else checked.review.file_mappings
     found, refused = check_description(found, pre, roles)
     checked.issues.extend(refused)
