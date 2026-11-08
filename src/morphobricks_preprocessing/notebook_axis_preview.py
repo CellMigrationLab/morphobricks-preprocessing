@@ -169,6 +169,7 @@ class _AxisPreview:
         self._render_preview_if_shown()
         self._show_calibration()
         self._refresh_run_step()
+        self._refresh_channels()
 
     def _open_image_type(self) -> None:
         """Suggest the image type for the confirmed roles and ask the user to confirm it."""

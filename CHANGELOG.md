@@ -8,6 +8,15 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Notebook: your channels, labels first then tag per unit (Stage 1 PR 15, draft).** After the axis
+  roles are confirmed, *Which labels did you image?* lists what was stained (prefilled only from
+  header names that are valid IDs as they are and not generic such as `Ch1`, `C0`, `AF488`; near
+  spellings are grouped for the user to decide, never merged; a case collision is refused at once),
+  and *Tag each channel* shows one row per unit with a safe thumbnail, the quoted header name and a
+  dropdown of the labels per channel, plus a per-unit image type with nothing preselected. Labels
+  used in only some units say so (`A_SCOPE_INCOMPLETE`). Every answer is saved to the draft, which is
+  now version 3 (a unit's `channels` may hold `null` for not tagged and `""` for not imaged;
+  `image_type` may be `channels`; versions 1 and 2 are refused); contract §18.
 - **Notebook Step 1 cards: names, IDs, pairing and references (Stage 1 PR 14, draft).** After the
   labels are confirmed, *Names for your experiment* proposes the folder names as IDs (only where
   valid as they are), takes an optional shown-as name, and adopts the IDs only when the user clicks

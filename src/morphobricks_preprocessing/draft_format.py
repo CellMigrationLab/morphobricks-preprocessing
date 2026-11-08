@@ -32,7 +32,9 @@ from .draft_answers import (
 from .run.description_file import ABSENT
 
 DRAFT_FORMAT = "morphobricks-description-draft"
-DRAFT_VERSION = 2
+DRAFT_VERSION = 3
+IMAGE_TYPES = ("rgb", "channels")
+"""The image types a draft may hold: ``channels`` is the answer "ordinary channel image"."""
 SPEC_COMMIT = "c8f68526c08633526395ca0180fd6bd1a182fc84"
 """The MorphoBricks-Spec commit the rules of this brick are pinned to (``tests/spec_fixtures``)."""
 BASE_MISSING = "R_DRAFT_BASE_MISSING"
@@ -107,6 +109,15 @@ def _texts(value: object, where: str) -> tuple[str, ...]:
     return tuple(_text(item, where) for item in value)
 
 
+def _tags(value: object, where: str) -> tuple[str | None, ...]:
+    """Read the channels of a unit: a channel ID, ``""`` (empty) or null (not tagged yet)."""
+    if not isinstance(value, list):
+        raise _bad(where, "a list is expected")
+    if not all(item is None or isinstance(item, str) for item in value):
+        raise _bad(where, "each entry is text or null")
+    return tuple(value)
+
+
 def _optional_texts(table: dict, key: str, where: str) -> tuple[str, ...] | None:
     return _texts(table[key], f"{where}.{key}") if key in table else None
 
@@ -136,9 +147,12 @@ def _units(value: object) -> dict[tuple[str, str, str], UnitAnswer]:
             for folder, raw in _entries(technical, f"units.{condition}.{repeat}").items():
                 where = f"units.{condition}.{repeat}.{folder}"
                 item = _table(raw, where, UNIT_KEYS, ("channels",))
+                kind = _optional(item, "image_type", where)
+                if kind is not None and kind not in IMAGE_TYPES:
+                    raise _bad(f"{where}.image_type", f"one of {IMAGE_TYPES} is expected")
                 out[(condition, repeat, folder)] = UnitAnswer(
-                    _texts(item["channels"], f"{where}.channels"),
-                    _optional(item, "image_type", where),
+                    _tags(item["channels"], f"{where}.channels"),
+                    kind,
                     _optional(item, "display_name", where),
                 )
     return out
@@ -318,6 +332,7 @@ __all__ = [
     "BASE_MISSING",
     "DRAFT_FORMAT",
     "DRAFT_VERSION",
+    "IMAGE_TYPES",
     "SPEC_COMMIT",
     "DraftFileError",
     "answers_from_bytes",
