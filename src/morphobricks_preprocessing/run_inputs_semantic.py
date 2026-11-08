@@ -123,6 +123,22 @@ class SemanticInputs:
         """
         return check_description(self.output_folder, self.manifest)
 
+    def section_digests(self) -> dict[str, str] | None:
+        """Return the description's section digests as the run's manifest recorded them.
+
+        The SHA-256 (hex) of the ``conditions``, ``channels``, ``repeats`` and ``masks``
+        sections (:func:`.description_write.section_digests`), so a brick can key a cache or a
+        memo on the section it depends on. Read from the manifest only: the published file is
+        not read again (``description()`` does that).
+
+        Returns
+        -------
+        dict[str, str] or None
+            A new dict, or None when the run had no description.
+        """
+        recorded = self.manifest.experiment_description
+        return None if recorded is None else dict(recorded["section_digests"])
+
     def images_without_header_channel_names(self) -> dict[str, tuple[int, ...]] | None:
         """Return the images the run passed without header channel names, as it recorded them.
 
@@ -152,7 +168,8 @@ class SemanticInputs:
         Raises
         ------
         ChannelNotFoundError
-            When the image does not have that channel (nothing is defaulted).
+            ``A_SCOPE_INCOMPLETE``: the image does not have that channel (nothing is
+            defaulted); the message names the image.
         RunInputsError
             When the run had no description, so its channels have no IDs.
         """
@@ -161,8 +178,9 @@ class SemanticInputs:
             ids = self._channel_ids(fov)
         if channel_id not in ids:
             raise ChannelNotFoundError(
-                f"The channel {channel_id!r} is not in this image; its channels are "
-                f"{', '.join(ids)}."
+                f"The channel {channel_id!r} is not in the image "
+                f"{getattr(fov, 'relative_path', fov)}; its channels are {', '.join(ids)} "
+                "(A_SCOPE_INCOMPLETE)."
             )
         return ids.index(channel_id)
 
