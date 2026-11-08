@@ -16,7 +16,7 @@ is executed by this repository.
   `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` (lifted at Stage 3).
 - Physical cases that need images (within-unit divergence, header contradictions, mask pixel
   contradictions, reconciliation) cannot be expressed by a TOML file alone; they are listed as
-  scenarios P01-P33 in the [conformance plan](../docs/conformance-plan.md#3-physical-scenarios-preprocessing-owned),
+  scenarios P01-P35 in the [conformance plan](../docs/conformance-plan.md#3-physical-scenarios-preprocessing-owned),
   built on the valid files below.
 - `v18` MUST parse to the same model as `v01` (round trip); `v21` differs from `v01` only in
   `display_name`, `target` and `treatment_key` values and `v16` only in `display_name` values, so
@@ -65,9 +65,9 @@ The matrix audit ([`docs/audits/matrix-audit-2026-11-07.md`](../docs/audits/matr
 adds `v35`, `v36` and `i128`-`i130` for structures the catalogue lacked (a flat experiment, a
 biological-repeat folder named like a forbidden key, `single` rules for condition folders and
 members). The owner decisions of 7 November 2026 (ADR 0001, SQ6) add `i131`-`i133` (the
-`single` rules for conditions) and `i134` (a duplicate key inside an inline table). Its audit-only validator, [`tools/audit/refval.py`](../tools/audit/refval.py)
-(`python -I tools/audit/refval.py fixtures .`), accepts 36 of 36 valid files with exactly the
-listed warnings, refuses 134 of 134 invalid files with exactly the listed code set from the listed
+`single` rules for conditions) and `i134` (a duplicate key inside an inline table); the owner decision of 7 November 2026 on reserved names in `used_ids` (UR1) adds `v37` and `i135`. Its audit-only validator, [`tools/audit/refval.py`](../tools/audit/refval.py)
+(`python -I tools/audit/refval.py fixtures .`), accepts 37 of 37 valid files with exactly the
+listed warnings, refuses 135 of 135 invalid files with exactly the listed code set from the listed
 phase, gives the listed `R_*` set for 12 of 12 transitions, and round-trips every valid and
 transition file through the canonical writer. It is an audit tool, not a reader: the conformance
 plan's single reference reader stays preprocessing.
@@ -157,7 +157,7 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | Adding is not a change; removing or reassigning is | `t03`, `t06`, `t07`, `t08`; P07, P15 |
 | Case-only correction needs a new ID; set of publication codes | `t02`, `t09`, `i95`; P16 |
 | RGB images (declared type, fixed tokens, no aliases) | `v28`, `v29`, `i100`-`i106`, `i119`; P13, P23, P24 |
-| Reserved names (one list for channel and mask IDs) | `i59`, `i61`, `i107`-`i109`, `v32` |
+| Reserved names (one list for channel and mask IDs; also for `used_ids.channels`) | `i59`, `i61`, `i107`-`i109`, `i135`, `v32`, `v37` |
 | Forbidden names apply to ID keys | `i113`-`i115` |
 | Folder labels never restricted: condition and technical-repeat IDs separate from `source_folder` | `v33`, `v34`, `i113`, `i115`, `i120`-`i127`, `t10`-`t12`; P32, P33 |
 | One folder, one ID; `single` iff no folder level (technical repeats: `i125`; conditions: `i131`-`i133`) | `i122`-`i125`, `i131`-`i133` |
@@ -203,6 +203,7 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | AQ2 | Case-only ID correction needs a new ID; publication reports every `R_*` code | `t02`, `t09`, `i95`; P16 |
 | AQ3 | `target` descriptive; MorphoCoverage may only prefill, confirmed inside MorphoCoverage | `v27`; P31 |
 | AQ4 | One reserved list: compartments plus MorphoRelate reserved column names | `i59`, `i61`, `i107`-`i109`, `v32` |
+| UR1 | The reserved list also applies to `used_ids.channels` entries (they reserve those IDs) | `i135`, `v37` |
 | AQ5 | Canonical repeat ID added as `repeat_group`; the FOV key keeps the source label | `v03`, `v30`; P25 |
 | AQ6 | RGB accepted as a declared type (`image_type = "rgb"`, tokens `R`, `G`, `B`); supersedes D8 | `v28`, `v29`, `i100`-`i106`, `i119`; P13, P23, P24 |
 | AQ7 | No trimming: header names exact after NFC of both sides | `v31`, `i110`; P26 |
@@ -214,8 +215,10 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | AQ13 | Forbidden names apply to ID keys; NFC of channel references; one code per broken rule | `i113`-`i118` |
 | FR1 | Folder labels are never restricted by the reserved or forbidden names: conditions and technical repeats have a canonical ID separate from the required `source_folder`; one folder, one ID; a folder change for an existing ID is a reassignment; the derived CSV keeps the folder labels | `v33`, `v34`, `i113`, `i115`, `i120`-`i127`, `t10`-`t12`; P32, P33 |
 | FR2 | Derived CSV byte-identity is guaranteed only for repeat groups with a single `confirmed_on`; a legacy group with several dates gets the latest, the migration note keeps the per-row dates | `v13`; P30 |
+| RR1 | Record type `image_count_changed` (a confirmed unit's image count changes and nothing else does; nothing reopens) | P34 |
+| RR2 | Record type `removed` for every confirmed removal of a unit, technical repeat, repeat or condition | P35 |
 
-## Valid fixtures (36)
+## Valid fixtures (37)
 
 | Fixture | Source | Expected | Homogeneous | Case |
 |---|---|---|---|---|
@@ -255,6 +258,7 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | [`v34_technical_repeat_folder_on_forbidden_list`](valid/v34_technical_repeat_folder_on_forbidden_list.toml) | Owner decision FR1 | pass | yes | Repeat rep1 has two technical-repeat folders, `files` and `overrides`, both forbidden names (experiment-v1 4.7). They are the `source_folder` values; the confirmed IDs are `acq1` and `acq2`, and the same ID carries the same folder in both members. rep2 has no technical-repeat folder level (`single`). Homogeneous. |
 | [`v35_flat_experiment`](valid/v35_flat_experiment.toml) | Matrix audit 2026-11-07, case F01 | pass | yes | The experiment folder is itself the leaf: condition, repeat and technical repeat are all `single`. The condition `single` has `source_folder = "single"` ("no condition folder level", 4.2, 3.2) and is the only condition (owner decision SQ6, matrix audit MS-1). |
 | [`v36_repeat_folder_forbidden_name`](valid/v36_repeat_folder_forbidden_name.toml) | Matrix audit 2026-11-07, case F16 | pass | yes | Biological-repeat folders `z` paired into repeat `R1`; `source_repeat` is never restricted. The folder label `z` is not an allowed repeat ID (`i130`), so no ID is proposed and the user names `R1` (4.6a; owner decision SQ6, matrix audit MS-2). |
+| [`v37_used_ids_reserved_near_misses`](valid/v37_used_ids_reserved_near_misses.toml) | Owner decision UR1 (Spec issue 11) | pass | yes | `v32` with the retired channel IDs `Ringer` and `label2` listed in `used_ids.channels`: names next to the reserved list are valid there too (experiment-v1 4.9). |
 
 ## Expected outputs (3)
 
@@ -287,7 +291,7 @@ Valid alone; checked against the named published predecessor (refused with the l
 | [`t12_condition_folder_reassigned`](transitions/t12_condition_folder_reassigned.toml) | `valid/v33` | R_CONFIRMED_ID_CHANGED (against predecessor valid/v33, without a recorded confirmation) | The ID `ctrl` held the folder `control` in v33 and now holds the folder `ctl` (a folder renamed on disk and attached to the same ID without a recorded confirmation). A folder change for an existing ID is a reassignment, so a changed entity (experiment-v1 4.6, 7). Valid alone. |
 | [`t13_confirmed_on_with_image_count_only`](transitions/t13_confirmed_on_with_image_count_only.toml) | `valid/v01` | `R_CONFIRMED_ON_CHANGED` (N35 not reopened) | Against v01 only CTRL/rep1 `image_count` (12 to 17, new FOVs) and rep1 `confirmed_on` (2026-11-07) change: new FOVs do not reopen the confirmation (experiment-v1 10), so the new date is refused. |
 
-## Invalid fixtures (134)
+## Invalid fixtures (135)
 
 | Fixture | Source | Expected code(s) | Phase | Case |
 |---|---|---|---|---|
@@ -425,3 +429,4 @@ Valid alone; checked against the named published predecessor (refused with the l
 | [`i132_condition_single_folder_other_id`](invalid/i132_condition_single_folder_other_id.toml) | Owner decision SQ6, matrix audit MS-1 | `E_SINGLE_MISUSE` | 4 | The condition `flat` has `source_folder = "single"`: a condition ID is `single` if and only if its folder is `single` (experiment-v1 3.2). |
 | [`i133_condition_single_not_alone`](invalid/i133_condition_single_not_alone.toml) | Owner decision SQ6, matrix audit MS-1 | `E_SINGLE_MISUSE` | 4 | The condition `single` (no condition folder level) next to the condition DrugA: it must be the only condition (experiment-v1 3.2). |
 | [`i134_duplicate_key_inline_table`](invalid/i134_duplicate_key_inline_table.toml) | Stage 1 design PR 0, experiment-v1 2.2 | `E_DUPLICATE_KEY` | 1 | `display_name` written twice inside the inline table of the channel DNA: a key declared twice in any spelling, inline tables included, is `E_DUPLICATE_KEY`, not `E_TOML_SYNTAX` (experiment-v1 2.2). |
+| [`i135_used_id_channel_reserved`](invalid/i135_used_id_channel_reserved.toml) | Owner decision UR1 (Spec issue 11) | `E_ID_RESERVED` | 4 | The retired channel ID `Nucleus` in `used_ids.channels`: a listed ID reserves the ID, so it follows the reserved list of 3.2 (case-folded) like a declared channel ID (experiment-v1 4.9). |

@@ -103,6 +103,11 @@ def test_notebook_runs_in_a_kernel():
     nbformat = pytest.importorskip("nbformat")
 
     notebook = nbformat.read(NOTEBOOK, as_version=4)
+    code = next(cell for cell in notebook.cells if cell.cell_type == "code")
+    # The kernel runs in this checkout, whose commit is not RELEASE_REF (#103): the one edit a
+    # developer makes to use a checkout is the explicit override.
+    assert code.source.count("DEVELOPMENT_OVERRIDE = False") == 1
+    code.source = code.source.replace("DEVELOPMENT_OVERRIDE = False", "DEVELOPMENT_OVERRIDE = True")
     client = nbclient.NotebookClient(
         notebook,
         timeout=300,
@@ -111,7 +116,6 @@ def test_notebook_runs_in_a_kernel():
     )
     client.execute()
 
-    code = next(cell for cell in notebook.cells if cell.cell_type == "code")
     assert not [output for output in code.outputs if output.output_type == "error"]
     text = "".join(output.get("text", "") for output in code.outputs)
     assert "Ready: preprocessing" in text

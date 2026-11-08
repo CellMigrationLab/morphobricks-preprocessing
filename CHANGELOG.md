@@ -27,6 +27,44 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   sum that overflows to infinity is `projection_overflow`, `inf + -inf` is
   `projection_undefined`). No I/O and no command yet: `convert --project` follows in later
   pull requests (design in MorphoFeature `docs/restart/designs/pp176-z-projection-design-2026-11-07.md`).
+- **Semantic `RunInputs` (Stage 1, PR 12; stacked on PR 11).** For a run with a published
+  description, each `Fov` carries `repeat_group`, `condition_id`, `technical_repeat_id` and
+  `channel_ids` beside the unchanged key (owner decision Q8: the key keeps the source folder
+  labels); `RunInputs.channel_index(fov, id)` finds a channel by canonical ID and refuses an
+  absent one; `references()` gives the condition reference graph, `mask_semantics()` and
+  `mask_check_status()` the masks' meaning and check status. `RunInputs.open` and
+  `description()` read only the published `morphobricks.toml`, check it is the file the run
+  recorded, and refuse a draft or an unconfirmed file with `A_DRAFT_REFUSED`; `read_mask` of a
+  file the mask step has not checked is `A_MASK_UNCHECKED`. A run without a description is
+  unchanged. New modules `fov_identity`, `description_consume`, `run_inputs_error`,
+  `run_inputs_semantic`; `LazyImage` moved to `run_inputs_image` (still exported from
+  `run_inputs`). Conformance P14, P25 and the `A_MASK_UNCHECKED` part of P28 in
+  `tests/test_spec_run_inputs_semantic.py`.
+- **A run with a published experiment description (Stage 1, PR 11).** When the output folder
+  holds a published `morphobricks.toml`, `run` reads it with the strict reader (a refusal is
+  reported with its Spec code, table path and a plain message), runs the physical checks
+  against the folder and headers, and records `experiment_description` in `run_manifest.json`:
+  the SHA-256 of the exact bytes read, the section digests, which units' image type was checked
+  against a header, the status of every declared mask file (`checked` or `not yet checked`,
+  with how many images have one) and the publication records of `morphobricks.records.jsonl`
+  copied unchanged. Units that declare more than one channel layout are refused with
+  `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`, naming the layouts and units; nothing is processed. The
+  mask step (`masks` command, `describe_masks`) checks each declared mask's representation:
+  a `binary` mask holding more than two values is `R_MASK_CONTRADICTS_REPRESENTATION` (the
+  command exits 1; the file stays `not yet checked`), and what it checked is written to
+  `mask_representation.json`, each file bound to the fingerprint it had when read, so a new
+  batch of files is `not yet checked` again. A run without a description is the v0.4 run, byte
+  for byte, with no new manifest key, and issues a `UserWarning` (owner decision Q1). New
+  modules `description_layouts`, `description_record`, `description_run_text`,
+  `mask_representation` and `run/description_run`; `file_sha256` moved to `_io` (re-exported by
+  `manifest`). Conformance P04, P05, P11, P28 in `tests/test_spec_run_description.py`.
+- **The notebook bootstrap shows and checks the Git identity of a local checkout ([#103](https://github.com/CellMigrationLab/morphobricks-preprocessing/issues/103)).** A nearby checkout was accepted when its `pyproject.toml` version equalled `current_version`, and the header showed only the version and path, so an edited checkout that kept the version number passed the `RELEASE_REF` pin. In local-checkout mode the cell now reads the checkout's commit and whether its tree has changes, prints both (also in the final header) and records them in `SETUP_RECORD`. A checkout whose commit differs from `RELEASE_REF`, whose tree has changes, or whose state cannot be read (not a Git work tree rooted there, or no Git) is refused, unless `DEVELOPMENT_OVERRIDE = True` is set in the cell; the header then says "DEVELOPMENT OVERRIDE". Installed-package and pinned-install modes are unchanged. Tests: `tests/test_notebook_setup.py`, `tests/test_notebook_file.py`.
+- **Re-pin the vendored Spec to b197ac1 (MorphoBricks-Spec PR 12, owner decision UR1).** The
+  reserved names of section 3.2 now also apply to `used_ids.channels`: an entry whose case-folded
+  form is on the list is `E_ID_RESERVED`, as for a declared channel ID (a listed ID reserves it).
+  The other three `used_ids` kinds are unchanged. New fixtures `i135` (invalid) and `v37`
+  (valid); the reference validator is updated. Every fixture is exact and the cross-check against
+  the reference validator has 0 differences. Before this change the reader accepted `i135`.
 - **The records append is rolled back with the description (K4 of external review batch 26).**
   `_append_records` appended straight to the live `morphobricks.records.jsonl`; a `write`,
   `flush` or `fsync` that failed after bytes were written left a torn line, or records naming a

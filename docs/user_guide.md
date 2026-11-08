@@ -20,7 +20,10 @@ complete preprocessing widget app.
 The setup chooses one source:
 
 1. **Nearby checkout:** when the kernel is running in this repository or one of its subfolders,
-   use that checkout's source code, including local edits.
+   use that checkout's source code. The checkout must be the commit the notebook pins
+   (`RELEASE_REF`) with no uncommitted changes, and setup prints its commit and tree state. Any
+   other commit or edited tree is refused; developers set `DEVELOPMENT_OVERRIDE = True` at the
+   top of the cell to use it, and the printed header then says so.
 2. **Matching installed package:** otherwise, reuse an installed preprocessing package only
    when its version matches the notebook.
 3. **Pinned GitHub source:** otherwise install the notebook's immutable `RELEASE_REF`, never
@@ -937,6 +940,13 @@ The default output folder is next to the experiment folder:
 - **`ome_zarr/`**: written only by v0.3 runs that converted TIFF images to OME-Zarr. That
   option was removed in v0.4.0; such a folder is left as it is, and may be deleted.
 
+- **`mask_representation.json`** (only from the `masks` command or the notebook's **Describe
+  the masks**, and only when the output folder holds a published `morphobricks.toml`): which
+  mask files the mask step checked against the representation the description declares, each
+  with the fingerprint it had when read. A new or changed mask file is `not yet checked` until
+  the step reads it again. A `binary` mask holding more than two values is reported as
+  `R_MASK_CONTRADICTS_REPRESENTATION` (the command exits 1) and is not recorded as checked.
+
 - **`mask_relationships.json`** (only from the `masks` command or the notebook's
   **Describe the masks**): each kind of mask, the
   relationship between every two kinds with its counts, and the hierarchy. The rules and
@@ -1029,6 +1039,10 @@ continues.
 | Message code | Severity | Meaning and what to do |
 |---|---|---|
 | `experiment_not_found` | Error | The folder does not exist. Select an existing folder. |
+| `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` | Error | The published experiment description declares acquisitions with different channel layouts (another channel list, order or image type). This version processes one layout per experiment and nothing was processed: the message names the layouts and units. Process the layouts as separate experiments. |
+| `R_MASK_CONTRADICTS_REPRESENTATION` | Error | The masks step found a mask file declared `binary` with more than two values. Declare the mask as `instances` in the description if every value is an object. |
+| `R_UNIT_NOT_FOUND`, `R_UNIT_NOT_DECLARED`, `R_UNIT_NOT_HOMOGENEOUS`, `R_CHANNEL_COUNT_MISMATCH`, `R_HEADER_CONTRADICTION`, `R_IMAGE_TYPE_CONTRADICTS_HEADER`, `R_MASK_TYPE_NOT_DECLARED` | Error | The published description and the folder or the image headers disagree (the message says where). Correct the description, publish it again and run again. |
+| `description_unreadable` | Error | `morphobricks.toml` or `morphobricks.records.jsonl` cannot be read. A description the reader refuses is reported with its own code (`E_*`, `R_FILE_SYMLINK`) and table path. |
 | `unreadable_folder` | Error | A folder could not be opened. Check permissions. |
 | `link_outside_folder` | Error | A link in the experiment or masks folder leads outside it (the message names each link and its target), and nothing outside the selected folder is read. Copy or move the files in, or select a folder that holds them, then remove the link. |
 | `link_loop` | Error | A link leads back to a folder that holds it. Remove it. |
