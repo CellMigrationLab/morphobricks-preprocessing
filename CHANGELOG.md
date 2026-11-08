@@ -17,6 +17,28 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   `MaskUncheckedError`) are exported at the package top level. `RunInputs.section_digests()` returns
   a copy of the manifest's `section_digests` of the description (None without one), read from the
   manifest only. Contract §9.1 and §16.
+- **`make_clean_run(description=...)` builds a described run for the bricks' Stage 2 tests (Stage 2
+  design PR 1).** `description` is a published experiment description (bytes, text or a
+  `Description`). The helper writes the declared tree (`image_count` images per member, RGB colour
+  for an `rgb` unit), writes the declared masks named in `mask_types` (now mask IDs in that case),
+  publishes the bytes as `morphobricks.toml`, runs preprocessing and the mask step, and returns a
+  `CleanRun` whose new `description` field holds the model (None otherwise).
+  `testing.make_described_run(folder, description, masks=..., mask_step=...)` is the same with
+  the mask step optional (masks left `not yet checked`). `axes`, `shape`, `pixel_size`, `design`
+  and `seed` raise `ValueError` with a description. Tested on the Spec fixtures `v03 v08 v13 v28
+  v30 v33 v34`: each builds, opens with `RunInputs`, and `fovs()` gives its condition IDs, repeat
+  groups, technical repeat IDs, channel IDs and image count. Without `description`, behaviour is
+  unchanged.
+- **A described run writes manifest version `"4"` (Stage 2 design question 9, owner answer 9).**
+  When the run manifest carries `experiment_description`, `manifest_version` is `"4"`; an
+  undescribed run keeps `"2"` or `"3"`, byte for byte (the v0.4.0 parity suite is unchanged).
+  A v0.4.0 reader skips keys it does not know, so it opened a described run and silently ignored
+  the description (channels by header name, pairing by folder name, no mask checks); it now
+  refuses version `"4"` (`ManifestFormatError`, tested with the code of the `v0.4.0` tag).
+  `read_manifest` and `RunInputs.open` read version 4. They refuse a version 4 manifest without
+  `experiment_description` and a version 1, 2 or 3 manifest with one; the writer applies the
+  same rule. Version 4 keeps the content rule of 2 and 3: a `content_sha256` in every entry
+  exactly when `settings.verify_content` is true. Contract §9 (`manifest_version`).
 - **Images without header channel names are listed in a described run (follow-up of #218, owner
   decision 2026-11-08).** An image whose header names no channel, or not every one, still passes
   the per-unit header checks (§4.3, fixture v12: no evidence needed, the confirmed layout is

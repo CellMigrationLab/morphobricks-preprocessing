@@ -13,15 +13,7 @@ import numpy as np
 import tifffile
 
 from morphobricks_preprocessing import prefill_mapping
-
-
-def unit_folder(description, repeat_id, condition_id, unit):
-    """Return the unit's folder relative to the experiment root."""
-    member = description.repeats[repeat_id].members[condition_id]
-    parts = [description.conditions[condition_id].source_folder, member.source_repeat]
-    if unit.source_folder != "single":
-        parts.append(unit.source_folder)
-    return Path(*parts)
+from morphobricks_preprocessing.testing_described import unit_folder
 
 
 def write_image(path, channels, seed=1):

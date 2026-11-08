@@ -308,6 +308,7 @@ class RunManifest:
             self.manifest_version,
             recorded_flag(self.settings.verify_content, "verify_content"),
             [(f.relative_path, f.content_sha256) for f in self.files],
+            self.experiment_description is not None,
         )
         data = {
             "manifest_version": self.manifest_version,
