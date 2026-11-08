@@ -13,15 +13,16 @@ as a ``unit`` record naming all six keys. An entity whose ID the removal leaves 
 all entity records in the order condition, repeat, technical repeat (each by ID), then the unit
 records by (condition ID, repeat ID, technical repeat ID). Labels are the published file's.
 
-``image_count_changed`` (owner decision RR1). Written for each member of a confirmed repeat whose
-``image_count`` differs, only when nothing else differs between the published file and the
-candidate. The members are in (condition ID, repeat ID) order.
+``image_count_changed`` (owner decisions RR1, RR3). Written for every member of a confirmed repeat
+whose ``image_count`` differs, whether or not the publication changes anything else (a removal, a
+new member, an ID correction, a reopening). Members are matched through the confirmed ID
+corrections; a member the candidate no longer holds has no new count and is covered by its
+``removed`` records. Lines carry the published IDs and labels, in (condition ID, repeat ID) order.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import replace
 from datetime import date
 
 from ..description import Description, Member
@@ -160,38 +161,29 @@ def _row(entity: str, confirmed_on: str, **named: str) -> dict:
     return {"type": "removed", "entity": entity, **_NONE, **named, "confirmed_on": confirmed_on}
 
 
-def _without_counts(description: Description) -> Description:
-    """Return the description with every member's ``image_count`` blanked, to compare the rest."""
-    repeats = {
-        rid: replace(
-            repeat,
-            members={c: replace(m, image_count=0) for c, m in repeat.members.items()},
-        )
-        for rid, repeat in description.repeats.items()
-    }
-    return replace(description, repeats=repeats)
-
-
 def image_count_records(
-    old: Description, new: Description, recorded_on: str | None
+    old: Description,
+    new: Description,
+    recorded_on: str | None,
+    confirmations: Iterable[Reconfirmation] = (),
 ) -> tuple[dict, ...]:
-    """Return the ``image_count_changed`` records, or none when anything else differs too.
+    """Return the ``image_count_changed`` record of every confirmed member whose count changed.
 
     Raises
     ------
     ValueError
         When a record is due and ``recorded_on`` is not a ``YYYY-MM-DD`` date (no default).
     """
-    if _without_counts(old) != _without_counts(new):
-        return ()
+    fix = _renames(confirmations)
     changed = []
     for rid, repeat in old.repeats.items():
         if not repeat.confirmed:
             continue
+        kept = new.repeats.get(fix["repeats"].get(rid, rid))
         for cid, member in repeat.members.items():
-            now = new.repeats[rid].members[cid].image_count
-            if now != member.image_count:
-                changed.append((cid, rid, member, now))
+            held = kept.members.get(fix["conditions"].get(cid, cid)) if kept else None
+            if held is not None and held.image_count != member.image_count:
+                changed.append((cid, rid, member, held.image_count))
     if not changed:
         return ()
     try:

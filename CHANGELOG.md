@@ -8,14 +8,22 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Re-pin the vendored Spec to 2975e0e (MorphoBricks-Spec PR 13, owner decision RR3).** Text only: the
+  `image_count_changed` record is written for every confirmed member whose count changed, also
+  beside other changes, and the order of the `removed` lines is stated; fixtures and the reference
+  validator are unchanged (the fixtures README alone differs). Every fixture is exact and the
+  cross-check against the reference validator has 0 differences.
 - **Publication writes the `removed` and `image_count_changed` records (owner decisions RR2 and
   RR1).** `publish_description` takes the user's `removals` (each with its confirmation date) and
   `recorded_on`. Every unit the candidate drops must be named by a removal (else `ValueError`,
   nothing written) and is appended to `morphobricks.records.jsonl` as a `removed` line with all
   six keys; a condition, repeat or technical repeat whose ID the removal leaves held nowhere gets
   its own line first (keys it does not name are `null`). A change of a confirmed member's
-  `image_count` alone writes `image_count_changed` with the old and new counts and `recorded_on`
-  (required then, never read from the clock). All lines go in the same single atomic append as
+  `image_count` writes `image_count_changed` with the old and new counts and `recorded_on`
+  (required then, never read from the clock), also when the same publication changes other
+  things (RR3). Entity lines come first, each unit line once after them; the date of an entity
+  is the first removal answer that touches it; with an ID correction the lines carry the
+  published IDs. All lines go in the same single atomic append as
   the re-confirmations, so the publication is whole or absent.
 - **`convert --project max|mean|sum [--z-range START:STOP]` (part of #176).** The command line of
   the recorded Z projection: no default method (`--project` alone or an unknown method is a

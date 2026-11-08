@@ -1,4 +1,4 @@
-"""The ``removed`` (RR2) and ``image_count_changed`` (RR1) records at publication (4.6, 10).
+"""The ``removed`` (RR2) and ``image_count_changed`` (RR1, RR3) records at publication (4.6, 10).
 
 The published file is a Spec fixture in a real output folder; the folder shows fewer units or
 another count, the draft and the user's answers come from the real reconciliation, and the lines
@@ -76,9 +76,9 @@ def on_disk(description, changes=None, without=()):
     return seen
 
 
-def removal(published, gone):
+def removal(published, gone, changes=None):
     """The draft, re-confirmations and answers when the folder loses the ``gone`` units."""
-    rec = reconcile(published, on_disk(published, without=gone))
+    rec = reconcile(published, on_disk(published, changes, without=gone))
     answers = [question.answer(DAY) for question in removal_questions(published, rec)]
     draft = candidate(published, rec, answers)
     for repeat_id in rec.reopened:
@@ -174,8 +174,17 @@ def test_a_removed_technical_repeat_names_its_id_and_folder_then_its_unit(tmp_pa
     base = publish_first(tmp_path, published)
     draft, accepted, answers = removal(published, {key("CTRL", "rep2", "acquisition_2")})
     publish_description(
-        tmp_path, draft, base_sha256=base, confirmations=accepted, removals=tuple(answers)
+        tmp_path,
+        draft,
+        base_sha256=base,
+        confirmations=accepted,
+        removals=tuple(answers),
+        recorded_on=LATER,  # the member's count falls with its unit: recorded too (RR3)
     )
+    counted = [r for r in read_records(tmp_path) if r["type"] == "image_count_changed"]
+    assert [(r["condition_id"], r["old_image_count"], r["new_image_count"]) for r in counted] == [
+        ("CTRL", 9, 4)
+    ]
     assert removed_lines(tmp_path) == [
         {
             **NULLS,
@@ -341,3 +350,38 @@ def test_an_unchanged_count_writes_no_record_and_needs_no_date(tmp_path):
     draft = replace(published, schema_version=published.schema_version)
     assert publish_description(tmp_path, draft, base_sha256=base).records == ()
     assert not (tmp_path / RECORDS_FILENAME).exists()
+
+
+def test_a_removal_and_a_count_change_in_one_publication_write_both_in_order(tmp_path):
+    """RR3: the count line is written although the same publication removes something."""
+    published = model("v06")
+    base = publish_first(tmp_path, published)
+    gone = {key("CTRL", "rep2", "acquisition_2")}
+    draft, accepted, answers = removal(
+        published, gone, {key("DrugA", "experiment_23"): ObservedUnit(7)}
+    )
+    assert draft.repeats["R001"].members["DrugA"].image_count == 7
+    result = publish_description(
+        tmp_path,
+        draft,
+        base_sha256=base,
+        confirmations=accepted,
+        removals=tuple(answers),
+        recorded_on=LATER,
+    )
+    lines = read_records(tmp_path)
+    assert lines == result.records
+    assert [(r["type"], r.get("entity")) for r in lines] == [
+        *[("reconfirmation", None)] * len(accepted),
+        ("removed", "technical_repeat"),
+        ("removed", "unit"),
+        ("image_count_changed", None),
+        ("image_count_changed", None),
+    ]
+    counts = [r for r in lines if r["type"] == "image_count_changed"]
+    assert [(r["condition_id"], r["repeat_id"]) for r in counts] == [
+        ("CTRL", "R002"),
+        ("DrugA", "R001"),
+    ]
+    assert [(r["old_image_count"], r["new_image_count"]) for r in counts] == [(9, 4), (5, 7)]
+    assert all(r["recorded_on"] == LATER and "confirmed_on" not in r for r in counts)

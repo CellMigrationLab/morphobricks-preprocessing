@@ -269,8 +269,8 @@ def publish_description(
         candidate drops must be named by one; each is written as a ``removed`` record, with the
         records of the condition, repeat and technical repeat that no longer exist.
     recorded_on
-        The date (``YYYY-MM-DD``) of an ``image_count_changed`` record: required when a
-        confirmed member's ``image_count`` is the only thing the candidate changes; never
+        The date (``YYYY-MM-DD``) of the ``image_count_changed`` records: required when any
+        confirmed member's ``image_count`` changes, alone or with other changes; never
         defaulted and never read from the clock.
 
     Returns
@@ -335,7 +335,7 @@ def publish_locked(
     records = tuple(_record(c, base, new_sha) for c in sorted(confirmations, key=_order))
     if old is not None:
         records += removal_records(old, candidate, removals, confirmations)
-        records += image_count_records(old, candidate, recorded_on)
+        records += image_count_records(old, candidate, recorded_on, confirmations)
     elif removals:
         raise ValueError("a removal needs a published file to remove from")
     write_text_atomic(path, data.decode("utf-8"))
