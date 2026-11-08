@@ -8,6 +8,18 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Per-unit header evidence for a described run (Stage 1, PR 13; conformance P26).** When the
+  output folder holds a published `morphobricks.toml`, `run` no longer applies the
+  experiment-wide v0.4 checks `channel_names_differ` and `different_channel_counts`: units may
+  spell a channel's header differently through the aliases the description confirms. The
+  per-unit checks decide instead: a header name must be, after NFC of both sides and with no
+  trimming or case folding, a confirmed name of the unit's channel at that C index
+  (`R_HEADER_CONTRADICTION`), the count must match the unit's list
+  (`R_CHANNEL_COUNT_MISMATCH`), and units with different lists are refused as before
+  (`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`). The refusal names the unit folders, the image, the
+  image's header names and the channel's confirmed names. An image without header names needs
+  no evidence (experiment-v1 section 4.3). A run without a description is unchanged (the global
+  checks still apply). Tests: `tests/test_spec_run_aliases.py`.
 - **Semantic `RunInputs` (Stage 1, PR 12; stacked on PR 11).** For a run with a published
   description, each `Fov` carries `repeat_group`, `condition_id`, `technical_repeat_id` and
   `channel_ids` beside the unchanged key (owner decision Q8: the key keeps the source folder

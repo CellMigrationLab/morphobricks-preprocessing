@@ -255,6 +255,12 @@ def _type_issues(
     ]
 
 
+def _quoted(names: Iterable[str | None]) -> str:
+    """List header names as read, quoted so outer whitespace shows; ``none`` when empty."""
+    shown = [repr(name) if name else "(no name)" for name in names]
+    return "[" + ", ".join(shown) + "]" if shown else "none"
+
+
 def _evidence_issues(
     key: UnitKey, unit: Unit, description: Description, layouts: Mapping[str, Layout]
 ) -> list[PhysicalIssue]:
@@ -263,7 +269,10 @@ def _evidence_issues(
     for path, layout in layouts.items():
         fov = position_id(path)
         if layout.channels is not None and layout.channels != len(unit.channels):
-            what = f"{layout.channels} channels, the description lists {len(unit.channels)}"
+            what = (
+                f"{layout.channels} channels, the description lists {len(unit.channels)} "
+                f"({', '.join(unit.channels)})"
+            )
             out.append(PhysicalIssue(CHANNEL_COUNT_MISMATCH, key, path, fov, None, what))
             continue
         if unit.image_type == RGB:  # R, G and B take no header names (§4.4b)
@@ -271,7 +280,11 @@ def _evidence_issues(
         for index, (channel, name) in enumerate(zip(unit.channels, layout.names, strict=False)):
             known = description.channels[channel].header_names or ()
             if name and nfc(name) not in {nfc(entry) for entry in known}:
-                what = f"header name {name!r} is not a confirmed name of channel {channel!r}"
+                what = (
+                    f"header name {name!r} at channel position {index} (the image's header "
+                    f"names: {_quoted(layout.names)}) is not a confirmed name of channel "
+                    f"{channel!r}, whose confirmed header names are {_quoted(known)}"
+                )
                 out.append(PhysicalIssue(HEADER_CONTRADICTION, key, path, fov, index, what))
     return out
 
