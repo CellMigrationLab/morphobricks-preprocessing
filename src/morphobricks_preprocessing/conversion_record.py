@@ -32,6 +32,7 @@ from .content_hash import unchanged_content
 from .fingerprint import Fingerprint, current_fingerprint
 from .manifest import file_sha256
 from .projection import Projection
+from .projection_marker import marker_issue, marked_images
 from .projection_record import ProjectionEntry, projection_from_data, projection_to_data
 from .projection_run import RunProjection, masks_issue, run_projection
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
@@ -403,8 +404,10 @@ def review_conversion(
         found = read_record(root)
     except ConversionRecordError as exc:
         return ConversionReview(None, None, (_unreadable(exc),))
-    if found is None:
-        return None
+    analysed = images if analysed is None else list(analysed)
+    if found is None:  # a projected copy needs its record: refuse it, nothing is guessed
+        marked = marked_images(root, analysed)
+        return ConversionReview(None, None, (marker_issue(marked),)) if marked else None
     record, sha256 = found
     sources = Path(record.source_root)
     changed = [
@@ -415,7 +418,11 @@ def review_conversion(
     listed = {e.relative_path for e in record.files}
     copies = sorted(set(changed_copies(root, record)) | (set(images) - listed))
     issues = [*_source_issue(changed, record.source_root), *_copy_issue(copies)]
-    projection = run_projection(record, sha256, images if analysed is None else analysed, masks)
+    done = {e.relative_path for e in record.files if e.action == PROJECTED}
+    marked = marked_images(root, [name for name in analysed if name not in done])
+    if marked:
+        issues.append(marker_issue(marked))
+    projection = run_projection(record, sha256, analysed, masks)
     if projection is not None:
         issues.extend(masks_issue(projection))
     return ConversionReview(sha256, record.source_root, tuple(issues), projection=projection)
