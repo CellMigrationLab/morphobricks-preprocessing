@@ -17,6 +17,13 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   are all named), `read_manifest` reads it strictly, `RunInputs.images_without_header_channel_names()`
   returns it read-only (None without a description), and the report text and JSON list the images.
   A run without a description is unchanged: no new manifest or report key.
+- **A draft written under another Spec commit is refused at resume (#223, owner decision of
+  2026-11-08).** `load_draft` and `publish_draft` raise `DraftFileError` with the new code
+  `spec_commit_mismatch` when the draft's `spec_commit` is not the pinned `SPEC_COMMIT`;
+  `save_draft` refuses answers carrying another commit. Before, any valid 40-digit commit was
+  accepted and the stored confirmations were published as current. The message names both
+  commits, says `morphobricks.toml` is untouched and says to start a fresh draft from the folders.
+  The stored commit is never rewritten and the stale draft is neither deleted nor repaired.
 - **Re-pin the vendored Spec to 2975e0e (MorphoBricks-Spec PR 13, owner decision RR3).** Text only: the
   `image_count_changed` record is written for every confirmed member whose count changed, also
   beside other changes, and the order of the `removed` lines is stated; fixtures and the reference

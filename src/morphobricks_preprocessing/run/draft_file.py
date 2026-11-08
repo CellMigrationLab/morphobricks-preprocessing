@@ -10,9 +10,10 @@ consumer reads it as a description.
   refuses is never saved, so the file on disk is always one that :func:`load_draft` accepts
   (against the same folder).
 - :func:`load_draft` resumes: the file is read strictly and refused when anything is wrong, and
-  refused with ``R_PUBLISHED_FILE_CHANGED`` when the published file is no longer the base the
-  draft recorded. The refused draft is never merged or repaired: it is derived again from the
-  current file.
+  refused with ``spec_commit_mismatch`` when it was written under another pinned Spec commit
+  (its confirmations were given under other rules) and with ``R_PUBLISHED_FILE_CHANGED`` when
+  the published file is no longer the base the draft recorded. The refused draft is never merged
+  or repaired: it is derived again from the folders and the current file.
 - :func:`publish_draft` builds the description from the draft file
   (:func:`..draft_answers.description_from_draft`: every confirmation or nothing), publishes it
   with the checks of :func:`.description_file.publish_locked`, and deletes the draft file, all
@@ -82,6 +83,18 @@ def _read_draft_bytes(folder: Path) -> bytes | None:
         ) from error
 
 
+def _require_current_spec(answers: DraftAnswers) -> None:
+    """Refuse answers recorded under another pinned Spec commit; never rewrite the commit."""
+    if answers.spec_commit != SPEC_COMMIT:
+        raise DraftFileError(
+            f"the draft was written under Spec commit {answers.spec_commit}, but this version is "
+            f"pinned to {SPEC_COMMIT}; its answers are not carried over. The published "
+            f"{DESCRIPTION_FILENAME} is untouched and the draft file is left as it is: start a "
+            "fresh draft from the folders",
+            "spec_commit_mismatch",
+        )
+
+
 def save_draft(output_folder: str | os.PathLike, draft: Draft, answers: DraftAnswers) -> Path:
     """Save the answers as ``morphobricks.draft.json``, holding the output folder's lock.
 
@@ -111,13 +124,14 @@ def save_draft(output_folder: str | os.PathLike, draft: Draft, answers: DraftAns
     DraftError
         If the draft refuses an answer.
     DraftFileError
-        If the answers cannot be a draft file, or the draft path is a symbolic link.
+        If the answers cannot be a draft file, the draft path is a symbolic link, or the answers
+        carry a ``spec_commit`` other than the pinned one (``spec_commit_mismatch``).
     """
     folder = Path(output_folder).resolve()
     refuse_output_inside_masks(folder)
     apply_answers(draft, answers)
     data = answers_to_bytes(answers)
-    answers_from_bytes(data)
+    _require_current_spec(answers_from_bytes(data))
     folder.mkdir(parents=True, exist_ok=True)
     with output_lock(folder):
         _read_draft_bytes(folder)  # a symbolic link is refused, never replaced
@@ -129,6 +143,7 @@ def _resume(folder: Path, draft: Draft) -> ResumedDraft:
     if data is None:
         raise DraftFileError(f"{folder / DRAFT_FILENAME} does not exist", "no_draft")
     answers = answers_from_bytes(data)
+    _require_current_spec(answers)
     try:
         check_base(answers.base_sha256, read_file_bytes(folder / DESCRIPTION_FILENAME))
     except DescriptionError as error:
@@ -150,7 +165,9 @@ def load_draft(output_folder: str | os.PathLike, draft: Draft) -> ResumedDraft |
     ------
     DraftFileError
         For a file that is malformed, of an unknown version, has a key the format does not have,
-        or has no usable base (``R_DRAFT_BASE_MISSING``); or a symbolic link.
+        or has no usable base (``R_DRAFT_BASE_MISSING``); a symbolic link; or was written under
+        a Spec commit other than the pinned one (``spec_commit_mismatch``: nothing is carried over,
+        the draft file and the published file are left untouched, a fresh draft is derived).
     PublicationRefused
         ``R_PUBLISHED_FILE_CHANGED`` when ``morphobricks.toml`` is no longer the recorded base.
     DraftError
