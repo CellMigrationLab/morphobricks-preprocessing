@@ -8,6 +8,7 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Contract: the final mask check is as late as practicable, not a lock (#222, docs only).** Source masks are checked right before the manifest replace and ordinary concurrent edits are detected; the files are not locked, so a change between that check and the replace is not detected, and the manifest binds the bytes as they were at the final check (owner decision of 8 November 2026: documented, not snapshotted). `docs/contract.md` §9.4.
 - **Notebook Step 1 cards: names, IDs, pairing and references (Stage 1 PR 14, draft).** After the
   labels are confirmed, *Names for your experiment* proposes the folder names as IDs (only where
   valid as they are), takes an optional shown-as name, and adopts the IDs only when the user clicks
