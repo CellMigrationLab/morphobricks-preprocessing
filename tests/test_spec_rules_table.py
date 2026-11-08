@@ -13,7 +13,6 @@ import pytest
 
 from morphobricks_preprocessing import description_rules as rules
 from morphobricks_preprocessing.description_rules import Code, TableSpec
-from morphobricks_preprocessing.discovery import MISSING_TEXT
 from spec_text import (
     BACKTICKED,
     section,
@@ -90,6 +89,6 @@ def test_the_token_pattern_and_the_rgb_tokens_are_the_text():
 
 
 def test_the_label_rule_the_reader_calls_refuses_the_names_of_the_text():
-    # The Label rule is the brick's check_identity_text (decision D-e), not a copy: its list
-    # of refused names must be the one section 3.2 states.
-    assert MISSING_TEXT == spec_label_sentinels()
+    # The reader's own Label rule (decision D-e): its list of refused names must be the one
+    # section 3.2 states; test_description_rules_copy keeps it equal to discovery's.
+    assert rules.MISSING_TEXT == spec_label_sentinels()

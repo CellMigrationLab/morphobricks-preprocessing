@@ -30,9 +30,11 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..discovery import default_output_folder
+from ..mask_representation import check_representation
 from ..mask_scan import MASK_REPORT_FILENAME, MaskReport, scan_masks, write_mask_report
 from ..masks import MaskInventory
 from ..validation import ValidationIssue, has_errors
+from .description_run import load_description
 from .lock import OutputLockedError, lock_issue, output_lock
 from .preflight import Preflight, preflight
 from .recorded import GivenInputs, InputChange, resolve_inputs, usable
@@ -98,11 +100,17 @@ class MaskStepResult:
         The report written, or None when the output folder's lock refused it.
     refusal
         ``output_locked`` when another run holds the output folder's lock, else None.
+    issues
+        With a published description: ``R_MASK_CONTRADICTS_REPRESENTATION`` for each mask file
+        that holds more than two values though declared ``binary`` (such a file stays ``not yet
+        checked``; the report is written all the same), or the error that the description
+        cannot be read. Empty without a description.
     """
 
     report: MaskReport | None
     path: Path | None
     refusal: ValidationIssue | None = None
+    issues: tuple[ValidationIssue, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -252,10 +260,24 @@ def describe_masks(
                 thresholds=thresholds,
                 verify_content=step.verify_content,
             )
+            issues = _representation_issues(step, output)
             path = write_mask_report(report, output / MASK_REPORT_FILENAME)
     except OutputLockedError as exc:
         return MaskStepResult(report=None, path=None, refusal=lock_issue(exc))
-    return MaskStepResult(report=report, path=path)
+    return MaskStepResult(report=report, path=path, issues=issues)
+
+
+def _representation_issues(step: MaskStep, output: Path) -> tuple[ValidationIssue, ...]:
+    """Check the declared masks' representations when a description is published.
+
+    The caller holds the output folder's lock and has read the masks. Without a published
+    description nothing is checked or written (a v0.4 output folder).
+    """
+    described, problems = load_description(output)
+    if described is None or step.preflight is None:
+        return tuple(problems)
+    root = step.preflight.discovery.root
+    return check_representation(described.description, step.masks, root, output).issues
 
 
 def recorded_masks(output_folder: str | os.PathLike) -> RecordedMasks | None:
