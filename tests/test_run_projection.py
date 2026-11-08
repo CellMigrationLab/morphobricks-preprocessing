@@ -126,7 +126,7 @@ def edit(path, change):
 def test_a_manifest_that_disagrees_with_the_record_is_refused(tmp_path):
     _, out, _, _ = projected_run(tmp_path)
     manifest = out / "run_manifest.json"
-    original = manifest.read_text(encoding="utf-8")
+    original = manifest.read_bytes()
     for change in (
         lambda d: d["projection"].__setitem__("method", "sum"),
         lambda d: d["projection"]["images"][0].__setitem__("z_range", [0, 4]),
@@ -137,7 +137,7 @@ def test_a_manifest_that_disagrees_with_the_record_is_refused(tmp_path):
         edit(manifest, change)
         with pytest.raises(RunInputsError):  # (the table is checked first: same file bytes)
             RunInputs.open(out)
-        manifest.write_text(original, encoding="utf-8")
+        manifest.write_bytes(original)
     assert RunInputs.open(out).projection.method == "max"
 
 
@@ -151,14 +151,14 @@ def test_a_projection_without_its_record_is_refused(tmp_path):
 def test_a_missing_or_changed_record_is_refused(tmp_path):
     copies, out, _, _ = projected_run(tmp_path)
     record = copies / RECORD_FILENAME
-    original = record.read_text(encoding="utf-8")
+    original = record.read_bytes()  # bytes: write_text would turn LF into CRLF on Windows
     edit(record, lambda d: d["projection"].__setitem__("method", "sum"))
     with pytest.raises(RunInputsError, match="not the one the run read"):
         RunInputs.open(out)
     record.unlink()
     with pytest.raises(RunInputsError, match="not the one the run read"):
         RunInputs.open(out)
-    record.write_text(original, encoding="utf-8")
+    record.write_bytes(original)
     assert RunInputs.open(out).projection is not None
 
 
