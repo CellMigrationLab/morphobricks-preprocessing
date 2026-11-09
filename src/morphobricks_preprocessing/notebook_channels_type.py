@@ -64,12 +64,12 @@ class ImageTypeColumn:
             options=OPTIONS, value=self.shown(layout), layout=widgets.Layout(width="99%")
         )
         radio.disabled = not layout.usable
-        note = widgets.HTML(self._note(layout))
+        note = widgets.HTML(self.note(layout))
         radio.observe(lambda change, u=layout: self._chosen(u, change["new"]), names="value")
         self.radios[layout.key], self.notes[layout.key] = radio, note
         return widgets.VBox([radio, note])
 
-    def _note(self, layout: UnitLayout) -> str:
+    def note(self, layout: UnitLayout) -> str:
         """Return what is said under a unit's radio buttons."""
         saved, shown = self.saved(layout.key), self.shown(layout)
         if not layout.usable:
@@ -189,10 +189,7 @@ class ImageTypeRows:
         ordered = sorted(self.types.layouts, key=lambda u: tuple(map(natural_key, u.key)))
         units = self.reopen()
         rows = self.fold.arrange(
-            [
-                (self._row(u), row_status(units, [u.key], self.types.saved(u.key) is not None))
-                for u in ordered
-            ]
+            [(self._row(u), row_status(units, [u.key], self._settled(u))) for u in ordered]
         )
         proposed = [u.key for u in self.types.layouts if self.types.proposed(u)]
         if proposed:
@@ -212,6 +209,11 @@ class ImageTypeRows:
             if done == usable
             else ui.status("warn", f"Not finished: {usable - done} image type(s) to choose.")
         )
+
+    def _settled(self, layout: UnitLayout) -> bool:
+        """Return True when a row may fold: answered, with no warning under its choice."""
+        saved = self.types.saved(layout.key) is not None
+        return layout.usable and saved and not self.types.note(layout)
 
     def _confirm(self, keys: Sequence[UnitKey]) -> None:
         self.types.confirm_header(keys)

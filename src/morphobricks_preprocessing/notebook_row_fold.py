@@ -32,7 +32,9 @@ def reopen_units(rec: Reconciliation | None) -> Mapping[UnitKey, str] | None:
     """Return each unit's status against the saved file, or None without a saved file.
 
     ``unchanged`` for a unit found as saved, ``changed`` for one whose member's image count
-    changed, ``new`` for a unit the saved file does not have.
+    changed or that the reconciliation gives a reason for (its header's channels no longer fit
+    the saved channels, or its folder was renamed), ``new`` for a unit the saved file does not
+    have.
     """
     if rec is None:
         return None
@@ -43,7 +45,7 @@ def reopen_units(rec: Reconciliation | None) -> Mapping[UnitKey, str] | None:
         if unit.status == Status.NEW:
             out[key] = NEW
         elif unit.status == Status.UNCHANGED:
-            changed = (unit.repeat_id, unit.condition_id) in counted
+            changed = (unit.repeat_id, unit.condition_id) in counted or bool(unit.reasons)
             out[key] = CHANGED if changed else UNCHANGED
     return out
 

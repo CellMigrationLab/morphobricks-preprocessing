@@ -270,7 +270,9 @@ class _CheckSaveScreen:
                 ),
             )
             keys = [u.key for m in view.members for u in m.units]
-            boxes.append((box, row_status(units, keys, view.confirmed_on is not None)))
+            # A box with a warning (an acquisition lacking a label) never folds.
+            settled = view.confirmed_on is not None and not view.missing
+            boxes.append((box, row_status(units, keys, settled)))
         self.same_way = toggles
         if not hasattr(self, "_replicate_fold"):
             self._replicate_fold = RowFold("replicate")

@@ -6,6 +6,8 @@ saved and whose question is answered folds behind one line with an **open** togg
 only: the answers and the draft are those of an unfolded page.
 """
 
+from dataclasses import replace
+
 import pytest
 
 from morphobricks_preprocessing.description_reconcile import (
@@ -121,3 +123,52 @@ def test_an_unsaved_experiment_folds_nothing(tmp_path):
     assert nb.channel_grid.fold.count == 0 and nb.type_rows.fold.count == 0
     assert nb._replicate_fold.count == 0
     assert "unchanged" not in _text(nb.channel_grid.blocks)
+
+
+def test_a_folder_whose_header_channels_changed_is_changed_not_folded():
+    # Regression (17b-2 review): the reconciliation's reasons were ignored, so a folder whose
+    # header names no longer fit the saved channels folded as "unchanged".
+    rec = Reconciliation(
+        (
+            UnitChange(UnitFolders("ctrl", "rep1", "single"), Status.UNCHANGED, "rep1", "ctrl"),
+            UnitChange(
+                UnitFolders("drug", "rep1", "single"),
+                Status.UNCHANGED,
+                "rep1",
+                "drug",
+                reasons=("channels_changed",),
+            ),
+        ),
+        {"rep1": ("channels_changed",)},
+        (),
+    )
+    units = reopen_units(rec)
+    assert units[("ctrl", "rep1", "single")] == UNCHANGED
+    assert units[("drug", "rep1", "single")] == CHANGED
+    assert row_status(units, [("drug", "rep1", "single")], answered=True) == CHANGED
+
+
+def test_a_row_with_a_warning_never_folds(reopened, monkeypatch):
+    # Regression (17b-2 review): a folded row hid the warning under an image type (a type the
+    # header contradicts) and the orange A_SCOPE_INCOMPLETE line of a replicate block.
+    nb = reopened
+    key = ("ctrl", "rep1", "single")
+    warn = "<span class='mb-help' style='color:#92400E'>The header says colour (RGB)</span>"
+    plain = nb.channel_types.note
+    monkeypatch.setattr(nb.channel_types, "note", lambda u: warn if u.key == key else plain(u))
+    nb.type_rows.refresh()
+    assert nb.type_rows.fold.count == 2  # ctrl/rep1 stays open, with its warning
+    assert "The header says colour (RGB)" not in _text(nb.type_rows.fold.folded)
+
+    from morphobricks_preprocessing import notebook_check_save
+
+    real = notebook_check_save.replicates
+
+    def lacking(applied, answers):
+        views = real(applied, answers)
+        return [replace(v, missing=((key, "DNA"),)) if v.repeat_id == "rep1" else v for v in views]
+
+    monkeypatch.setattr(notebook_check_save, "replicates", lacking)
+    nb._refresh_check_save()
+    assert nb._replicate_fold.count == 0
+    assert "A_SCOPE_INCOMPLETE" in _text(nb.replicates_box)
