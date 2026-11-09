@@ -2,9 +2,10 @@
 
 :func:`make_described_run` writes the experiment folder a published experiment description
 (``morphobricks.toml``, experiment-v1) declares: one folder per condition, repeat and
-technical repeat, ``image_count`` tiny images per member (as many channels as the unit
-declares, as RGB colour for an ``rgb`` unit), and, when asked, one mask per image for each
-declared mask. It publishes the description beside the output, runs preprocessing on it and,
+technical repeat, ``image_count`` tiny images per member (its total, spread over its
+technical repeats; each image has as many channels as the unit declares, or is RGB colour
+for an ``rgb`` unit), and, when asked, one mask per image for each declared mask. It
+publishes the description beside the output, runs preprocessing on it and,
 unless told not to, runs the mask step, so a brick's tests read their inputs through
 :class:`.run_inputs.RunInputs` exactly as a user's described run gives them.
 
@@ -87,12 +88,31 @@ def unit_folder(description: Description, repeat_id: str, condition_id: str, uni
 
 
 def _units(description: Description) -> Iterator[tuple[Path, Unit, int]]:
-    """Yield ``(folder, unit, image count)`` of every declared unit."""
+    """Yield ``(folder, unit, image count)`` of every declared unit.
+
+    A member's ``image_count`` is its total over its technical repeats, so it is spread
+    over them as evenly as possible: every unit gets ``image_count // n`` images and the
+    first ``image_count % n`` units, by sorted unit ID, one more.
+
+    Raises
+    ------
+    ValueError
+        If a member has fewer images than technical repeats (a unit would be empty).
+    """
     for repeat_id, repeat in description.repeats.items():
         for condition_id, member in repeat.members.items():
-            for unit in member.technical_repeats.values():
+            unit_ids = sorted(member.technical_repeats)
+            base, extra = divmod(member.image_count, len(unit_ids))
+            if base == 0:
+                raise ValueError(
+                    f"member {condition_id!r} of repeat {repeat_id!r} has image_count "
+                    f"{member.image_count} for {len(unit_ids)} technical repeats; every "
+                    "technical repeat needs at least one image"
+                )
+            for position, unit_id in enumerate(unit_ids):
+                unit = member.technical_repeats[unit_id]
                 folder = unit_folder(description, repeat_id, condition_id, unit)
-                yield folder, unit, member.image_count
+                yield folder, unit, base + (1 if position < extra else 0)
 
 
 def _mapping(description: Description) -> AxisMapping:
@@ -186,7 +206,8 @@ def make_described_run(
     Raises
     ------
     ValueError
-        For an unknown mask ID, or a description that mixes rgb and fluorescence units.
+        For an unknown mask ID, a description that mixes rgb and fluorescence units, or a
+        member whose ``image_count`` is below its number of technical repeats.
     RuntimeError
         If the run or the mask step does not write its outputs (its issues are in the message).
     """
