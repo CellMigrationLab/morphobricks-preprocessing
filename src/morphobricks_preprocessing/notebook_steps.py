@@ -21,7 +21,6 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .dataset import CONSISTENCY_CODES
 from .notebook_axes_quick import _QuickAxes
-from .notebook_channels import INTRO as CHANNELS_INTRO
 from .notebook_channels_type import ImageTypeRows
 from .notebook_check_save import INTRO as CHECK_INTRO
 from .notebook_masks_screen import INTRO as MASKS_INTRO
@@ -107,7 +106,7 @@ class _StepsFlow(_QuickAxes, _StepStates):
             ("Image type", "Separate channels or a colour (RGB) picture, per folder.",
              [self.type_rows.widget]),
             ("Stains", "Name what you stained.",
-             [ui.intro(CHANNELS_INTRO), self.channel_labels.widget]),
+             [self.channel_intro, self.channel_labels.widget]),
             ("Tag channels", "Say which stain each channel is, looking at its picture.",
              [self.channel_grid.widget]),
             ("Masks", "Say what each mask type is.", [ui.intro(MASKS_INTRO), self.masks_box]),

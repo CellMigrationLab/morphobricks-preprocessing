@@ -33,9 +33,16 @@ def all_colour(layouts: Sequence[UnitLayout], units: Mapping[UnitKey, UnitAnswer
     Only a saved answer counts (experiment-v1 section 4.4b): the header's pre-tick, a missing
     answer or a folder that cannot be read keeps this False, so the labels stay required.
     """
-    return bool(layouts) and all(
-        layout.usable and getattr(units.get(layout.key), "image_type", None) == "rgb"
-        for layout in layouts
+    return bool(layouts) and all(_declared_colour(lay, units.get(lay.key)) for lay in layouts)
+
+
+def _declared_colour(layout: UnitLayout, answer: UnitAnswer | None) -> bool:
+    """Return True for a readable unit with a saved ``rgb`` answer that still fits its image."""
+    return (
+        layout.usable
+        and answer is not None
+        and answer.image_type == "rgb"
+        and layout.channels == len(RGB_IDS) == len(answer.channels)  # a stale answer never counts
     )
 
 

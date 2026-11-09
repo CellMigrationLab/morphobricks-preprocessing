@@ -71,6 +71,7 @@ class _ChannelsStep:
         self.channel_types = ImageTypeColumn(store, self._types_changed)
         self.channel_grid = TagGrid(store, self.channel_types, self._channels_changed)
         self.channel_labels = LabelsCard(store, self._channel_labels_changed)
+        self.channel_intro = ui.intro(INTRO)  # hidden while the stains are not applicable
         self.channels_waiting = widgets.HTML()
         self.channels_box = widgets.VBox(
             [self.channels_waiting, self.channel_labels.widget, self.channel_grid.widget]
@@ -83,7 +84,7 @@ class _ChannelsStep:
             "Name what you stained, then tag every channel of every unit."
             if purpose is None
             else purpose,
-            [ui.intro(INTRO), self.channels_box],
+            [self.channel_intro, self.channels_box],
         )
 
     # Opening and closing -----------------------------------------------------------------
@@ -93,6 +94,7 @@ class _ChannelsStep:
         self._channel_thumbs = None
         self.channel_labels.close()
         self.channel_grid.close()
+        ui.set_visible(self.channel_intro, True)
         self.channels_waiting.value = why
         self._refresh_masks_screen()
 
@@ -154,6 +156,7 @@ class _ChannelsStep:
         """
         na = self._stains_not_applicable
         self.channel_labels.set_not_applicable(na)
+        ui.set_visible(self.channel_intro, not na)  # it says to name the stains first
         if (self.channel_labels.confirmed or na) and self._channels_key is not None:
             self.channel_grid.open(
                 self._channel_layouts, self.channel_labels.labels, self._channel_thumbs
