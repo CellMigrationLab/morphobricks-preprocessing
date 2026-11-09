@@ -35,7 +35,7 @@ DRAFT_FORMAT = "morphobricks-description-draft"
 DRAFT_VERSION = 3
 IMAGE_TYPES = ("rgb", "channels")
 """The image types a draft may hold: ``channels`` is the answer "ordinary channel image"."""
-SPEC_COMMIT = "c8f68526c08633526395ca0180fd6bd1a182fc84"
+SPEC_COMMIT = "1bed024e278d104ba4b8f63ae76c020fb2e3470d"
 """The MorphoBricks-Spec commit the rules of this brick are pinned to (``tests/spec_fixtures``)."""
 BASE_MISSING = "R_DRAFT_BASE_MISSING"
 SHA256 = re.compile(r"[0-9a-f]{64}")

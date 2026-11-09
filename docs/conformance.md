@@ -8,7 +8,7 @@ real run; a skip is never counted as a pass.
 | | |
 |---|---|
 | Base commit | `68b2a4b` (`origin/main`, merge of PR 211); the run included the changes of PR 17 |
-| Spec pin | the full SHA in `tests/spec_fixtures/PIN.toml` (vendored `experiment-v1.md` at `c8f6852`) |
+| Spec pin | the full SHA in `tests/spec_fixtures/PIN.toml` (vendored `experiment-v1.md` at `1bed024`) |
 | Command | `python tools/check.py` (Ruff, Ruff format, then `pytest -q` over the whole `tests/` folder), then `python tools/check.py --rules` |
 | Whole suite | 4324 passed, 4 skipped, 0 failed (301 s) |
 | Spec modules (`tests/test_spec_*.py`) | 1535 passed, 0 skipped, 0 failed (the Spec gate fails a skip or xfail there) |

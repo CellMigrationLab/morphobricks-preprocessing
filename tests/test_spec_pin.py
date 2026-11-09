@@ -32,7 +32,11 @@ def test_the_pin_is_a_full_commit_sha_never_a_branch():
     pin = read_pin()
     assert re.fullmatch(r"[0-9a-f]{40}", pin["commit"])
     assert re.fullmatch(r"[0-9a-f]{40}", pin["fixtures_tree"])
-    assert set(pin["files"]) == {"docs/experiment-v1.md", "tools/audit/refval.py"}
+    assert set(pin["files"]) == {
+        "docs/experiment-v1.md",
+        "tools/audit/refval.py",
+        "tools/audit/refrecords.py",
+    }
     assert all(re.fullmatch(r"[0-9a-f]{40}", blob) for blob in pin["files"].values())
 
 
