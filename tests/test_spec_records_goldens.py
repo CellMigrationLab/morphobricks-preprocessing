@@ -11,17 +11,16 @@ from __future__ import annotations
 import importlib.util
 import re
 from functools import cache
-from pathlib import Path
 from types import ModuleType
 
 import pytest
-from spec_pin import spec_root
 
 from morphobricks_preprocessing.run.description_file import (
     RECORDS_FILENAME,
     RecordsFileError,
     read_records,
 )
+from spec_pin import spec_root
 
 ROW = re.compile(r"\| \[`(r[vi]\d+[^`]*)`\]\(records/[^)]+\) \|([^|]*)\|")
 REASON = re.compile(r"\b(E_RECORDS_[A-Z_]+)\b")
