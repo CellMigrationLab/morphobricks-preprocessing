@@ -210,7 +210,7 @@ class _StepsFlow(_QuickAxes, _StepStates):
 
     def _wait_for_tags(self) -> str:
         waiting = self._wait_for_channels()
-        if waiting or self.channel_labels.confirmed:
+        if waiting or self.channel_labels.confirmed or self._stains_not_applicable:
             return waiting
         return ui.status("info", "Waiting for the stains.", ["Confirm the stains in step 8 first."])
 
