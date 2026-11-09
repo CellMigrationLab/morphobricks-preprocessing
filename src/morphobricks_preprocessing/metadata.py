@@ -28,11 +28,11 @@ from morphobricks_normalization.dtypes import UnsupportedDtypeError, check_suppo
 
 from .axis_names import OPEN_AXIS, named_letters
 from .discovery import DiscoveryResult
+from .image_consistency import arrangement_issues, dtype_issues
 from .ome_header import ome_details
 from .physical_sizes import PhysicalSizes, _tiff_sizes
 from .pixel_size_checks import pixel_size_issues
 from .size_checks import (
-    CONVERT_KEEPS_ORDER,
     breakdown,
     channel_count_issues,
     image_size_issues,
@@ -495,21 +495,8 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
             )
         )
 
-    if len({f.dtype for f in readable}) > 1:
-        summary, minority = _breakdown(readable, lambda f: f.dtype.name, str)
-        issues.append(
-            error(
-                "mixed_dtypes",
-                f"The images use different pixel types: {summary}. One experiment must "
-                "use a single pixel type so that its histograms can be combined. The "
-                "files listed are those not of the most common type.",
-                minority,
-                "Process each pixel type as a separate experiment, or convert the images "
-                "to one pixel type.",
-            )
-        )
-
-    issues.extend(_check_dimensions([f for f in readable if not f.is_ome_zarr]))
+    issues.extend(dtype_issues(readable))
+    issues.extend(arrangement_issues([f for f in readable if not f.is_ome_zarr]))
     issues.extend(_check_channel_names(readable))
     issues.extend(_check_counts(readable))
     issues.extend(dimension_issues(readable))
@@ -599,39 +586,6 @@ def _check_channel_names(files: list[TiffMetadata]) -> list[ValidationIssue]:
     ]
 
 
-def _check_dimensions(files: list[TiffMetadata]) -> list[ValidationIssue]:
-    arrangements = {f.axes for f in files}
-    if len(arrangements) > 1:
-        summary, minority = _breakdown(files, lambda f: f.axes, str)
-        longest = max(arrangements, key=len)
-        if all(_is_subsequence(axes, longest) for axes in arrangements) and (
-            sum(len(axes) == len(longest) for axes in arrangements) == 1
-        ):
-            # The common case: one channel or one z-slice, which tifffile drops.
-            return [
-                error(
-                    "missing_axes",
-                    f"Some images lack dimensions that the others have: {summary}. "
-                    "Processing is blocked until it is confirmed how the missing "
-                    "dimensions should be read.",
-                    minority,
-                    "If the missing dimensions simply have one plane in these files (for "
-                    "example a single channel), confirm this during axis review. Otherwise "
-                    "export the images again with the same dimensions.",
-                )
-            ]
-        return [
-            error(
-                "inconsistent_dimensions",
-                f"The images have their dimensions arranged differently: {summary}. One "
-                "axis mapping cannot describe all of them.",
-                minority,
-                CONVERT_KEEPS_ORDER,
-            )
-        ]
-    return []
-
-
 def header_channel_count(f: TiffMetadata) -> int:
     """Return the channel count the header suggests: the C axis, else the RGB samples."""
     return f.length("C") if "C" in f.axes else f.length("S")
@@ -693,8 +647,3 @@ def _breakdown(
 ) -> tuple[str, list[str]]:
     """Summarise files by ``key``, most common first (:func:`.size_checks.breakdown`)."""
     return breakdown({f.relative_path: key(f) for f in files}, describe)
-
-
-def _is_subsequence(short: str, long: str) -> bool:
-    remaining = iter(long)
-    return all(char in remaining for char in short)

@@ -22,6 +22,7 @@ from .notebook_render import (
     labels_html,
 )
 from .run import Preflight, preflight
+from .unit_consistency import unit_checked
 from .validation import ValidationIssue, plural
 
 
@@ -208,6 +209,8 @@ class _FolderStep:
                     masks_folder=masks,
                     mask_axes=mask_axes,
                 )
+                if self._describe:
+                    pre = unit_checked(pre)  # a described run checks inside each unit
                 self._note_edits()  # a check fills only what the user left as filled
                 self.missing_as_singleton.set(self._recorded_missing_as_singleton(), notify=False)
                 # The report reads images lacking some axes by that answer, as 'check
