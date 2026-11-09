@@ -104,27 +104,28 @@ class LabelsCard:
         self.confirm.observe(self._toggled)
         self.status = widgets.HTML()
         self.problem = widgets.HTML()
+        self.not_applicable = False
+        self.na_note = widgets.HTML()
+        self.body: list[widgets.Widget] = [
+            ui.help_text(
+                "Name what was stained, once per stain. The number of slots is the largest "
+                "number of channels found in any image; <b>Add label</b> adds more. Header "
+                "names are offered only when they are valid labels as they are and not "
+                "generic. "
+                "Every channel position of every folder needs a label, so an unused slot "
+                "needs one too: declare it here (for example <i>unused</i>)."
+            ),
+            self.note,
+            self.groups_box,
+            self.rows_box,
+            self.add_button,
+            self.skipped,
+            self.problem,
+            self.status,
+            self.confirm.widget,
+        ]
         self.widget = ui.card(
-            "Which labels did you image?",
-            [
-                ui.help_text(
-                    "Name what was stained, once per stain. The number of slots is the largest "
-                    "number of channels found in any image; <b>Add label</b> adds more. Header "
-                    "names are offered only when they are valid labels as they are and not "
-                    "generic. "
-                    "Every channel position of every folder needs a label, so an unused slot "
-                    "needs one too: declare it here (for example <i>unused</i>)."
-                ),
-                self.note,
-                self.groups_box,
-                self.rows_box,
-                self.add_button,
-                self.skipped,
-                self.problem,
-                self.status,
-                self.confirm.widget,
-            ],
-            visible=False,
+            "Which labels did you image?", [*self.body, self.na_note], visible=False
         )
 
     @property
@@ -136,6 +137,27 @@ class LabelsCard:
     def confirmed(self) -> bool:
         """True while the list is confirmed (saved and not being changed)."""
         return self.confirm.value
+
+    def set_not_applicable(self, on: bool) -> None:
+        """Say the card is not applicable (every folder is colour, RGB) and hide its questions."""
+        self.not_applicable = on
+        kept = ", ".join(self.labels)
+        self.na_note.value = (
+            ui.status(
+                "ok",
+                "Not applicable: every folder is colour (RGB).",
+                [
+                    "R, G and B are the fixed names of a colour image's channels, so no label is "
+                    "needed. If some folder is separate channels, change its image type "
+                    "(step 7) and the labels come back."
+                    + (f" The labels already declared ({kept}) stay saved, unused." if kept else "")
+                ],
+            )
+            if on
+            else ""
+        )
+        for widget in self.body:
+            ui.set_visible(widget, not on)
 
     def display_names(self) -> dict[str, str | None]:
         """Return the shown-as name of each saved label."""

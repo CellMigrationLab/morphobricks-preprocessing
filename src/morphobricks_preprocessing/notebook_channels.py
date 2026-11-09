@@ -18,6 +18,7 @@ import ipywidgets as widgets
 
 from . import notebook_style as ui
 from .axis_review import review_axes
+from .channel_answers import all_colour
 from .channel_labels import UnitLayout
 from .channel_units import header_names, slot_count, unit_layouts
 from .draft_answers import DraftAnswers
@@ -70,6 +71,7 @@ class _ChannelsStep:
         self.channel_types = ImageTypeColumn(store, self._types_changed)
         self.channel_grid = TagGrid(store, self.channel_types, self._channels_changed)
         self.channel_labels = LabelsCard(store, self._channel_labels_changed)
+        self.channel_intro = ui.intro(INTRO)  # hidden while the stains are not applicable
         self.channels_waiting = widgets.HTML()
         self.channels_box = widgets.VBox(
             [self.channels_waiting, self.channel_labels.widget, self.channel_grid.widget]
@@ -82,7 +84,7 @@ class _ChannelsStep:
             "Name what you stained, then tag every channel of every unit."
             if purpose is None
             else purpose,
-            [ui.intro(INTRO), self.channels_box],
+            [self.channel_intro, self.channels_box],
         )
 
     # Opening and closing -----------------------------------------------------------------
@@ -92,6 +94,7 @@ class _ChannelsStep:
         self._channel_thumbs = None
         self.channel_labels.close()
         self.channel_grid.close()
+        ui.set_visible(self.channel_intro, True)
         self.channels_waiting.value = why
         self._refresh_masks_screen()
 
@@ -136,9 +139,25 @@ class _ChannelsStep:
         self.channel_labels.open(slots, names, layouts)
         self._channel_labels_changed()
 
+    @property
+    def _stains_not_applicable(self) -> bool:
+        """True when the user declared every folder colour (RGB): R, G, B need no label."""
+        answers = self.draft_answers
+        return (
+            self._channels_key is not None
+            and answers is not None
+            and all_colour(self._channel_layouts, answers.units)
+        )
+
     def _channel_labels_changed(self) -> None:
-        """Open the tag grid for the confirmed labels, or close it while they are being changed."""
-        if self.channel_labels.confirmed and self._channels_key is not None:
+        """Open the tag grid for the confirmed labels, or close it while they are being changed.
+
+        When every folder is colour the labels are not applicable and the grid opens without them.
+        """
+        na = self._stains_not_applicable
+        self.channel_labels.set_not_applicable(na)
+        ui.set_visible(self.channel_intro, not na)  # it says to name the stains first
+        if (self.channel_labels.confirmed or na) and self._channels_key is not None:
             self.channel_grid.open(
                 self._channel_layouts, self.channel_labels.labels, self._channel_thumbs
             )
@@ -148,7 +167,10 @@ class _ChannelsStep:
 
     def _types_changed(self) -> None:
         """Redraw the grid after an image type (its rows hold the type cells)."""
-        self.channel_grid.refresh()
+        if self._stains_not_applicable != self.channel_labels.not_applicable:
+            self._channel_labels_changed()  # every folder became colour, or no longer is
+        else:
+            self.channel_grid.refresh()
         self._channels_changed()
 
     def _channels_changed(self) -> None:
