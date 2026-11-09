@@ -43,7 +43,11 @@ def _parameters(function):
 
 
 NOTEBOOK_METHODS = {
-    "__init__": [("experiment_folder", POSITIONAL, ""), ("output_folder", POSITIONAL, "")],
+    "__init__": [
+        ("experiment_folder", POSITIONAL, ""),
+        ("output_folder", POSITIONAL, ""),
+        ("describe", KEYWORD, False),
+    ],
     "welcome": [],
     "folder_step": [
         ("title", POSITIONAL, None),
@@ -67,6 +71,8 @@ NOTEBOOK_METHODS = {
         ("title", POSITIONAL, None),
         ("purpose", POSITIONAL, None),
     ],
+    "check_save_step": [("title", POSITIONAL, None)],
+    "save_experiment": [],
     "run_step": [],
     "results_step": [],
     "check_folder": [],

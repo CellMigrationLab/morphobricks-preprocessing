@@ -40,7 +40,7 @@ class _SavedDraft:
             return None, self._set_aside(str(exc))
         if saved is None:
             return None, ""
-        pairing = self._design_pairing()
+        pairing = self._resume_pairing(saved)
         answers, dropped = carry_over(self._draft_base, saved, pairing)
         try:
             apply_answers(self._draft_base, answers)
@@ -53,6 +53,10 @@ class _SavedDraft:
             lines.append("No longer in the experiment, so not kept: " + "; ".join(dropped) + ".")
             return answers, ui.status("warn", "Your saved answers were read.", lines)
         return answers, ui.status("info", "Your saved answers were read.", lines)
+
+    def _resume_pairing(self, saved: DraftAnswers) -> dict[tuple[str, str], str]:
+        """Return the pairing that holds on resume: the experiment design card's."""
+        return self._design_pairing()
 
     def _set_aside(self, reason: str) -> str:
         """Note that the saved draft cannot be used; it is copied aside before any save."""

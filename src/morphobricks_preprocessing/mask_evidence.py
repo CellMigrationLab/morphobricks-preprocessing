@@ -143,7 +143,7 @@ def mask_evidence(
         dtypes,
         first.image,
         values,
-        channel if len(strip.panels) > 1 or channel else None,
+        (channel or 0) if len(strip.panels) > 1 else None,
         where or "the only plane",
         panel.panel,
         labels,

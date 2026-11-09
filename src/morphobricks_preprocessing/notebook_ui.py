@@ -53,7 +53,9 @@ from .notebook_axis_preview import _AxisPreview
 from .notebook_axis_step import _AxisStep
 from .notebook_calibration import _CalibrationCard
 from .notebook_channels import _ChannelsStep
+from .notebook_check_save import _CheckSaveScreen
 from .notebook_convert import _ConvertCard
+from .notebook_described import _DescribedRun
 from .notebook_description import _DescriptionCard
 from .notebook_design import _DesignCard
 from .notebook_folder import _FolderStep
@@ -122,6 +124,8 @@ __all__ = [
 
 
 class PreprocessingNotebook(
+    _DescribedRun,
+    _CheckSaveScreen,
     _FolderStep,
     _MasksCard,
     _DesignCard,
@@ -147,6 +151,10 @@ class PreprocessingNotebook(
         Folder to prefill in step 1.
     output_folder
         Output folder to prefill; empty means the default next to the experiment.
+    describe
+        True for a described run (the shipped notebook, :mod:`.notebook_described`): the
+        experiment is saved as ``morphobricks.toml`` on *Check and save* before the run. False
+        keeps the v0.4 cards (embedding bricks).
 
     Attributes
     ----------
@@ -169,7 +177,10 @@ class PreprocessingNotebook(
         Result of the last run, or None.
     """
 
-    def __init__(self, experiment_folder: str = "", output_folder: str = ""):  # noqa: ANN204
+    def __init__(
+        self, experiment_folder: str = "", output_folder: str = "", *, describe: bool = False
+    ) -> None:
+        self._describe = describe
         self.preflight: Preflight | None = None
         self.design: ExperimentDesign | None = None
         # True while the saved design cannot be read and has not been replaced by an answer.
@@ -189,6 +200,7 @@ class PreprocessingNotebook(
         self._show_design = True
         self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None
         self._init_prefill()
+        self._build_check_save()
         self._build_output_cards()
         self._build_calibration_card()
         self._build_masks_cards()

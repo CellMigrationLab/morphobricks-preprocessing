@@ -108,6 +108,9 @@ def setup_environment(tmp_path, monkeypatch):
         import ipywidgets as widgets
 
         class FakeNotebook:
+            def __init__(self, **options):  # describe=True, the shipped notebook's run
+                self.options = options
+
             def __getattr__(self, name):  # welcome, folder_step, axis_step, channels_step, ...
                 return lambda: widgets.HTML(name)
 

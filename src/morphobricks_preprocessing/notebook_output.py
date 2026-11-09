@@ -229,7 +229,7 @@ class _OutputCards:
         checked, review = suggested_review(pre, missing_as_singleton=missing_as_singleton)
         output = self._output_path(pre.discovery.root)
         try:
-            if self._show_design:
+            if self._show_design and not self._describe:
                 written = write_check_outputs(checked, output, review)
             else:
                 report, refusal = write_check_report(checked, output, review)

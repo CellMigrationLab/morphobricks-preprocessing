@@ -8,6 +8,25 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Notebook: check and save, reopen, described runs (Stage 1 PR 16b).** `PreprocessingNotebook(describe=True)`
+  (the shipped notebook) saves the experiment as `morphobricks.toml` before the run. *Check and save*
+  restates it in sentences (what each condition is compared against, "compared against nothing" in
+  words), shows each replicate with its folders, image counts, a safe picture and the channel chips
+  (a label some acquisitions lack in orange, `A_SCOPE_INCOMPLETE`), and asks "Were these prepared and
+  imaged the same way…?" once per replicate (the N35 answer, moved here from Step 1). The short names
+  are listed ("never change once saved"); the exact canonical bytes go through the strict reader and
+  the run's checks (heterogeneous layouts and the physical `R_*` checks said in words), and the
+  derived `experiment_design.csv` change is listed by row. One click adopts every short name,
+  publishes under the lock and writes `experiment_design.csv` — only then (`run.draft_file.publish_draft`
+  now writes the derived CSV and takes `removals` and `recorded_on`). Run waits for it. Reopening:
+  the published file is the answers (`published_answers`, retired IDs only in `used_ids`); nothing
+  changed folds every screen behind "Saved on …, nothing changed. [Run] [Change…]"; new, removed and
+  recounted folders are listed in orange; a removed folder needs *Yes, remove*; a replicate whose
+  folders changed is asked "same way?" again. The draft carries the pairing. In a described run the
+  labels toggle, the design card's "comparable" questions, its CSV writes, the check's design template,
+  the names card's "Yes, use these IDs" and the global *Image type* card are retired; the pairing card
+  shows a picture of each folder once the axis roles are confirmed. Without `describe` the v0.4 cards
+  are unchanged.
 - **Notebook: your masks (Stage 1 PR 16a).** A *Your masks* screen after *Your channels*, shown only
   when the folder check paired masks: one question per mask type, *separate objects, each with its
   own number* (`instances`) or *regions: inside or outside* (`binary`), with nothing preselected

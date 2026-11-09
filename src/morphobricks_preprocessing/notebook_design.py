@@ -235,9 +235,10 @@ class _DesignCard:
                 widgets.GridBox(
                     [
                         widgets.HTML(html.escape(row.condition)),
-                        widgets.HTML(
+                        self._folder_cell(
+                            row.key,
                             f"<b>{html.escape(row.biological_repeat)}</b> "
-                            f"<span class='mb-help'>{plural(row.image_count, 'image')}</span>"
+                            f"<span class='mb-help'>{plural(row.image_count, 'image')}</span>",
                         ),
                         dropdown,
                     ],
@@ -263,6 +264,10 @@ class _DesignCard:
             )
         ]
         self._build_group_questions()
+
+    def _folder_cell(self, key: tuple[str, str], text: str) -> widgets.Widget:
+        """Return the cell naming a folder of the pairing (with its image count)."""
+        return widgets.HTML(text)
 
     def _build_group_questions(self) -> None:
         """One yellow question per repeat group; rebuilt when the pairing changes."""

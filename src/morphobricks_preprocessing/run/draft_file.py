@@ -34,7 +34,10 @@ from pathlib import Path
 from .._io import write_text_atomic
 from ..description import DescriptionError
 from ..description_file import DESCRIPTION_FILENAME, DRAFT_FILENAME, read_file_bytes, sha256_hex
+from ..description_removal import Removal
 from ..description_transition import Reconfirmation
+from ..design import DESIGN_FILENAME
+from ..design_derive import write_derived_design
 from ..draft import Draft
 from ..draft_answers import DraftAnswers, apply_answers, description_from_draft
 from ..draft_format import (
@@ -202,13 +205,18 @@ def publish_draft(
     draft: Draft,
     *,
     confirmations: tuple[Reconfirmation, ...] = (),
+    removals: tuple[Removal, ...] = (),
+    recorded_on: str | None = None,
 ) -> Publication:
-    """Publish the saved draft as ``morphobricks.toml`` and delete the draft, or refuse.
+    """Publish the saved draft as ``morphobricks.toml``, derive the CSV, delete the draft.
 
     Under the output folder's lock: the draft file is resumed (:func:`load_draft`), the
     description built from it (every confirmation present or :class:`DraftIncomplete`), published
-    with all the checks of :func:`.description_file.publish_description`, and then the draft file
-    is deleted. Nothing is written on any refusal.
+    with all the checks of :func:`.description_file.publish_description`, then the derived
+    ``experiment_design.csv`` is written (experiment-v1 section 11: it is written only here, from
+    the published file) and the draft file is deleted. Nothing is written on any refusal.
+    ``removals`` and ``recorded_on`` are the user's, as :func:`.description_file.publish_locked`
+    takes them (a removed folder, a changed image count).
 
     Raises
     ------
@@ -226,7 +234,13 @@ def publish_draft(
         resumed = _resume(folder, draft)
         candidate = description_from_draft(draft, resumed.answers)
         publication = publish_locked(
-            folder, candidate, base_sha256=resumed.answers.base_sha256, confirmations=confirmations
+            folder,
+            candidate,
+            base_sha256=resumed.answers.base_sha256,
+            confirmations=confirmations,
+            removals=removals,
+            recorded_on=recorded_on,
         )
+        write_derived_design(candidate, folder / DESIGN_FILENAME)
         (folder / DRAFT_FILENAME).unlink()
         return publication
