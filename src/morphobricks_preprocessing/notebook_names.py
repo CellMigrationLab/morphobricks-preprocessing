@@ -27,6 +27,12 @@ from .notebook_description_view import (
     text_box,
     why_no_proposal,
 )
+from .notebook_values import natural_key
+
+
+def _natural(item: tuple[str, object]) -> tuple:
+    """Return the display order of a replicate's row: its folder label, numbers as numbers."""
+    return natural_key(item[0])
 
 
 class _NameRows:
@@ -53,11 +59,11 @@ class _NameRows:
                 f"<b>{html.escape(label)}</b><br>{members_text(repeat.members)}",
                 answers.repeats.get(label, RepeatAnswer()).display_name,
             )
-            for label, repeat in sorted(draft.repeats.items())
+            for label, repeat in sorted(draft.repeats.items(), key=_natural)
         ]
         entries += [
             Entry("technical_repeats", folder, slot, f"<b>{html.escape(folder)}</b>")
-            for folder, slot in sorted(draft.technical_repeats.items())
+            for folder, slot in sorted(draft.technical_repeats.items(), key=_natural)
         ]
         return entries
 

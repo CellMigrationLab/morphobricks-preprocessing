@@ -8,6 +8,24 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Notebook: tags per header block, colour pictures, one-click axes (PR 17b-1).** *Tag channels*
+  shows folders whose image headers are identical, exactly (channel count, every raw header name
+  present and equal, colour flag), as one block tagged once for all its folders (owner decision Q5),
+  with every folder's pictures below for checking; a header lacking a channel name, other names or
+  other saved tags keep folders apart, and **Tag this folder on its own** takes one out. A block
+  answer writes the same per-folder answers into the draft as tagging one folder at a time (tested on
+  the draft bytes). The colour pre-tick is confirmed only on *Image type*; *Tag channels* restates
+  it. A colour (RGB) folder is drawn as one colour picture (channel 1 red, 2 green, 3 blue, each with
+  its own percentile contrast; display only) on *Tag channels*, *Image type* (which now has a picture
+  per folder), the pairing and *Check and save*: `preview_render.colour_composite`,
+  `Thumbnails.colour`. The axes step offers complete, unambiguous roles (no axis message, every image
+  naming its axes, nothing missing to state) with a preview and one **Confirm these axes** click,
+  which records what the two clicks of the role boxes record (owner decision Q3); an unchanged reopen
+  offers the earlier run's roles and then opens its next open step. Pixel sizes say *uncalibrated*
+  on the chip and in the summary when no physical size is found. Replicate IDs are shown in natural
+  order (`rep2` before `rep10`, the folder breaking a tie) in the run plots and legends, the
+  replicate blocks, the names rows and the short names: display only. Texts no longer name the old
+  steps 1-4 (the results page, the design card, the mask step, the design messages).
 - **Notebook: one step at a time (UX proposal 2026-11-09, PR 17a).** `PreprocessingNotebook.steps()`
   shows the shipped notebook's 13 steps one at a time, with a strip of chips (done green with a tick,
   current blue, to do grey, changed by a reopen orange; a chip opens its step) and Back/Next (Next is

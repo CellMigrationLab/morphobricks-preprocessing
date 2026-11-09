@@ -435,8 +435,7 @@ def _next_html(result: ConversionResult, output: Path, missing_as_singleton: boo
             "header gave, because the axis was relabelled: its size is unknown in the copy "
             "(a swapped Y and X keep theirs only when the header gives X and Y equal). If you "
             "know them, state them "
-            "under <b>Pixel sizes</b> in step 1 after checking the copies."
-            + ui.path_list(sizes, limit=5)
+            "under <b>Pixel sizes</b> after checking the copies." + ui.path_list(sizes, limit=5)
         )
     return ui.status(
         "info", "What next: check the copies in step 1, then run on them.", lines, raw=True

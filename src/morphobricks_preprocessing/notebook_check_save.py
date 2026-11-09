@@ -273,7 +273,7 @@ class _CheckSaveScreen:
         self.replicates_box.children = boxes
 
     def _member_picture(self, key: tuple[str, str]) -> widgets.Widget:
-        """Return the picture of a folder's first image, channel 1, or why there is none."""
+        """Return the picture of a folder's first image (channel 1, or in colour when RGB)."""
         thumbs, layouts = self._channel_thumbs, self._channel_layouts
         layout = next((u for u in layouts if u.key[:2] == key), None)
         if thumbs is None or layout is None:
@@ -281,12 +281,15 @@ class _CheckSaveScreen:
                 "<div class='mb-help' style='width:120px'>picture once the axis roles are "
                 "confirmed</div>"
             )
-        thumb = thumbs.get(layout, 0)
+        colour = self.channel_types.shown(layout) == "rgb"
+        thumb = thumbs.picture(layout, colour)
         if not thumb.png:
             return widgets.HTML(
                 f"<div class='mb-help' style='width:120px'>{html.escape(thumb.note)}</div>"
             )
-        return widgets.Image(value=thumb.png, format="png", layout=PICTURE)
+        image = widgets.Image(value=thumb.png, format="png", layout=PICTURE)
+        image.add_class("mb-colour" if colour else "mb-grey")
+        return image
 
     def _folder_cell(self, key: tuple[str, str], text: str) -> widgets.Widget:
         """Return a folder of the pairing card, with its picture in a described run."""

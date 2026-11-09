@@ -960,7 +960,7 @@ def test_folder_step_shows_the_design_by_default(tmp_path):
         nb.check_button.click()
         nb.labels_confirmed.button.click()
         assert ui.is_visible(nb.design_card) and nb.design is not None
-        assert "Step 3 runs once every group is confirmed." in nb.design_status.value
+        assert "The run waits until every group is confirmed." in nb.design_status.value
         assert "Confirm the biological repeats in Step 1" in nb.folder_next.value
         assert "Still to do: confirm the biological repeats" in nb.readiness.value
         path = tmp_path / name / "exp_MorphoBricks_Preprocessing" / "experiment_design.csv"
@@ -1245,7 +1245,7 @@ def test_full_run_and_statistics(experiment, tmp_path):
     assert read_manifest(tmp_path / "out" / "run_manifest.json").settings.bin_count == 64
     # Step 4 is optional: the new table is selected but nothing is calculated yet.
     assert nb.csv_file.value == str(tmp_path / "out" / "plane_histograms.csv")
-    assert "The table from step 3 is selected" in nb.stats_status.value
+    assert "The table the run just wrote is selected" in nb.stats_status.value
     assert not ui.is_visible(nb.statistics_card)
     nb.statistics_button.click()
     assert ui.is_visible(nb.statistics_card) and nb.statistics.value.count("<td>ctrl</td>") == 2

@@ -62,6 +62,8 @@ def saved(out):
 def tag_all(nb, tags=(DNA, ACTIN, PHASE), *, skip=()):
     """Tag every cell of every unit (not those of ``skip``) and answer every image type."""
     grid = nb.channel_grid
+    for key in skip:
+        grid.split(key)  # tagged on its own, outside its block
     for key, index in list(grid.cells):
         if key not in skip:
             grid.cells[(key, index)].value = tags[index]

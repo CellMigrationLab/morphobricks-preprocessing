@@ -186,7 +186,7 @@ class _MaskStepCard:
         except ValueError as exc:  # masks whose pixels cannot be used (planes, labels)
             self._mask_step_failed(
                 "The masks cannot be used.",
-                [str(exc), "Correct or replace the mask named, run step 3 again, then retry."],
+                [str(exc), "Correct or replace the mask named, run again, then retry."],
             )
             return None
         if result.refusal is not None:

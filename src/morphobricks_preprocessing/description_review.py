@@ -17,6 +17,7 @@ from dataclasses import dataclass, fields
 from .design import DesignRow, ExperimentDesign
 from .draft import Draft
 from .draft_answers import ConditionAnswer, DraftAnswers, RepeatAnswer, UnitKey
+from .notebook_values import natural_key
 
 SINGLE = "single"
 
@@ -96,10 +97,17 @@ def _members(applied: Draft, label: str, answers: DraftAnswers) -> tuple[MemberV
 
 
 def replicates(applied: Draft, answers: DraftAnswers) -> tuple[ReplicateView, ...]:
-    """Return every replicate with its folders, their channels and the labels some lack."""
+    """Return every replicate with its folders, their channels and the labels some lack.
+
+    In natural order of the replicate ID (``rep2`` before ``rep10``), the folder label breaking
+    a tie: for display only.
+    """
     every = sorted({c for unit in answers.units.values() for c in unit.channels if c is not None})
     out = []
-    for label, repeat in sorted(applied.repeats.items()):
+    shown = sorted(
+        applied.repeats.items(), key=lambda i: (natural_key(i[1].id.confirmed or i[0]), i[0])
+    )
+    for label, repeat in shown:
         members = _members(applied, label, answers)
         units = [u for m in members for u in m.units]
         present = sorted({c for u in units for c in u.channels if c is not None})
@@ -135,7 +143,7 @@ def short_names(applied: Draft, answers: DraftAnswers) -> list[tuple[str, tuple[
         ("Channels", set(answers.channels)),
         ("Masks", set(answers.masks)),
     ]
-    return [(title, tuple(sorted(ids))) for title, ids in kinds if ids]
+    return [(title, tuple(sorted(ids, key=natural_key))) for title, ids in kinds if ids]
 
 
 def unit_text(key: UnitKey) -> str:

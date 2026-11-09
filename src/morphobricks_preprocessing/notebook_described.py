@@ -272,8 +272,8 @@ class _DescribedRun:
             super()._refresh_axis_next()
             return
         self.axis_next.value = ui.next_steps(
-            "Go to Your channels.",
-            "Name what you stained and tag every channel; then Your masks and Check and save.",
+            "Go to Stains.",
+            "Name what you stained, then Tag channels, Masks and Check and save.",
         )
 
     # The run -----------------------------------------------------------------------------

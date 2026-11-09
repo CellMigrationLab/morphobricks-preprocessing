@@ -413,12 +413,13 @@ class PreprocessingNotebook(
 
     def results_step(self) -> widgets.Widget:
         """Step 4: pooled statistics and intensity distributions from the table."""
+        numbered = "" if self._describe else "Step 4 · "  # the stepper numbers steps 1-13
         return ui.page(
-            "Step 4 · Calculate the statistics (optional)",
-            "Compare conditions and repeats using the histograms computed in step 3.",
+            f"{numbered}Calculate the statistics (optional)",
+            "Compare conditions and repeats using the histograms computed by the run.",
             [
                 ui.intro(
-                    "<b>This step is optional.</b> The histogram table written in step 3 is "
+                    "<b>This step is optional.</b> The histogram table written by the run is "
                     "all that later MorphoBricks bricks need; this step does not change it "
                     "and writes no files. Use it to compare groups and check that the "
                     "brightness looks as expected.<br>Statistics are <b>pooled</b> from the "

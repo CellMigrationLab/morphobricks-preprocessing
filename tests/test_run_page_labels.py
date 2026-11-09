@@ -11,8 +11,10 @@ import pytest
 
 from channel_images import write_masks
 from morphobricks_preprocessing.description_file import DESCRIPTION_FILENAME
+from morphobricks_preprocessing.notebook_values import natural_key
 from morphobricks_preprocessing.run_labels import (
     NO_LABELS,
+    RunLabels,
     labels_from_description,
     recorded_labels,
 )
@@ -226,3 +228,27 @@ def test_a_mask_without_an_answer_says_so_and_a_different_id_is_kept(tmp_path):
     shown = nb.mask_step_result.value
     assert "<td>Nuclei_seg (Nuclei)</td><td>objects</td>" in shown
     assert "<td>tissue</td><td>not described yet</td>" in shown
+
+
+def test_replicate_ids_are_shown_in_natural_order_rep2_before_rep10():
+    # Display convention (PR 17b): numbers in an ID are compared as numbers; the folder breaks
+    # a tie. Nothing is renamed or stored in this order.
+    labels = RunLabels(
+        (),
+        {
+            ("drug", "b"): "rep10",
+            ("drug", "a"): "rep2",
+            ("drug", "c"): "rep2",
+            ("ctrl", "x"): "rep1",
+        },
+    )
+    found = sorted(
+        [("drug", "b"), ("drug", "c"), ("ctrl", "x"), ("drug", "a")], key=lambda k: labels.order(*k)
+    )
+    assert found == [("ctrl", "x"), ("drug", "a"), ("drug", "c"), ("drug", "b")]
+    assert sorted(["rep10", "rep2", "rep1", "rep02"], key=natural_key) == [
+        "rep1",
+        "rep02",
+        "rep2",
+        "rep10",
+    ]

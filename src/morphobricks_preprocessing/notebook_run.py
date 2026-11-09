@@ -371,7 +371,7 @@ class _RunStep:
             self.csv_file.value = str(result.csv_path)
             self.stats_status.value = ui.status(
                 "info",
-                "The table from step 3 is selected.",
+                "The table the run just wrote is selected.",
                 ["Click Calculate statistics to compare the groups (optional)."],
             )
 

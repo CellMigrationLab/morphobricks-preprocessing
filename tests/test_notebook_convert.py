@@ -268,7 +268,7 @@ def test_pixel_sizes_of_a_relabelled_y_and_x_are_stated_as_unknown(tmp_path):
     nb.convert_button.click()
     after = text(nb.convert_result)
     assert "Pixel sizes: 3 copies" in after and "ctrl/r1/a.tif: X, Y" in after
-    assert "under Pixel sizes in step 1" in after
+    assert "under Pixel sizes after checking the copies" in after
 
 
 def test_equal_x_and_y_sizes_are_carried_so_nothing_is_said_about_them(tmp_path):
