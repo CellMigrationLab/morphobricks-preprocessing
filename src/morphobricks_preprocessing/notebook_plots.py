@@ -287,12 +287,20 @@ class IntensityPanel:
             self.boxes.value = self.curves.value = b""
             return
         channel = self.channel.value or 0
-        boxes = repeat_boxes(report, channel)
         labels = self.labels
+        boxes = sorted(
+            repeat_boxes(report, channel),
+            key=lambda box: labels.order(box.condition, box.biological_repeat),
+        )
         self.boxes.value = (
             intensity_boxes_png(boxes, report.high_percentile, channel, labels) or b""
         )
-        curves = repeat_distributions(self.records, channel)
+        curves = {
+            condition: dict(
+                sorted(found.items(), key=lambda item: labels.order(condition, item[0]))
+            )
+            for condition, found in repeat_distributions(self.records, channel).items()
+        }
         shifted = report.shifted_repeats(channel)
         self.curves.value = repeat_curves_png(curves, shifted, channel, labels) or b""
 

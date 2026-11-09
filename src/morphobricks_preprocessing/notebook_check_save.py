@@ -79,7 +79,9 @@ class _CheckSaveScreen:
         self._check: CandidateCheck | None = None
         self.same_way: dict[str, ui.ConfirmToggle] = {}
         self.saved_line = widgets.HTML()
-        self.run_now = ui.button(" Run", style="success", icon="play", tooltip="Run step 3")
+        self.run_now = ui.button(
+            " Run", style="success", icon="play", tooltip="Compute the histograms (Run, step 12)"
+        )
         self.change_saved = ui.button(" Change…", style="warning", icon="pencil")
         self.fold_bar = widgets.HBox([self.saved_line, self.run_now, self.change_saved])
         ui.set_visible(self.fold_bar, False)
@@ -206,7 +208,7 @@ class _CheckSaveScreen:
         questions = list(missing_confirmations(applied, answers))
         extra = [problem] if problem else []
         left = masks_unanswered(answers, self._mask_types())
-        extra += [f"mask {m}: separate objects or regions? (Your masks)" for m in left]
+        extra += [f"mask {m}: separate objects or regions? (Masks, step 10)" for m in left]
         if len(applied.conditions) > 1:
             extra += [
                 f"what {folder} is compared against (choose, or no comparison)"
@@ -310,7 +312,7 @@ class _CheckSaveScreen:
         state = self._published()
         if self._saved_current():
             when = self._saved_on or (state.saved_on if state else "")
-            self.save_status.value = ui.status("ok", f"Saved {when}. Step 3 can run.")
+            self.save_status.value = ui.status("ok", f"Saved {when}. The run (step 12) can start.")
             self.saved_line.value = ui.status("ok", f"Saved on {when}, nothing changed.")
         else:
             self.saved_line.value = ""
@@ -345,7 +347,9 @@ class _CheckSaveScreen:
     def _run_from_fold(self) -> None:
         if self.run() is None:
             self.saved_line.value += ui.status(
-                "warn", "Not run yet.", ["See step 3: its checklist says what is still to do."]
+                "warn",
+                "Not run yet.",
+                ["See Run (step 12): its checklist says what is still to do."],
             )
 
     # Saving ------------------------------------------------------------------------------
@@ -363,7 +367,9 @@ class _CheckSaveScreen:
             return False
         if not self._confirm_ids():
             self.save_status.value = ui.status(
-                "error", "Not saved: a short name was refused.", ["See Names for your experiment."]
+                "error",
+                "Not saved: a short name was refused.",
+                ["See Conditions and Replicates (steps 4 and 5)."],
             )
             return False
         self._save_description()

@@ -28,7 +28,7 @@ from .notebook_channels_type import ImageTypeColumn
 
 INTRO = (
     "<b>What happens here:</b> first name what you stained (the labels), then say, for every "
-    "unit, which label each channel is, looking at its picture. Nothing is chosen for you: "
+    "folder, which label each channel is, looking at its picture. Nothing is chosen for you: "
     "names found in the image headers are offered only as suggestions, and each one needs your "
     "click."
 )

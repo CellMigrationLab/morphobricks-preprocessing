@@ -207,7 +207,7 @@ def test_incomplete_tagging_blocks_completion(plain, out):
     assert "3 channel(s) still to tag" in grid.status.value
     assert "1 image type(s) still to choose" in grid.status.value
     tag_all(nb)
-    assert grid.complete and "Every channel of every one of the 4 units" in grid.status.value
+    assert grid.complete and "Every channel of every one of the 4 folders" in grid.status.value
 
 
 def test_the_dropdown_has_no_empty_option_and_an_unused_slot_needs_a_label(plain, out):
@@ -266,10 +266,12 @@ def test_a_label_used_in_only_some_units_says_what_will_be_refused(plain, out):
     grid = nb.channel_grid
     tag_all(nb, skip=[("drug", "rep2", "single")])
     text = grid.usage_html.value
-    assert "used in 3 of 4 units: an analysis of DNA will be refused for the other units" in text
+    assert (
+        "used in 3 of 4 folders: an analysis of DNA will be refused for the other folders" in text
+    )
     assert "A_SCOPE_INCOMPLETE" in text
     tag_all(nb)
-    assert "used in all 4 units" in grid.usage_html.value
+    assert "used in all 4 folders" in grid.usage_html.value
     assert "will be refused" not in grid.usage_html.value
 
 
@@ -299,7 +301,7 @@ def test_a_pre_tag_from_the_header_is_only_a_suggestion_until_confirmed(tmp_path
     assert not saved(out).units  # nothing is the user's answer yet
     assert not grid.complete
     assert len(grid.confirm_buttons) == 1  # one confirm for the one layout
-    assert "4 unit(s)" in grid.confirm_buttons[0].description
+    assert "4 folder(s)" in grid.confirm_buttons[0].description
     grid.confirm_buttons[0].click()
     assert all(u.channels == (DNA, ACTIN, PHASE) for u in saved(out).units.values())
     assert "proposed, not confirmed" not in repr(grid.blocks.children)
@@ -315,7 +317,7 @@ def test_units_with_different_header_names_are_different_layouts(tmp_path, out):
     set_labels(nb, ["ACTIN", "DNA", "PHASE"])
     grid = nb.channel_grid
     assert len(grid.confirm_buttons) == 1  # only the layout that equals the labels exactly
-    assert "2 unit(s)" in grid.confirm_buttons[0].description
+    assert "2 folder(s)" in grid.confirm_buttons[0].description
     assert grid.cells[(("drug", "rep1", "single"), 0)].value is None
 
 
@@ -353,7 +355,7 @@ def test_confirming_the_colour_layout_declares_r_g_b_and_completes_every_unit(tm
     nb = open_screen(rgb_tree(tmp_path), out)
     set_labels(nb, ["DNA"])
     grid = nb.channel_grid
-    assert len(grid.confirm_buttons) == 1 and "4 unit(s)" in grid.confirm_buttons[0].description
+    assert len(grid.confirm_buttons) == 1 and "4 folder(s)" in grid.confirm_buttons[0].description
     grid.confirm_buttons[0].click()
     answers = saved(out)
     assert all(
@@ -393,7 +395,7 @@ def test_every_answer_is_saved_and_a_reopened_notebook_shows_it(plain, out):
     assert ui.is_visible(grid.widget) and grid.complete
     assert all(d.value == (DNA, ACTIN, PHASE)[k[1]] for k, d in grid.cells.items())
     assert all(r.value == "channels" for r in again.channel_types.radios.values())
-    assert "Every channel of every one of the 4 units" in grid.status.value
+    assert "Every channel of every one of the 4 folders" in grid.status.value
 
 
 def test_changing_the_labels_takes_back_the_tags_of_a_label_that_is_gone(plain, out):
