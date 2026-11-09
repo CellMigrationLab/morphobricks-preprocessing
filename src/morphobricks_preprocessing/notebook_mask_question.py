@@ -137,6 +137,8 @@ class MaskQuestion:
             box = widgets.ToggleButton(
                 value=label in chosen,
                 description=label,
+                icon="check" if label in chosen else "",
+                button_style="info" if label in chosen else "",
                 disabled=self.saved is None,
                 layout=widgets.Layout(width="auto"),
             )

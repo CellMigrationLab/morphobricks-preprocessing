@@ -27,7 +27,6 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .axes import AxisReview
 from .axis_review import review_axes
-from .channel_answers import label_ids
 from .description import DescriptionError
 from .description_candidate import CandidateCheck, check_candidate
 from .description_removal import Removal, reconfirmations
@@ -74,6 +73,7 @@ class _CheckSaveScreen:
     def _build_check_save(self) -> None:
         """Build the screen (its content follows the answers)."""
         self._folded = False
+        self._pictures_for: object = None
         self._removals: dict[str, str] = {}
         self._saved_on: str | None = None
         self._check: CandidateCheck | None = None
@@ -184,7 +184,7 @@ class _CheckSaveScreen:
             applied, problem = apply_answers(self._draft_base, answers), ""
         except DraftError as exc:
             applied, problem = self.draft, f"A short name is refused: {exc}"
-        labels = label_ids(self.draft_answers)
+        labels = sorted(self.draft_answers.channels)  # R, G and B get their chips too
         self.words.value = comparisons_html(comparisons(applied, answers))
         self._show_replicates(applied, answers, labels)
         self.short_names.value = names_html(short_names(applied, answers))

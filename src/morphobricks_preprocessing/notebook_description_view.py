@@ -185,6 +185,12 @@ def single_note(entries: list[Entry]) -> str:
     ]
     if not missing:
         return ""
+    some = any(e.kind == "technical_repeats" and not e.fixed for e in entries)
+    if some and missing == ["no technical-repeat folders"]:
+        return (
+            "<div class='mb-question'><b>Some biological-repeat folders have no "
+            "technical-repeat folders: their images get the technical-repeat ID single.</b></div>"
+        )
     return (
         "<div class='mb-question'><b>Your experiment has "
         f"{' and '.join(missing)}: they get the ID single.</b></div>"

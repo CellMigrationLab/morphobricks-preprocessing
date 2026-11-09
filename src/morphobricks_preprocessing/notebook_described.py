@@ -86,6 +86,17 @@ class _DescribedRun:
         super()._build_description_cards()
         ui.set_visible(self.ids_confirmed.widget, not self._describe)
 
+    def _build_design_card(self) -> None:
+        """Build the design card; a described run says where the pairing is kept."""
+        super()._build_design_card()
+        if self._describe:
+            help_box = self.design_card.children[1]
+            help_box.value = help_box.value.split("The answers")[0] + (
+                "Your pairing is saved with your other answers in the draft; "
+                "<b>experiment_design.csv</b> is written only when you save the experiment "
+                "description (Check and save).</div>"
+            )
+
     def _save_design(self) -> None:
         """Save the design card's answers (never in a described run: the draft holds them)."""
         if not self._describe:
@@ -220,6 +231,14 @@ class _DescribedRun:
         if self._describe and self._folded:
             for card in (self.names_card, self.references_card):
                 ui.set_visible(card, False)
+
+    def _refresh_channels(self) -> None:
+        """Refresh *Your channels*; the pairing card gets its pictures once they can be read."""
+        super()._refresh_channels()
+        thumbs = self._channel_thumbs
+        if self._describe and self.design is not None and thumbs is not self._pictures_for:
+            self._pictures_for = thumbs
+            self._build_design_editor()
 
     # Step 2 ------------------------------------------------------------------------------
 

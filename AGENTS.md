@@ -279,6 +279,16 @@ src/morphobricks_preprocessing/
                     mask_answers.py (pure) the mask answers of the draft; mask_evidence.py the
                     evidence beside the question (images with the mask, dtype, values in one
                     image, the mask on that image)
+  notebook_described.py a described run (PreprocessingNotebook(describe=True), the shipped
+                    notebook): the overrides that retire the labels toggle, the design card's
+                    comparable questions and CSV writes, the IDs toggle and the Image type card,
+                    and reopen from the published file
+  notebook_check_save.py the Check and save screen (sentences, one "same way?" per replicate,
+                    Yes, remove, the save click, the folded reopen); notebook_check_view.py its
+                    HTML; description_review.py (pure) the sentences and the CSV row diff;
+                    description_candidate.py the checks on the exact bytes; description_reopen.py
+                    the published file against the folders; published_answers.py (pure) the
+                    published file as draft answers, retired IDs, reopened replicates
   notebook_convert.py step 2's Make named-axis copies card under the axis check (PP-11b):
                     preview_conversion, then convert_experiment under the copy folder's lock,
                     then Check the copies in step 1 (same output folder)
