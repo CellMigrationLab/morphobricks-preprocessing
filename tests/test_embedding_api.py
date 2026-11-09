@@ -73,6 +73,7 @@ NOTEBOOK_METHODS = {
     ],
     "check_save_step": [("title", POSITIONAL, None)],
     "save_experiment": [],
+    "steps": [],
     "run_step": [],
     "results_step": [],
     "check_folder": [],

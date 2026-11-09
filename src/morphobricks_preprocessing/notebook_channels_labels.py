@@ -41,7 +41,7 @@ QUESTION = "Are these the labels you imaged?"
 EXPLANATION = (
     "A label is the short name of <b>what was stained</b>, for example <i>DNA</i> or "
     "<i>ACTIN</i>, not the dye (<i>AF488</i>) or the microscope's slot (<i>Ch1</i>). The same "
-    "label must be used for the same stain in every unit, and different stains must never share "
+    "label must be used for the same stain in every folder, and different stains must never share "
     "a label. Letters and digits, no space at the start or end; capital letters count as the "
     "same label."
 )
@@ -112,7 +112,7 @@ class LabelsCard:
                     "number of channels found in any image; <b>Add label</b> adds more. Header "
                     "names are offered only when they are valid labels as they are and not "
                     "generic. "
-                    "Every channel position of every unit needs a label, so an unused slot "
+                    "Every channel position of every folder needs a label, so an unused slot "
                     "needs one too: declare it here (for example <i>unused</i>)."
                 ),
                 self.note,

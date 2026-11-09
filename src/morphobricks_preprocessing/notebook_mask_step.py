@@ -47,7 +47,7 @@ _LABEL = " Describe the masks"
 _ICON = "sitemap"
 _SUGGESTIONS = (
     "These are suggestions from the masks' pixels: check the relationships before using them. "
-    "Each mask keeps the ID it was given on Your masks."
+    "Each mask keeps the ID it was given on Masks (step 10)."
 )
 
 

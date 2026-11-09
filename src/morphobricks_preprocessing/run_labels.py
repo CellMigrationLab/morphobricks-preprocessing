@@ -46,6 +46,14 @@ class RunLabels:
         """Return the replicate ID of a biological-repeat folder, or the folder label."""
         return self.repeats.get((condition, repeat), repeat)
 
+    def order(self, condition: str, repeat: str) -> tuple[str, str, str]:
+        """Return the sort key of a biological-repeat folder: condition, replicate ID, folder.
+
+        Within a condition the plots list the replicates by the ID they are shown with
+        (``rep1`` before ``rep2``), not by folder name; the folder breaks a tie.
+        """
+        return (condition, self.repeat(condition, repeat), repeat)
+
 
 NO_LABELS = RunLabels()
 """The labels of a run without a description: the table's own names."""

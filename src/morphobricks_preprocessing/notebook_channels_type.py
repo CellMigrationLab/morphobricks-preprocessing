@@ -11,6 +11,7 @@ contradicts the header is allowed here and said in words, since the run refuses 
 
 from __future__ import annotations
 
+import html
 from collections.abc import Callable, Sequence
 
 import ipywidgets as widgets
@@ -19,7 +20,7 @@ from . import notebook_style as ui
 from .channel_answers import synced, with_type
 from .channel_labels import UnitLayout
 from .draft_answers import UnitKey
-from .notebook_channels_view import AnswerStore, blank_chip
+from .notebook_channels_view import AnswerStore, blank_chip, quoted, unit_name
 
 OPTIONS = [("separate channels", "channels"), ("colour (RGB)", "rgb")]
 
@@ -79,12 +80,12 @@ class ImageTypeColumn:
         if saved == "channels" and layout.rgb:
             return (
                 "<span class='mb-help' style='color:#92400E'>The header says colour (RGB): the "
-                "run refuses a unit declared otherwise.</span>"
+                "run refuses a folder declared otherwise.</span>"
             )
         if saved == "rgb" and not layout.rgb:
             return (
                 "<span class='mb-help' style='color:#92400E'>The header does not say colour: the "
-                "run refuses this unit unless its header does.</span>"
+                "run refuses this folder unless its header does.</span>"
             )
         return ""
 
@@ -127,4 +128,99 @@ class ImageTypeColumn:
         return ok
 
 
-__all__ = ["OPTIONS", "ImageTypeColumn"]
+class ImageTypeRows:
+    """The image type on a page of its own: one row per folder, its header and its choice.
+
+    The cells are the :class:`ImageTypeColumn`'s own, so the answers, notes and refusals are
+    exactly those of the column in the tag grid; only the place differs.
+    """
+
+    def __init__(self, types: ImageTypeColumn) -> None:
+        self.types = types
+        self.rows = widgets.VBox()
+        self.status = widgets.HTML()
+        self.problem = widgets.HTML()
+        self.widget = ui.card(
+            "Image type of each folder",
+            [
+                ui.help_text(
+                    "<i>Separate channels</i>: one stain or marker per channel. <i>Colour "
+                    "(RGB)</i>: a colour picture whose red, green and blue are kept together. "
+                    "Nothing is chosen for you; colour is pre-ticked only where the image "
+                    "header says colour, and needs your click."
+                ),
+                self.rows,
+                self.problem,
+                self.status,
+            ],
+            visible=False,
+        )
+
+    def open(self, layouts: Sequence[UnitLayout]) -> None:
+        """Show one row per folder of these layouts."""
+        self.types.open(layouts)
+        self.refresh()
+        ui.set_visible(self.widget, True)
+
+    def close(self) -> None:
+        """Hide the rows."""
+        ui.set_visible(self.widget, False)
+
+    @property
+    def answered(self) -> int:
+        """Return how many usable folders have a saved image type."""
+        return sum(1 for u in self.types.layouts if u.usable and self.types.saved(u.key))
+
+    def refresh(self) -> None:
+        """Rebuild the rows from the saved answers."""
+        self.types.open(self.types.layouts)  # a fresh set of cells, built from the answers
+        rows = [self._row(u) for u in sorted(self.types.layouts, key=lambda u: u.key)]
+        proposed = [u.key for u in self.types.layouts if self.types.proposed(u)]
+        if proposed:
+            button = ui.button(
+                f" Yes, colour (RGB) is right for these {len(proposed)} folder(s)",
+                style="success",
+                icon="check",
+            )
+            button.on_click(lambda _, keys=tuple(proposed): self._confirm(keys))
+            rows.append(button)
+        self.rows.children = rows
+        self.problem.value = self.types.message
+        usable = sum(1 for u in self.types.layouts if u.usable)
+        done = self.answered
+        self.status.value = (
+            ui.status("ok", f"The image type of every one of the {usable} folders is answered.")
+            if done == usable
+            else ui.status("warn", f"Not finished: {usable - done} image type(s) to choose.")
+        )
+
+    def _confirm(self, keys: Sequence[UnitKey]) -> None:
+        self.types.confirm_header(keys)
+
+    def _row(self, layout: UnitLayout) -> widgets.Widget:
+        """Build one folder's row: its name, what its header says, and its choice."""
+        info = f"<b>{html.escape(unit_name(layout.key))}</b>"
+        if not layout.usable:
+            info += ui.status(
+                "warn", "Cannot be answered.", [html.escape(layout.problem)], raw=True
+            )
+            return widgets.HTML(info)
+        said = (
+            "header says: colour (RGB)"
+            if layout.rgb
+            else "header names: "
+            + " · ".join(quoted(layout.name(i)) for i in range(layout.channels))
+        )
+        info += f"<div class='mb-help'>{said}</div>"
+        return widgets.GridBox(
+            [widgets.HTML(info), self.types.cell(layout)],
+            layout=widgets.Layout(
+                grid_template_columns="minmax(200px, 2fr) minmax(200px, 3fr)",
+                grid_gap="4px 12px",
+                width="99%",
+                margin="0 0 8px 0",
+            ),
+        )
+
+
+__all__ = ["OPTIONS", "ImageTypeColumn", "ImageTypeRows"]

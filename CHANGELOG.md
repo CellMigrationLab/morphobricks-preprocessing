@@ -8,6 +8,21 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Notebook: one step at a time (UX proposal 2026-11-09, PR 17a).** `PreprocessingNotebook.steps()`
+  shows the shipped notebook's 13 steps one at a time, with a strip of chips (done green with a tick,
+  current blue, to do grey, changed by a reopen orange; a chip opens its step) and Back/Next (Next is
+  never blocked: the save and the run still refuse what is missing). The order is the owner's: images
+  found, axes, pixel sizes, conditions, replicates (pairing with the replicate and technical-repeat
+  names, then the consistency card only when it warns), compared against, image type (its own page;
+  the tag grid has no type column there), stains, tag channels, masks, check and save (starting with a
+  one-line overview of steps 1-10, each with *change*), run, describe the masks. Pure composition: the
+  cards, answers, draft, save and run are unchanged; a reopened experiment opens on its first step
+  still to do (the axes, confirmed once per session). The notebook file shows `notebook.steps()` and
+  `results_step()`; `folder_step()` and `axis_step()` render as before for embedders. Text: no RGB
+  sentence on a described run's axes page, no broken picture before the preview, "same way?" *above*,
+  the reader and CSV lines of *Check and save* behind *Details*, "folder" instead of "unit", and the
+  steps named by their new numbers. The run page's box plots and curves order the replicates of a
+  condition by replicate ID (`rep1` before `rep2`), not by folder name.
 - **Re-pin the vendored Spec to 1bed024 (MorphoBricks-Spec PR 16, owner decisions RF1 to RF6);
   `read_records` follows section 4.6.** The Spec now fixes the bytes and values of
   `morphobricks.records.jsonl` and names one refusal, `R_RECORDS_FILE_INVALID`, with the reasons

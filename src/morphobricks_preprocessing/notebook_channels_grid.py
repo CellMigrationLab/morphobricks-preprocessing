@@ -51,8 +51,8 @@ THUMB_PX = "160px"
 def partial_text(label: str, used: int, total: int) -> str:
     """Return the sentence for a label used in only some units, with its consequence."""
     return (
-        f"used in {used} of {total} units: an analysis of {html.escape(label)} will be "
-        "refused for the other units"
+        f"used in {used} of {total} folders: an analysis of {html.escape(label)} will be "
+        "refused for the other folders"
     )
 
 
@@ -66,6 +66,8 @@ class TagGrid:
         on_change: Callable[[], None] = lambda: None,
     ) -> None:
         self.store, self.types, self._on_change = store, types, on_change
+        # False when the image type has a page of its own (the stepper): no type column here.
+        self.place_types = True
         self.layouts: Sequence[UnitLayout] = ()
         self.labels: list[str] = []
         self.thumbs: Thumbnails | None = None
@@ -84,9 +86,9 @@ class TagGrid:
             "B. Tag each channel",
             [
                 ui.help_text(
-                    "For every unit, say which label each channel is, looking at its picture. "
+                    "For every folder, say which label each channel is, looking at its picture. "
                     "The same label should be in the same column in every row; a label used in "
-                    "only some units is shown in orange. Every channel and every image type "
+                    "only some folders is shown in orange. Every channel and every image type "
                     "must be answered."
                 ),
                 self.contrast,
@@ -105,7 +107,8 @@ class TagGrid:
     def open(self, layouts: Sequence[UnitLayout], labels: list[str], thumbs: Thumbnails) -> None:
         """Show the grid for these units and labels (the confirmed label list of step A)."""
         self.layouts, self.labels, self.thumbs = layouts, labels, thumbs
-        self.types.open(layouts)
+        if self.place_types:
+            self.types.open(layouts)
         self.detail.children = []
         self.refresh()
         ui.set_visible(self.widget, True)
@@ -193,7 +196,8 @@ class TagGrid:
         self._building = True
         try:
             self.cells, self.confirm_buttons = {}, []
-            self.types.open(self.layouts)
+            if self.place_types:
+                self.types.open(self.layouts)
             width = max((u.channels for u in self.layouts if not u.rgb), default=3)
             width = max(width, 3 if any(u.rgb for u in self.layouts) else 1)
             groups: dict[tuple, list[UnitLayout]] = {}
@@ -201,9 +205,9 @@ class TagGrid:
                 groups.setdefault(layout.signature if layout.usable else (0,), []).append(layout)
             blocks: list[widgets.Widget] = []
             header = widgets.GridBox(
-                [widgets.HTML("<b>unit</b>")]
+                [widgets.HTML("<b>folder</b>")]
                 + [widgets.HTML(f"<b>channel {i + 1}</b> (C{i})") for i in range(width)]
-                + [widgets.HTML("<b>image type</b>")],
+                + [widgets.HTML("<b>image type</b>" if self.place_types else "")],
                 layout=columns(width),
             )
             blocks.append(header)
@@ -221,7 +225,7 @@ class TagGrid:
         if first.usable:
             names = " · ".join(quoted(first.name(i)) for i in range(first.channels))
             what = f"Header names: {names}" if not first.rgb else "Header says: colour (RGB)"
-            text = f"{what} &nbsp;·&nbsp; {len(units)} unit(s) with this layout."
+            text = f"{what} &nbsp;·&nbsp; {len(units)} folder(s) with this layout."
             proposal = self._proposal(first)
             pending = [u for u in units if self._pending(u)]
             if proposal is not None:
@@ -233,10 +237,10 @@ class TagGrid:
             out.append(widgets.HTML(f"<div class='mb-help' style='margin-top:10px'>{text}</div>"))
             if pending:
                 button = ui.button(
-                    f" Yes, these are right for these {len(pending)} unit(s)",
+                    f" Yes, these are right for these {len(pending)} folder(s)",
                     style="success",
                     icon="check",
-                    tooltip="Save the pre-ticked answers of these units",
+                    tooltip="Save the pre-ticked answers of these folders",
                 )
                 button.on_click(lambda _, p=pending: self._confirm_layout(p))
                 self.confirm_buttons.append(button)
@@ -269,7 +273,8 @@ class TagGrid:
                 cells.append(widgets.HTML(f"<span class='mb-help'>{text}</span>"))
             else:
                 cells.append(self._cell(layout, index, tags[index], index in proposed, shown))
-        cells.append(self.types.cell(layout) if layout.usable else widgets.HTML(""))
+        typed = layout.usable and self.place_types
+        cells.append(self.types.cell(layout) if typed else widgets.HTML(""))
         return widgets.GridBox(cells, layout=columns(width))
 
     def _picture(self, layout: UnitLayout, index: int) -> widgets.Widget:
@@ -352,7 +357,7 @@ class TagGrid:
         for label, places in positions(self.layouts, answers.units, self.labels).items():
             if len(places) > 1:
                 where = ", ".join(
-                    f"channel {i + 1} in {n} unit(s)" for i, n in sorted(places.items())
+                    f"channel {i + 1} in {n} folder(s)" for i, n in sorted(places.items())
                 )
                 lines.append(
                     f"<div class='mb-help'>{html.escape(label)} is not always in the same "
@@ -373,9 +378,11 @@ class TagGrid:
         """Return the usage line of a label; one used in only some units is orange."""
         mark = chip(label, self.labels, self._shown_as(label))
         if used == total:
-            return f"<div>{mark} used in all {total} units</div>"
+            return f"<div>{mark} used in all {total} folders</div>"
         if used == 0:
-            return f"<div>{mark} <span style='color:#92400E'>not used in any unit yet</span></div>"
+            return (
+                f"<div>{mark} <span style='color:#92400E'>not used in any folder yet</span></div>"
+            )
         return (
             "<div style='background:#FFFBEB;border-left:3px solid #D97706;padding:2px 8px;"
             f"margin:2px 0'>{mark} <span style='color:#92400E'>"
@@ -387,14 +394,14 @@ class TagGrid:
         answers = self.store.answers()
         left = remaining(self.layouts, answers.units, self.labels)
         if left.done:
-            return ui.status("ok", f"Every channel of every one of the {total} units is tagged.")
+            return ui.status("ok", f"Every channel of every one of the {total} folders is tagged.")
         parts = []
         if left.cells:
             parts.append(f"{left.cells} channel(s) still to tag")
         if left.types:
             parts.append(f"{left.types} image type(s) still to choose")
         if left.blocked:
-            parts.append(f"{left.blocked} unit(s) cannot be tagged")
+            parts.append(f"{left.blocked} folder(s) cannot be tagged")
         return ui.status("warn", "Not finished: " + ", ".join(parts) + ".")
 
 

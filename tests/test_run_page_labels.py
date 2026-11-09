@@ -132,6 +132,16 @@ def test_a_described_run_uses_the_replicate_id_not_the_folder_name(tmp_path, fig
     assert not any("day2" in t for t in boxes + curves)
 
 
+def test_replicates_within_a_condition_are_ordered_by_replicate_id(tmp_path, figures):
+    # drug/day2 is replicate rep2: by folder name it came before drug/rep1 (PR #241 kept that).
+    nb, _ = described(tmp_path)
+    assert nb.run().written
+    ticks = [t.get_text() for t in figures[-2].axes[1].get_xticklabels()]
+    assert ticks == ["ctrl / rep1", "ctrl / rep2", "drug / rep1", "drug / rep2"]
+    (drug,) = [axes for axes in figures[-1].axes if axes.get_title() == "drug"]
+    assert [t.get_text() for t in drug.get_legend().get_texts()] == ["rep1", "rep2"]
+
+
 def test_an_undescribed_run_keeps_the_folder_names(tmp_path, figures):
     nb = confirmed(bright_tree(tmp_path / "exp"), output_folder=str(tmp_path / "out"))
     nb.run()

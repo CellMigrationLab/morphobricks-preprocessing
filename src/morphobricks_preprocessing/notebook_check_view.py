@@ -25,12 +25,12 @@ SAME_WAY_HELP = (
     "settings). They are then one biological replicate, compared with each other."
 )
 QUESTION_WORDS = {
-    "id_pending": "a short name is missing for {subject} (Names for your experiment)",
-    "repeat_not_confirmed": "{subject}: answer “same way?” below",
-    "confirmed_on_missing": "{subject}: answer “same way?” again below",
-    "unit_channels_missing": "the channels of {subject} are not tagged (Your channels)",
-    "unit_channel_untagged": "{subject} is not tagged (Your channels)",
-    "channel_undeclared": "the label {subject} is used but not declared (Your channels)",
+    "id_pending": "a short name is missing for {subject} (Conditions or Replicates)",
+    "repeat_not_confirmed": "{subject}: answer “same way?” above",
+    "confirmed_on_missing": "{subject}: answer “same way?” again above",
+    "unit_channels_missing": "the channels of {subject} are not tagged (Tag channels)",
+    "unit_channel_untagged": "{subject} is not tagged (Tag channels)",
+    "channel_undeclared": "the label {subject} is used but not declared (Stains)",
     "control_unresolved": "say what {subject} is compared against",
     "legacy_folder_missing": "{subject} is gone: confirm the removal",
 }
@@ -116,7 +116,7 @@ def checks_html(check: CandidateCheck | None) -> str:
         return ui.status(
             "error", "The description would be refused:", _issue_lines(check.refusals), raw=True
         )
-    parts = [ui.status("ok", "The strict reader accepts the exact bytes that will be saved.")]
+    parts: list[str] = []
     hetero = check.heterogeneous
     if hetero is not None:
         parts.append(
@@ -145,12 +145,14 @@ def checks_html(check: CandidateCheck | None) -> str:
     else:
         parts.append(ui.status("ok", "The images agree with it (headers checked)."))
     changes = check.changes or ("no row changes",)
-    parts.append(
-        "<b>experiment_design.csv</b> <span class='mb-help'>(written only when you save, from "
+    details = (
+        ui.status("ok", "The strict reader accepts the exact bytes that will be saved.")
+        + "<b>experiment_design.csv</b> <span class='mb-help'>(written only when you save, from "
         "the description)</span><ul style='margin:2px 0'>"
         + "".join(f"<li>{html.escape(c)}</li>" for c in changes)
         + "</ul>"
     )
+    parts.append(f"<details><summary class='mb-help'>Details</summary>{details}</details>")
     return "".join(parts)
 
 

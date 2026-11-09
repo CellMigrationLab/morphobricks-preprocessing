@@ -36,21 +36,14 @@ from .draft_answers import (
 from .draft_format import DraftFileError
 from .notebook_description_saved import _SavedDraft
 from .notebook_description_view import (
-    ID_COLUMNS,
     KIND_NAMES,
-    KIND_TITLES,
     REFERENCE_COLUMNS,
     Entry,
-    duplicate_hint,
     header_row,
     id_state,
-    members_text,
     refusal_card,
-    same_name,
-    single_note,
-    text_box,
-    why_no_proposal,
 )
+from .notebook_names import _NameRows, _updated
 from .run import OutputLockedError
 from .run.draft_file import save_draft
 from .run.output_guard import OutputInsideMasksError
@@ -65,7 +58,7 @@ IDS_EXPLANATION = (
 )
 
 
-class _DescriptionCard(_SavedDraft):
+class _DescriptionCard(_NameRows, _SavedDraft):
     """Step 1's names and references cards: the user's answers to the draft description."""
 
     def _build_description_cards(self) -> None:
@@ -88,6 +81,7 @@ class _DescriptionCard(_SavedDraft):
         self._id_states: dict[tuple[str, str], widgets.HTML] = {}
         self.names_status = widgets.HTML()
         self.names_grid = widgets.VBox()
+        self.condition_rows, self.replicate_rows = widgets.VBox(), widgets.VBox()
         self.ids_confirmed = ui.ConfirmToggle(
             IDS_QUESTION,
             IDS_EXPLANATION,
@@ -247,35 +241,6 @@ class _DescriptionCard(_SavedDraft):
 
     # The names card ----------------------------------------------------------------------
 
-    def _entries(self) -> list[Entry]:
-        """Return the rows of the names card: conditions, repeats, technical-repeat folders."""
-        draft, answers = self.draft, self.draft_answers
-        entries = [
-            Entry(
-                "conditions",
-                folder,
-                slot,
-                f"<b>{html.escape(folder)}</b>",
-                answers.conditions.get(folder, ConditionAnswer()).display_name,
-            )
-            for folder, slot in sorted(draft.conditions.items())
-        ]
-        entries += [
-            Entry(
-                "repeats",
-                label,
-                repeat.id,
-                f"<b>{html.escape(label)}</b><br>{members_text(repeat.members)}",
-                answers.repeats.get(label, RepeatAnswer()).display_name,
-            )
-            for label, repeat in sorted(draft.repeats.items())
-        ]
-        entries += [
-            Entry("technical_repeats", folder, slot, f"<b>{html.escape(folder)}</b>")
-            for folder, slot in sorted(draft.technical_repeats.items())
-        ]
-        return entries
-
     def _ids_all_confirmed(self) -> bool:
         return not any(q.code == "id_pending" for q in self.draft.open_questions())
 
@@ -296,55 +261,6 @@ class _DescriptionCard(_SavedDraft):
         ui.set_visible(self.names_card, True)
         ui.set_visible(self.references_card, len(self.draft.conditions) > 1)
         self._refresh_channels()
-
-    def _build_names(self) -> None:
-        """Rebuild the ID and shown-as boxes, keeping what was typed and not yet confirmed."""
-        typed = {key: box.value for key, box in self.id_inputs.items()}
-        self.id_inputs, self.name_inputs, self._id_states = {}, {}, {}
-        self.name_hints = {}
-        entries = self._entries()
-        blocks: list[widgets.Widget] = []
-        for kind, title in KIND_TITLES.items():
-            shown = [e for e in entries if e.kind == kind and not e.fixed]
-            if not shown:
-                continue
-            asks_name = kind != "technical_repeats"
-            rows: list[widgets.Widget] = [
-                header_row(title, "ID", "Shown as (optional)" if asks_name else "", "")
-            ]
-            for entry in shown:
-                rows += self._entry_row(entry, typed, asks_name=asks_name)
-            blocks.append(widgets.VBox(rows))
-        self.single_note.value = single_note(entries)
-        self.names_grid.children = blocks
-
-    def _entry_row(self, entry: Entry, typed: dict, *, asks_name: bool) -> list[widgets.Widget]:
-        """Build the grid row of one entry (and why it has no proposal, if so)."""
-        key = (entry.kind, entry.key)
-        confirmed = entry.slot.confirmed
-        text = confirmed or typed.get(key) or entry.slot.proposed or ""
-        box = text_box(text, "type an ID", disabled=confirmed is not None)
-        state = widgets.HTML(id_state(entry, text))
-        box.observe(
-            lambda change, e=entry, s=state: self._id_typed(e, s, change["new"]), names="value"
-        )
-        self.id_inputs[key], self._id_states[key] = box, state
-        cells: list[widgets.Widget] = [widgets.HTML(entry.where), box]
-        if asks_name:
-            name = text_box(entry.shown or "", "same as the ID")
-            name.observe(lambda change, e=entry: self._name_typed(e, change["new"]), names="value")
-            self.name_inputs[key] = name
-            cells.append(name)
-        else:
-            cells.append(widgets.HTML(""))
-        cells.append(state)
-        row: list[widgets.Widget] = [widgets.GridBox(cells, layout=ID_COLUMNS)]
-        if asks_name:
-            self.name_hints[key] = widgets.HTML()
-            row.append(self.name_hints[key])
-        if why := why_no_proposal(entry):
-            row.append(widgets.HTML(why))
-        return row
 
     def _show_names_status(self) -> None:
         """Say where the answers are saved (or why not), after any note or refusal."""
@@ -371,31 +287,6 @@ class _DescriptionCard(_SavedDraft):
         state.value = id_state(entry, text)
         if entry.kind == "conditions" and not self._refreshing:
             self._relabel_references()
-
-    def _name_typed(self, entry: Entry, text: str) -> None:
-        """Save the name shown in plots and tables; an empty box means the ID is shown.
-
-        The hint about a duplicate follows every keystroke; the answer is saved without
-        rebuilding the boxes, so typing is never interrupted. A duplicate is still saved: the
-        reader refuses it when the description is reviewed.
-        """
-        if self._refreshing or self.draft is None:
-            return
-        self._update_name_hints(entry.kind)
-        self._draft_note = ""
-        answers = self.draft_answers
-        kind = "conditions" if entry.kind == "conditions" else "repeats"
-        new = _updated(answers, kind, entry.key, display_name=text or None)
-        if new != answers:
-            self._names_refusal = ""
-            self._answer(new, rebuild=False)
-
-    def _update_name_hints(self, kind: str) -> None:
-        """Show a small orange hint beside every shown-as name that another one of its kind has."""
-        boxes = {key: box.value for key, box in self.name_inputs.items() if key[0] == kind}
-        for key, text in boxes.items():
-            same = [k for k, other in boxes.items() if k != key and same_name(text, other)]
-            self.name_hints[key].value = duplicate_hint(kind, text, [k[1] for k in same])
 
     def _ids_toggled(self, confirmed: bool) -> None:
         if self.draft is None:
@@ -542,18 +433,6 @@ class _DescriptionCard(_SavedDraft):
         for condition, check in self.control_checks.items():
             if check.value != (condition in referenced):
                 check.value = condition in referenced
-
-
-def _updated(answers: DraftAnswers, kind: str, key: str, **fields: str | None) -> DraftAnswers:
-    """Return the answers with fields of one condition or repeat set; an empty entry is dropped."""
-    table = dict(getattr(answers, kind))
-    empty = ConditionAnswer() if kind == "conditions" else RepeatAnswer()
-    entry = replace(table.get(key, empty), **fields)
-    if entry == empty:
-        table.pop(key, None)
-    else:
-        table[key] = entry
-    return replace(answers, **{kind: table})
 
 
 def _with_ids(answers: DraftAnswers, ids: dict[tuple[str, str], str]) -> DraftAnswers:

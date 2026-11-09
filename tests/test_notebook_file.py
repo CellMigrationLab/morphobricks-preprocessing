@@ -53,14 +53,12 @@ def test_notebook_is_one_readable_markdown_cell_and_one_runnable_cell():
 def test_notebook_uses_stable_page_api_not_a_new_app_method():
     source = _source()
     assert "notebook.app(" not in source
-    for call in (
-        "notebook.welcome()",
-        "notebook.folder_step()",
-        "notebook.axis_step()",
-        "notebook.run_step()",
-        "notebook.results_step()",
-    ):
+    # One stepper holds steps 1-13 (owner, 2026-11-09); the statistics stay a page of their own.
+    for call in ("notebook.welcome()", "notebook.steps()", "notebook.results_step()"):
         assert call in source
+    for page in ("folder_step(", "axis_step(", "channels_step(", "check_save_step(", "run_step("):
+        assert f"notebook.{page}" not in source  # never shown twice beside the stepper
+    assert "PreprocessingNotebook(describe=True)" in source
     assert "display(app)" in source
 
 
