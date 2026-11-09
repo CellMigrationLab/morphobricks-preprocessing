@@ -305,6 +305,8 @@ src/morphobricks_preprocessing/
   notebook_run.py           step 3: settings, what will happen, the run (_RunStep)
   notebook_results.py       step 4: pooled statistics per group and channel (_ResultsStep)
   notebook_plots.py         the PNG plots and IntensityPanel (the intensity checks card)
+  run_labels.py             RunLabels: channel and replicate IDs of a described run's plots, from the
+                    published description when it is the file the manifest recorded (else C<n>, folder labels)
   notebook_render.py        HTML helpers: issues, balance, labels, role effect, captions, tiles
   notebook_options.py       the steps' choices and fixed settings (ROLE_OPTIONS, ...)
   notebook_values.py        display_range (pure: no widgets, no files)

@@ -91,26 +91,37 @@ def mask_thresholds_used(report: MaskReport) -> str:
 
 
 NOT_DESCRIBED = "not described yet"
-"""What the mask ID column says for a mask type the experiment description does not declare."""
+"""What the declared-kind column says for a mask type the description does not declare."""
 
 
-def mask_type_rows(report: MaskReport, ids: Mapping[str, str] | None = None) -> list[list[str]]:
+def _mask_cell(name: str, ids: Mapping[str, str] | None) -> str:
+    """Return the mask's name: its ID, with the folder name only when that differs."""
+    mask_id = None if ids is None else ids.get(name)
+    return name if mask_id is None else mask_id if mask_id == name else f"{mask_id} ({name})"
+
+
+def mask_type_rows(
+    report: MaskReport,
+    ids: Mapping[str, str] | None = None,
+    declared: Mapping[str, str] | None = None,
+) -> list[list[str]]:
     """Return the mask types as table rows, header first: kind, images, objects, pieces.
 
-    With ``ids`` (mask type -> mask ID, from *Your masks* or the published description) a
-    *Mask ID* column follows the type: the masks are named there, never here.
+    The first column, *Mask*, is the mask's ID when ``ids`` (mask type -> mask ID, from
+    *Your masks* or the published description) gives one, followed by the folder name in
+    brackets only when the two differ; it is one column, not a type and an ID that repeat
+    each other. With ``declared`` (mask type -> ``objects`` or ``regions``, what the user
+    answered) a *Declared kind* column states that answer beside the suggested kind, which
+    stays a suggestion; a type the user has not answered says :data:`NOT_DESCRIBED`.
     """
-    named = ids is not None
-    rows = [
-        ["Mask type", *(["Mask ID"] if named else []), "Kind (suggested)", "Images", "Objects"]
-        + ["Median pieces per label"]
-    ]
+    shown = declared is not None
+    header = ["Mask", *(["Declared kind"] if shown else []), "Kind (suggested)"]
+    rows = [[*header, "Images", "Objects", "Median pieces per label"]]
     for name, summary in sorted(report.types.items()):
-        kind = _MASK_KINDS[summary.kind]
-        numbers = (summary.images, summary.objects)
-        mask_id = [ids.get(name, NOT_DESCRIBED)] if named else []
+        answer = [declared.get(name, NOT_DESCRIBED)] if declared is not None else []
         rows.append(
-            [name, *mask_id, kind, *(f"{n:,}" for n in numbers)]
+            [_mask_cell(name, ids), *answer, _MASK_KINDS[summary.kind]]
+            + [f"{summary.images:,}", f"{summary.objects:,}"]
             + [f"{summary.median_pieces_per_label:g}"]
         )
     return rows
