@@ -300,6 +300,15 @@ results or comparing another grouping.
    - The **Labels from the folder names** table shows every image folder with its condition,
      biological repeat and technical repeat (*single* where a level is missing). If they
      are right, press **Yes, the labels are correct** in the yellow box under the table.
+     In the shipped notebook (*Images found*), each folder also gets a picture of its first
+     image, so a wrong folder shows at once. It is drawn from the file header only, before the
+     axes are confirmed, and is for looking only: only when the header names Y and X (otherwise
+     "preview after Axes (step 2)"), every other axis max-projected and named in the caption,
+     colour when the header says RGB. At most 8 planes and 4096 x 4096 pixels are read for one
+     picture; a larger image says so instead. The first 12 folders are drawn by the check;
+     **Draw the pictures of the other N folders** draws the rest. A large image also shows a
+     square of 128 pixels at full resolution (where the picture varies most, with its x and y
+     range), here and on *Replicates* and *Check and save*; **Enlarge** shows both larger.
    - Once the labels are confirmed, **Experiment design** asks about the biological
      repeats. Later bricks normalise each biological repeat over all conditions together,
      so they need to know which folders are the same repeat:
@@ -421,6 +430,9 @@ results or comparing another grouping.
      *Axes* step shows them with a preview and one **Confirm these axes** button; it records
      the same two answers. A reopened experiment whose folders did not change offers the
      roles of its earlier run. The role boxes stay under **Look closer, or change the roles**.
+   - On a reopened experiment, new folders whose header is exactly that of a saved, tagged
+     group form their own block on *Tag channels* with **Tag like the saved group (…)**. One
+     click copies those tags, exactly as choosing them by hand; nothing is copied without it.
    - If some images lack a dimension the others have (often a single channel), a yellow box
      lists them; press **Yes, they have a single plane there** if that is the case.
      Once you confirm the axis roles, this resolves the missing-axis error for step 3.

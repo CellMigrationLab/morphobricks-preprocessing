@@ -253,10 +253,18 @@ class _MasksScreen:
                 self._memory_limit(),
             )
         found = self._mask_found[(source_type, channel)]
+        if self._colour_unit(unit):
+            return found.in_colour()
         tags = self.draft_answers.units.get(unit) if unit else None
         index = found.channel or 0
         tag = tags.channels[index] if tags and index < len(tags.channels) else None
         return replace(found, label=tag)
+
+    def _colour_unit(self, unit: object) -> bool:
+        """Return True when the folder is shown in colour: answered RGB, or pre-ticked so."""
+        layouts = getattr(self, "_channel_layouts", None) or ()
+        layout = next((u for u in layouts if u.key == unit), None)
+        return layout is not None and self.channel_types.shown(layout) == "rgb"
 
     def _mask_ids(self) -> dict[str, str] | None:
         """Return the mask ID of every described mask type (step 3 names the masks by them).

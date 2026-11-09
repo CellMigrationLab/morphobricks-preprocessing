@@ -11,6 +11,11 @@ whose header lacks a channel name, or whose saved tags differ, is a block of its
 folder can be taken out of its block (**Tag this folder on its own**). A block answer writes,
 for each of its folders, the same tags into the draft that tagging the folders one by one would.
 
+On a reopen, new folders whose header is exactly that of a saved, fully tagged block (the same
+block key, but no tags yet) form a block of their own. It offers **Tag like the saved group**:
+one click copies those tags, as if chosen by hand (never automatic, PR 17c). A header without
+every channel name is never offered it.
+
 A block whose header names equal the labels exactly is pre-tagged, but the pre-tag is only a
 suggestion until the user confirms it, once for the block. The page is complete only when every
 channel position of every unit is tagged and every image type answered. Labels used in only some
@@ -50,7 +55,7 @@ from .notebook_channels_view import (
     columns,
     quoted,
 )
-from .notebook_row_fold import RowFold, row_status
+from .notebook_row_fold import UNCHANGED, RowFold, row_status
 from .notebook_values import natural_key
 
 
@@ -89,6 +94,7 @@ class TagGrid:
         self.cells: dict[tuple[UnitKey, int], widgets.Dropdown] = {}
         self.confirm_buttons: list[widgets.Button] = []
         self.split_buttons: dict[UnitKey, widgets.Button] = {}
+        self.like_buttons: list[widgets.Button] = []
         # Folders the user took out of their block (this session; never saved).
         self.alone: set[UnitKey] = set()
         # The status of each unit against a saved experiment (None without one): rows fold.
@@ -250,6 +256,54 @@ class TagGrid:
         self.refresh()
         self._on_change()
 
+    def saved_like(self, units: Sequence[UnitLayout]) -> list[tuple[tuple[str, ...], int]]:
+        """Return the tags of saved blocks with exactly this block's header, and their sizes.
+
+        Only for a block of new folders with no tag yet whose header names every channel; a
+        saved block is one whose folders are unchanged since the save and fully tagged.
+        """
+        first, reopen = units[0], self.reopen()
+        if reopen is None or not named(first) or self._colour(first):
+            return []
+        saved = self.store.answers().units
+        if any(u.key in self.alone or reopen.get(u.key) == UNCHANGED for u in units):
+            return []
+        if any(t is not None for u in units for t in tags_of(u, saved.get(u.key))):
+            return []
+        found: dict[tuple[str, ...], int] = {}
+        for layout in self.layouts:
+            tags = tags_of(layout, saved.get(layout.key))
+            same = layout.signature == first.signature and not self._colour(layout)
+            if same and reopen.get(layout.key) == UNCHANGED and None not in tags:
+                found[tags] = found.get(tags, 0) + 1
+        return sorted(found.items())
+
+    def _like_button(
+        self, units: Sequence[UnitLayout], tags: tuple[str, ...], count: int
+    ) -> widgets.Button:
+        """Return the button that copies a saved block's tags to these folders."""
+        group = " · ".join(tags)
+        button = ui.button(
+            f" Tag like the saved group ({group}; {count} folder(s))",
+            style="info",
+            icon="clone",
+            tooltip="Copy the tags of the saved folders whose header is exactly this one",
+        )
+        button.layout = widgets.Layout(width="auto")
+        button.on_click(lambda _, u=units, t=tags: self.tag_like(u, t))
+        self.like_buttons.append(button)
+        return button
+
+    def tag_like(self, units: Sequence[UnitLayout], tags: tuple[str, ...]) -> None:
+        """Save ``tags`` for every folder of a block: the user's click, as if chosen by hand."""
+        answers = self.store.answers()
+        for layout in units:
+            answers = with_tags(answers, layout, tags)
+        ok = self.store.update(synced(answers, self.layouts))
+        self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
+        self.refresh()
+        self._on_change()
+
     # Building ----------------------------------------------------------------------------
 
     def refresh(self) -> None:
@@ -257,6 +311,7 @@ class TagGrid:
         self._building = True
         try:
             self.cells, self.confirm_buttons, self.split_buttons = {}, [], {}
+            self.like_buttons = []
             if self.place_types:
                 self.types.open(self.layouts)
             width = max((u.channels for u in self.layouts if not u.rgb), default=3)
@@ -304,6 +359,7 @@ class TagGrid:
             button.on_click(lambda _, p=pending: self._confirm_layout(p))
             self.confirm_buttons.append(button)
             out.append(button)
+        out += [self._like_button(units, tags, n) for tags, n in self.saved_like(units)]
         out += [self._folder_row(u, units, width, colour) for u in units]
         box = widgets.VBox(out)
         box.add_class("mb-tag-block")

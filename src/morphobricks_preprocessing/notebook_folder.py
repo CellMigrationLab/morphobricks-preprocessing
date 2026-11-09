@@ -12,6 +12,7 @@ from . import notebook_style as ui
 from .dataset import CONSISTENCY_CODES
 from .discovery import check_output_folder, default_output_folder
 from .manifest import MANIFEST_FILENAME
+from .notebook_folder_previews import LabelPreviews
 from .notebook_options import _WIDE, EXCLUDABLE_CODES
 from .notebook_render import (
     _folder_tiles,
@@ -120,6 +121,9 @@ class _FolderStep:
     def _build_labels_card(self) -> None:
         """Build the card of the labels taken from the folder names, and its confirmation."""
         self.labels_table = widgets.HTML()
+        # A described run (the shipped notebook) draws the table with a picture per folder.
+        self.label_previews = LabelPreviews()
+        ui.set_visible(self.label_previews.widget, False)
         self.labels_confirmed = ui.ConfirmToggle(
             "Do the labels in the table match your experiment?",
             _labels_explanation(show_design=True),
@@ -138,6 +142,7 @@ class _FolderStep:
                     "rename the folder and press <b>Check folder</b> again."
                 ),
                 self.labels_table,
+                self.label_previews.widget,
                 self.labels_confirmed.widget,
             ],
             visible=False,
@@ -237,6 +242,10 @@ class _FolderStep:
         ui.set_visible(self.design_card, False)
         self._hide_description()
         self.labels_table.value = labels_html(pre)
+        if self._describe:
+            self.label_previews.show(pre)
+        ui.set_visible(self.labels_table, not self._describe)
+        ui.set_visible(self.label_previews.widget, self._describe)
         self.labels_confirmed.set(False, notify=False)
         self.labels_confirmed.disabled = not pre.discovery.leaves
         ui.set_visible(self.labels_card, bool(pre.discovery.leaves))
@@ -355,6 +364,7 @@ class _FolderStep:
         ui.set_visible(self.design_card, False)
         self._hide_description()
         ui.set_visible(self.labels_card, False)
+        self.label_previews.clear()
         ui.set_visible(self.consistency_card, False)
         ui.set_visible(self.issues_card, False)
         ui.set_visible(self.calibration_card, False)

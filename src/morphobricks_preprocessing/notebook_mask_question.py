@@ -172,6 +172,10 @@ class MaskQuestion:
     def _caption(self, found: MaskEvidence, representation: str | None, labels: list[str]) -> str:
         """Say which image, channel and plane are shown, and how the mask is drawn."""
         channel = "" if found.channel is None else f"channel {found.channel + 1}"
+        if found.colour:
+            channel = "in colour (channel 1 red, 2 green, 3 blue)"
+        elif found.colour_problem:
+            channel += f" (not in colour: {found.colour_problem})"
         on = chip(found.label, labels) + " " if found.label else ""
         how = {
             INSTANCES: "each object outlined in its own colour, as you declared",
