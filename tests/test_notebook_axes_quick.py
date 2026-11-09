@@ -89,3 +89,21 @@ def test_a_role_edited_after_the_offer_is_not_confirmed_by_the_old_offer(exp):  
     assert offer is not None and nb._quick_offer is None  # the header names C: no offer now
     assert not ui.is_visible(nb.quick_card) and ui.is_visible(nb.axis_box)
     assert not nb._confirm_quick_axes() and nb.confirmed_mapping is None
+
+
+def test_a_role_edited_on_a_reopen_is_kept_not_put_back_to_the_run_s_roles(exp):  # noqa: F811
+    # Regression (17b review): every role change refilled the boxes with the recorded roles.
+    first = stepper(*exp)
+    first.quick_confirm.click()
+    answer_all(first)
+    assert first.save_experiment()
+    assert first.run().written
+    nb = stepper(*exp)
+    assert nb._quick_offer is not None
+    nb.axes_details.click()
+    nb.role_dropdowns[0].value = "Z"
+    assert nb.role_dropdowns[0].value == "Z"  # the user's edit stands
+    assert nb._quick_offer is None and not ui.is_visible(nb.quick_card)
+    assert nb.confirmed_mapping is None
+    nb.role_dropdowns[0].value = "C"  # back to the recorded roles: offered again, not confirmed
+    assert nb._quick_offer is not None and nb.confirmed_mapping is None
