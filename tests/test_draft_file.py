@@ -5,6 +5,7 @@ from datetime import date
 import pytest
 
 from draft_file_support import (
+    COUNTS,
     DAY,
     PATHS,
     REFUSED,
@@ -101,7 +102,7 @@ def test_a_draft_file_that_is_not_exactly_the_format_is_refused_never_repaired(n
         load_draft(out, draft_from_discovery(exp))
     assert on_disk.value.code == code
     with pytest.raises(DraftFileError):
-        publish_draft(out, draft_from_discovery(exp))
+        publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS)
     assert (out / DRAFT_FILENAME).read_bytes() == data  # not repaired, not deleted
     assert not (out / DESCRIPTION_FILENAME).exists()
 
@@ -135,7 +136,7 @@ def test_resume_is_refused_when_the_published_file_changed_since_the_base(exp, o
         load_draft(out, base)
     assert refusal.value.codes == {Refusal.R_PUBLISHED_FILE_CHANGED}
     with pytest.raises(PublicationRefused):
-        publish_draft(out, base)
+        publish_draft(out, base, channel_counts=COUNTS)
     assert snapshot(out) == kept
 
 
@@ -260,7 +261,7 @@ def test_an_incomplete_draft_can_be_saved_after_each_answer_and_resumed(exp, out
 
 def test_the_date_is_the_users_never_the_clock(exp, out):
     save_draft(out, draft_from_discovery(exp), complete())
-    publish_draft(out, draft_from_discovery(exp))
+    publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS)
     text = (out / DESCRIPTION_FILENAME).read_text(encoding="utf-8")
     assert date.today().isoformat() not in text
     assert f'confirmed_on = "{DAY}"' in text
@@ -272,7 +273,7 @@ def test_the_date_is_the_users_never_the_clock(exp, out):
 
 def test_a_complete_draft_is_published_and_the_draft_is_deleted(exp, out):
     save_draft(out, draft_from_discovery(exp), complete())
-    publication = publish_draft(out, draft_from_discovery(exp))
+    publication = publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS)
     assert publication.base_sha256 == ABSENT
     # draft and lock gone; the derived experiment_design.csv is written only here (v1 11)
     assert sorted(p.name for p in out.iterdir()) == [DESIGN_FILENAME, DESCRIPTION_FILENAME]
@@ -289,7 +290,7 @@ def test_a_draft_based_on_a_published_file_publishes_over_it(exp, out):
     first = publish_description(out, description, base_sha256=ABSENT)
     answers = complete(first.sha256)
     save_draft(out, draft_from_discovery(exp), answers)
-    publication = publish_draft(out, draft_from_discovery(exp))
+    publication = publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS)
     assert publication.base_sha256 == first.sha256
     assert not (out / DRAFT_FILENAME).exists()
 
@@ -309,7 +310,9 @@ def test_an_incomplete_draft_is_refused_and_nothing_is_written(exp, out):
         out, draft_from_discovery(exp), DraftAnswers(ABSENT, SPEC_COMMIT, answers.conditions)
     )
     refusal = refused_leaves_everything(
-        out, lambda: publish_draft(out, draft_from_discovery(exp)), DraftIncomplete
+        out,
+        lambda: publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS),
+        DraftIncomplete,
     )
     assert ("unit_channels_missing", "CTRL / rep1 / single") in {
         (q.code, q.subject) for q in refusal.questions
@@ -324,7 +327,9 @@ def test_an_incomplete_draft_leaves_an_earlier_published_file_alone(exp, out):
     )
     save_draft(out, draft_from_discovery(exp), DraftAnswers(first.sha256, SPEC_COMMIT))
     refused_leaves_everything(
-        out, lambda: publish_draft(out, draft_from_discovery(exp)), DraftIncomplete
+        out,
+        lambda: publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS),
+        DraftIncomplete,
     )
     assert sha256_hex((out / DESCRIPTION_FILENAME).read_bytes()) == first.sha256
 
@@ -332,7 +337,7 @@ def test_an_incomplete_draft_leaves_an_earlier_published_file_alone(exp, out):
 def test_a_description_the_strict_reader_refuses_writes_nothing(exp, out):
     answers = complete()
     channels = {**answers.channels, "bad id": ChannelAnswer()}
-    units = {key: UnitAnswer(("bad id", "ACTIN")) for key in UNITS}
+    units = {key: UnitAnswer(("bad id", "ACTIN"), "channels") for key in UNITS}
     bad = DraftAnswers(
         ABSENT,
         SPEC_COMMIT,
@@ -347,7 +352,9 @@ def test_a_description_the_strict_reader_refuses_writes_nothing(exp, out):
     from morphobricks_preprocessing.description import DescriptionError
 
     refusal = refused_leaves_everything(
-        out, lambda: publish_draft(out, draft_from_discovery(exp)), DescriptionError
+        out,
+        lambda: publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS),
+        DescriptionError,
     )
     assert Code.E_ID_SYNTAX in {issue.code for issue in refusal.issues}
 
@@ -356,7 +363,9 @@ def test_a_changed_published_file_refuses_publication_and_keeps_the_draft(exp, o
     save_draft(out, draft_from_discovery(exp), complete())
     (out / DESCRIPTION_FILENAME).write_text("changed by someone else")
     refusal = refused_leaves_everything(
-        out, lambda: publish_draft(out, draft_from_discovery(exp)), PublicationRefused
+        out,
+        lambda: publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS),
+        PublicationRefused,
     )
     assert refusal.codes == {Refusal.R_PUBLISHED_FILE_CHANGED}
 
@@ -365,12 +374,12 @@ def test_a_held_lock_refuses_publication_and_keeps_the_draft(exp, out):
     save_draft(out, draft_from_discovery(exp), complete())
     before = snapshot(out)
     with output_lock(out), pytest.raises(OutputLockedError):
-        publish_draft(out, draft_from_discovery(exp))
+        publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS)
     assert snapshot(out) == before
 
 
 def test_publication_without_a_draft_is_refused(exp, out):
     with pytest.raises(DraftFileError) as refusal:
-        publish_draft(out, draft_from_discovery(exp))
+        publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS)
     assert refusal.value.code == "no_draft"
     assert list(out.iterdir()) == []

@@ -242,6 +242,22 @@ def current_fingerprint(path: Path) -> Fingerprint | None:
         return None
 
 
+def changed_since_check(
+    root: Path, bound: Mapping[str, Fingerprint | None], paths: Iterable[str]
+) -> tuple[str, ...]:
+    """Return the images that are not, now, the revision whose header the check read.
+
+    ``bound`` are the fingerprints the folder check took with each header
+    (:attr:`.run.preflight.Preflight.header_fingerprints`); an image without one, changed or
+    gone is listed, sorted.
+    """
+    return tuple(
+        rel
+        for rel in sorted(paths)
+        if bound.get(rel) is None or current_fingerprint(root / rel) != bound[rel]
+    )
+
+
 def _frozen(value: object) -> object:
     """Return ``value`` with lists and dicts made hashable (tuples), for comparing keys."""
     if isinstance(value, Mapping):

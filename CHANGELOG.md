@@ -8,6 +8,23 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Audit batches 33 and 34a: what is published is what was answered, of the image checked.**
+  *Yes, these are right* saves exactly the tags a block shows (a hidden proposal is never
+  saved), and a unit tagging one label twice is refused before it is saved
+  (`E_DUPLICATE_CHANNEL_IN_UNIT`). An unanswered image type is an open question
+  (`unit_image_type_unanswered`; "channels" is still published as an absent `image_type`).
+  `publish_draft` now requires `channel_counts`, each unit's channel count read through the
+  confirmed axis roles: tags saved for another count (`unit_channels_stale`) or a unit without
+  a count (`unit_channel_count_unknown`) are refused. The notebook's folder check binds every
+  header to its file (`bind_headers=True`); the tag pictures, the Step 1 pictures, the axis
+  preview and the mask evidence are drawn only of that revision, and the save is refused when
+  an image changed since the check. An answer the draft file cannot take (lock, write error) is
+  refused and not shown as answered. `make_described_run` refuses a member with no technical
+  repeat or fewer images than technical repeats before writing anything. A new record the
+  records reader would refuse is never written (`R_RECORDS_FILE_INVALID`), and a run refused
+  for its records file reports that code with its `E_RECORDS_*` reasons instead of
+  `description_unreadable`. `all_colour` counts a unit only when its tags are exactly R, G, B.
+
 - **Notebook: folder pictures with a 1:1 crop, "Tag like the saved group", colour mask evidence
   (PR 17c).** *Images found* adds a picture of each folder's first image to the labels table,
   from the file header only and display only (`header_preview`, `notebook_folder_previews`):
@@ -52,7 +69,9 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   (`inconsistent_mapping`, `missing_axes`, `ambiguous_missing_axes`) no longer advise exporting the
   images the same way: they stay errors and say they follow from the layouts. The notebook's axis
   step says that no roles are suggested because the units declare different layouts (fluorescence
-  and RGB). The refusal codes are unchanged: nothing refused before is accepted.
+  and RGB). A previously blocking input stays blocked; diagnostic codes may change (a described
+  run reports the per-type checks and the Spec's codes in place of the global `mixed_dtypes` and
+  `inconsistent_dimensions`).
 - **Notebook: one step at a time (UX proposal 2026-11-09, PR 17a).** `PreprocessingNotebook.steps()`
   shows the shipped notebook's 13 steps one at a time, with a strip of chips (done green with a tick,
   current blue, to do grey, changed by a reopen orange; a chip opens its step) and Back/Next (Next is

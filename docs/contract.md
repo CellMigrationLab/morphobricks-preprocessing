@@ -73,7 +73,10 @@ planes of an experiment use the same bin count. In a described run (a published
 `morphobricks.toml`) the pixel type is compared among the units that declare the same
 `image_type`, and the notebook's folder check compares images inside each unit; units of
 different image types (RGB and fluorescence) are refused as `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`
-(Stages 1-2), not as `mixed_dtypes`. An undescribed run compares every image of the experiment.
+(Stages 1-2), not as `mixed_dtypes`. An undescribed run compares every image of the experiment. The
+invariant is that a previously blocking input stays blocked; the diagnostic codes may change
+(the per-type checks and the Spec's `R_*` codes replace the global `mixed_dtypes` and
+`inconsistent_dimensions` of a described run).
 
 ## 4. Histogram semantics
 

@@ -79,7 +79,8 @@ def test_the_masks_field_pairs_the_masks_as_check_masks_does(tmp_path):
     for rel in IMAGES[:3]:  # or the type after the image name; one image has none
         write_data(masks / rel.replace("a.tif", "a_nuclei.tif"), labels((16, 16)))
     nb = notebook(root, masks)
-    assert nb.preflight.masks == preflight(root, masks_folder=masks).masks
+    # The notebook binds each header to its file (audit batch 33): so does this check.
+    assert nb.preflight.masks == preflight(root, masks_folder=masks, bind_headers=True).masks
     assert ui.is_visible(nb.masks_input_card) and ui.is_visible(nb.masks_card)
     assert "2 mask types for 4 images" in nb.masks_status.value
     table = nb.masks_table.value

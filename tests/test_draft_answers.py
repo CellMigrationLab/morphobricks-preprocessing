@@ -73,7 +73,7 @@ def test_nothing_is_confirmed_for_the_user_and_every_missing_item_is_listed(exp)
 def test_a_partly_answered_draft_lists_only_what_is_missing(exp):
     answers = complete()
     units = dict(answers.units)
-    units[("DrugA", "rep2", "single")] = UnitAnswer(("DNA", "GFP"))  # GFP is not declared
+    units[("DrugA", "rep2", "single")] = UnitAnswer(("DNA", "GFP"), "channels")  # not declared
     units.pop(("CTRL", "rep1", "single"))
     repeats = dict(answers.repeats)
     repeats["rep2"] = RepeatAnswer(id="rep2")  # no confirmation day

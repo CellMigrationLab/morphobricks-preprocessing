@@ -31,6 +31,14 @@ QUESTION_WORDS = {
     "unit_channels_missing": "the channels of {subject} are not tagged (Tag channels)",
     "unit_channel_untagged": "{subject} is not tagged (Tag channels)",
     "channel_undeclared": "the label {subject} is used but not declared (Stains)",
+    "unit_image_type_unanswered": "the image type of {subject} is not answered (Image type)",
+    "unit_channels_stale": (
+        "the tags of {subject} were saved for another image: tag its channels again (Tag channels)"
+    ),
+    "unit_channel_count_unknown": (
+        "the channels of {subject} are not known from its image: confirm the axis roles "
+        "(Axes) and check that its first image can be read"
+    ),
     "control_unresolved": "say what {subject} is compared against",
     "legacy_folder_missing": "{subject} is gone: confirm the removal",
 }

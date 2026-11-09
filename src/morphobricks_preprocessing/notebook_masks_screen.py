@@ -34,7 +34,7 @@ from .mask_evidence import MaskEvidence, mask_evidence, representative
 from .notebook_channels import _NotebookStore
 from .notebook_channels_view import ORANGE, AnswerStore
 from .notebook_mask_question import MaskQuestion
-from .preview import PreviewCache
+from .preview import PreviewCache, StripOptions
 from .validation import plural
 
 INTRO = (
@@ -249,8 +249,8 @@ class _MasksScreen:
                 analysed,
                 review,
                 channel,
-                self._mask_cache,
-                self._memory_limit(),
+                StripOptions(cache=self._mask_cache, memory_limit=self._memory_limit()),
+                pre.header_fingerprints,
             )
         found = self._mask_found[(source_type, channel)]
         if self._colour_unit(unit):

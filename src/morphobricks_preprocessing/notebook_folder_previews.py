@@ -19,6 +19,7 @@ import ipywidgets as widgets
 
 from . import notebook_style as ui
 from .discovery import LeafFolder
+from .fingerprint import Fingerprint
 from .header_preview import HEADER_NOTE, HeaderPreview, header_preview
 from .metadata import TiffMetadata
 from .notebook_render import label_cells
@@ -86,6 +87,7 @@ class LabelPreviews:
         self._leaves: dict[str, LeafFolder] = {}
         self._root: Path | None = None
         self._headers: Mapping[str, TiffMetadata | None] = {}
+        self._bound: Mapping[str, Fingerprint | None] = {}
         self.widget = widgets.VBox([self.rows, self.more, self.detail])
 
     def clear(self) -> None:
@@ -99,6 +101,7 @@ class LabelPreviews:
         """Draw the table of a new check: labels, image count, folder and picture per folder."""
         self.clear()
         self._root, self._headers = Path(pre.discovery.root), first_headers(pre)
+        self._bound = pre.header_fingerprints  # drawn only as the check read them
         header = widgets.HTML(_cells([f"<b>{h}</b>" for h in HEADERS]))
         top = widgets.GridBox([header, widgets.HTML("<b>Preview</b>")], layout=self._grid())
         leaves = pre.discovery.leaves
@@ -136,7 +139,7 @@ class LabelPreviews:
         """Draw one folder's picture into its row (read once)."""
         if folder in self.tiles:
             return
-        found = header_preview(self._root, self._headers[folder])
+        found = header_preview(self._root, self._headers[folder], bound=self._bound)
         self.found[folder] = found
         leaf = self._leaves[folder]
         tile = ThumbTile(
@@ -162,7 +165,9 @@ class LabelPreviews:
 
     def enlarge(self, leaf: LeafFolder) -> None:
         """Show one folder's picture at the detail size under the table (read again)."""
-        found = header_preview(self._root, self._headers[leaf.relative_path], DETAIL_SIDE)
+        found = header_preview(
+            self._root, self._headers[leaf.relative_path], DETAIL_SIDE, bound=self._bound
+        )
         folder = "experiment folder" if leaf.relative_path == "." else leaf.relative_path
         title = f"<b>{html.escape(folder)}</b> · {html.escape(_caption(found))}"
         show_detail(self.detail, title, found.pictures, found.problem)
