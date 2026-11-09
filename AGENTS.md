@@ -311,6 +311,7 @@ src/morphobricks_preprocessing/
                             and the overview; notebook_step_states.py each step's done/one-line state
   notebook_names.py         the names card's rows (conditions on step 4, replicates on step 5)
   notebook_axes_quick.py    the stepper's one-click Confirm these axes (Q3, PR 17b)
+  notebook_row_fold.py      reopen: unchanged, answered rows fold; new or changed rows orange
   notebook_channels_rows.py the tag grid's folder rows: pictures (colour for RGB), Enlarge
   notebook_folder.py        step 1: folder, check, issues, labels (_FolderStep)
   notebook_design.py        step 1: the experiment design card (_DesignCard)

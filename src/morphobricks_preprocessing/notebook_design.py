@@ -23,6 +23,7 @@ from .design_edit import DesignEdit, DesignEditError, apply_design_edit
 from .discovery import check_output_folder, default_output_folder
 from .notebook_options import _PAIRING_COLUMNS
 from .notebook_render import _group_explanation, _group_question
+from .notebook_row_fold import RowFold, row_status
 from .run import OutputLockedError
 from .run.design_file import write_design
 from .run.output_guard import OutputInsideMasksError
@@ -224,6 +225,8 @@ class _DesignCard:
                 layout=_PAIRING_COLUMNS,
             )
         ]
+        units = self._reopen_units()
+        folded: list[tuple[widgets.Widget, str]] = []
         for row in design.rows if pairing else ():
             dropdown = widgets.Dropdown(
                 options=options, value=row.repeat_group, layout=widgets.Layout(width="99%")
@@ -231,7 +234,8 @@ class _DesignCard:
             dropdown.observe(
                 lambda change, key=row.key: self._pair(key, change["new"]), names="value"
             )
-            rows.append(
+            keys = [k for k in units or () if k[:2] == row.key]
+            folded.append((
                 widgets.GridBox(
                     [
                         widgets.HTML(html.escape(row.condition)),
@@ -243,9 +247,12 @@ class _DesignCard:
                         dropdown,
                     ],
                     layout=_PAIRING_COLUMNS,
-                )
-            )
-        self.pairing_grid.children = rows
+                ),
+                row_status(units, keys, answered=True),
+            ))  # fmt: skip
+        if not hasattr(self, "_pairing_fold"):
+            self._pairing_fold = RowFold("folders")
+        self.pairing_grid.children = rows + self._pairing_fold.arrange(folded)
         self.control_checks = {}
         for condition in design.conditions:
             check = widgets.Checkbox(

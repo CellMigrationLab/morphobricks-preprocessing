@@ -24,6 +24,7 @@ when the run is not described):
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -35,8 +36,9 @@ from .design import ExperimentDesign, default_design
 from .design_derive import derive_design
 from .design_edit import DesignEdit, DesignEditError, apply_design_edit
 from .draft import Draft, DraftError, draft_from_discovery
-from .draft_answers import DraftAnswers, apply_answers, carry_over
+from .draft_answers import DraftAnswers, UnitKey, apply_answers, carry_over
 from .fingerprint import current_fingerprint
+from .notebook_row_fold import reopen_units
 from .published_answers import published_answers, reopened, retired_ids
 from .run import Preflight
 
@@ -65,6 +67,11 @@ class _DescribedRun:
                 output, pre.discovery, pre.excluded
             )
         return self._published_cache
+
+    def _reopen_units(self) -> Mapping[UnitKey, str] | None:
+        """Return each unit's status against the saved file (None without one): rows fold."""
+        state = self._published() if self._describe else None
+        return None if state is None else reopen_units(state.reconciliation)
 
     def _forget_published(self) -> None:
         self._published_key = None

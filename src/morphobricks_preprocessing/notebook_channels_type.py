@@ -12,7 +12,7 @@ contradicts the header is allowed here and said in words, since the run refuses 
 from __future__ import annotations
 
 import html
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import ipywidgets as widgets
 
@@ -23,6 +23,7 @@ from .draft_answers import UnitKey
 from .notebook_channel_thumbs import Thumbnails
 from .notebook_channels_rows import picture
 from .notebook_channels_view import AnswerStore, blank_chip, quoted, unit_name
+from .notebook_row_fold import RowFold, row_status
 from .notebook_values import natural_key
 
 OPTIONS = [("separate channels", "channels"), ("colour (RGB)", "rgb")]
@@ -145,6 +146,9 @@ class ImageTypeRows:
         self, types: ImageTypeColumn, thumbs: Callable[[], Thumbnails | None] = lambda: None
     ) -> None:
         self.types, self._thumbs = types, thumbs
+        # The status of each unit against a saved experiment (None without one): rows fold.
+        self.reopen: Callable[[], Mapping[UnitKey, str] | None] = lambda: None
+        self.fold = RowFold("folders")
         self.rows = widgets.VBox()
         self.status = widgets.HTML()
         self.problem = widgets.HTML()
@@ -183,7 +187,13 @@ class ImageTypeRows:
         """Rebuild the rows from the saved answers."""
         self.types.open(self.types.layouts)  # a fresh set of cells, built from the answers
         ordered = sorted(self.types.layouts, key=lambda u: tuple(map(natural_key, u.key)))
-        rows = [self._row(u) for u in ordered]
+        units = self.reopen()
+        rows = self.fold.arrange(
+            [
+                (self._row(u), row_status(units, [u.key], self.types.saved(u.key) is not None))
+                for u in ordered
+            ]
+        )
         proposed = [u.key for u in self.types.layouts if self.types.proposed(u)]
         if proposed:
             button = ui.button(

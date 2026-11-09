@@ -27,7 +27,15 @@ from .notebook_description_view import (
     text_box,
     why_no_proposal,
 )
+from .notebook_row_fold import RowFold, row_status
 from .notebook_values import natural_key
+
+FOLD_WORDS = {
+    "conditions": "conditions",
+    "repeats": "replicates",
+    "technical_repeats": "technical-repeat folders",
+}
+_KEY_PART = {"conditions": 0, "repeats": 1, "technical_repeats": 2}
 
 
 def _natural(item: tuple[str, object]) -> tuple:
@@ -83,8 +91,14 @@ class _NameRows:
             rows: list[widgets.Widget] = [
                 header_row(title, "ID", "Shown as (optional)" if asks_name else "", "")
             ]
-            for entry in shown:
-                rows += self._entry_row(entry, typed, asks_name=asks_name)
+            entry_rows = [
+                (
+                    widgets.VBox(self._entry_row(entry, typed, asks_name=asks_name)),
+                    self._entry_status(entry),
+                )
+                for entry in shown
+            ]
+            rows += self._name_fold(kind).arrange(entry_rows)
             blocks.append(widgets.VBox(rows))
             kinds.append(kind)
         self.single_note.value = single_note(entries)
@@ -92,6 +106,26 @@ class _NameRows:
         pairs = list(zip(kinds, blocks, strict=True))
         self.condition_rows.children = [b for k, b in pairs if k == "conditions"]
         self.replicate_rows.children = [b for k, b in pairs if k != "conditions"]
+
+    def _name_fold(self, kind: str) -> RowFold:
+        """Return the fold of one kind of names (kept while the notebook lives)."""
+        if not hasattr(self, "_name_folds"):
+            self._name_folds: dict[str, RowFold] = {}
+        return self._name_folds.setdefault(kind, RowFold(FOLD_WORDS[kind]))
+
+    def _entry_status(self, entry: Entry) -> str:
+        """Return whether a name's folders are as saved (it folds once its ID is given)."""
+        keys = [r for r in self._unit_keys() if r[_KEY_PART[entry.kind]] == entry.key]
+        if entry.kind == "repeats":
+            repeat = self.draft.repeats[entry.key]
+            keys = [(m.condition, m.source_repeat, u.source_folder) for m in repeat.members
+                    for u in m.units]  # fmt: skip
+        return row_status(self._reopen_units(), keys, entry.slot.confirmed is not None)
+
+    def _unit_keys(self) -> list[tuple[str, str, str]]:
+        return [
+            (r.condition, r.biological_repeat, r.technical_repeat) for r in self.draft.unit_rows()
+        ]
 
     def _entry_row(self, entry: Entry, typed: dict, *, asks_name: bool) -> list[widgets.Widget]:
         """Build the grid row of one entry (and why it has no proposal, if so)."""

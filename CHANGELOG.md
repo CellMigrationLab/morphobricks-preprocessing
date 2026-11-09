@@ -8,6 +8,13 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Notebook: unchanged rows fold on reopen (PR 17b-2).** When a saved experiment is reopened, a
+  row whose folders are found exactly as saved and whose question is answered folds behind one line
+  ("3 unchanged folders, answered as saved") with an **open** toggle: the pairing, the condition,
+  replicate and technical-repeat names, the image types, the tag blocks and the replicate blocks of
+  *Check and save*. A row with a new folder, or a folder whose image count changed, stays open and
+  is marked orange ("new since saved", "changed since saved"). Display only (`notebook_row_fold`):
+  the answers, the draft, the save and the run are unchanged.
 - **Notebook: tags per header block, colour pictures, one-click axes (PR 17b-1).** *Tag channels*
   shows folders whose image headers are identical, exactly (channel count, every raw header name
   present and equal, colour flag), as one block tagged once for all its folders (owner decision Q5),

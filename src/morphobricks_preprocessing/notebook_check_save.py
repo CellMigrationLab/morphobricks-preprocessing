@@ -54,6 +54,7 @@ from .notebook_check_view import (
     todo_html,
 )
 from .notebook_description import _with_ids
+from .notebook_row_fold import RowFold, row_status
 from .run import OutputLockedError
 from .run.description_file import PublicationRefused
 from .run.draft_file import publish_draft
@@ -240,6 +241,7 @@ class _CheckSaveScreen:
     def _show_replicates(self, applied: object, answers: object, labels: list[str]) -> None:
         """One box per replicate: folders, pictures, channels, and its own question."""
         boxes, toggles = [], {}
+        units = self._reopen_units()
         for view in replicates(applied, answers):
             toggle = ui.ConfirmToggle(
                 SAME_WAY,
@@ -261,16 +263,18 @@ class _CheckSaveScreen:
                 for m in view.members
             ]
             body = [widgets.HTML(replicate_title(view)), *members, widgets.HTML(missing_html(view))]
-            boxes.append(
-                widgets.VBox(
-                    [*body, toggle.widget],
-                    layout=widgets.Layout(
-                        border="1px solid #E2E8F0", padding="8px 12px", margin="0 0 10px 0"
-                    ),
-                )
+            box = widgets.VBox(
+                [*body, toggle.widget],
+                layout=widgets.Layout(
+                    border="1px solid #E2E8F0", padding="8px 12px", margin="0 0 10px 0"
+                ),
             )
+            keys = [u.key for m in view.members for u in m.units]
+            boxes.append((box, row_status(units, keys, view.confirmed_on is not None)))
         self.same_way = toggles
-        self.replicates_box.children = boxes
+        if not hasattr(self, "_replicate_fold"):
+            self._replicate_fold = RowFold("replicates")
+        self.replicates_box.children = self._replicate_fold.arrange(boxes)
 
     def _member_picture(self, key: tuple[str, str]) -> widgets.Widget:
         """Return the picture of a folder's first image (channel 1, or in colour when RGB)."""
