@@ -197,7 +197,7 @@ def test_a_published_description_that_matches_the_folders_has_nothing_to_publish
     before = listing(tmp_path)
     assert main(["describe", str(root), "--output", str(output), "--publish"]) == 0
     out = capsys.readouterr().out
-    assert "No change." in out and "no image header is read" in out
+    assert "No change." in out and "the channels the image headers state are compared" in out
     assert "Nothing to publish" in out
     assert listing(tmp_path) == before
 

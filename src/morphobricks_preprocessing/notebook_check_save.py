@@ -46,6 +46,7 @@ from .notebook_channel_thumbs import Thumb
 from .notebook_check_view import (
     SAME_WAY,
     SAME_WAY_HELP,
+    blocked_html,
     changes_html,
     checks_html,
     comparisons_html,
@@ -54,12 +55,14 @@ from .notebook_check_view import (
     names_html,
     removal_text,
     replicate_title,
+    run_stop_html,
     todo_html,
 )
 from .notebook_description import _with_ids
 from .notebook_row_fold import RowFold, row_status
 from .notebook_thumb_tile import ThumbTile, show_detail
 from .preview_crop import TilePictures
+from .published_answers import kept_date
 from .run import OutputLockedError
 from .run.description_file import PublicationRefused
 from .run.draft_file import publish_draft
@@ -114,6 +117,9 @@ class _CheckSaveScreen:
             " Yes, save the experiment description", style="success", icon="check", main=True
         )
         self.save_button.on_click(lambda _: self.save_experiment())
+        self.save_note = widgets.HTML(layout=widgets.Layout(margin="0 0 0 12px"))
+        ui.set_visible(self.save_note, False)
+        self.save_row = widgets.HBox([self.save_button, self.save_note])
         self.save_status = widgets.HTML()
         self.check_card = ui.card(
             "Your experiment, in words",
@@ -126,7 +132,7 @@ class _CheckSaveScreen:
                 self.short_names,
                 self.todo,
                 self.checks,
-                self.save_button,
+                self.save_row,
                 self.save_status,
             ],
             visible=False,
@@ -221,10 +227,28 @@ class _CheckSaveScreen:
         if not todo[0] and not todo[1]:
             self._check = self._candidate_check(answers)
         self.todo.value = todo_html(*todo)
-        self.checks.value = checks_html(self._check)
+        self.checks.value = checks_html(self._check) or self._blocked(state)
         ready = self._check is not None and self._check.can_save
         self.save_button.disabled = not ready or self._saved_current()
+        self.save_note.value = "" if self.save_button.disabled else run_stop_html(self._check)
+        ui.set_visible(self.save_note, bool(self.save_note.value))
         self._show_saved_state()
+
+    def _blocked(self, state: object) -> str:
+        """Say what already stops the run while the candidate cannot be checked (answers missing).
+
+        The run's refusal of the saved description, or the header change the folder check found,
+        is shown at once, never only after the reopened "same way?" is answered again.
+        """
+        if state is None:
+            return ""
+        answers = self.draft_answers.repeats
+        asked = sorted(
+            label
+            for label in state.reconciliation.reopened
+            if label in answers and answers[label].confirmed_on is None
+        )
+        return blocked_html(self._published_check(), state.reconciliation, asked)
 
     def _todo(self, applied: object, answers: object, problem: str) -> tuple[list, list[str]]:
         """Return the open questions and the other answers still missing before saving."""
@@ -261,12 +285,23 @@ class _CheckSaveScreen:
             self.todo.value = ui.status("error", "The answers cannot be saved.", [str(exc)])
             return None
         roles = None if self.confirmed_mapping is None else self._review().file_mappings
-        return check_candidate(candidate, self.preflight, roles, self._design_folder())
+        state = self._published()
+        published = state.description if state is not None else None
+        _, confirmations = self._publication_terms(state, candidate)
+        return check_candidate(
+            candidate, self.preflight, roles, self._design_folder(), published, confirmations
+        )
 
     def _show_replicates(self, applied: object, answers: object, labels: list[str]) -> None:
         """One box per replicate: folders, pictures, channels, and its own question."""
         boxes, toggles = [], {}
         units, counts = self._reopen_units(), self._channel_counts()
+        state = self._published()
+        saved_dates = (
+            {}
+            if state is None
+            else {key: r.confirmed_on for key, r in state.description.repeats.items()}
+        )
         for view in replicates(applied, answers):
             toggle = ui.ConfirmToggle(
                 SAME_WAY,
@@ -297,8 +332,13 @@ class _CheckSaveScreen:
                 ),
             )
             keys = [u.key for m in view.members for u in m.units]
-            # A box with a warning (an acquisition lacking a label) never folds.
-            settled = view.confirmed_on is not None and not view.missing
+            # A box with a warning (an acquisition lacking a label) never folds, nor one whose
+            # date is not the published one (publication's R_CONFIRMED_ON_CHANGED names it).
+            settled = (
+                view.confirmed_on is not None
+                and not view.missing
+                and view.confirmed_on == saved_dates.get(view.label, view.confirmed_on)
+            )
             boxes.append((box, row_status(units, keys, settled)))
         self.same_way = toggles
         if not hasattr(self, "_replicate_fold"):
@@ -356,7 +396,7 @@ class _CheckSaveScreen:
             self._folded = False  # a refusal of the run's checks is never folded away
         if self._saved_current() and not self._published_refused():
             when = self._saved_on or (state.saved_on if state else "")
-            self.save_status.value = ui.status("ok", f"Saved {when}. The run (step 12) can start.")
+            self.save_status.value = self._saved_status(when)
             self.saved_line.value = ui.status("ok", f"Saved on {when}, nothing changed.")
         else:
             self.saved_line.value = ""
@@ -368,13 +408,43 @@ class _CheckSaveScreen:
             ui.set_visible(getattr(self, name), not self._folded)
         self._refresh_run_step()
 
+    def _saved_status(self, when: str) -> str:
+        """Say that the description is saved, and that the run can start only once it can.
+
+        The run's checks need the confirmed axis roles: before them nothing says the run can
+        start, only that the axes come first.
+        """
+        if self._run_allowed():
+            return ui.status("ok", f"Saved {when}. The run (step 12) can start.")
+        if self.confirmed_mapping is None:
+            return ui.status(
+                "info",
+                f"Saved {when}.",
+                [
+                    "Confirm the axis roles (step 2) first: the run's checks of the images "
+                    "need them, and the run (step 12) waits for those checks."
+                ],
+            )
+        return ui.status("ok", f"Saved {when}.", ["See Run (step 12) for what is still to do."])
+
     # Answers -----------------------------------------------------------------------------
 
     def _same_way(self, label: str, value: bool) -> None:
-        """Save the N35 answer of one replicate, dated the day of the click."""
+        """Save the N35 answer of one replicate, dated the day of the click.
+
+        A published replicate whose layout is as published is not reopened (experiment-v1
+        section 10): its "Yes" takes the published date back ("the draft copies it from the
+        published file, never from the clock"; section 4.4a). Only the user's click sets it.
+        """
         answers = self.draft_answers
         entry = answers.repeats.get(label, RepeatAnswer())
         day = date.today().isoformat() if value else None
+        state = self._published()
+        if value and state is not None:
+            try:
+                day = kept_date(self._draft_base, answers, state.description, label) or day
+            except DraftError:
+                pass  # the layout cannot be compared: the day of the click, checked before Save
         repeats = {**answers.repeats, label: replace(entry, confirmed_on=day)}
         if not self._answer(replace(answers, repeats=repeats)):
             self.save_status.value = ui.status("error", "Not taken.", [str(self._refusal)])
@@ -465,22 +535,33 @@ class _CheckSaveScreen:
         analysed = [m.relative_path for m in pre.metadata.files]
         return changed_since_check(Path(pre.discovery.root), pre.header_fingerprints, analysed)
 
+    def _publication_terms(self, state: object, candidate: object) -> tuple[tuple, tuple]:
+        """Return the removals the user confirmed and the re-confirmations they give publication.
+
+        The same terms go to publication (:meth:`_publish`) and to the pre-save check, so Save
+        is enabled only for what publication accepts.
+        """
+        if state is None:
+            return (), ()
+        removals = tuple(
+            Removal(q.units, self._removals[q.condition_id])
+            for q in state.removals
+            if q.condition_id in self._removals
+        )
+        confirmations = reconfirmations(
+            state.description, candidate, state.reconciliation, removals
+        ).accepted
+        return removals, confirmations
+
     def _publish(self) -> object:
         """Publish the saved draft with the removals the user confirmed."""
         state, today = self._published(), date.today().isoformat()
         removals, confirmations, recorded = (), (), None
         if state is not None:
-            removals = tuple(
-                Removal(q.units, self._removals[q.condition_id])
-                for q in state.removals
-                if q.condition_id in self._removals
-            )
             candidate = description_from_draft(
                 self._draft_base, self.draft_answers, channel_counts=self._channel_counts()
             )
-            confirmations = reconfirmations(
-                state.description, candidate, state.reconciliation, removals
-            ).accepted
+            removals, confirmations = self._publication_terms(state, candidate)
             recorded = today if state.reconciliation.counts else None
         return publish_draft(
             self._design_folder(),

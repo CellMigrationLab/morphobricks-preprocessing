@@ -150,9 +150,7 @@ class _QuickAxes:
 
     def _quick_preview_shown(self, offer: AxisMapping) -> bool:
         """Return whether the preview now shows a plane drawn with exactly the offered roles."""
-        drawn = getattr(self, "_preview_drawn", None)
-        same = drawn is not None and (drawn.axes, drawn.roles) == (offer.axes, offer.roles)
-        return bool(self.preview_image.value) and same
+        return self._preview_of(offer)
 
     def _quick_text(self, offer: AxisMapping) -> str:
         """Return what the card says: the roles, where they come from, what the click does."""

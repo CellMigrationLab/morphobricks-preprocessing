@@ -218,12 +218,10 @@ def header_preview(
     if meta is None:
         return HeaderPreview(None, problem="no image to analyse in this folder")
     try:
-        check_unchanged(
-            root / meta.relative_path,
-            checked_fingerprint(bound, meta.relative_path),
-            meta.relative_path,
-        )
-        found = header_planes(root / meta.relative_path, meta)
+        path, expected = root / meta.relative_path, checked_fingerprint(bound, meta.relative_path)
+        check_unchanged(path, expected, meta.relative_path)
+        found = header_planes(path, meta)
+        check_unchanged(path, expected, meta.relative_path)  # a rewrite during the read
         pictures = tile_pictures(found.planes, found.colour, side)
     except (PreviewUnavailable, PreviewRefused) as exc:
         return HeaderPreview(meta.relative_path, problem=str(exc))

@@ -14,9 +14,9 @@ When a thumbnail keeps fewer than one pixel in :data:`.preview_crop.CROP_FACTOR`
 read through the same confirmed roles and plane.
 
 Every picture is bound to the image as the folder check read its header: each read is given
-that fingerprint (``StripOptions.expected``), so an image changed since the check (same name,
-same shape or not) is refused with "check the folder again", never drawn as if it were the one
-checked.
+that fingerprint (``StripOptions.expected``), checked before and after the read, so an image
+changed since the check or during the read (same name, same shape or not) is refused with "check
+the folder again", never drawn as if it were the one checked.
 """
 
 from __future__ import annotations
@@ -180,7 +180,8 @@ class Thumbnails:
         has_c = mapping.index_of("C") is not None
         planes = []
         try:
-            check_unchanged(self.root / image, checked_fingerprint(self.bound, image), image)
+            expected = checked_fingerprint(self.bound, image)
+            check_unchanged(self.root / image, expected, image)
             for c in range(3 if colour else 1):
                 plane = read_plane(
                     self.root / image,
@@ -195,6 +196,7 @@ class Thumbnails:
                     reason = "no 1:1 detail: a plane this large is read reduced"
                     return no_crop(TilePictures(thumb.png, plane.step, note=thumb.note), reason)
                 planes.append(plane.pixels)
+            check_unchanged(self.root / image, expected, image)  # and after the read
             return tile_pictures(planes, colour, THUMBNAIL_SIDE)
         except READ_ERRORS as exc:
             return no_crop(TilePictures(thumb.png, 1, note=thumb.note), f"no 1:1 detail: {exc}")

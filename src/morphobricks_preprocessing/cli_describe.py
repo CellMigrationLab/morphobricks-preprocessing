@@ -3,14 +3,16 @@
 ``describe EXPERIMENT [--output FOLDER]`` prints what the folders and the output folder say
 about the experiment description (experiment-v1) in plain language: the IDs proposed for
 the conditions, technical repeats and biological repeats, the repeats and their folders, the
-references, and every question still open. It reads the folder structure and nothing else (no
-image is opened, no pixel read) and writes nothing.
+references, and every question still open. It reads the folder structure and, when it compares
+a published description, the image headers (no pixel is read); it writes nothing.
 
 The draft comes from the existing functions only: the legacy ``experiment_design.csv`` of the
 output folder, when there is one and no published description, is migrated
 (:func:`.draft.migrate_legacy_design`); otherwise the draft is built from the folders
-(:func:`.draft.draft_from_discovery`); when ``morphobricks.toml`` is published, the folders are
-compared with it (:func:`.description_reconcile.reconcile`). This module adds no rule.
+(:func:`.draft.draft_from_discovery`); when ``morphobricks.toml`` is published, the folders and
+the headers of their images are compared with it (:func:`.reconcile_observe.observe_folders`
+with the headers, then :func:`.description_reconcile.reconcile`), exactly as the notebook
+compares them on reopening, so both say the same. This module adds no rule.
 
 **Nothing is confirmed here.** An ID, a repeat's comparability (N35), a reference and a removal
 are the user's answers, given in the notebook; the command never answers for the user and never
@@ -32,9 +34,10 @@ from pathlib import Path
 
 from .description import Description
 from .description_reconcile import (
+    CHANNELS_CHANGED,
     NEW_UNIT,
     REMOVED_UNIT,
-    ObservedUnit,
+    RENAMED_FOLDER,
     Reconciliation,
     Status,
     UnitFolders,
@@ -44,6 +47,8 @@ from .design import DESIGN_FILENAME, DesignFormatError
 from .discovery import DiscoveryResult, default_output_folder, discover_experiment
 from .draft import Draft, DraftError, draft_from_discovery, migrate_legacy_design
 from .draft_ids import IdKind, id_problems
+from .metadata import inspect_images
+from .reconcile_observe import observe_folders
 from .report import format_issues
 from .run.description_run import load_description
 from .run.recorded import normalise_relative_path
@@ -75,6 +80,8 @@ NOT_IN_DRAFT = (
 REASON_TEXT = {
     NEW_UNIT: "a new folder joined it",
     REMOVED_UNIT: "a folder of it is gone",
+    CHANNELS_CHANGED: "the channels in its image headers no longer fit the published ones",
+    RENAMED_FOLDER: "a folder of it was renamed",
 }
 
 
@@ -218,21 +225,17 @@ def draft_blockers(draft: Draft) -> list[str]:
     return blockers or [NOT_IN_DRAFT]
 
 
-def _observed(discovery: DiscoveryResult, excluded: list[str]) -> dict[UnitFolders, ObservedUnit]:
-    """Return the units the folders hold now, with their included image counts."""
-    found = {}
-    for leaf in discovery.leaves:
-        count = sum(image not in excluded for image in leaf.images)
-        if count:
-            found[UnitFolders(*leaf.labels)] = ObservedUnit(count)
-    return found
-
-
 def _published(
     published: Description, discovery: DiscoveryResult, excluded: list[str], output: Path
 ) -> tuple[list[str], list[str]]:
-    """Compare the published description with the folders; return the report and blockers."""
-    rec = reconcile(published, _observed(discovery, excluded))
+    """Compare the published description with the folders and headers; return report, blockers.
+
+    The headers of every image to analyse are read (no pixel), so a header rewritten under the
+    same files is a change here as in the notebook (:func:`.description_reopen.published_state`).
+    """
+    images = [image for image in discovery.images if image not in excluded]
+    headers = inspect_images(discovery.root, images).files
+    rec = reconcile(published, observe_folders(discovery, excluded, headers))
     return reconciliation_lines(rec, output), reconciliation_blockers(rec)
 
 
@@ -244,12 +247,18 @@ def reconciliation_lines(rec: Reconciliation, output: Path) -> list[str]:
     """Return the plain-language comparison of the published description with the folders."""
     out = [
         f"The published description ({output / 'morphobricks.toml'}) compared with the folders.",
-        "Only the folder structure and image counts are compared: no image header is read, so "
-        "the channels are not.",
+        "The folder structure, the image counts and the channels the image headers state are "
+        "compared (no pixel is read).",
         "",
         f"{len(rec.unchanged)} acquisitions as published.",
     ]
     out += [f"  new, no ID yet: {_folders(u.folders)}" for u in rec.new]
+    out += [
+        f"  headers changed: {_folders(u.folders)} (its image headers no longer fit the "
+        "published channels)"
+        for u in rec.unchanged
+        if CHANNELS_CHANGED in u.reasons
+    ]
     out += [f"  gone, kept until you confirm: {_folders(u.folders)}" for u in rec.removed]
     for change in rec.counts:
         out.append(

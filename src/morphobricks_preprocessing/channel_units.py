@@ -69,7 +69,8 @@ def unit_layouts(
     A unit whose first image cannot be read, or does not fit the confirmed roles, is returned
     with a ``problem`` and no channels: the next image is **not** used instead. A unit whose
     other images do not all have the first one's header signature is ``uniform`` False, so the
-    tag grid never puts it in a block with other units on its first image alone.
+    tag grid never puts it in a block with other units on its first image alone; one whose
+    other images do not all have the first one's channel count is ``counts_agree`` False.
     """
     images = unit_images(discovery, excluded)
     headers = {f.relative_path: f for f in metadata.files}
@@ -93,9 +94,21 @@ def unit_layouts(
             )
             continue
         signature = (count, tuple(meta.raw_channel_names), meta.rgb_samples)
-        uniform = all(_signature(headers.get(i), review) == signature for i in found[1:])
-        out.append(UnitLayout(key, first, *signature, "", len(found), uniform))
+        others = [_signature(headers.get(i), review) for i in found[1:]]
+        uniform = all(other == signature for other in others)
+        agree = all(other is not None and other[0] == count for other in others)
+        out.append(UnitLayout(key, first, *signature, "", len(found), uniform, agree))
     return tuple(out)
+
+
+def unit_channel_counts(layouts: Iterable[UnitLayout]) -> dict[UnitKey, int]:
+    """Return the channel count of every unit whose images all have it, by unit key.
+
+    A unit that cannot be tagged, or whose images disagree in channel count (or one of whose
+    images has none known), is left out: its count is unknown
+    (``unit_channel_count_unknown``), never the first image's.
+    """
+    return {u.key: u.channels for u in layouts if u.usable and u.counts_agree}
 
 
 def _signature(meta: TiffMetadata | None, review: AxisReview) -> tuple | None:
@@ -106,4 +119,11 @@ def _signature(meta: TiffMetadata | None, review: AxisReview) -> tuple | None:
     return None if count is None else (count, tuple(meta.raw_channel_names), meta.rgb_samples)
 
 
-__all__ = ["channel_count", "header_names", "slot_count", "unit_images", "unit_layouts"]
+__all__ = [
+    "channel_count",
+    "header_names",
+    "slot_count",
+    "unit_channel_counts",
+    "unit_images",
+    "unit_layouts",
+]

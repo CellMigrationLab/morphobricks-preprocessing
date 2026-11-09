@@ -4,7 +4,10 @@ Before the user saves, the candidate is written with the canonical writer and th
 are read back with the strict reader (:func:`.description.description_from_bytes`); the accepted
 description then goes through the run's own checks (:func:`.run.description_run.check_description`:
 more than one channel layout is ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``, then the physical ``R_*``
-checks against the folder and the headers, which need the confirmed axis roles). The derived
+checks against the folder and the headers, which need the confirmed axis roles). On a reopen the
+candidate is also compared with the published file by the same transition checks publication
+runs (:func:`.run.description_file.transition_refusals`: experiment-v1 sections 4.4a, 4.6, 4.9
+and 10), so Save is never offered for a candidate that publication would refuse. The derived
 ``experiment_design.csv`` (experiment-v1 section 11) is compared with the file in the output
 folder now. Nothing is written: publication repeats the reader on the same bytes under the lock.
 """
@@ -17,15 +20,33 @@ from pathlib import Path
 
 from .description import Description, DescriptionError, description_from_bytes
 from .description_file import read_file_bytes, sha256_hex
+from .description_report import DescriptionIssue
 from .description_review import design_changes
+from .description_rules import Refusal
 from .description_run_text import reader_issue
+from .description_transition import Reconfirmation
 from .description_write import canonical_bytes
 from .design import DESIGN_FILENAME, DesignFormatError, ExperimentDesign, parse_design_bytes
 from .design_derive import derive_design
 from .physical_check import HETEROGENEOUS_LAYOUT
+from .run.description_file import transition_refusals
 from .run.description_run import RunDescription, check_description
 from .run.preflight import Preflight
-from .validation import ValidationIssue
+from .validation import ValidationIssue, error
+
+_TRANSITION_TEXT = {
+    Refusal.R_CONFIRMED_ON_CHANGED: (
+        "The “same way?” date of replicate {id} differs from the saved one, but its folders and "
+        "channels are as saved, so its confirmation is not reopened and the saved date stays "
+        "(experiment-v1 4.4a).",
+        "Answer “same way?” of {id} again (Undo, then Yes): the saved date is kept.",
+    ),
+    Refusal.R_CONFIRMED_ID_CHANGED: (
+        "The confirmed ID {id} would lose or move something it held in the saved description "
+        "(a folder, a channel position or a header name; experiment-v1 4.6).",
+        "Undo that change. A folder that is gone is removed with Yes, remove.",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -40,7 +61,7 @@ class CandidateCheck:
 
     @property
     def can_save(self) -> bool:
-        """True when the strict reader accepts the exact bytes (a valid file may be saved)."""
+        """True when the strict reader and publication's transition checks accept the bytes."""
         return self.description is not None and not self.refusals
 
     @property
@@ -65,11 +86,26 @@ def _current_design(output: Path | None) -> tuple[ExperimentDesign | None, bool]
         return None, False
 
 
+def transition_issue(issue: DescriptionIssue) -> ValidationIssue:
+    """Return one publication refusal of the candidate as an error naming its code and path."""
+    code, path = issue.code.value, issue.path
+    base, _, key = path.partition(".")
+    key = str(issue.value) if base == "used_ids" else key.strip('"')
+    message, action = _TRANSITION_TEXT.get(
+        issue.code,
+        ("Publication refuses this change.", "Undo the change it names."),
+    )
+    shown, todo = message.format(id=key, code=code, path=path), action.format(id=key)
+    return error(code, f"Saving would be refused: {code} at {path}. {shown} {todo}", (), todo)
+
+
 def check_candidate(
     candidate: Description,
     pre: Preflight,
     roles: Mapping | None,
     output: Path | None,
+    published: Description | None = None,
+    confirmations: tuple[Reconfirmation, ...] = (),
 ) -> CandidateCheck:
     """Check the candidate on its exact canonical bytes, as publication and the run will.
 
@@ -84,12 +120,20 @@ def check_candidate(
         axis roles are not confirmed (the physical checks then wait, never pass).
     output
         The output folder, whose ``experiment_design.csv`` is compared; None when unknown.
+    published
+        The published description the candidate replaces (None when there is none): its
+        transition refusals are refusals here, exactly as publication raises them.
+    confirmations
+        The user's recorded re-confirmations that publication will be given.
     """
     data = canonical_bytes(candidate)
     try:
         parsed = description_from_bytes(data)
     except DescriptionError as exc:
         return CandidateCheck(None, tuple(reader_issue(i) for i in exc.issues))
+    refused = tuple(
+        transition_issue(i) for i in transition_refusals(published, parsed, confirmations)
+    )
     found = RunDescription(parsed, sha256_hex(data), ())
     checked, problems = check_description(found, pre, roles)
     before, readable = _current_design(output)
@@ -99,7 +143,8 @@ def check_candidate(
         changes = [f"cannot be derived: {exc}"]
     if not readable:
         changes = ["the file in the output folder cannot be read; it is replaced", *changes]
-    return CandidateCheck(parsed, (), tuple(problems), checked.physical is not None, tuple(changes))
+    physical = checked.physical is not None
+    return CandidateCheck(parsed, refused, tuple(problems), physical, tuple(changes))
 
 
-__all__ = ["CandidateCheck", "check_candidate"]
+__all__ = ["CandidateCheck", "check_candidate", "transition_issue"]

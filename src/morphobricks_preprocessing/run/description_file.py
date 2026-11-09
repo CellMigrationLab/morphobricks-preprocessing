@@ -198,6 +198,23 @@ def _append_records(folder: Path, records: tuple[dict, ...]) -> None:
     _replace_file_durably(folder / RECORDS_FILENAME, _candidate_records(folder, records))
 
 
+def transition_refusals(
+    old: Description | None,
+    candidate: Description,
+    confirmations: tuple[Reconfirmation, ...] = (),
+) -> tuple[DescriptionIssue, ...]:
+    """Return the ``R_*`` refusals of ``candidate`` over the published ``old`` (none without one).
+
+    These are exactly the transition refusals publication raises (sections 4.4a, 4.6, 4.9 and
+    10) once the user's re-confirmations accepted what they name: the notebook's pre-save check
+    calls this too, so Save is enabled only for a candidate that publication accepts.
+    """
+    if old is None:
+        return ()
+    left = unwaived(transition_issues(old, candidate), confirmations)
+    return tuple(_transition_refusal(i) for i in left)
+
+
 def _compare(
     published: bytes | None,
     candidate: Description,
@@ -209,9 +226,9 @@ def _compare(
     """
     old = description_from_bytes(published) if published is not None else None
     issues = transition_issues(old, candidate) if old is not None else ()
-    left = unwaived(issues, confirmations)
+    left = transition_refusals(old, candidate, confirmations)
     if left:
-        raise PublicationRefused(tuple(_transition_refusal(i) for i in left))
+        raise PublicationRefused(left)
     if unused(issues, confirmations):
         names = ", ".join(f"{c.kind} {c.old_id}" for c in unused(issues, confirmations))
         raise ValueError(f"a re-confirmation names a change the candidate does not make: {names}")
