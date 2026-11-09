@@ -154,7 +154,7 @@ class IntensityPanel:
 
     def _build_plots(self) -> None:
         """Build the channel choice and the two plots of the chosen channel."""
-        self.channel = widgets.ToggleButtons(options=[("C0", 0)], style={"button_width": "64px"})
+        self.channel = widgets.ToggleButtons(options=[("C0", 0)], style={"button_width": "96px"})
         self.channel_row = widgets.VBox(
             [
                 widgets.HTML("<b>Channel</b>"),
