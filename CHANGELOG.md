@@ -6,7 +6,15 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 [migration guide](docs/migration-0.3-to-0.4.md).
 
-## Unreleased
+## 0.5.0 - 2026-11-09
+
+Stage 1 of the experiment description (MorphoBricks-Spec experiment-v1, pinned at `1bed024`):
+the reader, the canonical writer, publication, reconciliation, the described run, semantic
+`RunInputs` and the notebook that writes `morphobricks.toml`. Runs without a description keep
+the v0.4.0 behaviour (with a warning). The release step: the version is 0.5.0, the notebook
+installs `v0.5.0` (its `RELEASE_REF` is the release-preparation commit), and the Gate G1 record
+of this release candidate is in `docs/conformance.md`. The normalization brick stays pinned at
+v0.3.4.
 
 - **Notebook: folder pictures with a 1:1 crop, "Tag like the saved group", colour mask evidence
   (PR 17c).** *Images found* adds a picture of each folder's first image to the labels table,
