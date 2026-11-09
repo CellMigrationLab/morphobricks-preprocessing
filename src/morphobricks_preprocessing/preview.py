@@ -350,12 +350,33 @@ def mask_thumbnail(
     """
     mask = read_plane(path, mapping, max_side=side, memory_limit=memory_limit, **coordinates)
     if mask.source_shape != image.source_shape or mask.step != image.step:
-        raise PreviewRefused(
-            MASK_SIZE_DIFFERS,
-            f"The mask is {mask.source_shape[0]} x {mask.source_shape[1]} and the image "
-            f"{image.source_shape[0]} x {image.source_shape[1]}: they are not resampled to fit.",
-        )
+        raise _size_differs(mask.source_shape, image.source_shape)
     return mask
+
+
+def _size_differs(mask: tuple[int, ...], image: tuple[int, ...]) -> PreviewRefused:
+    return PreviewRefused(
+        MASK_SIZE_DIFFERS,
+        f"The mask is {mask[0]} x {mask[1]} and the image {image[0]} x {image[1]}: they are not "
+        "resampled to fit.",
+    )
+
+
+def labels_thumbnail(labels: np.ndarray, image: ReducedPlane) -> ReducedPlane:
+    """Reduce a mask plane already read whole with the step of the image it is drawn on.
+
+    Every n-th pixel is taken, as :func:`mask_thumbnail` does, so labels are never interpolated
+    or renumbered. A mask of another size than the image is refused, not resampled.
+
+    Raises
+    ------
+    PreviewRefused
+        ``mask_size_differs``.
+    """
+    if labels.ndim != 2 or tuple(labels.shape) != tuple(image.source_shape):
+        raise _size_differs(tuple(labels.shape), image.source_shape)
+    pixels = np.ascontiguousarray(labels[:: image.step, :: image.step])
+    return ReducedPlane(pixels, image.step, image.source_shape, image.z, None, image.t)
 
 
 __all__ = [
@@ -370,6 +391,7 @@ __all__ = [
     "ReducedPlane",
     "channel_strip",
     "confirmed_mapping",
+    "labels_thumbnail",
     "mask_thumbnail",
     "read_plane",
 ]

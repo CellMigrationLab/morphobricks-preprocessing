@@ -46,8 +46,8 @@ _STALE = object()
 _LABEL = " Describe the masks"
 _ICON = "sitemap"
 _SUGGESTIONS = (
-    "These are suggestions from the masks' pixels: name each mask, then check the "
-    "relationships before using them."
+    "These are suggestions from the masks' pixels: check the relationships before using them. "
+    "Each mask keeps the ID it was given on Your masks."
 )
 
 
@@ -250,7 +250,7 @@ class _MaskStepCard:
         hierarchy = html.escape("\n".join(mask_hierarchy_lines(report)))
         parts = [
             _heading("Mask types (suggestions to check)"),
-            ui.table(mask_type_rows(report), numeric_from=2),
+            ui.table(mask_type_rows(report, self._mask_ids()), numeric_from=3),
             _heading("Relationships found (suggestions to check)"),
             ui.table(relationships, numeric_from=3)
             if len(relationships) > 1

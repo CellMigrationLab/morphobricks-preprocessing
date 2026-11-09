@@ -165,6 +165,7 @@ class _MasksCard:
         self._paired_masks = _pairing(plan)
         self._show_issue_summary()
         self._refresh_run_step()
+        self._refresh_masks_screen()
         self._show_log()
 
     def _masks_edited(self) -> None:

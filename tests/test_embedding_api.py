@@ -63,6 +63,10 @@ NOTEBOOK_METHODS = {
         ("title", POSITIONAL, None),
         ("purpose", POSITIONAL, None),
     ],
+    "masks_step": [
+        ("title", POSITIONAL, None),
+        ("purpose", POSITIONAL, None),
+    ],
     "run_step": [],
     "results_step": [],
     "check_folder": [],

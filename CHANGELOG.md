@@ -8,6 +8,17 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Notebook: your masks (Stage 1 PR 16a).** A *Your masks* screen after *Your channels*, shown only
+  when the folder check paired masks: one question per mask type, *separate objects, each with its
+  own number* (`instances`) or *regions: inside or outside* (`binary`), with nothing preselected
+  (experiment-v1 §4.5), and optional *made from* channels (declared labels only). Beside it: how
+  many images have the mask, its pixel type, the number of different values in one image (read with
+  the mask step's reader) and the mask on that image (PR 13 safe preview; drawn only as the user
+  declared it, the mask alone in grey before an answer). The mask ID is the folder name when it is a
+  valid mask ID (Token rule, reserved names, the object-set part `in`); otherwise the user types one.
+  A declared mask whose files are gone is listed with *Remove*. Step 3's *Describe the masks* shows
+  these IDs in a *Mask ID* column and no longer asks to name the masks. New: `mask_answers`,
+  `mask_evidence`, `preview.labels_thumbnail`, `draft_ids` kind `masks`.
 - **Notebook: your channels, labels first then tag per unit (Stage 1 PR 15, draft).** After the axis
   roles are confirmed, *Which labels did you image?* lists what was stained (prefilled only from
   header names that are valid IDs as they are and not generic such as `Ch1`, `C0`, `AF488`; near

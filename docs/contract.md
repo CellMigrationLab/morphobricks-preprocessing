@@ -674,7 +674,7 @@ One JSON object, UTF-8, two-space indent, sorted keys, LF, a final newline, no d
 | `pairing` | Condition source folder → source repeat folder → the pairing label of the repeat the user paired that folder with (only folders not in the repeat of their own name; applied to the draft first, so the `repeats` keys are the paired labels; refused with `pairing_after_confirmation` once a repeat is named or confirmed, `unknown_key` for a folder the draft lacks). A reference to the condition itself or one that closes a loop is refused when saved (`E_REFERENCE_SELF`, `E_REFERENCE_CYCLE`). |
 | `units` | `condition folder` → `source repeat folder` → `technical-repeat folder` → `{channels, image_type?, display_name?}`; `channels` lists, for C0, C1, ... in order, a channel ID (every position needs a label the user declared, for example `unused`; an empty string is refused) or `null` (not tagged yet); `image_type` is `"rgb"` or `"channels"` (an ordinary channel image; absent means not answered), any other value is refused |
 | `channels` | Channel ID → `{display_name?, header_names?}` (the label list of the notebook's *Your channels* screen; `header_names` are the raw header names of every cell the user tagged with that label, recomputed at each save: the tag is the alias confirmation) |
-| `masks` | Mask ID → `{source_type, representation, source_channels?, display_name?}` |
+| `masks` | Mask ID → `{source_type, representation, source_channels?, display_name?}` (the notebook's *Your masks* screen: one answer per mask type, `representation` `instances` or `binary` with no default; the ID is the mask type's folder name when it is a valid mask ID, else typed by the user; `source_channels` are declared channel IDs) |
 
 Rules.
 

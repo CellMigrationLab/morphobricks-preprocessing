@@ -272,7 +272,13 @@ src/morphobricks_preprocessing/
   notebook_axes.py  the notebook's axis-check card and the marks under the role dropdowns
   notebook_masks.py step 1's masks folder, Masks card and mask-axis statements (PP-10c)
   notebook_mask_step.py step 3's Describe the masks card: the masks step after a run that
-                    recorded masks (PP-10d)
+                    recorded masks (PP-10d); it names the masks by their IDs from Your masks
+  notebook_masks_screen.py the Your masks screen (MasksCard, self-contained) and
+                    notebook_mask_question.py one mask type's question (objects or regions, no
+                    default; mask ID = folder name when valid; optional made-from channels);
+                    mask_answers.py (pure) the mask answers of the draft; mask_evidence.py the
+                    evidence beside the question (images with the mask, dtype, values in one
+                    image, the mask on that image)
   notebook_convert.py step 2's Make named-axis copies card under the axis check (PP-11b):
                     preview_conversion, then convert_experiment under the copy folder's lock,
                     then Check the copies in step 1 (same output folder)

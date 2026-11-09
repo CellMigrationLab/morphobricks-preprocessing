@@ -59,6 +59,7 @@ from .notebook_design import _DesignCard
 from .notebook_folder import _FolderStep
 from .notebook_mask_step import _MaskStepCard
 from .notebook_masks import _MasksCard
+from .notebook_masks_screen import _MasksScreen
 from .notebook_options import (
     _PACKAGE_LOGGER,
     EXCLUDABLE_CODES,
@@ -126,6 +127,7 @@ class PreprocessingNotebook(
     _DesignCard,
     _DescriptionCard,
     _ChannelsStep,
+    _MasksScreen,
     _CalibrationCard,
     _OutputCards,
     _AxisStep,
@@ -191,6 +193,7 @@ class PreprocessingNotebook(
         self._build_calibration_card()
         self._build_masks_cards()
         self._build_channels_step()
+        self._build_masks_screen()
         self._build_folder_step(str(experiment_folder), str(output_folder))
         self._build_axis_step()
         self._build_convert_card()
