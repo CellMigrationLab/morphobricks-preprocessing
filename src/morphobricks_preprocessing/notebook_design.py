@@ -55,7 +55,7 @@ class _DesignCard:
                     "condition (acquired a day later, for example), choose its group in "
                     "the dropdown. Each group may hold one folder per condition. The dropdown "
                     "offers "
-                    "folder names only; the repeat's own ID is set in the Names card."
+                    "folder names only; the repeat's own ID is set with the names below."
                 ),
                 self.pairing_grid,
             ]

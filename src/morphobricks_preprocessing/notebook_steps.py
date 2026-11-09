@@ -170,6 +170,7 @@ class _StepsFlow(_StepStates):
         """Return, by step (0-based), why it cannot be answered yet (HTML, empty when it can)."""
         after_check = self._wait_for_check
         return {
+            0: self._consistency_note,
             2: lambda: "" if self.preflight is not None else after_check(),
             3: after_check,
             4: after_check,
@@ -179,6 +180,16 @@ class _StepsFlow(_StepStates):
             8: self._wait_for_tags,
             12: self._wait_for_mask_step,
         }
+
+    def _consistency_note(self) -> str:
+        """Say where the consistency warnings are, since step 1 counts them but shows them later."""
+        if not ui.is_visible(self.consistency_slot):
+            return ""
+        return ui.status(
+            "info",
+            "The consistency warnings are on Replicates (step 5).",
+            ["They depend on which folders are one replicate: pair the folders there first."],
+        )
 
     def _wait_for_check(self) -> str:
         if self.draft is not None:

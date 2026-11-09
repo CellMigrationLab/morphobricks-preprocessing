@@ -49,6 +49,7 @@ class _StepStates:
         return state is not None and state.changed
 
     def _images_state(self) -> StepState:
+        """Return step 1: images and folders found, the masks, and changes since the save."""
         pre = self.preflight
         if pre is None:
             return StepState(False, "not checked yet")
@@ -74,6 +75,7 @@ class _StepStates:
         return StepState(True, ", ".join(role for role in mapping.roles if role) + " confirmed")
 
     def _sizes_state(self) -> StepState:
+        """Return step 3: the pixel sizes as the calibration card shows them."""
         if self.preflight is None or not self.preflight.metadata.files:
             return StepState(False, "after the folder check")
         key = (id(self.preflight), self.confirmed_mapping, self.missing_as_singleton.value)
@@ -90,6 +92,7 @@ class _StepStates:
         return not done and index in ANSWER_STEPS and self._reopen_changed()
 
     def _conditions_state(self) -> StepState:
+        """Return step 4: the condition IDs as shown, with their shown-as names."""
         if self.draft is None:
             return StepState(False, "after the folder check")
         wanted = self._wanted_ids()
@@ -104,6 +107,7 @@ class _StepStates:
         return StepState(done, text or "none", self._changed(3, done))
 
     def _replicates_state(self) -> StepState:
+        """Return step 5: the replicate IDs, the pairing and the technical-repeat IDs."""
         if self.draft is None:
             return StepState(False, "after the folder check")
         wanted = self._wanted_ids()
@@ -115,8 +119,9 @@ class _StepStates:
         ]
         if paired:
             text += f" ({'; '.join(paired)})"
-        if [i for i in technical if i != "single"]:
-            text += " · technical: " + ", ".join(i or "?" for i in technical)
+        named = [i or "?" for i in technical if i != "single"]
+        if named:
+            text += " · technical: " + ", ".join(named)
         done = all(repeats) and all(technical)
         return StepState(done, text or "none", self._changed(4, done))
 
@@ -132,6 +137,7 @@ class _StepStates:
         return StepState(done, text, self._changed(5, done))
 
     def _image_type_state(self) -> StepState:
+        """Return step 7: the image types answered, by kind, and how many are left."""
         if self._channels_key is None:
             return StepState(False, "after the axes")
         types = self.channel_types
@@ -155,6 +161,7 @@ class _StepStates:
         return StepState(done, text, self._changed(7, done))
 
     def _tags_state(self) -> StepState:
+        """Return step 9: whether every channel of every folder is tagged."""
         if self._channels_key is None or not self.channel_labels.confirmed:
             return StepState(False, "after the stains")
         layouts = self._channel_layouts
