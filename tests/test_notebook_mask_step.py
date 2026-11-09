@@ -143,7 +143,7 @@ def test_describe_the_masks_reuses_the_ids_of_your_masks_and_asks_no_name(tmp_pa
     nb.mask_step_button.click()
     status, shown = nb.mask_step_status.value, nb.mask_step_result.value
     assert "name each mask" not in status
-    assert "keeps the ID it was given on Your masks" in status
+    assert "keeps the ID it was given on Masks (step 10)" in status
     assert "<th>Mask</th><th>Declared kind</th><th>Kind (suggested)</th>" in shown
     assert "<td>Nuclei_seg (nuclei)</td><td>objects</td><td>one object per label</td>" in shown
     assert "<td>cells</td><td>not described yet</td><td>" in shown

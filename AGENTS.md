@@ -305,6 +305,10 @@ src/morphobricks_preprocessing/
                     (plan §12 Q26, Q31). Since PP-9 it holds the page methods, __init__ and
                     the shared helpers; the step methods live on mixin classes in the modules
                     below, and it re-exports every public name it had (`__all__`)
+  notebook_steps.py         steps(): the shipped notebook's 13 steps, one at a time (PR 17a; pure
+                            composition of the cards below); notebook_stepper.py the strip, Back/Next
+                            and the overview; notebook_step_states.py each step's done/one-line state
+  notebook_names.py         the names card's rows (conditions on step 4, replicates on step 5)
   notebook_folder.py        step 1: folder, check, issues, labels (_FolderStep)
   notebook_design.py        step 1: the experiment design card (_DesignCard)
   notebook_axis_step.py     step 2: role dropdowns, axis check, missing-axes card (_AxisStep)

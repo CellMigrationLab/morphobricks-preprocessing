@@ -90,11 +90,13 @@ class _AxisPreview:
                 )
         except (PlaneReadError, IndexError, ValueError) as exc:
             self.preview_image.value = b""
+            ui.set_visible(self.preview_image, False)
             self.preview_caption.value = ui.status(
                 "warn", "This plane cannot be shown with these roles.", [str(exc)]
             )
             return
         self.preview_image.value = plane_png(plane)
+        ui.set_visible(self.preview_image, True)
         self.preview_caption.value = self._preview_label() + preview_caption(
             header.relative_path, plane
         )

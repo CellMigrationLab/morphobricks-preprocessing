@@ -94,6 +94,7 @@ from .notebook_render import (
 from .notebook_results import _ResultsStep
 from .notebook_run import _RunStep
 from .notebook_run_plan import _RunPlan
+from .notebook_steps import _StepsFlow
 from .notebook_values import display_range
 from .planes import PlaneLayout
 from .run import Preflight, RunResult
@@ -124,6 +125,7 @@ __all__ = [
 
 
 class PreprocessingNotebook(
+    _StepsFlow,
     _DescribedRun,
     _CheckSaveScreen,
     _FolderStep,
@@ -374,9 +376,10 @@ class PreprocessingNotebook(
                 "<b>Why this matters:</b> every image is cut into flat 2D planes, one per "
                 "depth slice, channel and time point. The roles below are suggested from "
                 "the image metadata, which is not always right, so check them with the "
-                "preview before confirming. Then confirm whether the images are fluorescence "
-                "or RGB colour images."
+                "preview before confirming."
             )
+            if not self._describe:  # a described run asks the image type per folder later
+                intro += " Then confirm whether the images are fluorescence or RGB colour images."
         return ui.page(
             "Step 2 · Review the axis roles" if title is None else title,
             "Tell the brick which image dimension is width, height, depth, channel and time."

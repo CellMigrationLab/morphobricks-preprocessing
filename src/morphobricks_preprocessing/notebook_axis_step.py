@@ -90,6 +90,7 @@ class _AxisStep:
             tooltip="Read one plane with the roles above and show it",
         )
         self.preview_image = widgets.Image(format="png", layout=widgets.Layout(max_width="420px"))
+        ui.set_visible(self.preview_image, False)  # no broken-picture icon before a preview
         self.preview_caption = widgets.HTML()
         self.preview_checked = ui.ConfirmToggle(
             "Does the preview look like a normal image of your sample?",
@@ -267,6 +268,7 @@ class _AxisStep:
         for slider in self.preview_sliders.values():
             ui.set_visible(slider, False)
         self.preview_image.value = b""
+        ui.set_visible(self.preview_image, False)
         self.preview_caption.value = ""
         self.confirmed_status.value = ""
 
