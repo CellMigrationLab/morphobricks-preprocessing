@@ -4,7 +4,8 @@
 (``morphobricks.toml``, experiment-v1) declares: one folder per condition, repeat and
 technical repeat, ``image_count`` tiny images per member (its total, spread over its
 technical repeats; each image has as many channels as the unit declares, or is RGB colour
-for an ``rgb`` unit), and, when asked, one mask per image for each declared mask. It publishes the description beside the output, runs preprocessing on it and,
+for an ``rgb`` unit), and, when asked, one mask per image for each declared mask. It
+publishes the description beside the output, runs preprocessing on it and,
 unless told not to, runs the mask step, so a brick's tests read their inputs through
 :class:`.run_inputs.RunInputs` exactly as a user's described run gives them.
 
