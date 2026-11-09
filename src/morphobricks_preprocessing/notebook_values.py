@@ -18,10 +18,11 @@ def natural_key(text: str) -> tuple:
     """Return a sort key that puts numbers in number order: ``rep2`` before ``rep10``.
 
     For display only (owner convention, PR 17b): the text is cut into letters and numbers, the
-    numbers compared as numbers; the text itself breaks a tie (``rep02`` and ``rep2``).
+    numbers compared as numbers; the text itself breaks a tie (``rep02`` and ``rep2``). The parts
+    are a tuple of their own, so a shorter text (``rep``) never meets a number with its tie-break.
     """
     parts = _DIGITS.split(text)
-    return (*(int(p) if i % 2 else p for i, p in enumerate(parts)), text)
+    return (tuple(int(p) if i % 2 else p for i, p in enumerate(parts)), text)
 
 
 def _finite(pixels: np.ndarray) -> np.ndarray:

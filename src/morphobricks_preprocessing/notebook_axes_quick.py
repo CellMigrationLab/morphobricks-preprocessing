@@ -37,6 +37,9 @@ class _QuickAxes:
         """Build the card (hidden until roles can be offered) and the fold of the role boxes."""
         self._quick_offer: AxisMapping | None = None
         self._quick_filling = False
+        # The check whose recorded roles were offered: once offered, a role the user changes is
+        # theirs, and the recorded roles are not put back into the boxes.
+        self._quick_seeded: object | None = None
         self.quick_text = widgets.HTML()
         self.quick_image = widgets.Image(format="png", layout=widgets.Layout(max_width="420px"))
         ui.set_visible(self.quick_image, False)
@@ -79,7 +82,10 @@ class _QuickAxes:
         root = Path(self.preflight.discovery.root)
         saved = unchanged_confirmation(recorded.mapping, root)
         roles = saved.mapping if isinstance(saved, ConfirmedAxes) else saved
-        return saved if self.mapping is not None and roles.axes == self.mapping.axes else None
+        if self.mapping is None or roles.axes != self.mapping.axes:
+            return None
+        edited = roles.roles != self.mapping.roles and self._quick_seeded is self.preflight
+        return None if edited else saved
 
     def _quick_mapping(self) -> AxisMapping | None:
         """Return the roles to offer for one click, or None when the role boxes are needed."""
@@ -110,6 +116,8 @@ class _QuickAxes:
             return
         offer = None if self.confirmed_mapping is not None else self._quick_mapping()
         self._quick_offer = offer
+        if offer is not None and self._saved_axes() is not None:
+            self._quick_seeded = self.preflight  # the recorded roles go into the boxes once
         ui.set_visible(self.quick_card, offer is not None)
         ui.set_visible(self.axes_details, offer is not None)
         ui.set_visible(self.axis_box, offer is None)
