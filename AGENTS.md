@@ -122,6 +122,9 @@ src/morphobricks_preprocessing/
   description_file.py   read_description(path): symlink refusal (R_FILE_SYMLINK), bytes -> Description
   run/description_file.py publish_description: lock, base SHA-256, strict re-read, transitions,
                     atomic write, append-only morphobricks.records.jsonl (Spec experiment-v1 4.6, 10)
+  records_file.py   pure checker of morphobricks.records.jsonl (Spec experiment-v1 4.6): check_records
+                    (bytes -> records + E_RECORDS_* issues), encode_record, RECORD_KEYS; read_records
+                    in run/description_file.py refuses with R_RECORDS_FILE_INVALID
   draft_ids.py         proposed IDs: the folder label or raw header name only when the reader would
                     accept it as written, else none (never repaired); draft.py the draft
                     (IdSlot proposed/confirmed, open questions, unit_rows with condition_id,
