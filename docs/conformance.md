@@ -10,19 +10,19 @@ in the suite is listed as **not run**, with its reason.
 
 | | |
 |---|---|
-| Release candidate | Measured on `a6a0343` (branch `claude/release-0.5.0`: `main` at `bf733ee`, the v0.5.0 preparation `3b616a0`, the notebook's `RELEASE_REF` commit `c74d717`, the first record `4437067` and the G1 gap tests `a6a0343`). The commit that updates this record changes only this file, so the code and tests are those of `a6a0343`. `git diff 3b616a0 a6a0343 -- src pyproject.toml` is empty: the installed package is the one `RELEASE_REF` names |
+| Release candidate | Measured on `5cc3b07` (branch `claude/release-0.5.0`: `main` at `bf733ee`, the v0.5.0 preparation `3b616a0`, `c74d717`, the first record `4437067`, the G1 gap tests `a6a0343`, the record `c675f13`, the P21/P29 fix `0a2e25b`, and `5cc3b07`, which points the notebook's `RELEASE_REF` at `0a2e25b`). The commit that updates this record changes only this file, so the code and tests are those of `5cc3b07`. `git diff 0a2e25b 5cc3b07 -- src pyproject.toml` is empty: the installed package is the one `RELEASE_REF` names. The earlier measurement on `a6a0343` (5028 passed, 1660 in the Spec modules) found P21 and P29 not met; `0a2e25b` fixes that source defect |
 | Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `1bed024e278d104ba4b8f63ae76c020fb2e3470d`. The G1 scope ruling (ADR 0001 GS1, conformance plan sections 4 and 5) was merged later as `cdc1841`, which changes only `docs/adr/0001-experiment-description-v1.md` and `docs/conformance-plan.md`, so the pinned files are unchanged. Fixtures tree `f61b1c2`, `experiment-v1.md` blob `b12678c`, `refval.py` blob `0ea8309`, `refrecords.py` blob `ef06a1e`, each also compared by hand with `git rev-parse 1bed024:<path>` in a fresh clone of the Spec: all four equal |
 | Environment | Linux, Python 3.13.18, `pip install -e '.[dev,notebook,zarr]'` in a fresh venv (package version 0.5.0, numpy 2.5.4, tifffile 2026.11.8, ipywidgets 8.1.9, zarr 3.4.2, pytest 9.2.0, normalization 0.3.4); run as root on a case-sensitive file system |
 | Commands | `python -m pytest -q -p no:cacheprovider -rsxX --junitxml=… tests/` (the whole suite, with a per-test JUnit report), and `python tools/check.py` (Ruff, Ruff format, pytest over `tests/`, code rules) |
-| Whole suite | 5032 collected: 5028 passed, 4 skipped (not run, below), 0 failed, 0 xfailed |
-| Spec modules (`tests/test_spec_*.py`) | 1660 passed, **0 skipped, 0 xfailed, 0 failed**, from all 21 modules of `tests/spec_gate.py` `EXPECTED_MODULES` |
-| `tools/check.py` (on `a6a0343`) | Ruff clean, Ruff format 410 files already formatted, pytest 5028 passed and 4 skipped, code rules passed (exit status 0) |
+| Whole suite | 5049 collected: 5045 passed, 4 skipped (not run, below), 0 failed, 0 xfailed |
+| Spec modules (`tests/test_spec_*.py`) | 1671 passed, **0 skipped, 0 xfailed, 0 failed**, from all 21 modules of `tests/spec_gate.py` `EXPECTED_MODULES` |
+| `tools/check.py` (on `5cc3b07`) | Ruff clean, Ruff format 411 files already formatted, pytest 5045 passed and 4 skipped, code rules passed (exit status 0) |
 
-**How "no skips" was checked for the Spec modules.** (1) The JUnit report has 1660 test cases
+**How "no skips" was checked for the Spec modules.** (1) The JUnit report has 1671 test cases
 from `test_spec_*` modules, every one passed: none has a `skipped` (or xfail) element. (2) The
 `-rsxX` summary of the run lists exactly the four skips below, none in a Spec module, and no
 xfail or xpass. (3) All 21 modules of `EXPECTED_MODULES` have test cases in the report
-(catalogue 376, derived design 81, discovery 11, encoding 58, gate 9, no fallback 15, pin 16,
+(catalogue 376, derived design 81, discovery 22, encoding 58, gate 9, no fallback 15, pin 16,
 publication 20, reader 330, reader phases 1-3 287, reader refusal paths 8, reconcile 25,
 records 22, records goldens 76, refval cross-check 203, rules table 14, run aliases 16, run
 description 9, RunInputs semantic 8, transitions 73, vendored missing 3), and the gate's
@@ -75,7 +75,7 @@ GS1: a scenario that names fixtures is shown on those fixtures; further fixtures
 | P18 | Passed | `test_spec_publication`: `test_p18_publishing_over_nothing_with_the_absent_base_is_accepted`, `test_p18_another_file_appears_before_publication`, `test_p18_a_draft_without_a_usable_base_is_refused_and_nothing_is_published` (8 cases) |
 | P19 | Passed | `test_spec_publication`: `test_p19_a_retired_id_declared_again_is_refused`, `test_p19_also_when_the_returning_folder_is_the_one_the_retired_id_had` (`v25`, `t03`) |
 | P20 | Passed | `test_spec_publication`: `test_p20_a_dropped_used_id_is_refused` (`v25`, `t04`), `test_p20_removing_the_last_member_of_a_condition_needs_the_recorded_confirmation` (on `v01`); `test_spec_records`: `test_p35_v25_is_what_removing_the_last_members_of_drug_a_from_v01_publishes` (the accepted removal publishes `v25` byte for byte, DrugA kept in `used_ids`) |
-| P21 | **Not met on `v01`** | `test_spec_discovery` (4 `test_p21_*`, passed) shows `R_FOLDER_NOT_NFC` only through `preflight(..., with_description=True)` on a synthetic tree. With `v01` published and a decomposed folder `CTRL/Cafe\u0301` added, `run_experiment` refuses with `R_UNIT_NOT_DECLARED` and `repeat_missing_conditions` but **not** `R_FOLDER_NOT_NFC` (my run on `a6a0343`; nothing renamed). No production caller of `preflight` passes `with_description=True` (run pipeline, mask step, notebook folder check, command line). A source defect, reported to the owner and not fixed here: a fix moves `RELEASE_REF` |
+| P21 | Passed | `test_spec_discovery` on `v01` published with a decomposed folder `CTRL/Cafe\u0301` added: `test_p21_a_run_with_published_v01_refuses_a_decomposed_folder` (`run_experiment` refuses with `R_FOLDER_NOT_NFC` naming `CTRL/Cafe\u0301`, beside `R_UNIT_NOT_DECLARED`; nothing written, nothing renamed, no composed twin), `test_p21_the_mask_step_refuses_a_decomposed_experiment_folder`, `test_p21_the_command_line_check_and_run_refuse_a_decomposed_folder`, `test_p21_the_command_line_describe_refuses_a_decomposed_folder`; `test_notebook_name_refusals`: `test_p21_the_described_folder_check_refuses_a_decomposed_folder`, `test_p21_the_v0_4_folder_check_with_a_published_description_refuses_too`, `test_p21_p29_a_refused_name_blocks_check_and_save`. Without a description: `test_p21_p29_an_undescribed_run_of_the_same_trees_is_as_in_v0_4`, `test_p21_p29_the_mask_step_without_a_description_is_as_in_v0_4`, `test_p21_p29_the_command_line_check_without_a_description_is_as_in_v0_4`, `test_p21_p29_without_a_description_the_folder_check_is_as_in_v0_4`. Also the 4 synthetic-tree `test_p21_*` of `preflight(..., with_description=True)`. Fixed in `0a2e25b` (on `a6a0343` the run gave only `R_UNIT_NOT_DECLARED`): each of these fails on `c675f13` except the four without a description |
 | P22 | Passed | `test_spec_publication`: `test_p22_confirmed_on_stays_byte_for_byte_through_an_unrelated_publication`, `test_p22_a_new_date_on_an_unchanged_repeat_is_refused` (`t05`), `test_p22_after_a_reopening_and_a_new_confirmation_the_new_date_is_accepted` (`v01`) |
 | P23 | Passed | `test_physical_check`: `test_p23_a_unit_declared_rgb_whose_images_are_two_channel_grayscale` (`v28`), `test_p23_an_rgb_tiff_in_a_unit_that_does_not_declare_it` (`v01`), `test_p23_pixels_that_look_like_rgb_are_never_examined` |
 | P24 | Deferred to the Stage 2 gate per ADR 0001 GS1 (MorphoBricks-Spec `cdc1841`) | The outcome is a brick's (provider manifest `rgb_support`). Preprocessing's own parts passed: the `A_RGB_NOT_SUPPORTED` class (`test_a_error_classes`) and the section 2 "RGB" row (below) |
@@ -83,7 +83,7 @@ GS1: a scenario that names fixtures is shown on those fixtures; further fixtures
 | P26 | Passed | `test_spec_run_aliases` (9 `test_p26_*`), `test_physical_check` (`test_p26_*`, 2 functions), `test_spec_discovery` (`test_p26_the_header_names_are_recorded_as_read_untrimmed`, `test_p26_the_manifest_records_the_header_name_as_read`): 19 cases (`v11`, `v31`, `v12`) |
 | P27 | Deferred to the Stage 2 gate per ADR 0001 GS1 (MorphoBricks-Spec `cdc1841`) | The outcome is a brick's (per-request `binary_mask_policy`). Preprocessing's own parts passed: `A_MASK_NOT_INSTANCES` (`test_a_error_classes`) and the section 2 "Mask fields" row (`i111`, `i112`, below) |
 | P28 | Passed | `test_spec_run_description`: `test_p28_each_new_batch_is_not_yet_checked_until_the_mask_step_has_read_it` (`v08`, with the 0-5 binary batch); `test_spec_run_inputs_semantic`: `test_p28_a_mask_file_not_yet_checked_is_refused_when_read_until_the_step_checked_it` (`v08`), `test_p28_on_v09_each_batch_of_masks_is_unchecked_until_the_mask_step_reads_it` (`v09`: three batches, each `not yet checked` and `A_MASK_UNCHECKED` until the mask step reads it, earlier batches stay `checked`) |
-| P29 | **Not met on `v07`** | `test_spec_discovery` (5 `test_p29_*`, passed) shows `R_MASK_TYPE_NAME_INVALID` and `R_FOLDER_NOT_NFC` only through `preflight(..., with_description=True)` on a synthetic tree. With `v07` published and mask folders `NA`, ` cells` and `Cafe\u0301` beside `nuclei` and `cells`, `run_experiment` refuses with `R_MASK_TYPE_NOT_DECLARED` (and `mask_missing`) but **not** `R_MASK_TYPE_NAME_INVALID` or `R_FOLDER_NOT_NFC` (my run on `a6a0343`; nothing renamed). Same source defect as P21 |
+| P29 | Passed | `test_spec_discovery` on `v07` published with mask folders `NA`, ` cells` and `Cafe\u0301` beside `nuclei` and `cells`: `test_p29_a_run_with_published_v07_refuses_the_mask_type_names` (`run_experiment` refuses with `R_MASK_TYPE_NAME_INVALID` naming ` cells`, `NA` and `R_FOLDER_NOT_NFC` naming `Cafe\u0301`, beside `R_MASK_TYPE_NOT_DECLARED`; nothing renamed), `test_p29_the_mask_step_refuses_the_names_with_a_published_description` (the step is not ready), `test_p29_the_command_line_check_and_masks_refuse_the_mask_type_names` (no `mask_relationships.json`); `test_notebook_name_refusals`: `test_p29_the_described_folder_check_refuses_the_mask_type_names`, `test_p29_pairing_the_masks_again_keeps_the_refusal`, `test_p21_p29_a_refused_name_blocks_check_and_save` (no `morphobricks.toml` is published, so the names never reach `E_ID_TEXT`). Without a description: the four `test_p21_p29_*_as_in_v0_4` above. Also the 5 synthetic-tree `test_p29_*`. Fixed in `0a2e25b` (on `a6a0343` the run gave only `R_MASK_TYPE_NOT_DECLARED`); the new tests fail on `c675f13` except those without a description |
 | P30 | Passed | `test_spec_derived_design`: `test_p30_the_derived_file_of_migrated_legacy_answers_differs_only_in_the_earlier_date` (`v13` tree, 2 cases): the `v13` legacy file migrated, answered with the proposed IDs and derived again is the legacy file byte for byte (and the golden); with `rep1` rows dated 2026-10-01 and 2026-10-15, the repeat takes 2026-10-15, the note lists both dates, and the derived file differs from the legacy file in one line only, the CTRL/rep1 date (the one-date groups `rep2`, `rep3` are byte-identical); under a frozen clock no clock is read. Also `test_draft`: `test_p30_a_group_with_two_dates_takes_the_latest_and_a_note_lists_both`, `test_a_confirmed_group_without_any_date_stays_open_and_takes_no_clock_date` |
 | P31 | Deferred to the Stage 2 gate per ADR 0001 GS1 (MorphoBricks-Spec `cdc1841`) | The outcome is MorphoCoverage's (prefill, confirmation). Preprocessing's own parts passed: `v27` valid with no warning, and editing `target` or `treatment_key` of `v27` changes no digest and no derived row (section 2 rows below) |
 | P32 | Passed | `test_draft`: `test_p32_forbidden_folders_get_no_proposal_and_nothing_is_adopted`, `test_p32_ordinary_folders_are_proposed_as_their_labels`; `test_spec_derived_design`: golden `v33`, `v34` and `test_the_file_names_folders_never_ids` |
@@ -146,14 +146,20 @@ Gate G1 scope, ADR 0001 GS1 (MorphoBricks-Spec `cdc1841`): P24, P27, P31 and the
 part of the section 2 "Provenance" row are deferred to the Stage 2 gate per ADR 0001 GS1
 (MorphoBricks-Spec `cdc1841`); nothing else is deferred. Against that scope this run shows:
 
-- P01-P20, P22, P23, P25, P26, P28, P30, P33-P35 passed on the fixtures the plan names. P32
+- P01-P23, P25, P26, P28-P30, P33-P35 passed on the fixtures the plan names. P32
   passed on trees with the `v33` and `v34` folders and on the `v33`, `v34` goldens. The section 2
   rows in the table above passed (Provenance: its `i99` part).
-- **P21 and P29 are not met on their named fixtures (`v01`, `v07`).** Their codes are produced
-  only by `preflight(..., with_description=True)`, which no production caller passes, so a run
-  with a published description does not report `R_FOLDER_NOT_NFC` or `R_MASK_TYPE_NAME_INVALID`
-  (it refuses with `R_UNIT_NOT_DECLARED` or `R_MASK_TYPE_NOT_DECLARED` instead). This is a
-  source defect, left for the owner: fixing it changes `src` and so moves `RELEASE_REF`.
+- P21 and P29, not met when measured on `a6a0343` (their codes came only from
+  `preflight(..., with_description=True)`, which no production caller passed), are met on `v01`
+  and `v07` since `0a2e25b`: the run, the mask step, the command line (`check`, `run`, `masks`,
+  `describe`) and the notebook's folder check refuse the names whenever a description is in use
+  (owner decision Q1), and *Check and save* does not publish while one is refused. Without a
+  published description the run, mask step and check are unchanged: the same trees run without
+  a description give byte-identical `plane_histograms.csv`, `mask_relationships.json`,
+  `experiment_design.csv` and reports on `c675f13` and `5cc3b07`, the manifests differing only in
+  `written_at` (and so the reports in the manifest's SHA-256); `test_parity_v0_4_0` (24) passed.
+  The command line's `describe` now refuses a decomposed folder (exit status 1) where it drafted it
+  before: it drafts a description, so section 3.3 applies.
 - The Colab and JupyterLab browser check is the owner's, before tagging.
 
 So this record does not by itself declare any reader conforming; deciding Gate G1 is the owner's.
