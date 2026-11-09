@@ -27,7 +27,6 @@ record because they match or differ; it reads the records in order, unchanged.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import tempfile
@@ -53,6 +52,8 @@ from ..description_transition import (
     unwaived,
 )
 from ..description_write import canonical_bytes
+from ..records_file import CODE as RECORDS_FILE_INVALID
+from ..records_file import RecordsIssue, check_records, encode_record
 from .description_records import image_count_records, removal_records
 from .lock import output_lock
 
@@ -71,42 +72,19 @@ class PublicationRefused(Exception):
         super().__init__(f"the description was not published: {shown}")
 
 
-RECORD_KEYS: dict[str, frozenset[str]] = {
-    "reconfirmation": frozenset(
-        {"type", "id_kind", "old_id", "new_id", "confirmed_on", "old_sha256", "new_sha256"}
-    ),
-    "image_count_changed": frozenset(
-        {
-            "type",
-            "condition_id",
-            "condition_source_folder",
-            "repeat_id",
-            "source_repeat",
-            "technical_repeats",
-            "old_image_count",
-            "new_image_count",
-            "recorded_on",
-        }
-    ),
-    "removed": frozenset(
-        {
-            "type",
-            "entity",
-            "condition_id",
-            "condition_source_folder",
-            "repeat_id",
-            "source_repeat",
-            "technical_repeat_id",
-            "technical_repeat_source_folder",
-            "confirmed_on",
-        }
-    ),
-}
-"""The key set of each record type (Spec experiment-v1 4.6): a line carries exactly these keys."""
-
-
 class RecordsFileError(OSError):
-    """Raised when ``morphobricks.records.jsonl`` cannot be appended to as it stands."""
+    """Raised when ``morphobricks.records.jsonl`` is refused (``R_RECORDS_FILE_INVALID``).
+
+    ``code`` is the catalogue code, ``issues`` every refusal and ``reasons`` their distinct
+    ``E_RECORDS_*`` names.
+    """
+
+    def __init__(self, issues: tuple[RecordsIssue, ...]) -> None:
+        self.code = RECORDS_FILE_INVALID
+        self.issues = issues
+        self.reasons = frozenset(issue.reason for issue in issues)
+        shown = "; ".join(f"{i.reason} at line {i.line}" for i in issues[:6])
+        super().__init__(f"{RECORDS_FILENAME} is refused ({self.code}): {shown}")
 
 
 @dataclass(frozen=True)
@@ -164,32 +142,14 @@ def read_records(output_folder: str | os.PathLike) -> tuple[dict, ...]:
     DescriptionError
         ``R_FILE_SYMLINK`` when the records file is a symbolic link.
     RecordsFileError
-        When a line is not a JSON object, is not one of the three Spec record types with exactly
-        that type's keys (4.6), or the last line is torn (no final newline).
+        ``R_RECORDS_FILE_INVALID`` (section 4.6) for every file the Spec's reference validator
+        refuses; ``reasons`` lists the ``E_RECORDS_*`` names, the message the first line of each.
     """
     data = read_file_bytes(Path(output_folder) / RECORDS_FILENAME)
-    if not data:
-        return ()
-    if not data.endswith(b"\n"):
-        raise RecordsFileError(f"{RECORDS_FILENAME} ends in the middle of a line")
-    try:
-        # Lines end at LF only (Spec 4.6): str.splitlines would also cut at U+2028, U+0085, ...
-        rows = tuple(json.loads(line) for line in data.decode("utf-8").split("\n")[:-1])
-    except ValueError as error:
-        raise RecordsFileError(f"{RECORDS_FILENAME} holds a line that is not JSON") from error
-    if not all(isinstance(row, dict) for row in rows):
-        raise RecordsFileError(f"{RECORDS_FILENAME} holds a line that is not an object")
-    for number, row in enumerate(rows, start=1):
-        keys = RECORD_KEYS.get(row.get("type")) if isinstance(row.get("type"), str) else None
-        if keys is None:
-            raise RecordsFileError(f"{RECORDS_FILENAME} line {number}: no known record type")
-        if set(row) != keys:
-            odd = sorted(set(row) ^ keys)
-            raise RecordsFileError(
-                f"{RECORDS_FILENAME} line {number}: a {row['type']} record has exactly the keys "
-                f"{sorted(keys)}; these differ: {odd}"
-            )
-    return rows
+    records, issues = check_records(data or b"")
+    if issues:
+        raise RecordsFileError(issues)
+    return records
 
 
 def _replace_file_durably(path: Path, data: bytes) -> None:
@@ -218,8 +178,7 @@ def _append_records(folder: Path, records: tuple[dict, ...]) -> None:
     read_records(folder)  # refuses a symbolic link and a torn or foreign file before writing
     path = folder / RECORDS_FILENAME
     current = read_file_bytes(path) or b""
-    lines = "".join(json.dumps(r, ensure_ascii=False, sort_keys=True) + "\n" for r in records)
-    _replace_file_durably(path, current + lines.encode("utf-8"))
+    _replace_file_durably(path, current + b"".join(encode_record(r) for r in records))
 
 
 def _compare(

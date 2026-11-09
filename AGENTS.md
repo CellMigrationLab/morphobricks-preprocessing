@@ -122,6 +122,9 @@ src/morphobricks_preprocessing/
   description_file.py   read_description(path): symlink refusal (R_FILE_SYMLINK), bytes -> Description
   run/description_file.py publish_description: lock, base SHA-256, strict re-read, transitions,
                     atomic write, append-only morphobricks.records.jsonl (Spec experiment-v1 4.6, 10)
+  records_file.py   pure checker of morphobricks.records.jsonl (Spec experiment-v1 4.6): check_records
+                    (bytes -> records + E_RECORDS_* issues), encode_record, RECORD_KEYS; read_records
+                    in run/description_file.py refuses with R_RECORDS_FILE_INVALID
   draft_ids.py         proposed IDs: the folder label or raw header name only when the reader would
                     accept it as written, else none (never repaired); draft.py the draft
                     (IdSlot proposed/confirmed, open questions, unit_rows with condition_id,
@@ -153,6 +156,10 @@ src/morphobricks_preprocessing/
                     calibration_differs_from_header); calibration_io.py reads/writes
                     calibration.csv strictly; run/calibrate.py write_calibration (locked)
   pixel_size_checks.py the §11 pixel-size checks on resolved sizes (moved from metadata.py)
+  image_consistency.py dtype_issues (mixed_dtypes) and arrangement_issues (missing_axes,
+                    inconsistent_dimensions), moved from metadata.py; unit_consistency.py the same
+                    checks per unit of a described run (#239): unit_checked (notebook folder
+                    check, inside each unit) and declared_type_issues (the run, per image_type)
   narrow_ranges.py  NarrowRange (moved from manifest.py)
   sources.py        check_sources (moved from manifest.py in PP-4)
   manifest_fields.py a file entry's position_id (required in v2, the name's: A-m5) and roles,

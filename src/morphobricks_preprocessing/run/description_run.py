@@ -30,6 +30,7 @@ from ..description_record import description_record, unit_records
 from ..description_run_text import heterogeneous_issue, physical_issue, reader_issue
 from ..mask_representation import NOT_CHECKED, file_status, read_checked
 from ..physical_check import PhysicalReport, check_physical
+from ..unit_consistency import declared_type_issues
 from ..validation import ValidationIssue, error
 from .description_file import RecordsFileError, read_records
 from .preflight import Preflight
@@ -81,8 +82,11 @@ def check_description(
 ) -> tuple[RunDescription, list[ValidationIssue]]:
     """Return the description with its physical report, and every refusal that applies.
 
-    The layouts are checked first and alone: with more than one layout the run stops with
-    ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` and the folder checks add nothing. The physical
+    The layouts are checked first: with more than one layout the run stops with
+    ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` and the physical checks do not run. The folder's
+    pixel-type and dimension checks apply per declared image type
+    (:func:`..unit_consistency.declared_type_issues`), so units of different image types
+    never produce ``mixed_dtypes`` or ``inconsistent_dimensions`` between them. The physical
     checks need the confirmed axis roles; without them they are not run (the run stops on
     the missing roles anyway) and the report is None, never a pass.
 
@@ -97,10 +101,11 @@ def check_description(
         None when no axis roles were confirmed.
     """
     layouts = declared_layouts(found.description)
+    units = declared_type_issues(found.description, pre)
     if is_heterogeneous(layouts):
-        return found, [heterogeneous_issue(layouts)]
+        return found, [heterogeneous_issue(layouts), *units]
     if roles is None:
-        return found, []
+        return found, units
     masks = pre.masks
     report = check_physical(
         found.description,
@@ -110,7 +115,7 @@ def check_description(
         roles={path: mapping.roles for path, mapping in roles.items()},
         mask_types=None if masks is None else masks.types,
     )
-    return replace(found, physical=report), [physical_issue(i) for i in report.issues]
+    return replace(found, physical=report), [*units, *(physical_issue(i) for i in report.issues)]
 
 
 GLOBAL_CHANNEL_CODES = frozenset({"channel_names_differ", "different_channel_counts"})
@@ -122,9 +127,25 @@ described run they are replaced by the per-unit checks (``R_CHANNEL_COUNT_MISMAT
 and by ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` for units with different channel lists."""
 
 
+GLOBAL_UNIT_CODES = frozenset({"mixed_dtypes", "inconsistent_dimensions"})
+"""The v0.4 folder checks that compare pixel types and dimensions across the whole experiment.
+
+A description declares each unit's ``image_type``; they are replaced by the same checks per
+declared image type (:func:`..unit_consistency.declared_type_issues`; the axis review checks the
+arrangement of dimensions). Units of different image types are then refused as a layout
+(``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``), not by these."""
+
+
 def without_global_channel_checks(issues: Iterable[ValidationIssue]) -> list[ValidationIssue]:
-    """Return ``issues`` without the experiment-wide channel checks (described runs only)."""
-    return [issue for issue in issues if issue.code not in GLOBAL_CHANNEL_CODES]
+    """Return ``issues`` without the experiment-wide checks a description replaces.
+
+    These are the channel checks (:data:`GLOBAL_CHANNEL_CODES`) and the pixel-type and
+    dimension checks of every image of the experiment (``mixed_dtypes``,
+    ``inconsistent_dimensions``), which :func:`check_description` makes per declared image
+    type. Described runs only.
+    """
+    dropped = GLOBAL_CHANNEL_CODES | GLOBAL_UNIT_CODES
+    return [issue for issue in issues if issue.code not in dropped]
 
 
 def checked_description(output: Path, pre: Preflight, checked: Checked) -> RunDescription | None:
