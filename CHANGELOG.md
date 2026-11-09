@@ -34,6 +34,12 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   order (`rep2` before `rep10`, the folder breaking a tie) in the run plots and legends, the
   replicate blocks, the names rows and the short names: display only. Texts no longer name the old
   steps 1-4 (the results page, the design card, the mask step, the design messages).
+- **Described runs with several layouts report `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` first (#245).**
+  The run lists it before the axis review's issues, and the arrangement issues
+  (`inconsistent_mapping`, `missing_axes`, `ambiguous_missing_axes`) no longer advise exporting the
+  images the same way: they stay errors and say they follow from the layouts. The notebook's axis
+  step says that no roles are suggested because the units declare different layouts (fluorescence
+  and RGB). The refusal codes are unchanged: nothing refused before is accepted.
 - **Notebook: one step at a time (UX proposal 2026-11-09, PR 17a).** `PreprocessingNotebook.steps()`
   shows the shipped notebook's 13 steps one at a time, with a strip of chips (done green with a tick,
   current blue, to do grey, changed by a reopen orange; a chip opens its step) and Back/Next (Next is
