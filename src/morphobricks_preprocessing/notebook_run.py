@@ -31,6 +31,7 @@ from .notebook_render import _bins_help, _label, change_lines, issues_html
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import issue_counts, rebuild_line
 from .run import RESTART, Preflight, RunMode, RunResult, run_experiment
+from .run_labels import recorded_labels
 from .validation import has_errors, plural
 
 
@@ -83,7 +84,7 @@ class _RunStep:
             self.mode,
             self.verify_content,
         ):
-            control.observe(lambda _: self._refresh_run_step(), names="value")
+            control.observe(lambda _: self._settings_edited(), names="value")
         self.histogram_range.observe(
             lambda change: ui.set_visible(self.robust_box, change["new"] == "robust"), names="value"
         )
@@ -212,6 +213,16 @@ class _RunStep:
         )
         self._refresh_run_step()
 
+    def _settings_edited(self) -> None:
+        """Show "What will happen" again after a setting changed: it plans the next run."""
+        self._plan_for_next_run = True
+        self._refresh_run_step()
+
+    def _refresh_plan_card(self) -> None:
+        """Hide "What will happen" after a run until a setting changes: it plans a *next* run."""
+        done = self.result is not None and self.result.written
+        ui.set_visible(self.plan_card, not done or getattr(self, "_plan_for_next_run", False))
+
     def _refresh_run_step(self) -> None:
         """Update what is still to do before the run, and what will happen."""
         if self.result is None:
@@ -260,6 +271,7 @@ class _RunStep:
         self.readiness.value = title + ui.checklist(items)
         self.run_button.disabled = bool(missing)
         self.plan.value = self._plan_html(review if folder_ok else None)
+        self._refresh_plan_card()
         self._refresh_mask_step()
 
     def _design_items(self) -> list[tuple[bool, str]]:
@@ -348,6 +360,8 @@ class _RunStep:
 
     def _finish_run(self, result: RunResult) -> None:
         """Show what the run did and, when it wrote the table, its intensity checks."""
+        self._plan_for_next_run = False
+        self._refresh_plan_card()
         self._show_run_result(result)
         if result.written:
             self._recorded_after_run()
@@ -427,7 +441,7 @@ class _RunStep:
             ("✏️", f"{len(result.changed):,}", "changed images"),
             ("🗑️", f"{len(result.removed):,}", "images removed"),
             ("⛔", f"{len(result.excluded):,}", "excluded images"),
-            ("⚠️", issue_counts(result.issues), "checks"),
+            ("⚠️" if result.issues else "✅", issue_counts(result.issues), "checks"),
         ]
         self.run_tiles.value = ui.tiles(tiles)
 
@@ -435,7 +449,7 @@ class _RunStep:
         """Show the intensity checks and plots of the table the run wrote."""
         try:
             with self.log.attached():
-                self.run_checks.show(read_plane_histograms(path))
+                self.run_checks.show(read_plane_histograms(path), recorded_labels(path.parent))
         except Exception as exc:  # the table is written; only the checks failed
             self.log.lines.append(traceback.format_exc())
             self.run_checks.fail(exc)

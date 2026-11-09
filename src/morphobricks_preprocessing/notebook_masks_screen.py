@@ -25,6 +25,7 @@ from .mask_answers import (
     drawn_on,
     dropped_channels,
     mask_ids,
+    mask_kinds,
     masks_unanswered,
     masks_without_files,
     without_mask,
@@ -264,6 +265,11 @@ class _MasksScreen:
         """
         answers = getattr(self, "draft_answers", None)
         return None if answers is None else mask_ids(answers)
+
+    def _mask_kinds(self) -> dict[str, str] | None:
+        """Return what the user declared each mask type to be (objects or regions), or None."""
+        answers = getattr(self, "draft_answers", None)
+        return None if answers is None else mask_kinds(answers)
 
     def _masks_answered(self) -> None:
         """Take *Check and save* into account after a mask answer."""

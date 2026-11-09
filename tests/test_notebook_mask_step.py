@@ -144,9 +144,9 @@ def test_describe_the_masks_reuses_the_ids_of_your_masks_and_asks_no_name(tmp_pa
     status, shown = nb.mask_step_status.value, nb.mask_step_result.value
     assert "name each mask" not in status
     assert "keeps the ID it was given on Your masks" in status
-    assert "<th>Mask ID</th>" in shown
-    assert "<td>nuclei</td><td>Nuclei_seg</td><td>one object per label</td>" in shown
-    assert "<td>cells</td><td>not described yet</td>" in shown
+    assert "<th>Mask</th><th>Declared kind</th><th>Kind (suggested)</th>" in shown
+    assert "<td>Nuclei_seg (nuclei)</td><td>objects</td><td>one object per label</td>" in shown
+    assert "<td>cells</td><td>not described yet</td><td>" in shown
 
 
 def test_a_child_equally_in_two_parents_is_shown_with_no_parent(tmp_path):
