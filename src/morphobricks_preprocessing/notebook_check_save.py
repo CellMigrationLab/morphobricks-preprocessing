@@ -40,6 +40,7 @@ from .draft_answers import (
 )
 from .draft_format import DraftFileError
 from .mask_answers import masks_unanswered
+from .name_issues import NAME_CODES
 from .notebook_channel_thumbs import Thumb
 from .notebook_check_view import (
     SAME_WAY,
@@ -238,6 +239,14 @@ class _CheckSaveScreen:
             ]
         if self._design_folder() is None:
             extra.append("an output folder that can be written (step 1)")
+        # Spec experiment-v1 section 3.3 and AQ11: names refused at discovery block the save.
+        found = () if self.preflight is None else self.preflight.issues
+        refused = {i.code for i in found if i.code in NAME_CODES}
+        extra += [
+            f"the folder or mask type names that step 1 refuses ({code}): rename them on disk "
+            "and check the folder again"
+            for code in sorted(refused)
+        ]
         return questions, extra
 
     def _candidate_check(self, answers: object) -> CandidateCheck | None:

@@ -36,7 +36,7 @@ from ..masks import MaskInventory
 from ..validation import ValidationIssue, has_errors
 from .description_run import load_description
 from .lock import OutputLockedError, lock_issue, output_lock
-from .preflight import Preflight, preflight
+from .preflight import Preflight, description_in_use, preflight
 from .recorded import GivenInputs, InputChange, resolve_inputs, usable
 from .reuse import read_previous, recorded_experiment_root
 
@@ -201,6 +201,7 @@ def prepare_mask_step(
         masks_folder=resolved.masks_folder,
         mask_axes=resolved.mask_axes,
         bind_headers=True,
+        with_description=description_in_use(root, output),
     )
     pre = replace(pre, masks=pre.masks or MaskInventory(folder=None))  # none found
     return MaskStep(

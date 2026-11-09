@@ -55,6 +55,7 @@ from .report import (
 from .run import MODES, RESTART, Preflight, RunMode, preflight, run_experiment
 from .run.lock import OutputLockedError, lock_issue, output_lock
 from .run.output_guard import output_masks_issues
+from .run.preflight import description_in_use
 from .run.recorded import usable
 from .run.reuse import read_previous, recorded_experiment_root
 from .validation import ValidationIssue, has_errors
@@ -107,6 +108,7 @@ def command_preflight(args: argparse.Namespace) -> Preflight:
         exclude=args.exclude,
         masks_folder=args.masks,
         mask_axes=args.mask_axes,
+        with_description=description_in_use(args.experiment, args.output),
     )
 
 

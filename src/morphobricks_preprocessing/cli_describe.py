@@ -4,7 +4,8 @@
 about the experiment description (experiment-v1) in plain language: the IDs proposed for
 the conditions, technical repeats and biological repeats, the repeats and their folders, the
 references, and every question still open. It reads the folder structure and nothing else (no
-image is opened, no pixel read) and writes nothing.
+image is opened, no pixel read) and writes nothing. A folder label that is not Unicode NFC is
+refused (``R_FOLDER_NOT_NFC``, experiment-v1 section 3.3): nothing is drafted from it.
 
 The draft comes from the existing functions only: the legacy ``experiment_design.csv`` of the
 output folder, when there is one and no published description, is migrated
@@ -44,6 +45,7 @@ from .design import DESIGN_FILENAME, DesignFormatError
 from .discovery import DiscoveryResult, default_output_folder, discover_experiment
 from .draft import Draft, DraftError, draft_from_discovery, migrate_legacy_design
 from .draft_ids import IdKind, id_problems
+from .name_issues import non_nfc_folders_issue
 from .report import format_issues
 from .run.description_run import load_description
 from .run.recorded import normalise_relative_path
@@ -115,11 +117,14 @@ def describe_command(args: argparse.Namespace) -> int:
     output = Path(args.output).resolve() if args.output else default_output_folder(root)
     excluded = sorted({normalise_relative_path(path) for path in args.exclude})
     discovery = discover_experiment(root, output)
-    if has_errors(discovery.issues):
-        print(format_issues(discovery.issues))
+    # A description is drafted from the folders: a label that is not NFC is refused (Spec
+    # experiment-v1 section 3.3), never normalized or renamed.
+    issues = [*discovery.issues, *non_nfc_folders_issue(discovery.leaves)]
+    if has_errors(issues):
+        print(format_issues(issues))
         return 1
-    if discovery.issues:
-        print(format_issues(discovery.issues), end="\n\n")
+    if issues:
+        print(format_issues(issues), end="\n\n")
     found, problems = load_description(output)
     if problems:
         print(format_issues(problems))

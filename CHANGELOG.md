@@ -16,6 +16,18 @@ installs `v0.5.0` (its `RELEASE_REF` is the release-preparation commit), and the
 of this release candidate is in `docs/conformance.md`. The normalization brick stays pinned at
 v0.3.4.
 
+- **Fixed: `R_FOLDER_NOT_NFC` and `R_MASK_TYPE_NAME_INVALID` on the production paths
+  (conformance P21, P29).** They were raised only by `preflight(..., with_description=True)`,
+  which no production caller passed, so a run with a published `morphobricks.toml` refused a
+  decomposed folder only as `R_UNIT_NOT_DECLARED`, and the mask types `NA`, ` cells` and a
+  decomposed name only as `R_MASK_TYPE_NOT_DECLARED`. Now `run_experiment`, the mask step
+  (`prepare_mask_step`, the command line's `masks`) and the command line's `check` and `run`
+  pass `with_description` whenever the output folder holds a published description
+  (`run.preflight.description_in_use`); the notebook's folder check and its re-pairing of the
+  masks also pass it while the user describes the experiment, and *Check and save* is blocked
+  while either refusal stands; the command line's `describe` refuses a folder label that is not
+  NFC instead of drafting it. Nothing is renamed or normalized. A run, mask step or check
+  without a published description is unchanged (owner decision Q1).
 - **Notebook: folder pictures with a 1:1 crop, "Tag like the saved group", colour mask evidence
   (PR 17c).** *Images found* adds a picture of each folder's first image to the labels table,
   from the file header only and display only (`header_preview`, `notebook_folder_previews`):
