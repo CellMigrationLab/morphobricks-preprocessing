@@ -8,6 +8,12 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Described runs with several layouts report `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` first (#245).**
+  The run lists it before the axis review's issues, and the arrangement issues
+  (`inconsistent_mapping`, `missing_axes`, `ambiguous_missing_axes`) no longer advise exporting the
+  images the same way: they stay errors and say they follow from the layouts. The notebook's axis
+  step says that no roles are suggested because the units declare different layouts (fluorescence
+  and RGB). The refusal codes are unchanged: nothing refused before is accepted.
 - **Re-pin the vendored Spec to 1bed024 (MorphoBricks-Spec PR 16, owner decisions RF1 to RF6);
   `read_records` follows section 4.6.** The Spec now fixes the bytes and values of
   `morphobricks.records.jsonl` and names one refusal, `R_RECORDS_FILE_INVALID`, with the reasons

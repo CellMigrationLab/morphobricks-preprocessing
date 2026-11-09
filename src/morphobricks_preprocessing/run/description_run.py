@@ -29,7 +29,7 @@ from ..description_layouts import declared_layouts, is_heterogeneous
 from ..description_record import description_record, unit_records
 from ..description_run_text import heterogeneous_issue, physical_issue, reader_issue
 from ..mask_representation import NOT_CHECKED, file_status, read_checked
-from ..physical_check import PhysicalReport, check_physical
+from ..physical_check import HETEROGENEOUS_LAYOUT, PhysicalReport, check_physical
 from ..unit_consistency import declared_type_issues
 from ..validation import ValidationIssue, error
 from .description_file import RecordsFileError, read_records
@@ -163,7 +163,38 @@ def checked_description(output: Path, pre: Preflight, checked: Checked) -> RunDe
     roles = None if checked.review is None else checked.review.file_mappings
     found, refused = check_description(found, pre, roles)
     checked.issues.extend(refused)
+    checked.issues[:] = heterogeneous_first(checked.issues)
     return found
+
+
+SECONDARY_CODES = frozenset({"inconsistent_mapping", "missing_axes", "ambiguous_missing_axes"})
+"""The axis review's arrangement codes, whose advice is to export the images again."""
+
+SECONDARY_ADVICE = (
+    "Do not export the images again for this: it follows from the different layouts "
+    f"({HETEROGENEOUS_LAYOUT}, listed first). This version runs one layout per experiment."
+)
+
+
+def heterogeneous_first(issues: Iterable[ValidationIssue]) -> list[ValidationIssue]:
+    """Put the layout refusal first and make the axis review's arrangement issues secondary.
+
+    With several layouts the arrangement of dimensions differs between units by design, so the
+    axis review's arrangement issues (:data:`SECONDARY_CODES`) are a consequence, and
+    exporting the images the same way would not help: their advice is replaced. Only the order
+    and the advice change: no issue is added, removed or turned into a warning, so the run
+    refuses exactly as before.
+    """
+    found = list(issues)
+    layout = [i for i in found if i.code == HETEROGENEOUS_LAYOUT]
+    if not layout:
+        return found
+    rest = [
+        replace(i, action=SECONDARY_ADVICE) if i.code in SECONDARY_CODES else i
+        for i in found
+        if i.code != HETEROGENEOUS_LAYOUT
+    ]
+    return [*layout, *rest]
 
 
 def mask_records(
