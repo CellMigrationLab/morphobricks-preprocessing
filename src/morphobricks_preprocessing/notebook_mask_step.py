@@ -242,6 +242,7 @@ class _MaskStepCard:
             ],
             raw=True,
         )
+        kinds = self._mask_kinds()
         relationships = mask_relationship_rows(report)
         same = "".join(
             f"<li>{html.escape(first)} and {html.escape(second)}</li>"
@@ -250,7 +251,10 @@ class _MaskStepCard:
         hierarchy = html.escape("\n".join(mask_hierarchy_lines(report)))
         parts = [
             _heading("Mask types (suggestions to check)"),
-            ui.table(mask_type_rows(report, self._mask_ids()), numeric_from=3),
+            ui.table(
+                mask_type_rows(report, self._mask_ids(), kinds),
+                numeric_from=2 if kinds is None else 3,  # from the Images column
+            ),
             _heading("Relationships found (suggestions to check)"),
             ui.table(relationships, numeric_from=3)
             if len(relationships) > 1

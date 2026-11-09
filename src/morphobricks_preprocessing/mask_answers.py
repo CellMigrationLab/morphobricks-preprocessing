@@ -51,6 +51,15 @@ def mask_of_type(answers: DraftAnswers, source_type: str) -> tuple[str, MaskAnsw
     return None
 
 
+KIND_WORDS = {INSTANCES: "objects", BINARY: "regions"}
+"""The words the notebook uses for the two answers: separate objects, or regions."""
+
+
+def mask_kinds(answers: DraftAnswers) -> dict[str, str]:
+    """Return what the user declared each answered mask type to be: objects or regions."""
+    return {mask.source_type: KIND_WORDS[mask.representation] for mask in answers.masks.values()}
+
+
 def mask_ids(answers: DraftAnswers) -> dict[str, str]:
     """Return the mask ID of every answered mask type, by mask type."""
     return {mask.source_type: key for key, mask in answers.masks.items()}
@@ -186,10 +195,12 @@ def drawn_on(answers: DraftAnswers, source_type: str, unit: UnitKey | None) -> i
 __all__ = [
     "BINARY",
     "INSTANCES",
+    "KIND_WORDS",
     "MaskAnswerRefused",
     "drawn_on",
     "dropped_channels",
     "mask_ids",
+    "mask_kinds",
     "mask_of_type",
     "masks_unanswered",
     "masks_without_files",
