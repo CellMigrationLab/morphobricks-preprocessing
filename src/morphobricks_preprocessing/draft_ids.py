@@ -22,7 +22,7 @@ from .description_identity import Identities, nfc
 from .description_report import Issues
 from .description_rules import FORBIDDEN, RGB_TOKENS, Code
 
-IdKind = Literal["conditions", "channels", "repeats", "technical_repeats"]
+IdKind = Literal["conditions", "channels", "repeats", "technical_repeats", "masks"]
 REUSED = "R_USED_ID_REUSED"
 """Reported for a value that is already in ``used_ids``: it names a retired or declared ID."""
 
@@ -32,7 +32,8 @@ def id_problems(kind: IdKind, value: str, used: Collection[str] = ()) -> tuple[s
 
     The Label rules, NFC and the ``single`` rule for every kind; the forbidden names (section
     4.7, compared exactly) for every ID, since each is a table key; the Token rule and the
-    reserved list for channels. ``used`` holds the IDs of that kind the lineage already lists
+    reserved list for channels; for masks the Token rule and the reserved list with the object-set
+    part ``in`` (section 3.2). ``used`` holds the IDs of that kind the lineage already lists
     (``used_ids``): a value equal ignoring case to one is ``E_ID_CASE_COLLISION``, and equal
     exactly is ``R_USED_ID_REUSED`` (section 4.9).
 
@@ -41,11 +42,11 @@ def id_problems(kind: IdKind, value: str, used: Collection[str] = ()) -> tuple[s
     """
     out = Issues()
     ids = Identities(out)
-    if kind == "channels":
+    if kind in ("channels", "masks"):
         ids.token(value, "id")
         ids.nfc(value, "id")
         ids.single(value, "id")
-        ids.reserved(value, "id")
+        ids.reserved(value, "id", object_set=kind == "masks")
     else:
         ids.label_id(value, "id", kind)
     codes = [issue.code.value for issue in out.items]
@@ -62,7 +63,9 @@ def propose_id(kind: IdKind, label: str, used: Collection[str] = ()) -> str | No
     """Return the folder ``label`` as the proposed ID of ``kind``, or None when it is not allowed.
 
     Applies to conditions, technical repeats and, as the owner decided (Q6), biological repeats:
-    for ``control``, ``files`` or ``z`` there is no proposal. Never a repaired spelling.
+    for ``control``, ``files`` or ``z`` there is no proposal; and to masks, whose ID is the mask
+    type's folder name when it is a valid mask ID (``nuclei``, not ``nuclei-mask`` or ``cell``).
+    Never a repaired spelling.
     """
     if kind == "channels":
         raise ValueError("a channel ID is proposed from a header name: use propose_channel_ids")

@@ -90,14 +90,28 @@ def mask_thresholds_used(report: MaskReport) -> str:
     return ", ".join(changed) + "; the others the defaults" if changed else "the defaults"
 
 
-def mask_type_rows(report: MaskReport) -> list[list[str]]:
-    """Return the mask types as table rows, header first: kind, images, objects, pieces."""
-    rows = [["Mask type", "Kind (suggested)", "Images", "Objects", "Median pieces per label"]]
+NOT_DESCRIBED = "not described yet"
+"""What the mask ID column says for a mask type the experiment description does not declare."""
+
+
+def mask_type_rows(report: MaskReport, ids: Mapping[str, str] | None = None) -> list[list[str]]:
+    """Return the mask types as table rows, header first: kind, images, objects, pieces.
+
+    With ``ids`` (mask type -> mask ID, from *Your masks* or the published description) a
+    *Mask ID* column follows the type: the masks are named there, never here.
+    """
+    named = ids is not None
+    rows = [
+        ["Mask type", *(["Mask ID"] if named else []), "Kind (suggested)", "Images", "Objects"]
+        + ["Median pieces per label"]
+    ]
     for name, summary in sorted(report.types.items()):
         kind = _MASK_KINDS[summary.kind]
         numbers = (summary.images, summary.objects)
+        mask_id = [ids.get(name, NOT_DESCRIBED)] if named else []
         rows.append(
-            [name, kind, *(f"{n:,}" for n in numbers), f"{summary.median_pieces_per_label:g}"]
+            [name, *mask_id, kind, *(f"{n:,}" for n in numbers)]
+            + [f"{summary.median_pieces_per_label:g}"]
         )
     return rows
 

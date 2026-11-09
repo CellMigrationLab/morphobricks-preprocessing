@@ -132,6 +132,23 @@ def test_describe_the_masks_writes_the_report_and_shows_the_cards(tmp_path, caps
     }
 
 
+def test_describe_the_masks_reuses_the_ids_of_your_masks_and_asks_no_name(tmp_path):
+    # Stage 1 PR 16: masks are named once, on Your masks; step 3 shows those IDs.
+    root = experiment(tmp_path)
+    nb, _ = ran(root, nested_masks(tmp_path))
+    question = nb.mask_card.questions["nuclei"]
+    question.id_box.value = "Nuclei_seg"
+    question.choice.value = "instances"
+    assert nb.run().written
+    nb.mask_step_button.click()
+    status, shown = nb.mask_step_status.value, nb.mask_step_result.value
+    assert "name each mask" not in status
+    assert "keeps the ID it was given on Your masks" in status
+    assert "<th>Mask ID</th>" in shown
+    assert "<td>nuclei</td><td>Nuclei_seg</td><td>one object per label</td>" in shown
+    assert "<td>cells</td><td>not described yet</td>" in shown
+
+
 def test_a_child_equally_in_two_parents_is_shown_with_no_parent(tmp_path):
     # Plan §12 question 74: a tie gives no parent, and the card names the objects.
     root = experiment(tmp_path)

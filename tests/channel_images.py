@@ -55,6 +55,39 @@ def cells(seed: int, size: int = SIZE) -> np.ndarray:
 KINDS = {"blobs": blobs, "filaments": filaments, "cells": cells}
 
 
+def blob_labels(seed: int, size: int = SIZE) -> np.ndarray:
+    """Return the discs of ``blobs(seed)`` as numbered objects 1..7 (uint16), as a segmentation."""
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[:size, :size]
+    rng.normal(300, 20, (size, size))  # the same draws as blobs, so the discs line up
+    labels = np.zeros((size, size), np.uint16)
+    for number in range(1, 8):
+        cy, cx, r = rng.uniform(8, size - 8), rng.uniform(8, size - 8), rng.uniform(4, 8)
+        labels[(yy - cy) ** 2 + (xx - cx) ** 2 <= (r * 0.9) ** 2] = number
+    return labels
+
+
+def region(seed: int, size: int = SIZE) -> np.ndarray:
+    """Return the bright part of ``cells(seed)`` as a 0/1 region (uint8)."""
+    haze = cells(seed, size)
+    return (haze > np.percentile(haze, 60)).astype(np.uint8)
+
+
+def write_masks(masks: str | Path, images: dict[str, int], kinds: dict[str, str]):
+    """Write one mask per image and kind: ``kinds`` maps a mask type to ``labels`` or ``region``.
+
+    ``images`` maps an image path (relative, as in the experiment) to the seed it was written with.
+    """
+    masks = Path(masks)
+    for rel, seed in images.items():
+        for mask_type, kind in kinds.items():
+            data = blob_labels(seed) if kind == "labels" else region(seed + 2)
+            path = masks / mask_type / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tifffile.imwrite(path, data, metadata={"axes": "YX"}, photometric="minisblack")
+    return masks
+
+
 def write_channels(
     path: str | Path,
     names: list[str | None] | None,

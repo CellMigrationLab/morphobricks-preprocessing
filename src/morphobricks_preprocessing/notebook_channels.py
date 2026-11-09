@@ -93,6 +93,7 @@ class _ChannelsStep:
         self.channel_labels.close()
         self.channel_grid.close()
         self.channels_waiting.value = why
+        self._refresh_masks_screen()
 
     def _refresh_channels(self) -> None:
         """Open the screen for the checked folder once its draft and axis roles are known."""
@@ -126,6 +127,7 @@ class _ChannelsStep:
         slots, names = slot_count(pre.metadata, review), header_names(pre.metadata)
         key = (str(pre.discovery.root), self.confirmed_mapping, layouts, slots, tuple(names))
         if key == self._channels_key:
+            self._refresh_masks_screen()
             return
         self._channels_key = key
         self._channel_layouts = layouts
@@ -142,6 +144,7 @@ class _ChannelsStep:
             )
         else:
             self.channel_grid.close()
+        self._refresh_masks_screen()
 
     def _types_changed(self) -> None:
         """Redraw the grid after an image type (its rows hold the type cells)."""
@@ -152,6 +155,7 @@ class _ChannelsStep:
         """Take the notebook's later steps into account after a tag or an image type."""
         if self.confirmed_mapping is not None:
             self._refresh_axis_next()
+        self._refresh_masks_screen()
 
 
 __all__ = ["_ChannelsStep"]
