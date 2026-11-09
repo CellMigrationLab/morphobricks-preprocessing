@@ -66,13 +66,16 @@ class ObservedUnit:
     ``channel_count`` and ``header_names`` (raw names by C index, None where there is none) are
     None when the headers were not read or do not state them: that is not evidence of a change.
     ``uniform`` is False when the unit's headers disagree with each other (it is no longer one
-    layout): its channel evidence then no longer fits its declared channel list.
+    layout): its channel evidence then no longer fits its declared channel list. ``rgb`` is
+    whether the headers state a colour (RGB) image, None when they were not read or do not say
+    (OME-Zarr): a declared image type the headers now contradict is a channel change.
     """
 
     image_count: int
     channel_count: int | None = None
     header_names: tuple[str | None, ...] | None = None
     uniform: bool = True
+    rgb: bool | None = None
 
     def __post_init__(self) -> None:
         if self.image_count < 1:
@@ -229,6 +232,8 @@ def _channels_differ(
     unit = published.unit
     if not seen.uniform:
         return True
+    if seen.rgb is not None and seen.rgb != (unit.image_type == "rgb"):
+        return True  # as the run's checks compare it (IMAGE_TYPE_CONTRADICTS_HEADER)
     if seen.channel_count is not None and seen.channel_count != len(unit.channels):
         return True
     if seen.header_names is None or unit.image_type == "rgb":

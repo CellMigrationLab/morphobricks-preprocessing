@@ -3,9 +3,9 @@
 How many images each unit has now and, when the caller gives the image headers already read
 (the preflight's), the channel evidence those headers state: the channel count and the raw
 header names by C index (:func:`.physical_check.layout_of`, without axis roles: a count the
-header leaves open stays unknown). A unit whose readable headers disagree with each other is
-marked not uniform. Nothing is read from an image here, and no unit is renamed or matched by
-similarity.
+header leaves open stays unknown) and whether they state a colour (RGB) image. A unit whose
+readable headers disagree with each other is marked not uniform. Nothing is read from an image
+here, and no unit is renamed or matched by similarity.
 """
 
 from __future__ import annotations
@@ -14,19 +14,21 @@ from collections.abc import Collection, Iterable
 
 from .description_reconcile import ObservedUnit, UnitFolders
 from .discovery import DiscoveryResult
-from .metadata import TiffMetadata
+from .metadata import OME_ZARR, TiffMetadata
 from .physical_check import layout_of
 
 
 def _evidence(paths: Iterable[str], metas: dict[str, TiffMetadata], count: int) -> ObservedUnit:
     """Return one unit's observation from the headers of its readable images."""
-    layouts = {layout_of(metas[p]) for p in paths if p in metas and metas[p].readable}
+    readable = [metas[p] for p in paths if p in metas and metas[p].readable]
+    layouts = {layout_of(meta) for meta in readable}
     if not layouts:
         return ObservedUnit(count)  # no header read: no evidence, never assumed unchanged
     if len(layouts) > 1:
         return ObservedUnit(count, uniform=False)
     (layout,) = layouts
-    return ObservedUnit(count, layout.channels, layout.names or None)
+    rgb = None if any(meta.kind == OME_ZARR for meta in readable) else layout.rgb
+    return ObservedUnit(count, layout.channels, layout.names or None, rgb=rgb)
 
 
 def observe_folders(
