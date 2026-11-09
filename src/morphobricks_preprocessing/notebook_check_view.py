@@ -11,7 +11,7 @@ from collections.abc import Sequence
 
 from . import notebook_style as ui
 from .description_candidate import CandidateCheck
-from .description_reconcile import Reconciliation, UnitFolders
+from .description_reconcile import CHANNELS_CHANGED, Reconciliation, UnitFolders
 from .description_removal import RemovalQuestion
 from .description_review import MemberView, ReplicateView, unit_text
 from .draft import OpenQuestion
@@ -164,12 +164,18 @@ def _folders(unit: UnitFolders) -> str:
 
 
 def changes_html(rec: Reconciliation) -> str:
-    """Say in orange what changed in the folders since the description was saved."""
+    """Say in orange what changed in the folders (or their headers) since the save."""
     lines = [f"new: {_folders(u.folders)} · {plural(u.image_count or 0, 'image')}" for u in rec.new]
     lines += [f"removed: {_folders(u.folders)}" for u in rec.removed]
     lines += [
         f"{c.repeat_id} / {c.condition_id}: {c.before} images saved, {c.after} now"
         for c in rec.counts
+    ]
+    lines += [
+        f"headers changed: {_folders(u.folders)} · its image headers no longer fit the saved "
+        "channels (the run's checks say which)"
+        for u in rec.unchanged
+        if CHANNELS_CHANGED in u.reasons
     ]
     if not lines:
         return ""

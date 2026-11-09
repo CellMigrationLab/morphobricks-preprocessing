@@ -64,7 +64,7 @@ class _DescribedRun:
         if getattr(self, "_published_key", None) != key:
             self._published_key = key
             self._published_cache, self._published_problem = published_state(
-                output, pre.discovery, pre.excluded
+                output, pre.discovery, pre.excluded, pre.metadata.files
             )
         return self._published_cache
 

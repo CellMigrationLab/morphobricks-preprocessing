@@ -107,3 +107,61 @@ def test_a_role_edited_on_a_reopen_is_kept_not_put_back_to_the_run_s_roles(exp):
     assert nb.confirmed_mapping is None
     nb.role_dropdowns[0].value = "C"  # back to the recorded roles: offered again, not confirmed
     assert nb._quick_offer is not None and nb.confirmed_mapping is None
+
+
+def test_a_preview_that_cannot_be_read_is_not_confirmed_by_one_click(exp, monkeypatch):  # noqa: F811
+    # Regression (batch 34b BLOCKER 3): the headers are readable but the pixels are not; the
+    # card still offered the click, and the click set "the preview looks right" on no preview.
+    from morphobricks_preprocessing import notebook_axis_preview
+    from morphobricks_preprocessing.planes import PlaneReadError
+
+    def broken(*_args, **_kwargs):
+        raise PlaneReadError("the pixels cannot be decoded")
+
+    monkeypatch.setattr(notebook_axis_preview, "read_plane", broken)
+    nb = stepper(*exp)
+    assert nb._quick_offer is not None and ui.is_visible(nb.quick_card)
+    assert nb.preview_image.value == b"" and nb.quick_image.value == b""
+    assert not ui.is_visible(nb.quick_image)  # no image is shown
+    assert "the pixels cannot be decoded" in nb.quick_caption.value  # the failure stays visible
+    assert "This plane cannot be shown with these roles." in nb.quick_caption.value
+    assert nb.quick_confirm.disabled
+    assert not nb._confirm_quick_axes()  # even a click that reaches it is refused
+    assert nb.confirmed_mapping is None and not nb.preview_checked.value
+    assert "the pixels cannot be decoded" in nb.quick_caption.value
+
+
+def test_a_preview_that_fails_later_withdraws_the_click(exp, monkeypatch):  # noqa: F811
+    from morphobricks_preprocessing import notebook_axis_preview
+    from morphobricks_preprocessing.planes import PlaneReadError
+
+    nb = stepper(*exp)
+    assert not nb.quick_confirm.disabled  # a preview of these roles is shown
+    monkeypatch.setattr(
+        notebook_axis_preview,
+        "read_plane",
+        lambda *_a, **_k: (_ for _ in ()).throw(PlaneReadError("gone")),
+    )
+    nb._render_preview()  # e.g. another plane chosen: it cannot be read
+    assert not nb._confirm_quick_axes()
+    assert nb.confirmed_mapping is None and not nb.preview_checked.value
+
+
+def test_a_header_change_does_not_offer_the_earlier_run_s_roles(exp):  # noqa: F811
+    # Regression (batch 34b FILE 3): headers rewritten with other channel names (same files,
+    # shape and count) still offered "the roles the earlier run recorded".
+    from channel_images import write_channels
+    from test_notebook_check_save import KINDS
+
+    first = stepper(*exp)
+    first.quick_confirm.click()
+    answer_all(first)
+    assert first.save_experiment()
+    assert first.run().written
+    root, _, _ = exp
+    write_channels(root / "ctrl/rep1/a.tif", ["Actin", "DAPI", "Ch3"], KINDS, seed=1)
+    nb = stepper(*exp)
+    assert nb._saved_axes() is None
+    assert "the earlier run of this experiment recorded" not in nb.quick_text.value
+    assert "image headers changed since the experiment was saved" in nb.quick_text.value
+    assert nb.confirmed_mapping is None and not nb.preview_checked.value  # never automatic

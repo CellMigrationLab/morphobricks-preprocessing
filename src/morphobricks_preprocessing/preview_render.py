@@ -112,9 +112,9 @@ def display_panel(pixels: np.ndarray, limits: tuple[float, float] | None = None)
     if low == high:  # most values equal, a few others: show the full range instead
         low, high = float(values.min()), float(values.max())
     scaled = np.clip((wide - low) / (high - low), 0.0, 1.0) * 255.0
-    note = f"{missing} non-finite pixels shown in magenta" if missing else ""
+    # _with_missing names the non-finite pixels, once (they were named twice, batch 34b FILE 1).
     return _with_missing(
-        Panel(np.rint(scaled).astype(np.uint8), NORMAL, low, high, missing, note), finite
+        Panel(np.rint(scaled).astype(np.uint8), NORMAL, low, high, missing, ""), finite
     )
 
 

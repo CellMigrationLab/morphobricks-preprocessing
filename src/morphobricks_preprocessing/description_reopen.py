@@ -9,7 +9,7 @@ answered by the user's "Yes, remove". Nothing is written here.
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -19,6 +19,7 @@ from .description_file import DESCRIPTION_FILENAME, read_file_bytes, sha256_hex
 from .description_reconcile import Reconciliation, reconcile
 from .description_removal import RemovalQuestion, removal_questions
 from .discovery import DiscoveryResult
+from .metadata import TiffMetadata
 from .reconcile_observe import observe_folders
 
 
@@ -38,15 +39,26 @@ class PublishedState:
 
     @property
     def changed(self) -> bool:
-        """True when a folder is new or removed, or a member's image count changed."""
+        """True when the folders or headers differ from the saved file.
+
+        A folder is new or removed, a member's image count changed, or a unit's headers no
+        longer fit its saved channels (any reason that reopens a repeat).
+        """
         rec = self.reconciliation
-        return bool(rec.new or rec.removed or rec.counts)
+        return bool(rec.new or rec.removed or rec.counts or rec.reopened)
 
 
 def published_state(
-    output: Path, discovery: DiscoveryResult, excluded: Collection[str] = ()
+    output: Path,
+    discovery: DiscoveryResult,
+    excluded: Collection[str] = (),
+    metadata: Iterable[TiffMetadata] | None = None,
 ) -> tuple[PublishedState | None, str]:
     """Return the published file compared with the folders, or None and why it cannot be used.
+
+    ``metadata`` are the image headers already read (the preflight's): with them each unit's
+    channel count and header names are compared with its saved channels, so a header changed
+    under the same files is a change, never "nothing changed".
 
     Returns
     -------
@@ -65,7 +77,7 @@ def published_state(
         return None, f"{DESCRIPTION_FILENAME} cannot be used ({codes})"
     except OSError as exc:
         return None, f"{DESCRIPTION_FILENAME} cannot be read: {exc}"
-    rec = reconcile(published, observe_folders(discovery, excluded))
+    rec = reconcile(published, observe_folders(discovery, excluded, metadata))
     day = date.fromtimestamp(path.stat().st_mtime).isoformat()
     return PublishedState(
         published, sha256_hex(data), day, rec, removal_questions(published, rec)

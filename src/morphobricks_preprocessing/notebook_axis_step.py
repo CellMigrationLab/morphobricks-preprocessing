@@ -156,6 +156,7 @@ class _AxisStep:
         pre = self.preflight
         self.axis_next.value = ""
         self._preview_shown = False
+        self._preview_drawn = None
         self._close_image_type()
         waiting = self._axis_waiting()
         if waiting:

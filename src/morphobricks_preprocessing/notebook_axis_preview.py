@@ -68,9 +68,16 @@ class _AxisPreview:
             self._render_preview()
 
     def _render_preview(self) -> None:
-        """Draw the chosen plane with the roles shown, labelled confirmed or not (PP-10)."""
+        """Draw the chosen plane with the roles shown, labelled confirmed or not (PP-10).
+
+        ``_preview_drawn`` is the mapping of the plane now shown, None when none is (no image
+        fits, or the plane cannot be read): the one-click confirmation needs it (BLOCKER 3).
+        """
+        self._preview_drawn = None
         header = self._preview_header()
         if header is None:
+            self.preview_image.value = b""
+            ui.set_visible(self.preview_image, False)
             self.preview_caption.value = ui.status("warn", "No image fits these axis roles.")
             return
         file_mapping = file_mapping_for(header, self.mapping)
@@ -97,6 +104,7 @@ class _AxisPreview:
             return
         self.preview_image.value = plane_png(plane)
         ui.set_visible(self.preview_image, True)
+        self._preview_drawn = self.mapping
         self.preview_caption.value = self._preview_label() + preview_caption(
             header.relative_path, plane
         )
