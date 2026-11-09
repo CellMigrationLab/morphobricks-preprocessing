@@ -416,6 +416,11 @@ results or comparing another grouping.
      **Axes checked: they are correct for every image**. Changing a role afterwards asks
      you to check the preview again.
      The confirmed roles are locked until you click **Change axis roles**.
+   - In the shipped notebook (one step at a time), when the suggested roles leave nothing
+     to ask (no axis message, every image names its axes, no missing axis to state), the
+     *Axes* step shows them with a preview and one **Confirm these axes** button; it records
+     the same two answers. A reopened experiment whose folders did not change offers the
+     roles of its earlier run. The role boxes stay under **Look closer, or change the roles**.
    - If some images lack a dimension the others have (often a single channel), a yellow box
      lists them; press **Yes, they have a single plane there** if that is the case.
      Once you confirm the axis roles, this resolves the missing-axis error for step 3.

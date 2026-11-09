@@ -73,6 +73,18 @@ def chip(label: str, labels: Sequence[str], display: str | None = None) -> str:
     )
 
 
+RGB_COLOURS = {"R": "#DC2626", "G": "#16A34A", "B": "#2563EB"}
+"""The chips of a colour image's fixed channels (never labels) are drawn in their colour."""
+
+
+def rgb_chip(token: str) -> str:
+    """Return the chip of a colour channel (``R``, ``G``, ``B``) in red, green or blue."""
+    return (
+        "<span style='display:inline-block;padding:1px 9px;border-radius:999px;color:#fff;"
+        f"font-weight:600;background:{RGB_COLOURS[token]}'>{html.escape(token)}</span>"
+    )
+
+
 def blank_chip(text: str) -> str:
     """Return an orange outlined chip for something not answered."""
     return (
@@ -111,10 +123,12 @@ __all__ = [
     "ORANGE",
     "ORANGE_FILL",
     "PALETTE",
+    "RGB_COLOURS",
     "blank_chip",
     "chip",
     "colour",
     "columns",
     "quoted",
+    "rgb_chip",
     "unit_name",
 ]

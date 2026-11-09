@@ -182,7 +182,8 @@ src/morphobricks_preprocessing/
                     the confirmed AxisReview; no channel axis guessed), mask_thumbnail, PreviewCache;
                     preview_render.py display_panel (float32 after the reduction, percentile contrast
                     of the finite values; flat / no-finite / non-finite shown as such), stdlib PNG,
-                    strip_png, mask_overlay_png (declared representation only)
+                    strip_png, mask_overlay_png (declared representation only),
+                    colour_composite (an RGB image as one colour picture, display only)
   planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), table rows as
                     XYC planes whose channels are read one at a time (iter_xyc_planes, XycPlane),
                     memory estimate,
@@ -309,6 +310,8 @@ src/morphobricks_preprocessing/
                             composition of the cards below); notebook_stepper.py the strip, Back/Next
                             and the overview; notebook_step_states.py each step's done/one-line state
   notebook_names.py         the names card's rows (conditions on step 4, replicates on step 5)
+  notebook_axes_quick.py    the stepper's one-click Confirm these axes (Q3, PR 17b)
+  notebook_channels_rows.py the tag grid's folder rows: pictures (colour for RGB), Enlarge
   notebook_folder.py        step 1: folder, check, issues, labels (_FolderStep)
   notebook_design.py        step 1: the experiment design card (_DesignCard)
   notebook_axis_step.py     step 2: role dropdowns, axis check, missing-axes card (_AxisStep)

@@ -465,8 +465,8 @@ def design_issues(design: ExperimentDesign) -> list[ValidationIssue]:
                 "A repeat group is one biological repeat across the conditions, so it can "
                 f"hold only one folder of each condition: {described}.",
                 [_folder(row) for g in design.conflicts for row in design.members(g)],
-                "Move one of the folders into another repeat group in the experiment design "
-                "(step 1, or the repeat_group column of experiment_design.csv).",
+                "Move one of the folders into another repeat group (Replicates in the "
+                "notebook, or the repeat_group column of experiment_design.csv).",
             )
         )
     unconfirmed = [g for g in design.unconfirmed_groups if g not in design.conflicts]
@@ -484,7 +484,7 @@ def design_issues(design: ExperimentDesign) -> list[ValidationIssue]:
                 "that the biological repeats were prepared and acquired under the same "
                 "circumstances, so that they are comparable.",
                 [_folder(row) for g in unconfirmed for row in design.members(g)],
-                "Confirm the biological repeats in step 1 of the notebook, with the design "
+                "Confirm the biological repeats in the notebook, with the design "
                 "command (--confirm), or by setting confirmed to true in experiment_design.csv.",
             )
         )
@@ -592,7 +592,7 @@ def read_confirmed_design(
     """
     path = Path(path)
     rerun = (
-        "Run step 1 of the preprocessing brick on this experiment (it pairs and confirms the "
+        "Check this experiment in the preprocessing notebook (it pairs and confirms the "
         "biological repeats), then run the preprocessing brick again."
     )
     if not path.is_file():
@@ -720,7 +720,7 @@ def load_design(
                 exc,
                 "Correct the file where the message says (a spreadsheet program may have "
                 f"rewritten a date such as 2026-10-26 as 26/10/2026; dates are {DATE_FORMAT}). "
-                "Answering the questions again in step 1 of the notebook also replaces it; "
+                "Answering the questions again in the notebook also replaces it; "
                 "nothing replaces it without an answer.",
             ) from exc
     return reconcile_design(previous, repeats)

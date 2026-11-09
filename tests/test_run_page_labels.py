@@ -11,8 +11,10 @@ import pytest
 
 from channel_images import write_masks
 from morphobricks_preprocessing.description_file import DESCRIPTION_FILENAME
+from morphobricks_preprocessing.notebook_values import natural_key
 from morphobricks_preprocessing.run_labels import (
     NO_LABELS,
+    RunLabels,
     labels_from_description,
     recorded_labels,
 )
@@ -226,3 +228,46 @@ def test_a_mask_without_an_answer_says_so_and_a_different_id_is_kept(tmp_path):
     shown = nb.mask_step_result.value
     assert "<td>Nuclei_seg (Nuclei)</td><td>objects</td>" in shown
     assert "<td>tissue</td><td>not described yet</td>" in shown
+
+
+def test_replicate_ids_are_shown_in_natural_order_rep2_before_rep10():
+    # Display convention (PR 17b): numbers in an ID are compared as numbers; the folder breaks
+    # a tie. Nothing is renamed or stored in this order.
+    labels = RunLabels(
+        (),
+        {
+            ("drug", "b"): "rep10",
+            ("drug", "a"): "rep2",
+            ("drug", "c"): "rep2",
+            ("ctrl", "x"): "rep1",
+        },
+    )
+    found = sorted(
+        [("drug", "b"), ("drug", "c"), ("ctrl", "x"), ("drug", "a")], key=lambda k: labels.order(*k)
+    )
+    assert found == [("ctrl", "x"), ("drug", "a"), ("drug", "c"), ("drug", "b")]
+    assert sorted(["rep10", "rep2", "rep1", "rep02"], key=natural_key) == [
+        "rep1",
+        "rep02",
+        "rep2",
+        "rep10",
+    ]
+
+
+def test_natural_order_compares_a_bare_name_with_a_numbered_one_and_mixed_ids():
+    # Regression (17b review): "rep" against "rep2" compared the tie-break text with a number.
+    assert sorted(["rep2", "rep", "ctrl2", "ctrl"], key=natural_key) == [
+        "ctrl",
+        "ctrl2",
+        "rep",
+        "rep2",
+    ]
+    mixed = ["repA", "rep10", "rep02", "rep2", "rep", "2rep", "rep2b"]
+    first = sorted(mixed, key=natural_key)
+    assert first == sorted(reversed(mixed), key=natural_key)  # deterministic, any input order
+    assert first == ["2rep", "rep", "rep02", "rep2", "rep2b", "rep10", "repA"]
+    labels = RunLabels(repeats={("ctrl", "a"): "rep", ("ctrl", "b"): "rep2"})
+    assert sorted([("ctrl", "b"), ("ctrl", "a")], key=lambda k: labels.order(*k)) == [
+        ("ctrl", "a"),
+        ("ctrl", "b"),
+    ]

@@ -6,8 +6,11 @@ cards; these tests pin the layout (order, one page shown, chip states, reopen la
 moving between pages never changes or resets an answer.
 """
 
+import numpy as np
 import pytest
+import tifffile
 
+from channel_images import blobs
 from test_notebook_check_save import TAGS, add_folder, answer_all, exp  # noqa: F401
 
 pytest.importorskip("ipywidgets")
@@ -136,7 +139,7 @@ def test_the_steps_are_in_the_decided_order_with_one_page_on_screen(exp):  # noq
     assert [step.title for step in nb._stepper.steps] == ORDER
     assert nb.steps() is nb._stepper.widget  # built once
     assert shown(nb) == 0 and nb._stepper.current == 0  # a first check stays on its results
-    assert kinds(nb)[:3] == ["current", "todo", "done"]  # axes to confirm; sizes are read
+    assert kinds(nb)[:3] == ["current", "todo", "noted"]  # axes to confirm; sizes: uncalibrated
     nb._stepper.chips[1].click()
     assert shown(nb) == 1 and kinds(nb)[0] == "done"
     page = nb._stepper.pages[1]
@@ -196,7 +199,7 @@ def test_moving_through_every_page_keeps_every_answer(exp):  # noqa: F811
         chip.click()
     assert snapshot(nb) == before
     assert nb.draft_answers.conditions["drug"].display_name == "Drug A"
-    assert all(k == "done" for k in kinds(nb)[1:10]) and kinds(nb)[0] == "current"
+    assert all(k in ("done", "noted") for k in kinds(nb)[1:10]) and kinds(nb)[0] == "current"
     assert kinds(nb)[10] == "todo"  # not saved yet
     assert nb.save_experiment()
     assert kinds(nb)[10] == "done"
@@ -211,7 +214,7 @@ def test_a_reopened_experiment_opens_on_the_axes_its_only_open_step(exp):  # noq
     nb.preview_checked.set(True)
     nb.show_preview()
     nb.confirm_button.click()
-    assert all(k == "done" for k in kinds(nb)[:11] if k != "current")
+    assert all(k in ("done", "noted") for k in kinds(nb)[:11] if k != "current")
     assert "saved " in nb._stepper.chips[10].tooltip
     # The saved reopening folds the cards; a page that shows one unfolds it.
     assert nb._folded and not ui.is_visible(nb.design_card)
@@ -260,10 +263,40 @@ def test_the_axes_page_has_no_stale_image_type_sentence_and_no_broken_picture(ex
     nb = stepped(*exp, axes=False)
     text = "".join(getattr(w, "value", "") for w in nb._stepper.pages[1].children[1].children)
     assert "fluorescence or RGB" not in text
-    assert not ui.is_visible(nb.preview_image)  # nothing to show before Show preview
+    # never a broken picture: the image is shown only with a plane in it (the one-click card
+    # shows the preview of the roles it offers)
+    assert ui.is_visible(nb.preview_image) == bool(nb.preview_image.value)
     nb.show_preview()
     assert ui.is_visible(nb.preview_image) and nb.preview_image.value
     described = nb.axis_step()
     assert "fluorescence or RGB" not in described.children[1].children[2].value
     plain = PreprocessingNotebook().axis_step()  # embedders keep their words
     assert "fluorescence or RGB" in plain.children[1].children[2].value
+
+
+# --- PR 17b -------------------------------------------------------------------------------------
+
+
+def test_pixel_sizes_without_a_physical_size_say_uncalibrated(exp):  # noqa: F811
+    nb = stepped(*exp)
+    state = nb._stepper.states()[2]
+    assert state.done and state.note == "uncalibrated"
+    assert state.text.startswith("uncalibrated (pixels)")
+    assert nb._stepper.chips[2].description == "✓ 3 Pixel sizes · uncalibrated"
+    assert kinds(nb)[2] == "noted"
+
+
+def test_pixel_sizes_from_the_headers_are_a_plain_done(tmp_path):
+    root, out = tmp_path / "exp", tmp_path / "out"
+    for i, folder in enumerate(["ctrl/rep1", "drug/rep1"]):
+        data = np.stack([blobs(i + 1), blobs(i + 2), blobs(i + 3)])
+        path = root / folder / "a.tif"
+        path.parent.mkdir(parents=True)
+        metadata = {"axes": "CYX", "PhysicalSizeX": 0.65, "PhysicalSizeY": 0.65}
+        tifffile.imwrite(path, data, ome=True, photometric="minisblack", metadata=metadata)
+    nb = PreprocessingNotebook(str(root), output_folder=str(out), describe=True)
+    nb.steps()
+    nb.check_button.click()
+    state = nb._stepper.states()[2]
+    assert state.done and not state.note and "0.65" in state.text
+    assert kinds(nb)[2] == "done"

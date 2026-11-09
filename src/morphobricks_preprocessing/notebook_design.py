@@ -436,7 +436,7 @@ class _DesignCard:
                 lines.append(
                     f"Still to confirm: {plural(len(waiting), 'repeat group')} ("
                     + ", ".join(html.escape(g) for g in waiting)
-                    + "). Step 3 runs once every group is confirmed."
+                    + "). The run waits until every group is confirmed."
                 )
             lines.append(where)
             status = ui.status("warn", "Please answer the questions below.", lines, raw=True)

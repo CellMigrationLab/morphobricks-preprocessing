@@ -11,15 +11,19 @@ from __future__ import annotations
 from .channel_labels import remaining
 from .mask_answers import mask_kinds, masks_unanswered
 from .notebook_stepper import StepState
-from .notebook_values import size_rows
+from .notebook_values import natural_key, size_rows
 from .validation import plural
 
+UNCALIBRATED = ("uncalibrated", "pixels (stated)")
+"""The X/Y size texts (:func:`.notebook_values.size_text`) that give no physical size."""
 ANSWER_STEPS = range(3, 11)
 """The steps (0-based) whose answers the published file holds: conditions to check and save."""
 
 
 def _ids(wanted: dict[tuple[str, str], str], kind: str) -> list[str]:
-    return [text for (k, _), text in sorted(wanted.items()) if k == kind]
+    """Return the IDs of one kind in natural order of their folder (``rep2`` before ``rep10``)."""
+    found = sorted(((natural_key(f), t) for (k, f), t in wanted.items() if k == kind))
+    return [text for _, text in found]
 
 
 class _StepStates:
@@ -83,10 +87,19 @@ class _StepStates:
             shown, roles = self._shown_calibration()
             self._sizes_key, self._sizes_rows = key, size_rows(shown.calibration.sizes, roles)
         rows = self._sizes_rows
+        bare = [r for r in rows if all(t in UNCALIBRATED for t in r[0][:2])]
+        if len(bare) == len(rows):
+            stated = all(t == "pixels (stated)" for r in rows for t in r[0][:2])
+            why = "stated as pixels" if stated else "no pixel size in the headers or stated"
+            return StepState(True, f"uncalibrated (pixels): {why}", note="uncalibrated")
+        note = "partly uncalibrated" if bare else ""
         if len(rows) == 1:
             x, y = rows[0][0][:2]
             return StepState(True, f"X {x} · Y {y}")
-        return StepState(True, f"{len(rows)} different sets of sizes")
+        text = f"{len(rows)} different sets of sizes"
+        if bare:
+            text += f", {len(bare)} of them uncalibrated"
+        return StepState(True, text, note=note)
 
     def _changed(self, index: int, done: bool) -> bool:
         return not done and index in ANSWER_STEPS and self._reopen_changed()
@@ -210,4 +223,4 @@ class _StepStates:
         return StepState(False, "optional")
 
 
-__all__ = ["ANSWER_STEPS", "_StepStates"]
+__all__ = ["ANSWER_STEPS", "UNCALIBRATED", "_StepStates"]

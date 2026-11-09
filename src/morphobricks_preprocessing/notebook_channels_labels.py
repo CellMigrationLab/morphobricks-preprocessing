@@ -105,7 +105,7 @@ class LabelsCard:
         self.status = widgets.HTML()
         self.problem = widgets.HTML()
         self.widget = ui.card(
-            "A. Which labels did you image?",
+            "Which labels did you image?",
             [
                 ui.help_text(
                     "Name what was stained, once per stain. The number of slots is the largest "

@@ -23,13 +23,20 @@ import ipywidgets as widgets
 
 from . import notebook_style as ui
 
-CHIP_CLASSES = ("mb-chip-done", "mb-chip-current", "mb-chip-todo", "mb-chip-changed")
+CHIP_CLASSES = (
+    "mb-chip-done",
+    "mb-chip-noted",
+    "mb-chip-current",
+    "mb-chip-todo",
+    "mb-chip-changed",
+)
 STEPPER_CSS = """
 <style>
 .mb-strip { flex-wrap: wrap !important; gap: 6px; margin: 0 0 8px 0; }
 .mb-strip .mb-chip { border-radius: 999px; width: auto; height: auto; padding: 4px 12px;
   font-size: 13px; line-height: 1.4; border: none; box-shadow: none; }
 .mb-chip.mb-chip-done { background: #16A34A; color: #FFFFFF; }
+.mb-chip.mb-chip-noted { background: #DCFCE7; color: #166534; border: 1px solid #16A34A; }
 .mb-chip.mb-chip-current { background: #2563EB; color: #FFFFFF; font-weight: 600; }
 .mb-chip.mb-chip-todo { background: #E2E8F0; color: #334155; }
 .mb-chip.mb-chip-changed { background: #EA580C; color: #FFFFFF; }
@@ -52,11 +59,15 @@ class StepState:
         One line saying what was answered or found (plain text).
     changed
         True when a reopened experiment changed what the step holds (orange).
+    note
+        A word the chip shows after its title when the step is done with a reservation
+        (``uncalibrated``); empty for a plain done.
     """
 
     done: bool
     text: str
     changed: bool = False
+    note: str = ""
 
 
 def _no_wait() -> str:
@@ -141,19 +152,11 @@ class Stepper:
         """Update the chips, the waiting line of the step shown, Back/Next and the overview."""
         states = self.states()
         for i, (chip, step, state) in enumerate(zip(self.chips, self.steps, states, strict=True)):
-            kind = (
-                "current"
-                if i == self.current
-                else "changed"
-                if state.changed
-                else "done"
-                if state.done
-                else "todo"
-            )
             for name in CHIP_CLASSES:
                 chip.remove_class(name)
-            chip.add_class(f"mb-chip-{kind}")
-            chip.description = f"{'✓ ' if state.done else ''}{i + 1} {step.title}"
+            chip.add_class(f"mb-chip-{chip_kind(state, i == self.current)}")
+            noted = f" · {state.note}" if state.done and state.note else ""
+            chip.description = f"{'✓ ' if state.done else ''}{i + 1} {step.title}{noted}"
             chip.tooltip = state.text
         self.waits[self.current].value = self.steps[self.current].waiting()
         last = len(self.steps) - 1
@@ -182,6 +185,17 @@ class Stepper:
         return box
 
 
+def chip_kind(state: StepState, current: bool) -> str:
+    """Return how a chip looks: current, changed, done (noted when it has a note) or to do."""
+    if current:
+        return "current"
+    if state.changed:
+        return "changed"
+    if state.done:
+        return "noted" if state.note else "done"
+    return "todo"
+
+
 def overview_line(title: str, state: StepState) -> str:
     """Return one overview line: a mark, the step's name and its summary (HTML)."""
     mark, colour = (
@@ -193,4 +207,12 @@ def overview_line(title: str, state: StepState) -> str:
     )
 
 
-__all__ = ["CHIP_CLASSES", "STEPPER_CSS", "Step", "StepState", "Stepper", "overview_line"]
+__all__ = [
+    "CHIP_CLASSES",
+    "STEPPER_CSS",
+    "Step",
+    "StepState",
+    "Stepper",
+    "chip_kind",
+    "overview_line",
+]

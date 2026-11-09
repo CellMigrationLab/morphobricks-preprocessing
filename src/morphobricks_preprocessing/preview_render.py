@@ -10,6 +10,9 @@ float32, then given a percentile contrast. Unlike NucleiSky nothing is hidden:
 - an image with no finite value is drawn magenta and labelled ``no finite values``;
 - a non-finite pixel in an ordinary image is drawn magenta, and counted in the label.
 
+A colour (RGB) image is shown as one colour picture (:func:`colour_composite`): its three
+channels, each with its own percentile contrast as above, become red, green and blue.
+
 Contrast is for display only. Nothing here changes a source pixel, names a channel or decides
 what a mask means: a mask is drawn only for a representation the caller declares.
 """
@@ -35,6 +38,8 @@ _OUTLINES = ((255, 200, 0), (0, 220, 255), (255, 80, 80), (120, 255, 120), (255,
 _TINT = (255, 60, 60)
 _TINT_SHARE = 0.4
 FLAT, NO_FINITE, NORMAL = "flat", "no_finite", "normal"
+COMPOSITE = "composite"
+COLOURS = ("red", "green", "blue")
 
 
 class OverlayRefused(ValueError):
@@ -116,6 +121,36 @@ def _with_missing(panel: Panel, finite: np.ndarray) -> Panel:
     note = f"{panel.nonfinite} non-finite pixels shown in magenta"
     note = f"{panel.note}; {note}" if panel.note else note
     return Panel(colour, panel.kind, panel.low, panel.high, panel.nonfinite, note)
+
+
+def colour_composite(panels: Sequence[Panel]) -> Panel:
+    """Return the three channels of a colour (RGB) image as one colour picture, for display.
+
+    Channel 0 is red, 1 green and 2 blue, each keeping its own contrast (the panels of
+    :func:`display_panel`); nothing is mixed between channels or changed in the source. A flat
+    channel stays mid-grey in its colour, and the note names it.
+
+    Parameters
+    ----------
+    panels
+        The three grey (Y, X) panels of one plane, in channel order.
+
+    Raises
+    ------
+    ValueError
+        When there are not three panels, they differ in shape, or one is not a grey panel (a
+        channel with non-finite values is shown channel by channel instead, never coloured).
+    """
+    if len(panels) != len(COLOURS):
+        raise ValueError(f"a colour picture has three channels, not {len(panels)}")
+    if any(p.pixels.ndim != 2 or p.kind == NO_FINITE or p.nonfinite for p in panels):
+        raise ValueError("a channel has non-finite values: it is shown channel by channel")
+    if len({p.pixels.shape for p in panels}) != 1:
+        raise ValueError("the channels of a colour picture have one shape")
+    flat = [name for name, p in zip(COLOURS, panels, strict=True) if p.kind == FLAT]
+    note = f"flat: {', '.join(flat)}" if flat else ""
+    pixels = np.stack([p.pixels for p in panels], axis=-1)
+    return Panel(pixels, COMPOSITE, None, None, 0, note)
 
 
 def _chunk(kind: bytes, data: bytes) -> bytes:

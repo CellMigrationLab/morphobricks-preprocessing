@@ -210,6 +210,7 @@ def test_a_label_some_units_lack_is_said_in_orange(exp):
     nb.channel_labels.add_button.click()
     nb.channel_labels.rows[-1].id_box.value = "unused"
     nb.channel_labels.confirm.button.click()
+    grid.split(unit)  # tagged on its own, outside its block of identical headers
     grid.cells[(unit, 2)].value = "unused"
     box = [b for b in nb.replicates_box.children if "rep2" in b.children[0].value][0]
     assert "drug/rep2 has no PHASE" in box.children[-2].value
@@ -335,3 +336,17 @@ def test_the_mask_overlay_is_drawn_on_the_image_as_declared(exp):
     assert overlay.shape == (64, 64, 3)
     coloured = (overlay[..., 0] != overlay[..., 1]) | (overlay[..., 1] != overlay[..., 2])
     assert 0 < coloured.mean() < 0.5  # object outlines in colour over the grey image
+
+
+def test_replicates_are_listed_in_natural_order_rep2_before_rep10(tmp_path):
+    # Display only (PR 17b): the replicate blocks, the names rows and the short names.
+    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    for i, folder in enumerate(["ctrl/rep10", "ctrl/rep2", "drug/rep10", "drug/rep2"]):
+        add_folder(root, masks, folder, i + 1)
+    nb = opened(root, masks, out)
+    answer_all(nb)
+    titles = [b.children[0].value for b in nb.replicates_box.children]
+    assert "rep2" in titles[0] and "rep10" in titles[1]
+    assert "Replicates:</b> rep2, rep10" in nb.short_names.value
+    rows = [key for key in nb.id_inputs if key[0] == "repeats"]
+    assert rows == [("repeats", "rep2"), ("repeats", "rep10")]

@@ -20,6 +20,7 @@ import ipywidgets as widgets
 
 from . import notebook_style as ui
 from .dataset import CONSISTENCY_CODES
+from .notebook_axes_quick import _QuickAxes
 from .notebook_channels import INTRO as CHANNELS_INTRO
 from .notebook_channels_type import ImageTypeRows
 from .notebook_check_save import INTRO as CHECK_INTRO
@@ -55,7 +56,7 @@ UNFOLDING = {4: "design_card", 5: "references_card", 9: "masks_box"}
 """The steps (0-based) that show a card the saved reopening folds."""
 
 
-class _StepsFlow(_StepStates):
+class _StepsFlow(_QuickAxes, _StepStates):
     """``steps()``: the stepper of the shipped notebook, and the hooks that keep it current."""
 
     def steps(self) -> widgets.Widget:
@@ -77,12 +78,14 @@ class _StepsFlow(_StepStates):
             self.channel_grid.refresh()
         for box in (self.folder_next, self.axis_next):
             ui.set_visible(box, False)  # Next and the strip say where to go
-        self.type_rows = ImageTypeRows(self.channel_types)
+        self.type_rows = ImageTypeRows(self.channel_types, lambda: self._channel_thumbs)
         self.overview_box = widgets.VBox()
+        self._build_quick_axes()
         self.consistency_slot = widgets.VBox([self.consistency_card])
         self._stepper = Stepper(self._step_list(), self._step_shown)
         self.overview_box.children = [self._stepper.overview(OVERVIEW_STEPS)]
         self._refresh_type_rows()
+        self._refresh_quick_axes()
         self._refresh_steps()
         return self._stepper.widget
 
@@ -93,7 +96,7 @@ class _StepsFlow(_StepStates):
             ("Images found", "Choose the folder with your images and check it.",
              self._images_page()),
             ("Axes", "Say which image dimension is width, height, channel and time.",
-             [ui.intro(AXES_INTRO), self.axis_box]),
+             [ui.intro(AXES_INTRO), self.quick_card, self.axes_details, self.axis_box]),
             ("Pixel sizes", "The size of one pixel, and where it comes from.",
              [self.calibration_card]),
             ("Conditions", "A short name for each condition.", [self._conditions_card()]),
@@ -241,15 +244,36 @@ class _StepsFlow(_StepStates):
     def check_folder(self) -> Preflight | None:
         """Check the folder; a reopened experiment opens on its first step still to do."""
         pre = super().check_folder()
-        stepper = getattr(self, "_stepper", None)
-        if stepper is not None and pre is not None and self._published() is not None:
-            states = stepper.states()
-            first = next(
-                (i for i, s in enumerate(states[: OVERVIEW_STEPS + 1]) if not s.done),
-                OVERVIEW_STEPS + 1,
-            )
-            stepper.go(first)
+        if pre is not None:
+            self._go_first_open()
         return pre
+
+    def _go_first_open(self) -> None:
+        """Open a reopened experiment's first step still to do (Run when none is)."""
+        stepper = getattr(self, "_stepper", None)
+        if stepper is None or self._published() is None:
+            return
+        states = stepper.states()
+        first = next(
+            (i for i, s in enumerate(states[: OVERVIEW_STEPS + 1]) if not s.done),
+            OVERVIEW_STEPS + 1,
+        )
+        stepper.go(first)
+
+    def _confirm_quick_axes(self) -> bool:
+        """Confirm the offered axes; a reopened experiment then opens its next open step."""
+        confirmed = super()._confirm_quick_axes()
+        if confirmed:
+            self._go_first_open()
+        return confirmed
+
+    def _mapping_changed(self) -> None:
+        super()._mapping_changed()
+        self._refresh_quick_axes()
+
+    def _toggle_confirmation(self) -> None:
+        super()._toggle_confirmation()
+        self._refresh_quick_axes()
 
     def _refresh_type_rows(self) -> None:
         """Open the image-type step for the folders the channel step opened, or close it."""

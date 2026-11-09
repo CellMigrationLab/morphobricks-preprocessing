@@ -1,18 +1,24 @@
-"""Step B of *Your channels*: "Tag each channel" (a self-contained card).
+"""*Tag channels*: which label each channel is, one answer per block of identical headers.
 
-An image-first grid: one row per imaging unit (condition / biological repeat / technical repeat),
-one column per C index. Each cell is a safe thumbnail of the unit's representative image (about
-160 px, **Enlarge** for the 1024 px view), the C index, the header name quoted exactly as read and
-a dropdown limited to the labels of step A (an unused slot needs a label too, for example
-*unused*); there is no free text. A
-unit whose header names equal the labels exactly is pre-tagged, but the pre-tag is only a
-suggestion until the user confirms it once per layout (units with the same header names), beside
-the thumbnails. Step B is complete only when every channel position of every unit is tagged and
-every image type answered. Labels used in only some units say so, with the consequence.
+The folders (imaging units: condition / biological repeat / technical repeat) are shown in
+**blocks**. Folders whose image headers are identical, exactly (the same channel count, the same
+raw header names at every C index, all present, and the same colour flag), form one block, and
+the user tags its channels once, for every folder of the block (owner decision Q5): one dropdown
+per C index, limited to the confirmed stains (an unused slot needs a label too, for example
+*unused*); there is no free text. Under the dropdowns, every folder of the block has its own
+pictures (:mod:`.notebook_channels_rows`) for checking. Nothing is grouped by guessing: a folder
+whose header lacks a channel name, or whose saved tags differ, is a block of its own, and a
+folder can be taken out of its block (**Tag this folder on its own**). A block answer writes,
+for each of its folders, the same tags into the draft that tagging the folders one by one would.
 
-The card reads and saves through an :class:`.notebook_channels_view.AnswerStore`; the image-type
-column is a separate piece (:class:`.notebook_channels_type.ImageTypeColumn`) the card places in
-each row.
+A block whose header names equal the labels exactly is pre-tagged, but the pre-tag is only a
+suggestion until the user confirms it, once for the block. The page is complete only when every
+channel position of every unit is tagged and every image type answered. Labels used in only some
+folders say so, with the consequence.
+
+The card reads and saves through an :class:`.notebook_channels_view.AnswerStore`. The image
+type is answered by :class:`.notebook_channels_type.ImageTypeColumn`: placed in each folder row,
+or, with ``place_types`` False (the stepper), on its own page, and only restated here.
 """
 
 from __future__ import annotations
@@ -33,7 +39,8 @@ from .channel_labels import (
     usage,
 )
 from .draft_answers import UnitKey
-from .notebook_channel_thumbs import CONTRAST_TEXT, Thumbnails
+from .notebook_channel_thumbs import COLOUR_TEXT, CONTRAST_TEXT, Thumbnails
+from .notebook_channels_rows import FolderRows
 from .notebook_channels_type import ImageTypeColumn
 from .notebook_channels_view import (
     CHOOSE,
@@ -42,10 +49,8 @@ from .notebook_channels_view import (
     chip,
     columns,
     quoted,
-    unit_name,
 )
-
-THUMB_PX = "160px"
+from .notebook_values import natural_key
 
 
 def partial_text(label: str, used: int, total: int) -> str:
@@ -56,8 +61,18 @@ def partial_text(label: str, used: int, total: int) -> str:
     )
 
 
+def folder_order(layout: UnitLayout) -> tuple:
+    """Return the display order of a folder: its labels, numbers as numbers (rep2, rep10)."""
+    return tuple(natural_key(part) for part in layout.key)
+
+
+def named(layout: UnitLayout) -> bool:
+    """Return True when the header names every channel of a usable unit (a block can hold it)."""
+    return layout.usable and all(layout.name(i) for i in range(layout.channels))
+
+
 class TagGrid:
-    """The tag grid: rows of units, a dropdown per channel, one confirm per layout."""
+    """The tag grid: blocks of folders with identical headers, one answer per block."""
 
     def __init__(
         self,
@@ -70,9 +85,11 @@ class TagGrid:
         self.place_types = True
         self.layouts: Sequence[UnitLayout] = ()
         self.labels: list[str] = []
-        self.thumbs: Thumbnails | None = None
         self.cells: dict[tuple[UnitKey, int], widgets.Dropdown] = {}
         self.confirm_buttons: list[widgets.Button] = []
+        self.split_buttons: dict[UnitKey, widgets.Button] = {}
+        # Folders the user took out of their block (this session; never saved).
+        self.alone: set[UnitKey] = set()
         self.message = ""
         self._building = False
         self.blocks = widgets.VBox()
@@ -80,16 +97,18 @@ class TagGrid:
         self.status = widgets.HTML()
         self.problem = widgets.HTML()
         self.detail = widgets.VBox()
+        self.rows = FolderRows(self.detail)
         self.contrast = widgets.HTML(f"<div class='mb-help'>{CONTRAST_TEXT}</div>")
         self.plane = widgets.HTML()
         self.widget = ui.card(
-            "B. Tag each channel",
+            "Tag each channel",
             [
                 ui.help_text(
-                    "For every folder, say which label each channel is, looking at its picture. "
-                    "The same label should be in the same column in every row; a label used in "
-                    "only some folders is shown in orange. Every channel and every image type "
-                    "must be answered."
+                    "Folders whose image headers are identical are one block: say once which "
+                    "label each channel is, looking at the pictures of every folder of the "
+                    "block. The same label should be in the same column in every block; a label "
+                    "used in only some folders is shown in orange. Every channel and every "
+                    "image type must be answered."
                 ),
                 self.contrast,
                 self.plane,
@@ -102,11 +121,18 @@ class TagGrid:
             visible=False,
         )
 
+    @property
+    def thumbs(self) -> Thumbnails | None:
+        """The pictures of the folders' first images."""
+        return self.rows.thumbs
+
     # Opening -----------------------------------------------------------------------------
 
     def open(self, layouts: Sequence[UnitLayout], labels: list[str], thumbs: Thumbnails) -> None:
         """Show the grid for these units and labels (the confirmed label list of step A)."""
-        self.layouts, self.labels, self.thumbs = layouts, labels, thumbs
+        if layouts is not self.layouts:
+            self.alone = set()
+        self.layouts, self.labels, self.rows.thumbs = layouts, labels, thumbs
         if self.place_types:
             self.types.open(layouts)
         self.detail.children = []
@@ -121,6 +147,30 @@ class TagGrid:
     def complete(self) -> bool:
         """True when every position of every unit is tagged and every type answered."""
         return remaining(self.layouts, self.store.answers().units, self.labels).done
+
+    def split(self, key: UnitKey) -> None:
+        """Take one folder out of its block, to tag it on its own (nothing is saved)."""
+        self.alone.add(key)
+        self.refresh()
+
+    # Blocks ------------------------------------------------------------------------------
+
+    def _colour(self, layout: UnitLayout) -> bool:
+        return layout.usable and self.types.shown(layout) == "rgb"
+
+    def _block_key(self, layout: UnitLayout) -> tuple:
+        """Return what the folders of one block share exactly; a folder alone has its own key."""
+        colour = self._colour(layout)
+        tags = tags_of(layout, self.store.answers().units.get(layout.key))
+        together = (colour or named(layout)) and layout.key not in self.alone
+        return (layout.signature, colour, tags, None if together else layout.key)
+
+    def block_list(self) -> list[list[UnitLayout]]:
+        """Return the blocks of folders, each sorted, in the order of their first folder."""
+        groups: dict[tuple, list[UnitLayout]] = {}
+        for layout in sorted(self.layouts, key=folder_order):
+            groups.setdefault(self._block_key(layout), []).append(layout)
+        return list(groups.values())
 
     # Tags --------------------------------------------------------------------------------
 
@@ -143,38 +193,45 @@ class TagGrid:
                     proposed.add(index)
         return tuple(saved), proposed
 
-    def _tagged(self, layout: UnitLayout, index: int, value: str | None) -> None:
-        """Save one cell's tag; a label already tagged elsewhere in the unit is refused."""
+    def _tagged(self, units: Sequence[UnitLayout], index: int, value: str | None) -> None:
+        """Save one channel's tag for every folder of a block; a label used twice is refused."""
         if self._building:
             return
         answers = self.store.answers()
-        tags = list(tags_of(layout, answers.units.get(layout.key)))
+        first = units[0]
+        tags = list(tags_of(first, answers.units.get(first.key)))
         if value and value in [t for i, t in enumerate(tags) if i != index]:
-            other = tags.index(value) + 1
-            self.message = ui.status(
-                "error",
-                f"{value} was not tagged here.",
-                [
-                    f"{html.escape(value)} is already channel {other} of "
-                    f"{html.escape(unit_name(layout.key))}: one label cannot stand at two "
-                    "positions of a unit. Change that one first."
-                ],
-                raw=True,
-            )
-            self.refresh()
+            self._refuse_twice(value, tags.index(value) + 1)
             return
         tags[index] = value
-        if self.store.update(synced(with_tags(answers, layout, tags), self.layouts)):
+        for layout in units:  # every folder of the block holds these tags
+            answers = with_tags(answers, layout, tags)
+        if self.store.update(synced(answers, self.layouts)):
             self.message = ""
         else:
             self.message = ui.status("error", "Not saved.", [self.store.refusal()])
         self.refresh()
         self._on_change()
 
+    def _refuse_twice(self, value: str, other: int) -> None:
+        self.message = ui.status(
+            "error",
+            f"{value} was not tagged here.",
+            [
+                f"{html.escape(value)} is already channel {other} of these folders: one label "
+                "cannot stand at two positions of a folder. Change that one first."
+            ],
+            raw=True,
+        )
+        self.refresh()
+
     def _confirm_layout(self, units: Sequence[UnitLayout]) -> None:
-        """Save the header's proposal (tags and colour pre-tick) of these units as the answer."""
+        """Save the header's proposal of these units as the answer.
+
+        The colour pre-tick is saved too only when the image type is answered here.
+        """
         answers = self.store.answers()
-        rgb = [u.key for u in units if self.types.proposed(u)]
+        rgb = [u.key for u in units if self.place_types and self.types.proposed(u)]
         for layout in units:
             proposal = self._proposal(layout)
             if proposal is None:
@@ -192,136 +249,137 @@ class TagGrid:
     # Building ----------------------------------------------------------------------------
 
     def refresh(self) -> None:
-        """Rebuild the rows from the saved answers (pictures are kept, not read again)."""
+        """Rebuild the blocks from the saved answers (pictures are kept, not read again)."""
         self._building = True
         try:
-            self.cells, self.confirm_buttons = {}, []
+            self.cells, self.confirm_buttons, self.split_buttons = {}, [], {}
             if self.place_types:
                 self.types.open(self.layouts)
             width = max((u.channels for u in self.layouts if not u.rgb), default=3)
             width = max(width, 3 if any(u.rgb for u in self.layouts) else 1)
-            groups: dict[tuple, list[UnitLayout]] = {}
-            for layout in sorted(self.layouts, key=lambda u: u.key):
-                groups.setdefault(layout.signature if layout.usable else (0,), []).append(layout)
-            blocks: list[widgets.Widget] = []
             header = widgets.GridBox(
                 [widgets.HTML("<b>folder</b>")]
                 + [widgets.HTML(f"<b>channel {i + 1}</b> (C{i})") for i in range(width)]
                 + [widgets.HTML("<b>image type</b>" if self.place_types else "")],
                 layout=columns(width),
             )
-            blocks.append(header)
-            for units in groups.values():
-                blocks.append(self._group(units, width))
-            self.blocks.children = blocks
+            blocks = self.block_list()
+            shared = [b[0].signature for b in blocks if named(b[0])]
+            self.blocks.children = [header] + [
+                self._block(units, width, shared.count(units[0].signature) > 1) for units in blocks
+            ]
         finally:
             self._building = False
         self._summary()
 
-    def _group(self, units: Sequence[UnitLayout], width: int) -> widgets.Widget:
-        """Build the rows of units with one layout, and their one confirm button."""
+    def _block(self, units: Sequence[UnitLayout], width: int, apart: bool) -> widgets.Widget:
+        """Build one block: what its header says, its answer, and the rows of its folders."""
         first = units[0]
-        out: list[widgets.Widget] = []
-        if first.usable:
-            names = " · ".join(quoted(first.name(i)) for i in range(first.channels))
-            what = f"Header names: {names}" if not first.rgb else "Header says: colour (RGB)"
-            text = f"{what} &nbsp;·&nbsp; {len(units)} folder(s) with this layout."
-            proposal = self._proposal(first)
-            pending = [u for u in units if self._pending(u)]
-            if proposal is not None:
-                text += (
-                    " They equal your labels exactly: pre-tagged below, not confirmed yet."
-                    if pending
-                    else " They equal your labels exactly."
-                )
-            out.append(widgets.HTML(f"<div class='mb-help' style='margin-top:10px'>{text}</div>"))
-            if pending:
-                button = ui.button(
-                    f" Yes, these are right for these {len(pending)} folder(s)",
-                    style="success",
-                    icon="check",
-                    tooltip="Save the pre-ticked answers of these folders",
-                )
-                button.on_click(lambda _, p=pending: self._confirm_layout(p))
-                self.confirm_buttons.append(button)
-                out.append(button)
-        out += [self._row(u, width) for u in units]
-        return widgets.VBox(out)
-
-    def _pending(self, layout: UnitLayout) -> bool:
-        """Return True when the unit shows a proposal (tags or colour) not saved yet."""
-        _, proposed = self.effective(layout)
-        return bool(proposed) or self.types.proposed(layout)
-
-    def _row(self, layout: UnitLayout, width: int) -> widgets.Widget:
-        """Build the row of one unit: its name, a cell per C index and its image type."""
-        info = f"<b>{html.escape(unit_name(layout.key))}</b>"
-        if layout.usable and self.thumbs is not None:
-            info += (
-                f"<div class='mb-help'>first image by path: {html.escape(layout.image or '')}"
-                f"<br>1 of {layout.images} image(s); {html.escape(self.thumbs.plane(layout))}"
-                "</div>"
+        colour = self._colour(first)
+        out: list[widgets.Widget] = [widgets.HTML(self._block_text(units, colour, apart))]
+        if first.usable and not colour:
+            out.append(self._answer_row(units, width))
+        pending = [u for u in units if u.usable and self._pending(u)]
+        if pending:
+            button = ui.button(
+                f" Yes, these are right for these {len(pending)} folder(s)",
+                style="success",
+                icon="check",
+                tooltip="Save the pre-ticked answers of these folders",
             )
-        if not layout.usable:
-            info += ui.status("warn", "Cannot be tagged.", [html.escape(layout.problem)], raw=True)
-        shown = self.types.shown(layout)
-        tags, proposed = self.effective(layout)
-        cells: list[widgets.Widget] = [widgets.HTML(info)]
-        for index in range(width):
-            if not layout.usable or index >= layout.channels:
-                text = "" if not layout.usable else f"no channel {index + 1} in this image"
-                cells.append(widgets.HTML(f"<span class='mb-help'>{text}</span>"))
-            else:
-                cells.append(self._cell(layout, index, tags[index], index in proposed, shown))
-        typed = layout.usable and self.place_types
-        cells.append(self.types.cell(layout) if typed else widgets.HTML(""))
-        return widgets.GridBox(cells, layout=columns(width))
-
-    def _picture(self, layout: UnitLayout, index: int) -> widgets.Widget:
-        """Build the thumbnail of one channel, or the reason there is none."""
-        thumb = self.thumbs.get(layout, index) if self.thumbs is not None else None
-        if thumb is None or thumb.png is None:
-            note = "" if thumb is None else html.escape(thumb.note)
-            return widgets.HTML(
-                f"<div class='mb-help' style='border:1px dashed #94A3B8;padding:6px'>"
-                f"no picture: {note}</div>"
-            )
-        box = widgets.Image(
-            value=thumb.png,
-            format="png",
-            layout=widgets.Layout(width="99%", max_width=THUMB_PX, border="1px solid #CBD5E1"),
-        )
+            button.on_click(lambda _, p=pending: self._confirm_layout(p))
+            self.confirm_buttons.append(button)
+            out.append(button)
+        out += [self._folder_row(u, units, width, colour) for u in units]
+        box = widgets.VBox(out)
+        box.add_class("mb-tag-block")
         return box
 
-    def _cell(
-        self, layout: UnitLayout, index: int, tag: str | None, proposed: bool, shown: str | None
-    ) -> widgets.Widget:
-        """Build one cell: picture, C index and header name, the tag and a zoom button."""
-        header = f"<b>C{index}</b> {quoted(layout.name(index))}"
-        children: list[widgets.Widget] = [self._picture(layout, index)]
-        thumb = self.thumbs.get(layout, index) if self.thumbs is not None else None
-        if thumb is not None and thumb.note:
-            header += f"<div class='mb-help'>{html.escape(thumb.note)}</div>"
-        children.append(widgets.HTML(header))
-        if shown == "rgb":
-            children.append(widgets.HTML(chip("RGB"[index], list("RGB"))))
+    def _block_text(self, units: Sequence[UnitLayout], colour: bool, apart: bool) -> str:
+        """Return the line above a block: its header, its size and what is still to do."""
+        first = units[0]
+        if not first.usable:
+            return ""
+        if first.rgb:
+            what = "Header says: colour (RGB)"
         else:
-            children.append(self._dropdown(layout, index, tag, proposed))
-        zoom = ui.button(" Enlarge", icon="search-plus", tooltip="Show the 1024 px detail view")
-        zoom.layout = widgets.Layout(width="99%")
-        zoom.on_click(lambda _, u=layout, i=index: self._enlarge(u, i))
-        children.append(zoom)
-        return widgets.VBox(children)
+            what = "Header names: " + " · ".join(
+                quoted(first.name(i)) for i in range(first.channels)
+            )
+        text = f"{what} &nbsp;·&nbsp; {len(units)} folder(s)"
+        if colour:
+            text += f". {self._type_text(first)} Pictures: {COLOUR_TEXT}."
+        elif len(units) > 1:
+            text += " with this header: tagged once, for all of them."
+        elif not named(first):
+            text += ": a header without every channel name is tagged folder by folder."
+        if apart:
+            text += (
+                " Other folders with this header are in another block (other tags or taken out)."
+            )
+        if not colour and self._proposal(first) is not None:
+            text += (
+                " They equal your labels exactly: pre-tagged below, not confirmed yet."
+                if any(self._pending(u) for u in units)
+                else " They equal your labels exactly."
+            )
+        return f"<div class='mb-help' style='margin-top:12px'>{text}</div>"
+
+    def _type_text(self, layout: UnitLayout) -> str:
+        """Say the image-type answer of a colour block, as the image-type page gave it."""
+        if self.types.saved(layout.key) == "rgb":
+            where = "" if self.place_types else " (Image type, step 7)"
+            return f"Answered colour (RGB){where}: its channels are R, G and B, nothing to tag."
+        if self.place_types:
+            return "Colour is pre-ticked from the header: confirm it with the button below."
+        return "Colour is pre-ticked from the header: confirm it on Image type (step 7)."
+
+    def _pending(self, layout: UnitLayout) -> bool:
+        """Return True when the unit shows a proposal not saved yet.
+
+        The colour pre-tick counts only when the image type is answered here.
+        """
+        _, proposed = self.effective(layout)
+        return bool(proposed) or (self.place_types and self.types.proposed(layout))
+
+    def _answer_row(self, units: Sequence[UnitLayout], width: int) -> widgets.Widget:
+        """Build the block's answer: one dropdown per C index, for every folder of the block."""
+        first = units[0]
+        tags, proposed = self.effective(first)
+        what = "these folders" if len(units) > 1 else "this folder"
+        cells: list[widgets.Widget] = [widgets.HTML(f"<b>Tags</b> of {what}")]
+        for index in range(width):
+            if index >= first.channels:
+                cells.append(widgets.HTML(""))
+                continue
+            cells.append(self._dropdown(units, index, tags[index], index in proposed))
+        cells.append(widgets.HTML(""))
+        return widgets.GridBox(cells, layout=columns(width))
+
+    def _folder_row(
+        self, layout: UnitLayout, units: Sequence[UnitLayout], width: int, colour: bool
+    ) -> widgets.Widget:
+        """Build one folder's row of pictures, with its split button and image type."""
+        extra: list[widgets.Widget] = []
+        if len(units) > 1 and not colour:
+            button = ui.button(" Tag this folder on its own", icon="scissors")
+            button.on_click(lambda _, k=layout.key: self.split(k))
+            self.split_buttons[layout.key] = button
+            extra.append(button)
+        typed = layout.usable and self.place_types
+        last = self.types.cell(layout) if typed else widgets.HTML("")
+        return self.rows.row(layout, width, colour, extra, last)
 
     def _dropdown(
-        self, layout: UnitLayout, index: int, tag: str | None, proposed: bool
+        self, units: Sequence[UnitLayout], index: int, tag: str | None, proposed: bool
     ) -> widgets.Widget:
-        """Build the dropdown of one cell: the labels and what is shown now."""
+        """Build the dropdown of one C index: the labels and what is shown now."""
         options = [(CHOOSE, None), *((label, label) for label in self.labels)]
         value = tag if tag in {o[1] for o in options} else None
         drop = widgets.Dropdown(options=options, value=value, layout=widgets.Layout(width="99%"))
-        drop.observe(lambda change, u=layout, i=index: self._tagged(u, i, change["new"]), "value")
-        self.cells[(layout.key, index)] = drop
+        drop.observe(lambda change, u=units, i=index: self._tagged(u, i, change["new"]), "value")
+        for layout in units:
+            self.cells[(layout.key, index)] = drop
         if tag is None:
             mark = blank_chip("not tagged")
         else:
@@ -329,22 +387,6 @@ class TagGrid:
             if proposed:
                 mark += " <span class='mb-help'>proposed, not confirmed</span>"
         return widgets.VBox([drop, widgets.HTML(mark)])
-
-    def _enlarge(self, layout: UnitLayout, index: int) -> None:
-        """Show the 1024 px picture of one channel under the grid."""
-        thumb = self.thumbs.get(layout, index, detail=True)
-        close = ui.button(" Close", icon="times")
-        close.on_click(lambda _: setattr(self.detail, "children", []))
-        title = widgets.HTML(
-            f"<b>{html.escape(unit_name(layout.key))}</b> · C{index} "
-            f"{quoted(layout.name(index))} · {html.escape(layout.image or '')}"
-        )
-        picture: widgets.Widget = (
-            widgets.Image(value=thumb.png, format="png", layout=widgets.Layout(max_width="1024px"))
-            if thumb.png
-            else widgets.HTML(ui.status("warn", "No picture.", [html.escape(thumb.note)], raw=True))
-        )
-        self.detail.children = [title, picture, close]
 
     # Summary -----------------------------------------------------------------------------
 
@@ -405,4 +447,4 @@ class TagGrid:
         return ui.status("warn", "Not finished: " + ", ".join(parts) + ".")
 
 
-__all__ = ["TagGrid", "partial_text"]
+__all__ = ["TagGrid", "folder_order", "named", "partial_text"]

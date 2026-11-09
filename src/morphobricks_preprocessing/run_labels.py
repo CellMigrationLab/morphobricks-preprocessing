@@ -19,6 +19,7 @@ from pathlib import Path
 from .description import Description, DescriptionError, description_from_bytes
 from .description_file import DESCRIPTION_FILENAME, read_file_bytes, sha256_hex
 from .manifest import MANIFEST_FILENAME, ManifestFormatError, read_manifest
+from .notebook_values import natural_key
 
 
 @dataclass(frozen=True)
@@ -46,13 +47,14 @@ class RunLabels:
         """Return the replicate ID of a biological-repeat folder, or the folder label."""
         return self.repeats.get((condition, repeat), repeat)
 
-    def order(self, condition: str, repeat: str) -> tuple[str, str, str]:
+    def order(self, condition: str, repeat: str) -> tuple:
         """Return the sort key of a biological-repeat folder: condition, replicate ID, folder.
 
-        Within a condition the plots list the replicates by the ID they are shown with
-        (``rep1`` before ``rep2``), not by folder name; the folder breaks a tie.
+        Within a condition the plots list the replicates by the ID they are shown with, in
+        natural order (``rep2`` before ``rep10``, :func:`.notebook_values.natural_key`), not by
+        folder name; the folder breaks a tie. Display only.
         """
-        return (condition, self.repeat(condition, repeat), repeat)
+        return (condition, natural_key(self.repeat(condition, repeat)), repeat)
 
 
 NO_LABELS = RunLabels()

@@ -20,7 +20,10 @@ from . import notebook_style as ui
 from .channel_answers import synced, with_type
 from .channel_labels import UnitLayout
 from .draft_answers import UnitKey
+from .notebook_channel_thumbs import Thumbnails
+from .notebook_channels_rows import picture
 from .notebook_channels_view import AnswerStore, blank_chip, quoted, unit_name
+from .notebook_values import natural_key
 
 OPTIONS = [("separate channels", "channels"), ("colour (RGB)", "rgb")]
 
@@ -132,11 +135,16 @@ class ImageTypeRows:
     """The image type on a page of its own: one row per folder, its header and its choice.
 
     The cells are the :class:`ImageTypeColumn`'s own, so the answers, notes and refusals are
-    exactly those of the column in the tag grid; only the place differs.
+    exactly those of the column in the tag grid; only the place differs. Each row has the
+    folder's picture: in colour when the folder is shown as colour (RGB), else channel 1.
+    This page holds the only confirmation of the header's colour pre-tick; *Tag channels*
+    restates the answer.
     """
 
-    def __init__(self, types: ImageTypeColumn) -> None:
-        self.types = types
+    def __init__(
+        self, types: ImageTypeColumn, thumbs: Callable[[], Thumbnails | None] = lambda: None
+    ) -> None:
+        self.types, self._thumbs = types, thumbs
         self.rows = widgets.VBox()
         self.status = widgets.HTML()
         self.problem = widgets.HTML()
@@ -174,7 +182,8 @@ class ImageTypeRows:
     def refresh(self) -> None:
         """Rebuild the rows from the saved answers."""
         self.types.open(self.types.layouts)  # a fresh set of cells, built from the answers
-        rows = [self._row(u) for u in sorted(self.types.layouts, key=lambda u: u.key)]
+        ordered = sorted(self.types.layouts, key=lambda u: tuple(map(natural_key, u.key)))
+        rows = [self._row(u) for u in ordered]
         proposed = [u.key for u in self.types.layouts if self.types.proposed(u)]
         if proposed:
             button = ui.button(
@@ -212,10 +221,16 @@ class ImageTypeRows:
             + " · ".join(quoted(layout.name(i)) for i in range(layout.channels))
         )
         info += f"<div class='mb-help'>{said}</div>"
+        thumbs = self._thumbs()
+        colour = self.types.shown(layout) == "rgb"
+        thumb = None if thumbs is None else thumbs.picture(layout, colour)
+        if thumb is not None:
+            what = thumb.note if colour else f"channel 1{'; ' if thumb.note else ''}{thumb.note}"
+            info += f"<div class='mb-help'>picture: {html.escape(what)}</div>"
         return widgets.GridBox(
-            [widgets.HTML(info), self.types.cell(layout)],
+            [picture(thumb, colour), widgets.HTML(info), self.types.cell(layout)],
             layout=widgets.Layout(
-                grid_template_columns="minmax(200px, 2fr) minmax(200px, 3fr)",
+                grid_template_columns="120px minmax(200px, 2fr) minmax(200px, 3fr)",
                 grid_gap="4px 12px",
                 width="99%",
                 margin="0 0 8px 0",

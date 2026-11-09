@@ -29,7 +29,7 @@ class _ResultsStep:
         self._build_statistics_cards()
         self.table_checks = IntensityPanel(
             "Intensity checks",
-            "The same checks as after step 3, for the chosen table. Each image is compared only "
+            "The same checks as after the run, for the chosen table. Each image is compared only "
             "with the others of its condition, so differences between conditions are never "
             "reported. Nothing is written.",
         )
@@ -41,7 +41,7 @@ class _ResultsStep:
     def _build_csv_card(self) -> None:
         """Build the card that chooses the histogram table."""
         self.csv_file = widgets.Text(
-            placeholder="filled in after step 3, or choose a plane_histograms.csv",
+            placeholder="filled in after the run, or choose a plane_histograms.csv",
             layout=widgets.Layout(flex="1 1 auto", width="auto"),
         )
         self.csv_browse = ui.button(
@@ -52,8 +52,8 @@ class _ResultsStep:
             [
                 widgets.HBox([self.csv_file, self.csv_browse], layout=widgets.Layout(**_WIDE)),
                 ui.help_text(
-                    "The table to calculate the statistics from. After a successful run in "
-                    "step 3 this is the table just written. To look at another experiment, "
+                    "The table to calculate the statistics from. After a successful run "
+                    "this is the table just written. To look at another experiment, "
                     "paste the path of its <b>plane_histograms.csv</b> or use "
                     "<b>Browse…</b>."
                 ),
@@ -161,7 +161,10 @@ class _ResultsStep:
                 self.stats_status.value = ui.status(
                     "info",
                     "Choose a histogram table first.",
-                    ["Run step 3, or click Browse… above to pick a plane_histograms.csv."],
+                    [
+                        "Run the images first (Run), or click Browse… above to pick a "
+                        "plane_histograms.csv."
+                    ],
                 )
             else:
                 self.stats_status.value = ui.status(
