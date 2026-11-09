@@ -134,6 +134,7 @@ def test_a_described_run_retires_the_labels_toggle_the_comparable_questions_and_
     assert ui.is_visible(nb.design_card) and not ui.is_visible(nb.groups_box)
     assert not ui.is_visible(nb.ids_confirmed.widget)
     assert not ui.is_visible(nb.image_type_card) and nb.confirmed_image_type is None
+    assert "Optional" not in nb.references_card.children[1].value
     assert not (out / DESIGN_FILENAME).exists()  # no template written by the check
     assert "Save the experiment description (Check and save)" in nb.readiness.value
     assert "Confirm the image type" not in nb.readiness.value

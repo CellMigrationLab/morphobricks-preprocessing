@@ -85,6 +85,11 @@ class _DescribedRun:
     def _build_description_cards(self) -> None:
         super()._build_description_cards()
         ui.set_visible(self.ids_confirmed.widget, not self._describe)
+        if self._describe:  # nothing is left as a silent default: "no comparison" is chosen
+            help_box = self.references_card.children[1]
+            help_box.value = help_box.value.replace(
+                "Optional. For a treated", "Answer for each condition. For a treated"
+            ).replace("Nothing is chosen for you.", "Choose <i>no comparison</i> where none.")
 
     def _build_design_card(self) -> None:
         """Build the design card; a described run says where the pairing is kept."""
