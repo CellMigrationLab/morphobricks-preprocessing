@@ -121,3 +121,16 @@ def test_missing_axes_means_one_longest_arrangement_and_the_rest_with_axes_dropp
         dropped = all(_dropped(axes, longest) for axes in group)
         assert _found(*group) == {"missing_axes" if dropped else "inconsistent_dimensions"}, group
     assert _found("CYX", "CYX") == set()
+
+
+def test_layout_kinds_names_two_channel_lists_of_one_image_type_in_words():
+    """Two fluorescence layouts differ by channels, not by type: say so, not "fluorescence"."""
+    from morphobricks_preprocessing.description_layouts import DeclaredLayout, layout_kinds
+
+    both = (
+        DeclaredLayout(("DNA",), "fluorescence", ()),
+        DeclaredLayout(("DNA", "ACTIN"), None, ()),
+    )
+    assert layout_kinds(both) == "fluorescence, with different channel lists"
+    mixed = (both[0], DeclaredLayout(("R", "G", "B"), "rgb", ()))
+    assert layout_kinds(mixed) == "fluorescence and RGB"

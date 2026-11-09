@@ -93,4 +93,6 @@ def heterogeneous_units(layouts: tuple[DeclaredLayout, ...]) -> tuple[str, ...]:
 def layout_kinds(layouts: tuple[DeclaredLayout, ...]) -> str:
     """Name the kinds of the layouts in words, e.g. ``"fluorescence and RGB"``."""
     kinds = {"RGB" if layout.image_type == "rgb" else "fluorescence" for layout in layouts}
+    if len(kinds) == 1:
+        return f"{kinds.pop()}, with different channel lists"
     return " and ".join(sorted(kinds, key=lambda kind: kind == "RGB"))

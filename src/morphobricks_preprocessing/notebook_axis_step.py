@@ -201,8 +201,8 @@ class _AxisStep:
                     "error",
                     "No axis roles are suggested: the units declare different layouts.",
                     [
-                        f"The saved description declares {kinds} units, which are arranged "
-                        "differently. This version runs one layout per experiment, so the "
+                        f"The saved description declares different layouts ({kinds}). "
+                        "This version runs one layout per experiment, so the "
                         "run stops with R_HETEROGENEOUS_LAYOUT_NOT_ENABLED (see Check and "
                         "save). Exporting the images again would not change that."
                     ],
