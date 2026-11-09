@@ -8,6 +8,16 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Notebook: Step 3 run-page labels (UX proposal 2026-11-09, Q4).** In a described run the intensity
+  plots name the channel tabs, titles and tab findings by channel ID (`DNA`, `ACTIN`, `PHASE`) instead
+  of `C0`/`C1`/`C2`, and the box-plot axis and curve legends use the replicate ID (`rep2`) instead of
+  the folder name (`day2`). The IDs come from the published `morphobricks.toml` only when its SHA-256
+  is the one the run's manifest recorded (`run_labels.recorded_labels`); an undescribed run, an edited
+  file, or a channel position whose units do not all declare one ID keeps `C<n>` and the folder label.
+  The run tile says "no problems found" with a tick, not the warning sign. "What will happen" is hidden
+  after a successful run (it planned that run) and returns when a setting changes. *Describe the masks*
+  shows the declared kind (objects or regions) beside the suggested kind and has one *Mask* column
+  instead of *Mask type* and *Mask ID* holding the same text.
 - **Notebook: check and save, reopen, described runs (Stage 1 PR 16b).** `PreprocessingNotebook(describe=True)`
   (the shipped notebook) saves the experiment as `morphobricks.toml` before the run. *Check and save*
   restates it in sentences (what each condition is compared against, "compared against nothing" in

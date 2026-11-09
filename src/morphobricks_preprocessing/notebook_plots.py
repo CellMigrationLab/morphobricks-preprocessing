@@ -40,6 +40,7 @@ from .notebook_options import _CHECK_LABELS, _MAX_PLOTTED_GROUPS
 from .notebook_render import _label
 from .notebook_values import display_range
 from .planes import Plane
+from .run_labels import NO_LABELS, RunLabels
 from .validation import plural
 
 
@@ -61,6 +62,7 @@ class IntensityPanel:
     def __init__(self, title: str, explanation: str):  # noqa: ANN204
         self.records: list[PlaneRecord] = []
         self.report: IntensityReport | None = None
+        self.labels: RunLabels = NO_LABELS
         self._used: tuple[tuple, IntensityCheckSettings] | None = None
         self._build_settings_box()
         self.status = widgets.HTML()
@@ -152,7 +154,7 @@ class IntensityPanel:
 
     def _build_plots(self) -> None:
         """Build the channel choice and the two plots of the chosen channel."""
-        self.channel = widgets.ToggleButtons(options=[("C0", 0)], style={"button_width": "64px"})
+        self.channel = widgets.ToggleButtons(options=[("C0", 0)], style={"button_width": "96px"})
         self.channel_row = widgets.VBox(
             [
                 widgets.HTML("<b>Channel</b>"),
@@ -207,12 +209,17 @@ class IntensityPanel:
         """Set the default limits again."""
         self.use(IntensityCheckSettings())
 
-    def show(self, records: Sequence[PlaneRecord]) -> None:
-        """Check the intensities of ``records`` and show the warnings and plots."""
+    def show(self, records: Sequence[PlaneRecord], labels: RunLabels = NO_LABELS) -> None:
+        """Check the intensities of ``records`` and show the warnings and plots.
+
+        ``labels`` names the channels and biological repeats by the IDs of the run's
+        description; the default keeps the table's own names (``C0``, the folder labels).
+        """
         self.records = list(records)
+        self.labels = labels
         channels = self.records[0].channel_count if self.records else 1
         with self.channel.hold_trait_notifications():
-            self.channel.options = [(f"C{c}", c) for c in range(channels)]
+            self.channel.options = [(labels.channel(c), c) for c in range(channels)]
             self.channel.value = 0
         ui.set_visible(self.channel_row, channels > 1)
         self._check()
@@ -220,7 +227,7 @@ class IntensityPanel:
 
     def clear(self) -> None:
         """Hide the panel and forget the table."""
-        self.records, self.report = [], None
+        self.records, self.report, self.labels = [], None, NO_LABELS
         self.status.value = self.tiles.value = self.findings.value = ""
         self.boxes.value = self.curves.value = b""
         ui.set_visible(self.card, False)
@@ -269,7 +276,7 @@ class IntensityPanel:
                 ("❔", f"{counts['channel_without_finite_pixels']:,}", "channels not checked"),
             ]
         )
-        self.findings.value = intensity_findings_html(report)
+        self.findings.value = intensity_findings_html(report, self.labels)
         ui.set_visible(self.plots, bool(report.summaries))
         self._draw()
 
@@ -281,21 +288,28 @@ class IntensityPanel:
             return
         channel = self.channel.value or 0
         boxes = repeat_boxes(report, channel)
-        self.boxes.value = intensity_boxes_png(boxes, report.high_percentile, channel) or b""
-        curves = repeat_distributions(self.records, channel)
-        self.curves.value = (
-            repeat_curves_png(curves, report.shifted_repeats(channel), channel) or b""
+        labels = self.labels
+        self.boxes.value = (
+            intensity_boxes_png(boxes, report.high_percentile, channel, labels) or b""
         )
+        curves = repeat_distributions(self.records, channel)
+        shifted = report.shifted_repeats(channel)
+        self.curves.value = repeat_curves_png(curves, shifted, channel, labels) or b""
 
 
-def intensity_findings_html(report: IntensityReport) -> str:
+def intensity_findings_html(report: IntensityReport, labels: RunLabels = NO_LABELS) -> str:
     """Render the intensity warnings as a table, then what to do about each kind."""
     if not report.issues:
         return ""
     rows = [["Check", "Channel", "Image or biological repeat", "What was found"]]
     for issue in report.issues:
         rows.append(
-            [_CHECK_LABELS[issue.code], f"C{issue.channel}", ", ".join(issue.items), issue.message]
+            [
+                _CHECK_LABELS[issue.code],
+                labels.channel(issue.channel),
+                ", ".join(issue.items),
+                issue.message,
+            ]
         )
     actions = []
     for code in INTENSITY_CODES:
@@ -308,12 +322,16 @@ def intensity_findings_html(report: IntensityReport) -> str:
 
 
 def intensity_boxes_png(
-    boxes: Sequence[RepeatBox], high_percentile: float, channel: int
+    boxes: Sequence[RepeatBox],
+    high_percentile: float,
+    channel: int,
+    labels: RunLabels = NO_LABELS,
 ) -> bytes | None:
     """Box plots of the image medians and high percentiles per condition and biological repeat.
 
     Images with a warning in the channel are red diamonds; a biological repeat
-    reported as shifted has an amber box.
+    reported as shifted has an amber box. With ``labels`` the channel is named by its ID and
+    each biological repeat by its replicate ID (after its condition).
     """
     if not boxes:
         return None
@@ -350,9 +368,13 @@ def intensity_boxes_png(
         axes.set_ylabel(name, fontsize=9)
         axes.grid(axis="y", alpha=0.3)
     pair[1].set_xticks(
-        list(range(n)), [box.label for box in boxes], rotation=30, ha="right", fontsize=8
+        list(range(n)),
+        [f"{b.condition} / {labels.repeat(b.condition, b.biological_repeat)}" for b in boxes],
+        rotation=30,
+        ha="right",
+        fontsize=8,
     )
-    pair[0].set_title(f"Channel C{channel}: one point per image", fontsize=10)
+    pair[0].set_title(f"Channel {labels.channel(channel)}: one point per image", fontsize=10)
     pair[0].legend(
         handles=[
             Line2D([], [], color="#d62728", marker="D", linestyle="", label="image with a warning"),
@@ -366,11 +388,17 @@ def intensity_boxes_png(
     return _png(figure)
 
 
-def repeat_curves_png(curves: dict, shifted: set[tuple[str, str]], channel: int) -> bytes | None:
+def repeat_curves_png(
+    curves: dict,
+    shifted: set[tuple[str, str]],
+    channel: int,
+    labels: RunLabels = NO_LABELS,
+) -> bytes | None:
     """Overlay the cumulative intensity distribution of each biological repeat, per condition.
 
     ``curves`` is :func:`.intensity.repeat_distributions`; shifted repeats are
-    dashed. At most 12 conditions are drawn.
+    dashed. At most 12 conditions are drawn. With ``labels`` the channel and each curve are
+    named by the channel and replicate IDs.
     """
     conditions = list(curves)[:_MAX_PLOTTED_GROUPS]
     if not conditions:
@@ -385,13 +413,14 @@ def repeat_curves_png(curves: dict, shifted: set[tuple[str, str]], channel: int)
         axes = figure.add_subplot(rows, columns, index + 1)
         for repeat, histogram in curves[condition].items():
             dashed = (condition, repeat) in shifted
+            name = labels.repeat(condition, repeat)
             axes.step(
                 histogram.values,
                 cumulative_share(histogram),
                 where="post",
                 linewidth=1.4,
                 linestyle="--" if dashed else "-",
-                label=f"{repeat} (shifted)" if dashed else repeat,
+                label=f"{name} (shifted)" if dashed else name,
             )
         if high > low:
             axes.set_xlim(low, high)
@@ -403,7 +432,7 @@ def repeat_curves_png(curves: dict, shifted: set[tuple[str, str]], channel: int)
         axes.tick_params(labelsize=7)
         axes.grid(alpha=0.3)
         axes.legend(fontsize=7, frameon=False, loc="lower right")
-    title = f"Channel C{channel}: one curve per biological repeat"
+    title = f"Channel {labels.channel(channel)}: one curve per biological repeat"
     if len(curves) > _MAX_PLOTTED_GROUPS:
         title += f" (first {_MAX_PLOTTED_GROUPS} of {len(curves)} conditions)"
     figure.suptitle(title, fontsize=10)
