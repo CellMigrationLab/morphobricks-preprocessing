@@ -167,15 +167,22 @@ class _StepStates:
         return StepState(done, ", ".join(parts), self._changed(6, done))
 
     def _stains_state(self) -> StepState:
+        """Return step 8: the confirmed labels, or not applicable when every folder is colour."""
         if self._channels_key is None:
             return StepState(False, "after the axes")
+        if self._stains_not_applicable:
+            return StepState(
+                True, "not applicable: every folder is colour (RGB)", note="not applicable"
+            )
         done = self.channel_labels.confirmed
         text = ", ".join(self.channel_labels.labels) if done else "not confirmed"
         return StepState(done, text, self._changed(7, done))
 
     def _tags_state(self) -> StepState:
         """Return step 9: whether every channel of every folder is tagged."""
-        if self._channels_key is None or not self.channel_labels.confirmed:
+        if self._channels_key is None or not (
+            self.channel_labels.confirmed or self._stains_not_applicable
+        ):
             return StepState(False, "after the stains")
         layouts = self._channel_layouts
         left = remaining(layouts, self.draft_answers.units, self.channel_labels.labels)
