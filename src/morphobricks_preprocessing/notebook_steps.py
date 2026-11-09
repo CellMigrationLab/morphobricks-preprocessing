@@ -79,6 +79,7 @@ class _StepsFlow(_QuickAxes, _StepStates):
         for box in (self.folder_next, self.axis_next):
             ui.set_visible(box, False)  # Next and the strip say where to go
         self.type_rows = ImageTypeRows(self.channel_types, lambda: self._channel_thumbs)
+        self.type_rows.reopen = self.channel_grid.reopen = self._reopen_units
         self.overview_box = widgets.VBox()
         self._build_quick_axes()
         self.consistency_slot = widgets.VBox([self.consistency_card])

@@ -24,7 +24,7 @@ or, with ``place_types`` False (the stepper), on its own page, and only restated
 from __future__ import annotations
 
 import html
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import ipywidgets as widgets
 
@@ -50,6 +50,7 @@ from .notebook_channels_view import (
     columns,
     quoted,
 )
+from .notebook_row_fold import RowFold, row_status
 from .notebook_values import natural_key
 
 
@@ -90,6 +91,9 @@ class TagGrid:
         self.split_buttons: dict[UnitKey, widgets.Button] = {}
         # Folders the user took out of their block (this session; never saved).
         self.alone: set[UnitKey] = set()
+        # The status of each unit against a saved experiment (None without one): rows fold.
+        self.reopen: Callable[[], Mapping[UnitKey, str] | None] = lambda: None
+        self.fold = RowFold("folder block")
         self.message = ""
         self._building = False
         self.blocks = widgets.VBox()
@@ -265,12 +269,22 @@ class TagGrid:
             )
             blocks = self.block_list()
             shared = [b[0].signature for b in blocks if named(b[0])]
-            self.blocks.children = [header] + [
-                self._block(units, width, shared.count(units[0].signature) > 1) for units in blocks
+            built = [
+                (
+                    self._block(units, width, shared.count(units[0].signature) > 1),
+                    self._status(units),
+                )
+                for units in blocks
             ]
+            self.blocks.children = [header, *self.fold.arrange(built)]
         finally:
             self._building = False
         self._summary()
+
+    def _status(self, units: Sequence[UnitLayout]) -> str:
+        """Return whether a block's folders are as saved; it folds once fully answered."""
+        answered = remaining(units, self.store.answers().units, self.labels).done
+        return row_status(self.reopen(), [u.key for u in units], answered)
 
     def _block(self, units: Sequence[UnitLayout], width: int, apart: bool) -> widgets.Widget:
         """Build one block: what its header says, its answer, and the rows of its folders."""

@@ -12,7 +12,7 @@ contradicts the header is allowed here and said in words, since the run refuses 
 from __future__ import annotations
 
 import html
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import ipywidgets as widgets
 
@@ -23,6 +23,7 @@ from .draft_answers import UnitKey
 from .notebook_channel_thumbs import Thumbnails
 from .notebook_channels_rows import picture
 from .notebook_channels_view import AnswerStore, blank_chip, quoted, unit_name
+from .notebook_row_fold import RowFold, row_status
 from .notebook_values import natural_key
 
 OPTIONS = [("separate channels", "channels"), ("colour (RGB)", "rgb")]
@@ -63,12 +64,12 @@ class ImageTypeColumn:
             options=OPTIONS, value=self.shown(layout), layout=widgets.Layout(width="99%")
         )
         radio.disabled = not layout.usable
-        note = widgets.HTML(self._note(layout))
+        note = widgets.HTML(self.note(layout))
         radio.observe(lambda change, u=layout: self._chosen(u, change["new"]), names="value")
         self.radios[layout.key], self.notes[layout.key] = radio, note
         return widgets.VBox([radio, note])
 
-    def _note(self, layout: UnitLayout) -> str:
+    def note(self, layout: UnitLayout) -> str:
         """Return what is said under a unit's radio buttons."""
         saved, shown = self.saved(layout.key), self.shown(layout)
         if not layout.usable:
@@ -145,6 +146,9 @@ class ImageTypeRows:
         self, types: ImageTypeColumn, thumbs: Callable[[], Thumbnails | None] = lambda: None
     ) -> None:
         self.types, self._thumbs = types, thumbs
+        # The status of each unit against a saved experiment (None without one): rows fold.
+        self.reopen: Callable[[], Mapping[UnitKey, str] | None] = lambda: None
+        self.fold = RowFold("folder")
         self.rows = widgets.VBox()
         self.status = widgets.HTML()
         self.problem = widgets.HTML()
@@ -183,7 +187,10 @@ class ImageTypeRows:
         """Rebuild the rows from the saved answers."""
         self.types.open(self.types.layouts)  # a fresh set of cells, built from the answers
         ordered = sorted(self.types.layouts, key=lambda u: tuple(map(natural_key, u.key)))
-        rows = [self._row(u) for u in ordered]
+        units = self.reopen()
+        rows = self.fold.arrange(
+            [(self._row(u), row_status(units, [u.key], self._settled(u))) for u in ordered]
+        )
         proposed = [u.key for u in self.types.layouts if self.types.proposed(u)]
         if proposed:
             button = ui.button(
@@ -202,6 +209,11 @@ class ImageTypeRows:
             if done == usable
             else ui.status("warn", f"Not finished: {usable - done} image type(s) to choose.")
         )
+
+    def _settled(self, layout: UnitLayout) -> bool:
+        """Return True when a row may fold: answered, with no warning under its choice."""
+        saved = self.types.saved(layout.key) is not None
+        return layout.usable and saved and not self.types.note(layout)
 
     def _confirm(self, keys: Sequence[UnitKey]) -> None:
         self.types.confirm_header(keys)
