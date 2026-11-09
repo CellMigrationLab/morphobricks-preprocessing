@@ -2,8 +2,9 @@
 
 Normative test data for [experiment-v1.md](../docs/experiment-v1.md). Each file starts with a
 comment header (`Fixture`, `Expected`, `Source`, description). How these become executable tests
-in preprocessing is described in the [conformance plan](../docs/conformance-plan.md); nothing here
-is executed by this repository.
+in preprocessing is described in the [conformance plan](../docs/conformance-plan.md); the audit tool
+`tools/audit/refval.py` runs them here. The records files in `records/` have no header; see
+their section.
 
 ## Rules
 
@@ -218,6 +219,12 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | RR1 | Record type `image_count_changed` (a confirmed member's image count changes; nothing reopens) | P34 |
 | RR3 | `image_count_changed` is written for every confirmed member whose count changed, also when the publication changes other things | P34 |
 | RR2 | Record type `removed` for every confirmed removal of a unit, technical repeat, repeat or condition | P35 |
+| RF1 | Records file separators are `, ` and `: `; other whitespace refused | `ri25`, `ri27`, `ri30` |
+| RF2 | Every records-file violation is a refusal (key set, order, escapes, duplicates, values) | `ri01`-`ri24` |
+| RF3 | One code, `R_RECORDS_FILE_INVALID`, with `E_RECORDS_*` reasons | all `ri` records files |
+| RF4 | Empty records file accepted; BOM and CR before LF refused; lower-case SHA hex | `rv06`, `ri13`, `ri24`, `ri26`, `ri31` |
+| RF5 | `technical_repeats` not empty; `old_image_count` differs from `new_image_count` | `ri28`, `ri29` |
+| RF6 | Line order within one publication stated; checked by writer tests, not by the file | P34, P35 |
 
 ## Valid fixtures (37)
 
@@ -431,3 +438,53 @@ Valid alone; checked against the named published predecessor (refused with the l
 | [`i133_condition_single_not_alone`](invalid/i133_condition_single_not_alone.toml) | Owner decision SQ6, matrix audit MS-1 | `E_SINGLE_MISUSE` | 4 | The condition `single` (no condition folder level) next to the condition DrugA: it must be the only condition (experiment-v1 3.2). |
 | [`i134_duplicate_key_inline_table`](invalid/i134_duplicate_key_inline_table.toml) | Stage 1 design PR 0, experiment-v1 2.2 | `E_DUPLICATE_KEY` | 1 | `display_name` written twice inside the inline table of the channel DNA: a key declared twice in any spelling, inline tables included, is `E_DUPLICATE_KEY`, not `E_TOML_SYNTAX` (experiment-v1 2.2). |
 | [`i135_used_id_channel_reserved`](invalid/i135_used_id_channel_reserved.toml) | Owner decision UR1 (Spec issue 11) | `E_ID_RESERVED` | 4 | The retired channel ID `Nucleus` in `used_ids.channels`: a listed ID reserves the ID, so it follows the reserved list of 3.2 (case-folded) like a declared channel ID (experiment-v1 4.9). |
+
+## Records fixtures (37)
+
+Byte-exact test data for `morphobricks.records.jsonl` (experiment-v1 §4.6, owner decisions RF1-RF6
+of 9 November 2026). Unlike the TOML fixtures a JSONL file has no comment header, so each case is
+listed here. Every file is checked by `tools/audit/refrecords.py` through `refval.py fixtures`: an
+`accepted` file gives no error and is byte-identical to the canonical encoding of its records; a
+`refused` file gives exactly the listed reason and its first error is on the listed line. A reader
+MUST accept the `rv` files and refuse the `ri` files with `R_RECORDS_FILE_INVALID`; the
+`E_RECORDS_*` names are its reasons (experiment-v1 §8).
+
+| Fixture | Expected | Case |
+|---|---|---|
+| [`rv01_reconfirmation_old_bytes`](records/rv01_reconfirmation_old_bytes.jsonl) | `accepted` | Three `reconfirmation` lines exactly as written before the `removed` and `image_count_changed` types existed (a `null` `new_id`, an `old_sha256` of `absent`); the bytes are unchanged and equal the canonical encoding. |
+| [`rv02_image_count_changed`](records/rv02_image_count_changed.jsonl) | `accepted` | Two `image_count_changed` lines (RR1, RR3): one unit, and two units sorted by `id`, with a space inside a `source_folder`. |
+| [`rv03_removed_every_entity`](records/rv03_removed_every_entity.jsonl) | `accepted` | `removed` lines of all four entities: the entity lines (condition, repeat, technical repeat) first, then each `unit` line (RR2); a key the entity does not name is `null`. |
+| [`rv04_old_and_new_mixed`](records/rv04_old_and_new_mixed.jsonl) | `accepted` | One file mixing old and new records, as a records file grows: `reconfirmation`, `removed` and `image_count_changed` lines in append order. |
+| [`rv05_non_ascii_unescaped`](records/rv05_non_ascii_unescaped.jsonl) | `accepted` | Non-ASCII text written unescaped (umlaut, accent, CJK, an astral character), a U+2028 inside a string that must not end the line, and an escaped quote, backslash and tab. |
+| [`rv06_empty_file`](records/rv06_empty_file.jsonl) | `accepted` | Zero bytes: no record and no torn line (RF4). |
+| [`ri01_missing_final_lf`](records/ri01_missing_final_lf.jsonl) | refused: `E_RECORDS_NO_FINAL_LF` (line 2) | The last line is a complete record without its LF (a torn append). |
+| [`ri02_malformed_line`](records/ri02_malformed_line.jsonl) | refused: `E_RECORDS_NOT_JSON_OBJECT` (line 2) | A line cut in the middle of an object; the lines after it are checked too. |
+| [`ri03_line_not_an_object`](records/ri03_line_not_an_object.jsonl) | refused: `E_RECORDS_NOT_JSON_OBJECT` (line 2) | A line that is a JSON array. |
+| [`ri04_blank_line`](records/ri04_blank_line.jsonl) | refused: `E_RECORDS_NOT_JSON_OBJECT` (line 2) | An empty line between two records. |
+| [`ri05_unknown_type`](records/ri05_unknown_type.jsonl) | refused: `E_RECORDS_UNKNOWN_TYPE` (line 2) | `type` is `renamed`, none of the three. |
+| [`ri06_type_missing`](records/ri06_type_missing.jsonl) | refused: `E_RECORDS_UNKNOWN_TYPE` (line 2) | No `type` key. |
+| [`ri07_key_missing`](records/ri07_key_missing.jsonl) | refused: `E_RECORDS_KEY_SET` (line 2) | An `image_count_changed` line without `recorded_on`. |
+| [`ri08_key_of_another_type`](records/ri08_key_of_another_type.jsonl) | refused: `E_RECORDS_KEY_SET` (line 1) | A `reconfirmation` line that also carries `recorded_on`, a key of another type. |
+| [`ri09_key_order`](records/ri09_key_order.jsonl) | refused: `E_RECORDS_KEY_ORDER` (line 2) | The keys of a `reconfirmation` in the order of the text, not in code point order. |
+| [`ri10_nested_key_order`](records/ri10_nested_key_order.jsonl) | refused: `E_RECORDS_KEY_ORDER` (line 2) | Inside `technical_repeats`, `source_folder` before `id`. |
+| [`ri11_non_ascii_escaped`](records/ri11_non_ascii_escaped.jsonl) | refused: `E_RECORDS_NON_ASCII_ESCAPED` (line 2) | `\u00e9` written for a non-ASCII character. |
+| [`ri12_invalid_utf8`](records/ri12_invalid_utf8.jsonl) | refused: `E_RECORDS_ENCODING` (line 2) | The byte 0xE9 alone (Latin-1) in a line. |
+| [`ri13_byte_order_mark`](records/ri13_byte_order_mark.jsonl) | refused: `E_RECORDS_ENCODING` (line 1) | The file starts with a byte-order mark (RF4). |
+| [`ri14_duplicate_key`](records/ri14_duplicate_key.jsonl) | refused: `E_RECORDS_NOT_JSON_OBJECT` (line 2) | `confirmed_on` twice in one object; the second value would silently win. |
+| [`ri15_removed_unit_with_null_name`](records/ri15_removed_unit_with_null_name.jsonl) | refused: `E_RECORDS_VALUE` (line 2) | A `unit` line with a `null` where the unit names all six keys. |
+| [`ri16_removed_repeat_names_extra_key`](records/ri16_removed_repeat_names_extra_key.jsonl) | refused: `E_RECORDS_VALUE` (line 2) | A `repeat` line with a `condition_id` that is not `null`. |
+| [`ri17_removed_entity_unknown`](records/ri17_removed_entity_unknown.jsonl) | refused: `E_RECORDS_VALUE` (line 2) | `entity` is `channel`. |
+| [`ri18_image_count_zero`](records/ri18_image_count_zero.jsonl) | refused: `E_RECORDS_VALUE` (line 2) | `new_image_count` is 0 (at least 1). |
+| [`ri19_image_count_float`](records/ri19_image_count_float.jsonl) | refused: `E_RECORDS_VALUE` (line 2) | `new_image_count` is `15.0`, not an integer. |
+| [`ri20_date_impossible`](records/ri20_date_impossible.jsonl) | refused: `E_RECORDS_VALUE` (line 2) | `confirmed_on` is `2026-02-30`. |
+| [`ri21_technical_repeats_unsorted`](records/ri21_technical_repeats_unsorted.jsonl) | refused: `E_RECORDS_VALUE` (line 2) | `technical_repeats` not sorted by `id`. |
+| [`ri22_id_kind_unknown`](records/ri22_id_kind_unknown.jsonl) | refused: `E_RECORDS_VALUE` (line 2) | `id_kind` is `masks`. |
+| [`ri23_bad_line_after_good_new_records`](records/ri23_bad_line_after_good_new_records.jsonl) | refused: `E_RECORDS_VALUE` (line 5) | Four valid lines of three types, then an `image_count_changed` line with `old_image_count` 0; the line after it is valid. |
+| [`ri24_sha256_not_hex`](records/ri24_sha256_not_hex.jsonl) | refused: `E_RECORDS_VALUE` (line 2) | `new_sha256` is 64 upper-case `B` (lower-case hex, RF4). |
+| [`ri25_compact_separators`](records/ri25_compact_separators.jsonl) | refused: `E_RECORDS_FORM` (line 2) | Key order and ASCII rules met, but no space after `,` and `:` (RF1). |
+| [`ri26_crlf_line_ends`](records/ri26_crlf_line_ends.jsonl) | refused: `E_RECORDS_FORM` (line 1) | A CR before the LF (RF4). |
+| [`ri27_optional_ascii_escape`](records/ri27_optional_ascii_escape.jsonl) | refused: `E_RECORDS_FORM` (line 2) | `\u0031` written for the ASCII character `1`: only the minimal escapes are allowed. |
+| [`ri28_technical_repeats_empty`](records/ri28_technical_repeats_empty.jsonl) | refused: `E_RECORDS_VALUE` (line 2) | An `image_count_changed` line with `technical_repeats` `[]` (RF5). |
+| [`ri29_image_count_unchanged`](records/ri29_image_count_unchanged.jsonl) | refused: `E_RECORDS_VALUE` (line 2) | `old_image_count` equals `new_image_count`: the record states no change (RF5). |
+| [`ri30_extra_whitespace`](records/ri30_extra_whitespace.jsonl) | refused: `E_RECORDS_FORM` (line 2) | A space after `{` and a trailing space before the LF (RF1). |
+| [`ri31_sha256_trailing_newline`](records/ri31_sha256_trailing_newline.jsonl) | refused: `E_RECORDS_VALUE` (line 2) | `new_sha256` is 64 lower-case hex digits followed by an escaped LF (`\n`): the line is canonical bytes, but the value is not 64 hex digits (RF4). Regression for a `$` anchor that matched before a final LF. |

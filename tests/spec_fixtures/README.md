@@ -8,6 +8,7 @@ at the commit named in `PIN.toml`, laid out as in the Spec repository:
 | `fixtures/` | `fixtures/` | The conformance fixtures: every test of the experiment-description reader runs on them |
 | `docs/experiment-v1.md` | `docs/experiment-v1.md` | The normative text; tests compare the reader's tables of codes, names and fields with it |
 | `tools/audit/refval.py` | `tools/audit/refval.py` | The reference validator, used **only as a test oracle**; nothing in `src/` imports it |
+| `tools/audit/refrecords.py` | `tools/audit/refrecords.py` | The reference validator of the records file (§4.6), imported by `refval.py`; also a test oracle only |
 
 Rules (conformance plan, sections 1 and 2):
 
@@ -26,10 +27,11 @@ Rules (conformance plan, sections 1 and 2):
 
 1. In a checkout of the Spec, check out the new commit and read
    `git rev-parse HEAD`, `git rev-parse HEAD:fixtures`,
-   `git rev-parse HEAD:docs/experiment-v1.md` and `git rev-parse HEAD:tools/audit/refval.py`.
+   `git rev-parse HEAD:docs/experiment-v1.md`, `git rev-parse HEAD:tools/audit/refval.py` and
+   `git rev-parse HEAD:tools/audit/refrecords.py`.
 2. Replace the vendored files from that commit, for example
    `git archive HEAD fixtures | tar -x -C tests/spec_fixtures`, and `git show HEAD:<path>` for
-   the two single files.
-3. Put the four values in `PIN.toml`.
+   the three single files.
+3. Put the five values in `PIN.toml`.
 4. Run the whole suite. The reader, its tables and its tests change in the same pull
    request when the Spec changed text or fixtures (the Spec changes first).

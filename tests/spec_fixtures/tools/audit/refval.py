@@ -3,7 +3,8 @@
 This is not a runtime package and no brick may import it. It implements the normative text of
 docs/experiment-v1.md (phases 1-5 of section 6 and the warnings), the canonical writer of
 section 9.1, the section digests of section 9.3 and the predecessor checks of sections 4.4a,
-4.6 and 4.9 that two TOML files can express. Where the text is ambiguous the choice made here is
+4.6 and 4.9 that two TOML files can express. The records file of section 4.6 is `refrecords.py`;
+`fixtures` runs its goldens too. Where the text is ambiguous the choice made here is
 marked "AMBIGUITY" and reported in docs/audits/matrix-audit-2026-11-07.md.
 
 Usage:
@@ -24,6 +25,9 @@ import tomllib
 import unicodedata
 from datetime import date
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # -I drops the script folder
+import refrecords  # noqa: E402  (records of section 4.6; a sibling audit module)
 
 SENTINELS = {"", "na", "nan", "none", "null", "n/a", "<na>"}
 TOKEN = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*$")
@@ -905,6 +909,9 @@ def run_fixtures(root: Path) -> int:
         if section_digests(docs[k]) != section_digests(docs["v01"]):
             bad += 1
             print(f"MISMATCH {k} digests != v01")
+    n_records, bad_records = refrecords.run_fixtures(root)  # the records goldens (section 4.6)
+    bad += bad_records
+    counts["records"] = n_records
     print(f"checked {counts}; round trip on {sum(1 for k in docs if k[0] in 'vt')} files; "
           f"mismatches: {bad}")
     return bad

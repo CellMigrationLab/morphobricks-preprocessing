@@ -399,17 +399,39 @@ stays in the brick that owns it.
   `morphobricks.toml`, and copies the records unchanged into the manifest of the next run. The
   records file is never rewritten or truncated, and nothing about a re-confirmation is stored in
   `morphobricks.toml`. Products keyed on that ID are invalidated.
-- **Encoding of the records file.** UTF-8, one JSON object per line, each line ending in LF, keys
-  in code point order, non-ASCII characters unescaped. The key `type` tells the record types
+- **Encoding of the records file (owner decisions RF1, RF4).** UTF-8 without a byte-order mark,
+  one JSON object per line, each line ending in LF (a CR before the LF is not allowed), keys in
+  code point order at every level (the objects inside `technical_repeats` included), non-ASCII
+  characters unescaped, the separators `, ` between members and `: ` after a key, and no other
+  whitespace outside strings. A string uses only the escapes `\"`, `\\`, `\b`, `\f`, `\n`, `\r`,
+  `\t` and, for the other control characters U+0000 to U+001F, `\u00xx` with lower-case hex; no
+  other character is escaped. A file of zero bytes holds no record and is accepted. The key
+  `type` tells the record types
   apart: `"reconfirmation"`, `"image_count_changed"` and `"removed"`. Each type has its own fixed
   key set; a line of one type carries no key of another. The first type is the only one written
   before this addition, and its lines are unchanged. Keys of `reconfirmation`: `type`,
   `id_kind` (`conditions`, `channels`, `repeats` or `technical_repeats`), `old_id`, `new_id`
   (`null` when the same ID lost or was reassigned something), `confirmed_on` (`YYYY-MM-DD`, the
   date of the user's action), `old_sha256` (of the published file replaced, or `absent`) and
-  `new_sha256` (of the file written). The records are appended after the file is replaced. A records
-  file whose last line lacks its LF, that holds a line that is not a JSON object, or that holds an
-  object whose `type` is none of the three, is refused before anything is published.
+  `new_sha256` (of the file written). A SHA-256 is 64 lower-case hex digits. The records are
+  appended after the file is replaced.
+- **Refusal of a records file (owner decisions RF2, RF3, RF4, RF5; `R_RECORDS_FILE_INVALID`).** A
+  reader refuses the whole file, before anything is published, when any of these holds (the reason
+  is given in parentheses, one file may have several): the bytes are not UTF-8 or start with a
+  byte-order mark (`E_RECORDS_ENCODING`); the last line lacks its LF (`E_RECORDS_NO_FINAL_LF`); a
+  line is not a JSON object, including an empty line and an object with a key twice
+  (`E_RECORDS_NOT_JSON_OBJECT`); `type` is missing or none of the three (`E_RECORDS_UNKNOWN_TYPE`);
+  the keys are not exactly the key set of the type (`E_RECORDS_KEY_SET`); keys are not in code point
+  order at every level (`E_RECORDS_KEY_ORDER`); a non-ASCII character is written as an escape
+  (`E_RECORDS_NON_ASCII_ESCAPED`); a value is invalid: an enumeration (`id_kind`, `entity`) outside
+  its values, a date that is not a real `YYYY-MM-DD`, a SHA-256 that is not 64 lower-case hex
+  digits (`old_sha256` may also be `absent`), a key that must be `null` (or must not be) in a
+  `removed` line, a count that is not an integer of at least 1, `old_image_count` equal to
+  `new_image_count`, `technical_repeats` empty or not sorted by `id` (`E_RECORDS_VALUE`); or the
+  line differs from the canonical bytes above in anything else, whitespace, a CR, an optional
+  escape (`E_RECORDS_FORM`). The reasons are named by the reference validator
+  (`tools/audit/refrecords.py`); the code is the Spec's. The record values that name IDs and
+  folder labels are text; the Spec states no further rule for them here.
 - **Record of a removal (`removed`, owner decision RR2).** Written for **every** removal of an
   imaging unit, technical repeat, repeat or condition that the user confirms (§10), including a
   removal whose ID is held nowhere else afterwards; it is written in addition to a
@@ -431,8 +453,9 @@ stays in the brick that owns it.
   confirmation and reopens nothing: a count change alone is not a reopening, and
   `R_CONFIRMED_ON_CHANGED` (§4.4a) is unchanged. Keys: `type`, `condition_id`,
   `condition_source_folder`, `repeat_id`, `source_repeat`, `technical_repeats` (the member's
-  imaging units as an array of objects `{"id", "source_folder"}`, sorted by `id` in code point
-  order), `old_image_count`, `new_image_count` (integers, each at least 1) and `recorded_on`
+  imaging units as a non-empty array of objects `{"id", "source_folder"}`, sorted by `id` in code
+  point order), `old_image_count`, `new_image_count` (integers, each at least 1, and different:
+  the record states a change) and `recorded_on`
   (`YYYY-MM-DD`, the date the change was recorded at publication; it is not a confirmation and is
   never copied into `confirmed_on`).
 - **Order and content of the `removed` lines of one publication (RR2, clarified with RR3).** Each
@@ -441,6 +464,12 @@ stays in the brick that owns it.
   `confirmed_on` date of the first removal answer that touches it. When a removal is combined
   with an ID correction in the same publication, the lines carry the IDs as published (before the
   correction).
+- **Order of the lines of one publication (owner decision RF6).** Preprocessing writes them as one
+  append: the `reconfirmation` lines (by `id_kind`, `old_id`, `new_id`, `confirmed_on`), then the
+  `removed` lines (entity lines, then `unit` lines, above), then the `image_count_changed` lines
+  by `condition_id`, then `repeat_id`. The file has no publication boundary, so a reader of the
+  file alone cannot check this order or that each unit is written once; the writer tests of
+  scenarios P34 and P35 check it, and a file that breaks it is not refused for that.
 - **A case-only correction needs a new ID (AQ2).** `ACTIN` cannot be corrected to `Actin`: the
   retired spelling stays in `used_ids` and the new one collides with it
   (`E_ID_CASE_COLLISION`, §4.9). The correction is a new, non-colliding ID (for example
@@ -708,6 +737,7 @@ Required preprocessing refusals (`R_*`):
 | `R_USED_ID_REUSED` | A candidate declares an ID that `used_ids` lists as retired (§4.9) |
 | `R_USED_ID_DROPPED` | A candidate omits an ID listed in `used_ids` of the file it replaces (§4.9) |
 | `R_CONFIRMED_ON_CHANGED` | `confirmed_on` of a repeat whose confirmation was not reopened differs from the published file (§4.4a) |
+| `R_RECORDS_FILE_INVALID` | `morphobricks.records.jsonl` breaks the encoding, key set or value rules of §4.6; reasons `E_RECORDS_ENCODING`, `E_RECORDS_NO_FINAL_LF`, `E_RECORDS_NOT_JSON_OBJECT`, `E_RECORDS_UNKNOWN_TYPE`, `E_RECORDS_KEY_SET`, `E_RECORDS_KEY_ORDER`, `E_RECORDS_NON_ASCII_ESCAPED`, `E_RECORDS_VALUE`, `E_RECORDS_FORM` |
 | `R_PUBLISHED_FILE_CHANGED` | The SHA-256 of the published file at publication differs from the draft's recorded base (§10) |
 | `R_DRAFT_BASE_MISSING` | A draft has no recorded base SHA-256 (§10) |
 | `R_FOLDER_NOT_NFC` | A folder label or a discovered mask type name read from disk is not NFC (§3.3) |

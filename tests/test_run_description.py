@@ -51,7 +51,7 @@ def test_the_manifest_records_the_file_its_digests_and_the_records_unchanged(tmp
     root, out = _folder(tmp_path)
     (out / "morphobricks.toml").write_bytes(V01.data)
     line = json.dumps(RECORD, sort_keys=True) + "\n"
-    (out / "morphobricks.records.jsonl").write_text(line, encoding="utf-8")
+    (out / "morphobricks.records.jsonl").write_bytes(line.encode("utf-8"))  # no CRLF (4.6)
     assert run_experiment(root, MAPPING, output_folder=out).written
     entry = _manifest(out)["experiment_description"]
     assert entry["sha256"] == sha256_hex(V01.data)

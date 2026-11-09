@@ -8,6 +8,20 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Re-pin the vendored Spec to 1bed024 (MorphoBricks-Spec PR 16, owner decisions RF1 to RF6);
+  `read_records` follows section 4.6.** The Spec now fixes the bytes and values of
+  `morphobricks.records.jsonl` and names one refusal, `R_RECORDS_FILE_INVALID`, with the reasons
+  `E_RECORDS_ENCODING`, `_NO_FINAL_LF`, `_NOT_JSON_OBJECT`, `_UNKNOWN_TYPE`, `_KEY_SET`, `_KEY_ORDER`,
+  `_NON_ASCII_ESCAPED`, `_VALUE` and `_FORM`. `read_records` checked only the key set; it now refuses
+  every file the Spec's reference validator refuses (new pure module `records_file`): key order at every
+  level, escaped non-ASCII, duplicate keys, impossible dates and counts, upper-case or newline-ended
+  SHA-256, an unchanged or empty count record, and any byte that is not the canonical encoding
+  (`json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"`, what the writer appends, so every
+  file the writer produces is still accepted). `RecordsFileError` now carries `code` and `reasons`.
+  The vendored files add `fixtures/records/` (37 goldens) and the reference module `refrecords.py`
+  (imported by `refval.py`, also pinned). `tests/test_spec_records_goldens.py` runs every golden
+  through `read_records` against the catalogue and the reference validator. A draft saved under the
+  previous pin is refused at resume with `spec_commit_mismatch`, as before.
 - **Notebook: Step 3 run-page labels (UX proposal 2026-11-09, Q4).** In a described run the intensity
   plots name the channel tabs, titles and tab findings by channel ID (`DNA`, `ACTIN`, `PHASE`) instead
   of `C0`/`C1`/`C2`, and the box-plot axis and curve legends use the replicate ID (`rep2`) instead of
