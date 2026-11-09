@@ -7,12 +7,12 @@ import html
 from . import notebook_style as ui
 from .axes import AxisMapping, axis_name, file_mapping_for
 from .axis_review import review_axes
-from .fingerprint import Fingerprint
 from .image_type import review_image_type
 from .notebook_options import IMAGE_TYPE_NAMES
 from .notebook_plots import plane_png
 from .notebook_render import preview_caption
 from .planes import Plane, PlaneReadError, read_plane
+from .preview import PreviewRefused, check_unchanged, checked_fingerprint
 from .validation import plural
 
 
@@ -89,7 +89,7 @@ class _AxisPreview:
         }
         try:
             plane = self._bound_plane(header.relative_path, file_mapping, coords)
-        except (PlaneReadError, IndexError, ValueError, OSError) as exc:
+        except (PreviewRefused, PlaneReadError, IndexError, ValueError, OSError) as exc:
             self.preview_image.value = b""
             ui.set_visible(self.preview_image, False)
             self.preview_caption.value = ui.status(
@@ -109,32 +109,23 @@ class _AxisPreview:
 
         The fingerprint the check bound to the header must hold before and after the read: an
         image changed since the check (same name, same shape or not) is refused, never shown as
-        the image checked, so the one-click confirmation is not offered on it.
+        the image checked, so the one-click confirmation is not offered on it. The binding is
+        the one every other picture uses (:func:`.preview.checked_fingerprint`).
 
         Raises
         ------
-        ValueError
+        PreviewRefused
             When the image is not bound, or is no longer that revision ("check the folder
             again").
         """
         path = self.preflight.discovery.root / rel
-        expected = self.preflight.header_fingerprints.get(rel)
-        if expected is None:
-            raise ValueError(
-                f"{rel} is not bound to the header the folder check read (it changed while it "
-                "was read): check the folder again."
-            )
-        changed = ValueError(
-            f"{rel} changed since the folder check read it: check the folder again."
-        )
-        if Fingerprint.of(path) != expected:
-            raise changed
+        expected = checked_fingerprint(self.preflight.header_fingerprints, rel)
+        check_unchanged(path, expected, rel)
         with self.log.attached():
             plane = read_plane(
                 path, file_mapping, memory_limit=self._memory_limit(), preview=True, **coords
             )
-        if Fingerprint.of(path) != expected:
-            raise changed
+        check_unchanged(path, expected, rel)
         return plane
 
     def _preview_label(self) -> str:

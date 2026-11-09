@@ -190,3 +190,32 @@ def test_an_image_changed_since_the_folder_check_is_not_previewed_or_confirmed(e
     assert nb.quick_confirm.disabled
     assert not nb._confirm_quick_axes()
     assert nb.confirmed_mapping is None and not nb.preview_checked.value
+
+
+def test_an_image_changed_during_the_preview_read_is_not_shown(exp, monkeypatch):  # noqa: F811
+    # Review of #255: the axis preview checks the bound fingerprint after the read too, so a
+    # file rewritten while its plane was read is a failed preview, never the image checked.
+    import os
+
+    from channel_images import write_channels
+    from morphobricks_preprocessing import notebook_axis_preview
+    from test_notebook_check_save import KINDS
+
+    nb = stepper(*exp)
+    rel = nb.preview_file.value
+    path = exp[0] / rel
+    real = notebook_axis_preview.read_plane
+
+    def read_then_rewrite(*args, **kwargs):
+        plane = real(*args, **kwargs)
+        write_channels(path, ["DAPI", "Actin", "Ch3"], KINDS, seed=9)
+        stat = path.stat()
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**10))
+        return plane
+
+    monkeypatch.setattr(notebook_axis_preview, "read_plane", read_then_rewrite)
+    nb._refresh_quick_axes()
+    assert nb.preview_image.value == b"" and nb._preview_drawn is None
+    assert "changed since the folder check read it" in nb.quick_caption.value
+    assert nb.quick_confirm.disabled and not nb._confirm_quick_axes()
+    assert nb.confirmed_mapping is None and not nb.preview_checked.value
