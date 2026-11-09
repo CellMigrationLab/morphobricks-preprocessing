@@ -15,7 +15,7 @@ import tifffile
 
 from channel_images import write_channels, write_rgb
 from description_tree import MAPPING, build_experiment
-from morphobricks_preprocessing import preflight, prefill_mapping, run_experiment
+from morphobricks_preprocessing import prefill_mapping, preflight, run_experiment
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_candidate import check_candidate
 from morphobricks_preprocessing.notebook_check_view import checks_html
@@ -127,8 +127,10 @@ def test_a_unit_mixed_inside_itself_is_refused_by_the_run_of_one_image_type(tmp_
 
 def test_units_of_one_image_type_are_still_compared_with_each_other(tmp_path):
     """Two RGB units of different pixel types: one layout, so the pixel types still refuse."""
-    text = VALID["v29"].data.decode("utf-8").replace(
-        'channels = ["DNA", "ACTIN"]', 'channels = ["R", "G", "B"]\nimage_type = "rgb"'
+    text = (
+        VALID["v29"]
+        .data.decode("utf-8")
+        .replace('channels = ["DNA", "ACTIN"]', 'channels = ["R", "G", "B"]\nimage_type = "rgb"')
     )
     root, out = mixed_experiment(tmp_path)
     for path in (root / "CTRL/rep1/fluorescence").glob("*.tif"):
