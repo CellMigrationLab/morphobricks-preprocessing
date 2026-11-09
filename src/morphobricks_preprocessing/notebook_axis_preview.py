@@ -7,11 +7,12 @@ import html
 from . import notebook_style as ui
 from .axes import AxisMapping, axis_name, file_mapping_for
 from .axis_review import review_axes
+from .fingerprint import Fingerprint
 from .image_type import review_image_type
 from .notebook_options import IMAGE_TYPE_NAMES
 from .notebook_plots import plane_png
 from .notebook_render import preview_caption
-from .planes import PlaneReadError, read_plane
+from .planes import Plane, PlaneReadError, read_plane
 from .validation import plural
 
 
@@ -87,15 +88,8 @@ class _AxisPreview:
             if file_mapping.index_of(role) is not None
         }
         try:
-            with self.log.attached():
-                plane = read_plane(
-                    self.preflight.discovery.root / header.relative_path,
-                    file_mapping,
-                    memory_limit=self._memory_limit(),
-                    preview=True,
-                    **coords,
-                )
-        except (PlaneReadError, IndexError, ValueError) as exc:
+            plane = self._bound_plane(header.relative_path, file_mapping, coords)
+        except (PlaneReadError, IndexError, ValueError, OSError) as exc:
             self.preview_image.value = b""
             ui.set_visible(self.preview_image, False)
             self.preview_caption.value = ui.status(
@@ -109,6 +103,39 @@ class _AxisPreview:
             header.relative_path, plane
         )
         self._show_log()
+
+    def _bound_plane(self, rel: str, file_mapping: AxisMapping, coords: dict) -> Plane:
+        """Read the preview plane of the image only as the folder check read its header.
+
+        The fingerprint the check bound to the header must hold before and after the read: an
+        image changed since the check (same name, same shape or not) is refused, never shown as
+        the image checked, so the one-click confirmation is not offered on it.
+
+        Raises
+        ------
+        ValueError
+            When the image is not bound, or is no longer that revision ("check the folder
+            again").
+        """
+        path = self.preflight.discovery.root / rel
+        expected = self.preflight.header_fingerprints.get(rel)
+        if expected is None:
+            raise ValueError(
+                f"{rel} is not bound to the header the folder check read (it changed while it "
+                "was read): check the folder again."
+            )
+        changed = ValueError(
+            f"{rel} changed since the folder check read it: check the folder again."
+        )
+        if Fingerprint.of(path) != expected:
+            raise changed
+        with self.log.attached():
+            plane = read_plane(
+                path, file_mapping, memory_limit=self._memory_limit(), preview=True, **coords
+            )
+        if Fingerprint.of(path) != expected:
+            raise changed
+        return plane
 
     def _preview_label(self) -> str:
         """Say whether the preview shows the confirmed roles or roles still being edited."""

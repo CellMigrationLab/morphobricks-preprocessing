@@ -165,3 +165,28 @@ def test_a_header_change_does_not_offer_the_earlier_run_s_roles(exp):  # noqa: F
     assert "the earlier run of this experiment recorded" not in nb.quick_text.value
     assert "image headers changed since the experiment was saved" in nb.quick_text.value
     assert nb.confirmed_mapping is None and not nb.preview_checked.value  # never automatic
+
+
+def test_an_image_changed_since_the_folder_check_is_not_previewed_or_confirmed(exp):  # noqa: F811
+    # Regression (batch 34b, with batch 33's bound pictures): the axis preview read the file as
+    # it is now, not as the folder check read its header, and one click vouched for it.
+    import os
+
+    from channel_images import write_channels
+    from test_notebook_check_save import KINDS
+
+    nb = stepper(*exp)
+    rel = nb.preview_file.value
+    assert nb.preflight.header_fingerprints.get(rel) is not None  # the check bound the header
+    assert not nb.quick_confirm.disabled
+    root, _, _ = exp
+    path = root / rel
+    write_channels(path, ["DAPI", "Actin", "Ch3"], KINDS, seed=7)  # same name, header, shape
+    stat = path.stat()
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**10))
+    nb._refresh_quick_axes()
+    assert nb.preview_image.value == b"" and not ui.is_visible(nb.quick_image)
+    assert "changed since the folder check read it" in nb.quick_caption.value
+    assert nb.quick_confirm.disabled
+    assert not nb._confirm_quick_axes()
+    assert nb.confirmed_mapping is None and not nb.preview_checked.value
