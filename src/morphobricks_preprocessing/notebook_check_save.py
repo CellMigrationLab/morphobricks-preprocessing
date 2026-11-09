@@ -62,6 +62,7 @@ from .notebook_description import _with_ids
 from .notebook_row_fold import RowFold, row_status
 from .notebook_thumb_tile import ThumbTile, show_detail
 from .preview_crop import TilePictures
+from .published_answers import kept_date
 from .run import OutputLockedError
 from .run.description_file import PublicationRefused
 from .run.draft_file import publish_draft
@@ -284,12 +285,23 @@ class _CheckSaveScreen:
             self.todo.value = ui.status("error", "The answers cannot be saved.", [str(exc)])
             return None
         roles = None if self.confirmed_mapping is None else self._review().file_mappings
-        return check_candidate(candidate, self.preflight, roles, self._design_folder())
+        state = self._published()
+        published = state.description if state is not None else None
+        _, confirmations = self._publication_terms(state, candidate)
+        return check_candidate(
+            candidate, self.preflight, roles, self._design_folder(), published, confirmations
+        )
 
     def _show_replicates(self, applied: object, answers: object, labels: list[str]) -> None:
         """One box per replicate: folders, pictures, channels, and its own question."""
         boxes, toggles = [], {}
         units, counts = self._reopen_units(), self._channel_counts()
+        state = self._published()
+        saved_dates = (
+            {}
+            if state is None
+            else {key: r.confirmed_on for key, r in state.description.repeats.items()}
+        )
         for view in replicates(applied, answers):
             toggle = ui.ConfirmToggle(
                 SAME_WAY,
@@ -320,8 +332,13 @@ class _CheckSaveScreen:
                 ),
             )
             keys = [u.key for m in view.members for u in m.units]
-            # A box with a warning (an acquisition lacking a label) never folds.
-            settled = view.confirmed_on is not None and not view.missing
+            # A box with a warning (an acquisition lacking a label) never folds, nor one whose
+            # date is not the published one (publication's R_CONFIRMED_ON_CHANGED names it).
+            settled = (
+                view.confirmed_on is not None
+                and not view.missing
+                and view.confirmed_on == saved_dates.get(view.label, view.confirmed_on)
+            )
             boxes.append((box, row_status(units, keys, settled)))
         self.same_way = toggles
         if not hasattr(self, "_replicate_fold"):
@@ -413,10 +430,21 @@ class _CheckSaveScreen:
     # Answers -----------------------------------------------------------------------------
 
     def _same_way(self, label: str, value: bool) -> None:
-        """Save the N35 answer of one replicate, dated the day of the click."""
+        """Save the N35 answer of one replicate, dated the day of the click.
+
+        A published replicate whose layout is as published is not reopened (experiment-v1
+        section 10): its "Yes" takes the published date back ("the draft copies it from the
+        published file, never from the clock"; section 4.4a). Only the user's click sets it.
+        """
         answers = self.draft_answers
         entry = answers.repeats.get(label, RepeatAnswer())
         day = date.today().isoformat() if value else None
+        state = self._published()
+        if value and state is not None:
+            try:
+                day = kept_date(self._draft_base, answers, state.description, label) or day
+            except DraftError:
+                pass  # the layout cannot be compared: the day of the click, checked before Save
         repeats = {**answers.repeats, label: replace(entry, confirmed_on=day)}
         if not self._answer(replace(answers, repeats=repeats)):
             self.save_status.value = ui.status("error", "Not taken.", [str(self._refusal)])
@@ -507,22 +535,33 @@ class _CheckSaveScreen:
         analysed = [m.relative_path for m in pre.metadata.files]
         return changed_since_check(Path(pre.discovery.root), pre.header_fingerprints, analysed)
 
+    def _publication_terms(self, state: object, candidate: object) -> tuple[tuple, tuple]:
+        """Return the removals the user confirmed and the re-confirmations they give publication.
+
+        The same terms go to publication (:meth:`_publish`) and to the pre-save check, so Save
+        is enabled only for what publication accepts.
+        """
+        if state is None:
+            return (), ()
+        removals = tuple(
+            Removal(q.units, self._removals[q.condition_id])
+            for q in state.removals
+            if q.condition_id in self._removals
+        )
+        confirmations = reconfirmations(
+            state.description, candidate, state.reconciliation, removals
+        ).accepted
+        return removals, confirmations
+
     def _publish(self) -> object:
         """Publish the saved draft with the removals the user confirmed."""
         state, today = self._published(), date.today().isoformat()
         removals, confirmations, recorded = (), (), None
         if state is not None:
-            removals = tuple(
-                Removal(q.units, self._removals[q.condition_id])
-                for q in state.removals
-                if q.condition_id in self._removals
-            )
             candidate = description_from_draft(
                 self._draft_base, self.draft_answers, channel_counts=self._channel_counts()
             )
-            confirmations = reconfirmations(
-                state.description, candidate, state.reconciliation, removals
-            ).accepted
+            removals, confirmations = self._publication_terms(state, candidate)
             recorded = today if state.reconciliation.counts else None
         return publish_draft(
             self._design_folder(),

@@ -6,8 +6,10 @@ turns it back into :class:`.draft_answers.DraftAnswers` keyed by the source fold
 ID), so the same cards show them and the folders found now decide what still applies
 (:func:`.draft_answers.carry_over`). Nothing is confirmed by this module: every value is copied
 from the published file, and a comparability date is dropped (the repeat asked again) only when
-the folders of that repeat changed or the comparison with the folders reopens it (a unit's
-channels changed under the same files; :func:`reopened`, experiment-v1 section 10).
+the candidate's layout of that repeat differs from the published one: its folders, or a unit's
+declared ordered channel list or image type (:func:`reopened`, :func:`reasked`, experiment-v1
+section 10). Headers that no longer fit the declared channels are the run's refusal, not a
+reopening: the user fixes the description (for example a header name) and the date stays.
 
 The draft of the folders is derived with the IDs the lineage **retired** (:func:`retired_ids`):
 the IDs still in use are the published answers themselves, so they are not "used" twice.
@@ -15,11 +17,9 @@ the IDs still in use are the published answers themselves, so they are not "used
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import replace
 
 from .description import USED_KINDS, Description
-from .description_reconcile import Reconciliation
 from .draft import Draft
 from .draft_answers import (
     ChannelAnswer,
@@ -123,52 +123,80 @@ def published_answers(published: Description, base_sha256: str) -> DraftAnswers:
     )
 
 
-def _members(draft: Draft, label: str) -> frozenset[UnitKey]:
-    repeat = draft.repeats.get(label)
-    if repeat is None:
-        return frozenset()
+Layout = frozenset[tuple[UnitKey, tuple[str | None, ...] | None, str | None]]
+"""A repeat's layout as section 10 reads it: each unit's folders, ordered channels and type."""
+
+
+def _layout(answers: DraftAnswers, keys: frozenset[UnitKey]) -> Layout:
+    units = answers.units
     return frozenset(
-        (m.condition, m.source_repeat, u.source_folder) for m in repeat.members for u in m.units
+        (key, tuple(units[key].channels), units[key].image_type)
+        if key in units
+        else (key, None, None)
+        for key in keys
     )
 
 
-def _published_members(published: Description) -> Mapping[str, frozenset[UnitKey]]:
-    out = {}
-    for rid, repeat in published.repeats.items():
-        out[rid] = frozenset(
-            (published.conditions[cid].source_folder, member.source_repeat, unit.source_folder)
-            for cid, member in repeat.members.items()
-            for unit in member.technical_repeats.values()
+def layouts(draft: Draft, answers: DraftAnswers) -> dict[str, Layout]:
+    """Return, per repeat label of the paired draft, its units and their declared channels.
+
+    A unit is its folders ``(condition, source repeat, technical)`` with the ordered channel
+    labels and the image type the answers declare for it: the candidate's own layout, never the
+    image headers.
+    """
+    paired = draft.paired(answers.pairing)
+    return {
+        label: _layout(
+            answers,
+            frozenset(
+                (m.condition, m.source_repeat, u.source_folder)
+                for m in repeat.members
+                for u in m.units
+            ),
         )
-    return out
+        for label, repeat in paired.repeats.items()
+    }
+
+
+def published_layouts(published: Description) -> dict[str, Layout]:
+    """Return, per published repeat ID, its units and their declared channels (as answers)."""
+    answers = published_answers(published, "")
+    return {
+        rid: _layout(
+            answers,
+            frozenset(
+                (published.conditions[cid].source_folder, member.source_repeat, unit.source_folder)
+                for cid, member in repeat.members.items()
+                for unit in member.technical_repeats.values()
+            ),
+        )
+        for rid, repeat in published.repeats.items()
+    }
 
 
 def reopened(
-    draft: Draft, answers: DraftAnswers, published: Description, reconciliation: Reconciliation
+    draft: Draft, answers: DraftAnswers, published: Description
 ) -> tuple[DraftAnswers, tuple[str, ...]]:
-    """Return the answers with the comparability of every changed repeat taken back, and which.
+    """Return the answers with the comparability of every reopened repeat taken back, and which.
 
     Experiment-v1 section 10 (N35 reopening): "The confirmation of a repeat is reopened (draft
     ``confirmed = false``) only when channels, layout or grouping change: a new or removed unit
     or member, a unit's ordered channel list, or the pairing of folders into repeats."
 
-    ``draft`` is the draft of the folders now (without answers) and ``reconciliation`` the
-    comparison of ``published`` with the folders and headers now
-    (:func:`.description_reconcile.reconcile`). A repeat is asked again when its folders differ
-    from the published ones (a folder joined or left it) or when the comparison reopens it
-    (``reconciliation.reopened``: for example ``channels_changed``, a unit's headers no longer
-    fitting its saved channels under the same files): its ``confirmed_on`` is dropped, its ID
-    and shown-as name are kept. Every other repeat keeps its date byte for byte (section 4.4a),
-    even if image counts changed.
+    ``draft`` is the draft of the folders now (without answers). The candidate these answers
+    make is compared with ``published``: a repeat is asked again when its layout differs
+    (:func:`layouts`: a folder joined or left it, or a unit's declared ordered channel list or
+    image type differs). Its ``confirmed_on`` is dropped, its ID and shown-as name are kept.
+    Every other repeat keeps its date byte for byte (section 4.4a), even if image counts
+    changed, and even if the image headers no longer fit its channels: that is the run's
+    refusal (``R_HEADER_CONTRADICTION``), shown at once, and the declared list did not change.
     """
-    paired = draft.paired(answers.pairing)
-    before = _published_members(published)
+    now, before = layouts(draft, answers), published_layouts(published)
     changed = tuple(
         sorted(
             label
             for label, answer in answers.repeats.items()
-            if answer.confirmed_on is not None
-            and (label in reconciliation.reopened or _members(paired, label) != before.get(label))
+            if answer.confirmed_on is not None and now.get(label) != before.get(label)
         )
     )
     repeats = dict(answers.repeats)
@@ -177,4 +205,70 @@ def reopened(
     return replace(answers, repeats=repeats), changed
 
 
-__all__ = ["CHANNELS_TYPE", "published_answers", "reopened", "retired_ids"]
+def _declared(layout: Layout | None) -> bool:
+    """Return whether every unit of a layout has its whole ordered channel list and its type."""
+    return layout is not None and all(
+        channels is not None and None not in channels and kind is not None
+        for _, channels, kind in layout
+    )
+
+
+def reasked(
+    draft: Draft, before: DraftAnswers, after: DraftAnswers, published: Description
+) -> tuple[DraftAnswers, tuple[str, ...]]:
+    """Return ``after`` with the date of every repeat an answer just reopened taken back.
+
+    A repeat is reopened by this answer when its layout (:func:`layouts`) differs between
+    ``before`` and ``after``, ``after`` declares every unit's whole channel list and type, and
+    that layout is not the published one (section 10): the user changed a unit's declared
+    channels, its type or the grouping. Its ``confirmed_on`` is dropped, so its "same way?" is
+    asked again; nothing is ever ticked here. A layout with an untagged channel declares no
+    list yet (a tag being changed passes through it), so it reopens nothing by itself: the
+    candidate cannot be saved while a tag is missing.
+    """
+    old, new = layouts(draft, before), layouts(draft, after)
+    saved = published_layouts(published)
+    changed = tuple(
+        sorted(
+            label
+            for label, answer in after.repeats.items()
+            if answer.confirmed_on is not None
+            and _declared(new.get(label))
+            and new.get(label) != old.get(label)
+            and new.get(label) != saved.get(label)
+        )
+    )
+    repeats = dict(after.repeats)
+    for label in changed:
+        repeats[label] = replace(repeats[label], confirmed_on=None)
+    return replace(after, repeats=repeats), changed
+
+
+def kept_date(
+    draft: Draft, answers: DraftAnswers, published: Description, label: str
+) -> str | None:
+    """Return the published ``confirmed_on`` of a repeat whose confirmation is not reopened.
+
+    Section 10: "``confirmed_on`` is kept byte-identical for every repeat whose confirmation is
+    not reopened (section 4.4a); the draft copies it from the published file, never from the
+    clock." None when the repeat is not published or its layout differs from the published one
+    (the answer then takes the day of the click).
+    """
+    repeat = published.repeats.get(label)
+    if repeat is None or layouts(draft, answers).get(label) != published_layouts(published).get(
+        label
+    ):
+        return None
+    return repeat.confirmed_on
+
+
+__all__ = [
+    "CHANNELS_TYPE",
+    "kept_date",
+    "layouts",
+    "published_answers",
+    "published_layouts",
+    "reasked",
+    "reopened",
+    "retired_ids",
+]

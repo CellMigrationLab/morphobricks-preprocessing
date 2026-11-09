@@ -28,7 +28,9 @@ from morphobricks_preprocessing.draft_answers import (
     description_from_draft,
 )
 from morphobricks_preprocessing.published_answers import (
+    kept_date,
     published_answers,
+    reasked,
     reopened,
     retired_ids,
 )
@@ -93,32 +95,63 @@ def test_a_repeat_that_gained_a_folder_is_asked_again_and_the_others_keep_their_
     published = description_from_draft(small, replace(complete(), units=units))
     make_tree(tmp_path / "exp", ["DrugA/rep2/a.tif"])
     now = draft_from_discovery(discover_experiment(tmp_path / "exp"))
-    rec = reconcile(published, observe_folders(discover_experiment(tmp_path / "exp")))
-    answers, asked = reopened(now, published_answers(published, SHA), published, rec)
+    answers, asked = reopened(now, published_answers(published, SHA), published)
     assert asked == ("rep2",)
     assert answers.repeats["rep2"].confirmed_on is None
     assert answers.repeats["rep2"].id == "rep2"  # the ID is kept
     assert answers.repeats["rep1"].confirmed_on == DAY  # byte for byte (4.4a)
 
 
-def test_a_repeat_whose_unit_s_channels_changed_is_asked_again_with_the_same_folders(exp):
-    # Regression (review of #254/#255): experiment-v1 section 10 reopens a repeat when "a
-    # unit's ordered channel list" changes; only a change of folders took the date back.
+def test_a_unit_s_declared_channel_order_reopens_its_repeat_with_the_same_folders(exp):
+    # Experiment-v1 section 10 reopens a repeat when "a unit's ordered channel list" changes:
+    # the candidate's declared list, compared with the published one.
     now, published = described(exp)
-    observed = observe_folders(discover_experiment(exp))
-    changed = next(key for key in observed if key.source_repeat == "rep1")
-    observed[changed] = replace(observed[changed], channel_count=7)  # headers state 7 channels
-    rec = reconcile(published, observed)
-    assert rec.reopened == {"rep1": (CHANNELS_CHANGED,)}
     saved = published_answers(published, SHA)
-    answers, asked = reopened(now, saved, published, rec)
+    key = next(k for k in saved.units if k[1] == "rep1")
+    swapped = tuple(reversed(saved.units[key].channels))
+    edited = replace(saved, units={**saved.units, key: replace(saved.units[key], channels=swapped)})
+    answers, asked = reopened(now, edited, published)
     assert asked == ("rep1",)
     assert answers.repeats["rep1"].confirmed_on is None and answers.repeats["rep1"].id == "rep1"
     rep2 = saved.repeats["rep2"].confirmed_on
     assert rep2 and answers.repeats["rep2"].confirmed_on == rep2  # not reopened: kept (4.4a)
-    same = reconcile(published, observe_folders(discover_experiment(exp)))
-    kept, none = reopened(now, saved, published, same)
+    again, by_answer = reasked(now, saved, edited, published)  # the same, as the edit is made
+    assert by_answer == ("rep1",) and again.repeats == answers.repeats
+    kept, none = reopened(now, saved, published)
     assert none == () and kept.repeats == saved.repeats
+
+
+def test_headers_that_no_longer_fit_reopen_nothing_while_the_declared_list_is_as_saved(exp):
+    # Owner decision (review of #257): the folder reconciliation's channels_changed compares the
+    # headers with the PUBLISHED file. It is the run's refusal, not a section 10 reopening: the
+    # declared ordered channel list did not change, so the date stays (section 4.4a) and a
+    # header name the user adds to a channel keeps it too.
+    now, published = described(exp)
+    observed = observe_folders(discover_experiment(exp))
+    changed = next(key for key in observed if key.source_repeat == "rep1")
+    observed[changed] = replace(observed[changed], channel_count=7)  # headers state 7 channels
+    assert reconcile(published, observed).reopened == {"rep1": (CHANNELS_CHANGED,)}
+    saved = published_answers(published, SHA)
+    kept, none = reopened(now, saved, published)
+    assert none == () and kept.repeats == saved.repeats
+    channel = next(iter(saved.channels))
+    alias = replace(saved.channels[channel], header_names=("Hoechst",))
+    named = replace(saved, channels={**saved.channels, channel: alias})
+    after, asked = reasked(now, saved, named, published)
+    assert asked == () and after.repeats == saved.repeats
+
+
+def test_an_untagged_channel_on_the_way_reopens_nothing_and_the_saved_date_is_offered(exp):
+    now, published = described(exp)
+    saved = published_answers(published, SHA)
+    key = next(k for k in saved.units if k[1] == "rep1")
+    cleared = (None, *saved.units[key].channels[1:])
+    gap = replace(saved, units={**saved.units, key: replace(saved.units[key], channels=cleared)})
+    after, asked = reasked(now, saved, gap, published)
+    assert asked == () and after.repeats == saved.repeats  # a tag being changed, not a list
+    assert kept_date(now, gap, published, "rep1") is None  # the layout differs: the click's day
+    assert kept_date(now, saved, published, "rep1") == published.repeats["rep1"].confirmed_on
+    assert kept_date(now, saved, published, "nope") is None
 
 
 def test_the_review_states_comparisons_in_words_and_missing_channels(exp):

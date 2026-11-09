@@ -8,10 +8,20 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
-- **Pre-release follow-ups to #254 and #255.** A unit whose image headers changed under the
-  same files (`channels_changed`) now asks its replicate's "prepared and imaged the same way?"
-  again, as experiment-v1 §10 requires ("a unit's ordered channel list"); only that replicate's
-  `confirmed_on` is taken back, every other one is kept byte for byte. `describe` (command
+- **Pre-release follow-ups to #254 and #255.** A replicate's "prepared and imaged the same
+  way?" is asked again when the candidate description changes its layout against the published
+  one, as experiment-v1 §10 says ("a unit's ordered channel list", a new or removed unit or
+  member, the pairing): at the reopen, and as soon as an answer changes a unit's declared
+  channel order, image type or grouping. Only that replicate's `confirmed_on` is taken back;
+  every other one is kept byte for byte (§4.4a). Image headers that no longer fit the declared
+  channels (`channels_changed`) are the run's refusal (`R_HEADER_CONTRADICTION`), shown at once,
+  not a reopening: a header rename fixed by tagging the channel again (its new header name joins
+  the channel's `header_names`) keeps the date and saves. Ticking "same way?" for a replicate
+  whose layout is as published takes the published date back (§10: "the draft copies it from
+  the published file, never from the clock"). *Check and save* runs publication's own
+  transition checks (`R_CONFIRMED_ON_CHANGED`, `R_CONFIRMED_ID_CHANGED`, `R_USED_ID_*`) with the
+  same re-confirmations, so Save is disabled, with the reason, for a candidate that publication
+  would refuse. `describe` (command
   line) reads the image headers (no pixel) when it compares a published description and
   reports a header-only change and the replicate to confirm again, as the notebook does. Save
   stays allowed when the run's checks would refuse (owner decision, 2026-11-10); a line beside
@@ -24,13 +34,16 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   read) leave it unknown (`unit_channel_count_unknown`), never the first image's count.
   "The run (step 12) can start" is said only once the run's checks have run and passed; before
   the axis roles are confirmed the screen says to confirm them first. A refusal is not hidden
-  behind the reopened question: while answers are missing, *Check and save* says at once that
-  the run is blocked by both, the question and the run's refusal of the saved description (its
-  codes and folders), or, before the axis roles are confirmed, the header change the folder check
+  behind a missing answer: while answers are missing, *Check and save* says at once that the
+  run is blocked by both, the answers and the run's refusal of the saved description (its codes
+  and folders), or, before the axis roles are confirmed, the header change the folder check
   found. A plane read across a rewrite is not kept in the preview cache. **API changes:**
-  `published_answers.reopened(draft, answers, published, reconciliation)` takes the
-  reconciliation as a new required argument; `UnitLayout.counts_agree` and
-  `channel_units.unit_channel_counts` are new.
+  `published_answers.reopened(draft, answers, published)` compares the declared layouts (units
+  with their ordered channels and image type); `published_answers.layouts`,
+  `published_layouts`, `reasked` and `kept_date`, `run.description_file.transition_refusals`,
+  `description_candidate.transition_issue`, and `check_candidate(..., published=,
+  confirmations=)` are new; `UnitLayout.counts_agree` and `channel_units.unit_channel_counts`
+  are new.
 
 - **Audit batches 33 and 34a: what is published is what was answered, of the image checked.**
   *Yes, these are right* saves exactly the tags a block shows (a hidden proposal is never
