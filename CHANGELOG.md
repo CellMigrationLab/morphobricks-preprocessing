@@ -8,6 +8,15 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Notebook: your channels, labels first then tag per unit (Stage 1 PR 15, draft).** After the axis
+  roles are confirmed, *Which labels did you image?* lists what was stained (prefilled only from
+  header names that are valid IDs as they are and not generic such as `Ch1`, `C0`, `AF488`; near
+  spellings are grouped for the user to decide, never merged; a case collision is refused at once),
+  and *Tag each channel* shows one row per unit with a safe thumbnail, the quoted header name and a
+  dropdown of the labels per channel, plus a per-unit image type with nothing preselected. Labels
+  used in only some units say so (`A_SCOPE_INCOMPLETE`). Every answer is saved to the draft, which is
+  now version 3 (a unit's `channels` may hold `null` for not tagged, never `""`: every position needs a declared label, e.g. `unused`;
+  `image_type` may be `channels`; versions 1 and 2 are refused); contract §18.
 - **Contract: the final mask check is as late as practicable, not a lock (#222, docs only).** Source masks are checked right before the manifest replace and ordinary concurrent edits are detected; the files are not locked, so a change between that check and the replace is not detected, and the manifest binds the bytes as they were at the final check (owner decision of 8 November 2026: documented, not snapshotted). `docs/contract.md` §9.4.
 - **Notebook Step 1 cards: names, IDs, pairing and references (Stage 1 PR 14, draft).** After the
   labels are confirmed, *Names for your experiment* proposes the folder names as IDs (only where

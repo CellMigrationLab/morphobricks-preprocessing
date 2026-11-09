@@ -135,6 +135,7 @@ class _DescriptionCard(_SavedDraft):
         self.draft = self.draft_answers = self._draft_base = None
         ui.set_visible(self.names_card, False)
         ui.set_visible(self.references_card, False)
+        self._hide_channels()
 
     def _design_pairing(self) -> dict[tuple[str, str], str]:
         """Return the folders the design pairs under another name than their own."""
@@ -291,6 +292,7 @@ class _DescriptionCard(_SavedDraft):
             self._refreshing = False
         ui.set_visible(self.names_card, True)
         ui.set_visible(self.references_card, len(self.draft.conditions) > 1)
+        self._refresh_channels()
 
     def _build_names(self) -> None:
         """Rebuild the ID and shown-as boxes, keeping what was typed and not yet confirmed."""
