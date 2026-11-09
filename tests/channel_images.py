@@ -52,7 +52,32 @@ def cells(seed: int, size: int = SIZE) -> np.ndarray:
     return np.clip(img, 0, 65535).astype(np.uint16)
 
 
-KINDS = {"blobs": blobs, "filaments": filaments, "cells": cells}
+def large(seed: int, size: int = 2048) -> np.ndarray:
+    """Return a large field: broad cells, with fine one-pixel fibres and dots on top (uint16).
+
+    The fine structure is lost in a strided thumbnail and visible in a crop at native pixels.
+    """
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[:size, :size]
+    img = rng.normal(300, 20, (size, size))
+    for _ in range(10):
+        cy, cx = rng.uniform(0.1 * size, 0.9 * size, 2)
+        r = rng.uniform(size / 14, size / 8)
+        img += 1200 * np.exp(-(((yy - cy) ** 2 + (xx - cx) ** 2) / (2 * r**2)))
+    for _ in range(size // 4):
+        y0, x0 = rng.uniform(0, size, 2)
+        angle, length = rng.uniform(0, np.pi), rng.uniform(size / 40, size / 8)
+        t = np.linspace(0, length, int(length * 2))
+        y, x = (y0 + t * np.sin(angle)).astype(int), (x0 + t * np.cos(angle)).astype(int)
+        keep = (y >= 0) & (y < size) & (x >= 0) & (x < size)
+        img[y[keep], x[keep]] += 1500
+    dots = rng.integers(1, size - 1, (size, 2))
+    for dy in (-1, 0, 1):
+        img[dots[:, 0] + dy, dots[:, 1]] += 2500
+    return np.clip(img, 0, 65535).astype(np.uint16)
+
+
+KINDS = {"blobs": blobs, "filaments": filaments, "cells": cells, "large": large}
 
 
 def blob_labels(seed: int, size: int = SIZE) -> np.ndarray:

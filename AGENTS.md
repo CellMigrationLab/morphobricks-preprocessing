@@ -313,6 +313,9 @@ src/morphobricks_preprocessing/
   notebook_axes_quick.py    the stepper's one-click Confirm these axes (Q3, PR 17b)
   notebook_row_fold.py      reopen: unchanged, answered rows fold; new or changed rows orange
   notebook_channels_rows.py the tag grid's folder rows: pictures (colour for RGB), Enlarge
+  notebook_folder_previews.py Images found: a header picture per folder (header_preview.py,
+                            display only, Y/X named, capped reads); notebook_thumb_tile.py the
+                            shared thumbnail with its 1:1 crop (preview_crop.py, pure) and Enlarge
   notebook_folder.py        step 1: folder, check, issues, labels (_FolderStep)
   notebook_design.py        step 1: the experiment design card (_DesignCard)
   notebook_axis_step.py     step 2: role dropdowns, axis check, missing-axes card (_AxisStep)

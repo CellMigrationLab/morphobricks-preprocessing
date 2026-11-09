@@ -18,6 +18,7 @@ from . import notebook_style as ui
 from .channel_labels import RGB_IDS, UnitLayout
 from .notebook_channel_thumbs import COLOUR_TEXT, Thumb, Thumbnails
 from .notebook_channels_view import columns, quoted, rgb_chip, unit_name
+from .notebook_thumb_tile import zoom_button
 
 THUMB_PX = "160px"
 
@@ -112,10 +113,7 @@ class FolderRows:
 
     @staticmethod
     def _zoom(action: Callable[[], None]) -> widgets.Button:
-        zoom = ui.button(" Enlarge", icon="search-plus", tooltip="Show the 1024 px detail view")
-        zoom.layout = widgets.Layout(width="99%")
-        zoom.on_click(lambda _: action())
-        return zoom
+        return zoom_button(action, "Show the 1024 px detail view")
 
     def _enlarge(self, layout: UnitLayout, index: int | None) -> None:
         """Show the 1024 px picture of one channel (or the colour picture) under the grid."""

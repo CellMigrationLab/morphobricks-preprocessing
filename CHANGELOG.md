@@ -8,6 +8,19 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Notebook: folder pictures with a 1:1 crop, "Tag like the saved group", colour mask evidence
+  (PR 17c).** *Images found* adds a picture of each folder's first image to the labels table,
+  from the file header only and display only (`header_preview`, `notebook_folder_previews`):
+  drawn only when the header names Y and X ("preview after Axes (step 2)" otherwise), every
+  other axis max-projected and named, colour for an RGB header, at most 8 planes and
+  4096 x 4096 pixels read per picture (a larger image says so), a read failure written in its
+  cell; the check draws the first 12 folders and a button draws the others. A thumbnail
+  downscaled more than 2x gets a crop of 128 native pixels where the thumbnail varies most
+  (deterministic, topmost then leftmost, with its x/y range; `preview_crop`), in one shared
+  tile with **Enlarge** (`notebook_thumb_tile`), also on *Replicates* and *Check and save*.
+  On a reopen, a block of new folders with exactly a saved block's header offers
+  **Tag like the saved group (…)**: the click writes the same draft bytes as tagging by hand.
+  The mask evidence of an RGB folder is drawn on its colour picture.
 - **Notebook: unchanged rows fold on reopen (PR 17b-2).** When a saved experiment is reopened, a
   row whose folders are found exactly as saved and whose question is answered folds behind one line
   ("3 unchanged folders, answered as saved") with an **open** toggle: the pairing, the condition,

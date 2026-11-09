@@ -8,13 +8,14 @@ mask reduced with the same step (:func:`.preview.labels_thumbnail`, never interp
 plane is read with the mask step's reader (:func:`.masks.read_mask`, which also checks the
 labels). Nothing here decides what the mask is: the values are evidence for the user, who answers
 "separate objects" or "regions"; the overlay is drawn only as the user declared
-(:func:`.preview_render.mask_overlay_png`).
+(:func:`.preview_render.mask_overlay_png`). For a colour (RGB) folder the image is drawn in
+colour (:meth:`MaskEvidence.in_colour`, :func:`.preview_render.colour_composite`), display only.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -29,7 +30,14 @@ from .preview import (
     channel_strip,
     labels_thumbnail,
 )
-from .preview_render import OverlayRefused, Panel, display_panel, mask_overlay_png, png_bytes
+from .preview_render import (
+    OverlayRefused,
+    Panel,
+    colour_composite,
+    display_panel,
+    mask_overlay_png,
+    png_bytes,
+)
 
 READ_ERRORS = (PreviewRefused, OSError, ValueError, IndexError)
 """Why a picture or a value count may not be available; each becomes a sentence, never a guess."""
@@ -43,7 +51,9 @@ class MaskEvidence:
     ``values`` the number of different values (0 included) in its mask plane, None when it could
     not be read; ``channel`` the C index of the picture (None for an image without channels);
     ``plane`` which plane is shown; ``label`` the channel label the user tagged at that C index
-    (None when not tagged); ``problem`` why something is missing.
+    (None when not tagged); ``problem`` why something is missing. ``panels`` are every channel
+    of the plane shown; ``colour`` is True when the picture is their colour composite, and
+    ``colour_problem`` says why a colour folder is drawn on one channel instead.
     """
 
     source_type: str
@@ -58,6 +68,23 @@ class MaskEvidence:
     labels: np.ndarray | None = None
     problem: str = ""
     label: str | None = None
+    panels: tuple[Panel, ...] = ()
+    colour: bool = False
+    colour_problem: str = ""
+
+    def in_colour(self) -> MaskEvidence:
+        """Return the evidence drawn on the colour picture of the three channels (RGB folder).
+
+        A plane that cannot be drawn in colour keeps its one-channel picture, and
+        ``colour_problem`` says why (shown in the caption, never silently).
+        """
+        if self.picture is None:
+            return self
+        try:
+            panel = colour_composite(self.panels)
+        except ValueError as exc:
+            return replace(self, colour_problem=str(exc))
+        return replace(self, picture=panel, channel=None, colour=True)
 
     def image_png(self) -> bytes | None:
         """Return the image channel's picture as PNG bytes, or None."""
@@ -147,6 +174,7 @@ def mask_evidence(
         where or "the only plane",
         panel.panel,
         labels,
+        panels=tuple(p.panel for p in strip.panels),
     )
 
 

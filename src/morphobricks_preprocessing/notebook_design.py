@@ -46,6 +46,7 @@ class _DesignCard:
         )
         ui.set_visible(self.design_change, False)
         self.pairing_grid = widgets.VBox()
+        self.pairing_detail = widgets.VBox()  # a picture's Enlarge (described run)
         self.pairing_box = widgets.VBox(
             [
                 widgets.HTML("<b>1. Pair the biological repeats across conditions</b>"),
@@ -59,6 +60,7 @@ class _DesignCard:
                     "folder names only; the repeat's own ID is set with the names below."
                 ),
                 self.pairing_grid,
+                self.pairing_detail,
             ]
         )
         self.groups_box = widgets.VBox()

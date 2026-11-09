@@ -40,6 +40,7 @@ from .draft_answers import (
 )
 from .draft_format import DraftFileError
 from .mask_answers import masks_unanswered
+from .notebook_channel_thumbs import Thumb
 from .notebook_check_view import (
     SAME_WAY,
     SAME_WAY_HELP,
@@ -55,6 +56,8 @@ from .notebook_check_view import (
 )
 from .notebook_description import _with_ids
 from .notebook_row_fold import RowFold, row_status
+from .notebook_thumb_tile import ThumbTile, show_detail
+from .preview_crop import TilePictures
 from .run import OutputLockedError
 from .run.description_file import PublicationRefused
 from .run.draft_file import publish_draft
@@ -64,8 +67,15 @@ INTRO = (
     "replicate, whether its folders were prepared and imaged the same way, read the short names "
     "(they never change once saved), then save. Nothing is saved for good before your click."
 )
-PICTURE = widgets.Layout(width="120px", border="1px solid #CBD5E1")
 FOLDED = ("design_card", "names_card", "references_card", "channels_box", "masks_box")
+
+
+def _enlarge(detail: widgets.VBox, title: str, found: TilePictures | Thumb) -> None:
+    """Show a folder's enlarged picture in ``detail``, or why there is none."""
+    if isinstance(found, Thumb):
+        show_detail(detail, title, None, found.note)
+    else:
+        show_detail(detail, title, found, "")
 
 
 class _CheckSaveScreen:
@@ -92,6 +102,7 @@ class _CheckSaveScreen:
         self.folder_changes = widgets.HTML()
         self.words = widgets.HTML()
         self.replicates_box = widgets.VBox()
+        self.replicates_detail = widgets.VBox()  # a picture's Enlarge
         self.removals_box = widgets.VBox()
         self.short_names = widgets.HTML()
         self.todo = widgets.HTML()
@@ -107,6 +118,7 @@ class _CheckSaveScreen:
                 self.folder_changes,
                 self.words,
                 self.replicates_box,
+                self.replicates_detail,
                 self.removals_box,
                 self.short_names,
                 self.todo,
@@ -256,7 +268,9 @@ class _CheckSaveScreen:
             members = [
                 widgets.HBox(
                     [
-                        self._member_picture((m.condition, m.source_repeat)),
+                        self._member_picture(
+                            (m.condition, m.source_repeat), self.replicates_detail
+                        ),
                         widgets.HTML(member_html(m, labels)),
                     ]
                 )
@@ -278,8 +292,12 @@ class _CheckSaveScreen:
             self._replicate_fold = RowFold("replicate")
         self.replicates_box.children = self._replicate_fold.arrange(boxes)
 
-    def _member_picture(self, key: tuple[str, str]) -> widgets.Widget:
-        """Return the picture of a folder's first image (channel 1, or in colour when RGB)."""
+    def _member_picture(self, key: tuple[str, str], detail: widgets.VBox) -> widgets.Widget:
+        """Return the picture of a folder's first image (channel 1, or in colour when RGB).
+
+        A large image gets its crop at native pixels beside it; **Enlarge** shows both in
+        ``detail``.
+        """
         thumbs, layouts = self._channel_thumbs, self._channel_layouts
         layout = next((u for u in layouts if u.key[:2] == key), None)
         if thumbs is None or layout is None:
@@ -288,20 +306,22 @@ class _CheckSaveScreen:
                 "confirmed</div>"
             )
         colour = self.channel_types.shown(layout) == "rgb"
-        thumb = thumbs.picture(layout, colour)
-        if not thumb.png:
-            return widgets.HTML(
-                f"<div class='mb-help' style='width:120px'>{html.escape(thumb.note)}</div>"
-            )
-        image = widgets.Image(value=thumb.png, format="png", layout=PICTURE)
-        image.add_class("mb-colour" if colour else "mb-grey")
-        return image
+        found = thumbs.tile(layout, colour)
+        if isinstance(found, Thumb):
+            return ThumbTile(None, problem=found.note, width="120px").widget
+        title = f"<b>{html.escape('/'.join(key))}</b> · {html.escape(layout.image or '')}"
+        return ThumbTile(
+            found,
+            colour=colour,
+            enlarge=lambda: _enlarge(detail, title, thumbs.enlarged(layout, colour)),
+            width="120px",
+        ).widget
 
     def _folder_cell(self, key: tuple[str, str], text: str) -> widgets.Widget:
         """Return a folder of the pairing card, with its picture in a described run."""
         if not self._describe:
             return super()._folder_cell(key, text)
-        return widgets.VBox([widgets.HTML(text), self._member_picture(key)])
+        return widgets.VBox([widgets.HTML(text), self._member_picture(key, self.pairing_detail)])
 
     def _show_removals(self, state: object) -> None:
         """One orange question per condition with removed folders, with **Yes, remove**."""

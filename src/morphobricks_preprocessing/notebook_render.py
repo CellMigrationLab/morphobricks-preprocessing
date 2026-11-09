@@ -11,6 +11,7 @@ from . import notebook_style as ui
 from .axes import AxisMapping
 from .dataset import BalanceTable
 from .design import ExperimentDesign
+from .discovery import LeafFolder
 from .notebook_options import _SKIPPED_CODES
 from .notebook_values import plane_counts, value_range
 from .planes import Plane
@@ -101,22 +102,28 @@ def balance_html(balance: BalanceTable) -> str:
     )
 
 
+def label_cells(leaf: LeafFolder) -> list[str]:
+    """Return a folder's cells of the labels table: its labels, image count and folder (HTML)."""
+    cells = [
+        "<span class='mb-pill mb-pill-single'>single</span>"
+        if label == "single"
+        else f"<b>{html.escape(label)}</b>"
+        for label in leaf.labels
+    ]
+    folder = "experiment folder" if leaf.relative_path == "." else leaf.relative_path
+    return [*cells, f"{len(leaf.images):,}", f"<b>{html.escape(folder)}</b>"]
+
+
 def labels_html(pre: Preflight) -> str:
     """Render the leaf folders and their labels as a table, ``single`` greyed out."""
     rows = []
     for leaf in pre.discovery.leaves:
-        cells = [
-            "<span class='mb-pill mb-pill-single'>single</span>"
-            if label == "single"
-            else f"<b>{html.escape(label)}</b>"
-            for label in leaf.labels
-        ]
-        folder = "experiment folder" if leaf.relative_path == "." else leaf.relative_path
+        *labels, count, folder = label_cells(leaf)
         rows.append(
             "<tr>"
-            + "".join(f"<td>{cell}</td>" for cell in cells)
-            + f"<td class='mb-num'>{len(leaf.images):,}</td>"
-            + f"<td><b>{html.escape(folder)}</b></td></tr>"
+            + "".join(f"<td>{cell}</td>" for cell in labels)
+            + f"<td class='mb-num'>{count}</td>"
+            + f"<td>{folder}</td></tr>"
         )
     header = "".join(
         f"<th>{h}</th>"

@@ -57,6 +57,7 @@ STYLE_CSS = """
   min-width: 120px; flex: 1 1 120px; }
 .mb-tile .mb-tile-value { font-size: 20px; font-weight: 700; color: #0F172A; }
 .mb-tile .mb-tile-label { font-size: 12px; color: #64748B; }
+.mb-crop, .mb-crop img { image-rendering: pixelated; }
 .mb-table-wrap { overflow-x: auto; max-height: 460px; overflow-y: auto; }
 .mb-table { border-collapse: collapse; font-size: 13px; width: 99%; }
 .mb-table th { background: #F8FAFC; text-align: left; padding: 6px 10px; position: sticky; top: 0;

@@ -76,13 +76,17 @@ def _number(value: float) -> str:
     return f"{value:.6g}"
 
 
-def display_panel(pixels: np.ndarray) -> Panel:
+def display_panel(pixels: np.ndarray, limits: tuple[float, float] | None = None) -> Panel:
     """Return a plane as a display panel: float32, percentile contrast of the finite values.
 
     Parameters
     ----------
     pixels
         An already reduced (Y, X) plane, in its own dtype.
+    limits
+        The values shown as black and white, when they come from another view of the same
+        image (a detail drawn with its thumbnail's contrast); None for the plane's own
+        percentiles. Flat and non-finite pixels are drawn as always.
 
     Raises
     ------
@@ -99,7 +103,9 @@ def display_panel(pixels: np.ndarray) -> Panel:
         return Panel(magenta, NO_FINITE, None, None, missing, "no finite values")
     values = wide[finite]
     low, high = (float(v) for v in np.percentile(values, [LOW_PERCENTILE, HIGH_PERCENTILE]))
-    if low == high and float(values.min()) == float(values.max()):
+    if limits is not None and limits[0] < limits[1]:
+        low, high = limits
+    elif low == high and float(values.min()) == float(values.max()):
         grey = np.full(pixels.shape, FLAT_GREY, np.uint8)
         note = f"flat: every finite value is {_number(low)}"
         return _with_missing(Panel(grey, FLAT, None, None, missing, note), finite)

@@ -161,7 +161,7 @@ def test_pairing_shows_a_picture_of_each_folder_once_the_axis_roles_are_confirme
     nb.show_preview()
     nb.confirm_button.click()
     cell = nb.pairing_grid.children[1].children[1]  # rebuilt with its picture
-    png = bytes(cell.children[1].value)
+    png = bytes(cell.children[1].children[0].children[0].value)  # the tile's thumbnail
     pixels = decode(png)
     assert pixels.shape[:2] == (64, 64) and pixels.std() > 0  # the folder's own 64 px image
 
@@ -313,7 +313,8 @@ def test_each_replicate_row_shows_its_own_folders_picture(exp):
     seen = {}
     for box in nb.replicates_box.children:
         for row in box.children[1:-2]:
-            picture, text = row.children
+            tile, text = row.children
+            picture = tile.children[0].children[0]  # the tile's thumbnail
             folder = text.value.split("<b>")[1].split("</b>")[0]
             key = tuple(folder.split("/"))
             expected = nb._channel_thumbs.get(layouts[key], 0).png
