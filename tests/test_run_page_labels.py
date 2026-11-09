@@ -252,3 +252,22 @@ def test_replicate_ids_are_shown_in_natural_order_rep2_before_rep10():
         "rep2",
         "rep10",
     ]
+
+
+def test_natural_order_compares_a_bare_name_with_a_numbered_one_and_mixed_ids():
+    # Regression (17b review): "rep" against "rep2" compared the tie-break text with a number.
+    assert sorted(["rep2", "rep", "ctrl2", "ctrl"], key=natural_key) == [
+        "ctrl",
+        "ctrl2",
+        "rep",
+        "rep2",
+    ]
+    mixed = ["repA", "rep10", "rep02", "rep2", "rep", "2rep", "rep2b"]
+    first = sorted(mixed, key=natural_key)
+    assert first == sorted(reversed(mixed), key=natural_key)  # deterministic, any input order
+    assert first == ["2rep", "rep", "rep02", "rep2", "rep2b", "rep10", "repA"]
+    labels = RunLabels(repeats={("ctrl", "a"): "rep", ("ctrl", "b"): "rep2"})
+    assert sorted([("ctrl", "b"), ("ctrl", "a")], key=lambda k: labels.order(*k)) == [
+        ("ctrl", "a"),
+        ("ctrl", "b"),
+    ]
