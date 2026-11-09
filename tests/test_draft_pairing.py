@@ -102,7 +102,7 @@ def test_the_pairing_is_saved_and_resumed_from_the_draft_file(base, tmp_path):
 
 
 def test_the_file_of_an_older_version_without_pairing_is_refused(base):
-    old = answers_to_bytes(answers()).replace(b'"version": 2', b'"version": 1')
+    old = answers_to_bytes(answers()).replace(b'"version": 3', b'"version": 1')
     with pytest.raises(DraftFileError) as refused:
         answers_from_bytes(old)
     assert refused.value.code == "unknown_version"

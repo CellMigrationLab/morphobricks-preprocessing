@@ -108,20 +108,8 @@ def setup_environment(tmp_path, monkeypatch):
         import ipywidgets as widgets
 
         class FakeNotebook:
-            def welcome(self):
-                return widgets.HTML("welcome")
-
-            def folder_step(self):
-                return widgets.HTML("folder")
-
-            def axis_step(self):
-                return widgets.HTML("axes")
-
-            def run_step(self):
-                return widgets.HTML("run")
-
-            def results_step(self):
-                return widgets.HTML("results")
+            def __getattr__(self, name):  # welcome, folder_step, axis_step, channels_step, ...
+                return lambda: widgets.HTML(name)
 
         return SimpleNamespace(PreprocessingNotebook=FakeNotebook)
 

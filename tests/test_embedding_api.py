@@ -59,6 +59,10 @@ NOTEBOOK_METHODS = {
         ("intro", KEYWORD, None),
         ("show_next", KEYWORD, True),
     ],
+    "channels_step": [
+        ("title", POSITIONAL, None),
+        ("purpose", POSITIONAL, None),
+    ],
     "run_step": [],
     "results_step": [],
     "check_folder": [],

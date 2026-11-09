@@ -57,9 +57,15 @@ class RepeatAnswer:
 
 @dataclass(frozen=True)
 class UnitAnswer:
-    """The channel ID of each C index of one imaging unit, in order, and its optional type."""
+    """The channel ID of each C index of one imaging unit, in order, and its image type.
 
-    channels: tuple[str, ...]
+    An entry of ``channels`` is a declared channel ID or None while that position is not
+    tagged (every position needs a label the user declared, for example ``unused``).
+    ``image_type`` is ``"rgb"``, ``"channels"`` (an ordinary channel image,
+    the description's absent type) or None while not answered.
+    """
+
+    channels: tuple[str | None, ...]
     image_type: str | None = None
     display_name: str | None = None
 
@@ -289,8 +295,9 @@ def missing_confirmations(draft: Draft, answers: DraftAnswers) -> tuple[OpenQues
     """Return every confirmation still missing for ``draft`` with ``answers`` applied.
 
     The draft's own open questions (IDs, repeats, controls, legacy folders), plus the channels
-    of every imaging unit that has none (``unit_channels_missing``) and every channel a unit
-    names that is not declared (``channel_undeclared``).
+    of every imaging unit that has none (``unit_channels_missing``), every position not tagged
+    (``unit_channel_untagged``) and every channel a unit names that is not declared
+    (``channel_undeclared``).
     """
     out = list(draft.open_questions())
     declared = set(answers.channels)
@@ -300,8 +307,14 @@ def missing_confirmations(draft: Draft, answers: DraftAnswers) -> tuple[OpenQues
         answer = answers.units.get(key)
         if answer is None or not answer.channels:
             out.append(OpenQuestion("unit_channels_missing", " / ".join(key)))
-        else:
-            undeclared.update(c for c in answer.channels if c not in declared)
+            continue
+        where = " / ".join(key)
+        out += [
+            OpenQuestion("unit_channel_untagged", f"{where} / C{i}")
+            for i, c in enumerate(answer.channels)
+            if c is None
+        ]
+        undeclared.update(c for c in answer.channels if c and c not in declared)
     return tuple(out + [OpenQuestion("channel_undeclared", c) for c in sorted(undeclared)])
 
 
@@ -333,8 +346,9 @@ def _repeat(draft: Draft, label: str, answers: DraftAnswers) -> Repeat:
         units = {}
         for u in member.units:
             given = answers.units[(member.condition, member.source_repeat, u.source_folder)]
+            kind = None if given.image_type == "channels" else given.image_type
             units[draft.technical_repeats[u.source_folder].confirmed] = Unit(
-                u.source_folder, given.channels, given.display_name, given.image_type
+                u.source_folder, tuple(given.channels), given.display_name, kind
             )
         members[cid] = Member(member.source_repeat, member.image_count, units)
     shown = answers.repeats.get(label, RepeatAnswer()).display_name
