@@ -11,6 +11,7 @@ import pytest
 from draft_file_support import COUNTS, DAY, PATHS, complete
 from morphobricks_preprocessing import discover_experiment, preflight
 from morphobricks_preprocessing.description_candidate import check_candidate
+from morphobricks_preprocessing.description_reconcile import CHANNELS_CHANGED, reconcile
 from morphobricks_preprocessing.description_reopen import published_state
 from morphobricks_preprocessing.description_review import (
     comparisons,
@@ -31,6 +32,7 @@ from morphobricks_preprocessing.published_answers import (
     reopened,
     retired_ids,
 )
+from morphobricks_preprocessing.reconcile_observe import observe_folders
 from morphobricks_preprocessing.run.description_file import publish_description
 from morphobricks_preprocessing.run.draft_file import publish_draft, save_draft
 from tiff_tree import make_tree
@@ -91,11 +93,32 @@ def test_a_repeat_that_gained_a_folder_is_asked_again_and_the_others_keep_their_
     published = description_from_draft(small, replace(complete(), units=units))
     make_tree(tmp_path / "exp", ["DrugA/rep2/a.tif"])
     now = draft_from_discovery(discover_experiment(tmp_path / "exp"))
-    answers, asked = reopened(now, published_answers(published, SHA), published)
+    rec = reconcile(published, observe_folders(discover_experiment(tmp_path / "exp")))
+    answers, asked = reopened(now, published_answers(published, SHA), published, rec)
     assert asked == ("rep2",)
     assert answers.repeats["rep2"].confirmed_on is None
     assert answers.repeats["rep2"].id == "rep2"  # the ID is kept
     assert answers.repeats["rep1"].confirmed_on == DAY  # byte for byte (4.4a)
+
+
+def test_a_repeat_whose_unit_s_channels_changed_is_asked_again_with_the_same_folders(exp):
+    # Regression (review of #254/#255): experiment-v1 section 10 reopens a repeat when "a
+    # unit's ordered channel list" changes; only a change of folders took the date back.
+    now, published = described(exp)
+    observed = observe_folders(discover_experiment(exp))
+    changed = next(key for key in observed if key.source_repeat == "rep1")
+    observed[changed] = replace(observed[changed], channel_count=7)  # headers state 7 channels
+    rec = reconcile(published, observed)
+    assert rec.reopened == {"rep1": (CHANNELS_CHANGED,)}
+    saved = published_answers(published, SHA)
+    answers, asked = reopened(now, saved, published, rec)
+    assert asked == ("rep1",)
+    assert answers.repeats["rep1"].confirmed_on is None and answers.repeats["rep1"].id == "rep1"
+    rep2 = saved.repeats["rep2"].confirmed_on
+    assert rep2 and answers.repeats["rep2"].confirmed_on == rep2  # not reopened: kept (4.4a)
+    same = reconcile(published, observe_folders(discover_experiment(exp)))
+    kept, none = reopened(now, saved, published, same)
+    assert none == () and kept.repeats == saved.repeats
 
 
 def test_the_review_states_comparisons_in_words_and_missing_channels(exp):

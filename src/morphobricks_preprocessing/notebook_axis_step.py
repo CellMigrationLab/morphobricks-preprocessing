@@ -321,6 +321,7 @@ class _AxisStep:
             self.mapping = self._current_mapping()
         except ValueError as exc:
             self.axis_status.value = ui.status("error", str(exc))
+            self.preview_checked.disabled = True  # the preview shown is not of these roles
             return
         ranges = axis_length_ranges(self.mapping, self.preflight.metadata.files)
         marks = header_marks(self.mapping, self.preflight.metadata.files)

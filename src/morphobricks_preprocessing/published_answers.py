@@ -6,7 +6,8 @@ turns it back into :class:`.draft_answers.DraftAnswers` keyed by the source fold
 ID), so the same cards show them and the folders found now decide what still applies
 (:func:`.draft_answers.carry_over`). Nothing is confirmed by this module: every value is copied
 from the published file, and a comparability date is dropped (the repeat asked again) only when
-the folders of that repeat changed (:func:`reopened`, experiment-v1 section 10).
+the folders of that repeat changed or the comparison with the folders reopens it (a unit's
+channels changed under the same files; :func:`reopened`, experiment-v1 section 10).
 
 The draft of the folders is derived with the IDs the lineage **retired** (:func:`retired_ids`):
 the IDs still in use are the published answers themselves, so they are not "used" twice.
@@ -18,6 +19,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 
 from .description import USED_KINDS, Description
+from .description_reconcile import Reconciliation
 from .draft import Draft
 from .draft_answers import (
     ChannelAnswer,
@@ -142,14 +144,22 @@ def _published_members(published: Description) -> Mapping[str, frozenset[UnitKey
 
 
 def reopened(
-    draft: Draft, answers: DraftAnswers, published: Description
+    draft: Draft, answers: DraftAnswers, published: Description, reconciliation: Reconciliation
 ) -> tuple[DraftAnswers, tuple[str, ...]]:
     """Return the answers with the comparability of every changed repeat taken back, and which.
 
-    ``draft`` is the draft of the folders now (without answers). A repeat whose folders differ
-    from the published ones (a folder joined or left it) is asked again: its ``confirmed_on`` is
-    dropped, its ID and shown-as name are kept. A repeat whose folders are the same keeps its
-    date byte for byte (section 4.4a), even if image counts changed.
+    Experiment-v1 section 10 (N35 reopening): "The confirmation of a repeat is reopened (draft
+    ``confirmed = false``) only when channels, layout or grouping change: a new or removed unit
+    or member, a unit's ordered channel list, or the pairing of folders into repeats."
+
+    ``draft`` is the draft of the folders now (without answers) and ``reconciliation`` the
+    comparison of ``published`` with the folders and headers now
+    (:func:`.description_reconcile.reconcile`). A repeat is asked again when its folders differ
+    from the published ones (a folder joined or left it) or when the comparison reopens it
+    (``reconciliation.reopened``: for example ``channels_changed``, a unit's headers no longer
+    fitting its saved channels under the same files): its ``confirmed_on`` is dropped, its ID
+    and shown-as name are kept. Every other repeat keeps its date byte for byte (section 4.4a),
+    even if image counts changed.
     """
     paired = draft.paired(answers.pairing)
     before = _published_members(published)
@@ -157,7 +167,8 @@ def reopened(
         sorted(
             label
             for label, answer in answers.repeats.items()
-            if answer.confirmed_on is not None and _members(paired, label) != before.get(label)
+            if answer.confirmed_on is not None
+            and (label in reconciliation.reopened or _members(paired, label) != before.get(label))
         )
     )
     repeats = dict(answers.repeats)

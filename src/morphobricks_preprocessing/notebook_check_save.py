@@ -54,6 +54,7 @@ from .notebook_check_view import (
     names_html,
     removal_text,
     replicate_title,
+    run_stop_html,
     todo_html,
 )
 from .notebook_description import _with_ids
@@ -114,6 +115,9 @@ class _CheckSaveScreen:
             " Yes, save the experiment description", style="success", icon="check", main=True
         )
         self.save_button.on_click(lambda _: self.save_experiment())
+        self.save_note = widgets.HTML(layout=widgets.Layout(margin="0 0 0 12px"))
+        ui.set_visible(self.save_note, False)
+        self.save_row = widgets.HBox([self.save_button, self.save_note])
         self.save_status = widgets.HTML()
         self.check_card = ui.card(
             "Your experiment, in words",
@@ -126,7 +130,7 @@ class _CheckSaveScreen:
                 self.short_names,
                 self.todo,
                 self.checks,
-                self.save_button,
+                self.save_row,
                 self.save_status,
             ],
             visible=False,
@@ -224,6 +228,8 @@ class _CheckSaveScreen:
         self.checks.value = checks_html(self._check)
         ready = self._check is not None and self._check.can_save
         self.save_button.disabled = not ready or self._saved_current()
+        self.save_note.value = "" if self.save_button.disabled else run_stop_html(self._check)
+        ui.set_visible(self.save_note, bool(self.save_note.value))
         self._show_saved_state()
 
     def _todo(self, applied: object, answers: object, problem: str) -> tuple[list, list[str]]:
@@ -356,7 +362,7 @@ class _CheckSaveScreen:
             self._folded = False  # a refusal of the run's checks is never folded away
         if self._saved_current() and not self._published_refused():
             when = self._saved_on or (state.saved_on if state else "")
-            self.save_status.value = ui.status("ok", f"Saved {when}. The run (step 12) can start.")
+            self.save_status.value = self._saved_status(when)
             self.saved_line.value = ui.status("ok", f"Saved on {when}, nothing changed.")
         else:
             self.saved_line.value = ""
@@ -367,6 +373,25 @@ class _CheckSaveScreen:
         for name in FOLDED:
             ui.set_visible(getattr(self, name), not self._folded)
         self._refresh_run_step()
+
+    def _saved_status(self, when: str) -> str:
+        """Say that the description is saved, and that the run can start only once it can.
+
+        The run's checks need the confirmed axis roles: before them nothing says the run can
+        start, only that the axes come first.
+        """
+        if self._run_allowed():
+            return ui.status("ok", f"Saved {when}. The run (step 12) can start.")
+        if self.confirmed_mapping is None:
+            return ui.status(
+                "info",
+                f"Saved {when}.",
+                [
+                    "Confirm the axis roles (step 2) first: the run's checks of the images "
+                    "need them, and the run (step 12) waits for those checks."
+                ],
+            )
+        return ui.status("ok", f"Saved {when}.", ["See Run (step 12) for what is still to do."])
 
     # Answers -----------------------------------------------------------------------------
 

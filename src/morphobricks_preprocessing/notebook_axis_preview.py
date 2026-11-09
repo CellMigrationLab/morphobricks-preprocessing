@@ -62,18 +62,48 @@ class _AxisPreview:
             self._configure_sliders(reset=True)
             self._preview_shown = True
         self._render_preview()
-        self.preview_checked.disabled = False
 
     def _render_preview_if_shown(self) -> None:
         if self._preview_shown:
             self._render_preview()
 
     def _render_preview(self) -> None:
-        """Draw the chosen plane with the roles shown, labelled confirmed or not (PP-10).
+        """Draw the chosen plane with the roles shown, then offer the tick only if one is shown.
 
         ``_preview_drawn`` is the mapping of the plane now shown, None when none is (no image
-        fits, or the plane cannot be read): the one-click confirmation needs it (BLOCKER 3).
+        fits, or the plane cannot be read): the one-click confirmation needs it (BLOCKER 3), and
+        so does the step-by-step "Yes, the preview looks right" (:meth:`_gate_preview_tick`).
         """
+        try:
+            self._draw_preview()
+        finally:
+            self._gate_preview_tick()
+
+    def _preview_of(self, mapping: AxisMapping | None) -> bool:
+        """Return whether the preview now shows a plane drawn with exactly these roles."""
+        drawn = self._preview_drawn
+        return (
+            mapping is not None
+            and drawn is not None
+            and (drawn.axes, drawn.roles) == (mapping.axes, mapping.roles)
+            and bool(self.preview_image.value)
+        )
+
+    def _gate_preview_tick(self) -> None:
+        """Offer "Yes, the preview looks right" only while a preview of the current roles shows.
+
+        Without one (no plane drawn, it could not be read, or it was drawn with other roles) the
+        tick is disabled and an earlier tick is taken back, as the one-click *Confirm these axes*
+        is withdrawn (#255). Confirmed roles keep their tick; the box is locked then.
+        """
+        locked = self.confirmed_mapping is not None
+        shown = self._preview_of(self.mapping)
+        if not shown and not locked and self.preview_checked.value:
+            self.preview_checked.set(False)  # a tick says nothing about a preview not shown
+        self.preview_checked.disabled = locked or not shown
+
+    def _draw_preview(self) -> None:
+        """Draw the chosen plane with the roles shown, labelled confirmed or not (PP-10)."""
         self._preview_drawn = None
         header = self._preview_header()
         if header is None:
@@ -290,7 +320,7 @@ class _AxisPreview:
         for dropdown in self.role_dropdowns:
             dropdown.disabled = locked
         self.missing_as_singleton.disabled = locked
-        self.preview_checked.disabled = locked or not self._preview_shown
+        self._gate_preview_tick()
         self.confirm_button.description = " Change axis roles" if locked else " Confirm axis roles"
         self.confirm_button.icon = "pencil" if locked else "check"
         self.confirm_button.button_style = "warning" if locked else "success"

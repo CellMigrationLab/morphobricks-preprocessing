@@ -8,6 +8,26 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **Pre-release follow-ups to #254 and #255.** A unit whose image headers changed under the
+  same files (`channels_changed`) now asks its replicate's "prepared and imaged the same way?"
+  again, as experiment-v1 §10 requires ("a unit's ordered channel list"); only that replicate's
+  `confirmed_on` is taken back, every other one is kept byte for byte. `describe` (command
+  line) reads the image headers (no pixel) when it compares a published description and
+  reports a header-only change and the replicate to confirm again, as the notebook does. Save
+  stays allowed when the run's checks would refuse (owner decision, 2026-11-10); a line beside
+  the button says that the run will stop, with each refusal and its code. The step-by-step
+  "Yes, the preview looks right" is offered only while a preview of the current roles is shown
+  (a preview that fails takes an earlier tick back), as the one-click *Confirm these axes* is.
+  The tag pictures (`channel_strip`), their 1:1 crop and the *Images found* picture check the
+  bound fingerprint after the read too: a file rewritten during the read is not shown. A unit's
+  channel count comes from every image of the unit: images that disagree (or one that cannot be
+  read) leave it unknown (`unit_channel_count_unknown`), never the first image's count.
+  "The run (step 12) can start" is said only once the run's checks have run and passed; before
+  the axis roles are confirmed the screen says to confirm them first. **API changes:**
+  `published_answers.reopened(draft, answers, published, reconciliation)` takes the
+  reconciliation as a new required argument; `UnitLayout.counts_agree` and
+  `channel_units.unit_channel_counts` are new.
+
 - **Audit batches 33 and 34a: what is published is what was answered, of the image checked.**
   *Yes, these are right* saves exactly the tags a block shows (a hidden proposal is never
   saved), and a unit tagging one label twice is refused before it is saved

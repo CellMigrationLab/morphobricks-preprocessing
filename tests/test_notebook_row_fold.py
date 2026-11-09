@@ -196,6 +196,10 @@ def test_a_header_rewritten_under_the_same_files_keeps_its_row_open(tmp_path):
     assert not nb._folded and not ui.is_visible(nb.fold_bar)
     assert ui.is_visible(nb.check_card)
     assert "headers changed: ctrl/rep1" in nb.folder_changes.value  # the unit is named
+    # Experiment-v1 section 10: the channel change reopens rep1's "same way?" (asked again
+    # first); once answered, the run's checks say which header contradicts the description.
+    assert not nb.same_way["rep1"].value and "rep1: answer" in _text(nb.todo)
+    nb.same_way["rep1"].button.click()
     assert "R_HEADER_CONTRADICTION" in nb.checks.value  # the refusal is visible
     assert "changed since saved" in _text(nb.replicates_box)  # rep1's block stays open
     assert "can start" not in nb.save_status.value and "nothing changed" not in nb.saved_line.value

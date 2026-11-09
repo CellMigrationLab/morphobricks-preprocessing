@@ -37,8 +37,9 @@ QUESTION_WORDS = {
         "the tags of {subject} were saved for another image: tag its channels again (Tag channels)"
     ),
     "unit_channel_count_unknown": (
-        "the channels of {subject} are not known from its image: confirm the axis roles "
-        "(Axes) and check that its first image can be read"
+        "the channels of {subject} are not known from its images: confirm the axis roles "
+        "(Axes) and check that every image of it can be read and has the same number of "
+        "channels"
     ),
     "control_unresolved": "say what {subject} is compared against",
     "legacy_folder_missing": "{subject} is gone: confirm the removal",
@@ -132,6 +133,28 @@ def todo_html(questions: Sequence[OpenQuestion], extra: Sequence[str]) -> str:
 
 def _issue_lines(issues: Sequence[ValidationIssue]) -> list[str]:
     return [f"{html.escape(i.message)} ({html.escape(i.code)})" for i in issues]
+
+
+def run_stop_html(check: CandidateCheck | None) -> str:
+    """Return the line beside the save button when the run's checks would refuse, else "".
+
+    Saving stays allowed (owner decision, 2026-11-10): a valid description may be saved even
+    when the images contradict it or this version cannot run it, but the user is told, beside
+    the button, that the run will stop and on which refusals. Nothing is said while the checks
+    wait for the axis roles.
+    """
+    if check is None or not check.can_save or not check.run_refusals:
+        return ""
+    codes = [i.code for i in check.run_refusals]
+    named = ", ".join(
+        f"{code} ({codes.count(code)}x)" if codes.count(code) > 1 else code
+        for code in dict.fromkeys(codes)
+    )
+    return ui.status(
+        "warn",
+        "You can save, but the run (step 12) will stop.",
+        [f"Refused: {named}.", "Each reason is listed above, with the folder it names."],
+    )
 
 
 def checks_html(check: CandidateCheck | None) -> str:

@@ -198,7 +198,7 @@ class _DescribedRun:
         derived = published_answers(state.description, state.sha256)
         kept, dropped = carry_over(self._draft_base, derived, self._resume_pairing(derived))
         try:
-            kept, asked = reopened(self._draft_base, kept, state.description)
+            kept, asked = reopened(self._draft_base, kept, state.description, state.reconciliation)
             apply_answers(self._draft_base, kept)
         except DraftError as exc:
             self._draft_note = ui.status("warn", "The saved description was not used.", [str(exc)])

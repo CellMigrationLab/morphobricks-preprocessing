@@ -335,7 +335,8 @@ def channel_strip(
     The plane is the middle Z when the file has a Z axis and the first T when it has a T axis
     (``options`` can override); the strip says which. The channels are the ``C`` axis of the
     confirmed roles; a file without one is a single channel ``C0``, whatever its shape. Each
-    channel has its own contrast.
+    channel has its own contrast. ``options.expected`` is checked before the read and the
+    fingerprint then taken is checked after it: a file rewritten during the read is refused.
 
     Parameters
     ----------
@@ -369,6 +370,7 @@ def channel_strip(
         plane = _cached_plane(path, mapping, (fingerprint, c, z, t), options)
         label = _label(c, options.header_names)
         panels.append(ChannelPanel(c, plane, display_panel(plane.pixels), label))
+    check_unchanged(path, fingerprint)  # a file rewritten during the read is not shown
     return ChannelStrip(os.fspath(path), z, t, tuple(panels), strip_png([p.panel for p in panels]))
 
 

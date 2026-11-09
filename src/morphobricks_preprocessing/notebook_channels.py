@@ -20,7 +20,7 @@ from . import notebook_style as ui
 from .axis_review import review_axes
 from .channel_answers import all_colour
 from .channel_labels import UnitLayout
-from .channel_units import header_names, slot_count, unit_layouts
+from .channel_units import header_names, slot_count, unit_channel_counts, unit_layouts
 from .draft_answers import DraftAnswers
 from .notebook_channel_thumbs import Thumbnails
 from .notebook_channels_grid import TagGrid
@@ -150,11 +150,12 @@ class _ChannelsStep:
         """Return each unit's channel count, read through the confirmed axis roles, by key.
 
         Empty while the screen is not open for the current check and roles; a unit whose image
-        cannot be tagged has none. The save is gated on these counts.
+        cannot be tagged, or whose images disagree in channel count, has none
+        (:func:`.channel_units.unit_channel_counts`). The save is gated on these counts.
         """
         if self._channels_key is None:
             return {}
-        return {u.key: u.channels for u in self._channel_layouts if u.usable}
+        return unit_channel_counts(self._channel_layouts)
 
     @property
     def _stains_not_applicable(self) -> bool:
