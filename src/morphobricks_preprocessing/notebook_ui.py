@@ -198,6 +198,7 @@ class PreprocessingNotebook(
         self.log = _LogCapture()
         self._checked_folder = ""
         self._preview_shown = False
+        self._preview_drawn = None
         self._show_output = True
         self._show_design = True
         self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None

@@ -172,3 +172,52 @@ def test_a_row_with_a_warning_never_folds(reopened, monkeypatch):
     nb._refresh_check_save()
     assert nb._replicate_fold.count == 0
     assert "A_SCOPE_INCOMPLETE" in _text(nb.replicates_box)
+
+
+def test_a_header_rewritten_under_the_same_files_keeps_its_row_open(tmp_path):
+    # Regression (batch 34b BLOCKER 4): the reopen reconciled image counts only, so headers
+    # rewritten with swapped channel names (same files, shape and count) folded as "nothing
+    # changed" while the run's checks refused R_HEADER_CONTRADICTION. Real workflow, no fake.
+    from channel_images import write_channels
+    from test_notebook_check_save import FOLDERS, KINDS
+
+    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    for i, folder in enumerate(FOLDERS):
+        add_folder(root, masks, folder, i + 1)
+    first = stepper(root, masks, out)
+    answer_all(first)
+    assert first.save_experiment()
+    write_channels(root / "ctrl/rep1/a.tif", ["Actin", "DAPI", "Ch3"], KINDS, seed=1)
+    nb = stepper(root, masks, out)
+    reasons = {u.folders: u.reasons for u in nb._published().reconciliation.units}
+    assert reasons.pop(UnitFolders("ctrl", "rep1", "single")) == ("channels_changed",)
+    assert set(reasons.values()) == {()}  # produced by the real path, for that unit only
+    assert nb._reopen_units()[("ctrl", "rep1", "single")] == CHANGED
+    assert not nb._folded and not ui.is_visible(nb.fold_bar)
+    assert ui.is_visible(nb.check_card)
+    assert "headers changed: ctrl/rep1" in nb.folder_changes.value  # the unit is named
+    assert "R_HEADER_CONTRADICTION" in nb.checks.value  # the refusal is visible
+    assert "changed since saved" in _text(nb.replicates_box)  # rep1's block stays open
+    assert "can start" not in nb.save_status.value and "nothing changed" not in nb.saved_line.value
+    assert nb.run_button.disabled
+
+
+def test_a_refusal_of_the_run_s_checks_unfolds_an_unchanged_reopen(tmp_path):
+    # Regression (batch 34b BLOCKER 4, second layer): a refusal the reconciliation cannot see
+    # (a mask type added beside the saved folders) was folded behind "nothing changed".
+    from channel_images import write_masks
+    from test_notebook_check_save import FOLDERS
+
+    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    for i, folder in enumerate(FOLDERS):
+        add_folder(root, masks, folder, i + 1)
+    first = stepper(root, masks, out)
+    answer_all(first)
+    assert first.save_experiment()
+    write_masks(masks, {"ctrl/rep1/a.tif": 1}, {"Cells": "labels"})
+    nb = stepper(root, masks, out)
+    assert not nb._published().changed  # the folders are as saved
+    assert not nb._published_check().can_run
+    assert not nb._folded and not ui.is_visible(nb.fold_bar) and ui.is_visible(nb.check_card)
+    assert "nothing changed" not in nb.saved_line.value and "can start" not in nb.save_status.value
+    assert nb.run_button.disabled

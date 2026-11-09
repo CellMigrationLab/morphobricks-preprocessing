@@ -162,6 +162,13 @@ class _CheckSaveScreen:
         check = self._published_check()
         return check is not None and check.can_run
 
+    def _published_refused(self) -> bool:
+        """Return whether the run's checks ran on the published file and refuse it."""
+        if self.confirmed_mapping is None:
+            return False  # the physical checks wait for the roles: nothing is decided yet
+        check = self._published_check()
+        return check is not None and check.physical_run and not check.can_run
+
     def _published_check(self) -> CandidateCheck | None:
         """Return the run's checks of the published file (None without one)."""
         state = self._published()
@@ -345,7 +352,9 @@ class _CheckSaveScreen:
     def _show_saved_state(self) -> None:
         """Show the green saved line (folded or not) and the run gate."""
         state = self._published()
-        if self._saved_current():
+        if self._published_refused():
+            self._folded = False  # a refusal of the run's checks is never folded away
+        if self._saved_current() and not self._published_refused():
             when = self._saved_on or (state.saved_on if state else "")
             self.save_status.value = ui.status("ok", f"Saved {when}. The run (step 12) can start.")
             self.saved_line.value = ui.status("ok", f"Saved on {when}, nothing changed.")
@@ -354,6 +363,7 @@ class _CheckSaveScreen:
             if self.save_status.value.find("Saved") >= 0:
                 self.save_status.value = ""
         ui.set_visible(self.fold_bar, self._folded)
+        ui.set_visible(self.check_card, not self._folded)
         for name in FOLDED:
             ui.set_visible(getattr(self, name), not self._folded)
         self._refresh_run_step()
