@@ -64,6 +64,28 @@ def test_a_channel_strip_of_a_file_changed_during_the_read_is_refused(tmp_path, 
     assert "changed since the folder check read it" in str(refused.value)
 
 
+def test_a_plane_read_across_a_rewrite_is_not_kept_in_the_cache(tmp_path, monkeypatch):
+    # Review of #257: the refused strip had already cached its torn planes under the fingerprint
+    # taken before the read, so a file put back with that size and time (a restore that keeps
+    # times) would have been shown from them without a read.
+    path = tmp_path / "cyx.tif"
+    data = np.stack([large(s, 64) for s in (1, 2)])
+    tifffile.imwrite(path, data, metadata={"axes": "CYX"}, photometric="minisblack")
+    mapping = AxisMapping("CYX", "CYX")
+    review = AxisReview(mapping, {"cyx.tif": mapping}, ())
+    seen, cache = Fingerprint.of(path), preview.PreviewCache()
+    real = preview.read_plane
+    other = np.stack([large(s, 64) for s in (3, 4)])
+    monkeypatch.setattr(preview, "read_plane", _rewriting(real, path, other, "CYX"))
+    with pytest.raises(PreviewRefused):
+        preview.channel_strip(path, "cyx.tif", review, StripOptions(expected=seen, cache=cache))
+    assert len(cache) == 0  # nothing read across the rewrite is kept
+    monkeypatch.setattr(preview, "read_plane", real)
+    now = Fingerprint.of(path)
+    preview.channel_strip(path, "cyx.tif", review, StripOptions(expected=now, cache=cache))
+    assert len(cache) == 2  # the control: a clean read is kept
+
+
 def test_the_native_crop_of_a_file_changed_during_its_read_is_not_shown(tmp_path, monkeypatch):
     pytest.importorskip("matplotlib")
     from morphobricks_preprocessing import notebook_channel_thumbs as nct

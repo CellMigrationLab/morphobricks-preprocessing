@@ -157,6 +157,49 @@ def run_stop_html(check: CandidateCheck | None) -> str:
     )
 
 
+def blocked_html(
+    published: CandidateCheck | None, rec: Reconciliation | None, asked: Sequence[str]
+) -> str:
+    """Say what already stops the run while answers are missing and the candidate is unchecked.
+
+    A refusal is never hidden until the user acts: the run's checks of the *saved* description
+    (``published``) and the header changes the folder check found (``rec``) are shown as soon as
+    they are known, beside the questions still open. ``asked`` are the replicates whose "same
+    way?" was asked again and is not answered yet. Returns "" when nothing stops the run but the
+    missing answers.
+    """
+    refusals = published.run_refusals if published is not None else ()
+    changed = [
+        _folders(u.folders) for u in (rec.unchanged if rec else ()) if CHANNELS_CHANGED in u.reasons
+    ]
+    if not refusals and not changed:
+        return ""
+    questions = (
+        "the “same way?” of "
+        + ", ".join(asked)
+        + " is asked again and not answered yet (the run checks only an answered description)"
+        if asked
+        else "answers are still missing (listed above)"
+    )
+    lines = [html.escape(questions)]
+    if refusals:
+        lines.append(
+            "the run's checks refuse the saved description:<ul style='margin:2px 0'>"
+            + "".join(f"<li>{line}</li>" for line in _issue_lines(refusals))
+            + "</ul>"
+        )
+    else:
+        lines.append(
+            html.escape(
+                "the folder check found a header contradiction: the image headers of "
+                + ", ".join(changed)
+                + " no longer fit the saved channels (the run's checks name each refusal once "
+                "the axis roles are confirmed, step 2)"
+            )
+        )
+    return ui.status("error", "The run (step 12) is blocked by both:", lines, raw=True)
+
+
 def checks_html(check: CandidateCheck | None) -> str:
     """Return what the strict reader, the run's checks and the derived CSV say."""
     if check is None:
@@ -251,6 +294,7 @@ def removal_text(question: RemovalQuestion) -> str:
 __all__ = [
     "SAME_WAY",
     "SAME_WAY_HELP",
+    "blocked_html",
     "changes_html",
     "checks_html",
     "comparisons_html",
@@ -259,5 +303,6 @@ __all__ = [
     "names_html",
     "removal_text",
     "replicate_title",
+    "run_stop_html",
     "todo_html",
 ]

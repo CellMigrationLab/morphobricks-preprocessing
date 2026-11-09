@@ -23,7 +23,11 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   channel count comes from every image of the unit: images that disagree (or one that cannot be
   read) leave it unknown (`unit_channel_count_unknown`), never the first image's count.
   "The run (step 12) can start" is said only once the run's checks have run and passed; before
-  the axis roles are confirmed the screen says to confirm them first. **API changes:**
+  the axis roles are confirmed the screen says to confirm them first. A refusal is not hidden
+  behind the reopened question: while answers are missing, *Check and save* says at once that
+  the run is blocked by both, the question and the run's refusal of the saved description (its
+  codes and folders), or, before the axis roles are confirmed, the header change the folder check
+  found. A plane read across a rewrite is not kept in the preview cache. **API changes:**
   `published_answers.reopened(draft, answers, published, reconciliation)` takes the
   reconciliation as a new required argument; `UnitLayout.counts_agree` and
   `channel_units.unit_channel_counts` are new.

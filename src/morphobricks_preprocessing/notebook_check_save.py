@@ -46,6 +46,7 @@ from .notebook_channel_thumbs import Thumb
 from .notebook_check_view import (
     SAME_WAY,
     SAME_WAY_HELP,
+    blocked_html,
     changes_html,
     checks_html,
     comparisons_html,
@@ -225,12 +226,28 @@ class _CheckSaveScreen:
         if not todo[0] and not todo[1]:
             self._check = self._candidate_check(answers)
         self.todo.value = todo_html(*todo)
-        self.checks.value = checks_html(self._check)
+        self.checks.value = checks_html(self._check) or self._blocked(state)
         ready = self._check is not None and self._check.can_save
         self.save_button.disabled = not ready or self._saved_current()
         self.save_note.value = "" if self.save_button.disabled else run_stop_html(self._check)
         ui.set_visible(self.save_note, bool(self.save_note.value))
         self._show_saved_state()
+
+    def _blocked(self, state: object) -> str:
+        """Say what already stops the run while the candidate cannot be checked (answers missing).
+
+        The run's refusal of the saved description, or the header change the folder check found,
+        is shown at once, never only after the reopened "same way?" is answered again.
+        """
+        if state is None:
+            return ""
+        answers = self.draft_answers.repeats
+        asked = sorted(
+            label
+            for label in state.reconciliation.reopened
+            if label in answers and answers[label].confirmed_on is None
+        )
+        return blocked_html(self._published_check(), state.reconciliation, asked)
 
     def _todo(self, applied: object, answers: object, problem: str) -> tuple[list, list[str]]:
         """Return the open questions and the other answers still missing before saving."""
