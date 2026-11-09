@@ -142,6 +142,57 @@ def test_units_of_one_image_type_are_still_compared_with_each_other(tmp_path):
     assert LAYOUT not in codes(result.issues)
 
 
+def _rewrite(path, data, axes):
+    path.unlink()
+    tifffile.imwrite(path, data, photometric="minisblack", metadata={"axes": axes})
+
+
+@pytest.mark.parametrize(
+    ("data", "axes", "code"),
+    [
+        (np.zeros((8, 8, 2), np.uint16), "YXC", "inconsistent_dimensions"),
+        (np.zeros((3, 8, 8), np.uint16), "CYX", "different_channel_counts"),
+    ],
+)
+def test_a_unit_whose_images_disagree_inside_itself_is_refused_by_the_folder_check(
+    tmp_path, data, axes, code
+):
+    """The folder check still compares the images of one unit: arrangement and channels too."""
+    root, out = mixed_experiment(tmp_path)
+    _rewrite(root / "CTRL/rep1/fluorescence/f0.tif", data, axes)
+    pre = unit_checked(preflight(root, out))
+    assert not pre.ok
+    (issue,) = [i for i in pre.issues if i.code == code]
+    assert all(p.startswith("CTRL/rep1/fluorescence/") for p in issue.paths)
+
+
+@pytest.mark.parametrize(
+    ("data", "axes", "mapping", "code"),
+    [
+        (np.zeros((8, 8, 2), np.uint8), "YXC", "CYX", "inconsistent_mapping"),
+        (np.zeros((3, 8, 8), np.uint8), "CYX", "CYX", "R_CHANNEL_COUNT_MISMATCH"),
+        (np.zeros((8, 8), np.uint8), "YX", "CYX", "missing_axes"),
+    ],
+)
+def test_units_of_one_layout_that_disagree_are_still_refused_by_the_run(
+    tmp_path, data, axes, mapping, code
+):
+    """Passing the folder check per unit lets nothing through: the run compares the units."""
+    description = description_from_bytes(VALID["v01"].data)
+    root, out = tmp_path / "exp", tmp_path / "out"
+    out.mkdir()
+    (out / "morphobricks.toml").write_bytes(VALID["v01"].data)
+    images = build_experiment(root, description, images=2)
+    unit = [image for image in images if image.startswith("DrugA/rep2/")]
+    for image in unit:
+        _rewrite(root / image, data, axes)
+    pre = unit_checked(preflight(root, out))
+    assert not {"inconsistent_dimensions", "different_channel_counts"} & codes(pre.issues)
+    result = run_experiment(root, prefill_mapping(mapping), output_folder=out)
+    assert not result.written
+    assert code in codes(result.issues)
+
+
 def _checked_notebook(root, out, *, describe):
     pytest.importorskip("ipywidgets")
     pytest.importorskip("matplotlib")
