@@ -10,6 +10,7 @@ from . import notebook_style as ui
 from .axes import axis_length_ranges, axis_name, file_mapping_for
 from .axis_check import AXIS_CHECK_CODES
 from .axis_review import review_axes
+from .description_layouts import declared_layouts, is_heterogeneous, layout_kinds
 from .image_type import FLUORESCENCE
 from .notebook_axes import axis_check_html, header_marks
 from .notebook_options import IMAGE_TYPE_OPTIONS, ROLE_OPTIONS
@@ -194,6 +195,18 @@ class _AxisStep:
         if self.preflight is None:
             return ui.status("info", "Waiting for step 1.", ["Check the experiment folder first."])
         if self.mapping is None:
+            kinds = self._layout_kinds()
+            if kinds:
+                return ui.status(
+                    "error",
+                    "No axis roles are suggested: the units declare different layouts.",
+                    [
+                        f"The saved description declares different layouts ({kinds}). "
+                        "This version runs one layout per experiment, so the "
+                        "run stops with R_HETEROGENEOUS_LAYOUT_NOT_ENABLED (see Check and "
+                        "save). Exporting the images again would not change that."
+                    ],
+                )
             return ui.status(
                 "error",
                 "No axis roles can be suggested.",
@@ -204,6 +217,14 @@ class _AxisStep:
                 ],
             )
         return ""
+
+    def _layout_kinds(self) -> str:
+        """Return the kinds of layout the saved description declares when they differ, else ''."""
+        state = self._published() if getattr(self, "_describe", False) else None
+        if state is None:
+            return ""
+        layouts = declared_layouts(state.description)
+        return layout_kinds(layouts) if is_heterogeneous(layouts) else ""
 
     def _role_grid(self) -> widgets.GridBox:
         """Build one box per axis, with its length, the suggested role and a dropdown."""
