@@ -148,8 +148,7 @@ class _DescriptionCard(_SavedDraft):
         folder) or was made for another pairing than the design shows is left as it is on
         disk and not used; the next answer replaces it. Nothing is merged or guessed.
         """
-        pre = self.preflight
-        self._draft_base = draft_from_discovery(pre.discovery, pre.excluded)
+        self._draft_base = self._base_draft()
         self._keep_old_draft = False
         output = self._design_output
         answers, note = None, ""
@@ -163,6 +162,10 @@ class _DescriptionCard(_SavedDraft):
         self._draft_note = note
         self._names_refusal = self._references_refusal = ""
         self.ids_confirmed.set(self._ids_all_confirmed(), notify=False)
+
+    def _base_draft(self) -> Draft:
+        """Return the draft of the checked folders, before any answer."""
+        return draft_from_discovery(self.preflight.discovery, self.preflight.excluded)
 
     # Answers -----------------------------------------------------------------------------
 
@@ -405,12 +408,22 @@ class _DescriptionCard(_SavedDraft):
             self._answer(_with_ids(self.draft_answers, {}))
         self._show_names_status()
 
-    def _confirm_ids(self) -> bool:
-        """Adopt every ID as shown, or none: each refusal is listed with the reader's reason."""
-        wanted = {
-            (e.kind, e.key): ("single" if e.fixed else self.id_inputs[(e.kind, e.key)].value)
+    def _wanted_ids(self) -> dict[tuple[str, str], str]:
+        """Return every ID as the names card shows it now (typed, proposed or confirmed)."""
+        return {
+            (e.kind, e.key): (
+                "single"
+                if e.fixed
+                else self.id_inputs[(e.kind, e.key)].value
+                if (e.kind, e.key) in self.id_inputs
+                else e.slot.confirmed or e.slot.proposed or ""
+            )
             for e in self._entries()
         }
+
+    def _confirm_ids(self) -> bool:
+        """Adopt every ID as shown, or none: each refusal is listed with the reader's reason."""
+        wanted = self._wanted_ids()
         problems = []
         for (kind, key), text in wanted.items():
             try:

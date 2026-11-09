@@ -184,6 +184,11 @@ class _MasksScreen:
         self.masks_waiting.value = why
 
     def _refresh_masks_screen(self) -> None:
+        """Open or update the masks screen, then restate the experiment on *Check and save*."""
+        self._refresh_masks_only()
+        self._refresh_check_save()
+
+    def _refresh_masks_only(self) -> None:
         """Open the screen for the checked folder's masks once the axis roles are confirmed."""
         types = self._mask_types()
         answers = self.draft_answers
@@ -261,7 +266,8 @@ class _MasksScreen:
         return None if answers is None else mask_ids(answers)
 
     def _masks_answered(self) -> None:
-        """Take the later steps into account after a mask answer (none depend on it yet)."""
+        """Take *Check and save* into account after a mask answer."""
+        self._refresh_check_save()
 
 
 __all__ = ["INTRO", "MasksCard", "_MasksScreen"]

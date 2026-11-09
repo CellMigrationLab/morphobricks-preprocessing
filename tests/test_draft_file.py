@@ -20,6 +20,8 @@ from morphobricks_preprocessing.description_file import (
     sha256_hex,
 )
 from morphobricks_preprocessing.description_rules import Code, Refusal
+from morphobricks_preprocessing.design import DESIGN_FILENAME
+from morphobricks_preprocessing.design_derive import write_derived_design
 from morphobricks_preprocessing.draft import DraftError, draft_from_discovery
 from morphobricks_preprocessing.draft_answers import (
     ChannelAnswer,
@@ -272,9 +274,12 @@ def test_a_complete_draft_is_published_and_the_draft_is_deleted(exp, out):
     save_draft(out, draft_from_discovery(exp), complete())
     publication = publish_draft(out, draft_from_discovery(exp))
     assert publication.base_sha256 == ABSENT
-    assert sorted(p.name for p in out.iterdir()) == [DESCRIPTION_FILENAME]  # draft and lock gone
+    # draft and lock gone; the derived experiment_design.csv is written only here (v1 11)
+    assert sorted(p.name for p in out.iterdir()) == [DESIGN_FILENAME, DESCRIPTION_FILENAME]
     published = read_description(out / DESCRIPTION_FILENAME)
     assert published == description_from_draft(draft_from_discovery(exp), complete())
+    derived = write_derived_design(published, out.parent / "derived.csv")
+    assert (out / DESIGN_FILENAME).read_bytes() == derived.read_bytes()
     assert publication.sha256 == sha256_hex((out / DESCRIPTION_FILENAME).read_bytes())
     assert load_draft(out, draft_from_discovery(exp)) is None
 

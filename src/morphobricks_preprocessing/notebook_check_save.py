@@ -1,0 +1,418 @@
+"""The notebook's *Check and save* screen (screen 5 of the natural design; Stage 1, PR 16).
+
+The experiment restated in sentences (what each condition is compared against, "compared
+against nothing" said in words), each replicate with its folders, image counts, pictures and
+channels (a label some acquisitions lack in orange), and beside it the one comparability
+question of that replicate ("Were these prepared and imaged the same way…?", the N35 answer, its
+date the day of the click). Then the short names that never change once saved, what the strict
+reader and the run's checks say about the exact bytes (:mod:`.description_candidate`), the
+change of the derived ``experiment_design.csv``, and one **Yes, save the experiment
+description** click: it adopts every short name, publishes ``morphobricks.toml`` under the lock
+and writes ``experiment_design.csv`` (:func:`.run.draft_file.publish_draft`). Run waits for it.
+
+On reopening, a published file whose folders did not change folds every screen behind one green
+line ("Saved on …, nothing changed. [Run] [Change…]"); new or removed folders are listed in
+orange, a removed folder needs **Yes, remove**, and a replicate whose folders changed is asked
+again here only.
+"""
+
+from __future__ import annotations
+
+import html
+from dataclasses import replace
+from datetime import date
+
+import ipywidgets as widgets
+
+from . import notebook_style as ui
+from .axes import AxisReview
+from .axis_review import review_axes
+from .channel_answers import label_ids
+from .description import DescriptionError
+from .description_candidate import CandidateCheck, check_candidate
+from .description_removal import Removal, reconfirmations
+from .description_review import comparisons, replicates, short_names
+from .draft import DraftError
+from .draft_answers import (
+    RepeatAnswer,
+    apply_answers,
+    description_from_draft,
+    missing_confirmations,
+)
+from .draft_format import DraftFileError
+from .mask_answers import masks_unanswered
+from .notebook_check_view import (
+    SAME_WAY,
+    SAME_WAY_HELP,
+    changes_html,
+    checks_html,
+    comparisons_html,
+    member_html,
+    missing_html,
+    names_html,
+    removal_text,
+    replicate_title,
+    todo_html,
+)
+from .notebook_description import _with_ids
+from .run import OutputLockedError
+from .run.description_file import PublicationRefused
+from .run.draft_file import publish_draft
+
+INTRO = (
+    "<b>What happens here:</b> your experiment is restated in sentences. Answer, for each "
+    "replicate, whether its folders were prepared and imaged the same way, read the short names "
+    "(they never change once saved), then save. Nothing is saved for good before your click."
+)
+PICTURE = widgets.Layout(width="120px", border="1px solid #CBD5E1")
+FOLDED = ("design_card", "names_card", "references_card", "channels_box", "masks_box")
+
+
+class _CheckSaveScreen:
+    """The *Check and save* screen, its save click and the folded reopening."""
+
+    def _build_check_save(self) -> None:
+        """Build the screen (its content follows the answers)."""
+        self._folded = False
+        self._removals: dict[str, str] = {}
+        self._saved_on: str | None = None
+        self._check: CandidateCheck | None = None
+        self.same_way: dict[str, ui.ConfirmToggle] = {}
+        self.saved_line = widgets.HTML()
+        self.run_now = ui.button(" Run", style="success", icon="play", tooltip="Run step 3")
+        self.change_saved = ui.button(" Change…", style="warning", icon="pencil")
+        self.fold_bar = widgets.HBox([self.saved_line, self.run_now, self.change_saved])
+        ui.set_visible(self.fold_bar, False)
+        self.run_now.on_click(lambda _: self._run_from_fold())
+        self.change_saved.on_click(lambda _: self._unfold())
+        self.check_waiting = widgets.HTML()
+        self.folder_changes = widgets.HTML()
+        self.words = widgets.HTML()
+        self.replicates_box = widgets.VBox()
+        self.removals_box = widgets.VBox()
+        self.short_names = widgets.HTML()
+        self.todo = widgets.HTML()
+        self.checks = widgets.HTML()
+        self.save_button = ui.button(
+            " Yes, save the experiment description", style="success", icon="check", main=True
+        )
+        self.save_button.on_click(lambda _: self.save_experiment())
+        self.save_status = widgets.HTML()
+        self.check_card = ui.card(
+            "Your experiment, in words",
+            [
+                self.folder_changes,
+                self.words,
+                self.replicates_box,
+                self.removals_box,
+                self.short_names,
+                self.todo,
+                self.checks,
+                self.save_button,
+                self.save_status,
+            ],
+            visible=False,
+        )
+
+    def check_save_step(self, title: str | None = None) -> widgets.Widget:
+        """Return the *Check and save* screen."""
+        return ui.page(
+            "Check and save" if title is None else title,
+            "Check your experiment in words, confirm each replicate, then save.",
+            [ui.intro(INTRO), self.fold_bar, self.check_waiting, self.check_card],
+        )
+
+    # State -------------------------------------------------------------------------------
+
+    def _saved_current(self) -> bool:
+        """Return whether the published file holds every answer and the folders are as saved."""
+        state = self._published()
+        output = self._design_folder()
+        if state is None or output is None or state.changed:
+            return False
+        draft_file = output / "morphobricks.draft.json"
+        return (
+            not draft_file.exists()
+            and self.draft_answers is not None
+            and (self.draft_answers.base_sha256 == state.sha256)
+        )
+
+    def _run_allowed(self) -> bool:
+        """Return whether the saved description is current and nothing stops the run."""
+        if not self._saved_current():
+            return False
+        check = self._published_check()
+        return check is not None and check.can_run
+
+    def _published_check(self) -> CandidateCheck | None:
+        """Return the run's checks of the published file (None without one)."""
+        state = self._published()
+        if state is None:
+            return None
+        roles = None if self.confirmed_mapping is None else self._review().file_mappings
+        key = (id(state), id(self.confirmed_mapping))
+        if getattr(self, "_published_check_key", None) != key:
+            self._published_check_key = key
+            self._published_checked = check_candidate(
+                state.description, self.preflight, roles, self._design_folder()
+            )
+        return self._published_checked
+
+    def _review(self) -> AxisReview:
+        """Return the axis review of the confirmed roles."""
+        return review_axes(
+            self.preflight.metadata,
+            self.confirmed_mapping,
+            missing_as_singleton=self.missing_as_singleton.value,
+        )
+
+    # Refresh -----------------------------------------------------------------------------
+
+    def _refresh_check_save(self) -> None:
+        """Restate the experiment from the answers and say what the save would do."""
+        if not self._describe or self.draft is None or self.draft_answers is None:
+            ui.set_visible(self.check_card, False)
+            ui.set_visible(self.fold_bar, False)
+            self.check_waiting.value = ui.status(
+                "info", "Waiting for step 1.", ["Check the folder and answer its cards."]
+            )
+            return
+        self.check_waiting.value = ""
+        ui.set_visible(self.check_card, not self._folded)
+        answers = _with_ids(self.draft_answers, self._wanted_ids())
+        try:
+            applied, problem = apply_answers(self._draft_base, answers), ""
+        except DraftError as exc:
+            applied, problem = self.draft, f"A short name is refused: {exc}"
+        labels = label_ids(self.draft_answers)
+        self.words.value = comparisons_html(comparisons(applied, answers))
+        self._show_replicates(applied, answers, labels)
+        self.short_names.value = names_html(short_names(applied, answers))
+        state = self._published()
+        self.folder_changes.value = changes_html(state.reconciliation) if state else ""
+        self._show_removals(state)
+        todo = self._todo(applied, answers, problem)
+        self._check = None
+        if not todo[0] and not todo[1]:
+            self._check = self._candidate_check(answers)
+        self.todo.value = todo_html(*todo)
+        self.checks.value = checks_html(self._check)
+        ready = self._check is not None and self._check.can_save
+        self.save_button.disabled = not ready or self._saved_current()
+        self._show_saved_state()
+
+    def _todo(self, applied: object, answers: object, problem: str) -> tuple[list, list[str]]:
+        """Return the open questions and the other answers still missing before saving."""
+        questions = list(missing_confirmations(applied, answers))
+        extra = [problem] if problem else []
+        left = masks_unanswered(answers, self._mask_types())
+        extra += [f"mask {m}: separate objects or regions? (Your masks)" for m in left]
+        if len(applied.conditions) > 1:
+            extra += [
+                f"what {folder} is compared against (choose, or no comparison)"
+                for folder in sorted(applied.conditions)
+                if folder not in applied.references
+                and getattr(answers.conditions.get(folder), "reference", None) is None
+            ]
+        state = self._published()
+        if state is not None:
+            extra += [
+                f"the removal of {q.condition_id}'s folders (Yes, remove)"
+                for q in state.removals
+                if q.condition_id not in self._removals
+            ]
+        if self._design_folder() is None:
+            extra.append("an output folder that can be written (step 1)")
+        return questions, extra
+
+    def _candidate_check(self, answers: object) -> CandidateCheck | None:
+        """Build the candidate from the answers and check its exact bytes; None if refused."""
+        try:
+            candidate = description_from_draft(self._draft_base, answers)
+        except DraftError as exc:
+            self.todo.value = ui.status("error", "The answers cannot be saved.", [str(exc)])
+            return None
+        roles = None if self.confirmed_mapping is None else self._review().file_mappings
+        return check_candidate(candidate, self.preflight, roles, self._design_folder())
+
+    def _show_replicates(self, applied: object, answers: object, labels: list[str]) -> None:
+        """One box per replicate: folders, pictures, channels, and its own question."""
+        boxes, toggles = [], {}
+        for view in replicates(applied, answers):
+            toggle = ui.ConfirmToggle(
+                SAME_WAY,
+                SAME_WAY_HELP,
+                "Yes, the same way",
+                f"Confirmed on {view.confirmed_on}: one replicate." if view.confirmed_on else "",
+                "Undo",
+            )
+            toggle.set(view.confirmed_on is not None, notify=False)
+            toggle.observe(lambda value, label=view.label: self._same_way(label, value))
+            toggles[view.label] = toggle
+            members = [
+                widgets.HBox(
+                    [
+                        self._member_picture((m.condition, m.source_repeat)),
+                        widgets.HTML(member_html(m, labels)),
+                    ]
+                )
+                for m in view.members
+            ]
+            body = [widgets.HTML(replicate_title(view)), *members, widgets.HTML(missing_html(view))]
+            boxes.append(
+                widgets.VBox(
+                    [*body, toggle.widget],
+                    layout=widgets.Layout(
+                        border="1px solid #E2E8F0", padding="8px 12px", margin="0 0 10px 0"
+                    ),
+                )
+            )
+        self.same_way = toggles
+        self.replicates_box.children = boxes
+
+    def _member_picture(self, key: tuple[str, str]) -> widgets.Widget:
+        """Return the picture of a folder's first image, channel 1, or why there is none."""
+        thumbs, layouts = self._channel_thumbs, self._channel_layouts
+        layout = next((u for u in layouts if u.key[:2] == key), None)
+        if thumbs is None or layout is None:
+            return widgets.HTML(
+                "<div class='mb-help' style='width:120px'>picture once the axis roles are "
+                "confirmed</div>"
+            )
+        thumb = thumbs.get(layout, 0)
+        if not thumb.png:
+            return widgets.HTML(
+                f"<div class='mb-help' style='width:120px'>{html.escape(thumb.note)}</div>"
+            )
+        return widgets.Image(value=thumb.png, format="png", layout=PICTURE)
+
+    def _folder_cell(self, key: tuple[str, str], text: str) -> widgets.Widget:
+        """Return a folder of the pairing card, with its picture in a described run."""
+        if not self._describe:
+            return super()._folder_cell(key, text)
+        return widgets.VBox([widgets.HTML(text), self._member_picture(key)])
+
+    def _show_removals(self, state: object) -> None:
+        """One orange question per condition with removed folders, with **Yes, remove**."""
+        rows = []
+        for question in state.removals if state is not None else ():
+            done = self._removals.get(question.condition_id)
+            button = ui.button(" Yes, remove", style="warning", icon="trash")
+            blocked = question.last_member and bool(question.referenced_by)
+            button.disabled = done is not None or blocked
+            button.on_click(lambda _, q=question: self._remove(q.condition_id))
+            said = f" <span class='mb-help'>removed on {done}</span>" if done else ""
+            rows.append(widgets.HBox([widgets.HTML(removal_text(question) + said), button]))
+        self.removals_box.children = rows
+
+    def _show_saved_state(self) -> None:
+        """Show the green saved line (folded or not) and the run gate."""
+        state = self._published()
+        if self._saved_current():
+            when = self._saved_on or (state.saved_on if state else "")
+            self.save_status.value = ui.status("ok", f"Saved {when}. Step 3 can run.")
+            self.saved_line.value = ui.status("ok", f"Saved on {when}, nothing changed.")
+        else:
+            self.saved_line.value = ""
+            if self.save_status.value.find("Saved") >= 0:
+                self.save_status.value = ""
+        ui.set_visible(self.fold_bar, self._folded)
+        for name in FOLDED:
+            ui.set_visible(getattr(self, name), not self._folded)
+        self._refresh_run_step()
+
+    # Answers -----------------------------------------------------------------------------
+
+    def _same_way(self, label: str, value: bool) -> None:
+        """Save the N35 answer of one replicate, dated the day of the click."""
+        answers = self.draft_answers
+        entry = answers.repeats.get(label, RepeatAnswer())
+        day = date.today().isoformat() if value else None
+        repeats = {**answers.repeats, label: replace(entry, confirmed_on=day)}
+        if not self._answer(replace(answers, repeats=repeats)):
+            self.save_status.value = ui.status("error", "Not taken.", [str(self._refusal)])
+        self._refresh_check_save()
+
+    def _remove(self, condition_id: str) -> None:
+        self._removals[condition_id] = date.today().isoformat()
+        self._refresh_check_save()
+
+    def _unfold(self) -> None:
+        self._folded = False
+        self._refresh_description()
+        self._refresh_check_save()
+
+    def _run_from_fold(self) -> None:
+        if self.run() is None:
+            self.saved_line.value += ui.status(
+                "warn", "Not run yet.", ["See step 3: its checklist says what is still to do."]
+            )
+
+    # Saving ------------------------------------------------------------------------------
+
+    def save_experiment(self) -> bool:
+        """Adopt every short name, publish the description and write the derived CSV.
+
+        Returns
+        -------
+        bool
+            True once ``morphobricks.toml`` and ``experiment_design.csv`` are written.
+        """
+        self._refresh_check_save()
+        if self.save_button.disabled:
+            return False
+        if not self._confirm_ids():
+            self.save_status.value = ui.status(
+                "error", "Not saved: a short name was refused.", ["See Names for your experiment."]
+            )
+            return False
+        self._save_description()
+        try:
+            publication = self._publish()
+        except OutputLockedError:
+            self.save_status.value = ui.status(
+                "error", "Not saved: a run holds the lock of the output folder.", ["Try again."]
+            )
+            return False
+        except PublicationRefused as exc:
+            lines = [f"{i.code.value} at {i.path}" for i in exc.issues]
+            self.save_status.value = ui.status("error", "Not saved: refused.", lines)
+            return False
+        except (DraftError, DraftFileError, DescriptionError, ValueError, OSError) as exc:
+            self.save_status.value = ui.status("error", "Not saved.", [str(exc)])
+            return False
+        self._saved_on = date.today().isoformat()
+        self.draft_answers = replace(self.draft_answers, base_sha256=publication.sha256)
+        self._removals = {}
+        self._draft_note = ""
+        self._forget_published()
+        self.confirmed_image_type = self._described_image_type()
+        self._refresh_description()
+        self._refresh_check_save()
+        return True
+
+    def _publish(self) -> object:
+        """Publish the saved draft with the removals the user confirmed."""
+        state, today = self._published(), date.today().isoformat()
+        removals, confirmations, recorded = (), (), None
+        if state is not None:
+            removals = tuple(
+                Removal(q.units, self._removals[q.condition_id])
+                for q in state.removals
+                if q.condition_id in self._removals
+            )
+            candidate = description_from_draft(self._draft_base, self.draft_answers)
+            confirmations = reconfirmations(
+                state.description, candidate, state.reconciliation, removals
+            ).accepted
+            recorded = today if state.reconciliation.counts else None
+        return publish_draft(
+            self._design_folder(),
+            self._draft_base,
+            confirmations=confirmations,
+            removals=removals,
+            recorded_on=recorded,
+        )
+
+
+__all__ = ["INTRO", "_CheckSaveScreen"]
