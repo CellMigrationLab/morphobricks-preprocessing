@@ -25,6 +25,7 @@ from .notebook_render import label_cells
 from .notebook_thumb_tile import ThumbTile, show_detail
 from .preview import DETAIL_SIDE
 from .run import Preflight
+from .validation import plural
 
 LABELS = "minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 56px minmax(0,1.3fr)"
 COLUMNS = "minmax(0,1fr) 340px"
@@ -109,7 +110,8 @@ class LabelPreviews:
         rest = "".join(_waiting_row(leaf) for leaf in self._waiting)
         block = widgets.HTML(rest, layout=widgets.Layout(flex="0 0 auto"))
         self.rows.children = [top, *rows, *([block] if rest else [])]
-        self.more.description = f" Draw the pictures of the other {len(self._waiting)} folders"
+        others = plural(len(self._waiting), "folder")
+        self.more.description = f" Draw the pictures of the other {others}"
         ui.set_visible(self.more, bool(self._waiting))
 
     @staticmethod

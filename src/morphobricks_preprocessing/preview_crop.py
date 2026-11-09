@@ -142,19 +142,34 @@ def tile_pictures(
     pictures = TilePictures(png_bytes(shown.pixels), factor, note=shown.note)
     if factor <= CROP_FACTOR:
         return pictures
+    if min(shape[:2]) < CROP_SIDE:
+        why = f"no 1:1 detail: the image is under {CROP_SIDE} pixels on a side"
+        return replace(pictures, crop_text=why)
     best = busiest_square(shown.pixels, factor, shape, CROP_SIDE)
     if best < 0:
-        return replace(pictures, crop_text="no 1:1 detail: the image varies too little to place it")
+        why = f"no 1:1 detail: the thumbnail keeps too few pixels of a {CROP_SIDE}-pixel square"
+        return replace(pictures, crop_text=why)
     columns = shape[1] // CROP_SIDE
     y0, x0 = (best // columns) * CROP_SIDE, (best % columns) * CROP_SIDE
     box = (y0, y0 + CROP_SIDE, x0, x0 + CROP_SIDE)
     crop = _crop(planes, panels, box)
     big = np.repeat(np.repeat(crop.pixels, zoom, axis=0), zoom, axis=1)
+    where = _where(shown.pixels, factor, box)
     text = (
-        f"1:1 detail: x {x0}-{box[3] - 1}, y {y0}-{box[1] - 1} (the {CROP_SIDE}-pixel square "
-        f"that varies most), each pixel drawn {zoom}x{zoom}"
+        f"1:1 detail: x {x0}-{box[3] - 1}, y {y0}-{box[1] - 1} ({where}), "
+        f"each pixel drawn {zoom}x{zoom}"
     )
     return replace(pictures, crop_png=png_bytes(big), crop_box=box, crop_text=text)
+
+
+def _where(shown: np.ndarray, factor: int, box: tuple[int, int, int, int]) -> str:
+    """Say why the crop is where it is: it varies most, or nothing varies (the first square)."""
+    y0, y1, x0, x1 = (-(-v // factor) for v in box)  # the thumbnail pixels inside the box
+    square = shown[y0:y1, x0:x1].astype(np.float64)
+    grey = square.mean(axis=2) if square.ndim == 3 else square  # as busiest_square measures
+    if grey.min() == grey.max():
+        return f"the thumbnail does not vary in any {CROP_SIDE}-pixel square: the first one"
+    return f"the {CROP_SIDE}-pixel square that varies most"
 
 
 def no_crop(pictures: TilePictures, reason: str) -> TilePictures:

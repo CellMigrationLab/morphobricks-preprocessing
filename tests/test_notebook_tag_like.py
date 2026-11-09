@@ -95,3 +95,20 @@ def test_the_mask_evidence_of_an_rgb_folder_is_drawn_in_colour(tmp_path):
     question.choice.value = "instances"
     overlay = decode(bytes(question.pictures.children[1].value))
     assert overlay.shape == image.shape
+
+
+def test_the_same_names_in_another_order_are_not_offered_the_saved_tags(tmp_path):
+    root, masks, out, _ = _reopened(tmp_path)
+    write_channels(root / "drug/rep2/a.tif", ["Ch3", "Actin", "DAPI"], KINDS, seed=9)
+    nb = stepper(root, masks, out)
+    assert _new_block(nb.channel_grid) and nb.channel_grid.like_buttons == []
+
+
+def test_a_new_folder_taken_out_on_its_own_is_not_offered_the_saved_tags(tmp_path):
+    root, masks, out, _ = _reopened(tmp_path)
+    add_folder(root, masks, "drug/rep3", 10)
+    grid = stepper(root, masks, out).channel_grid
+    assert len(grid.like_buttons) == 1  # one block of the two new folders
+    grid.split_buttons[NEW].click()
+    assert len(grid.like_buttons) == 1  # drug/rep3 alone keeps it; drug/rep2 taken out does not
+    assert all(b[0].key != NEW for b in grid.block_list() if grid.saved_like(b))

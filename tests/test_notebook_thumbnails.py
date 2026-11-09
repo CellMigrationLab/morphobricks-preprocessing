@@ -186,3 +186,39 @@ def test_a_big_experiment_draws_the_first_folders_and_the_rest_on_a_click(tmp_pa
     shown.more.click()
     assert sorted(shown.found) == ["a/rep1", "a/rep2", "b/rep1", "b/rep2"]
     assert "picture not drawn yet" not in _text(shown.rows) and len(shown.rows.children) == 5
+
+
+def test_a_new_check_of_another_folder_shows_no_picture_of_the_last_one(tmp_path, monkeypatch):
+    from morphobricks_preprocessing import notebook_folder_previews as previews
+
+    monkeypatch.setattr(previews, "DRAWN_AT_ONCE", 2)
+    first, second = tmp_path / "one", tmp_path / "two"
+    for folder in ("a/rep1", "a/rep2", "b/rep1", "b/rep2"):
+        write_channels(first / folder / "x.tif", ["DAPI"], ["blobs"])
+    for folder in ("a/rep1", "c/rep1", "c/rep2"):
+        write_channels(second / folder / "x.tif", ["DAPI"], ["filaments"])
+    nb = _checked(first, tmp_path / "out")
+    shown = nb.label_previews
+    old = shown.tiles["a/rep1"].pictures.png
+    nb.folder.value, nb.output.value = str(second), str(tmp_path / "out2")
+    nb.check_button.click()
+    assert sorted(shown.found) == ["a/rep1", "c/rep1"]
+    assert shown.tiles["a/rep1"].pictures.png != old  # read again from the new folder
+    assert "b/rep1" not in _text(shown.rows) and "c/rep2" in _text(shown.rows)
+    assert shown.more.description.strip() == "Draw the pictures of the other 1 folder"
+    shown.more.click()
+    assert sorted(shown.found) == ["a/rep1", "c/rep1", "c/rep2"] and len(shown.rows.children) == 4
+
+
+def test_the_crop_says_why_it_is_missing_or_where_it_is_when_nothing_varies():
+    narrow = np.random.default_rng(0).random((100, 2000)).astype(np.float32)
+    found = tile_pictures([narrow], False, 256)
+    assert found.crop_png is None and "under 128 pixels on a side" in found.crop_text
+    wide = np.random.default_rng(0).random((300, 40000)).astype(np.float32)  # factor 157
+    found = tile_pictures([wide], False, 256)
+    assert found.crop_png is None and "too few pixels" in found.crop_text
+    flat = np.full((1024, 1024), 7, np.uint16)
+    flat[1::4, 1::4] = 9000  # native detail the thumbnail (every 4th pixel from 0) never keeps
+    found = tile_pictures([flat], False, 256)
+    assert found.crop_box == (0, 128, 0, 128) and "does not vary" in found.crop_text
+    assert "varies most" not in found.crop_text
