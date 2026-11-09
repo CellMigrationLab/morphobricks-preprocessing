@@ -14,6 +14,7 @@ from morphobricks_preprocessing.draft_answers import (
 )
 from morphobricks_preprocessing.draft_format import ABSENT, SPEC_COMMIT
 from morphobricks_preprocessing.draft_ids import id_problems, propose_id
+from morphobricks_preprocessing.fingerprint import Fingerprint
 from morphobricks_preprocessing.mask_answers import (
     MaskAnswerRefused,
     drawn_on,
@@ -31,6 +32,7 @@ from morphobricks_preprocessing.preview import (
     THUMBNAIL_SIDE,
     PreviewCache,
     PreviewRefused,
+    StripOptions,
     labels_thumbnail,
     read_plane,
 )
@@ -149,9 +151,17 @@ def test_the_evidence_counts_values_and_draws_nothing_undeclared(tmp_path):
     inventory = find_masks(masks, pre.discovery, pre.metadata.files)
     mapping = AxisMapping("CYX", "CYX")
     review = AxisReview(mapping, dict.fromkeys(images, mapping), ())
+    bound = {rel: Fingerprint.of(root / rel) for rel in images}
     assert representative(inventory, "Nuclei", sorted(images)).image == "ctrl/rep1/a.tif"
     found = mask_evidence(
-        inventory, "Nuclei", root, sorted(images), review, 1, PreviewCache(), 2**30
+        inventory,
+        "Nuclei",
+        root,
+        sorted(images),
+        review,
+        1,
+        StripOptions(cache=PreviewCache(), memory_limit=2**30),
+        bound,
     )
     assert (found.images_with, found.images, found.dtypes) == (2, 2, ("uint16",))
     assert found.image == "ctrl/rep1/a.tif" and found.values == 8 and found.channel == 1
@@ -159,6 +169,13 @@ def test_the_evidence_counts_values_and_draws_nothing_undeclared(tmp_path):
     assert found.overlay_png("instances").startswith(b"\x89PNG")
     assert found.mask_png().startswith(b"\x89PNG") and found.image_png().startswith(b"\x89PNG")
     missing = mask_evidence(
-        inventory, "Nuclei", root, sorted(images), review, 5, PreviewCache(), 2**30
+        inventory,
+        "Nuclei",
+        root,
+        sorted(images),
+        review,
+        5,
+        StripOptions(cache=PreviewCache(), memory_limit=2**30),
+        bound,
     )
     assert missing.picture is None and missing.problem  # no channel 5: said, not guessed

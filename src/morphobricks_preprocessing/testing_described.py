@@ -92,27 +92,35 @@ def _units(description: Description) -> Iterator[tuple[Path, Unit, int]]:
 
     A member's ``image_count`` is its total over its technical repeats, so it is spread
     over them as evenly as possible: every unit gets ``image_count // n`` images and the
-    first ``image_count % n`` units, by sorted unit ID, one more.
+    first ``image_count % n`` units, by sorted unit ID, one more. Every member is checked
+    before the first unit is yielded, so a refused description writes nothing.
 
     Raises
     ------
     ValueError
-        If a member has fewer images than technical repeats (a unit would be empty).
+        If a member has no technical repeat, or fewer images than technical repeats (a unit
+        would be empty; a negative count included).
     """
-    for repeat_id, repeat in description.repeats.items():
-        for condition_id, member in repeat.members.items():
-            unit_ids = sorted(member.technical_repeats)
-            base, extra = divmod(member.image_count, len(unit_ids))
-            if base == 0:
-                raise ValueError(
-                    f"member {condition_id!r} of repeat {repeat_id!r} has image_count "
-                    f"{member.image_count} for {len(unit_ids)} technical repeats; every "
-                    "technical repeat needs at least one image"
-                )
-            for position, unit_id in enumerate(unit_ids):
-                unit = member.technical_repeats[unit_id]
-                folder = unit_folder(description, repeat_id, condition_id, unit)
-                yield folder, unit, base + (1 if position < extra else 0)
+    members = [
+        (repeat_id, condition_id, member)
+        for repeat_id, repeat in description.repeats.items()
+        for condition_id, member in repeat.members.items()
+    ]
+    for repeat_id, condition_id, member in members:
+        units = len(member.technical_repeats)
+        if units == 0 or member.image_count < units:
+            raise ValueError(
+                f"member {condition_id!r} of repeat {repeat_id!r} has image_count "
+                f"{member.image_count} for {units} technical repeats; it needs at least one "
+                "technical repeat, and every technical repeat at least one image"
+            )
+    for repeat_id, condition_id, member in members:
+        unit_ids = sorted(member.technical_repeats)
+        base, extra = divmod(member.image_count, len(unit_ids))
+        for position, unit_id in enumerate(unit_ids):
+            unit = member.technical_repeats[unit_id]
+            folder = unit_folder(description, repeat_id, condition_id, unit)
+            yield folder, unit, base + (1 if position < extra else 0)
 
 
 def _mapping(description: Description) -> AxisMapping:
@@ -207,7 +215,8 @@ def make_described_run(
     ------
     ValueError
         For an unknown mask ID, a description that mixes rgb and fluorescence units, or a
-        member whose ``image_count`` is below its number of technical repeats.
+        member with no technical repeat or whose ``image_count`` is below its number of
+        technical repeats (nothing is written then).
     RuntimeError
         If the run or the mask step does not write its outputs (its issues are in the message).
     """

@@ -5,7 +5,7 @@ from dataclasses import replace
 
 import pytest
 
-from draft_file_support import PATHS, complete, snapshot
+from draft_file_support import COUNTS, PATHS, complete, snapshot
 from morphobricks_preprocessing import discover_experiment
 from morphobricks_preprocessing.description_file import DESCRIPTION_FILENAME, DRAFT_FILENAME
 from morphobricks_preprocessing.draft import draft_from_discovery
@@ -63,7 +63,7 @@ def test_publish_refuses_and_leaves_an_absent_description_absent(exp, out):
     stale(out, exp)
     before = snapshot(out)
     with pytest.raises(DraftFileError) as refusal:
-        publish_draft(out, draft_from_discovery(exp))
+        publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS)
     assert refusal.value.code == "spec_commit_mismatch"
     assert not (out / DESCRIPTION_FILENAME).exists()
     assert snapshot(out) == before
@@ -71,7 +71,7 @@ def test_publish_refuses_and_leaves_an_absent_description_absent(exp, out):
 
 def test_publish_refuses_and_keeps_an_existing_description_byte_identical(exp, out):
     save_draft(out, draft_from_discovery(exp), complete())
-    publish_draft(out, draft_from_discovery(exp))
+    publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS)
     published = (out / DESCRIPTION_FILENAME).read_bytes()
     answers = new_answers(out)
     assert answers.base_sha256 != "absent"
@@ -82,7 +82,7 @@ def test_publish_refuses_and_keeps_an_existing_description_byte_identical(exp, o
     path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
     before = snapshot(out)
     with pytest.raises(DraftFileError) as refusal:
-        publish_draft(out, draft_from_discovery(exp))
+        publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS)
     assert refusal.value.code == "spec_commit_mismatch"
     assert (out / DESCRIPTION_FILENAME).read_bytes() == published
     assert snapshot(out) == before
@@ -108,7 +108,7 @@ def test_save_refusal_keeps_an_earlier_draft_byte_identical(exp, out):
 def test_a_draft_with_the_current_commit_round_trips_and_publishes(exp, out):
     save_draft(out, draft_from_discovery(exp), complete())
     assert load_draft(out, draft_from_discovery(exp)).answers.spec_commit == SPEC_COMMIT
-    publication = publish_draft(out, draft_from_discovery(exp))
+    publication = publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS)
     assert publication is not None
     assert (out / DESCRIPTION_FILENAME).exists()
     assert not (out / DRAFT_FILENAME).exists()

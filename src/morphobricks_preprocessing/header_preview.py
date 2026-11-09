@@ -16,6 +16,9 @@ read here feeds an answer, an axis role, the draft or the run. The rules:
   the planes (the caption says so). OME-Zarr images are read from level 0 by the same rule.
 - **A failure is a sentence in the cell** (:class:`HeaderPreview.problem`), never an exception
   that stops the folder check.
+- **Only the image as the check read it:** the picture is drawn only when the file still has the
+  fingerprint the folder check took with its header; another revision (or one not bound) says
+  "check the folder again" and is not drawn.
 
 The projection reads the planes through :func:`.planes.read_plane` with a reading layout made
 from the header's own letters. Its role slots only say which dimension to step through: every
@@ -27,15 +30,23 @@ from __future__ import annotations
 
 import math
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
 from .axes import AxisMapping
+from .fingerprint import Fingerprint
 from .metadata import TiffMetadata, named_axes
 from .planes import PlaneMemoryError, PlaneReadError, read_plane
-from .preview import READ_BUDGET, THUMBNAIL_SIDE
+from .preview import (
+    READ_BUDGET,
+    THUMBNAIL_SIDE,
+    PreviewRefused,
+    check_unchanged,
+    checked_fingerprint,
+)
 from .preview_crop import TilePictures, tile_pictures
 
 PLANE_CAP = 8
@@ -183,7 +194,11 @@ def header_planes(path: str | os.PathLike, meta: TiffMetadata) -> HeaderPlanes:
 
 
 def header_preview(
-    root: Path, meta: TiffMetadata | None, side: int = THUMBNAIL_SIDE
+    root: Path,
+    meta: TiffMetadata | None,
+    side: int = THUMBNAIL_SIDE,
+    *,
+    bound: Mapping[str, Fingerprint | None],
 ) -> HeaderPreview:
     """Return a folder's picture from its first image's header, or the reason there is none.
 
@@ -195,13 +210,22 @@ def header_preview(
         The header of the folder's first image by path; None when it has no image to analyse.
     side
         The thumbnail's largest side in pixels.
+    bound
+        The fingerprints the folder check took with each header
+        (:attr:`.run.preflight.Preflight.header_fingerprints`): the image is drawn only as that
+        revision.
     """
     if meta is None:
         return HeaderPreview(None, problem="no image to analyse in this folder")
     try:
+        check_unchanged(
+            root / meta.relative_path,
+            checked_fingerprint(bound, meta.relative_path),
+            meta.relative_path,
+        )
         found = header_planes(root / meta.relative_path, meta)
         pictures = tile_pictures(found.planes, found.colour, side)
-    except PreviewUnavailable as exc:
+    except (PreviewUnavailable, PreviewRefused) as exc:
         return HeaderPreview(meta.relative_path, problem=str(exc))
     except READ_FAILURES as exc:
         return HeaderPreview(meta.relative_path, problem=f"cannot be read for a preview: {exc}")

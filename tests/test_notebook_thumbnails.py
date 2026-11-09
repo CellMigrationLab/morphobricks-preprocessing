@@ -12,6 +12,7 @@ import tifffile
 
 from channel_images import blobs, large, write_channels, write_rgb
 from morphobricks_preprocessing import header_preview as hp
+from morphobricks_preprocessing.fingerprint import Fingerprint
 from morphobricks_preprocessing.metadata import inspect_image
 from morphobricks_preprocessing.preview_crop import CROP_SIDE, busiest_square, tile_pictures
 from morphobricks_preprocessing.preview_render import display_panel
@@ -74,12 +75,21 @@ def _meta(root, name):
     return inspect_image(root / name, name)
 
 
+def _bound(root, name):
+    """The fingerprint the folder check takes with the header (the picture is of that file)."""
+    return {name: Fingerprint.of(root / name)}
+
+
 def test_a_picture_is_drawn_only_when_the_header_names_y_and_x(tmp_path):
     tifffile.imwrite(tmp_path / "plain.tif", np.stack([blobs(1), blobs(2)]))  # QYX: nothing named
     write_channels(tmp_path / "named.tif", ["DAPI", "Actin"], ["blobs", "filaments"])
-    plain = hp.header_preview(tmp_path, _meta(tmp_path, "plain.tif"))
+    plain = hp.header_preview(
+        tmp_path, _meta(tmp_path, "plain.tif"), bound=_bound(tmp_path, "plain.tif")
+    )
     assert plain.pictures is None and plain.problem == hp.NO_YX
-    named = hp.header_preview(tmp_path, _meta(tmp_path, "named.tif"))
+    named = hp.header_preview(
+        tmp_path, _meta(tmp_path, "named.tif"), bound=_bound(tmp_path, "named.tif")
+    )
     assert named.pictures is not None and named.text == "max projection over C (2): all 2 planes"
 
 
@@ -104,17 +114,19 @@ def test_a_plane_over_the_pixel_cap_is_not_read_and_the_cap_is_said(tmp_path, mo
     write_channels(tmp_path / "a.tif", ["DAPI"], ["blobs"])
     monkeypatch.setattr(hp, "PIXEL_CAP", 1000)
     monkeypatch.setattr(hp, "read_plane", lambda *a, **k: pytest.fail("read over the cap"))
-    found = hp.header_preview(tmp_path, _meta(tmp_path, "a.tif"))
+    found = hp.header_preview(tmp_path, _meta(tmp_path, "a.tif"), bound=_bound(tmp_path, "a.tif"))
     assert found.pictures is None and "over the 1,000-pixel cap" in found.problem
 
 
 def test_an_rgb_header_is_drawn_in_colour_and_a_read_failure_is_a_sentence(tmp_path):
     write_rgb(tmp_path / "rgb.tif")
-    found = hp.header_preview(tmp_path, _meta(tmp_path, "rgb.tif"))
+    found = hp.header_preview(
+        tmp_path, _meta(tmp_path, "rgb.tif"), bound=_bound(tmp_path, "rgb.tif")
+    )
     assert found.colour and decode(found.pictures.png).shape == (64, 64, 3)
     meta = _meta(tmp_path, "rgb.tif")
     (tmp_path / "rgb.tif").write_bytes((tmp_path / "rgb.tif").read_bytes()[:400])  # truncated
-    broken = hp.header_preview(tmp_path, meta)
+    broken = hp.header_preview(tmp_path, meta, bound=_bound(tmp_path, "rgb.tif"))
     assert broken.pictures is None and broken.problem.startswith("cannot be read for a preview")
 
 

@@ -8,7 +8,7 @@ from dataclasses import replace
 
 import pytest
 
-from draft_file_support import DAY, PATHS, complete
+from draft_file_support import COUNTS, DAY, PATHS, complete
 from morphobricks_preprocessing import discover_experiment, preflight
 from morphobricks_preprocessing.description_candidate import check_candidate
 from morphobricks_preprocessing.description_reopen import published_state
@@ -66,8 +66,8 @@ def test_a_repeat_named_otherwise_is_paired_under_its_id(tmp_path):
         repeats={"rep1": complete().repeats["rep1"]},
         pairing={("DrugA", "day2"): "rep1"},
         units={
-            ("CTRL", "rep1", "single"): UnitAnswer(("DNA", "ACTIN")),
-            ("DrugA", "day2", "single"): UnitAnswer(("DNA", "ACTIN")),
+            ("CTRL", "rep1", "single"): UnitAnswer(("DNA", "ACTIN"), "channels"),
+            ("DrugA", "day2", "single"): UnitAnswer(("DNA", "ACTIN"), "channels"),
         },
     )
     published = description_from_draft(draft, answers)
@@ -108,7 +108,7 @@ def test_the_review_states_comparisons_in_words_and_missing_channels(exp):
         },
     )
     units = dict(answers.units)
-    units[("DrugA", "rep2", "single")] = UnitAnswer(("DNA",))
+    units[("DrugA", "rep2", "single")] = UnitAnswer(("DNA",), "channels")
     answers = replace(answers, units=units)
     applied = apply_answers(draft, answers)
     assert comparisons(applied, answers) == [
@@ -158,5 +158,5 @@ def test_publish_draft_writes_the_derived_csv_only_with_the_description(exp, tmp
     out = tmp_path / "out"
     save_draft(out, draft, complete())
     assert not (out / "experiment_design.csv").exists()  # saving answers writes no CSV
-    publish_draft(out, draft)
+    publish_draft(out, draft, channel_counts=COUNTS)
     assert (out / "experiment_design.csv").read_bytes().startswith(b"condition,")

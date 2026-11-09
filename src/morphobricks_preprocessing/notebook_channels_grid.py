@@ -73,8 +73,12 @@ def folder_order(layout: UnitLayout) -> tuple:
 
 
 def named(layout: UnitLayout) -> bool:
-    """Return True when the header names every channel of a usable unit (a block can hold it)."""
-    return layout.usable and all(layout.name(i) for i in range(layout.channels))
+    """Return True when the header names every channel of a usable unit (a block can hold it).
+
+    Every image of the unit must have that header: a unit whose later images differ is never
+    grouped on its first image alone.
+    """
+    return layout.usable and layout.uniform and all(layout.name(i) for i in range(layout.channels))
 
 
 class TagGrid:
@@ -172,7 +176,8 @@ class TagGrid:
         """Return what the folders of one block share exactly; a folder alone has its own key."""
         colour = self._colour(layout)
         tags = tags_of(layout, self.store.answers().units.get(layout.key))
-        together = (colour or named(layout)) and layout.key not in self.alone
+        grouped = (colour and layout.uniform) or named(layout)
+        together = grouped and layout.key not in self.alone
         return (layout.signature, colour, tags, None if together else layout.key)
 
     def block_list(self) -> list[list[UnitLayout]]:
@@ -236,19 +241,18 @@ class TagGrid:
         self.refresh()
 
     def _confirm_layout(self, units: Sequence[UnitLayout]) -> None:
-        """Save the header's proposal of these units as the answer.
+        """Save the tags these units show as the answer: exactly what is displayed.
 
-        The colour pre-tick is saved too only when the image type is answered here.
+        Only the proposals shown (:meth:`effective`) are saved; a position whose proposal is
+        not shown (its label is already tagged elsewhere in the unit) stays untagged. The colour
+        pre-tick is saved too only when the image type is answered here.
         """
         answers = self.store.answers()
         rgb = [u.key for u in units if self.place_types and self.types.proposed(u)]
         for layout in units:
-            proposal = self._proposal(layout)
-            if proposal is None:
-                continue
-            tags = tags_of(layout, answers.units.get(layout.key))
-            filled = tuple(t if t is not None else proposal[i] for i, t in enumerate(tags))
-            answers = with_tags(answers, layout, filled)
+            shown, proposed = self.effective(layout)
+            if proposed:
+                answers = with_tags(answers, layout, shown)
         ok = self.store.update(synced(answers, self.layouts))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
         if ok and rgb:
@@ -381,6 +385,8 @@ class TagGrid:
             text += f". {self._type_text(first)} Pictures: {COLOUR_TEXT}."
         elif len(units) > 1:
             text += " with this header: tagged once, for all of them."
+        elif not first.uniform:
+            text += ": its images do not all have this header, so it is tagged on its own."
         elif not named(first):
             text += ": a header without every channel name is tagged folder by folder."
         if apart:

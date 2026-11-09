@@ -28,6 +28,7 @@ Nothing here confirms anything or reads the clock: every date is the user's, in 
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,7 +40,7 @@ from ..description_transition import Reconfirmation
 from ..design import DESIGN_FILENAME
 from ..design_derive import write_derived_design
 from ..draft import Draft
-from ..draft_answers import DraftAnswers, apply_answers, description_from_draft
+from ..draft_answers import DraftAnswers, UnitKey, apply_answers, description_from_draft
 from ..draft_format import (
     ABSENT,
     SPEC_COMMIT,
@@ -204,6 +205,7 @@ def publish_draft(
     output_folder: str | os.PathLike,
     draft: Draft,
     *,
+    channel_counts: Mapping[UnitKey, int],
     confirmations: tuple[Reconfirmation, ...] = (),
     removals: tuple[Removal, ...] = (),
     recorded_on: str | None = None,
@@ -217,6 +219,12 @@ def publish_draft(
     the published file) and the draft file is deleted. Nothing is written on any refusal.
     ``removals`` and ``recorded_on`` are the user's, as :func:`.description_file.publish_locked`
     takes them (a removed folder, a changed image count).
+
+    ``channel_counts`` are the channel counts of each unit's image now, from its header read
+    through the axis roles the user confirmed (one entry per unit). It is required: a unit
+    whose saved tags are not one per channel, or that has no count, is refused
+    (:func:`.draft_answers.missing_confirmations`), so tags saved for another image are never
+    published.
 
     Raises
     ------
@@ -232,7 +240,7 @@ def publish_draft(
     folder = Path(output_folder)
     with output_lock(folder):
         resumed = _resume(folder, draft)
-        candidate = description_from_draft(draft, resumed.answers)
+        candidate = description_from_draft(draft, resumed.answers, channel_counts=channel_counts)
         publication = publish_locked(
             folder,
             candidate,

@@ -58,6 +58,13 @@ IDS_EXPLANATION = (
 )
 
 
+class AnswerNotSaved(DraftError):
+    """An answer refused because it could not be saved; the message says why."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"Not saved: {reason}.", ("not_saved",))
+
+
 class _DescriptionCard(_NameRows, _SavedDraft):
     """Step 1's names and references cards: the user's answers to the draft description."""
 
@@ -73,6 +80,7 @@ class _DescriptionCard(_NameRows, _SavedDraft):
         self._keep_old_draft = False
         self._refreshing = False
         self._refusal: DraftError | None = None
+        self._save_problem = ""
         self.id_inputs: dict[tuple[str, str], widgets.Text] = {}
         self.name_inputs: dict[tuple[str, str], widgets.Text] = {}
         self.name_hints: dict[tuple[str, str], widgets.HTML] = {}
@@ -193,51 +201,73 @@ class _DescriptionCard(_NameRows, _SavedDraft):
     def _answer(self, answers: DraftAnswers, *, rebuild: bool = True) -> bool:
         """Apply new answers to the draft and save them; False when they are refused.
 
-        A refused answer changes nothing and is shown by the card that asked for it. With
-        ``rebuild`` False the boxes are left as they are (a name being typed keeps its focus).
+        A refused answer changes nothing and is shown by the card that asked for it. An answer
+        that cannot be saved (the output folder's lock, the draft file, a write error) is
+        refused too: the answers before it are kept, so nothing is shown as answered that is
+        not on disk. With ``rebuild`` False the boxes are left as they are (a name being typed
+        keeps its focus).
         """
         try:
             draft = apply_answers(self._draft_base, answers)
         except DraftError as exc:
             self._refusal = exc
             return False
-        self._refusal = None
+        before = self.draft, self.draft_answers
         self.draft, self.draft_answers = draft, answers
-        self._save_description()
+        saved = self._save_description()
+        if not saved:
+            self.draft, self.draft_answers = before
+            self._refusal = AnswerNotSaved(self._save_problem)
+        else:
+            self._refusal = None
         if rebuild:
             self._refresh_description()
         else:
             self._show_names_status()
-        return True
+        return saved
 
-    def _save_description(self) -> None:
-        """Save the answers to ``morphobricks.draft.json`` under the output folder's lock."""
+    def _save_description(self) -> bool:
+        """Save the answers to ``morphobricks.draft.json`` under the output folder's lock.
+
+        Returns
+        -------
+        bool
+            False when the save was refused or failed (``_save_problem`` says why); True when
+            the draft was written, or when no output folder is set (the answers are then kept
+            while the notebook is open, and the page says they are not saved).
+        """
         output = self._design_folder()
-        self._draft_saved = False
+        self._draft_saved, self._save_problem = False, ""
         if output is None:
-            return
+            return True
         if self._keep_old_draft and not self._keep_unused_draft(output):
-            return
+            self._save_problem = "the unused draft could not be kept"
+            return False
         with self.log.attached():
             try:
                 save_draft(output, self._draft_base, self.draft_answers)
             except OutputLockedError:
                 self.folder_lock.show(output)
+                self._save_problem = "another run holds the lock of the output folder"
                 self._names_refusal = ui.status(
                     "error",
                     "Not saved: another run holds the lock of the output folder.",
                     ["Answer again once it is free."],
                 )
-                return
+                return False
             except (OutputInsideMasksError, DraftFileError, DraftError) as exc:
+                self._save_problem = str(exc)
                 self._names_refusal = ui.status("error", "Not saved.", [str(exc)])
-                return
-            except OSError:
+                return False
+            except OSError as exc:
                 logging.getLogger(__name__).warning("Cannot save the draft", exc_info=True)
-                return
+                self._save_problem = f"the draft could not be written: {exc}"
+                self._names_refusal = ui.status("error", "Not saved.", [self._save_problem])
+                return False
             finally:
                 self._show_log()
         self._draft_saved = True
+        return True
 
     # The names card ----------------------------------------------------------------------
 
@@ -464,4 +494,4 @@ def _with_ids(answers: DraftAnswers, ids: dict[tuple[str, str], str]) -> DraftAn
     )
 
 
-__all__ = ["_DescriptionCard"]
+__all__ = ["AnswerNotSaved", "_DescriptionCard"]

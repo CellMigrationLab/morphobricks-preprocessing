@@ -10,24 +10,31 @@ labels). Nothing here decides what the mask is: the values are evidence for the 
 "separate objects" or "regions"; the overlay is drawn only as the user declared
 (:func:`.preview_render.mask_overlay_png`). For a colour (RGB) folder the image is drawn in
 colour (:meth:`MaskEvidence.in_colour`, :func:`.preview_render.colour_composite`), display only.
+
+The evidence is of the files as the folder check read them: the image is read only with the
+fingerprint the check took with its header, and the mask only with the fingerprint taken with
+its own header (:attr:`.masks.MaskFile.bound`); a mask found without one must not change while it
+is read. Another revision is refused ("check the folder again"), never shown as the one checked.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
 
 from .axes import AxisReview
+from .fingerprint import Fingerprint, current_fingerprint
 from .masks import MaskFile, MaskInventory, read_mask
 from .preview import (
-    THUMBNAIL_SIDE,
-    PreviewCache,
+    FILE_CHANGED,
     PreviewRefused,
     StripOptions,
     channel_strip,
+    check_unchanged,
+    checked_fingerprint,
     labels_thumbnail,
 )
 from .preview_render import (
@@ -119,8 +126,8 @@ def mask_evidence(
     analysed: Sequence[str],
     review: AxisReview,
     channel: int | None,
-    cache: PreviewCache,
-    memory_limit: int,
+    options: StripOptions,
+    bound: Mapping[str, Fingerprint | None],
 ) -> MaskEvidence:
     """Gather the evidence about one mask type (see the module docstring).
 
@@ -138,8 +145,12 @@ def mask_evidence(
         The axis review of the confirmed roles: the image is read only through them.
     channel
         The C index to draw the mask on (None or 0 for an image without channels).
-    cache, memory_limit
-        The preview cache and the memory limit of one plane.
+    options
+        The size, preview cache and memory limit of the image's picture (its ``expected`` is
+        set here, from ``bound``).
+    bound
+        The fingerprints the folder check took with each image header
+        (:attr:`.run.preflight.Preflight.header_fingerprints`).
     """
     files = [f for f in masks.files if f.mask_type == source_type and f.image in set(analysed)]
     dtypes = tuple(sorted({str(f.dtype) for f in files if f.dtype is not None}))
@@ -147,13 +158,14 @@ def mask_evidence(
     first = representative(masks, source_type, analysed)
     if first is None:
         return found
-    options = StripOptions(side=THUMBNAIL_SIDE, cache=cache, memory_limit=memory_limit)
     try:
+        options = replace(options, expected=checked_fingerprint(bound, first.image))
+        check_unchanged(root / first.image, options.expected, first.image)
         strip = channel_strip(root / first.image, first.image, review, options)
         panel = strip.panels[channel or 0]
         z = strip.z if "Z" in first.axes else None
         t = strip.t if "T" in first.axes else None
-        plane = read_mask(first, masks.folder, root, z=z, t=t)
+        plane = _read_bound(first, masks.folder, root, (z, t))
         values = int(np.unique(plane).size)
         labels = labels_thumbnail(plane, panel.plane).pixels
     except READ_ERRORS as exc:
@@ -176,6 +188,29 @@ def mask_evidence(
         labels,
         panels=tuple(p.panel for p in strip.panels),
     )
+
+
+def _read_bound(
+    mask: MaskFile, folder: Path | None, root: Path, where: tuple[int | None, int | None]
+) -> np.ndarray:
+    """Read the mask plane only as the revision whose header was read; refuse another.
+
+    A mask bound by the check (:attr:`.masks.MaskFile.bound`) must still have that fingerprint;
+    one found without binding must keep one fingerprint across the read.
+
+    Raises
+    ------
+    PreviewRefused
+        ``file_changed_while_shown``.
+    """
+    path = mask.location(folder, root)
+    before = mask.bound or current_fingerprint(path)
+    if before is None:
+        raise PreviewRefused(FILE_CHANGED, f"the mask {mask.path} is gone: check the folder again.")
+    check_unchanged(path, before, f"the mask {mask.path}")
+    plane = read_mask(mask, folder, root, z=where[0], t=where[1])
+    check_unchanged(path, before, f"the mask {mask.path}")
+    return plane
 
 
 def _missing(found: MaskEvidence, image: str, why: str) -> MaskEvidence:

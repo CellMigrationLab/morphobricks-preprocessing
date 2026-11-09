@@ -5,6 +5,10 @@ The Spec still refuses RGB and fluorescence units in one description in Stages 1
 changes is which refusal the user meets: not ``mixed_dtypes`` and ``inconsistent_dimensions``
 from comparing an RGB image with a fluorescence one, but the Spec's own. A unit mixed inside
 itself and an undescribed (v0.4) run are refused as before.
+
+The invariant is that a previously blocking input stays blocked; the diagnostic codes may change
+(the per-type checks and the Spec's codes replace the global ``mixed_dtypes`` and
+``inconsistent_dimensions``). It is not that the set of refusal codes is unchanged.
 """
 
 from pathlib import Path
@@ -187,6 +191,7 @@ def test_units_of_one_layout_that_disagree_are_still_refused_by_the_run(
     for image in unit:
         _rewrite(root / image, data, axes)
     pre = unit_checked(preflight(root, out))
+    assert pre.ok, [i.code for i in pre.issues if i.is_error]  # only the run can refuse it
     assert not {"inconsistent_dimensions", "different_channel_counts"} & codes(pre.issues)
     result = run_experiment(root, prefill_mapping(mapping), output_folder=out)
     assert not result.written
