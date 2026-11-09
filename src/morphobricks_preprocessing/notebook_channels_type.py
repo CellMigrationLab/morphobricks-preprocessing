@@ -148,7 +148,7 @@ class ImageTypeRows:
         self.types, self._thumbs = types, thumbs
         # The status of each unit against a saved experiment (None without one): rows fold.
         self.reopen: Callable[[], Mapping[UnitKey, str] | None] = lambda: None
-        self.fold = RowFold("folders")
+        self.fold = RowFold("folder")
         self.rows = widgets.VBox()
         self.status = widgets.HTML()
         self.problem = widgets.HTML()

@@ -91,7 +91,7 @@ def test_a_changed_reopen_folds_the_unchanged_rows_and_marks_the_new_ones(reopen
     nb = reopened
     grid, types = nb.channel_grid, nb.type_rows
     assert grid.fold.count == 1 and not ui.is_visible(grid.fold.folded)
-    assert "1 unchanged folder blocks" in grid.fold.line.value
+    assert "1 unchanged folder block<" in grid.fold.line.value
     assert "new since saved" in _text(grid.blocks)  # drug/rep2's block stays open
     assert types.fold.count == 3 and "new since saved" in _text(types.rows)
     conditions = nb._name_folds["conditions"]

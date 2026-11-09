@@ -31,9 +31,9 @@ from .notebook_row_fold import RowFold, row_status
 from .notebook_values import natural_key
 
 FOLD_WORDS = {
-    "conditions": "conditions",
-    "repeats": "replicates",
-    "technical_repeats": "technical-repeat folders",
+    "conditions": "condition",
+    "repeats": "replicate",
+    "technical_repeats": "technical-repeat folder",
 }
 _KEY_PART = {"conditions": 0, "repeats": 1, "technical_repeats": 2}
 

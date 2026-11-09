@@ -251,7 +251,7 @@ class _DesignCard:
                 row_status(units, keys, answered=True),
             ))  # fmt: skip
         if not hasattr(self, "_pairing_fold"):
-            self._pairing_fold = RowFold("folders")
+            self._pairing_fold = RowFold("folder")
         self.pairing_grid.children = rows + self._pairing_fold.arrange(folded)
         self.control_checks = {}
         for condition in design.conditions:

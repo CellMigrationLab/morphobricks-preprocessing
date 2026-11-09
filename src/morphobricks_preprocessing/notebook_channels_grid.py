@@ -93,7 +93,7 @@ class TagGrid:
         self.alone: set[UnitKey] = set()
         # The status of each unit against a saved experiment (None without one): rows fold.
         self.reopen: Callable[[], Mapping[UnitKey, str] | None] = lambda: None
-        self.fold = RowFold("folder blocks")
+        self.fold = RowFold("folder block")
         self.message = ""
         self._building = False
         self.blocks = widgets.VBox()

@@ -22,6 +22,7 @@ from . import notebook_style as ui
 from .description_reconcile import Reconciliation, Status
 from .draft_answers import UnitKey
 from .notebook_channels_view import ORANGE, ORANGE_FILL
+from .validation import plural
 
 UNCHANGED, NEW, CHANGED = "unchanged", "new", "changed"
 WORDS = {NEW: "new since saved", CHANGED: "changed since saved"}
@@ -85,6 +86,7 @@ class RowFold:
     """
 
     def __init__(self, what: str) -> None:
+        # ``what`` is the singular noun of a row ("folder"); the line says "3 unchanged folders".
         self.what = what
         self.opened = False
         self.toggle = ui.button(" open", icon="chevron-down", tooltip="Show the unchanged rows")
@@ -117,8 +119,9 @@ class RowFold:
             return shown
         self.folded.children = folded
         self.line.value = (
-            f"<span style='color:#166534;font-weight:600'>✓ {len(folded)} unchanged "
-            f"{html.escape(self.what)}</span> <span class='mb-help'>answered as saved</span>"
+            f"<span style='color:#166534;font-weight:600'>✓ "
+            f"{html.escape(plural(len(folded), 'unchanged ' + self.what))}</span> "
+            "<span class='mb-help'>answered as saved</span>"
         )
         self._show()
         return [*shown, self.bar, self.folded]

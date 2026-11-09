@@ -273,7 +273,7 @@ class _CheckSaveScreen:
             boxes.append((box, row_status(units, keys, view.confirmed_on is not None)))
         self.same_way = toggles
         if not hasattr(self, "_replicate_fold"):
-            self._replicate_fold = RowFold("replicates")
+            self._replicate_fold = RowFold("replicate")
         self.replicates_box.children = self._replicate_fold.arrange(boxes)
 
     def _member_picture(self, key: tuple[str, str]) -> widgets.Widget:
