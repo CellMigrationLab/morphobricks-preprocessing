@@ -28,6 +28,11 @@ from .description import USED_KINDS, Channel, Condition, Description, Mask, Memb
 from .description_transition import DATE
 from .draft import Draft, DraftError, OpenQuestion
 
+CHANNELS = "channels"
+"""The answer "an ordinary channel image": published as an absent ``image_type`` (§4.4b)."""
+ANSWERED_TYPES = (CHANNELS, "rgb")
+"""The image-type answers that count: only an explicit one is published."""
+
 UnitKey = tuple[str, str, str]
 """``(condition folder, source repeat folder, technical-repeat folder or "single")``."""
 
@@ -214,8 +219,10 @@ def apply_answers(draft: Draft, answers: DraftAnswers) -> Draft:
     answer for a folder or repeat the draft does not have is refused. Applying the same answers
     twice gives the same draft. The pairing is applied first (:meth:`.draft.Draft.paired`); a
     reference to the condition itself or one that closes a loop is refused (``E_REFERENCE_SELF``,
-    ``E_REFERENCE_CYCLE``). Channels, units and masks are not part of the draft and are not
-    checked here (:func:`missing_confirmations`, then the strict reader at publication).
+    ``E_REFERENCE_CYCLE``). A unit that tags one label at two positions is refused
+    (``E_DUPLICATE_CHANNEL_IN_UNIT``): such an answer is never saved. The rest of the
+    channels, units and masks are not part of the draft and are not checked here
+    (:func:`missing_confirmations`, then the strict reader at publication).
 
     Raises
     ------
@@ -226,6 +233,12 @@ def apply_answers(draft: Draft, answers: DraftAnswers) -> Draft:
     unknown = _unknown_keys(draft, answers)
     if unknown:
         raise DraftError(f"the draft has no {', '.join(unknown)}", ("unknown_key",))
+    twice = _repeated_tags(answers.units)
+    if twice:
+        raise DraftError(
+            f"one label cannot stand at two positions of a unit: {'; '.join(twice)}",
+            ("E_DUPLICATE_CHANNEL_IN_UNIT",),
+        )
     for folder, answer in sorted(answers.conditions.items()):
         if answer.id is not None:
             draft = draft.confirm_id("conditions", folder, answer.id)
@@ -291,29 +304,78 @@ def carry_over(
     return kept, tuple(dropped)
 
 
-def missing_confirmations(draft: Draft, answers: DraftAnswers) -> tuple[OpenQuestion, ...]:
+def _repeated_tags(units: Mapping[UnitKey, UnitAnswer]) -> list[str]:
+    """Name every unit that tags one label at more than one position, with the label."""
+    out = []
+    for key, unit in sorted(units.items()):
+        tags = [t for t in unit.channels if t is not None]
+        out += [f"{' / '.join(key)}: {t}" for t in sorted({t for t in tags if tags.count(t) > 1})]
+    return out
+
+
+def _unit_questions(
+    where: str, answer: UnitAnswer, count: int | None, checked: bool
+) -> list[OpenQuestion]:
+    """Return what is still open about one unit that has saved channels.
+
+    ``count`` is the channel count of the unit's image now, from its header read through the
+    confirmed axis roles (None when the caller does not know it); ``checked`` says whether the
+    caller gave the counts at all.
+    """
+    out = []
+    if answer.image_type not in ANSWERED_TYPES:
+        out.append(OpenQuestion("unit_image_type_unanswered", where))
+    if checked and count is None:
+        out.append(OpenQuestion("unit_channel_count_unknown", where))
+    elif checked and count != len(answer.channels):
+        # Tags saved for another channel count: never stretched, cut or kept; retag.
+        out.append(
+            OpenQuestion(
+                "unit_channels_stale",
+                f"{where} ({len(answer.channels)} tags saved, the image has {count} channels)",
+            )
+        )
+        return out
+    out += [
+        OpenQuestion("unit_channel_untagged", f"{where} / C{i}")
+        for i, c in enumerate(answer.channels)
+        if c is None
+    ]
+    return out
+
+
+def missing_confirmations(
+    draft: Draft,
+    answers: DraftAnswers,
+    *,
+    channel_counts: Mapping[UnitKey, int] | None = None,
+) -> tuple[OpenQuestion, ...]:
     """Return every confirmation still missing for ``draft`` with ``answers`` applied.
 
     The draft's own open questions (IDs, repeats, controls, legacy folders), plus the channels
-    of every imaging unit that has none (``unit_channels_missing``), every position not tagged
-    (``unit_channel_untagged``) and every channel a unit names that is not declared
+    of every imaging unit that has none (``unit_channels_missing``), every unit whose image
+    type is not answered ``"channels"`` or ``"rgb"`` (``unit_image_type_unanswered``: an
+    unanswered type is never published as an ordinary channel image), every position not
+    tagged (``unit_channel_untagged``) and every channel a unit names that is not declared
     (``channel_undeclared``).
+
+    ``channel_counts`` are the channel counts of each unit's image now, from its header read
+    through the confirmed axis roles. With them, a unit whose saved tags are not one per
+    channel is ``unit_channels_stale`` (the user retags it) and a unit without a count is
+    ``unit_channel_count_unknown``. :func:`.run.draft_file.publish_draft` always gives them.
     """
     out = list(draft.open_questions())
     declared = set(answers.channels)
     undeclared: set[str] = set()
+    checked = channel_counts is not None
     for row in draft.unit_rows():
         key = (row.condition, row.biological_repeat, row.technical_repeat)
         answer = answers.units.get(key)
         if answer is None or not answer.channels:
             out.append(OpenQuestion("unit_channels_missing", " / ".join(key)))
             continue
-        where = " / ".join(key)
-        out += [
-            OpenQuestion("unit_channel_untagged", f"{where} / C{i}")
-            for i, c in enumerate(answer.channels)
-            if c is None
-        ]
+        count = channel_counts.get(key) if checked else None
+        out += _unit_questions(" / ".join(key), answer, count, checked)
         undeclared.update(c for c in answer.channels if c and c not in declared)
     return tuple(out + [OpenQuestion("channel_undeclared", c) for c in sorted(undeclared)])
 
@@ -346,7 +408,7 @@ def _repeat(draft: Draft, label: str, answers: DraftAnswers) -> Repeat:
         units = {}
         for u in member.units:
             given = answers.units[(member.condition, member.source_repeat, u.source_folder)]
-            kind = None if given.image_type == "channels" else given.image_type
+            kind = None if given.image_type == CHANNELS else given.image_type
             units[draft.technical_repeats[u.source_folder].confirmed] = Unit(
                 u.source_folder, tuple(given.channels), given.display_name, kind
             )
@@ -355,12 +417,18 @@ def _repeat(draft: Draft, label: str, answers: DraftAnswers) -> Repeat:
     return Repeat(True, repeat.confirmed_on, members, shown)
 
 
-def description_from_draft(draft: Draft, answers: DraftAnswers) -> Description:
+def description_from_draft(
+    draft: Draft,
+    answers: DraftAnswers,
+    *,
+    channel_counts: Mapping[UnitKey, int] | None = None,
+) -> Description:
     """Build the description of a draft whose every science decision the user confirmed.
 
     Pure: no file is read or written and no clock is read. Each ID and ``confirmed_on`` is the
     user's, from ``answers`` (or carried by a migrated ``draft``); ``used_ids`` is the draft's
-    retired IDs plus every ID confirmed now.
+    retired IDs plus every ID confirmed now. ``channel_counts`` are as
+    :func:`missing_confirmations` takes them.
 
     Raises
     ------
@@ -371,7 +439,7 @@ def description_from_draft(draft: Draft, answers: DraftAnswers) -> Description:
         repeat holding two folders of one condition.
     """
     applied = apply_answers(draft, answers)
-    questions = missing_confirmations(applied, answers)
+    questions = missing_confirmations(applied, answers, channel_counts=channel_counts)
     if questions:
         raise DraftIncomplete(questions)
     conditions = {}
@@ -408,6 +476,8 @@ def description_from_draft(draft: Draft, answers: DraftAnswers) -> Description:
 
 
 __all__ = [
+    "ANSWERED_TYPES",
+    "CHANNELS",
     "ChannelAnswer",
     "ConditionAnswer",
     "DraftAnswers",

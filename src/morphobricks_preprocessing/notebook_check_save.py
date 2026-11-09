@@ -21,6 +21,7 @@ from __future__ import annotations
 import html
 from dataclasses import replace
 from datetime import date
+from pathlib import Path
 
 import ipywidgets as widgets
 
@@ -39,6 +40,7 @@ from .draft_answers import (
     missing_confirmations,
 )
 from .draft_format import DraftFileError
+from .fingerprint import changed_since_check
 from .mask_answers import masks_unanswered
 from .notebook_channel_thumbs import Thumb
 from .notebook_check_view import (
@@ -61,6 +63,7 @@ from .preview_crop import TilePictures
 from .run import OutputLockedError
 from .run.description_file import PublicationRefused
 from .run.draft_file import publish_draft
+from .validation import plural
 
 INTRO = (
     "<b>What happens here:</b> your experiment is restated in sentences. Answer, for each "
@@ -225,7 +228,8 @@ class _CheckSaveScreen:
 
     def _todo(self, applied: object, answers: object, problem: str) -> tuple[list, list[str]]:
         """Return the open questions and the other answers still missing before saving."""
-        questions = list(missing_confirmations(applied, answers))
+        counts = self._channel_counts()
+        questions = list(missing_confirmations(applied, answers, channel_counts=counts))
         extra = [problem] if problem else []
         left = masks_unanswered(answers, self._mask_types())
         extra += [f"mask {m}: separate objects or regions? (Masks, step 10)" for m in left]
@@ -250,7 +254,9 @@ class _CheckSaveScreen:
     def _candidate_check(self, answers: object) -> CandidateCheck | None:
         """Build the candidate from the answers and check its exact bytes; None if refused."""
         try:
-            candidate = description_from_draft(self._draft_base, answers)
+            candidate = description_from_draft(
+                self._draft_base, answers, channel_counts=self._channel_counts()
+            )
         except DraftError as exc:
             self.todo.value = ui.status("error", "The answers cannot be saved.", [str(exc)])
             return None
@@ -260,7 +266,7 @@ class _CheckSaveScreen:
     def _show_replicates(self, applied: object, answers: object, labels: list[str]) -> None:
         """One box per replicate: folders, pictures, channels, and its own question."""
         boxes, toggles = [], {}
-        units = self._reopen_units()
+        units, counts = self._reopen_units(), self._channel_counts()
         for view in replicates(applied, answers):
             toggle = ui.ConfirmToggle(
                 SAME_WAY,
@@ -278,7 +284,7 @@ class _CheckSaveScreen:
                         self._member_picture(
                             (m.condition, m.source_repeat), self.replicates_detail
                         ),
-                        widgets.HTML(member_html(m, labels)),
+                        widgets.HTML(member_html(m, labels, counts)),
                     ]
                 )
                 for m in view.members
@@ -411,7 +417,24 @@ class _CheckSaveScreen:
                 ["See Conditions and Replicates (steps 4 and 5)."],
             )
             return False
-        self._save_description()
+        if not self._save_description():
+            self.save_status.value = ui.status(
+                "error", "Not saved: your answers could not be saved first.", [self._save_problem]
+            )
+            return False
+        changed = self._changed_images()
+        if changed:
+            self.save_status.value = ui.status(
+                "error",
+                f"Not saved: {plural(len(changed), 'image')} changed since the folder check.",
+                [
+                    "Check the folder again (step 1): the channels and pictures were of the "
+                    "images as the check read them. Changed: "
+                    + ", ".join(changed[:5])
+                    + (" …" if len(changed) > 5 else "")
+                ],
+            )
+            return False
         try:
             publication = self._publish()
         except OutputLockedError:
@@ -436,6 +459,12 @@ class _CheckSaveScreen:
         self._refresh_check_save()
         return True
 
+    def _changed_images(self) -> tuple[str, ...]:
+        """Return the images to analyse that are no longer as the folder check read them."""
+        pre = self.preflight
+        analysed = [m.relative_path for m in pre.metadata.files]
+        return changed_since_check(Path(pre.discovery.root), pre.header_fingerprints, analysed)
+
     def _publish(self) -> object:
         """Publish the saved draft with the removals the user confirmed."""
         state, today = self._published(), date.today().isoformat()
@@ -446,7 +475,9 @@ class _CheckSaveScreen:
                 for q in state.removals
                 if q.condition_id in self._removals
             )
-            candidate = description_from_draft(self._draft_base, self.draft_answers)
+            candidate = description_from_draft(
+                self._draft_base, self.draft_answers, channel_counts=self._channel_counts()
+            )
             confirmations = reconfirmations(
                 state.description, candidate, state.reconciliation, removals
             ).accepted
@@ -454,6 +485,7 @@ class _CheckSaveScreen:
         return publish_draft(
             self._design_folder(),
             self._draft_base,
+            channel_counts=self._channel_counts(),
             confirmations=confirmations,
             removals=removals,
             recorded_on=recorded,

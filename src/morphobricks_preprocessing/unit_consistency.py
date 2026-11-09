@@ -16,6 +16,9 @@ and that refusal is not lifted here. In a described run the same checks apply:
   the axis review's (``inconsistent_mapping``).
 
 An experiment whose units all declare one image type gets the same pixel-type refusal as before.
+The invariant is that a previously blocking input stays blocked; the diagnostic codes may change
+(the per-type checks and the Spec's ``R_*`` codes replace the global ``mixed_dtypes`` and
+``inconsistent_dimensions``).
 """
 
 from __future__ import annotations

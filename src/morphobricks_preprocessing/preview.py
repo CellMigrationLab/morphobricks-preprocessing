@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 import os
 from collections import OrderedDict
-from collections.abc import Hashable, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -223,13 +223,56 @@ def confirmed_mapping(review: AxisReview | None, relative_path: str) -> AxisMapp
     return mapping
 
 
-def _check_fingerprint(path: str | os.PathLike, expected: Fingerprint | None) -> Fingerprint:
+def _check_fingerprint(
+    path: str | os.PathLike, expected: Fingerprint | None, shown: str | None = None
+) -> Fingerprint:
     now = Fingerprint.of(path)
     if expected is not None and now != expected:
+        name = os.fspath(path) if shown is None else shown
         raise PreviewRefused(
-            FILE_CHANGED, f"{os.fspath(path)} changed while it was shown: check the folder again."
+            FILE_CHANGED, f"{name} changed since the folder check read it: check the folder again."
         )
     return now
+
+
+def check_unchanged(
+    path: str | os.PathLike, expected: Fingerprint, shown: str | None = None
+) -> None:
+    """Refuse when the file is not, now, the revision whose header was read (``expected``).
+
+    ``shown`` is the name the refusal gives the file (its path relative to the experiment);
+    the full path otherwise.
+
+    Raises
+    ------
+    PreviewRefused
+        ``file_changed_while_shown``.
+    OSError
+        When the file is gone.
+    """
+    _check_fingerprint(path, expected, shown)
+
+
+def checked_fingerprint(bound: Mapping[str, Fingerprint | None], relative_path: str) -> Fingerprint:
+    """Return the fingerprint the folder check bound to an image's header, or refuse.
+
+    A picture is evidence about the image as the check read its header. An image that the
+    check did not bind (it changed while its header was read, or it was not fingerprinted) has
+    no such revision, so no picture is drawn for it: the user checks the folder again.
+
+    Raises
+    ------
+    PreviewRefused
+        ``file_changed_while_shown``.
+    """
+    found = bound.get(relative_path)
+    if found is None:
+        raise PreviewRefused(
+            FILE_CHANGED,
+            f"{relative_path} is not bound to the header the folder check read (it changed "
+            "while it was read): check the folder again.",
+        )
+    return found
 
 
 def _label(c: int, names: Sequence[str | None] | None) -> str:
@@ -390,6 +433,8 @@ __all__ = [
     "StripOptions",
     "ReducedPlane",
     "channel_strip",
+    "check_unchanged",
+    "checked_fingerprint",
     "confirmed_mapping",
     "labels_thumbnail",
     "mask_thumbnail",

@@ -37,12 +37,17 @@ def all_colour(layouts: Sequence[UnitLayout], units: Mapping[UnitKey, UnitAnswer
 
 
 def _declared_colour(layout: UnitLayout, answer: UnitAnswer | None) -> bool:
-    """Return True for a readable unit with a saved ``rgb`` answer that still fits its image."""
+    """Return True for a readable unit with a saved ``rgb`` answer that still fits its image.
+
+    The tags must be exactly ``R``, ``G``, ``B`` in this order (experiment-v1 section 4.4b): a
+    stale or malformed answer (a resumed draft with other tokens) never counts.
+    """
     return (
         layout.usable
         and answer is not None
         and answer.image_type == "rgb"
-        and layout.channels == len(RGB_IDS) == len(answer.channels)  # a stale answer never counts
+        and layout.channels == len(RGB_IDS)
+        and tuple(answer.channels) == RGB_IDS
     )
 
 

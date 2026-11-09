@@ -128,16 +128,33 @@ class _ChannelsStep:
         ]
         layouts = unit_layouts(keys, pre.discovery, pre.excluded, pre.metadata, review)
         slots, names = slot_count(pre.metadata, review), header_names(pre.metadata)
-        key = (str(pre.discovery.root), self.confirmed_mapping, layouts, slots, tuple(names))
+        # The pictures are of the images as this check read them: a new check, or another
+        # revision of a representative image, is another key and its pictures are read again.
+        bound = tuple(
+            sorted((u.image, pre.header_fingerprints.get(u.image)) for u in layouts if u.image)
+        )
+        key = (str(pre.discovery.root), self.confirmed_mapping, layouts, slots, tuple(names), bound)
         if key == self._channels_key:
             self._refresh_masks_screen()
             return
         self._channels_key = key
         self._channel_layouts = layouts
-        self._channel_thumbs = Thumbnails(pre.discovery.root, review, self._memory_limit())
+        self._channel_thumbs = Thumbnails(
+            pre.discovery.root, review, self._memory_limit(), pre.header_fingerprints
+        )
         self.channels_waiting.value = ""
         self.channel_labels.open(slots, names, layouts)
         self._channel_labels_changed()
+
+    def _channel_counts(self) -> dict[tuple[str, str, str], int]:
+        """Return each unit's channel count, read through the confirmed axis roles, by key.
+
+        Empty while the screen is not open for the current check and roles; a unit whose image
+        cannot be tagged has none. The save is gated on these counts.
+        """
+        if self._channels_key is None:
+            return {}
+        return {u.key: u.channels for u in self._channel_layouts if u.usable}
 
     @property
     def _stains_not_applicable(self) -> bool:

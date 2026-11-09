@@ -71,7 +71,11 @@ def load_description(output: Path) -> tuple[RunDescription | None, list[Validati
         records = read_records(output)
     except DescriptionError as exc:
         return None, [reader_issue(item) for item in exc.issues]
-    except (RecordsFileError, OSError) as exc:
+    except RecordsFileError as exc:  # the Spec code and its E_RECORDS_* reasons, kept
+        reasons = ", ".join(sorted(exc.reasons))
+        message = f"The records file of the experiment description is refused ({reasons}): {exc}."
+        return None, [error(exc.code, message, (), "Fix or remove the records file.")]
+    except OSError as exc:
         message = f"The experiment description or its records file cannot be read: {exc}."
         return None, [error("description_unreadable", message, (), "Fix or remove the file.")]
     return RunDescription(description, sha256_hex(data), records), []

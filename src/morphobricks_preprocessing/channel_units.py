@@ -67,7 +67,9 @@ def unit_layouts(
     """Return one layout per unit key, from the unit's first image by sorted path.
 
     A unit whose first image cannot be read, or does not fit the confirmed roles, is returned
-    with a ``problem`` and no channels: the next image is **not** used instead.
+    with a ``problem`` and no channels: the next image is **not** used instead. A unit whose
+    other images do not all have the first one's header signature is ``uniform`` False, so the
+    tag grid never puts it in a block with other units on its first image alone.
     """
     images = unit_images(discovery, excluded)
     headers = {f.relative_path: f for f in metadata.files}
@@ -90,12 +92,18 @@ def unit_layouts(
                 )
             )
             continue
-        out.append(
-            UnitLayout(
-                key, first, count, tuple(meta.raw_channel_names), meta.rgb_samples, "", len(found)
-            )
-        )
+        signature = (count, tuple(meta.raw_channel_names), meta.rgb_samples)
+        uniform = all(_signature(headers.get(i), review) == signature for i in found[1:])
+        out.append(UnitLayout(key, first, *signature, "", len(found), uniform))
     return tuple(out)
+
+
+def _signature(meta: TiffMetadata | None, review: AxisReview) -> tuple | None:
+    """Return an image's header signature (count, raw names, colour); None when unreadable."""
+    if meta is None or not meta.readable:
+        return None
+    count = channel_count(meta, review)
+    return None if count is None else (count, tuple(meta.raw_channel_names), meta.rgb_samples)
 
 
 __all__ = ["channel_count", "header_names", "slot_count", "unit_images", "unit_layouts"]
