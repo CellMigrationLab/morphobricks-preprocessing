@@ -17,19 +17,9 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .channel_labels import RGB_IDS, UnitLayout
 from .notebook_channel_thumbs import COLOUR_TEXT, Thumb, Thumbnails
-from .notebook_channels_view import columns, quoted, unit_name
+from .notebook_channels_view import columns, quoted, rgb_chip, unit_name
 
 THUMB_PX = "160px"
-RGB_COLOURS = {"R": "#DC2626", "G": "#16A34A", "B": "#2563EB"}
-"""The chips of a colour image's fixed channels are drawn in their own colour."""
-
-
-def rgb_chip(token: str) -> str:
-    """Return the chip of a colour channel (``R``, ``G``, ``B``) in red, green or blue."""
-    return (
-        "<span style='display:inline-block;padding:1px 9px;border-radius:999px;color:#fff;"
-        f"font-weight:600;background:{RGB_COLOURS[token]}'>{html.escape(token)}</span>"
-    )
 
 
 def picture(thumb: Thumb | None, colour: bool = False) -> widgets.Widget:
@@ -148,4 +138,4 @@ class FolderRows:
         self.detail.children = [title, shown, close]
 
 
-__all__ = ["RGB_COLOURS", "THUMB_PX", "FolderRows", "folder_info", "picture", "rgb_chip"]
+__all__ = ["THUMB_PX", "FolderRows", "folder_info", "picture"]

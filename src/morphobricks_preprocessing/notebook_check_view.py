@@ -15,7 +15,7 @@ from .description_reconcile import Reconciliation, UnitFolders
 from .description_removal import RemovalQuestion
 from .description_review import MemberView, ReplicateView, unit_text
 from .draft import OpenQuestion
-from .notebook_channels_view import ORANGE, blank_chip, chip
+from .notebook_channels_view import ORANGE, RGB_COLOURS, blank_chip, chip, rgb_chip
 from .validation import ValidationIssue, plural
 
 SAME_WAY = "Were these prepared and imaged the same way, so they count as one replicate?"
@@ -43,7 +43,10 @@ def comparisons_html(sentences: Sequence[str]) -> str:
 
 
 def _channels(channels: Sequence[str | None], labels: Sequence[str]) -> str:
-    return " ".join(chip(c, labels) if c else blank_chip("not tagged") for c in channels)
+    return " ".join(
+        (rgb_chip(c) if c in RGB_COLOURS else chip(c, labels)) if c else blank_chip("not tagged")
+        for c in channels
+    )
 
 
 def member_html(member: MemberView, labels: Sequence[str]) -> str:
