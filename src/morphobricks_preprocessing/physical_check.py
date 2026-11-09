@@ -187,7 +187,7 @@ def layout_of(meta: TiffMetadata, roles: Sequence[str | None] | None = None) -> 
     return Layout(count, tuple(meta.raw_channel_names), meta.rgb_samples, axes)
 
 
-def _units(description: Description) -> dict[UnitKey, tuple[str, Unit]]:
+def declared_units(description: Description) -> dict[UnitKey, tuple[str, Unit]]:
     """Return the declared units by source folders, with the repeat ID they belong to."""
     found: dict[UnitKey, tuple[str, Unit]] = {}
     for repeat_id, repeat in description.repeats.items():
@@ -201,7 +201,10 @@ def _units(description: Description) -> dict[UnitKey, tuple[str, Unit]]:
     return found
 
 
-def _discovered(discovery: DiscoveryResult, excluded: Collection[str]) -> dict[UnitKey, list[str]]:
+def discovered_units(
+    discovery: DiscoveryResult, excluded: Collection[str]
+) -> dict[UnitKey, list[str]]:
+    """Return the images of each discovered unit (folder labels), without the excluded ones."""
     found: dict[UnitKey, list[str]] = {}
     for leaf in discovery.leaves:
         included = [image for image in leaf.images if image not in excluded]
@@ -379,8 +382,8 @@ def check_physical(
         checked.
     """
     metas = {m.relative_path: m for m in metadata}
-    declared = _units(description)
-    found = _discovered(discovery, set(excluded))
+    declared = declared_units(description)
+    found = discovered_units(discovery, set(excluded))
     issues = [PhysicalIssue(UNIT_NOT_FOUND, key) for key in declared if key not in found]
     issues += [PhysicalIssue(UNIT_NOT_DECLARED, key) for key in found if key not in declared]
     layouts: dict[UnitKey, Layout] = {}

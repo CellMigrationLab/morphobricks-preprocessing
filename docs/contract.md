@@ -69,7 +69,11 @@ channel order; an image without a C axis has one channel.
 Defined by the [normalization brick's contract][normalization contract] §1.2.1: integers
 int8–uint64 and float32/float64, everything else rejected, with their default and allowed
 bin counts. This brick adds: one dtype per experiment (`mixed_dtypes` error), and all
-planes of an experiment use the same bin count.
+planes of an experiment use the same bin count. In a described run (a published
+`morphobricks.toml`) the pixel type is compared among the units that declare the same
+`image_type`, and the notebook's folder check compares images inside each unit; units of
+different image types (RGB and fluorescence) are refused as `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`
+(Stages 1-2), not as `mixed_dtypes`. An undescribed run compares every image of the experiment.
 
 ## 4. Histogram semantics
 
