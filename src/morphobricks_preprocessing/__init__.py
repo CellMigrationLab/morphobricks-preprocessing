@@ -216,6 +216,20 @@ from .run_inputs_error import (
     MaskUncheckedError,
     RgbNotSupportedError,
 )
+from .run_inputs_request import (
+    RESOLVER_VERSION,
+    Capabilities,
+    FovSelection,
+    MaskRequest,
+    MaskSelection,
+    PlaneSelection,
+    Provenance,
+    Refusal,
+    RepeatCoverage,
+    Request,
+    ResolvedRequest,
+    VolumeNotSupportedError,
+)
 from .sources import check_sources
 from .unrecorded import UnrecordedFiles, unrecorded_files
 from .validation import Severity, ValidationIssue, has_errors
@@ -260,6 +274,7 @@ __all__ = [
     "OPEN_AXIS",
     "PIXEL_SIZE_TOLERANCE",
     "PLACEHOLDER_AXES",
+    "RESOLVER_VERSION",
     "RGB",
     "SPACE_UNITS",
     "AxisMapping",
@@ -323,6 +338,17 @@ __all__ = [
     "MaskNotInstancesError",
     "MaskUncheckedError",
     "RgbNotSupportedError",
+    "VolumeNotSupportedError",
+    "Capabilities",
+    "FovSelection",
+    "MaskRequest",
+    "MaskSelection",
+    "PlaneSelection",
+    "Provenance",
+    "Refusal",
+    "RepeatCoverage",
+    "Request",
+    "ResolvedRequest",
     "UnrecordedFiles",
     "UnrecordedFilesError",
     "unrecorded_files",

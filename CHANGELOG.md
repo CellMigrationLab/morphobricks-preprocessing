@@ -8,6 +8,25 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 
 ## Unreleased
 
+- **`RunInputs.resolve_request`: the shared request resolver (resolver contract version 1;
+  MorphoBricks architecture decision of 10 November 2026; contract §9.1, §16).** One interpreter
+  of a described run for every analysis route. A `Request` (canonical channel IDs; masks by ID
+  with a role and, for a `binary` mask used as objects, the explicit `binary_mask_policy`;
+  `plane` or `volume`; the consumer's `Capabilities`; the explicit `device`) resolves to an
+  immutable, picklable `ResolvedRequest`: one `FovSelection` per position with the C index of
+  every channel in that image, the declared masks, the planes to read and the canonical IDs
+  beside the unchanged key; the refusals (`A_SCOPE_INCOMPLETE` "present in k of n",
+  `A_MASK_UNCHECKED`, `A_MASK_NOT_INSTANCES`, `A_RGB_NOT_SUPPORTED`, and the contract's
+  `A_VOLUME_NOT_SUPPORTED`, refusing Z-volumes unless `volume_support` is declared); the
+  coverage of every biological repeat (full, partial, unavailable); and the provenance. A
+  refused request selects nothing. The resolver reads no pixel, runs no kernel, converts no
+  mask (a recorded policy is returned for the consumer's shared labeller) and imports no brick,
+  CellPatcher or provider module (tested). `FovIdentity` gains the unit's `image_type`. Runs
+  without a description are refused by it and otherwise unchanged. **API additions only:**
+  `RESOLVER_VERSION`, `Request`, `MaskRequest`, `Capabilities`, `ResolvedRequest`,
+  `FovSelection`, `MaskSelection`, `PlaneSelection`, `Refusal`, `RepeatCoverage`, `Provenance`,
+  `VolumeNotSupportedError`.
+
 - **Audit batches 33 and 34a: what is published is what was answered, of the image checked.**
   *Yes, these are right* saves exactly the tags a block shows (a hidden proposal is never
   saved), and a unit tagging one label twice is refused before it is saved

@@ -42,6 +42,7 @@ EXPECTED_MODULES = (
     "test_spec_records.py",
     "test_spec_records_goldens.py",
     "test_spec_refval_crosscheck.py",
+    "test_spec_resolve_request.py",
     "test_spec_rules_table.py",
     "test_spec_run_aliases.py",
     "test_spec_run_description.py",

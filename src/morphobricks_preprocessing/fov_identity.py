@@ -4,7 +4,8 @@ The FOV key keeps the source folder labels. The canonical IDs are added beside i
 function of the key: the repeat ID (``repeat_group``) of the member folder, the condition ID of
 the condition folder, the technical repeat ID of the unit folder, and the unit's channel IDs
 by C index. Nothing is looked up by the label alone: a label that names no declared member, or
-two, is refused.
+two, is refused. The unit's declared image type rides along (``image_type``) for the
+request resolver (:mod:`.run_inputs_resolve`).
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ class FovIdentity:
     condition_id: str
     technical_repeat_id: str
     channel_ids: tuple[str, ...]
+    image_type: str | None = None
+    """The unit's declared image type (``rgb``), or None for an ordinary channel image."""
 
 
 def fov_identity(description: Description, labels: tuple[str, str, str]) -> FovIdentity:
@@ -41,7 +44,7 @@ def fov_identity(description: Description, labels: tuple[str, str, str]) -> FovI
     """
     condition, repeat, technical = labels
     found = [
-        FovIdentity(repeat_id, condition_id, unit_id, unit.channels)
+        FovIdentity(repeat_id, condition_id, unit_id, unit.channels, unit.image_type)
         for repeat_id, entry in description.repeats.items()
         for condition_id, member in entry.members.items()
         if description.conditions[condition_id].source_folder == condition
