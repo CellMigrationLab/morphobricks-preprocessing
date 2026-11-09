@@ -16,14 +16,23 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   `publish_draft` now requires `channel_counts`, each unit's channel count read through the
   confirmed axis roles: tags saved for another count (`unit_channels_stale`) or a unit without
   a count (`unit_channel_count_unknown`) are refused. The notebook's folder check binds every
-  header to its file (`bind_headers=True`); the tag pictures, the Step 1 pictures, the axis
-  preview and the mask evidence are drawn only of that revision, and the save is refused when
-  an image changed since the check. An answer the draft file cannot take (lock, write error) is
+  header to its file (`bind_headers=True`); the tag pictures, the Step 1 pictures and the mask
+  evidence are drawn only of that revision (masks paired again without a new check are bound
+  too, and evidence already read is not shown once its image or mask changed), and the save is
+  refused when an image changed since the check. The axis step's preview is not bound yet.
+  *Check and save* shows tags saved for another channel count as stale, not as the folder's
+  channels. An answer the draft file cannot take (lock, write error) is
   refused and not shown as answered. `make_described_run` refuses a member with no technical
   repeat or fewer images than technical repeats before writing anything. A new record the
   records reader would refuse is never written (`R_RECORDS_FILE_INVALID`), and a run refused
   for its records file reports that code with its `E_RECORDS_*` reasons instead of
   `description_unreadable`. `all_colour` counts a unit only when its tags are exactly R, G, B.
+  **API changes:** `publish_draft(..., channel_counts=...)` is a new required keyword;
+  `missing_confirmations` and `description_from_draft` take an optional `channel_counts`;
+  `header_preview(..., bound=...)` is a new required keyword; `mask_evidence` takes
+  `options: StripOptions, bound` in place of `cache, memory_limit`; `Thumbnails` takes the
+  check's `header_fingerprints`. A draft saved before this change with no image type reopens
+  with the image type asked, never as "channels".
 
 - **Notebook: folder pictures with a 1:1 crop, "Tag like the saved group", colour mask evidence
   (PR 17c).** *Images found* adds a picture of each folder's first image to the labels table,

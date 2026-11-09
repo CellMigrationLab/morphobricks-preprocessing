@@ -7,7 +7,7 @@ colour chips of *Your channels* and orange for what needs attention.
 from __future__ import annotations
 
 import html
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from . import notebook_style as ui
 from .description_candidate import CandidateCheck
@@ -15,6 +15,7 @@ from .description_reconcile import Reconciliation, UnitFolders
 from .description_removal import RemovalQuestion
 from .description_review import MemberView, ReplicateView, unit_text
 from .draft import OpenQuestion
+from .draft_answers import UnitKey
 from .notebook_channels_view import ORANGE, RGB_COLOURS, blank_chip, chip, rgb_chip
 from .validation import ValidationIssue, plural
 
@@ -57,13 +58,27 @@ def _channels(channels: Sequence[str | None], labels: Sequence[str]) -> str:
     )
 
 
-def member_html(member: MemberView, labels: Sequence[str]) -> str:
-    """Return one folder of a replicate: where, how many images, and its channels."""
+def member_html(
+    member: MemberView, labels: Sequence[str], counts: Mapping[UnitKey, int] | None = None
+) -> str:
+    """Return one folder of a replicate: where, how many images, and its channels.
+
+    ``counts`` are the channel counts of each unit's image now (as *Check and save* gates the
+    save on them): tags saved for another count are not shown as the folder's channels, only
+    said to be stale, as the to-do list says (``unit_channels_stale``).
+    """
     name = html.escape(f"{member.condition}/{member.source_repeat}")
     lines = [f"<b>{name}</b> <span class='mb-help'>{plural(member.image_count, 'image')}</span>"]
     for unit in member.units:
         where = "" if unit.key[2] == "single" else f"{html.escape(unit.key[2])}: "
-        tags = _channels(unit.channels, labels) if unit.channels else blank_chip("not tagged")
+        now = None if counts is None else counts.get(unit.key)
+        if unit.channels and now is not None and now != len(unit.channels):
+            tags = (
+                f"<span style='color:{ORANGE}'>{len(unit.channels)} tags saved for another "
+                f"image (it has {now} channels now): tag its channels again</span>"
+            )
+        else:
+            tags = _channels(unit.channels, labels) if unit.channels else blank_chip("not tagged")
         lines.append(f"<div class='mb-help'>{where}{tags}</div>")
     return "".join(lines)
 

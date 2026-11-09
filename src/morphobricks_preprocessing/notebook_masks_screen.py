@@ -14,6 +14,7 @@ from __future__ import annotations
 import html
 from collections.abc import Callable, Sequence
 from dataclasses import replace
+from pathlib import Path
 
 import ipywidgets as widgets
 
@@ -21,6 +22,7 @@ from . import notebook_style as ui
 from .axis_review import review_axes
 from .channel_answers import label_ids
 from .channel_units import unit_images
+from .fingerprint import changed_since_check, current_fingerprint
 from .mask_answers import (
     drawn_on,
     dropped_channels,
@@ -31,6 +33,7 @@ from .mask_answers import (
     without_mask,
 )
 from .mask_evidence import MaskEvidence, mask_evidence, representative
+from .masks import MaskFile
 from .notebook_channels import _NotebookStore
 from .notebook_channels_view import ORANGE, AnswerStore
 from .notebook_mask_question import MaskQuestion
@@ -236,6 +239,8 @@ class _MasksScreen:
         first = representative(pre.masks, source_type, analysed)
         unit = next((k for k, found in images.items() if first and first.image in found), None)
         channel = drawn_on(self.draft_answers, source_type, unit)
+        if first is not None and _changed(pre, first):  # never the evidence of another revision
+            self._mask_found.pop((source_type, channel), None)
         if (source_type, channel) not in self._mask_found:
             review = review_axes(
                 pre.metadata,
@@ -282,6 +287,19 @@ class _MasksScreen:
     def _masks_answered(self) -> None:
         """Take *Check and save* into account after a mask answer."""
         self._refresh_check_save()
+
+
+def _changed(pre: object, mask: MaskFile) -> bool:
+    """Return True when the image or the bound mask is no longer as the check read it.
+
+    Evidence kept from an earlier read is then read again (and refused: "check the folder
+    again"), never shown as the files checked.
+    """
+    root = Path(pre.discovery.root)
+    if changed_since_check(root, pre.header_fingerprints, [mask.image]):
+        return True
+    path = mask.location(pre.masks.folder, root)
+    return mask.bound is not None and current_fingerprint(path) != mask.bound
 
 
 __all__ = ["INTRO", "MasksCard", "_MasksScreen"]

@@ -113,12 +113,16 @@ def test_tags_saved_for_another_channel_count_are_not_published(exp):  # noqa: F
     assert all(len(nb.draft_answers.units[key].channels) == 3 for key in KEYS)
     nb._refresh_check_save()
     assert "were saved for another image: tag its channels again" in nb.todo.value
+    shown = repr(nb.replicates_box.children)  # the stale 3-tag chips are not shown as channels
+    assert "3 tags saved for another image (it has 2 channels now)" in shown
+    assert ">PHASE<" not in shown
     assert nb.save_button.disabled and not nb.save_experiment()
     assert not (out / DESCRIPTION_FILENAME).exists()
     tag(nb)  # the user retags the folders
     assert all(nb.draft_answers.units[key].channels == (DNA, ACTIN) for key in KEYS)
     nb._refresh_check_save()
     assert "another image" not in nb.todo.value
+    assert "tags saved for another image" not in repr(nb.replicates_box.children)
     answer_all(nb)
     assert nb.save_experiment() and (out / DESCRIPTION_FILENAME).exists()
 
@@ -179,6 +183,30 @@ def test_the_mask_evidence_of_an_image_changed_after_the_check_is_refused(exp): 
     _rewrite(root / "ctrl/rep1/a.tif", ["DAPI", "Actin", "Ch3"], seed=13)
     nb._mask_found = {}
     found = nb._mask_evidence("Nuclei")
+    assert found.picture is None and "check the folder again" in found.problem
+
+
+def test_mask_evidence_already_read_is_not_shown_once_its_image_changed(exp):  # noqa: F811
+    root = exp[0]
+    nb = opened(*exp)
+    tag(nb)
+    assert nb._mask_evidence("Nuclei").picture is not None  # read once, kept
+    _rewrite(root / "ctrl/rep1/a.tif", ["DAPI", "Actin", "Ch3"], seed=14)
+    found = nb._mask_evidence("Nuclei")  # before the fix: the kept picture of the old image
+    assert found.picture is None and "check the folder again" in found.problem
+
+
+def test_masks_paired_again_are_bound_and_a_changed_mask_is_refused(exp):  # noqa: F811
+    root, masks, _ = exp
+    nb = opened(*exp)
+    tag(nb)
+    nb._check_masks()  # the masks are paired again (remasked), without a new folder check
+    assert nb.preflight.masks.files and all(m.bound for m in nb.preflight.masks.files)
+    mask = masks / "Nuclei" / "ctrl/rep1/a.tif"
+    before = mask.stat().st_mtime_ns
+    mask.write_bytes(mask.read_bytes())  # another revision of the mask, same pixels
+    os.utime(mask, ns=(before + 5 * 10**9, before + 5 * 10**9))
+    found = nb._mask_evidence("Nuclei")  # before the fix: drawn, as if it were the one paired
     assert found.picture is None and "check the folder again" in found.problem
 
 

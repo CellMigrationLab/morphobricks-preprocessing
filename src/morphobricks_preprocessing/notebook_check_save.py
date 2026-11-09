@@ -259,7 +259,7 @@ class _CheckSaveScreen:
     def _show_replicates(self, applied: object, answers: object, labels: list[str]) -> None:
         """One box per replicate: folders, pictures, channels, and its own question."""
         boxes, toggles = [], {}
-        units = self._reopen_units()
+        units, counts = self._reopen_units(), self._channel_counts()
         for view in replicates(applied, answers):
             toggle = ui.ConfirmToggle(
                 SAME_WAY,
@@ -277,7 +277,7 @@ class _CheckSaveScreen:
                         self._member_picture(
                             (m.condition, m.source_repeat), self.replicates_detail
                         ),
-                        widgets.HTML(member_html(m, labels)),
+                        widgets.HTML(member_html(m, labels, counts)),
                     ]
                 )
                 for m in view.members
