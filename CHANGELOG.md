@@ -17,6 +17,19 @@ OME-XML description is parsed (which images are marked is unchanged; a malformed
 debug line without a traceback), and while the capture is attached the package's DEBUG records
 go to the "Technical details" panel only, with WARNING and above still reaching the root handlers.
 
+### Normalization pinned at v0.4.0 (#262)
+
+- **`morphobricks-normalization` moves from v0.3.4 to v0.4.0** (tag `c952263`). It is
+  breaking for the table: `PlaneRecord.position_id` is required and keyword-only, a blank
+  `position_id` in a CSV row is refused with `CsvFormatError`, and tables of schema versions
+  1 to 3 are refused. On valid inputs its output is bit-identical, so `plane_histograms.csv` is
+  unchanged byte for byte.
+- A table without position identifiers is no longer filled in without reading: the reader
+  refuses it and the run rebuilds every row ("the earlier histogram table could not be read").
+  The dead fill-in in `run/steps.py` is removed, and `run/rows.py` takes `position: str`.
+- Tests build every `PlaneRecord` with `position_id=`; the README example does too. The
+  `RELEASE_REF` install still pins v0.3.4 and is unchanged (the v0.5.1 release moves it).
+
 ### The notebook has three code cells: install, mount Google Drive, run
 
 Owner request of 10 November 2026, as in the lab's ZeroCostDL4Mic and NucleiSky notebooks. The

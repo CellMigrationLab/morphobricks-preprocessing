@@ -41,7 +41,7 @@ Pre-alpha; the current release is v0.5.0 (what is planned next is in
 Every feature, message code and output file is described in the [user guide](docs/user_guide.md).
 
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
-to its release v0.3.4): per-plane histograms with the robust range and the range check
+to its release v0.4.0): per-plane histograms with the robust range and the range check
 (`histogram`, `ranges`), the histogram table (`csv_io`, schema version 4), pooled group statistics
 (`pooling`) and normalization parameters (`normalization`); import them from
 `morphobricks_normalization` (the deprecated paths through `morphobricks_preprocessing` were
@@ -189,6 +189,7 @@ record = PlaneRecord(
     biological_repeat="bio_rep1",
     technical_repeat="tech_rep1",
     histograms=[compute_plane_histogram(plane)],  # one per channel
+    position_id="img_01",  # required: the XY position within its technical repeat
 )
 write_plane_histograms([record], "plane_histograms.csv")
 

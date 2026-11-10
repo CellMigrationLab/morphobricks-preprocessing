@@ -8,6 +8,8 @@ in ``experiments/binning_study``.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 from morphobricks_normalization.histogram import compute_plane_histogram
 from morphobricks_normalization.records import PlaneRecord
@@ -54,7 +56,12 @@ def simulate_experiment(
 
 def make_records(planes, bin_count=None):
     return [
-        PlaneRecord(path, *labels, histograms=compute_plane_histogram(pixels, bin_count))
+        PlaneRecord(
+            path,
+            *labels,
+            histograms=compute_plane_histogram(pixels, bin_count),
+            position_id=Path(path).stem,
+        )
         for labels, path, pixels in planes
     ]
 

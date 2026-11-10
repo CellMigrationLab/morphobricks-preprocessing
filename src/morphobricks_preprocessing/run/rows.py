@@ -30,7 +30,7 @@ def _read_file(
     labels: tuple[str, str, str],
     mapping: AxisMapping,
     settings: RunSettings,
-    position: str | None,
+    position: str,
 ) -> tuple[list[PlaneRecord], list[NarrowRange]]:
     """Histogram every XYC plane of ``path``, recording the rows under the source ``rel``.
 
