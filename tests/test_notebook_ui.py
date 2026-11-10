@@ -270,9 +270,8 @@ def test_role_notes_and_plane_summary(experiment):
 def test_confirm_needs_valid_roles_and_a_checked_preview(experiment):
     nb = checked(experiment)
     assert nb.confirm_button.disabled
-    assert nb.preview_checked.disabled  # the preview must be shown first
-    nb.preview_button.click()
-    assert not nb.preview_checked.disabled
+    assert not nb.preview_checked.disabled  # the example is drawn by the check itself
+    assert nb.preview_image.value[:4] == b"\x89PNG" and not nb.preview_checked.value
     nb.preview_checked.button.click()
     assert not nb.confirm_button.disabled
     nb.role_dropdowns[1].value = "-"
@@ -311,8 +310,7 @@ def test_confirmation_locks_and_unlocks(experiment):
 
 def test_preview_sliders_browse_planes(experiment):
     nb = checked(experiment)
-    assert not any(ui.is_visible(s) for s in nb.preview_sliders.values())
-    nb.preview_button.click()
+    assert not ui.is_visible(nb.preview_button)  # the example needs no click
     assert bytes(nb.preview_image.value).startswith(b"\x89PNG")
     assert "ctrl/rep1/a.tif" in nb.preview_caption.value
     assert "c = 0, t = 0" in nb.preview_caption.value  # the first time point first

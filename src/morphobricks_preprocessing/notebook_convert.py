@@ -179,7 +179,7 @@ class _ConvertCard:
         self.convert_tick_blocker.value = blocked_line(
             []
             if confirmed or self.preview_checked.value
-            else ["the preview is not ticked: click Yes, the preview looks right first"]
+            else ["the example is not ticked: click Yes, the example looks right first"]
         )
         ui.set_visible(
             self.convert_roles_checked.widget, not confirmed and self.mapping is not None
@@ -375,7 +375,7 @@ def _roles_html(mapping: AxisMapping | None, roles: AxisMapping | None, confirme
             "The roles for the copies are not confirmed yet.",
             [
                 *lines,
-                "Check them with Show preview and press Yes, the preview looks right; then "
+                "Check them with the example and press Yes, the example looks right; then "
                 "answer the question below.",
             ],
             raw=True,

@@ -1,8 +1,9 @@
-"""The shipped notebook's 13 steps, one on screen at a time (owner decision 2026-11-09).
+"""The shipped notebook's 12 steps, one on screen at a time (owner decision 2026-11-09).
 
 Pure composition of the cards the notebook already has (UX proposal 2026-11-09, PR 17a): the
-order is images found, axes, pixel sizes, conditions, replicates, compared against, image type,
-stains, tag channels, masks, check and save (with the overview of steps 1-10), run, and describe
+order is images found, axes (with the pixel size, owner 2026-11-10), conditions, replicates,
+compared against, image type,
+stains, tag channels, masks, check and save (with the overview of steps 1-9), run, and describe
 the masks. Each answer is still saved, refused and checked by the card that asks it; the stepper
 (:mod:`.notebook_stepper`) only shows one page and says, from each card's state
 (:mod:`.notebook_step_states`), which steps are done.
@@ -38,7 +39,7 @@ FOLDER_INTRO = (
 AXES_INTRO = (
     "<b>Why this matters:</b> every image is cut into flat 2D planes, one per depth slice, "
     "channel and time point. The roles below are suggested from the image metadata, which is "
-    "not always right, so check them with the preview before confirming. The pictures of the "
+    "not always right, so check them with the example before confirming. The pictures of the "
     "later steps are read only through the roles you confirm."
 )
 CONDITIONS_HELP = (
@@ -51,9 +52,9 @@ REPLICATES_HELP = (
     "which never changes once the experiment description is saved. A replicate pairs one folder "
     "per condition (above); its name is proposed from the folder name when it can be used."
 )
-OVERVIEW_STEPS = 10
-"""The overview on *Check and save* restates steps 1 to 10."""
-UNFOLDING = {4: "design_card", 5: "references_card", 9: "masks_box"}
+OVERVIEW_STEPS = 9
+"""The overview on *Check and save* restates steps 1 to 9."""
+UNFOLDING = {3: "design_card", 4: "references_card", 8: "masks_box"}
 """The steps (0-based) that show a card the saved reopening folds."""
 
 
@@ -61,7 +62,7 @@ class _StepsFlow(_QuickScan, _QuickAxes, _StepStates):
     """``steps()``: the stepper of the shipped notebook, and the hooks that keep it current."""
 
     def steps(self) -> widgets.Widget:
-        """Return the notebook's 13 steps, one shown at a time, with a strip and Back/Next.
+        """Return the notebook's 12 steps, one shown at a time, with a strip and Back/Next.
 
         The shipped notebook shows this instead of the stacked
         pages. Every answer is given and saved on the card that asks it, as on the pages;
@@ -83,6 +84,7 @@ class _StepsFlow(_QuickScan, _QuickAxes, _StepStates):
         self.type_rows.reopen = self.channel_grid.reopen = self._reopen_units
         self.overview_box = widgets.VBox()
         self._build_quick_axes()
+        self.axis_sizes_slot.children = [self.calibration_card]  # with the axes (owner)
         self._build_quick_scan()
         self.consistency_slot = widgets.VBox([self.consistency_card])
         self._stepper = Stepper(self._step_list(), self._step_shown)
@@ -93,15 +95,13 @@ class _StepsFlow(_QuickScan, _QuickAxes, _StepStates):
         return self._stepper.widget
 
     def _step_list(self) -> list[Step]:
-        """Return the 13 steps: titles, purposes, the existing cards, and their states."""
+        """Return the 12 steps: titles, purposes, the existing cards, and their states."""
         states = self._step_states()
         pages = [
             ("Images found", "Choose the folder with your images and check it.",
              self._images_page()),
             ("Axes", "Say which image dimension is width, height, channel and time.",
-             [ui.intro(AXES_INTRO), self.quick_card, self.axes_details, self.axis_box]),
-            ("Pixel sizes", "The size of one pixel, and where it comes from.",
-             [self.calibration_card]),
+             [ui.intro(AXES_INTRO), self.axis_box, self.quick_card]),
             ("Conditions", "A short name for each condition.", [self._conditions_card()]),
             ("Replicates", "Which folders are one replicate, and their names.",
              [self.design_card, self._replicates_card(), self.consistency_slot]),
@@ -182,14 +182,13 @@ class _StepsFlow(_QuickScan, _QuickAxes, _StepStates):
         after_check = self._wait_for_check
         return {
             0: self._consistency_note,
-            2: lambda: "" if self.preflight is not None else after_check(),
+            2: after_check,
             3: after_check,
-            4: after_check,
-            5: self._wait_for_references,
+            4: self._wait_for_references,
+            5: self._wait_for_channels,
             6: self._wait_for_channels,
-            7: self._wait_for_channels,
-            8: self._wait_for_tags,
-            12: self._wait_for_mask_step,
+            7: self._wait_for_tags,
+            11: self._wait_for_mask_step,
         }
 
     def _consistency_note(self) -> str:
@@ -198,7 +197,7 @@ class _StepsFlow(_QuickScan, _QuickAxes, _StepStates):
             return ""
         return ui.status(
             "info",
-            "The consistency warnings are on Replicates (step 5).",
+            "The consistency warnings are on Replicates.",
             ["They depend on which folders are one replicate: pair the folders there first."],
         )
 
@@ -219,7 +218,7 @@ class _StepsFlow(_QuickScan, _QuickAxes, _StepStates):
         waiting = self._wait_for_channels()
         if waiting or self.channel_labels.confirmed or self._stains_not_applicable:
             return waiting
-        return ui.status("info", "Waiting for the stains.", ["Confirm the stains in step 8 first."])
+        return ui.status("info", "Waiting for the stains.", ["Confirm the stains first (Stains)."])
 
     def _wait_for_mask_step(self) -> str:
         if ui.is_visible(self.mask_step_card):
@@ -277,7 +276,7 @@ class _StepsFlow(_QuickScan, _QuickAxes, _StepStates):
 
     def _mapping_changed(self) -> None:
         super()._mapping_changed()
-        self._refresh_quick_axes()
+        self._refresh_quick_axes(drawn=True)  # the example was just redrawn
 
     def _toggle_confirmation(self) -> None:
         super()._toggle_confirmation()

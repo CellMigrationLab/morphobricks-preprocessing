@@ -144,7 +144,7 @@ class MaskQuestion:
             )
             box.observe(lambda _: self._made_from_changed(), names="value")
             self.made_from[label] = box
-        empty = "no channel labels yet: declare them on Stains (step 8)"
+        empty = "no channel labels yet: declare them on Stains"
         hint = "answer the question first" if labels and self.saved is None else ""
         tail = [
             widgets.HTML(f"<span class='mb-help'>{hint or (empty if not labels else '')}</span>")

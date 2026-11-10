@@ -43,6 +43,7 @@ STYLE_CSS = """
 .mb-status details { margin-top: 4px; }
 .mb-paths { margin: 2px 0 2px 4px; max-height: 190px; overflow-y: auto; }
 .mb-paths div { padding: 1px 0; overflow-wrap: anywhere; }
+.mb-columns { gap: 14px; align-items: flex-start; }
 .mb-blocker { color: #92400E; font-size: 13px; line-height: 1.4; margin: 2px 0 6px 0;
   overflow-wrap: anywhere; }
 .mb-next { background: #EFF6FF; border: 2px solid #93C5FD; border-radius: 8px;

@@ -27,7 +27,6 @@ from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa
 ORDER = [
     "Images found",
     "Axes",
-    "Pixel sizes",
     "Conditions",
     "Replicates",
     "Compared against",
@@ -139,26 +138,27 @@ def test_the_steps_are_in_the_decided_order_with_one_page_on_screen(exp):  # noq
     assert [step.title for step in nb._stepper.steps] == ORDER
     assert nb.steps() is nb._stepper.widget  # built once
     assert shown(nb) == 0 and nb._stepper.current == 0  # a first check stays on its results
-    assert kinds(nb)[:3] == ["current", "todo", "noted"]  # axes to confirm; sizes: uncalibrated
+    assert kinds(nb)[:2] == ["current", "todo"]  # the axes are still to confirm
     nb._stepper.chips[1].click()
     assert shown(nb) == 1 and kinds(nb)[0] == "done"
     page = nb._stepper.pages[1]
-    assert "Step 2 of 13 · Axes" in page.children[1].children[0].value
+    assert "Step 2 of 12 · Axes" in page.children[1].children[0].value
 
 
 def test_the_pages_hold_the_existing_cards_in_the_new_places(exp):  # noqa: F811
     nb = stepped(*exp)
     contains = lambda i, w: _holds(nb._stepper.pages[i], w)  # noqa: E731
     assert contains(0, nb.check_button) and contains(0, nb.masks_card)
-    assert contains(1, nb.axis_box) and contains(2, nb.calibration_card)
-    assert contains(3, nb.condition_rows) and not contains(3, nb.replicate_rows)
-    assert contains(4, nb.design_card) and contains(4, nb.replicate_rows)
-    assert contains(5, nb.references_card) and contains(6, nb.type_rows.widget)
-    assert contains(7, nb.channel_labels.widget) and contains(8, nb.channel_grid.widget)
-    assert contains(9, nb.masks_box) and contains(10, nb.check_card)
-    assert contains(10, nb.overview_box) and contains(11, nb.run_button)
-    assert contains(12, nb.mask_step_card) and not contains(11, nb.mask_step_card)
-    # The names rows are split between steps 4 and 5, and still the names card's grid.
+    assert contains(1, nb.axis_box) and contains(1, nb.calibration_card)  # one step (owner)
+    assert _holds(nb.axis_box, nb.calibration_card) and contains(1, nb.quick_card)
+    assert contains(2, nb.condition_rows) and not contains(2, nb.replicate_rows)
+    assert contains(3, nb.design_card) and contains(3, nb.replicate_rows)
+    assert contains(4, nb.references_card) and contains(5, nb.type_rows.widget)
+    assert contains(6, nb.channel_labels.widget) and contains(7, nb.channel_grid.widget)
+    assert contains(8, nb.masks_box) and contains(9, nb.check_card)
+    assert contains(9, nb.overview_box) and contains(10, nb.run_button)
+    assert contains(11, nb.mask_step_card) and not contains(10, nb.mask_step_card)
+    # The names rows are split between steps 3 and 4, and still the names card's grid.
     (conditions,) = nb.condition_rows.children
     assert "Condition" in conditions.children[0].children[0].value
     assert list(nb.names_grid.children) == [conditions, *nb.replicate_rows.children]
@@ -199,10 +199,10 @@ def test_moving_through_every_page_keeps_every_answer(exp):  # noqa: F811
         chip.click()
     assert snapshot(nb) == before
     assert nb.draft_answers.conditions["drug"].display_name == "Drug A"
-    assert all(k in ("done", "noted") for k in kinds(nb)[1:10]) and kinds(nb)[0] == "current"
-    assert kinds(nb)[10] == "todo"  # not saved yet
+    assert all(k in ("done", "noted") for k in kinds(nb)[1:9]) and kinds(nb)[0] == "current"
+    assert kinds(nb)[9] == "todo"  # not saved yet
     assert nb.save_experiment()
-    assert kinds(nb)[10] == "done"
+    assert kinds(nb)[9] == "done"
 
 
 def test_a_reopened_experiment_opens_on_the_axes_its_only_open_step(exp):  # noqa: F811
@@ -214,11 +214,11 @@ def test_a_reopened_experiment_opens_on_the_axes_its_only_open_step(exp):  # noq
     nb.preview_checked.set(True)
     nb.show_preview()
     nb.confirm_button.click()
-    assert all(k in ("done", "noted") for k in kinds(nb)[:11] if k != "current")
-    assert "saved " in nb._stepper.chips[10].tooltip
+    assert all(k in ("done", "noted") for k in kinds(nb)[:10] if k != "current")
+    assert "saved " in nb._stepper.chips[9].tooltip
     # The saved reopening folds the cards; a page that shows one unfolds it.
     assert nb._folded and not ui.is_visible(nb.design_card)
-    nb._stepper.chips[4].click()
+    nb._stepper.chips[3].click()
     assert not nb._folded and ui.is_visible(nb.design_card)
 
 
@@ -233,9 +233,9 @@ def test_a_changed_reopen_turns_the_affected_steps_orange(tmp_path):
     nb = stepped(root, masks, out)
     states = nb._stepper.states()
     assert "since saved: 1 new, 0 gone" in states[0].text
-    assert states[8].changed and states[10].changed  # the new folder's tags; save again
-    assert not states[3].changed and states[3].done  # the conditions did not change
-    assert kinds(nb)[8] == "changed" and kinds(nb)[10] == "changed"
+    assert states[7].changed and states[9].changed  # the new folder's tags; save again
+    assert not states[2].changed and states[2].done  # the conditions did not change
+    assert kinds(nb)[7] == "changed" and kinds(nb)[9] == "changed"
     assert nb._stepper.current == 1  # landed on the axes: each session confirms them again
 
 
@@ -244,10 +244,10 @@ def test_consistency_follows_the_pairing_and_shows_only_when_it_warns(tmp_path):
     for i, folder in enumerate(["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/day2"]):
         add_folder(root, masks, folder, i + 1)
     nb = stepped(root, masks, out)
-    assert _holds(nb._stepper.pages[4], nb.consistency_card)
+    assert _holds(nb._stepper.pages[3], nb.consistency_card)
     assert not _holds(nb._stepper.pages[0], nb.consistency_card)
     assert ui.is_visible(nb.consistency_slot)  # rep2 and day2 are each in one condition only
-    assert "on Replicates (step 5)" in nb._stepper.waits[0].value  # step 1 says where
+    assert "on Replicates" in nb._stepper.waits[0].value  # step 1 says where
     (dropdown,) = [
         row.children[2]
         for row in nb.pairing_grid.children[1:]
@@ -256,7 +256,7 @@ def test_consistency_follows_the_pairing_and_shows_only_when_it_warns(tmp_path):
     dropdown.value = "rep2"
     assert not ui.is_visible(nb.consistency_slot)
     assert nb._stepper.waits[0].value == ""
-    assert "drug/day2 = rep2" in nb._stepper.states()[4].text
+    assert "drug/day2 = rep2" in nb._stepper.states()[3].text
 
 
 def test_the_axes_page_has_no_stale_image_type_sentence_and_no_broken_picture(exp):  # noqa: F811
@@ -277,11 +277,12 @@ def test_the_axes_page_has_no_stale_image_type_sentence_and_no_broken_picture(ex
 
 def test_pixel_sizes_without_a_physical_size_say_uncalibrated(exp):  # noqa: F811
     nb = stepped(*exp)
-    state = nb._stepper.states()[2]
+    state = nb._stepper.states()[1]  # the pixel size is part of the axes step
     assert state.done and state.note == "uncalibrated"
-    assert state.text.startswith("uncalibrated (pixels)")
-    assert nb._stepper.chips[2].description == "✓ 3 Pixel sizes · uncalibrated"
-    assert kinds(nb)[2] == "noted"
+    assert "confirmed · uncalibrated (pixels)" in state.text
+    nb._stepper.go(0)
+    assert nb._stepper.chips[1].description == "✓ 2 Axes · uncalibrated"
+    assert kinds(nb)[1] == "noted"
 
 
 def test_pixel_sizes_from_the_headers_are_a_plain_done(tmp_path):
@@ -295,6 +296,9 @@ def test_pixel_sizes_from_the_headers_are_a_plain_done(tmp_path):
     nb = PreprocessingNotebook(str(root), output_folder=str(out))
     nb.steps()
     nb.check_button.click()
-    state = nb._stepper.states()[2]
+    assert not nb._stepper.states()[1].done  # the axes are not confirmed yet
+    nb.quick_confirm.click()
+    nb._stepper.go(0)
+    state = nb._stepper.states()[1]
     assert state.done and not state.note and "0.65" in state.text
-    assert kinds(nb)[2] == "done"
+    assert kinds(nb)[1] == "done"

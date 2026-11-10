@@ -151,11 +151,11 @@ def test_confirm_axis_roles_says_that_different_channel_counts_block_it(tmp_path
     assert nb.confirm_button.disabled
     said = _text(nb.confirm_blocker.value)
     assert "Not available yet" in said and "different channel counts" in said
-    assert "red message above" in said and "preview is not ticked" in said
+    assert "red message above" in said and "example is not ticked" in said
     nb.preview_checked.button.click()
     assert nb.confirm_button.disabled  # the refusal stays: ticking the preview does not lift it
     said = _text(nb.confirm_blocker.value)
-    assert "different channel counts" in said and "preview" not in said
+    assert "different channel counts" in said and "example" not in said
     assert nb.confirmed_mapping is None
 
 
@@ -170,12 +170,14 @@ def test_confirm_axis_roles_names_the_missing_preview_then_the_missing_tick(tmp_
     nb.folder_step()
     nb.axis_step()
     nb.check_button.click()
-    assert nb.confirm_button.disabled and nb.preview_checked.disabled
-    assert "click Show preview" in _text(nb.confirm_blocker.value)
-    assert "click Show preview" in _text(nb.preview_blocker.value)
-    nb.show_preview()
+    assert nb.confirm_button.disabled and not nb.preview_checked.disabled  # drawn by itself
+    assert nb.preview_blocker.value == ""
+    assert "click Yes, the example looks right" in _text(nb.confirm_blocker.value)
+    nb.role_dropdowns[1].value = "Z"  # Y on no axis: no example can be drawn of these roles
+    assert nb.preview_checked.disabled and nb.confirm_button.disabled
+    assert "no example of these roles is drawn" in _text(nb.preview_blocker.value)
+    nb.role_dropdowns[1].value = "Y"
     assert nb.preview_blocker.value == "" and not nb.preview_checked.disabled
-    assert "click Yes, the preview looks right" in _text(nb.confirm_blocker.value)
     nb.preview_checked.button.click()
     assert not nb.confirm_button.disabled and nb.confirm_blocker.value == ""
     nb.confirm_button.click()
@@ -246,7 +248,7 @@ def test_the_named_axis_copies_button_says_what_it_waits_for(tmp_path):
     nb.role_dropdowns[0].value = "C"
     assert ui.is_visible(nb.convert_card) and nb.convert_button.disabled
     assert "roles of the copies are not confirmed" in _text(nb.convert_blocker.value)
-    assert "preview is not ticked" in _text(nb.convert_tick_blocker.value)
+    assert "example is not ticked" in _text(nb.convert_tick_blocker.value)
     nb.show_preview()
     nb.preview_checked.button.click()
     assert nb.convert_tick_blocker.value == ""

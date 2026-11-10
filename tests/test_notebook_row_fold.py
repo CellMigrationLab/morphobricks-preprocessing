@@ -255,7 +255,7 @@ def test_a_header_change_before_the_axes_are_confirmed_is_shown_as_blocking(tmp_
     assert nb._published().reconciliation.reopened == {"rep1": ("channels_changed",)}
     assert nb.same_way["rep1"].value  # the declared list did not change: the date stays
     shown = _text(nb.checks)
-    assert "The run (step 12) is blocked by both" in shown
+    assert "The run is blocked by both" in shown
     assert "header contradiction: the image headers of ctrl/rep1" in shown
     assert "“same way?” of rep1 is asked again" not in shown
     assert nb.save_button.disabled and nb.run_button.disabled

@@ -468,6 +468,58 @@ def plane_png(plane: Plane, size: float = 4.2) -> bytes:
     return buffer.getvalue()
 
 
+TILE_INCHES = 1.9
+DRAWN_SIDE = 384
+"""The most pixels along a side handed to the drawing (a larger plane is strided)."""
+DPI = 100
+
+
+def tile_label(label: str, shape: tuple[int, int]) -> str:
+    """Return a tile's caption: its coordinate and the plane's height and width in pixels."""
+    size = f"{shape[0]} × {shape[1]} px"
+    return f"{label} · {size}" if label else f"{size} (height × width)"
+
+
+def example_png(rows: Sequence[tuple[str, Sequence[tuple[str, np.ndarray]]]]) -> bytes:
+    """Draw the example: one titled row of tiles per role, each tile with its label.
+
+    Parameters
+    ----------
+    rows
+        ``(row title, [(tile label, pixels), ...])`` per row; ``pixels`` is a (Y, X) array.
+
+    Returns
+    -------
+    bytes
+        A PNG picture.
+    """
+    columns = max(len(tiles) for _, tiles in rows)
+    row_height = TILE_INCHES + 0.5
+    figure = Figure(figsize=(max(columns, 2) * TILE_INCHES, len(rows) * row_height), dpi=DPI)
+    for r, (title, tiles) in enumerate(rows):
+        top = 1 - r / len(rows)
+        figure.text(0.01, top - 0.02 / len(rows), title, fontsize=9, fontweight="bold", va="top")
+        for c, (label, pixels) in enumerate(tiles):
+            width = 1 / max(columns, 2)
+            box = (
+                c * width + 0.01,
+                top - 1 / len(rows) + 0.02 / len(rows),
+                width - 0.02,
+                TILE_INCHES / row_height / len(rows) - 0.02 / len(rows),
+            )
+            axes = figure.add_axes(box)
+            step = max(1, max(pixels.shape) // DRAWN_SIDE)
+            shown = pixels[::step, ::step]
+            low, high = display_range(shown)
+            axes.imshow(shown, cmap="gray", vmin=low, vmax=high, interpolation="nearest")
+            axes.set_anchor("N")
+            axes.set_axis_off()
+            axes.set_title(label, fontsize=8, pad=2)
+    buffer = io.BytesIO()
+    figure.savefig(buffer, format="png", dpi=DPI)
+    return buffer.getvalue()
+
+
 def distribution_png(groups: dict[tuple[str, ...], list]) -> bytes | None:
     """Plot the cumulative intensity distribution of each group, one panel per channel.
 

@@ -191,9 +191,7 @@ def test_the_experiment_is_restated_in_words_with_one_question_per_replicate(exp
 
 def test_save_says_saved_and_enables_run(exp):
     nb = saved_nb(exp)
-    assert (
-        "Saved " in nb.save_status.value and "The run (step 12) can start" in nb.save_status.value
-    )
+    assert "Saved " in nb.save_status.value and "The run can start" in nb.save_status.value
     assert not nb.run_button.disabled
     assert nb.confirmed_image_type == "fluorescence"
     _, _, out = exp

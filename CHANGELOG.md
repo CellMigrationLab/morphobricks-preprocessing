@@ -17,6 +17,41 @@ OME-XML description is parsed (which images are marked is unchanged; a malformed
 debug line without a traceback), and while the capture is attached the package's DEBUG records
 go to the "Technical details" panel only, with WARNING and above still reaching the root handlers.
 
+### Notebook redesign 3: the axes step shows the data as the roles read it; pixel size in one line
+
+Owner test of v0.5.0 (10 November 2026), items (e) and (f). The shipped notebook has 12 steps:
+*Pixel sizes* is part of *Axes*.
+
+- **An example of one image as the chosen roles read it**, drawn by the folder check itself and
+  redrawn whenever a role changes (`axis_example.example_rows`, `notebook_plots.example_png`):
+  one tile per channel labelled `c=…` (six evenly spread beyond six), a few time points
+  `t=…` or depth slices `z=…`, or the single plane, each with its height and width and its
+  true proportions, so a wrong role looks wrong. The image and the other planes are under
+  **Another image, or other planes**. **Show preview** is gone (its button is hidden and still
+  works for the bricks that click it). The planes are read as before: with the roles being
+  edited, only the image as the folder check read it, labelled *not confirmed yet*.
+- **The confirmation is unchanged and explicit.** The roles are confirmed by **Yes, the example
+  looks right** and **Confirm axis roles**, or by the one-click **Confirm these axes** under the
+  same conditions as before (owner decision Q3); nothing is confirmed without the click. The
+  role boxes and the example are always shown; the *Look closer, or change the roles* fold and
+  the separate *Suggested axes* card are gone.
+- **Pixel size in one line, with the axes** (`pixel_size_summary`): "Pixel size: 0.108 × 0.108
+  µm (from the headers, same in all 270 images)". When nothing gives a size, one input states
+  it for the whole experiment (**Use for all images**: the user's explicit statement, written
+  to `calibration.csv` for `.` as the `calibrate` command does, replacing other X and Y
+  statements; Z statements are kept). When it would remove or replace a statement, or a size
+  the images have from their headers or an earlier statement, it first lists them and writes
+  only after **Replace them**; it refuses if `calibration.csv` changed since. When the images do not agree the line says so with the
+  counts and folders ("Headers disagree: 0.108 × 0.108 µm in 180 images, 0.216 × 0.216 µm in
+  90 (Condition_2/Biological_repeat_2)") and **Set per imaging unit…** opens: the size of each
+  folder and the form to state one for a folder or an image. Nothing is chosen silently: each
+  image is recorded with its header's size until the user states another, and a stated size
+  that differs from a header is still warned about (`calibration_differs_from_header`). The
+  rules of `calibration.csv` and what the manifest records per image are unchanged; the
+  experiment description holds no pixel size (Spec experiment-v1).
+- Texts of the notebook no longer carry step numbers after step 3 ("the run can start", "on
+  Image type"), so they stay right when steps merge.
+
 ### Notebook redesign 2: progress for every wait, and a quick scan before the headers
 
 Owner test of v0.5.0 (10 November 2026), items (c) and (d).

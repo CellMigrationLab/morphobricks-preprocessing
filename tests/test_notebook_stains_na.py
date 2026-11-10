@@ -25,8 +25,8 @@ from morphobricks_preprocessing.draft_answers import UnitAnswer  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 
 FOLDERS = ["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/rep2"]
-STAINS = 7  # step 8, 0-based
-TAGS = 8
+STAINS = 6  # step 7, 0-based
+TAGS = 7
 
 
 def _open(tmp_path, *, channel_folders=()):
@@ -78,7 +78,7 @@ def test_an_all_rgb_experiment_completes_stains_and_check_and_save_without_a_lab
     assert not ui.is_visible(nb.channel_intro)  # "first name what you stained" would contradict
     assert nb.todo.value == "" and not nb.save_button.disabled
     assert nb.save_experiment()
-    assert _state(nb, 10).done
+    assert _state(nb, 9).done
 
 
 def test_the_saved_file_declares_exactly_r_g_b_and_the_rgb_image_type(tmp_path):
