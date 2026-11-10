@@ -9,7 +9,7 @@
   beside the button says that the run will stop, and why.
 - The step-by-step "Yes, the preview looks right" is offered only while a preview of the current
   roles is shown, as the one-click *Confirm these axes* is (#255).
-- "The run (step 12) can start" is said only once the run's checks have run and passed.
+- "The run can start" is said only once the run's checks have run and passed.
 """
 
 import re
@@ -129,7 +129,7 @@ def test_a_a_rename_resolved_through_header_names_keeps_the_dates_saves_and_runs
     assert not nb.save_button.disabled
     assert nb.save_experiment(), _text(nb.save_status.value)
     assert _published_dates(exp) == [SAVED_ON, SAVED_ON]
-    assert "The run (step 12) can start." in nb.save_status.value
+    assert "The run can start." in nb.save_status.value
     assert nb.run().written
 
 
@@ -266,7 +266,7 @@ def test_save_stays_allowed_beside_a_line_saying_the_run_will_stop_and_why(exp):
     codes = sorted({i.code for i in check.run_refusals})
     assert codes and not nb.save_button.disabled  # owner decision: saving stays allowed
     note = _text(nb.save_note.value)
-    assert "the run (step 12) will stop" in note and "Refused:" in note
+    assert "the run will stop" in note and "Refused:" in note
     assert all(code in note for code in codes)
     assert nb.save_note in nb.save_row.children and nb.save_button in nb.save_row.children
     assert ui.is_visible(nb.save_note)
@@ -296,7 +296,6 @@ def test_the_preview_tick_is_offered_only_while_a_preview_of_these_roles_is_show
     from morphobricks_preprocessing.planes import PlaneReadError
 
     nb = stepper(*exp)
-    nb.axes_details.click()
     nb.show_preview()
     assert nb._preview_drawn is not None and not nb.preview_checked.disabled  # the control
     real = notebook_axis_preview.read_plane
@@ -321,7 +320,6 @@ def test_a_ticked_preview_that_then_fails_is_unticked(exp, monkeypatch):  # noqa
     from morphobricks_preprocessing.planes import PlaneReadError
 
     nb = stepper(*exp)
-    nb.axes_details.click()
     nb.show_preview()
     nb.preview_checked.button.click()
     assert nb.preview_checked.value and not nb.confirm_button.disabled
@@ -339,7 +337,7 @@ def test_a_ticked_preview_that_then_fails_is_unticked(exp, monkeypatch):  # noqa
 
 
 def test_a_reopen_before_the_axes_are_confirmed_does_not_say_the_run_can_start(exp):  # noqa: F811
-    # Regression: an unchanged reopen said "Saved ..., The run (step 12) can start." while the
+    # Regression: an unchanged reopen said "Saved ..., The run can start." while the
     # run's checks (which need the axis roles) had not run.
     first = stepper(*exp)
     first.quick_confirm.click()
@@ -354,4 +352,4 @@ def test_a_reopen_before_the_axes_are_confirmed_does_not_say_the_run_can_start(e
     assert "nothing changed" in nb.saved_line.value  # true: the folders are as saved
     nb.quick_confirm.click()  # the user confirms the roles: the checks run and pass
     assert nb._published_check().can_run
-    assert "The run (step 12) can start." in nb.save_status.value
+    assert "The run can start." in nb.save_status.value

@@ -99,7 +99,7 @@ class _CheckSaveScreen:
         self.same_way: dict[str, ui.ConfirmToggle] = {}
         self.saved_line = widgets.HTML()
         self.run_now = ui.button(
-            " Run", style="success", icon="play", tooltip="Compute the histograms (Run, step 12)"
+            " Run", style="success", icon="play", tooltip="Compute the histograms (Run)"
         )
         self.change_saved = ui.button(" Change…", style="warning", icon="pencil")
         self.fold_bar = widgets.HBox([self.saved_line, self.run_now, self.change_saved])
@@ -270,7 +270,7 @@ class _CheckSaveScreen:
         questions = list(missing_confirmations(applied, answers, channel_counts=counts))
         extra = [problem] if problem else []
         left = masks_unanswered(answers, self._mask_types())
-        extra += [f"mask {m}: separate objects or regions? (Masks, step 10)" for m in left]
+        extra += [f"mask {m}: separate objects or regions? (Masks)" for m in left]
         if len(applied.conditions) > 1:
             extra += [
                 f"what {folder} is compared against (choose, or no comparison)"
@@ -433,17 +433,17 @@ class _CheckSaveScreen:
         start, only that the axes come first.
         """
         if self._run_allowed():
-            return ui.status("ok", f"Saved {when}. The run (step 12) can start.")
+            return ui.status("ok", f"Saved {when}. The run can start.")
         if self.confirmed_mapping is None:
             return ui.status(
                 "info",
                 f"Saved {when}.",
                 [
                     "Confirm the axis roles (step 2) first: the run's checks of the images "
-                    "need them, and the run (step 12) waits for those checks."
+                    "need them, and the run waits for those checks."
                 ],
             )
-        return ui.status("ok", f"Saved {when}.", ["See Run (step 12) for what is still to do."])
+        return ui.status("ok", f"Saved {when}.", ["See Run for what is still to do."])
 
     # Answers -----------------------------------------------------------------------------
 
@@ -482,7 +482,7 @@ class _CheckSaveScreen:
             self.saved_line.value += ui.status(
                 "warn",
                 "Not run yet.",
-                ["See Run (step 12): its checklist says what is still to do."],
+                ["See Run: its checklist says what is still to do."],
             )
 
     # Saving ------------------------------------------------------------------------------

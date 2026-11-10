@@ -1,6 +1,11 @@
-"""Step 1 of the notebook: the calibration card (design v0.4 §3, PP-10).
+"""The notebook's pixel size card (design v0.4 §3, PP-10; one line since the redesign).
 
-The card shows the pixel sizes each image is recorded with, and their source: the image
+By default the card is one line: the one pixel size of the whole experiment and where it
+comes from (:mod:`.pixel_size_summary`), with one input when nothing gives a size, or behind
+**Change the pixel size…** when the images have one (owner, 10 November 2026). When the images
+do not agree the line says how many images have which size and where, and **Set per imaging
+unit…** opens; nothing is ever chosen silently. The per-unit part shows the sizes each image
+is recorded with, and their source: the image
 metadata (``header``), a size stated in ``calibration.csv`` (``stated``), ``pixels``
 (deliberately uncalibrated), or none (uncalibrated). The user states sizes per target (the
 whole experiment, a folder or an image), axis and unit through the same API as the
@@ -25,6 +30,7 @@ from .calibration_io import CalibrationFormatError
 from .notebook_options import _WIDE
 from .notebook_render import issues_html
 from .notebook_values import size_rows
+from .pixel_size_summary import summary_line, unit_rows, xy_groups
 from .recorded_sizes import PIXELS, SIZE_ROLES
 from .run import OutputLockedError, Preflight
 from .run.calibrate import update_calibration
@@ -78,34 +84,102 @@ class _CalibrationCard:
                 grid_template_columns="2fr 1fr 1fr 2fr", grid_gap="4px 12px", **_WIDE
             ),
         )
+        self._build_pixel_line()
+        self._build_pixel_units(form)
         self.calibration_card = ui.card(
-            "Pixel sizes (calibration)",
+            "Pixel size",
             [
-                ui.help_text(
-                    "The size of one pixel along each axis, and where it comes from: the "
-                    "image metadata (<i>header</i>), a size you state here (<i>stated</i>), "
-                    "or <i>pixels</i> (deliberately uncalibrated). Nothing is guessed: an image "
-                    "without either is uncalibrated. A size you state is saved in "
-                    f"<b>{CALIBRATION_FILENAME}</b> in the output folder, used instead of the "
-                    "metadata, and recorded by the run. No histogram depends on it."
-                ),
-                self.calibration_table,
-                self.calibration_issues,
-                widgets.HTML("<b>State a size</b>"),
-                ui.help_text(
-                    "For <b>.</b> (the whole experiment), a folder or an image, relative to the "
-                    "experiment folder. The most specific statement applies. Y and X are "
-                    "always stated by name and never exchanged."
-                ),
-                form,
-                widgets.HBox([self.calibration_state, self.calibration_remove]),
+                self.pixel_line,
+                self.pixel_change,
+                self.pixel_form,
                 self.calibration_message,
+                self.calibration_issues,
+                self.pixel_units,
             ],
             visible=False,
         )
         self.calibration_unit.observe(lambda _: self._calibration_unit_changed(), names="value")
         self.calibration_state.on_click(lambda _: self._state_size())
         self.calibration_remove.on_click(lambda _: self._remove_size())
+
+    def _build_pixel_units(self, form: widgets.Widget) -> None:
+        """Build the collapsed part: the sizes per imaging unit and the form to state one."""
+        self.pixel_units = ui.accordion(
+            "Set per imaging unit…",
+            [
+                widgets.VBox(
+                    [
+                        ui.help_text(
+                            "An imaging unit is a folder of images. Choose it under <b>For</b> "
+                            "(<b>.</b> is the whole experiment; an image can be chosen too); "
+                            "the most specific statement applies. A stated size is saved in "
+                            f"<b>{CALIBRATION_FILENAME}</b> in the output folder and recorded "
+                            "by the run; no histogram depends on it."
+                        ),
+                        self.unit_table,
+                        form,
+                        widgets.HBox([self.calibration_state, self.calibration_remove]),
+                        self.calibration_table,
+                    ]
+                )
+            ],
+        )
+
+    def _build_pixel_line(self) -> None:
+        """Build the one line about the pixel size and the one input for the whole experiment."""
+        self.pixel_line = widgets.HTML()
+        self.unit_table = widgets.HTML()
+        self.pixel_size = widgets.Text(
+            placeholder="e.g. 0.325", layout=widgets.Layout(width="120px")
+        )
+        self.pixel_unit = widgets.Dropdown(
+            options=UNIT_OPTIONS, value="micrometer", layout=widgets.Layout(width="260px")
+        )
+        self.pixel_apply = ui.button(
+            " Use for all images",
+            style="primary",
+            icon="check",
+            tooltip="State this size of one pixel (X and Y) for every image of the experiment",
+        )
+        self.pixel_form = widgets.HBox(
+            [
+                widgets.HTML("<b>One pixel is</b>&nbsp;"),
+                self.pixel_size,
+                self.pixel_unit,
+                self.pixel_apply,
+            ],
+            layout=widgets.Layout(align_items="center", flex_flow="row wrap"),
+        )
+        self.pixel_change = ui.button(
+            " Change the pixel size…", icon="pencil", tooltip="State one size for all images"
+        )
+        self.pixel_change.on_click(lambda _: self._toggle_pixel_form())
+        self.pixel_apply.on_click(lambda _: self._state_for_all())
+        self.pixel_unit.observe(lambda _: self._pixel_unit_changed(), names="value")
+
+    def _pixel_unit_changed(self) -> None:
+        """Disable the size for ``pixels``, which states no value."""
+        self.pixel_size.disabled = self.pixel_unit.value == PIXELS
+
+    def _toggle_pixel_form(self) -> None:
+        ui.set_visible(self.pixel_form, not ui.is_visible(self.pixel_form))
+
+    def _state_for_all(self) -> None:
+        """State one X and Y size for the whole experiment, replacing every other X/Y statement.
+
+        The user's explicit statement for all images: statements for single folders or images
+        would otherwise still apply to them (the most specific wins), so they are removed
+        along X and Y; Z statements are kept. Header sizes that differ are then named by the
+        ``calibration_differs_from_header`` warning, as for any statement.
+        """
+        unit = self.pixel_unit.value
+        size = None if unit == PIXELS else self.pixel_size.value.strip()
+
+        def change(calibration: Calibration) -> Calibration:
+            kept = Calibration(tuple(e for e in calibration.entries if e.axis not in ("X", "Y")))
+            return kept.stating(calibration_entry(".", axis, size, unit) for axis in ("X", "Y"))
+
+        self._change_calibration(change)
 
     def _calibration_unit_changed(self) -> None:
         """Disable the size for ``pixels``, which states no value."""
@@ -132,15 +206,27 @@ class _CalibrationCard:
         return fit_calibration(pre, review)[0], roles
 
     def _show_calibration(self) -> None:
-        """Show every image's recorded sizes and the calibration's messages."""
+        """Show the pixel size in one line, the per-unit sizes and the calibration's messages."""
         pre = self.preflight
         ui.set_visible(self.calibration_card, pre is not None and bool(pre.metadata.files))
         if pre is None:
             return
         self.calibration_target.options = self._calibration_targets()
         shown, roles = self._shown_calibration()
+        sizes = shown.calibration.sizes
+        groups = xy_groups(sizes)
+        kind, line = summary_line(groups)
+        self.pixel_line.value = ui.status(kind, line)
+        one_size = len(groups) == 1 and groups[0].calibrated
+        # One input when nothing gives a size; behind "Change…" when the images have one.
+        ui.set_visible(self.pixel_change, one_size)
+        ui.set_visible(self.pixel_form, not one_size)
+        if len(groups) > 1:
+            self.pixel_units.selected_index = 0  # they differ: the units are shown, not hidden
+        rows = [("Imaging unit (folder)", "Pixel size (X × Y)", "From")]
+        self.unit_table.value = ui.table([*rows, *unit_rows(sizes)])
         rows = [("Images", *SIZE_ROLES)]
-        for texts, paths in size_rows(shown.calibration.sizes, roles):
+        for texts, paths in size_rows(sizes, roles):
             first = paths[0] if len(paths) == 1 else f"{len(paths):,} images, e.g. {paths[0]}"
             rows.append((first, *texts))
         note = (
@@ -149,7 +235,7 @@ class _CalibrationCard:
             if roles is None
             else "With the confirmed axis roles, as the run records them."
         )
-        self.calibration_table.value = ui.table(rows) + ui.help_text(note).value
+        self.calibration_table.value = ui.help_text(note).value + ui.table(rows)
         issues = [i for i in shown.metadata.issues if i.code in CALIBRATION_ISSUE_CODES]
         self.calibration_issues.value = issues_html(issues) if issues else ""
 

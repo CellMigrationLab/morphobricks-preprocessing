@@ -49,7 +49,7 @@ _ICON = "sitemap"
 READING_MASKS = "Reading the masks, one image at a time"
 _SUGGESTIONS = (
     "These are suggestions from the masks' pixels: check the relationships before using them. "
-    "Each mask keeps the ID it was given on Masks (step 10)."
+    "Each mask keeps the ID it was given on Masks."
 )
 
 

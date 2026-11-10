@@ -149,8 +149,8 @@ class LabelsCard:
                 "Not applicable: every folder is colour (RGB).",
                 [
                     "R, G and B are the fixed names of a colour image's channels, so no label is "
-                    "needed. If some folder is separate channels, change its image type "
-                    "(step 7) and the labels come back."
+                    "needed. If some folder is separate channels, change its image type and "
+                    "the labels come back."
                     + (f" The labels already declared ({kept}) stay saved, unused." if kept else "")
                 ],
             )

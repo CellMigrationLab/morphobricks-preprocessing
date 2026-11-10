@@ -1,8 +1,9 @@
 """*Confirm these axes*: the axes step in one click, when nothing about the axes is open.
 
 Owner decision Q3 (UX proposal 2026-11-09): when the suggested roles are complete and nothing
-in them is uncertain, the axes step shows them with a preview and one **Confirm these axes**
-button; the role boxes are folded under *Look closer, or change the roles*. On a reopened
+in them is uncertain, the axes step offers one **Confirm these axes** button under the role
+boxes and the example (redesign of 10 November 2026: the boxes and the example are always
+shown; the button replaces the tick and *Confirm axis roles* while it is offered). On a reopened
 experiment whose folders are unchanged, the roles the earlier run recorded are the ones offered,
 so a reopening no longer stops on the axes.
 
@@ -27,50 +28,31 @@ from .axis_check import ConfirmedAxes
 from .axis_review import review_axes
 from .description_reconcile import CHANNELS_CHANGED
 from .fingerprint import unchanged_confirmation
-
-DETAILS_OPEN, DETAILS_CLOSED = " Hide the role boxes", " Look closer, or change the roles"
+from .notebook_render import blocked_line
 
 
 class _QuickAxes:
     """The one-click confirmation card of the stepper's axes step."""
 
     def _build_quick_axes(self) -> None:
-        """Build the card (hidden until roles can be offered) and the fold of the role boxes."""
+        """Build the one-click confirmation (hidden until roles can be offered)."""
         self._quick_offer: AxisMapping | None = None
         self._quick_filling = False
         # The check whose recorded roles were offered: once offered, a role the user changes is
         # theirs, and the recorded roles are not put back into the boxes.
         self._quick_seeded: object | None = None
         self.quick_text = widgets.HTML()
-        self.quick_image = widgets.Image(format="png", layout=widgets.Layout(max_width="420px"))
-        ui.set_visible(self.quick_image, False)
         self.quick_caption = widgets.HTML()
         self.quick_confirm = ui.button(
             " Confirm these axes",
             style="success",
             icon="check",
-            tooltip="The preview looks right: use these roles for every image",
+            tooltip="The example looks right: use these roles for every image",
             main=True,
         )
         self.quick_confirm.on_click(lambda _: self._confirm_quick_axes())
-        self.quick_card = ui.card(
-            "Suggested axes",
-            [
-                self.quick_text,
-                widgets.HBox([self.quick_image]),
-                self.quick_caption,
-                self.quick_confirm,
-            ],
-            visible=False,
-        )
-        self.axes_details = ui.button(DETAILS_CLOSED, style="info", icon="sliders")
-        self.axes_details.on_click(lambda _: self._toggle_axes_details())
-        ui.set_visible(self.axes_details, False)
-
-    def _toggle_axes_details(self) -> None:
-        shown = not ui.is_visible(self.axis_box)
-        ui.set_visible(self.axis_box, shown)
-        self.axes_details.description = DETAILS_OPEN if shown else DETAILS_CLOSED
+        self.quick_card = widgets.VBox([self.quick_text, self.quick_confirm, self.quick_caption])
+        ui.set_visible(self.quick_card, False)
 
     # What can be offered -------------------------------------------------------------------
 
@@ -111,18 +93,24 @@ class _QuickAxes:
 
     # Showing -----------------------------------------------------------------------------
 
-    def _refresh_quick_axes(self) -> None:
-        """Offer the roles for one click, or show the role boxes open."""
+    def _refresh_quick_axes(self, drawn: bool = False) -> None:
+        """Offer the roles for one click, or the tick and *Confirm axis roles*.
+
+        The example is read again here (the image as the folder check read it), unless
+        ``drawn`` says the caller has just drawn it.
+        """
         if getattr(self, "quick_card", None) is None or self._quick_filling:
             return
         offer = None if self.confirmed_mapping is not None else self._quick_mapping()
         self._quick_offer = offer
         if offer is not None and self._saved_axes() is not None:
             self._quick_seeded = self.preflight  # the recorded roles go into the boxes once
-        ui.set_visible(self.quick_card, offer is not None)
-        ui.set_visible(self.axes_details, offer is not None)
-        ui.set_visible(self.axis_box, offer is None)
-        self.axes_details.description = DETAILS_CLOSED
+        offered = offer is not None
+        ui.set_visible(self.quick_card, offered)
+        # One click when nothing is open; else the tick and Confirm axis roles (also to change).
+        for widget in (self.preview_checked.widget, self.preview_blocker, self.confirm_button,
+                       self.confirm_blocker):  # fmt: skip
+            ui.set_visible(widget, not offered)
         if offer is None:
             return
         if offer.roles != self.mapping.roles:
@@ -133,19 +121,12 @@ class _QuickAxes:
             finally:
                 self._quick_filling = False
         self.quick_text.value = self._quick_text(offer)
-        self.show_preview()
+        if not drawn:
+            self.show_preview()
         shown = self._quick_preview_shown(offer)
-        self.quick_image.value = self.preview_image.value if shown else b""
-        ui.set_visible(self.quick_image, shown)
         self.quick_confirm.disabled = not shown
-        self.quick_caption.value = self.preview_caption.value + (
-            ""
-            if shown
-            else ui.status(
-                "warn",
-                "Confirm these axes is not offered: no preview of these roles is shown.",
-                ["Open the role boxes below to look closer or change the roles."],
-            )
+        self.quick_caption.value = blocked_line(
+            [] if shown else ["no example of these roles is drawn: see the message under it"]
         )
 
     def _quick_preview_shown(self, offer: AxisMapping) -> bool:
@@ -169,8 +150,7 @@ class _QuickAxes:
             f"Suggested: {roles}.",
             [
                 *self._headers_changed_line(),
-                f"These are {source}; the axis check finds nothing to ask about them.",
-                "Look at the preview: if it looks like a normal image of your sample, confirm. "
+                f"These are {source}. If the example shows your sample as you expect, confirm. "
                 "Nothing is confirmed until you click.",
             ],
             raw=True,
@@ -210,4 +190,4 @@ class _QuickAxes:
         return self.confirmed_mapping is not None
 
 
-__all__ = ["DETAILS_CLOSED", "DETAILS_OPEN", "_QuickAxes"]
+__all__ = ["_QuickAxes"]

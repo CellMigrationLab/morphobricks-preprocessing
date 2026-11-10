@@ -90,36 +90,47 @@ class _AxisStep:
             icon="eye",
             tooltip="Read one plane with the roles above and show it",
         )
-        self.preview_image = widgets.Image(format="png", layout=widgets.Layout(max_width="420px"))
+        self.preview_image = widgets.Image(format="png", layout=widgets.Layout(max_width="99%"))
         ui.set_visible(self.preview_image, False)  # no broken-picture icon before a preview
         self.preview_caption = widgets.HTML()
         self.preview_checked = ui.ConfirmToggle(
-            "Does the preview look like a normal image of your sample?",
-            "Look at a few planes with the sliders. Stripes, repeating patterns or a smeared "
-            "picture mean that X or Y is on the wrong dimension: change the roles above. "
-            "The axis roles can only be confirmed once the preview looks right.",
-            "Yes, the preview looks right",
-            "Preview checked. Now click Confirm axis roles below.",
-            "Undo: the preview does not look right",
+            "Does the example show your sample as you expect?",
+            "Each channel, time point or slice should be a normal picture of the right size. "
+            "Stripes or a thin strip mean a role is on the wrong dimension: change it.",
+            "Yes, the example looks right",
+            "Example checked. Now click Confirm axis roles below.",
+            "Undo: the example does not look right",
         )
         self.preview_checked.disabled = True
         self.preview_blocker = widgets.HTML()
-        self.preview_card = ui.card(
-            "Preview",
+        ui.set_visible(self.preview_button, False)  # the example is drawn by itself
+        self.preview_more = ui.accordion(
+            "Another image, or other planes",
             [
-                ui.help_text(
-                    "Pick an image and move the sliders to look at different planes. "
-                    "Brightness is stretched for display only; the images are not changed."
-                ),
-                self.preview_file,
-                self.preview_button,
-                *self.preview_sliders.values(),
+                widgets.VBox(
+                    [
+                        self.preview_file,
+                        *self.preview_sliders.values(),
+                        ui.help_text(
+                            "The sliders choose the time point or slice of the row of channels, "
+                            "and the channel of the other rows."
+                        ),
+                    ]
+                )
+            ],
+        )
+        self.preview_card = ui.card(
+            "Example: one image as these roles read it",
+            [
                 widgets.HBox([self.preview_image]),
                 self.preview_caption,
+                self.preview_more,
+                self.preview_button,
                 self.preview_checked.widget,
                 self.preview_blocker,
             ],
         )
+        self.axis_sizes_slot = widgets.VBox()  # the pixel size card, in the shipped notebook
 
     def _build_image_type_card(self) -> None:
         """Build the image type card, hidden until the axis roles are confirmed."""
@@ -169,23 +180,29 @@ class _AxisStep:
         self._refresh_missing_card(pre)
         self._reset_preview()
         self._set_locked(False)
+        roles = ui.card(
+            "Axis roles",
+            [
+                ui.help_text(
+                    "One box per dimension, in the order stored in the files. Exactly one Y "
+                    "and one X; a dimension with more than one plane needs Z, C or T."
+                ),
+                grid,
+                self.plane_summary,
+            ],
+        )
+        left = widgets.VBox(
+            [roles, self.missing_card, self.axis_status, self.axis_sizes_slot],
+            layout=widgets.Layout(flex="1 1 0", min_width="0"),
+        )
+        right = widgets.VBox(
+            [self.preview_card], layout=widgets.Layout(flex="1 1 0", min_width="0")
+        )
+        columns = widgets.HBox([left, right], layout=widgets.Layout(width="99%"))
+        columns.add_class("mb-columns")
         self.axis_box.children = [
-            ui.card(
-                "Axis roles",
-                [
-                    ui.help_text(
-                        "One box per dimension of the images, in the order stored in the "
-                        "files. Dimensions with more than one plane need Z, C or T; the image "
-                        "itself needs exactly one Y and one X."
-                    ),
-                    grid,
-                    self.plane_summary,
-                ],
-            ),
-            self.missing_card,
-            self.axis_status,
+            columns,
             self.convert_card,
-            self.preview_card,
             self.confirm_button,
             self.confirm_blocker,
             self.confirmed_status,
@@ -327,7 +344,12 @@ class _AxisStep:
             self.axis_status.value = ui.status("error", str(exc))
             self.preview_checked.disabled = True  # the preview shown is not of these roles
             self._review_ok, self._review_errors = False, ()
-            self._update_confirm_button()
+            self.preview_image.value, self._preview_drawn = b"", None
+            ui.set_visible(self.preview_image, False)
+            self.preview_caption.value = ui.status(
+                "warn", "No example: these roles cannot be used together."
+            )
+            self._gate_preview_tick()
             return
         ranges = axis_length_ranges(self.mapping, self.preflight.metadata.files)
         marks = header_marks(self.mapping, self.preflight.metadata.files)
@@ -356,17 +378,18 @@ class _AxisStep:
                 "metadata names.",
             )
             self.axis_next.value = ui.next_steps(
-                "Check the preview in Step 2, then confirm the axis roles.",
-                "Click Show preview and inspect a few planes before confirming.",
+                "Look at the example in Step 2, then confirm the axis roles.",
+                "It is redrawn whenever a role changes; other planes are one click away.",
             )
         self._review_ok = review.ok
         self._review_errors = tuple(
             dict.fromkeys(i.code.replace("_", " ") for i in review.issues if i.is_error)
         )
         self._refresh_convert_card(review)
-        if self._preview_shown:
-            self._configure_sliders(reset=False)
-            self._render_preview()
+        # The example is drawn by itself and redrawn for every change of the roles.
+        self._configure_sliders(reset=not self._preview_shown)
+        self._preview_shown = True
+        self._render_preview()
         self._update_confirm_button()
 
     def _update_confirm_button(self) -> None:
@@ -392,7 +415,7 @@ class _AxisStep:
             named = f" ({', '.join(codes)})" if codes else ""
             blockers.append(f"these roles have an error{named}: see the red message above")
         if not self._preview_of(self.mapping):
-            blockers.append("no preview of these roles is drawn: click Show preview")
+            blockers.append("no example of these roles is drawn: see the message under it")
         elif not self.preview_checked.value:
-            blockers.append("the preview is not ticked: click Yes, the preview looks right")
+            blockers.append("the example is not ticked: click Yes, the example looks right")
         return blockers
