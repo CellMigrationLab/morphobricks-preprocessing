@@ -36,8 +36,8 @@ their section.
   predecessor file and are not part of the single-file valid/invalid rules. Publication-base and
   folder-name rules need no TOML of their own: they run on named fixtures in scenarios P17-P22.
 - Rules that need images, a run or a consumer (header matching, image type against the header,
-  mask checks and conversions, mask type names, the FOV key, the `target` prefill, legacy
-  migration dates) have no single-file TOML form: each is a scenario P23-P33 of the conformance
+  mask checks and conversions, mask type names, the FOV key, the `target` prefill, derived-CSV
+  dates) have no single-file TOML form: each is a scenario P23-P33 of the conformance
   plan on a named fixture, listed in the coverage tables below.
 - A copy of this tree vendored by a reader MUST hash to the pinned SHA's `fixtures` tree
   (conformance plan §1).
@@ -124,12 +124,12 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | 1 | Two technical repeats of different counts/orders stay ONE biological replicate | `v06` | Stage 2-3: N per repeat in normalization, embeddings, MorphoCoverage |
 | 2 | One deviating FOV in a technical repeat refused with image/C-index evidence | `i20`; P01, P02 | Stage 1: `R_UNIT_NOT_HOMOGENEOUS` |
 | 3 | Swapped C order never mixes ACTIN and DNA in normalization or CellPatcher | `v04`, `v06` | Stage 1 refusal; Stage 3 pooling by canonical ID |
-| 4 | Homogeneous legacy datasets keep numerical parity and existing refusals | `v13` | Stage 1: byte-identical derived CSV; Stage 3 parity |
+| 4 | A homogeneous described dataset (folder-name IDs confirmed by the user) keeps the existing refusals; no parity against v0.4.0 (ADR 0002 AR10) | `v13` | Stage 1: byte-identical derived CSV (as reviewed for v0.5.0); no legacy numerical parity gate |
 | 5 | `DNA` with confirmed header `DAPI` passes; unconfirmed contradiction refuses | `v11`; P03 | Stage 1: `R_HEADER_CONTRADICTION` |
 | 6 | A binary region mask never becomes an instance object set | `v08` | Stage 2: `A_MASK_NOT_INSTANCES` |
-| 7 | N35 confirmation survives migration and reopens on discovery changes | `v13`, `i37`; P07 | Stage 1 migration and reconciliation |
+| 7 | N35 confirmation survives reconciliation and reopens on discovery changes (the legacy-CSV migration is removed, ADR 0002 AR10 (9)) | `v13`, `i37`; P07 | Stage 1 reconciliation |
 | 8 | Distinct source repeat names paired by the user give one canonical ID in MorphoCoverage | `v03` | Stage 2 (S2.5) |
-| 9 | Missing channels in requested scope: refusal or recorded user subset, never silent drop; a channel no image has is the same refusal (SI1) | `v05`, `v17` | Stage 2: `A_SCOPE_INCOMPLETE` |
+| 9 | Missing channels in requested scope: refusal or recorded user subset, never silent drop; a channel no image has is the same refusal (SI1) | `v05`, `v17` | `A_SCOPE_INCOMPLETE`, shown at Stage 3 / gate G3 for both: their layouts are refused at Stages 1-2 (P04); owner decision GS2 for both |
 | 10 | Metadata-only changes keep valid pixel-derived caches | `v01` vs `v21` | Stage 1: section digests |
 
 **Further required cases:**
@@ -150,7 +150,7 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | Implicit-conversion traps | `i07`, `i08`, `i12`-`i14`, `i19`, `i27`-`i30`, `i33`, `i34`, `i36`, `i38`, `i39`; valid side `v15` |
 | Reference DAG | `i64`-`i68`, `i41`; `v10`, `v19` |
 | Swapped channel order | `v04`, `v06` |
-| Extra / missing channel | `v05`, `v17`, `v22`, `i69` |
+| Extra / missing channel | `v05`, `v17` (both Stage 3 / G3, GS2: P04 refuses their layouts at Stages 1-2), `v22`, `i69` |
 | Within-unit divergence | `i20`; P01, P02 |
 | Instance vs binary masks | `v07`, `v08`, `i42`, `i43`, `i111`, `i112`; P05, P27, P28 |
 | Partial masks | `v09` |
@@ -167,7 +167,7 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | FOV key keeps the source label, `repeat_group` added | `v03`, `v30`; P25 |
 | Mask checks: when, unchecked masks, type names | `v09`; P05, P28, P29 |
 | Descriptive keys prefill only | `v27`; P31 |
-| Legacy migration dates (byte-identity only for a single `confirmed_on`) | `v13`; P30 |
+| Derived CSV dates (every row carries its repeat's one `confirmed_on`; no clock read) | `v13`; P30 |
 | Derived CSV keeps the source folder labels | `v13`, `v33`; P32 |
 | Aliases (header evidence) | `v11`, `v12`, `v31`, `i46`, `i81`, `i110`; P03, P26 |
 | Versioning (offline constant, no default) | `i09`-`i15` |
@@ -212,10 +212,10 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | AQ9 | Binary-as-instances only by an explicit, per-request, recorded conversion | `v08`, `i112`; P27 |
 | AQ10 | Mask representation checked in the mask step; publication records "not yet checked"; unchecked masks refuse | `v09`; P05, P28 |
 | AQ11 | A discovered mask type breaking the Label rules: `R_MASK_TYPE_NAME_INVALID` | P29 |
-| AQ12 | Legacy groups with different `confirmed_on` take the latest date, with a note | `v13`; P30 |
+| AQ12 | Legacy groups with different `confirmed_on` take the latest date, with a note. **Superseded 10 November 2026** (ADR 0002 AR10 (9): no legacy-CSV migration) | none (P30 now tests the derived output only) |
 | AQ13 | Forbidden names apply to ID keys; NFC of channel references; one code per broken rule | `i113`-`i118` |
 | FR1 | Folder labels are never restricted by the reserved or forbidden names: conditions and technical repeats have a canonical ID separate from the required `source_folder`; one folder, one ID; a folder change for an existing ID is a reassignment; the derived CSV keeps the folder labels | `v33`, `v34`, `i113`, `i115`, `i120`-`i127`, `t10`-`t12`; P32, P33 |
-| FR2 | Derived CSV byte-identity is guaranteed only for repeat groups with a single `confirmed_on`; a legacy group with several dates gets the latest, the migration note keeps the per-row dates | `v13`; P30 |
+| FR2 | Derived CSV byte-identity is guaranteed only for repeat groups with a single `confirmed_on`; a legacy group with several dates gets the latest, the migration note keeps the per-row dates. **Superseded 10 November 2026** (ADR 0002 AR10 (9): no legacy-CSV migration; every published repeat has one `confirmed_on`) | none (P30 now tests the derived output only) |
 | RR1 | Record type `image_count_changed` (a confirmed member's image count changes; nothing reopens) | P34 |
 | RR3 | `image_count_changed` is written for every confirmed member whose count changed, also when the publication changes other things | P34 |
 | RR2 | Record type `removed` for every confirmed removal of a unit, technical repeat, repeat or condition | P35 |
@@ -242,7 +242,7 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | [`v10_reference_chain`](valid/v10_reference_chain.toml) | RFC case 11 | pass | yes | Reference chains VEC_SiCol6a1 -> VEC_SiNC -> VEC and THBS5_SiCol6a1 -> THBS5_SiNC -> THBS5; shared treatment_key across backgrounds. |
 | [`v11_header_aliases`](valid/v11_header_aliases.toml) | Adversarial 5 | pass | yes | Canonical DNA confirmed with header evidence DAPI and Hoechst 33342; canonical ACTIN with an exact-match header name that still had to be confirmed. A header name outside these lists is R_HEADER_CONTRADICTION. |
 | [`v12_unnamed_headers`](valid/v12_unnamed_headers.toml) | Extra: aliases | pass | yes | No header evidence at all (ImageJ TIFFs carry no channel names); the user's confirmation is the only guard. Undetectable physical swaps are a documented limit. |
-| [`v13_homogeneous_legacy`](valid/v13_homogeneous_legacy.toml) | Adversarial 4 | pass | yes | A legacy homogeneous dataset: folder-name repeat IDs, one control, same layout everywhere (IDs proposed equal to the folder labels). The derived experiment_design.csv, which carries the `source_folder` labels, must be byte-identical to today's; numerical outputs must keep parity. |
+| [`v13_homogeneous_legacy`](valid/v13_homogeneous_legacy.toml) | Adversarial 4 | pass | yes | A legacy homogeneous dataset: folder-name repeat IDs, one control, same layout everywhere (IDs proposed equal to the folder labels). The derived experiment_design.csv, which carries the `source_folder` labels, must be byte-identical to its golden file (a Stage 1 check); there is no numerical parity against v0.4.0 (ADR 0002 AR10). |
 | [`v14_no_repeat_folders`](valid/v14_no_repeat_folders.toml) | Extra: single convention | pass | yes | No biological-repeat or technical-repeat folders: the source label is `single` (N31, one group for the whole experiment). |
 | [`v15_toml_keys_are_text`](valid/v15_toml_keys_are_text.toml) | Extra: implicit-conversion traps (valid side) | pass | yes | Folder labels that YAML would retype (2026-01-01, 012, NO, 1.0, off) stay exact text in TOML keys and strings. The quoted key "1.0" is needed: a bare 1.0 would be a dotted key. |
 | [`v16_display_name_change`](valid/v16_display_name_change.toml) | Owner refinement: immutable IDs | pass | yes | v01 with every `display_name` changed or added (conditions, channels, repeats). Identity is identical: all four section digests equal v01's, nothing may be invalidated. |

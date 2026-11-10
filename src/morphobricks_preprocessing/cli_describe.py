@@ -8,13 +8,14 @@ a published description, the image headers (no pixel is read); it writes nothing
 label that is not Unicode NFC is refused (``R_FOLDER_NOT_NFC``, experiment-v1 section 3.3):
 nothing is drafted from it.
 
-The draft comes from the existing functions only: the legacy ``experiment_design.csv`` of the
-output folder, when there is one and no published description, is migrated
-(:func:`.draft.migrate_legacy_design`); otherwise the draft is built from the folders
-(:func:`.draft.draft_from_discovery`); when ``morphobricks.toml`` is published, the folders and
-the headers of their images are compared with it (:func:`.reconcile_observe.observe_folders`
-with the headers, then :func:`.description_reconcile.reconcile`), exactly as the notebook
-compares them on reopening, so both say the same. This module adds no rule.
+The draft comes from the existing functions only: it is built from the folders
+(:func:`.draft.draft_from_discovery`); no file of the output folder, ``experiment_design.csv``
+included, is read to propose or prefill it (experiment-v1 section 7); when ``morphobricks.toml``
+is published, the folders and the headers of their images are compared with it
+(:func:`.reconcile_observe.observe_folders` with the headers, then
+:func:`.description_reconcile.reconcile`),
+exactly as the notebook compares them on reopening, so both say the same. This module
+adds no rule.
 
 **Nothing is confirmed here.** An ID, a repeat's comparability (N35), a reference and a removal
 are the user's answers, given in the notebook; the command never answers for the user and never
@@ -26,7 +27,7 @@ for a published description that matches the folders it reports that there is no
 publish.
 
 Exit status: 1 for an error (a folder that cannot be described, a description that cannot be
-read, a legacy design that breaks the rules, a publication refused), else 0, as every command.
+read, a publication refused), else 0, as every command.
 """
 
 from __future__ import annotations
@@ -45,9 +46,8 @@ from .description_reconcile import (
     UnitFolders,
     reconcile,
 )
-from .design import DESIGN_FILENAME, DesignFormatError
 from .discovery import DiscoveryResult, default_output_folder, discover_experiment
-from .draft import Draft, DraftError, draft_from_discovery, migrate_legacy_design
+from .draft import Draft, draft_from_discovery
 from .draft_ids import IdKind, id_problems
 from .metadata import inspect_images
 from .name_issues import non_nfc_folders_issue
@@ -64,14 +64,6 @@ QUESTION_TEXT = {
         "circumstances, so they are comparable"
     ),
     "confirmed_on_missing": "{subject} is confirmed but has no date: confirm it again",
-    "control_unresolved": (
-        "condition {subject} is marked as a control, as is another one: say what each "
-        "condition is compared against"
-    ),
-    "legacy_folder_missing": (
-        "the legacy design lists {subject}, which is no longer in the folder: restore it or "
-        "confirm that it is removed"
-    ),
 }
 """What the user must do for each open question of a draft, in plain words."""
 
@@ -99,7 +91,7 @@ def add_describe_parser(commands: argparse._SubParsersAction) -> argparse.Argume
     describe.add_argument(
         "--output",
         metavar="FOLDER",
-        help="output folder holding experiment_design.csv or morphobricks.toml "
+        help="output folder holding morphobricks.toml "
         "(default: next to the experiment, <name>_MorphoBricks_Preprocessing)",
     )
     describe.add_argument(
@@ -140,12 +132,7 @@ def describe_command(args: argparse.Namespace) -> int:
     if found is not None:
         lines, blockers = _published(found.description, discovery, excluded, output)
     else:
-        try:
-            draft = _draft(discovery, excluded, output)
-        except (DesignFormatError, DraftError) as exc:
-            print(f"The experiment description cannot be drafted from {output / DESIGN_FILENAME}")
-            print(f"  {exc}")
-            return 1
+        draft = draft_from_discovery(discovery, excluded)
         lines, blockers = draft_lines(draft, root), draft_blockers(draft)
     print("\n".join(lines))
     if not args.publish:
@@ -159,14 +146,6 @@ def describe_command(args: argparse.Namespace) -> int:
     return 1
 
 
-def _draft(discovery: DiscoveryResult, excluded: list[str], output: Path) -> Draft:
-    """Build the draft: the legacy design migrated when the output folder holds one."""
-    legacy = output / DESIGN_FILENAME
-    if legacy.is_file():
-        return migrate_legacy_design(legacy.read_bytes(), discovery, excluded, name=legacy.name)
-    return draft_from_discovery(discovery, excluded)
-
-
 def _proposal(kind: IdKind, folder: str, slot_proposed: str | None) -> str:
     """Say what is proposed for a folder, or why nothing is."""
     if slot_proposed is not None:
@@ -177,14 +156,9 @@ def _proposal(kind: IdKind, folder: str, slot_proposed: str | None) -> str:
 
 def draft_lines(draft: Draft, root: Path) -> list[str]:
     """Return the plain-language report of a draft."""
-    source = (
-        "the legacy experiment_design.csv of the output folder"
-        if draft.origin == "legacy"
-        else "the folders alone"
-    )
     out = [
         f"Draft experiment description of {root}",
-        f"Drawn from {source}. Nothing here is confirmed: IDs below are proposals.",
+        "Drawn from the folders alone. Nothing here is confirmed: IDs below are proposals.",
         "",
         "Conditions (folder: proposal)",
     ]
@@ -207,10 +181,6 @@ def draft_lines(draft: Draft, root: Path) -> list[str]:
     if draft.references:
         out += ["", "References (condition is compared against)"]
         out += [f"  {c} -> {r}" for c, r in sorted(draft.references.items())]
-    for note in draft.notes:
-        listed = "; ".join(f"{c}/{r}: {d or 'no date'}" for c, r, d in note.dates)
-        out += ["", f"Several dates in the legacy design for {note.repeat_group} ({listed})."]
-        out.append(f"  The draft keeps the latest, {note.kept or 'none'}; you confirm it again.")
     out += _question_lines(draft)
     return out
 

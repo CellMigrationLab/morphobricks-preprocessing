@@ -147,7 +147,7 @@ Time-lapses (T > 1) are allowed: the file has no T field, and the homogeneity of
   spelling; a consumer MUST NOT replace the source label by the canonical repeat ID in any of
   them.
 - The canonical repeat ID is **added** next to the key, as the field `repeat_group` (the column
-  name of the legacy design file, §11). Grouping and pairing MUST use `repeat_group`: pooling of
+  name of the derived `experiment_design.csv`, §11). Grouping and pairing MUST use `repeat_group`: pooling of
   normalization and scaling, pairing of conditions and families in MorphoCoverage, and any
   statement about biological N. A consumer MUST NOT group or pair by `biological_repeat` when a
   description exists, and MUST NOT fall back to folder-name grouping.
@@ -296,10 +296,10 @@ accepted, **declared** image type, per imaging unit:
   brick without a provider manifest states the same declaration in its documented capabilities.
   The key declares support only; it gives RGB no meaning (the bullet above), and it does not
   change a description: `image_type = "rgb"` is still user-declared and never inferred.
-- The refusal applies to a **described** run (one opened from a published description). A run
-  without a description has no declared image type to refuse on; what a brick does with colour
-  images there is the brick's own behaviour (owner decision RC1: such runs keep working as today,
-  with a warning), not a Spec rule.
+- The refusal applies to a **described** run (one opened from a published description). There is
+  no other run: a run without a published description is refused with `A_DESCRIPTION_REQUIRED`
+  before any capability is checked (ADR 0002 AR10, which supersedes owner decision RC1's clause
+  that such runs keep working with a warning).
 - A file MAY hold RGB and non-RGB units; their lists differ, so that layout is heterogeneous
   (`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` in Stage 1-2). A unit's `image_type` is part of the
   `repeats` section digest (§9.3).
@@ -699,26 +699,11 @@ validation: a reader MUST NOT try to interpret fields of a version it does not s
   new folder to the existing ID changes that ID's `source_folder`, which is a reassignment and
   follows the removed/reassigned rules of §4.6 (recorded user confirmation, else
   `R_CONFIRMED_ID_CHANGED`). The ID never changes.
-- **Legacy `experiment_design.csv` → v1:** read with the strict reader (no `yes`/`no`/empty
-  coercion). `repeat_group` → canonical repeat ID; `biological_repeat` → `source_repeat`;
-  `image_count`, `confirmed`, `confirmed_on` copied (see the next point for a group whose rows
-  have different dates); the legacy `condition` label becomes the condition's `source_folder`,
-  and the condition ID is proposed as that label when allowed (§4.6a), else another proposed ID
-  the user confirms; technical repeats (folder, `source_folder`, ID) and channel lists come from
-  discovery and user confirmation. Controls: 0 marked → no `reference`; 1 marked → every other
-  condition references it; ≥ 2 marked → a draft with unresolved references that cannot be
-  cannot be published until the user answers (no name-stem guessing). A legacy design that violates v1
-  rules (e.g. `E_REPEAT_ID_SHADOWS_SOURCE`) MUST be refused with the code, not repaired. A legacy
-  condition label on the reserved or forbidden lists is no longer a violation: it is the
-  `source_folder` and the user confirms another ID.
-- **Legacy groups with different `confirmed_on` (AQ12).** v1 has one date per repeat. A legacy
-  `repeat_group` whose rows carry different dates takes the **latest** date (what preprocessing's
-  `ExperimentDesign.confirmed_on` returns today, `design.py:216-218`) and the migration records a
-  note listing each folder's original date. It never takes the clock. Consequently the
-  byte-identity of the derived `experiment_design.csv` (§11) is guaranteed **only** for repeat
-  groups with a single `confirmed_on`; for a group with several dates the derived rows carry the
-  latest date and only the note keeps the original per-row dates. A group with no dated row
-  cannot be published until the user supplies the date of their confirmation.
+- **No migration from a legacy `experiment_design.csv`** (ADR 0002 AR10 (9), owner decision of
+  10 November 2026). Preprocessing MUST NOT read an `experiment_design.csv` found in an output
+  folder to propose or prefill a description or a draft: a description is created only from
+  discovery of the experiment folder and the user's answers (§10). The derived
+  `experiment_design.csv` of §11 is an output only and is never read back.
 
 ## 8. Validation boundaries
 
@@ -862,7 +847,7 @@ silently; edits go to a separate draft and are published atomically after valida
 
 ## 11. Derived `experiment_design.csv` (compatibility output)
 
-Preprocessing MUST derive the legacy file (schema version 1, preprocessing contract §12)
+Preprocessing MUST derive the file (schema version 1, preprocessing contract §12)
 deterministically from a published file, with the contract's byte rules:
 
 | CSV column | Value |
@@ -886,22 +871,14 @@ or a byte-order mark, so these four are not yet normative; the golden files use 
 quoting (no golden value needs it), LF after every row including the last, and no byte-order
 mark, as today's writer does. The CSV carries the **source folder labels exactly as today** and no technical
 repeat or condition ID, so the choice of a condition or technical repeat ID (for example `ctrl` for
-the folder `control`) never changes it. For a legacy dataset whose `repeat_group` values migrate
-to the canonical repeat IDs and whose controls migrate deterministically, the derived file MUST be
-byte-identical to the one preprocessing writes today.
-Known loss: a legacy design marking a control that no other condition references (e.g. one
-condition only) exports `control = false`. For a migrated group whose legacy rows carried
-different `confirmed_on` dates (§7, AQ12) the derived file carries the group's one date, the
-latest, on every row. **Byte-identity is guaranteed only for repeat groups with a single
-`confirmed_on`**; for a group with several dates the earlier per-row dates are the only difference
-and are recorded in the migration note, which is their only record.
+the folder `control`) never changes it.
 
 Expected `experiment_design.csv` outputs (golden files) for `v13`, `v33` and `v34` are in
 `fixtures/expected/`; a derived file MUST equal the golden file byte for byte.
 
 ## 12. Drafts
 
-A draft (reconciliation proposal, unconfirmed repeats, unresolved legacy references) is internal
+A draft (reconciliation proposal, unconfirmed repeats) is internal
 to preprocessing and records its base SHA-256 (§10). It is never named `morphobricks.toml`. Downstream consumers (`RunInputs`) read
 only the confirmed, published `morphobricks.toml` and MUST refuse a draft or any file with an
 unconfirmed repeat (`A_DRAFT_REFUSED`; a published-path file with `confirmed = false` is also

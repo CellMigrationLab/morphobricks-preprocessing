@@ -90,7 +90,7 @@ src/morphobricks_preprocessing/
   design.py         the rows of experiment_design.csv (an output only since v0.5.1): DesignTable/
                     DesignRow (read-only), the run's reconcile_design and design_issues against
                     the folders, write_experiment_design, parse_design_bytes (the strict parser
-                    of the draft's legacy migration); no reader for other bricks (SWEEP-PP)
+                    of a written file; nothing reads the file to prefill a draft); no reader for other bricks (SWEEP-PP)
   design_derive.py  derive_design/write_derived_design: experiment_design.csv from a published
                     description (Spec experiment-v1 11), written by design.write_experiment_design
   design_values.py  the design file's header check (no column twice or unnamed, #83), booleans,
@@ -129,7 +129,7 @@ src/morphobricks_preprocessing/
   draft_ids.py         proposed IDs: the folder label or raw header name only when the reader would
                     accept it as written, else none (never repaired); draft.py the draft
                     (IdSlot proposed/confirmed, open questions, unit_rows with condition_id,
-                    repeat_group, technical_repeat_id) and migrate_legacy_design
+                    repeat_group, technical_repeat_id)
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)
@@ -663,8 +663,9 @@ functions the tests use.
   `load_design`, the strict `read_confirmed_design`/`ConfirmedDesign`/`DesignCheckError` and
   `RunInputs.design()` are removed; bricks take `repeat_group` from the description
   (`Fov.repeat_group`). `parse_design_bytes` (strict, `DesignFormatError` naming line and
-  column, also for a header naming a column twice or not at all, #83) remains for the draft's
-  experiment-v1 §7 migration of a legacy file.
+  column, also for a header naming a column twice or not at all, #83) remains to check a
+  written file; the draft's legacy migration was removed (Spec ADR 0002 AR10 (9)), and no code
+  path reads an `experiment_design.csv` to propose or prefill a draft.
 - **The run's check:** `reconcile_design` keeps the derived rows of known folders, reopens only
   groups that gain a folder (`design_not_confirmed`), drops removed folders.
 - **v0.5.1: an output only.** Every run is described (`A_DESCRIPTION_REQUIRED` without a

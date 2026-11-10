@@ -8,6 +8,34 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased (v0.5.1)
 
+### The legacy `experiment_design.csv` migration is removed (inventory PP-03)
+
+Spec ADR 0002 AR10 (9) and experiment-v1 §7 (MorphoBricks-Spec PR 25): no backward
+compatibility before the first pipeline release. The Spec is re-vendored at `cc9820f`
+(`tools/vendor.py`; `--check`: identical).
+`draft_format.SPEC_COMMIT` follows the pin, so an answers draft file (`morphobricks.draft.json`)
+saved under `1bed024` is refused as before (`spec_commit_mismatch`) and not carried over.
+
+- **Breaking: an old `experiment_design.csv` is no longer migrated.** Preprocessing never reads
+  an `experiment_design.csv` from an output folder to propose or prefill a draft or a
+  description (Spec §7); `describe` and the notebook build the draft from the folders alone.
+  Describe the experiment in the notebook. The derived `experiment_design.csv` stays an output.
+- Removed: `draft.migrate_legacy_design`, `LegacyMigrationRefused`, `MigrationNote`,
+  `Draft.origin`, `Draft.legacy_missing`, `Draft.notes`, `Draft.unresolved_controls` and the
+  open questions `legacy_folder_missing` and `control_unresolved` (nothing else produced them),
+  with their texts in `describe` and the notebook. `describe` no longer says "cannot be drafted
+  from experiment_design.csv".
+- Kept: `design.parse_design_bytes` and `design_issues` (the run's reconcile check and the tests
+  of the written file still use them).
+- Tests: the Spec scenario P30 follows the amended Spec (`v13` derived twice with a frozen clock
+  moved by a day; both files equal the `v13` golden; the clock is never read). The migration
+  tests are deleted; `tests/test_orphan_design_csv.py` and `test_cli_describe` check that an
+  orphan `experiment_design.csv` in the output folder is ignored by draft creation, `describe`
+  and the notebook (open and reopen).
+- The valid Spec fixtures give byte-identical `plane_histograms.csv`, `experiment_design.csv`
+  and manifest (apart from times) before and after; the refusal codes of the 135 invalid
+  fixtures are unchanged.
+
 ### Normalization pinned at v0.4.0 (#262)
 
 - **`morphobricks-normalization` moves from v0.3.4 to v0.4.0** (tag `c952263`). It is
