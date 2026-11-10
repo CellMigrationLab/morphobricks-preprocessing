@@ -323,10 +323,11 @@ results or comparing another grouping.
        confirmed; if images are not comparable, process them as separate experiments.
      - **Controls (optional).** Tick the control conditions. This is recorded for later
        bricks; nothing uses it yet.
-     - The answers are saved in **experiment_design.csv** in the output folder (§6) after
-       every answer, holding the output folder's lock, with the rules of the `design`
-       command (§5): a repeat group is confirmed only when its folders pass the run's
-       checks, and a refused answer is shown with the reason and changes nothing. Nothing
+     - The answers are saved in the draft (`morphobricks.draft.json`) after every answer and
+       published with the description on *Check and save*; `experiment_design.csv` is
+       derived from the published description: a repeat group is confirmed only when its
+       folders pass the run's checks, and a refused answer is shown with the reason and
+       changes nothing. Nothing
        is confirmed for you. Next time, if the folders are the same, they are loaded and the
        questions are folded away; **Change the experiment design** shows them again. A new
        biological-repeat folder asks again only for the group it joins.
@@ -627,36 +628,18 @@ was suggested and how to choose the other one; `check` prints the suggestion too
 for images that are not three channels of a whole-number pixel type stops the run
 (`rgb_not_possible`).
 
-`run` also needs the experiment design (§4, step 1). It reads `experiment_design.csv` from
-the output folder (or the file given with `--design`). `check` writes that file, prefilled
-from the folders, when the output folder holds none (one row per biological-repeat folder of
-each condition, the repeat group named after the folder, nothing confirmed, no control); it
-never replaces a design that is there. `run` does the same the first time, or when folders
-were added, and stops. Fill it in with a spreadsheet program or a text editor: give rows the
-same `repeat_group` to pair biological repeats named differently, set `confirmed` to `true`
-in every row of a repeat group whose images are comparable, and optionally `control` to
-`true` for control conditions. Or use the `design` command, which changes the file for you:
-
-```bash
-morphobricks-preprocessing design --output /data/exp1_MorphoBricks_Preprocessing
-morphobricks-preprocessing design --output /data/exp1_MorphoBricks_Preprocessing \
-    --repeat-group drug/d2=day2 --control ctrl --confirm day1 --confirm day2
-```
-
-The first prints the design as a table and the repeat groups not confirmed yet; nothing is
-confirmed unless you ask. The second moves the folder `drug/d2` into the repeat group
-`day2` (pairing it with the other conditions' `day2`), marks `ctrl` as a control and
-confirms the two groups, filling in today's date. `--confirm-all` confirms every group not
-confirmed yet, and `--no-control` unmarks a control. A group whose folders break the rules
-(two folders of one condition, a name such as `NA`) is not confirmed, an unknown name is
-refused, and the file is then left as it was. Then run again. `check` also says whether the
-design is confirmed, or why a saved one cannot be read (naming the line and column). Both
-commands write the report, `discovery_report.json` and `discovery_report.txt`, to the
-output folder; `run` writes it on every run, also one that
-stops (`status` `stopped` or `written`, with the SHA-256 of the manifest it describes).
-A run that stops says so, says that no table or manifest was written, and names what it
-did write: the report, and the design template when it wrote one. Only a run refused before
-it starts (another run holds the lock) writes nothing.
+`check`, `run` and `masks` need the experiment description published in the output folder
+(`morphobricks.toml`, v0.5.1): the conditions, which biological repeats pair across conditions
+and that they are comparable, the channels and the masks, answered in the notebook's describe
+steps and saved with *Check and save*. Without it they print `A_DESCRIPTION_REQUIRED` with what
+to do, write nothing and exit with status 1. `describe` shows the draft description of the
+folders and every question still open. The run writes `experiment_design.csv`, derived from the
+description (an output for later bricks; nothing reads it back). `check` and `run` write the
+report, `discovery_report.json` and `discovery_report.txt`, to the output folder; `run` writes
+it on every run, also one that stops (`status` `stopped` or `written`, with the SHA-256 of the
+manifest it describes). A run that stops says so, says that no table or manifest was written,
+and names what it did write: the report. Only a run refused before it starts (another run
+holds the lock, or no description is published) writes nothing.
 
 A later `run` in the same output folder reuses everything the earlier run recorded: the
 axis roles (`--axes` is needed again only for plain stacks that are new or changed), the
@@ -675,14 +658,13 @@ SHA-256 still accept it; the report records the rerun. Other options:
 | `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` or `1.5GiB`: a whole number of bytes above 0 (`1.5` or `0.5B` are refused before anything is read) |
 | `--missing-as-singleton`, `--no-missing-as-singleton` | Confirm that images lacking some dimensions have one plane along them (`check` and `run`; default: the earlier run's answer, else no). `check` then reports what `run` will: an experiment of 2D images and Z-stacks passes `check` once confirmed, and the suggested option says `--axes ZCYX --missing-as-singleton` |
 | `--image-type fluorescence\|rgb` | The image type (default: the earlier run's, else the suggested one, printed) |
-| `--design FILE` | The confirmed experiment design (default: `experiment_design.csv` in the output folder); it is copied to the output folder |
 | `--mode restart\|full` | `restart` (default) reuses the rows of unchanged images; `full` recomputes every row and check. Both keep your confirmations and replace the results only when the run succeeds |
 | `--verify-content`, `--no-verify-content` | Reuse rows (earlier or staged) only when each image's content SHA-256 is the one recorded with them, not only its size and modification time; every image is read once more. Default: the earlier run's choice, else on; `--no-verify-content` opts out and the manifest records it. Turning it on or off recomputes every row. With `masks`: also compare each mask's content SHA-256 before and after it is read (same default) |
 | `--no-masks` | Drop the masks folder an earlier run recorded, with the mask axes stated for its masks (those of OME-Zarr label images are kept) |
 | `--no-exclude` | Clear the exclusions an earlier run recorded, so every image is analysed again (not together with `--exclude`) |
-| `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks`, `design` and `calibrate`); give it only when no other run uses the output folder |
+| `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks` and `calibrate`); give it only when no other run uses the output folder |
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
-| `--log FILE` | Write technical details to a file (`run`, `masks`, `convert`). It is checked before anything is written and opened only once the other options are checked: a file inside the experiment or masks folder (given or recorded by the earlier run), inside the folder of the copies (`convert`), the design file given with `--design`, or named as one of the run's files in the output folder (`plane_histograms.csv`, `run_manifest.json`, the reports, `experiment_design.csv`, `calibration.csv`, `mask_relationships.json`, the lock) is refused and nothing is written; so is a file that is a hard link (it has another name). Any other name in the output folder is fine, for example `run.log` |
+| `--log FILE` | Write technical details to a file (`run`, `masks`, `convert`). It is checked before anything is written and opened only once the other options are checked: a file inside the experiment or masks folder (given or recorded by the earlier run), inside the folder of the copies (`convert`), or named as one of the run's files in the output folder (`plane_histograms.csv`, `run_manifest.json`, the reports, `experiment_design.csv`, `calibration.csv`, `mask_relationships.json`, the lock) is refused and nothing is written; so is a file that is a hard link (it has another name). Any other name in the output folder is fine, for example `run.log` |
 | `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json` |
 | `--mask-axes TYPE=ROLES` | The axes of a mask type, one role (Y, X, Z or T) per axis as stored, stated once per type: `Cells=TYX` for plain stacks of time points whose files do not name their axes; a 2D mask needs none, and `Cells=YX` (the removed shared 2D mask) is the error `shared_mask_not_supported` (repeatable; `check`, `run`, `masks`). Masks are never reordered. |
 
@@ -690,14 +672,10 @@ After writing, `run` prints the intensity checks of the table, grouped by kind, 
 the channel, the image or biological repeat and the values compared, and what to do once
 per kind; it draws no plots (the notebook does).
 
-**Exit status.** Every command (`check`, `run`, `masks`, `calibrate`, `design`, `describe` and
+**Exit status.** Every command (`check`, `run`, `masks`, `calibrate`, `describe` and
 `convert`) exits with status 1 when it prints an error, and with 0 otherwise: warnings,
 intensity warnings included, never change it. So `check` exits with 1 on every error it
-reports, also an experiment design it cannot read (it never replaces that file) or one
-with a `repeat_group_conflict` or `invalid_experiment_design`, which `run` stops on; and
-`design` exits with 1 when the design it prints has a `repeat_group_conflict` or
-`invalid_experiment_design`, also after a change it wrote (since v0.4.0; both exited with 0
-before). Options that cannot be read exit with 2. Scripts can therefore stop on any
+reports, `A_DESCRIPTION_REQUIRED` included. Options that cannot be read exit with 2. Scripts can therefore stop on any
 non-zero status.
 
 The optional `masks` command reads the masks and tells how they relate:
@@ -1056,7 +1034,7 @@ first (`--remove-stale-lock`). Once a run has written its results, `.staging` is
 written into the hidden folder `.publish`; replacing `run_manifest.json` then makes them
 the current results in one step, and the other files are moved into place. A run stopped
 before that step leaves the earlier results exactly as they were; one stopped after it is
-finished by the next run (or `check`, `masks`, `design`, `calibrate`). Later bricks always
+finished by the next run (or `check`, `masks`, `calibrate`). Later bricks always
 read one whole set of results, old or new. If a file cannot be moved into place (for
 example because another program has the table open on Windows), the run says so: close
 that program and run again. This needs temporary disk space for the new outputs.
@@ -1084,7 +1062,7 @@ this computer that is no longer running, the message says the lock looks stale; 
 never removed without your request. `check` holds the lock
 while it writes its report, `masks` (and **Describe the masks**) from before the first
 mask is read until `mask_relationships.json` is written (a locked folder is refused before
-any mask is read), `design` and `calibrate` while they change their files,
+any mask is read), and `calibrate` while it changes its file,
 and are refused the same way. A stopped run leaves the last good results in place;
 rerunning checks the table against the manifest and rebuilds a mismatched pair.
 `mask_relationships.json` is removed by a `full` run and when the masks changed since it
@@ -1216,9 +1194,9 @@ continues.
 | `calibration_unreadable` | Error | `calibration.csv` cannot be read; the message names the line and what is wrong. The file is left as it is: correct it, or remove it to use the sizes in the metadata. |
 | `unbalanced_images` | Warning | A condition and biological repeat has fewer than half or more than twice the median number of images. Check for missing, misplaced or duplicated images. |
 | `repeat_missing_conditions` | Warning | A biological repeat is not found in every condition. It is still used. If it has another folder name in some condition, pair it in the experiment design (step 1). |
-| `design_not_confirmed` | Error | Some repeat groups are not confirmed as comparable. Confirm them in step 1, with the `design` command (`--confirm GROUP`, `--confirm-all`), or set `confirmed` to `true` in `experiment_design.csv`. |
+| `design_not_confirmed` | Error | Some repeat groups are not confirmed as comparable. Confirm them in the notebook's describe steps and save the description again. |
 | `rgb_not_possible` | Error | The image type RGB was chosen, but the images are not three channels of a whole-number pixel type. Choose fluorescence, or check the axis roles: the RGB samples must have the role C. |
-| `repeat_group_conflict` | Error | A repeat group holds two folders of the same condition. Move one into another group. |
+| `repeat_group_conflict` | Error | A repeat group holds two folders of the same condition. Move one into another replicate on the *Replicates* page and save the description again (*Check and save*). |
 | `invalid_experiment_design` | Error | A repeat group has no usable name (empty, `NA`, `nan`, `none`, `null`, `n/a`, `<NA>`, or spaces around it), two repeat groups are spelled the same apart from upper and lower case, or a confirmation date is not written `YYYY-MM-DD`. Correct `experiment_design.csv` (the message names the line and column). |
 | `missing_experiment_design`, `unreadable_experiment_design` | Error (other bricks) | A brick that pools biological repeats as `experiment_design.csv` pairs them found no such file, or one it cannot use as written by the preprocessing brick (another column order, a column named twice or without a name, a value with spaces around it, `TRUE` or `yes` for `true`, an empty repeat group, a byte-order mark from a spreadsheet program, ...). Run the preprocessing brick on the experiment again: its run writes the file as other bricks read it. |
 | `unreadable_experiment_design` | Error (`load_design`, notebook step 1, `check`) | The saved `experiment_design.csv` in the output folder cannot be read even leniently (for example a date a spreadsheet program rewrote as 26/10/2026, a repeat group `NA`, or a header that names a column twice, such as two `repeat_group` columns, or has a column without a name); the message names the line and column. No reader chooses between two columns of one name: delete one. The file is left as it is. Correct it, or answer the questions again in step 1, which replaces it. |
@@ -1271,43 +1249,12 @@ result = run_experiment("/data/exp1", mapping)
 records = read_plane_histograms(result.csv_path)
 ```
 
-The experiment design is optional in Python: without `design=`, the run neither asks for
-nor writes one. To record it as the notebook does (`load_design` returns the saved design
-brought up to date with the folders, or the default design when there is no file yet; a
-saved file that cannot be read raises `DesignCheckError` instead, never a default design;
-breaking in v0.4.0, plan §12 question 43: until v0.3.4 it returned a
-third value, `problem`, with the default design):
-
-```python
-from morphobricks_preprocessing import load_design
-
-# An existing file that cannot be read raises DesignCheckError (unreadable_experiment_design,
-# naming the line and column) and is left as it is: correct it, do not overwrite it.
-design, changes = load_design(result.output_folder, check.dataset.repeats)
-design = design.with_group(("treated", "rep2_day2"), "rep2")  # pair a repeat
-for group in design.groups:
-    design = design.with_confirmed(group, True, "2026-10-26")
-result = run_experiment("/data/exp1", mapping, design=design)
-pairing = design.repeat_groups()  # {(condition, biological_repeat): repeat_group}
-```
-
-The `design` command's Python equivalent changes `experiment_design.csv` in the output
-folder under its lock (refusing what the command refuses, with `DesignEditError`):
-
-```python
-from morphobricks_preprocessing import DesignEdit, edit_design
-
-design, written = edit_design(
-    "/data/exp1_MorphoBricks_Preprocessing",
-    DesignEdit(
-        repeat_groups={("treated", "rep2_day2"): "rep2"},
-        control=("ctrl",),
-        confirm=("rep1", "rep2"),
-    ),
-)  # written is None when nothing changed
-```
-
-Later bricks read the file with `read_experiment_design(path)`.
+The output folder must hold the published experiment description (`morphobricks.toml`,
+written by the notebook's *Check and save*); without it `run_experiment` returns
+`written=False` with the one error `A_DESCRIPTION_REQUIRED` and writes nothing. The run writes
+the `experiment_design.csv` derived from the description; `run_experiment` takes no design
+(v0.5.1). Later bricks read the pairing from the description (`RunInputs.fovs()`:
+`repeat_group`, `condition_id`, `technical_repeat_id`).
 
 Stated pixel sizes (§5) are built with `calibration_entry` and written with
 `write_calibration`; the next run records them, and later bricks read every image's sizes
