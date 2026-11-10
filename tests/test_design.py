@@ -2,9 +2,9 @@
 
 The file is an output only (v0.5.1, Spec ADR 0002 AR11 (3)): the run derives it from the
 published description and checks it against the folders found (:func:`reconcile_design`,
-:func:`design_issues`); :func:`parse_design_bytes` is the strict parser of the draft's legacy
-migration. The editor model, the default pairing, the lenient reader, ``load_design`` and the
-strict reader for other bricks were removed (SWEEP-PP).
+:func:`design_issues`); :func:`parse_design_bytes` is the strict parser of a file the writer wrote
+(no brick reads the file as an input). The editor model, the default pairing, the lenient
+reader, ``load_design`` and the strict reader for other bricks were removed (SWEEP-PP).
 """
 
 from dataclasses import replace

@@ -293,10 +293,8 @@ results or comparing another grouping.
    - Click **Check folder**. Only folder names and image headers are read. Like the command
      line's `check`, it writes its report, **discovery_report.txt** and
      **discovery_report.json** (§6), to the output folder; **Show the report** under the
-     status box shows it. When the output folder holds no **experiment_design.csv**, it also
-     writes one prefilled from the folders, with nothing confirmed and no control, for the
-     **Experiment design** questions below. (When another brick embeds this step without
-     the output folder, the check writes nothing.)
+     status box shows it. (When another brick embeds this step without the output folder,
+     the check writes nothing.)
    - If another run holds the output folder's lock, **The output folder is locked** names it
      (computer, process ID, start time). Wait for it to finish. If it was stopped (on Colab,
      the runtime disconnected) and no other session uses the folder, press **Remove the lock
@@ -339,11 +337,9 @@ results or comparing another grouping.
        is confirmed for you. Next time, if the folders are the same, they are loaded and the
        questions are folded away; **Change the experiment design** shows them again. A new
        biological-repeat folder asks again only for the group it joins.
-     - If the saved **experiment_design.csv** cannot be read (for example a spreadsheet
-       program rewrote a date such as 2026-10-26 as 26/10/2026), a red box shows why,
-       naming the line and column, and the file is left as it is. Correct the file and
-       undo and confirm the labels again to read it, or answer the questions again: the
-       first answer replaces the file.
+     - An **experiment_design.csv** that an earlier version left in the output folder is not
+       read and does not prefill these questions: describe the experiment here, in the
+       notebook. The file is only an output, derived from the published description.
      - The design belongs to its output folder. If you change the output folder, the design
        is read from the new folder (its own answers and controls, a blue box says so), or,
        when it holds none, the questions are asked again: answers given for the previous
@@ -769,11 +765,9 @@ what each of two controls is compared against.
   no pixel is read) and **writes nothing**: no output
   folder, no draft, no description. `--output FOLDER` names the output folder to read (default:
   next to the experiment), `--exclude PATH` leaves an image out, as in `check`.
-- If the output folder holds an `experiment_design.csv` from an earlier version and no
-  published `morphobricks.toml`, the draft is that design migrated: its confirmed repeats
-  and their dates are shown as you gave them, and the IDs are still only proposals. A design
-  that cannot be read, or breaks the rules of the description, is refused with the reason and
-  left as it is.
+- The draft is always built from the folders. An `experiment_design.csv` in the output folder
+  (from an earlier version, say) is not read and proposes or prefills nothing: describe the
+  experiment in the notebook.
 - If a `morphobricks.toml` is published, `describe` compares it with the folders instead: how
   many acquisitions are as published, which are new or gone, which image counts changed and
   which units' image headers no longer fit their published channels and which repeats must

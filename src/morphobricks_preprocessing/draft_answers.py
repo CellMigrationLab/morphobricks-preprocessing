@@ -3,7 +3,7 @@
 A :class:`.draft.Draft` is what discovery can say; the answers are what the user said: the IDs
 they confirmed, the date of each repeat's confirmation, the channel of every C index of every
 imaging unit, the declared masks, optional references and display names. They are kept apart
-from the draft because the draft is derived again from the folder (or from a legacy design) on
+from the draft because the draft is derived again from the folder on
 every resume, while the answers are the only thing the user typed or clicked. The answers are
 keyed by the draft's own stable keys (source folder labels, the pairing label of a repeat), so
 an answer for a folder the draft no longer has is refused (``unknown_key``), never carried over
@@ -352,7 +352,7 @@ def missing_confirmations(
 ) -> tuple[OpenQuestion, ...]:
     """Return every confirmation still missing for ``draft`` with ``answers`` applied.
 
-    The draft's own open questions (IDs, repeats, controls, legacy folders), plus the channels
+    The draft's own open questions (IDs, repeats), plus the channels
     of every imaging unit that has none (``unit_channels_missing``), every unit whose image
     type is not answered ``"channels"`` or ``"rgb"`` (``unit_image_type_unanswered``: an
     unanswered type is never published as an ordinary channel image), every position not
@@ -426,7 +426,7 @@ def description_from_draft(
     """Build the description of a draft whose every science decision the user confirmed.
 
     Pure: no file is read or written and no clock is read. Each ID and ``confirmed_on`` is the
-    user's, from ``answers`` (or carried by a migrated ``draft``); ``used_ids`` is the draft's
+    user's, from ``answers``; ``used_ids`` is the draft's
     retired IDs plus every ID confirmed now. ``channel_counts`` are as
     :func:`missing_confirmations` takes them.
 

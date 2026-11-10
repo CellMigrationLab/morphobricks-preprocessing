@@ -81,24 +81,38 @@ def test_a_folder_that_cannot_be_an_id_has_no_proposal_and_is_not_repaired(tmp_p
     assert "DrugA: proposed ID 'DrugA'" in out
 
 
-def test_describe_reads_the_legacy_design_without_confirming_anything(experiment, tmp_path, capsys):
+def orphan_designs():
+    """An ``experiment_design.csv`` as an older version wrote it, and one that is no design."""
+    rows = [row(c, r, control=c == "CTRL") for c in ("CTRL", "DrugA") for r in ("rep1", "rep2")]
+    return {
+        "a confirmed design": rows,
+        "no design at all": None,
+    }
+
+
+@pytest.mark.parametrize("kind", ["a confirmed design", "no design at all"])
+@pytest.mark.parametrize("publish", [False, True])
+def test_an_experiment_design_csv_in_the_output_folder_is_ignored_by_describe(
+    experiment, tmp_path, capsys, kind, publish
+):
+    """Experiment-v1 section 7: nothing proposes or prefills a draft from the derived CSV."""
+    arguments = ["describe", str(experiment), "--output", str(tmp_path / "out")]
+    arguments += ["--publish"] if publish else []
+    status = main(arguments)
+    expected = (status, capsys.readouterr().out)
     output = tmp_path / "out"
-    rows = [
-        row("CTRL", "rep1", control=True),
-        row("CTRL", "rep2", control=True),
-        row("DrugA", "rep1", control=True, confirmed=False, on=""),
-        row("DrugA", "rep2", control=True, confirmed=False, on=""),
-    ]
     output.mkdir()
-    write_experiment_design(DesignTable(tuple(rows)), output / DESIGN)
+    rows = orphan_designs()[kind]
+    if rows is None:
+        (output / DESIGN).write_text("not,a,design\n1,2,3\n", encoding="utf-8")
+    else:
+        write_experiment_design(DesignTable(tuple(rows)), output / DESIGN)
     before = listing(tmp_path)
-    assert main(["describe", str(experiment), "--output", str(output)]) == 0
-    out = capsys.readouterr().out
-    assert "legacy experiment_design.csv" in out
-    assert "DrugA -> CTRL" not in out  # two controls: nothing is guessed
-    assert "marked as a control, as is another one" in out
-    assert "rep1: proposed ID 'rep1'; not confirmed" in out
-    assert listing(tmp_path) == before
+    status = main(arguments)
+    assert (status, capsys.readouterr().out) == expected
+    assert "confirmed on" not in expected[1] and "legacy" not in expected[1]
+    assert "  CTRL -> " not in expected[1]  # no reference taken from the control column
+    assert listing(tmp_path) == before  # the orphan is neither rewritten nor removed
 
 
 def test_publish_refuses_a_draft_with_open_questions_and_lists_them(experiment, tmp_path, capsys):
@@ -112,20 +126,6 @@ def test_publish_refuses_a_draft_with_open_questions_and_lists_them(experiment, 
     assert "  - confirm that the folders of repeat rep2" in out
     assert not (output / TOML).exists() and not output.exists()
     assert listing(tmp_path) == before
-
-
-def test_publish_never_confirms_for_the_user(experiment, tmp_path, capsys):
-    """A fully confirmed legacy design still leaves the IDs to the user: nothing is adopted."""
-    output = tmp_path / "out"
-    output.mkdir()
-    rows = [row(c, r) for c in ("CTRL", "DrugA") for r in ("rep1", "rep2")]
-    write_experiment_design(DesignTable(tuple(rows)), output / DESIGN)
-    before = listing(tmp_path)
-    assert main(["describe", str(experiment), "--output", str(output), "--publish"]) == 1
-    out = capsys.readouterr().out
-    assert "choose the ID of condition CTRL" in out
-    assert "confirmed on 2026-10-30" in out  # the user's own earlier confirmation, as given
-    assert listing(tmp_path) == before  # no design rewritten, no description, no draft
 
 
 def test_a_complete_draft_is_still_not_publishable_from_the_command_line(tmp_path):
@@ -149,18 +149,6 @@ def test_a_complete_draft_is_still_not_publishable_from_the_command_line(tmp_pat
     )
     assert done.publishable
     assert draft_blockers(done) == [NOT_IN_DRAFT]
-
-
-def test_a_legacy_design_that_cannot_be_read_is_refused_and_left_alone(
-    experiment, tmp_path, capsys
-):
-    output = tmp_path / "out"
-    output.mkdir()
-    (output / DESIGN).write_text("not,a,design\n1,2,3\n", encoding="utf-8")
-    before = listing(tmp_path)
-    assert main(["describe", str(experiment), "--output", str(output)]) == 1
-    assert "cannot be drafted" in capsys.readouterr().out
-    assert listing(tmp_path) == before
 
 
 def test_a_missing_experiment_folder_is_an_error(tmp_path, capsys):

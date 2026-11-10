@@ -3,7 +3,7 @@
 The file is an output only (v0.5.1, Spec ADR 0002 AR11 (3)): no brick reads it back for its
 repeat groups (they come from the description through ``RunInputs``). Its golden here is parsed
 in the test with the standard ``csv`` module; :func:`parse_design_bytes` is the strict parser of
-the draft's experiment-v1 section 7 migration, which refuses anything doubtful. The strict
+a file the writer wrote, which refuses anything doubtful. The strict
 reader for other bricks (``read_confirmed_design``, ``ConfirmedDesign``, ``DesignCheckError``)
 was removed in SWEEP-PP.
 """
