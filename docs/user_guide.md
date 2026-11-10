@@ -509,11 +509,9 @@ what each of two controls is compared against.
   no pixel is read) and **writes nothing**: no output
   folder, no draft, no description. `--output FOLDER` names the output folder to read (default:
   next to the experiment), `--exclude PATH` leaves an image out, as in `check`.
-- If the output folder holds an `experiment_design.csv` from an earlier version and no
-  published `morphobricks.toml`, the draft is that design migrated: its confirmed repeats
-  and their dates are shown as you gave them, and the IDs are still only proposals. A design
-  that cannot be read, or breaks the rules of the description, is refused with the reason and
-  left as it is.
+- The draft is always built from the folders. An `experiment_design.csv` in the output folder
+  (from an earlier version, say) is not read and proposes or prefills nothing: describe the
+  experiment in the notebook.
 - If a `morphobricks.toml` is published, `describe` compares it with the folders instead: how
   many acquisitions are as published, which are new or gone, which image counts changed and
   which units' image headers no longer fit their published channels and which repeats must

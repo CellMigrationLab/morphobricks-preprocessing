@@ -10,15 +10,13 @@ from draft_file_support import (
 )
 from morphobricks_preprocessing import discover_experiment
 from morphobricks_preprocessing.description import Channel, Condition
-from morphobricks_preprocessing.design import DesignRow, DesignTable, write_experiment_design
-from morphobricks_preprocessing.draft import DraftError, draft_from_discovery, migrate_legacy_design
+from morphobricks_preprocessing.draft import DraftError, draft_from_discovery
 from morphobricks_preprocessing.draft_answers import (
     ConditionAnswer,
     DraftAnswers,
     DraftIncomplete,
     RepeatAnswer,
     UnitAnswer,
-    apply_answers,
     confirm_repeat,
     description_from_draft,
 )
@@ -152,28 +150,3 @@ def test_retired_ids_stay_in_used_ids(exp):
     description = description_from_draft(base, complete())
     assert description.used_ids["repeats"] == ("old", "rep1", "rep2")
     assert description.used_ids["channels"] == ("ACTIN", "DNA", "GFP")
-
-
-def test_a_legacy_confirmation_is_carried_not_asked_again(tmp_path):
-    make_tree(tmp_path / "exp", PATHS)
-    rows = [
-        DesignRow(c, r, r, control=False, image_count=2, confirmed=True, confirmed_on="2026-10-30")
-        for c in ("CTRL", "DrugA")
-        for r in ("rep1", "rep2")
-    ]
-    csv = tmp_path / "legacy.csv"
-    write_experiment_design(DesignTable(tuple(rows)), csv)
-    draft = migrate_legacy_design(csv.read_bytes(), discover_experiment(tmp_path / "exp"))
-    answers = complete()
-    only_ids = DraftAnswers(
-        ABSENT,
-        SPEC_COMMIT,
-        {k: ConditionAnswer(id=k) for k in ("CTRL", "DrugA")},
-        answers.technical_repeats,
-        {k: RepeatAnswer(id=k) for k in ("rep1", "rep2")},
-        answers.units,
-        answers.channels,
-    )
-    description = description_from_draft(draft, only_ids)
-    assert {r.confirmed_on for r in description.repeats.values()} == {"2026-10-30"}
-    assert apply_answers(draft, only_ids).repeats["rep1"].confirmed_on == "2026-10-30"

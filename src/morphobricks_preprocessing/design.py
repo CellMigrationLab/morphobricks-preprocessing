@@ -10,8 +10,9 @@ notebook's pairing is an answer of the draft (:mod:`.notebook_design`). :class:`
 holds rows and answers questions about them; it has no editing methods.
 
 :func:`reconcile_design` and :func:`design_issues` are the run's check of the derived rows
-against the folders found; :func:`parse_design_bytes` is the strict parser the draft's
-experiment-v1 section 7 migration of a legacy file uses (:func:`.draft.migrate_legacy_design`).
+against the folders found; :func:`parse_design_bytes` is the strict parser of a file
+:func:`write_experiment_design` wrote. No brick reads the file to propose or prefill a draft
+(experiment-v1 section 7); the parser is for tests and for checking a written file.
 The lenient reader, the default pairing, the editor model and the strict reader for other
 bricks (``read_confirmed_design``) were removed in v0.5.1 (SWEEP-PP). Nothing here reads images.
 """
@@ -337,7 +338,8 @@ def parse_design_bytes(data: bytes, name: str = DESIGN_FILENAME) -> DesignTable:
     Strict (experiment-v1 section 7): UTF-8 without a byte-order mark, exactly
     :data:`DESIGN_COLUMNS` in that order, one value per column, no outer whitespace, ``true`` or
     ``false``, whole counts, ISO dates, identities as :func:`.discovery.check_identity_text`
-    takes them and no case collision. Only the draft's legacy migration uses it.
+    takes them and no case collision.
+    Nothing in this package reads an ``experiment_design.csv`` back as an input.
 
     Raises
     ------

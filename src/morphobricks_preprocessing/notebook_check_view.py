@@ -41,8 +41,6 @@ QUESTION_WORDS = {
         "(Axes) and check that every image of it can be read and has the same number of "
         "channels"
     ),
-    "control_unresolved": "say what {subject} is compared against",
-    "legacy_folder_missing": "{subject} is gone: confirm the removal",
 }
 
 
