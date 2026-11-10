@@ -71,7 +71,9 @@ Owner test of v0.5.0 (10 November 2026), items (e) and (f). The shipped notebook
   µm (from the headers, same in all 270 images)". When nothing gives a size, one input states
   it for the whole experiment (**Use for all images**: the user's explicit statement, written
   to `calibration.csv` for `.` as the `calibrate` command does, replacing other X and Y
-  statements; Z statements are kept). When the images do not agree the line says so with the
+  statements; Z statements are kept). When it would remove or replace a statement, or a size
+  the images have from their headers or an earlier statement, it first lists them and writes
+  only after **Replace them**; it refuses if `calibration.csv` changed since. When the images do not agree the line says so with the
   counts and folders ("Headers disagree: 0.108 × 0.108 µm in 180 images, 0.216 × 0.216 µm in
   90 (Condition_2/Biological_repeat_2)") and **Set per imaging unit…** opens: the size of each
   folder and the form to state one for a folder or an image. Nothing is chosen silently: each

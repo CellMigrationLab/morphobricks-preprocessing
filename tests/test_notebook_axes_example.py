@@ -319,6 +319,8 @@ def test_a_size_per_unit_and_then_one_for_all_are_each_the_users_statement(tmp_p
     nb.calibration_state.click()
     nb.pixel_size.value = "0.5"
     nb.pixel_apply.click()  # one value for all: explicit, and it replaces the per-unit X and Y
+    assert "drug/rep1: X 0.108 micrometer" in _text(nb.pixel_replace_text.value)  # shown first
+    nb.pixel_replace_yes.click()
     text = (out / "calibration.csv").read_text(encoding="utf-8")
     assert ".,X,0.5,micrometer" in text and ".,Y,0.5,micrometer" in text
     assert "drug/rep1" not in text and ".,Z,2.0,micrometer" in text
@@ -326,3 +328,50 @@ def test_a_size_per_unit_and_then_one_for_all_are_each_the_users_statement(tmp_p
         "Pixel size: 0.5 × 0.5 µm (stated by you, same in all 2 images)."
     )
     assert "calibration differs from header" in _text(nb.calibration_issues.value)  # still said
+
+
+def test_one_size_for_all_shows_what_it_replaces_before_it_takes_effect(tmp_path):
+    nb = experiment(tmp_path, {"ctrl/rep1": 0.108, "drug/rep1": 0.216})
+    out = tmp_path / "out"
+    nb.calibration_target.value = "drug/rep1"
+    nb.calibration_size.value = "0.108"
+    nb.calibration_state.click()
+    before = (out / "calibration.csv").read_bytes()
+    nb.pixel_size.value = "0.5"
+    nb.pixel_apply.click()
+    assert (out / "calibration.csv").read_bytes() == before  # nothing yet: the user must see
+    assert ui.is_visible(nb.pixel_replace_box)
+    shown = _text(nb.pixel_replace_text.value)
+    assert "drug/rep1: X 0.108 micrometer" in shown and "drug/rep1: Y 0.108 micrometer" in shown
+    assert "The images have now: Pixel sizes differ: 0.108 × 0.108 µm in 1 image" in shown
+    nb.pixel_replace_no.click()
+    assert not ui.is_visible(nb.pixel_replace_box)
+    assert (out / "calibration.csv").read_bytes() == before
+    nb.pixel_apply.click()
+    nb.pixel_replace_yes.click()
+    text = (out / "calibration.csv").read_text(encoding="utf-8")
+    assert ".,X,0.5,micrometer" in text and "drug/rep1" not in text
+    assert "Replaced: drug/rep1: X 0.108 micrometer" in _text(nb.calibration_message.value)
+
+
+def test_one_size_for_all_refuses_when_the_statements_changed_after_they_were_shown(tmp_path):
+    nb = experiment(tmp_path, {"ctrl/rep1": 0.108, "drug/rep1": 0.216})
+    out = tmp_path / "out"
+    nb.pixel_size.value = "0.5"
+    nb.pixel_apply.click()  # replaces the header sizes: shown first
+    assert ui.is_visible(nb.pixel_replace_box)
+    out.mkdir(exist_ok=True)
+    (out / "calibration.csv").write_text(
+        "target,axis,size,unit\nctrl/rep1,X,0.3,micrometer\n", encoding="utf-8"
+    )
+    nb.pixel_replace_yes.click()
+    assert "Nothing was changed" in nb.calibration_message.value
+    assert "ctrl/rep1,X,0.3" in (out / "calibration.csv").read_text(encoding="utf-8")
+
+
+def test_one_size_for_all_with_nothing_to_replace_takes_effect_at_once(tmp_path):
+    nb = experiment(tmp_path)  # no size in the headers, nothing stated
+    nb.pixel_size.value = "0.2"
+    nb.pixel_apply.click()
+    assert not ui.is_visible(nb.pixel_replace_box)
+    assert ".,X,0.2,micrometer" in (tmp_path / "out" / "calibration.csv").read_text("utf-8")

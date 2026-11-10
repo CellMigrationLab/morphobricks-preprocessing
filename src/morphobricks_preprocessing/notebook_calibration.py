@@ -25,8 +25,14 @@ import ipywidgets as widgets
 
 from . import notebook_style as ui
 from .axis_review import review_axes
-from .calibration import CALIBRATION_FILENAME, Calibration, calibration_entry
-from .calibration_io import CalibrationFormatError
+from .calibration import (
+    CALIBRATION_FILENAME,
+    EXPERIMENT,
+    Calibration,
+    CalibrationEntry,
+    calibration_entry,
+)
+from .calibration_io import CalibrationFormatError, read_calibration
 from .notebook_options import _WIDE
 from .notebook_render import issues_html
 from .notebook_values import size_rows
@@ -51,6 +57,28 @@ UNIT_OPTIONS = [
     ("pixels: deliberately uncalibrated", PIXELS),
 ]
 AXES_OPTIONS = [("X and Y", "XY"), ("X", "X"), ("Y", "Y"), ("Z", "Z"), ("X, Y and Z", "XYZ")]
+
+
+def replaced_by_one_size(
+    calibration: Calibration, new: tuple[CalibrationEntry, ...]
+) -> tuple[CalibrationEntry, ...]:
+    """Return the X and Y statements that stating ``new`` for the whole experiment replaces.
+
+    Every X or Y statement of a single folder or image is removed (it would otherwise still
+    win), and a whole-experiment X or Y statement is replaced when it says something else.
+    """
+    wanted = {(entry.axis, entry.size, entry.unit) for entry in new}
+    return tuple(
+        entry
+        for entry in calibration.entries
+        if entry.axis in ("X", "Y")
+        and (entry.target != EXPERIMENT or (entry.axis, entry.size, entry.unit) not in wanted)
+    )
+
+
+def _statement_words(entry: CalibrationEntry) -> str:
+    """Return one statement as the confirmation lists it: ``drug/rep1: X 0.108 micrometer``."""
+    return f"{entry.target}: {entry.axis} {entry.describe()}"
 
 
 class _CalibrationCard:
@@ -92,6 +120,7 @@ class _CalibrationCard:
                 self.pixel_line,
                 self.pixel_change,
                 self.pixel_form,
+                self.pixel_replace_box,
                 self.calibration_message,
                 self.calibration_issues,
                 self.pixel_units,
@@ -156,6 +185,25 @@ class _CalibrationCard:
         self.pixel_change.on_click(lambda _: self._toggle_pixel_form())
         self.pixel_apply.on_click(lambda _: self._state_for_all())
         self.pixel_unit.observe(lambda _: self._pixel_unit_changed(), names="value")
+        self._build_pixel_replace()
+
+    def _build_pixel_replace(self) -> None:
+        """Build the confirmation shown before one size replaces what gives the sizes now."""
+        self._pending_for_all: tuple | None = None
+        self.pixel_replace_text = widgets.HTML()
+        self.pixel_replace_yes = ui.button(" Replace them", style="warning", icon="check")
+        self.pixel_replace_no = ui.button(" Cancel", icon="times")
+        self.pixel_replace_box = widgets.VBox(
+            [
+                self.pixel_replace_text,
+                widgets.HBox([self.pixel_replace_yes, self.pixel_replace_no]),
+            ]
+        )
+        ui.set_visible(self.pixel_replace_box, False)
+        self.pixel_replace_yes.on_click(lambda _: self._confirm_for_all())
+        self.pixel_replace_no.on_click(lambda _: self._cancel_for_all())
+        for box in (self.pixel_size, self.pixel_unit):
+            box.observe(lambda _: self._cancel_for_all(), names="value")
 
     def _pixel_unit_changed(self) -> None:
         """Disable the size for ``pixels``, which states no value."""
@@ -165,21 +213,91 @@ class _CalibrationCard:
         ui.set_visible(self.pixel_form, not ui.is_visible(self.pixel_form))
 
     def _state_for_all(self) -> None:
-        """State one X and Y size for the whole experiment, replacing every other X/Y statement.
+        """State one X and Y size for the whole experiment, once the user saw what it replaces.
 
         The user's explicit statement for all images: statements for single folders or images
         would otherwise still apply to them (the most specific wins), so they are removed
-        along X and Y; Z statements are kept. Header sizes that differ are then named by the
-        ``calibration_differs_from_header`` warning, as for any statement.
+        along X and Y; Z statements are kept. Before anything is written, the statements it
+        removes or replaces and the sizes the images have now are shown, and only **Replace
+        them** writes; with nothing to replace it is written at once. Header sizes that differ
+        are then named by the ``calibration_differs_from_header`` warning, as for any statement.
         """
+        self._cancel_for_all()
         unit = self.pixel_unit.value
         size = None if unit == PIXELS else self.pixel_size.value.strip()
+        try:
+            new = tuple(calibration_entry(EXPERIMENT, axis, size, unit) for axis in ("X", "Y"))
+            current = self._calibration_statements()
+        except (CalibrationFormatError, OSError, ValueError) as exc:
+            self.calibration_message.value = ui.status("error", "Nothing was changed.", [str(exc)])
+            return
+        replaced = replaced_by_one_size(current, new)
+        overridden = self._overridden_sizes(new)
+        if not replaced and not overridden:
+            self._write_for_all(new, replaced)
+            return
+        self._pending_for_all = (new, replaced)
+        lines = [f"Statements removed or replaced: {_statement_words(e)}" for e in replaced]
+        lines += [f"The images have now: {line}" for line in overridden]
+        self.pixel_replace_text.value = ui.status(
+            "warn",
+            f"Use {new[0].describe()} (X and Y) for all images? This replaces what gives "
+            "their size now; nothing is written until you click Replace them.",
+            lines,
+        )
+        ui.set_visible(self.pixel_replace_box, True)
+
+    def _calibration_statements(self) -> Calibration:
+        """Return the statements ``calibration.csv`` holds now (read only, without the lock)."""
+        output = self._design_folder()
+        path = None if output is None else output / CALIBRATION_FILENAME
+        return read_calibration(path)[0] if path is not None and path.is_file() else Calibration()
+
+    def _overridden_sizes(self, new: tuple[CalibrationEntry, ...]) -> list[str]:
+        """Return the line about the X and Y sizes the images have now, when one differs."""
+        if self.preflight is None:
+            return []
+        groups = xy_groups(self._shown_calibration()[0].calibration.sizes)
+        stated = (new[0].size, None if new[0].in_pixels else new[0].unit)
+        differs = any(
+            (size.value, size.unit) != stated
+            for group in groups
+            if group.calibrated
+            for size in (group.x, group.y)
+        )
+        return [summary_line(groups)[1]] if differs else []
+
+    def _confirm_for_all(self) -> None:
+        """Write the one size shown, unless the statements changed since they were shown."""
+        pending = self._pending_for_all
+        self._cancel_for_all()
+        if pending is not None:
+            self._write_for_all(*pending)
+
+    def _cancel_for_all(self) -> None:
+        """Take back the confirmation: nothing is written."""
+        self._pending_for_all = None
+        if getattr(self, "pixel_replace_box", None) is not None:
+            ui.set_visible(self.pixel_replace_box, False)
+
+    def _write_for_all(
+        self, new: tuple[CalibrationEntry, ...], replaced: tuple[CalibrationEntry, ...]
+    ) -> None:
+        """Write ``new`` for the whole experiment, removing exactly the ``replaced`` shown."""
 
         def change(calibration: Calibration) -> Calibration:
+            if replaced_by_one_size(calibration, new) != replaced:
+                raise ValueError(
+                    f"{CALIBRATION_FILENAME} changed since its statements were shown: click "
+                    "Use for all images again to see them"
+                )
             kept = Calibration(tuple(e for e in calibration.entries if e.axis not in ("X", "Y")))
-            return kept.stating(calibration_entry(".", axis, size, unit) for axis in ("X", "Y"))
+            return kept.stating(new)
 
-        self._change_calibration(change)
+        if self._change_calibration(change, validate=False) and replaced:
+            self.calibration_message.value += ui.status(
+                "info", "Replaced: " + "; ".join(_statement_words(e) for e in replaced)
+            )
 
     def _calibration_unit_changed(self) -> None:
         """Disable the size for ``pixels``, which states no value."""
@@ -208,6 +326,7 @@ class _CalibrationCard:
     def _show_calibration(self) -> None:
         """Show the pixel size in one line, the per-unit sizes and the calibration's messages."""
         pre = self.preflight
+        self._cancel_for_all()  # a confirmation shown is of the sizes before this change
         ui.set_visible(self.calibration_card, pre is not None and bool(pre.metadata.files))
         if pre is None:
             return
@@ -265,28 +384,37 @@ class _CalibrationCard:
         target, axes = self.calibration_target.value.strip(), tuple(self.calibration_axes.value)
         self._change_calibration(lambda calibration: calibration.without(target, axes))
 
-    def _change_calibration(self, change: Callable[[Calibration], Calibration]) -> None:
-        """Write a change to ``calibration.csv`` under the lock, then show the new sizes."""
+    def _change_calibration(
+        self, change: Callable[[Calibration], Calibration], *, validate: bool = True
+    ) -> bool:
+        """Write a change to ``calibration.csv`` under the lock, then show the new sizes.
+
+        With ``validate``, the change is first tried on no statements, so that a wrong
+        statement is refused before the lock is taken. Returns False when nothing was written
+        because the change was refused (the message says why).
+        """
         output = self._design_folder()
         if output is None or self.preflight is None:
             self.calibration_message.value = ui.status(
                 "warn", "Check the experiment folder with an output folder outside it first."
             )
-            return
+            return False
         try:
-            change(Calibration())  # refuse a wrong statement before taking the lock
+            if validate:
+                change(Calibration())  # refuse a wrong statement before taking the lock
             with self.log.attached():
                 _, written = update_calibration(output, change)
         except OutputLockedError:
             self.folder_lock.show(output)
             self.calibration_message.value = ui.status("error", "Nothing was changed.")
-            return
+            return False
         except (CalibrationFormatError, OSError, ValueError) as exc:
             self.calibration_message.value = ui.status("error", "Nothing was changed.", [str(exc)])
-            return
+            return False
         finally:
             self._show_log()
         self._calibration_written(output, written)
+        return True
 
     def _calibration_written(self, output: Path, written: Path | None) -> None:
         """Read the calibration again and update everything that shows the sizes."""
