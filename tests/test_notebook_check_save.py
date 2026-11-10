@@ -108,10 +108,13 @@ def answer_all(nb):
     question = nb.mask_card.questions.get("Nuclei")
     if question is not None and question.choice.value is None:
         question.choice.value = "instances"
-    if nb.reference_boxes["drug"].value is None:
+    if nb._chosen_reference("drug") is None:
         nb.reference_boxes["drug"].value = "ctrl"
-    if nb.reference_boxes["ctrl"].value is None:
+    if nb._chosen_reference("ctrl") is None and nb.reference_boxes["ctrl"].value is None:
         nb.reference_boxes["ctrl"].value = ""
+    if getattr(nb, "_stepper", None) is not None and not nb._design_confirmed():
+        # The stepper's Design step: the names and "no comparison" as shown, in one click.
+        nb.design_confirm.click()
     for toggle in list(nb.same_way.values()):
         if not toggle.value:
             toggle.button.click()

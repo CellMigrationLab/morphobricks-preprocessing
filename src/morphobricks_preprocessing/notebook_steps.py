@@ -1,18 +1,25 @@
-"""The shipped notebook's 12 steps, one on screen at a time (owner decision 2026-11-09).
+"""The shipped notebook's 7 steps, one on screen at a time (owner decisions 2026-11-09/10).
 
-Pure composition of the cards the notebook already has (UX proposal 2026-11-09, PR 17a): the
-order is images found, axes (with the pixel size, owner 2026-11-10), conditions, replicates,
-compared against, image type,
-stains, tag channels, masks, check and save (with the overview of steps 1-9), run, and describe
-the masks. Each answer is still saved, refused and checked by the card that asks it; the stepper
+Pure composition of the cards the notebook already has. The order is the owner's of
+10 November 2026, what the files hold first and what it means after:
+
+1. **Images**: the folders, the quick scan, then every header read on an explicit click;
+2. **Axes**: the role of each dimension with the example, the pixel size, and the image type
+   (what the channel dimension holds: :mod:`.notebook_image_type_line`);
+3. **Channels**: name the stains, then tag each folder's channels;
+4. **Masks**: the masks paired with the images (and their axes), what each mask type is and,
+   once a run recorded them, the mask step that reads every mask and describes how the types
+   relate (it reads the masks the run recorded, so it cannot come earlier; bricks that use
+   masks still refuse a mask it has not read, ``A_MASK_UNCHECKED``);
+5. **Design**: conditions, biological repeats and comparisons in one grid, confirmed by one
+   click (:mod:`.notebook_design_step`);
+6. **Check and save**; 7. **Run**, with the collapsed *Compare groups*.
+
+Each answer is still saved, refused and checked by the card that asks it; the stepper
 (:mod:`.notebook_stepper`) only shows one page and says, from each card's state
-(:mod:`.notebook_step_states`), which steps are done.
-
-Three things follow the layout and nothing else: the tag grid leaves the image type to its own
-page (:class:`.notebook_channels_type.ImageTypeRows`, the same answers), the condition names and
-the replicate names sit on their own steps (:mod:`.notebook_names`), and the consistency card
-follows the pairing, shown only when it warns. A page holding a card the saved reopening folded
-unfolds it when it is opened. ``folder_step`` and ``axis_step`` are unchanged for embedders.
+(:mod:`.notebook_step_states`), which steps are done. A page holding a card the saved
+reopening folded unfolds it when it is opened. ``folder_step`` and ``axis_step`` are unchanged
+for embedders.
 """
 
 from __future__ import annotations
@@ -26,6 +33,8 @@ from .notebook_axis_step import ROLES_HELP
 from .notebook_channels_type import ImageTypeRows
 from .notebook_check_save import INTRO as CHECK_INTRO
 from .notebook_compact import CHIPS, _CompactPages
+from .notebook_design_step import _DesignStep
+from .notebook_image_type_line import ImageTypeLine
 from .notebook_masks_screen import INTRO as MASKS_INTRO
 from .notebook_quick_scan import _QuickScan
 from .notebook_step_states import _StepStates
@@ -39,7 +48,22 @@ AXES_INTRO = (
     "later steps are read only through the roles you confirm.<br>"
     + ROLES_HELP
     + " The pixel size is the size of one pixel along X and Y, from the image headers or stated "
-    "by you; nothing is guessed, and an image without one is uncalibrated."
+    "by you; nothing is guessed, and an image without one is uncalibrated.<br>The image type "
+    "says what the channel dimension holds: one stain or marker per channel, or the red, green "
+    "and blue of a colour picture. It is proposed from the image headers and recorded only "
+    "when you click."
+)
+CHANNELS_INTRO = (
+    "<b>What happens here:</b> first name what you stained, then say, for every folder, which "
+    "stain each channel is, looking at its picture. Nothing is chosen for you: names found in "
+    "the image headers are offered only as suggestions, and each one needs your click."
+)
+DESIGN_INTRO = (
+    "<b>What happens here:</b> you say which folders are which condition and biological "
+    "repeat, and what each condition is compared against. A short name (ID) is what later "
+    "bricks use; it never changes once the experiment description is saved. Later bricks "
+    "normalise each biological repeat over all its conditions together, so folders of the same "
+    "preparation must be the same repeat."
 )
 CONDITIONS_HELP = (
     "Each condition gets a short name (its ID), which later bricks use and which never changes "
@@ -51,17 +75,18 @@ REPLICATES_HELP = (
     "which never changes once the experiment description is saved. A replicate pairs one folder "
     "per condition (above); its name is proposed from the folder name when it can be used."
 )
-OVERVIEW_STEPS = 9
-"""The overview on *Check and save* restates steps 1 to 9."""
-UNFOLDING = {3: "design_card", 4: "references_card", 8: "masks_box"}
+OVERVIEW_STEPS = 5
+"""The overview on *Check and save* restates steps 1 to 5."""
+MASKS_STEP, DESIGN_STEP = 3, 4
+UNFOLDING = (MASKS_STEP, DESIGN_STEP)
 """The steps (0-based) that show a card the saved reopening folds."""
 
 
-class _StepsFlow(_CompactPages, _QuickScan, _QuickAxes, _StepStates):
+class _StepsFlow(_CompactPages, _DesignStep, _QuickScan, _QuickAxes, _StepStates):
     """``steps()``: the stepper of the shipped notebook, and the hooks that keep it current."""
 
     def steps(self) -> widgets.Widget:
-        """Return the notebook's 12 steps, one shown at a time, with a strip and Back/Next.
+        """Return the notebook's 7 steps, one shown at a time, with a strip and Back/Next.
 
         The shipped notebook shows this instead of the stacked
         pages. Every answer is given and saved on the card that asks it, as on the pages;
@@ -74,13 +99,14 @@ class _StepsFlow(_CompactPages, _QuickScan, _QuickAxes, _StepStates):
         """
         if getattr(self, "_stepper", None) is not None:
             return self._stepper.widget
-        self.channel_grid.place_types = False  # the image type has its own step
+        self.channel_grid.place_types = False  # the image type is asked with the axes
         if ui.is_visible(self.channel_grid.widget):
             self.channel_grid.refresh()
         for box in (self.folder_next, self.axis_next):
             ui.set_visible(box, False)  # Next and the strip say where to go
         self.type_rows = ImageTypeRows(self.channel_types, lambda: self._channel_thumbs)
         self.type_rows.reopen = self.channel_grid.reopen = self._reopen_units
+        self.type_line = ImageTypeLine(self.channel_types, self.type_rows)
         self.overview_box = widgets.VBox()
         self.overview_fold = ui.accordion("Your answers, step by step", [self.overview_box])
         self._build_quick_axes()
@@ -88,39 +114,36 @@ class _StepsFlow(_CompactPages, _QuickScan, _QuickAxes, _StepStates):
         ui.set_visible(self.roles_help, False)  # said under About this step
         self._build_quick_scan()
         self.consistency_slot = widgets.VBox([self.consistency_card])
+        self._build_design_step()
         self._stepper = Stepper(self._step_list(), self._step_shown)
         self.overview_box.children = [self._stepper.overview(OVERVIEW_STEPS)]
+        if self.draft is not None:
+            self._refresh_description()  # the comparisons show their proposal
         self._refresh_type_rows()
         self._refresh_quick_axes()
         self._refresh_steps()
         return self._stepper.widget
 
     def _step_list(self) -> list[Step]:
-        """Return the 12 steps: titles, purposes, the existing cards, and their states."""
+        """Return the 7 steps: titles, purposes, the existing cards, and their states."""
         states = self._step_states()
         pages = [
-            ("Images found", "Choose the folder with your images and check it.",
+            ("Images", "Choose the folders, look at one image, then read every header.",
              self._images_page()),
-            ("Axes", "Say which image dimension is width, height, channel and time.",
-             [about(AXES_INTRO), self.axis_box, self.quick_card]),
-            ("Conditions", "A short name for each condition.", [self._conditions_card()]),
-            ("Replicates", "Which folders are one replicate, and their names.",
-             [self.design_card, self._replicates_card(), self.consistency_slot]),
-            ("Compared against", "One question per condition.", [self.references_card]),
-            ("Image type", "Separate channels or a colour (RGB) picture, per folder.",
-             [self.type_rows.widget]),
-            ("Stains", "Name what you stained.",
-             [self.channel_intro, self.channel_labels.widget]),
-            ("Tag channels", "Say which stain each channel is, looking at its picture.",
-             [self.channel_grid.widget]),
-            ("Masks", "Say what each mask type is.", [about(MASKS_INTRO), self.masks_box]),
+            ("Axes", "What each image dimension is, the pixel size and the image type.",
+             [about(AXES_INTRO), self.axis_box, self.quick_card, self.type_line.widget]),
+            ("Channels", "Name what you stained, then tag each folder's channels.",
+             [about(CHANNELS_INTRO), self.channel_labels.widget, self.channel_grid.widget]),
+            ("Masks", "What each mask type is; after a run, how the types relate.",
+             [about(MASKS_INTRO), self.masks_card, self.masks_box, self.mask_step_card]),
+            ("Design", "Conditions, biological repeats and comparisons.",
+             [about(DESIGN_INTRO), self.design_step_card, self.design_edit,
+              self.consistency_slot]),
             ("Check and save", "Check your experiment, confirm each replicate, then save.",
              [about(CHECK_INTRO), self.fold_bar, self.check_waiting, self.check_card,
               self.overview_fold]),
-            ("Run", "Read the images one plane at a time and write the histogram table.",
+            ("Run", "Compute the histogram table; then check and compare the groups.",
              self._run_page()),
-            ("Describe the masks", "Optional: how the mask types relate.",
-             [self.mask_step_card]),
         ]  # fmt: skip
         waits = self._step_waits()
         return [
@@ -140,16 +163,10 @@ class _StepsFlow(_CompactPages, _QuickScan, _QuickAxes, _StepStates):
 
     def _step_waits(self) -> dict:
         """Return, by step (0-based), why it cannot be answered yet (HTML, empty when it can)."""
-        after_check = self._wait_for_check
         return {
             0: self._consistency_note,
-            2: after_check,
-            3: after_check,
-            4: self._wait_for_references,
-            5: self._wait_for_channels,
-            6: self._wait_for_channels,
-            7: self._wait_for_tags,
-            11: self._wait_for_mask_step,
+            2: self._wait_for_channels,
+            DESIGN_STEP: self._wait_for_check,
         }
 
     def _consistency_note(self) -> str:
@@ -158,33 +175,26 @@ class _StepsFlow(_CompactPages, _QuickScan, _QuickAxes, _StepStates):
             return ""
         return ui.status(
             "info",
-            "The consistency warnings are on Replicates.",
-            ["They depend on which folders are one replicate: pair the folders there first."],
+            "The consistency warnings are on Design.",
+            ["They depend on which folders are one replicate: see the pairing there first."],
         )
 
     def _wait_for_check(self) -> str:
         if self.draft is not None:
             return ""
-        return ui.status("info", "Waiting for step 1.", ["Check the experiment folder first."])
-
-    def _wait_for_references(self) -> str:
-        if self.draft is not None and len(self.draft.conditions) < 2:
-            return ui.status("ok", "There is one condition: nothing to compare.")
-        return self._wait_for_check()
+        return ui.status("info", "Waiting for step 1.", ["Read the image headers first (Images)."])
 
     def _wait_for_channels(self) -> str:
-        return "" if self._channels_key is not None else self.channels_waiting.value
-
-    def _wait_for_tags(self) -> str:
-        waiting = self._wait_for_channels()
-        if waiting or self.channel_labels.confirmed or self._stains_not_applicable:
-            return waiting
-        return ui.status("info", "Waiting for the stains.", ["Confirm the stains first (Stains)."])
-
-    def _wait_for_mask_step(self) -> str:
-        if ui.is_visible(self.mask_step_card):
-            return ""
-        return ui.status("info", "Not offered.", ["The output folder is not shown."])
+        """Say what the channels wait for: the folder check, the axis roles, the image type."""
+        if self._channels_key is None:
+            return self.channels_waiting.value
+        if not self.type_line.complete:
+            return ui.status(
+                "info",
+                "Waiting for the image type.",
+                ["Say on Axes (step 2) what the channels hold: a folder is tagged after that."],
+            )
+        return ""
 
     # Hooks -------------------------------------------------------------------------------
 
@@ -249,7 +259,7 @@ class _StepsFlow(_CompactPages, _QuickScan, _QuickAxes, _StepStates):
         self._refresh_quick_axes()
 
     def _refresh_type_rows(self) -> None:
-        """Open the image-type step for the folders the channel step opened, or close it."""
+        """Open the image type for the folders the channel step opened, or close it."""
         rows = getattr(self, "type_rows", None)
         if rows is None:
             return
@@ -259,6 +269,7 @@ class _StepsFlow(_CompactPages, _QuickScan, _QuickAxes, _StepStates):
             rows.open(self._channel_layouts)
         else:
             rows.refresh()
+        self.type_line.refresh()
 
     def _refresh_channels(self) -> None:
         super()._refresh_channels()

@@ -84,13 +84,14 @@ class _MaskStepCard:
             "Describe the masks (optional)",
             [
                 ui.help_text(
-                    "Reads every mask the run recorded and describes each mask type (one "
-                    "object per label, or labels in several pieces), how the types relate "
-                    "(inside, grouped by, the same objects) and their hierarchy, with the "
-                    f"counts behind each. Writes <b>{MASK_REPORT_FILENAME}</b> to the output "
-                    "folder, as the command line's masks step does. The relationship "
-                    "thresholds are the defaults; the command line's masks step can change "
-                    "them. Optional: the histogram table does not need it."
+                    "Reads every mask the run recorded. Optional for the histogram table; "
+                    "bricks that use masks accept only masks this step has read. It describes "
+                    "each mask type (one object per label, or labels in several pieces), how "
+                    "the types relate (inside, grouped by, the same objects) and their "
+                    "hierarchy, with the counts behind each, and writes "
+                    f"<b>{MASK_REPORT_FILENAME}</b> to the output folder, as the command "
+                    "line's masks step does. The relationship thresholds are the defaults; "
+                    "the command line's masks step can change them."
                 ),
                 self.mask_step_hint,
                 self.mask_step_button,
@@ -289,8 +290,8 @@ def _recorded_hint(recorded: RecordedMasks | None) -> str:
     """Name the run the step describes, or say why the button is disabled."""
     if recorded is None:
         return (
-            "Available when the output folder holds a run that recorded masks "
-            "(step 1's masks folder)."
+            "Available after a run that recorded masks: it reads the masks that run recorded "
+            "(the masks folder is given in step 1)."
         )
     when = f", written {html.escape(recorded.written_at)}" if recorded.written_at else ""
     run = (

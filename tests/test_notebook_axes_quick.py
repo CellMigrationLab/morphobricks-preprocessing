@@ -77,7 +77,7 @@ def test_an_unchanged_reopen_offers_the_run_s_roles_and_moves_on(exp):  # noqa: 
     assert "the earlier run of this experiment recorded" in nb.quick_text.value
     nb.quick_confirm.click()
     assert nb.confirmed_mapping == first.confirmed_mapping
-    assert nb._stepper.current == 10  # every answer is saved: the run is next
+    assert nb._stepper.current == 6  # every answer is saved: the run is next
 
 
 def test_a_role_edited_after_the_offer_is_not_confirmed_by_the_old_offer(exp):  # noqa: F811

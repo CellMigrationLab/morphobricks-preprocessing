@@ -26,15 +26,15 @@ SAME_WAY_HELP = (
     "settings). They are then one biological replicate, compared with each other."
 )
 QUESTION_WORDS = {
-    "id_pending": "a short name is missing for {subject} (Conditions or Replicates)",
+    "id_pending": "a short name is missing for {subject} (Design)",
     "repeat_not_confirmed": "{subject}: answer “same way?” above",
     "confirmed_on_missing": "{subject}: answer “same way?” again above",
-    "unit_channels_missing": "the channels of {subject} are not tagged (Tag channels)",
-    "unit_channel_untagged": "{subject} is not tagged (Tag channels)",
-    "channel_undeclared": "the label {subject} is used but not declared (Stains)",
-    "unit_image_type_unanswered": "the image type of {subject} is not answered (Image type)",
+    "unit_channels_missing": "the channels of {subject} are not tagged (Channels)",
+    "unit_channel_untagged": "{subject} is not tagged (Channels)",
+    "channel_undeclared": "the label {subject} is used but not declared (Channels)",
+    "unit_image_type_unanswered": "the image type of {subject} is not answered (Axes)",
     "unit_channels_stale": (
-        "the tags of {subject} were saved for another image: tag its channels again (Tag channels)"
+        "the tags of {subject} were saved for another image: tag its channels again (Channels)"
     ),
     "unit_channel_count_unknown": (
         "the channels of {subject} are not known from its images: confirm the axis roles "
@@ -117,6 +117,10 @@ def names_html(names: Sequence[tuple[str, Sequence[str]]]) -> str:
     )
 
 
+TODO_SHOWN = 8
+"""The most missing answers listed at once on *Check and save*; the others are folded."""
+
+
 def todo_html(questions: Sequence[OpenQuestion], extra: Sequence[str]) -> str:
     """Return what is still to answer before saving, or nothing."""
     lines = [
@@ -128,7 +132,16 @@ def todo_html(questions: Sequence[OpenQuestion], extra: Sequence[str]) -> str:
     lines += list(extra)
     if not lines:
         return ""
-    return ui.status("warn", f"Still to answer before saving: {len(lines)}.", lines)
+    title = f"Still to answer before saving: {len(lines)}."
+    if len(lines) <= TODO_SHOWN:
+        return ui.status("warn", title, lines)
+    # Every line is still there: the first ones shown, the others one click away.
+    first = [html.escape(line) for line in lines[: TODO_SHOWN - 2]]
+    rest = "".join(f"<li>{html.escape(line)}</li>" for line in lines[TODO_SHOWN - 2 :])
+    more = (
+        f"<details><summary>and {len(lines) - len(first)} more</summary><ul>{rest}</ul></details>"
+    )
+    return ui.status("warn", title, [*first, more], raw=True)
 
 
 def _issue_lines(issues: Sequence[ValidationIssue]) -> list[str]:
