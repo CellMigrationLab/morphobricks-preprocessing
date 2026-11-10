@@ -15,15 +15,18 @@ every route. Shown here on the vendored fixtures through ``make_described_run``:
 - A volume is refused unless ``volume_support`` is declared; a one-slice volume reads what a
   plane reads.
 - The result is immutable and picklable; the provenance is the manifest's record; the resolver
-  writes nothing and imports no brick, CellPatcher or provider module; an undescribed run is
-  refused and otherwise unchanged.
+  writes nothing and imports no brick, CellPatcher or provider module, not even indirectly.
+- Every run the resolver sees is described: a run without ``morphobricks.toml`` is refused
+  with ``A_DESCRIPTION_REQUIRED`` before a ``RunInputs`` exists (ADR 0002 AR10).
 """
 
 from __future__ import annotations
 
 import ast
 import dataclasses
+import json
 import pickle
+import subprocess
 import sys
 import warnings
 from pathlib import Path
@@ -36,6 +39,7 @@ from morphobricks_preprocessing import (
     RESOLVER_VERSION,
     Capabilities,
     ChannelNotFoundError,
+    DescriptionRequiredError,
     MaskNotInstancesError,
     MaskRequest,
     MaskUncheckedError,
@@ -53,7 +57,7 @@ from morphobricks_preprocessing.run_inputs_request import (
     PlaneSelection,
     plane_selections,
 )
-from morphobricks_preprocessing.testing import make_clean_run, make_described_run
+from morphobricks_preprocessing.testing import make_described_run
 from morphobricks_preprocessing.testing_described import (
     PUBLISHED_NAME,
     _mapping,
@@ -183,6 +187,22 @@ def test_v08_p28_unchecked_masks_are_refused_with_k_of_n_files(tmp_path):
     assert not RunInputs.open(inputs.output_folder).resolve_request(request).refused
 
 
+def test_v08_p28_a_mask_checked_for_some_files_is_unchecked_for_k_of_n(tmp_path):
+    inputs, _ = _open(tmp_path, "v08", masks=("Nuclei",))
+    status = inputs.output_folder / "mask_representation.json"
+    document = json.loads(status.read_text(encoding="utf-8"))
+    dropped = document["masks"]["Nuclei"]["files"].pop(0)["path"]
+    status.write_text(json.dumps(document), encoding="utf-8")
+    resolved = inputs.resolve_request(Request(("DNA",), (MaskRequest("Nuclei"),)))
+    assert _codes(resolved) == [("A_MASK_UNCHECKED", "Nuclei")]
+    assert "for 1 of 4 files" in resolved.refusals[0].message
+    assert resolved.refusals[0].files == (dropped,)
+    assert resolved.selections == ()
+    assert [(c.status, c.present, c.total) for c in resolved.coverage if c.subject == "Nuclei"] == [
+        ("full", 4, 4)
+    ]  # coverage is presence; the check status is the refusal's
+
+
 def test_v08_every_applicable_refusal_is_reported_together(tmp_path):
     inputs, _ = _open(tmp_path, "v08", masks=("TumorRegion",), mask_step=False)
     request = Request(("PHASE",), (MaskRequest("TumorRegion"), MaskRequest("Nuclei")))
@@ -263,6 +283,9 @@ def test_v13_resolves_every_position_by_channel_id(tmp_path):
 
 
 def test_v13_a_reordered_channel_list_changes_only_that_positions_indices(tmp_path, monkeypatch):
+    # Preprocessing processes one channel layout per experiment today (a unit declaring another
+    # order is refused before the run is written), so the resolver's per-image rule is shown on
+    # the run's own positions with one position's channel order reversed.
     inputs, _ = _open(tmp_path, "v13")
     original = inputs.fovs()
     swapped = original[7]
@@ -346,6 +369,14 @@ def test_plane_selections_enumerate_planes_or_one_volume_per_time_point():
         (Request((), (MaskRequest("Nuclei"), MaskRequest("Nuclei"))), "mask ID is requested twice"),
         (Request(("DNA",), planes="stack"), "planes must be one of"),
         (Request(("DNA",), device="gpu"), "device must be one of"),
+        (Request(("DNA",), device="CUDA"), "device must be one of"),
+        (Request(("DNA",), device="cuda:0"), "device must be one of"),
+        (Request(["DNA"]), "channel_ids must be a tuple of str"),
+        (Request("DNA"), "channel_ids must be a tuple of str"),
+        (Request((), [MaskRequest("Nuclei")]), "masks must be a tuple of MaskRequest"),
+        (Request((), ("Nuclei",)), "masks must be a tuple of MaskRequest"),
+        (Request(("DNA",), capabilities=Capabilities(rgb_support=1)), "capabilities must be"),
+        (Request(("DNA",), capabilities=Capabilities(volume_support="no")), "capabilities must be"),
         (Request((), (MaskRequest("Nuclei", role="cells"),)), "mask role must be one of"),
         (
             Request((), (MaskRequest("TumorRegion", binary_mask_policy="threshold"),)),
@@ -382,6 +413,14 @@ def test_provenance_is_the_manifests_record_and_the_request_with_its_device(tmp_
     assert inputs.resolve_request(Request(("DNA",))).provenance.request.device == "cpu"
 
 
+def test_a_description_changed_since_the_run_is_refused_not_resolved(tmp_path):
+    inputs, run = _open(tmp_path, "v01")
+    published = run.output / PUBLISHED_NAME
+    published.write_bytes(published.read_bytes() + b"# edited after the run\n")
+    with pytest.raises(RunInputsError, match="not the one the run read"):
+        inputs.resolve_request(Request(("DNA",)))
+
+
 def test_the_result_is_immutable_and_picklable(tmp_path):
     inputs, _ = _open(tmp_path, "v08", masks=("Nuclei",))
     resolved = inputs.resolve_request(Request(("DNA",), (MaskRequest("Nuclei"),)))
@@ -408,19 +447,15 @@ def test_resolving_writes_nothing(tmp_path):
     assert RunInputs.open(run.output).fovs() == inputs.fovs()
 
 
-# --- undescribed runs keep today's behaviour -----------------------------------------------
+# --- every run the resolver sees is described (AR10) ----------------------------------------
 
 
-def test_an_undescribed_run_is_refused_and_otherwise_unchanged(tmp_path):
-    run = make_clean_run(tmp_path / "run")
-    inputs = RunInputs.open(run.output)
-    assert inputs.description() is None
-    with pytest.raises(RunInputsError, match="no experiment description") as raised:
-        inputs.resolve_request(Request(("DNA",)))
-    assert raised.value.code is None
-    fovs = inputs.fovs()
-    assert fovs and all(f.channel_ids is None and f.repeat_group is None for f in fovs)
-    assert inputs.read_plane(fovs[0]).ndim == 3  # the header-name path is untouched
+def test_a_run_without_a_published_description_never_reaches_the_resolver(tmp_path):
+    inputs, run = _open(tmp_path, "v01")
+    (run.output / PUBLISHED_NAME).unlink()
+    with pytest.raises(DescriptionRequiredError, match="A_DESCRIPTION_REQUIRED") as raised:
+        RunInputs.open(run.output)
+    assert raised.value.code == "A_DESCRIPTION_REQUIRED"
 
 
 # --- the resolver imports no brick, CellPatcher or provider module -------------------------
@@ -441,8 +476,22 @@ def test_the_resolver_modules_import_no_brick_cellpatcher_or_provider_module(mod
     for name in imported:
         assert not name.startswith(FORBIDDEN_IMPORTS), name
         assert name.startswith(allowed), name
-    loaded = {name.split(".")[0] for name in sys.modules}
-    assert not loaded & set(FORBIDDEN_IMPORTS[:-2])  # torch/skimage-free; scipy is the brick's own
+
+
+def test_importing_the_resolver_loads_no_brick_cellpatcher_or_provider_module():
+    # A fresh interpreter: the package's own relative imports must not pull any in either.
+    code = (
+        "import sys, morphobricks_preprocessing.run_inputs_resolve, "
+        "morphobricks_preprocessing.run_inputs_request; "
+        "print(sorted({n.split('.')[0] for n in sys.modules}))"
+    )
+    found = subprocess.run(
+        [sys.executable, "-c", code], check=True, capture_output=True, text=True
+    ).stdout
+    loaded = set(ast.literal_eval(found))
+    # scipy is preprocessing's own dependency (the package loads it); everything else is barred.
+    barred = set(FORBIDDEN_IMPORTS) - {"scipy"}
+    assert not loaded & barred, loaded & barred
 
 
 def test_the_resolver_runs_no_kernel_and_reads_no_pixel(tmp_path, monkeypatch):

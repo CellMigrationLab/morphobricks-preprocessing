@@ -20,7 +20,9 @@ Codes (experiment-v1 section 8, as the classes of :mod:`.run_inputs_error`): ``A
 ("present in k of n acquisitions", k may be 0, one rule for channels and masks, owner decision
 SI1), ``A_MASK_NOT_INSTANCES``, ``A_MASK_UNCHECKED``, ``A_RGB_NOT_SUPPORTED`` and, from the
 resolver contract, ``A_VOLUME_NOT_SUPPORTED`` (a volume asked of a consumer without
-``volume_support``). A refused request selects nothing: no subset is taken for the user.
+``volume_support``). A refused request selects nothing: no subset is taken for the user. The
+contract's other code, ``A_DESCRIPTION_REQUIRED``, is raised before a ``RunInputs`` exists
+(``RunInputs.open``): every run the resolver sees is described.
 """
 
 from __future__ import annotations
@@ -293,10 +295,13 @@ def check_request(request: Request, declared_masks: Mapping[str, str]) -> None:
     Raises
     ------
     ValueError
-        A channel ID named twice, a mask ID named twice, a role or policy outside the contract,
-        a policy on a mask that is not ``binary`` (nothing to convert) or on a ``region``
-        role, an unknown plane kind, or a device that is neither ``cpu`` nor ``cuda``.
+        Channels or masks not given as a tuple (of ``str`` IDs, of :class:`MaskRequest`), a
+        capability that is not a ``bool``, a channel ID named twice, a mask ID named twice, a
+        role or policy outside the contract, a policy on a mask that is not ``binary`` (nothing
+        to convert) or on a ``region`` role, an unknown plane kind, or a device that is neither
+        ``cpu`` nor ``cuda``.
     """
+    _check_shape(request)
     if len(set(request.channel_ids)) != len(request.channel_ids):
         raise ValueError("a channel ID is requested twice")
     ids = [m.mask_id for m in request.masks]
@@ -321,6 +326,27 @@ def check_request(request: Request, declared_masks: Mapping[str, str]) -> None:
                 f"binary_mask_policy applies to a binary mask used as objects; {mask.mask_id!r} "
                 f"is {declared_masks.get(mask.mask_id, 'undeclared')} in the role {mask.role!r}"
             )
+
+
+def _check_shape(request: Request) -> None:
+    """Refuse a request whose fields are not the frozen types the result records.
+
+    The request is recorded in the provenance as given, so a list would leave the result
+    mutable (and unhashable), and a string would be read as one ID per character.
+    """
+    if not isinstance(request.channel_ids, tuple) or not all(
+        isinstance(c, str) for c in request.channel_ids
+    ):
+        raise ValueError(f"channel_ids must be a tuple of str, not {request.channel_ids!r}")
+    if not isinstance(request.masks, tuple) or not all(
+        isinstance(m, MaskRequest) and isinstance(m.mask_id, str) for m in request.masks
+    ):
+        raise ValueError(f"masks must be a tuple of MaskRequest (str IDs), not {request.masks!r}")
+    capabilities = request.capabilities
+    if not isinstance(capabilities, Capabilities) or not all(
+        isinstance(v, bool) for v in (capabilities.rgb_support, capabilities.volume_support)
+    ):
+        raise ValueError(f"capabilities must be Capabilities of bool, not {capabilities!r}")
 
 
 def scope_refusal(subject: str, kind: str, missing: Iterable[str], total: int) -> Refusal | None:

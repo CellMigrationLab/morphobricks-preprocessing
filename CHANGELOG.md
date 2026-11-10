@@ -92,6 +92,44 @@ published `morphobricks.toml` first), `run_experiment(design=...)` and the `desc
 of `PreprocessingNotebook` are gone, and a run written by v0.5.0 or earlier is refused until it
 is run again.
 
+### PP-0: `RunInputs.resolve_request`, the shared request resolver (#256)
+
+Resolver contract version 1 (`RESOLVER_VERSION = 1`; MorphoBricks-Spec ADR 0002 AR1-AR11,
+contract §9.1 and §16). **API additions only.**
+
+- **One interpreter of a described run for every analysis route** (a brick's direct run and a
+  run through MorphoFeature alike). A `Request` (canonical channel IDs; masks by ID with a role,
+  `objects` or `region`, and, for a `binary` mask used as objects, the explicit
+  `binary_mask_policy`; `plane` or `volume`; the consumer's `Capabilities`, `rgb_support` and
+  `volume_support`, both False by default; the explicit `device`, `cpu` or `cuda`) resolves to
+  an immutable, picklable `ResolvedRequest`: one `FovSelection` per position with the C index of
+  every requested channel **in that image**, the masks as `MaskSelection`s, the planes to read
+  and the canonical IDs beside the unchanged key; every applicable refusal at once
+  (`A_SCOPE_INCOMPLETE` "present in k of n acquisitions", `A_MASK_UNCHECKED` "k of n files",
+  `A_MASK_NOT_INSTANCES`, `A_RGB_NOT_SUPPORTED`, and the contract's own
+  `A_VOLUME_NOT_SUPPORTED`); the coverage of every biological repeat per channel and mask
+  (`full`, `partial`, `unavailable`), refused or not; and the `Provenance` (the resolver
+  version, the description's SHA-256 and section digests as the manifest recorded them, and the
+  request with its device). A refused request selects nothing; `require()` raises the first
+  refusal's error class with every refusal in its text.
+- **It only classifies.** It reads the manifest, the published description (checked against
+  the run's SHA-256) and `mask_representation.json`; it reads no pixel, runs no kernel, writes
+  nothing, converts no mask (a recorded policy comes back as `MaskSelection.conversion` for the
+  route's shared labeller), checks only the device's spelling (the consumer refuses `cuda`
+  without a GPU) and imports no brick, CellPatcher or provider module, directly or through the
+  package (tested in a fresh interpreter). A malformed request is a `ValueError`: an ID twice;
+  an unknown role, policy, plane kind or device; a policy on a mask that is not `binary` or in a
+  `region` role; channels or masks not a tuple (of `str` IDs, of `MaskRequest`), or a capability
+  that is not a `bool` (the request is recorded as given, so it must be immutable).
+- **Every run it sees is described** (AR10): a run without `morphobricks.toml` is refused by
+  `RunInputs.open` with `A_DESCRIPTION_REQUIRED` (PP-C), so the resolver has no undescribed
+  branch.
+- `FovIdentity` gains the unit's `image_type`; `Fov` is unchanged. New exports:
+  `RESOLVER_VERSION`, `Request`, `MaskRequest`, `Capabilities`, `ResolvedRequest`,
+  `FovSelection`, `MaskSelection`, `PlaneSelection`, `Refusal`, `RepeatCoverage`, `Provenance`,
+  `VolumeNotSupportedError`. Suite: `tests/test_spec_resolve_request.py`, a Spec module
+  (`spec_gate.EXPECTED_MODULES`).
+
 ## 0.5.0 - 2026-11-09
 
 Stage 1 of the experiment description (MorphoBricks-Spec experiment-v1, pinned at `1bed024`):
@@ -166,25 +204,6 @@ pre-release follow-ups (#257).
   `description_candidate.transition_issue`, and `check_candidate(..., published=,
   confirmations=)` are new; `UnitLayout.counts_agree` and `channel_units.unit_channel_counts`
   are new.
-
-- **`RunInputs.resolve_request`: the shared request resolver (resolver contract version 1;
-  MorphoBricks architecture decision of 10 November 2026; contract §9.1, §16).** One interpreter
-  of a described run for every analysis route. A `Request` (canonical channel IDs; masks by ID
-  with a role and, for a `binary` mask used as objects, the explicit `binary_mask_policy`;
-  `plane` or `volume`; the consumer's `Capabilities`; the explicit `device`) resolves to an
-  immutable, picklable `ResolvedRequest`: one `FovSelection` per position with the C index of
-  every channel in that image, the declared masks, the planes to read and the canonical IDs
-  beside the unchanged key; the refusals (`A_SCOPE_INCOMPLETE` "present in k of n",
-  `A_MASK_UNCHECKED`, `A_MASK_NOT_INSTANCES`, `A_RGB_NOT_SUPPORTED`, and the contract's
-  `A_VOLUME_NOT_SUPPORTED`, refusing Z-volumes unless `volume_support` is declared); the
-  coverage of every biological repeat (full, partial, unavailable); and the provenance. A
-  refused request selects nothing. The resolver reads no pixel, runs no kernel, converts no
-  mask (a recorded policy is returned for the consumer's shared labeller) and imports no brick,
-  CellPatcher or provider module (tested). `FovIdentity` gains the unit's `image_type`. Runs
-  without a description are refused by it and otherwise unchanged. **API additions only:**
-  `RESOLVER_VERSION`, `Request`, `MaskRequest`, `Capabilities`, `ResolvedRequest`,
-  `FovSelection`, `MaskSelection`, `PlaneSelection`, `Refusal`, `RepeatCoverage`, `Provenance`,
-  `VolumeNotSupportedError`.
 
 - **Audit batches 33 and 34a: what is published is what was answered, of the image checked.**
   *Yes, these are right* saves exactly the tags a block shows (a hidden proposal is never
