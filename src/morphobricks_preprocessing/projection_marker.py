@@ -35,9 +35,15 @@ def is_projected_copy(path: Path) -> bool:
     try:
         with tifffile.TiffFile(path) as tif:
             text = tif.pages.first.description
-        root = ElementTree.fromstring(text)
-    except (OSError, ValueError, ElementTree.ParseError, tifffile.TiffFileError, AttributeError):
+    except (OSError, ValueError, tifffile.TiffFileError, AttributeError):
         logger.debug("Cannot read the description of %s", path, exc_info=True)
+        return False
+    if not text.lstrip().startswith("<"):
+        return False  # plain text (ImageJ, none): not OME-XML, so not marked; nothing to report
+    try:
+        root = ElementTree.fromstring(text)
+    except ElementTree.ParseError as exc:
+        logger.debug("The OME description of %s is not well-formed XML (%s)", path, exc)
         return False
     for image in root:
         if image.tag.rsplit("}", 1)[-1] != "Image":

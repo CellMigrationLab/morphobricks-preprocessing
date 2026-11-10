@@ -80,3 +80,34 @@ def test_the_check_reads_no_pixels(tmp_path, monkeypatch):
     from morphobricks_preprocessing.projection_marker import marked_images
 
     assert marked_images(copies, NAMES) == sorted(NAMES)
+
+
+def _record_marker_logs(caplog):
+    caplog.set_level("DEBUG", logger="morphobricks_preprocessing")
+
+
+def test_an_imagej_tiff_is_not_marked_and_logs_nothing(tmp_path, caplog):
+    from morphobricks_preprocessing.projection_marker import is_projected_copy
+
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(path, np.zeros((2, 4, 4), np.uint8), imagej=True)
+    _record_marker_logs(caplog)
+    assert is_projected_copy(path) is False
+    assert caplog.records == []
+
+
+def test_a_malformed_ome_description_is_not_marked_and_logs_no_traceback(tmp_path, caplog):
+    from morphobricks_preprocessing.projection_marker import is_projected_copy
+
+    path = tmp_path / "b.tif"
+    tifffile.imwrite(path, np.zeros((4, 4), np.uint8), description="<OME><Image>")
+    _record_marker_logs(caplog)
+    assert is_projected_copy(path) is False
+    assert len(caplog.records) == 1 and not caplog.records[0].exc_info
+
+
+def test_a_marked_projection_is_still_marked(tmp_path):
+    from morphobricks_preprocessing.projection_marker import marked_images
+
+    copies = projected_tree(tmp_path)
+    assert set(marked_images(copies, NAMES)) == set(NAMES)
