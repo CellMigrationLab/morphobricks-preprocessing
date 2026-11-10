@@ -698,8 +698,8 @@ def test_mixed_tiff_and_ome_zarr_experiment(tmp_path):
     write_ngff(root / "drug/c.ome.zarr", random_data((3, 8, 8), "uint8", seed=2), "tyx")
     pre = preflight(root)
     assert pre.suggested_mapping == prefill_mapping("TCYX")
-    # Its missing channel axis is read as one channel, but the others have two (N43): in the
-    # description, a unit of one channel beside units of two (one layout per experiment).
+    blocked = run_described(root, pre.suggested_mapping).issues  # without missing_as_singleton
+    assert issue(blocked, "missing_axes").paths == ("drug/c.ome.zarr",)  # with it: 1 channel, N43
     one_channel = run_described(root, pre.suggested_mapping, missing_as_singleton=True)
     assert codes(one_channel.issues)[0] == "R_HETEROGENEOUS_LAYOUT_NOT_ENABLED"
     write_ngff(root / "drug/d.ome.zarr", random_data((3, 2, 8, 8), "uint8", seed=3), "tcyx")

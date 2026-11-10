@@ -109,6 +109,27 @@ def test_unconfirmed_groups_are_errors(tmp_path):
     assert design_issues(confirm_all(design)) == []
 
 
+REMOVED_FIXES = ("design command", "--confirm", "experiment_design.csv", "repeat_group column")
+
+
+def test_the_design_refusals_name_the_fix_of_a_described_run(tmp_path):
+    # Review of PP-C: the actions named the removed design command and editing
+    # experiment_design.csv, which is now an output only (derived from the description).
+    design = default_design(repeats_of(tree(tmp_path / "exp", PAIRED)))
+    clash = design.with_group(("control", "rep2"), "rep1")
+    found = [*design_issues(design), *design_issues(clash)]
+    unpaired = preflight(tree(tmp_path / "unpaired", {"a/r1": 1, "b/r2": 1})).issues
+    found += [issue for issue in unpaired if issue.code == "repeat_missing_conditions"]
+    assert {i.code for i in found} == {
+        "design_not_confirmed",
+        "repeat_group_conflict",
+        "repeat_missing_conditions",
+    }
+    for issue in found:
+        assert "Check and save" in issue.action, issue.code
+        assert not [fix for fix in REMOVED_FIXES if fix in issue.action], issue.action
+
+
 def test_without_biological_repeat_folders_one_question(tmp_path):
     design = default_design(repeats_of(tree(tmp_path / "exp", {"control": 2, "treated": 3})))
     assert design.single_repeat and design.groups == ("single",)

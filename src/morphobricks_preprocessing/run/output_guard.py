@@ -1,6 +1,6 @@
 """Refuse an output folder inside the masks folder before anything is written (audit I1).
 
-Every command that writes into the output folder (``check``, ``run``, ``masks``, ``design``,
+Every command that writes into the output folder (``check``, ``run``, ``masks``,
 ``calibrate``) checks it against the masks folder, given or recorded by the run in the
 output folder, before it creates the folder, takes its lock or writes a report
 (:mod:`..folder_rules`).
