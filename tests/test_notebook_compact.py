@@ -122,6 +122,23 @@ def test_every_page_is_a_single_column_of_cards(exp):  # noqa: F811
     assert list(nb.scan_box.children) == [nb.scan_example, nb.scan_another, nb.scan_tree]
 
 
+def _boxes(widget):
+    yield widget
+    for child in getattr(widget, "children", ()):
+        yield from _boxes(child)
+
+
+def test_the_run_log_is_text_in_the_page_not_a_box_that_scrolls(exp):  # noqa: F811
+    # Review of #275: the run step's technical log was a 14em read-only Textarea, a box with
+    # its own scroll bar. It is now wrapped text in its fold; the log is the same.
+    nb = _ran(exp)
+    for page in nb._stepper.pages:
+        assert not [w for w in _boxes(page) if isinstance(w, widgets.Textarea) and w.disabled]
+    assert nb.details.value and "run" in nb.details.value.lower()
+    assert _holds(nb.details_box, nb.log_text)
+    assert nb.details.value.splitlines()[-1].replace("&", "&amp;")[:20] in nb.log_text.value
+
+
 def test_explanations_are_folded_behind_about_this_step(exp):  # noqa: F811
     nb = stepper(*exp)
     for index in (0, 1, 8, 9):

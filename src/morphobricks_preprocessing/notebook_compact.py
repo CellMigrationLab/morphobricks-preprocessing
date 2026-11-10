@@ -9,10 +9,13 @@ other modules own; no answer, check or refusal is decided here.
 - **Run** shows what is still missing only while something is, with the settings and *What
   will happen* collapsed; after a run, the intensity checks, **Compare groups** (the former
   optional statistics page: pooled statistics and the distribution plot of this run's table)
-  and the report are collapsed panels.
+  and the report are collapsed panels. Its technical log is text in the page, not a box that
+  scrolls by itself (owner's test of the redesign: the page scrolls, nothing inside it).
 """
 
 from __future__ import annotations
+
+import html
 
 import ipywidgets as widgets
 
@@ -89,6 +92,10 @@ class _CompactPages:
         self.checks_fold = ui.accordion("Intensity checks and plots", [self.run_checks.card])
         self.compare_fold = ui.accordion("Compare groups", [self._compare_box()])
         self.run_report_fold = ui.accordion("Run report", [self.run_report.widget])
+        self.log_text = widgets.HTML()
+        self.details.observe(lambda _: self._write_log_text(), names="value")
+        self.details_box.children = (self.log_text,)
+        self._write_log_text()
         return [
             self.readiness_card,
             self.settings_fold,
@@ -105,6 +112,16 @@ class _CompactPages:
             self.run_report_fold,
             self.details_box,
         ]
+
+    def _write_log_text(self) -> None:
+        """Write the technical log as wrapped text, so the page scrolls and not the log."""
+        text = self.details.value
+        self.log_text.value = (
+            "<pre style='white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; "
+            f"font-size: 12px'>{html.escape(text)}</pre>"
+            if text
+            else ""
+        )
 
     def _compare_box(self) -> widgets.Widget:
         """Return *Compare groups*: the grouping, the pooled statistics and the plot.
