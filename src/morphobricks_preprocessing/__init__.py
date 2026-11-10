@@ -112,6 +112,8 @@ from .intensity import (
     repeat_boxes,
     repeat_distributions,
 )
+from .lab_links import LabLinks, LabLinksError
+from .lab_links_file import read_lab_links
 from .manifest import (
     MANIFEST_FILENAME,
     FileEntry,
@@ -308,6 +310,8 @@ __all__ = [
     "ImageMetadata",
     "ImageTypeReview",
     "IntensityReport",
+    "LabLinks",
+    "LabLinksError",
     "LeafFolder",
     "ManifestFormatError",
     "MaskFile",
@@ -431,6 +435,7 @@ __all__ = [
     "read_conversion_record",
     "read_confirmed_design",
     "read_experiment_design",
+    "read_lab_links",
     "read_manifest",
     "read_mask",
     "read_mask_file",

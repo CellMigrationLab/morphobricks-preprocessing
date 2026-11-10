@@ -37,6 +37,7 @@ from ..discovery_report import (
 )
 from ..image_type import check_image_type
 from ..intensity import IntensityReport, check_intensities
+from ..lab_links import LabLinks, repeat_code_issues
 from ..manifest import (
     MANIFEST_FILENAME,
     RunManifest,
@@ -147,7 +148,7 @@ def run_experiment(  # noqa: PLR0913
         inventory): a rewrite of the same size with the time set back is not seen. A
         :class:`.modes.RunMode` with ``verify_content=True`` also records each source's
         content SHA-256 and reuses rows only for the same content (``None``: as recorded;
-        turning it on or off recomputes every row).
+        turning it on or off recomputes every row). Its ``lab_links``: manifest only (PP-2).
     progress
         Called as ``progress(done, total, relative_path)`` before each file is
         read, and as ``progress(total, total, "")`` when reading is finished.
@@ -213,7 +214,8 @@ def run_experiment(  # noqa: PLR0913
     output.mkdir(parents=True, exist_ok=True)
     try:
         with output_lock(output):
-            return _locked_run(given, output, _Options(mode, memory_limit, progress))
+            options = _Options(mode, memory_limit, progress, chosen.lab_links)
+            return _locked_run(given, output, options)
     except OutputLockedError as exc:
         return RunResult(output, False, (lock_issue(exc),), mode=mode)
 
@@ -225,6 +227,7 @@ class _Options:
     mode: str
     memory_limit: int
     progress: Callable[[int, int, str], None] | None
+    lab_links: LabLinks | None = None
 
 
 @dataclass(frozen=True)
@@ -243,6 +246,7 @@ class _Run:
     """In a ``verify_content`` run, each mask's content SHA-256 taken after the header checks."""
     description: RunDescription | None = None
     """The published experiment description the run works with; None when it was refused."""
+    lab_links: LabLinks | None = None
 
 
 def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResult:
@@ -265,12 +269,14 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
     design = None if loaded[0] is None else derive_design(loaded[0].description)
     checked = header_checks(pre, inputs, design, options.memory_limit)
     described = checked_description(output, pre, checked, loaded)
+    links = options.lab_links  # provenance only (experiment-v1 9.3): checked, never a key
+    checked.issues.extend(repeat_code_issues(links, described and described.description))
     if checked.review is not None:
         pre, absent = fit_calibration(pre, checked.review)
         checked.issues.extend(absent)
     calibrated = calibration_change(usable(previous[0]), pre.calibration)
     inputs = replace(inputs, changes=(*inputs.changes, *calibrated))
-    run = _Run(output, pre, inputs, options.mode, checked, previous, found, description=described)
+    run = _Run(output, pre, inputs, options.mode, checked, previous, found, {}, described, links)
     recorded = usable(previous[0])
     base = RunOutcome(
         step="run",
@@ -508,6 +514,7 @@ def _write_generation(
         conversion_record_sha256=None if pre.conversion is None else pre.conversion.sha256,
         projection=_projection(pre),
         experiment_description=manifest_entry(described, masks, run.output, len(rows.entries)),
+        lab_links=None if run.lab_links is None else run.lab_links.to_dict(),
         manifest_version=MANIFEST_VERSION,
     )
     manifest = _kept_time(manifest, run.previous[0])

@@ -660,6 +660,8 @@ SHA-256 still accept it; the report records the rerun. Other options:
 | `--image-type fluorescence\|rgb` | The image type (default: the earlier run's, else the suggested one, printed) |
 | `--mode restart\|full` | `restart` (default) reuses the rows of unchanged images; `full` recomputes every row and check. Both keep your confirmations and replace the results only when the run succeeds |
 | `--verify-content`, `--no-verify-content` | Reuse rows (earlier or staged) only when each image's content SHA-256 is the one recorded with them, not only its size and modification time; every image is read once more. Default: the earlier run's choice, else on; `--no-verify-content` opts out and the manifest records it. Turning it on or off recomputes every row. With `masks`: also compare each mask's content SHA-256 before and after it is read (same default) |
+| `--lab-links FILE` | A JSON file of lab-tool links (for example LabChronicle), recorded in `run_manifest.json` only (`lab_links`): exactly the keys `repository_url`, `commit` (the full 40- or 64-character lowercase SHA) and `experiment_path`, as non-empty text, and optionally `repeat_codes`, which maps each lab-tool repeat code to a biological repeat ID of the description (for example `{"R001": "rep1"}`). Any other key, a value of another type, an empty value, spaces around a value, or a key given twice is refused before anything is read (`lab_links_invalid`). The links change no result: no row, digest, cache or other file. They are not taken over by the next run: give the file to each run it belongs to. Not offered by the notebook |
+| `--confirm-repeat-codes` | Confirm the `repeat_codes` of `--lab-links` for this run. The run prints each pair; without this option a file with repeat codes is refused (`lab_links_repeat_codes_not_confirmed`), also when a code is spelled like the ID: the lab tool's codes and the description's IDs are separate names |
 | `--no-masks` | Drop the masks folder an earlier run recorded, with the mask axes stated for its masks (those of OME-Zarr label images are kept) |
 | `--no-exclude` | Clear the exclusions an earlier run recorded, so every image is analysed again (not together with `--exclude`) |
 | `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks` and `calibrate`); give it only when no other run uses the output folder |
@@ -1195,6 +1197,11 @@ continues.
 | `unbalanced_images` | Warning | A condition and biological repeat has fewer than half or more than twice the median number of images. Check for missing, misplaced or duplicated images. |
 | `repeat_missing_conditions` | Warning | A biological repeat is not found in every condition. It is still used. If it has another folder name in some condition, pair it in the experiment design (step 1). |
 | `design_not_confirmed` | Error | Some repeat groups are not confirmed as comparable. Confirm them in the notebook's describe steps and save the description again. |
+| `lab_links_invalid` | Error | The `--lab-links` file cannot be read, is not one JSON object with exactly `repository_url`, `commit`, `experiment_path` and optionally `repeat_codes`, or a value is of another type, empty, has spaces around it, or (`commit`) is not a full lowercase SHA; or `--confirm-repeat-codes` was given with nothing to confirm. Nothing is read or written. Correct the file. |
+| `lab_links_repeat_codes_not_confirmed` | Error | The lab-tool links map repeat codes to biological repeats, and the mapping was not confirmed. Check each pair the run prints, then give `--confirm-repeat-codes`. |
+| `lab_links_repeat_unknown` | Error | A lab-tool repeat code names a biological repeat the description does not declare (IDs are compared exactly; a folder name or display name is not an ID). Correct the file. |
+| `lab_links_repeat_twice` | Error | Two lab-tool repeat codes name the same biological repeat; each repeat has exactly one code. Correct the file. |
+| `lab_links_repeat_missing` | Error | The lab-tool repeat codes leave out a biological repeat of the description; a mapping names every repeat. Add its code, or leave `repeat_codes` out. |
 | `rgb_not_possible` | Error | The image type RGB was chosen, but the images are not three channels of a whole-number pixel type. Choose fluorescence, or check the axis roles: the RGB samples must have the role C. |
 | `repeat_group_conflict` | Error | A repeat group holds two folders of the same condition. Move one into another replicate on the *Replicates* page and save the description again (*Check and save*). |
 | `invalid_experiment_design` | Error | A repeat group has no usable name (empty, `NA`, `nan`, `none`, `null`, `n/a`, `<NA>`, or spaces around it), two repeat groups are spelled the same apart from upper and lower case, or a confirmation date is not written `YYYY-MM-DD`. Correct `experiment_design.csv` (the message names the line and column). |
@@ -1255,6 +1262,10 @@ written by the notebook's *Check and save*); without it `run_experiment` returns
 the `experiment_design.csv` derived from the description; `run_experiment` takes no design
 (v0.5.1). Later bricks read the pairing from the description (`RunInputs.fovs()`:
 `repeat_group`, `condition_id`, `technical_repeat_id`).
+
+Lab-tool links (v0.5.1) are given as `run_experiment(..., mode=RunMode(lab_links=links))`, with
+`links = read_lab_links("links.json", confirmed=True)` (or `LabLinks(...)`); `confirmed=True`
+is your confirmation of its repeat codes. They are recorded in the manifest's `lab_links` only.
 
 Stated pixel sizes (§5) are built with `calibration_entry` and written with
 `write_calibration`; the next run records them, and later bricks read every image's sizes
