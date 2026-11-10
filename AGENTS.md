@@ -331,7 +331,7 @@ src/morphobricks_preprocessing/
 notebooks/MorphoBricks_Preprocessing.ipynb   thin notebook: every code cell calls notebook_ui only
 notebooks/notebook_latest_versions.yaml      the notebook's latest version, for LabConstrictor's version check
 tests/              pytest with simulated TIFFs (tests/tiff_tree.py, tests/simulation.py); the
-                    schema-version-2 fixture (tests/v2_fixture.py, tests/data)
+                    histogram science goldens (tests/histogram_goldens.py, tests/data)
 experiments/binning_study/      the study behind the binning decisions (not part of the package)
 ```
 
@@ -534,9 +534,9 @@ functions the tests use.
 - **Rows** are sorted by path, then z, t.
 - **Earlier versions:** the reader refuses schema 1 and 2 (`CsvFormatError`); a run
   recomputes them completely (manifest `schema_version` differs). Each channel's
-  histogram equals the version-2 row's, whole and in blocks
-  (`tests/test_schema_v2_equivalence.py` with the committed fixture in `tests/data`,
-  written by `tests/data/make_v2_fixture.py` with the pre-P3b code).
+  histogram equals the reference row's, whole and in blocks (science goldens:
+  `tests/test_histogram_goldens.py` with the committed reference in `tests/data`, written by
+  `tests/data/make_histogram_goldens.py` with an earlier, independent implementation).
 - **Step 4** summarises each channel of a group on its own (issue #104): one
   `GroupSummary` per group and channel (`channel`, `xyc_plane_count`,
   `channel_histogram_count`), a `channel` column in the table and one plot panel per
