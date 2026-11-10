@@ -129,15 +129,16 @@ def test_same_source_ignores_informational_fields():
     assert entry().same_source(entry(read_in_blocks=True))
 
 
-def test_read_in_blocks_round_trips_and_defaults_to_false(tmp_path):
+def test_read_in_blocks_round_trips_and_is_required(tmp_path):
     original = manifest(files=(entry(read_in_blocks=True), entry("cond/rep/b.tif")))
     path = write_manifest(original, tmp_path / "m.json")
     assert read_manifest(path) == original
     data = json.loads(path.read_bytes())
     assert [f["read_in_blocks"] for f in data["files"]] == [True, False]
-    del data["files"][0]["read_in_blocks"]  # written before planes could be read in blocks
+    del data["files"][0]["read_in_blocks"]  # always written: never defaulted when absent
     path.write_text(json.dumps(data), encoding="utf-8")
-    assert not read_manifest(path).files[0].read_in_blocks
+    with pytest.raises(ManifestFormatError, match="read_in_blocks"):
+        read_manifest(path)
 
 
 def test_position_id_round_trips(tmp_path):
@@ -175,7 +176,7 @@ def test_intensity_check_limits_round_trip_and_are_none_when_absent(tmp_path):
     assert read_manifest(path).intensity_checks is None
 
 
-def test_histogram_settings_and_narrow_ranges_round_trip_and_default_when_absent(tmp_path):
+def test_histogram_settings_and_narrow_ranges_round_trip(tmp_path):
     import numpy as np
     from morphobricks_normalization.ranges import HistogramSettings, RangeCheck
 
@@ -201,10 +202,10 @@ def test_histogram_settings_and_narrow_ranges_round_trip_and_default_when_absent
     data = json.loads(path.read_bytes())
     assert data["settings"]["histogram"]["histogram_range"] == "robust"
     assert data["narrow_histogram_ranges"][0]["robust_limits"] == [61.5, 140.25]
-    del data["settings"]["histogram"], data["narrow_histogram_ranges"]  # written before P6
+    del data["settings"]["histogram"]  # always written: never the default when absent
     path.write_text(json.dumps(data), encoding="utf-8")
-    read = read_manifest(path)
-    assert read.settings.histogram == HistogramSettings() and read.narrow_ranges == ()
+    with pytest.raises(ManifestFormatError, match="histogram"):
+        read_manifest(path)
 
 
 def test_file_entry_for_reads_size_and_time(tmp_path):
@@ -331,3 +332,28 @@ def test_file_entry_for_records_the_files_own_roles(tmp_path):
     write_tiff(tmp_path / "a.tif")
     mapping = prefill_mapping("ZYX").with_role(0, None)
     assert file_entry_for(tmp_path, "a.tif", ("c", "b", "t"), mapping).roles == (None, "Y", "X")
+
+
+@pytest.mark.parametrize(
+    "where, key",
+    [
+        ("settings", "histogram"),
+        ("settings", "verify_content"),
+        ("file", "singleton_roles"),
+        ("file", "channel_names"),
+        ("file", "significant_bits"),
+        ("file", "channel_names_trimmed"),
+        ("file", "pixel_sizes"),
+    ],
+)
+def test_a_missing_always_written_key_is_refused_naming_it_and_the_fix(tmp_path, where, key):
+    # PP-05: nothing is defaulted; the refusal names the key and the fix, not a bare KeyError.
+    path = write_manifest(manifest(), tmp_path / "m.json")
+    data = json.loads(path.read_bytes())
+    del (data["settings"] if where == "settings" else data["files"][0])[key]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ManifestFormatError) as refused:
+        read_manifest(path)
+    message = str(refused.value)
+    assert f"has no {key!r}" in message
+    assert "Run preprocessing again" in message

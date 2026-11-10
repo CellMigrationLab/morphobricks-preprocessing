@@ -3,8 +3,8 @@
 All notable changes to `morphobricks-preprocessing`. Numbers are pull requests (PR) and
 issues of [CellMigrationLab/morphobricks-preprocessing](https://github.com/CellMigrationLab/morphobricks-preprocessing).
 The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on branch `claude/restart-doc` ([commit ff19de8](https://github.com/CellMigrationLab/MorphoFeature/blob/ff19de8938d5ed8c4143cff563715551ee874a05/docs/restart/preprocessing-design-v0.4.md); not on `main`). The decisions
-are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
-[migration guide](docs/migration-0.3-to-0.4.md).
+are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
+v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased (v0.5.1)
 
@@ -216,6 +216,53 @@ ADR 0001 GS1; contract §9). **API and CLI additions only.**
   resolver's provenance and the mask step's check; unconfirmed, unknown, missing and
   wrong-case repeat codes are refused; `i99` is still refused with links given. The input's
   own checks and the CLI: `tests/test_lab_links.py`.
+
+### SWEEP-PP: the remaining compatibility code removed
+
+The obsolete-code sweep of this repository (MorphoFeature `docs/restart/designs/obsolete-code-inventory-2026-11-10.md`
+§1 and §12, Stage 2 plan §3.7; owner policy of 10 November 2026, Spec ADR 0002 AR10). What PP-C
+already removed is not repeated here. **Breaking** where it says so.
+
+- **Tests: the frozen clock without the `notebook` extra** (#262). `tests/frozen_clock.py`
+  skips a module whose import fails only because ipywidgets or matplotlib is missing (any
+  other import error is raised), so a plain `pip install -e '.[dev]'` passes the frozen-clock
+  tests (`tests/test_frozen_clock_extras.py`).
+
+- **Removed: `GroupSummary.plane_count`** (inventory PP-07), the deprecated alias of
+  `channel_histogram_count` from before #104; use `xyc_plane_count` (XYC planes) or
+  `channel_histogram_count` (channel histograms pooled). No caller in the nine repositories.
+
+- **Removed: `source_fingerprint`** (inventory PP-08, owner answer 7) from `inventory`, its
+  re-export from `manifest` and the package's top level. It was kept "for callers" that compared
+  size and modification time only; no source caller in the nine repositories. Use
+  `inventory.source_signature` (size, modification time and the OME-Zarr inventory digest).
+
+- **Conversion record: version 3 only** (inventory PP-06). **Breaking.** A
+  `.morphobricks-conversion.json` of any other version (2 was still read as a tree without a
+  projection; 1 had its own message) is refused by `convert`, the run's `review_conversion` and
+  `RunInputs` with `conversion_record_unreadable`, naming its version and the fix: convert the
+  originals again into a new folder. The record's and each entry's `projection` key is required
+  (version 3 always writes it). Removed: `_READABLE_VERSIONS`, `_OLD_VERSIONS` and the "version 2
+  cannot hold a projection" check.
+
+- **Run manifest: nothing read leniently** (inventory PP-05, owner ruling 16). **Breaking** for a
+  hand-edited or truncated manifest only (version 4 always writes these keys). Removed: the
+  `strict` argument of `manifest_fields.recorded_position_id` (version-1 entries kept any value,
+  or None), the `strict` branches of the file-entry reader and writer, and the defaults for
+  absent keys: a file entry needs `position_id`, `roles`, `axes_from`, `pixel_sizes`,
+  `singleton_roles`, `channel_names`, `significant_bits`, `read_in_blocks` and
+  `channel_names_trimmed`, the settings `histogram` and `verify_content`; a manifest without
+  one is refused (`ManifestFormatError`). `recorded_sizes.sizes_from_data` refuses an absent
+  list (also in a conversion record). `check_sources` no longer has the
+  `position_id_not_recorded` issue (an entry without a position is `identity_differs`) and no
+  longer resolves roles from the image header for an entry without them (it fits no axes,
+  `axis_mapping_mismatch`).
+
+- **Docs: `docs/migration-0.3-to-0.4.md` removed** (inventory PP-10): no run of v0.3 or v0.4 is
+  read any more. README, user guide and this file no longer point to it. (The rest of PP-10, the
+  v0.4.0 parity tests, `test_removed_in_v040.py`, `released_code.py` and the CI's full-history
+  fetch, went in PP-C; `test_schema_v2_equivalence.py` was renamed `test_histogram_goldens.py`
+  there.)
 
 ## 0.5.0 - 2026-11-09
 

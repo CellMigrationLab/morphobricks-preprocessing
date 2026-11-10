@@ -7,7 +7,6 @@ masks have theirs in :mod:`.mask_text`.
 
 from __future__ import annotations
 
-import warnings
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -353,21 +352,6 @@ class GroupSummary:
     std: float | None = None
     median: float | None = None
     percentiles: dict[float, float] | None = None
-
-    @property
-    def plane_count(self) -> int:
-        """Deprecated name of ``channel_histogram_count`` (before issue #104).
-
-        It counted each channel of an XYC plane as one plane; use ``xyc_plane_count`` for
-        planes and ``channel_histogram_count`` for histograms.
-        """
-        warnings.warn(
-            "GroupSummary.plane_count is deprecated: use xyc_plane_count (XYC planes) or "
-            "channel_histogram_count (channel histograms pooled).",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.channel_histogram_count
 
 
 def group_summaries(

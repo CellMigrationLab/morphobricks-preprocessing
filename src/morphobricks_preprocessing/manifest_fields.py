@@ -2,10 +2,12 @@
 
 A file entry's ``position_id`` is not free text: it is the image's name without its
 extension (:func:`.image_names.position_id`, MorphoBricks D02 and D85), never parsed or
-edited. Manifest version 2 records it for every image, so a version 2 entry without it, or
-with another one, is refused rather than read as an empty or a different position (round-2
-audit A-m5: ``RunInputs`` turned a missing one into ``""``). Also the check of an entry's
-axis roles, and of its flags, optional texts and masks entry, moved from :mod:`.manifest`.
+edited. Every manifest this package reads (version 4) records it for every image, so an entry
+without it, or with another one, is refused rather than read as an empty or a different position
+(round-2 audit A-m5: ``RunInputs`` turned a missing one into ``""``). Nothing is read leniently
+for an older manifest: older versions are refused whole (:mod:`.manifest_versions`). Also the
+check of an entry's axis roles, and of its flags, optional texts and masks entry, moved from
+:mod:`.manifest`.
 Pure: no I/O.
 """
 
@@ -31,7 +33,7 @@ def recorded_raw_names(value: object, relative_path: str) -> tuple[str | None, .
     return tuple(value)
 
 
-def recorded_position_id(value: object, relative_path: str, *, strict: bool = True) -> str | None:
+def recorded_position_id(value: object, relative_path: str) -> str:
     """Check the ``position_id`` of a manifest file entry against its image's name.
 
     Parameters
@@ -40,29 +42,24 @@ def recorded_position_id(value: object, relative_path: str, *, strict: bool = Tr
         The recorded ``position_id``.
     relative_path
         The entry's ``relative_path``, whose name gives the position identifier.
-    strict
-        True for manifest version 2, which records it for every image. False for version 1
-        (read for reporting only): any value is kept as text, and None when absent.
 
     Returns
     -------
-    str or None
-        The position identifier; None only when not ``strict`` and none is recorded.
+    str
+        The position identifier.
 
     Raises
     ------
     ValueError
-        When ``strict`` and the value is missing, null or not text, or is not
-        ``position_id(relative_path)``, or the path's name is only an extension; the
-        message names the entry and the identifier its name gives.
+        When the value is missing, null or not text, or is not ``position_id(relative_path)``,
+        or the path's name is only an extension; the message names the entry and the
+        identifier its name gives.
     """
-    if not strict:
-        return None if value is None else str(value)
     expected = position_id(relative_path)
     if not isinstance(value, str):
         raise ValueError(
-            f"the entry of {relative_path!r} has no position_id ({value!r}); manifest version 2 "
-            f"records one for every image: {expected!r}, its name without the extension"
+            f"the entry of {relative_path!r} has no position_id ({value!r}); a manifest records "
+            f"one for every image: {expected!r}, its name without the extension"
         )
     if value != expected:
         raise ValueError(
@@ -73,28 +70,26 @@ def recorded_position_id(value: object, relative_path: str, *, strict: bool = Tr
     return value
 
 
-def recorded_roles(value: object, axes: str) -> tuple[str | None, ...] | None:
-    """Check a file's recorded axis roles: one role or null per axis (absent in older manifests).
+def recorded_roles(value: object, axes: str) -> tuple[str | None, ...]:
+    """Check a file's recorded axis roles: one role or null per axis, always recorded.
 
     Parameters
     ----------
     value
-        The recorded ``roles``: a list with one role or null per axis, or None.
+        The recorded ``roles``: a list with one role or null per axis.
     axes
         The file's axis letters.
 
     Returns
     -------
-    tuple or None
-        The roles; None when none are recorded.
+    tuple
+        The roles.
 
     Raises
     ------
     ValueError
-        If they are not one role or null per axis, or a role is unknown.
+        If they are absent, not one role or null per axis, or a role is unknown.
     """
-    if value is None:
-        return None
     if not isinstance(value, list) or len(value) != len(axes):
         raise ValueError(f"the roles {value!r} do not fit the axes {axes!r}")
     roles = tuple(None if r is None else str(r) for r in value)

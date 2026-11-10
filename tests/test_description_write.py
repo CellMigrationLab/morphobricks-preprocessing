@@ -14,7 +14,7 @@ from dataclasses import replace
 
 import pytest
 
-from frozen_clock import FrozenClock
+from frozen_clock import FrozenClock, notebook_extra_installed
 from morphobricks_preprocessing.description import (
     Description,
     DescriptionError,
@@ -210,7 +210,9 @@ def test_a_frozen_clock_moved_by_a_day_writes_identical_bytes_for_an_unchanged_m
 ):
     """Conformance plan section 2, ``confirmed_on``: the writer never reads the clock."""
     clock = FrozenClock(monkeypatch, datetime.date(2026, 11, 9))
-    assert "morphobricks_preprocessing.notebook_check_save.date" in clock.patched
+    assert "morphobricks_preprocessing.description_reconcile.date" in clock.patched
+    if notebook_extra_installed():  # the notebook modules are skipped without it (#262)
+        assert "morphobricks_preprocessing.notebook_check_save.date" in clock.patched
     models = {name: _model(name) for name in VALID}
     clock.reads = 0
     first = {name: canonical_bytes(model) for name, model in models.items()}

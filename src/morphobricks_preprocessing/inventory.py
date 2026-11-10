@@ -14,7 +14,7 @@ is then set back to its earlier value (as for a TIFF file): only hashing the con
 Design v0.4 §1 keeps the fingerprint metadata only by default; a run that verifies content
 (``verify_content``, :mod:`.source_content`) also records and checks each source's SHA-256.
 
-Moved from :mod:`.manifest` (PP-12), which re-exports :func:`source_fingerprint`.
+Moved from :mod:`.manifest` (PP-12).
 """
 
 from __future__ import annotations
@@ -104,27 +104,6 @@ def store_files(path: Path) -> tuple[int, list[tuple[str, os.stat_result]]]:
             newest = max(newest, stat.st_mtime_ns)
     found.sort(key=lambda item: item[0])
     return newest, found
-
-
-def source_fingerprint(path: str | os.PathLike) -> tuple[int, int]:
-    """Return the size and modification time of an image, without its inventory.
-
-    Kept for callers that show or compare only these two numbers; whether an image
-    changed is decided with the inventory too (:func:`source_signature`,
-    :class:`.fingerprint.Fingerprint`).
-
-    Parameters
-    ----------
-    path
-        A TIFF file or an OME-Zarr folder.
-
-    Returns
-    -------
-    tuple
-        ``(size, mtime_ns)`` as :func:`source_signature` gives them.
-    """
-    size, mtime_ns, _ = source_signature(path)
-    return size, mtime_ns
 
 
 def _raise(error: OSError) -> None:

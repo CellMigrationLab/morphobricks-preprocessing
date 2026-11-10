@@ -109,7 +109,8 @@ def test_a_name_that_is_only_an_extension_is_refused():
     with pytest.raises(ValueError, match="only an extension"):
         recorded_position_id(".tif", "ctrl/.tif")
     assert recorded_position_id("img.01", "ctrl/img.01.ome.tif") == "img.01"
-    assert recorded_position_id(None, "ctrl/a.tif", strict=False) is None
+    with pytest.raises(ValueError, match="no position_id"):
+        recorded_position_id(None, "ctrl/a.tif")
 
 
 def test_a_run_after_a_manifest_without_positions_reads_every_image_again(run):

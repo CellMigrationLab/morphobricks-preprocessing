@@ -122,15 +122,13 @@ def sizes_to_data(sizes: Iterable[RecordedSize]) -> list[dict]:
 
 
 def sizes_from_data(data: object) -> tuple[RecordedSize, ...]:
-    """Read recorded sizes (absent in v1 manifests, which gives none).
+    """Read recorded sizes: a list, one entry per role (always written; never absent).
 
     Raises
     ------
     ValueError
         If the data is not a list of sizes.
     """
-    if data is None:
-        return ()
     if not isinstance(data, list):
         raise ValueError(f"the pixel sizes {data!r} are not a list")
     return tuple(RecordedSize.from_dict(item) for item in data)

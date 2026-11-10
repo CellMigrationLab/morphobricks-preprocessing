@@ -9,13 +9,13 @@ records the record's SHA-256 in its manifest (``conversion_record_sha256``) and
 :func:`review_conversion` warns when a source changed after the conversion, or a copy
 since it was written (its fingerprint or its SHA-256).
 
-Record version 2 (PP-11c) added the copies' SHA-256, channel names and significant bits;
-a version 1 record is refused with a message to convert again
-(:class:`ConversionRecordError`), since its copies cannot be checked. Record version 3
-(issue #176) adds the record-level ``projection`` (the method and slice range of a tree of
-Z-projected copies, or null) and the entry action ``"projected"`` with its
-:class:`.projection_record.ProjectionEntry`; version 2 records are still read, as trees
-without a projection.
+Only record version 3 is written and read (issue #176): the copies' SHA-256, channel names
+and significant bits (PP-11c), the record-level ``projection`` (the method and slice range of a
+tree of Z-projected copies, or null) and the entry action ``"projected"`` with its
+:class:`.projection_record.ProjectionEntry`. A record of any other version (1 and 2 were
+written before v0.5.1) is refused with :class:`ConversionRecordError`, naming the fix: convert
+the originals again into a new folder. Nothing is converted (no backward compatibility before
+the first pipeline release, Spec ADR 0002 AR10; SWEEP-PP).
 """
 
 from __future__ import annotations
@@ -42,13 +42,11 @@ RECORD_FILENAME = ".morphobricks-conversion.json"
 """The conversion record, in the root of the copy tree."""
 
 RECORD_VERSION = "3"
-"""Version 3 (issue #176): the record-level projection and projected entries. Version 2
-(PP-11c: each copy's SHA-256, channel names and significant bits) is still read."""
+"""The one version written and read (issue #176): the record-level projection and projected
+entries, with each copy's SHA-256, channel names and significant bits (PP-11c)."""
 
-_READABLE_VERSIONS = ("2", RECORD_VERSION)
-
-_OLD_VERSIONS = ("1",)
-"""Record versions written before the copies' SHA-256: refused, convert again."""
+_CONVERT_AGAIN = "convert the originals again into a new folder"
+"""The fix a refused record names."""
 
 CONVERTED = "converted"
 """An image written as a named-axis OME-TIFF with the confirmed roles."""
@@ -192,14 +190,14 @@ class CopyEntry:
             source_axes=str(data.get("source_axes", "")),
             roles=None if roles is None else tuple(None if r is None else str(r) for r in roles),
             copy_axes=None if data.get("copy_axes") is None else str(data["copy_axes"]),
-            pixel_sizes=sizes_from_data(data.get("pixel_sizes")),
+            pixel_sizes=sizes_from_data(data["pixel_sizes"]),
             unknown_sizes={str(k): str(v) for k, v in (data.get("unknown_sizes") or {}).items()},
             copy_sha256=str(data["copy_sha256"]),
             channel_names=tuple(None if n is None else str(n) for n in data["channel_names"]),
             significant_bits=_bits(data["significant_bits"]),
             projection=(
                 None
-                if data.get("projection") is None
+                if data["projection"] is None
                 else ProjectionEntry.from_dict(data["projection"])
             ),
         )
@@ -261,21 +259,22 @@ class ConversionRecord:
         Raises
         ------
         ConversionRecordError
-            For another record version (a version 1 record: convert again) or data that is
-            not a record.
+            For another record version (refused, never converted: convert the originals again)
+            or data that is not a record.
         """
-        if isinstance(data, Mapping) and data.get("record_version") in _OLD_VERSIONS:
-            raise ConversionRecordError(
-                f"it is a record of version {data['record_version']}, written before the "
-                "copies' SHA-256 was recorded, so the copies cannot be checked; convert the "
-                "originals again into a new folder"
-            )
-        if not isinstance(data, Mapping) or data.get("record_version") not in _READABLE_VERSIONS:
+        if not isinstance(data, Mapping) or "record_version" not in data:
             raise ConversionRecordError(f"not a conversion record of version {RECORD_VERSION}")
-        if data["record_version"] != RECORD_VERSION and (
-            "projection" in data or any("projection" in f for f in data.get("files") or [])
-        ):
-            raise ConversionRecordError("a version 2 record cannot hold a projection")
+        if data["record_version"] != RECORD_VERSION:
+            version = data["record_version"]
+            if not isinstance(version, str):  # the number 3 is not the version "3"
+                raise ConversionRecordError(
+                    f"its record_version {version!r} is not text: this version of preprocessing "
+                    f'reads version "{RECORD_VERSION}" only; {_CONVERT_AGAIN}'
+                )
+            raise ConversionRecordError(
+                f"it is a record of version {version}, and this version of preprocessing reads "
+                f"version {RECORD_VERSION} only (older records are not converted); {_CONVERT_AGAIN}"
+            )
         try:
             mapping = data["mapping"]
             return cls(
@@ -286,12 +285,15 @@ class ConversionRecord:
                 versions={str(k): str(v) for k, v in (data.get("versions") or {}).items()},
                 written_at=str(data.get("written_at", "")),
                 projection=(
-                    None
-                    if data.get("projection") is None
-                    else projection_from_data(data["projection"])
+                    None if data["projection"] is None else projection_from_data(data["projection"])
                 ),
             )
-        except (KeyError, TypeError, ValueError) as exc:
+        except KeyError as exc:  # a key every version 3 record writes: never defaulted (PP-06)
+            raise ConversionRecordError(
+                f"the record has no {exc.args[0]!r}, which every version {RECORD_VERSION} record "
+                f"holds; {_CONVERT_AGAIN}"
+            ) from exc
+        except (TypeError, ValueError) as exc:
             raise ConversionRecordError(f"not a valid conversion record: {exc}") from exc
 
     def entry(self, relative_path: str) -> CopyEntry | None:

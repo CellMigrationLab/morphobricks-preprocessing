@@ -139,7 +139,7 @@ src/morphobricks_preprocessing/
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
   axis_review.py    review_axes and check_mapping (moved from axes.py in PP-4)
-  inventory.py      source_signature/source_fingerprint: a file's size and mtime, an OME-Zarr
+  inventory.py      source_signature: a file's size and mtime, an OME-Zarr
                     folder's total size, newest mtime and inventory digest (issue #86; PP-12);
                     store_files (the files an OME-Zarr fingerprint covers)
   source_content.py verify_content: a source's content SHA-256 (TIFF bytes; OME-Zarr per-file
@@ -549,8 +549,8 @@ functions the tests use.
   `GroupSummary` per group and channel (`channel`, `xyc_plane_count`,
   `channel_histogram_count`), a `channel` column in the table and one plot panel per
   channel. Pooling every channel together (as with version 2) only with
-  `group_summaries(..., pool_channels=True)`, labelled `all channels (pooled)`;
-  `GroupSummary.plane_count` is a deprecated alias of `channel_histogram_count`.
+  `group_summaries(..., pool_channels=True)`, labelled `all channels (pooled)`. (The
+  deprecated alias `GroupSummary.plane_count` was removed in v0.5.1, SWEEP-PP.)
 - **`position_id`** is filled in every row (D02, plan §12 question 20). Earlier tables with
   it blank are filled on the next run without reading pixels.
 - **Reading:** labels are always read back as text (`NA`, `001`, `TRUE` stay as typed).
