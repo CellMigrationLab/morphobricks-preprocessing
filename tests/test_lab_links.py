@@ -103,7 +103,7 @@ def test_a_sha256_commit_and_an_ssh_remote_are_accepted():
     ],
 )
 def test_anything_but_the_fixed_keys_with_text_values_is_refused(data, found):
-    with pytest.raises(LabLinksError, match=None) as caught:
+    with pytest.raises(LabLinksError) as caught:
         parse_lab_links(_bytes(data))
     assert found in str(caught.value)
 
@@ -132,8 +132,9 @@ def test_the_file_reader_names_the_file(tmp_path):
     with pytest.raises(LabLinksError, match="cannot be read"):
         read_lab_links(path)
     path.write_bytes(_bytes(_with(commit="abc")))
-    with pytest.raises(LabLinksError, match=f"{path} is refused: commit 'abc'"):
+    with pytest.raises(LabLinksError) as caught:
         read_lab_links(path)
+    assert f"{path} is refused: commit 'abc'" in str(caught.value)  # a Windows path is no regex
     path.write_bytes(_bytes(GOOD))
     assert read_lab_links(path, confirmed=True).repeat_codes_confirmed
 
