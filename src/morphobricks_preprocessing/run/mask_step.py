@@ -178,6 +178,9 @@ def prepare_mask_step(
         output folder holds no published description (``A_DESCRIPTION_REQUIRED``; nothing is
         read).
     """
+    if output_folder and not is_published(output_folder):  # before the recorded run is read
+        refusal = description_required_issue(Path(output_folder))
+        return MaskStep(preflight=None, output_folder=None, refusal=refusal)
     if experiment_root is None:
         recorded, missing = recorded_experiment_root(
             output_folder and Path(output_folder).resolve()

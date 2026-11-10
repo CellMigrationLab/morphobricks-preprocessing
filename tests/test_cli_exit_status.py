@@ -10,6 +10,7 @@ import pytest
 
 from described_tree import main_described
 from morphobricks_preprocessing.cli import main
+from morphobricks_preprocessing.run import LOCK_FILENAME
 from tiff_tree import write_data, write_file
 
 
@@ -47,3 +48,25 @@ def test_check_and_run_exit_with_1_on_an_error(experiment, tmp_path, capsys):
     output = tmp_path / "out"
     assert main_described(["check", str(experiment), "--output", str(output)]) == 1
     assert main_described(["run", str(experiment), "--output", str(output), "--axes", "YX"]) == 1
+
+
+@pytest.mark.parametrize("command", ["check", "run", "masks"])
+def test_without_a_description_no_log_lock_or_recorded_run_is_touched(
+    experiment, tmp_path, capsys, command
+):
+    # Review of PP-C: the refusal came after the log was opened, a stale lock removed and the
+    # recorded run read. A manifest that cannot be read shows the run was not read either.
+    output = tmp_path / "out"
+    output.mkdir()
+    (output / "run_manifest.json").write_text("not json", encoding="utf-8")
+    (output / LOCK_FILENAME).write_text("{}", encoding="utf-8")
+    before = {path.name: path.read_bytes() for path in output.iterdir()}
+    log = tmp_path / "notes.log"
+    given = [str(experiment)] if command == "check" else []  # else the recorded experiment
+    args = [command, *given, "--output", str(output)]
+    args += [] if command == "check" else ["--log", str(log)]  # 'check' takes no --log
+    assert main([*args, "--remove-stale-lock"]) == 1
+    printed = capsys.readouterr().out
+    assert "A_DESCRIPTION_REQUIRED" in printed and "could not be read" not in printed
+    assert not log.exists()
+    assert {path.name: path.read_bytes() for path in output.iterdir()} == before

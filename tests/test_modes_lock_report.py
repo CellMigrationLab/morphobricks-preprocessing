@@ -14,7 +14,7 @@ import socket
 import numpy as np
 import pytest
 
-from described_tree import main_described, run_described, without_mask_step
+from described_tree import main_described, publish_any, run_described, without_mask_step
 from morphobricks_preprocessing import (
     AxisMapping,
     RunMode,
@@ -417,7 +417,9 @@ def test_check_writes_the_report_and_the_design_template(experiment):
 
 def test_nothing_is_written_inside_the_experiment(experiment):
     result = run_described(experiment, TYX, output_folder=experiment / "results")
-    assert codes([i for i in result.issues if i.is_error]) == ["output_inside_experiment"]
+    # Nothing is described there either: both are said, and no image is read.
+    errors = codes([i for i in result.issues if i.is_error])
+    assert errors == ["A_DESCRIPTION_REQUIRED", "output_inside_experiment"]
     assert not (experiment / "results").exists()
 
 
@@ -494,7 +496,7 @@ def test_without_a_recorded_experiment_the_cli_names_what_is_missing(
         data["manifest_version"] = "1"
         (out / "run_manifest.json").write_text(json.dumps(data), encoding="utf-8")
     elif folder == "empty":
-        out.mkdir()
+        publish_any(out)  # described, so the missing recorded run is what is refused
     assert cli_run(*(() if folder == "none" else ("--output", out))) == 1
     text = capsys.readouterr().out
     assert "No experiment folder was given" in text and "--output" in text

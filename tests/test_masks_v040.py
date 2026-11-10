@@ -241,7 +241,8 @@ def test_the_output_folder_may_not_be_inside_the_masks_folder(tmp_path):
     result = run_described(
         root, prefill_mapping("YX"), masks_folder=masks, output_folder=masks / "out"
     )
-    assert errors(result.issues) == ["output_inside_masks"] and not result.written
+    assert errors(result.issues) == ["A_DESCRIPTION_REQUIRED", "output_inside_masks"]
+    assert not result.written
     assert one(result.issues, "output_inside_masks").paths == ("out",)
 
 

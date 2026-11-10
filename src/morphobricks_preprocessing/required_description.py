@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal
 
 from .description_file import DESCRIPTION_FILENAME
+from .discovery import check_output_folder
+from .folder_rules import output_inside_masks_issues
 from .validation import ValidationIssue, error
 
 DESCRIPTION_REQUIRED = "A_DESCRIPTION_REQUIRED"
@@ -52,3 +55,22 @@ def description_required_issue(output_folder: str | os.PathLike) -> ValidationIs
         [Path(output_folder).as_posix()],
         FIX,
     )
+
+
+def undescribed_issues(
+    experiment_root: str | os.PathLike | None,
+    output_folder: str | os.PathLike,
+    masks_folder: str | os.PathLike | Literal[False] | None = None,
+) -> list[ValidationIssue]:
+    """Return the refusal of a run without a published description; nothing is read.
+
+    ``A_DESCRIPTION_REQUIRED``, then ``output_inside_experiment`` and ``output_inside_masks``
+    when the folders given say so: only their paths (and device and inode) are compared, no
+    image header and no recorded run is read.
+    """
+    issues = [description_required_issue(output_folder)]
+    if experiment_root is not None:
+        issues.extend(check_output_folder(experiment_root, output_folder))
+    if masks_folder:
+        issues.extend(output_inside_masks_issues(output_folder, Path(masks_folder).resolve()))
+    return issues
