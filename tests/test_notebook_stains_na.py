@@ -36,7 +36,7 @@ def _open(tmp_path, *, channel_folders=()):
             write_channels(root / folder / "a.tif", ["DAPI", "Actin", "Ch3"], ["blobs"] * 3, seed=i)
         else:
             write_rgb(root / folder / "a.tif", seed=i + 1)
-    nb = PreprocessingNotebook(str(root), output_folder=str(tmp_path / "out"), describe=True)
+    nb = PreprocessingNotebook(str(root), output_folder=str(tmp_path / "out"))
     nb.steps()
     nb.check_button.click()
     nb.quick_confirm.click()

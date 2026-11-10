@@ -24,11 +24,8 @@ from morphobricks_normalization.ranges import HistogramSettings
 
 from ..axes import AxisMapping
 from ..axis_check import ConfirmedAxes
-from ..design import (
-    DESIGN_FILENAME,
-    ExperimentDesign,
-    write_experiment_design,
-)
+from ..design import DESIGN_FILENAME, write_experiment_design
+from ..design_derive import derive_design
 from ..discovery import check_output_folder, default_output_folder
 from ..discovery_report import (
     REPORT_FILENAME,
@@ -48,7 +45,7 @@ from ..manifest import (
     package_versions,
     write_manifest,
 )
-from ..manifest_versions import version_for
+from ..manifest_versions import MANIFEST_VERSION
 from ..mask_binding import (
     changed_masks,
     content_changed_masks,
@@ -58,20 +55,21 @@ from ..mask_binding import (
 from ..mask_record import mask_manifest
 from ..mask_scan import MASK_REPORT_FILENAME
 from ..planes import DEFAULT_MEMORY_LIMIT
+from ..required_description import is_published, undescribed_issues
 from ..source_content import content_changed
 from ..validation import ValidationIssue, has_errors, warning
 from .description_run import (
     RunDescription,
     checked_description,
+    load_description,
     manifest_entry,
     unit_entries,
 )
-from .design_file import design_for_run
 from .generation import staged_generation
 from .lock import OutputLockedError, lock_issue, output_lock
 from .modes import FULL, RESTART, RunMode, run_mode
 from .output_guard import output_masks_issues
-from .preflight import Preflight, description_in_use, fit_calibration, preflight
+from .preflight import Preflight, fit_calibration, preflight
 from .publish import write_report
 from .recorded import (
     GivenInputs,
@@ -101,7 +99,6 @@ def run_experiment(  # noqa: PLR0913
     exclude: Iterable[str] | None = None,
     mode: str | RunMode = RESTART,
     progress: Callable[[int, int, str], None] | None = None,
-    design: ExperimentDesign | None = None,
     masks_folder: str | os.PathLike | Literal[False] | None = None,
     mask_axes: Mapping[str, str] | None = None,
     image_type: str | None = None,
@@ -113,6 +110,12 @@ def run_experiment(  # noqa: PLR0913
     Every input left as None is taken from the earlier run in the output folder (design
     v0.4 §1), or is the default without one. A value given that differs from the
     recorded one is used, and the report names the change and its effect.
+
+    The output folder must hold a published experiment description (``morphobricks.toml``,
+    Spec ADR 0002 AR10): without one the run is refused with ``A_DESCRIPTION_REQUIRED``
+    before anything is read or written (:mod:`..required_description`). The run's
+    ``experiment_design.csv`` is derived from the description (:func:`.design_derive.derive_design`)
+    and written with the table: it is an output only, never read back.
 
     Parameters
     ----------
@@ -148,13 +151,6 @@ def run_experiment(  # noqa: PLR0913
     progress
         Called as ``progress(done, total, relative_path)`` before each file is
         read, and as ``progress(total, total, "")`` when reading is finished.
-    design
-        The experiment design the user confirmed (None: the ``experiment_design.csv``
-        of the earlier run). It is brought up to date with the folders
-        (:func:`.design.reconcile_design`); the run stops with ``design_not_confirmed``
-        while a repeat group is not confirmed, or with ``repeat_group_conflict``. It is
-        written to ``experiment_design.csv`` with the table, and its SHA-256 recorded in
-        the manifest. Without any design nothing is asked and the manifest records none.
     masks_folder, mask_axes
         As :func:`preflight`; the label images of OME-Zarr images are always used.
         ``masks_folder=False`` drops the recorded masks folder. ``mask_axes`` add to the
@@ -175,7 +171,8 @@ def run_experiment(  # noqa: PLR0913
     Returns
     -------
     RunResult
-        If any error is found, only the report is written and ``written`` is False.
+        If any error is found, only the report is written and ``written`` is False. Without a
+        published description nothing is written (``A_DESCRIPTION_REQUIRED``).
 
     Raises
     ------
@@ -186,7 +183,14 @@ def run_experiment(  # noqa: PLR0913
     _check_arguments(mode, image_type, missing_as_singleton)
     chosen = run_mode(mode)
     mode = chosen.name
+    if output_folder is not None and not is_published(output_folder):
+        # Before the recorded run or any image is read: only where the folders are is said.
+        issues = undescribed_issues(experiment_root, Path(output_folder).resolve(), masks_folder)
+        return RunResult(Path(output_folder).resolve(), False, _sorted(issues), mode=mode)
     output, root = _folders(experiment_root, output_folder)
+    if not is_published(output):  # the default output folder next to the experiment
+        issues = undescribed_issues(root, output, masks_folder)
+        return RunResult(output, False, _sorted(issues), mode=mode)
     inside_masks = output_masks_issues(output, masks_folder)
     if check_output_folder(root, output) or inside_masks:
         # Nothing is written inside the experiment or the masks: not the lock, not the report.
@@ -209,7 +213,7 @@ def run_experiment(  # noqa: PLR0913
     output.mkdir(parents=True, exist_ok=True)
     try:
         with output_lock(output):
-            return _locked_run(given, output, _Options(mode, memory_limit, progress, design))
+            return _locked_run(given, output, _Options(mode, memory_limit, progress))
     except OutputLockedError as exc:
         return RunResult(output, False, (lock_issue(exc),), mode=mode)
 
@@ -221,7 +225,6 @@ class _Options:
     mode: str
     memory_limit: int
     progress: Callable[[int, int, str], None] | None
-    design: ExperimentDesign | None
 
 
 @dataclass(frozen=True)
@@ -239,7 +242,7 @@ class _Run:
     mask_content: Mapping[str, str | None] = field(default_factory=dict)
     """In a ``verify_content`` run, each mask's content SHA-256 taken after the header checks."""
     description: RunDescription | None = None
-    """The published experiment description the run works with, or None (a v0.4 run)."""
+    """The published experiment description the run works with; None when it was refused."""
 
 
 def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResult:
@@ -256,17 +259,17 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
         masks_folder=inputs.masks_folder,
         mask_axes=inputs.mask_axes or None,
         bind_headers=True,
-        with_description=description_in_use(inputs.experiment_root, output),
     )
-    design, design_problems, design_changed = design_for_run(options.design, output, previous[0])
+    loaded = load_description(output)
+    # The design is the description's (experiment-v1 section 11), never a file read back.
+    design = None if loaded[0] is None else derive_design(loaded[0].description)
     checked = header_checks(pre, inputs, design, options.memory_limit)
-    checked.issues.extend(design_problems)
-    described = checked_description(output, pre, checked)
+    described = checked_description(output, pre, checked, loaded)
     if checked.review is not None:
         pre, absent = fit_calibration(pre, checked.review)
         checked.issues.extend(absent)
     calibrated = calibration_change(usable(previous[0]), pre.calibration)
-    inputs = replace(inputs, changes=(*inputs.changes, *design_changed, *calibrated))
+    inputs = replace(inputs, changes=(*inputs.changes, *calibrated))
     run = _Run(output, pre, inputs, options.mode, checked, previous, found, description=described)
     recorded = usable(previous[0])
     base = RunOutcome(
@@ -504,12 +507,8 @@ def _write_generation(
         calibration_sha256=pre.calibration.sha256,
         conversion_record_sha256=None if pre.conversion is None else pre.conversion.sha256,
         projection=_projection(pre),
-        experiment_description=(
-            None
-            if described is None
-            else manifest_entry(described, masks, run.output, len(rows.entries))
-        ),
-        manifest_version=version_for(settings.verify_content, described is not None),
+        experiment_description=manifest_entry(described, masks, run.output, len(rows.entries)),
+        manifest_version=MANIFEST_VERSION,
     )
     manifest = _kept_time(manifest, run.previous[0])
     return file_sha256(write_manifest(manifest, staged / MANIFEST_FILENAME))

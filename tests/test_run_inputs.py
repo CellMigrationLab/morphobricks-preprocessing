@@ -10,8 +10,9 @@ import numpy as np
 import pytest
 import tifffile
 
-from morphobricks_preprocessing import DESIGN_FILENAME, AxisMapping, prefill_mapping, run_experiment
-from morphobricks_preprocessing.manifest import MANIFEST_FILENAME
+from described_tree import check_masks, run_described
+from morphobricks_preprocessing import DESIGN_FILENAME, AxisMapping, prefill_mapping
+from morphobricks_preprocessing.manifest import MANIFEST_FILENAME, ManifestFormatError
 from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError
 from morphobricks_preprocessing.testing import make_clean_run
 from tiff_tree import write_data, write_plain
@@ -71,7 +72,8 @@ def test_histograms_design_and_image_type(clean):
     assert {r.source_relative_path for r in inputs.histograms()} == {
         f.relative_path for f in inputs.fovs()
     }
-    assert inputs.design() is None and inputs.image_type() is None
+    # The design derived from the description (an output of the run, v0.5.1).
+    assert inputs.design().confirmed and inputs.image_type() is None
 
 
 def test_run_inputs_pickle(clean):
@@ -84,7 +86,7 @@ def test_run_inputs_pickle(clean):
 # Refusals --------------------------------------------------------------------------------
 
 
-def test_a_version_1_run_is_refused(clean):
+def test_an_older_manifest_version_is_refused(clean):
     path = clean.output / MANIFEST_FILENAME
     data = json.loads(path.read_text(encoding="utf-8"))
     data["manifest_version"] = "1"
@@ -92,7 +94,7 @@ def test_a_version_1_run_is_refused(clean):
     for entry in data["files"]:
         del entry["content_sha256"]
     path.write_text(json.dumps(data), encoding="utf-8")
-    with pytest.raises(RunInputsError, match="before v0.4.0"):
+    with pytest.raises(ManifestFormatError, match="Run preprocessing again"):
         RunInputs.open(clean.output)
 
 
@@ -149,13 +151,13 @@ def test_a_confirmed_plain_stack_and_a_stated_plain_stack_mask(tmp_path):
     labels = np.zeros((3, 6, 8), np.uint16)
     labels[:, 2:4, 2:5] = 7
     write_plain(masks / "Cells/ctrl/a.tif", labels)
-    result = run_experiment(
+    result = run_described(
         root,
         AxisMapping("IYX", "TYX"),
         masks_folder=masks,
         mask_axes={"Cells": "TYX"},
     )
-    inputs = RunInputs.open(result.output_folder)
+    inputs = RunInputs.open(check_masks(result.output_folder))
     (fov,) = inputs.fovs()
     assert (fov.axes_from, fov.t_count, fov.c_count) == ("confirmed", 3, 1)
     np.testing.assert_array_equal(inputs.read_plane(fov, t=2), stack[2:3])
@@ -169,9 +171,11 @@ def test_labels_are_checked_on_every_read(tmp_path):
     signed = np.zeros((6, 8), np.int32)
     signed[0, 0] = -5
     write_data(masks / "Cells/ctrl/a.tif", signed, "YX")
-    result = run_experiment(root, prefill_mapping("YX"), masks_folder=masks)
-    inputs = RunInputs.open(result.output_folder)
+    result = run_described(root, prefill_mapping("YX"), masks_folder=masks)
     with pytest.raises(ValueError, match="-5|negative"):
+        check_masks(result.output_folder)  # the mask step reads it and refuses it
+    inputs = RunInputs.open(result.output_folder)
+    with pytest.raises(ValueError, match="-5|negative|A_MASK_UNCHECKED"):
         inputs.read_mask("ctrl/a.tif", "Cells")
 
 
@@ -239,7 +243,7 @@ def test_a_header_naming_x_before_y_is_read_y_before_x(tmp_path):
     # Owner rule (design v0.4 change log): the header names the axes, so reordering is exact.
     stored = np.arange(2 * 2 * 5 * 7, dtype=np.uint16).reshape(2, 2, 5, 7)  # T, C, X, Y
     write_data(tmp_path / "exp/ctrl/a.tif", stored, "TCXY")
-    result = run_experiment(tmp_path / "exp", prefill_mapping("TCXY"))
+    result = run_described(tmp_path / "exp", prefill_mapping("TCXY"))
     assert result.written, result.issues
     inputs = RunInputs.open(result.output_folder)
     (fov,) = inputs.fovs()
@@ -258,7 +262,7 @@ def test_read_image_is_t_z_c_y_x_whatever_the_stored_order(tmp_path):
     tifffile.imwrite(path, stored, ome=True, photometric="minisblack", metadata={"axes": "CTYX"})
     with tifffile.TiffFile(path) as tif:
         assert tif.series[0].axes == "CTYX"
-    result = run_experiment(tmp_path / "exp", prefill_mapping("CTYX"))
+    result = run_described(tmp_path / "exp", prefill_mapping("CTYX"))
     inputs = RunInputs.open(result.output_folder)
     (fov,) = inputs.fovs()
     assert (fov.z_count, fov.t_count, fov.c_count) == (1, 3, 2)
@@ -276,11 +280,11 @@ def stated(tmp_path):
     labels = np.zeros((3, 6, 8), np.uint16)
     labels[1, 1:3, 1:3], labels[2, 2:4, 2:4] = 4, 9
     write_plain(masks / "Cells/ctrl/a.tif", labels)
-    result = run_experiment(
+    result = run_described(
         root, prefill_mapping("TYX"), masks_folder=masks, mask_axes={"Cells": "TYX"}
     )
     assert result.written, result.issues
-    return result.output_folder, masks, labels
+    return check_masks(result.output_folder), masks, labels
 
 
 def test_a_stated_mask_is_read_through_its_stored_axes(stated):
@@ -325,9 +329,9 @@ def test_ome_zarr_label_images_are_read_by_their_pairing(tmp_path):
     labels = np.zeros((2, 4, 5), np.uint16)
     labels[1, 1:3, 1:3] = 3
     write_labels(path, {"cells": labels}, "tyx")
-    result = run_experiment(tmp_path / "exp", prefill_mapping("TYX"))
+    result = run_described(tmp_path / "exp", prefill_mapping("TYX"))
     assert result.written, result.issues
-    inputs = RunInputs.open(result.output_folder)
+    inputs = RunInputs.open(check_masks(result.output_folder))
     assert inputs.mask_types() == ("cells",)
     np.testing.assert_array_equal(inputs.read_mask("ctrl/a.ome.zarr", "cells", t=1), labels[1])
     np.testing.assert_array_equal(np.asarray(inputs.read_image("ctrl/a.ome.zarr"))[:, 0, 0], image)

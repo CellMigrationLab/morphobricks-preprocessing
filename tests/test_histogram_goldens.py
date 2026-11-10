@@ -22,13 +22,13 @@ from morphobricks_normalization.csv_io import read_plane_histograms
 from morphobricks_normalization.histogram import PlaneHistogram
 from morphobricks_normalization.records import PlaneRecord
 
+from described_tree import run_described
 from histogram_goldens import DATA, EXPERIMENTS, PIXELS, TIME_FOR_DEPTH, write_experiment
 from morphobricks_preprocessing import (
     plane_layout,
     prefill_mapping,
     preflight,
     review_axes,
-    run_experiment,
 )
 from morphobricks_preprocessing.manifest import file_sha256
 from morphobricks_preprocessing.report import group_summaries, group_table
@@ -91,7 +91,7 @@ def test_histograms_equal_the_reference_values(tmp_path, pixels, dtype, blocks):
     bins, axes = write_experiment(root, dtype, pixels)
     mapping = prefill_mapping(axes)
     limit = smallest_blocks_limit(root, mapping, bins) if blocks else 2**30
-    result = run_experiment(root, mapping, bin_count=bins, memory_limit=limit)
+    result = run_described(root, mapping, bin_count=bins, memory_limit=limit)
     assert result.written
     in_blocks = [i for i in result.issues if i.code == "planes_read_in_blocks"]
     assert bool(in_blocks) == blocks
@@ -160,7 +160,7 @@ def test_step_4_statistics_equal_the_reference_values(tmp_path, pixels, dtype, l
     needs_zarr(dtype)
     root = tmp_path / "exp"
     bins, axes = write_experiment(root, dtype, pixels)
-    result = run_experiment(root, prefill_mapping(axes), bin_count=bins)
+    result = run_described(root, prefill_mapping(axes), bin_count=bins)
     records = read_plane_histograms(result.csv_path)
     # Issue #104: each channel on its own, from the reference rows of that channel.
     now = group_summaries(records, level, (1.0, 99.8))
@@ -197,12 +197,12 @@ def test_a_table_of_an_older_format_is_recomputed(tmp_path, pixels):
     root = tmp_path / "exp"
     bins, axes = write_experiment(root, "float32", pixels)
     mapping = prefill_mapping(axes)
-    first = run_experiment(root, mapping, bin_count=bins)
+    first = run_described(root, mapping, bin_count=bins)
     table = first.csv_path.read_bytes()
     shutil.copyfile(DATA / "golden_float32.csv", first.csv_path)
     manifest = json.loads(first.manifest_path.read_text(encoding="utf-8"))
     manifest["csv_sha256"] = file_sha256(first.csv_path)
     first.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    second = run_experiment(root, mapping, bin_count=bins)
+    second = run_described(root, mapping, bin_count=bins)
     assert second.rebuild_reason == "the earlier histogram table could not be read"
     assert second.csv_path.read_bytes() == table

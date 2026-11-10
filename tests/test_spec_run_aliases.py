@@ -15,8 +15,8 @@ import numpy as np
 import pytest
 import tifffile
 
+from described_tree import run_described
 from description_tree import MAPPING, two_unnamed_units, unit_folder, write_fluorophores
-from morphobricks_preprocessing import run_experiment
 from morphobricks_preprocessing.description import description_from_bytes
 from spec_pin import fixtures
 
@@ -58,7 +58,7 @@ def _setup(tmp_path, fixture, names_by_unit, *, described=True, images=2):
 
 
 def _run(root, out):
-    return run_experiment(root, MAPPING, output_folder=out)
+    return run_described(root, MAPPING, output_folder=out)
 
 
 def _codes(result):
@@ -74,19 +74,6 @@ def test_p26_units_spelling_headers_differently_through_declared_aliases_are_acc
     result = _run(root, out)
     assert result.written, [(i.code, i.message) for i in result.issues]
     assert not [i for i in result.issues if i.code in GLOBAL]
-
-
-def test_the_same_folder_without_a_description_is_still_refused_by_the_v0_4_check(tmp_path):
-    root, out = _setup(
-        tmp_path,
-        "v11",
-        {"acquisition_1": ["DAPI", "ACTIN"], "acquisition_2": ["Hoechst 33342", "ACTIN"]},
-        described=False,
-    )
-    with pytest.warns(UserWarning, match="No experiment description"):
-        result = _run(root, out)
-    assert not result.written
-    assert _codes(result) == ["channel_names_differ"]
 
 
 def test_p26_a_name_that_matches_no_declared_name_is_refused_naming_unit_image_and_names(

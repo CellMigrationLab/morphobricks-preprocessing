@@ -8,7 +8,6 @@ top level, picklable (a worker process raises them), and with the code in the me
 from __future__ import annotations
 
 import pickle
-import warnings
 
 import pytest
 
@@ -21,6 +20,7 @@ from morphobricks_preprocessing.manifest import read_manifest
 from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError
 from morphobricks_preprocessing.run_inputs_error import (
     ChannelNotFoundError,
+    DescriptionRequiredError,
     DraftRefusedError,
     MaskNotInstancesError,
     MaskUncheckedError,
@@ -30,6 +30,7 @@ from spec_pin import fixtures
 
 VALID = {item.name.split("_")[0]: item for item in fixtures("valid")}
 CODES = [
+    (DescriptionRequiredError, "A_DESCRIPTION_REQUIRED"),
     (DraftRefusedError, "A_DRAFT_REFUSED"),
     (MaskUncheckedError, "A_MASK_UNCHECKED"),
     (ChannelNotFoundError, "A_SCOPE_INCOMPLETE"),
@@ -38,17 +39,22 @@ CODES = [
 ]
 
 
-def _open(tmp_path, name="v01", *, publish=True):
+def _open(tmp_path, name="v01"):
     data = VALID[name].data
     root, out = tmp_path / "exp", tmp_path / "out"
     out.mkdir()
     build_experiment(root, description_from_bytes(data))
-    if publish:
-        (out / "morphobricks.toml").write_bytes(data)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        assert run_experiment(root, MAPPING, output_folder=out).written
+    (out / "morphobricks.toml").write_bytes(data)
+    assert run_experiment(root, MAPPING, output_folder=out).written
     return RunInputs.open(out), out
+
+
+def test_an_output_folder_without_a_description_is_refused_at_open(tmp_path):
+    inputs, out = _open(tmp_path)
+    (out / "morphobricks.toml").unlink()
+    with pytest.raises(DescriptionRequiredError, match="A_DESCRIPTION_REQUIRED") as refused:
+        RunInputs.open(out)
+    assert refused.value.code == "A_DESCRIPTION_REQUIRED" and "describe" in str(refused.value)
 
 
 @pytest.mark.parametrize(("error", "code"), CODES)
@@ -93,11 +99,6 @@ def test_section_digests_equal_the_manifests(tmp_path):
     assert set(digests) == {"conditions", "channels", "repeats", "masks"}
     digests["masks"] = "changed"
     assert inputs.section_digests() == recorded  # a copy: the manifest is not changed
-
-
-def test_section_digests_are_none_without_a_description(tmp_path):
-    inputs, _ = _open(tmp_path, publish=False)
-    assert inputs.description() is None and inputs.section_digests() is None
 
 
 def test_section_digests_read_the_manifest_only(tmp_path):

@@ -9,13 +9,13 @@ import os
 import numpy as np
 import pytest
 
+from described_tree import run_described
 from morphobricks_preprocessing import (
     RunInputs,
     RunInputsError,
     UnrecordedFilesError,
     convert_experiment,
     prefill_mapping,
-    run_experiment,
 )
 from morphobricks_preprocessing.discovery import discover_experiment
 from morphobricks_preprocessing.run import preflight
@@ -122,7 +122,7 @@ def test_a_link_back_to_a_folder_above_is_a_loop(tree):
 def test_a_run_with_a_link_out_is_refused_before_any_pixel_is_read(tree, tmp_path):
     root, outside = tree
     (root / "ctrl/rep1/b.tif").symlink_to(outside / "far.tif")
-    result = run_experiment(root, prefill_mapping("YX"), output_folder=tmp_path / "out")
+    result = run_described(root, prefill_mapping("YX"), output_folder=tmp_path / "out")
     assert not result.written
     assert "link_outside_folder" in _codes(result.issues)
 
@@ -263,7 +263,7 @@ def test_a_hard_link_to_an_image_is_refused_naming_both(tmp_path):
     assert _issue(found.issues, "linked_twice").paths == (
         "drug/rep1/b.tif (the same file as ctrl/rep1/a.tif)",
     )
-    result = run_experiment(root, prefill_mapping("YX"), output_folder=tmp_path / "out")
+    result = run_described(root, prefill_mapping("YX"), output_folder=tmp_path / "out")
     assert not result.written
     assert "linked_twice" in _codes(result.issues)
 

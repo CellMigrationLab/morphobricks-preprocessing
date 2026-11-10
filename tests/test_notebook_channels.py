@@ -36,7 +36,6 @@ def open_screen(root, out):
     for step in (nb.welcome, nb.folder_step, nb.axis_step, nb.channels_step, nb.run_step):
         step()
     nb.check_button.click()
-    nb.labels_confirmed.button.click()
     nb.preview_checked.set(True)
     nb.show_preview()
     nb.confirm_button.click()
@@ -466,7 +465,6 @@ def test_the_screen_waits_for_the_axis_roles(plain, out):
     nb.channels_step()
     assert not ui.is_visible(nb.channel_labels.widget)
     nb.check_button.click()
-    nb.labels_confirmed.button.click()
     assert "Waiting for the axis roles" in nb.channels_waiting.value
     assert not ui.is_visible(nb.channel_labels.widget)
 

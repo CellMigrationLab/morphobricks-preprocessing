@@ -1,17 +1,17 @@
 """Every command exits with status 1 when it reports an error, and 0 otherwise.
 
-Found in the review of #130: ``check`` printed a refused experiment design (an error) and
-exited 0, while ``run`` stops on it with 1. The same mismatch was in ``design``, which
-printed ``repeat_group_conflict`` and exited 0. Warnings alone never change the status.
+Found in the review of #130: ``check`` printed an error and exited 0, while ``run`` stopped on
+it with 1. Warnings alone never change the status. Since v0.5.1 a missing published description
+is such an error (``A_DESCRIPTION_REQUIRED``) for ``check``, ``run`` and ``masks``.
 """
 
 import numpy as np
 import pytest
 
+from described_tree import main_described
 from morphobricks_preprocessing.cli import main
-from tiff_tree import write_data
-
-DESIGN = "experiment_design.csv"
+from morphobricks_preprocessing.run import LOCK_FILENAME
+from tiff_tree import write_data, write_file
 
 
 @pytest.fixture
@@ -24,54 +24,49 @@ def experiment(tmp_path):
     return root
 
 
-@pytest.fixture
-def checked(experiment, tmp_path):
-    """The output folder of a first 'check', which writes the design template (status 0)."""
-    output = tmp_path / "checked"
-    assert main(["check", str(experiment), "--output", str(output)]) == 0
-    assert (output / DESIGN).is_file()
-    return output
-
-
-def test_check_exits_with_1_on_a_refused_design(experiment, checked, capsys):
-    path = checked / DESIGN
-    lines = path.read_text(encoding="utf-8").splitlines()
-    header = lines[0].split(",")
-    path.write_text(",".join([*header, header[0]]) + "\n" + "\n".join(lines[1:]) + "\n")
-    before = path.read_bytes()
-    capsys.readouterr()
-    assert main(["check", str(experiment), "--output", str(checked)]) == 1
+@pytest.mark.parametrize("command", ["check", "run", "masks"])
+def test_without_a_published_description_every_run_command_exits_with_1(
+    experiment, tmp_path, capsys, command
+):
+    output = tmp_path / "out"
+    extra = ["--axes", "YX"] if command == "run" else []
+    assert main([command, str(experiment), "--output", str(output), *extra]) == 1
     out = capsys.readouterr().out
-    assert "Experiment design: The experiment design cannot be read" in out
-    assert "names the column 'condition' twice" in out
-    assert path.read_bytes() == before  # 'check' never replaces a design
-    # 'run' stops on the same design with 1
-    assert main(["run", str(experiment), "--output", str(checked), "--axes", "YX"]) == 1
+    assert "A_DESCRIPTION_REQUIRED" in out and "describe" in out
+    assert not output.exists()  # nothing read or written
 
 
-def test_check_exits_with_0_on_warnings_and_an_unconfirmed_design(experiment, checked, capsys):
-    capsys.readouterr()
-    assert main(["check", str(experiment), "--output", str(checked)]) == 0
-    assert "not confirmed" in capsys.readouterr().out
+def test_check_exits_with_0_on_warnings(experiment, tmp_path, capsys):
+    write_file(experiment / "ctrl" / "notes.txt")  # a warning, not an error
+    output = tmp_path / "out"
+    assert main_described(["check", str(experiment), "--output", str(output)]) == 0
+    assert "Warning" in capsys.readouterr().out
 
 
-def test_design_exits_with_1_when_it_reports_a_conflict(checked, capsys):
-    capsys.readouterr()
-    assert main(["design", "--output", str(checked), "--repeat-group", "ctrl/day2=day1"]) == 1
-    out = capsys.readouterr().out
-    assert "Error: A repeat group is one biological repeat" in out
-    assert "day1 has more than one folder of ctrl" in out
-    # the move itself is written; undoing it gives a usable design again (status 0)
-    assert main(["design", "--output", str(checked), "--repeat-group", "ctrl/day2=day2"]) == 0
+def test_check_and_run_exit_with_1_on_an_error(experiment, tmp_path, capsys):
+    write_file(experiment / "ctrl" / "day1" / "bad.tif", b"garbage")
+    output = tmp_path / "out"
+    assert main_described(["check", str(experiment), "--output", str(output)]) == 1
+    assert main_described(["run", str(experiment), "--output", str(output), "--axes", "YX"]) == 1
 
 
-def test_check_exits_with_1_on_a_repeat_group_conflict(experiment, checked, capsys):
-    # Review of #133: 'check' described the conflict in its summary but exited 0, while
-    # 'run' stops on it with 1. It is now reported as the error it is.
-    assert main(["design", "--output", str(checked), "--repeat-group", "ctrl/day2=day1"]) == 1
-    capsys.readouterr()
-    assert main(["check", str(experiment), "--output", str(checked)]) == 1
-    out = capsys.readouterr().out
-    assert "day1: ctrl/day1, ctrl/day2, drug/day1 (more than one folder of ctrl)" in out
-    assert "Error: A repeat group is one biological repeat" in out
-    assert main(["run", str(experiment), "--output", str(checked), "--axes", "YX"]) == 1
+@pytest.mark.parametrize("command", ["check", "run", "masks"])
+def test_without_a_description_no_log_lock_or_recorded_run_is_touched(
+    experiment, tmp_path, capsys, command
+):
+    # Review of PP-C: the refusal came after the log was opened, a stale lock removed and the
+    # recorded run read. A manifest that cannot be read shows the run was not read either.
+    output = tmp_path / "out"
+    output.mkdir()
+    (output / "run_manifest.json").write_text("not json", encoding="utf-8")
+    (output / LOCK_FILENAME).write_text("{}", encoding="utf-8")
+    before = {path.name: path.read_bytes() for path in output.iterdir()}
+    log = tmp_path / "notes.log"
+    given = [str(experiment)] if command == "check" else []  # else the recorded experiment
+    args = [command, *given, "--output", str(output)]
+    args += [] if command == "check" else ["--log", str(log)]  # 'check' takes no --log
+    assert main([*args, "--remove-stale-lock"]) == 1
+    printed = capsys.readouterr().out
+    assert "A_DESCRIPTION_REQUIRED" in printed and "could not be read" not in printed
+    assert not log.exists()
+    assert {path.name: path.read_bytes() for path in output.iterdir()} == before

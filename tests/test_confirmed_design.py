@@ -22,7 +22,6 @@ from morphobricks_preprocessing import (
     write_experiment_design,
 )
 from morphobricks_preprocessing.axes import prefill_mapping
-from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.manifest import file_sha256
 from tiff_tree import make_tree
 
@@ -63,18 +62,43 @@ def refusal(path, **kwargs):
 # What both bricks need ---------------------------------------------------------------------
 
 
+def _unit(repeat, condition, folder):
+    return (
+        f"[repeats.{repeat}.members.{condition}]\nsource_repeat = {folder!r}\nimage_count = 1\n\n"
+        f"[repeats.{repeat}.members.{condition}.technical_repeats.single]\n"
+        'source_folder = "single"\nchannels = ["ch1"]\n\n'
+    ).replace("'", '"')
+
+
+PAIRED = (
+    'schema = "morphobricks-experiment"\nschema_version = 1\n\n'
+    '[conditions.ctrl]\nsource_folder = "control"\n\n'
+    '[conditions.treated]\nsource_folder = "treated"\nreference = "ctrl"\n\n'
+    "[channels.ch1]\n\n"
+    '[repeats.rep1]\nconfirmed = true\nconfirmed_on = "2026-10-26"\n\n'
+    + _unit("rep1", "ctrl", "rep1")
+    + _unit("rep1", "treated", "rep1b")
+    + '[repeats.rep2]\nconfirmed = true\nconfirmed_on = "2026-10-26"\n\n'
+    + _unit("rep2", "treated", "rep2")
+    + '[used_ids]\nconditions = ["ctrl", "treated"]\nchannels = ["ch1"]\n'
+    'repeats = ["rep1", "rep2"]\ntechnical_repeats = ["single"]\n'
+)
+
+
 def test_a_design_written_by_a_run_reads_with_everything_both_bricks_need(tmp_path):
+    # The run derives the design from the published description (v0.5.1): the pairing and
+    # the control are the description's, and the strict reader gives both bricks all of it.
     root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1b": 1, "treated/rep2": 1})
-    repeats = biological_repeats(discover_experiment(root))
-    design = default_design(repeats).with_group(("treated", "rep1b"), "rep1")
-    design = confirm_all(design).with_control("control", True)
-    result = run_experiment(root, prefill_mapping("YX"), design=design)
-    assert result.written
+    output = default_output_folder(root)
+    output.mkdir(parents=True)
+    (output / "morphobricks.toml").write_text(PAIRED, encoding="utf-8")
+    result = run_experiment(root, prefill_mapping("YX"))
+    assert result.written, result.issues
     recorded = read_manifest(result.manifest_path).experiment_design_sha256
 
     read = read_confirmed_design(result.design_path, expected_sha256=recorded)
     assert isinstance(read, ConfirmedDesign)
-    assert read.path == result.design_path and read.design == design
+    assert read.path == result.design_path
     assert read.sha256 == recorded == file_sha256(result.design_path)
     assert dict(read.repeat_groups) == {
         ("control", "rep1"): "rep1",
@@ -89,30 +113,6 @@ def test_a_design_written_by_a_run_reads_with_everything_both_bricks_need(tmp_pa
     assert read.groups == ("rep1", "rep2")
     with pytest.raises(TypeError):
         read.repeat_groups[("control", "rep1")] = "other"  # read-only
-
-
-def test_a_spreadsheet_edit_is_read_strictly_once_the_run_has_written_it(tmp_path, capsys):
-    # The lenient reader takes the user's own edits; the run writes them back as the brick
-    # writes every design, and that file is what other bricks read.
-    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1b": 1})
-    output = default_output_folder(root)
-    output.mkdir(parents=True)
-    edited = write(
-        output,
-        "﻿" + HEADER.replace("\n", "\r\n") + "control ,rep1,rep1,TRUE,1,0,Yes,2026-10-26,1\r\n"
-        "treated,rep1b,rep1,FALSE,1,0,1,,1\r\n",
-    )
-    with pytest.raises(DesignCheckError, match="byte-order mark"):
-        read_confirmed_design(edited)
-    assert main(["run", str(root), "--axes", "YX"]) == 0
-    capsys.readouterr()
-    read = read_confirmed_design(
-        edited, expected_sha256=read_manifest(output / "run_manifest.json").experiment_design_sha256
-    )
-    assert dict(read.repeat_groups) == {("control", "rep1"): "rep1", ("treated", "rep1b"): "rep1"}
-    # A confirmation without a date got the run's date.
-    assert read.design.row(("treated", "rep1b")).confirmed_on != ""
-    assert read.design.row(("control", "rep1")).confirmed_on == "2026-10-26"
 
 
 def test_the_hash_is_of_the_bytes_read(tmp_path):
@@ -239,14 +239,6 @@ def test_every_reader_refuses_a_column_named_twice_or_not_at_all(tmp_path, text,
     # The step-1 reader refuses it too, and leaves the file as it is.
     with pytest.raises(DesignCheckError, match=message):
         load_design(tmp_path, [])
-    assert path.read_text(encoding="utf-8") == text
-
-
-def test_the_design_command_does_not_rewrite_a_design_with_a_column_named_twice(tmp_path, capsys):
-    text = DUPLICATED + "ctrl,rep1,rep1,true,2,0,false,,1,other\n"
-    path = write(tmp_path, text)
-    assert main(["design", "--output", str(tmp_path), "--confirm-all"]) == 1
-    assert "'repeat_group' twice" in capsys.readouterr().out
     assert path.read_text(encoding="utf-8") == text
 
 

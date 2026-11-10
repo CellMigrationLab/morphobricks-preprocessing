@@ -6,6 +6,7 @@ import tifffile
 from morphobricks_normalization.csv_io import read_plane_histograms
 from morphobricks_normalization.histogram import compute_plane_histogram
 
+from described_tree import main_described, run_described
 from morphobricks_preprocessing import (
     AxisMapping,
     NgffError,
@@ -27,11 +28,9 @@ from morphobricks_preprocessing import (
     read_sample_plane,
     reference_axes,
     review_axes,
-    run_experiment,
     zarr_input,
 )
 from morphobricks_preprocessing import run as run_module
-from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.zarr_input import ngff_axes
 from tiff_tree import write_data, write_file
 from zarr_tree import write_bioformats2raw, write_ngff, write_plate, zarr_major
@@ -400,7 +399,7 @@ def test_the_manifest_records_each_files_own_axis_roles(tmp_path):
     # roles; a consumer must not rebuild them from the experiment mapping.
     write_data(tmp_path / "exp" / "a.tif", random_data((3, 2, 8, 8)), axes="TCYX", imagej=True)
     write_ngff(tmp_path / "exp" / "b.ome.zarr", random_data((2, 3, 8, 8)), "ctyx")
-    result = run_experiment(tmp_path / "exp", prefill_mapping("TCYX"), output_folder=tmp_path / "o")
+    result = run_described(tmp_path / "exp", prefill_mapping("TCYX"), output_folder=tmp_path / "o")
     assert result.written, result.issues
     manifest = read_manifest(result.manifest_path)
     assert manifest.file("a.tif").roles == ("T", "C", "Y", "X")
@@ -649,7 +648,7 @@ def zarr_experiment(tmp_path):
 def test_ome_zarr_experiment_end_to_end(zarr_experiment):
     pre = preflight(zarr_experiment)
     assert pre.ok and pre.suggested_mapping == prefill_mapping("CTYX")
-    result = run_experiment(zarr_experiment, pre.suggested_mapping)
+    result = run_described(zarr_experiment, pre.suggested_mapping)
     assert result.written
     records = read_plane_histograms(result.csv_path)
     assert len(records) == 9  # 3 stores x 3 time points, each row with 2 channels
@@ -671,9 +670,9 @@ def test_ome_zarr_experiment_end_to_end(zarr_experiment):
 
 def test_rerun_detects_a_changed_store(zarr_experiment):
     mapping = prefill_mapping("CTYX")
-    first = run_experiment(zarr_experiment, mapping)
+    first = run_described(zarr_experiment, mapping)
     table = first.csv_path.read_bytes()
-    assert run_experiment(zarr_experiment, mapping).read == ()
+    assert run_described(zarr_experiment, mapping).read == ()
     import zarr
 
     store = zarr_experiment / "ctrl/rep1/b.ome.zarr"
@@ -683,7 +682,7 @@ def test_rerun_detects_a_changed_store(zarr_experiment):
     for p in store.rglob("*"):
         if p.is_file():
             os.utime(p, ns=(newest + 10**9, newest + 10**9))
-    second = run_experiment(zarr_experiment, mapping)
+    second = run_described(zarr_experiment, mapping)
     assert second.changed == ("ctrl/rep1/b.ome.zarr",) and second.read == second.changed
     entry = read_manifest(second.manifest_path).file("ctrl/rep1/b.ome.zarr")
     assert entry.size == sum(p.stat().st_size for p in store.rglob("*") if p.is_file())
@@ -699,13 +698,12 @@ def test_mixed_tiff_and_ome_zarr_experiment(tmp_path):
     write_ngff(root / "drug/c.ome.zarr", random_data((3, 8, 8), "uint8", seed=2), "tyx")
     pre = preflight(root)
     assert pre.suggested_mapping == prefill_mapping("TCYX")
-    blocked = run_experiment(root, pre.suggested_mapping)
-    assert codes(blocked.issues)[0] == "missing_axes"
-    # Its missing channel axis is read as one channel, but the others have two (N43).
-    one_channel = run_experiment(root, pre.suggested_mapping, missing_as_singleton=True)
-    assert issue(one_channel.issues, "different_channel_counts").paths == ("drug/c.ome.zarr",)
+    blocked = run_described(root, pre.suggested_mapping).issues  # without missing_as_singleton
+    assert issue(blocked, "missing_axes").paths == ("drug/c.ome.zarr",)  # with it: 1 channel, N43
+    one_channel = run_described(root, pre.suggested_mapping, missing_as_singleton=True)
+    assert codes(one_channel.issues)[0] == "R_HETEROGENEOUS_LAYOUT_NOT_ENABLED"
     write_ngff(root / "drug/d.ome.zarr", random_data((3, 2, 8, 8), "uint8", seed=3), "tcyx")
-    result = run_experiment(
+    result = run_described(
         root, pre.suggested_mapping, missing_as_singleton=True, exclude=["drug/c.ome.zarr"]
     )
     assert result.written
@@ -738,7 +736,7 @@ def test_sample_planes_cover_both_formats(tmp_path):
 def test_ome_ngff_0_5_experiment(tmp_path):
     root = tmp_path / "exp"
     write_ngff(root / "a.ome.zarr", random_data((2, 3, 8, 8), "uint8"), "ctyx", version="0.5")
-    result = run_experiment(root, prefill_mapping("CTYX"))
+    result = run_described(root, prefill_mapping("CTYX"))
     assert result.written and result.plane_count == 3
 
 
@@ -746,7 +744,7 @@ def test_cli_check_names_the_formats(tmp_path, capsys):
     root = tmp_path / "exp"
     write_data(root / "a.tif", random_data((3, 2, 8, 8), "uint8"), axes="TCYX", imagej=True)
     write_ngff(root / "b.ome.zarr", random_data((2, 3, 8, 8), "uint8"), "ctyx")
-    assert main(["check", str(root)]) == 0
+    assert main_described(["check", str(root)]) == 0
     out = capsys.readouterr().out
     assert "Formats: 1 TIFF, 1 OME-Zarr" in out and "--axes TCYX" in out
 
@@ -757,7 +755,7 @@ def test_unreadable_store_can_be_excluded(tmp_path):
     (root / "bad.ome.zarr").mkdir()
     write_file(root / "bad.ome.zarr" / "junk.txt")
     assert "unreadable_ome_zarr" in codes(preflight(root).issues)
-    result = run_experiment(root, prefill_mapping("TYX"), exclude=["bad.ome.zarr"])
+    result = run_described(root, prefill_mapping("TYX"), exclude=["bad.ome.zarr"])
     assert result.written and result.excluded == ("bad.ome.zarr",)
 
 

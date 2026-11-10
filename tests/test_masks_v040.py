@@ -13,6 +13,7 @@ import json
 import numpy as np
 import pytest
 
+from described_tree import main_described, run_described
 from morphobricks_preprocessing import (
     MASK_NAME_SUFFIXES,
     AxisMapping,
@@ -22,9 +23,7 @@ from morphobricks_preprocessing import (
     preflight,
     read_manifest,
     read_mask,
-    run_experiment,
 )
-from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.manifest import source_fingerprint
 from morphobricks_preprocessing.masks.stated import mask_roles
 from tiff_tree import write_data, write_file, write_plain
@@ -81,9 +80,7 @@ def test_a_plain_stack_mask_needs_its_axes_stated(timelapse):
 def test_the_run_checks_stated_mask_planes_against_the_image(timelapse):
     root, masks = timelapse
     write_plain(masks / "Cells/ctrl/r1/a.tif", labels((3, 6, 8)))
-    ok = run_experiment(
-        root, prefill_mapping("TYX"), masks_folder=masks, mask_axes={"Cells": "TYX"}
-    )
+    ok = run_described(root, prefill_mapping("TYX"), masks_folder=masks, mask_axes={"Cells": "TYX"})
     assert ok.written
     (recorded,) = read_manifest(ok.manifest_path).masks["files"]
     assert (recorded["roles"], recorded["axes_from"]) == ("TYX", "stated")
@@ -91,7 +88,7 @@ def test_the_run_checks_stated_mask_planes_against_the_image(timelapse):
     # The axes as stored, beside the roles they are read as: nothing is reordered.
     assert (recorded["axes"], recorded["shape"]) == ("IYX", [3, 6, 8])
     # Stated as depth, the mask's planes are not the time-lapse's.
-    wrong = run_experiment(
+    wrong = run_described(
         root, prefill_mapping("TYX"), masks_folder=masks, mask_axes={"Cells": "ZYX"}
     )
     assert errors(wrong.issues) == ["mask_planes_mismatch"]
@@ -134,10 +131,10 @@ def test_a_2d_mask_on_a_stack_is_refused_and_cannot_be_shared(timelapse, named):
         write_data(masks / "Cells/ctrl/r1/a.tif", labels((6, 8)), "YX")
     else:
         write_plain(masks / "Cells/ctrl/r1/a.tif", labels((6, 8)))
-    refused = run_experiment(root, prefill_mapping("TYX"), masks_folder=masks)
+    refused = run_described(root, prefill_mapping("TYX"), masks_folder=masks)
     assert "mask_planes_mismatch" in errors(refused.issues)
     # The removed statement YX is refused, not a way to share the mask.
-    stated = run_experiment(
+    stated = run_described(
         root, prefill_mapping("TYX"), masks_folder=masks, mask_axes={"Cells": "YX"}
     )
     assert not stated.written
@@ -148,7 +145,7 @@ def test_a_2d_mask_on_a_single_plane_image_needs_no_statement(tmp_path):
     root = tmp_path / "exp"
     write_data(root / "ctrl/a.tif", np.zeros((6, 8), np.uint8), "YX")
     write_plain(tmp_path / "masks/Cells/ctrl/a.tif", labels((6, 8)))
-    result = run_experiment(root, prefill_mapping("YX"), masks_folder=tmp_path / "masks")
+    result = run_described(root, prefill_mapping("YX"), masks_folder=tmp_path / "masks")
     assert result.written
     (recorded,) = read_manifest(result.manifest_path).masks["files"]
     assert recorded["axes_from"] == "header" and "shared" not in recorded
@@ -157,7 +154,7 @@ def test_a_2d_mask_on_a_single_plane_image_needs_no_statement(tmp_path):
 def test_a_named_tyx_mask_keeps_its_own_axes(timelapse):
     root, masks = timelapse
     write_data(masks / "Cells/ctrl/r1/a.tif", labels((3, 6, 8)), "TYX")
-    assert run_experiment(root, AxisMapping("TYX", "TYX"), masks_folder=masks).written
+    assert run_described(root, AxisMapping("TYX", "TYX"), masks_folder=masks).written
 
 
 def test_mask_roles():
@@ -180,10 +177,10 @@ def test_the_command_line_states_mask_axes(timelapse, capsys):
     root, masks = timelapse
     write_plain(masks / "Cells/ctrl/r1/a.tif", labels((3, 6, 8)))
     args = ["check", str(root), "--masks", str(masks)]
-    assert main(args) == 1
+    assert main_described(args) == 1
     assert "--mask-axes Cells=TYX" in capsys.readouterr().out
-    assert main([*args, "--mask-axes", "Cells=TYX"]) == 0
-    assert main([*args, "--mask-axes", "TYX"]) == 1
+    assert main_described([*args, "--mask-axes", "Cells=TYX"]) == 0
+    assert main_described([*args, "--mask-axes", "TYX"]) == 1
     assert "give the mask type and its roles" in capsys.readouterr().out
 
 
@@ -204,7 +201,7 @@ def test_a_mask_with_the_images_height_and_width_swapped_is_a_layout_error(tmp_p
     root = tmp_path / "exp"
     write_data(root / "ctrl/a.tif", np.zeros((6, 8), np.uint8), "YX")
     write_data(tmp_path / "masks/Cells/ctrl/a.tif", labels((8, 6)), "YX")
-    result = run_experiment(root, prefill_mapping("YX"), masks_folder=tmp_path / "masks")
+    result = run_described(root, prefill_mapping("YX"), masks_folder=tmp_path / "masks")
     issue = one(result.issues, "mask_layout")
     assert issue.paths == ("Cells/ctrl/a.tif",) and "swapaxes" in issue.action
     assert "mask_size_mismatch" not in codes(result.issues) and not result.written
@@ -241,10 +238,11 @@ def test_the_output_folder_may_not_be_inside_the_masks_folder(tmp_path):
     write_data(root / "ctrl/a.tif", np.zeros((6, 8), np.uint8), "YX")
     masks = tmp_path / "masks"
     write_data(masks / "Cells/ctrl/a.tif", labels((6, 8)), "YX")
-    result = run_experiment(
+    result = run_described(
         root, prefill_mapping("YX"), masks_folder=masks, output_folder=masks / "out"
     )
-    assert errors(result.issues) == ["output_inside_masks"] and not result.written
+    assert errors(result.issues) == ["A_DESCRIPTION_REQUIRED", "output_inside_masks"]
+    assert not result.written
     assert one(result.issues, "output_inside_masks").paths == ("out",)
 
 
@@ -256,12 +254,12 @@ def test_files_named_like_masks_are_blocked_as_images(tmp_path, name):
     root = tmp_path / "exp"
     write_data(root / "ctrl/a.tif", np.zeros((6, 8), np.uint8), "YX")
     write_data(root / f"ctrl/{name}", labels((6, 8)), "YX")
-    result = run_experiment(root, prefill_mapping("YX"))
+    result = run_described(root, prefill_mapping("YX"))
     issue = one(result.issues, "image_named_as_mask")
     assert issue.is_error and issue.paths == (f"ctrl/{name}",) and not result.written
     assert "(of ctrl/a.tif)" in issue.message and "exclude them" in issue.action
     # Excluded, it is no longer an image, so nothing is blocked.
-    assert run_experiment(root, prefill_mapping("YX"), exclude=[f"ctrl/{name}"]).written
+    assert run_described(root, prefill_mapping("YX"), exclude=[f"ctrl/{name}"]).written
 
 
 def test_the_mask_name_suffixes_include_cellposes():
@@ -294,7 +292,7 @@ def test_label_images_are_always_used(tmp_path):
     root, _ = zarr_experiment(tmp_path)
     with pytest.raises(TypeError, match="ome_zarr_labels"):
         preflight(root, ome_zarr_labels=True)  # removed: there is no flag any more
-    result = run_experiment(root, prefill_mapping("YX"))
+    result = run_described(root, prefill_mapping("YX"))
     assert result.written
     recorded = read_manifest(result.manifest_path).masks
     assert recorded["folder"] is None and recorded["types"] == ["cells"]
@@ -308,10 +306,10 @@ def test_label_images_are_left_out_of_the_image_fingerprint(tmp_path):
 
     root, path = zarr_experiment(tmp_path)
     before = source_fingerprint(path)
-    first = run_experiment(root, prefill_mapping("YX"))
+    first = run_described(root, prefill_mapping("YX"))
     write_labels(path, {"cells": labels((6, 8), 2), "nuclei": labels((6, 8))}, "yx")
     assert source_fingerprint(path) == before
-    again = run_experiment(root, prefill_mapping("YX"), output_folder=first.output_folder)
+    again = run_described(root, prefill_mapping("YX"), output_folder=first.output_folder)
     assert again.read == ()  # the image's rows are reused
     data = json.loads(again.manifest_path.read_text(encoding="utf-8"))
     assert data["masks"]["types"] == ["cells", "nuclei"]
@@ -329,11 +327,11 @@ def test_the_masks_command_refuses_a_2d_mask_beside_per_plane_masks(tmp_path, ca
     nuclei[2:4, 3:5] = 1
     write_data(masks / "Cells/ctrl/r1/a.tif", cells, "TYX")
     write_plain(masks / "Nuclei/ctrl/r1/a.tif", nuclei)
-    refused = run_experiment(root, prefill_mapping("TYX"), masks_folder=masks)
+    refused = run_described(root, prefill_mapping("TYX"), masks_folder=masks)
     assert "mask_planes_differ" in errors(refused.issues)
     out = tmp_path / "out"
     args = [str(root), "--masks", str(masks), "--output", str(out)]
-    assert main(["masks", *args]) == 1
-    assert main(["masks", *args, "--mask-axes", "Nuclei=YX"]) == 1
+    assert main_described(["masks", *args]) == 1
+    assert main_described(["masks", *args, "--mask-axes", "Nuclei=YX"]) == 1
     capsys.readouterr()
     assert not (out / "mask_relationships.json").exists()

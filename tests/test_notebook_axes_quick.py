@@ -20,7 +20,7 @@ from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa
 
 
 def stepper(root, masks, out):
-    nb = PreprocessingNotebook(str(root), output_folder=str(out), describe=True)
+    nb = PreprocessingNotebook(str(root), output_folder=str(out))
     nb.welcome()
     nb.steps()
     nb.masks_folder.value = str(masks)
@@ -60,7 +60,7 @@ def test_roles_the_header_does_not_name_are_not_offered(tmp_path):
         path.parent.mkdir(parents=True)
         data = np.arange(3 * 16 * 16, dtype=np.uint16).reshape(3, 16, 16)
         tifffile.imwrite(path, data, photometric="minisblack", metadata=None)  # a plain stack
-    nb = PreprocessingNotebook(str(root), output_folder=str(tmp_path / "out"), describe=True)
+    nb = PreprocessingNotebook(str(root), output_folder=str(tmp_path / "out"))
     nb.steps()
     nb.check_button.click()
     assert not ui.is_visible(nb.quick_card) and ui.is_visible(nb.axis_box)

@@ -16,8 +16,8 @@ import numpy as np
 import pytest
 import tifffile
 
-from morphobricks_preprocessing import mask_scan, prefill_mapping, run_experiment
-from morphobricks_preprocessing.cli import main
+from described_tree import main_described, run_described, without_mask_step
+from morphobricks_preprocessing import mask_scan, prefill_mapping
 from morphobricks_preprocessing.mask_binding import MaskChangedError
 from morphobricks_preprocessing.mask_scan import MASK_REPORT_FILENAME
 from morphobricks_preprocessing.run import describe_masks, prepare_mask_step
@@ -29,7 +29,9 @@ LABELS = itertools.count(3)
 
 @pytest.fixture
 def clean(tmp_path):
-    return make_clean_run(tmp_path, axes="YX", shape=(8, 8), mask_types=("Cells", "Nuclei"))
+    return without_mask_step(
+        make_clean_run(tmp_path, axes="YX", shape=(8, 8), mask_types=("Cells", "Nuclei"))
+    )
 
 
 def rewrite_mask(path, *, keep_metadata=False):
@@ -125,9 +127,11 @@ def test_content_is_compared_only_with_verify_content(clean, monkeypatch):
 def test_the_step_verifies_content_when_the_run_did(tmp_path):
     from morphobricks_preprocessing import RunMode
 
-    clean = make_clean_run(tmp_path, axes="YX", shape=(8, 8), mask_types=("Cells",))
+    clean = without_mask_step(
+        make_clean_run(tmp_path, axes="YX", shape=(8, 8), mask_types=("Cells",))
+    )
     assert prepare_mask_step(None, clean.output).verify_content  # on by default (#159)
-    off = run_experiment(
+    off = run_described(
         clean.experiment,
         output_folder=clean.output,
         masks_folder=clean.masks,
@@ -147,7 +151,7 @@ def test_unchanged_masks_give_the_same_report_with_and_without_content(clean):
 
 def test_the_masks_command_names_the_changed_mask(clean, monkeypatch, capsys):
     rewrite_while_read(monkeypatch, clean.masks / MASK)
-    assert main(["masks", "--output", str(clean.output)]) == 1
+    assert main_described(["masks", "--output", str(clean.output)]) == 1
     printed = capsys.readouterr().out
     assert "changed or went missing before or while the mask step read them" in printed
     assert MASK in printed
@@ -164,7 +168,7 @@ def test_a_label_image_changed_while_it_is_scanned_writes_no_report(tmp_path, mo
     cells[:, 1:3, 1:3] = 1
     write_labels(image, {"cells": cells}, "tyx")
     out = tmp_path / "out"
-    assert run_experiment(tmp_path / "exp", prefill_mapping("TYX"), output_folder=out).written
+    assert run_described(tmp_path / "exp", prefill_mapping("TYX"), output_folder=out).written
     step = prepare_mask_step(None, out)
     assert step.ready
     read, path = mask_scan.read_mask, "ctrl/a.ome.zarr/labels/cells"
@@ -188,6 +192,6 @@ def test_a_label_image_changed_while_it_is_scanned_writes_no_report(tmp_path, mo
 def test_the_masks_command_takes_verify_content(clean, monkeypatch, capsys):
     rewrite_while_read(monkeypatch, clean.masks / MASK, keep_metadata=True)
     out = str(clean.output)
-    assert main(["masks", "--output", out, "--no-verify-content"]) == 0
-    assert main(["masks", "--output", out, "--verify-content"]) == 1
+    assert main_described(["masks", "--output", out, "--no-verify-content"]) == 0
+    assert main_described(["masks", "--output", out, "--verify-content"]) == 1
     assert "content (SHA-256)" in capsys.readouterr().out

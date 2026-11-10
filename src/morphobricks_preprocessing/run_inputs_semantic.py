@@ -1,6 +1,6 @@
 """The description's meaning for :class:`.run_inputs.RunInputs` (Stage 1 design section 3).
 
-A run with a published description records its SHA-256 in the manifest
+Every run has a published description and records its SHA-256 in the manifest
 (``experiment_description``, :mod:`.description_record`). :class:`SemanticInputs` is mixed into
 ``RunInputs`` and gives the consumer the canonical identities and semantics, read from the
 published file after checking it is the file the run read:
@@ -12,8 +12,8 @@ published file after checking it is the file the run read:
 - refusals: ``A_DRAFT_REFUSED`` for a draft or an unconfirmed file, ``A_MASK_UNCHECKED`` for a
   mask file whose representation the mask step has not checked.
 
-A run without a description has none of this: ``description()`` and the graphs are None and
-every other method of ``RunInputs`` is as before.
+There is no run without a description (Spec ADR 0002 AR10): :class:`.run_inputs.RunInputs`
+refuses an output folder without one (``A_DESCRIPTION_REQUIRED``).
 """
 
 from __future__ import annotations
@@ -30,7 +30,12 @@ from .description_unnamed import FIELD as UNNAMED_FIELD
 from .fov_identity import FovIdentity, fov_identity
 from .manifest import FileEntry, RunManifest
 from .mask_representation import CHECKED, file_status, read_checked
-from .run_inputs_error import ChannelNotFoundError, MaskUncheckedError, RunInputsError
+from .run_inputs_error import (
+    ChannelNotFoundError,
+    DescriptionRequiredError,
+    MaskUncheckedError,
+    RunInputsError,
+)
 
 if TYPE_CHECKING:
     from .run_inputs import Fov
@@ -45,11 +50,13 @@ class MaskSemantics:
     source_channels: tuple[str, ...] | None = None
 
 
-def check_description(output: Path, manifest: RunManifest) -> Description | None:
+def check_description(output: Path, manifest: RunManifest) -> Description:
     """Return the published description a run recorded, checked against its SHA-256.
 
     Raises
     ------
+    DescriptionRequiredError
+        ``A_DESCRIPTION_REQUIRED``: the manifest records no description.
     DraftRefusedError
         ``A_DRAFT_REFUSED``: the published file holds an unconfirmed repeat.
     RunInputsError
@@ -57,7 +64,10 @@ def check_description(output: Path, manifest: RunManifest) -> Description | None
     """
     recorded = manifest.experiment_description
     if recorded is None:
-        return None
+        raise DescriptionRequiredError(
+            "The run records no experiment description (A_DESCRIPTION_REQUIRED). Describe the "
+            "experiment and run preprocessing again."
+        )
     description, sha256 = read_published_description(output / DESCRIPTION_FILENAME)
     if sha256 != recorded["sha256"]:
         raise RunInputsError(
@@ -108,8 +118,8 @@ class SemanticInputs:
     output_folder: Path
     manifest: RunManifest
 
-    def description(self) -> Description | None:
-        """Return the published description the run read, or None when it had none.
+    def description(self) -> Description:
+        """Return the published description the run read.
 
         The file is read again and must still be the one the run recorded; only the
         published ``morphobricks.toml`` is ever read, never a draft.
@@ -123,7 +133,7 @@ class SemanticInputs:
         """
         return check_description(self.output_folder, self.manifest)
 
-    def section_digests(self) -> dict[str, str] | None:
+    def section_digests(self) -> dict[str, str]:
         """Return the description's section digests as the run's manifest recorded them.
 
         The SHA-256 (hex) of the ``conditions``, ``channels``, ``repeats`` and ``masks``
@@ -133,22 +143,19 @@ class SemanticInputs:
 
         Returns
         -------
-        dict[str, str] or None
-            A new dict, or None when the run had no description.
+        dict[str, str]
+            A new dict.
         """
-        recorded = self.manifest.experiment_description
-        return None if recorded is None else dict(recorded["section_digests"])
+        return dict(self.manifest.experiment_description["section_digests"])
 
-    def images_without_header_channel_names(self) -> dict[str, tuple[int, ...]] | None:
+    def images_without_header_channel_names(self) -> dict[str, tuple[int, ...]]:
         """Return the images the run passed without header channel names, as it recorded them.
 
         Each image's relative path maps to its zero-based C positions whose header gives no
         name (all of them when the header names none). Empty when every header names all its
-        channels; None when the run had no description. Read from the manifest only.
+        channels. Read from the manifest only.
         """
         recorded = self.manifest.experiment_description
-        if recorded is None:
-            return None
         return {
             item["image"]: tuple(item["channel_positions"])
             for unit in recorded["units"]
@@ -171,7 +178,7 @@ class SemanticInputs:
             ``A_SCOPE_INCOMPLETE``: the image does not have that channel (nothing is
             defaulted); the message names the image.
         RunInputsError
-            When the run had no description, so its channels have no IDs.
+            When the image is not one of the run's.
         """
         ids = getattr(fov, "channel_ids", None)
         if ids is None:
@@ -186,33 +193,23 @@ class SemanticInputs:
 
     def _channel_ids(self, fov: object) -> tuple[str, ...]:
         description = self.description()
-        if description is None:
-            raise RunInputsError("This run has no experiment description, so no channel IDs.")
         relative = getattr(fov, "relative_path", fov)
         entry = self.manifest.file(str(relative))
         if entry is None:
             raise RunInputsError(f"{relative} is not an image of this run.")
         return _identity(entry.labels, description).channel_ids
 
-    def references(self) -> dict[str, str | None] | None:
+    def references(self) -> dict[str, str | None]:
         """Return the condition reference graph: condition ID to the ID it references.
 
-        The value is None for a condition that references none; the whole result is None
-        when the run had no description.
+        The value is None for a condition that references none.
         """
         description = self.description()
-        if description is None:
-            return None
         return {key: value.reference for key, value in sorted(description.conditions.items())}
 
-    def mask_semantics(self) -> dict[str, MaskSemantics] | None:
-        """Return the declared masks by ID with their source type, representation and channels.
-
-        None when the run had no description.
-        """
+    def mask_semantics(self) -> dict[str, MaskSemantics]:
+        """Return the declared masks by ID with their source type, representation and channels."""
         description = self.description()
-        if description is None:
-            return None
         return {
             key: MaskSemantics(m.source_type, m.representation, m.source_channels)
             for key, m in sorted(description.masks.items())
@@ -227,11 +224,9 @@ class SemanticInputs:
         Raises
         ------
         RunInputsError
-            For a run without a description, an undeclared mask ID, or an image with no
-            recorded file of that mask.
+            For an undeclared mask ID, or an image with no recorded file of that mask.
         """
-        description = self.description()
-        mask = None if description is None else description.masks.get(mask_id)
+        mask = self.description().masks.get(mask_id)
         if mask is None:
             raise RunInputsError(f"{mask_id!r} is not a mask of this run's description.")
         relative = str(getattr(fov, "relative_path", fov))
@@ -249,11 +244,9 @@ class SemanticInputs:
     def require_checked(self, recorded: Mapping, mask_type: str) -> None:
         """Refuse a mask file the mask step has not checked (``A_MASK_UNCHECKED``).
 
-        Only a run with a description refuses, and only for a mask type it declares.
+        Only a mask type the description declares is refused.
         """
         description = self.description()
-        if description is None:
-            return
         table = read_checked(self.output_folder)
         for mask_id, mask in description.masks.items():
             if mask.source_type != mask_type:

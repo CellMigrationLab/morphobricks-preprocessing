@@ -17,6 +17,7 @@ import tifffile
 
 import morphobricks_preprocessing.conversion as conversion_module
 import morphobricks_preprocessing.conversion_write as write_module
+from described_tree import main_described, run_described
 from morphobricks_preprocessing import (
     CONVERSION_RECORD_FILENAME,
     AxisMapping,
@@ -26,11 +27,9 @@ from morphobricks_preprocessing import (
     file_sha256,
     preflight,
     read_conversion_record,
-    run_experiment,
 )
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.run.lock import LOCK_FILENAME, output_lock
-from morphobricks_preprocessing.testing import _confirmed_design
 from tiff_tree import write_data
 
 SWAPPED = AxisMapping("TYX", ("T", "X", "Y"))
@@ -259,11 +258,11 @@ def test_the_copy_trees_lock_refuses_a_second_conversion(tmp_path):
 
 def test_the_run_on_the_copies_reads_them_with_their_named_axes(tmp_path):
     exp, out = swapped_experiment(tmp_path / "exp"), tmp_path / "out"
-    first = run_experiment(exp, SWAPPED, output_folder=out, design=_confirmed_design(exp))
+    first = run_described(exp, SWAPPED, output_folder=out)
     assert not first.written and "axes_yx_swapped" in codes(first.issues)
     result = convert_experiment(exp, SWAPPED, tmp_path / "copies")
     copies = tmp_path / "copies"
-    run = run_experiment(copies, AxisMapping("TYX", tuple("TYX")), output_folder=out)
+    run = run_described(copies, AxisMapping("TYX", tuple("TYX")), output_folder=out)
     assert run.written, run.issues
     manifest = json.loads((out / "run_manifest.json").read_text())
     assert manifest["experiment_root"] == copies.as_posix()
@@ -290,7 +289,7 @@ def test_run_inputs_refuses_a_conversion_record_changed_or_gone_since_the_run(tm
     exp, out = swapped_experiment(tmp_path / "exp"), tmp_path / "out"
     copies = tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
-    assert run_experiment(copies, AxisMapping("TYX", tuple("TYX")), output_folder=out).written
+    assert run_described(copies, AxisMapping("TYX", tuple("TYX")), output_folder=out).written
     record = copies / CONVERSION_RECORD_FILENAME
     RunInputs.open(out)  # the record as the run read it
     moved = tmp_path / "moved"
@@ -315,7 +314,7 @@ def test_a_conversion_reusing_every_copy_keeps_the_record_so_the_run_stays_valid
     copies = tmp_path / "copies"
     first = convert_experiment(exp, PLAIN, copies)
     assert first.written and "axes_not_named" not in codes(first.issues)
-    assert run_experiment(copies, AxisMapping("TYX", tuple("TYX")), output_folder=out).written
+    assert run_described(copies, AxisMapping("TYX", tuple("TYX")), output_folder=out).written
     record = (copies / CONVERSION_RECORD_FILENAME).read_bytes()
     again = convert_experiment(exp, PLAIN, copies)
     assert again.written and again.reused == first.converted
@@ -326,12 +325,11 @@ def test_a_conversion_reusing_every_copy_keeps_the_record_so_the_run_stays_valid
 
 def test_every_row_is_recomputed_and_equals_the_originals_rows(tmp_path):
     exp, out = plain_experiment(tmp_path / "exp"), tmp_path / "out"
-    design = _confirmed_design(exp)
-    first = run_experiment(exp, PLAIN, output_folder=out, design=design)
+    first = run_described(exp, PLAIN, output_folder=out)
     assert first.written and "axes_not_named" in codes(first.issues)
     rows = (out / "plane_histograms.csv").read_text()
     assert convert_experiment(exp, PLAIN, tmp_path / "copies").written
-    run = run_experiment(tmp_path / "copies", AxisMapping("TYX", tuple("TYX")), output_folder=out)
+    run = run_described(tmp_path / "copies", AxisMapping("TYX", tuple("TYX")), output_folder=out)
     assert run.written and "axes_not_named" not in codes(run.issues)
     assert len(run.read) == 2 and run.unchanged == ()
     assert "experiment_root" in [c.name for c in run.input_changes]
@@ -345,7 +343,7 @@ def test_the_run_warns_when_a_source_changed_after_the_conversion(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
     (exp / "ctrl" / "r1" / "a.tif").unlink()
-    run = run_experiment(copies, AxisMapping("TYX", tuple("TYX")), output_folder=tmp_path / "o")
+    run = run_described(copies, AxisMapping("TYX", tuple("TYX")), output_folder=tmp_path / "o")
     assert run.written
     found = {issue.code: issue for issue in run.issues}
     assert found["conversion_source_changed"].paths == ("ctrl/r1/a.tif",)
@@ -358,7 +356,7 @@ def test_a_copy_changed_after_the_conversion_stops_the_run_before_it_writes(tmp_
     assert convert_experiment(exp, SWAPPED, copies).written
     copy = copies / "drug" / "r1" / "a.tif"
     os.utime(copy, ns=(copy.stat().st_atime_ns, copy.stat().st_mtime_ns + 10**9))
-    run = run_experiment(copies, AxisMapping("TYX", tuple("TYX")), output_folder=out)
+    run = run_described(copies, AxisMapping("TYX", tuple("TYX")), output_folder=out)
     assert not run.written and run.read == ()
     found = {issue.code: issue for issue in run.issues}["copy_changed_after_conversion"]
     assert found.is_error and found.paths == ("drug/r1/a.tif",)
@@ -366,6 +364,7 @@ def test_a_copy_changed_after_the_conversion_stops_the_run_before_it_writes(tmp_
     assert sorted(p.name for p in out.iterdir()) == [
         "discovery_report.json",
         "discovery_report.txt",
+        "morphobricks.toml",
     ]
 
 
@@ -373,7 +372,7 @@ def test_an_unreadable_conversion_record_stops_the_run(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
     (copies / CONVERSION_RECORD_FILENAME).write_text("{not json")
-    run = run_experiment(copies, AxisMapping("TYX", tuple("TYX")), output_folder=tmp_path / "o")
+    run = run_described(copies, AxisMapping("TYX", tuple("TYX")), output_folder=tmp_path / "o")
     assert not run.written and "conversion_record_unreadable" in codes(run.issues)
 
 
@@ -388,7 +387,7 @@ def test_masks_are_never_converted_and_are_checked_against_the_copies(tmp_path):
     before = mask.read_bytes()
     roles = AxisMapping("YX", ("X", "Y"))
     assert convert_experiment(exp, roles, tmp_path / "copies").written
-    run = run_experiment(
+    run = run_described(
         tmp_path / "copies", AxisMapping("YX", ("Y", "X")), output_folder=tmp_path / "out",
         masks_folder=tmp_path / "masks",
     )  # fmt: skip
@@ -416,16 +415,15 @@ def test_the_printed_next_command_uses_the_output_folder_given_and_works(tmp_pat
     # F8 (cross-brick test, 3 November 2026): the next command named the default output
     # folder although the runs used another one, and was refused.
     exp, copies, out = swapped_experiment(tmp_path / "exp"), tmp_path / "copies", tmp_path / "pre"
-    main(["check", str(exp), "--output", str(out)])  # writes the design template
-    assert main(["design", "--output", str(out), "--confirm-all"]) == 0
+    main_described(["check", str(exp), "--output", str(out)])
     capsys.readouterr()
     args = ["convert", str(exp), "--to", str(copies), "--axes", "TXY", "--output", str(out)]
-    assert main(args) == 0
+    assert main_described(args) == 0
     text = capsys.readouterr().out
     (command,) = [line.split()[1:] for line in text.splitlines() if "preprocessing run " in line]
     assert command == ["run", str(copies), "--output", str(out), "--axes", "TYX"]
     assert "by default" not in text
-    assert main(command) == 0, capsys.readouterr().out
+    assert main_described(command) == 0, capsys.readouterr().out
     # Without --output the default folder is named, with what to do if it is not theirs.
     copies_b = tmp_path / "copies_b"
     assert main(["convert", str(exp), "--to", str(copies_b), "--axes", "TXY"]) == 0
@@ -464,7 +462,7 @@ def test_the_convert_command_removes_a_stale_lock_only_on_request(tmp_path, caps
     assert "lock of this folder looks stale" in text and "no longer running" in text
     assert "--remove-stale-lock" in text and lock.exists()  # never removed on its own
     args = ["convert", str(exp), "--to", str(copies), "--axes", "TXY", "--remove-stale-lock"]
-    assert main(args) == 0
+    assert main_described(args) == 0
     assert "Removed the lock" in capsys.readouterr().out
 
 
@@ -493,7 +491,7 @@ def test_an_ome_zarr_image_is_copied_as_it_is(tmp_path):
     assert found == {
         p.relative_to(store).as_posix(): p.read_bytes() for p in store.rglob("*") if p.is_file()
     }
-    run = run_experiment(
+    run = run_described(
         tmp_path / "copies", AxisMapping("TYX", tuple("TYX")), output_folder=tmp_path / "o"
     )
     assert run.written, run.issues

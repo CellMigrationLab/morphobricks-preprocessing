@@ -13,13 +13,13 @@ import shutil
 import numpy as np
 import pytest
 
+from described_tree import run_described
 from morphobricks_preprocessing import (
     MANIFEST_FILENAME,
     RunInputs,
     check_sources,
     prefill_mapping,
     read_manifest,
-    run_experiment,
 )
 from morphobricks_preprocessing.fingerprint import Fingerprint
 from morphobricks_preprocessing.inventory import source_fingerprint, source_signature
@@ -139,7 +139,7 @@ def zarr_run(tmp_path):
     root = tmp_path / "exp"
     image = two_chunks(root / IMAGE)
     output = tmp_path / "out"
-    result = run_experiment(root, prefill_mapping("TYX"), output_folder=output)
+    result = run_described(root, prefill_mapping("TYX"), output_folder=output)
     assert result.written, result.issues
     return root, image, output
 
@@ -155,7 +155,7 @@ def test_a_restart_recomputes_an_image_whose_chunk_changed(zarr_run):
     assert entry.inventory_sha256 == Fingerprint.of(image).inventory
     assert maxima(output) == [5, 9]
     swap_chunks(image)
-    result = run_experiment(root, output_folder=output)
+    result = run_described(root, output_folder=output)
     assert result.written, result.issues
     assert result.changed == (IMAGE,) and result.read == (IMAGE,)
     assert maxima(output) == [9, 5]  # the rows describe the pixels as they are now
@@ -179,6 +179,6 @@ def test_an_image_recorded_without_inventory_is_read_again(zarr_run):
     data = json.loads(path.read_text(encoding="utf-8"))
     del data["files"][0]["inventory_sha256"]
     path.write_text(json.dumps(data), encoding="utf-8")
-    result = run_experiment(root, output_folder=output)
+    result = run_described(root, output_folder=output)
     assert result.written, result.issues
     assert result.changed == (IMAGE,)

@@ -17,7 +17,8 @@ import numpy as np
 import pytest
 import tifffile
 
-from morphobricks_preprocessing import RunMode, prefill_mapping, run_experiment
+from described_tree import run_described
+from morphobricks_preprocessing import RunMode, prefill_mapping
 from morphobricks_preprocessing import run as run_module
 from morphobricks_preprocessing.fingerprint import Fingerprint
 from morphobricks_preprocessing.masks import checks as mask_checks
@@ -71,7 +72,7 @@ def test_a_mask_changed_while_the_images_are_read_is_refused(clean, monkeypatch)
         return rows
 
     monkeypatch.setattr(run_module.resume, "_read_file", segmentation_still_writing)
-    result = run_experiment(clean.experiment, output_folder=out, masks_folder=clean.masks)
+    result = run_described(clean.experiment, output_folder=out, masks_folder=clean.masks)
     assert not result.written and result.report_written
     (issue,) = [i for i in result.issues if i.is_error]
     assert issue.code == "mask_changed_during_run" and issue.paths == (MASK,)
@@ -80,7 +81,7 @@ def test_a_mask_changed_while_the_images_are_read_is_refused(clean, monkeypatch)
     )
     assert outputs(out) == before and not (out / PUBLISH_FOLDER).exists()
     monkeypatch.undo()
-    again = run_experiment(clean.experiment, output_folder=out, masks_folder=clean.masks)
+    again = run_described(clean.experiment, output_folder=out, masks_folder=clean.masks)
     assert again.written
     assert Fingerprint.recorded(mask_entry(out)) == Fingerprint.of(mask)
 
@@ -95,7 +96,7 @@ def test_a_mask_changed_after_its_header_and_before_the_commit_is_refused(clean,
         return changed_since(entries, root)
 
     monkeypatch.setattr(run_module.pipeline, "changed_since", meanwhile)
-    result = run_experiment(clean.experiment, output_folder=out, masks_folder=clean.masks)
+    result = run_described(clean.experiment, output_folder=out, masks_folder=clean.masks)
     assert not result.written
     assert [(i.code, i.paths) for i in result.issues if i.is_error] == [
         ("mask_changed_during_run", (MASK,))
@@ -112,7 +113,7 @@ def test_a_mask_changed_while_its_header_is_read_is_refused(clean, monkeypatch):
         return found
 
     monkeypatch.setattr(mask_checks, "_check_header", rewritten_during)
-    result = run_experiment(clean.experiment, output_folder=clean.output, masks_folder=clean.masks)
+    result = run_described(clean.experiment, output_folder=clean.output, masks_folder=clean.masks)
     assert not result.written
     (issue,) = [i for i in result.issues if i.is_error]
     assert issue.code == "mask_changed_during_check" and issue.paths == (MASK,)
@@ -120,17 +121,19 @@ def test_a_mask_changed_while_its_header_is_read_is_refused(clean, monkeypatch):
 
 def test_an_unchanged_rerun_keeps_every_output_byte_for_byte(clean):
     out = clean.output
+    # The run before the mask step recorded its masks "not yet checked"; this one "checked".
+    assert run_described(clean.experiment, output_folder=out, masks_folder=clean.masks).written
     before = outputs(out)
     entry = mask_entry(out)
     assert Fingerprint.recorded(entry) == Fingerprint.of(clean.masks / MASK)
-    result = run_experiment(clean.experiment, output_folder=out, masks_folder=clean.masks)
+    result = run_described(clean.experiment, output_folder=out, masks_folder=clean.masks)
     assert result.written and result.read == ()
     assert outputs(out) == before and mask_entry(out) == entry
 
 
 def test_a_strict_run_refuses_a_mask_rewritten_with_its_size_and_time_kept(clean, monkeypatch):
     out, mask = clean.output, clean.masks / MASK
-    assert run_experiment(
+    assert run_described(
         clean.experiment, output_folder=out, masks_folder=clean.masks, mode=STRICT
     ).written
     before = outputs(out)
@@ -141,7 +144,7 @@ def test_a_strict_run_refuses_a_mask_rewritten_with_its_size_and_time_kept(clean
         return hashed(entries, root)
 
     monkeypatch.setattr(run_module.pipeline, "content_changed", rewritten_before_the_commit)
-    result = run_experiment(clean.experiment, output_folder=out)
+    result = run_described(clean.experiment, output_folder=out)
     assert not result.written
     (issue,) = [i for i in result.issues if i.is_error]
     assert issue.code == "mask_changed_during_run" and issue.paths == (MASK,)
@@ -160,7 +163,7 @@ def test_a_run_that_opted_out_does_not_see_a_rewrite_with_size_and_time_kept(cle
         return changed_since(entries, root)
 
     monkeypatch.setattr(run_module.pipeline, "changed_since", meanwhile)
-    result = run_experiment(
+    result = run_described(
         clean.experiment,
         output_folder=clean.output,
         masks_folder=clean.masks,
@@ -188,7 +191,7 @@ def test_a_label_image_changed_during_the_run_is_refused(tmp_path, monkeypatch):
         return changed_since(entries, root)
 
     monkeypatch.setattr(run_module.pipeline, "changed_since", chunk_rewritten)
-    result = run_experiment(tmp_path / "exp", YX, output_folder=tmp_path / "out")
+    result = run_described(tmp_path / "exp", YX, output_folder=tmp_path / "out")
     assert not result.written
     assert [(i.code, i.paths) for i in result.issues if i.is_error] == [
         ("mask_changed_during_run", ("ctrl/a.ome.zarr/labels/cells",))
@@ -218,9 +221,7 @@ def test_a_mask_rewritten_after_the_staged_checks_is_not_published(clean, monkey
     out, mask = clean.output, clean.masks / MASK
     before = outputs(out)
     rewrite_after_the_staged_body(monkeypatch, mask)
-    result = run_experiment(
-        clean.experiment, output_folder=out, masks_folder=clean.masks, mode=mode
-    )
+    result = run_described(clean.experiment, output_folder=out, masks_folder=clean.masks, mode=mode)
     assert not result.written and result.report_written
     (issue,) = [i for i in result.issues if i.is_error]
     assert issue.code == "mask_changed_during_run" and issue.paths == (MASK,)

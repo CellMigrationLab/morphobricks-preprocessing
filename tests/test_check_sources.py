@@ -6,12 +6,12 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from described_tree import run_described
 from morphobricks_preprocessing import (
     MANIFEST_FILENAME,
     check_sources,
     prefill_mapping,
     read_manifest,
-    run_experiment,
 )
 from tiff_tree import write_data
 
@@ -27,7 +27,7 @@ def run(tmp_path):
     root = tmp_path / "exp"
     for seed, rel in enumerate(IMAGES):
         write_data(root / rel, stack(seed), "TYX")
-    result = run_experiment(root, prefill_mapping("TYX"), output_folder=tmp_path / "out")
+    result = run_described(root, prefill_mapping("TYX"), output_folder=tmp_path / "out")
     assert result.written, result.issues
     return root, read_manifest(tmp_path / "out" / MANIFEST_FILENAME)
 
@@ -90,7 +90,7 @@ def test_a_rewritten_chunk_of_an_ome_zarr_image_is_a_change(tmp_path):
 
     root = tmp_path / "exp"
     image = write_ngff(root / "ctrl" / "a.ome.zarr", stack(1), "tyx")
-    result = run_experiment(root, prefill_mapping("TYX"), output_folder=tmp_path / "out")
+    result = run_described(root, prefill_mapping("TYX"), output_folder=tmp_path / "out")
     assert result.written, result.issues
     manifest = read_manifest(tmp_path / "out" / MANIFEST_FILENAME)
     assert check_sources(manifest, root, ["ctrl/a.ome.zarr"]) == []
@@ -160,10 +160,3 @@ def test_every_path_needs_its_axes_and_identity(run):
         check_sources(manifest, root, IMAGES, image_axes=dict.fromkeys(IMAGES[:2], "TYX"))
     with pytest.raises(ValueError, match="identities has no entry"):
         check_sources(manifest, root, IMAGES, identities={})
-
-
-def test_a_version_1_manifest_fails_every_image(run):
-    root, manifest = run
-    issues = check_sources(replace(manifest, manifest_version="1"), root, IMAGES)
-    assert codes(issues) == {"manifest_before_v040": tuple(sorted(IMAGES))}
-    assert issues[0].is_error

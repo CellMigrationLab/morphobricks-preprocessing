@@ -10,8 +10,9 @@ from itertools import combinations
 
 import pytest
 
+from described_tree import run_described
 from description_tree import build_experiment
-from morphobricks_preprocessing import prefill_mapping, preflight, run_experiment
+from morphobricks_preprocessing import prefill_mapping, preflight
 from morphobricks_preprocessing.axis_review import review_axes
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_candidate import check_candidate
@@ -31,7 +32,7 @@ from test_metadata import meta
 def test_the_layout_refusal_comes_first_in_the_run(tmp_path):
     root, out = mixed_experiment(tmp_path)
     publish(out)
-    result = run_experiment(root, prefill_mapping("CYX"), output_folder=out)
+    result = run_described(root, prefill_mapping("CYX"), output_folder=out)
     assert not result.written
     assert [i.code for i in result.issues][0] == LAYOUT
     assert {i.code for i in result.issues} == {LAYOUT, "inconsistent_mapping"}
@@ -40,7 +41,7 @@ def test_the_layout_refusal_comes_first_in_the_run(tmp_path):
 def test_the_axis_issue_stays_an_error_without_the_advice_to_export_again(tmp_path):
     root, out = mixed_experiment(tmp_path)
     publish(out)
-    result = run_experiment(root, prefill_mapping("CYX"), output_folder=out)
+    result = run_described(root, prefill_mapping("CYX"), output_folder=out)
     (axis,) = [i for i in result.issues if i.code == "inconsistent_mapping"]
     assert axis.is_error
     assert "Export the images again" not in axis.action
@@ -53,7 +54,7 @@ def test_a_run_of_one_layout_keeps_the_advice_of_the_axis_review(tmp_path):
     out.mkdir()
     (out / "morphobricks.toml").write_bytes(VALID["v01"].data)
     build_experiment(root, description, images=2)
-    result = run_experiment(root, prefill_mapping("YXC"), output_folder=out)
+    result = run_described(root, prefill_mapping("YXC"), output_folder=out)
     (axis,) = [i for i in result.issues if i.code == "inconsistent_mapping"]
     assert "Export the images again" in axis.action
     assert LAYOUT not in {i.code for i in result.issues}
@@ -75,7 +76,7 @@ def test_the_check_and_save_list_leads_with_the_layout_refusal(tmp_path, confirm
 def test_the_axis_step_says_the_layouts_are_why_no_roles_are_suggested(tmp_path):
     root, out = mixed_experiment(tmp_path)
     publish(out)
-    nb = _checked_notebook(root, out, describe=True)
+    nb = _checked_notebook(root, out)
     assert nb.mapping is None
     text = nb._axis_waiting()
     assert "the units declare different layouts" in text
@@ -86,7 +87,7 @@ def test_the_axis_step_says_the_layouts_are_why_no_roles_are_suggested(tmp_path)
 
 def test_the_axis_step_keeps_its_general_message_without_a_description(tmp_path):
     root, out = mixed_experiment(tmp_path)
-    nb = _checked_notebook(root, out, describe=True)
+    nb = _checked_notebook(root, out)
     assert nb.mapping is None
     text = nb._axis_waiting()
     assert "No axis roles can be suggested." in text

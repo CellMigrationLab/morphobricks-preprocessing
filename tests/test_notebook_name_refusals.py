@@ -48,9 +48,9 @@ def tree(tmp_path, extra_folder=None, mask_types=()):
     return root, masks, tmp_path / "out"
 
 
-def checked(root, masks, out, *, describe):
+def checked(root, masks, out):
     """Open the notebook and check the folder (step 1) with the masks folder given."""
-    nb = PreprocessingNotebook(str(root), output_folder=str(out), describe=describe)
+    nb = PreprocessingNotebook(str(root), output_folder=str(out))
     for step in (nb.welcome, nb.folder_step, nb.axis_step, nb.masks_step, nb.run_step):
         step()
     nb.masks_folder.value = str(masks)
@@ -59,14 +59,14 @@ def checked(root, masks, out, *, describe):
 
 
 def test_p21_the_described_folder_check_refuses_a_decomposed_folder(tmp_path):
-    nb = checked(*tree(tmp_path, f"ctrl/{DECOMPOSED}"), describe=True)
+    nb = checked(*tree(tmp_path, f"ctrl/{DECOMPOSED}"))
     assert paths(nb, "R_FOLDER_NOT_NFC") == (f"ctrl/{DECOMPOSED}",)
     assert not nb.preflight.ok
     assert (tmp_path / "exp" / "ctrl" / DECOMPOSED).is_dir()  # never renamed
 
 
 def test_p29_the_described_folder_check_refuses_the_mask_type_names(tmp_path):
-    nb = checked(*tree(tmp_path, mask_types=("NA", " cells", DECOMPOSED)), describe=True)
+    nb = checked(*tree(tmp_path, mask_types=("NA", " cells", DECOMPOSED)))
     assert paths(nb, "R_MASK_TYPE_NAME_INVALID") == (" cells", "NA")
     assert paths(nb, "R_FOLDER_NOT_NFC") == (DECOMPOSED,)
     assert {"NA", " cells", DECOMPOSED} <= set(nb.preflight.masks.types)  # as discovered
@@ -74,7 +74,7 @@ def test_p29_the_described_folder_check_refuses_the_mask_type_names(tmp_path):
 
 def test_p29_pairing_the_masks_again_keeps_the_refusal(tmp_path):
     root, masks, out = tree(tmp_path)
-    nb = checked(root, masks, out, describe=True)
+    nb = checked(root, masks, out)
     assert not NAME_CODES & codes(nb)
     write_masks(masks, {f"{folder}/a.tif": 1 for folder in FOLDERS}, {"NA": "labels"})
     nb.masks_button.click()  # the masks are paired again (remasked), the folder is not
@@ -91,18 +91,11 @@ def test_p21_p29_a_refused_name_blocks_check_and_save(tmp_path):
     assert not (out / DESCRIPTION_FILENAME).exists()
 
 
-def test_p21_the_v0_4_folder_check_with_a_published_description_refuses_too(tmp_path):
+def test_p21_the_folder_check_with_a_published_description_refuses_too(tmp_path):
     root, out = tmp_path / "exp", tmp_path / "out"
     build_experiment(root, description_from_bytes(V01.data))
     write_image(root / "CTRL" / DECOMPOSED / "a.tif", 2)
     out.mkdir()
     (out / DESCRIPTION_FILENAME).write_bytes(V01.data)  # the run uses it, so the check does
-    nb = checked(root, tmp_path / "masks", out, describe=False)
+    nb = checked(root, tmp_path / "masks", out)
     assert paths(nb, "R_FOLDER_NOT_NFC") == (f"CTRL/{DECOMPOSED}",)
-
-
-def test_p21_p29_without_a_description_the_folder_check_is_as_in_v0_4(tmp_path):
-    root, masks, out = tree(tmp_path, f"ctrl/{DECOMPOSED}", ("NA", " cells", DECOMPOSED))
-    nb = checked(root, masks, out, describe=False)
-    assert not NAME_CODES & codes(nb)
-    assert not (out / DESCRIPTION_FILENAME).exists()

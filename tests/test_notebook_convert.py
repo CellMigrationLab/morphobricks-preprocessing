@@ -19,6 +19,7 @@ import numpy as np
 import pytest
 import tifffile
 
+from described_tree import describe_tree  # noqa: E402
 from morphobricks_preprocessing import (
     CONVERSION_RECORD_FILENAME,
     AxisMapping,
@@ -379,15 +380,12 @@ def test_missing_axes_must_be_confirmed_again_on_the_copies(tmp_path):
 def test_end_to_end_convert_check_the_copies_with_header_axes_and_run(tmp_path):
     nb, root = ready_to_convert(tmp_path)
     output = output_of(root)
-    nb.labels_confirmed.button.click()
-    for toggle in nb.group_confirmations.values():
-        if not toggle.value:
-            toggle.button.click()
     assert nb.output.value == ""  # the default output folder of the originals
     nb.convert_button.click()
     after = text(nb.convert_result)
     assert "Check the copies in step 1" in after and str(output) in after
     copies = tmp_path / "copies"
+    describe_tree(copies, output, "TYX")  # the copies described and saved before the run
     nb.convert_recheck_button.click()
     # Step 1 now checks the copies, with the originals' output folder kept.
     assert nb.folder.value == str(copies) and nb.output.value == str(output)
@@ -395,13 +393,10 @@ def test_end_to_end_convert_check_the_copies_with_header_axes_and_run(tmp_path):
     assert nb.preflight.ok
     assert "".join(nb.mapping.roles) == "TYX"  # suggested from the copies' named axes
     assert not ui.is_visible(nb.convert_card)  # nothing to convert any more
-    nb.labels_confirmed.button.click()
-    assert not nb._design_pending()  # the design answered on the originals is kept
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
     assert "Axes checked" in nb.confirmed_status.value
-    nb.image_type_checked.button.click()
     result = nb.run()
     assert result.written, result.issues
     manifest = json.loads((output / "run_manifest.json").read_text())

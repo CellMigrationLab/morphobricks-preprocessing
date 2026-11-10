@@ -16,8 +16,8 @@ from dataclasses import replace
 
 import pytest
 
-from description_tree import MAPPING, build_experiment, write_mask
-from morphobricks_preprocessing import run_experiment
+from described_tree import run_described
+from description_tree import MAPPING, build_experiment
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_write import canonical_bytes
 from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError
@@ -37,7 +37,7 @@ def _open(tmp_path, data, *, publish=True):
         (out / "morphobricks.toml").write_bytes(data)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        assert run_experiment(root, MAPPING, output_folder=out).written
+        assert run_described(root, MAPPING, output_folder=out).written
     return RunInputs.open(out), description
 
 
@@ -96,7 +96,7 @@ def test_a_unit_that_does_not_match_its_image_is_refused(tmp_path):
     (out / "morphobricks.toml").write_bytes(VALID["v01"].data)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        assert run_experiment(root, MAPPING, output_folder=out).written
+        assert run_described(root, MAPPING, output_folder=out).written
     repeat = description.repeats["rep1"]
     member = repeat.members["CTRL"]
     unit = member.technical_repeats["single"]
@@ -112,38 +112,6 @@ def test_a_unit_that_does_not_match_its_image_is_refused(tmp_path):
     inputs = RunInputs.open(out)
     with pytest.raises(RunInputsError, match="declares 1"):
         inputs.fovs()
-
-
-def test_a_run_without_a_description_is_unchanged(tmp_path):
-    inputs, _ = _open(tmp_path, VALID["v01"].data, publish=False)
-    fov = inputs.fovs()[0]
-    assert (fov.repeat_group, fov.condition_id, fov.technical_repeat_id) == (None,) * 3
-    assert fov.channel_ids is None
-    assert inputs.description() is None
-    assert inputs.references() is None and inputs.mask_semantics() is None
-    with pytest.raises(RunInputsError, match="no experiment description"):
-        inputs.channel_index(fov, "DNA")
-
-
-def test_a_run_without_a_description_reads_masks_as_before(tmp_path):
-    description = description_from_bytes(VALID["v08"].data)
-    root, out, masks = tmp_path / "exp", tmp_path / "out", tmp_path / "masks"
-    found = build_experiment(root, description)
-    for image in found:
-        write_mask(masks, "tumor_region", image, [0, 1, 2, 3])  # would contradict "binary"
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        assert run_experiment(root, MAPPING, output_folder=out, masks_folder=masks).written
-    inputs = RunInputs.open(out)
-    assert inputs.read_mask(inputs.fovs()[0], "tumor_region").max() == 3
-
-
-def test_a_description_published_after_a_run_without_one_changes_nothing(tmp_path):
-    inputs, _ = _open(tmp_path, VALID["v01"].data, publish=False)
-    (tmp_path / "out" / "morphobricks.toml").write_bytes(VALID["v01"].data)
-    again = RunInputs.open(tmp_path / "out")
-    assert again.description() is None and again.fovs()[0].channel_ids is None
-    assert inputs.output_folder == again.output_folder
 
 
 def test_run_inputs_with_a_description_is_picklable(tmp_path):

@@ -18,12 +18,12 @@ import numpy as np
 import pytest
 from morphobricks_normalization.csv_io import OUTPUT_FILENAME, read_plane_histograms
 
+from described_tree import run_described
 from morphobricks_preprocessing import (
     MANIFEST_FILENAME,
     RunInputs,
     prefill_mapping,
     read_manifest,
-    run_experiment,
 )
 from morphobricks_preprocessing import run as run_module
 from morphobricks_preprocessing.manifest import file_sha256
@@ -34,7 +34,6 @@ from morphobricks_preprocessing.run.generation import (
     finish_publication,
 )
 from morphobricks_preprocessing.run.lock import output_lock, remove_stale_lock
-from morphobricks_preprocessing.testing import _confirmed_design
 from run_files import outputs
 from tiff_tree import write_data
 
@@ -59,7 +58,7 @@ def first_generation(base):
     root, out = base / "exp", base / "out"
     for seed, rel in enumerate(IMAGES):
         write_data(root / rel, stack(seed), "TYX")
-    assert run_experiment(root, TYX, output_folder=out, design=_confirmed_design(root)).written
+    assert run_described(root, TYX, output_folder=out).written
     (out / MASK_REPORT).write_text("{}\n", encoding="utf-8")  # a full run removes it
     return root, out
 
@@ -115,10 +114,10 @@ def test_a_failure_before_the_commit_keeps_the_earlier_generation(tmp_path, monk
         }[failure]
         patch.setattr(*target)
         with pytest.raises(OSError, match="simulated failure"):
-            run_experiment(root, output_folder=out, **NEXT)
+            run_described(root, output_folder=out, **NEXT)
     assert outputs(out) == before
     assert not (out / PUBLISH_FOLDER).exists()
-    retried = run_experiment(root, output_folder=out, **NEXT)
+    retried = run_described(root, output_folder=out, **NEXT)
     assert retried.written
     assert read_manifest(retried.manifest_path).csv_sha256 == file_sha256(retried.csv_path)
 
@@ -135,7 +134,7 @@ def test_an_interruption_at_the_commit_keeps_the_earlier_generation(tmp_path, mo
 
     monkeypatch.setattr(os, "replace", interrupted)
     with pytest.raises(KeyboardInterrupt):
-        run_experiment(root, output_folder=out, **NEXT)
+        run_described(root, output_folder=out, **NEXT)
     assert outputs(out) == before and not (out / PUBLISH_FOLDER).exists()
 
 
@@ -153,7 +152,7 @@ def test_a_failure_after_the_commit_is_finished_by_the_next_run(tmp_path, monkey
     with monkeypatch.context() as patch:
         patch.setattr(os, "replace", table_in_use)
         with pytest.raises(PublicationIncompleteError, match="next run finishes"):
-            run_experiment(root, output_folder=out, **NEXT)
+            run_described(root, output_folder=out, **NEXT)
     # The new generation is current: RunInputs reads its table from the publication folder;
     # a plain reader still reads the earlier, whole table.
     manifest = read_manifest(out / MANIFEST_FILENAME)
@@ -167,7 +166,7 @@ def test_a_failure_after_the_commit_is_finished_by_the_next_run(tmp_path, monkey
         pass
     assert not (out / PUBLISH_FOLDER).exists() and not (out / MASK_REPORT).exists()
     assert file_sha256(out / OUTPUT_FILENAME) == manifest.csv_sha256
-    again = run_experiment(root, output_folder=out)
+    again = run_described(root, output_folder=out)
     assert again.written and again.read == ()
 
 
@@ -252,7 +251,7 @@ def test_a_cleanup_failure_does_not_fail_a_published_run(tmp_path, monkeypatch, 
         return original(path, *args, **kwargs)
 
     monkeypatch.setattr(shutil, "rmtree", broken)
-    result = run_experiment(root, output_folder=out, **NEXT)
+    result = run_described(root, output_folder=out, **NEXT)
     assert result.written
     assert read_manifest(result.manifest_path).csv_sha256 == file_sha256(result.csv_path)
     assert "Cannot remove the publication folder" in caplog.text
@@ -276,7 +275,7 @@ def test_the_output_folder_is_flushed_right_after_the_commit(tmp_path, monkeypat
 
     monkeypatch.setattr(os, "replace", replace)
     monkeypatch.setattr(generation, "_flush_folder", flush_folder)
-    assert run_experiment(root, output_folder=out, **NEXT).written
+    assert run_described(root, output_folder=out, **NEXT).written
     commit = calls.index(("replace", out / MANIFEST_FILENAME))
     assert calls[commit - 1] == ("flush_folder", out / PUBLISH_FOLDER)
     assert calls[commit + 1] == ("flush_folder", out)
@@ -382,7 +381,7 @@ def test_a_kill_between_any_two_publication_steps_leaves_one_generation(tmp_path
         manifest = read_manifest(out / MANIFEST_FILENAME)
         assert manifest.csv_sha256 == file_sha256(out / OUTPUT_FILENAME) == sha, kill_at
         assert (out / MASK_REPORT).exists() == (sha == old_sha), kill_at
-        again = run_experiment(base / "exp", output_folder=out)
+        again = run_described(base / "exp", output_folder=out)
         assert again.written, (kill_at, again.issues)
     assert seen == {"old", "new"}
 

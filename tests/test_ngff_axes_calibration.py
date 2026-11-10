@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import tifffile
 
+from described_tree import run_described
 from morphobricks_preprocessing import (
     AxisMapping,
     NgffError,
@@ -15,7 +16,6 @@ from morphobricks_preprocessing import (
     open_ngff,
     preflight,
     review_axes,
-    run_experiment,
     zarr_input,
 )
 from morphobricks_preprocessing.zarr_input import ngff_axes
@@ -91,7 +91,7 @@ def test_a_role_for_an_axis_of_no_known_type_is_refused(tmp_path):
 
 
 def test_a_run_refuses_ngff_depth_confirmed_as_time(zyx_store, tmp_path):
-    result = run_experiment(
+    result = run_described(
         tmp_path / "exp", AxisMapping("ZYX", "TYX"), output_folder=tmp_path / "o"
     )
     assert not result.written
@@ -104,7 +104,7 @@ def test_roles_that_agree_with_ngff_axes_are_read_as_declared(tmp_path):
     store = write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", data((3, 6, 8)), "tyx")
     write_data(tmp_path / "exp/ctrl/b.tif", data((3, 6, 8)), axes="TYX", imagej=True)
     mapping = AxisMapping("TYX", "TYX")
-    result = run_experiment(tmp_path / "exp", mapping, output_folder=tmp_path / "o")
+    result = run_described(tmp_path / "exp", mapping, output_folder=tmp_path / "o")
     assert result.written, result.issues
     assert "ome_zarr_axes_mismatch" not in codes(result.issues)
     meta = inspect_image(store, "ctrl/a.ome.zarr")
@@ -262,7 +262,7 @@ def test_every_image_with_a_malformed_calibration_is_named_and_kept_in_the_repor
     assert (
         "ctrl/a.ome.zarr: the coordinateTransformations of level 0 are not a list" in found.message
     )
-    result = run_experiment(root, AxisMapping("TYX", "TYX"), output_folder=tmp_path / "o")
+    result = run_described(root, AxisMapping("TYX", "TYX"), output_folder=tmp_path / "o")
     assert result.written, result.issues
     assert "invalid_physical_calibration" in codes(result.issues)
     report = json.loads((tmp_path / "o/discovery_report.json").read_text(encoding="utf-8"))

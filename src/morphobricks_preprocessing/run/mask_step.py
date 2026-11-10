@@ -33,10 +33,11 @@ from ..discovery import default_output_folder
 from ..mask_representation import check_representation
 from ..mask_scan import MASK_REPORT_FILENAME, MaskReport, scan_masks, write_mask_report
 from ..masks import MaskInventory
+from ..required_description import description_required_issue, is_published
 from ..validation import ValidationIssue, has_errors
 from .description_run import load_description
 from .lock import OutputLockedError, lock_issue, output_lock
-from .preflight import Preflight, description_in_use, preflight
+from .preflight import Preflight, preflight
 from .recorded import GivenInputs, InputChange, resolve_inputs, usable
 from .reuse import read_previous, recorded_experiment_root
 
@@ -104,7 +105,8 @@ class MaskStepResult:
         With a published description: ``R_MASK_CONTRADICTS_REPRESENTATION`` for each mask file
         that holds more than two values though declared ``binary`` (such a file stays ``not yet
         checked``; the report is written all the same), or the error that the description
-        cannot be read. Empty without a description.
+        cannot be read, or ``A_DESCRIPTION_REQUIRED`` when it was removed since the step was
+        prepared.
     """
 
     report: MaskReport | None
@@ -172,8 +174,13 @@ def prepare_mask_step(
     Returns
     -------
     MaskStep
-        With ``refusal`` set when no experiment folder was given or recorded.
+        With ``refusal`` set when no experiment folder was given or recorded, or when the
+        output folder holds no published description (``A_DESCRIPTION_REQUIRED``; nothing is
+        read).
     """
+    if output_folder and not is_published(output_folder):  # before the recorded run is read
+        refusal = description_required_issue(Path(output_folder))
+        return MaskStep(preflight=None, output_folder=None, refusal=refusal)
     if experiment_root is None:
         recorded, missing = recorded_experiment_root(
             output_folder and Path(output_folder).resolve()
@@ -183,6 +190,9 @@ def prepare_mask_step(
         experiment_root = str(recorded)
     root = Path(experiment_root).resolve()
     output = Path(output_folder) if output_folder else default_output_folder(root)
+    if not is_published(output):
+        refusal = description_required_issue(output)
+        return MaskStep(preflight=None, output_folder=None, refusal=refusal)
     given = GivenInputs(
         experiment_root=root,
         exclude=None if exclude is None else tuple(exclude),
@@ -201,7 +211,6 @@ def prepare_mask_step(
         masks_folder=resolved.masks_folder,
         mask_axes=resolved.mask_axes,
         bind_headers=True,
-        with_description=description_in_use(root, output),
     )
     pre = replace(pre, masks=pre.masks or MaskInventory(folder=None))  # none found
     return MaskStep(
@@ -269,12 +278,14 @@ def describe_masks(
 
 
 def _representation_issues(step: MaskStep, output: Path) -> tuple[ValidationIssue, ...]:
-    """Check the declared masks' representations when a description is published.
+    """Check the declared masks' representations against the published description.
 
-    The caller holds the output folder's lock and has read the masks. Without a published
-    description nothing is checked or written (a v0.4 output folder).
+    The caller holds the output folder's lock and has read the masks. A description removed
+    since the step was prepared is ``A_DESCRIPTION_REQUIRED``.
     """
     described, problems = load_description(output)
+    if described is None and not problems:
+        problems = [description_required_issue(output)]
     if described is None or step.preflight is None:
         return tuple(problems)
     root = step.preflight.discovery.root

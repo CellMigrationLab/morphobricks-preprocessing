@@ -1,7 +1,7 @@
 """Change an experiment design without editing the CSV: groups, controls, confirmations.
 
-The ``design`` command and :func:`.run.design_file.edit_design` apply a :class:`DesignEdit` to
-the design in ``experiment_design.csv`` (contract §12): move folders to other repeat
+The notebook's pairing card applies a :class:`DesignEdit` to the design it shows (the
+``design`` command and ``edit_design`` were removed in v0.5.1, PP-C): move folders to other repeat
 groups, mark conditions as controls or not, and confirm repeat groups. Each change uses the
 design's own rules (:class:`.design.ExperimentDesign`), and a repeat group is confirmed only
 when its rows pass the run's validator (:func:`.design.design_issues`). Nothing is confirmed
@@ -42,8 +42,8 @@ class DesignEdit:
         Confirm every repeat group not confirmed yet.
     unconfirm
         Repeat groups whose confirmation is taken back (after the moves, before the
-        confirmations); the notebook's "Undo" (PP-10). Python only, not a ``design``
-        option. It never confirms anything: a group in it cannot also be confirmed, and it
+        confirmations); the notebook's "Undo" (PP-10). Python only. It never confirms
+        anything: a group in it cannot also be confirmed, and it
         cannot be combined with ``confirm_all``.
     """
 

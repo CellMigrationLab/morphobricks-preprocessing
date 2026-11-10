@@ -1,12 +1,12 @@
 """The folder check's pixel-type and dimension checks, applied per unit of a described run.
 
-An undescribed (v0.4) run compares the pixel type and the arrangement of dimensions of every
-image of the experiment (``mixed_dtypes``, ``inconsistent_dimensions``, ``missing_axes``;
-:func:`.metadata.check_metadata`). A description declares an ``image_type`` per unit, so an
-experiment may hold RGB colour units next to fluorescence units. Comparing those across the
-whole experiment gives folder errors that mislead: the Spec refuses such an experiment in
-Stages 1-2 with ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` (experiment-v1 sections 4.4b and 8),
-and that refusal is not lifted here. In a described run the same checks apply:
+The folder check (before any unit is declared) compares the pixel type and the arrangement of
+dimensions of every image of the experiment (``mixed_dtypes``, ``inconsistent_dimensions``,
+``missing_axes``; :func:`.metadata.check_metadata`). A description declares an ``image_type``
+per unit, so an experiment may hold RGB colour units next to fluorescence units. Comparing
+those across the whole experiment gives folder errors that mislead: the Spec refuses such an
+experiment in Stages 1-2 with ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` (experiment-v1 sections
+4.4b and 8), and that refusal is not lifted here. In a run the same checks apply:
 
 - on the notebook's folder check, inside each unit (its image type is not declared yet), so a
   unit mixed inside itself is refused and units of different kinds do not hide the screens
@@ -116,7 +116,7 @@ def declared_type_issues(description: Description, pre: Preflight) -> list[Valid
     Returns
     -------
     list of ValidationIssue
-        ``mixed_dtypes`` as the undescribed folder check finds it, with the RGB units compared
+        ``mixed_dtypes`` as the experiment-wide folder check finds it, with the RGB units compared
         only with each other and the other units only with each other. The arrangement of
         dimensions is not examined here: the axis review checks it against the confirmed
         mapping, which replaces the folder check's ``inconsistent_dimensions``.

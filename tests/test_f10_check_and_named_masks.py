@@ -18,19 +18,14 @@ import numpy as np
 import pytest
 import tifffile
 
+from described_tree import main_described, run_described
 from morphobricks_preprocessing import (
-    default_design,
     default_output_folder,
     prefill_mapping,
     preflight,
     read_manifest,
-    run_experiment,
-    write_experiment_design,
 )
-from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.run.check_step import suggested_review
-from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError
-from tiff_tree import write_data
 
 
 def ome(path, data, axes):
@@ -44,14 +39,6 @@ def labels(shape, start=1):
     return (np.arange(np.prod(shape)).reshape(shape) % 5 + start).astype(np.uint16)
 
 
-def confirm_design(root, output):
-    design = default_design(preflight(root).dataset.repeats)
-    for group in design.groups:
-        design = design.with_confirmed(group, True, "2026-11-04")
-    output.mkdir(parents=True, exist_ok=True)
-    write_experiment_design(design, output / "experiment_design.csv")
-
-
 def error_codes(output):
     report = json.loads((output / "discovery_report.json").read_text(encoding="utf-8"))
     return sorted({i["code"] for i in report["issues"] if i["severity"] == "error"})
@@ -59,14 +46,14 @@ def error_codes(output):
 
 @pytest.fixture
 def mixed(tmp_path):
-    """Two 2-D images (CYX) and one Z-stack (TCYX), each with its own masks (synA)."""
+    """Two 2-D images (CYX) and one time-lapse (TCYX, a unit of its own), with masks (synA)."""
     root, masks = tmp_path / "exp", tmp_path / "masks"
     rng = np.random.default_rng(4)
     for rel in ("ctrl/r1/a.tif", "drug/r1/a.ome.tif"):
         ome(root / rel, rng.integers(0, 200, (2, 6, 8), dtype=np.uint16), "CYX")
         ome(masks / "Cells" / rel, labels((6, 8)), "YX")
-    ome(root / "ctrl/r1/b.ome.tif", rng.integers(0, 200, (2, 2, 6, 8), dtype=np.uint16), "TCYX")
-    ome(masks / "Cells/ctrl/r1/b.ome.tif", labels((2, 6, 8)), "TYX")
+    ome(root / "ctrl/r2/b.ome.tif", rng.integers(0, 200, (2, 2, 6, 8), dtype=np.uint16), "TCYX")
+    ome(masks / "Cells/ctrl/r2/b.ome.tif", labels((2, 6, 8)), "TYX")
     return root, masks
 
 
@@ -77,11 +64,11 @@ def test_check_refuses_a_mixed_experiment_until_it_is_confirmed(mixed, tmp_path,
     root, masks = mixed
     out = tmp_path / "out"
     args = ["check", str(root), "--masks", str(masks), "--output", str(out)]
-    assert main(args) == 1
+    assert main_described(args) == 1
     printed = capsys.readouterr().out
     assert "lack some of the dimensions of the axis mapping (TCYX)" in printed
     assert error_codes(out) == ["missing_axes"]
-    assert main([*args, "--missing-as-singleton"]) == 0
+    assert main_described([*args, "--missing-as-singleton"]) == 0
     printed = capsys.readouterr().out
     assert "Error" not in printed
     assert "--axes TCYX --missing-as-singleton" in printed
@@ -94,9 +81,8 @@ def test_check_and_run_report_the_same_errors(mixed, tmp_path, capsys, singleton
     option = ["--missing-as-singleton"] if singleton else []
     checked, ran = tmp_path / "checked", tmp_path / "ran"
     common = [str(root), "--masks", str(masks), *option]
-    status = main(["check", *common, "--output", str(checked)])
-    confirm_design(root, ran)
-    assert main(["run", *common, "--output", str(ran), "--axes", "TCYX"]) == status
+    status = main_described(["check", *common, "--output", str(checked)])
+    assert main_described(["run", *common, "--output", str(ran), "--axes", "TCYX"]) == status
     capsys.readouterr()
     assert error_codes(checked) == error_codes(ran) == ([] if singleton else ["missing_axes"])
 
@@ -104,11 +90,10 @@ def test_check_and_run_report_the_same_errors(mixed, tmp_path, capsys, singleton
 def test_check_takes_the_answer_the_earlier_run_recorded(mixed, tmp_path, capsys):
     root, masks = mixed
     out = tmp_path / "out"
-    confirm_design(root, out)
     common = [str(root), "--masks", str(masks), "--output", str(out)]
-    assert main(["run", *common, "--axes", "TCYX", "--missing-as-singleton"]) == 0
-    assert main(["check", *common]) == 0  # as 'run' would read them again
-    assert main(["check", *common, "--no-missing-as-singleton"]) == 1
+    assert main_described(["run", *common, "--axes", "TCYX", "--missing-as-singleton"]) == 0
+    assert main_described(["check", *common]) == 0  # as 'run' would read them again
+    assert main_described(["check", *common, "--no-missing-as-singleton"]) == 1
     assert "lack some of the dimensions" in capsys.readouterr().out
 
 
@@ -125,7 +110,9 @@ def test_suggested_review_answers_the_missing_axes_as_the_run_does(mixed):
 
 def test_the_output_folder_defaults_next_to_the_experiment(mixed, capsys):
     root, masks = mixed
-    assert main(["check", str(root), "--masks", str(masks), "--missing-as-singleton"]) == 0
+    assert (
+        main_described(["check", str(root), "--masks", str(masks), "--missing-as-singleton"]) == 0
+    )
     capsys.readouterr()
     assert error_codes(default_output_folder(root)) == []
 
@@ -148,10 +135,8 @@ def test_the_notebooks_check_report_takes_the_recorded_answer(mixed, capsys):
 
     first = checked()
     assert not first.missing_as_singleton.value
-    assert error_codes(out) == ["missing_axes"]
-    confirm_design(root, out)
     common = [str(root), "--masks", str(masks), "--output", str(out)]
-    assert main(["run", *common, "--axes", "TCYX", "--missing-as-singleton"]) == 0
+    assert main_described(["run", *common, "--axes", "TCYX", "--missing-as-singleton"]) == 0
     capsys.readouterr()
     again = checked()  # step 2 shows the recorded answer, and the report follows it
     assert again.missing_as_singleton.value
@@ -164,15 +149,16 @@ def test_the_notebooks_check_report_takes_the_recorded_answer(mixed, capsys):
 def test_check_and_run_say_when_the_recorded_answer_is_reused(mixed, tmp_path, capsys):
     root, masks = mixed
     out = tmp_path / "out"
-    confirm_design(root, out)
     common = [str(root), "--masks", str(masks), "--output", str(out)]
-    assert main(["run", *common, "--axes", "TCYX", "--missing-as-singleton"]) == 0
+    assert main_described(["run", *common, "--axes", "TCYX", "--missing-as-singleton"]) == 0
     assert "as confirmed for the earlier run (give" not in capsys.readouterr().out
     for command in (["check", *common], ["run", *common, "--axes", "TCYX"]):
-        assert main(command) == 0
+        assert main_described(command) == 0
         printed = capsys.readouterr().out
         assert "Images lacking some axes: read with one plane along them, as confirmed" in printed
-    assert main(["check", *common, "--missing-as-singleton"]) == 0  # given: nothing reused
+    assert (
+        main_described(["check", *common, "--missing-as-singleton"]) == 0
+    )  # given: nothing reused
     assert "Images lacking some axes" not in capsys.readouterr().out
 
 
@@ -181,7 +167,7 @@ def test_check_suggests_the_option_only_for_images_lacking_axes(tmp_path, capsys
     ome(root / "ctrl/r1/a.tif", np.zeros((3, 2, 6, 8), np.uint16), "TCYX")
     ome(masks / "Cells/ctrl/r1/a.tif", labels((3, 6, 8)), "TYX")
     args = ["check", str(root), "--masks", str(masks), "--output", str(out)]
-    assert main([*args, "--missing-as-singleton"]) == 0
+    assert main_described([*args, "--missing-as-singleton"]) == 0
     assert "Suggested option for 'run': --axes TCYX (axes" in capsys.readouterr().out
 
 
@@ -190,9 +176,8 @@ def test_check_keeps_the_other_errors_of_a_confirmed_mixed_experiment(mixed, tmp
     (root / "drug/r1/broken.tif").write_bytes(b"not a TIFF file")
     checked, ran = tmp_path / "checked", tmp_path / "ran"
     common = [str(root), "--masks", str(masks), "--missing-as-singleton"]
-    assert main(["check", *common, "--output", str(checked)]) == 1
-    confirm_design(root, ran)
-    assert main(["run", *common, "--output", str(ran), "--axes", "TCYX"]) == 1
+    assert main_described(["check", *common, "--output", str(checked)]) == 1
+    assert main_described(["run", *common, "--output", str(ran), "--axes", "TCYX"]) == 1
     capsys.readouterr()
     found = error_codes(checked)
     assert found and "missing_axes" not in found
@@ -203,7 +188,7 @@ def test_a_named_2d_mask_of_a_single_plane_image_is_recorded_from_its_header(tmp
     root, masks = tmp_path / "exp", tmp_path / "masks"
     ome(root / "ctrl/a.ome.tif", np.zeros((2, 6, 8), np.uint16), "CYX")
     ome(masks / "Cells/ctrl/a.ome.tif", labels((6, 8)), "YX")
-    result = run_experiment(root, prefill_mapping("CYX"), masks_folder=masks)
+    result = run_described(root, prefill_mapping("CYX"), masks_folder=masks)
     (entry,) = read_manifest(result.manifest_path).masks["files"]
     assert entry["axes_from"] == "header" and "shared" not in entry
 
@@ -215,7 +200,7 @@ def test_a_label_image_of_a_one_plane_ome_zarr_is_used_as_it_is(tmp_path):
     write_labels(image, {"cells": labels((6, 8))}, "yx")
     (mask,) = preflight(tmp_path / "exp").masks.files
     assert (mask.axes, mask.axes_from) == ("YX", "header")
-    assert run_experiment(tmp_path / "exp", prefill_mapping("ZYX")).written
+    assert run_described(tmp_path / "exp", prefill_mapping("ZYX")).written
 
 
 # A manifest #148 wrote (main after v0.4.0rc5, no tag) is never trusted -------------------
@@ -226,32 +211,9 @@ F10_MAIN = "f7c54bd2985ec3bd72e59938270cb2f398247fee"
 WRITE_WITH_F10 = """
 from morphobricks_preprocessing import prefill_mapping, run_experiment
 root, masks, out = (Path(a) for a in sys.argv[2:5])
-result = run_experiment(root, prefill_mapping("TYX"), output_folder=out, masks_folder=masks)
+result = run_described(root, prefill_mapping("TYX"), output_folder=out, masks_folder=masks)
 print(json.dumps(result.written))
 """
-
-
-def test_a_mask_shared_by_its_header_in_an_f10_manifest_is_refused(tmp_path):
-    from released_code import PRELUDE, extract, run_with
-
-    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
-    write_data(root / "ctrl/a.tif", np.zeros((4, 6, 8), np.uint8), "TYX")
-    write_data(masks / "Cells/ctrl/a.tif", labels((6, 8)), "YX")
-    src = extract(F10_MAIN, tmp_path / "f10")
-    assert run_with(src, PRELUDE + WRITE_WITH_F10, root, masks, out) is True
-    (entry,) = read_manifest(out / "run_manifest.json").masks["files"]
-    assert (entry["shared"], entry["axes_from"]) == (True, "header")  # as #148 wrote it
-    with pytest.raises(RunInputsError, match="shared by every plane") as refused:
-        RunInputs.open(out)
-    text = str(refused.value)
-    assert "Cells/ctrl/a.tif" in text and "run preprocessing again" in text
-    assert "--mask-axes Cells=YX" not in text  # no longer a way out
-    # The rerun: refused without a statement and with the removed one alike.
-    plain = run_experiment(root, output_folder=out, masks_folder=masks)
-    assert "mask_planes_mismatch" in {i.code for i in plain.issues if i.is_error}
-    stated = run_experiment(root, output_folder=out, masks_folder=masks, mask_axes={"Cells": "YX"})
-    assert "shared_mask_not_supported" in {i.code for i in stated.issues if i.is_error}
-    assert not stated.written
 
 
 def test_any_shared_mask_record_is_refused():

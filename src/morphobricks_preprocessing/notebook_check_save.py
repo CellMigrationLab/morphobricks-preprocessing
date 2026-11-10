@@ -202,7 +202,7 @@ class _CheckSaveScreen:
 
     def _refresh_check_save(self) -> None:
         """Restate the experiment from the answers and say what the save would do."""
-        if not self._describe or self.draft is None or self.draft_answers is None:
+        if self.draft is None or self.draft_answers is None:
             ui.set_visible(self.check_card, False)
             ui.set_visible(self.fold_bar, False)
             self.check_waiting.value = ui.status(
@@ -380,9 +380,7 @@ class _CheckSaveScreen:
         ).widget
 
     def _folder_cell(self, key: tuple[str, str], text: str) -> widgets.Widget:
-        """Return a folder of the pairing card, with its picture in a described run."""
-        if not self._describe:
-            return super()._folder_cell(key, text)
+        """Return a folder of the pairing card, with its picture."""
         return widgets.VBox([widgets.HTML(text), self._member_picture(key, self.pairing_detail)])
 
     def _show_removals(self, state: object) -> None:

@@ -39,7 +39,6 @@ def labelled(root, out):
     for step in (nb.welcome, nb.folder_step, nb.axis_step, nb.run_step, nb.results_step):
         step()
     nb.check_button.click()
-    nb.labels_confirmed.button.click()
     return nb
 
 
@@ -50,10 +49,14 @@ def saved(out):
 
 def pair_experiment_23(nb):
     """Choose repeat group rep2 for drug's folder experiment_23, in the design card."""
+
+    def folder(cell):  # the folder's name, beside its picture (a VBox) in a described run
+        return cell.children[0].value if hasattr(cell, "children") else cell.value
+
     (dropdown,) = [
         box.children[2]
         for box in nb.pairing_grid.children[1:]
-        if "experiment_23" in box.children[1].value and "drug" in box.children[0].value
+        if "experiment_23" in folder(box.children[1]) and "drug" in box.children[0].value
     ]
     dropdown.value = "rep2"
 
@@ -164,38 +167,6 @@ def test_two_differently_named_folders_are_paired_into_one_repeat(root, out):
     assert "experiment_23" not in saved(out).repeats
 
 
-def test_pairing_and_unpairing_ask_only_for_the_names_that_are_new(root, out):
-    nb = labelled(root, out)
-    nb.ids_confirmed.button.click()
-    assert nb.ids_confirmed.value
-    pair_experiment_23(nb)
-    # rep1 and rep2 keep the names the user confirmed; experiment_23 is no longer a repeat.
-    assert nb.ids_confirmed.value
-    assert "No longer a repeat of its own: experiment_23" in nb.names_status.value
-    assert "experiment_23" not in saved(out).repeats
-    (dropdown,) = [
-        box.children[2]
-        for box in nb.pairing_grid.children[1:]
-        if "experiment_23" in box.children[1].value and "drug" in box.children[0].value
-    ]
-    dropdown.value = "experiment_23"  # take the folder out of rep2 again
-    assert not nb.ids_confirmed.value  # experiment_23 is a repeat again, and unnamed
-    assert not nb.id_inputs[("repeats", "experiment_23")].disabled
-    assert nb.id_inputs[("repeats", "rep1")].disabled
-    assert dict(saved(out).pairing) == {}
-
-
-def test_the_comparable_date_of_a_repeat_is_the_design_cards_click(root, out):
-    nb = labelled(root, out)
-    pair_experiment_23(nb)
-    nb.group_confirmations["rep1"].button.click()
-    day = nb.design.confirmed_on("rep1")
-    assert day and saved(out).repeats["rep1"].confirmed_on == day
-    assert "rep2" not in saved(out).repeats  # not confirmed: no date, no entry
-    nb.group_confirmations["rep1"].button.click()  # undo
-    assert saved(out).repeats == {}
-
-
 def test_a_reference_is_chosen_saved_and_marks_the_control(root, out):
     nb = labelled(root, out)
     assert nb.reference_boxes["drug"].value is None  # nothing is chosen for the user
@@ -229,28 +200,6 @@ def test_a_shown_as_name_is_saved_and_the_id_stays(root, out):
     assert saved(out).conditions["ctrl"].id == "ctrl"
     nb.name_inputs[("conditions", "ctrl")].value = ""
     assert saved(out).conditions["ctrl"].display_name is None
-
-
-def test_a_saved_draft_resumes_with_its_answers_shown(root, out):
-    first = labelled(root, out)
-    pair_experiment_23(first)
-    first.id_inputs[("conditions", "ctrl")].value = "UNTREATED"
-    first.ids_confirmed.button.click()
-    first.name_inputs[("conditions", "drug")].value = "Drug A"
-    first.reference_boxes["drug"].value = "ctrl"
-    first.group_confirmations["rep1"].button.click()
-    before = (out / DRAFT_FILENAME).read_bytes()
-
-    again = labelled(root, out)
-    assert "Your saved answers were read" in again.names_status.value
-    assert again.ids_confirmed.value
-    assert again.id_inputs[("conditions", "ctrl")].value == "UNTREATED"
-    assert again.id_inputs[("conditions", "ctrl")].disabled
-    assert sorted(again.draft.repeats) == ["rep1", "rep2"]
-    assert again.name_inputs[("conditions", "drug")].value == "Drug A"
-    assert again.reference_boxes["drug"].value == "ctrl"
-    assert again.draft.repeats["rep1"].confirmed and not again.draft.repeats["rep2"].confirmed
-    assert (out / DRAFT_FILENAME).read_bytes() == before  # looking changes nothing
 
 
 def answered_tree(root, out):
@@ -291,22 +240,6 @@ def test_a_condition_removed_after_answering_is_listed_and_the_rest_is_kept(root
     assert saved(out).conditions["drug"].reference == "ctrl"  # on disk until the next answer
 
 
-def test_a_saved_pairing_that_differs_from_the_design_follows_the_design(root, out):
-    first = labelled(root, out)
-    pair_experiment_23(first)
-    first.ids_confirmed.button.click()
-    (out / "experiment_design.csv").unlink()  # the design forgets the pairing
-    before = (out / DRAFT_FILENAME).read_bytes()
-    again = labelled(root, out)
-    assert "pairing of the experiment design above is used" in again.names_status.value
-    assert again.id_inputs[("repeats", "rep1")].disabled  # kept
-    assert not again.ids_confirmed.value  # experiment_23 is a repeat again, and unnamed
-    assert (out / DRAFT_FILENAME).read_bytes() == before
-    again.ids_confirmed.button.click()
-    assert dict(saved(out).pairing) == {}
-    assert saved(out).repeats["experiment_23"].id == "experiment_23"
-
-
 def test_a_draft_that_cannot_be_used_is_copied_aside_and_never_overwritten(root, out):
     first = labelled(root, out)
     first.ids_confirmed.button.click()
@@ -332,17 +265,6 @@ def test_without_a_writable_output_folder_the_answers_are_kept_in_the_notebook(r
     nb.output.value = ""
     nb.ids_confirmed.button.click()
     assert nb.ids_confirmed.value  # answered; saved with the default output folder if it can be
-
-
-def test_a_flat_experiment_asks_for_no_condition_or_technical_repeat_names(tmp_path):
-    root = design_tree(tmp_path / "exp", [""])  # images directly in the experiment folder
-    out = tmp_path / "out"
-    nb = labelled(root, out)
-    assert sorted(nb.id_inputs) == [("repeats", "single")]
-    assert not ui.is_visible(nb.references_card)  # one condition: nothing to compare
-    nb.ids_confirmed.button.click()
-    assert nb.ids_confirmed.value
-    assert saved(out).conditions["single"].id == "single"
 
 
 def _all_widgets(box):
@@ -386,18 +308,6 @@ def test_an_unanswered_reference_and_no_comparison_look_different(root, out):
     assert saved(out).conditions == {}
 
 
-def test_the_design_summary_follows_the_references(root, out):
-    nb = labelled(root, out)
-    for toggle in nb.group_confirmations.values():
-        toggle.button.click()  # the summary is shown once the repeats are confirmed
-    assert "Controls: none" in nb.design_status.value
-    nb.reference_boxes["drug"].value = "ctrl"
-    assert "Compared against (from references): drug → ctrl" in nb.design_status.value
-    assert "Controls:" not in nb.design_status.value
-    nb.reference_boxes["drug"].value = ""
-    assert "Compared against (from references): nothing" in nb.design_status.value
-
-
 def test_the_names_card_says_in_bold_which_levels_get_the_id_single(root, out, tmp_path):
     nb = labelled(root, out)  # conditions and repeats, no technical-repeat folders
     note = nb.single_note.value
@@ -433,18 +343,3 @@ def test_typing_a_shown_as_name_keeps_the_box_being_typed_in(root, out):
     box = nb.name_inputs[("conditions", "ctrl")]
     box.value = "Un"
     assert nb.name_inputs[("conditions", "ctrl")] is box  # not rebuilt under the cursor
-
-
-def test_the_ids_gate_neither_step_2_nor_run(root, out):
-    nb = labelled(root, out)
-    pair_experiment_23(nb)
-    for toggle in nb.group_confirmations.values():
-        toggle.button.click()
-    assert not nb.ids_confirmed.value
-    nb.preview_button.click()
-    nb.preview_checked.button.click()
-    nb.confirm_button.click()
-    nb.image_type_checked.button.click()
-    assert not nb.run_button.disabled
-    nb.run_button.click()
-    assert nb.result.written

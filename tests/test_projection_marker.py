@@ -11,10 +11,10 @@ import numpy as np
 import pytest
 import tifffile
 
-from morphobricks_preprocessing import AxisMapping, Projection, convert_experiment, run_experiment
+from described_tree import run_described
+from morphobricks_preprocessing import AxisMapping, Projection, convert_experiment
 from morphobricks_preprocessing.conversion_record import RECORD_FILENAME
 from morphobricks_preprocessing.run.preflight import preflight
-from morphobricks_preprocessing.testing import _confirmed_design
 from test_projection_convert import NAMES, ZCYX, codes, stack_experiment
 
 CYX = AxisMapping("CYX", tuple("CYX"))
@@ -39,7 +39,7 @@ def test_projected_copies_without_their_record_are_refused(tmp_path):
     issue = next(i for i in pre.issues if i.code == CODE)
     assert set(issue.paths) == set(NAMES) and "convert --project" in issue.action
     out = tmp_path / "out"
-    run = run_experiment(copies, CYX, output_folder=out, design=_confirmed_design(copies))
+    run = run_described(copies, CYX, output_folder=out)
     assert (
         not run.written and CODE in codes(run.issues) and not (out / "run_manifest.json").exists()
     )

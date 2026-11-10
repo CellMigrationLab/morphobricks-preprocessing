@@ -46,7 +46,6 @@ def find_masks(
     mask_axes: Mapping[str, str] | None = None,
     output_folder: str | os.PathLike | None = None,
     bind: bool = False,
-    with_description: bool = False,
 ) -> MaskInventory:
     """Pair every image with its masks and check them from their headers, without pixels.
 
@@ -77,12 +76,6 @@ def find_masks(
         fingerprint with it (:attr:`.model.MaskFile.bound`, issue #160), so a run or the
         mask step refuses a mask that is no longer the one its header described; a mask
         that changed while its header was read is the error ``mask_changed_during_check``.
-    with_description
-        True when an experiment description is in use: a discovered mask type name that
-        breaks the Label rules (``NA``, `` cells``) is then the error
-        ``R_MASK_TYPE_NAME_INVALID``, and one that is not Unicode NFC the error
-        ``R_FOLDER_NOT_NFC`` (Spec experiment-v1 §6; never normalized or renamed). Without a
-        description, mask type names are accepted as before (owner decision Q1).
 
     Returns
     -------
@@ -103,8 +96,7 @@ def find_masks(
     found, unreadable = _label_masks(discovery.root, images)
     files.extend(found)
     issues.extend(_name_issues(files))
-    if with_description:
-        issues.extend(_description_name_issues(files))
+    issues.extend(_description_name_issues(files))
     files.sort(key=lambda f: (f.image, f.mask_type))
     issues.extend(_duplicate_issues(files))
     stated = dict(mask_axes or {})

@@ -122,7 +122,7 @@ def _rgb_stepper(tmp_path):
     root = tmp_path / "exp"
     for i, folder in enumerate(FOLDERS):
         write_rgb(root / folder / "a.tif", seed=i + 1)
-    nb = PreprocessingNotebook(str(root), output_folder=str(tmp_path / "out"), describe=True)
+    nb = PreprocessingNotebook(str(root), output_folder=str(tmp_path / "out"))
     nb.steps()
     nb.check_button.click()
     nb.quick_confirm.click()

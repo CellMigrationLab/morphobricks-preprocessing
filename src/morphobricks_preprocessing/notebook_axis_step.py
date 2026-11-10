@@ -221,7 +221,7 @@ class _AxisStep:
 
     def _layout_kinds(self) -> str:
         """Return the kinds of layout the saved description declares when they differ, else ''."""
-        state = self._published() if getattr(self, "_describe", False) else None
+        state = self._published()
         if state is None:
             return ""
         layouts = declared_layouts(state.description)

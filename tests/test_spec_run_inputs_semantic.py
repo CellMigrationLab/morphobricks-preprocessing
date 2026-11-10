@@ -13,8 +13,8 @@ import json
 
 import pytest
 
+from described_tree import run_described
 from description_tree import MAPPING, build_experiment, write_mask
-from morphobricks_preprocessing import run_experiment
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_consume import read_published_description
 from morphobricks_preprocessing.run.mask_step import describe_masks, prepare_mask_step
@@ -35,7 +35,7 @@ def _described_run(tmp_path, name, images=2):
 
 
 def _run(root, out, masks=None):
-    assert run_experiment(root, MAPPING, output_folder=out, masks_folder=masks).written
+    assert run_described(root, MAPPING, output_folder=out, masks_folder=masks).written
 
 
 @pytest.mark.parametrize(("name", "groups"), [("v03", {"Day1", "Day2"}), ("v30", {"Day1", "Day2"})])

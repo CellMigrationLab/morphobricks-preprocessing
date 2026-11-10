@@ -465,8 +465,8 @@ def design_issues(design: ExperimentDesign) -> list[ValidationIssue]:
                 "A repeat group is one biological repeat across the conditions, so it can "
                 f"hold only one folder of each condition: {described}.",
                 [_folder(row) for g in design.conflicts for row in design.members(g)],
-                "Move one of the folders into another repeat group (Replicates in the "
-                "notebook, or the repeat_group column of experiment_design.csv).",
+                "Move one of the folders into another replicate on the notebook's Replicates "
+                "page, then save the experiment description again (Check and save).",
             )
         )
     unconfirmed = [g for g in design.unconfirmed_groups if g not in design.conflicts]
@@ -484,8 +484,8 @@ def design_issues(design: ExperimentDesign) -> list[ValidationIssue]:
                 "that the biological repeats were prepared and acquired under the same "
                 "circumstances, so that they are comparable.",
                 [_folder(row) for g in unconfirmed for row in design.members(g)],
-                "Confirm the biological repeats in the notebook, with the design "
-                "command (--confirm), or by setting confirmed to true in experiment_design.csv.",
+                "Describe these folders: confirm their replicates in the notebook's describe "
+                "steps and save the experiment description again (Check and save).",
             )
         )
     return issues

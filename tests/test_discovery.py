@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from morphobricks_normalization.records import SINGLE
 
+from described_tree import run_described
 from morphobricks_preprocessing import (
     AxisMapping,
     Severity,
@@ -11,7 +12,6 @@ from morphobricks_preprocessing import (
     default_output_folder,
     discover_experiment,
     position_id,
-    run_experiment,
 )
 from morphobricks_preprocessing.discovery import is_system_name, is_tiff_name
 from tiff_tree import make_tree, write_data
@@ -178,10 +178,10 @@ def test_a_run_with_images_beside_subfolders_writes_nothing(tmp_path):
     root, output = tmp_path / "exp", tmp_path / "out"
     write_data(root / "cond" / "stray.tif", np.zeros((8, 9), dtype=np.uint8))
     write_data(root / "cond" / "bio" / "a.tif", np.zeros((8, 9), dtype=np.uint8))
-    result = run_experiment(root, AxisMapping("YX", "YX"), output_folder=output)
+    result = run_described(root, AxisMapping("YX", "YX"), output_folder=output)
     assert not result.written
     assert "tiff_outside_leaf" in [i.code for i in result.issues if i.is_error]
-    assert [p.stem for p in output.iterdir()] == ["discovery_report"] * 2  # only the report
+    assert sorted(p.stem for p in output.iterdir()) == [*["discovery_report"] * 2, "morphobricks"]
 
 
 def test_system_files_are_ignored_silently(tmp_path):

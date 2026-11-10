@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from morphobricks_preprocessing.cli import main
+from described_tree import main_described
 from morphobricks_preprocessing.testing import make_clean_run
 
 
@@ -41,7 +41,7 @@ def _masks(clean, *more):
 @pytest.mark.parametrize("command", [_run, _masks])
 def test_a_log_in_the_experiment_folder_is_refused(clean, capsys, command):
     log = clean.experiment / "notes.txt"
-    assert main(command(clean, "--log", str(log))) == 1
+    assert main_described(command(clean, "--log", str(log))) == 1
     assert "inside the experiment folder" in _refused(capsys, log)
 
 
@@ -49,14 +49,14 @@ def test_a_log_in_the_experiment_folder_is_refused(clean, capsys, command):
 def test_a_log_over_a_source_image_leaves_it_unchanged(clean, capsys, command):
     image = clean.experiment / "ctrl/rep1/a.ome.tif"
     before = image.read_bytes()
-    assert main(command(clean, "--log", str(image))) == 1
+    assert main_described(command(clean, "--log", str(image))) == 1
     _refused(capsys, image, before)
 
 
 @pytest.mark.parametrize("command", [_run, _masks])
 def test_a_log_in_the_masks_folder_is_refused(clean, capsys, command):
     log = clean.masks / "Cells/notes.txt"
-    assert main(command(clean, "--log", str(log))) == 1
+    assert main_described(command(clean, "--log", str(log))) == 1
     assert "inside the masks folder" in _refused(capsys, log)
 
 
@@ -68,7 +68,7 @@ def test_a_log_in_the_masks_folder_is_refused(clean, capsys, command):
 def test_a_log_over_an_output_file_leaves_it_unchanged(clean, capsys, command, name):
     target = clean.output / name
     before = target.read_bytes()
-    assert main(command(clean, "--log", str(target))) == 1
+    assert main_described(command(clean, "--log", str(target))) == 1
     assert f"the run's {name}" in _refused(capsys, target, before)
 
 
@@ -84,8 +84,9 @@ def test_a_log_over_an_output_file_leaves_it_unchanged(clean, capsys, command, n
 )
 def test_a_log_named_as_another_output_is_refused(clean, capsys, name):
     log = clean.output / name
-    assert main(_run(clean, "--log", str(log))) == 1
-    _refused(capsys, log)
+    before = log.read_bytes() if log.is_file() else None  # the mask step wrote its report
+    assert main_described(_run(clean, "--log", str(log))) == 1
+    _refused(capsys, log, before)
 
 
 def test_the_recorded_experiment_and_masks_folders_are_refused(clean, capsys):
@@ -94,13 +95,13 @@ def test_the_recorded_experiment_and_masks_folders_are_refused(clean, capsys):
         (clean.experiment / "notes.txt", "experiment folder"),
         (clean.masks / "notes.txt", "masks folder of the earlier run"),
     ]:
-        assert main(["run", "--output", str(clean.output), "--log", str(log)]) == 1
+        assert main_described(["run", "--output", str(clean.output), "--log", str(log)]) == 1
         assert f"inside the {where}" in _refused(capsys, log)
 
 
 def test_a_log_is_not_opened_when_the_arguments_are_refused(clean, capsys, tmp_path):
     log = tmp_path / "run.log"
-    assert main(_run(clean, "--mask-axes", "Cells", "--log", str(log))) == 1
+    assert main_described(_run(clean, "--mask-axes", "Cells", "--log", str(log))) == 1
     capsys.readouterr()
     assert not log.exists()
 
@@ -108,7 +109,7 @@ def test_a_log_is_not_opened_when_the_arguments_are_refused(clean, capsys, tmp_p
 @pytest.mark.parametrize("command", [_run, _masks])
 def test_a_log_elsewhere_in_the_output_folder_is_written(clean, capsys, command):
     log = clean.output / "run.log"
-    status = main(command(clean, "--log", str(log)))
+    status = main_described(command(clean, "--log", str(log)))
     assert "was not opened" not in capsys.readouterr().out
     assert status == 0 and log.is_file()
 
@@ -121,7 +122,7 @@ def test_convert_refuses_a_log_in_the_experiment_or_the_copies(clean, capsys, tm
     ]:
         copies.mkdir(exist_ok=True)
         args = ["convert", str(clean.experiment), "--to", str(copies), "--axes", "YX"]
-        assert main([*args, "--log", str(log)]) == 1
+        assert main_described([*args, "--log", str(log)]) == 1
         assert f"inside the {where}" in _refused(capsys, log)
         assert list(copies.iterdir()) == []
 
@@ -129,13 +130,13 @@ def test_convert_refuses_a_log_in_the_experiment_or_the_copies(clean, capsys, tm
 def test_convert_writes_a_log_outside(clean, capsys, tmp_path):
     log = tmp_path / "convert.log"
     args = ["convert", str(clean.experiment), "--to", str(tmp_path / "copies"), "--axes", "YX"]
-    assert main([*args, "--log", str(log)]) == 0
+    assert main_described([*args, "--log", str(log)]) == 0
     assert log.read_text(encoding="utf-8")
 
 
 def test_a_log_in_a_missing_folder_or_naming_a_folder_is_refused(clean, capsys, tmp_path):
     for log in (tmp_path / "missing/run.log", tmp_path):
-        assert main(_run(clean, "--log", str(log))) == 1
+        assert main_described(_run(clean, "--log", str(log))) == 1
         assert "was not opened" in capsys.readouterr().out
 
 
@@ -148,13 +149,13 @@ def test_a_log_hard_linked_to_a_source_image_leaves_it_unchanged(clean, capsys, 
         os.link(image, log)
     except (OSError, NotImplementedError):
         pytest.skip("hard links cannot be made here")
-    assert main(command(clean, "--log", str(log))) == 1
+    assert main_described(command(clean, "--log", str(log))) == 1
     assert "hard link" in _refused(capsys, image, before)
 
 
 def test_an_output_named_in_another_case_is_refused(clean, capsys):
     before = (clean.output / "run_manifest.json").read_bytes()
-    assert main(_run(clean, "--log", str(clean.output / "Run_Manifest.JSON"))) == 1
+    assert main_described(_run(clean, "--log", str(clean.output / "Run_Manifest.JSON"))) == 1
     _refused(capsys, clean.output / "run_manifest.json", before)
 
 
@@ -164,15 +165,5 @@ def test_the_experiment_folder_in_another_case_is_refused(clean, capsys):
     if not other.is_dir():
         pytest.skip("this file system tells names apart by case")
     log = other / "notes.txt"
-    assert main(_run(clean, "--log", str(log))) == 1
+    assert main_described(_run(clean, "--log", str(log))) == 1
     assert "inside the experiment folder" in _refused(capsys, clean.experiment / "notes.txt")
-
-
-def test_a_log_over_the_design_given_leaves_it_unchanged(clean, capsys, tmp_path):
-    # Review of #128: the confirmed design given with --design, outside the output folder,
-    # was appended to (and the run went on).
-    design = tmp_path / "my_design.csv"
-    design.write_bytes((clean.output / "experiment_design.csv").read_bytes())
-    before = design.read_bytes()
-    assert main(_run(clean, "--design", str(design), "--log", str(design))) == 1
-    assert "design file given with --design" in _refused(capsys, design, before)

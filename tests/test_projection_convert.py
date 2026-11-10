@@ -12,6 +12,7 @@ import pytest
 import tifffile
 
 import morphobricks_preprocessing.conversion_write as write_module
+from described_tree import run_described
 from morphobricks_preprocessing import (
     AxisMapping,
     Projection,
@@ -19,10 +20,8 @@ from morphobricks_preprocessing import (
     file_sha256,
     preflight,
     read_conversion_record,
-    run_experiment,
 )
 from morphobricks_preprocessing.conversion_record import PROJECTED
-from morphobricks_preprocessing.testing import _confirmed_design
 from test_convert_run import codes
 from tiff_tree import write_plain
 from zarr_tree import write_ngff
@@ -375,8 +374,8 @@ def test_2d_masks_pair_with_the_projected_images(tmp_path):
     result = convert_experiment(exp, ZCYX, copies, projection=Projection("max"),
                                 masks_folder=masks)  # fmt: skip
     assert result.written, result.issues
-    run = run_experiment(copies, AxisMapping("CYX", tuple("CYX")), output_folder=tmp_path / "out",
-                         masks_folder=masks, design=_confirmed_design(copies))  # fmt: skip
+    run = run_described(copies, AxisMapping("CYX", tuple("CYX")), output_folder=tmp_path / "out",
+                         masks_folder=masks)  # fmt: skip
     assert run.written, run.issues
     assert mask.read_bytes() == before
 

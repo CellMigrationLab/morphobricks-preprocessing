@@ -3,14 +3,14 @@
 One output folder belongs to one experiment. A run given no value for an input uses the
 value its folder's manifest records: the experiment root, masks folder, exclusions,
 plain-stack confirmations, mask-axis statements, image type, bins, histogram and
-intensity settings, ``missing_as_singleton`` and ``verify_content`` (the design is the
-``experiment_design.csv`` in the folder, and the stated calibration its ``calibration.csv``,
-which a run never writes). A value given explicitly that differs from the
+intensity settings, ``missing_as_singleton`` and ``verify_content`` (the experiment is the
+published ``morphobricks.toml`` in the folder, and the stated calibration its
+``calibration.csv``, which a run never writes). A value given explicitly that differs from the
 recorded one is used, and an :class:`InputChange` names the change and its effect. The
 masks are dropped only on request (``masks_folder=False``, CLI ``--no-masks``).
 
-A manifest written before v0.4.0 (version 1) holds no usable earlier results: nothing is
-taken from it.
+A manifest of an older version is not read (:mod:`..manifest_versions`): nothing is taken
+from it.
 """
 
 from __future__ import annotations
@@ -26,9 +26,8 @@ from morphobricks_normalization.ranges import HistogramSettings
 from ..axes import AxisMapping
 from ..axis_check import ConfirmedAxes
 from ..calibration import CalibrationReview
-from ..design import ExperimentDesign
 from ..fingerprint import Fingerprint
-from ..manifest import LEGACY_MANIFEST_VERSION, RunManifest
+from ..manifest import RunManifest
 from ..masks.model import OME_ZARR
 
 RECOMPUTED = "every row is recomputed"
@@ -136,9 +135,11 @@ class ResolvedInputs:
 
 
 def usable(manifest: RunManifest | None) -> RunManifest | None:
-    """Return the manifest when its inputs can be reused (not a version 1 manifest)."""
-    if manifest is None or manifest.manifest_version == LEGACY_MANIFEST_VERSION:
-        return None
+    """Return the manifest when its inputs can be reused: every manifest that could be read.
+
+    Only the current manifest version is read (:mod:`..manifest_versions`), so a manifest that
+    reads is usable; an older one is not read at all.
+    """
     return manifest
 
 
@@ -237,45 +238,6 @@ def _moved(given: GivenInputs, before: RunManifest) -> bool:
     )
 
 
-def design_change(
-    recorded: ExperimentDesign | None, used: ExperimentDesign, *, edited: bool
-) -> tuple[InputChange, ...]:
-    """Return the change of the design from the one the earlier run recorded, if any.
-
-    Only the answers count (repeat group, confirmation, control) of the folders in both;
-    folders added or removed since are the dataset's business, and dates are filled in
-    by the run.
-
-    Parameters
-    ----------
-    recorded
-        ``experiment_design.csv`` of the earlier run, or None when it cannot be read.
-    used
-        The design the run uses.
-    edited
-        True when the file differs from the one the earlier run wrote (SHA-256).
-
-    Returns
-    -------
-    tuple
-        One :class:`InputChange` named ``"design"``, or nothing.
-    """
-    if recorded is None:
-        return (
-            InputChange("design", "its file cannot be read now", "the design given", UNAFFECTED),
-        )
-    before, now = _answers(recorded), _answers(used)
-    differ = [key for key in sorted(set(before) & set(now)) if before[key] != now[key]]
-    if differ:
-        was = "; ".join(f"{key}: {before[key]}" for key in differ)
-        given = "; ".join(f"{key}: {now[key]}" for key in differ)
-        return (InputChange("design", was, given, UNAFFECTED),)
-    if edited:
-        was = "experiment_design.csv as the earlier run wrote it"
-        return (InputChange("design", was, "the file edited since", UNAFFECTED),)
-    return ()
-
-
 def calibration_change(
     recorded: RunManifest | None, review: CalibrationReview
 ) -> tuple[InputChange, ...]:
@@ -311,18 +273,6 @@ def calibration_change(
     images = "image" if len(moved) == 1 else "images"
     effect = f"no row is affected; the pixel sizes of {len(moved)} {images} change"
     return (InputChange("calibration", was, now, effect),)
-
-
-def _answers(design: ExperimentDesign) -> dict[str, str]:
-    """Return each folder's answers in words, ``{"ctrl/r1": "group r1, confirmed"}``."""
-    return {
-        f"{row.condition}/{row.biological_repeat}": ", ".join(
-            [f"group {row.repeat_group}"]
-            + (["confirmed"] if row.confirmed else ["not confirmed"])
-            + (["control"] if row.control else [])
-        )
-        for row in design.rows
-    }
 
 
 def recorded_mask_axes(manifest: RunManifest, *, labels_only: bool = False) -> dict[str, str]:

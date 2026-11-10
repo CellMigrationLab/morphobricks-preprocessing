@@ -3,7 +3,8 @@
 import numpy as np
 import pytest
 
-from morphobricks_preprocessing import inspect_images, prefill_mapping, run_experiment
+from described_tree import run_described
+from morphobricks_preprocessing import inspect_images, prefill_mapping
 from morphobricks_preprocessing.axes import AxisMapping
 from morphobricks_preprocessing.axis_review import review_axes
 from tiff_tree import write_data, write_plain, write_tiff
@@ -101,7 +102,7 @@ def test_the_run_reports_the_warnings_of_the_confirmed_roles(tmp_path):
     root = tmp_path / "exp"
     write_data(root / "a.tif", np.ones((16, 16, 3), np.uint16))
     write_data(root / "b.tif", np.ones((32, 16, 3), np.uint16))
-    result = run_experiment(root, AxisMapping("QYX", "YXC"))
+    result = run_described(root, AxisMapping("QYX", "YXC"))
     assert "different_plane_counts" not in codes(result.issues)
     sizes = issue(result.issues, "different_sizes")
     assert "16 x 16 (1 image), 32 x 16 (1 image)" in sizes.message
