@@ -75,6 +75,8 @@ STEPPER_CSS = """
 .mb-compact .mb-table-wrap + .mb-help { -webkit-line-clamp: unset; display: block; }
 .mb-compact img.mb-grey, .mb-compact img.mb-colour, .mb-compact img.mb-crop {
   width: 108px !important; height: auto; }
+.mb-compact .mb-scan img.mb-grey, .mb-compact .mb-scan img.mb-colour,
+.mb-compact .mb-scan img.mb-crop { width: 180px !important; }
 .mb-about { margin: 0 0 6px 0; font-size: 12.5px; color: #475569; }
 .mb-about summary { cursor: pointer; color: #2563EB; }
 .mb-about .mb-intro { margin: 4px 0 0 0; }
