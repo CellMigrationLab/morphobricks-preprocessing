@@ -12,7 +12,7 @@ import tomllib
 import pytest
 
 from frozen_clock import FrozenClock
-from morphobricks_preprocessing import discover_experiment, read_confirmed_design
+from morphobricks_preprocessing import discover_experiment, parse_design_bytes
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.design_derive import derive_design, write_derived_design
 from morphobricks_preprocessing.draft import migrate_legacy_design
@@ -53,10 +53,10 @@ def test_the_derived_file_equals_the_oracles_on_every_valid_fixture(item, tmp_pa
 
 
 @pytest.mark.parametrize("item", VALID.values(), ids=lambda item: item.name.split("_")[0])
-def test_the_derived_file_is_read_back_by_the_strict_reader(item, tmp_path):
+def test_the_derived_file_is_read_back_by_the_strict_parser(item, tmp_path):
     description = description_from_bytes(item.data)
     path = write_derived_design(description, tmp_path / "design.csv")
-    design = read_confirmed_design(path).design
+    design = parse_design_bytes(path.read_bytes())
     assert design == derive_design(description)
     assert all(row.confirmed for row in design.rows)
 

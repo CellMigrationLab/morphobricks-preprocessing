@@ -264,6 +264,34 @@ already removed is not repeated here. **Breaking** where it says so.
   fetch, went in PP-C; `test_schema_v2_equivalence.py` was renamed `test_histogram_goldens.py`
   there.)
 
+- **`experiment_design.csv`: an output only, nothing reads it back; the notebook's pairing card
+  rebuilt on the draft** (inventory PP-02, owner answers 3 and 4; Spec ADR 0002 AR11 (3)).
+  **Breaking.** Removed: `read_confirmed_design`, `ConfirmedDesign`, `DesignCheckError` (its
+  codes `missing_experiment_design`, `unreadable_experiment_design`,
+  `changed_experiment_design`), `RunInputs.design()`, the lenient `read_experiment_design`,
+  `load_design`, `DesignChanges`, `default_design`, the editor model `ExperimentDesign` (its
+  `with_group`, `with_confirmed`, `with_control`, `dated`), `design_edit.py`
+  (`DesignEdit`, `DesignEditError`, `apply_design_edit`, `parse_repeat_group`), and the unused
+  `report.design_summary`/`design_table`. The derived rows are now a read-only `DesignTable`
+  (`design.py`): the run's check against the folders (`reconcile_design`, which returns the
+  rows only; `design_issues`), `write_experiment_design`, `DESIGN_COLUMNS`, `design_derive`
+  and the manifest's `experiment_design_sha256` stay, and `RunInputs.open` still checks the
+  file's SHA-256. `parse_design_bytes` (strict) stays for the draft's experiment-v1 §7
+  migration of a legacy file. A brick takes the repeat groups from the description
+  (`Fov.repeat_group`, `resolve_request`). *Check and save* compares the candidate's derived
+  rows with those of the published description, not with the file in the output folder
+  (`check_candidate` lost its `output` argument). **Notebook:** the pairing card shows one row
+  per folder of the draft's base, with the repeat it is paired with
+  (`PreprocessingNotebook.pairing`, replacing `.design`); a change is a draft answer at once.
+  Removed with the retired card parts: the hidden comparability questions
+  (`group_confirmations`, `groups_box`), the hidden control boxes (`controls_box`,
+  `control_checks`, `_sync_controls`), the *Change the experiment design* button, and the dead
+  `_design_pending`/`_design_items`/`_design_confirmed` gates. The shipped notebook file is
+  unchanged (it installs its `RELEASE_REF`). **Downstream** (pins hold until moved):
+  CellPatcher (`normalization.py`, `config.py`, `setting_checks.py`, `file_runs.py`, CP-1) and
+  MorphoFeature (`experiment_design.py`, `fits.py`, MF-4) must read `repeat_group` from the
+  description before their pin passes this change.
+
 ## 0.5.0 - 2026-11-09
 
 Stage 1 of the experiment description (MorphoBricks-Spec experiment-v1, pinned at `1bed024`):

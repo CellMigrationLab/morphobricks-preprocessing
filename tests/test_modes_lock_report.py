@@ -18,12 +18,9 @@ from described_tree import main_described, publish_any, run_described, without_m
 from morphobricks_preprocessing import (
     AxisMapping,
     RunMode,
-    default_design,
     default_output_folder,
     prefill_mapping,
-    preflight,
     read_manifest,
-    write_experiment_design,
 )
 from morphobricks_preprocessing.discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
 from morphobricks_preprocessing.manifest import file_sha256
@@ -431,11 +428,8 @@ def cli_run(*args):
 
 
 def confirmed_design(root, output):
-    """Confirm every repeat group, as the user does before 'run' (contract §12)."""
-    design = default_design(preflight(root).dataset.repeats)
-    for group in design.groups:
-        design = design.with_confirmed(group, True, "2026-11-02")
-    write_experiment_design(design, output / "experiment_design.csv")
+    """Make the output folder; the replicates are confirmed in the description (contract §12)."""
+    output.mkdir(parents=True, exist_ok=True)
 
 
 def test_no_exclude_clears_the_recorded_exclusions(experiment, tmp_path, capsys):

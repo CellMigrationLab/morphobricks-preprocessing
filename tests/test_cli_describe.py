@@ -18,7 +18,7 @@ from description_tree import build_experiment
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_file import sha256_hex
-from morphobricks_preprocessing.design import DesignRow, ExperimentDesign, write_experiment_design
+from morphobricks_preprocessing.design import DesignRow, DesignTable, write_experiment_design
 from morphobricks_preprocessing.discovery import discover_experiment
 from morphobricks_preprocessing.draft import draft_from_discovery
 from morphobricks_preprocessing.run.description_file import publish_description
@@ -90,7 +90,7 @@ def test_describe_reads_the_legacy_design_without_confirming_anything(experiment
         row("DrugA", "rep2", control=True, confirmed=False, on=""),
     ]
     output.mkdir()
-    write_experiment_design(ExperimentDesign(tuple(rows)), output / DESIGN)
+    write_experiment_design(DesignTable(tuple(rows)), output / DESIGN)
     before = listing(tmp_path)
     assert main(["describe", str(experiment), "--output", str(output)]) == 0
     out = capsys.readouterr().out
@@ -119,7 +119,7 @@ def test_publish_never_confirms_for_the_user(experiment, tmp_path, capsys):
     output = tmp_path / "out"
     output.mkdir()
     rows = [row(c, r) for c in ("CTRL", "DrugA") for r in ("rep1", "rep2")]
-    write_experiment_design(ExperimentDesign(tuple(rows)), output / DESIGN)
+    write_experiment_design(DesignTable(tuple(rows)), output / DESIGN)
     before = listing(tmp_path)
     assert main(["describe", str(experiment), "--output", str(output), "--publish"]) == 1
     out = capsys.readouterr().out

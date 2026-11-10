@@ -247,7 +247,6 @@ class _RunStep:
             )
         items = [
             (folder_ok, "Check the experiment folder and fix any errors (step 1)"),
-            *self._design_items(),
             (self.confirmed_mapping is not None, "Confirm the axis roles (step 2)"),
             *self._gate_items(),
         ]
@@ -270,11 +269,6 @@ class _RunStep:
         self.plan.value = self._plan_html(review if folder_ok else None)
         self._refresh_plan_card()
         self._refresh_mask_step()
-
-    def _design_items(self) -> list[tuple[bool, str]]:
-        """Return the experiment design answer the run waits for (step 1), if shown."""
-        design = (self._design_confirmed(), "Confirm the biological repeats (step 1)")
-        return [design] if self._show_design else []
 
     def _gate_items(self) -> list[tuple[bool, str]]:
         """Return the answers after the axis roles that the run waits for (the image type)."""

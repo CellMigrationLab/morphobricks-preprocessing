@@ -17,7 +17,6 @@ from morphobricks_normalization.records import LEVELS, PlaneRecord, group_record
 
 from .axes import AxisMapping, AxisReview, axis_length_ranges, axis_name
 from .dataset import BalanceTable
-from .design import ExperimentDesign
 from .discovery import DiscoveryResult
 from .discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
 from .run import Preflight, RunResult
@@ -114,74 +113,6 @@ def balance_summary(balance: BalanceTable) -> str:
     if balance.not_counted():
         lines.append(balance.not_counted())
     return "\n".join(lines)
-
-
-def design_summary(design: ExperimentDesign) -> str:
-    """Describe the repeat groups, their folders and confirmation, and the controls."""
-    lines = []
-    for group in design.groups:
-        folders = ", ".join(
-            f"{row.condition}/{row.biological_repeat}" for row in design.members(group)
-        )
-        if group in design.conflicts:
-            state = "more than one folder of " + ", ".join(design.conflicts[group])
-        elif design.group_confirmed(group):
-            on = design.confirmed_on(group)
-            state = f"confirmed{f' on {on}' if on else ''}"
-        else:
-            state = "not confirmed"
-        lines.append(f"  {group}: {folders} ({state})")
-    controls = ", ".join(design.controls) or "none marked"
-    lines.append(f"  Controls: {controls}")
-    return "\n".join(lines)
-
-
-def design_table(design: ExperimentDesign) -> str:
-    """Show the design's rows as a table, then the repeat groups still to confirm.
-
-    Parameters
-    ----------
-    design
-        The experiment design.
-
-    Returns
-    -------
-    str
-        One row per biological-repeat folder of each condition (``experiment_design.csv``
-        without its schema column), then which repeat groups are not confirmed yet.
-    """
-    rows = [
-        [
-            "condition",
-            "biological repeat",
-            "repeat group",
-            "control",
-            "images",
-            "technical repeats",
-            "confirmed",
-        ]
-    ]
-    for row in design.rows:
-        on = f", {row.confirmed_on}" if row.confirmed_on else ""
-        confirmed = f"yes{on}" if row.confirmed else "no"
-        rows.append(
-            [
-                row.condition,
-                row.biological_repeat,
-                row.repeat_group,
-                "yes" if row.control else "no",
-                str(row.image_count),
-                str(row.technical_repeat_count),
-                confirmed,
-            ]
-        )
-    waiting = design.unconfirmed_groups
-    last = (
-        f"Not confirmed yet: {', '.join(waiting)}"
-        if waiting
-        else "Every repeat group is confirmed."
-    )
-    return format_table(rows) + "\n" + last
 
 
 def mapping_summary(mapping: AxisMapping, files: Iterable = ()) -> str:

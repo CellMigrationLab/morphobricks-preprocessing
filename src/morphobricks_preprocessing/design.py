@@ -1,31 +1,29 @@
-"""The experiment design: repeat groups, their confirmation, and control conditions.
+"""The rows of ``experiment_design.csv``: repeat groups, their confirmation, and controls.
 
-A repeat group is one biological repeat across all conditions (normalization
-plan N30). By default, biological-repeat folders with the same name are one
-group; the user may move a folder into another group when a repeat was named
-differently in some condition. Before processing, the user confirms for each
-group that its images were prepared and acquired under the same circumstances
-(N35); without biological-repeat folders the whole experiment is one group
-(N31). Conditions may be marked as controls, for the record only (N36).
+A repeat group is one biological repeat across all conditions (normalization plan N30); each
+row is one biological-repeat folder of a condition, with its group, whether the condition is a
+control (recorded only, N36), its counts and the confirmation that the group's images are
+comparable (N35). The file is an **output only** (Spec ADR 0002 AR10 and AR11 (3)): the run
+derives it from the published description (:mod:`.design_derive`) and writes it with
+:func:`write_experiment_design`; no brick reads it back as an input to grouping, and the
+notebook's pairing is an answer of the draft (:mod:`.notebook_design`). :class:`DesignTable`
+holds rows and answers questions about them; it has no editing methods.
 
-The answers are kept in ``experiment_design.csv`` in the output folder
-(``docs/contract.md`` §12), so a rerun with the same folders does not ask
-again. Later bricks read the pairing with :func:`read_confirmed_design`, the one
-strict reader every brick uses (contract §16); :func:`read_experiment_design` is
-this brick's lenient reader of a file the user may still be editing. Nothing here
-reads images.
+:func:`reconcile_design` and :func:`design_issues` are the run's check of the derived rows
+against the folders found; :func:`parse_design_bytes` is the strict parser the draft's
+experiment-v1 section 7 migration of a legacy file uses (:func:`.draft.migrate_legacy_design`).
+The lenient reader, the default pairing, the editor model and the strict reader for other
+bricks (``read_confirmed_design``) were removed in v0.5.1 (SWEEP-PP). Nothing here reads images.
 """
 
 from __future__ import annotations
 
 import csv
-import hashlib
 import io
 import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from types import MappingProxyType
 
 from morphobricks_normalization.records import SINGLE
 
@@ -55,26 +53,6 @@ DESIGN_COLUMNS = (
     "confirmed_on",
     "schema_version",
 )
-
-
-class DesignCheckError(ValueError):
-    """Raised by :func:`read_confirmed_design` when a design cannot be used.
-
-    Also raised by :func:`load_design`, with the one error
-    ``unreadable_experiment_design``, when a saved file cannot be read.
-
-    Attributes
-    ----------
-    issues
-        The errors, each with its code (``missing_experiment_design``,
-        ``unreadable_experiment_design``, ``repeat_group_conflict``,
-        ``design_not_confirmed`` or ``changed_experiment_design``), message, path and
-        suggested action. The exception's text joins their messages.
-    """
-
-    def __init__(self, issues: Iterable[ValidationIssue]) -> None:
-        self.issues = tuple(issues)
-        super().__init__(" ".join(f"{issue.code}: {issue.message}" for issue in self.issues))
 
 
 @dataclass(frozen=True)
@@ -114,35 +92,10 @@ class DesignRow:
 
 
 @dataclass(frozen=True)
-class DesignChanges:
-    """How the folders differ from an earlier experiment design.
+class DesignTable:
+    """The rows of an ``experiment_design.csv``, sorted, and what they say.
 
-    Attributes
-    ----------
-    added
-        Biological-repeat folders not in the earlier design.
-    removed
-        Folders of the earlier design no longer found.
-    reopened
-        Repeat groups that were confirmed but are asked again, because a folder
-        was added to them.
-    """
-
-    added: tuple[tuple[str, str], ...] = ()
-    removed: tuple[tuple[str, str], ...] = ()
-    reopened: tuple[str, ...] = ()
-
-    @property
-    def any(self) -> bool:
-        """True if the folders changed since the earlier design."""
-        return bool(self.added or self.removed)
-
-
-@dataclass(frozen=True)
-class ExperimentDesign:
-    """The pairing of biological repeats, their confirmation and the controls.
-
-    Every method returns a new design; a design is never changed in place.
+    Read-only: there is no editing method (the notebook's pairing is a draft answer).
 
     Attributes
     ----------
@@ -230,181 +183,29 @@ class ExperimentDesign:
         """
         return {row.key: row.repeat_group for row in self.rows}
 
-    def with_group(self, key: tuple[str, str], group: str) -> ExperimentDesign:
-        """Move a folder into another repeat group.
 
-        Both groups changed, so neither stays confirmed.
-        """
-        old = self.row(key)
-        if old is None:
-            raise KeyError(f"{key!r} is not a folder of this design.")
-        if old.repeat_group == group:
-            return self
-        touched = {old.repeat_group, group}
-        rows = []
-        for row in self.rows:
-            if row.key == key:
-                row = replace(row, repeat_group=group)
-            if row.repeat_group in touched or row.key == key:
-                row = replace(row, confirmed=False, confirmed_on="")
-            rows.append(row)
-        return ExperimentDesign(tuple(rows))
+def reconcile_design(design: DesignTable, repeats: Iterable[BiologicalRepeat]) -> DesignTable:
+    """Bring derived rows up to date with the folders found now (the run's check).
 
-    def with_confirmed(
-        self,
-        group: str,
-        confirmed: bool,
-        on: str = "",
-        repeats: Iterable[BiologicalRepeat] = (),
-    ) -> ExperimentDesign:
-        """Confirm a repeat group, or take the confirmation back.
-
-        Parameters
-        ----------
-        group
-            The repeat group.
-        confirmed
-            The answer.
-        on
-            Date of the confirmation (ISO 8601).
-        repeats
-            The folders as found now; confirming records their counts.
-        """
-        counts = {r.key: (r.image_count, r.technical_repeat_count) for r in repeats}
-        rows = []
-        for row in self.rows:
-            if row.repeat_group == group:
-                images, technical = counts.get(
-                    row.key, (row.image_count, row.technical_repeat_count)
-                )
-                row = replace(
-                    row,
-                    confirmed=confirmed,
-                    confirmed_on=on if confirmed else "",
-                    image_count=images,
-                    technical_repeat_count=technical,
-                )
-            rows.append(row)
-        return ExperimentDesign(tuple(rows))
-
-    def with_control(self, condition: str, control: bool) -> ExperimentDesign:
-        """Mark a condition as a control, or not."""
-        return ExperimentDesign(
-            tuple(
-                replace(row, control=control) if row.condition == condition else row
-                for row in self.rows
-            )
-        )
-
-    def dated(self, on: str) -> ExperimentDesign:
-        """Fill the date of confirmed rows that have none (e.g. confirmed by hand in the file)."""
-        return ExperimentDesign(
-            tuple(
-                replace(row, confirmed_on=on) if row.confirmed and not row.confirmed_on else row
-                for row in self.rows
-            )
-        )
-
-
-@dataclass(frozen=True)
-class ConfirmedDesign:
-    """An ``experiment_design.csv`` checked for use by another brick.
-
-    Build it with :func:`read_confirmed_design`. Every repeat group is confirmed and holds
-    at most one folder per condition.
-
-    Attributes
-    ----------
-    path
-        The file that was read.
-    sha256
-        SHA-256 of exactly the bytes that were parsed (the manifest's
-        ``experiment_design_sha256``).
-    design
-        The design itself.
-    repeat_groups
-        Read-only ``{(condition, biological_repeat): repeat_group}``, the pairing the
-        normalization brick's ``biological_repeat`` scope takes.
-    """
-
-    path: Path
-    sha256: str
-    design: ExperimentDesign
-    repeat_groups: Mapping[tuple[str, str], str]
-
-    @property
-    def conditions(self) -> tuple[str, ...]:
-        """Condition labels, sorted."""
-        return self.design.conditions
-
-    @property
-    def controls(self) -> tuple[str, ...]:
-        """Conditions marked as controls, sorted (recorded only, contract §12)."""
-        return self.design.controls
-
-    @property
-    def groups(self) -> tuple[str, ...]:
-        """Repeat-group labels, sorted."""
-        return self.design.groups
-
-    def group_members(self) -> Mapping[str, Mapping[str, str]]:
-        """Return ``{repeat_group: {condition: biological_repeat}}``, read-only.
-
-        One biological-repeat folder per condition and group, which the design's checks
-        guarantee.
-        """
-        members: dict[str, dict[str, str]] = {}
-        for (condition, repeat), group in self.repeat_groups.items():
-            members.setdefault(group, {})[condition] = repeat
-        return MappingProxyType(
-            {
-                group: MappingProxyType(dict(sorted(m.items())))
-                for group, m in sorted(members.items())
-            }
-        )
-
-
-def default_design(repeats: Iterable[BiologicalRepeat]) -> ExperimentDesign:
-    """Build the design before any answer: repeats with the same folder name are one group.
-
-    Nothing is confirmed and no condition is a control.
-    """
-    return ExperimentDesign(tuple(_new_row(repeat, repeat.biological_repeat) for repeat in repeats))
-
-
-def reconcile_design(
-    previous: ExperimentDesign | None, repeats: Iterable[BiologicalRepeat]
-) -> tuple[ExperimentDesign, DesignChanges]:
-    """Bring an earlier design up to date with the folders found now.
-
-    Folders of the earlier design keep their repeat group, control mark and
-    confirmation; added or removed images within a folder keep the
-    confirmation. A new folder joins the group named after it (and the
-    control mark of its condition), and that group is asked again. Folders no
-    longer found are dropped.
+    Folders of ``design`` keep their repeat group, control mark and confirmation; added or
+    removed images within a folder keep the confirmation. A folder found now but not in
+    ``design`` joins the group named after it (and the control mark of its condition)
+    unconfirmed, so that group is not confirmed (:func:`design_issues`). Folders no longer
+    found are dropped.
 
     Parameters
     ----------
-    previous
-        The earlier design, or None.
+    design
+        The rows derived from the published description.
     repeats
-        The biological-repeat folders found now
-        (:func:`.dataset.biological_repeats`).
-
-    Returns
-    -------
-    tuple of ExperimentDesign and DesignChanges
+        The biological-repeat folders found now (:func:`.dataset.biological_repeats`).
     """
-    repeats = list(repeats)
-    if previous is None:
-        return default_design(repeats), DesignChanges()
-    controls = set(previous.controls)
-    current = {repeat.key for repeat in repeats}
-    rows, added = [], []
+    controls = set(design.controls)
+    rows, added = [], set()
     for repeat in repeats:
-        row = previous.row(repeat.key)
+        row = design.row(repeat.key)
         if row is None:
-            added.append(repeat.key)
+            added.add(repeat.key)
             row = replace(
                 _new_row(repeat, repeat.biological_repeat), control=repeat.condition in controls
             )
@@ -416,18 +217,16 @@ def reconcile_design(
                 technical_repeat_count=repeat.technical_repeat_count,
             )
         rows.append(row)
-    reopened = sorted({row.repeat_group for row in rows if row.key in added})
-    was_confirmed = [g for g in reopened if previous.group_confirmed(g)]
-    rows = [
-        replace(row, confirmed=False, confirmed_on="") if row.repeat_group in reopened else row
-        for row in rows
-    ]
-    removed = sorted(row.key for row in previous.rows if row.key not in current)
-    changes = DesignChanges(tuple(sorted(added)), tuple(removed), tuple(was_confirmed))
-    return ExperimentDesign(tuple(rows)), changes
+    reopened = {row.repeat_group for row in rows if row.key in added}
+    return DesignTable(
+        tuple(
+            replace(row, confirmed=False, confirmed_on="") if row.repeat_group in reopened else row
+            for row in rows
+        )
+    )
 
 
-def design_issues(design: ExperimentDesign) -> list[ValidationIssue]:
+def design_issues(design: DesignTable) -> list[ValidationIssue]:
     """Check that a design can be used: every repeat group confirmed, one folder per condition.
 
     Returns
@@ -491,153 +290,7 @@ def design_issues(design: ExperimentDesign) -> list[ValidationIssue]:
     return issues
 
 
-def read_experiment_design(path: str | os.PathLike) -> ExperimentDesign:
-    """Read ``experiment_design.csv``.
-
-    Labels are read as text. ``control`` and ``confirmed`` accept ``true`` or
-    ``false`` in any case (also ``yes``/``no``, ``1``/``0``; empty is false), so
-    a file saved by a spreadsheet program still reads. The user's own edits are
-    checked (owner decision, 31 October 2026): ``repeat_group`` follows the identity
-    rules of decision D-e (not empty, ``NA``, ``nan``, ``none``, ``null``, ``n/a`` or
-    ``<NA>`` in any case, no leading or trailing whitespace), and ``confirmed_on`` is
-    empty or a date in :data:`DATE_FORMAT`; the error names the line and column.
-
-    Raises
-    ------
-    DesignFormatError
-        If the file cannot be read, the header names a column twice (ignoring case,
-        outer whitespace and invisible characters) or has a column without a name, a
-        column is missing, a value is not valid
-        (including a repeat-group name or confirmation date as above), a folder is
-        listed twice, the rows of a condition disagree about ``control``, or the
-        schema version is not 1.
-    """
-    path = Path(path)
-    try:
-        text = path.read_text(encoding="utf-8-sig")
-    except (OSError, UnicodeDecodeError) as exc:
-        raise DesignFormatError(f"{path} cannot be read: {exc}") from exc
-    reader = csv.DictReader(io.StringIO(text))
-    check_header(reader.fieldnames or (), path.name)
-    missing = [c for c in DESIGN_COLUMNS if c not in (reader.fieldnames or ())]
-    if missing:
-        raise DesignFormatError(
-            f"{path.name} is not an experiment design: the column(s) {', '.join(missing)} "
-            "are missing."
-        )
-    rows: list[DesignRow] = []
-    numbers: list[int] = []
-    for number, record in enumerate(reader, start=2):
-        if not any((value or "").strip() for value in record.values() if isinstance(value, str)):
-            continue
-        rows.append(_parse_row(record, f"{path.name}, line {number}"))
-        numbers.append(number)
-    _check_group_case(zip(numbers, rows, strict=True), path.name)
-    _check_rows(rows, path.name)
-    return ExperimentDesign(tuple(rows))
-
-
-def read_confirmed_design(
-    path: str | os.PathLike, *, expected_sha256: str | None = None
-) -> ConfirmedDesign:
-    """Read ``experiment_design.csv`` for use by another brick, refusing anything doubtful.
-
-    The one reader of the experiment design for every MorphoBricks brick (contract §16),
-    replacing CellPatcher's ``load_experiment_design`` and MorphoFeature's
-    ``ExperimentDesign.read``. It takes the file as this brick writes it
-    (:func:`write_experiment_design`) and fills nothing in, where
-    :func:`read_experiment_design`, for the user's own edits in step 1, is lenient about
-    the file's form:
-
-    - the file is UTF-8 without a byte-order mark, its header is exactly
-      :data:`DESIGN_COLUMNS` in that order, and every row has one value per column
-      (an unclosed quote, a missing or extra value, or a blank line is refused);
-    - no value has leading or trailing whitespace; ``control`` and ``confirmed`` are
-      ``true`` or ``false``; ``image_count`` and ``technical_repeat_count`` are whole
-      numbers of at least 0 written as such; ``confirmed_on`` is empty or a date in
-      :data:`DATE_FORMAT` (as :func:`read_experiment_design` requires too);
-      ``schema_version`` is ``1``;
-    - ``condition``, ``biological_repeat`` and ``repeat_group`` pass
-      :func:`.discovery.check_identity_text` (the repeat group as
-      :func:`read_experiment_design` requires too), and labels of one level differing
-      only in case are refused (:func:`.discovery.check_identity_case`);
-    - a folder listed twice, rows of a condition disagreeing on ``control``, or a file
-      without rows are refused;
-    - every repeat group is confirmed and holds one folder per condition
-      (:func:`design_issues`);
-    - with ``expected_sha256`` (a run manifest's ``experiment_design_sha256``), the file
-      must be that one.
-
-    The SHA-256 is of the bytes that were parsed, so the file cannot change between the
-    two.
-
-    Parameters
-    ----------
-    path
-        The ``experiment_design.csv`` file.
-    expected_sha256
-        The SHA-256 the preprocessing run that wrote the statistics recorded, if any.
-
-    Returns
-    -------
-    ConfirmedDesign
-
-    Raises
-    ------
-    DesignCheckError
-        With the errors ``missing_experiment_design`` (no such file),
-        ``unreadable_experiment_design`` (not a design this version reads strictly),
-        ``repeat_group_conflict`` and ``design_not_confirmed`` (:func:`design_issues`), or
-        ``changed_experiment_design`` (not the file the run recorded).
-    """
-    path = Path(path)
-    rerun = (
-        "Check this experiment in the preprocessing notebook (it pairs and confirms the "
-        "biological repeats), then run the preprocessing brick again."
-    )
-    if not path.is_file():
-        raise DesignCheckError(
-            [
-                error(
-                    "missing_experiment_design",
-                    f"The experiment design {path} does not exist.",
-                    [str(path)],
-                    rerun,
-                )
-            ]
-        )
-    try:
-        data = path.read_bytes()
-        design = parse_design_bytes(data, path.name)
-    except (OSError, DesignFormatError) as exc:
-        raise _unreadable(path, exc, rerun) from exc
-    issues = design_issues(design)
-    if issues:
-        raise DesignCheckError(issues)
-    sha256 = hashlib.sha256(data).hexdigest()
-    if expected_sha256 is not None and sha256 != expected_sha256:
-        raise DesignCheckError(
-            [
-                error(
-                    "changed_experiment_design",
-                    f"{path.name} is not the experiment design the preprocessing run used: its "
-                    "SHA-256 differs from the one in the run manifest, so the repeat groups may "
-                    "not be the ones the statistics were checked with.",
-                    [str(path)],
-                    "Give the experiment design of that run, or run the preprocessing brick "
-                    "again on this experiment.",
-                )
-            ]
-        )
-    return ConfirmedDesign(
-        path=path,
-        sha256=sha256,
-        design=design,
-        repeat_groups=MappingProxyType(design.repeat_groups()),
-    )
-
-
-def write_experiment_design(design: ExperimentDesign, path: str | os.PathLike) -> Path:
+def write_experiment_design(design: DesignTable, path: str | os.PathLike) -> Path:
     """Write ``experiment_design.csv``, replacing the file only once writing succeeded.
 
     The file is UTF-8 with LF line endings; the same design always gives the
@@ -647,7 +300,7 @@ def write_experiment_design(design: ExperimentDesign, path: str | os.PathLike) -
     Raises
     ------
     DesignFormatError
-        If a row has a repeat-group name or confirmation date the readers refuse
+        If a row has a repeat-group name or confirmation date the parser refuses
         (:func:`design_issues`, ``invalid_experiment_design``); nothing is written.
     """
     path = Path(path)
@@ -678,70 +331,19 @@ def write_experiment_design(design: ExperimentDesign, path: str | os.PathLike) -
     return write_text_atomic(path, buffer.getvalue(), parents=True)
 
 
-def load_design(
-    output_folder: str | os.PathLike, repeats: Iterable[BiologicalRepeat]
-) -> tuple[ExperimentDesign, DesignChanges]:
-    """Read the design in an output folder, if any, and bring it up to date with the folders.
+def parse_design_bytes(data: bytes, name: str = DESIGN_FILENAME) -> DesignTable:
+    """Parse a design as :func:`write_experiment_design` writes it; confirmation not required.
 
-    The file is read with the lenient :func:`read_experiment_design`. A file that
-    cannot be read is refused, never replaced by the default design (owner decision of
-    31 October 2026, plan §12 question 43): the file is left as it is.
-
-    Parameters
-    ----------
-    output_folder
-        The output folder that holds ``experiment_design.csv``, if it was written.
-    repeats
-        The biological-repeat folders found now
-        (:func:`.dataset.biological_repeats`).
-
-    Returns
-    -------
-    tuple of ExperimentDesign and DesignChanges
-        The saved design brought up to date with the folders (:func:`reconcile_design`),
-        or the default design when there is no file yet, and how the folders changed
-        since it was written.
+    Strict (experiment-v1 section 7): UTF-8 without a byte-order mark, exactly
+    :data:`DESIGN_COLUMNS` in that order, one value per column, no outer whitespace, ``true`` or
+    ``false``, whole counts, ISO dates, identities as :func:`.discovery.check_identity_text`
+    takes them and no case collision. Only the draft's legacy migration uses it.
 
     Raises
     ------
-    DesignCheckError
-        With the one error ``unreadable_experiment_design`` when a saved file cannot be
-        read; its message is :func:`read_experiment_design`'s refusal, naming the line and
-        column where it can. The :class:`DesignFormatError` is its ``__cause__``.
+    DesignFormatError
+        Naming the line and column of the first value refused.
     """
-    path = Path(output_folder) / DESIGN_FILENAME
-    previous = None
-    if path.exists():
-        try:
-            previous = read_experiment_design(path)
-        except DesignFormatError as exc:
-            raise _unreadable(
-                path,
-                exc,
-                "Correct the file where the message says (a spreadsheet program may have "
-                f"rewritten a date such as 2026-10-26 as 26/10/2026; dates are {DATE_FORMAT}). "
-                "Answering the questions again in the notebook also replaces it; "
-                "nothing replaces it without an answer.",
-            ) from exc
-    return reconcile_design(previous, repeats)
-
-
-def _unreadable(path: Path, exc: Exception, action: str) -> DesignCheckError:
-    """Return the refusal ``unreadable_experiment_design`` of a design file."""
-    return DesignCheckError(
-        [
-            error(
-                "unreadable_experiment_design",
-                f"The experiment design cannot be read: {exc}",
-                [str(path)],
-                action,
-            )
-        ]
-    )
-
-
-def parse_design_bytes(data: bytes, name: str = DESIGN_FILENAME) -> ExperimentDesign:
-    """Parse a design as :func:`write_experiment_design` writes it; confirmation not required."""
     if data.startswith(b"\xef\xbb\xbf"):
         raise DesignFormatError(
             f"{name} starts with a byte-order mark: it was saved by another program, not "
@@ -782,7 +384,7 @@ def parse_design_bytes(data: bytes, name: str = DESIGN_FILENAME) -> ExperimentDe
     except IdentityError as exc:
         raise DesignFormatError(f"{name}: {exc}") from None
     _check_group_case(zip(numbers, rows, strict=True), name)
-    return ExperimentDesign(tuple(rows))
+    return DesignTable(tuple(rows))
 
 
 def _check_rows(rows: list[DesignRow], name: str) -> None:
@@ -872,8 +474,8 @@ def _parse_row(record: Mapping[str, str | None], where: str) -> DesignRow:
     )
 
 
-def _design_problems(design: ExperimentDesign) -> list[tuple[DesignRow, str]]:
-    """Return the rows whose repeat group or date the readers refuse, with the reason.
+def _design_problems(design: DesignTable) -> list[tuple[DesignRow, str]]:
+    """Return the rows whose repeat group or date the parser refuses, with the reason.
 
     Each row's own values (:func:`_row_problems`), and a repeat group spelled differently
     from an earlier row's only in case (decision D-e: one spelling per name).

@@ -131,7 +131,7 @@ def test_a_described_run_retires_the_labels_toggle_the_comparable_questions_and_
     root, masks, out = exp
     nb = opened(root, masks, out)
     assert nb.labels_confirmed.value and not ui.is_visible(nb.labels_confirmed.widget)
-    assert ui.is_visible(nb.design_card) and not ui.is_visible(nb.groups_box)
+    assert ui.is_visible(nb.design_card)
     assert not ui.is_visible(nb.ids_confirmed.widget)
     assert not ui.is_visible(nb.image_type_card) and nb.confirmed_image_type is None
     assert "Optional" not in nb.references_card.children[1].value
@@ -288,7 +288,7 @@ def test_the_draft_carries_the_pairing_across_a_reopen(tmp_path):
     dropdown.value = "rep2"
     assert json.loads((out / DRAFT_FILENAME).read_text())["pairing"] == {"drug": {"day2": "rep2"}}
     again = opened(root, masks, out)
-    assert again.design.repeat_groups()[("drug", "day2")] == "rep2"
+    assert again.pairing[("drug", "day2")] == "rep2"
     assert not (out / DESIGN_FILENAME).exists()
 
 

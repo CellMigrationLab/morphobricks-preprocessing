@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 
-from .design import DesignRow, ExperimentDesign
+from .design import DesignRow, DesignTable
 from .draft import Draft
 from .draft_answers import ConditionAnswer, DraftAnswers, RepeatAnswer, UnitKey
 from .notebook_values import natural_key
@@ -164,11 +164,11 @@ def _differences(old: DesignRow, new: DesignRow) -> list[str]:
     ]
 
 
-def design_changes(before: ExperimentDesign | None, after: ExperimentDesign) -> list[str]:
+def design_changes(before: DesignTable | None, after: DesignTable) -> list[str]:
     """Return how ``experiment_design.csv`` changes, one line per row added, removed or changed.
 
-    ``before`` is the file as it is now (None when there is none). An empty list means the file
-    is written with the same rows.
+    ``before`` is the design the published description derives (None when there is none). An
+    empty list means the file is written with the same rows.
     """
     new: Mapping[tuple[str, str], DesignRow] = {r.key: r for r in after.rows}
     if before is None:

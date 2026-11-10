@@ -304,11 +304,6 @@ class _AxisPreview:
                 "Go to Step 1 and confirm the folder labels.",
                 "Review the labels and click Yes, the labels are correct before running Step 3.",
             )
-        elif self._design_pending():
-            self.axis_next.value = ui.next_steps(
-                "Go to Step 1 and confirm the biological repeats.",
-                "Under Experiment design, answer each yellow question before running Step 3.",
-            )
         else:
             self.axis_next.value = ui.next_steps(
                 "Go to Step 3 and compute the histograms.",

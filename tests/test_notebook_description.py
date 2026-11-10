@@ -170,14 +170,12 @@ def test_two_differently_named_folders_are_paired_into_one_repeat(root, out):
 def test_a_reference_is_chosen_saved_and_marks_the_control(root, out):
     nb = labelled(root, out)
     assert nb.reference_boxes["drug"].value is None  # nothing is chosen for the user
-    assert not ui.is_visible(nb.controls_box)  # the design card's tick boxes are replaced
     nb.reference_boxes["drug"].value = "ctrl"
     assert dict(nb.draft.references) == {"drug": "ctrl"}
     assert saved(out).conditions["drug"].reference == "ctrl"
-    assert nb.design.controls == ("ctrl",)  # experiment_design.csv follows the references
     assert "the reference of drug" in nb.references_grid.children[1].children[2].value
     nb.reference_boxes["drug"].value = None
-    assert saved(out).conditions == {} and nb.design.controls == ()
+    assert saved(out).conditions == {}
 
 
 def test_a_loop_of_references_is_refused_at_once(root, out):
@@ -300,7 +298,7 @@ def test_an_unanswered_reference_and_no_comparison_look_different(root, out):
     assert box.value is None and not (out / DRAFT_FILENAME).exists()
     box.value = ""  # the user answered: compared against nothing
     assert box.value == "" and saved(out).conditions["drug"].reference == ""
-    assert dict(nb.draft.references) == {} and nb.design.controls == ()
+    assert dict(nb.draft.references) == {}
     again = labelled(root, out)
     assert again.reference_boxes["drug"].value == ""  # resumed as answered, not as unanswered
     assert again.reference_boxes["ctrl"].value is None

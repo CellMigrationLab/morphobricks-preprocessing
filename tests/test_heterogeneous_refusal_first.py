@@ -65,7 +65,7 @@ def test_the_check_and_save_list_leads_with_the_layout_refusal(tmp_path, confirm
     root, out = mixed_experiment(tmp_path)
     pre = unit_checked(preflight(root, out))
     roles = review_axes(pre.metadata, prefill_mapping("CYX")).file_mappings if confirmed else None
-    check = check_candidate(description_from_bytes(VALID["v29"].data), pre, roles, out)
+    check = check_candidate(description_from_bytes(VALID["v29"].data), pre, roles)
     assert check.run_refusals[0].code == LAYOUT
     assert check.heterogeneous is check.run_refusals[0]
     text = checks_html(check)

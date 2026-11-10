@@ -76,8 +76,7 @@ def consistent(out):
     """Return the generation's table as RunInputs reads it, checking it is one generation."""
     inputs = RunInputs.open(out)
     manifest = inputs.manifest
-    design = inputs.design()
-    assert design is not None
+    assert manifest.experiment_design_sha256 is not None
     return manifest.csv_sha256, inputs.histograms()
 
 
@@ -388,5 +387,5 @@ def test_a_kill_between_any_two_publication_steps_leaves_one_generation(tmp_path
 
 def consistent_at(out, root):
     inputs = RunInputs.open(out, experiment_root=root)
-    assert inputs.design() is not None
+    assert inputs.manifest.experiment_design_sha256 is not None
     return inputs.manifest.csv_sha256, inputs.histograms()

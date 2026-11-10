@@ -197,15 +197,14 @@ def test_a_technical_repeat_folder_named_single_is_the_level_value(tmp_path):
 
 
 def test_the_design_written_by_a_run_counts_only_analysed_technical_repeats(tmp_path):
-    from morphobricks_preprocessing import read_confirmed_design
-    from morphobricks_preprocessing.design import DESIGN_FILENAME
+    from morphobricks_preprocessing.design import DESIGN_FILENAME, parse_design_bytes
 
     root = tree(tmp_path / "exp", {"ctrl/rep1/techA": 1, "ctrl/rep1/techB": 1})
     excluded = ["ctrl/rep1/techB/img_00.tif"]
     output = tmp_path / "out"  # the description declares the analysed unit only
     result = run_described(root, prefill_mapping("YX"), output_folder=output, exclude=excluded)
     assert result.written
-    (row,) = read_confirmed_design(output / DESIGN_FILENAME).design.rows
+    (row,) = parse_design_bytes((output / DESIGN_FILENAME).read_bytes()).rows
     assert (row.image_count, row.technical_repeat_count) == (1, 1)
 
 

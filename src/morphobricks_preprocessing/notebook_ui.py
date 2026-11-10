@@ -47,7 +47,6 @@ except ImportError as exc:  # pragma: no cover - depends on the environment
 from . import notebook_style as ui
 from .axes import AxisMapping
 from .dataset import DatasetReport
-from .design import ExperimentDesign
 from .image_type import ImageTypeReview
 from .notebook_axis_preview import _AxisPreview
 from .notebook_axis_step import _AxisStep
@@ -181,10 +180,9 @@ class PreprocessingNotebook(
 
     def __init__(self, experiment_folder: str = "", output_folder: str = "") -> None:
         self.preflight: Preflight | None = None
-        self.design: ExperimentDesign | None = None
-        # True while the saved design cannot be read and has not been replaced by an answer.
-        self._design_unreadable = False
-        # The output folder the design was read for: a design belongs to it (issue #98).
+        # The pairing card's folders and their repeats (None while the card is closed), and the
+        # output folder its answers were read for (issue #98): see notebook_design.
+        self.pairing: dict[tuple[str, str], str] | None = None
         self._design_output: Path | None = None
         self.dataset = DatasetReport()
         self.mapping: AxisMapping | None = None

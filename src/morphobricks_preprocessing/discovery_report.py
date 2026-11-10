@@ -32,7 +32,7 @@ from .validation import ValidationIssue, plural
 
 if TYPE_CHECKING:
     from .axes import AxisReview
-    from .design import ExperimentDesign
+    from .design import DesignTable
     from .run.preflight import Preflight
     from .run.recorded import InputChange
 
@@ -164,7 +164,7 @@ def build_report(
     issues: Sequence[ValidationIssue],
     *,
     review: AxisReview | None = None,
-    design: ExperimentDesign | None = None,
+    design: DesignTable | None = None,
     image_type: str | None = None,
     outcome: RunOutcome | None = None,
     unit_records: Sequence[Mapping[str, object]] | None = None,
@@ -344,7 +344,7 @@ def _calibration(pre: Preflight) -> dict:
     }
 
 
-def _design(design: ExperimentDesign | None) -> list[dict] | None:
+def _design(design: DesignTable | None) -> list[dict] | None:
     """Return the design's rows, or None without a design."""
     if design is None:
         return None
