@@ -22,7 +22,7 @@ from morphobricks_preprocessing import (
     read_manifest,
 )
 from morphobricks_preprocessing.fingerprint import Fingerprint
-from morphobricks_preprocessing.inventory import source_fingerprint, source_signature
+from morphobricks_preprocessing.inventory import source_signature
 from morphobricks_preprocessing.run_inputs import RunInputsError
 from zarr_tree import write_ngff
 
@@ -68,9 +68,9 @@ def test_a_rewritten_chunk_below_the_newest_time_changes_the_fingerprint(tmp_pat
     # The issue's counterexample: same total size, same newest time.
     image = two_chunks(tmp_path / "a.ome.zarr")
     before = Fingerprint.of(image)
-    old_size, old_time = source_fingerprint(image)
+    old_size, old_time, _ = source_signature(image)
     swap_chunks(image)
-    assert source_fingerprint(image) == (old_size, old_time)  # the old rule saw nothing
+    assert source_signature(image)[:2] == (old_size, old_time)  # size and time saw nothing
     assert Fingerprint.of(image) != before
 
 
@@ -82,7 +82,7 @@ def test_a_chunk_removed_and_another_added_changes_the_fingerprint(tmp_path):
     shutil.copy2(first, moved)
     first.unlink()
     os.utime(first.parent, ns=(3_000, 3_000))
-    assert source_fingerprint(image) == (before.size, before.mtime_ns)
+    assert source_signature(image)[:2] == (before.size, before.mtime_ns)
     assert Fingerprint.of(image) != before
 
 

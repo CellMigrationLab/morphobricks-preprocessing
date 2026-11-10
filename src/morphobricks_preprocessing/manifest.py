@@ -35,7 +35,6 @@ from .description_record import KEY as DESCRIPTION_KEY
 from .description_record import recorded_description
 from .image_names import position_id
 from .inventory import INVENTORY_KEY, source_signature
-from .inventory import source_fingerprint as source_fingerprint  # re-exported (moved, PP-12)
 from .lab_links import KEY as LAB_LINKS_KEY
 from .lab_links import recorded_lab_links
 from .manifest_fields import (

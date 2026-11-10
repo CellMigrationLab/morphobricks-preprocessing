@@ -24,12 +24,12 @@ from morphobricks_preprocessing import (
 )
 from morphobricks_preprocessing.axis_check import ConfirmedAxes
 from morphobricks_preprocessing.fingerprint import Fingerprint, RowKey, confirm_axes
+from morphobricks_preprocessing.inventory import source_signature
 from morphobricks_preprocessing.manifest import (
     MANIFEST_VERSION,
     FileEntry,
     ManifestFormatError,
     RunSettings,
-    source_fingerprint,
     write_manifest,
 )
 from morphobricks_preprocessing.recorded_sizes import RecordedSize
@@ -92,7 +92,7 @@ def test_masks_record_their_fingerprint_and_roles(tmp_path):
     mask = write_data(tmp_path / "masks/Cells/ctrl/a.tif", np.ones((6, 8), np.uint16), "YX")
     result = run_described(root, prefill_mapping("YX"), masks_folder=tmp_path / "masks")
     (recorded,) = read_manifest(result.manifest_path).masks["files"]
-    size, mtime_ns = source_fingerprint(mask)
+    size, mtime_ns, _ = source_signature(mask)
     assert recorded == {
         "image": "ctrl/a.tif",
         "type": "Cells",
@@ -172,7 +172,7 @@ def test_the_row_key():
 
 def test_fingerprint_of_a_file(tmp_path):
     path = write_data(tmp_path / "a.tif", stack(), "TYX")
-    assert Fingerprint.of(path) == Fingerprint(*source_fingerprint(path))
+    assert Fingerprint.of(path) == Fingerprint(*source_signature(path))
 
 
 # A plain stack's confirmation covers only its files (audit 2 B-1) ---------------------------

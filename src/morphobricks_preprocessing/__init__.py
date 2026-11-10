@@ -122,7 +122,6 @@ from .manifest import (
     RunSettings,
     file_sha256,
     read_manifest,
-    source_fingerprint,
     write_manifest,
 )
 from .mask_checks import mask_issues, mask_size_issues
@@ -455,7 +454,6 @@ __all__ = [
     "sample_planes",
     "scan_masks",
     "series_axes_from_metadata",
-    "source_fingerprint",
     "space_unit",
     "to_micrometers",
     "write_calibration",

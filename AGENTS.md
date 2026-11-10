@@ -139,7 +139,7 @@ src/morphobricks_preprocessing/
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
   axis_review.py    review_axes and check_mapping (moved from axes.py in PP-4)
-  inventory.py      source_signature/source_fingerprint: a file's size and mtime, an OME-Zarr
+  inventory.py      source_signature: a file's size and mtime, an OME-Zarr
                     folder's total size, newest mtime and inventory digest (issue #86; PP-12);
                     store_files (the files an OME-Zarr fingerprint covers)
   source_content.py verify_content: a source's content SHA-256 (TIFF bytes; OME-Zarr per-file
