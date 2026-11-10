@@ -78,9 +78,12 @@ def test_choosing_a_reference_keeps_the_dropdown_and_shows_the_choice_at_once(ex
     assert boxes["drug"].value == "ctrl"
     assert nb.draft_answers.conditions["drug"].reference == "ctrl"  # saved as before
     assert "the reference of drug" in nb.reference_notes["ctrl"].value
-    nb.reference_boxes["ctrl"].value = ""
+    # "no comparison" is the proposal the Design step shows: saved by its one click, not before.
+    assert boxes["ctrl"].value == "" and "ctrl" not in nb.draft_answers.conditions
+    nb.design_confirm.click()
     assert nb.reference_boxes["ctrl"] is boxes["ctrl"] and boxes["ctrl"].value == ""
     assert nb.draft_answers.conditions["ctrl"].reference == ""
+    assert nb.draft_answers.conditions["drug"].reference == "ctrl"  # the choice is kept
 
 
 def test_a_refused_reference_is_shown_and_the_dropdown_goes_back_in_place(exp):  # noqa: F811
@@ -91,7 +94,8 @@ def test_a_refused_reference_is_shown_and_the_dropdown_goes_back_in_place(exp): 
     nb.reference_boxes["ctrl"].value = "drug"  # a loop: refused by the draft's own rule
     assert "This answer was not taken" in nb.references_status.value
     assert nb.reference_boxes["ctrl"] is boxes["ctrl"]
-    assert boxes["ctrl"].value is None and boxes["drug"].value == "ctrl"
+    # Back to the proposal the Design step shows ("no comparison"), which is not saved.
+    assert boxes["ctrl"].value == "" and boxes["drug"].value == "ctrl"
     assert nb.draft_answers.conditions.get("ctrl") is None or (
         nb.draft_answers.conditions["ctrl"].reference is None
     )

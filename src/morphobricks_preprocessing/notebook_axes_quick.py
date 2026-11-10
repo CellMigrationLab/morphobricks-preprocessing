@@ -111,8 +111,12 @@ class _QuickAxes:
         for widget in (self.preview_checked.widget, self.preview_blocker, self.confirm_button,
                        self.confirm_blocker):  # fmt: skip
             ui.set_visible(widget, not offered)
-        # The offer says the roles are the headers' and nothing is open: the line is not repeated.
-        ui.set_visible(self.axis_status, not offered)
+        # The offer says the roles are the headers' and nothing is open: the line is not repeated;
+        # once confirmed, the confirmation says it, and Change axis roles takes it back.
+        confirmed = self.confirmed_mapping is not None
+        ui.set_visible(self.axis_status, not offered and not confirmed)
+        if confirmed:
+            ui.set_visible(self.preview_checked.widget, False)
         if offer is None:
             return
         if offer.roles != self.mapping.roles:

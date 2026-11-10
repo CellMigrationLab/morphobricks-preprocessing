@@ -45,6 +45,54 @@ OME-XML description is parsed (which images are marked is unchanged; a malformed
 debug line without a traceback), and while the capture is attached the package's DEBUG records
 go to the "Technical details" panel only, with WARNING and above still reaching the root handlers.
 
+### Notebook redesign 5: seven steps, what the files hold first
+
+Owner's test of the first redesign (10 November 2026), items (o), (p) and (q). The shipped
+notebook has 7 steps instead of 12, in the owner's order: **Images → Axes → Channels → Masks →
+Design → Check and save → Run**. For the same answers the published `morphobricks.toml`,
+`experiment_design.csv`, `plane_histograms.csv`, `calibration.csv`, the mask files and the
+manifest (but for its time and paths) are byte-identical to before; the Spec behaviour is
+unchanged.
+
+- **Axes holds the image type** (what the channel dimension holds: separate stains or markers,
+  or colour), in the pattern of the pixel size (`notebook_image_type_line.ImageTypeLine`): one
+  line for all folders, pre-filled from what the image headers say and **recorded only by the
+  click Use for all folders**; **Set per folder…** holds each folder's row as before; when the
+  headers differ nothing is pre-filled, the line says how many folders say what, and the
+  per-folder part opens. Folders answered differently are said at once with the refusal that
+  follows (`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`); colour pictures beside separate-channel
+  images are still refused at the axes. Replacing answers already given asks first. The step is
+  done once the roles are confirmed and every folder's image type is answered.
+- **Channels** is *Stains* and *Tag channels* on one page: name the stains, then tag.
+- **Masks** holds the masks the check paired (with **Check the masks**, moved from step 1),
+  what each mask type is, and **Describe the masks**. The mask step reads the masks a run
+  recorded, so it stays greyed out, with its reason, until a run exists; after such a run the
+  run step says to come back for it. `A_MASK_UNCHECKED` is unchanged.
+- **Design** is *Conditions*, *Replicates* and *Compared against* in one grid
+  (`notebook_design_step`): conditions down, biological repeats across, each cell the folder
+  of that repeat, and what each condition is compared against in the last column. The names
+  are the folder names, folders of the same name are one repeat, and "no comparison" is shown
+  for every condition: all proposals. **Looks right: confirm the design** adopts every ID as
+  shown (all or none, each refusal listed, as *Yes, use these IDs*) and records "no
+  comparison" where nothing else was chosen. A name that cannot be proposed blocks the click
+  with its reason and opens **Edit names or pairing…**, which holds the earlier rows.
+  *Check and save* waits for the click and says so. The grid is updated in place.
+- **Check and save** lists at most eight missing answers at once; the others are one click
+  away (`notebook_check_view.TODO_SHOWN`). Every one is still listed.
+- Smaller: the tiles of counts are one line of text in the stepper; mask pictures are
+  smaller; once the axes are confirmed the tick box and the "roles are valid" line make way
+  for the confirmation. Messages name the new steps (*Channels*, *Design*, *Axes*).
+- The notebook's Markdown cell and the user guide §4 describe the seven steps (the stale
+  card-by-card text of §4 is removed). `RELEASE_REF` and the code cells are unchanged.
+- **For bricks that embed the pages:** `welcome`, `folder_step`, `axis_step`, `channels_step`,
+  `masks_step`, `check_save_step`, `run_step`, `results_step` and the public methods are
+  unchanged (`tests/test_embedding_api.py` is untouched). Texts that changed on the stacked
+  pages too: the masks' "Before you run" items end in "(Masks)" instead of "(step 1)" /
+  "(step 1, Masks)"; the mask step's hint reads "Available after a run that recorded
+  masks: …"; its help paragraph starts with what it is needed for; a mask question without
+  labels says "declare them on Channels"; the missing-answer lines end in "(Channels)",
+  "(Design)" and "(Axes)".
+
 ### Notebook redesign 4: one column, less on screen; Compare groups in the run step
 
 Owner test of v0.5.0 (10 November 2026), items (a) and (b), and the owner's test of the first

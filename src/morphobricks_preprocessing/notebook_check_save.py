@@ -502,7 +502,7 @@ class _CheckSaveScreen:
             self.save_status.value = ui.status(
                 "error",
                 "Not saved: a short name was refused.",
-                ["See Conditions and Replicates (steps 4 and 5)."],
+                ["See Design: the names are under Edit names or pairing."],
             )
             return False
         if not self._save_description():

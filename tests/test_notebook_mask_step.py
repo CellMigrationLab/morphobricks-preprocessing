@@ -78,9 +78,7 @@ def test_the_button_is_on_step_3_and_waits_for_a_run_that_recorded_masks(tmp_pat
     assert nb.mask_step_card in page.children[1].children
     assert ui.is_visible(nb.mask_step_card)
     assert nb.mask_step_button.disabled
-    assert "Available when the output folder holds a run that recorded masks" in (
-        nb.mask_step_hint.value
-    )
+    assert "Available after a run that recorded masks" in (nb.mask_step_hint.value)
     assert nb._on_describe_masks() is None
     assert nb.run().written
     assert not nb.mask_step_button.disabled
@@ -289,7 +287,7 @@ def test_a_reopened_notebook_follows_the_output_folder_of_step_1(tmp_path):
     assert not nb.mask_step_button.disabled
     nb.output.value = str(tmp_path / "elsewhere")
     assert nb.mask_step_button.disabled
-    assert "Available when the output folder holds" in nb.mask_step_hint.value
+    assert "Available after a run that recorded masks" in nb.mask_step_hint.value
     nb.output.value = str(output_of(root))
     assert not nb.mask_step_button.disabled
 

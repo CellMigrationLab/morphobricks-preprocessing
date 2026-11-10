@@ -226,10 +226,10 @@ class _MasksCard:
         """Return the "Before you run" item of the masks, or None without masks."""
         plan = self._planned_masks() if self._show_output else None
         if self._masks_stale(plan):
-            return False, "Check the masks again with the folder and mask axes chosen (step 1)"
+            return False, "Check the masks again with the folder and mask axes chosen (Masks)"
         if self.preflight is None or self.preflight.masks is None:
             return None
-        return not has_errors(self._mask_issues_now(review)), "Fix any mask errors (step 1, Masks)"
+        return not has_errors(self._mask_issues_now(review)), "Fix any mask errors (Masks)"
 
     def _refresh_masks(self, review: AxisReview | None) -> None:
         """Show the recorded masks folder, the masks found, their axes and their messages."""

@@ -265,384 +265,69 @@ notebook's step 3 (§4), also tells how they relate.
 
 ## 4. The notebook, step by step
 
-### The app in short (v0.5.1)
+Run the notebook's three cells from top to bottom (install, mount Google Drive, run
+preprocessing). Cell 3 opens the app: a strip of seven steps, one on screen at a time, with
+**Back** and **Next** under it. **Next** is never blocked, and a chip of the strip opens its
+step; a green chip with a check mark is done.
 
-Cell 3 opens the app: a strip of twelve steps, one on screen at a time, with **Back** and
-**Next** under it (**Next** is never blocked; a chip opens its step). The page is one column
-and scrolls as a whole: nothing scrolls inside its own box and nothing sits side by side.
-Explanations are folded under **About this step**, and details are in collapsed panels.
-Every wait shows a bar with what is done of the total, the file being read, the time elapsed
-and, once it can be measured, the time left. Every greyed-out button has a line beside it
-saying what it waits for.
+The page is one column and scrolls as a whole. Each step shows what you must answer;
+explanations are under **About this step** and details are in collapsed panels. Every wait
+shows a bar with what is done of the total, the file being read and the time. Every greyed-out
+button has a line beside it saying what it waits for. Nothing is decided for you: what the app
+proposes is recorded only when you click.
 
-1. **Images.** Give the folders (images; masks and output are optional). **Scan the folders**
-   lists the conditions and folders with their image counts without reading any image header,
-   and shows one image chosen at random, with its path, for looking only: it is not used for
-   anything. Every channel of it is shown side by side (`c=0`, `c=1`, …, each with its own
-   contrast; at most six, and then it says *6 of N channels shown*).
-   If this is your experiment, click **Looks right: read all image headers**; the
-   headers are then read and checked. Changing a folder asks for a new scan. The pictures of
-   each folder, the check's report and **Exclude images** are collapsed below.
-2. **Axes.** One row per image dimension with its role, and under them an **example of one
-   image as these roles read it**: one tile per channel (`c=0`, `c=1`, …), a few time points
-   or slices, or the single plane, each with its height and width. It is drawn by itself and
-   redrawn whenever you change a role, so a wrong role looks wrong (a strip, stripes). Another
-   image or other planes are under **Another image, or other planes**. Nothing is confirmed
-   for you: click **Confirm these axes** (offered when the headers name every axis and
-   nothing is open), or **Yes, the example looks right** and then **Confirm axis roles**.
-   - **Pixel size** is one line here: for example *Pixel size: 0.108 × 0.108 µm (from the
-     headers, same in all 270 images)*. When the headers give none, type it once and click
-     **Use for all images** (or choose *pixels: deliberately uncalibrated*); leaving it empty
-     records the images as uncalibrated, nothing is guessed. When the headers do not agree,
-     the line says how many images have which size and in which folders, and **Set per
-     imaging unit…** opens: there you state a size for one folder (imaging unit) or image.
-     **Use for all images** is your statement for every image: it replaces sizes stated per
-     folder, and a size that differs from an image's header is still listed as a warning.
-3. **Conditions**, 4. **Replicates**, 5. **Compared against**, 6. **Image type**, 7. **Stains**,
-   8. **Tag channels**, 9. **Masks**: one kind of answer per step, saved as you give it.
-10. **Check and save.** Your experiment in sentences, one question per replicate, then **Yes,
-    save the experiment description**. The line beside the button says what is still missing.
-11. **Run.** **Compute histograms**; what is still to do is listed only while something is.
-    The settings and *What will happen* are collapsed. After the run: its result, and collapsed
-    panels for the **intensity checks and plots**, **Compare groups** and the report.
-    **Compare groups** replaces the former optional statistics page: choose how to group
-    (condition, biological repeat, technical repeat or image) and click **Calculate
-    statistics** for the pooled statistics and the distribution plot of the table this run
-    wrote. It writes nothing.
-12. **Describe the masks** (optional), after a run that recorded masks.
+1. **Images.** Give the folders (images; masks and output are optional) and click **Scan the
+   folders**. The scan lists the conditions and folders without reading any image header and
+   shows one image chosen at random, for looking only: every channel side by side (`c=0`,
+   `c=1`, …, each with its own contrast; at most six, and then it says *6 of N channels
+   shown*). If this is your experiment, click **Looks right: read all image headers**. The
+   pictures of each folder, the check's report and **Exclude images** are collapsed below.
+2. **Axes.** What the files hold, in three parts.
+   - **Axis roles:** one row per image dimension with its role, and under them an example of
+     one image as these roles read it, redrawn whenever you change a role (a wrong role looks
+     wrong: a strip, stripes). Click **Confirm these axes** (offered when the headers name
+     every axis), or **Yes, the example looks right** and then **Confirm axis roles**.
+   - **Pixel size:** one line, for example *Pixel size: 0.108 × 0.108 µm (from the headers,
+     same in all 270 images)*. When the headers give none, type it once and click **Use for
+     all images**, or leave the images uncalibrated; nothing is guessed. When the headers
+     disagree, the line says how many images have which size, and **Set per imaging unit…**
+     opens.
+   - **Image type:** what the channel dimension holds, *separate stains or markers* or
+     *colour (RGB)*. It is proposed from the image headers and recorded when you click **Use
+     for all folders**. **Set per folder…** holds one row per folder; it opens when the
+     headers differ. An experiment that mixes colour and separate-channel folders is refused
+     in this version.
+3. **Channels.** Name what you stained and confirm the list; then tag each folder's channels
+   with those names, looking at their pictures.
+4. **Masks.** The masks the check paired with the images (and, for masks whose files do not
+   name their axes, the axes to state), then for each mask type: *separate objects* or
+   *regions*. **Describe the masks** reads every mask and reports how the types relate. It
+   reads the masks a run recorded, so it is greyed out before the run and says so; come back
+   to it after **Run**. The histogram table does not need it, but bricks that use masks accept
+   only masks it has read. Without masks, the step says so.
+5. **Design.** One grid: conditions down, biological repeats across, each cell the folder of
+   that repeat, and what each condition is compared against in the last column. The names are
+   the folder names, folders with the same name are the same repeat, and nothing is compared.
+   If that is right, click **Looks right: confirm the design**; otherwise change a comparison
+   in the grid, or a name or the pairing under **Edit names or pairing…**, first.
+6. **Check and save.** Your experiment in sentences and one question per replicate (*Were
+   these prepared and imaged the same way?*), then **Yes, save the experiment description**.
+   The line beside the button says what is still missing.
+7. **Run.** **Compute histograms**; what is still to do is listed only while something is.
+   After the run: its result, and collapsed panels for the **intensity checks and plots**,
+   **Compare groups** (pooled statistics and a distribution plot per condition, repeat or
+   image, for the table this run wrote; it writes nothing) and the report.
 
 Images with different numbers of channels (for example three in most folders and four in
-one) are refused in this version (`different_channel_counts`): the axes step names the error in
-one sentence, with the files and what to do one click away, and **Confirm axis roles** says
-that this is what it waits for.
+one) are refused in this version (`different_channel_counts`): the axes step names the error
+in one sentence, with the files and what to do one click away.
 
-The rest of this section describes each card in detail. It is written for the same cards
-shown as stacked pages (as other bricks embed them); where the app differs, the list above
-is what you see. In particular: **Show preview** and **Yes, the preview looks right** are the
-example and **Yes, the example looks right**; **Check folder** is **Looks right: read all
-image headers**; and step 4 below is the **Compare groups** panel.
+When you open the notebook again on an experiment that is already saved and whose folders
+did not change, it opens on the first step still to do (usually **Run**).
 
-### The cards in detail
-
-The notebook's code cells are hidden: run them from top to bottom (click a cell and press
-**Shift + Enter**). Each step is a page of boxes. A blue box at the top says what the step
-is for, every control has a grey help line, and one coloured message says what happened
-and what to do next. Green means done, amber means "please check", and red means
-something must be fixed first. Where you need to confirm something, a yellow box asks the
-question and you answer with a large green **Yes, …** button. The box turns green, and an
-**Undo** button takes the answer back. Later steps stay locked until the earlier ones are
-confirmed. If you change the experiment folder, everything after it is reset.
-
-After a successful action, a separate **What next?** box gives the next action in larger
-text. In step 1 it first asks you to check the labels, then points to step 2 once they are
-confirmed. Step 3 offers the optional statistics step, and step 4 suggests reviewing the
-results or comparing another grouping.
-
-0. **Start the notebook.** The setup cell checks the environment and installs missing
-   requirements if needed. A green box then confirms it is ready and shows the package
-   version.
-1. **Check the experiment folder.**
-   - Paste the folder path, or click **Browse…** to choose it in a dialog. Below the output
-     folder, a line shows where the results will go. An output folder that is a file, or
-     inside one (for example `somefile/out`), cannot be created: the line says so in red,
-     nothing is written there, and step 3 waits until you choose another folder.
-   - If you have masks (§2), give their folder under **Masks folder (optional)** the same way
-     (on Colab, paste its path: **Browse…** explains how). Leave it empty for no masks.
-     **Check folder** pairs them with the images exactly as `check --masks` does.
-   - Click **Check folder**. Only folder names and image headers are read. Like the command
-     line's `check`, it writes its report, **discovery_report.txt** and
-     **discovery_report.json** (§6), to the output folder; **Show the report** under the
-     status box shows it. (When another brick embeds this step without the output folder,
-     the check writes nothing.)
-   - If another run holds the output folder's lock, **The output folder is locked** names it
-     (computer, process ID, start time). Wait for it to finish. If it was stopped (on Colab,
-     the runtime disconnected) and no other session uses the folder, press **Remove the lock
-     of a stopped run**: the same rule as `--remove-stale-lock`, so the lock of a process
-     still running on this computer is kept. On Google Drive the lock cannot guard a folder
-     across computers or sessions: use one session per output folder (§1).
-   - Tiles summarise the result: images to analyse, image folders, conditions, pixel type,
-     skipped files, and errors and warnings.
-   - The **Labels from the folder names** table shows every image folder with its condition,
-     biological repeat and technical repeat (*single* where a level is missing). If they
-     are right, press **Yes, the labels are correct** in the yellow box under the table.
-     In the shipped notebook (*Images found*), each folder also gets a picture of its first
-     image, so a wrong folder shows at once. It is drawn from the file header only, before the
-     axes are confirmed, and is for looking only: only when the header names Y and X (otherwise
-     "preview after Axes (step 2)"), every other axis max-projected and named in the caption,
-     colour when the header says RGB. At most 8 planes and 4096 x 4096 pixels are read for one
-     picture; a larger image says so instead. The first 12 folders are drawn by the check;
-     **Draw the pictures of the other N folders** draws the rest. A large image also shows a
-     square of 128 pixels at full resolution (where the picture varies most, with its x and y
-     range), here and on *Replicates* and *Check and save*; **Enlarge** shows both larger.
-   - Once the labels are confirmed, **Experiment design** asks about the biological
-     repeats. Later bricks normalise each biological repeat over all conditions together,
-     so they need to know which folders are the same repeat:
-     - **Pair the biological repeats across conditions.** Folders with the same name in
-       different conditions are one *repeat group*. If a repeat has another folder name in
-       some condition (acquired a day later, for example), choose its group in the
-       **Repeat group** dropdown. A group can hold only one folder of each condition.
-     - **Confirm that they are comparable.** For each repeat group, a yellow box asks
-       whether its images were prepared and acquired under the same circumstances. Press
-       **Yes, they are comparable** if they were. Without biological-repeat folders, one
-       question covers the whole experiment. Step 3 runs only once every group is
-       confirmed; if images are not comparable, process them as separate experiments.
-     - **Controls (optional).** Tick the control conditions. This is recorded for later
-       bricks; nothing uses it yet.
-     - The answers are saved in the draft (`morphobricks.draft.json`) after every answer and
-       published with the description on *Check and save*; `experiment_design.csv` is
-       derived from the published description: a repeat group is confirmed only when its
-       folders pass the run's checks, and a refused answer is shown with the reason and
-       changes nothing. Nothing
-       is confirmed for you. Next time, if the folders are the same, they are loaded and the
-       questions are folded away; **Change the experiment design** shows them again. A new
-       biological-repeat folder asks again only for the group it joins.
-     - An **experiment_design.csv** that an earlier version left in the output folder is not
-       read and does not prefill these questions: describe the experiment here, in the
-       notebook. The file is only an output, derived from the published description.
-     - The design belongs to its output folder. If you change the output folder, the design
-       is read from the new folder (its own answers and controls, a blue box says so), or,
-       when it holds none, the questions are asked again: answers given for the previous
-       output folder are never carried over, and nothing is written in the new folder until
-       you answer. Changing back reads the first folder's design again.
-   - **Pixel sizes (calibration)** lists the size of one pixel along X, Y, Z and T for every
-     image (images with the same sizes share a row), with its source: **header** (the image
-     metadata), **stated** (in **calibration.csv**), **pixels** (stated as deliberately
-     uncalibrated) or **uncalibrated** (nothing is guessed). To state a size, fill in **For**
-     (`.` for the whole experiment, or a folder or image relative to the experiment folder),
-     **Axes**, **Size** and **Unit** (or *pixels*) and press **State this size**; **Remove the
-     statement** goes back to the metadata. This writes **calibration.csv** in the output
-     folder with the `calibrate` command's functions, under the lock (§5), and the most
-     specific statement applies. The messages `calibration_target_not_found` (an error),
-     `calibration_differs_from_header` and `calibration_axis_absent` (warnings, §8) are
-     shown on the card. Until the axis roles are confirmed in step 2, Z and T show the
-     metadata's sizes; once they are, an image without a Z or T axis shows **no such axis**,
-     as the run records no size for it. No histogram depends on the sizes. (When another
-     brick embeds this step without the output folder, the card is left out.)
-   - **Dataset consistency** shows how many images each condition (columns) and
-     biological repeat (rows; the repeat groups once paired) has, with the number of technical-repeat folders. Excluded images
-     are not counted, nor is a technical-repeat folder whose images are all excluded; the
-     line under the table says how many images were excluded and names those folders. A
-     technical-repeat folder named **single** is the level's value single, so it counts as
-     no technical-repeat folder, like images directly in the biological-repeat folder. A cell is
-     amber when it has fewer than half or more than twice the median number of images, or
-     when a condition does not have that biological repeat. Expand **Show consistency
-     warnings** to see the checks that compare the images with each other: pixel type,
-     dimensions, width and height, numbers of channels, slices and time points, channel
-     names and physical pixel sizes (see §8). Warnings never stop you; they say what to
-     check. Images with different numbers of channels, pixel types or dimension orders are
-     errors: fix them before going on.
-   - **Masks** (with a masks folder, or OME-Zarr images with label images) lists every kind
-     of mask found, where from (the masks folder or label images), its axes, how many masks
-     it has and the images without one (named below the table), and the masks' messages
-     (§8): the same checks as `check --masks` and, once the axis roles are confirmed in
-     step 2, as `run`. A mask error blocks step 3; the step-1 status and tiles count the
-     masks' errors and warnings too.
-     - **Mask axes** appears only for kinds of mask that need their axes stated, as the
-       command line's `--mask-axes TYPE=ROLES`: masks whose files do not name their axes (a
-       plain stack, `mask_not_2d`), or whose statement does not fit. A 2D mask needs no
-       statement and is never shared by several planes, so a 2D mask of a time-lapse is not
-       asked about: it is refused (`mask_planes_mismatch`) until it is saved with the
-       image's time points. The dropdown lists only the statements that fit every
-       mask of that kind (one role per axis as stored, never X before Y), starts at **Not
-       stated**, and nothing is applied until you press **Check the masks**. If no statement
-       fits (masks of one kind stored differently), it says so: save them alike.
-     - **Check the masks** pairs the masks again with the masks folder and the mask axes
-       chosen, keeping your other answers (labels, design, axis roles). Step 3 asks you to
-       press it after changing the masks folder or a mask axis; masks that were not checked
-       are never used. A new masks folder starts its mask axes over.
-     - The run records the masks folder and the mask axes in **run_manifest.json**; a later
-       run in the same output folder reuses them (§7). With the box empty, the masks folder of
-       the earlier run is used again, and the card says so; **Drop the recorded masks** (then
-       **Check the masks**) runs without masks, as `--no-masks`, and drops the mask axes
-       stated for that folder's masks. A masks folder other than the recorded one, or dropped,
-       is named under **What will happen** in step 3 and in the run's report.
-     - When another brick embeds this step without the output folder, neither the masks
-       folder nor the card is shown, and the check pairs no masks folder.
-   - **Messages** lists the other problems (folders, files that are not images, unreadable
-     images), with the warning count visible in orange and the error count in red.
-     Expand **Show warnings and errors** to see each problem, the affected files and what
-     to do. The details start collapsed after each check. If some images cannot be read,
-     **Exclude these images and check again** inside the dropdown leaves them out (see §7).
-2. **Review the axis roles.**
-   - Each dimension of the images has its own box. It shows the dimension's length and the
-     role suggested from the metadata, with a dropdown to change it.
-   - A line under each dropdown says what the choice means, for example *3 depth slices,
-     numbered z = 0 to 2*. A blue line says how many planes each image will be split into.
-   - Click **Show preview** and move the sliders to look at different slices, channels and
-     time points of any image. Until you confirm the roles, the preview is labelled
-     **Preview of the roles above, not confirmed yet**: it is drawn with the roles as you
-     edit them, nothing is written, and the run uses only the roles you confirm. If the roles you choose give the images different numbers of
-     channels, a message says so and step 3 stays locked. Each picture should be a normal image of your sample;
-     stripes or a smear mean X or Y is on the wrong dimension. Brightness is stretched for
-     display only.
-   - The roles are checked against the axes each image's metadata names, in one **Axis
-     check** card. A role that disagrees with the header is marked in amber under its
-     dropdown; the card gives the error (`axes_yx_swapped` or `axes_contradict_header`,
-     §8) naming the images with their header axes, your roles and the likely cause. Such
-     images are never read: correct the axes, or save named-axis copies with your roles and
-     run preprocessing on the copies (the **Make named-axis copies (optional)** card under
-     the axis check, §5 "Named-axis copies"). An axis the metadata does not name (a plain stack of
-     pages) takes the role you confirm: the card warns (`axes_not_named`) and the run
-     records the roles as confirmed by you.
-   - If the preview looks right, press **Yes, the preview looks right** (offered only while a
-     preview of the roles shown is drawn), then click
-     **Confirm axis roles**. When the roles agree with every header, a green card says
-     **Axes checked: they are correct for every image**. Changing a role afterwards asks
-     you to check the preview again.
-     The confirmed roles are locked until you click **Change axis roles**.
-   - In the shipped notebook (one step at a time), when the suggested roles leave nothing
-     to ask (no axis message, every image names its axes, no missing axis to state), the
-     *Axes* step shows them with a preview and one **Confirm these axes** button; it records
-     the same two answers. A reopened experiment whose folders did not change offers the
-     roles of its earlier run. The role boxes stay under **Look closer, or change the roles**.
-   - On a reopened experiment, new folders whose header is exactly that of a saved, tagged
-     group form their own block on *Tag channels* with **Tag like the saved group (…)**. One
-     click copies those tags, exactly as choosing them by hand; nothing is copied without it.
-   - If some images lack a dimension the others have (often a single channel), a yellow box
-     lists them; press **Yes, they have a single plane there** if that is the case.
-     Once you confirm the axis roles, this resolves the missing-axis error for step 3.
-     Any other errors still need to be fixed before running.
-   - Once the axis roles are confirmed, **Image type** asks whether the images are
-     **Fluorescence** (each channel is a separate stain or marker) or **RGB** (colour
-     images, such as brightfield or histology stains). Later bricks normalise the two types
-     differently: fluorescence channel by channel, RGB with the red, green and blue channels
-     together (StarDist's method), so the colours are kept. The histograms are the same for
-     both types.
-     - RGB is suggested when the images are stored as RGB colour (three colour samples per
-       pixel) and those samples are the channels; fluorescence otherwise. The suggestion is
-       only preselected: press **Yes, this is the right image type** to confirm it, or choose
-       the other type first. An amber line reminds you when you choose against the
-       suggestion. Step 3 runs only once the type is confirmed.
-     - RGB needs exactly three channels of a whole-number pixel type (8- or 16-bit colour).
-       For other images the choice is greyed out at Fluorescence, with the reason.
-     - Changing the axis roles asks for the image type again. The type is recorded in
-       **run_manifest.json** (§6); changing it on a later run reads no image again.
-3. **Compute the histograms.**
-   - **Before you run** lists anything still to do.
-   - **The settings start from the earlier run** in the output folder, as the command
-     line's `run` keeps them: the excluded images (filled in step 1 when you choose the
-     folders), the bins (when recorded for the same pixel type), the histogram range and
-     its quantiles, the intensity limits, the image type (preselected in step 2) and the
-     answer about missing axes; the masks folder and mask axes are kept by leaving the
-     masks folder empty. Leave a setting as it is to keep it. A setting you change is
-     listed under **What will happen** and in the run's report. Choosing another output
-     folder fills them again from that folder's run; a folder without a run sets back the
-     values filled from the other folder that you did not edit.
-   - **What will happen** names the output folder and files, the image type and the masks
-     recorded (or that the recorded masks are dropped), and says
-     whether an earlier run was found and what will be read. It lists the inputs that differ
-     from those the earlier run recorded (for example an image excluded since, or another
-     bin count), each with its effect (*every row is recomputed*, *no row is affected*,
-     …), from the run's own rules, and the run's report names them again. Once the axis roles are confirmed it also names
-     the images whose planes are too large for the memory limit and will be read in
-     blocks, and, in a red box, any image that cannot be read within the limit at all
-     (the run would stop; raise the limit or exclude the image).
-   - The recommended settings suit most experiments. Untick **Use the recommended
-     settings** to change them:
-     - *Bins per plane:* one bin per possible value for 8- and 16-bit images (exact
-       histograms); 65,536 bins for wider integers and 10,000 for floats.
-     - *Histogram range:* **Minimum to maximum of each plane** (recommended) or
-       **Robust**, which bins between two quantiles of each plane (0.01 % and 99.99 % by
-       default) and counts the pixels outside separately. It matters only for histograms
-       that are not exact (float images, and integer images with more values than bins).
-       A few extreme pixels, such as hot pixels, can squeeze every other pixel into a few
-       bins of the minimum-to-maximum range; the run then warns
-       (`narrow_histogram_range`), names the planes, and says how many bins the robust
-       range would give. Run again with the robust range to fix it. Changing the range
-       reads every image again.
-     - *Memory limit:* the most working memory one plane may need (default 1 GiB). A
-       plane that needs more (roughly above 5,000 x 5,000 pixels) is read in blocks
-       instead, and the run reports this as a warning: the histograms are exactly the
-       same, only reading takes longer. Raise the limit only if the computer has enough
-       memory.
-   - **Mode:** **Restart** (recommended) reuses the rows of unchanged images and reads new
-     or changed ones; **Full** reads every image again and recomputes every row and check.
-     Both keep your confirmations (labels, design, axis roles, image type, stated pixel
-     sizes) and write the table only when the whole run succeeds.
-   - **Verify each image's content (SHA-256) before reusing its rows** (off by default): an
-     image counts as unchanged when its size and modification time are, so a file rewritten
-     with the same size and its time set back would keep its earlier rows. With the box
-     ticked, the run records each image's SHA-256 and reuses rows only for the same content;
-     every image is read once more. The choice is recorded and kept by later runs; turning
-     it on or off reads every image again.
-   - Click **Compute histograms**. A progress bar shows which image is being read. Tiles
-     then summarise planes written, images read, kept, new, changed, removed and excluded,
-     and the status names the mode, the files replaced and the inputs that changed. The
-     table and manifest are written only when the whole run succeeds; the report
-     (**discovery_report.txt**, **Show the report**) is written either way. A run that stops
-     says *The run stopped: no table or manifest was written.*, and that its report was
-     written; a run refused before it starts (the lock) says *Nothing was written.* and
-     shows **The output folder is locked**. **Technical details (log)** holds the log for
-     troubleshooting.
-   - **Intensity checks** then compares the images, using only the table just written (no
-     image is read again, and nothing else is written). Each image is compared with the
-     other images of its condition and biological repeat, and each biological repeat with
-     the other repeats of its condition, so differences between conditions (treatment
-     effects) are never reported:
-     - Tiles count the images checked and each kind of warning; a table lists every
-       warning with the check, the channel (**C0**, **C1**, …), the image or biological
-       repeat, and what was found (the values compared and the limit), followed by what to
-       do about each kind. The four checks find images far from the others of their
-       biological repeat, biological repeats shifted from the others of their condition,
-       saturated images, and images without intensity spread; a fifth kind names each
-       image channel without finite pixels, which the checks cannot see (see §8).
-     - **Check settings** (collapsed) holds the limits: how many robust deviations count as
-       far (default 3), the share of saturated pixels (default 1 %), and the fewest images a
-       comparison needs (default 5). Changing them updates the warnings and plots at once;
-       the run records the limits in **run_manifest.json**, so the next run records the
-       new ones. **Restore the defaults** sets them back.
-     - Plots, one channel at a time (choose it above the plots): box plots of the image
-       medians and high percentiles for each condition and biological repeat, one point per
-       image, with images that have a warning in that channel as red diamonds and shifted
-       repeats as amber boxes; and one panel per condition with the intensity distribution
-       of each biological repeat (comparable repeats lie close together; a shifted one is
-       dashed). The plots are only shown here, never saved.
-   - **Describe the masks (optional)**, after a run that recorded masks: the notebook's
-     counterpart of the `masks` command (§5), with the same functions and the inputs the
-     run recorded (experiment folder, masks folder, mask axes, excluded images). The button
-     works for the run in step 1's output folder: after a run in this session, and also for
-     an earlier run when you reopen the notebook (choose the same experiment or output
-     folder in step 1). The line above it names the run it describes (output folder, when
-     it was written, experiment and masks folders, mask types); it is greyed out, saying
-     why, when that folder holds no run that recorded masks. Click it to read every mask, one image at a
-     time (a progress bar names the image); the card then shows each mask type (kind,
-     images, objects, median pieces per label), the relationships found (which type is
-     inside or grouped by which, how many objects are inside, how many objects of the
-     other type hold 0, 1, 2 or 3 or more, and how many are outside or split), the
-     objects given no parent because they lie equally in two or more objects of the other
-     type, masks of the same objects, and the hierarchy of direct parents. These are suggestions to
-     check, not decisions. The description is written to **mask_relationships.json** in
-     the output folder (its path is shown). The output folder's lock is held from before the
-     first mask is read until the file is written: when another run holds it, **The output folder is locked** is shown with **Remove the lock of a
-     stopped run**, no mask is read and nothing is written. Errors found since the run
-     (the experiment or masks folder moved, a mask changed or removed) and masks that
-     cannot be used (a label above 2,147,483,647) are shown as red cards, and nothing is
-     written. The notebook uses the default thresholds
-     (contract §15.1); the `masks` command can change them. A new run clears the card;
-     an embedding brick that hides the output folder does not show it.
-4. **Calculate the statistics (optional).** The table from step 3 is all that later bricks
-   need; this step only reads it to compare groups and writes no files.
-   - **Histogram table** is filled in with the table from step 3. To look at another
-     experiment, paste the path of its `plane_histograms.csv` or click **Browse…**.
-   - Choose **Condition**, **Biological repeat**, **Technical repeat** or **Image**, and the
-     percentiles to report, then click **Calculate statistics**.
-   - A spinning wheel shows that work is in progress while the table is read, statistics
-     are calculated and the plot is drawn. The button says **Calculating…** and stays
-     disabled until the calculation finishes or an error is shown; you can then try again.
-   - The table lists pooled statistics per group **and channel**: minimum, maximum, mean,
-     standard deviation, median and percentiles. Each channel (**C0**, **C1**, …) has its
-     own row, since different fluorescence markers (or the red, green and blue of an RGB
-     image) are different measurements and are never mixed. **XYC planes** counts the
-     planes (an image at one time point) and **channel histograms** the histograms pooled
-     in that row.
-   - The plot compares the groups' intensity distributions, one panel per channel: curves
-     further right are brighter.
-   - **Intensity checks** shows the same warnings, settings and plots as step 3 for the
-     chosen table, so tables of other experiments can be checked too. It needs only the
-     table, not the images.
-
-In JupyterLab, the optional `jl-hidecode` extension keeps the code cells collapsed and adds
-a run button to each; without it, click the "…" of a cell to see its code.
+Other MorphoBricks notebooks embed the first cards of this app as stacked pages
+(`folder_step`, `axis_step`, `run_step`): the cards and their messages are the same, laid out
+one page under the other.
 
 ## 5. Command line
 

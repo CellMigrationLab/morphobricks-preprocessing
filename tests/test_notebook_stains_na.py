@@ -1,7 +1,8 @@
 """An all-RGB experiment needs no channel label (issue 240, experiment-v1 section 4.4b).
 
 R, G and B are the fixed channel IDs of a unit the user declared ``rgb``; no label applies. So
-the Stains step is not applicable when every folder's saved image type is ``rgb``, and Check and
+naming the stains (on the Channels step) is not applicable when every folder's saved image type
+is ``rgb``, and Check and
 save completes and saves without one. Only the user's answer counts: a header's colour pre-tick,
 a mixed experiment or an unanswered image type keeps the labels required.
 """
@@ -25,8 +26,8 @@ from morphobricks_preprocessing.draft_answers import UnitAnswer  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 
 FOLDERS = ["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/rep2"]
-STAINS = 6  # step 7, 0-based
-TAGS = 7
+CHANNELS = 2  # step 3, 0-based: the stains and the tags
+STAINS = TAGS = CHANNELS
 
 
 def _open(tmp_path, *, channel_folders=()):
@@ -54,7 +55,7 @@ def _answer(nb, *, skip=()):
             types.radios[layout.key].value = "channels"
     types.confirm_header([u.key for u in types.layouts if types.proposed(u) and u.key not in skip])
     nb.reference_boxes["drug"].value = "ctrl"
-    nb.reference_boxes["ctrl"].value = ""
+    nb.design_confirm.click()  # the names, and "no comparison" for ctrl, as the Design step shows
     for toggle in list(nb.same_way.values()):
         if not toggle.value:
             toggle.button.click()
@@ -68,17 +69,16 @@ def test_an_all_rgb_experiment_completes_stains_and_check_and_save_without_a_lab
     nb = _open(tmp_path)
     _answer(nb)
     stains = _state(nb, STAINS)
-    assert stains.done and stains.note == "not applicable"
-    assert stains.text == "not applicable: every folder is colour (RGB)"
-    assert "not applicable" in nb._stepper.chips[STAINS].description
-    assert "mb-chip-noted" in nb._stepper.chips[STAINS]._dom_classes
+    assert stains.done
+    assert stains.text.startswith("no stains to name: every folder is colour (RGB) · every channel")
+    assert "mb-chip-done" in nb._stepper.chips[STAINS]._dom_classes
     assert _state(nb, TAGS).done and not nb.channel_labels.confirmed
     assert "Not applicable" in nb.channel_labels.na_note.value
     assert not ui.is_visible(nb.channel_labels.body[0])
     assert not ui.is_visible(nb.channel_intro)  # "first name what you stained" would contradict
     assert nb.todo.value == "" and not nb.save_button.disabled
     assert nb.save_experiment()
-    assert _state(nb, 9).done
+    assert _state(nb, 5).done
 
 
 def test_the_saved_file_declares_exactly_r_g_b_and_the_rgb_image_type(tmp_path):
@@ -103,7 +103,7 @@ def test_the_header_pre_tick_alone_does_not_make__stains_not_applicable(tmp_path
     nb = _open(tmp_path)  # the headers say colour; nothing is answered
     assert not nb._stains_not_applicable
     stains = _state(nb, STAINS)
-    assert not stains.done and stains.text == "not confirmed"
+    assert not stains.done and stains.text == "stains not confirmed"
     assert ui.is_visible(nb.channel_labels.body[0])
     assert "Not applicable" not in nb.channel_labels.na_note.value
 

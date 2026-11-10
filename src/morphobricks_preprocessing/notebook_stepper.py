@@ -55,10 +55,11 @@ STEPPER_CSS = """
 .mb-compact .mb-header { font-size: 11px; padding-bottom: 3px; margin-bottom: 5px; }
 .mb-compact .mb-help { font-size: 12px; margin: 1px 0 4px 0; line-height: 1.35; }
 .mb-compact .mb-status { padding: 5px 10px; margin: 4px 0; line-height: 1.4; }
-.mb-compact .mb-tiles { gap: 6px; margin: 4px 0 2px 0; }
-.mb-compact .mb-tile { padding: 3px 10px; min-width: 96px; flex: 1 1 96px; }
-.mb-compact .mb-tile .mb-tile-value { font-size: 15px; }
-.mb-compact .mb-tile .mb-tile-label { font-size: 11px; }
+.mb-compact .mb-tiles { gap: 2px 18px; margin: 4px 0 4px 2px; }
+.mb-compact .mb-tile { display: flex; align-items: baseline; gap: 5px; padding: 0; min-width: 0;
+  flex: 0 0 auto; border: none; background: transparent; box-shadow: none; }
+.mb-compact .mb-tile .mb-tile-value { font-size: 13px; }
+.mb-compact .mb-tile .mb-tile-label { font-size: 12px; }
 .mb-compact .mb-confirm { padding: 6px 10px; margin: 6px 0 2px 0; }
 .mb-compact .mb-question { margin-bottom: 4px; }
 .mb-compact .mb-table td { padding: 3px 10px; }
@@ -81,6 +82,7 @@ STEPPER_CSS = """
 .mb-compact .mb-scan img.mb-grey, .mb-compact .mb-scan img.mb-colour,
 .mb-compact .mb-scan img.mb-crop { width: 180px !important; }
 .mb-channel-row { gap: 8px; }
+.mb-compact .mb-mask-pictures img { width: 170px !important; height: auto; }
 .mb-compact .mb-channel-row .mb-channel img.mb-grey { width: 99% !important; }
 .mb-about { margin: 0 0 6px 0; font-size: 12.5px; color: #475569; }
 .mb-about summary { cursor: pointer; color: #2563EB; }

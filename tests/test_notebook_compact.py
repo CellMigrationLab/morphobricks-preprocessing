@@ -56,10 +56,10 @@ def test_the_strip_is_short_names_and_the_page_keeps_the_full_title(exp):  # noq
     assert "mb-compact" in st.widget._dom_classes
     names = [re.sub(r"^(✓ )?\d+ ", "", chip.description).split(" · ")[0] for chip in st.chips]
     assert names == [CHIPS.get(step.title, step.title) for step in st.steps]
-    assert names[0] == "Images" and names[9] == "Save" and names[11] == "Describe masks"
+    assert names == ["Images", "Axes", "Channels", "Masks", "Design", "Save", "Run"]
     assert sum(len(chip.description) for chip in st.chips) < 150  # one row at 1366 px
-    head = st.pages[9].children[1].children[0].value
-    assert "Step 10 of 12 · Check and save" in head and "mb-purpose" in head
+    head = st.pages[5].children[1].children[0].value
+    assert "Step 6 of 7 · Check and save" in head and "mb-purpose" in head
 
 
 def test_each_page_is_a_title_line_and_one_column_that_never_scrolls_by_itself(exp):  # noqa: F811
@@ -141,7 +141,7 @@ def test_the_run_log_is_text_in_the_page_not_a_box_that_scrolls(exp):  # noqa: F
 
 def test_explanations_are_folded_behind_about_this_step(exp):  # noqa: F811
     nb = stepper(*exp)
-    for index in (0, 1, 8, 9):
+    for index in range(6):
         first = nb._stepper.pages[index].children[1].children[1].children[1]
         assert first.value.startswith(
             "<details class='mb-about'><summary>About this step</summary>"
@@ -169,6 +169,7 @@ def test_the_folders_are_one_card_of_three_labelled_rows(exp):  # noqa: F811
         assert _holds(page, box)
     for card in (nb.folder_card, nb.output_card, nb.masks_input_card):
         assert not _holds(page, card)  # their help paragraphs are under About this step
+    assert not _holds(page, nb.masks_card)  # what the check paired is on Masks
     labels = [w.value for w in field_rows([("Images", []), ("Masks (optional)", [])]).children[::2]]
     assert [_text(v) for v in labels] == ["Images", "Masks (optional)"]
 
@@ -227,7 +228,7 @@ def test_a_refusal_is_one_sentence_with_the_files_and_the_fix_on_demand():
 
 def test_the_run_step_shows_only_what_is_missing_and_folds_the_rest(exp):  # noqa: F811
     nb = stepper(*exp)
-    page = nb._stepper.pages[10]
+    page = nb._stepper.pages[6]
     assert ui.is_visible(nb.readiness_card) and nb.run_button.disabled
     for fold, inner in (
         (nb.settings_fold, nb.settings_card),
@@ -245,7 +246,7 @@ def test_the_run_step_shows_only_what_is_missing_and_folds_the_rest(exp):  # noq
 
 def test_compare_groups_appears_collapsed_after_a_run_for_that_run_s_table(exp):  # noqa: F811
     nb = _ran(exp)
-    page = nb._stepper.pages[10]
+    page = nb._stepper.pages[6]
     assert ui.is_visible(nb.compare_fold) and nb.compare_fold.selected_index is None
     assert ui.is_visible(nb.checks_fold) and ui.is_visible(nb.run_report_fold)
     assert not ui.is_visible(

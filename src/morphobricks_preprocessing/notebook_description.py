@@ -342,7 +342,7 @@ class _DescriptionCard(_NameRows, _SavedDraft):
         references = self.draft.references
         for condition in conditions:
             box = self.reference_boxes[condition]
-            options, chosen = self._reference_options(condition), self._chosen_reference(condition)
+            options, chosen = self._reference_options(condition), self._shown_reference(condition)
             if list(box.options) != options:
                 box.options = options
             if box.value != chosen:
@@ -361,7 +361,7 @@ class _DescriptionCard(_NameRows, _SavedDraft):
         for condition in conditions:
             box = widgets.Dropdown(
                 options=self._reference_options(condition),
-                value=self._chosen_reference(condition),
+                value=self._shown_reference(condition),
                 layout=widgets.Layout(width="99%"),
             )
             box.observe(
@@ -385,6 +385,10 @@ class _DescriptionCard(_NameRows, _SavedDraft):
         """Return the saved choice: None if not answered, ``""`` for no comparison, a folder."""
         answer = self.draft_answers.conditions.get(condition, ConditionAnswer()).reference
         return self.draft.references.get(condition) if answer is None else answer
+
+    def _shown_reference(self, condition: str) -> str | None:
+        """Return what the dropdown shows: the saved choice (the stepper shows a proposal)."""
+        return self._chosen_reference(condition)
 
     def _references_answered(self) -> bool:
         """Return True once any condition was answered (including "no comparison")."""

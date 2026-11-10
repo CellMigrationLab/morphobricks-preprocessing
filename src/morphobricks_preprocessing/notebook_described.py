@@ -202,8 +202,8 @@ class _DescribedRun:
 
     def _refresh_axis_next(self) -> None:
         self.axis_next.value = ui.next_steps(
-            "Go to Stains.",
-            "Name what you stained, then Tag channels, Masks and Check and save.",
+            "Go to Channels.",
+            "Name what you stained and tag the channels, then Masks, Design and Check and save.",
         )
 
     # The run -----------------------------------------------------------------------------

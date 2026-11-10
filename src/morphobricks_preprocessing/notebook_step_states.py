@@ -17,8 +17,9 @@ from .validation import plural
 
 UNCALIBRATED = ("uncalibrated", "pixels (stated)")
 """The X/Y size texts (:func:`.notebook_values.size_text`) that give no physical size."""
-ANSWER_STEPS = range(2, 10)
-"""The steps (0-based) whose answers the published file holds: conditions to check and save."""
+ANSWER_STEPS = range(1, 6)
+"""The steps (0-based) whose answers the published file holds: axes (the image type) to save."""
+TYPE_WORDS = (("separate channels", "channels"), ("colour", "rgb"))
 
 
 def _ids(wanted: dict[tuple[str, str], str], kind: str) -> list[str]:
@@ -31,20 +32,15 @@ class _StepStates:
     """The :class:`.notebook_stepper.StepState` of each step, from the cards' state."""
 
     def _step_states(self) -> list:
-        """Return the state callables of the 12 steps, in order."""
+        """Return the state callables of the 7 steps, in order."""
         return [
             self._images_state,
             self._axes_state,
-            self._conditions_state,
-            self._replicates_state,
-            self._references_state,
-            self._image_type_state,
-            self._stains_state,
-            self._tags_state,
+            self._channels_state,
             self._masks_state,
+            self._design_state,
             self._saved_state,
             self._run_state,
-            self._describe_state,
         ]
 
     def _reopen_changed(self) -> bool:
@@ -76,13 +72,35 @@ class _StepStates:
         return StepState(pre.ok, text)
 
     def _axes_state(self) -> StepState:
-        """Return step 2: the confirmed roles, with the pixel size (its note when uncalibrated)."""
+        """Return step 2: the confirmed roles, the pixel size and the image type.
+
+        Done once the roles are confirmed and every folder's image type is answered; the chip
+        notes an uncalibrated experiment.
+        """
         mapping = self.confirmed_mapping
         sizes, note = self._sizes_words()
         if mapping is None:
             return StepState(False, "not confirmed")
         roles = ", ".join(role for role in mapping.roles if role) + " confirmed"
-        return StepState(True, f"{roles} · {sizes}" if sizes else roles, note=note)
+        types, typed = self._image_type_words()
+        text = " · ".join(part for part in (roles, sizes, types) if part)
+        return StepState(typed, text, self._changed(1, typed), note=note)
+
+    def _image_type_words(self) -> tuple[str, bool]:
+        """Return the image types answered, by kind, and whether none is left to answer."""
+        if self._channels_key is None:
+            return "image type: after the folder check", False
+        types = self.channel_types
+        saved = [types.saved(u.key) for u in self._channel_layouts if u.usable]
+        parts = [
+            f"{word} ({plural(saved.count(value), 'folder')})"
+            for word, value in TYPE_WORDS
+            if value in saved
+        ]
+        done = None not in saved
+        if not done:
+            parts.append(f"image type: {saved.count(None)} to choose")
+        return ", ".join(parts), done
 
     def _sizes_words(self) -> tuple[str, str]:
         """Return the pixel sizes as the calibration card shows them, and the chip's note."""
@@ -110,97 +128,57 @@ class _StepStates:
     def _changed(self, index: int, done: bool) -> bool:
         return not done and index in ANSWER_STEPS and self._reopen_changed()
 
-    def _conditions_state(self) -> StepState:
-        """Return step 3: the condition IDs as shown, with their shown-as names."""
+    def _design_state(self) -> StepState:
+        """Return step 5: the conditions, the replicates and the comparisons, once confirmed."""
         if self.draft is None:
             return StepState(False, "after the folder check")
         wanted = self._wanted_ids()
-        ids = _ids(wanted, "conditions")
-        shown = {
-            wanted.get(("conditions", folder), ""): answer.display_name
-            for folder, answer in self.draft_answers.conditions.items()
-            if answer.display_name
-        }
-        text = ", ".join(f"{i} ({shown[i]})" if i in shown else i or "?" for i in ids)
-        done = all(ids)
-        return StepState(done, text or "none", self._changed(2, done))
-
-    def _replicates_state(self) -> StepState:
-        """Return step 4: the replicate IDs, the pairing and the technical-repeat IDs."""
-        if self.draft is None:
-            return StepState(False, "after the folder check")
-        wanted = self._wanted_ids()
+        conditions = sorted(self.draft.conditions)
+        chosen = {c: self._chosen_reference(c) for c in conditions}
+        named = []
+        for folder in conditions:
+            text = wanted.get(("conditions", folder)) or "?"
+            target = chosen[folder]
+            named.append(f"{text} → {wanted.get(('conditions', target)) or target}"
+                         if target else text)  # fmt: skip
         repeats, technical = _ids(wanted, "repeats"), _ids(wanted, "technical_repeats")
-        text = ", ".join(i or "?" for i in repeats)
+        text = f"{', '.join(named)} × {', '.join(i or '?' for i in repeats)}"
         paired = [
             f"{condition}/{folder} = {wanted.get(('repeats', group)) or group}"
             for (condition, folder), group in sorted(self.draft_answers.pairing.items())
         ]
         if paired:
             text += f" ({'; '.join(paired)})"
-        named = [i or "?" for i in technical if i != "single"]
-        if named:
-            text += " · technical: " + ", ".join(named)
-        done = all(repeats) and all(technical)
-        return StepState(done, text or "none", self._changed(3, done))
-
-    def _references_state(self) -> StepState:
-        if self.draft is None:
-            return StepState(False, "after the folder check")
-        conditions = sorted(self.draft.conditions)
-        if len(conditions) < 2:
-            return StepState(True, "one condition: nothing to compare")
-        chosen = {c: self._chosen_reference(c) for c in conditions}
-        text = " · ".join(f"{c} → {'?' if t is None else t or 'none'}" for c, t in chosen.items())
-        done = None not in chosen.values()
+        named_folders = [i or "?" for i in technical if i != "single"]
+        if named_folders:
+            text += " · technical: " + ", ".join(named_folders)
+        done = self._design_confirmed()
+        if not done:
+            text += " · not confirmed"
         return StepState(done, text, self._changed(4, done))
 
-    def _image_type_state(self) -> StepState:
-        """Return step 6: the image types answered, by kind, and how many are left."""
+    def _channels_state(self) -> StepState:
+        """Return step 3: the stains named and every channel of every folder tagged."""
         if self._channels_key is None:
             return StepState(False, "after the axes")
-        types = self.channel_types
-        usable = [u for u in self._channel_layouts if u.usable]
-        saved = [types.saved(u.key) for u in usable]
-        parts = [
-            f"{word} ({plural(saved.count(value), 'folder')})"
-            for word, value in (("separate channels", "channels"), ("colour", "rgb"))
-            if value in saved
-        ]
-        done = None not in saved
-        if not done:
-            parts.append(f"{saved.count(None)} to choose")
-        return StepState(done, ", ".join(parts), self._changed(5, done))
-
-    def _stains_state(self) -> StepState:
-        """Return step 7: the confirmed labels, or not applicable when every folder is colour."""
-        if self._channels_key is None:
-            return StepState(False, "after the axes")
-        if self._stains_not_applicable:
-            return StepState(
-                True, "not applicable: every folder is colour (RGB)", note="not applicable"
-            )
-        done = self.channel_labels.confirmed
-        text = ", ".join(self.channel_labels.labels) if done else "not confirmed"
-        return StepState(done, text, self._changed(6, done))
-
-    def _tags_state(self) -> StepState:
-        """Return step 8: whether every channel of every folder is tagged."""
-        if self._channels_key is None or not (
-            self.channel_labels.confirmed or self._stains_not_applicable
-        ):
-            return StepState(False, "after the stains")
         layouts = self._channel_layouts
+        if self._stains_not_applicable:
+            stains = "no stains to name: every folder is colour (RGB)"
+        elif self.channel_labels.confirmed:
+            stains = ", ".join(self.channel_labels.labels)
+        else:
+            return StepState(False, "stains not confirmed", self._changed(2, False))
         left = remaining(layouts, self.draft_answers.units, self.channel_labels.labels)
         done = not left.cells and not left.blocked
-        text = (
+        tags = (
             f"every channel of {plural(len(layouts), 'folder')} tagged"
             if done
             else f"{left.cells} channel(s) still to tag"
         )
-        return StepState(done, text, self._changed(7, done))
+        return StepState(done, f"{stains} · {tags}", self._changed(2, done))
 
     def _masks_state(self) -> StepState:
+        """Return step 4: what each mask type is, and whether the relationships are described."""
         types = self._mask_types()
         if not types:
             return StepState(self.preflight is not None, "no masks")
@@ -208,8 +186,10 @@ class _StepStates:
             return StepState(False, "after the folder check")
         kinds = mask_kinds(self.draft_answers)
         text = " · ".join(f"{t} = {kinds.get(t, '?')}" for t in types)
+        if self.mask_step_result.value:
+            text += " · relationships described"
         done = not masks_unanswered(self.draft_answers, types)
-        return StepState(done, text, self._changed(8, done))
+        return StepState(done, text, self._changed(3, done))
 
     def _saved_state(self) -> StepState:
         if self.draft is None:
@@ -217,7 +197,7 @@ class _StepStates:
         if self._saved_current():
             state = self._published()
             return StepState(True, f"saved {self._saved_on or state.saved_on}")
-        return StepState(False, "not saved yet", self._changed(9, False))
+        return StepState(False, "not saved yet", self._changed(5, False))
 
     def _run_state(self) -> StepState:
         result = self.result
@@ -229,11 +209,6 @@ class _StepStates:
         return StepState(
             True, f"{plural(result.plane_count, 'plane')} · {plural(len(warnings), 'warning')}"
         )
-
-    def _describe_state(self) -> StepState:
-        if self.mask_step_result.value:
-            return StepState(True, "masks described")
-        return StepState(False, "optional")
 
 
 __all__ = ["ANSWER_STEPS", "UNCALIBRATED", "_StepStates"]

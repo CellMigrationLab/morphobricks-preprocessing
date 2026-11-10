@@ -113,7 +113,7 @@ def test_mask_errors_are_shown_on_the_card_and_block_the_run(tmp_path):
     assert "some masks cannot be used" in nb.masks_status.value
     assert "Action required" in nb.folder_status.value
     confirm_everything(nb)
-    assert still_to_do(nb) == "fix any mask errors (step 1, Masks)"
+    assert still_to_do(nb) == "fix any mask errors (Masks)"
     assert nb.run() is None
 
 
@@ -151,7 +151,7 @@ def test_plain_stack_masks_get_their_axes_stated_never_guessed(tmp_path):
     assert offered[:3] == ["", "TYX", "ZYX"] and "YX" not in offered
     assert "<b>Cells</b> (axes in the files: IYX)" in nb.mask_axes_box.children[1].value
     confirm_everything(nb)
-    assert still_to_do(nb) == "fix any mask errors (step 1, Masks)"
+    assert still_to_do(nb) == "fix any mask errors (Masks)"
     choice.value = "TYX"  # chosen, not yet applied
     assert nb.preflight.masks.files[0].axes == ""
     assert still_to_do(nb).startswith("check the masks again")
@@ -182,7 +182,7 @@ def test_a_2d_mask_of_a_time_lapse_is_refused_without_a_question(tmp_path, named
     assert "mask planes mismatch" in nb.masks_issues.value
     assert "same T as their image" in nb.masks_issues.value
     assert "Cells" not in nb._mask_choices and nb.mask_axes_box.children == ()
-    assert still_to_do(nb) == "fix any mask errors (step 1, Masks)"
+    assert still_to_do(nb) == "fix any mask errors (Masks)"
     assert nb.run_button.disabled
 
 

@@ -40,13 +40,11 @@ COMPARE_HELP = (
     "Optional; nothing is written. Statistics are <b>pooled</b> from the histograms of all "
     "planes of a group and channel: a group's median is the median of all its pixels."
 )
-CHIPS = {
-    "Images found": "Images",
-    "Compared against": "Compared to",
-    "Tag channels": "Tags",
-    "Check and save": "Save",
-    "Describe the masks": "Describe masks",
-}
+MASKS_HINT = (
+    "This run recorded masks. Bricks that use masks accept only masks that were read once: "
+    "<b>Describe the masks</b> on Masks (step 4) reads them and reports how the types relate."
+)
+CHIPS = {"Check and save": "Save"}
 """The shorter names on the chips, so that the strip is one row on a laptop screen."""
 
 
@@ -78,7 +76,6 @@ class _CompactPages:
             self.folder_status,  # the check's progress, right under the button clicked
             self.folder_lock.card,
             self.folder_tiles,
-            self.masks_card,
             self.issues_card,
             self.found_fold,
             self.report_fold,
@@ -86,12 +83,13 @@ class _CompactPages:
         ]
 
     def _run_page(self) -> list[widgets.Widget]:
-        """Return the run's widgets (the mask step has its own step after it)."""
+        """Return the run's widgets (the optional mask description is on the Masks step)."""
         self.settings_fold = ui.accordion("Settings and mode", [self.settings_card])
         self.plan_fold = ui.accordion("What will happen", [self.plan_card])
         self.checks_fold = ui.accordion("Intensity checks and plots", [self.run_checks.card])
         self.compare_fold = ui.accordion("Compare groups", [self._compare_box()])
         self.run_report_fold = ui.accordion("Run report", [self.run_report.widget])
+        self.masks_hint = ui.help_text(MASKS_HINT)  # after a run that recorded masks
         self.log_text = widgets.HTML()
         self.details.observe(lambda _: self._write_log_text(), names="value")
         self.details_box.children = (self.log_text,)
@@ -107,6 +105,7 @@ class _CompactPages:
             self.run_lock.card,
             self.run_tiles,
             self.run_issues,
+            self.masks_hint,
             self.checks_fold,
             self.compare_fold,
             self.run_report_fold,
@@ -163,6 +162,7 @@ class _CompactPages:
         ui.set_visible(self.checks_fold, written and ui.is_visible(self.run_checks.card))
         ui.set_visible(self.compare_fold, written)
         ui.set_visible(self.run_report_fold, bool(self.run_report.where.value))
+        ui.set_visible(self.masks_hint, written and not self.mask_step_button.disabled)
 
 
-__all__ = ["CHIPS", "COMPARE_HELP", "FOLDERS_HELP", "FOLDER_INTRO", "_CompactPages"]
+__all__ = ["CHIPS", "COMPARE_HELP", "FOLDERS_HELP", "FOLDER_INTRO", "MASKS_HINT", "_CompactPages"]

@@ -85,6 +85,7 @@ class MaskQuestion:
         self.message = widgets.HTML()
         self.facts = widgets.HTML()
         self.pictures = widgets.HBox()
+        self.pictures.add_class("mb-mask-pictures")  # drawn smaller in the stepper
         self.id_box.observe(lambda _: self._id_typed(), names="value")
         self.choice.observe(lambda change: self._chosen(change["new"]), names="value")
         self.widget = widgets.VBox(
@@ -144,7 +145,7 @@ class MaskQuestion:
             )
             box.observe(lambda _: self._made_from_changed(), names="value")
             self.made_from[label] = box
-        empty = "no channel labels yet: declare them on Stains"
+        empty = "no channel labels yet: declare them on Channels"
         hint = "answer the question first" if labels and self.saved is None else ""
         tail = [
             widgets.HTML(f"<span class='mb-help'>{hint or (empty if not labels else '')}</span>")
