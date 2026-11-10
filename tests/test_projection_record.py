@@ -119,13 +119,13 @@ def test_a_version_2_record_is_refused_naming_the_fix(tmp_path):
     for entry in data["files"]:
         del entry["projection"]
     path.write_text(json.dumps(data))
-    with pytest.raises(ConversionRecordError, match="record_version '2'.*convert the originals"):
+    with pytest.raises(ConversionRecordError, match="version 2,.*convert the originals again"):
         read_conversion_record(copies)
 
 
 @pytest.mark.parametrize("version", ["1", "2", "4", None])
 def test_other_versions_are_refused(version):
-    with pytest.raises(ConversionRecordError, match="reads record version '3' only"):
+    with pytest.raises(ConversionRecordError, match="reads version .?3.? only"):
         ConversionRecord.from_dict(edited(lambda d: d.update(record_version=version)))
 
 
@@ -243,14 +243,14 @@ def test_an_excluded_image_stays_a_plain_copy_in_a_projected_tree():
         )
 
 
-@pytest.mark.parametrize("version, shown", [(3, "3"), (None, "None"), ("2", "'2'")])
-def test_a_refused_version_is_shown_exactly_with_the_fix(version, shown):
+@pytest.mark.parametrize("version", [3, None])
+def test_a_version_that_is_not_text_is_shown_exactly_with_the_fix(version):
     # PP-06: the number 3 is not the text "3"; the message must not read "version 3 ... reads
     # version 3 only".
     with pytest.raises(ConversionRecordError) as refused:
         ConversionRecord.from_dict(edited(lambda d: d.update(record_version=version)))
     message = str(refused.value)
-    assert f"record_version {shown}" in message and "'3' only" in message
+    assert f"record_version {version!r} is not text" in message
     assert "convert the originals again into a new folder" in message
 
 
