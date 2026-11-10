@@ -1,8 +1,9 @@
 """What a clean preprocessing run gives the other bricks: :class:`RunInputs` (design v0.4 §6).
 
 A brick that works on files reads them only through a clean run: the images, their axis
-roles, pixel sizes, masks, histograms, design and image type, all as the run recorded them.
-Nothing is parsed from names, guessed or transposed, and no file is read once it changed:
+roles, pixel sizes, masks, histograms, design and each unit's declared image type
+(``Fov.image_type``), all as the run recorded them. Nothing is parsed from names, guessed or
+transposed, and no file is read once it changed:
 
 - :meth:`RunInputs.open` refuses an output folder without a published description
   (``A_DESCRIPTION_REQUIRED``), a manifest of an older version (run preprocessing again), a table,
@@ -133,6 +134,11 @@ class Fov:
     channel_ids
         The canonical channel ID of each C index, in order (None only in a ``Fov`` built by
         hand).
+    image_type
+        The unit's declared image type, ``"rgb"`` or ``"channels"`` (an ordinary channel
+        image), from the published description only (experiment-v1 §4.4b): never read from a
+        header. Each position carries its own unit's type; there is no run-wide value. None
+        only in a ``Fov`` built by hand.
     """
 
     key: tuple[str, str, str, str]
@@ -151,6 +157,7 @@ class Fov:
     condition_id: str | None = None
     technical_repeat_id: str | None = None
     channel_ids: tuple[str, ...] | None = None
+    image_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -398,10 +405,6 @@ class RunInputs(SemanticInputs, ProjectionInputs, ResolvingInputs):
                 f"The design {DESIGN_FILENAME} cannot be used: {exc.issues[0].message} "
                 "Run preprocessing again."
             ) from exc
-
-    def image_type(self) -> str | None:
-        """Return the image type the user confirmed (``"fluorescence"`` or ``"rgb"``), or None."""
-        return self.manifest.image_type
 
     def _check_files(self) -> None:
         """Refuse changed or gone files, masks without axes or shared, unrecorded files."""

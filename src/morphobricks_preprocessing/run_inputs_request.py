@@ -65,6 +65,10 @@ COVERAGE = (FULL, PARTIAL, UNAVAILABLE)
 BINARY = "binary"
 INSTANCES = "instances"
 RGB = "rgb"
+CHANNELS = "channels"
+IMAGE_TYPES = (CHANNELS, RGB)
+"""A unit's declared image type: ``rgb``, or ``channels`` for an ordinary channel image (the
+description's absent ``image_type``, experiment-v1 section 4.4b). Never read from a header."""
 CHECKED = "checked"
 
 
@@ -195,7 +199,8 @@ class FovSelection:
     """What to read of one position, with its canonical identity.
 
     ``channel_indices`` holds the C index of each ``channel_ids`` entry **in this image**;
-    :meth:`index_of` looks one up. ``image_type`` is the unit's declared type (``rgb`` or None).
+    :meth:`index_of` looks one up. ``image_type`` is the unit's declared type, ``rgb`` or
+    ``channels`` (:data:`IMAGE_TYPES`), the same as the position's ``Fov.image_type``.
     """
 
     key: tuple[str, str, str, str]
@@ -203,7 +208,7 @@ class FovSelection:
     repeat_group: str
     condition_id: str
     technical_repeat_id: str
-    image_type: str | None
+    image_type: str
     channel_ids: tuple[str, ...]
     channel_indices: tuple[int, ...]
     masks: tuple[MaskSelection, ...]

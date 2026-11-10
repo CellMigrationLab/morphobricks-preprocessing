@@ -8,7 +8,8 @@ published file after checking it is the file the run read:
 - canonical channel IDs per position and ``channel_index(fov, id)``: by ID, never by C index
   alone, and an absent channel is an error, never a default;
 - ``repeat_group``, ``condition_id`` and ``technical_repeat_id`` beside the unchanged FOV key
-  (:mod:`.fov_identity`), the condition reference graph and the masks' semantics;
+  and the unit's declared ``image_type`` (:mod:`.fov_identity`), the condition reference
+  graph and the masks' semantics;
 - refusals: ``A_DRAFT_REFUSED`` for a draft or an unconfirmed file, ``A_MASK_UNCHECKED`` for a
   mask file whose representation the mask step has not checked.
 
@@ -99,6 +100,7 @@ def with_identity(fov: Fov, entry: FileEntry, description: Description) -> Fov:
         condition_id=identity.condition_id,
         technical_repeat_id=identity.technical_repeat_id,
         channel_ids=identity.channel_ids,
+        image_type=identity.image_type,
     )
 
 

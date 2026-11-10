@@ -73,7 +73,10 @@ def test_histograms_design_and_image_type(clean):
         f.relative_path for f in inputs.fovs()
     }
     # The design derived from the description (an output of the run, v0.5.1).
-    assert inputs.design().confirmed and inputs.image_type() is None
+    assert inputs.design().confirmed
+    # The image type is each unit's declaration (PP-1): no run-wide value hides it.
+    assert not hasattr(inputs, "image_type")
+    assert {f.image_type for f in inputs.fovs()} == {"channels"}
 
 
 def test_run_inputs_pickle(clean):

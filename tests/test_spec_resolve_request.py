@@ -28,7 +28,6 @@ import json
 import pickle
 import subprocess
 import sys
-import warnings
 from pathlib import Path
 
 import pytest
@@ -48,22 +47,15 @@ from morphobricks_preprocessing import (
     RunInputs,
     RunInputsError,
     VolumeNotSupportedError,
-    run_experiment,
 )
 from morphobricks_preprocessing.manifest import read_manifest
 from morphobricks_preprocessing.run.mask_step import describe_masks, prepare_mask_step
-from morphobricks_preprocessing.run_inputs import Fov
 from morphobricks_preprocessing.run_inputs_request import (
     PlaneSelection,
     plane_selections,
 )
-from morphobricks_preprocessing.testing import make_described_run
-from morphobricks_preprocessing.testing_described import (
-    PUBLISHED_NAME,
-    _mapping,
-    description_of,
-    write_described_tree,
-)
+from morphobricks_preprocessing.testing import described_images, make_described_run
+from morphobricks_preprocessing.testing_described import PUBLISHED_NAME, description_of
 from spec_pin import fixtures
 
 VALID = {item.name.split("_")[0]: item for item in fixtures("valid")}
@@ -88,25 +80,11 @@ def _open(tmp_path, name, masks=(), mask_step=True):
 
 
 def _partial_mask_run(tmp_path, name, mask_id, keep):
-    """Write a described run whose ``mask_id`` masks exist for the first ``keep`` images only."""
+    """A described run whose ``mask_id`` masks exist for the first ``keep`` images only (PP-1)."""
     data = VALID[name].data.replace(b"image_count = 500", b"image_count = 3")
-    description, raw = description_of(data)
-    root = tmp_path / "run"
-    experiment, output, masks = root / "experiment", root / "output", root / "masks"
-    images = write_described_tree(experiment, masks, description, (mask_id,))
-    source_type = description.masks[mask_id].source_type
-    for rel in images[keep:]:
-        (masks / source_type / rel).unlink()
-    output.mkdir(parents=True)
-    (output / PUBLISHED_NAME).write_bytes(raw)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        result = run_experiment(
-            experiment, _mapping(description), output_folder=output, masks_folder=masks
-        )
-    assert result.written
-    assert describe_masks(prepare_mask_step(None, output)).issues == ()
-    return RunInputs.open(output), images
+    images = described_images(description_of(data)[0])
+    run = make_described_run(tmp_path / "run", data, masks=(mask_id,), mask_images=images[:keep])
+    return RunInputs.open(run.output), list(images)
 
 
 def _codes(resolved):
@@ -126,7 +104,7 @@ def test_v08_instances_mask_as_objects_resolves_every_position(tmp_path):
         assert selection.channel_indices == (0, 1)
         assert selection.index_of("ACTIN") == 1
         assert selection.repeat_group == "rep1" and selection.condition_id == "CTRL"
-        assert selection.technical_repeat_id == "single" and selection.image_type is None
+        assert selection.technical_repeat_id == "single" and selection.image_type == "channels"
         (mask,) = selection.masks
         assert mask.mask_id == "Nuclei" and mask.source_type == "nuclei"
         assert mask.representation == "instances" and mask.check_status == "checked"
@@ -317,10 +295,10 @@ def test_v28_rgb_units_are_refused_unless_the_consumer_declares_rgb_support(tmp_
     assert accepted.selections[0].channel_indices == (0, 1, 2)
 
 
-def test_v01_fluorescence_units_have_no_image_type_and_need_no_capability(tmp_path):
+def test_v01_channel_units_are_channels_and_need_no_capability(tmp_path):
     inputs, _ = _open(tmp_path, "v01")
     resolved = inputs.resolve_request(Request(("DNA",)))
-    assert not resolved.refused and {s.image_type for s in resolved.selections} == {None}
+    assert not resolved.refused and {s.image_type for s in resolved.selections} == {"channels"}
 
 
 # --- planes and volumes -----------------------------------------------------------------------
@@ -521,6 +499,10 @@ def test_a_fov_selection_carries_the_unchanged_key_beside_the_canonical_ids(tmp_
     assert all(f.key == s.key for f, s in zip(inputs.fovs(), resolved.selections, strict=True))
 
 
-def test_fov_is_unchanged_by_the_resolver():
-    names = {f.name for f in dataclasses.fields(Fov)}
-    assert "image_type" not in names  # PP-1 adds it; the resolver reads the unit's declaration
+def test_a_selection_carries_its_fovs_image_type(tmp_path):
+    # PP-1: one source, the unit's declaration through FovIdentity, for Fov and FovSelection.
+    inputs, _ = _open(tmp_path, "v28")
+    capable = Request(("R", "G", "B"), capabilities=Capabilities(rgb_support=True))
+    resolved = inputs.resolve_request(capable)
+    by_path = {f.relative_path: f.image_type for f in inputs.fovs()}
+    assert {s.relative_path: s.image_type for s in resolved.selections} == by_path

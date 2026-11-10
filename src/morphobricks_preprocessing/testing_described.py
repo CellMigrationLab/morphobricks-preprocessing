@@ -4,10 +4,10 @@
 (``morphobricks.toml``, experiment-v1) declares: one folder per condition, repeat and
 technical repeat, ``image_count`` tiny images per member (its total, spread over its
 technical repeats; each image has as many channels as the unit declares, or is RGB colour
-for an ``rgb`` unit), and, when asked, one mask per image for each declared mask. It
-publishes the description beside the output, runs preprocessing on it and,
-unless told not to, runs the mask step, so a brick's tests read their inputs through
-:class:`.run_inputs.RunInputs` exactly as a user's described run gives them.
+for an ``rgb`` unit), and, when asked, one mask per image for each declared mask (or only for
+the images ``mask_images`` names). It publishes the description beside the output, runs
+preprocessing on it and, unless told not to, runs the mask step, so a brick's tests read their
+inputs through :class:`.run_inputs.RunInputs` exactly as a user's described run gives them.
 
 :func:`.testing.make_clean_run` calls it for ``make_clean_run(description=...)``, and
 :func:`publish_and_run` for its own tree.
@@ -16,7 +16,7 @@ unless told not to, runs the mask step, so a brick's tests read their inputs thr
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -154,28 +154,102 @@ def _write_mask(path: Path, representation: str) -> None:
     tifffile.imwrite(path, labels, photometric="minisblack", metadata={"axes": "YX"})
 
 
-def write_described_tree(
-    root: Path, masks_root: Path | None, description: Description, mask_ids: tuple[str, ...] = ()
-) -> list[str]:
-    """Write the images (and the masks of ``mask_ids``) of a description; return image paths.
+def described_images(description: Description) -> tuple[str, ...]:
+    """Return the relative path of every image the description's tree holds, sorted.
+
+    These are the images :func:`make_described_run` writes (``img0.tif``, ``img1.tif``, ...
+    in each unit's folder), so a test can name the subset ``mask_images`` gives masks to
+    before anything is written.
 
     Raises
     ------
     ValueError
-        If a mask ID is not declared by the description, or masks are asked without a folder.
+        For a member with no technical repeat or fewer images than technical repeats.
+    """
+    return tuple(
+        sorted(
+            _image_name(folder, index)
+            for folder, _, count in _units(description)
+            for index in range(count)
+        )
+    )
+
+
+def _image_name(folder: Path, index: int) -> str:
+    """Return the relative path of a unit folder's ``index``-th image."""
+    return (folder / f"img{index}.tif").as_posix()
+
+
+def _masked_images(
+    description: Description, mask_ids: tuple[str, ...], mask_images: Iterable[str] | None
+) -> frozenset[str]:
+    """Return the images that get masks, refusing an undeclared ID or an unknown image.
+
+    Raises
+    ------
+    ValueError
+        If a mask ID is not declared, ``mask_images`` is given without masks or as one text,
+        names no image, or names an image the tree does not hold.
     """
     unknown = [m for m in mask_ids if m not in description.masks]
-    if unknown or (mask_ids and masks_root is None):
+    if unknown:
         raise ValueError(
             f"mask IDs {unknown} are not declared by the description "
             f"(declared: {sorted(description.masks)})"
         )
+    every = described_images(description)
+    if mask_images is None:
+        return frozenset(every) if mask_ids else frozenset()
+    if isinstance(mask_images, str) or not mask_ids:
+        raise ValueError(
+            "mask_images names the images (a collection of relative paths) that get the masks "
+            "of mask_ids; it needs at least one mask ID"
+        )
+    chosen = frozenset(mask_images)
+    if not chosen:
+        raise ValueError(
+            "mask_images names no image: a declared mask with files for none of them is the "
+            "run without masks (leave masks and mask_images out)"
+        )
+    outside = sorted(chosen - set(every))
+    if outside:
+        raise ValueError(
+            f"mask_images {outside} are not images of the described tree "
+            "(testing_described.described_images gives them)"
+        )
+    return chosen
+
+
+def write_described_tree(
+    root: Path,
+    masks_root: Path | None,
+    description: Description,
+    mask_ids: tuple[str, ...] = (),
+    mask_images: Iterable[str] | None = None,
+) -> list[str]:
+    """Write the images (and the masks of ``mask_ids``) of a description; return image paths.
+
+    Each mask ID gets one file per image of ``mask_images`` (relative paths, as
+    :func:`described_images` gives them), or per image when it is None. Everything is checked
+    before the first file is written.
+
+    Raises
+    ------
+    ValueError
+        If a mask ID is not declared by the description, masks are asked without a folder, or
+        ``mask_images`` is not a subset of the tree's images (:func:`_masked_images`).
+    """
+    masked = _masked_images(description, mask_ids, mask_images)
+    if mask_ids and masks_root is None:
+        raise ValueError("masks are asked without a masks folder")
+    if mask_ids:
+        masks_root.mkdir(parents=True, exist_ok=True)
     found: list[str] = []
     for folder, unit, count in _units(description):
         for index in range(count):
-            rel = (folder / f"img{index}.tif").as_posix()
+            rel = _image_name(folder, index)
             _write_image(root / rel, unit, seed=len(found) + 1)
-            for mask_id in mask_ids:
+            for mask_id in mask_ids if rel in masked else ():
                 mask = description.masks[mask_id]
                 _write_mask(masks_root / mask.source_type / rel, mask.representation)
             found.append(rel)
@@ -187,6 +261,7 @@ def make_described_run(
     description: Description | bytes | str,
     *,
     masks: tuple[str, ...] = (),
+    mask_images: Iterable[str] | None = None,
     mask_step: bool = True,
 ) -> CleanRun:
     """Write the experiment a description declares, publish it and run preprocessing.
@@ -203,6 +278,12 @@ def make_described_run(
     masks
         IDs of the description's masks to write, one file per image and ID (instances: two
         labelled squares; binary: one region of 1s). None by default.
+    mask_images
+        The images that get the masks, as relative paths (:func:`described_images`), for a
+        run whose masks cover a declared subset (experiment-v1 §4.5: progressive
+        segmentation, Spec ``v09``); None (the default) writes them for every image. Only the
+        images named get masks: nothing is chosen at random. At least one image: a mask on
+        none of them is the run without ``masks``.
     mask_step
         Run the mask step (:func:`.run.mask_step.describe_masks`) after the run, so the masks
         are ``checked``; False leaves them ``not yet checked``. Ignored without ``masks``.
@@ -215,7 +296,8 @@ def make_described_run(
     Raises
     ------
     ValueError
-        For an unknown mask ID, a description that mixes rgb and fluorescence units, or a
+        For an unknown mask ID, ``mask_images`` naming an image the tree does not hold (or
+        given without ``masks``), a description that mixes rgb and fluorescence units, or a
         member with no technical repeat or whose ``image_count`` is below its number of
         technical repeats (nothing is written then).
     RuntimeError
@@ -224,7 +306,7 @@ def make_described_run(
     root = Path(folder)
     parsed, data = description_of(description)
     masks_root = root / "masks" if masks else None
-    write_described_tree(root / "experiment", masks_root, parsed, tuple(masks))
+    write_described_tree(root / "experiment", masks_root, parsed, tuple(masks), mask_images)
     return publish_and_run(root, root / "experiment", masks_root, _mapping(parsed), data, mask_step)
 
 
