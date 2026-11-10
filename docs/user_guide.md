@@ -14,16 +14,23 @@ its own output folder, which is never inside the experiment folder.
 
 You need Python 3.11 or newer and JupyterLab (or Google Colab). Download
 [`notebooks/MorphoBricks_Preprocessing.ipynb`](../notebooks/MorphoBricks_Preprocessing.ipynb),
-open it and run its single code cell. That cell prepares the environment and displays the
-complete preprocessing widget app.
+open it and run its three code cells in order:
 
-The setup chooses one source:
+1. **Install MorphoBricks preprocessing** prepares the environment and prints the versions.
+   Running it again installs nothing that is already there; no restart is needed.
+2. **Mount Google Drive** connects Google Drive on Google Colab. In JupyterLab or
+   LabConstrictor it prints a one-line note and does nothing.
+3. **Run preprocessing** displays the complete preprocessing widget app. Run before cell 1,
+   it stops and says to run cell 1; on Colab without Drive connected, it says to run cell 2.
+   It never runs an earlier cell for you.
+
+Cell 1 chooses one source:
 
 1. **Nearby checkout:** when the kernel is running in this repository or one of its subfolders,
    use that checkout's source code. The checkout must be the commit the notebook pins
    (`RELEASE_REF`) with no uncommitted changes, and setup prints its commit and tree state. Any
    other commit or edited tree is refused; developers set `DEVELOPMENT_OVERRIDE = True` at the
-   top of the cell to use it, and the printed header then says so.
+   top of cell 1 to use it, and the printed header then says so.
 2. **Matching installed package:** otherwise, reuse an installed preprocessing package only
    when its version matches the notebook.
 3. **Pinned GitHub source:** otherwise install the notebook's immutable `RELEASE_REF`, never
@@ -53,12 +60,13 @@ paste the path instead.
 ### Google Colab
 
 Open the notebook in Google Colab (**File › Open notebook › GitHub**, or upload the file) and
-run the notebook's single code cell. On Colab it:
+run the notebook's three code cells in order. On Colab:
 
-- connects your Google Drive: allow access in the window that opens. Your Drive is then the
-  folder `/content/drive/MyDrive`;
-- installs the notebook's pinned preprocessing revision, with its notebook dependencies and
-  the `zarr` extra when needed;
+- cell 1 installs the notebook's pinned preprocessing revision, with its notebook
+  dependencies and the `zarr` extra when needed;
+- cell 2 connects your Google Drive: allow access in the window that opens. Your Drive is then
+  the folder `/content/drive/MyDrive`. Cell 3 refuses to open the app until Drive is
+  connected, so the data and the output are never silently put on the runtime's own disk;
 - uses Colab's native core ipywidgets support. The notebook accepts ipywidgets 7.7 or 8 and
   does not force a widget upgrade, runtime restart or custom-widget manager.
 

@@ -68,7 +68,7 @@ pip install -e ".[dev]"
 
 The optional `notebook` extra installs the widget dependencies for the notebook
 (`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.5.0"`).
-The notebook's single runnable cell can set this up automatically: it uses a compatible nearby
+The notebook's first code cell (**1. Install**) can set this up automatically: it uses a compatible nearby
 checkout or installed package, and installs missing requirements into the active kernel. A standalone
 download installs from GitHub if needed (internet access and Git required).
 
@@ -81,9 +81,13 @@ is one portable widget app for Google Colab, JupyterLab and LabConstrictor. It f
 LabConstrictor's
 [notebook portability guide](https://github.com/CellMigrationLab/LabConstrictor/blob/main/.tools/docs/notebook_portability.md):
 
-1. The notebook is intentionally small: one short Markdown introduction and one `# @title …`
-   runnable cell. That cell prepares the environment and explicitly displays the complete
-   preprocessing UI; users never edit code, so LabConstrictor may hide it.
+1. The notebook is intentionally small: a short Markdown introduction and three `# @title …`
+   code cells, each under a heading that explains it, as in the lab's ZeroCostDL4Mic and
+   NucleiSky notebooks: **1. Install MorphoBricks preprocessing** (prepares the environment and
+   reports versions), **2. Mount Google Drive** (Colab only; elsewhere a one-line note) and
+   **3. Run preprocessing** (explicitly displays the complete preprocessing UI). Cell 3 run out
+   of order says which cell to run first and never runs it for the user. Users never edit
+   code, so LabConstrictor may hide it.
 2. Colab-only setup stays inside `if "google.colab" in sys.modules:` and mounts Google Drive.
    The UI uses only core ipywidgets supported by both ipywidgets 7.7 and 8; it does not force an
    ipywidgets upgrade/restart or enable Colab's custom-widget manager. Locally the same notebook

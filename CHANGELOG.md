@@ -8,6 +8,25 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased (v0.5.1)
 
+### The notebook has three code cells: install, mount Google Drive, run
+
+Owner request of 10 November 2026, as in the lab's ZeroCostDL4Mic and NucleiSky notebooks. The
+single code cell of `notebooks/MorphoBricks_Preprocessing.ipynb` is split into three, each under
+a Markdown heading that explains it; what the cells do together is unchanged (`RELEASE_REF`,
+the install target and `PreprocessingNotebook(describe=True)` stay as they were).
+
+- **1. Install MorphoBricks preprocessing**: the pinned install with its extras, the version
+  report and `SETUP_RECORD`, as before; it no longer mounts Drive. Running it again installs
+  nothing that is already there; no restart is requested.
+- **2. Mount Google Drive**: mounts Drive on Colab (the same refusal when the mount fails); in
+  JupyterLab or LabConstrictor it prints a one-line note and does nothing.
+- **3. Run preprocessing**: shows the app. Run before cell 1 it stops with "run cell 1 (Install
+  MorphoBricks preprocessing) first", not an `ImportError`; on Colab without Drive at
+  `/content/drive/MyDrive` it stops naming cell 2. It never runs an earlier cell.
+- Tests: exactly these three cells in order and each one's part (`test_notebook_file.py`), the
+  cells out of order and cell 1 run twice (`test_notebook_setup.py`), and the notebook in a
+  real kernel with and without a faked `google.colab`, and cell 3 alone.
+
 ### PP-C: every run is described; undescribed runs and their compatibility code removed
 
 No backward compatibility before the first pipeline release (owner policy of 10 November 2026,
