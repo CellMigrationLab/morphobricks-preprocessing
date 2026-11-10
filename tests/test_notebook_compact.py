@@ -75,17 +75,38 @@ def test_each_page_is_a_title_line_and_one_column_that_never_scrolls_by_itself(e
     assert "mb-label-rows" in nb.label_previews.rows._dom_classes
 
 
+def _panel(widget):
+    """Return True when ``widget`` is, or holds anywhere inside it, a card or a fold."""
+    if "mb-card" in getattr(widget, "_dom_classes", ()) or isinstance(widget, widgets.Accordion):
+        return True
+    return any(_panel(child) for child in getattr(widget, "children", ()))
+
+
 def _side_by_side(widget, found=None):
-    """Return the boxes that lay cards or panels out in a row (pictures and inputs may be)."""
+    """Return the boxes that lay cards or panels out in a row (pictures and inputs may be).
+
+    A row is an ``HBox`` or a ``GridBox`` (the earlier axes step put its cards in a grid), and
+    a card wrapped in another box is still a card in that row.
+    """
     found = [] if found is None else found
-    if isinstance(widget, widgets.HBox):
-        for child in widget.children:
-            classes = getattr(child, "_dom_classes", ())
-            if "mb-card" in classes or isinstance(child, widgets.Accordion):
-                found.append(widget)
+    if isinstance(widget, (widgets.HBox, widgets.GridBox)):
+        if len(widget.children) > 1 and any(_panel(child) for child in widget.children):
+            found.append(widget)
     for child in getattr(widget, "children", ()):
         _side_by_side(child, found)
     return found
+
+
+def test_a_row_of_cards_is_found_in_a_grid_and_inside_another_box():
+    # Review of #275: the walk looked only at HBox rows holding a card directly, so the cards
+    # side by side in a GridBox (main's axes step) or wrapped in a VBox were not found.
+    card = ui.card("A", [widgets.HTML("a")])
+    other = ui.card("B", [widgets.HTML("b")])
+    assert _side_by_side(widgets.GridBox([card, other])) != []
+    assert _side_by_side(widgets.HBox([widgets.VBox([card]), widgets.VBox([other])])) != []
+    assert _side_by_side(widgets.HBox([widgets.HTML("a"), widgets.Dropdown()])) == []
+    assert _side_by_side(widgets.VBox([card, other])) == []
+    assert _side_by_side(widgets.HBox([card])) == []
 
 
 def test_every_page_is_a_single_column_of_cards(exp):  # noqa: F811
