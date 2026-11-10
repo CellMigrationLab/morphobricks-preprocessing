@@ -6,17 +6,17 @@ real run; a skip is never counted as a pass. Owner rulings of 8 November 2026 (i
 "no skips" applies to the Spec conformance modules (`tests/test_spec_*.py`); a skip elsewhere
 in the suite is listed as **not run**, with its reason.
 
-## Gate G1 record: release candidate v0.5.0 (9 November 2026)
+## Gate G1 record: release candidate v0.5.0 (10 November 2026)
 
 | | |
 |---|---|
-| Release candidate | Measured on `ba415de` (branch `claude/release-0.5.0`: `main` at `bf733ee`, the v0.5.0 preparation `3b616a0`, `c74d717`, the first record `4437067`, the G1 gap tests `a6a0343`, the record `c675f13`, the P21/P29 fix `0a2e25b`, `5cc3b07`, the record `76e09c3`, then `0ea3254`, the merge of `main` at `8c573d6` (#254, #255, #257: the audit fixes listed below), and `ba415de`, which points the notebook's `RELEASE_REF` at `0ea3254`). The commit that updates this record changes only this file, so the code and tests are those of `ba415de`. `git diff 0ea3254 ba415de -- src pyproject.toml` is empty: the installed package is the one `RELEASE_REF` names. Earlier measurements: on `a6a0343` (5028 passed, 1660 in the Spec modules) P21 and P29 were not met, and `0a2e25b` fixes that source defect; on `5cc3b07`, before the merge of `main`, 5045 passed and 1671 in the Spec modules |
+| Release candidate | Measured on `1e5390c` (branch `claude/release-0.5.0`: `main` at `bf733ee`, the v0.5.0 preparation `3b616a0`, `c74d717`, the first record `4437067`, the G1 gap tests `a6a0343`, the record `c675f13`, the P21/P29 fix `0a2e25b`, `5cc3b07`, the record `76e09c3`, then `0ea3254`, the merge of `main` at `8c573d6` (#254, #255, #257: the audit fixes listed below), `ba415de`, the record `43d1257`, then the final-review fix `fd7afd3` (below), and `1e5390c`, which points the notebook's `RELEASE_REF` at `fd7afd3`). The commit that updates this record changes only this file, so the code and tests are those of `1e5390c`. `git diff fd7afd3 1e5390c -- src pyproject.toml` is empty: the installed package is the one `RELEASE_REF` names. Earlier measurements: on `ba415de`, before the final review, 5105 passed and 1671 in the Spec modules; on `a6a0343` (5028 passed, 1660 in the Spec modules) P21 and P29 were not met, and `0a2e25b` fixes that source defect; on `5cc3b07`, before the merge of `main`, 5045 passed and 1671 in the Spec modules |
 | Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `1bed024e278d104ba4b8f63ae76c020fb2e3470d`. The G1 scope ruling (ADR 0001 GS1, conformance plan sections 4 and 5) was merged later as `cdc1841`, which changes only `docs/adr/0001-experiment-description-v1.md` and `docs/conformance-plan.md`, so the pinned files are unchanged. Fixtures tree `f61b1c2`, `experiment-v1.md` blob `b12678c`, `refval.py` blob `0ea8309`, `refrecords.py` blob `ef06a1e`, each also compared by hand with `git rev-parse 1bed024:<path>` in a fresh clone of the Spec: all four equal |
 | Environment | Linux, Python 3.13.18, `pip install -e '.[dev,notebook,zarr]'` in a fresh venv (package version 0.5.0, numpy 2.5.4, tifffile 2026.11.8, ipywidgets 8.1.9, zarr 3.4.2, pytest 9.2.0, normalization 0.3.4); run as root on a case-sensitive file system |
 | Commands | `python -m pytest -q -p no:cacheprovider -rsxX --junitxml=… tests/` (the whole suite, with a per-test JUnit report), and `python tools/check.py` (Ruff, Ruff format, pytest over `tests/`, code rules) |
-| Whole suite | 5109 collected: 5105 passed, 4 skipped (not run, below), 0 failed, 0 xfailed (the 60 more than on `5cc3b07` are the tests of #254, #255 and #257) |
+| Whole suite | 5119 collected: 5115 passed, 4 skipped (not run, below), 0 failed, 0 xfailed (the 10 more than on `ba415de` are `tests/test_notebook_final_review.py`; the 60 more on `ba415de` than on `5cc3b07` are the tests of #254, #255 and #257) |
 | Spec modules (`tests/test_spec_*.py`) | 1671 passed, **0 skipped, 0 xfailed, 0 failed**, from all 21 modules of `tests/spec_gate.py` `EXPECTED_MODULES` |
-| `tools/check.py` (on `ba415de`) | Ruff clean, Ruff format 415 files already formatted, pytest 5105 passed and 4 skipped, code rules passed (exit status 0) |
+| `tools/check.py` (on `1e5390c`) | Ruff clean, Ruff format 416 files already formatted, pytest 5115 passed and 4 skipped, code rules passed (exit status 0) |
 
 **How "no skips" was checked for the Spec modules.** (1) The JUnit report has 1671 test cases
 from `test_spec_*` modules, every one passed: none has a `skipped` (or xfail) element. (2) The
@@ -47,7 +47,26 @@ oracle (`test_spec_derived_design.py`) passed.
 
 These four behaviours are **not verified by this run**.
 
-### Fixes in this candidate since the previous measurement (merged from `main` in `0ea3254`)
+### Final-review fixes (`fd7afd3`), since the measurement on `ba415de`
+
+Found by the final adversarial review of the candidate, by driving the notebook headless; each
+has regression tests in `tests/test_notebook_final_review.py` (10 tests, 8 of which fail on
+`ba415de`), all passed in this run. No Spec module and no Spec pin changes.
+
+- **A header refusal lifted by an answer about another cell.** Tagging any channel of any folder
+  recomputed every label's `header_names` from every saved tag, so after images were rewritten
+  with other header names the `R_HEADER_CONTRADICTION` of folders the user had not tagged again
+  vanished, the save published it and the run wrote the table. Now a tag confirms the header
+  name of the cell tagged and nothing else (`channel_answers.synced`); the refusal stays until
+  the channel it names is tagged again.
+- **A "same way?" kept for other folders or another layout in a draft.** With nothing published,
+  the date saved in `morphobricks.draft.json` was kept when a folder joined or left the
+  replicate, and when a tag or an image type changed after it, and was then published as the
+  user's confirmation. Now it is asked again (`published_answers.resumed`, and `reasked` with or
+  without a published file); a replicate brought back to the layout it was answered for keeps
+  its answer.
+
+### Fixes merged from `main` in `0ea3254` (measured first on `ba415de`)
 
 Each with its own tests, all passed in this run; none changes a Spec module or the Spec pin.
 
