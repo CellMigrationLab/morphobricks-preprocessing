@@ -331,7 +331,10 @@ def remasked(
 
     The notebook calls it when the user changes the masks folder or states the axes of a
     mask type, so the masks follow without checking the folder again (the answers given
-    so far are kept). Only the masks' headers are read.
+    so far are kept). Only the masks' headers are read. A preflight whose headers were bound
+    (``bind_headers``: :attr:`Preflight.header_fingerprints` is not empty) binds the masks
+    paired again the same way (:attr:`.masks.MaskFile.bound`), so their evidence is of the
+    masks as this pairing read them.
 
     Parameters
     ----------
@@ -355,6 +358,7 @@ def remasked(
         masks_folder,
         mask_axes,
         Path(output_folder),
+        bind=bool(pre.header_fingerprints),
         with_description=with_description,
     )
     return replace(pre, masks=masks)

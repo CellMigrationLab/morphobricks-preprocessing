@@ -11,7 +11,8 @@ from .image_type import review_image_type
 from .notebook_options import IMAGE_TYPE_NAMES
 from .notebook_plots import plane_png
 from .notebook_render import preview_caption
-from .planes import PlaneReadError, read_plane
+from .planes import Plane, PlaneReadError, read_plane
+from .preview import PreviewRefused, check_unchanged, checked_fingerprint
 from .validation import plural
 
 
@@ -61,16 +62,53 @@ class _AxisPreview:
             self._configure_sliders(reset=True)
             self._preview_shown = True
         self._render_preview()
-        self.preview_checked.disabled = False
 
     def _render_preview_if_shown(self) -> None:
         if self._preview_shown:
             self._render_preview()
 
     def _render_preview(self) -> None:
+        """Draw the chosen plane with the roles shown, then offer the tick only if one is shown.
+
+        ``_preview_drawn`` is the mapping of the plane now shown, None when none is (no image
+        fits, or the plane cannot be read): the one-click confirmation needs it (BLOCKER 3), and
+        so does the step-by-step "Yes, the preview looks right" (:meth:`_gate_preview_tick`).
+        """
+        try:
+            self._draw_preview()
+        finally:
+            self._gate_preview_tick()
+
+    def _preview_of(self, mapping: AxisMapping | None) -> bool:
+        """Return whether the preview now shows a plane drawn with exactly these roles."""
+        drawn = self._preview_drawn
+        return (
+            mapping is not None
+            and drawn is not None
+            and (drawn.axes, drawn.roles) == (mapping.axes, mapping.roles)
+            and bool(self.preview_image.value)
+        )
+
+    def _gate_preview_tick(self) -> None:
+        """Offer "Yes, the preview looks right" only while a preview of the current roles shows.
+
+        Without one (no plane drawn, it could not be read, or it was drawn with other roles) the
+        tick is disabled and an earlier tick is taken back, as the one-click *Confirm these axes*
+        is withdrawn (#255). Confirmed roles keep their tick; the box is locked then.
+        """
+        locked = self.confirmed_mapping is not None
+        shown = self._preview_of(self.mapping)
+        if not shown and not locked and self.preview_checked.value:
+            self.preview_checked.set(False)  # a tick says nothing about a preview not shown
+        self.preview_checked.disabled = locked or not shown
+
+    def _draw_preview(self) -> None:
         """Draw the chosen plane with the roles shown, labelled confirmed or not (PP-10)."""
+        self._preview_drawn = None
         header = self._preview_header()
         if header is None:
+            self.preview_image.value = b""
+            ui.set_visible(self.preview_image, False)
             self.preview_caption.value = ui.status("warn", "No image fits these axis roles.")
             return
         file_mapping = file_mapping_for(header, self.mapping)
@@ -80,15 +118,8 @@ class _AxisPreview:
             if file_mapping.index_of(role) is not None
         }
         try:
-            with self.log.attached():
-                plane = read_plane(
-                    self.preflight.discovery.root / header.relative_path,
-                    file_mapping,
-                    memory_limit=self._memory_limit(),
-                    preview=True,
-                    **coords,
-                )
-        except (PlaneReadError, IndexError, ValueError) as exc:
+            plane = self._bound_plane(header.relative_path, file_mapping, coords)
+        except (PreviewRefused, PlaneReadError, IndexError, ValueError, OSError) as exc:
             self.preview_image.value = b""
             ui.set_visible(self.preview_image, False)
             self.preview_caption.value = ui.status(
@@ -97,10 +128,35 @@ class _AxisPreview:
             return
         self.preview_image.value = plane_png(plane)
         ui.set_visible(self.preview_image, True)
+        self._preview_drawn = self.mapping
         self.preview_caption.value = self._preview_label() + preview_caption(
             header.relative_path, plane
         )
         self._show_log()
+
+    def _bound_plane(self, rel: str, file_mapping: AxisMapping, coords: dict) -> Plane:
+        """Read the preview plane of the image only as the folder check read its header.
+
+        The fingerprint the check bound to the header must hold before and after the read: an
+        image changed since the check (same name, same shape or not) is refused, never shown as
+        the image checked, so the one-click confirmation is not offered on it. The binding is
+        the one every other picture uses (:func:`.preview.checked_fingerprint`).
+
+        Raises
+        ------
+        PreviewRefused
+            When the image is not bound, or is no longer that revision ("check the folder
+            again").
+        """
+        path = self.preflight.discovery.root / rel
+        expected = checked_fingerprint(self.preflight.header_fingerprints, rel)
+        check_unchanged(path, expected, rel)
+        with self.log.attached():
+            plane = read_plane(
+                path, file_mapping, memory_limit=self._memory_limit(), preview=True, **coords
+            )
+        check_unchanged(path, expected, rel)
+        return plane
 
     def _preview_label(self) -> str:
         """Say whether the preview shows the confirmed roles or roles still being edited."""
@@ -264,7 +320,7 @@ class _AxisPreview:
         for dropdown in self.role_dropdowns:
             dropdown.disabled = locked
         self.missing_as_singleton.disabled = locked
-        self.preview_checked.disabled = locked or not self._preview_shown
+        self._gate_preview_tick()
         self.confirm_button.description = " Change axis roles" if locked else " Confirm axis roles"
         self.confirm_button.icon = "pencil" if locked else "check"
         self.confirm_button.button_style = "warning" if locked else "success"

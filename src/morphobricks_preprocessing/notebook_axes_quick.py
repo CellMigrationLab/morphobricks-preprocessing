@@ -25,6 +25,7 @@ from . import notebook_style as ui
 from .axes import AxisMapping, axis_name
 from .axis_check import ConfirmedAxes
 from .axis_review import review_axes
+from .description_reconcile import CHANNELS_CHANGED
 from .fingerprint import unchanged_confirmation
 
 DETAILS_OPEN, DETAILS_CLOSED = " Hide the role boxes", " Look closer, or change the roles"
@@ -133,9 +134,23 @@ class _QuickAxes:
                 self._quick_filling = False
         self.quick_text.value = self._quick_text(offer)
         self.show_preview()
-        self.quick_image.value = self.preview_image.value
-        ui.set_visible(self.quick_image, bool(self.preview_image.value))
-        self.quick_caption.value = self.preview_caption.value
+        shown = self._quick_preview_shown(offer)
+        self.quick_image.value = self.preview_image.value if shown else b""
+        ui.set_visible(self.quick_image, shown)
+        self.quick_confirm.disabled = not shown
+        self.quick_caption.value = self.preview_caption.value + (
+            ""
+            if shown
+            else ui.status(
+                "warn",
+                "Confirm these axes is not offered: no preview of these roles is shown.",
+                ["Open the role boxes below to look closer or change the roles."],
+            )
+        )
+
+    def _quick_preview_shown(self, offer: AxisMapping) -> bool:
+        """Return whether the preview now shows a plane drawn with exactly the offered roles."""
+        return self._preview_of(offer)
 
     def _quick_text(self, offer: AxisMapping) -> str:
         """Return what the card says: the roles, where they come from, what the click does."""
@@ -153,12 +168,24 @@ class _QuickAxes:
             "info",
             f"Suggested: {roles}.",
             [
+                *self._headers_changed_line(),
                 f"These are {source}; the axis check finds nothing to ask about them.",
                 "Look at the preview: if it looks like a normal image of your sample, confirm. "
                 "Nothing is confirmed until you click.",
             ],
             raw=True,
         )
+
+    def _headers_changed_line(self) -> list[str]:
+        """Say that the headers changed since the save, so the earlier roles are not offered."""
+        state = self._published() if self.preflight is not None else None
+        units = () if state is None else state.reconciliation.units
+        if not any(CHANNELS_CHANGED in unit.reasons for unit in units):
+            return []
+        return [
+            "Some image headers changed since the experiment was saved: the roles the earlier "
+            "run recorded are not offered. Review these afresh."
+        ]
 
     # The click ---------------------------------------------------------------------------
 
@@ -176,6 +203,8 @@ class _QuickAxes:
         if self._current_mapping() != offer:
             self._refresh_quick_axes()
             return False
+        if not self._quick_preview_shown(offer):
+            return False  # no preview of these roles was shown: the click cannot vouch for it
         self.preview_checked.set(True)  # the user's click says the preview looks right
         self._toggle_confirmation()
         return self.confirmed_mapping is not None

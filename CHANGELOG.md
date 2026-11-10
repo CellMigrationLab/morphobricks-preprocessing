@@ -14,7 +14,8 @@ the reader, the canonical writer, publication, reconciliation, the described run
 the v0.4.0 behaviour (with a warning). The release step: the version is 0.5.0, the notebook
 installs `v0.5.0` (its `RELEASE_REF` is the release-preparation commit), and the Gate G1 record
 of this release candidate is in `docs/conformance.md`. The normalization brick stays pinned at
-v0.3.4.
+v0.3.4. It also carries the audit batches 33, 34a and 34b (#254, #255) and their
+pre-release follow-ups (#257).
 
 - **Fixed: `R_FOLDER_NOT_NFC` and `R_MASK_TYPE_NAME_INVALID` on the production paths
   (conformance P21, P29).** They were raised only by `preflight(..., with_description=True)`,
@@ -28,6 +29,68 @@ v0.3.4.
   while either refusal stands; the command line's `describe` refuses a folder label that is not
   NFC instead of drafting it. Nothing is renamed or normalized. A run, mask step or check
   without a published description is unchanged (owner decision Q1).
+- **Pre-release follow-ups to #254 and #255.** A replicate's "prepared and imaged the same
+  way?" is asked again when the candidate description changes its layout against the published
+  one, as experiment-v1 §10 says ("a unit's ordered channel list", a new or removed unit or
+  member, the pairing): at the reopen, and as soon as an answer changes a unit's declared
+  channel order, image type or grouping. Only that replicate's `confirmed_on` is taken back;
+  every other one is kept byte for byte (§4.4a). Image headers that no longer fit the declared
+  channels (`channels_changed`) are the run's refusal (`R_HEADER_CONTRADICTION`), shown at once,
+  not a reopening: a header rename fixed by tagging the channel again (its new header name joins
+  the channel's `header_names`) keeps the date and saves. Ticking "same way?" for a replicate
+  whose layout is as published takes the published date back (§10: "the draft copies it from
+  the published file, never from the clock"). *Check and save* runs publication's own
+  transition checks (`R_CONFIRMED_ON_CHANGED`, `R_CONFIRMED_ID_CHANGED`, `R_USED_ID_*`) with the
+  same re-confirmations, so Save is disabled, with the reason, for a candidate that publication
+  would refuse. `describe` (command
+  line) reads the image headers (no pixel) when it compares a published description and
+  reports a header-only change and the replicate to confirm again, as the notebook does. Save
+  stays allowed when the run's checks would refuse (owner decision, 2026-11-10); a line beside
+  the button says that the run will stop, with each refusal and its code. The step-by-step
+  "Yes, the preview looks right" is offered only while a preview of the current roles is shown
+  (a preview that fails takes an earlier tick back), as the one-click *Confirm these axes* is.
+  The tag pictures (`channel_strip`), their 1:1 crop and the *Images found* picture check the
+  bound fingerprint after the read too: a file rewritten during the read is not shown. A unit's
+  channel count comes from every image of the unit: images that disagree (or one that cannot be
+  read) leave it unknown (`unit_channel_count_unknown`), never the first image's count.
+  "The run (step 12) can start" is said only once the run's checks have run and passed; before
+  the axis roles are confirmed the screen says to confirm them first. A refusal is not hidden
+  behind a missing answer: while answers are missing, *Check and save* says at once that the
+  run is blocked by both, the answers and the run's refusal of the saved description (its codes
+  and folders), or, before the axis roles are confirmed, the header change the folder check
+  found. A plane read across a rewrite is not kept in the preview cache. **API changes:**
+  `published_answers.reopened(draft, answers, published)` compares the declared layouts (units
+  with their ordered channels and image type); `published_answers.layouts`,
+  `published_layouts`, `reasked` and `kept_date`, `run.description_file.transition_refusals`,
+  `description_candidate.transition_issue`, and `check_candidate(..., published=,
+  confirmations=)` are new; `UnitLayout.counts_agree` and `channel_units.unit_channel_counts`
+  are new.
+
+- **Audit batches 33 and 34a: what is published is what was answered, of the image checked.**
+  *Yes, these are right* saves exactly the tags a block shows (a hidden proposal is never
+  saved), and a unit tagging one label twice is refused before it is saved
+  (`E_DUPLICATE_CHANNEL_IN_UNIT`). An unanswered image type is an open question
+  (`unit_image_type_unanswered`; "channels" is still published as an absent `image_type`).
+  `publish_draft` now requires `channel_counts`, each unit's channel count read through the
+  confirmed axis roles: tags saved for another count (`unit_channels_stale`) or a unit without
+  a count (`unit_channel_count_unknown`) are refused. The notebook's folder check binds every
+  header to its file (`bind_headers=True`); the tag pictures, the Step 1 pictures and the mask
+  evidence are drawn only of that revision (masks paired again without a new check are bound
+  too, and evidence already read is not shown once its image or mask changed), and the save is
+  refused when an image changed since the check. The axis step's preview is not bound yet.
+  *Check and save* shows tags saved for another channel count as stale, not as the folder's
+  channels. An answer the draft file cannot take (lock, write error) is
+  refused and not shown as answered. `make_described_run` refuses a member with no technical
+  repeat or fewer images than technical repeats before writing anything. A new record the
+  records reader would refuse is never written (`R_RECORDS_FILE_INVALID`), and a run refused
+  for its records file reports that code with its `E_RECORDS_*` reasons instead of
+  `description_unreadable`. `all_colour` counts a unit only when its tags are exactly R, G, B.
+  **API changes:** `publish_draft(..., channel_counts=...)` is a new required keyword;
+  `missing_confirmations` and `description_from_draft` take an optional `channel_counts`;
+  `header_preview(..., bound=...)` is a new required keyword; `mask_evidence` takes
+  `options: StripOptions, bound` in place of `cache, memory_limit`; `Thumbnails` takes the
+  check's `header_fingerprints`. A draft saved before this change with no image type reopens
+  with the image type asked, never as "channels".
 - **Notebook: folder pictures with a 1:1 crop, "Tag like the saved group", colour mask evidence
   (PR 17c).** *Images found* adds a picture of each folder's first image to the labels table,
   from the file header only and display only (`header_preview`, `notebook_folder_previews`):
@@ -72,7 +135,9 @@ v0.3.4.
   (`inconsistent_mapping`, `missing_axes`, `ambiguous_missing_axes`) no longer advise exporting the
   images the same way: they stay errors and say they follow from the layouts. The notebook's axis
   step says that no roles are suggested because the units declare different layouts (fluorescence
-  and RGB). The refusal codes are unchanged: nothing refused before is accepted.
+  and RGB). A previously blocking input stays blocked; diagnostic codes may change (a described
+  run reports the per-type checks and the Spec's codes in place of the global `mixed_dtypes` and
+  `inconsistent_dimensions`).
 - **Notebook: one step at a time (UX proposal 2026-11-09, PR 17a).** `PreprocessingNotebook.steps()`
   shows the shipped notebook's 13 steps one at a time, with a strip of chips (done green with a tick,
   current blue, to do grey, changed by a reopen orange; a chip opens its step) and Back/Next (Next is

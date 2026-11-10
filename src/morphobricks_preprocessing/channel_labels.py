@@ -204,7 +204,12 @@ class UnitLayout:
     ``image`` is the first image of the unit by sorted path, whose header gives ``channels`` (the
     number of C indices, 3 for a colour image) and ``names`` (the raw header names by C index,
     None where it has none). ``problem`` is why the unit cannot be tagged (no readable first
-    image, roles that do not fit it); then ``channels`` is 0.
+    image, roles that do not fit it); then ``channels`` is 0. ``uniform`` is False when some
+    other image of the unit has another header signature (channel count, raw names or colour):
+    such a unit is never put in a block with others. ``counts_agree`` is False when some other
+    image of the unit has another channel count or none known (unreadable, or the roles do not
+    fit it): the unit's channel count is then not known
+    (:func:`.channel_units.unit_channel_counts`).
     """
 
     key: UnitKey
@@ -214,6 +219,8 @@ class UnitLayout:
     rgb: bool = False
     problem: str = ""
     images: int = 0
+    uniform: bool = True
+    counts_agree: bool = True
 
     @property
     def usable(self) -> bool:

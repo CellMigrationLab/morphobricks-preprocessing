@@ -388,3 +388,46 @@ def test_the_records_are_written_with_the_same_hashes_as_the_files(tmp_path):
     assert {r["new_sha256"] for r in read_records(tmp_path)} == {done.sha256}
     assert canonical_bytes(V01) != (tmp_path / DESCRIPTION_FILENAME).read_bytes()
     assert os.path.getsize(tmp_path / RECORDS_FILENAME) > 0
+
+
+# --- batch 34a: a record the reader would refuse is never written ------------------------------
+
+GOOD = {
+    "type": "reconfirmation",
+    "id_kind": "repeats",
+    "old_id": "rep1",
+    "new_id": "Day1",
+    "confirmed_on": DAY,
+    "old_sha256": "absent",
+    "new_sha256": "0" * 64,
+}
+BAD_RECORDS = {
+    "missing_keys": {"type": "reconfirmation"},
+    "bad_date": {**GOOD, "confirmed_on": "2026-02-30"},
+    "malformed_sha": {**GOOD, "new_sha256": "ABC"},
+}
+
+
+@pytest.mark.parametrize("name", sorted(BAD_RECORDS))
+def test_a_new_record_the_reader_refuses_is_not_appended(tmp_path, name):
+    with pytest.raises(RecordsFileError) as refusal:
+        publication._append_records(tmp_path, (BAD_RECORDS[name],))
+    assert refusal.value.code == "R_RECORDS_FILE_INVALID"
+    assert not (tmp_path / RECORDS_FILENAME).exists()
+
+
+@pytest.mark.parametrize("name", sorted(BAD_RECORDS))
+def test_a_publication_with_a_refused_record_writes_neither_file(tmp_path, monkeypatch, name):
+    base = _published(tmp_path)
+    publication._append_records(tmp_path, (GOOD,))  # a records file that must stay as it is
+    before = _snapshot(tmp_path)
+    monkeypatch.setattr(publication, "_record", lambda *_: BAD_RECORDS[name])
+    with pytest.raises(RecordsFileError) as refusal:
+        publish_description(
+            tmp_path,
+            description_from_bytes(BY_NAME["t01"].data),
+            base_sha256=base,
+            confirmations=RENAMES,
+        )
+    assert refusal.value.code == "R_RECORDS_FILE_INVALID"
+    assert _snapshot(tmp_path) == before and not (tmp_path / LOCK_FILENAME).exists()

@@ -12,9 +12,10 @@ import tifffile
 
 from channel_images import blobs, large, write_channels, write_rgb
 from morphobricks_preprocessing import header_preview as hp
+from morphobricks_preprocessing.fingerprint import Fingerprint
 from morphobricks_preprocessing.metadata import inspect_image
 from morphobricks_preprocessing.preview_crop import CROP_SIDE, busiest_square, tile_pictures
-from morphobricks_preprocessing.preview_render import display_panel
+from morphobricks_preprocessing.preview_render import MAGENTA, display_panel
 from test_notebook_check_save import decode
 
 # --- the crop (pure) ------------------------------------------------------------------------------
@@ -74,12 +75,21 @@ def _meta(root, name):
     return inspect_image(root / name, name)
 
 
+def _bound(root, name):
+    """The fingerprint the folder check takes with the header (the picture is of that file)."""
+    return {name: Fingerprint.of(root / name)}
+
+
 def test_a_picture_is_drawn_only_when_the_header_names_y_and_x(tmp_path):
     tifffile.imwrite(tmp_path / "plain.tif", np.stack([blobs(1), blobs(2)]))  # QYX: nothing named
     write_channels(tmp_path / "named.tif", ["DAPI", "Actin"], ["blobs", "filaments"])
-    plain = hp.header_preview(tmp_path, _meta(tmp_path, "plain.tif"))
+    plain = hp.header_preview(
+        tmp_path, _meta(tmp_path, "plain.tif"), bound=_bound(tmp_path, "plain.tif")
+    )
     assert plain.pictures is None and plain.problem == hp.NO_YX
-    named = hp.header_preview(tmp_path, _meta(tmp_path, "named.tif"))
+    named = hp.header_preview(
+        tmp_path, _meta(tmp_path, "named.tif"), bound=_bound(tmp_path, "named.tif")
+    )
     assert named.pictures is not None and named.text == "max projection over C (2): all 2 planes"
 
 
@@ -104,17 +114,19 @@ def test_a_plane_over_the_pixel_cap_is_not_read_and_the_cap_is_said(tmp_path, mo
     write_channels(tmp_path / "a.tif", ["DAPI"], ["blobs"])
     monkeypatch.setattr(hp, "PIXEL_CAP", 1000)
     monkeypatch.setattr(hp, "read_plane", lambda *a, **k: pytest.fail("read over the cap"))
-    found = hp.header_preview(tmp_path, _meta(tmp_path, "a.tif"))
+    found = hp.header_preview(tmp_path, _meta(tmp_path, "a.tif"), bound=_bound(tmp_path, "a.tif"))
     assert found.pictures is None and "over the 1,000-pixel cap" in found.problem
 
 
 def test_an_rgb_header_is_drawn_in_colour_and_a_read_failure_is_a_sentence(tmp_path):
     write_rgb(tmp_path / "rgb.tif")
-    found = hp.header_preview(tmp_path, _meta(tmp_path, "rgb.tif"))
+    found = hp.header_preview(
+        tmp_path, _meta(tmp_path, "rgb.tif"), bound=_bound(tmp_path, "rgb.tif")
+    )
     assert found.colour and decode(found.pictures.png).shape == (64, 64, 3)
     meta = _meta(tmp_path, "rgb.tif")
     (tmp_path / "rgb.tif").write_bytes((tmp_path / "rgb.tif").read_bytes()[:400])  # truncated
-    broken = hp.header_preview(tmp_path, meta)
+    broken = hp.header_preview(tmp_path, meta, bound=_bound(tmp_path, "rgb.tif"))
     assert broken.pictures is None and broken.problem.startswith("cannot be read for a preview")
 
 
@@ -222,3 +234,27 @@ def test_the_crop_says_why_it_is_missing_or_where_it_is_when_nothing_varies():
     found = tile_pictures([flat], False, 256)
     assert found.crop_box == (0, 128, 0, 128) and "does not vary" in found.crop_text
     assert "varies most" not in found.crop_text
+
+
+def test_non_finite_pixels_inside_and_outside_the_crop_are_flagged_and_do_not_move_it():
+    # Regression (batch 34b FILE 1): magenta non-finite pixels counted as detail, so a block of
+    # NaN outside the busy square took the crop; one inside the crop was not named, and the
+    # thumbnail's note named its non-finite pixels twice.
+    plane = _busy_at(256, 640).astype(np.float32)
+    plane[0:128, 0:128:8] = np.nan  # outside the busy square, on the thumbnail's grid
+    plane[301, 701] = np.inf  # inside it, off the thumbnail's grid: in the detail only
+    plane[300, 700] = -np.inf  # inside it, on the thumbnail's grid
+    before = plane.copy()
+    runs = [tile_pictures([plane], False, 256) for _ in range(3)]
+    assert np.array_equal(plane, before, equal_nan=True)  # the source array is never changed
+    found = runs[0]
+    assert all(r == found for r in runs)  # deterministic: the same pictures every time
+    assert found.crop_box == (256, 384, 640, 768)  # the busy square, not the NaN block
+    assert found.note == "513 non-finite pixels shown in magenta"  # named once
+    assert "; 2 non-finite pixels in the detail, shown in magenta" in found.crop_text
+    thumb, crop = decode(found.png), decode(found.crop_png)
+    assert (thumb[0, 0] == MAGENTA).all() and (thumb[75, 175] == MAGENTA).all()
+    native = crop[::2, ::2]
+    assert (native[301 - 256, 701 - 640] == MAGENTA).all()
+    assert (native[300 - 256, 700 - 640] == MAGENTA).all()
+    assert int((native == MAGENTA).all(axis=2).sum()) == 2

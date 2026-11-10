@@ -120,8 +120,19 @@ def test_an_unreadable_records_file_stops_the_run(tmp_path):
     (out / "morphobricks.toml").write_bytes(V01.data)
     (out / "morphobricks.records.jsonl").write_text("not json\n", encoding="utf-8")
     result = run_experiment(root, MAPPING, output_folder=out)
-    assert not result.written
-    assert result.issues[0].code == "description_unreadable"
+    assert not result.written and not (out / "run_manifest.json").exists()
+    assert result.issues[0].code == "R_RECORDS_FILE_INVALID"  # the Spec code (batch 34a)
+    assert "E_RECORDS_NOT_JSON_OBJECT" in result.issues[0].message
+
+
+def test_a_malformed_record_stops_the_run_with_the_spec_code_and_its_reason(tmp_path):
+    root, out = _folder(tmp_path)
+    (out / "morphobricks.toml").write_bytes(V01.data)
+    (out / "morphobricks.records.jsonl").write_text('{"type": "reconfirmation"}\n', "utf-8")
+    result = run_experiment(root, MAPPING, output_folder=out)
+    assert not result.written and not (out / "run_manifest.json").exists()
+    assert [i.code for i in result.issues] == ["R_RECORDS_FILE_INVALID"]
+    assert "E_RECORDS_KEY_SET" in result.issues[0].message
 
 
 def test_a_description_that_lists_a_missing_unit_is_refused_with_its_code(tmp_path):

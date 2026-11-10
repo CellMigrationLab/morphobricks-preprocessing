@@ -172,3 +172,90 @@ def test_a_row_with_a_warning_never_folds(reopened, monkeypatch):
     nb._refresh_check_save()
     assert nb._replicate_fold.count == 0
     assert "A_SCOPE_INCOMPLETE" in _text(nb.replicates_box)
+
+
+def test_a_header_rewritten_under_the_same_files_keeps_its_row_open(tmp_path):
+    # Regression (batch 34b BLOCKER 4): the reopen reconciled image counts only, so headers
+    # rewritten with swapped channel names (same files, shape and count) folded as "nothing
+    # changed" while the run's checks refused R_HEADER_CONTRADICTION. Real workflow, no fake.
+    from channel_images import write_channels
+    from test_notebook_check_save import FOLDERS, KINDS
+
+    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    for i, folder in enumerate(FOLDERS):
+        add_folder(root, masks, folder, i + 1)
+    first = stepper(root, masks, out)
+    answer_all(first)
+    assert first.save_experiment()
+    write_channels(root / "ctrl/rep1/a.tif", ["Actin", "DAPI", "Ch3"], KINDS, seed=1)
+    nb = stepper(root, masks, out)
+    reasons = {u.folders: u.reasons for u in nb._published().reconciliation.units}
+    assert reasons.pop(UnitFolders("ctrl", "rep1", "single")) == ("channels_changed",)
+    assert set(reasons.values()) == {()}  # produced by the real path, for that unit only
+    assert nb._reopen_units()[("ctrl", "rep1", "single")] == CHANGED
+    assert not nb._folded and not ui.is_visible(nb.fold_bar)
+    assert ui.is_visible(nb.check_card)
+    assert "headers changed: ctrl/rep1" in nb.folder_changes.value  # the unit is named
+    # Owner decision (review of #257, experiment-v1 section 10 read literally): headers that no
+    # longer fit are the run's refusal, not a reopening (the declared ordered channel list did
+    # not change), so rep1 keeps its date and nothing waits for an answer. A refusal is never
+    # hidden until the user acts: the run's refusal is shown at once, naming the unit.
+    assert nb.same_way["rep1"].value and "rep1: answer" not in _text(nb.todo)
+    shown = _text(nb.checks)
+    assert "The images contradict it: the run would stop" in shown
+    assert shown.count("R_HEADER_CONTRADICTION") == 2
+    assert "repeat folder &#x27;rep1&#x27;" in shown  # the unit it names
+    assert "changed since saved" in _text(nb.replicates_box)  # rep1's block stays open
+    assert "can start" not in nb.save_status.value and "nothing changed" not in nb.saved_line.value
+    assert nb.run_button.disabled
+
+
+def test_a_refusal_of_the_run_s_checks_unfolds_an_unchanged_reopen(tmp_path):
+    # Regression (batch 34b BLOCKER 4, second layer): a refusal the reconciliation cannot see
+    # (a mask type added beside the saved folders) was folded behind "nothing changed".
+    from channel_images import write_masks
+    from test_notebook_check_save import FOLDERS
+
+    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    for i, folder in enumerate(FOLDERS):
+        add_folder(root, masks, folder, i + 1)
+    first = stepper(root, masks, out)
+    answer_all(first)
+    assert first.save_experiment()
+    write_masks(masks, {"ctrl/rep1/a.tif": 1}, {"Cells": "labels"})
+    nb = stepper(root, masks, out)
+    assert not nb._published().changed  # the folders are as saved
+    assert not nb._published_check().can_run
+    assert not nb._folded and not ui.is_visible(nb.fold_bar) and ui.is_visible(nb.check_card)
+    assert "nothing changed" not in nb.saved_line.value and "can start" not in nb.save_status.value
+    assert nb.run_button.disabled
+
+
+def test_a_header_change_before_the_axes_are_confirmed_is_shown_as_blocking(tmp_path):
+    # Review of #257: the header contradiction is never hidden. Before the axis roles are
+    # confirmed the run's checks cannot name the refusal (nor can the channels be checked), so
+    # the folder check's finding is shown at once beside the missing answers; rep1 is not
+    # reopened (section 10: the declared ordered channel list did not change).
+    from channel_images import write_channels
+    from test_notebook_check_save import FOLDERS, KINDS
+
+    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    for i, folder in enumerate(FOLDERS):
+        add_folder(root, masks, folder, i + 1)
+    first = stepper(root, masks, out)
+    answer_all(first)
+    assert first.save_experiment()
+    write_channels(root / "ctrl/rep1/a.tif", ["Actin", "DAPI", "Ch3"], KINDS, seed=1)
+    nb = PreprocessingNotebook(str(root), output_folder=str(out), describe=True)
+    nb.welcome()
+    nb.steps()
+    nb.masks_folder.value = str(masks)
+    nb.check_button.click()  # the axis roles are not confirmed
+    assert nb.confirmed_mapping is None
+    assert nb._published().reconciliation.reopened == {"rep1": ("channels_changed",)}
+    assert nb.same_way["rep1"].value  # the declared list did not change: the date stays
+    shown = _text(nb.checks)
+    assert "The run (step 12) is blocked by both" in shown
+    assert "header contradiction: the image headers of ctrl/rep1" in shown
+    assert "“same way?” of rep1 is asked again" not in shown
+    assert nb.save_button.disabled and nb.run_button.disabled

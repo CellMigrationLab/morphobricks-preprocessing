@@ -420,7 +420,8 @@ results or comparing another grouping.
      the axis check, §5 "Named-axis copies"). An axis the metadata does not name (a plain stack of
      pages) takes the role you confirm: the card warns (`axes_not_named`) and the run
      records the roles as confirmed by you.
-   - If the preview looks right, press **Yes, the preview looks right**, then click
+   - If the preview looks right, press **Yes, the preview looks right** (offered only while a
+     preview of the roles shown is drawn), then click
      **Confirm axis roles**. When the roles agree with every header, a green card says
      **Axes checked: they are correct for every image**. Changing a role afterwards asks
      you to check the preview again.
@@ -776,7 +777,8 @@ every question still open, each with what you have to do: choose or accept an ID
 that the folders of a repeat were prepared and acquired under the same circumstances, say
 what each of two controls is compared against.
 
-- It reads the folder structure only (no image is opened) and **writes nothing**: no output
+- It reads the folder structure (and, to compare a published description, the image headers;
+  no pixel is read) and **writes nothing**: no output
   folder, no draft, no description. `--output FOLDER` names the output folder to read (default:
   next to the experiment), `--exclude PATH` leaves an image out, as in `check`.
 - If the output folder holds an `experiment_design.csv` from an earlier version and no
@@ -786,8 +788,10 @@ what each of two controls is compared against.
   left as it is.
 - If a `morphobricks.toml` is published, `describe` compares it with the folders instead: how
   many acquisitions are as published, which are new or gone, which image counts changed and
-  which repeats must be confirmed again. Only folders and counts are compared; the channels
-  are not (no header is read).
+  which units' image headers no longer fit their published channels and which repeats must
+  be confirmed again. The headers of the images are read (no pixel) and compared as the
+  notebook compares them on reopening, so a header rewritten under the same files is a
+  change in both.
 - **Nothing is confirmed by the command.** An ID, the comparability of a repeat, a reference
   and the removal of a folder are your answers, given in the notebook; the command never
   answers for you and never fills in a date.

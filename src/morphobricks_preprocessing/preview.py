@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 import os
 from collections import OrderedDict
-from collections.abc import Hashable, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -171,6 +171,10 @@ class PreviewCache:
             self._items.move_to_end(key)
         return found
 
+    def discard(self, key: Hashable) -> None:
+        """Forget the plane under ``key``, if kept (a read the file changed under)."""
+        self._items.pop(key, None)
+
     def put(self, key: Hashable, plane: ReducedPlane) -> None:
         """Keep the plane, dropping the least recently used one beyond the size."""
         self._items[key] = plane
@@ -223,13 +227,56 @@ def confirmed_mapping(review: AxisReview | None, relative_path: str) -> AxisMapp
     return mapping
 
 
-def _check_fingerprint(path: str | os.PathLike, expected: Fingerprint | None) -> Fingerprint:
+def _check_fingerprint(
+    path: str | os.PathLike, expected: Fingerprint | None, shown: str | None = None
+) -> Fingerprint:
     now = Fingerprint.of(path)
     if expected is not None and now != expected:
+        name = os.fspath(path) if shown is None else shown
         raise PreviewRefused(
-            FILE_CHANGED, f"{os.fspath(path)} changed while it was shown: check the folder again."
+            FILE_CHANGED, f"{name} changed since the folder check read it: check the folder again."
         )
     return now
+
+
+def check_unchanged(
+    path: str | os.PathLike, expected: Fingerprint, shown: str | None = None
+) -> None:
+    """Refuse when the file is not, now, the revision whose header was read (``expected``).
+
+    ``shown`` is the name the refusal gives the file (its path relative to the experiment);
+    the full path otherwise.
+
+    Raises
+    ------
+    PreviewRefused
+        ``file_changed_while_shown``.
+    OSError
+        When the file is gone.
+    """
+    _check_fingerprint(path, expected, shown)
+
+
+def checked_fingerprint(bound: Mapping[str, Fingerprint | None], relative_path: str) -> Fingerprint:
+    """Return the fingerprint the folder check bound to an image's header, or refuse.
+
+    A picture is evidence about the image as the check read its header. An image that the
+    check did not bind (it changed while its header was read, or it was not fingerprinted) has
+    no such revision, so no picture is drawn for it: the user checks the folder again.
+
+    Raises
+    ------
+    PreviewRefused
+        ``file_changed_while_shown``.
+    """
+    found = bound.get(relative_path)
+    if found is None:
+        raise PreviewRefused(
+            FILE_CHANGED,
+            f"{relative_path} is not bound to the header the folder check read (it changed "
+            "while it was read): check the folder again.",
+        )
+    return found
 
 
 def _label(c: int, names: Sequence[str | None] | None) -> str:
@@ -292,7 +339,8 @@ def channel_strip(
     The plane is the middle Z when the file has a Z axis and the first T when it has a T axis
     (``options`` can override); the strip says which. The channels are the ``C`` axis of the
     confirmed roles; a file without one is a single channel ``C0``, whatever its shape. Each
-    channel has its own contrast.
+    channel has its own contrast. ``options.expected`` is checked before the read and the
+    fingerprint then taken is checked after it: a file rewritten during the read is refused.
 
     Parameters
     ----------
@@ -326,6 +374,13 @@ def channel_strip(
         plane = _cached_plane(path, mapping, (fingerprint, c, z, t), options)
         label = _label(c, options.header_names)
         panels.append(ChannelPanel(c, plane, display_panel(plane.pixels), label))
+    try:
+        check_unchanged(path, fingerprint)  # a file rewritten during the read is not shown
+    except PreviewRefused:
+        if options.cache is not None:  # nor kept: a plane read across a rewrite is not that file
+            for c in range(layout.channel_count):
+                options.cache.discard((os.fspath(path), fingerprint, c, z, t, options.side))
+        raise
     return ChannelStrip(os.fspath(path), z, t, tuple(panels), strip_png([p.panel for p in panels]))
 
 
@@ -390,6 +445,8 @@ __all__ = [
     "StripOptions",
     "ReducedPlane",
     "channel_strip",
+    "check_unchanged",
+    "checked_fingerprint",
     "confirmed_mapping",
     "labels_thumbnail",
     "mask_thumbnail",

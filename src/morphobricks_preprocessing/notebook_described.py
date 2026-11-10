@@ -18,8 +18,9 @@ when the run is not described):
 - **Step 2.** The global *Image type* card is retired: the image type is answered per unit on
   *Your channels*; the run is given the type the saved description states.
 - **Reopening.** The published file is the answers: the folders found now decide what still
-  applies (removed folders need "Yes, remove"; a replicate whose folders changed is asked
-  "same way?" again); the draft carries the pairing.
+  applies (removed folders need "Yes, remove"; a replicate whose layout differs from the
+  published one, its folders or a unit's declared ordered channel list, is asked "same way?"
+  again, at the reopen or as soon as an answer changes it); the draft carries the pairing.
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ from .draft import Draft, DraftError, draft_from_discovery
 from .draft_answers import DraftAnswers, UnitKey, apply_answers, carry_over
 from .fingerprint import current_fingerprint
 from .notebook_row_fold import reopen_units
-from .published_answers import published_answers, reopened, retired_ids
+from .published_answers import published_answers, reasked, reopened, retired_ids
 from .run import Preflight
 
 
@@ -64,7 +65,7 @@ class _DescribedRun:
         if getattr(self, "_published_key", None) != key:
             self._published_key = key
             self._published_cache, self._published_problem = published_state(
-                output, pre.discovery, pre.excluded
+                output, pre.discovery, pre.excluded, pre.metadata.files
             )
         return self._published_cache
 
@@ -205,6 +206,23 @@ class _DescribedRun:
             return answers
         self._reopen_note = (dropped, asked)
         return kept
+
+    def _answer(self, answers: DraftAnswers, *, rebuild: bool = True) -> bool:
+        """Save new answers; a repeat whose layout this answer changed is asked again.
+
+        Experiment-v1 section 10: a change of a unit's declared ordered channel list, its image
+        type or the grouping reopens the repeat's N35 confirmation, so its ``confirmed_on`` is
+        dropped (:func:`.published_answers.reasked`). A header name added to a channel changes
+        no layout and keeps the date (section 4.4a). Nothing is ticked for the user.
+        """
+        state = self._published() if self._describe else None
+        before = self.draft_answers
+        if state is not None and before is not None and self._draft_base is not None:
+            try:
+                answers, _ = reasked(self._draft_base, before, answers, state.description)
+            except DraftError:
+                pass  # the answer itself is refused below, with its reason
+        return super()._answer(answers, rebuild=rebuild)
 
     def _sync_description(self) -> None:
         """Take the design card's pairing into the answers; changed replicates are asked again."""

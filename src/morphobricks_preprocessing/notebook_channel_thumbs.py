@@ -12,15 +12,22 @@ panels, each channel with its own contrast.
 When a thumbnail keeps fewer than one pixel in :data:`.preview_crop.CROP_FACTOR` per side,
 :meth:`Thumbnails.tile` adds a crop at native pixels (:func:`.preview_crop.tile_pictures`),
 read through the same confirmed roles and plane.
+
+Every picture is bound to the image as the folder check read its header: each read is given
+that fingerprint (``StripOptions.expected``), checked before and after the read, so an image
+changed since the check or during the read (same name, same shape or not) is refused with "check
+the folder again", never drawn as if it were the one checked.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .axes import AxisReview
 from .channel_labels import UnitLayout
+from .fingerprint import Fingerprint
 from .preview import (
     DETAIL_SIDE,
     THUMBNAIL_SIDE,
@@ -28,6 +35,8 @@ from .preview import (
     PreviewRefused,
     StripOptions,
     channel_strip,
+    check_unchanged,
+    checked_fingerprint,
     confirmed_mapping,
     read_plane,
 )
@@ -57,10 +66,22 @@ class Thumb:
 
 
 class Thumbnails:
-    """Reads and keeps the channel pictures of the units' representative images."""
+    """Reads and keeps the channel pictures of the units' representative images.
 
-    def __init__(self, root: Path, review: AxisReview, memory_limit: int) -> None:
+    ``bound`` are the fingerprints the folder check took with each header
+    (:attr:`.run.preflight.Preflight.header_fingerprints`): an image is read only as that
+    revision.
+    """
+
+    def __init__(
+        self,
+        root: Path,
+        review: AxisReview,
+        memory_limit: int,
+        bound: Mapping[str, Fingerprint | None],
+    ) -> None:
         self.root, self.review, self.memory_limit = root, review, memory_limit
+        self.bound = bound
         self._cache = PreviewCache()
         self._strips: dict[tuple[str, int], tuple[Panel, ...] | Thumb] = {}
         self._planes: dict[str, tuple[tuple[int, int], int | None, int | None]] = {}
@@ -70,9 +91,18 @@ class Thumbnails:
     def _read(self, layout: UnitLayout, side: int) -> tuple[Panel, ...] | Thumb:
         """Read every channel of the unit's image once per size; a refusal becomes one note."""
         key = (layout.image or "", side)
+        try:  # a picture already read is shown only while the image is still that revision
+            check_unchanged(self.root / key[0], checked_fingerprint(self.bound, key[0]), key[0])
+        except READ_ERRORS as exc:
+            return Thumb(None, str(exc))
         if key not in self._strips:
-            options = StripOptions(side=side, cache=self._cache, memory_limit=self.memory_limit)
             try:
+                options = StripOptions(
+                    side=side,
+                    expected=checked_fingerprint(self.bound, key[0]),
+                    cache=self._cache,
+                    memory_limit=self.memory_limit,
+                )
                 strip = channel_strip(self.root / key[0], key[0], self.review, options)
             except READ_ERRORS as exc:
                 self._strips[key] = Thumb(None, str(exc))
@@ -150,6 +180,8 @@ class Thumbnails:
         has_c = mapping.index_of("C") is not None
         planes = []
         try:
+            expected = checked_fingerprint(self.bound, image)
+            check_unchanged(self.root / image, expected, image)
             for c in range(3 if colour else 1):
                 plane = read_plane(
                     self.root / image,
@@ -164,6 +196,7 @@ class Thumbnails:
                     reason = "no 1:1 detail: a plane this large is read reduced"
                     return no_crop(TilePictures(thumb.png, plane.step, note=thumb.note), reason)
                 planes.append(plane.pixels)
+            check_unchanged(self.root / image, expected, image)  # and after the read
             return tile_pictures(planes, colour, THUMBNAIL_SIDE)
         except READ_ERRORS as exc:
             return no_crop(TilePictures(thumb.png, 1, note=thumb.note), f"no 1:1 detail: {exc}")

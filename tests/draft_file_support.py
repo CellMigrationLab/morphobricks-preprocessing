@@ -19,6 +19,8 @@ from morphobricks_preprocessing.draft_format import (
 DAY = "2026-11-06"
 PATHS = [f"{c}/{r}/{n}.tif" for c in ("CTRL", "DrugA") for r in ("rep1", "rep2") for n in "ab"]
 UNITS = [(c, r, "single") for c in ("CTRL", "DrugA") for r in ("rep1", "rep2")]
+COUNTS = dict.fromkeys(UNITS, 2)
+"""The channel count of every unit's image, as the confirmed axis roles read it (2 here)."""
 
 
 def complete(base=ABSENT):
@@ -35,7 +37,7 @@ def complete(base=ABSENT):
             "rep1": RepeatAnswer(id="rep1", confirmed_on=DAY),
             "rep2": RepeatAnswer(id="rep2", confirmed_on="2026-11-05", display_name="Second"),
         },
-        units={key: UnitAnswer(("DNA", "ACTIN")) for key in UNITS},
+        units={key: UnitAnswer(("DNA", "ACTIN"), "channels") for key in UNITS},
         channels={
             "DNA": ChannelAnswer("DAPI", ("DAPI",)),
             "ACTIN": ChannelAnswer(None, None),

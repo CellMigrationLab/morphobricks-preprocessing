@@ -215,6 +215,9 @@ class _FolderStep:
                     masks_folder=masks,
                     mask_axes=mask_axes,
                     with_description=self._with_description(folder),
+                    # Each header is bound to the file's fingerprint: every picture and the
+                    # save are of the images as this check read them (audit batch 33).
+                    bind_headers=True,
                 )
                 if self._describe:
                     pre = unit_checked(pre)  # a described run checks inside each unit

@@ -7,8 +7,9 @@ picture shows one square of :data:`CROP_SIDE` native pixels, enlarged by repeati
 
 - **where:** the square of the native grid (squares of :data:`CROP_SIDE` pixels from the top
   left corner, whole squares only) whose thumbnail pixels have the highest standard deviation, on
-  the displayed thumbnail (for colour, the mean of red, green and blue). A tie goes to the
-  topmost square, then the leftmost. The caption gives its x and y range.
+  the displayed thumbnail (for colour, the mean of red, green and blue), counting finite pixels
+  only (a magenta non-finite pixel is not detail). A tie goes to the topmost square, then the
+  leftmost. The caption gives its x and y range, and the non-finite pixels inside it.
 - **contrast:** the thumbnail's own black and white values, so both pictures agree (a flat
   thumbnail gives the crop its own contrast); non-finite pixels are magenta, as everywhere.
 
@@ -56,7 +57,13 @@ def downscale_factor(shape: tuple[int, ...], side: int) -> int:
     return max(1, math.ceil(max(shape[:2]) / side))
 
 
-def busiest_square(shown: np.ndarray, factor: int, shape: tuple[int, int], side: int) -> int:
+def busiest_square(
+    shown: np.ndarray,
+    factor: int,
+    shape: tuple[int, int],
+    side: int,
+    finite: np.ndarray | None = None,
+) -> int:
     """Return the index (row-major) of the native square whose thumbnail pixels vary most.
 
     Parameters
@@ -70,6 +77,9 @@ def busiest_square(shown: np.ndarray, factor: int, shape: tuple[int, int], side:
         The native (Y, X) shape.
     side
         The native side of a square. Only whole squares count.
+    finite
+        The (y, x) mask of the thumbnail pixels drawn from finite values; the others (magenta)
+        are left out of the measure. None counts every pixel.
 
     Returns
     -------
@@ -87,6 +97,9 @@ def busiest_square(shown: np.ndarray, factor: int, shape: tuple[int, int], side:
     grey = grey[keep_y][:, keep_x]
     index = (ys[keep_y][:, None] * cols + xs[keep_x][None, :]).ravel()
     values = grey.ravel()
+    if finite is not None:
+        kept = finite[keep_y][:, keep_x].ravel()
+        index, values = index[kept], values[kept]
     count = np.bincount(index, minlength=rows * cols)
     total = np.bincount(index, values, minlength=rows * cols)
     squares = np.bincount(index, values * values, minlength=rows * cols)
@@ -137,37 +150,52 @@ def tile_pictures(
     """
     shape = planes[0].shape
     factor = downscale_factor(shape, side)
-    panels = [display_panel(np.ascontiguousarray(p[::factor, ::factor])) for p in planes]
+    reduced = [np.ascontiguousarray(p[::factor, ::factor]) for p in planes]
+    panels = [display_panel(p) for p in reduced]
     shown = _picture(panels, colour)
+    finite = np.logical_and.reduce([_finite(p) for p in reduced])
     pictures = TilePictures(png_bytes(shown.pixels), factor, note=shown.note)
     if factor <= CROP_FACTOR:
         return pictures
     if min(shape[:2]) < CROP_SIDE:
         why = f"no 1:1 detail: the image is under {CROP_SIDE} pixels on a side"
         return replace(pictures, crop_text=why)
-    best = busiest_square(shown.pixels, factor, shape, CROP_SIDE)
+    best = busiest_square(shown.pixels, factor, shape, CROP_SIDE, finite)
     if best < 0:
         why = f"no 1:1 detail: the thumbnail keeps too few pixels of a {CROP_SIDE}-pixel square"
         return replace(pictures, crop_text=why)
     columns = shape[1] // CROP_SIDE
     y0, x0 = (best // columns) * CROP_SIDE, (best % columns) * CROP_SIDE
     box = (y0, y0 + CROP_SIDE, x0, x0 + CROP_SIDE)
-    crop = _crop(planes, panels, box)
+    try:
+        crop = _crop(planes, panels, box)
+    except ValueError as exc:  # a colour detail with non-finite values: never coloured
+        return replace(pictures, crop_text=f"no 1:1 detail: {exc}")
     big = np.repeat(np.repeat(crop.pixels, zoom, axis=0), zoom, axis=1)
-    where = _where(shown.pixels, factor, box)
+    where = _where(shown.pixels, factor, box, finite)
     text = (
         f"1:1 detail: x {x0}-{box[3] - 1}, y {y0}-{box[1] - 1} ({where}), "
         f"each pixel drawn {zoom}x{zoom}"
     )
+    if crop.nonfinite:
+        text += f"; {crop.nonfinite} non-finite pixels in the detail, shown in magenta"
     return replace(pictures, crop_png=png_bytes(big), crop_box=box, crop_text=text)
 
 
-def _where(shown: np.ndarray, factor: int, box: tuple[int, int, int, int]) -> str:
+def _finite(plane: np.ndarray) -> np.ndarray:
+    """Return the mask of a plane's finite values (every pixel of an integer plane)."""
+    return np.isfinite(plane) if plane.dtype.kind in "fc" else np.ones(plane.shape, bool)
+
+
+def _where(
+    shown: np.ndarray, factor: int, box: tuple[int, int, int, int], finite: np.ndarray
+) -> str:
     """Say why the crop is where it is: it varies most, or nothing varies (the first square)."""
     y0, y1, x0, x1 = (-(-v // factor) for v in box)  # the thumbnail pixels inside the box
     square = shown[y0:y1, x0:x1].astype(np.float64)
     grey = square.mean(axis=2) if square.ndim == 3 else square  # as busiest_square measures
-    if grey.min() == grey.max():
+    grey = grey[finite[y0:y1, x0:x1]]
+    if grey.size == 0 or grey.min() == grey.max():
         return f"the thumbnail does not vary in any {CROP_SIDE}-pixel square: the first one"
     return f"the {CROP_SIDE}-pixel square that varies most"
 

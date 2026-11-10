@@ -86,7 +86,11 @@ TWO_DATES = {
 
 
 def _only_ids(draft):
-    """The user's answers to a migrated v13 draft: the proposed IDs and the unit channels."""
+    """The user's answers to a migrated v13 draft: the proposed IDs, the unit channels and type.
+
+    The image type is answered as an ordinary channel image ("channels"): an unanswered type is
+    an open question (``unit_image_type_unanswered``, audit batch 33).
+    """
     conditions, repeats = ("CTRL", "DrugA", "DrugB"), ("rep1", "rep2", "rep3")
     return DraftAnswers(
         ABSENT,
@@ -94,7 +98,11 @@ def _only_ids(draft):
         {c: ConditionAnswer(id=c) for c in conditions},
         {"single": "single"},
         {r: RepeatAnswer(id=r) for r in repeats},
-        {(c, r, "single"): UnitAnswer(("DNA", "ACTIN")) for c in conditions for r in repeats},
+        {
+            (c, r, "single"): UnitAnswer(("DNA", "ACTIN"), "channels")
+            for c in conditions
+            for r in repeats
+        },
         {"DNA": ChannelAnswer("DAPI", None), "ACTIN": ChannelAnswer("F-actin", None)},
     )
 

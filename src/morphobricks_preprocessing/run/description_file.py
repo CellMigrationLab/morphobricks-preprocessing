@@ -167,18 +167,52 @@ def _replace_file_durably(path: Path, data: bytes) -> None:
         raise
 
 
+def _candidate_records(folder: Path, records: tuple[dict, ...]) -> bytes:
+    """Return the records file's bytes with ``records`` added, checked as the reader checks them.
+
+    Raises
+    ------
+    RecordsFileError
+        ``R_RECORDS_FILE_INVALID`` when the existing file (a symbolic link, a torn or foreign
+        file) or the complete candidate bytes would be refused by the reader: a new record with
+        a wrong key set, a bad date or a malformed SHA-256 is never written.
+    """
+    read_records(folder)  # refuses a symbolic link and a torn or foreign file before writing
+    current = read_file_bytes(folder / RECORDS_FILENAME) or b""
+    data = current + b"".join(encode_record(r) for r in records)
+    _, issues = check_records(data)
+    if issues:
+        raise RecordsFileError(issues)
+    return data
+
+
 def _append_records(folder: Path, records: tuple[dict, ...]) -> None:
     """Add the records as lines after the existing ones, in one atomic replace of the file.
 
-    The live file is replaced only once the old bytes and the new lines are all on disk in a
-    temporary file, so a failure leaves it exactly as it was.
+    The complete new bytes are checked first (:func:`_candidate_records`); the live file is
+    replaced only once the old bytes and the new lines are all on disk in a temporary file, so a
+    refusal or a failure leaves it exactly as it was.
     """
     if not records:
         return
-    read_records(folder)  # refuses a symbolic link and a torn or foreign file before writing
-    path = folder / RECORDS_FILENAME
-    current = read_file_bytes(path) or b""
-    _replace_file_durably(path, current + b"".join(encode_record(r) for r in records))
+    _replace_file_durably(folder / RECORDS_FILENAME, _candidate_records(folder, records))
+
+
+def transition_refusals(
+    old: Description | None,
+    candidate: Description,
+    confirmations: tuple[Reconfirmation, ...] = (),
+) -> tuple[DescriptionIssue, ...]:
+    """Return the ``R_*`` refusals of ``candidate`` over the published ``old`` (none without one).
+
+    These are exactly the transition refusals publication raises (sections 4.4a, 4.6, 4.9 and
+    10) once the user's re-confirmations accepted what they name: the notebook's pre-save check
+    calls this too, so Save is enabled only for a candidate that publication accepts.
+    """
+    if old is None:
+        return ()
+    left = unwaived(transition_issues(old, candidate), confirmations)
+    return tuple(_transition_refusal(i) for i in left)
 
 
 def _compare(
@@ -192,9 +226,9 @@ def _compare(
     """
     old = description_from_bytes(published) if published is not None else None
     issues = transition_issues(old, candidate) if old is not None else ()
-    left = unwaived(issues, confirmations)
+    left = transition_refusals(old, candidate, confirmations)
     if left:
-        raise PublicationRefused(tuple(_transition_refusal(i) for i in left))
+        raise PublicationRefused(left)
     if unused(issues, confirmations):
         names = ", ".join(f"{c.kind} {c.old_id}" for c in unused(issues, confirmations))
         raise ValueError(f"a re-confirmation names a change the candidate does not make: {names}")
@@ -297,6 +331,8 @@ def publish_locked(
         records += image_count_records(old, candidate, recorded_on, confirmations)
     elif removals:
         raise ValueError("a removal needs a published file to remove from")
+    if records:
+        _candidate_records(folder, records)  # a record the reader refuses: nothing is written
     write_text_atomic(path, data.decode("utf-8"))
     try:
         _append_records(folder, records)
