@@ -3,8 +3,8 @@
 All notable changes to `morphobricks-preprocessing`. Numbers are pull requests (PR) and
 issues of [CellMigrationLab/morphobricks-preprocessing](https://github.com/CellMigrationLab/morphobricks-preprocessing).
 The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on branch `claude/restart-doc` ([commit ff19de8](https://github.com/CellMigrationLab/MorphoFeature/blob/ff19de8938d5ed8c4143cff563715551ee874a05/docs/restart/preprocessing-design-v0.4.md); not on `main`). The decisions
-are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
-[migration guide](docs/migration-0.3-to-0.4.md).
+are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
+v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased (v0.5.1)
 
@@ -257,6 +257,12 @@ already removed is not repeated here. **Breaking** where it says so.
   `position_id_not_recorded` issue (an entry without a position is `identity_differs`) and no
   longer resolves roles from the image header for an entry without them (it fits no axes,
   `axis_mapping_mismatch`).
+
+- **Docs: `docs/migration-0.3-to-0.4.md` removed** (inventory PP-10): no run of v0.3 or v0.4 is
+  read any more. README, user guide and this file no longer point to it. (The rest of PP-10, the
+  v0.4.0 parity tests, `test_removed_in_v040.py`, `released_code.py` and the CI's full-history
+  fetch, went in PP-C; `test_schema_v2_equivalence.py` was renamed `test_histogram_goldens.py`
+  there.)
 
 ## 0.5.0 - 2026-11-09
 

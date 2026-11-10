@@ -1084,11 +1084,9 @@ Run the notebook or `run` again after adding, changing or removing images:
 - changing only the image type reads nothing again: the histograms are the same for both
   types, and only the manifest records the new type.
 
-**After upgrading from v0.3** (or from v0.4.0rc3 or earlier with OME-Zarr images): the
-first run recomputes every row. A v0.3 manifest (version 1) gives no reusable row and no
-recorded input, so give the axis roles, masks and exclusions again; an OME-Zarr image
-recorded without its file inventory counts as changed. Later bricks refuse such older runs
-until they are run again. The [migration guide](migration-0.3-to-0.4.md) lists every change.
+**After upgrading from a version before v0.5.1:** its run manifest is not read (only version 4
+is), so the first run recomputes every row and reuses no recorded input: give the axis roles,
+masks and exclusions again. Later bricks refuse such older runs until they are run again.
 
 Run the brick again after adding images or masks before using a later brick: later bricks
 read the images and masks this brick's run recorded, and refuse an experiment holding images
