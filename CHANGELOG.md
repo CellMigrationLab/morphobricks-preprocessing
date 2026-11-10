@@ -217,6 +217,17 @@ ADR 0001 GS1; contract §9). **API and CLI additions only.**
   wrong-case repeat codes are refused; `i99` is still refused with links given. The input's
   own checks and the CLI: `tests/test_lab_links.py`.
 
+### SWEEP-PP: the remaining compatibility code removed
+
+The obsolete-code sweep of this repository (MorphoFeature `docs/restart/designs/obsolete-code-inventory-2026-11-10.md`
+§1 and §12, Stage 2 plan §3.7; owner policy of 10 November 2026, Spec ADR 0002 AR10). What PP-C
+already removed is not repeated here. **Breaking** where it says so.
+
+- **Tests: the frozen clock without the `notebook` extra** (#262). `tests/frozen_clock.py`
+  skips a module whose import fails only because ipywidgets or matplotlib is missing (any
+  other import error is raised), so a plain `pip install -e '.[dev]'` passes the frozen-clock
+  tests (`tests/test_frozen_clock_extras.py`).
+
 ## 0.5.0 - 2026-11-09
 
 Stage 1 of the experiment description (MorphoBricks-Spec experiment-v1, pinned at `1bed024`):
