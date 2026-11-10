@@ -33,7 +33,7 @@ def derive_design(description: Description) -> DesignTable:
     ------
     DesignFormatError
         From :func:`.design.write_experiment_design` when written, if a repeat ID is not a name
-        the legacy readers accept (it is never repaired).
+        the strict parser accepts (it is never repaired).
     """
     referenced = {c.reference for c in description.conditions.values() if c.reference is not None}
     rows = []

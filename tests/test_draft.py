@@ -1,6 +1,6 @@
-"""The draft of an experiment description: proposed IDs and the legacy design migration.
+"""The draft of an experiment description: proposed IDs.
 
-Experiment-v1 sections 4.6a and 7, conformance scenarios P30 and P32 (the proposal part). The
+Experiment-v1 section 4.6a, conformance scenario P32 (the proposal part). The
 owner's answers: Q4 a header name is proposed as a channel ID only when it is valid as it
 stands, Q6 the proposal rule covers repeat IDs and the condition ``single`` rule, Q8 the added
 fields are ``condition_id``, ``repeat_group`` and ``technical_repeat_id``.
@@ -8,14 +8,8 @@ fields are ``condition_id``, ``repeat_group`` and ``technical_repeat_id``.
 
 import pytest
 
-from morphobricks_preprocessing import DesignFormatError, discover_experiment
-from morphobricks_preprocessing.design import DesignRow, DesignTable, write_experiment_design
-from morphobricks_preprocessing.draft import (
-    DraftError,
-    LegacyMigrationRefused,
-    draft_from_discovery,
-    migrate_legacy_design,
-)
+from morphobricks_preprocessing import discover_experiment
+from morphobricks_preprocessing.draft import DraftError, draft_from_discovery
 from morphobricks_preprocessing.draft_ids import (
     id_problems,
     propose_channel_ids,
@@ -28,25 +22,6 @@ def folders(root, *paths):
     """Write two images into each folder path and return the discovery of the root."""
     make_tree(root, [f"{p}/{name}.tif" for p in paths for name in ("a", "b")])
     return discover_experiment(root)
-
-
-def legacy(tmp_path, rows):
-    """Return the bytes of a legacy design with ``rows`` written by the brick's own writer."""
-    path = tmp_path / "legacy.csv"
-    write_experiment_design(DesignTable(tuple(rows)), path)
-    return path.read_bytes()
-
-
-def row(condition, repeat, group=None, *, control=False, on="2026-10-30", confirmed=True):
-    return DesignRow(
-        condition,
-        repeat,
-        group or repeat,
-        control=control,
-        image_count=2,
-        confirmed=confirmed,
-        confirmed_on=on if confirmed else "",
-    )
 
 
 # --- proposed IDs (P32, Q4, Q6) ---------------------------------------------------------------
@@ -201,180 +176,3 @@ def test_a_proposal_keeps_the_raw_header_name_and_its_index():
     (first, second) = propose_channel_ids(["DAPI", " raw "])
     assert (first.index, first.header_name, first.proposed_id) == (0, "DAPI", "DAPI")
     assert (second.index, second.header_name, second.proposed_id) == (1, " raw ", None)
-
-
-# --- legacy migration (P30) --------------------------------------------------------------------
-
-
-def test_a_legacy_design_migrates_to_proposals_and_open_confirmations(tmp_path):
-    discovery = folders(tmp_path / "exp", "CTRL/rep1", "CTRL/rep2", "DrugA/rep1", "DrugA/rep2")
-    data = legacy(
-        tmp_path,
-        [
-            row("CTRL", "rep1", control=True),
-            row("CTRL", "rep2", control=True),
-            row("DrugA", "rep1"),
-            row("DrugA", "rep2"),
-        ],
-    )
-    draft = migrate_legacy_design(data, discovery)
-    assert draft.origin == "legacy"
-    assert {g: (r.id.proposed, r.id.confirmed) for g, r in draft.repeats.items()} == {
-        "rep1": ("rep1", None),
-        "rep2": ("rep2", None),
-    }
-    assert {r.confirmed_on for r in draft.repeats.values()} == {"2026-10-30"}
-    assert all(r.confirmed for r in draft.repeats.values())
-    assert dict(draft.references) == {"DrugA": "CTRL"}
-    assert draft.notes == ()
-    assert {q.code for q in draft.open_questions()} == {"id_pending"}  # IDs not adopted
-    assert not draft.publishable
-    for kind, key in [
-        ("conditions", "CTRL"),
-        ("conditions", "DrugA"),
-        ("technical_repeats", "single"),
-        ("repeats", "rep1"),
-        ("repeats", "rep2"),
-    ]:
-        draft = draft.confirm_id(kind, key, key)
-    assert draft.open_questions() == ()
-    assert draft.publishable
-
-
-def test_p30_a_group_with_two_dates_takes_the_latest_and_a_note_lists_both(tmp_path):
-    discovery = folders(tmp_path / "exp", "A/rep1", "B/rep1", "A/rep2", "B/rep2")
-    data = legacy(
-        tmp_path,
-        [
-            row("A", "rep1", "G1", on="2026-10-01"),
-            row("B", "rep1", "G1", on="2026-10-15"),
-            row("A", "rep2", "G2", on="2026-10-20"),
-            row("B", "rep2", "G2", on="2026-10-20"),
-        ],
-    )
-    draft = migrate_legacy_design(data, discovery)
-    assert draft.repeats["G1"].confirmed_on == "2026-10-15"
-    assert draft.repeats["G2"].confirmed_on == "2026-10-20"
-    (note,) = draft.notes
-    assert note.repeat_group == "G1"
-    assert note.kept == "2026-10-15"
-    assert set(note.dates) == {("A", "rep1", "2026-10-01"), ("B", "rep1", "2026-10-15")}
-
-
-def test_a_confirmed_group_without_any_date_stays_open_and_takes_no_clock_date(tmp_path):
-    discovery = folders(tmp_path / "exp", "A/rep1", "B/rep1")
-    data = legacy(tmp_path, [row("A", "rep1", on=""), row("B", "rep1", on="")])
-    draft = migrate_legacy_design(data, discovery)
-    assert draft.repeats["rep1"].confirmed is True
-    assert draft.repeats["rep1"].confirmed_on == ""
-    assert ("confirmed_on_missing", "repeat rep1") in {
-        (q.code, q.subject) for q in draft.open_questions()
-    }
-
-
-def test_an_unconfirmed_legacy_group_stays_unconfirmed(tmp_path):
-    discovery = folders(tmp_path / "exp", "A/rep1", "B/rep1")
-    data = legacy(tmp_path, [row("A", "rep1", confirmed=False), row("B", "rep1")])
-    repeat = migrate_legacy_design(data, discovery).repeats["rep1"]
-    assert (repeat.confirmed, repeat.confirmed_on) == (False, "")
-
-
-@pytest.mark.parametrize(
-    ("marked", "references", "unresolved"),
-    [
-        ((), {}, ()),
-        (("A",), {"B": "A", "C": "A"}, ()),
-        (("A", "B"), {}, ("A", "B")),
-    ],
-)
-def test_legacy_controls_give_no_reference_one_reference_or_an_open_question(
-    tmp_path, marked, references, unresolved
-):
-    discovery = folders(tmp_path / "exp", "A/rep1", "B/rep1", "C/rep1")
-    data = legacy(tmp_path, [row(c, "rep1", control=c in marked) for c in "ABC"])
-    draft = migrate_legacy_design(data, discovery)
-    assert dict(draft.references) == references
-    assert draft.unresolved_controls == unresolved
-    assert (
-        ("control_unresolved", "A") in {(q.code, q.subject) for q in draft.open_questions()}
-    ) == (len(unresolved) > 1)
-
-
-def test_a_legacy_condition_on_the_forbidden_list_migrates_with_no_proposed_id(tmp_path):
-    discovery = folders(tmp_path / "exp", "control/rep1", "DrugA/rep1")
-    data = legacy(tmp_path, [row("control", "rep1", control=True), row("DrugA", "rep1")])
-    draft = migrate_legacy_design(data, discovery)  # not refused
-    assert draft.conditions["control"].proposed is None
-    assert dict(draft.references) == {"DrugA": "control"}  # by folder; the ID is confirmed later
-    assert ("id_pending", "condition control") in {
-        (q.code, q.subject) for q in draft.open_questions()
-    }
-    assert (
-        draft.confirm_id("conditions", "control", "ctrl").conditions["control"].confirmed == "ctrl"
-    )
-
-
-def test_lenient_legacy_values_are_refused_not_coerced(tmp_path):
-    discovery = folders(tmp_path / "exp", "A/rep1")
-    data = legacy(tmp_path, [row("A", "rep1")]).replace(b",true,", b",yes,")
-    with pytest.raises(DesignFormatError):
-        migrate_legacy_design(data, discovery)
-
-
-def test_a_legacy_design_that_breaks_a_rule_is_refused_with_the_code(tmp_path):
-    discovery = folders(tmp_path / "exp", "A/rep1", "A/rep2", "B/rep1", "B/rep2")
-    swapped = legacy(
-        tmp_path,
-        [
-            row("A", "rep1", "rep2"),
-            row("A", "rep2", "rep1"),
-            row("B", "rep1", "rep2"),
-            row("B", "rep2", "rep1"),
-        ],
-    )
-    with pytest.raises(LegacyMigrationRefused) as refused:
-        migrate_legacy_design(swapped, discovery)
-    assert refused.value.codes == ("E_REPEAT_ID_SHADOWS_SOURCE",)
-    twice = legacy(tmp_path, [row("A", "rep1", "G"), row("A", "rep2", "G")])
-    with pytest.raises(LegacyMigrationRefused) as refused:
-        migrate_legacy_design(twice, discovery)
-    assert refused.value.codes == ("repeat_group_conflict",)
-
-
-@pytest.mark.parametrize("group", ["z", "files", "overrides"])
-def test_a_legacy_repeat_group_that_is_not_an_allowed_id_opens_a_question(tmp_path, group):
-    """Owner decision 2026-11-07, Spec 4.6a: not refused, no proposal, never repaired."""
-    discovery = folders(tmp_path / "exp", "A/rep1", "B/rep1")
-    data = legacy(tmp_path, [row("A", "rep1", group), row("B", "rep1", group)])
-    draft = migrate_legacy_design(data, discovery)  # not refused
-    repeat = draft.repeats[group]
-    assert repeat.id.proposed is None and repeat.id.confirmed is None
-    assert repeat.confirmed and repeat.confirmed_on == "2026-10-30"  # the legacy answer is kept
-    assert [m.source_repeat for m in repeat.members] == ["rep1", "rep1"]
-    assert ("id_pending", f"repeat {group}") in {
-        (q.code, q.subject) for q in draft.open_questions()
-    }
-    assert not draft.publishable
-    with pytest.raises(DraftError) as refused:  # the user cannot adopt it unchanged
-        draft.confirm_id("repeats", group, group)
-    assert "E_FORBIDDEN_FIELD" in refused.value.codes
-    named = draft.confirm_id("repeats", group, "R1")
-    assert named.repeats[group].id.confirmed == "R1"
-
-
-def test_new_and_missing_folders_are_never_merged_silently(tmp_path):
-    discovery = folders(tmp_path / "exp", "A/rep1", "B/rep1", "B/rep2")
-    data = legacy(tmp_path, [row("A", "rep1"), row("B", "rep1"), row("B", "gone")])
-    draft = migrate_legacy_design(data, discovery)
-    assert draft.legacy_missing == (("B", "gone"),)
-    assert draft.repeats["rep1"].confirmed is True
-    assert draft.repeats["rep2"].confirmed is False  # a new folder is pending, not confirmed
-    codes = {(q.code, q.subject) for q in draft.open_questions()}
-    assert ("legacy_folder_missing", "B / gone") in codes
-    assert ("repeat_not_confirmed", "repeat rep2") in codes
-    joined = legacy(tmp_path, [row("A", "rep1"), row("B", "rep1")])
-    rejoined = migrate_legacy_design(
-        joined, folders(tmp_path / "exp2", "A/rep1", "B/rep1", "C/rep1")
-    )
-    assert rejoined.repeats["rep1"].confirmed is False  # the new folder joined; asked again
-    assert rejoined.repeats["rep1"].confirmed_on == ""

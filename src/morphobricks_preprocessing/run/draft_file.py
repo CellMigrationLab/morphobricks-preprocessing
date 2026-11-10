@@ -110,7 +110,7 @@ def save_draft(output_folder: str | os.PathLike, draft: Draft, answers: DraftAns
     output_folder
         The output folder; created if needed.
     draft
-        The draft derived from the folder (discovery or a legacy design), without the answers.
+        The draft derived from the folder, without the answers.
     answers
         All the user's answers so far (the file is replaced, not merged).
 
@@ -181,7 +181,7 @@ def load_draft(output_folder: str | os.PathLike, draft: Draft) -> ResumedDraft |
     output_folder
         The output folder.
     draft
-        The draft derived again from the folder (or the legacy design) now.
+        The draft derived again from the folder now.
 
     Raises
     ------
