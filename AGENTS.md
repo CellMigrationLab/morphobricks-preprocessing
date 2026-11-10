@@ -880,7 +880,8 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
     files on the runtime are visible (owner, v0.5.1). No cell runs another.
   - A cell that cannot go on raises its own `CellStop` (a `RuntimeError` whose
     `_render_traceback_` returns the message), so Colab and JupyterLab show one line and no
-    traceback (owner, v0.5.1). Cell 1 checks the Python version before `import tomllib`.
+    traceback (owner, v0.5.1). A stop caused by another error (the interface import, the Drive
+    mount) names that error on the same line; an error that is not a stop keeps its traceback. Cell 1 checks the Python version before `import tomllib`.
   - Cell 1 is a standalone standard-library bootstrap: nearby checkout, installed package,
     or GitHub installation of the release `RELEASE_TAG`, with missing requirements
     installed using the kernel's Python (`subprocess`, never `!pip`); on Colab with the

@@ -347,3 +347,49 @@ def test_on_a_faked_colab_without_drive_cell_3_opens_the_app_after_one_line(tmp_
     ]
     assert not drive_root.exists()  # nothing mounted for the user
     assert _shows_a_widget(run)
+
+
+def _cell_after(nbformat, notebook, source):
+    """Put a cell running ``source`` in front of the notebook's last cell."""
+    notebook.cells.insert(len(notebook.cells) - 1, nbformat.v4.new_code_cell(source))
+
+
+def test_an_unexpected_error_in_a_cell_keeps_its_traceback():
+    # Only the cells' own stops are one line: a real error still shows where it happened.
+    nbformat = _kernel_modules()
+    notebook, (install, run) = _kernel_notebook(nbformat, roles=(INSTALL, RUN))
+    _cell_after(
+        nbformat,
+        notebook,
+        "import morphobricks_preprocessing.notebook_ui as interface\n"
+        "def broken(*arguments, **options):\n"
+        "    raise KeyError('a real defect')\n"
+        "interface.PreprocessingNotebook = broken\n",
+    )
+    _execute(notebook, allow_errors=True)
+
+    assert not _errors(install)
+    (error,) = _errors(run)
+    assert error.ename == "KeyError"
+    assert len(error.traceback) > 1
+    assert any("broken" in line for line in error.traceback)
+
+
+def test_the_stop_for_an_interface_that_cannot_load_names_the_import_error():
+    # The one-line stop keeps the cause on its line: it never hides what failed.
+    nbformat = _kernel_modules()
+    notebook, (install, run) = _kernel_notebook(nbformat, roles=(INSTALL, RUN))
+    _cell_after(
+        nbformat,
+        notebook,
+        "import sys\nsys.modules['morphobricks_preprocessing.notebook_ui'] = None\n",
+    )
+    _execute(notebook, allow_errors=True)
+
+    assert not _errors(install)
+    (error,) = _errors(run)
+    assert error.ename == "CellStop"
+    assert "could not load (ModuleNotFoundError: import of " in error.evalue
+    assert "morphobricks_preprocessing.notebook_ui" in error.evalue
+    assert error.evalue.endswith("Run cell 1 again.")
+    assert error.traceback == [error.evalue]

@@ -1162,6 +1162,10 @@ Raised during review; to be decided before the milestones that need them:
     report), 2. Mount Google Drive (Colab only; elsewhere a one-line note), 3. Run
     preprocessing (the app). Cell 3 run before cell 1, or on Colab without Drive, stops and
     names the cell to run; no cell runs another.*
+    *Amended (v0.5.1, owner): the code cells are Colab forms with the code hidden; a cell that
+    cannot go on stops with one line and no traceback (a stop caused by another error names
+    that error on the same line; any other error keeps its traceback); cell 3 on Colab without
+    Drive opens the app after one line saying that only files on the runtime are visible.*
 59. How are images with axis errors saved as named-axis copies (design v0.4 §5, PP-11)?
     *Decided (owner, 2 November 2026; implemented in PP-11) as design v0.4 §5 says: images
     only, as named-axis OME-TIFF (BigTIFF when large); copies keep the file name and folder

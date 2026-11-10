@@ -97,7 +97,10 @@ and `run.preflight.remasked`. The pinned surface is `tests/test_brick_api_surfac
 - A cell that cannot go on (cell 3 before cell 1, a refused checkout, a failed install or Drive
   mount, Python 3.10) stops with its message on one line and no traceback: it raises the cell's
   own `CellStop`, a `RuntimeError` whose `_render_traceback_` is the message (shown so by
-  IPython, so in Colab and JupyterLab; tested in a real kernel).
+  IPython, so in Colab and JupyterLab; tested in a real kernel). A stop caused by another error
+  names it on that line, as in "… its notebook interface could not load (ImportError: …)" or
+  "Google Drive could not be connected (ValueError: …)", so the one line never hides what
+  failed; any other error keeps its full traceback (tested in a real kernel).
 - **Cell 3 on Colab without Drive opens the app** after one line: "Google Drive is not mounted:
   only files on this Colab runtime are visible, and they are deleted when the runtime stops."
   (It stopped and named cell 2 before.)

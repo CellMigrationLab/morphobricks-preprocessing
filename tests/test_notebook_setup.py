@@ -380,7 +380,9 @@ def test_setup_stops_when_drive_cannot_be_mounted(setup_environment, monkeypatch
     state = setup_environment
     state.start(INSTALL)
     imported = list(state.imports)
-    with pytest.raises(RuntimeError, match="Google Drive could not be connected"):
+    with pytest.raises(
+        RuntimeError, match=r"Google Drive could not be connected \(ValueError: mount failed\)\."
+    ):
         state.start(DRIVE, fresh=False)
     assert state.imports == imported
     assert state.apps == []
@@ -567,3 +569,30 @@ def test_cell_3_outside_colab_needs_no_drive(setup_environment):
     state.start(INSTALL, RUN)  # cell 2 skipped: nothing to mount outside Colab
     assert state.apps == [APP_OPTIONS]
     assert "app" in state.namespace
+
+
+@pytest.mark.parametrize("number", [INSTALL, RUN])
+def test_the_interface_stop_names_its_import_error(setup_environment, monkeypatch, number):
+    # A stop is one line, but it never hides what failed: the ImportError is on that line.
+    state = setup_environment
+    if number == RUN:
+        state.start(INSTALL)
+    imported = importlib.import_module  # the fixture's double
+
+    def broken(name):
+        if name == "morphobricks_preprocessing.notebook_ui":
+            raise ImportError("cannot import name 'gone' from 'morphobricks_preprocessing.x'")
+        return imported(name)
+
+    monkeypatch.setattr(importlib, "import_module", broken)
+    with pytest.raises(RuntimeError) as stopped:
+        state.start(number, fresh=number == INSTALL)
+    stop = stopped.value
+    assert type(stop).__name__ == "CellStop"
+    assert (
+        "its notebook interface could not load (ImportError: cannot import name 'gone' from "
+        "'morphobricks_preprocessing.x')." in str(stop)
+    )
+    assert stop._render_traceback_() == [str(stop)]
+    assert isinstance(stop.__cause__, ImportError)
+    assert state.apps == []
