@@ -9,6 +9,7 @@ checked or computed again here, and nothing is changed. A mixin of
 from __future__ import annotations
 
 from .channel_labels import remaining
+from .description_reconcile import CHANNELS_CHANGED
 from .mask_answers import mask_kinds, masks_unanswered
 from .notebook_stepper import StepState
 from .notebook_values import natural_key, size_rows
@@ -68,6 +69,9 @@ class _StepStates:
         if state is not None and state.changed:
             rec = state.reconciliation
             text += f" · since saved: {len(rec.new)} new, {len(rec.removed)} gone"
+            headers = sum(CHANNELS_CHANGED in u.reasons for u in rec.unchanged)
+            if headers:
+                text += f", {plural(headers, 'folder')} with changed headers"
         if not pre.ok:
             text += " · problems to fix"
         return StepState(pre.ok, text)

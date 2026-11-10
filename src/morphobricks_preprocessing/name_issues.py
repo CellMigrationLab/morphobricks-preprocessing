@@ -3,8 +3,7 @@
 Spec experiment-v1 §3.3 and §6: a folder label or a discovered mask type name read from disk
 must be Unicode NFC (``R_FOLDER_NOT_NFC``), and a mask type name must pass the Label rules
 (``R_MASK_TYPE_NAME_INVALID``). Neither is ever normalized, trimmed or renamed: the name is
-reported as read. They apply only when a description is in use (owner decision Q1, 7 November
-2026); a run without one keeps accepting what v0.4 accepted.
+reported as read. Every run is described (Spec ADR 0002 AR10), so they always apply.
 """
 
 from __future__ import annotations

@@ -12,9 +12,9 @@ import sys
 
 import pytest
 
-from morphobricks_preprocessing import _io, calibration_entry, run_experiment, write_calibration
+from described_tree import main_described, run_described
+from morphobricks_preprocessing import _io, calibration_entry, write_calibration
 from morphobricks_preprocessing.calibration import Calibration
-from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.testing import make_clean_run
 
 pytestmark = pytest.mark.skipif(
@@ -63,7 +63,7 @@ def test_every_output_of_a_run_is_readable_by_others(tmp_path, umask_022):
     clean = make_clean_run(tmp_path, axes="YX", shape=(8, 8), mask_types=("Cells",), design=True)
     write_calibration(Calibration((calibration_entry(".", "X", 0.5, "um"),)), clean.output)
     args = ["masks", str(clean.experiment), "--output", str(clean.output)]
-    assert main([*args, "--masks", str(clean.masks)]) == 0
+    assert main_described([*args, "--masks", str(clean.masks)]) == 0
     files = sorted(path for path in clean.output.iterdir() if path.is_file())
     names = {path.name for path in files}
     assert {
@@ -82,6 +82,6 @@ def test_a_rerun_keeps_the_modes_the_user_set(tmp_path, umask_022):
     clean = make_clean_run(tmp_path, axes="YX", shape=(8, 8))
     table = clean.output / "plane_histograms.csv"
     table.chmod(0o600)
-    assert run_experiment(output_folder=clean.output, mode="full").written
+    assert run_described(output_folder=clean.output, mode="full").written
     assert mode(table) == 0o600
     assert mode(clean.output / "run_manifest.json") == 0o644

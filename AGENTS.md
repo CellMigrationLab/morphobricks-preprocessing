@@ -168,6 +168,9 @@ src/morphobricks_preprocessing/
                     preprocessing's discovery and pairing; RunInputs.open raises
                     UnrecordedFilesError for them (PP-8b, contract §9.1)
   run_inputs_text.py the texts RunInputs refuses a run with (moved from run_inputs.py in PP-12)
+  required_description.py every run needs a published morphobricks.toml (v0.5.1, ADR 0002
+                    AR10): is_published, the A_DESCRIPTION_REQUIRED issue and its fix, shared by
+                    the run, the mask step, the CLI and RunInputs
   mask_record.py    the manifest's masks entry with fingerprints and roles (manifest v2); the
                     fingerprint is the one bound to the mask's header (issue #160)
   mask_binding.py   masks bound to their fingerprints (issues #160, #165): changed_masks,
@@ -217,7 +220,7 @@ src/morphobricks_preprocessing/
                     moved from report.py in PP-10d
   discovery_report.py the run report (discovery_report.json and .txt, design v0.4 §4): status,
                     manifest SHA-256, what was found, reused, recomputed and replaced
-  cli.py, __main__  `morphobricks-preprocessing check|run|masks|calibrate|design|convert` (also `python -m morphobricks_preprocessing`);
+  cli.py, __main__  `morphobricks-preprocessing check|run|masks|calibrate|describe|convert` (also `python -m morphobricks_preprocessing`);
                     cli_run.py holds `run`'s options and output; cli_calibrate.py `calibrate`;
                     cli_convert.py `convert`; log_target.py where `--log` may write (#99),
                     by write_target.py's write_target_refusal (the shared rule other bricks
@@ -287,8 +290,8 @@ src/morphobricks_preprocessing/
                     mask_answers.py (pure) the mask answers of the draft; mask_evidence.py the
                     evidence beside the question (images with the mask, dtype, values in one
                     image, the mask on that image)
-  notebook_described.py a described run (PreprocessingNotebook(describe=True), the shipped
-                    notebook): the overrides that retire the labels toggle, the design card's
+  notebook_described.py the described run (every PreprocessingNotebook; there is no
+                    undescribed notebook since v0.5.1): the overrides that retire the labels toggle, the design card's
                     comparable questions and CSV writes, the IDs toggle and the Image type card,
                     and reopen from the published file
   notebook_check_save.py the Check and save screen (sentences, one "same way?" per replicate,
@@ -331,7 +334,8 @@ src/morphobricks_preprocessing/
 notebooks/MorphoBricks_Preprocessing.ipynb   thin notebook: every code cell calls notebook_ui only
 notebooks/notebook_latest_versions.yaml      the notebook's latest version, for LabConstrictor's version check
 tests/              pytest with simulated TIFFs (tests/tiff_tree.py, tests/simulation.py); the
-                    schema-version-2 fixture (tests/v2_fixture.py, tests/data)
+                    histogram science goldens (tests/histogram_goldens.py, tests/data);
+                    described test runs of a tree (tests/described_tree.py)
 experiments/binning_study/      the study behind the binning decisions (not part of the package)
 ```
 
@@ -534,9 +538,9 @@ functions the tests use.
 - **Rows** are sorted by path, then z, t.
 - **Earlier versions:** the reader refuses schema 1 and 2 (`CsvFormatError`); a run
   recomputes them completely (manifest `schema_version` differs). Each channel's
-  histogram equals the version-2 row's, whole and in blocks
-  (`tests/test_schema_v2_equivalence.py` with the committed fixture in `tests/data`,
-  written by `tests/data/make_v2_fixture.py` with the pre-P3b code).
+  histogram equals the reference row's, whole and in blocks (science goldens:
+  `tests/test_histogram_goldens.py` with the committed reference in `tests/data`, written by
+  `tests/data/make_histogram_goldens.py` with an earlier, independent implementation).
 - **Step 4** summarises each channel of a group on its own (issue #104): one
   `GroupSummary` per group and channel (`channel`, `xyc_plane_count`,
   `channel_histogram_count`), a `channel` column in the table and one plot panel per
@@ -658,12 +662,11 @@ functions the tests use.
   `RunInputs.design()` uses it too (#83).
 - **Reruns:** `reconcile_design` keeps answers for known folders, reopens only groups that
   gain a folder, drops removed folders.
-- **Notebook** writes the file after every answer once the labels are confirmed; a
-  confirmed design for the same folders is folded away behind **Change the experiment
-  design**; step 3 is gated on it. `folder_step(show_design=False)` (embedding, Q31) asks
-  and writes nothing, and step 3 runs without a design. **CLI** `run` reads it (or `--design`), else writes the
-  reconciled template and exits 1. **API** `run_experiment(design=None)` is optional; with
-  a design it is written with the table and `experiment_design_sha256` goes in the manifest.
+- **v0.5.1: an output only.** Every run is described (`A_DESCRIPTION_REQUIRED` without a
+  published `morphobricks.toml`, contract §0); the run derives `experiment_design.csv` from the
+  description and writes it with the table (`experiment_design_sha256` in the manifest). The
+  notebook keeps the pairing in the draft; there is no `design=`, `--design`, `design`
+  command or `check` template any more.
 
 ### Image type (contract §13, follow-up P4)
 
@@ -1033,7 +1036,8 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   input read directly (TIFF to OME-Zarr conversion and the `_moved.py` re-exports were removed);
   optional masks, the mask step and the notebook's **Describe the masks**; named-axis copies
   (`convert`, notebook card); calibration; resumable, crash-consistent runs.
-- **Command line:** `check`, `run`, `masks`, `calibrate`, `design`, `convert`.
+- **Command line:** `check`, `run`, `masks`, `calibrate`, `describe`, `convert` (`check`,
+  `run` and `masks` need a published description, v0.5.1).
 - **Next:** [docs/roadmap.md](docs/roadmap.md).
 - **Not yet verified:**
   - the exact look of the notebook in a real JupyterLab;

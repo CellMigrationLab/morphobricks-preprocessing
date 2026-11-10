@@ -1,5 +1,6 @@
 import pytest
 
+from described_tree import main_described, run_described
 from morphobricks_preprocessing import (
     CONSISTENCY_CODES,
     balance_table,
@@ -7,10 +8,8 @@ from morphobricks_preprocessing import (
     check_dataset,
     discover_experiment,
     preflight,
-    run_experiment,
 )
 from morphobricks_preprocessing.axes import prefill_mapping
-from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.report import balance_rows, balance_summary
 from morphobricks_preprocessing.validation import Severity
 from tiff_tree import make_tree
@@ -123,7 +122,7 @@ def test_preflight_and_run_report_the_balance(tmp_path):
     assert pre.ok
     assert {"unbalanced_images", "repeat_missing_conditions"} <= set(codes(pre.issues))
     assert pre.dataset.balance.cell("rep1", "treated").unbalanced
-    result = run_experiment(root, prefill_mapping("YX"))
+    result = run_described(root, prefill_mapping("YX"))
     assert result.written
     assert {"unbalanced_images", "repeat_missing_conditions"} <= set(codes(result.issues))
 
@@ -157,7 +156,7 @@ def test_balance_text_for_the_command_line(tmp_path):
 
 def test_cli_check_prints_the_balance_and_warnings(tmp_path, capsys):
     root = tree(tmp_path / "exp", {"control/rep1": 4, "treated/rep1": 1, "treated/rep2": 4})
-    assert main(["check", str(root)]) == 0
+    assert main_described(["check", str(root)]) == 0
     out = capsys.readouterr().out
     assert "Images per condition (columns) and biological repeat (rows)" in out
     assert "1 (0) !" in out
@@ -198,18 +197,13 @@ def test_a_technical_repeat_folder_named_single_is_the_level_value(tmp_path):
 
 
 def test_the_design_written_by_a_run_counts_only_analysed_technical_repeats(tmp_path):
-    from morphobricks_preprocessing import default_design, read_confirmed_design
+    from morphobricks_preprocessing import read_confirmed_design
     from morphobricks_preprocessing.design import DESIGN_FILENAME
 
     root = tree(tmp_path / "exp", {"ctrl/rep1/techA": 1, "ctrl/rep1/techB": 1})
     excluded = ["ctrl/rep1/techB/img_00.tif"]
-    repeats = biological_repeats(discover_experiment(root), excluded)
-    design = default_design(repeats)
-    design = design.with_confirmed(design.groups[0], True, on="2026-11-02")
-    output = tmp_path / "out"
-    result = run_experiment(
-        root, prefill_mapping("YX"), output_folder=output, exclude=excluded, design=design
-    )
+    output = tmp_path / "out"  # the description declares the analysed unit only
+    result = run_described(root, prefill_mapping("YX"), output_folder=output, exclude=excluded)
     assert result.written
     (row,) = read_confirmed_design(output / DESIGN_FILENAME).design.rows
     assert (row.image_count, row.technical_repeat_count) == (1, 1)

@@ -58,8 +58,36 @@ def test_notebook_uses_stable_page_api_not_a_new_app_method():
         assert call in source
     for page in ("folder_step(", "axis_step(", "channels_step(", "check_save_step(", "run_step("):
         assert f"notebook.{page}" not in source  # never shown twice beside the stepper
-    assert "PreprocessingNotebook(describe=True)" in source
+    assert release_call() in source
     assert "display(app)" in source
+
+
+# The shipped notebook installs the package at its RELEASE_REF, not this checkout: its cell must
+# call the API of the code at that commit. Between releases main's code moves on (v0.5.1 removed
+# ``describe``), while the cell keeps the released call until the release PR moves RELEASE_REF and
+# the call together, adding the new pair here.
+RELEASE_CALLS = {
+    # v0.5.0: the described run is ``describe=True``; the default is the undescribed v0.4 run.
+    "fd7afd339bcaab7579c806a28a65bb7ecebe940c": "PreprocessingNotebook(describe=True)",
+}
+CHECKOUT_CALL = "PreprocessingNotebook()"
+"""The call of this checkout's code (every run described, no ``describe`` argument)."""
+
+
+def release_call():
+    """Return the ``PreprocessingNotebook`` call of the code at the notebook's RELEASE_REF."""
+    ref = _setting("RELEASE_REF")
+    assert ref in RELEASE_CALLS, (
+        f"RELEASE_REF {ref} has no recorded PreprocessingNotebook call: the release that moves "
+        "RELEASE_REF records the call of the code at that commit in RELEASE_CALLS"
+    )
+    return RELEASE_CALLS[ref]
+
+
+def test_the_shipped_cell_calls_the_api_of_its_release_ref():
+    source = _source()
+    calls = re.findall(r"PreprocessingNotebook\([^)]*\)", source)
+    assert calls == [release_call()]  # one call, the released code's: never this checkout's
 
 
 def test_colab_setup_mounts_drive_without_custom_widget_manager_or_restart():
@@ -106,6 +134,10 @@ def test_notebook_runs_in_a_kernel():
     # developer makes to use a checkout is the explicit override.
     assert code.source.count("DEVELOPMENT_OVERRIDE = False") == 1
     code.source = code.source.replace("DEVELOPMENT_OVERRIDE = False", "DEVELOPMENT_OVERRIDE = True")
+    # While RELEASE_REF is behind this checkout, the cell calls the released API: the kernel,
+    # running this checkout, is given this checkout's call (the release PR makes them one).
+    assert code.source.count(release_call()) == 1
+    code.source = code.source.replace(release_call(), CHECKOUT_CALL)
     client = nbclient.NotebookClient(
         notebook,
         timeout=300,

@@ -4,7 +4,7 @@ A run with a published description records, in its manifest, the file's identity
 of the exact bytes the run read: provenance, never a cache key), the section digests consumers
 key their products on, which units' image types were checked against a header, the status of
 every declared mask file, and the records of publication (re-confirmations) copied unchanged
-from ``morphobricks.records.jsonl``. A run without a description writes no such key.
+from ``morphobricks.records.jsonl``. Every run has a published description (Spec ADR 0002 AR10).
 """
 
 from __future__ import annotations

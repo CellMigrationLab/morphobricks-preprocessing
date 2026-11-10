@@ -156,6 +156,7 @@ class _AxisStep:
         pre = self.preflight
         self.axis_next.value = ""
         self._preview_shown = False
+        self._preview_drawn = None
         self._close_image_type()
         waiting = self._axis_waiting()
         if waiting:
@@ -220,7 +221,7 @@ class _AxisStep:
 
     def _layout_kinds(self) -> str:
         """Return the kinds of layout the saved description declares when they differ, else ''."""
-        state = self._published() if getattr(self, "_describe", False) else None
+        state = self._published()
         if state is None:
             return ""
         layouts = declared_layouts(state.description)
@@ -320,6 +321,7 @@ class _AxisStep:
             self.mapping = self._current_mapping()
         except ValueError as exc:
             self.axis_status.value = ui.status("error", str(exc))
+            self.preview_checked.disabled = True  # the preview shown is not of these roles
             return
         ranges = axis_length_ranges(self.mapping, self.preflight.metadata.files)
         marks = header_marks(self.mapping, self.preflight.metadata.files)

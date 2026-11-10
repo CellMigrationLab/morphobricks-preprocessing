@@ -7,16 +7,20 @@ and ``v16`` and ``v21`` have the four section digests of ``v01``.
 
 from __future__ import annotations
 
+import datetime
 import re
 import tomllib
+from dataclasses import replace
 
 import pytest
 
+from frozen_clock import FrozenClock
 from morphobricks_preprocessing.description import (
     Description,
     DescriptionError,
     description_from_bytes,
 )
+from morphobricks_preprocessing.description_file import DESCRIPTION_FILENAME, RECORDS_FILENAME
 from morphobricks_preprocessing.description_read import read_description_bytes
 from morphobricks_preprocessing.description_write import (
     SECTIONS,
@@ -25,6 +29,8 @@ from morphobricks_preprocessing.description_write import (
     toml_key,
     toml_string,
 )
+from morphobricks_preprocessing.design_derive import derive_design
+from morphobricks_preprocessing.run.description_file import ABSENT, publish_description
 from spec_pin import fixtures
 
 VALID = {item.name.split("_")[0]: item for item in fixtures("valid")}
@@ -100,6 +106,24 @@ def test_a_display_name_target_or_treatment_key_changes_no_digest(name):
     assert _model(name) != _model("v01")
     assert section_digests(_model(name)) == section_digests(_model("v01"))
     assert canonical_bytes(_model(name)) != canonical_bytes(_model("v01"))
+
+
+def test_editing_only_target_or_treatment_key_of_v27_changes_no_digest_and_no_grouping():
+    """Section 2 "Descriptive keys" and "Section digests" on ``v27`` (ADR 0001 GS1)."""
+    base = _model("v27")
+    edits = {
+        "DrugA": {"target": "YES1", "treatment_key": "dasatinib"},
+        "DrugB": {"target": None, "treatment_key": None},
+        "DrugC": {"target": "src", "treatment_key": "azd0530"},  # now equal to DrugB's
+    }
+    conditions = {
+        key: replace(condition, **edits.get(key, {})) for key, condition in base.conditions.items()
+    }
+    edited = replace(base, conditions=conditions)
+    assert canonical_bytes(edited) != canonical_bytes(base)
+    assert description_from_bytes(canonical_bytes(edited)) == edited  # a valid file
+    assert section_digests(edited) == section_digests(base)
+    assert derive_design(edited) == derive_design(base)  # no grouping on the descriptive keys
 
 
 def test_the_digests_cover_the_four_sections_and_a_semantic_change_moves_them():
@@ -179,6 +203,33 @@ def test_confirmed_on_is_written_as_the_model_holds_it():
         )
     ).decode("utf-8")
     assert 'confirmed_on = "1999-12-31"' in text and "1999-12-31" in text.split("[used_ids]")[0]
+
+
+def test_a_frozen_clock_moved_by_a_day_writes_identical_bytes_for_an_unchanged_model(
+    monkeypatch, tmp_path
+):
+    """Conformance plan section 2, ``confirmed_on``: the writer never reads the clock."""
+    clock = FrozenClock(monkeypatch, datetime.date(2026, 11, 9))
+    assert "morphobricks_preprocessing.notebook_check_save.date" in clock.patched
+    models = {name: _model(name) for name in VALID}
+    clock.reads = 0
+    first = {name: canonical_bytes(model) for name, model in models.items()}
+    out = tmp_path / "out"
+    out.mkdir()
+    published = publish_description(out, models["v01"], base_sha256=ABSENT)
+    file_first = (out / DESCRIPTION_FILENAME).read_bytes()
+    clock.move(days=1)
+    assert datetime.date.today() == datetime.date(2026, 11, 10)  # the clock did move
+    clock.reads = 0
+    second = {name: canonical_bytes(model) for name, model in models.items()}
+    assert clock.reads == 0  # the canonical writer read no clock, on either day
+    assert second == first
+    again = publish_description(out, models["v01"], base_sha256=published.sha256)
+    assert (out / DESCRIPTION_FILENAME).read_bytes() == file_first == first["v01"]
+    assert again.sha256 == published.sha256 and again.records == ()
+    assert not (out / RECORDS_FILENAME).exists()
+    assert {m.confirmed_on for m in models["v01"].repeats.values()} == {"2026-11-06"}
+    assert file_first.count(b'confirmed_on = "2026-11-06"') == 2  # the model's, not the clock's
 
 
 def test_a_refused_file_is_not_a_model():

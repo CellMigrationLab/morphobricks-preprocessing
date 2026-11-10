@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 import tifffile
 
+from described_tree import main_described, run_described
 from morphobricks_preprocessing import (
     AXIS_CHECK_CODES,
     AXIS_ERROR_CODES,
@@ -24,10 +25,8 @@ from morphobricks_preprocessing import (
     prefill_mapping,
     preflight,
     review_axes,
-    run_experiment,
 )
 from morphobricks_preprocessing.axis_check import axis_disagreements
-from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.design import default_design, write_experiment_design
 from morphobricks_preprocessing.discovery import default_output_folder
 from run_files import only_the_report
@@ -281,7 +280,7 @@ def test_run_stops_naming_every_file(tmp_path, reads, write, axes, roles, code):
     root = tmp_path / "exp"
     for rel in ["ctrl/r1/a.tif", "ctrl/r1/b.tif", "drug/r1/a.tif"]:
         write(root / rel)
-    result = run_experiment(root, AxisMapping(axes, roles))
+    result = run_described(root, AxisMapping(axes, roles))
     assert not result.written and reads == []
     found = one(result.issues, code)
     assert found.paths == ("ctrl/r1/a.tif", "ctrl/r1/b.tif", "drug/r1/a.tif")
@@ -292,14 +291,14 @@ def test_run_stops_naming_every_file(tmp_path, reads, write, axes, roles, code):
 def test_a_plain_stack_runs_with_a_warning(tmp_path):
     root = tmp_path / "exp"
     plain(root / "ctrl/a.tif", data((3, 6, 8)))
-    result = run_experiment(root, AxisMapping("IYX", "TYX"))  # ZYX: a Z-stack is refused
+    result = run_described(root, AxisMapping("IYX", "TYX"))  # ZYX: a Z-stack is refused
     assert result.written and one(result.issues, "axes_not_named").paths == ("ctrl/a.tif",)
 
 
 def test_a_clean_run_is_unchanged(tmp_path):
     root = tmp_path / "exp"
     write_data(root / "ctrl/a.tif", data((2, 6, 8)), "CYX")
-    result = run_experiment(root, prefill_mapping("CYX"))
+    result = run_described(root, prefill_mapping("CYX"))
     assert result.written and not [i for i in result.issues if i.code in AXIS_ERROR_CODES]
 
 
@@ -316,7 +315,7 @@ def masks_tree(tmp_path, image, mask_shape, mask_axes=None):
 def test_a_swapped_image_gets_no_spurious_mask_size_error(tmp_path):
     # Header CYX of 6 x 8; confirmed CXY, so by the roles the image is 8 high and 6 wide.
     root, masks = masks_tree(tmp_path, lambda p: write_data(p, data((2, 6, 8)), "CYX"), (8, 6))
-    result = run_experiment(root, AxisMapping("CYX", "CXY"), masks_folder=masks)
+    result = run_described(root, AxisMapping("CYX", "CXY"), masks_folder=masks)
     assert [i.code for i in result.issues if i.is_error] == ["axes_yx_swapped"]
 
 
@@ -324,7 +323,7 @@ def test_a_relabelled_stack_gets_no_spurious_mask_plane_error(tmp_path):
     root, masks = masks_tree(
         tmp_path, lambda p: imagej(p, data((3, 6, 8)), "ZYX"), (3, 6, 8), "ZYX"
     )
-    result = run_experiment(root, AxisMapping("ZYX", "TYX"), masks_folder=masks)
+    result = run_described(root, AxisMapping("ZYX", "TYX"), masks_folder=masks)
     assert [i.code for i in result.issues if i.is_error] == ["axes_contradict_header"]
 
 
@@ -344,7 +343,7 @@ def test_mask_sizes_are_compared_by_the_confirmed_roles(tmp_path):
 
 def test_a_mask_of_the_wrong_size_is_still_an_error(tmp_path):
     root, masks = masks_tree(tmp_path, lambda p: write_data(p, data((2, 6, 8)), "CYX"), (5, 5))
-    result = run_experiment(root, prefill_mapping("CYX"), masks_folder=masks)
+    result = run_described(root, prefill_mapping("CYX"), masks_folder=masks)
     assert [i.code for i in result.issues if i.is_error] == ["mask_size_mismatch"]
     assert one(result.issues, "mask_size_mismatch").paths == ("Cells/ctrl/a.tif",)
 
@@ -374,7 +373,7 @@ def test_cli_check_reports_plain_stacks(tmp_path, capsys):
     root = tmp_path / "exp"
     plain(root / "ctrl/a.tif", data((3, 6, 8)))
     # A warning: 'run' reads the stack with the roles given in --axes.
-    assert main(["check", str(root)]) == 0
+    assert main_described(["check", str(root)]) == 0
     out = capsys.readouterr().out
     assert "1 image do not name their axes, so their roles are recorded as confirmed" in out
     assert "do not name their axes in their metadata (header IYX, confirmed -YX" in out
@@ -383,10 +382,10 @@ def test_cli_check_reports_plain_stacks(tmp_path, capsys):
 def test_cli_check_and_run_say_the_axes_are_correct(tmp_path, capsys):
     root = tmp_path / "exp"
     write_data(root / "ctrl/a.tif", data((2, 6, 8)), "CYX")
-    assert main(["check", str(root)]) == 0
+    assert main_described(["check", str(root)]) == 0
     assert "Axes checked: every image names its axes in its metadata" in capsys.readouterr().out
     confirm(root)
-    assert main(["run", str(root), "--axes", "CYX"]) == 0
+    assert main_described(["run", str(root), "--axes", "CYX"]) == 0
     assert "Axes checked: every image names its axes" in capsys.readouterr().out
 
 
@@ -394,7 +393,7 @@ def test_cli_run_names_the_swapped_files(tmp_path, capsys):
     root = tmp_path / "exp"
     write_data(root / "ctrl/a.tif", data((2, 6, 8)), "CYX")
     confirm(root)
-    assert main(["run", str(root), "--axes", "CXY"]) == 1
+    assert main_described(["run", str(root), "--axes", "CXY"]) == 1
     out = capsys.readouterr().out
     assert "header CYX, confirmed CXY: ctrl/a.tif" in out
     assert "no table or manifest was written" in out

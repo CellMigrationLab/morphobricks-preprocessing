@@ -153,10 +153,10 @@ class PreprocessingNotebook(
         Folder to prefill in step 1.
     output_folder
         Output folder to prefill; empty means the default next to the experiment.
-    describe
-        True for a described run (the shipped notebook, :mod:`.notebook_described`): the
-        experiment is saved as ``morphobricks.toml`` on *Check and save* before the run. False
-        keeps the v0.4 cards (embedding bricks).
+
+    Every run is described (:mod:`.notebook_described`, Spec ADR 0002 AR10): the experiment is
+    saved as ``morphobricks.toml`` on *Check and save* before the run, and a run without it is
+    refused (``A_DESCRIPTION_REQUIRED``). There is no undescribed mode.
 
     Attributes
     ----------
@@ -179,10 +179,7 @@ class PreprocessingNotebook(
         Result of the last run, or None.
     """
 
-    def __init__(
-        self, experiment_folder: str = "", output_folder: str = "", *, describe: bool = False
-    ) -> None:
-        self._describe = describe
+    def __init__(self, experiment_folder: str = "", output_folder: str = "") -> None:
         self.preflight: Preflight | None = None
         self.design: ExperimentDesign | None = None
         # True while the saved design cannot be read and has not been replaced by an answer.
@@ -198,6 +195,7 @@ class PreprocessingNotebook(
         self.log = _LogCapture()
         self._checked_folder = ""
         self._preview_shown = False
+        self._preview_drawn = None
         self._show_output = True
         self._show_design = True
         self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None
@@ -378,8 +376,6 @@ class PreprocessingNotebook(
                 "the image metadata, which is not always right, so check them with the "
                 "preview before confirming."
             )
-            if not self._describe:  # a described run asks the image type per folder later
-                intro += " Then confirm whether the images are fluorescence or RGB colour images."
         return ui.page(
             "Step 2 · Review the axis roles" if title is None else title,
             "Tell the brick which image dimension is width, height, depth, channel and time."
@@ -413,9 +409,8 @@ class PreprocessingNotebook(
 
     def results_step(self) -> widgets.Widget:
         """Step 4: pooled statistics and intensity distributions from the table."""
-        numbered = "" if self._describe else "Step 4 · "  # the stepper numbers steps 1-13
         return ui.page(
-            f"{numbered}Calculate the statistics (optional)",
+            "Calculate the statistics (optional)",  # the stepper numbers the steps
             "Compare conditions and repeats using the histograms computed by the run.",
             [
                 ui.intro(

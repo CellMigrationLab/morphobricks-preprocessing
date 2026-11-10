@@ -58,7 +58,7 @@ class RunLabels:
 
 
 NO_LABELS = RunLabels()
-"""The labels of a run without a description: the table's own names."""
+"""The labels when the run's description cannot be used (edited since): the table's names."""
 
 
 def labels_from_description(description: Description) -> RunLabels:
@@ -86,8 +86,8 @@ def recorded_labels(output_folder: str | os.PathLike) -> RunLabels:
     """Return the IDs of the run recorded in ``output_folder``, or :data:`NO_LABELS`.
 
     The run's manifest must record a description and the published file must still have the
-    recorded SHA-256; anything else (no description, a file edited since, an unreadable
-    manifest or file) gives :data:`NO_LABELS`.
+    recorded SHA-256; anything else (a file edited or removed since, an unreadable manifest or
+    file) gives :data:`NO_LABELS`.
     """
     folder = Path(output_folder)
     try:

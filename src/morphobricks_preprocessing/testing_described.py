@@ -9,7 +9,8 @@ publishes the description beside the output, runs preprocessing on it and,
 unless told not to, runs the mask step, so a brick's tests read their inputs through
 :class:`.run_inputs.RunInputs` exactly as a user's described run gives them.
 
-:func:`.testing.make_clean_run` calls it for ``make_clean_run(description=...)``.
+:func:`.testing.make_clean_run` calls it for ``make_clean_run(description=...)``, and
+:func:`publish_and_run` for its own tree.
 """
 
 from __future__ import annotations
@@ -45,14 +46,14 @@ class CleanRun:
     result
         What :func:`.run.run_experiment` returned.
     description
-        The experiment description of a described run, else None.
+        The run's published experiment description.
     """
 
     experiment: Path
     output: Path
     masks: Path | None
     result: RunResult
-    description: Description | None = None
+    description: Description
 
 
 PUBLISHED_NAME = "morphobricks.toml"
@@ -222,10 +223,41 @@ def make_described_run(
     """
     root = Path(folder)
     parsed, data = description_of(description)
-    experiment, output = root / "experiment", root / "output"
     masks_root = root / "masks" if masks else None
-    mapping = _mapping(parsed)
-    write_described_tree(experiment, masks_root, parsed, tuple(masks))
+    write_described_tree(root / "experiment", masks_root, parsed, tuple(masks))
+    return publish_and_run(root, root / "experiment", masks_root, _mapping(parsed), data, mask_step)
+
+
+def publish_and_run(
+    root: Path,
+    experiment: Path,
+    masks_root: Path | None,
+    mapping: AxisMapping,
+    description: Description | bytes,
+    mask_step: bool = True,
+) -> CleanRun:
+    """Publish the description in ``root/output``, run preprocessing, then the mask step.
+
+    Parameters
+    ----------
+    root
+        The folder holding the experiment; the output is ``root/output``.
+    experiment, masks_root
+        The experiment and masks folders (None: no masks).
+    mapping
+        The axis roles the run is given.
+    description
+        The description, or the exact bytes to publish.
+    mask_step
+        Run the mask step when there are masks, so they are ``checked``.
+
+    Raises
+    ------
+    RuntimeError
+        If the run or the mask step does not write its outputs (its issues are in the message).
+    """
+    parsed, data = description_of(description)
+    output = root / "output"
     output.mkdir(parents=True, exist_ok=True)
     (output / PUBLISHED_NAME).write_bytes(data)
     result = run_experiment(experiment, mapping, output_folder=output, masks_folder=masks_root)
@@ -233,8 +265,12 @@ def make_described_run(
         raise RuntimeError(
             "The described run was not written: " + "; ".join(map(str, result.issues))
         )
-    if masks and mask_step:
-        step = describe_masks(prepare_mask_step(None, output))
+    if masks_root is not None and mask_step:
+        prepared = prepare_mask_step(None, output)
+        if not prepared.ready:
+            problems = [*prepared.issues, *([prepared.refusal] if prepared.refusal else [])]
+            raise RuntimeError("The mask step failed: " + "; ".join(map(str, problems)))
+        step = describe_masks(prepared)
         if step.issues:
             raise RuntimeError("The mask step failed: " + "; ".join(map(str, step.issues)))
     return CleanRun(experiment, output, masks_root, result, parsed)

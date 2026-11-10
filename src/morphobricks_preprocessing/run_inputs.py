@@ -4,7 +4,8 @@ A brick that works on files reads them only through a clean run: the images, the
 roles, pixel sizes, masks, histograms, design and image type, all as the run recorded them.
 Nothing is parsed from names, guessed or transposed, and no file is read once it changed:
 
-- :meth:`RunInputs.open` refuses a version 1 manifest (a run before the axis check), a table,
+- :meth:`RunInputs.open` refuses an output folder without a published description
+  (``A_DESCRIPTION_REQUIRED``), a manifest of an older version (run preprocessing again), a table,
   design or ``calibration.csv`` whose SHA-256 is not the manifest's (also a
   ``calibration.csv`` added since the run), a conversion record changed or gone since a
   run on named-axis copies (``conversion_record_sha256``) or one of its copies changed since
@@ -47,7 +48,6 @@ from .fingerprint import Fingerprint
 from .folder_rules import masks_folder_issues
 from .links import LinkRefusedError
 from .manifest import (
-    LEGACY_MANIFEST_VERSION,
     MANIFEST_FILENAME,
     FileEntry,
     RunManifest,
@@ -59,7 +59,9 @@ from .masks import FOLDER, MaskFile, read_mask
 from .masks.header import _mask_header
 from .planes import DEFAULT_MEMORY_LIMIT, read_plane
 from .recorded_sizes import RecordedSize
+from .required_description import FIX, is_published, required_message
 from .run.generation import published_path, read_stable
+from .run_inputs_error import DescriptionRequiredError
 from .run_inputs_error import RunInputsError as RunInputsError  # re-exported (moved)
 from .run_inputs_image import LazyImage as LazyImage  # re-exported (moved)
 from .run_inputs_projection import ProjectionInputs
@@ -126,10 +128,11 @@ class Fov:
         Depth slices, time points and channels.
     repeat_group, condition_id, technical_repeat_id
         The canonical repeat, condition and technical repeat IDs of the position, added
-        beside the unchanged ``key`` (experiment-v1 §3.4). None for a run without a
-        published description.
+        beside the unchanged ``key`` (experiment-v1 §3.4), from the run's published
+        description. None only in a ``Fov`` built by hand.
     channel_ids
-        The canonical channel ID of each C index, in order; None without a description.
+        The canonical channel ID of each C index, in order (None only in a ``Fov`` built by
+        hand).
     """
 
     key: tuple[str, str, str, str]
@@ -494,17 +497,23 @@ def _coordinate(value: object, name: str, call: str) -> int:
 
 
 def _manifest(output: Path) -> RunManifest:
-    """Read an output folder's manifest, refusing runs written before v0.4.0."""
+    """Read an output folder's manifest; an older version is refused (re-run preprocessing).
+
+    Raises
+    ------
+    DescriptionRequiredError
+        ``A_DESCRIPTION_REQUIRED``: the output folder holds no published description.
+    RunInputsError
+        When there is no manifest.
+    ManifestFormatError
+        When the manifest cannot be read, or is of an older version (run preprocessing again).
+    """
     path = output / MANIFEST_FILENAME
     if not path.exists():
         raise RunInputsError(f"{output} holds no {MANIFEST_FILENAME}: run preprocessing first.")
-    manifest = read_manifest(path)
-    if manifest.manifest_version == LEGACY_MANIFEST_VERSION:
-        raise RunInputsError(
-            f"The run in {output} was written before v0.4.0, without the axis check. Run "
-            "preprocessing again on the experiment."
-        )
-    return manifest
+    if not is_published(output):
+        raise DescriptionRequiredError(f"{required_message(output)} {FIX}")
+    return read_manifest(path)
 
 
 def _check_sha(path: Path, expected: str, what: str) -> None:
@@ -576,4 +585,5 @@ def _fov(
         t_count=max(ts) + 1,
         c_count=channels,
     )
+    # Without one, only the shape (internal reads); fovs() always gives the identity.
     return fov if description is None else with_identity(fov, entry, description)

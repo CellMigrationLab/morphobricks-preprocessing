@@ -7,8 +7,8 @@ the CLI ``run`` writes the design template when it stops on the design. The summ
 
 import numpy as np
 
-from morphobricks_preprocessing import prefill_mapping, run_experiment
-from morphobricks_preprocessing.cli import main
+from described_tree import run_described
+from morphobricks_preprocessing import prefill_mapping
 from morphobricks_preprocessing.report import run_summary
 from morphobricks_preprocessing.run.lock import output_lock
 from tiff_tree import write_data
@@ -22,24 +22,9 @@ def experiment(tmp_path):
     return root
 
 
-def test_the_cli_names_the_report_and_the_design_template(tmp_path, capsys):
-    root, output = experiment(tmp_path), tmp_path / "out"
-    assert main(["run", str(root), "--output", str(output), "--axes", "YX"]) == 1
-    out = capsys.readouterr().out
-    assert "Nothing was written" not in out
-    assert "The run stopped (1 error): no table or manifest was written." in out
-    assert "discovery_report.json and discovery_report.txt (the report)" in out
-    assert "experiment_design.csv (the experiment design to confirm)" in out
-    assert {p.name for p in output.iterdir()} == {
-        "discovery_report.json",
-        "discovery_report.txt",
-        "experiment_design.csv",
-    }
-
-
 def test_a_stopped_api_run_records_that_its_report_was_written(tmp_path):
     root, output = experiment(tmp_path), tmp_path / "out"
-    result = run_experiment(root, prefill_mapping("ZYX"), output_folder=output)  # wrong roles
+    result = run_described(root, prefill_mapping("ZYX"), output_folder=output)  # wrong roles
     assert not result.written and result.report_written
     text = run_summary(result)
     assert text.startswith("The run stopped (")
@@ -52,6 +37,6 @@ def test_a_run_refused_by_the_lock_wrote_nothing(tmp_path):
     root, output = experiment(tmp_path), tmp_path / "out"
     output.mkdir()
     with output_lock(output):
-        result = run_experiment(root, prefill_mapping("YX"), output_folder=output)
+        result = run_described(root, prefill_mapping("YX"), output_folder=output)
     assert not result.written and not result.report_written
     assert "Nothing was written." in run_summary(result)

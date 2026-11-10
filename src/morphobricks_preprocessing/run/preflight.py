@@ -174,7 +174,6 @@ def preflight(
     masks_folder: str | os.PathLike | None = None,
     mask_axes: Mapping[str, str] | None = None,
     bind_headers: bool = False,
-    with_description: bool = False,
     progress: Callable[[str, int, int, str], None] | None = None,
 ) -> Preflight:
     """Pass 1: check the folder and the image headers without reading pixels.
@@ -200,11 +199,6 @@ def preflight(
         (:attr:`Preflight.header_fingerprints`), so a caller that writes from the headers
         (:func:`.conversion_plan.plan_conversion`) never mixes a header with a later file.
         Each mask is bound the same way (:attr:`.masks.MaskFile.bound`, issue #160).
-    with_description
-        True when an experiment description is in use: folder names that are not Unicode NFC
-        (``R_FOLDER_NOT_NFC``) and mask type names that break the Label rules
-        (``R_MASK_TYPE_NAME_INVALID``) or are not NFC are then errors. Without one (the
-        default) they are accepted as in v0.4 (owner decision Q1).
     progress
         Called as ``progress(phase, done, total, path)`` while the check runs, with a phase of
         :data:`.phases.PHASES` (``folders``, ``headers``, ``masks``, ``acquisitions``): a phase
@@ -221,10 +215,10 @@ def preflight(
     output = default_output_folder(root) if output_folder is None else Path(output_folder)
     report("folders", 0, 1, "")
     discovery = discover_experiment(root, output)
-    if with_description:
-        discovery = replace(
-            discovery, issues=(*discovery.issues, *non_nfc_folders_issue(discovery.leaves))
-        )
+    # Every run is described: a folder label that is not NFC cannot be a source folder.
+    discovery = replace(
+        discovery, issues=(*discovery.issues, *non_nfc_folders_issue(discovery.leaves))
+    )
     report("folders", 1, 1, "")
     excluded = tuple(sorted({normalise_relative_path(path) for path in exclude}))
     discovery = _without_excluded_masks(discovery, excluded)
@@ -232,9 +226,7 @@ def preflight(
     inspected, bound = _inspected(root, images, bind_headers, progress)
     metadata, calibration = _calibrated(inspected, discovery.images, output)
     report("masks", 0, 1, "")
-    masks = _masks(
-        discovery, metadata, masks_folder, mask_axes, output, bind_headers, with_description
-    )
+    masks = _masks(discovery, metadata, masks_folder, mask_axes, output, bind_headers)
     report("masks", 1, 1, "")
     report("acquisitions", 0, 1, "")
     result = Preflight(
@@ -296,8 +288,6 @@ def remasked(
     masks_folder: str | os.PathLike | None,
     mask_axes: Mapping[str, str] | None,
     output_folder: str | os.PathLike,
-    *,
-    with_description: bool = False,
 ) -> Preflight:
     """Return the preflight with its masks paired again, as :func:`preflight` pairs them.
 
@@ -316,8 +306,6 @@ def remasked(
         As :func:`preflight`.
     output_folder
         The output folder (it may not be inside the masks folder).
-    with_description
-        As :func:`preflight`: the mask type name refusals of a description.
 
     Returns
     -------
@@ -331,7 +319,6 @@ def remasked(
         mask_axes,
         Path(output_folder),
         bind=bool(pre.header_fingerprints),
-        with_description=with_description,
     )
     return replace(pre, masks=masks)
 
@@ -343,7 +330,6 @@ def _masks(
     mask_axes: Mapping[str, str] | None,
     output: Path,
     bind: bool = False,
-    with_description: bool = False,
 ) -> MaskInventory | None:
     """Pair the analysed images with their masks; None without masks folder or label image."""
     masks = find_masks(
@@ -353,7 +339,6 @@ def _masks(
         mask_axes=mask_axes,
         output_folder=output,
         bind=bind,
-        with_description=with_description,
     )
     if masks_folder is None and not masks.files and not masks.issues:
         return None  # no masks folder and no label images: the run has no masks

@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 import tifffile
 
+from described_tree import main_described
 from morphobricks_preprocessing import read_conversion_record
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.discovery import default_output_folder
@@ -43,18 +44,17 @@ def test_convert_project_makes_copies_the_run_accepts(tmp_path, capsys):
         assert (tifffile.imread(copies / name) == stack[1:4].max(axis=0)).all()
     record, _ = read_conversion_record(copies)
     assert record.projection.method == "max" and record.projection.z_range == (1, 4)
-    # The next commands work: check (writes the design), confirm it, run.
-    main(check)
-    assert main(["design", "--output", str(out), "--confirm-all"]) == 0
+    # The next commands work, once the experiment is described: check, then run.
+    main_described(check)
     capsys.readouterr()
-    assert main(run) == 0, capsys.readouterr().out
+    assert main_described(run) == 0, capsys.readouterr().out
     assert (out / "plane_histograms.csv").is_file()
 
 
 def test_the_check_of_a_z_stack_names_the_command(tmp_path, capsys):
     exp = tmp_path / "exp"
     stack_experiment(exp, names=("a.tif",))
-    main(["check", str(exp), "--output", str(tmp_path / "o")])
+    main_described(["check", str(exp), "--output", str(tmp_path / "o")])
     text = capsys.readouterr().out
     assert "Z-stack" in text
     assert "convert EXPERIMENT --to FOLDER --axes ROLES --project max|mean|sum" in text

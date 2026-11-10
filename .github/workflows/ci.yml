@@ -28,10 +28,6 @@ jobs:
         python-version: ["3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
-        with:
-          # The whole history and its tags: tests run the code of v0.4.0rc4 and of an
-          # earlier commit (tests/released_code.py) against today's manifests.
-          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}

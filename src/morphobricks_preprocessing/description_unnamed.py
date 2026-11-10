@@ -7,7 +7,7 @@ manifest's ``experiment_description`` entry (:mod:`.description_record`), under
 :data:`FIELD`, and only for a unit that has such images: a unit whose images are all fully
 named has no such key. Each item names the image (relative to the experiment root), whether
 its header names no channel (``"none"``) or only some (``"partial"``), and the zero-based C
-positions without a name. A run without a description records nothing of this.
+positions without a name.
 """
 
 from __future__ import annotations

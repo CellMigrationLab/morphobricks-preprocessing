@@ -160,7 +160,9 @@ def test_tags_labels_and_types_change_one_slice_and_keep_the_rest():
     tagged = with_tags(with_labels(base, {"DNA": "DAPI", "ACTIN": None}), lay, ["DNA", None])
     assert tagged.units[lay.key] == UnitAnswer(("DNA", None))
     assert tagged.channels["DNA"].display_name == "DAPI"
-    assert synced(tagged, [lay]).channels["DNA"].header_names == ("DAPI",)
+    # the tag confirms the header name of the cell tagged; a tag saved earlier confirms none
+    assert synced(tagged, [lay], [(lay.key, 0)]).channels["DNA"].header_names == ("DAPI",)
+    assert synced(tagged, [lay]).channels["DNA"].header_names is None
     # a label that is gone takes its tags back, never moves them to another label
     gone = with_labels(tagged, {"ACTIN": None})
     assert gone.units[lay.key].channels == (None, None)

@@ -10,10 +10,10 @@ pytest.importorskip("matplotlib")
 
 from morphobricks_normalization.csv_io import read_plane_histograms
 
+from described_tree import describe_tree  # noqa: E402
 from morphobricks_preprocessing import Plane, notebook_ui, read_experiment_design, read_manifest
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.axes import AxisMapping  # noqa: E402
-from morphobricks_preprocessing.manifest import file_sha256  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import (  # noqa: E402
     PreprocessingNotebook,
     display_range,
@@ -39,6 +39,8 @@ def experiment(tmp_path):
 
 
 def checked(experiment, **kwargs):
+    """Check the folder of an experiment described and saved first (every run is described)."""
+    describe_tree(experiment, kwargs.get("output_folder") or None)
     nb = PreprocessingNotebook(str(experiment), **kwargs)
     for step in (nb.welcome, nb.folder_step, nb.axis_step, nb.run_step, nb.results_step):
         step()
@@ -54,10 +56,8 @@ def confirm_repeats(nb):
 
 
 def confirmed(experiment, **kwargs):
-    """Check the folder and confirm everything step 3 needs: labels, design, roles, type."""
-    nb = roles_confirmed(experiment, **kwargs)
-    nb.image_type_checked.button.click()
-    return nb
+    """Check the described folder and confirm what step 3 still needs: the axis roles."""
+    return roles_confirmed(experiment, **kwargs)
 
 
 # Step 1 -----------------------------------------------------------------------------------
@@ -90,7 +90,7 @@ def test_check_shows_status_tiles_labels_and_roles(experiment):
     assert "images to analyse" in nb.folder_tiles.value and "uint8" in nb.folder_tiles.value
     assert ui.is_visible(nb.labels_card)
     assert "<b>ctrl</b>" in nb.labels_table.value and "mb-pill-single" in nb.labels_table.value
-    assert not nb.labels_confirmed.disabled and not nb.labels_confirmed.value
+    assert nb.labels_confirmed.value  # taken as shown: the description states them
     assert not ui.is_visible(nb.issues_card)
     assert [d.value for d in nb.role_dropdowns] == ["T", "C", "Y", "X"]
     assert nb.bins.value == 256 and nb.bins.max == 256
@@ -186,47 +186,16 @@ def test_different_channel_counts_are_an_error_in_the_consistency_panel(experime
     nb = checked(experiment)
     assert "mb-error'>1 error" in nb.consistency_counts.value
     assert "different channel counts" in nb.consistency_issues.value
-    assert "2 channels (3 images), 3 channels (1 image)" in nb.consistency_issues.value
-    assert "drug/rep1/b.tif" in nb.consistency_issues.value
+    assert "drug/rep1/b.tif" in nb.consistency_issues.value  # checked inside its unit
     assert "different channel counts" not in nb.folder_issues.value
     assert "Action required" in nb.folder_status.value
     # Confirming the axis roles does not lift it: the run stays locked.
-    nb.labels_confirmed.button.click()
     confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
     assert nb.run_button.disabled and nb.run() is None
     assert "fix any errors" in nb.readiness.value
-
-
-def test_next_steps_follow_confirmation_and_folder_changes(experiment):
-    nb = checked(experiment)
-    assert "Check the labels in Step 1" in nb.folder_next.value
-    assert "Go to Step 2" not in nb.folder_next.value
-    nb.labels_confirmed.button.click()
-    assert "Confirm the biological repeats in Step 1" in nb.folder_next.value
-    confirm_repeats(nb)
-    assert "Go to Step 2" in nb.folder_next.value
-    assert "Continue" not in nb.labels_confirmed.message.value
-    nb.labels_confirmed.button.click()
-    assert "Go to Step 2" not in nb.folder_next.value
-    nb.labels_confirmed.button.click()
-    nb.preview_button.click()
-    nb.preview_checked.button.click()
-    nb.confirm_button.click()
-    assert "Confirm the image type in Step 2" in nb.axis_next.value
-    nb.image_type_checked.button.click()
-    assert "Go to Step 3" in nb.axis_next.value
-    assert "Continue" not in nb.confirmed_status.value
-    nb.labels_confirmed.button.click()
-    assert "Go to Step 1" in nb.axis_next.value
-    nb.labels_confirmed.button.click()
-    assert "Go to Step 3" in nb.axis_next.value
-    nb.confirm_button.click()
-    assert "Go to Step 3" not in nb.axis_next.value
-    nb.folder.value += "_other"
-    assert nb.folder_next.value == nb.axis_next.value == nb.run_next.value == ""
 
 
 def test_unreadable_image_can_be_excluded(experiment):
@@ -238,12 +207,10 @@ def test_unreadable_image_can_be_excluded(experiment):
     nb.exclude_button.click()
     assert nb.exclude.value == "ctrl/rep1/bad.tif"
     assert nb.preflight.ok and not ui.is_visible(nb.exclude_button)
-    nb.labels_confirmed.button.click()
-    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
-    nb.image_type_checked.button.click()
+    assert nb.save_experiment()  # the description is saved again without the excluded image
     assert nb.run().excluded == ("ctrl/rep1/bad.tif",)
 
 
@@ -252,65 +219,7 @@ def test_unreadable_image_can_be_excluded(experiment):
 
 def labelled(root, tmp_path):
     nb = checked(root, output_folder=str(tmp_path / "out"))
-    nb.labels_confirmed.button.click()
     return nb
-
-
-def test_design_is_asked_after_the_labels_and_saved(tmp_path):
-    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/rep2b"])
-    nb = checked(root, output_folder=str(tmp_path / "out"))
-    assert not ui.is_visible(nb.design_card)
-    nb.labels_confirmed.button.click()
-    assert ui.is_visible(nb.design_card) and ui.is_visible(nb.design_editor)
-    assert ui.is_visible(nb.pairing_box)
-    assert sorted(nb.group_confirmations) == ["rep1", "rep2", "rep2b"]
-    toggle = nb.group_confirmations["rep1"]
-    assert "Repeat group rep1: were these images prepared and acquired" in toggle.prompt.value
-    assert toggle.button.description.strip() == "Yes, they are comparable"
-    assert "Not found in drug" in nb.group_confirmations["rep2"].prompt.value
-    assert "Still to confirm: 3 repeat groups" in nb.design_status.value
-    assert "Confirm the biological repeats in Step 1" in nb.folder_next.value
-    assert "Still to do: confirm the biological repeats" in nb.readiness.value
-    # Saved straight away, unconfirmed, like the command-line template.
-    path = tmp_path / "out" / "experiment_design.csv"
-    assert not read_experiment_design(path).confirmed
-
-
-def test_pairing_a_repeat_updates_the_groups_and_the_balance(tmp_path):
-    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/rep2b"])
-    nb = labelled(root, tmp_path)
-    assert "repeat missing conditions" in nb.consistency_issues.value
-    nb.group_confirmations["rep1"].button.click()
-    (dropdown,) = [
-        box.children[2]
-        for box in nb.pairing_grid.children[1:]
-        if "rep2b" in box.children[1].value and "drug" in box.children[0].value
-    ]
-    dropdown.value = "rep2"
-    assert sorted(nb.group_confirmations) == ["rep1", "rep2"]
-    assert nb.group_confirmations["rep1"].value and not nb.group_confirmations["rep2"].value
-    assert "repeat missing conditions" not in nb.consistency_issues.value
-    assert "<th>Biological repeat</th>" in nb.balance_table.value
-    assert "rep2b" not in nb.balance_table.value.split("<tbody>")[1].split("</td>")[0]
-    saved = read_experiment_design(tmp_path / "out" / "experiment_design.csv")
-    assert saved.repeat_groups()[("drug", "rep2b")] == "rep2"
-    nb.group_confirmations["rep2"].button.click()
-    assert "The biological repeats are confirmed on" in nb.design_status.value
-    assert "Go to Step 2" in nb.folder_next.value
-    assert read_experiment_design(tmp_path / "out" / "experiment_design.csv").confirmed
-
-
-def test_two_folders_of_a_condition_cannot_be_confirmed(tmp_path):
-    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "ctrl/rep2", "drug/rep1"])
-    nb = labelled(root, tmp_path)
-    (dropdown,) = [
-        box.children[2] for box in nb.pairing_grid.children[1:] if "rep2" in box.children[1].value
-    ]
-    dropdown.value = "rep1"
-    toggle = nb.group_confirmations["rep1"]
-    assert toggle.disabled and "more than one folder of ctrl" in toggle.prompt.value
-    assert "holds more than one folder of a condition" in nb.design_status.value
-    assert nb.run_button.disabled
 
 
 def test_without_repeat_folders_one_question_is_asked(tmp_path):
@@ -323,54 +232,6 @@ def test_without_repeat_folders_one_question_is_asked(tmp_path):
     assert nb.design.confirmed
 
 
-def test_controls_are_saved(tmp_path):
-    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
-    nb = labelled(root, tmp_path)
-    nb.control_checks["ctrl"].value = True
-    assert "Controls: ctrl" not in nb.design_status.value  # shown once confirmed
-    confirm_repeats(nb)
-    assert "Controls: ctrl" in nb.design_status.value
-    assert read_experiment_design(tmp_path / "out" / "experiment_design.csv").controls == ("ctrl",)
-
-
-def test_a_confirmed_design_is_not_asked_again(tmp_path):
-    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
-    nb = labelled(root, tmp_path)
-    nb.control_checks["drug"].value = True
-    confirm_repeats(nb)
-    again = labelled(root, tmp_path)
-    assert again.design.confirmed and again.design.controls == ("drug",)
-    assert not ui.is_visible(again.design_editor) and ui.is_visible(again.design_change)
-    assert "The biological repeats are confirmed on" in again.design_status.value
-    assert "Go to Step 2" in again.folder_next.value
-    again.design_change.click()
-    assert ui.is_visible(again.design_editor) and not ui.is_visible(again.design_change)
-    assert again.group_confirmations["rep1"].value
-
-
-def test_a_new_repeat_asks_only_for_its_group(tmp_path):
-    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
-    confirm_repeats(labelled(root, tmp_path))
-    design_tree(root, ["ctrl/rep2", "drug/rep2"])
-    nb = labelled(root, tmp_path)
-    assert ui.is_visible(nb.design_editor)
-    assert "The folders changed since the design was saved" in nb.design_status.value
-    assert nb.group_confirmations["rep1"].value
-    assert not nb.group_confirmations["rep2"].value
-    assert "Still to confirm: 1 repeat group (rep2)" in nb.design_status.value
-
-
-def test_an_unreadable_design_is_asked_again(tmp_path):
-    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
-    (tmp_path / "out").mkdir()
-    (tmp_path / "out" / "experiment_design.csv").write_bytes(b"not a design")
-    nb = labelled(root, tmp_path)
-    assert "cannot be read" in nb.design_status.value
-    assert (tmp_path / "out" / "experiment_design.csv").read_bytes() == b"not a design"
-    confirm_repeats(nb)
-    assert read_experiment_design(tmp_path / "out" / "experiment_design.csv").confirmed
-
-
 def spreadsheet_saved(path):
     """Rewrite the ISO dates of a saved design as a spreadsheet program may (26/10/2026)."""
     text = path.read_text(encoding="utf-8")
@@ -379,72 +240,6 @@ def spreadsheet_saved(path):
         text = text.replace(on, f"{day}/{month}/{year}")
     path.write_text(text, encoding="utf-8")
     return path.read_bytes()
-
-
-def test_an_unreadable_design_is_left_untouched_until_answered(tmp_path):
-    # PR #59 follow-up, owner decision of 31 October 2026: the confirmed answers in a file
-    # that cannot be read are never replaced by the default design before the user answers.
-    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/rep2"])
-    nb = labelled(root, tmp_path)
-    nb.control_checks["ctrl"].value = True
-    confirm_repeats(nb)
-    path = tmp_path / "out" / "experiment_design.csv"
-    answers = path.read_bytes()
-    unreadable = spreadsheet_saved(path)
-
-    again = labelled(root, tmp_path)
-    assert path.read_bytes() == unreadable
-    status = again.design_status.value
-    assert "cannot be read" in status and "left unchanged" in status
-    assert "line 2, column confirmed_on" in status
-    assert "mb-error" in status
-    assert not again._design_confirmed()
-    assert ui.is_visible(again.design_editor)
-    # Undoing and confirming the labels again reads the file again: still nothing written.
-    again.labels_confirmed.button.click()
-    again.labels_confirmed.button.click()
-    assert path.read_bytes() == unreadable
-
-    # The corrected file is read with the answers it holds.
-    path.write_bytes(answers)
-    fixed = labelled(root, tmp_path)
-    assert path.read_bytes() == answers
-    assert fixed.design.controls == ("ctrl",)
-    assert fixed.design.confirmed and not ui.is_visible(fixed.design_editor)
-
-
-def test_answering_again_replaces_an_unreadable_design(tmp_path):
-    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
-    nb = labelled(root, tmp_path)
-    confirm_repeats(nb)
-    path = tmp_path / "out" / "experiment_design.csv"
-    spreadsheet_saved(path)
-    again = labelled(root, tmp_path)
-    again.control_checks["drug"].value = True
-    saved = read_experiment_design(path)
-    assert saved.controls == ("drug",) and not saved.confirmed
-    assert "replaced the unreadable" in again.design_status.value
-    assert "mb-error" not in again.design_status.value
-
-
-def test_undoing_the_labels_closes_the_design(tmp_path):
-    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
-    nb = labelled(root, tmp_path)
-    confirm_repeats(nb)
-    nb.labels_confirmed.button.click()
-    assert nb.design is None and not ui.is_visible(nb.design_card)
-    assert "Still to do: confirm the labels" in nb.readiness.value
-
-
-def test_the_run_writes_the_design(tmp_path):
-    root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
-    nb = confirmed(root, output_folder=str(tmp_path / "out"))
-    nb.run_button.click()
-    assert nb.result.written
-    path = tmp_path / "out" / "experiment_design.csv"
-    assert "Experiment design: " in nb.run_status.value
-    manifest = read_manifest(tmp_path / "out" / "run_manifest.json")
-    assert manifest.experiment_design_sha256 == file_sha256(path)
 
 
 def test_changing_the_folder_resets_later_steps(experiment):
@@ -510,24 +305,6 @@ def test_confirm_needs_valid_roles_and_a_checked_preview(experiment):
     nb.preview_checked.button.click()
     assert not nb.confirm_button.disabled
     assert nb.mapping.roles == ("T", "C", "Y", "X")
-
-
-def test_confirmations_are_buttons_that_can_be_undone(experiment):
-    nb = checked(experiment)
-    toggle = nb.labels_confirmed
-    assert "Do the labels in the table match your experiment?" in toggle.prompt.value
-    assert toggle.button.description.strip() == "Yes, the labels are correct"
-    assert toggle.button.button_style == "success"
-    toggle.button.click()
-    assert toggle.value and "Labels confirmed" in toggle.message.value
-    assert toggle.button.description.strip() == "Undo: the labels are not right"
-    assert "mb-confirmed" in toggle.widget._dom_classes
-    assert "Still to do: confirm the biological repeats" in nb.readiness.value
-    confirm_repeats(nb)
-    assert "Still to do: confirm the axis roles" in nb.readiness.value
-    toggle.button.click()
-    assert not toggle.value and toggle.message.value == ""
-    assert "Still to do: confirm the labels" in nb.readiness.value
 
 
 def test_changing_a_role_asks_for_the_preview_again(experiment):
@@ -608,8 +385,8 @@ def test_preview_and_roles_with_an_ome_zarr_image(tmp_path):
 
 def test_missing_axes_card(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((2, 1, 8, 8), np.uint8), axes="TCYX")  # was ZTYX
-    write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="TYX")
+    write_data(root / "a/a.tif", np.zeros((2, 1, 8, 8), np.uint8), axes="TCYX")  # was ZTYX
+    write_data(root / "b/b.tif", np.zeros((2, 8, 8), np.uint8), axes="TYX")  # own unit
     nb = checked(root)
     assert ui.is_visible(nb.missing_card)
     assert "1 image with axes <b>TYX</b> lack C (channel)" in nb.missing_note.value
@@ -623,19 +400,16 @@ def test_missing_axes_card(tmp_path):
 @pytest.mark.parametrize("blocking_file", [False, True])
 def test_confirmed_missing_axes_allow_running_unless_other_errors_remain(tmp_path, blocking_file):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((2, 1, 8, 8), np.uint8), axes="TCYX")  # was ZTYX
-    write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="TYX")
+    write_data(root / "a/a.tif", np.zeros((2, 1, 8, 8), np.uint8), axes="TCYX")  # was ZTYX
+    write_data(root / "b/b.tif", np.zeros((2, 8, 8), np.uint8), axes="TYX")  # own unit
     if blocking_file:
-        write_file(root / "bad.tif", b"garbage")
+        write_file(root / "a/bad.tif", b"garbage")
     nb = checked(root)
-    nb.labels_confirmed.button.click()
-    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     assert nb.run_button.disabled
     nb.missing_as_singleton.button.click()
     nb.confirm_button.click()
-    nb.image_type_checked.button.click()
     assert nb.confirmed_mapping is not None
     assert nb.run_button.disabled == blocking_file
     if blocking_file:
@@ -645,21 +419,21 @@ def test_confirmed_missing_axes_allow_running_unless_other_errors_remain(tmp_pat
         result = nb.run()
         assert result.written
         rows = read_plane_histograms(result.csv_path)
-        assert [(r.z, r.t) for r in rows if r.source_relative_path == "b.tif"] == [(0, 0), (0, 1)]
+        assert [(r.z, r.t) for r in rows if r.source_relative_path == "b/b.tif"] == [
+            (0, 0),
+            (0, 1),
+        ]
 
 
 def test_undoing_missing_axes_confirmation_blocks_running_again(tmp_path):
     root = tmp_path / "exp"
-    write_data(root / "a.tif", np.zeros((2, 1, 8, 8), np.uint8), axes="TCYX")  # was ZTYX
-    write_data(root / "b.tif", np.zeros((2, 8, 8), np.uint8), axes="TYX")
+    write_data(root / "a/a.tif", np.zeros((2, 1, 8, 8), np.uint8), axes="TCYX")  # was ZTYX
+    write_data(root / "b/b.tif", np.zeros((2, 8, 8), np.uint8), axes="TYX")  # own unit
     nb = checked(root)
-    nb.labels_confirmed.button.click()
-    confirm_repeats(nb)
     nb.missing_as_singleton.button.click()
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
-    nb.image_type_checked.button.click()
     assert not nb.run_button.disabled
     nb.confirm_button.click()  # unlock the roles before undoing singleton confirmation
     nb.missing_as_singleton.button.click()
@@ -671,10 +445,8 @@ def test_undoing_missing_axes_confirmation_blocks_running_again(tmp_path):
 
 
 def roles_confirmed(root, **kwargs):
-    """Check the folder and confirm the labels, the design and the axis roles, not the type."""
+    """Check the described folder and confirm the axis roles."""
     nb = checked(root, **kwargs)
-    nb.labels_confirmed.button.click()
-    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
@@ -687,71 +459,6 @@ def rgb_tree(root, dtype=np.uint8):
         data = rng.integers(0, 200, (2, 8, 8, 3)).astype(dtype)
         write_data(root / rel, data, axes="TYXS", photometric="rgb")
     return root
-
-
-def test_image_type_is_asked_after_the_axis_roles(experiment):
-    nb = checked(experiment)
-    assert not ui.is_visible(nb.image_type_card)
-    nb.labels_confirmed.button.click()
-    confirm_repeats(nb)
-    nb.preview_button.click()
-    nb.preview_checked.button.click()
-    nb.confirm_button.click()
-    assert ui.is_visible(nb.image_type_card)
-    assert nb.image_type.value == "fluorescence" and nb.confirmed_image_type is None
-    assert "Suggested: <b>Fluorescence</b>" in nb.image_type_note.value
-    # Two channels cannot be RGB: the choice is fixed and the reason shown.
-    assert nb.image_type.disabled
-    assert "RGB cannot be chosen" in nb.image_type_note.value
-    assert "2 channels of type uint8" in nb.image_type_note.value
-    assert nb.run_button.disabled and "Confirm the image type in Step 2" in nb.axis_next.value
-    nb.image_type_checked.button.click()
-    assert nb.confirmed_image_type == "fluorescence"
-    assert "Image type confirmed: Fluorescence." in nb.image_type_checked.message.value
-    assert not nb.run_button.disabled and "Go to Step 3" in nb.axis_next.value
-    assert "Image type: <b>Fluorescence</b>" in nb.plan.value
-    assert read_manifest(nb.run().manifest_path).image_type == "fluorescence"
-
-
-def test_rgb_is_suggested_but_only_used_once_confirmed(tmp_path):
-    nb = roles_confirmed(rgb_tree(tmp_path / "exp"))
-    assert nb.image_type.value == "rgb" and not nb.image_type.disabled
-    assert "Suggested: <b>RGB</b>" in nb.image_type_note.value
-    assert nb.confirmed_image_type is None and nb.run_button.disabled
-    assert nb.run() is None
-    # Choosing the other type is possible, with a reminder of the suggestion.
-    nb.image_type.value = "fluorescence"
-    assert "mb-warn" in nb.image_type_note.value and "not the suggested type" in (
-        nb.image_type_note.value
-    )
-    nb.image_type.value = "rgb"
-    nb.image_type_checked.button.click()
-    assert nb.confirmed_image_type == "rgb" and nb.image_type.disabled
-    manifest = read_manifest(nb.run().manifest_path)
-    assert manifest.image_type == "rgb" and manifest.channels_from_rgb_samples
-    nb.image_type_checked.button.click()  # undo
-    assert nb.confirmed_image_type is None and not nb.image_type.disabled
-    assert nb.run_button.disabled
-
-
-def test_float_rgb_images_cannot_be_rgb(tmp_path):
-    nb = roles_confirmed(rgb_tree(tmp_path / "exp", np.float32))
-    assert nb.image_type.value == "fluorescence" and nb.image_type.disabled
-    assert "stored as RGB colour, but cannot be of type RGB" in nb.image_type_note.value
-    assert "3 channels of type float32" in nb.image_type_note.value
-
-
-def test_changing_the_axis_roles_asks_for_the_image_type_again(experiment):
-    nb = confirmed(experiment)
-    assert nb.confirmed_image_type == "fluorescence"
-    nb.confirm_button.click()  # change the axis roles
-    assert nb.confirmed_image_type is None and not ui.is_visible(nb.image_type_card)
-    assert not nb.image_type_checked.value and nb.run_button.disabled
-    nb.confirm_button.click()
-    assert ui.is_visible(nb.image_type_card) and nb.confirmed_image_type is None
-    nb.image_type_checked.button.click()
-    nb.folder.value = str(experiment) + "_other"
-    assert nb.confirmed_image_type is None and not ui.is_visible(nb.image_type_card)
 
 
 # Intensity checks (follow-up P5) ----------------------------------------------------------
@@ -776,7 +483,7 @@ def test_intensity_checks_follow_a_successful_run(tmp_path):
     nb.run()
     assert sorted(p.name for p in out.iterdir() if "report" not in p.name) == [
         "experiment_design.csv",
-        "morphobricks.draft.json",
+        "morphobricks.toml",
         "plane_histograms.csv",
         "run_manifest.json",
     ]
@@ -900,7 +607,6 @@ def test_folder_step_with_its_own_words_and_no_output_card(experiment):
     # The check works without the card, with the default output folder.
     nb.check_button.click()
     assert nb.preflight is not None and nb.preflight.ok
-    nb.labels_confirmed.button.click()
     confirm_repeats(nb)  # embedded steps keep the experiment-design gating (P3)
     assert "Go to Step 2" in nb.folder_next.value and not ui.is_visible(nb.folder_next)
 
@@ -931,43 +637,6 @@ def page_text(found, *paths):
     return text
 
 
-def test_folder_step_shows_the_design_by_default(tmp_path):
-    for name, kwargs in [("default", {}), ("explicit", {"show_design": True})]:
-        root = design_tree(tmp_path / name / "exp", ["ctrl/rep1", "drug/rep1"])
-        nb = PreprocessingNotebook(str(root))
-        page = nb.folder_step(**kwargs)
-        assert page.children[1].children[3:] == (
-            nb.folder_card,
-            nb.output_card,
-            nb.masks_input_card,
-            nb.exclude_box,
-            nb.check_button,
-            nb.folder_status,
-            nb.folder_lock.card,
-            nb.check_report.widget,
-            nb.folder_tiles,
-            nb.labels_card,
-            *(nb.design_card, nb.names_card, nb.references_card),
-            nb.calibration_card,
-            nb.consistency_card,
-            nb.masks_card,
-            nb.issues_card,
-            nb.folder_next,
-        )
-        assert "Step 3 can only run once the labels are confirmed." in (
-            nb.labels_confirmed.prompt.value
-        )
-        nb.check_button.click()
-        nb.labels_confirmed.button.click()
-        assert ui.is_visible(nb.design_card) and nb.design is not None
-        assert "The run waits until every group is confirmed." in nb.design_status.value
-        assert "Confirm the biological repeats in Step 1" in nb.folder_next.value
-        assert "Still to do: confirm the biological repeats" in nb.readiness.value
-        path = tmp_path / name / "exp_MorphoBricks_Preprocessing" / "experiment_design.csv"
-        assert f"Saved in <b>{path}</b>" in nb.design_status.value
-        assert not read_experiment_design(path).confirmed
-
-
 def test_folder_step_without_the_design_writes_nothing(tmp_path):
     root = design_tree(tmp_path / "exp", ["ctrl/rep1", "drug/rep1"])
     before = files_under(tmp_path)
@@ -975,41 +644,12 @@ def test_folder_step_without_the_design_writes_nothing(tmp_path):
     nb.folder_step(show_output=False, show_next=False, show_design=False)
     nb.axis_step(show_next=False)
     nb.check_button.click()
-    nb.labels_confirmed.button.click()
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
-    assert nb.labels_confirmed.value and nb.confirmed_mapping is not None
-    assert nb.design is None
+    assert nb.confirmed_mapping is not None
     assert files_under(tmp_path) == before
     assert not (tmp_path / "exp_MorphoBricks_Preprocessing").exists()
-
-
-def test_folder_step_without_the_design_card_or_its_words(experiment):
-    nb = PreprocessingNotebook(str(experiment))
-    page = nb.folder_step(show_design=False)
-    nb.axis_step()
-    nb.run_step()
-    assert nb.design_card not in page_parts(page)[2]
-    nb.check_button.click()
-    nb.labels_confirmed.button.click()
-    found = page_parts(page)[2]
-    assert nb.design_card not in found and not ui.is_visible(nb.design_card)
-    text = page_text(found, experiment.parent)
-    assert "Step 3" not in text and "design" not in text.lower()
-    assert "biological repeats" not in nb.folder_next.value
-    assert "Go to Step 2" in nb.folder_next.value
-    nb.preview_button.click()
-    nb.preview_checked.button.click()
-    nb.confirm_button.click()
-    nb.image_type_checked.button.click()
-    assert "Experiment design" not in nb.axis_next.value
-    # This notebook's own step 3 then runs without a design.
-    assert "biological repeats" not in nb.readiness.value and not nb.run_button.disabled
-    # Building the default page again asks for the design of the confirmed labels.
-    nb.folder_step()
-    assert ui.is_visible(nb.design_card) and nb.design is not None
-    assert "Step 3 can only run" in nb.labels_confirmed.prompt.value
 
 
 def test_steps_without_an_intro_box():
@@ -1019,6 +659,7 @@ def test_steps_without_an_intro_box():
 
 
 def test_axis_step_with_its_own_words(experiment):
+    describe_tree(experiment)  # described and saved: the run waits only for the roles
     nb = PreprocessingNotebook(str(experiment))
     nb.folder_step()
     title, purpose, found = page_parts(
@@ -1029,17 +670,14 @@ def test_axis_step_with_its_own_words(experiment):
     )
     assert len(intros(found)) == 1  # the default intro is kept
     nb.check_button.click()
-    nb.labels_confirmed.button.click()
-    confirm_repeats(nb)  # embedded steps keep the experiment-design gating (P3)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
     assert nb.confirmed_mapping is not None
-    # The embedded step asks for the image type too, with the same gating (P4).
-    assert ui.is_visible(nb.image_type_card) and nb.run_button.disabled
-    nb.image_type_checked.button.click()
-    assert nb.confirmed_image_type == "fluorescence" and not nb.run_button.disabled
-    assert "compute the histograms" in nb.axis_next.value and not ui.is_visible(nb.axis_next)
+    # The image type comes from the saved description: no card asks it (v0.5.1).
+    assert not ui.is_visible(nb.image_type_card) and not nb.run_button.disabled
+    assert nb.confirmed_image_type == "fluorescence"
+    assert not ui.is_visible(nb.axis_next)
     # Building the default page again shows the box again.
     nb.axis_step()
     assert ui.is_visible(nb.axis_next)
@@ -1051,16 +689,12 @@ def test_axis_step_with_its_own_words(experiment):
 def test_readiness_checklist(experiment):
     nb = checked(experiment)
     assert "Almost ready" in nb.readiness.value
-    assert "Still to do: confirm the labels" in nb.readiness.value
-    assert "✅ Check the experiment folder" in nb.readiness.value
-    nb.labels_confirmed.button.click()
-    confirm_repeats(nb)
     assert "Still to do: confirm the axis roles" in nb.readiness.value
+    assert "✅ Check the experiment folder" in nb.readiness.value
+    assert "Save the experiment description" in nb.readiness.value
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
-    assert "Still to do: confirm the image type" in nb.readiness.value and nb.run_button.disabled
-    nb.image_type_checked.button.click()
     assert "Ready to run" in nb.readiness.value and not nb.run_button.disabled
 
 
@@ -1136,7 +770,6 @@ def test_plan_names_images_read_in_blocks(tmp_path, monkeypatch):
     def fail(*args, **kwargs):
         raise AssertionError("pixel data was read")
 
-    nb.labels_confirmed.button.click()
     confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
@@ -1188,7 +821,6 @@ def test_plan_layouts_are_cached_until_their_inputs_change(tmp_path, monkeypatch
     nb = checked(root)
     nb.recommended.value = False
     assert calls == []  # nothing is opened before the axis roles are confirmed
-    nb.labels_confirmed.button.click()
     confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
@@ -1213,7 +845,6 @@ def test_plan_layouts_are_cached_until_their_inputs_change(tmp_path, monkeypatch
     nb.confirm_button.click()
     assert recomputed() == 0  # the same roles and settings as before
     nb.check_button.click()
-    nb.labels_confirmed.button.click()
     confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
@@ -1362,7 +993,7 @@ def test_statistics_by_level_and_percentiles(experiment):
 
 def test_statistics_explain_a_table_of_an_earlier_version(experiment, tmp_path):
     nb = checked(experiment)
-    nb.csv_file.value = str(Path(__file__).parent / "data" / "v2_float32.csv")
+    nb.csv_file.value = str(Path(__file__).parent / "data" / "golden_float32.csv")
     nb.statistics_button.click()
     assert "The table cannot be read" in nb.stats_status.value
     assert "schema version 2" in nb.stats_status.value
@@ -1378,7 +1009,6 @@ def test_statistics_need_a_table_and_valid_percentiles(experiment):
     nb.csv_file.value = str(experiment / "missing.csv")
     nb.show_statistics()
     assert "does not exist" in nb.stats_status.value
-    nb.labels_confirmed.button.click()
     confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()

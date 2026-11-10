@@ -161,7 +161,12 @@ class _MasksCard:
         plan = self._planned_masks(root)
         output = self._output_folder() or default_output_folder(root)
         with self.log.attached():
-            self.preflight = remasked(self.preflight, plan.folder, plan.mask_axes or None, output)
+            self.preflight = remasked(
+                self.preflight,
+                plan.folder,
+                plan.mask_axes or None,
+                output,
+            )
         self._paired_masks = _pairing(plan)
         self._show_issue_summary()
         self._refresh_run_step()

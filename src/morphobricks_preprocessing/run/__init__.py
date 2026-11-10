@@ -5,9 +5,10 @@ without reading pixels, and suggests an axis mapping for the user to confirm.
 :func:`run_experiment` is pass 2: with the confirmed mapping it checks
 everything again, reads only the images that are new or changed since the last
 run, and writes ``plane_histograms.csv`` and ``run_manifest.json`` to the output
-folder (``docs/plan.md`` §5–§7). Given the confirmed experiment design, it also
-writes ``experiment_design.csv`` and records its hash in the manifest; given the
-confirmed image type, it records it there too. After writing, it checks the
+folder (``docs/plan.md`` §5–§7). Every run needs the experiment description published in
+the output folder (``morphobricks.toml``; ``A_DESCRIPTION_REQUIRED`` without it): the run
+writes the ``experiment_design.csv`` derived from it and records its hash in the manifest;
+given the confirmed image type, it records it there too. After writing, it checks the
 images' intensities from the table's rows (:mod:`.intensity`) and records the
 limits used. Every plane is binned with the chosen histogram range, and its
 range check reports channels whose central intensity range covers too few bins
@@ -24,8 +25,7 @@ succeeds replaces the earlier output.
 from __future__ import annotations
 
 from .calibrate import write_calibration
-from .check_step import CheckOutputs, write_check_outputs, write_check_report
-from .design_file import edit_design, write_design_template
+from .check_step import write_check_report
 from .lock import LOCK_FILENAME, LockHolder, OutputLockedError, read_lock, remove_stale_lock
 from .mask_step import (
     MaskStep,
@@ -45,7 +45,6 @@ __all__ = [
     "LOCK_FILENAME",
     "MODES",
     "RESTART",
-    "CheckOutputs",
     "LockHolder",
     "MaskStep",
     "MaskStepResult",
@@ -56,7 +55,6 @@ __all__ = [
     "RunResult",
     "SamplePlane",
     "describe_masks",
-    "edit_design",
     "preflight",
     "prepare_mask_step",
     "read_lock",
@@ -65,7 +63,5 @@ __all__ = [
     "run_experiment",
     "sample_planes",
     "write_calibration",
-    "write_check_outputs",
     "write_check_report",
-    "write_design_template",
 ]

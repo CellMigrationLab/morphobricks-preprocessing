@@ -6,6 +6,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from described_tree import description_entry
 from morphobricks_preprocessing import (
     FileEntry,
     ManifestFormatError,
@@ -49,6 +50,7 @@ def manifest(**kwargs):
         "csv_sha256": "0" * 64,
         "versions": {"numpy": "2.0"},
         "written_at": "2026-10-17T12:00:00+00:00",
+        "experiment_description": description_entry(),
     }
     return RunManifest(**{**values, **kwargs})
 
@@ -68,7 +70,7 @@ def test_written_json_is_readable_and_stable(tmp_path):
     raw = path.read_bytes()
     assert b"\r\n" not in raw and raw.endswith(b"\n")
     data = json.loads(raw)
-    assert data["manifest_version"] == "2" and data["schema_version"] == "4"
+    assert data["manifest_version"] == "4" and data["schema_version"] == "4"
     assert data["axis_mapping"] == {"axes": "ZYX", "roles": ["Z", "Y", "X"]}
     assert data["settings"]["exclude"] == ["a.tif", "b.tif"]
     assert data["labels"] == [
@@ -138,16 +140,12 @@ def test_read_in_blocks_round_trips_and_defaults_to_false(tmp_path):
     assert not read_manifest(path).files[0].read_in_blocks
 
 
-def test_position_id_round_trips_and_is_none_when_absent_from_a_v1_manifest(tmp_path):
+def test_position_id_round_trips(tmp_path):
     original = manifest(files=(entry(position_id="a"), entry("cond/rep/b.tif", position_id="b")))
     path = write_manifest(original, tmp_path / "m.json")
     assert read_manifest(path) == original
     data = json.loads(path.read_bytes())
     assert [f["position_id"] for f in data["files"]] == ["a", "b"]
-    del data["files"][0]["position_id"]  # written before position identifiers were recorded
-    data["manifest_version"] = "1"  # only a v1 manifest may lack it (audit A-m5)
-    path.write_text(json.dumps(data), encoding="utf-8")
-    assert read_manifest(path).files[0].position_id is None
 
 
 def test_image_type_round_trips_and_is_none_when_absent(tmp_path):
@@ -156,7 +154,7 @@ def test_image_type_round_trips_and_is_none_when_absent(tmp_path):
     assert read_manifest(path) == original
     data = json.loads(path.read_bytes())
     assert (data["image_type"], data["channels_from_rgb_samples"]) == ("rgb", True)
-    assert data["manifest_version"] == "2"
+    assert data["manifest_version"] == "4"
     del data["image_type"], data["channels_from_rgb_samples"]  # written before P4
     path.write_text(json.dumps(data), encoding="utf-8")
     read = read_manifest(path)
@@ -307,7 +305,7 @@ def test_the_writer_keeps_null_for_an_unknown_rgb_flag(tmp_path):
     assert json.loads(path.read_bytes())["channels_from_rgb_samples"] is None
 
 
-def test_each_files_axis_roles_round_trip_and_are_none_when_absent(tmp_path):
+def test_each_files_axis_roles_round_trip_and_are_required(tmp_path):
     original = manifest(
         files=(
             entry(roles=("Z", "Y", "X")),
@@ -321,10 +319,8 @@ def test_each_files_axis_roles_round_trip_and_are_none_when_absent(tmp_path):
     del data["files"][0]["roles"]
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ManifestFormatError, match="has no roles or axes_from"):
-        read_manifest(path)  # required in manifest version 2
-    data["manifest_version"] = "1"  # written before the roles were recorded
-    path.write_text(json.dumps(data), encoding="utf-8")
-    assert read_manifest(path).files[0].roles is None
+        read_manifest(path)  # required
+    data["files"][0]["roles"] = ["Z", "Y", "X"]
     data["files"][1]["roles"] = ["Z", "Y"]  # not one role per axis
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ManifestFormatError):

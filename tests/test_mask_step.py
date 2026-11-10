@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from morphobricks_preprocessing.cli import main
+from described_tree import main_described, publish_any, without_mask_step
 from morphobricks_preprocessing.mask_scan import MASK_REPORT_FILENAME
 from morphobricks_preprocessing.run import (
     MaskStep,
@@ -24,7 +24,9 @@ from morphobricks_preprocessing.testing import make_clean_run
 
 @pytest.fixture
 def clean(tmp_path):
-    return make_clean_run(tmp_path, axes="YX", shape=(8, 8), mask_types=("Cells", "Nuclei"))
+    return without_mask_step(
+        make_clean_run(tmp_path, axes="YX", shape=(8, 8), mask_types=("Cells", "Nuclei"))
+    )
 
 
 def without_versions(path):
@@ -54,13 +56,13 @@ def test_describe_masks_writes_the_report_the_command_writes(clean, capsys):
     assert set(result.report.types) == {"Cells", "Nuclei"}
     written = without_versions(result.path)
     result.path.unlink()
-    assert main(["masks", "--output", str(clean.output)]) == 0
+    assert main_described(["masks", "--output", str(clean.output)]) == 0
     assert without_versions(clean.output / MASK_REPORT_FILENAME) == written
     assert f"Report written to {result.path}" in capsys.readouterr().out
 
 
 def test_without_an_experiment_or_a_recorded_run_the_step_is_refused(tmp_path):
-    step = prepare_mask_step(None, tmp_path / "out")
+    step = prepare_mask_step(None, publish_any(tmp_path / "out"))
     assert step.refusal.code == "experiment_not_recorded"
     assert step.preflight is None and not step.ready
     assert step.masks.types == ()
@@ -111,7 +113,7 @@ def test_the_lock_is_held_from_the_first_mask_read_to_the_write(clean):
 
 def test_the_command_refuses_a_locked_folder_before_reading_a_mask(clean, capsys):
     with output_lock(clean.output):
-        assert main(["masks", "--output", str(clean.output)]) == 1
+        assert main_described(["masks", "--output", str(clean.output)]) == 1
     out = capsys.readouterr().out
     assert "output_locked" in out or "Another run is using this output folder" in out
     assert "[1/4]" not in out

@@ -51,9 +51,7 @@ from .manifest_versions import (
     check_version,
     recorded_version,
 )
-from .manifest_versions import LEGACY_MANIFEST_VERSION as LEGACY_MANIFEST_VERSION
 from .manifest_versions import MANIFEST_VERSION as MANIFEST_VERSION
-from .manifest_versions import STRICT_MANIFEST_VERSION as STRICT_MANIFEST_VERSION
 from .narrow_ranges import NarrowRange
 from .projection_run import KEY as PROJECTION_KEY
 from .projection_run import recorded_projection
@@ -252,17 +250,15 @@ class RunManifest:
         SHA-256 of the output folder's ``calibration.csv`` as the run read it (the pixel
         sizes the user stated, design v0.4 §3); None when there was none.
     experiment_description
-        What a run with a published ``morphobricks.toml`` records about it
-        (:mod:`.description_record`); None, and the key left out, for a run without one.
+        What the run records about its published ``morphobricks.toml``
+        (:mod:`.description_record`). Every manifest carries it; None is refused when written.
     projection
         The Z projection of the images (:mod:`.projection_run`); None (key left out) if none.
     schema_version
         Version of the CSV format.
     manifest_version
-        Version of the manifest format (:mod:`.manifest_versions`): ``"2"`` since v0.4.0,
-        ``"3"`` for a ``verify_content`` run (:func:`.manifest_versions.version_for`), which
-        readers of v0.4.0rc4 and earlier refuse. A ``"1"`` manifest (older runs) is read
-        for reporting only; no row of such a run is reused.
+        Version of the manifest format (:mod:`.manifest_versions`): ``"4"``, the only one
+        written and read; an older manifest is refused (run preprocessing again).
     """
 
     experiment_root: str

@@ -1,6 +1,6 @@
 """A described run: *Check and save* and reopening (Stage 1, PR 16b).
 
-Widgets are driven headless. ``PreprocessingNotebook(describe=True)`` is the shipped notebook:
+Widgets are driven headless. ``PreprocessingNotebook()`` is the shipped notebook:
 the labels toggle, the design card's "comparable" questions and the global Image type card are
 retired; every answer goes to ``morphobricks.draft.json``; one click publishes
 ``morphobricks.toml`` and writes ``experiment_design.csv`` (only then); reopening folds what
@@ -68,7 +68,7 @@ def exp(tmp_path):
 
 
 def opened(root, masks, out, *, axes=True):
-    nb = PreprocessingNotebook(str(root), output_folder=str(out), describe=True)
+    nb = PreprocessingNotebook(str(root), output_folder=str(out))
     for step in (
         nb.welcome,
         nb.folder_step,
@@ -290,17 +290,6 @@ def test_the_draft_carries_the_pairing_across_a_reopen(tmp_path):
     again = opened(root, masks, out)
     assert again.design.repeat_groups()[("drug", "day2")] == "rep2"
     assert not (out / DESIGN_FILENAME).exists()
-
-
-def test_without_describe_the_v04_cards_stay(exp):
-    root, masks, out = exp
-    nb = PreprocessingNotebook(str(root), output_folder=str(out))
-    for step in (nb.folder_step, nb.axis_step, nb.check_save_step, nb.run_step):
-        step()
-    nb.check_button.click()
-    assert ui.is_visible(nb.labels_confirmed.widget) and not nb.labels_confirmed.value
-    assert (out / DESIGN_FILENAME).exists()  # the v0.4 template
-    assert not ui.is_visible(nb.check_card)
 
 
 # --- the pictures hold the right image ------------------------------------------------------------

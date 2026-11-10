@@ -1,4 +1,4 @@
-"""The physical ``R_*`` checks on the Spec fixtures: conformance P01-P03, P10, P12, P13, P23, P26.
+"""The physical ``R_*`` checks on Spec fixtures: conformance P01-P03, P06, P10, P12, P13, P23, P26.
 
 Experiment-v1 section 8. The folder is built from a vendored valid fixture (one small image
 per unit position, header names taken from the fixture's confirmed names), then one image or
@@ -13,6 +13,8 @@ import numpy as np
 import pytest
 import tifffile
 
+from description_tree import two_unnamed_units, write_fluorophores
+from morphobricks_preprocessing.axes import AxisMapping, AxisReview
 from morphobricks_preprocessing.description import Description, description_from_bytes
 from morphobricks_preprocessing.discovery import discover_experiment
 from morphobricks_preprocessing.metadata import OME_ZARR, inspect_images
@@ -29,6 +31,7 @@ from morphobricks_preprocessing.physical_check import (
     check_physical,
     layout_groups,
 )
+from morphobricks_preprocessing.preview import channel_strip
 from spec_pin import fixtures
 
 VALID = {item.name.split("_")[0]: item for item in fixtures("valid")}
@@ -220,6 +223,45 @@ def test_an_image_with_names_when_the_channel_has_none_contradicts(tmp_path):
     for path in first.parent.glob("*.tif"):
         write_plane(path, names)
     assert check(root, description).codes == {HEADER_CONTRADICTION}
+
+
+# P06 -------------------------------------------------------------------------------------
+
+
+def _p06_tree(root, *, swapped):
+    """CTRL/rep1 and DrugA/rep1, four unnamed images each; DrugA's fluorophores maybe swapped."""
+    for condition in ("CTRL", "DrugA"):
+        for index in range(4):
+            path = root / condition / "rep1" / f"FOV{index}.tif"
+            write_fluorophores(path, swapped=swapped and condition == "DrugA")
+    return root
+
+
+def test_p06_swapped_fluorophores_in_unnamed_units_pass_and_each_unit_needs_its_own_look(
+    tmp_path,
+):
+    """P06: no refusal (a documented limit); what guards it is the preview and confirmation."""
+    description = description_from_bytes(two_unnamed_units(VALID["v12"].data))
+    same = check(_p06_tree(tmp_path / "same", swapped=False), description)
+    root = _p06_tree(tmp_path / "swapped", swapped=True)
+    report = check(root, description)
+    assert report.ok and report.issues == () and report.unchecked == ()
+    assert report == same  # the pixels are never compared: nothing tells the two apart
+    ctrl, drug = UnitKey("CTRL", "rep1", "single"), UnitKey("DrugA", "rep1", "single")
+    assert report.layouts[ctrl] == report.layouts[drug]
+    assert (report.layouts[ctrl].channels, report.layouts[ctrl].names) == (2, ())
+    (group,) = layout_groups(report.layouts)
+    assert group.units == (ctrl, drug) and not group.batch_confirmable  # Q3: one look per unit
+    mapping = AxisMapping("CYX", "CYX")
+    shown = {}
+    for condition in ("CTRL", "DrugA"):
+        relative = f"{condition}/rep1/FOV0.tif"
+        strip = channel_strip(
+            root / relative, relative, AxisReview(mapping, {relative: mapping}, ())
+        )
+        assert [p.label for p in strip.panels] == ["C0", "C1"]  # no name is made up
+        shown[condition] = [int(p.plane.pixels.max()) for p in strip.panels]
+    assert shown == {"CTRL": [200, 60], "DrugA": [60, 200]}  # the preview shows the swap
 
 
 # P10, P12 ------------------------------------------------------------------------------

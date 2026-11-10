@@ -15,7 +15,12 @@ import pytest
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_write import canonical_bytes
 from morphobricks_preprocessing.run_inputs import RunInputs
-from morphobricks_preprocessing.testing import CleanRun, make_clean_run, make_described_run
+from morphobricks_preprocessing.testing import (
+    CleanRun,
+    clean_description,
+    make_clean_run,
+    make_described_run,
+)
 from spec_pin import fixtures
 
 VALID = {item.name.split("_")[0]: item for item in fixtures("valid")}
@@ -154,10 +159,18 @@ def test_an_invalid_description_is_refused_with_the_readers_error(tmp_path):
 
 
 @pytest.mark.filterwarnings("ignore:No experiment description")
-def test_make_clean_run_without_a_description_is_unchanged(tmp_path):
+def test_make_clean_run_without_a_description_makes_a_described_run_of_its_tree(tmp_path):
+    # v0.5.1 (ADR 0002 AR10): every run is described; the tree and FOV keys are as before.
     run = make_clean_run(tmp_path / "run", mask_types=("Cells",), design=True)
-    assert run.description is None and run.masks is not None
-    assert not (run.output / "morphobricks.toml").exists()
-    fovs = RunInputs.open(run.output).fovs()
+    assert run.description == clean_description(2, ("Cells",), reference=True)
+    assert (run.output / "morphobricks.toml").exists() and run.masks is not None
+    inputs = RunInputs.open(run.output)
+    fovs = inputs.fovs()
     assert {f.key[:3] for f in fovs} == {("ctrl", "rep1", "single"), ("drug", "rep1", "single")}
-    assert all(f.condition_id is None for f in fovs)
+    assert {(f.condition_id, f.repeat_group, f.channel_ids) for f in fovs} == {
+        ("ctrl", "rep1", ("ch1", "ch2")),
+        ("drug", "rep1", ("ch1", "ch2")),
+    }
+    assert inputs.mask_check_status("Cells", fovs[0]) == "checked"  # the mask step ran
+    assert inputs.design().repeat_groups() == {("ctrl", "rep1"): "rep1", ("drug", "rep1"): "rep1"}
+    assert inputs.design().controls == ("ctrl",)

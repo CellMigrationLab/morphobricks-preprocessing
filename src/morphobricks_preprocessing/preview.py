@@ -171,6 +171,10 @@ class PreviewCache:
             self._items.move_to_end(key)
         return found
 
+    def discard(self, key: Hashable) -> None:
+        """Forget the plane under ``key``, if kept (a read the file changed under)."""
+        self._items.pop(key, None)
+
     def put(self, key: Hashable, plane: ReducedPlane) -> None:
         """Keep the plane, dropping the least recently used one beyond the size."""
         self._items[key] = plane
@@ -335,7 +339,8 @@ def channel_strip(
     The plane is the middle Z when the file has a Z axis and the first T when it has a T axis
     (``options`` can override); the strip says which. The channels are the ``C`` axis of the
     confirmed roles; a file without one is a single channel ``C0``, whatever its shape. Each
-    channel has its own contrast.
+    channel has its own contrast. ``options.expected`` is checked before the read and the
+    fingerprint then taken is checked after it: a file rewritten during the read is refused.
 
     Parameters
     ----------
@@ -369,6 +374,13 @@ def channel_strip(
         plane = _cached_plane(path, mapping, (fingerprint, c, z, t), options)
         label = _label(c, options.header_names)
         panels.append(ChannelPanel(c, plane, display_panel(plane.pixels), label))
+    try:
+        check_unchanged(path, fingerprint)  # a file rewritten during the read is not shown
+    except PreviewRefused:
+        if options.cache is not None:  # nor kept: a plane read across a rewrite is not that file
+            for c in range(layout.channel_count):
+                options.cache.discard((os.fspath(path), fingerprint, c, z, t, options.side))
+        raise
     return ChannelStrip(os.fspath(path), z, t, tuple(panels), strip_png([p.panel for p in panels]))
 
 

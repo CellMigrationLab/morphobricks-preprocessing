@@ -58,7 +58,7 @@ def write_target_refusal(
         exist is compared by its resolved path only.
     protected_files
         Files the path may not be, by what they are, for example
-        ``{"design file given with --design": design}``; None values are left out.
+        ``{"conversion record": path}``; None values are left out.
     output
         An output folder in which only ``output_names`` (and the folder itself) are
         refused; None when there is none. Any other name in it is allowed.

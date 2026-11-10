@@ -15,14 +15,12 @@ import numpy as np
 import pytest
 import tifffile
 
+from described_tree import check_masks, main_described, run_described
 from morphobricks_preprocessing import (
     AxisMapping,
-    default_design,
     preflight,
     read_manifest,
     review_axes,
-    run_experiment,
-    write_experiment_design,
 )
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.mask_review import _statements, mask_axes_questions
@@ -63,14 +61,6 @@ def written_outputs(out):
     return sorted(p.name for p in out.iterdir()) if out.exists() else []
 
 
-def confirm_design(root, output):
-    design = default_design(preflight(root).dataset.repeats)
-    for group in design.groups:
-        design = design.with_confirmed(group, True, "2026-11-05")
-    output.mkdir(parents=True, exist_ok=True)
-    write_experiment_design(design, output / "experiment_design.csv")
-
-
 # 1. Z > 1 is refused, by every route that names a Z axis -------------------------------
 
 
@@ -94,7 +84,7 @@ def test_a_named_z_stack_is_refused_from_its_header(tmp_path, route):
     assert issue.is_error and issue.paths == ("ctrl/r1/a.tif", "ctrl/r1/b.tif")
     assert "ctrl/r1/a.tif: 3 slices" in issue.message and "b.tif: 4 slices" in issue.message
     assert "2-D planes" in issue.message and "project" in issue.action.lower()
-    result = run_experiment(root, AxisMapping("ZCYX", "ZCYX"), output_folder=out)
+    result = run_described(root, AxisMapping("ZCYX", "ZCYX"), output_folder=out)
     assert not result.written and Z_STACK in errors(result.issues)
     # Nothing but the report: no table, no manifest.
     assert "plane_histograms.csv" not in written_outputs(out)
@@ -114,7 +104,7 @@ def test_every_z_stack_is_named_not_only_the_first(tmp_path):
 def test_check_refuses_a_z_stack_and_writes_only_the_report(tmp_path, capsys):
     root, out = tmp_path / "exp", tmp_path / "out"
     write_named("ome", root / "ctrl/r1/a.ome.tif", 3)
-    assert main(["check", str(root), "--output", str(out)]) == 1
+    assert main_described(["check", str(root), "--output", str(out)]) == 1
     printed = capsys.readouterr().out
     assert "1 image is a Z-stack" in printed and "--project max|mean|sum" in printed
     report = json.loads((out / "discovery_report.json").read_text(encoding="utf-8"))
@@ -128,10 +118,10 @@ def test_a_plain_stack_confirmed_with_a_z_role_is_refused(tmp_path):
     assert Z_STACK not in {i.code for i in preflight(root).metadata.issues}  # unnamed yet
     review = review_axes(preflight(root).metadata, AxisMapping("IYX", "ZYX"))
     assert one(review.issues, Z_STACK).paths == ("ctrl/a.tif",)
-    result = run_experiment(root, AxisMapping("IYX", "ZYX"))
+    result = run_described(root, AxisMapping("IYX", "ZYX"))
     assert not result.written and Z_STACK in errors(result.issues)
     # The same stack confirmed as time points is a time-lapse, and is analysed.
-    assert run_experiment(root, AxisMapping("IYX", "TYX")).written
+    assert run_described(root, AxisMapping("IYX", "TYX")).written
 
 
 def test_a_header_z_confirmed_as_time_is_the_axis_error_that_convert_fixes(tmp_path):
@@ -147,7 +137,7 @@ def test_a_header_z_confirmed_as_time_is_the_axis_error_that_convert_fixes(tmp_p
     assert combined == {"axes_contradict_header"}
     copies = tmp_path / "copies"
     assert main(["convert", str(root), "--to", str(copies), "--axes", "TYX"]) == 0
-    assert run_experiment(copies, AxisMapping("TYX", "TYX"), output_folder=out).written
+    assert run_described(copies, AxisMapping("TYX", "TYX"), output_folder=out).written
     # Confirmed as the depth its header names, it is a Z-stack.
     refused = review_axes(pre.metadata, AxisMapping("ZYX", "ZYX"))
     assert one(refused.issues, Z_STACK).paths == ("ctrl/a.tif",)
@@ -167,7 +157,7 @@ def test_an_ome_zarr_z_stack_is_refused(tmp_path):
     root = tmp_path / "exp"
     write_ngff(root / "ctrl/a.ome.zarr", np.zeros((2, 3, 6, 8), np.uint16), "czyx")
     assert one(preflight(root).metadata.issues, Z_STACK).paths == ("ctrl/a.ome.zarr",)
-    result = run_experiment(root, AxisMapping("CZYX", "CZYX"))
+    result = run_described(root, AxisMapping("CZYX", "CZYX"))
     assert not result.written and Z_STACK in errors(result.issues)
 
 
@@ -175,7 +165,7 @@ def test_convert_refuses_a_z_stack_too(tmp_path, capsys):
     root = tmp_path / "exp"
     write_plain(root / "ctrl/a.tif", np.zeros((3, 6, 8), np.uint8))
     args = ["convert", str(root), "--to", str(tmp_path / "copies"), "--axes", "ZYX"]
-    assert main(args) == 1
+    assert main_described(args) == 1
     assert "1 image is a Z-stack" in capsys.readouterr().out
     assert not (tmp_path / "copies/ctrl/a.tif").exists()
 
@@ -190,7 +180,7 @@ def test_a_z_axis_of_one_slice_is_accepted_as_it_is(tmp_path, route):
     pre = preflight(root)
     assert Z_STACK not in {i.code for i in pre.metadata.issues}
     axes = pre.metadata.files[0].axes
-    result = run_experiment(root, AxisMapping(axes, axes))
+    result = run_described(root, AxisMapping(axes, axes))
     assert result.written, result.issues
     (fov,) = RunInputs.open(result.output_folder).fovs()
     assert fov.z_count == 1
@@ -199,7 +189,7 @@ def test_a_z_axis_of_one_slice_is_accepted_as_it_is(tmp_path, route):
 def test_a_2d_image_is_accepted(tmp_path):
     root = tmp_path / "exp"
     write_data(root / "ctrl/a.tif", np.zeros((2, 6, 8), np.uint8), "CYX")
-    assert run_experiment(root, AxisMapping("CYX", "CYX")).written
+    assert run_described(root, AxisMapping("CYX", "CYX")).written
 
 
 # 2. T > 1 only with masks of the same T --------------------------------------------------
@@ -217,9 +207,9 @@ def timelapse(tmp_path):
 def test_a_time_lapse_with_masks_of_its_t_is_accepted(timelapse):
     root, masks = timelapse
     ome(masks / "Cells/ctrl/r1/a.tif", labels((4, 6, 8)), "TYX")
-    result = run_experiment(root, TCYX, masks_folder=masks)
+    result = run_described(root, TCYX, masks_folder=masks)
     assert result.written, result.issues
-    inputs = RunInputs.open(result.output_folder)
+    inputs = RunInputs.open(check_masks(result.output_folder))
     (fov,) = inputs.fovs()
     for t in range(4):
         np.testing.assert_array_equal(inputs.read_mask(fov, "Cells", t=t), labels((4, 6, 8))[t])
@@ -228,7 +218,7 @@ def test_a_time_lapse_with_masks_of_its_t_is_accepted(timelapse):
 def test_a_stated_plain_stack_mask_of_its_t_is_accepted(timelapse):
     root, masks = timelapse
     write_plain(masks / "Cells/ctrl/r1/a.tif", labels((4, 6, 8)))
-    result = run_experiment(root, TCYX, masks_folder=masks, mask_axes={"Cells": "TYX"})
+    result = run_described(root, TCYX, masks_folder=masks, mask_axes={"Cells": "TYX"})
     assert result.written, result.issues
     (entry,) = read_manifest(result.manifest_path).masks["files"]
     assert (entry["roles"], entry["axes_from"]) == ("TYX", "stated")
@@ -238,7 +228,7 @@ def test_a_stated_plain_stack_mask_of_its_t_is_accepted(timelapse):
 def test_a_stated_plain_stack_mask_of_another_t_is_refused(timelapse):
     root, masks = timelapse
     write_plain(masks / "Cells/ctrl/r1/a.tif", labels((3, 6, 8)))
-    result = run_experiment(root, TCYX, masks_folder=masks, mask_axes={"Cells": "TYX"})
+    result = run_described(root, TCYX, masks_folder=masks, mask_axes={"Cells": "TYX"})
     assert not result.written and "mask_planes_mismatch" in errors(result.issues)
 
 
@@ -250,7 +240,7 @@ def test_a_2d_mask_of_a_time_lapse_is_refused(timelapse, named):
         ome(path, labels((6, 8)), "YX")
     else:
         write_plain(path, labels((6, 8)))
-    result = run_experiment(root, TCYX, masks_folder=masks)
+    result = run_described(root, TCYX, masks_folder=masks)
     assert not result.written
     issue = one(result.issues, "mask_planes_mismatch")
     assert issue.paths == ("Cells/ctrl/r1/a.tif",)
@@ -273,7 +263,7 @@ def test_masks_of_one_image_with_other_planes_name_no_statement(timelapse):
 def test_the_shared_statement_is_refused_by_the_api(timelapse):
     root, masks = timelapse
     ome(masks / "Cells/ctrl/r1/a.tif", labels((6, 8)), "YX")
-    result = run_experiment(root, TCYX, masks_folder=masks, mask_axes={"Cells": "YX"})
+    result = run_described(root, TCYX, masks_folder=masks, mask_axes={"Cells": "YX"})
     assert not result.written
     issue = one(result.issues, SHARED)
     assert issue.paths == ("Cells/ctrl/r1/a.tif",)
@@ -286,7 +276,7 @@ def test_the_shared_statement_is_refused_on_a_one_plane_image_too(tmp_path):
     write_data(root / "ctrl/a.tif", np.zeros((6, 8), np.uint8), "YX")
     write_plain(masks / "Cells/ctrl/a.tif", labels((6, 8)))
     assert SHARED in errors(preflight(root, masks_folder=masks, mask_axes={"Cells": "yx"}).issues)
-    assert run_experiment(root, AxisMapping("YX", "YX"), masks_folder=masks).written
+    assert run_described(root, AxisMapping("YX", "YX"), masks_folder=masks).written
 
 
 def test_the_shared_statement_is_refused_by_the_command_line(timelapse, tmp_path, capsys):
@@ -294,10 +284,9 @@ def test_the_shared_statement_is_refused_by_the_command_line(timelapse, tmp_path
     ome(masks / "Cells/ctrl/r1/a.tif", labels((6, 8)), "YX")
     out = tmp_path / "out"
     common = [str(root), "--masks", str(masks), "--output", str(out), "--mask-axes", "Cells=YX"]
-    assert main(["check", *common]) == 1
+    assert main_described(["check", *common]) == 1
     assert "That option was removed" in capsys.readouterr().out
-    confirm_design(root, out)
-    assert main(["run", *common, "--axes", "TCYX"]) == 1
+    assert main_described(["run", *common, "--axes", "TCYX"]) == 1
     assert "That option was removed" in capsys.readouterr().out
     assert not (out / "plane_histograms.csv").exists()
 
@@ -338,7 +327,7 @@ def test_a_run_folder_recording_a_shared_mask_is_refused_until_run_again(tmp_pat
     write_data(root / "ctrl/a.tif", np.zeros((6, 8), np.uint8), "YX")
     write_plain(masks / "Cells/ctrl/a.tif", labels((6, 8)))
     mapping = AxisMapping("YX", "YX")
-    assert run_experiment(root, mapping, masks_folder=masks, output_folder=out).written
+    assert run_described(root, mapping, masks_folder=masks, output_folder=out).written
     path = out / "run_manifest.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     (entry,) = data["masks"]["files"]
@@ -351,7 +340,7 @@ def test_a_run_folder_recording_a_shared_mask_is_refused_until_run_again(tmp_pat
     assert "run preprocessing again without" in str(refused.value)
     assert "--mask-axes TYPE=YX" in str(refused.value)
     # Doing what it says, the recorded statement is not reapplied and the folder opens.
-    assert run_experiment(root, mapping, masks_folder=masks, output_folder=out).written
+    assert run_described(root, mapping, masks_folder=masks, output_folder=out).written
     (entry,) = read_manifest(path).masks["files"]
     assert "shared" not in entry and entry["axes_from"] == "header"
     assert RunInputs.open(out).fovs()

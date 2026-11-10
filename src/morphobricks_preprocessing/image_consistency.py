@@ -1,9 +1,9 @@
 """The pixel-type and dimension-arrangement checks of a set of image headers.
 
 These are the folder check's ``mixed_dtypes`` and ``inconsistent_dimensions`` (or
-``missing_axes``) errors. :func:`.metadata.check_metadata` applies them to every image of an
-undescribed (v0.4) experiment; a described run applies them per image type of the
-description (:mod:`.unit_consistency`). The checks themselves are the same in both.
+``missing_axes``) errors. :func:`.metadata.check_metadata` applies them to every image of the
+experiment (the folder check); the run applies them per image type of the description
+(:mod:`.unit_consistency`). The checks themselves are the same in both.
 """
 
 from __future__ import annotations

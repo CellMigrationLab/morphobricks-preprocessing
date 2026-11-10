@@ -70,7 +70,7 @@ def setup_environment(tmp_path, monkeypatch):
         installs=[],
         imports=[],
         versions={
-            "morphobricks-preprocessing": "0.4.0",
+            "morphobricks-preprocessing": "0.5.0",
             "morphobricks-normalization": "0.3.4",
             "ipywidgets": "7.7.1",
         },
@@ -96,7 +96,7 @@ def setup_environment(tmp_path, monkeypatch):
         assert check is True
         state.installs.append(command)
         state.available.update({*REQUIRED, ZARR})
-        state.versions["morphobricks-preprocessing"] = "0.4.0"
+        state.versions["morphobricks-preprocessing"] = "0.5.0"
 
     monkeypatch.setattr(subprocess, "run", install)
 
@@ -135,7 +135,7 @@ def checkout_at(path):
     package.mkdir(parents=True)
     (package / "__init__.py").write_text("", encoding="utf-8")
     (path / "pyproject.toml").write_text(
-        '[project]\nname = "morphobricks-preprocessing"\nversion = "0.4.0"\n',
+        '[project]\nname = "morphobricks-preprocessing"\nversion = "0.5.0"\n',
         encoding="utf-8",
     )
     return path
@@ -150,7 +150,7 @@ def test_setup_reuses_the_matching_installed_release(setup_environment, capsys):
         "morphobricks_preprocessing",
     ]
     out = capsys.readouterr().out
-    assert "Ready: preprocessing 0.4.0" in out
+    assert "Ready: preprocessing 0.5.0" in out
     assert "ipywidgets 7.7.1" in out
 
 
@@ -164,8 +164,8 @@ def test_setup_installs_missing_package_from_the_exact_commit(setup_environment,
     target = command[5]
     assert target.startswith("morphobricks-preprocessing[notebook] @ git+")
     assert target.endswith("@" + namespace["RELEASE_REF"])
-    assert namespace["RELEASE_REF"] == "4b8a32e58985d0753c2bfb7e2998893a84185533"
-    assert "pinned v0.4.0 candidate" in capsys.readouterr().out
+    assert namespace["RELEASE_REF"] == "fd7afd339bcaab7579c806a28a65bb7ecebe940c"
+    assert "pinned v0.5.0 candidate" in capsys.readouterr().out
 
 
 def test_setup_replaces_a_mismatched_installed_release(setup_environment):
@@ -256,7 +256,7 @@ def test_an_explicit_development_override_uses_the_checkout_and_says_so(
     assert sys.path[0] == str(checkout / "src")
     assert f"commit {OTHER_COMMIT}, uncommitted changes" in out
     assert "DEVELOPMENT OVERRIDE is on" in out
-    assert "DEVELOPMENT OVERRIDE on" in out.split("Notebook 0.4.0")[1]
+    assert "DEVELOPMENT OVERRIDE on" in out.split("Notebook 0.5.0")[1]
     record = namespace["SETUP_RECORD"]
     assert record["checkout_commit"] == OTHER_COMMIT
     assert record["checkout_has_uncommitted_changes"] is True

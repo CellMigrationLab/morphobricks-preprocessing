@@ -61,7 +61,7 @@ class _StepsFlow(_QuickAxes, _StepStates):
     def steps(self) -> widgets.Widget:
         """Return the notebook's 13 steps, one shown at a time, with a strip and Back/Next.
 
-        The shipped notebook shows this (with ``describe=True``) instead of the stacked
+        The shipped notebook shows this instead of the stacked
         pages. Every answer is given and saved on the card that asks it, as on the pages;
         Next is never blocked, and the save and the run still refuse what is missing.
 

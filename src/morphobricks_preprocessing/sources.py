@@ -13,7 +13,7 @@ from pathlib import Path
 from .axes import file_mapping_for
 from .image_names import position_id
 from .inventory import source_signature
-from .manifest import LEGACY_MANIFEST_VERSION, RunManifest
+from .manifest import RunManifest
 from .metadata import inspect_image
 from .validation import ValidationIssue, error, plural
 
@@ -35,9 +35,8 @@ def check_sources(
     files' total size, newest time and inventory digest, issue #86); its recorded
     ``position_id`` is the one its name gives; with
     ``identities``, its labels and ``position_id`` are the caller's; with ``image_axes``,
-    the caller's axes give every axis the role the run confirmed for that image. A version 1
-    manifest (a run before v0.4.0, without the axis check) fails every image: such a run
-    must be redone (design v0.4 §6).
+    the caller's axes give every axis the role the run confirmed for that image. A manifest of
+    an older version is not read at all (:mod:`.manifest_versions`).
 
     Parameters
     ----------
@@ -60,8 +59,7 @@ def check_sources(
     Returns
     -------
     list of ValidationIssue
-        Errors, each naming its images: ``manifest_before_v040`` (alone, for a version 1
-        manifest), ``images_not_in_manifest``, ``images_missing``
+        Errors, each naming its images: ``images_not_in_manifest``, ``images_missing``
         (no longer on disk), ``images_changed``, ``position_id_not_recorded`` (a manifest
         from before ``position_id`` was recorded, when ``identities`` are checked),
         ``identity_differs`` and ``axis_mapping_mismatch``. Empty when all images pass.
@@ -77,8 +75,6 @@ def check_sources(
         absent = [path for path in paths if given is not None and path not in given]
         if absent:
             raise ValueError(f"{name} has no entry for {', '.join(absent)}")
-    if manifest.manifest_version == LEGACY_MANIFEST_VERSION:
-        return [_issue("manifest_before_v040", [(path, "") for path in paths])]
     found: dict[str, list[tuple[str, str]]] = {}
 
     def report(code: str, path: str, detail: str = "") -> None:
@@ -146,11 +142,6 @@ _RERUN = "Run the preprocessing brick again on this experiment, or use the table
 
 
 _SOURCE_TEXTS = {
-    "manifest_before_v040": (
-        "The manifest of {n} was written before v0.4.0, without the axis check, so its "
-        "results cannot be used.",
-        "Run the preprocessing brick again on this experiment.",
-    ),
     "images_not_in_manifest": (
         "{n} not analysed by the preprocessing run of this manifest: added after it ran, "
         "excluded, or from another experiment.",

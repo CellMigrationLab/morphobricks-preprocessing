@@ -1,8 +1,9 @@
-"""The experiments of the schema-version-2 fixture in ``tests/data`` (follow-up P3b).
+"""The experiments of the reference histograms (science goldens) in ``tests/data``.
 
-``tests/data/make_v2_fixture.py`` wrote their ``plane_histograms.csv`` with the
-code of version 2 (one row per plane and channel); ``test_schema_v2_equivalence.py``
-writes the same images again and compares the current table with it.
+``tests/data/make_histogram_goldens.py`` wrote their ``plane_histograms.csv`` with an earlier,
+independent implementation (one row per plane and channel, before follow-up P3b);
+``test_histogram_goldens.py`` writes the same images again and compares the current table with
+those values.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import numpy as np
 from tiff_tree import write_data
 
 DATA = Path(__file__).parent / "data"
-PIXELS = DATA / "v2_pixels.npz"
+PIXELS = DATA / "golden_pixels.npz"
 
 # Per pixel type: the bin count, the experiment axis roles and its images as
 # (relative path, axes, writer options). TIFF images share one arrangement of axes;
@@ -74,7 +75,7 @@ TIME_FOR_DEPTH = {"ZCYX": "TCYX", "czyx": "tcyx"}
 MorphoBricks v1 analyses 2-D planes (owner decision of 5 November 2026): a Z-stack is
 refused, so the tests write each uint16 image with its planes along T instead. The pixels
 and every histogram are the reference's; only the reference's ``z`` is now ``t``.
-``make_v2_fixture.py`` writes them as the reference was made (``as_made=True``).
+``make_histogram_goldens.py`` writes them as the reference was made (``as_made=True``).
 """
 
 

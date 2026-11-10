@@ -18,6 +18,7 @@ import pytest
 import tifffile
 
 from channel_images import write_channels, write_rgb
+from described_tree import run_described
 from description_tree import MAPPING, build_experiment
 from morphobricks_preprocessing import prefill_mapping, preflight, run_experiment
 from morphobricks_preprocessing.description import description_from_bytes
@@ -54,22 +55,19 @@ def publish(out, name="v29"):
     (out / "morphobricks.toml").write_bytes(VALID[name].data)
 
 
-@pytest.mark.filterwarnings("ignore:No experiment description")
 def test_the_folder_check_of_a_mixed_experiment_is_refused_without_a_description(tmp_path):
     root, out = mixed_experiment(tmp_path)
-    pre = preflight(root, out)
+    pre = preflight(root, out)  # experiment-wide, before any unit is declared
     assert FOLDER_CODES <= codes(pre.issues)
     assert not pre.ok
-    result = run_experiment(root, MAPPING, output_folder=out)  # no published file: v0.4 run
-    assert not result.written
-    assert "mixed_dtypes" in codes(result.issues)
-    assert LAYOUT not in codes(result.issues)
+    result = run_experiment(root, MAPPING, output_folder=out)  # no published file
+    assert not result.written and codes(result.issues) == {"A_DESCRIPTION_REQUIRED"}
 
 
 def test_a_described_run_of_a_mixed_experiment_stops_with_the_spec_refusal(tmp_path):
     root, out = mixed_experiment(tmp_path)
     publish(out)
-    result = run_experiment(root, MAPPING, output_folder=out)
+    result = run_described(root, MAPPING, output_folder=out)
     assert not result.written
     assert LAYOUT in codes(result.issues)
     assert not FOLDER_CODES & codes(result.issues)
@@ -107,7 +105,7 @@ def test_a_unit_mixed_inside_itself_is_refused_in_a_described_run(tmp_path):
     root, out = mixed_experiment(tmp_path)
     publish(out)
     _mix_inside_unit(root)
-    result = run_experiment(root, MAPPING, output_folder=out)
+    result = run_described(root, MAPPING, output_folder=out)
     assert not result.written
     assert {"mixed_dtypes", LAYOUT} <= codes(result.issues)
     pre = unit_checked(preflight(root, out))
@@ -123,7 +121,7 @@ def test_a_unit_mixed_inside_itself_is_refused_by_the_run_of_one_image_type(tmp_
     (out / "morphobricks.toml").write_bytes(VALID["v01"].data)
     images = build_experiment(root, description, images=2)
     tifffile.imwrite(root / images[0], np.zeros((2, 8, 8), np.uint16), photometric="minisblack")
-    result = run_experiment(root, MAPPING, output_folder=out)
+    result = run_described(root, MAPPING, output_folder=out)
     assert not result.written
     assert "mixed_dtypes" in codes(result.issues)
     assert "mixed_dtypes" in codes(unit_checked(preflight(root, out)).issues)
@@ -141,7 +139,7 @@ def test_units_of_one_image_type_are_still_compared_with_each_other(tmp_path):
         path.unlink()
         tifffile.imwrite(path, np.full((8, 8, 3), 700, np.uint16), photometric="rgb")
     (out / "morphobricks.toml").write_text(text, encoding="utf-8")
-    result = run_experiment(root, prefill_mapping("YXS"), output_folder=out)
+    result = run_described(root, prefill_mapping("YXS"), output_folder=out)
     assert "mixed_dtypes" in codes(result.issues)
     assert LAYOUT not in codes(result.issues)
 
@@ -193,17 +191,17 @@ def test_units_of_one_layout_that_disagree_are_still_refused_by_the_run(
     pre = unit_checked(preflight(root, out))
     assert pre.ok, [i.code for i in pre.issues if i.is_error]  # only the run can refuse it
     assert not {"inconsistent_dimensions", "different_channel_counts"} & codes(pre.issues)
-    result = run_experiment(root, prefill_mapping(mapping), output_folder=out)
+    result = run_described(root, prefill_mapping(mapping), output_folder=out)
     assert not result.written
     assert code in codes(result.issues)
 
 
-def _checked_notebook(root, out, *, describe):
+def _checked_notebook(root, out):
     pytest.importorskip("ipywidgets")
     pytest.importorskip("matplotlib")
     from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook
 
-    nb = PreprocessingNotebook(str(root), output_folder=str(out), describe=describe)
+    nb = PreprocessingNotebook(str(root), output_folder=str(out))
     nb.welcome(), nb.folder_step()
     nb.check_button.click()
     return nb
@@ -211,13 +209,6 @@ def _checked_notebook(root, out, *, describe):
 
 def test_the_described_notebook_folder_check_reaches_the_screens(tmp_path):
     root, out = mixed_experiment(tmp_path)
-    nb = _checked_notebook(root, out, describe=True)
+    nb = _checked_notebook(root, out)
     assert nb.preflight.ok, [i.code for i in nb.preflight.issues if i.is_error]
     assert not FOLDER_CODES & codes(nb._step1_issues())
-
-
-def test_the_undescribed_notebook_keeps_the_folder_refusal(tmp_path):
-    root, out = mixed_experiment(tmp_path)
-    nb = _checked_notebook(root, out, describe=False)
-    assert not nb.preflight.ok
-    assert FOLDER_CODES <= codes(nb._step1_issues())

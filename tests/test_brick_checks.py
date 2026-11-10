@@ -7,6 +7,7 @@ import sys
 import numpy as np
 import pytest
 
+from described_tree import run_described
 from morphobricks_preprocessing import (
     MANIFEST_FILENAME,
     RunInputs,
@@ -14,7 +15,6 @@ from morphobricks_preprocessing import (
     UnrecordedFilesError,
     find_masks,
     prefill_mapping,
-    run_experiment,
 )
 from morphobricks_preprocessing.discovery import discover_experiment
 from morphobricks_preprocessing.mask_record import mask_manifest
@@ -44,9 +44,7 @@ def test_a_run_refuses_a_mask_whose_header_puts_x_before_y(tmp_path, axes, shape
     image_shape = (6, 8) if len(shape) == 2 else (3, 6, 8)
     write_data(root / "ctrl/a.tif", np.zeros(image_shape, np.uint8), axes[:-2] + "YX")
     write_data(tmp_path / "masks/Cells/ctrl/a.tif", _labels(shape), axes)
-    result = run_experiment(
-        root, prefill_mapping(axes[:-2] + "YX"), masks_folder=tmp_path / "masks"
-    )
+    result = run_described(root, prefill_mapping(axes[:-2] + "YX"), masks_folder=tmp_path / "masks")
     assert not result.written
     assert not (result.output_folder / MANIFEST_FILENAME).exists()
     (issue,) = [i for i in result.issues if i.code == "mask_layout"]
@@ -128,7 +126,7 @@ def test_excluded_images_are_not_named(tmp_path):
     root = tmp_path / "exp"
     for name in ("a", "b"):
         write_data(root / f"ctrl/{name}.tif", np.arange(48, dtype=np.uint8).reshape(6, 8), "YX")
-    result = run_experiment(root, prefill_mapping("YX"), exclude=["ctrl/b.tif"])
+    result = run_described(root, prefill_mapping("YX"), exclude=["ctrl/b.tif"])
     assert result.written, result.issues
     assert [f.relative_path for f in RunInputs.open(result.output_folder).fovs()] == ["ctrl/a.tif"]
     write_data(root / "ctrl/c.tif", np.zeros((6, 8), np.uint8), "YX")
@@ -150,7 +148,7 @@ def test_a_label_image_added_after_the_run_is_named(tmp_path):
     image = np.arange(40, dtype=np.uint8).reshape(2, 4, 5)
     path = write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", image, "tyx")
     write_labels(path, {"cells": _labels((2, 4, 5))}, "tyx")
-    result = run_experiment(tmp_path / "exp", prefill_mapping("TYX"))
+    result = run_described(tmp_path / "exp", prefill_mapping("TYX"))
     assert result.written, result.issues
     RunInputs.open(result.output_folder)
     # Written as the only listed label image: the recorded cells label image is unchanged.
@@ -169,7 +167,7 @@ def labelled(tmp_path):
     image = np.arange(40, dtype=np.uint8).reshape(2, 4, 5)
     path = write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", image, "tyx")
     write_labels(path, {"cells": _labels((2, 4, 5))}, "tyx")
-    result = run_experiment(tmp_path / "exp", prefill_mapping("TYX"))
+    result = run_described(tmp_path / "exp", prefill_mapping("TYX"))
     assert result.written, result.issues
     RunInputs.open(result.output_folder)
     return result.output_folder, path

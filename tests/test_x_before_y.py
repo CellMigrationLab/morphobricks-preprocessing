@@ -8,13 +8,13 @@ saving the images again with Y before X, or as named-axis OME-TIFF copies.
 import numpy as np
 import pytest
 
+from described_tree import run_described
 from morphobricks_preprocessing import (
     AXIS_ERROR_CODES,
     AxisMapping,
     header_axis_issue,
     inspect_image,
     review_axes,
-    run_experiment,
 )
 from morphobricks_preprocessing.axis_check import axis_disagreements
 from tiff_tree import write_data, write_plain
@@ -43,11 +43,11 @@ def test_a_plain_stack_confirmed_x_before_y_is_refused(tmp_path, writer, roles):
 def test_the_run_reads_nothing(tmp_path):
     root = tmp_path / "exp"
     write_plain(root / "ctrl/a.tif", stack())
-    result = run_experiment(root, AxisMapping("IYX", "TXY"))
+    result = run_described(root, AxisMapping("IYX", "TXY"))
     assert not result.written and result.read == ()
     assert [i.code for i in result.issues if i.is_error] == ["axes_x_before_y"]
     # Y before X is read, with the plain stack's warning.
-    assert run_experiment(root, AxisMapping("IYX", "TYX")).written
+    assert run_described(root, AxisMapping("IYX", "TYX")).written
 
 
 def test_only_y_and_x_are_marked(tmp_path):

@@ -47,3 +47,41 @@ def write_mask(masks_root, mask_type, image, values):
 
 
 MAPPING = prefill_mapping("CYX")
+
+
+def two_unnamed_units(v12: bytes) -> bytes:
+    """Return ``v12`` with a second unit, DrugA/rep1, of the same unnamed DNA, ACTIN layout.
+
+    Conformance P06 asks for two unnamed, identical-shape units; ``v12`` declares one. The
+    second is added as the file format writes it, and DrugA is listed in ``used_ids``.
+    """
+    text = v12.decode("utf-8")
+    condition = '[conditions.DrugA]\nsource_folder = "DrugA"\nreference = "CTRL"\n\n'
+    member = (
+        '[repeats.rep1.members.DrugA]\nsource_repeat = "rep1"\nimage_count = 4\n\n'
+        '[repeats.rep1.members.DrugA.technical_repeats.single]\nsource_folder = "single"\n'
+        'channels = ["DNA", "ACTIN"]\n\n'
+    )
+    for old, new in (
+        ("[channels.DNA]", condition + "[channels.DNA]"),
+        ("[used_ids]", member + "[used_ids]"),
+        ('conditions = ["CTRL"]', 'conditions = ["CTRL", "DrugA"]'),
+    ):
+        assert text.count(old) == 1, old
+        text = text.replace(old, new)
+    return text.encode("utf-8")
+
+
+def write_fluorophores(path, *, swapped, side=8):
+    """Write an unnamed ``CYX`` image: a nucleus-like disc then actin-like stripes.
+
+    With ``swapped`` the two planes are stored the other way round, as when the fluorophores
+    of a unit were physically exchanged. The header names no channel either way.
+    """
+    yy, xx = np.mgrid[0:side, 0:side]
+    nuclei = ((yy - side // 2) ** 2 + (xx - side // 2) ** 2 < 4).astype(np.uint8) * 200
+    actin = (xx % 2 == 0).astype(np.uint8) * 60
+    planes = [actin, nuclei] if swapped else [nuclei, actin]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tifffile.imwrite(path, np.stack(planes), photometric="minisblack", metadata={"axes": "CYX"})
+    return path

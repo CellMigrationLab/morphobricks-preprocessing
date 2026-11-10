@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 
 from . import notebook_style as ui
 from .description_candidate import CandidateCheck
-from .description_reconcile import Reconciliation, UnitFolders
+from .description_reconcile import CHANNELS_CHANGED, Reconciliation, UnitFolders
 from .description_removal import RemovalQuestion
 from .description_review import MemberView, ReplicateView, unit_text
 from .draft import OpenQuestion
@@ -37,8 +37,9 @@ QUESTION_WORDS = {
         "the tags of {subject} were saved for another image: tag its channels again (Tag channels)"
     ),
     "unit_channel_count_unknown": (
-        "the channels of {subject} are not known from its image: confirm the axis roles "
-        "(Axes) and check that its first image can be read"
+        "the channels of {subject} are not known from its images: confirm the axis roles "
+        "(Axes) and check that every image of it can be read and has the same number of "
+        "channels"
     ),
     "control_unresolved": "say what {subject} is compared against",
     "legacy_folder_missing": "{subject} is gone: confirm the removal",
@@ -134,6 +135,71 @@ def _issue_lines(issues: Sequence[ValidationIssue]) -> list[str]:
     return [f"{html.escape(i.message)} ({html.escape(i.code)})" for i in issues]
 
 
+def run_stop_html(check: CandidateCheck | None) -> str:
+    """Return the line beside the save button when the run's checks would refuse, else "".
+
+    Saving stays allowed (owner decision, 2026-11-10): a valid description may be saved even
+    when the images contradict it or this version cannot run it, but the user is told, beside
+    the button, that the run will stop and on which refusals. Nothing is said while the checks
+    wait for the axis roles.
+    """
+    if check is None or not check.can_save or not check.run_refusals:
+        return ""
+    codes = [i.code for i in check.run_refusals]
+    named = ", ".join(
+        f"{code} ({codes.count(code)}x)" if codes.count(code) > 1 else code
+        for code in dict.fromkeys(codes)
+    )
+    return ui.status(
+        "warn",
+        "You can save, but the run (step 12) will stop.",
+        [f"Refused: {named}.", "Each reason is listed above, with the folder it names."],
+    )
+
+
+def blocked_html(
+    published: CandidateCheck | None, rec: Reconciliation | None, asked: Sequence[str]
+) -> str:
+    """Say what already stops the run while answers are missing and the candidate is unchecked.
+
+    A refusal is never hidden until the user acts: the run's checks of the *saved* description
+    (``published``) and the header changes the folder check found (``rec``) are shown as soon as
+    they are known, beside the questions still open. ``asked`` are the replicates whose "same
+    way?" was asked again and is not answered yet. Returns "" when nothing stops the run but the
+    missing answers.
+    """
+    refusals = published.run_refusals if published is not None else ()
+    changed = [
+        _folders(u.folders) for u in (rec.unchanged if rec else ()) if CHANNELS_CHANGED in u.reasons
+    ]
+    if not refusals and not changed:
+        return ""
+    questions = (
+        "the “same way?” of "
+        + ", ".join(asked)
+        + " is asked again and not answered yet (the run checks only an answered description)"
+        if asked
+        else "answers are still missing (listed above)"
+    )
+    lines = [html.escape(questions)]
+    if refusals:
+        lines.append(
+            "the run's checks refuse the saved description:<ul style='margin:2px 0'>"
+            + "".join(f"<li>{line}</li>" for line in _issue_lines(refusals))
+            + "</ul>"
+        )
+    else:
+        lines.append(
+            html.escape(
+                "the folder check found a header contradiction: the image headers of "
+                + ", ".join(changed)
+                + " no longer fit the saved channels (the run's checks name each refusal once "
+                "the axis roles are confirmed, step 2)"
+            )
+        )
+    return ui.status("error", "The run (step 12) is blocked by both:", lines, raw=True)
+
+
 def checks_html(check: CandidateCheck | None) -> str:
     """Return what the strict reader, the run's checks and the derived CSV say."""
     if check is None:
@@ -187,12 +253,18 @@ def _folders(unit: UnitFolders) -> str:
 
 
 def changes_html(rec: Reconciliation) -> str:
-    """Say in orange what changed in the folders since the description was saved."""
+    """Say in orange what changed in the folders (or their headers) since the save."""
     lines = [f"new: {_folders(u.folders)} · {plural(u.image_count or 0, 'image')}" for u in rec.new]
     lines += [f"removed: {_folders(u.folders)}" for u in rec.removed]
     lines += [
         f"{c.repeat_id} / {c.condition_id}: {c.before} images saved, {c.after} now"
         for c in rec.counts
+    ]
+    lines += [
+        f"headers changed: {_folders(u.folders)} · its image headers no longer fit the saved "
+        "channels (the run's checks say which)"
+        for u in rec.unchanged
+        if CHANNELS_CHANGED in u.reasons
     ]
     if not lines:
         return ""
@@ -222,6 +294,7 @@ def removal_text(question: RemovalQuestion) -> str:
 __all__ = [
     "SAME_WAY",
     "SAME_WAY_HELP",
+    "blocked_html",
     "changes_html",
     "checks_html",
     "comparisons_html",
@@ -230,5 +303,6 @@ __all__ = [
     "names_html",
     "removal_text",
     "replicate_title",
+    "run_stop_html",
     "todo_html",
 ]

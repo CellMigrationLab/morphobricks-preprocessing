@@ -14,8 +14,9 @@ import numpy as np
 import pytest
 import tifffile
 
+from described_tree import run_described
 from description_tree import MAPPING, build_experiment
-from morphobricks_preprocessing import RunInputs, run_experiment
+from morphobricks_preprocessing import RunInputs
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.discovery import discover_experiment
 from morphobricks_preprocessing.manifest import ManifestFormatError, read_manifest
@@ -65,7 +66,7 @@ def _listed(entry):
 
 def test_the_run_lists_the_unnamed_and_the_partly_named_image_exactly(tmp_path):
     root, out, by_unit = _run(tmp_path)
-    assert run_experiment(root, MAPPING, output_folder=out).written
+    assert run_described(root, MAPPING, output_folder=out).written
     entry = _entry(out)
     assert len(entry["units"]) == 4
     listed = _listed(entry)
@@ -87,7 +88,7 @@ def test_the_run_lists_the_unnamed_and_the_partly_named_image_exactly(tmp_path):
 
 def test_the_report_text_and_json_show_them(tmp_path):
     root, out, by_unit = _run(tmp_path)
-    run_experiment(root, MAPPING, output_folder=out)
+    run_described(root, MAPPING, output_folder=out)
     text = (out / "discovery_report.txt").read_text(encoding="utf-8")
     assert "Images without header channel names: 2 images in 2 units" in text
     assert f"{by_unit['CTRL/rep2']}: no channel named (channel positions 0, 1" in text
@@ -104,23 +105,13 @@ def test_a_fully_named_run_lists_nothing_and_has_no_such_key(tmp_path):
     for path in build_experiment(root, DESCRIPTION, images=1):
         _named(root / path, NAMES)
     (out / "morphobricks.toml").write_bytes(V01.data)
-    assert run_experiment(root, MAPPING, output_folder=out).written
+    assert run_described(root, MAPPING, output_folder=out).written
     entry = _entry(out)
     assert not any(FIELD in unit for unit in entry["units"])  # omitted, never an empty list
     data = json.loads((out / "discovery_report.json").read_text(encoding="utf-8"))
     assert data[FIELD] == []
     assert "without header channel names" not in (out / "discovery_report.txt").read_text()
     assert RunInputs.open(out).images_without_header_channel_names() == {}
-
-
-def test_an_undescribed_run_has_no_new_key_anywhere(tmp_path):
-    root, out, _ = _run(tmp_path, described=False)
-    with pytest.warns(UserWarning, match="No experiment description"):
-        assert run_experiment(root, MAPPING, output_folder=out).written
-    assert "experiment_description" not in json.loads((out / "run_manifest.json").read_text())
-    assert FIELD not in json.loads((out / "discovery_report.json").read_text())
-    assert "without header channel names" not in (out / "discovery_report.txt").read_text()
-    assert RunInputs.open(out).images_without_header_channel_names() is None
 
 
 @pytest.mark.parametrize(
@@ -141,7 +132,7 @@ def test_an_undescribed_run_has_no_new_key_anywhere(tmp_path):
 )
 def test_a_malformed_list_is_refused_on_read(tmp_path, bad):
     root, out, _ = _run(tmp_path)
-    run_experiment(root, MAPPING, output_folder=out)
+    run_described(root, MAPPING, output_folder=out)
     data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
     data["experiment_description"]["units"][0][FIELD] = bad
     (out / "run_manifest.json").write_text(json.dumps(data), encoding="utf-8")

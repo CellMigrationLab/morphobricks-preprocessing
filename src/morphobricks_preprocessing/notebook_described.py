@@ -1,14 +1,12 @@
-"""A *described run* of the notebook: the experiment is saved as ``morphobricks.toml`` first.
+"""The notebook's runs are described: the experiment is saved as ``morphobricks.toml`` first.
 
-``PreprocessingNotebook(..., describe=True)`` (the shipped notebook) follows the natural design
-(Stage 1, PR 16): every science answer is given once, on the screen it belongs to, saved in the
-draft, and the whole experiment is confirmed with one click on *Check and save*, which publishes
-the description and only then writes the derived ``experiment_design.csv``. The run waits for
-that. Without ``describe`` the notebook keeps the v0.4 cards unchanged (embedding bricks, the
-legacy flow).
+``PreprocessingNotebook`` follows the natural design (Stage 1, PR 16): every science answer is
+given once, on the screen it belongs to, saved in the draft, and the whole experiment is
+confirmed with one click on *Check and save*, which publishes the description and only then
+writes the derived ``experiment_design.csv``. The run waits for that: every run needs a published
+description (Spec ADR 0002 AR10; there is no undescribed notebook any more).
 
-What changes in a described run, as overrides of the step mixins (each calls the original
-when the run is not described):
+What the described run changes, as overrides of the step mixins:
 
 - **Step 1.** The "Yes, the labels are correct" toggle is retired: the labels are shown and
   restated on *Check and save*. The check writes no design template, the design card keeps only
@@ -18,8 +16,9 @@ when the run is not described):
 - **Step 2.** The global *Image type* card is retired: the image type is answered per unit on
   *Your channels*; the run is given the type the saved description states.
 - **Reopening.** The published file is the answers: the folders found now decide what still
-  applies (removed folders need "Yes, remove"; a replicate whose folders changed is asked
-  "same way?" again); the draft carries the pairing.
+  applies (removed folders need "Yes, remove"; a replicate whose layout differs from the
+  published one, its folders or a unit's declared ordered channel list, is asked "same way?"
+  again, at the reopen or as soon as an answer changes it); the draft carries the pairing.
 """
 
 from __future__ import annotations
@@ -32,14 +31,20 @@ from pathlib import Path
 from . import notebook_style as ui
 from .description_file import DESCRIPTION_FILENAME
 from .description_reopen import PublishedState, published_state
-from .design import ExperimentDesign, default_design
-from .design_derive import derive_design
+from .design import default_design
 from .design_edit import DesignEdit, DesignEditError, apply_design_edit
 from .draft import Draft, DraftError, draft_from_discovery
 from .draft_answers import DraftAnswers, UnitKey, apply_answers, carry_over
 from .fingerprint import current_fingerprint
 from .notebook_row_fold import reopen_units
-from .published_answers import published_answers, reopened, retired_ids
+from .published_answers import (
+    confirmed_layouts,
+    published_answers,
+    reasked,
+    reopened,
+    resumed,
+    retired_ids,
+)
 from .run import Preflight
 
 
@@ -64,13 +69,13 @@ class _DescribedRun:
         if getattr(self, "_published_key", None) != key:
             self._published_key = key
             self._published_cache, self._published_problem = published_state(
-                output, pre.discovery, pre.excluded
+                output, pre.discovery, pre.excluded, pre.metadata.files
             )
         return self._published_cache
 
     def _reopen_units(self) -> Mapping[UnitKey, str] | None:
         """Return each unit's status against the saved file (None without one): rows fold."""
-        state = self._published() if self._describe else None
+        state = self._published()
         return None if state is None else reopen_units(state.reconciliation)
 
     def _forget_published(self) -> None:
@@ -79,55 +84,38 @@ class _DescribedRun:
     # Step 1 ------------------------------------------------------------------------------
 
     def check_folder(self) -> Preflight | None:
-        """Check the folder; in a described run the labels are taken as shown (no toggle)."""
+        """Check the folder; the labels are taken as shown (no toggle)."""
         pre = super().check_folder()
-        if self._describe and pre is not None and pre.discovery.leaves and self._show_design:
+        if pre is not None and pre.discovery.leaves and self._show_design:
             self.labels_confirmed.set(True)
         return pre
 
     def _show_folder_results(self, pre: Preflight) -> None:
         super()._show_folder_results(pre)
-        ui.set_visible(self.labels_confirmed.widget, not self._describe)
+        ui.set_visible(self.labels_confirmed.widget, False)
 
     def _build_description_cards(self) -> None:
         super()._build_description_cards()
-        ui.set_visible(self.ids_confirmed.widget, not self._describe)
-        if self._describe:  # nothing is left as a silent default: "no comparison" is chosen
-            help_box = self.references_card.children[1]
-            help_box.value = help_box.value.replace(
-                "Optional. For a treated", "Answer for each condition. For a treated"
-            ).replace("Nothing is chosen for you.", "Choose <i>no comparison</i> where none.")
-
-    def _build_design_card(self) -> None:
-        """Build the design card; a described run says where the pairing is kept."""
-        super()._build_design_card()
-        if self._describe:
-            help_box = self.design_card.children[1]
-            help_box.value = help_box.value.split("The answers")[0] + (
-                "Your pairing is saved with your other answers in the draft; "
-                "<b>experiment_design.csv</b> is written only when you save the experiment "
-                "description (Check and save).</div>"
-            )
+        ui.set_visible(self.ids_confirmed.widget, False)
+        # Nothing is left as a silent default: "no comparison" is chosen.
+        help_box = self.references_card.children[1]
+        help_box.value = help_box.value.replace(
+            "Optional. For a treated", "Answer for each condition. For a treated"
+        ).replace("Nothing is chosen for you.", "Choose <i>no comparison</i> where none.")
 
     def _save_design(self) -> None:
-        """Save the design card's answers (never in a described run: the draft holds them)."""
-        if not self._describe:
-            super()._save_design()
-            return
+        """Keep the design card's answers in the draft (never written to a design file)."""
         self._design_saved = self._design_waiting = False
 
     def _build_group_questions(self) -> None:
         super()._build_group_questions()
-        ui.set_visible(self.groups_box, not self._describe)
+        ui.set_visible(self.groups_box, False)
 
     def _design_pending(self) -> bool:
-        return False if self._describe else super()._design_pending()
+        return False
 
     def _open_design(self, *, output_changed: bool = False) -> None:
-        """Open the pairing from the draft (or the published file) in a described run."""
-        if not self._describe:
-            super()._open_design(output_changed=output_changed)
-            return
+        """Open the pairing from the draft (or the published file)."""
         self._design_output = self._design_folder()
         self.design = default_design(self.preflight.dataset.repeats)
         self._design_unreadable, self._design_saved = False, False
@@ -154,10 +142,7 @@ class _DescribedRun:
         self._build_design_editor()
 
     def _refresh_design_status(self) -> None:
-        """Say how the pairing is kept in a described run (no confirmation on this card)."""
-        if not self._describe:
-            super()._refresh_design_status()
-            return
+        """Say how the pairing is kept (no confirmation on this card)."""
         if self.design is None:
             self.design_status.value = ""
             return
@@ -174,24 +159,20 @@ class _DescribedRun:
     # Answers -----------------------------------------------------------------------------
 
     def _base_draft(self) -> Draft:
-        if not self._describe:
-            return super()._base_draft()
         state = self._published()
         used = retired_ids(state.description) if state is not None else None
         pre = self.preflight
         return draft_from_discovery(pre.discovery, pre.excluded, used_ids=used)
 
     def _resume_pairing(self, saved: DraftAnswers) -> dict[tuple[str, str], str]:
-        """Return the saved pairing of the folders that still exist (described run)."""
-        if not self._describe:
-            return super()._resume_pairing(saved)
+        """Return the saved pairing of the folders that still exist."""
         members = {m.key for r in self._draft_base.repeats.values() for m in r.members}
         return {key: label for key, label in saved.pairing.items() if key in members}
 
     def _new_answers(self, output: object) -> DraftAnswers:
         """Return the published file's answers that still apply, or empty answers."""
         answers = super()._new_answers(output)
-        state = self._published() if self._describe else None
+        state = self._published()
         self._reopen_note = ((), ())
         if state is None:
             return answers
@@ -206,11 +187,43 @@ class _DescribedRun:
         self._reopen_note = (dropped, asked)
         return kept
 
+    def _answer(self, answers: DraftAnswers, *, rebuild: bool = True) -> bool:
+        """Save new answers; a repeat whose layout this answer changed is asked again.
+
+        Experiment-v1 section 10: a change of a unit's declared ordered channel list, its image
+        type or the grouping reopens the repeat's N35 confirmation, so its ``confirmed_on`` is
+        dropped (:func:`.published_answers.reasked`). A header name added to a channel changes
+        no layout and keeps the date (section 4.4a). Nothing is ticked for the user.
+        """
+        before = self.draft_answers
+        if before is not None and self._draft_base is not None:
+            state = self._published()
+            published = None if state is None else state.description
+            try:
+                # The layouts "same way?" was answered for: kept while a tag passes through
+                # no tag, forgotten at each new check of the folders (the base draft changes).
+                if getattr(self, "_same_way_base", None) is not self._draft_base:
+                    self._same_way_base, self._same_way_for = self._draft_base, {}
+                self._same_way_for.update(confirmed_layouts(self._draft_base, before))
+                answers, _ = reasked(
+                    self._draft_base, before, answers, published, self._same_way_for
+                )
+            except DraftError:
+                pass  # the answer itself is refused below, with its reason
+        return super()._answer(answers, rebuild=rebuild)
+
+    def _still_confirmed(
+        self, saved: DraftAnswers, kept: DraftAnswers
+    ) -> tuple[DraftAnswers, tuple[str, ...]]:
+        """Take back the saved "same way?" of a replicate whose folders are not those answered.
+
+        The draft file is read after a new check of the folders: a folder that joined or left
+        a replicate since the answer reopens it (:func:`.published_answers.resumed`).
+        """
+        return resumed(self._draft_base, saved, kept)
+
     def _sync_description(self) -> None:
         """Take the design card's pairing into the answers; changed replicates are asked again."""
-        if not self._describe:
-            super()._sync_description()
-            return
         answers = self.draft_answers
         if answers is None or self.design is None:
             return
@@ -230,17 +243,16 @@ class _DescribedRun:
 
     def _id_typed(self, entry: object, state: object, text: str) -> None:
         super()._id_typed(entry, state, text)
-        if self._describe and not self._refreshing:
+        if not self._refreshing:
             self._refresh_check_save()
 
     def _show_names_status(self) -> None:
         super()._show_names_status()
-        if self._describe:
-            self._refresh_check_save()
+        self._refresh_check_save()
 
     def _refresh_description(self) -> None:
         super()._refresh_description()
-        if self._describe and self._folded:
+        if self._folded:
             for card in (self.names_card, self.references_card):
                 ui.set_visible(card, False)
 
@@ -248,16 +260,13 @@ class _DescribedRun:
         """Refresh *Your channels*; the pairing card gets its pictures once they can be read."""
         super()._refresh_channels()
         thumbs = self._channel_thumbs
-        if self._describe and self.design is not None and thumbs is not self._pictures_for:
+        if self.design is not None and thumbs is not self._pictures_for:
             self._pictures_for = thumbs
             self._build_design_editor()
 
     # Step 2 ------------------------------------------------------------------------------
 
     def _open_image_type(self) -> None:
-        if not self._describe:
-            super()._open_image_type()
-            return
         ui.set_visible(self.image_type_card, False)
         self.confirmed_image_type = self._described_image_type()
 
@@ -275,9 +284,6 @@ class _DescribedRun:
         return None if len(kinds) != 1 else ("rgb" if kinds.pop() else "fluorescence")
 
     def _refresh_axis_next(self) -> None:
-        if not self._describe:
-            super()._refresh_axis_next()
-            return
         self.axis_next.value = ui.next_steps(
             "Go to Stains.",
             "Name what you stained, then Tag channels, Masks and Check and save.",
@@ -286,18 +292,10 @@ class _DescribedRun:
     # The run -----------------------------------------------------------------------------
 
     def _design_items(self) -> list[tuple[bool, str]]:
-        return [] if self._describe else super()._design_items()
+        return []
 
     def _gate_items(self) -> list[tuple[bool, str]]:
-        if not self._describe:
-            return super()._gate_items()
         return [(self._run_allowed(), "Save the experiment description (Check and save)")]
-
-    def _design_for_run(self) -> ExperimentDesign | None:
-        if not self._describe:
-            return super()._design_for_run()
-        state = self._published()
-        return None if state is None else derive_design(state.description)
 
 
 def _stamp(output: Path) -> object:

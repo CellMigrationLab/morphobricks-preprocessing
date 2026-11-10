@@ -21,6 +21,7 @@ import morphobricks_preprocessing.cli_convert as cli_convert
 import morphobricks_preprocessing.cli_run as cli_run
 import morphobricks_preprocessing.metadata as metadata_module
 import morphobricks_preprocessing.ome_tiff_copy as copy_module
+from described_tree import main_described, run_described
 from morphobricks_preprocessing import (
     CONVERSION_RECORD_FILENAME,
     AxisMapping,
@@ -31,7 +32,7 @@ from morphobricks_preprocessing import (
     read_conversion_record,
     run_experiment,
 )
-from morphobricks_preprocessing.cli import main, parse_size
+from morphobricks_preprocessing.cli import parse_size
 from morphobricks_preprocessing.copy_axes import copy_layout
 from morphobricks_preprocessing.metadata import inspect_image
 from morphobricks_preprocessing.ome_tiff_copy import CopyWriteError, write_named_copy
@@ -136,7 +137,7 @@ def test_the_run_on_the_copies_stops_on_a_same_size_change(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
     change_in_place(copies / "drug" / "r1" / "a.tif")
-    run = run_experiment(copies, NAMED, output_folder=tmp_path / "out")
+    run = run_described(copies, NAMED, output_folder=tmp_path / "out")
     found = {issue.code: issue for issue in run.issues}
     assert not run.written and found["copy_changed_after_conversion"].is_error
     assert found["copy_changed_after_conversion"].paths == ("drug/r1/a.tif",)
@@ -145,7 +146,7 @@ def test_the_run_on_the_copies_stops_on_a_same_size_change(tmp_path):
 def test_run_inputs_refuses_a_copy_changed_since_it_was_written(tmp_path):
     exp, copies, out = swapped_experiment(tmp_path / "exp"), tmp_path / "copies", tmp_path / "o"
     assert convert_experiment(exp, SWAPPED, copies).written
-    assert run_experiment(copies, NAMED, output_folder=out).written
+    assert run_described(copies, NAMED, output_folder=out).written
     RunInputs.open(out)
     change_in_place(copies / "ctrl" / "r1" / "a.tif")
     with pytest.raises(RunInputsError, match="1 named-axis copy changed .*ctrl/r1/a.tif"):
@@ -177,7 +178,7 @@ def test_an_ome_zarr_copy_changed_in_place_is_not_reused(tmp_path):
 def test_a_version_1_record_is_refused_with_a_reason(tmp_path):
     exp, copies, out = swapped_experiment(tmp_path / "exp"), tmp_path / "copies", tmp_path / "o"
     assert convert_experiment(exp, SWAPPED, copies).written
-    assert run_experiment(copies, NAMED, output_folder=out).written
+    assert run_described(copies, NAMED, output_folder=out).written
 
     def version_1(data):
         data["record_version"] = "1"
@@ -279,7 +280,7 @@ def test_the_commands_refuse_a_bad_memory_size_before_reading_anything(
     if command == "convert":
         args += ["--to", str(tmp_path / "copies")]
     with pytest.raises(SystemExit) as exit_info:
-        main(args)
+        main_described(args)
     assert exit_info.value.code == 2
     assert "not a whole number of bytes" in capsys.readouterr().err
     assert not (tmp_path / "copies").exists()
@@ -310,10 +311,10 @@ def test_an_added_copy_stops_the_run_and_the_earlier_run_is_kept(tmp_path):
     # would refuse the run; the earlier clean run stays as it was.
     exp, copies, out = swapped_experiment(tmp_path / "exp"), tmp_path / "copies", tmp_path / "o"
     assert convert_experiment(exp, SWAPPED, copies).written
-    assert run_experiment(copies, NAMED, output_folder=out).written
+    assert run_described(copies, NAMED, output_folder=out).written
     table = (out / "plane_histograms.csv").read_bytes()
     (copies / "ctrl" / "r1" / "n.tif").write_bytes((copies / "ctrl" / "r1" / "a.tif").read_bytes())
-    run = run_experiment(copies, NAMED, output_folder=out)
+    run = run_experiment(copies, NAMED, output_folder=out)  # the description as published
     found = {issue.code: issue for issue in run.issues}["copy_changed_after_conversion"]
     assert not run.written and found.is_error
     assert found.paths == ("ctrl/r1/n.tif",) and "refuse" in found.message

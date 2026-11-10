@@ -1,4 +1,4 @@
-"""Semantic ``RunInputs``: conformance P14 and P25, and ``A_MASK_UNCHECKED`` of P28 (PR 12).
+"""Semantic ``RunInputs``: conformance P14 and P25, and ``A_MASK_UNCHECKED`` of P28 (v08, v09).
 
 P14: only the published, confirmed ``morphobricks.toml`` is read; a draft or a file with an
 unconfirmed repeat is ``A_DRAFT_REFUSED``. P25: every position carries the key with the source
@@ -13,8 +13,8 @@ import json
 
 import pytest
 
+from described_tree import run_described
 from description_tree import MAPPING, build_experiment, write_mask
-from morphobricks_preprocessing import run_experiment
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_consume import read_published_description
 from morphobricks_preprocessing.run.mask_step import describe_masks, prepare_mask_step
@@ -35,7 +35,7 @@ def _described_run(tmp_path, name, images=2):
 
 
 def _run(root, out, masks=None):
-    assert run_experiment(root, MAPPING, output_folder=out, masks_folder=masks).written
+    assert run_described(root, MAPPING, output_folder=out, masks_folder=masks).written
 
 
 @pytest.mark.parametrize(("name", "groups"), [("v03", {"Day1", "Day2"}), ("v30", {"Day1", "Day2"})])
@@ -114,3 +114,31 @@ def test_p28_a_mask_file_not_yet_checked_is_refused_when_read_until_the_step_che
     assert inputs.read_mask(fov, "nuclei").max() == 2
     manifest = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
     assert manifest["experiment_description"]["masks"]["TumorRegion"]["status"] == "not yet checked"
+
+
+def test_p28_on_v09_each_batch_of_masks_is_unchecked_until_the_mask_step_reads_it(tmp_path):
+    """P28 on ``v09`` (partial masks), the fixture the plan names beside ``v08``."""
+    root, out, found = _described_run(tmp_path, "v09")
+    masks = tmp_path / "masks"
+    _run(root, out)  # no masks yet: valid
+    checked = []
+    for batch in (found[:1], found[1:3], found[3:]):
+        for image in batch:
+            write_mask(masks, "nuclei", image, [0, 1, 2])
+        _run(root, out, masks)
+        inputs = RunInputs.open(out)
+        image_of = {f"{fov.key[0]}/{fov.key[1]}/{fov.key[3]}.tif": fov for fov in inputs.fovs()}
+        new = [image_of[image] for image in batch]
+        for image in checked:  # the batches read before stay checked
+            assert inputs.mask_check_status("Nuclei", image_of[image]) == "checked"
+        for fov in new:
+            assert inputs.mask_check_status("Nuclei", fov) == "not yet checked"
+            with pytest.raises(MaskUncheckedError) as raised:
+                inputs.read_mask(fov, "nuclei")
+            assert raised.value.code == "A_MASK_UNCHECKED"
+        assert describe_masks(prepare_mask_step(None, out)).issues == ()
+        inputs = RunInputs.open(out)
+        for fov in new:
+            assert inputs.mask_check_status("Nuclei", fov) == "checked"
+            assert inputs.read_mask(fov, "nuclei").max() == 2
+        checked.extend(batch)

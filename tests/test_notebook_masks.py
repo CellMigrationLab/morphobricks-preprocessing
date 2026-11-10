@@ -12,6 +12,7 @@ import importlib
 import numpy as np
 import pytest
 
+from described_tree import describe_tree  # noqa: E402
 from morphobricks_preprocessing import preflight, read_manifest
 from tiff_tree import write_data, write_plain
 
@@ -42,6 +43,8 @@ def output_of(root):
 
 
 def notebook(root, masks=None, **kwargs):
+    """Open the notebook on ``root`` described first (with its masks), and check the folder."""
+    describe_tree(root, kwargs.get("output_folder") or None, masks_folder=masks)
     nb = PreprocessingNotebook(str(root), **kwargs)
     for step in (nb.welcome, nb.folder_step, nb.axis_step, nb.run_step, nb.results_step):
         step()
@@ -52,14 +55,9 @@ def notebook(root, masks=None, **kwargs):
 
 
 def confirm_everything(nb):
-    nb.labels_confirmed.button.click()
-    for toggle in nb.group_confirmations.values():
-        if not toggle.value:  # a later session loads the confirmed design
-            toggle.button.click()
-    nb.preview_button.click()
-    nb.preview_checked.button.click()
-    nb.confirm_button.click()
-    nb.image_type_checked.button.click()
+    """Confirm the axis roles: the description gives everything else step 3 needs."""
+    for button in (nb.preview_button, nb.preview_checked.button, nb.confirm_button):
+        button.click()
 
 
 def still_to_do(nb):
@@ -133,8 +131,8 @@ def test_a_new_masks_folder_is_paired_on_check_the_masks_keeping_the_answers(tmp
     nb.masks_button.click()
     assert nb.labels_confirmed.value and nb.confirmed_mapping is not None
     assert "1 mask type for 4 images" in nb.masks_status.value
-    assert not nb.run_button.disabled
-    assert read_manifest(nb.run().manifest_path).masks["types"] == ["cells"]
+    # A mask type the saved description does not declare is described and saved first.
+    assert nb.run_button.disabled and "cells" in nb.mask_card.questions
 
 
 # 2. Mask-axis statements per mask type -------------------------------------------------

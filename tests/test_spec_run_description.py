@@ -13,8 +13,8 @@ import json
 
 import pytest
 
+from described_tree import run_described
 from description_tree import MAPPING, build_experiment, write_mask
-from morphobricks_preprocessing import run_experiment
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.run.mask_step import describe_masks, prepare_mask_step
 from spec_pin import fixtures
@@ -33,7 +33,7 @@ def _setup(tmp_path, name, images=2):
 
 
 def _run(root, out, masks=None):
-    result = run_experiment(root, MAPPING, output_folder=out, masks_folder=masks)
+    result = run_described(root, MAPPING, output_folder=out, masks_folder=masks)
     assert result.written, [i.message for i in result.issues]
     return json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
 
@@ -51,7 +51,7 @@ def _mask_step(out):
 @pytest.mark.parametrize("name", ["v04", "v05", "v06", "v17"])
 def test_p04_heterogeneous_layouts_are_refused_and_nothing_is_processed(tmp_path, name):
     root, out, _ = _setup(tmp_path, name)
-    result = run_experiment(root, MAPPING, output_folder=out)
+    result = run_described(root, MAPPING, output_folder=out)
     assert not result.written
     assert CODE in {i.code for i in result.issues}
     assert not (out / "plane_histograms.csv").exists()
@@ -61,7 +61,7 @@ def test_p04_heterogeneous_layouts_are_refused_and_nothing_is_processed(tmp_path
 def test_p04_the_message_names_the_layouts_and_the_units_in_plain_words(tmp_path):
     root, out, _ = _setup(tmp_path, "v04")
     issue = next(
-        i for i in run_experiment(root, MAPPING, output_folder=out).issues if i.code == CODE
+        i for i in run_described(root, MAPPING, output_folder=out).issues if i.code == CODE
     )
     assert "2 channel layouts" in issue.message
     assert "A: DNA, ACTIN in 1 acquisition; B: ACTIN, DNA in 1 acquisition" in issue.message

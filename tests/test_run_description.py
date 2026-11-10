@@ -2,8 +2,8 @@
 
 The Spec scenarios are in ``test_spec_run_description.py``. Here: the manifest entry (the file's
 SHA-256, section digests, records copied unchanged, image type verification), a run without a
-description (the v0.4 run, with a warning, and no new manifest key), an invalid description or
-records file, and a description that contradicts the folder.
+description (refused, ``A_DESCRIPTION_REQUIRED``), an invalid description or records file, and a
+description that contradicts the folder.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_file import sha256_hex
 from morphobricks_preprocessing.description_write import canonical_bytes, section_digests
 from morphobricks_preprocessing.manifest import ManifestFormatError, read_manifest
-from morphobricks_preprocessing.run.description_run import NO_DESCRIPTION
 from spec_pin import fixtures
 
 V01 = next(f for f in fixtures("valid") if f.name.startswith("v01_"))
@@ -80,14 +79,14 @@ def test_the_sha_is_the_exact_bytes_even_when_not_canonical(tmp_path):
     assert sha256_hex(text) != sha256_hex(canonical_bytes(DESCRIPTION))
 
 
-def test_a_run_without_a_description_is_the_v04_run_with_a_warning(tmp_path):
+def test_a_run_without_a_description_is_refused_before_anything_is_read(tmp_path):
     root, out = _folder(tmp_path)
-    with pytest.warns(UserWarning, match="No experiment description") as caught:
-        result = run_experiment(root, MAPPING, output_folder=out)
-    assert result.written
-    assert any(NO_DESCRIPTION == str(w.message) for w in caught)
-    assert "experiment_description" not in _manifest(out)
-    assert result.issues == ()
+    result = run_experiment(root, MAPPING, output_folder=out)
+    assert not result.written and not result.report_written
+    (refusal,) = result.issues
+    assert refusal.code == "A_DESCRIPTION_REQUIRED" and refusal.is_error
+    assert "morphobricks.toml" in refusal.message and "describe" in refusal.action
+    assert list(out.iterdir()) == []  # nothing written, not even the report
 
 
 def test_a_run_with_a_description_does_not_warn(tmp_path):
@@ -101,8 +100,8 @@ def test_a_run_with_a_description_does_not_warn(tmp_path):
 def test_a_draft_alone_is_not_a_description(tmp_path):
     root, out = _folder(tmp_path)
     (out / "morphobricks.draft.json").write_text("{}", encoding="utf-8")
-    with pytest.warns(UserWarning, match="No experiment description"):
-        assert run_experiment(root, MAPPING, output_folder=out).written
+    result = run_experiment(root, MAPPING, output_folder=out)
+    assert [i.code for i in result.issues] == ["A_DESCRIPTION_REQUIRED"]
 
 
 def test_an_invalid_description_stops_the_run_with_its_code_and_path(tmp_path):
@@ -161,3 +160,39 @@ def test_a_malformed_manifest_entry_is_refused_on_read(tmp_path):
     (out / "run_manifest.json").write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ManifestFormatError, match="SHA-256"):
         read_manifest(out / "run_manifest.json")
+
+
+def test_without_a_description_no_image_or_recorded_run_is_read(tmp_path, monkeypatch):
+    # Review of PP-C: an output folder inside the experiment or the masks was checked first,
+    # by reading every image header (the preflight) and the recorded run.
+    from morphobricks_preprocessing.run import pipeline
+
+    def no_read(*args, **kwargs):
+        raise AssertionError("read before the description was checked")
+
+    monkeypatch.setattr(pipeline, "preflight", no_read)
+    monkeypatch.setattr(pipeline, "output_masks_issues", no_read)
+    monkeypatch.setattr(pipeline, "recorded_experiment_root", no_read)
+    root, out = _folder(tmp_path)
+    inside = run_experiment(root, MAPPING, output_folder=root / "results")
+    codes = [issue.code for issue in inside.issues]
+    assert codes == ["A_DESCRIPTION_REQUIRED", "output_inside_experiment"] and not inside.written
+    masks = tmp_path / "masks"
+    masks.mkdir()
+    in_masks = run_experiment(root, MAPPING, output_folder=masks / "out", masks_folder=masks)
+    assert [i.code for i in in_masks.issues] == ["A_DESCRIPTION_REQUIRED", "output_inside_masks"]
+    (out / "run_manifest.json").write_text("not json", encoding="utf-8")  # never read
+    recorded = run_experiment(None, output_folder=out)
+    assert [i.code for i in recorded.issues] == ["A_DESCRIPTION_REQUIRED"]
+    assert not (root / "results").exists() and not (masks / "out").exists()
+    assert [p.name for p in out.iterdir()] == ["run_manifest.json"]
+
+
+def test_the_mask_step_refuses_before_the_recorded_run_is_read(tmp_path):
+    from morphobricks_preprocessing.run.mask_step import prepare_mask_step
+
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "run_manifest.json").write_text("not json", encoding="utf-8")
+    step = prepare_mask_step(None, out)
+    assert step.refusal.code == "A_DESCRIPTION_REQUIRED" and not step.ready

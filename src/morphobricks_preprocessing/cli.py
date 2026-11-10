@@ -1,17 +1,16 @@
-"""Command-line interface: ``check``, ``run``, ``masks``, ``calibrate``, ``design``, ``describe``.
+"""Command-line interface: ``check``, ``run``, ``masks``, ``calibrate``, ``describe``, ``convert``.
 
-``check`` runs the preflight (folders and image headers, no pixels) and prints
+Every run needs a published experiment description (``morphobricks.toml``) in its output
+folder: ``check``, ``run`` and ``masks`` refuse a folder without one (``A_DESCRIPTION_REQUIRED``,
+Spec ADR 0002 AR10), naming the fix (the notebook's describe steps; ``describe`` shows what is
+still open). ``check`` runs the preflight (folders and image headers, no pixels) and prints
 what will be analysed, the problems found and the suggested axis roles; it writes the
-report (``discovery_report.json`` and ``.txt``) to the output folder, and the experiment
-design template, prefilled from the folders, when the folder holds no design.
-``design`` (:mod:`.cli_design`) shows, checks and changes that design without editing it.
+report (``discovery_report.json`` and ``.txt``) to the output folder.
 ``describe`` (:mod:`.cli_describe`) prints the draft experiment description in plain language;
 it writes nothing and confirms nothing. ``convert`` is described below.
 ``run`` (:mod:`.cli_run`) processes the experiment with the axis roles given in ``--axes``,
 or those of the earlier run in the same output folder; roles are never taken from metadata
-without being stated. It also needs the
-experiment design confirmed in ``experiment_design.csv``: without it, ``run``
-writes a template to the output folder for the user to fill in, and stops.
+without being stated. It writes the ``experiment_design.csv`` derived from the description.
 The image type (fluorescence or RGB) is given with ``--image-type``, or the
 suggestion from the image headers is used and printed. After writing, ``run``
 prints the intensity checks of the table (warnings only; plots are drawn in the
@@ -37,23 +36,18 @@ from pathlib import Path
 from .cli_calibrate import add_calibrate_parser, calibrate_command, calibration_summary
 from .cli_convert import add_convert_parser, convert_command
 from .cli_describe import add_describe_parser, describe_command
-from .cli_design import add_design_parser, design_command, design_errors, design_instructions
 from .cli_masks import add_masks_arguments, masks_command
 from .cli_run import (
     add_missing_as_singleton,
     add_run_arguments,
     command_preflight,
+    description_refusal,
     missing_as_singleton,
     parse_size,
     recorded_run,
     reused_missing_as_singleton,
     run_command,
     use_recorded_experiment,
-)
-from .design import (
-    DESIGN_FILENAME,
-    DesignCheckError,
-    load_design,
 )
 from .discovery import default_output_folder
 from .image_type import review_image_type
@@ -63,16 +57,14 @@ from .masks import mask_axes_option
 from .report import (
     axis_check_summary,
     balance_summary,
-    design_summary,
     format_issues,
     label_tree,
     preflight_summary,
 )
 from .run import (
     OutputLockedError,
-    Preflight,
     remove_stale_lock,
-    write_check_outputs,
+    write_check_report,
 )
 from .run.check_step import suggested_review
 
@@ -105,8 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _common(masks, recorded=True)
     add_masks_arguments(masks)
-    for command in (add_calibrate_parser(commands), add_design_parser(commands)):
-        _remove_stale_lock_option(command)
+    _remove_stale_lock_option(add_calibrate_parser(commands))
     add_describe_parser(commands)
     add_convert_parser(commands)
     return parser
@@ -119,10 +110,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "describe":
         return describe_command(args)
-    if args.command in ("calibrate", "design"):
+    if args.command == "calibrate":
         if args.remove_stale_lock and not _remove_stale_lock(args):
             return 1
-        return {"calibrate": calibrate_command, "design": design_command}[args.command](args)
+        return calibrate_command(args)
     if getattr(args, "no_exclude", False) and args.exclude:
         parser.error("--exclude and --no-exclude cannot be given together")
     if args.command != "convert":
@@ -130,6 +121,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.mask_axes = mask_axes_option(args.mask_axes)
         except ValueError as exc:
             print(exc)
+            return 1
+    if args.command in ("check", "run", "masks") and (args.output or args.experiment):
+        # Every run is described: refused before anything is read (the recorded experiment)
+        # or written (the log, the stale lock's removal).
+        refusal = description_refusal(args)
+        if refusal is not None:
+            print(format_issues([refusal]))
             return 1
     if args.command in ("run", "masks") and not use_recorded_experiment(args):
         return 1
@@ -220,7 +218,7 @@ def _remove_stale_lock(args: argparse.Namespace) -> bool:
         output = Path(args.to).resolve()
     elif args.output:
         output = Path(args.output).resolve()
-    elif getattr(args, "experiment", None):  # 'design' takes only --output
+    elif getattr(args, "experiment", None):  # 'calibrate' may take only --output
         output = default_output_folder(Path(args.experiment).resolve())
     else:
         print("Give the experiment folder or --output to say whose lock to remove.")
@@ -236,6 +234,10 @@ def _remove_stale_lock(args: argparse.Namespace) -> bool:
 
 def _check(args: argparse.Namespace) -> int:
     """Print what the preflight found and the suggested roles, and write the report."""
+    refusal = description_refusal(args)
+    if refusal is not None:  # every run is described: nothing is read or written
+        print(format_issues([refusal]))
+        return 1
     # As 'run' reads images lacking some axes (F10); no Z or T size without the axis.
     recorded = recorded_run(args)
     missing = missing_as_singleton(args, recorded)
@@ -256,7 +258,6 @@ def _check(args: argparse.Namespace) -> int:
     if pre.issues:
         print()
         print(format_issues(pre.issues))
-    design_refused = bool(pre.dataset.repeats) and not _print_design(args, pre)
     axis_errors = ()
     if review is not None:
         # The suggested roles are the header's own, so they never contradict it; 'run'
@@ -283,48 +284,11 @@ def _check(args: argparse.Namespace) -> int:
             f"Suggested image type: {type_review.suggested}, because {type_review.reason}. "
             "'run' uses it unless you give --image-type."
         )
-    written = write_check_outputs(pre, args.output, review)
-    if written.design is not None:
-        print()
-        print("\n".join(design_instructions(written.design, written.design.parent)))
+    path, refusal = write_check_report(pre, args.output, review)
     print()
-    refusal, path = written.refusal, written.report
     print(format_issues([refusal]) if refusal else f"Report written to {path}" if path else "")
-    blocked = not pre.ok or axis_errors or refusal is not None or design_refused
+    blocked = not pre.ok or axis_errors or refusal is not None
     return 1 if blocked else 0  # every error printed exits with 1, as 'run' does
-
-
-def _print_design(args: argparse.Namespace, pre: Preflight) -> bool:
-    """Print the experiment design in the output folder; False when it has an error.
-
-    ``check`` never replaces a design. One it cannot read, or one ``run`` would stop on
-    (``repeat_group_conflict``, ``invalid_experiment_design``), is printed with its error,
-    and ``check`` then exits with status 1.
-    """
-    output = Path(args.output) if args.output else default_output_folder(pre.discovery.root)
-    try:
-        design, _ = load_design(output, pre.dataset.repeats)
-    except DesignCheckError as exc:
-        # Refused and left as it is: 'check' never replaces a design.
-        design, refusal = None, exc.issues[0]
-    print()
-    if design is None:
-        print(f"Experiment design: {refusal.message}")
-        print(f"  Suggested action: {refusal.action}")
-        return not refusal.is_error
-    if (output / DESIGN_FILENAME).exists():
-        print(f"Experiment design ({output / DESIGN_FILENAME}):")
-        print(design_summary(design))
-        problems = design_errors(design)  # what 'run' would stop on, as errors
-        if problems:
-            print(format_issues(problems))
-            return False
-    else:
-        print(
-            "Experiment design: not confirmed yet. 'check' writes experiment_design.csv, "
-            "prefilled from the folders, to the output folder for you to confirm."
-        )
-    return True
 
 
 def _log_refusal(args: argparse.Namespace) -> str | None:
@@ -334,8 +298,7 @@ def _log_refusal(args: argparse.Namespace) -> str | None:
         return log_refusal(args.log, folders)
     experiment = Path(args.experiment).resolve()
     output = Path(args.output) if args.output else default_output_folder(experiment)
-    design = getattr(args, "design", None)
-    return run_log_refusal(args.log, experiment, output, args.masks, design)
+    return run_log_refusal(args.log, experiment, output, args.masks)
 
 
 def _attach_log(path: str) -> logging.Handler:

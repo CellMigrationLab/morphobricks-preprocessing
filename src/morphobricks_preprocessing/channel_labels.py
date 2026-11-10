@@ -206,7 +206,10 @@ class UnitLayout:
     None where it has none). ``problem`` is why the unit cannot be tagged (no readable first
     image, roles that do not fit it); then ``channels`` is 0. ``uniform`` is False when some
     other image of the unit has another header signature (channel count, raw names or colour):
-    such a unit is never put in a block with others.
+    such a unit is never put in a block with others. ``counts_agree`` is False when some other
+    image of the unit has another channel count or none known (unreadable, or the roles do not
+    fit it): the unit's channel count is then not known
+    (:func:`.channel_units.unit_channel_counts`).
     """
 
     key: UnitKey
@@ -217,6 +220,7 @@ class UnitLayout:
     problem: str = ""
     images: int = 0
     uniform: bool = True
+    counts_agree: bool = True
 
     @property
     def usable(self) -> bool:
@@ -290,13 +294,16 @@ def positions(
 
 
 def aliases(
-    layouts: Sequence[UnitLayout], units: Mapping[UnitKey, UnitAnswer]
+    layouts: Sequence[UnitLayout],
+    units: Mapping[UnitKey, UnitAnswer],
+    only: Collection[tuple[UnitKey, int]] | None = None,
 ) -> dict[str, tuple[str, ...]]:
     """Return the raw header names of every cell tagged with a label, by label, sorted.
 
     The tag is the user's confirmation that the header name is evidence for the label
     (experiment-v1 section 4.3); names are kept exactly as read. A colour unit has none (``R``,
     ``G`` and ``B`` take no aliases), and a label whose cells have no header name is omitted.
+    With ``only``, just the cells ``(unit key, C index)`` it lists are read.
     """
     found: dict[str, set[str]] = {}
     for layout in layouts:
@@ -305,6 +312,8 @@ def aliases(
             continue
         for index, tag in enumerate(tags_of(layout, answer)):
             name = layout.name(index)
+            if only is not None and (layout.key, index) not in only:
+                continue
             if tag and name:
                 found.setdefault(tag, set()).add(name)
     return {label: tuple(sorted(names)) for label, names in found.items()}

@@ -7,12 +7,12 @@ from morphobricks_normalization.histogram import compute_plane_histogram
 from morphobricks_normalization.pooling import PooledHistogram
 from morphobricks_normalization.records import PlaneRecord, group_records
 
+from described_tree import run_described
 from morphobricks_preprocessing import (
     discover_experiment,
     group_summaries,
     prefill_mapping,
     preflight,
-    run_experiment,
 )
 from morphobricks_preprocessing.report import (
     ALL_CHANNELS,
@@ -110,25 +110,25 @@ def test_preflight_summary_with_conflicting_axes(tmp_path):
 
 
 def test_run_summaries(experiment):
-    first = run_experiment(experiment, prefill_mapping("TYX"))
+    first = run_described(experiment, prefill_mapping("TYX"))
     text = run_summary(first)
     assert "Wrote 8 planes to" in text and "Read: 4 images" in text
     assert "because there is no earlier run" in text
     (experiment / "ctrl/rep2/a.tif").unlink()
-    second = run_summary(run_experiment(experiment, prefill_mapping("TYX")))
+    second = run_summary(run_described(experiment, prefill_mapping("TYX")))
     assert "Unchanged (rows kept): 3 images" in second
     assert "Removed from the table: 1 image" in second
     assert "Read:" not in second
 
 
 def test_run_summary_when_blocked(experiment):
-    result = run_experiment(experiment, prefill_mapping("TYX"), bin_count=0)
+    result = run_described(experiment, prefill_mapping("TYX"), bin_count=0)
     assert run_summary(result).startswith("The run stopped (1 error")
 
 
 def test_group_summaries_pool_the_planes(experiment):
     # One channel: one summary per group, the same numbers as before issue #104.
-    result = run_experiment(experiment, prefill_mapping("TYX"))
+    result = run_described(experiment, prefill_mapping("TYX"))
     records = read_plane_histograms(result.csv_path)
     summaries = group_summaries(records, "biological_repeat", percentiles=(5, 95))
     assert [s.labels for s in summaries] == [("ctrl", "rep1"), ("ctrl", "rep2"), ("drug", "rep1")]
@@ -147,7 +147,7 @@ def test_group_summaries_pool_the_planes(experiment):
 
 
 def test_group_table_and_text(experiment):
-    result = run_experiment(experiment, prefill_mapping("TYX"))
+    result = run_described(experiment, prefill_mapping("TYX"))
     records = read_plane_histograms(result.csv_path)
     rows = group_table(group_summaries(records, "condition"), "condition")
     assert rows[0] == [
@@ -234,7 +234,7 @@ def test_rgb_channels_are_summarised_one_by_one(tmp_path):
     root = tmp_path / "exp"
     rgb = np.stack([np.full((8, 8), v, np.uint8) for v in (20, 120, 240)])
     write_data(root / "a/x.tif", rgb, axes="CYX")
-    result = run_experiment(root, prefill_mapping("CYX"), image_type="rgb")
+    result = run_described(root, prefill_mapping("CYX"), image_type="rgb")
     assert result.written
     summaries = group_summaries(read_plane_histograms(result.csv_path), "condition")
     assert [(s.channel, s.mean, s.xyc_plane_count) for s in summaries] == [
@@ -260,7 +260,7 @@ def test_group_without_finite_pixels(tmp_path):
     root = tmp_path / "exp"
     write_data(root / "a/x.tif", np.ones((2, 4, 4), np.float32), axes="TYX")
     write_data(root / "b/x.tif", np.full((2, 4, 4), np.nan, np.float32), axes="TYX")
-    result = run_experiment(root, prefill_mapping("TYX"))
+    result = run_described(root, prefill_mapping("TYX"))
     summaries = group_summaries(read_plane_histograms(result.csv_path), "condition")
     empty = summaries[1]
     assert empty.labels == ("b",) and empty.pixel_count == 0 and empty.mean is None

@@ -6,15 +6,15 @@ import numpy as np
 import pytest
 import tifffile
 
+from described_tree import main_described as cli
+from described_tree import run_described
 from morphobricks_preprocessing import (
     prefill_mapping,
     preflight,
     read_manifest,
     read_mask,
-    run_experiment,
     scan_masks,
 )
-from morphobricks_preprocessing.cli import main
 from tiff_tree import write_data, write_file
 
 IMAGES = ["ctrl/rep1/a.tif", "ctrl/rep1/b.tif", "drug/rep1/a.tif"]
@@ -283,7 +283,7 @@ def test_label_images_of_ome_zarr_images_are_masks(tmp_path):
 
 def test_the_run_records_the_masks_in_the_manifest(experiment, masks, tmp_path):
     out = tmp_path / "out"
-    result = run_experiment(
+    result = run_described(
         experiment, prefill_mapping("CYX"), output_folder=out, masks_folder=masks
     )
     assert result.written
@@ -292,14 +292,14 @@ def test_the_run_records_the_masks_in_the_manifest(experiment, masks, tmp_path):
     # Each entry's keys are checked in test_manifest_v2 (manifest version 2).
     assert recorded["files"][0]["path"] == "Cells/ctrl/rep1/a.tif"
     # Without masks (dropped on request, design v0.4 §1) the manifest has no masks key.
-    run_experiment(experiment, prefill_mapping("CYX"), output_folder=out, masks_folder=False)
+    run_described(experiment, prefill_mapping("CYX"), output_folder=out, masks_folder=False)
     data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
     assert "masks" not in data and read_manifest(out / "run_manifest.json").masks is None
 
 
 def test_a_mask_error_stops_the_run(experiment, masks, tmp_path):
     write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", np.zeros((3, 3), dtype=np.uint8))
-    result = run_experiment(
+    result = run_described(
         experiment, prefill_mapping("CYX"), output_folder=tmp_path / "out", masks_folder=masks
     )
     assert not result.written
@@ -307,7 +307,7 @@ def test_a_mask_error_stops_the_run(experiment, masks, tmp_path):
 
 
 def test_check_lists_the_masks(experiment, masks, capsys):
-    assert main(["check", str(experiment), "--masks", str(masks)]) == 0
+    assert cli(["check", str(experiment), "--masks", str(masks)]) == 0
     out = capsys.readouterr().out
     assert "Masks: 2 mask types for 3 images:" in out
     assert "  Nuclei: 3 images (folder)" in out
@@ -315,7 +315,7 @@ def test_check_lists_the_masks(experiment, masks, capsys):
 
 def test_masks_command_writes_the_report(experiment, masks, tmp_path, capsys):
     out = tmp_path / "out"
-    assert main(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 0
+    assert cli(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 0
     printed = capsys.readouterr().out
     assert "[3/3] drug/rep1/a.tif" in printed
     assert "Hierarchy (direct parents only):" in printed
@@ -326,22 +326,22 @@ def test_masks_command_writes_the_report(experiment, masks, tmp_path, capsys):
 
 
 def test_masks_command_stops_on_mask_errors_or_without_masks(experiment, masks, capsys):
-    assert main(["masks", str(experiment)]) == 1
+    assert cli(["masks", str(experiment)]) == 1
     assert "Masks: none found." in capsys.readouterr().out
     write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", np.zeros((3, 3), dtype=np.uint8))
-    assert main(["masks", str(experiment), "--masks", str(masks)]) == 1
+    assert cli(["masks", str(experiment), "--masks", str(masks)]) == 1
     assert "do not have the size" in capsys.readouterr().out
 
 
 def test_masks_command_takes_thresholds(experiment, masks, tmp_path, capsys):
     out = tmp_path / "out"
     args = ["masks", str(experiment), "--masks", str(masks), "--output", str(out)]
-    assert main([*args, "--same-objects-iou", "0.8", "--inside-object-share", "0.7"]) == 0
+    assert cli([*args, "--same-objects-iou", "0.8", "--inside-object-share", "0.7"]) == 0
     printed = capsys.readouterr().out
     assert "Thresholds: inside_object_share 0.7, same_objects_iou 0.8; the others" in printed
     report = json.loads((out / "mask_relationships.json").read_text(encoding="utf-8"))
     assert report["thresholds"]["same_objects_iou"] == 0.8
-    assert main([*args, "--grouped-label-share", "1.5"]) == 1
+    assert cli([*args, "--grouped-label-share", "1.5"]) == 1
     assert "must be above 0 and at most 1" in capsys.readouterr().out
 
 
@@ -356,7 +356,7 @@ def time_lapse(tmp_path, n_t=3, image_axes="TYX"):
 
 
 def run_with_masks(root, masks, roles, tmp_path):
-    return run_experiment(
+    return run_described(
         root, prefill_mapping(roles), output_folder=tmp_path / "out", masks_folder=masks
     )
 
@@ -465,7 +465,7 @@ def test_label_images_with_time_points(tmp_path):
     cells = found.for_image("a.ome.zarr")["cells"]
     assert (cells.axes, cells.planes) == ("TYX", {"Z": 1, "T": 3})
     np.testing.assert_array_equal(read_mask(cells, None, tmp_path / "exp", t=1), data[1])
-    result = run_experiment(
+    result = run_described(
         tmp_path / "exp",
         prefill_mapping("TYX"),
         output_folder=tmp_path / "out",
@@ -479,7 +479,7 @@ def test_masks_command_refuses_negative_labels(experiment, masks, tmp_path, caps
     signed[0, 0] = -5
     write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", signed)
     out = tmp_path / "out"
-    assert main(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 1
+    assert cli(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 1
     assert "Cells/ctrl/rep1/a.tif holds negative labels (smallest -5)" in capsys.readouterr().out
     assert not (out / "mask_relationships.json").exists()
 
@@ -506,7 +506,7 @@ def test_labels_above_the_int32_range_are_refused(experiment, masks, tmp_path, c
     assert read_mask(cells, found.folder, experiment)[0, 0] == 2**31 - 1
     write_data(masks / "Cells" / "ctrl" / "rep1" / "a.tif", huge)
     out = tmp_path / "out"
-    assert main(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 1
+    assert cli(["masks", str(experiment), "--masks", str(masks), "--output", str(out)]) == 1
     assert "32-bit signed numbers (int32)" in capsys.readouterr().out
 
 
@@ -542,7 +542,7 @@ def test_a_malformed_labels_group_is_an_error_not_a_vanished_mask_type(tmp_path)
     assert not found.ok
     assert codes(found.issues) == ["unreadable_mask"]
     assert found.issues[0].paths == ("ctrl/a.ome.zarr/labels", "drug/a.ome.zarr/labels")
-    result = run_experiment(
+    result = run_described(
         tmp_path / "exp",
         prefill_mapping("YX"),
         output_folder=tmp_path / "out",

@@ -46,7 +46,6 @@ NOTEBOOK_METHODS = {
     "__init__": [
         ("experiment_folder", POSITIONAL, ""),
         ("output_folder", POSITIONAL, ""),
-        ("describe", KEYWORD, False),
     ],
     "welcome": [],
     "folder_step": [

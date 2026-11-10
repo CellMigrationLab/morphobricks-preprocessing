@@ -24,7 +24,7 @@ rerun refused before its commit). A publication folder is discarded record first
 removal that stops halfway never leaves a record without its staged manifest.
 
 A run killed during step 3 leaves the new manifest with some files still in ``.publish``.
-The next run, ``check``, ``masks``, ``design`` or ``calibrate`` (whatever takes the output
+The next run, ``check``, ``masks`` or ``calibrate`` (whatever takes the output
 folder's lock) finishes the moves first (:func:`finish_publication`). Readers that go
 through the manifest (``RunInputs``) never see a mix: they read each file the manifest
 names by its SHA-256, from the output folder or, while a publication is unfinished, from

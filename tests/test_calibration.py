@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 import tifffile
 
+from described_tree import main_described, run_described
 from morphobricks_preprocessing import (
     CALIBRATION_FILENAME,
     Calibration,
@@ -26,7 +27,6 @@ from morphobricks_preprocessing import (
     preflight,
     read_calibration,
     read_manifest,
-    run_experiment,
     write_calibration,
 )
 from morphobricks_preprocessing.calibration_io import calibration_text
@@ -75,7 +75,7 @@ def calibrated(tmp_path):
 
 
 def again(clean, **kwargs):
-    return run_experiment(output_folder=clean.output, **kwargs)
+    return run_described(output_folder=clean.output, **kwargs)
 
 
 # The statements ------------------------------------------------------------------------------
@@ -291,7 +291,7 @@ def test_y_and_x_are_stated_by_role_and_never_exchanged(tmp_path):
     )
     output = tmp_path / "output"
     state(output, "c/a.ome.tif,Y,0.3,um\n")
-    result = run_experiment(experiment, prefill_mapping("YX"), output_folder=output)
+    result = run_described(experiment, prefill_mapping("YX"), output_folder=output)
     assert result.written
     recorded = sizes(output, "c/a.ome.tif")
     assert (recorded["X"].value, recorded["X"].source) == (0.5, "header")
@@ -409,7 +409,10 @@ def test_run_inputs_refuse_a_calibration_changed_or_added_since_the_run(calibrat
 
 def test_check_reports_the_resolved_sizes(calibrated, capsys):
     state(calibrated.output, ".,X,0.5,um\n.,Y,0.5,um\n")
-    assert main(["check", str(calibrated.experiment), "--output", str(calibrated.output)]) == 0
+    assert (
+        main_described(["check", str(calibrated.experiment), "--output", str(calibrated.output)])
+        == 0
+    )
     out = capsys.readouterr().out
     assert "Stated pixel sizes (calibration.csv):" in out
     data = json.loads((calibrated.output / "discovery_report.json").read_text(encoding="utf-8"))
@@ -462,7 +465,7 @@ def test_the_calibrate_command_states_shows_and_removes(tmp_path, capsys):
     assert "No pixel size is stated" in capsys.readouterr().out
     assert not (output / CALIBRATION_FILENAME).exists()
     args = ["calibrate", "--output", str(output), "--size", ".", "YX", "0.65", "um"]
-    assert main([*args, "--pixels", "ctrl/rep1", "Z"]) == 0
+    assert main_described([*args, "--pixels", "ctrl/rep1", "Z"]) == 0
     out = capsys.readouterr().out
     assert ". X: 0.65 micrometer" in out and ". Y: 0.65 micrometer" in out
     assert "ctrl/rep1 Z: pixels" in out

@@ -1,6 +1,6 @@
 """A small experiment of three time-lapses for the content-verification tests.
 
-Shared by ``test_verify_content.py``, ``test_strict_manifest.py`` and
+Shared by ``test_verify_content.py``, ``test_manifest_version.py`` and
 ``test_strict_final_check.py``.
 """
 

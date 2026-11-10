@@ -43,7 +43,7 @@ ORDER = [
 
 def stepped(root, masks, out, *, axes=True):
     """Return a described notebook shown as the stepper, checked (and its axes confirmed)."""
-    nb = PreprocessingNotebook(str(root), output_folder=str(out), describe=True)
+    nb = PreprocessingNotebook(str(root), output_folder=str(out))
     nb.welcome()
     nb.steps()
     nb.results_step()
@@ -270,8 +270,6 @@ def test_the_axes_page_has_no_stale_image_type_sentence_and_no_broken_picture(ex
     assert ui.is_visible(nb.preview_image) and nb.preview_image.value
     described = nb.axis_step()
     assert "fluorescence or RGB" not in described.children[1].children[2].value
-    plain = PreprocessingNotebook().axis_step()  # embedders keep their words
-    assert "fluorescence or RGB" in plain.children[1].children[2].value
 
 
 # --- PR 17b -------------------------------------------------------------------------------------
@@ -294,7 +292,7 @@ def test_pixel_sizes_from_the_headers_are_a_plain_done(tmp_path):
         path.parent.mkdir(parents=True)
         metadata = {"axes": "CYX", "PhysicalSizeX": 0.65, "PhysicalSizeY": 0.65}
         tifffile.imwrite(path, data, ome=True, photometric="minisblack", metadata=metadata)
-    nb = PreprocessingNotebook(str(root), output_folder=str(out), describe=True)
+    nb = PreprocessingNotebook(str(root), output_folder=str(out))
     nb.steps()
     nb.check_button.click()
     state = nb._stepper.states()[2]
