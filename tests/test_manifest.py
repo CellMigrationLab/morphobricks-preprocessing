@@ -332,3 +332,28 @@ def test_file_entry_for_records_the_files_own_roles(tmp_path):
     write_tiff(tmp_path / "a.tif")
     mapping = prefill_mapping("ZYX").with_role(0, None)
     assert file_entry_for(tmp_path, "a.tif", ("c", "b", "t"), mapping).roles == (None, "Y", "X")
+
+
+@pytest.mark.parametrize(
+    "where, key",
+    [
+        ("settings", "histogram"),
+        ("settings", "verify_content"),
+        ("file", "singleton_roles"),
+        ("file", "channel_names"),
+        ("file", "significant_bits"),
+        ("file", "channel_names_trimmed"),
+        ("file", "pixel_sizes"),
+    ],
+)
+def test_a_missing_always_written_key_is_refused_naming_it_and_the_fix(tmp_path, where, key):
+    # PP-05: nothing is defaulted; the refusal names the key and the fix, not a bare KeyError.
+    path = write_manifest(manifest(), tmp_path / "m.json")
+    data = json.loads(path.read_bytes())
+    del (data["settings"] if where == "settings" else data["files"][0])[key]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ManifestFormatError) as refused:
+        read_manifest(path)
+    message = str(refused.value)
+    assert f"has no {key!r}" in message
+    assert "Run preprocessing again" in message

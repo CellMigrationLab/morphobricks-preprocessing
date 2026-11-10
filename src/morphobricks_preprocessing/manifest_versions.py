@@ -110,7 +110,7 @@ def recorded_version(data: dict) -> str:
     files = data["files"]
     check_version(
         data["manifest_version"],
-        recorded_flag(data["settings"].get("verify_content", False)),
+        recorded_flag(data["settings"]["verify_content"], "verify_content"),
         [(entry.get("relative_path"), entry.get(CONTENT_KEY)) for entry in files],
         data.get(DESCRIPTION_KEY) is not None,
     )
