@@ -250,10 +250,9 @@ def test_a_group_with_different_channel_counts_is_refused():
         group_summaries(records, "condition")
 
 
-def test_plane_count_is_a_deprecated_alias_of_the_histogram_count():
+def test_pooled_channels_count_each_channel_histogram():
     (summary,) = group_summaries(channel_records((10, 1000)), "condition", pool_channels=True)
-    with pytest.warns(DeprecationWarning, match="xyc_plane_count"):
-        assert summary.plane_count == 4
+    assert summary.channel_histogram_count == 2 * summary.xyc_plane_count
 
 
 def test_group_without_finite_pixels(tmp_path):

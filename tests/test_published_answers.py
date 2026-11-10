@@ -190,7 +190,7 @@ def test_the_csv_changes_are_listed_by_row(exp):
 
 def test_the_candidate_is_checked_on_its_exact_bytes_and_waits_for_the_roles(exp, tmp_path):
     _, published = described(exp)
-    check = check_candidate(published, preflight(exp), None, tmp_path / "out")
+    check = check_candidate(published, preflight(exp), None)
     assert check.can_save and not check.physical_run and not check.can_run
     assert check.changes == ("written for the first time (4 rows)",)
 

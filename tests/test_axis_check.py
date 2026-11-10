@@ -27,7 +27,6 @@ from morphobricks_preprocessing import (
     review_axes,
 )
 from morphobricks_preprocessing.axis_check import axis_disagreements
-from morphobricks_preprocessing.design import default_design, write_experiment_design
 from morphobricks_preprocessing.discovery import default_output_folder
 from run_files import only_the_report
 from tiff_tree import write_data
@@ -361,12 +360,7 @@ def test_plain_stack_masks_are_not_compared_before_the_roles(tmp_path):
 
 
 def confirm(root):
-    design = default_design(preflight(root).dataset.repeats)
-    for group in design.groups:
-        design = design.with_confirmed(group, True, "2026-11-01")
-    output = default_output_folder(root)
-    output.mkdir(parents=True, exist_ok=True)
-    write_experiment_design(design, output / "experiment_design.csv")
+    default_output_folder(root).mkdir(parents=True, exist_ok=True)
 
 
 def test_cli_check_reports_plain_stacks(tmp_path, capsys):

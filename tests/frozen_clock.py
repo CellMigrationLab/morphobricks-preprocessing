@@ -5,26 +5,67 @@ write identical bytes for an unchanged model. :class:`FrozenClock` replaces
 :class:`datetime.date` and :class:`datetime.datetime` in the :mod:`datetime` module and in every
 module of the package that imported them by name, with subclasses whose ``today``, ``now`` and
 ``utcnow`` return the frozen day (at noon UTC) and count each read.
+
+The notebook modules need the ``notebook`` extra (ipywidgets, matplotlib). Without it they cannot
+be imported, so they are left out (issue #262): such a module cannot run, so it cannot read the
+clock either. Any other import failure is raised.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import importlib
+import importlib.util
 import pkgutil
 import sys
 
 import morphobricks_preprocessing
 
 PACKAGE = morphobricks_preprocessing.__name__
+NOTEBOOK_EXTRA = frozenset({"ipywidgets", "matplotlib"})
+"""The top-level packages of the ``notebook`` extra; a module needing one is skipped without it."""
 
 
 def _import_package() -> list[object]:
-    """Import every module of the package (not ``__main__``) and return them all."""
+    """Import every module of the package (not ``__main__``) and return them all.
+
+    A module whose import fails only because a package of the ``notebook`` extra is missing is
+    skipped (issue #262); every other import error is raised.
+    """
     for info in pkgutil.walk_packages(morphobricks_preprocessing.__path__, PACKAGE + "."):
-        if not info.name.endswith(".__main__"):
+        if info.name.endswith(".__main__"):
+            continue
+        try:
             importlib.import_module(info.name)
+        except ImportError as exc:
+            if not _needs_notebook_extra(exc):
+                raise
     return [m for name, m in sorted(sys.modules.items()) if name.split(".")[0] == PACKAGE]
+
+
+def notebook_extra_installed() -> bool:
+    """True when every package of the ``notebook`` extra can be imported."""
+    return all(_importable(name) for name in NOTEBOOK_EXTRA)
+
+
+def _importable(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):  # blocked in sys.modules, or a broken entry
+        return False
+
+
+def _needs_notebook_extra(exc: BaseException | None) -> bool:
+    """True when ``exc`` (or what it was raised from) is a missing ``notebook`` extra package.
+
+    The notebook modules re-raise a missing ipywidgets or matplotlib with an install hint, so
+    the chain of causes is followed to the :class:`ModuleNotFoundError` itself.
+    """
+    while exc is not None:
+        if isinstance(exc, ModuleNotFoundError):
+            return (exc.name or "").split(".")[0] in NOTEBOOK_EXTRA
+        exc = exc.__cause__ or exc.__context__
+    return False
 
 
 class FrozenClock:

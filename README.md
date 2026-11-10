@@ -50,9 +50,9 @@ removed in v0.4.0).
 Optional (the `zarr` extra): OME-Zarr images as input (`zarr_input`). **New users: start with the
 [user guide](docs/user_guide.md).**
 
-**Upgrading from v0.3:** v0.4.0 is a breaking release. Every v0.3 run must be run again, and
-bricks read runs through `RunInputs`. See the [migration guide](docs/migration-0.3-to-0.4.md)
-and the [CHANGELOG](CHANGELOG.md).
+**Upgrading:** there is no backward compatibility before the first pipeline release (Spec
+ADR 0002 AR10). Every run needs a published experiment description, and a run written before
+v0.5.1 is refused until it is run again; nothing is converted. See the [CHANGELOG](CHANGELOG.md).
 
 ## Installation
 

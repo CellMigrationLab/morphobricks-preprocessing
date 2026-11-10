@@ -9,7 +9,7 @@ fields are ``condition_id``, ``repeat_group`` and ``technical_repeat_id``.
 import pytest
 
 from morphobricks_preprocessing import DesignFormatError, discover_experiment
-from morphobricks_preprocessing.design import DesignRow, ExperimentDesign, write_experiment_design
+from morphobricks_preprocessing.design import DesignRow, DesignTable, write_experiment_design
 from morphobricks_preprocessing.draft import (
     DraftError,
     LegacyMigrationRefused,
@@ -33,7 +33,7 @@ def folders(root, *paths):
 def legacy(tmp_path, rows):
     """Return the bytes of a legacy design with ``rows`` written by the brick's own writer."""
     path = tmp_path / "legacy.csv"
-    write_experiment_design(ExperimentDesign(tuple(rows)), path)
+    write_experiment_design(DesignTable(tuple(rows)), path)
     return path.read_bytes()
 
 

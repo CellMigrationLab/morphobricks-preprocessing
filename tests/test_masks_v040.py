@@ -24,7 +24,7 @@ from morphobricks_preprocessing import (
     read_manifest,
     read_mask,
 )
-from morphobricks_preprocessing.manifest import source_fingerprint
+from morphobricks_preprocessing.inventory import source_signature
 from morphobricks_preprocessing.masks.stated import mask_roles
 from tiff_tree import write_data, write_file, write_plain
 
@@ -297,7 +297,7 @@ def test_label_images_are_always_used(tmp_path):
     recorded = read_manifest(result.manifest_path).masks
     assert recorded["folder"] is None and recorded["types"] == ["cells"]
     (entry,) = recorded["files"]
-    size, mtime_ns = source_fingerprint(root / "ctrl/a.ome.zarr/labels/cells")
+    size, mtime_ns, _ = source_signature(root / "ctrl/a.ome.zarr/labels/cells")
     assert (entry["size"], entry["mtime_ns"]) == (size, mtime_ns)
 
 
@@ -305,10 +305,10 @@ def test_label_images_are_left_out_of_the_image_fingerprint(tmp_path):
     from zarr_tree import write_labels
 
     root, path = zarr_experiment(tmp_path)
-    before = source_fingerprint(path)
+    before = source_signature(path)
     first = run_described(root, prefill_mapping("YX"))
     write_labels(path, {"cells": labels((6, 8), 2), "nuclei": labels((6, 8))}, "yx")
-    assert source_fingerprint(path) == before
+    assert source_signature(path) == before
     again = run_described(root, prefill_mapping("YX"), output_folder=first.output_folder)
     assert again.read == ()  # the image's rows are reused
     data = json.loads(again.manifest_path.read_text(encoding="utf-8"))

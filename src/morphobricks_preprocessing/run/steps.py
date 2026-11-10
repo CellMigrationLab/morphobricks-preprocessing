@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, replace
-from datetime import datetime
 from pathlib import Path
 
 from morphobricks_normalization.records import PlaneRecord
@@ -18,7 +17,7 @@ from morphobricks_normalization.records import PlaneRecord
 from ..axes import AxisReview
 from ..axis_review import review_axes
 from ..dataset import check_dataset
-from ..design import ExperimentDesign, design_issues, reconcile_design
+from ..design import DesignTable, design_issues, reconcile_design
 from ..discovery_report import RunOutcome
 from ..fingerprint import unchanged_confirmation
 from ..image_type import ImageTypeReview, image_type_issues, review_image_type
@@ -45,7 +44,7 @@ class Checked:
     review, type_review
         The axis and image-type reviews; None when no axis roles were given or recorded.
     design
-        The design brought up to date with the folders, or None.
+        The derived design brought up to date with the folders, or None.
     issues
         Every issue found so far.
     bins
@@ -54,7 +53,7 @@ class Checked:
 
     review: AxisReview | None
     type_review: ImageTypeReview | None
-    design: ExperimentDesign | None
+    design: DesignTable | None
     issues: list[ValidationIssue] = field(default_factory=list)
     bins: int | None = None
 
@@ -62,7 +61,7 @@ class Checked:
 def header_checks(
     pre: Preflight,
     inputs: ResolvedInputs,
-    design: ExperimentDesign | None,
+    design: DesignTable | None,
     memory_limit: int,
 ) -> Checked:
     """Check everything that needs no pixel: folders, axes, image type, design, masks.
@@ -74,7 +73,7 @@ def header_checks(
     inputs
         The run's resolved inputs.
     design
-        The design given or recorded, or None.
+        The design derived from the published description, or None.
     memory_limit
         Working-memory limit per plane, in bytes.
 
@@ -91,8 +90,7 @@ def header_checks(
     type_review = review_image_type(pre.metadata, review)
     dataset, design_problems = pre.dataset, []
     if design is not None:
-        design, _ = reconcile_design(design, pre.dataset.repeats)
-        design = design.dated(datetime.now().date().isoformat())
+        design = reconcile_design(design, pre.dataset.repeats)
         design_problems = design_issues(design)
         dataset = check_dataset(pre.discovery, design.repeat_groups(), excluded=pre.excluded)
     issues = [

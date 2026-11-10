@@ -902,9 +902,9 @@ so `check` and `run` on a folder of copies, and opening their run, take about on
 the copies longer. An original that changes while `convert` reads its metadata is refused
 (`source_changed_during_check`); convert again once nothing writes into the experiment.
 
-A folder of copies made by v0.4.0rc3 or earlier has a conversion record of version 1, without the
-copies' SHA-256: `convert`, `run` and the bricks refuse it (`conversion_record_unreadable`,
-naming version 1). Convert the originals again into a new folder.
+A folder of copies made before v0.5.1 may have a conversion record of version 1 or 2: `convert`,
+`run` and the bricks read version 3 only and refuse it (`conversion_record_unreadable`, naming
+its version); nothing is converted. Convert the originals again into a new folder.
 
 Running `convert` again with the same images and roles reuses the copies and only adds new
 images; when nothing is added the record is left as it was. Bricks reading the run on the
@@ -993,9 +993,9 @@ The default output folder is next to the experiment folder:
   run; later bricks ask you to run this brick again on it.
 - **`experiment_design.csv`:** one row per biological-repeat folder of each condition: its
   repeat group, whether its condition is a control, its image and technical-repeat counts,
-  and whether and when the repeat group was confirmed. Written in step 1 and by every run.
-  Later bricks read the pairing from it (`read_experiment_design`). Format in
-  [contract.md](contract.md) §12.
+  and whether and when the repeat group was confirmed. Derived from the saved description and
+  written by every run (and by *Check and save*); a record for people, never read back: later
+  bricks take the pairing from the description. Format in [contract.md](contract.md) §12.
 - **`run_manifest.json`:** what the run read and with which settings: labels, axis roles,
   the image type (and whether the channels are RGB colour samples), bin count, histogram
   range, memory limit, excluded images, the limits of the intensity checks, the planes with a
@@ -1092,11 +1092,9 @@ Run the notebook or `run` again after adding, changing or removing images:
 - changing only the image type reads nothing again: the histograms are the same for both
   types, and only the manifest records the new type.
 
-**After upgrading from v0.3** (or from v0.4.0rc3 or earlier with OME-Zarr images): the
-first run recomputes every row. A v0.3 manifest (version 1) gives no reusable row and no
-recorded input, so give the axis roles, masks and exclusions again; an OME-Zarr image
-recorded without its file inventory counts as changed. Later bricks refuse such older runs
-until they are run again. The [migration guide](migration-0.3-to-0.4.md) lists every change.
+**After upgrading from a version before v0.5.1:** its run manifest is not read (only version 4
+is), so the first run recomputes every row and reuses no recorded input: give the axis roles,
+masks and exclusions again. Later bricks refuse such older runs until they are run again.
 
 Run the brick again after adding images or masks before using a later brick: later bricks
 read the images and masks this brick's run recorded, and refuse an experiment holding images
@@ -1176,7 +1174,7 @@ continues.
 | `source_changed_during_check` | Error | `convert`: an original changed while its metadata was read, so the metadata may not describe the file that would be copied. Nothing was written; convert again when nothing writes into the experiment. |
 | `conversion_failed` | Error | `convert`: an image could not be copied (unreadable, changed while copied, or the folder cannot be written). The copies written by this conversion were removed; fix the cause and convert again, or exclude the image. |
 | `not_enough_space` | Error | `convert`: the copies would not fit on the drive. Free space or choose another drive. |
-| `conversion_record_unreadable` | Error | The conversion record of a folder of named-axis copies (**.morphobricks-conversion.json**) cannot be read, or is of version 1 (made by v0.4.0rc3 or earlier, without the copies' SHA-256), so `run` stops and `convert` refuses the folder. Convert again into a new folder. |
+| `conversion_record_unreadable` | Error | The conversion record of a folder of named-axis copies (**.morphobricks-conversion.json**) cannot be read, or is not of version 3 (versions 1 and 2 were made before v0.5.1), so `run` stops and `convert` refuses the folder. Convert again into a new folder. |
 | `conversion_source_changed` | Warning | An original changed or went missing after its named-axis copy was made; the copies hold the images as converted. If the originals were corrected, convert again into a new folder. |
 | `copy_changed_after_conversion` | Error | An image of the folder of named-axis copies changed (its size, time or SHA-256), went missing or was added after the conversion, so the conversion record does not describe it, and the bricks (`RunInputs`) would refuse a run on it. The run stops before it writes anything but the report: convert the originals again into a new folder, and run preprocessing on that one (same output folder). |
 | `source_changed_during_run` | Error | An image changed or went missing while the run was checking or reading it, so its rows would not describe it. No scientific outputs are published and sources are untouched; the discovery report is written. Wait until nothing writes to the experiment (an acquisition or a copy still running), then run again: the images already read resume from their staged rows. |
@@ -1212,10 +1210,7 @@ continues.
 | `lab_links_repeat_missing` | Error | The lab-tool repeat codes leave out a biological repeat of the description; a mapping names every repeat. Add its code, or leave `repeat_codes` out. |
 | `rgb_not_possible` | Error | The image type RGB was chosen, but the images are not three channels of a whole-number pixel type. Choose fluorescence, or check the axis roles: the RGB samples must have the role C. |
 | `repeat_group_conflict` | Error | A repeat group holds two folders of the same condition. Move one into another replicate on the *Replicates* page and save the description again (*Check and save*). |
-| `invalid_experiment_design` | Error | A repeat group has no usable name (empty, `NA`, `nan`, `none`, `null`, `n/a`, `<NA>`, or spaces around it), two repeat groups are spelled the same apart from upper and lower case, or a confirmation date is not written `YYYY-MM-DD`. Correct `experiment_design.csv` (the message names the line and column). |
-| `missing_experiment_design`, `unreadable_experiment_design` | Error (other bricks) | A brick that pools biological repeats as `experiment_design.csv` pairs them found no such file, or one it cannot use as written by the preprocessing brick (another column order, a column named twice or without a name, a value with spaces around it, `TRUE` or `yes` for `true`, an empty repeat group, a byte-order mark from a spreadsheet program, ...). Run the preprocessing brick on the experiment again: its run writes the file as other bricks read it. |
-| `unreadable_experiment_design` | Error (`load_design`, notebook step 1, `check`) | The saved `experiment_design.csv` in the output folder cannot be read even leniently (for example a date a spreadsheet program rewrote as 26/10/2026, a repeat group `NA`, or a header that names a column twice, such as two `repeat_group` columns, or has a column without a name); the message names the line and column. No reader chooses between two columns of one name: delete one. The file is left as it is. Correct it, or answer the questions again in step 1, which replaces it. |
-| `changed_experiment_design` | Error (other bricks) | `experiment_design.csv` is not the file the preprocessing run that wrote the statistics used (its SHA-256 differs from the one in the run manifest). Give that run's design, or run the preprocessing brick again. |
+| `invalid_experiment_design` | Error | A repeat group has no usable name (empty, `NA`, `nan`, `none`, `null`, `n/a`, `<NA>`, or spaces around it), two repeat groups are spelled the same apart from upper and lower case, or a confirmation date is not written `YYYY-MM-DD`. It comes from a description edited by hand or rows built in code; correct the description (the message names the folder). |
 | `image_intensity_outlier` | Warning (intensity check) | An image's median or high percentile in a channel is far from the other images of its condition and biological repeat. Look at it: it may be out of focus, contain debris or bubbles, or have been acquired differently. Exclude it if it is faulty. |
 | `repeat_intensity_shift` | Warning (intensity check) | A biological repeat is brighter or darker than the other repeats of its condition. Check whether it was prepared or acquired differently; normalising per biological repeat in later bricks removes such differences. |
 | `saturated_image` | Warning (intensity check) | More than the limit (default 1 %) of an image's pixels in a channel are at the largest value of its pixel type, so their true intensity is lost. Check the exposure, gain or laser power. |
@@ -1245,7 +1240,7 @@ continues.
 | `mask_missing` | Warning | Some images have no mask of a kind that other images have; their objects of that kind cannot be measured. Add the masks, or exclude the images. |
 | `ambiguous_mask` | Error | A mask's name could belong to two images (one image name starts another's) or fit both layouts. Rename the masks or the images so each names one image and one kind. |
 | `mask_without_image`, `mask_outside_type_folder`, `mask_of_excluded_image` | Warning | Files in the masks folder that match no image of the experiment (check the folder and file names), other files directly in the masks folder, or masks of excluded images. They are not used. |
-| `manifest_before_v040`, `images_not_in_manifest`, `images_missing`, `images_changed`, `position_id_not_recorded`, `identity_differs`, `axis_mapping_mismatch` | Error (other bricks) | A later brick checked its images against this brick's run (`check_sources`): a run written before v0.4.0 (redo it), an image the run did not analyse, no longer there, changed since, recorded with other labels or position (or by a version that did not record positions), or read with axes the run gave other roles. Run this brick again on the experiment as it is, or use the run's labels and axis roles. |
+| `images_not_in_manifest`, `images_missing`, `images_changed`, `identity_differs`, `axis_mapping_mismatch` | Error (other bricks) | A later brick checked its images against this brick's run (`check_sources`): an image the run did not analyse, no longer there, changed since, recorded with other labels or position (or with none), or read with axes the run gave other roles. Run this brick again on the experiment as it is, or use the run's labels and axis roles. |
 | `UnrecordedFilesError` | Error (other bricks) | The experiment holds images or masks that the preprocessing run neither recorded nor excluded, for example added after the run. Later bricks never look for images themselves, so they refuse rather than leave them out: run this brick again on the experiment as it is (with its masks folder, `--masks`, for masks), or exclude the images. Files the run ignores (non-image files, system files, masks matching no image) do not count. A run holding OME-Zarr images also needs the `zarr` extra here (`pip install "morphobricks-preprocessing[zarr]"`), so that their label images can be checked; an OME-Zarr image whose `labels` group cannot be read is refused too. |
 | `zarr_not_installed` | Error | OME-Zarr images need the `zarr` extra. Install it, or exclude the OME-Zarr images. |
 

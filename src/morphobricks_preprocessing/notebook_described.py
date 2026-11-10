@@ -9,10 +9,10 @@ description (Spec ADR 0002 AR10; there is no undescribed notebook any more).
 What the described run changes, as overrides of the step mixins:
 
 - **Step 1.** The "Yes, the labels are correct" toggle is retired: the labels are shown and
-  restated on *Check and save*. The check writes no design template, the design card keeps only
-  the pairing (in the draft, never written to ``experiment_design.csv`` before the save) and its
-  "comparable" questions move to *Check and save*, one per replicate. The names card's "Yes, use
-  these IDs" is retired too: the save click adopts every short name.
+  restated on *Check and save*. The check writes no design template; the pairing card
+  (:mod:`.notebook_design`) is an answer of the draft, and the "comparable" questions are on
+  *Check and save*, one per replicate. The names card's "Yes, use these IDs" is retired too: the
+  save click adopts every short name.
 - **Step 2.** The global *Image type* card is retired: the image type is answered per unit on
   *Your channels*; the run is given the type the saved description states.
 - **Reopening.** The published file is the answers: the folders found now decide what still
@@ -24,15 +24,11 @@ What the described run changes, as overrides of the step mixins:
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
-from datetime import date
 from pathlib import Path
 
 from . import notebook_style as ui
 from .description_file import DESCRIPTION_FILENAME
 from .description_reopen import PublishedState, published_state
-from .design import default_design
-from .design_edit import DesignEdit, DesignEditError, apply_design_edit
 from .draft import Draft, DraftError, draft_from_discovery
 from .draft_answers import DraftAnswers, UnitKey, apply_answers, carry_over
 from .fingerprint import current_fingerprint
@@ -46,13 +42,6 @@ from .published_answers import (
     retired_ids,
 )
 from .run import Preflight
-
-
-def _units(draft: Draft, label: str) -> frozenset:
-    repeat = draft.repeats.get(label)
-    if repeat is None:
-        return frozenset()
-    return frozenset((m.key, u.source_folder) for m in repeat.members for u in m.units)
 
 
 class _DescribedRun:
@@ -102,59 +91,6 @@ class _DescribedRun:
         help_box.value = help_box.value.replace(
             "Optional. For a treated", "Answer for each condition. For a treated"
         ).replace("Nothing is chosen for you.", "Choose <i>no comparison</i> where none.")
-
-    def _save_design(self) -> None:
-        """Keep the design card's answers in the draft (never written to a design file)."""
-        self._design_saved = self._design_waiting = False
-
-    def _build_group_questions(self) -> None:
-        super()._build_group_questions()
-        ui.set_visible(self.groups_box, False)
-
-    def _design_pending(self) -> bool:
-        return False
-
-    def _open_design(self, *, output_changed: bool = False) -> None:
-        """Open the pairing from the draft (or the published file)."""
-        self._design_output = self._design_folder()
-        self.design = default_design(self.preflight.dataset.repeats)
-        self._design_unreadable, self._design_saved = False, False
-        self._design_note = self._design_refusal = ""
-        self._forget_published()
-        self._load_description()
-        self._folded = self._saved_current()
-        self._take_pairing()
-        ui.set_visible(self.design_editor, True)
-        ui.set_visible(self.design_change, False)
-        ui.set_visible(self.design_card, True)
-        self._design_changed()
-
-    def _take_pairing(self) -> None:
-        """Set the design card's pairing to the one the answers hold."""
-        pairing = dict(self.draft_answers.pairing) if self.draft_answers else {}
-        if pairing:
-            try:
-                self.design = apply_design_edit(
-                    self.design, DesignEdit(repeat_groups=pairing), date.today().isoformat()
-                )
-            except DesignEditError as exc:
-                self._design_note = ui.status("warn", "The saved pairing was not used.", [str(exc)])
-        self._build_design_editor()
-
-    def _refresh_design_status(self) -> None:
-        """Say how the pairing is kept (no confirmation on this card)."""
-        if self.design is None:
-            self.design_status.value = ""
-            return
-        note = self._design_note + self._design_refusal
-        self.design_status.value = note + ui.status(
-            "info",
-            "Folders with the same name are the same replicate.",
-            [
-                "Choose another replicate for a folder that was named differently. Your pairing "
-                "is saved with your other answers and confirmed on Check and save."
-            ],
-        )
 
     # Answers -----------------------------------------------------------------------------
 
@@ -222,25 +158,6 @@ class _DescribedRun:
         """
         return resumed(self._draft_base, saved, kept)
 
-    def _sync_description(self) -> None:
-        """Take the design card's pairing into the answers; changed replicates are asked again."""
-        answers = self.draft_answers
-        if answers is None or self.design is None:
-            return
-        pairing = self._design_pairing()
-        if pairing == dict(answers.pairing):
-            self._refresh_description()
-            return
-        old, new = self._draft_base.paired(answers.pairing), self._draft_base.paired(pairing)
-        repeats = {
-            label: answer
-            if _units(old, label) == _units(new, label)
-            else replace(answer, confirmed_on=None)
-            for label, answer in answers.repeats.items()
-            if label in new.repeats
-        }
-        self._answer(replace(answers, pairing=pairing, repeats=repeats))
-
     def _id_typed(self, entry: object, state: object, text: str) -> None:
         super()._id_typed(entry, state, text)
         if not self._refreshing:
@@ -260,7 +177,7 @@ class _DescribedRun:
         """Refresh *Your channels*; the pairing card gets its pictures once they can be read."""
         super()._refresh_channels()
         thumbs = self._channel_thumbs
-        if self.design is not None and thumbs is not self._pictures_for:
+        if self.pairing is not None and thumbs is not self._pictures_for:
             self._pictures_for = thumbs
             self._build_design_editor()
 
@@ -290,9 +207,6 @@ class _DescribedRun:
         )
 
     # The run -----------------------------------------------------------------------------
-
-    def _design_items(self) -> list[tuple[bool, str]]:
-        return []
 
     def _gate_items(self) -> list[tuple[bool, str]]:
         return [(self._run_allowed(), "Save the experiment description (Check and save)")]

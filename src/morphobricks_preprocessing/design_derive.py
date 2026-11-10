@@ -23,10 +23,10 @@ from pathlib import Path
 from morphobricks_normalization.records import SINGLE
 
 from .description import Description
-from .design import DesignRow, ExperimentDesign, write_experiment_design
+from .design import DesignRow, DesignTable, write_experiment_design
 
 
-def derive_design(description: Description) -> ExperimentDesign:
+def derive_design(description: Description) -> DesignTable:
     """Return the design the description derives, one row per member (section 11).
 
     Raises
@@ -53,7 +53,7 @@ def derive_design(description: Description) -> ExperimentDesign:
                     confirmed_on=repeat.confirmed_on,
                 )
             )
-    return ExperimentDesign(tuple(rows))
+    return DesignTable(tuple(rows))
 
 
 def write_derived_design(description: Description, path: str | os.PathLike) -> Path:

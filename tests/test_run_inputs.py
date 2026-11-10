@@ -66,14 +66,14 @@ def test_masks_by_the_recorded_pairing(clean):
         inputs.read_mask("drug/rep1/b.ome.tif", "Nuclei")
 
 
-def test_histograms_design_and_image_type(clean):
+def test_histograms_and_image_type(clean):
     inputs = RunInputs.open(clean.output)
     assert len(inputs.histograms()) == 4
     assert {r.source_relative_path for r in inputs.histograms()} == {
         f.relative_path for f in inputs.fovs()
     }
-    # The design derived from the description (an output of the run, v0.5.1).
-    assert inputs.design().confirmed
+    # The derived experiment_design.csv is an output only: RunInputs does not read it back.
+    assert not hasattr(inputs, "design")
     # The image type is each unit's declaration (PP-1): no run-wide value hides it.
     assert not hasattr(inputs, "image_type")
     assert {f.image_type for f in inputs.fovs()} == {"channels"}
@@ -200,46 +200,24 @@ def mask_of(image):
     return image.replace(".ome.tif", ".tif")
 
 
-def test_the_design_of_a_run_with_one(tmp_path):
+def test_the_repeat_groups_come_from_the_description(tmp_path):
     clean = make_clean_run(tmp_path, design=True)
-    design = RunInputs.open(clean.output).design()
-    assert design.repeat_groups() == {("ctrl", "rep1"): "rep1", ("drug", "rep1"): "rep1"}
-    assert {row.condition: row.control for row in design.rows} == {"ctrl": True, "drug": False}
-    assert all(row.confirmed for row in design.rows)
+    fovs = RunInputs.open(clean.output).fovs()
+    assert {(f.key[0], f.key[1], f.repeat_group) for f in fovs} == {
+        ("ctrl", "rep1", "rep1"),
+        ("drug", "rep1", "rep1"),
+    }
 
 
 def test_a_changed_or_missing_design_is_refused(tmp_path):
     clean = make_clean_run(tmp_path, design=True)
     path = clean.output / DESIGN_FILENAME
-    inputs = RunInputs.open(clean.output)
     path.write_text(path.read_text(encoding="utf-8").replace("true", "false"), encoding="utf-8")
-    with pytest.raises(RunInputsError, match="design"):
-        inputs.design()
     with pytest.raises(RunInputsError, match="design"):
         RunInputs.open(clean.output)
     path.unlink()
     with pytest.raises(RunInputsError, match="design"):
         RunInputs.open(clean.output)
-
-
-def test_the_design_is_read_with_the_strict_reader(tmp_path):
-    # Issue #83: RunInputs.design() used the lenient reader, so a design the strict
-    # reader refuses was given to bricks once its SHA-256 matched the manifest.
-    from morphobricks_preprocessing.manifest import file_sha256
-
-    clean = make_clean_run(tmp_path, design=True)
-    path = clean.output / DESIGN_FILENAME
-    text = path.read_text(encoding="utf-8")
-    header, rest = text.split("\n", 1)
-    path.write_text(f"{header},repeat_group\n" + rest.replace(",1\n", ",1,other\n"), "utf-8")
-    manifest_path = clean.output / MANIFEST_FILENAME
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["experiment_design_sha256"] = file_sha256(path)
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    inputs = RunInputs.open(clean.output)
-    with pytest.raises(RunInputsError, match="'repeat_group' twice") as caught:
-        inputs.design()
-    assert caught.value.__cause__ is not None
 
 
 def test_a_header_naming_x_before_y_is_read_y_before_x(tmp_path):

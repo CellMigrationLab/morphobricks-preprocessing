@@ -113,12 +113,12 @@ def test_labels_and_position_must_be_the_runs(run):
     assert "('ctrl', 'rep2', 'single', 'b')" in issues[0].message
 
 
-def test_a_manifest_without_positions_cannot_confirm_them(run):
+def test_an_entry_without_a_position_is_refused(run):
     root, manifest = run
     old = replace(manifest, files=tuple(replace(f, position_id=None) for f in manifest.files))
     issues = check_sources(old, root, IMAGES, identities={p: identity(p) for p in IMAGES})
-    assert codes(issues) == {"position_id_not_recorded": tuple(sorted(IMAGES))}
-    assert check_sources(old, root, IMAGES) == []  # nothing to compare without identities
+    assert codes(issues) == {"identity_differs": tuple(sorted(IMAGES))}
+    assert codes(check_sources(old, root, IMAGES)) == {"identity_differs": tuple(sorted(IMAGES))}
 
 
 def test_a_recorded_position_that_is_not_the_name_is_refused(run):
@@ -131,13 +131,9 @@ def test_a_recorded_position_that_is_not_the_name_is_refused(run):
     assert found == {"identity_differs": ("ctrl/rep1/a.tif",)}
 
 
-@pytest.mark.parametrize("roles_recorded", [True, False])
-def test_axes_must_have_the_confirmed_roles(run, roles_recorded):
-    # CellPatcher's check_images rule; manifests written before per-file roles fall back on
-    # the run's mapping resolved for the image's header.
+def test_axes_must_have_the_confirmed_roles(run):
+    # CellPatcher's check_images rule, against each file's recorded roles.
     root, manifest = run
-    if not roles_recorded:
-        manifest = replace(manifest, files=tuple(replace(f, roles=None) for f in manifest.files))
     axes = dict.fromkeys(IMAGES, "tyx")
     assert check_sources(manifest, root, IMAGES, image_axes=axes) == []
     axes["drug/rep1/a.tif"] = "ZYX"
@@ -145,6 +141,15 @@ def test_axes_must_have_the_confirmed_roles(run, roles_recorded):
     issues = check_sources(manifest, root, IMAGES, image_axes=axes)
     assert codes(issues) == {"axis_mapping_mismatch": ("ctrl/rep1/b.tif", "drug/rep1/a.tif")}
     assert "drug/rep1/a.tif: given ZYX, preprocessing TYX" in issues[0].message
+
+
+def test_an_entry_without_roles_fits_no_axes(run):
+    # Nothing is resolved from the header in their place (no older manifest is read).
+    root, manifest = run
+    old = replace(manifest, files=tuple(replace(f, roles=None) for f in manifest.files))
+    issues = check_sources(old, root, IMAGES, image_axes=dict.fromkeys(IMAGES, "TYX"))
+    assert codes(issues) == {"axis_mapping_mismatch": tuple(sorted(IMAGES))}
+    assert "preprocessing none fit" in issues[0].message
 
 
 def test_an_axis_without_a_role_fits_any_letter(run):

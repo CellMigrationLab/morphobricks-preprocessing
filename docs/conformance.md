@@ -143,8 +143,8 @@ GS1: a scenario that names fixtures is shown on those fixtures; further fixtures
   `v13`, `v33`, `v34`;
 - `test_the_derived_file_equals_the_golden_file_byte_for_byte`: `v13`, `v33`, `v34`, byte for byte;
 - `test_the_derived_file_equals_the_oracles_on_every_valid_fixture` and
-  `test_the_derived_file_is_read_back_by_the_strict_reader`: every valid fixture, against
-  `refval.derive_csv` and through `read_confirmed_design`;
+  `test_the_derived_file_is_read_back_by_the_strict_parser`: every valid fixture, against
+  `refval.derive_csv` and through `parse_design_bytes`;
 - `test_the_file_names_folders_never_ids`: `v33` carries the folder label `control`, never `ctrl`.
 
 Legacy parity with the `v0.4.0` tag (`tests/test_parity_v0_4_0.py`, 24 passed, the tag's `src`

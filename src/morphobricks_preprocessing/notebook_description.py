@@ -128,8 +128,6 @@ class _DescriptionCard(_NameRows, _SavedDraft):
             ],
             visible=False,
         )
-        # A control is a condition others are compared against: the references say it.
-        ui.set_visible(self.controls_box, False)
 
     # Opening, resuming and closing -------------------------------------------------------
 
@@ -138,10 +136,6 @@ class _DescriptionCard(_NameRows, _SavedDraft):
         ui.set_visible(self.names_card, False)
         ui.set_visible(self.references_card, False)
         self._hide_channels()
-
-    def _design_pairing(self) -> dict[tuple[str, str], str]:
-        """Return the folders the design pairs under another name than their own."""
-        return {k: g for k, g in self.design.repeat_groups().items() if g != k[1]}
 
     def _load_description(self) -> None:
         """Derive the draft from the folders and resume the saved answers, if any are usable.
@@ -170,33 +164,6 @@ class _DescriptionCard(_NameRows, _SavedDraft):
         return draft_from_discovery(self.preflight.discovery, self.preflight.excluded)
 
     # Answers -----------------------------------------------------------------------------
-
-    def _sync_description(self) -> None:
-        """Take the design card's pairing and comparability dates into the answers."""
-        answers = self.draft_answers
-        if answers is None or self.design is None:
-            return
-        repeats = {}
-        for group in self.design.groups:
-            day = self.design.confirmed_on(group) if self.design.group_confirmed(group) else ""
-            kept = replace(answers.repeats.get(group, RepeatAnswer()), confirmed_on=day or None)
-            if kept != RepeatAnswer():
-                repeats[group] = kept
-        lost = [g for g, a in answers.repeats.items() if g not in repeats and a.id is not None]
-        new = replace(answers, pairing=self._design_pairing(), repeats=repeats)
-        if new != answers:
-            if lost:
-                self._draft_note = ui.status(
-                    "info",
-                    "The pairing changed.",
-                    [
-                        f"No longer a repeat of its own: {', '.join(lost)}. Its name was dropped; "
-                        "a repeat that is new is named below."
-                    ],
-                )
-            self._answer(new)
-        else:
-            self._refresh_description()
 
     def _answer(self, answers: DraftAnswers, *, rebuild: bool = True) -> bool:
         """Apply new answers to the draft and save them; False when they are refused.
@@ -444,7 +411,6 @@ class _DescriptionCard(_NameRows, _SavedDraft):
         new = _updated(answers, "conditions", condition, reference=target)
         if self._answer(new):
             self._references_refusal = ""
-            self._sync_controls()
         else:
             self._references_refusal = refusal_card(
                 "This answer was not taken.",
@@ -452,17 +418,6 @@ class _DescriptionCard(_NameRows, _SavedDraft):
             )
         self._refresh_description()
         self._refresh_design_status()
-
-    def _sync_controls(self) -> None:
-        """Mark as controls (design card, ``experiment_design.csv``) the conditions referenced.
-
-        The checkboxes are the design card's own, hidden; setting one saves the design as
-        ticking it did.
-        """
-        referenced = set(self.draft.references.values())
-        for condition, check in self.control_checks.items():
-            if check.value != (condition in referenced):
-                check.value = condition in referenced
 
 
 def _with_ids(answers: DraftAnswers, ids: dict[tuple[str, str], str]) -> DraftAnswers:

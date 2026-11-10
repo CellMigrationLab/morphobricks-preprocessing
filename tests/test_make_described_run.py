@@ -8,6 +8,8 @@ behaviour of ``make_clean_run`` is unchanged (its other tests are in ``test_run_
 
 from __future__ import annotations
 
+import csv
+import io
 from collections import Counter
 
 import pytest
@@ -172,5 +174,10 @@ def test_make_clean_run_without_a_description_makes_a_described_run_of_its_tree(
         ("drug", "rep1", ("ch1", "ch2")),
     }
     assert inputs.mask_check_status("Cells", fovs[0]) == "checked"  # the mask step ran
-    assert inputs.design().repeat_groups() == {("ctrl", "rep1"): "rep1", ("drug", "rep1"): "rep1"}
-    assert inputs.design().controls == ("ctrl",)
+    # The derived experiment_design.csv is an output only: parsed here, never by RunInputs.
+    rows = list(csv.DictReader(io.StringIO((run.output / "experiment_design.csv").read_text())))
+    assert {(r["condition"], r["biological_repeat"]): r["repeat_group"] for r in rows} == {
+        ("ctrl", "rep1"): "rep1",
+        ("drug", "rep1"): "rep1",
+    }
+    assert [r["condition"] for r in rows if r["control"] == "true"] == ["ctrl"]

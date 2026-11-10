@@ -238,8 +238,8 @@ class _FolderStep:
         return pre
 
     def _show_folder_results(self, pre: Preflight) -> None:
-        """Show the labels, messages and pixel sizes of a new check; the design starts over."""
-        self.design = None
+        """Show the labels, messages and pixel sizes of a new check; the pairing starts over."""
+        self.pairing = None
         self.dataset = pre.dataset
         ui.set_visible(self.design_card, False)
         self._hide_description()
@@ -328,13 +328,7 @@ class _FolderStep:
         self.folder_next.value = ""
         if self.preflight is None or not self.preflight.ok:
             return
-        if self.labels_confirmed.value and self._design_pending():
-            self.folder_next.value = ui.next_steps(
-                "Confirm the biological repeats in Step 1.",
-                "Under Experiment design, pair the repeats if needed and answer each yellow "
-                "question with Yes, they are comparable.",
-            )
-        elif self.labels_confirmed.value:
+        if self.labels_confirmed.value:
             self.folder_next.value = ui.next_steps(
                 "Go to Step 2 and review the axis roles.",
                 "Run its cell, check the preview, then click Confirm axis roles.",
@@ -361,7 +355,7 @@ class _FolderStep:
         self.folder_tiles.value = ""
         self.folder_next.value = ""
         self.labels_confirmed.set(False, notify=False)
-        self.design = None
+        self.pairing = None
         ui.set_visible(self.design_card, False)
         self._hide_description()
         ui.set_visible(self.labels_card, False)
@@ -379,9 +373,9 @@ class _FolderStep:
         self._update_output_hint()
         # The inputs start from the earlier run in the new output folder (audit I4).
         self._prefill_from_output()
-        # A design belongs to its output folder (issue #98): another folder's design is
+        # The answers belong to their output folder (issue #98): another folder's draft is
         # read, or the questions asked again; nothing is carried over or written here.
-        if self.design is not None and self._design_folder() != self._design_output:
+        if self.pairing is not None and self._design_folder() != self._design_output:
             self._open_design(output_changed=True)
         # "What will happen" and the free disk space depend on the output folder.
         if hasattr(self, "readiness"):

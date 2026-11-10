@@ -7,7 +7,7 @@ and :class:`.run_inputs.RunInputs` check it. Sources keep the fingerprint rule (
 §1).
 
 An OME-Zarr copy is hashed as the SHA-256 of its files' relative paths and SHA-256s, in
-path order. Its ``labels`` group is left out, as :func:`.inventory.source_fingerprint`
+path order. Its ``labels`` group is left out, as :func:`.inventory.source_signature`
 leaves it out: label images are masks, recorded and checked one by one by the run, and
 a brick may add a label image to an OME-Zarr image without changing the image. A folder
 holding a link to a folder is not hashed (:class:`OSError`): the files behind the link

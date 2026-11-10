@@ -10,7 +10,7 @@ from draft_file_support import (
 )
 from morphobricks_preprocessing import discover_experiment
 from morphobricks_preprocessing.description import Channel, Condition
-from morphobricks_preprocessing.design import DesignRow, ExperimentDesign, write_experiment_design
+from morphobricks_preprocessing.design import DesignRow, DesignTable, write_experiment_design
 from morphobricks_preprocessing.draft import DraftError, draft_from_discovery, migrate_legacy_design
 from morphobricks_preprocessing.draft_answers import (
     ConditionAnswer,
@@ -162,7 +162,7 @@ def test_a_legacy_confirmation_is_carried_not_asked_again(tmp_path):
         for r in ("rep1", "rep2")
     ]
     csv = tmp_path / "legacy.csv"
-    write_experiment_design(ExperimentDesign(tuple(rows)), csv)
+    write_experiment_design(DesignTable(tuple(rows)), csv)
     draft = migrate_legacy_design(csv.read_bytes(), discover_experiment(tmp_path / "exp"))
     answers = complete()
     only_ids = DraftAnswers(

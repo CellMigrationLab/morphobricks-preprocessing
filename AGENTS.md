@@ -87,9 +87,10 @@ src/morphobricks_preprocessing/
                     is wrong with a malformed one (PhysicalSizes.invalid, issue #94)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
-  design.py         experiment design (P3): ExperimentDesign/DesignRow, default pairing, reconcile with
-                    the folders on reruns, design_issues, read/write experiment_design.csv, load_design;
-                    read_confirmed_design/ConfirmedDesign (the strict reader other bricks use, §16)
+  design.py         the rows of experiment_design.csv (an output only since v0.5.1): DesignTable/
+                    DesignRow (read-only), the run's reconcile_design and design_issues against
+                    the folders, write_experiment_design, parse_design_bytes (the strict parser
+                    of the draft's legacy migration); no reader for other bricks (SWEEP-PP)
   design_derive.py  derive_design/write_derived_design: experiment_design.csv from a published
                     description (Spec experiment-v1 11), written by design.write_experiment_design
   design_values.py  the design file's header check (no column twice or unnamed, #83), booleans,
@@ -139,7 +140,7 @@ src/morphobricks_preprocessing/
   axes.py           AxisMapping (role per dimension), prefill, check_mapping, review_axes (one mapping
                     applied to every file, missing axes as singletons only when confirmed)
   axis_review.py    review_axes and check_mapping (moved from axes.py in PP-4)
-  inventory.py      source_signature/source_fingerprint: a file's size and mtime, an OME-Zarr
+  inventory.py      source_signature: a file's size and mtime, an OME-Zarr
                     folder's total size, newest mtime and inventory digest (issue #86; PP-12);
                     store_files (the files an OME-Zarr fingerprint covers)
   source_content.py verify_content: a source's content SHA-256 (TIFF bytes; OME-Zarr per-file
@@ -549,8 +550,8 @@ functions the tests use.
   `GroupSummary` per group and channel (`channel`, `xyc_plane_count`,
   `channel_histogram_count`), a `channel` column in the table and one plot panel per
   channel. Pooling every channel together (as with version 2) only with
-  `group_summaries(..., pool_channels=True)`, labelled `all channels (pooled)`;
-  `GroupSummary.plane_count` is a deprecated alias of `channel_histogram_count`.
+  `group_summaries(..., pool_channels=True)`, labelled `all channels (pooled)`. (The
+  deprecated alias `GroupSummary.plane_count` was removed in v0.5.1, SWEEP-PP.)
 - **`position_id`** is filled in every row (D02, plan §12 question 20). Earlier tables with
   it blank are filled on the next run without reading pixels.
 - **Reading:** labels are always read back as text (`NA`, `001`, `TRUE` stay as typed).
@@ -657,15 +658,15 @@ functions the tests use.
 - **Confirmation** per group (`design_not_confirmed` until then); all-`single` experiments
   get one whole-experiment question. Controls are recorded only.
 - **`experiment_design.csv`** (schema 1): one row per condition x biological-repeat folder,
-  sorted; counts at confirmation; `confirmed_on` ISO date. Lenient reader (any-case
-  booleans, BOM); `DesignFormatError` otherwise, also for a header naming a column twice
-  or not at all (#83, both readers), a repeat group that is not a
-  D-e identity or a `confirmed_on` that is not `YYYY-MM-DD` (naming line and column).
-  Other bricks read it with the strict `read_confirmed_design` (contract §16,
-  question 40): nothing filled in, every group confirmed, SHA-256 of the bytes parsed;
-  `RunInputs.design()` uses it too (#83).
-- **Reruns:** `reconcile_design` keeps answers for known folders, reopens only groups that
-  gain a folder, drops removed folders.
+  sorted; counts at confirmation; `confirmed_on` ISO date. Written by the run only. No brick
+  reads it back (v0.5.1, SWEEP-PP; Spec ADR 0002 AR11 (3)): the lenient reader,
+  `load_design`, the strict `read_confirmed_design`/`ConfirmedDesign`/`DesignCheckError` and
+  `RunInputs.design()` are removed; bricks take `repeat_group` from the description
+  (`Fov.repeat_group`). `parse_design_bytes` (strict, `DesignFormatError` naming line and
+  column, also for a header naming a column twice or not at all, #83) remains for the draft's
+  experiment-v1 §7 migration of a legacy file.
+- **The run's check:** `reconcile_design` keeps the derived rows of known folders, reopens only
+  groups that gain a folder (`design_not_confirmed`), drops removed folders.
 - **v0.5.1: an output only.** Every run is described (`A_DESCRIPTION_REQUIRED` without a
   published `morphobricks.toml`, contract §0); the run derives `experiment_design.csv` from the
   description and writes it with the table (`experiment_design_sha256` in the manifest). The

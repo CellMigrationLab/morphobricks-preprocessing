@@ -10,7 +10,6 @@ from morphobricks_normalization.dtypes import MAX_BIN_COUNT, MIN_FLOAT_BIN_COUNT
 from . import notebook_style as ui
 from .axes import AxisMapping
 from .dataset import BalanceTable
-from .design import ExperimentDesign
 from .discovery import LeafFolder
 from .notebook_options import _SKIPPED_CODES
 from .notebook_values import plane_counts, value_range
@@ -210,43 +209,6 @@ def _labels_explanation(show_design: bool) -> str:
         "folder</b> again."
     )
     return (text + " Step 3 can only run once the labels are confirmed.") if show_design else text
-
-
-def _group_question(design: ExperimentDesign, group: str) -> str:
-    """Return the question asked for a repeat group, or for the whole experiment."""
-    if design.single_repeat:
-        return (
-            "All images of every condition come from one biological repeat: were they "
-            "prepared and acquired under the same circumstances?"
-        )
-    return (
-        f"Repeat group {group}: were these images prepared and acquired under the same "
-        "circumstances, so they are comparable with each other?"
-    )
-
-
-def _group_explanation(design: ExperimentDesign, group: str) -> str:
-    """Describe the folders of a repeat group and anything unusual about it (HTML)."""
-    items = [
-        f"<b>{html.escape(row.condition)}</b>: {html.escape(row.biological_repeat)} "
-        f"({plural(row.image_count, 'image')})"
-        for row in design.members(group)
-    ]
-    text = "Folders: " + "; ".join(items) + "."
-    missing = design.missing_conditions(group)
-    if missing and not design.single_repeat:
-        text += (
-            "<br><span style='color:#92400E'>Not found in "
-            + ", ".join(html.escape(c) for c in missing)
-            + ": it is still used, with the conditions that have it.</span>"
-        )
-    if group in design.conflicts:
-        text += (
-            "<br><span style='color:#991B1B'>This group holds more than one folder of "
-            + ", ".join(html.escape(c) for c in design.conflicts[group])
-            + ". Move one of them into another group above before confirming.</span>"
-        )
-    return text + " If they are not comparable, process them as separate experiments."
 
 
 def _folder_tiles(pre: Preflight, issues: Sequence[ValidationIssue]) -> list[tuple[str, str, str]]:
