@@ -10,7 +10,7 @@ from .axis_review import review_axes
 from .image_type import review_image_type
 from .notebook_options import IMAGE_TYPE_NAMES
 from .notebook_plots import plane_png
-from .notebook_render import preview_caption
+from .notebook_render import blocked_line, preview_caption
 from .planes import Plane, PlaneReadError, read_plane
 from .preview import PreviewRefused, check_unchanged, checked_fingerprint
 from .validation import plural
@@ -101,6 +101,13 @@ class _AxisPreview:
         if not shown and not locked and self.preview_checked.value:
             self.preview_checked.set(False)  # a tick says nothing about a preview not shown
         self.preview_checked.disabled = locked or not shown
+        self.preview_blocker.value = (
+            ""
+            if locked or shown
+            else blocked_line(["no preview of these roles is drawn: click Show preview"])
+        )
+        if not locked:
+            self._update_confirm_button()
 
     def _draw_preview(self) -> None:
         """Draw the chosen plane with the roles shown, labelled confirmed or not (PP-10)."""

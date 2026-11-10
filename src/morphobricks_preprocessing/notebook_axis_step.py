@@ -14,7 +14,7 @@ from .description_layouts import declared_layouts, is_heterogeneous, layout_kind
 from .image_type import FLUORESCENCE
 from .notebook_axes import axis_check_html, header_marks
 from .notebook_options import IMAGE_TYPE_OPTIONS, ROLE_OPTIONS
-from .notebook_render import issues_html, plane_summary_html, role_effect
+from .notebook_render import blocked_line, issues_html, plane_summary_html, role_effect
 from .run import Preflight
 from .validation import plural
 
@@ -40,6 +40,7 @@ class _AxisStep:
             tooltip="Use these roles for every image of the experiment",
             main=True,
         )
+        self.confirm_blocker = widgets.HTML()
         self.confirmed_status = widgets.HTML()
         self.axis_next = widgets.HTML()
         self.missing_as_singleton.observe(lambda _: self._mapping_changed())
@@ -102,6 +103,7 @@ class _AxisStep:
             "Undo: the preview does not look right",
         )
         self.preview_checked.disabled = True
+        self.preview_blocker = widgets.HTML()
         self.preview_card = ui.card(
             "Preview",
             [
@@ -115,6 +117,7 @@ class _AxisStep:
                 widgets.HBox([self.preview_image]),
                 self.preview_caption,
                 self.preview_checked.widget,
+                self.preview_blocker,
             ],
         )
 
@@ -184,6 +187,7 @@ class _AxisStep:
             self.convert_card,
             self.preview_card,
             self.confirm_button,
+            self.confirm_blocker,
             self.confirmed_status,
             self.image_type_card,
             self.axis_next,
@@ -322,6 +326,8 @@ class _AxisStep:
         except ValueError as exc:
             self.axis_status.value = ui.status("error", str(exc))
             self.preview_checked.disabled = True  # the preview shown is not of these roles
+            self._review_ok, self._review_errors = False, ()
+            self._update_confirm_button()
             return
         ranges = axis_length_ranges(self.mapping, self.preflight.metadata.files)
         marks = header_marks(self.mapping, self.preflight.metadata.files)
@@ -354,6 +360,9 @@ class _AxisStep:
                 "Click Show preview and inspect a few planes before confirming.",
             )
         self._review_ok = review.ok
+        self._review_errors = tuple(
+            dict.fromkeys(i.code.replace("_", " ") for i in review.issues if i.is_error)
+        )
         self._refresh_convert_card(review)
         if self._preview_shown:
             self._configure_sliders(reset=False)
@@ -361,13 +370,29 @@ class _AxisStep:
         self._update_confirm_button()
 
     def _update_confirm_button(self) -> None:
+        """Enable *Confirm axis roles* when nothing blocks it; say beside it what does."""
         if self.confirmed_mapping is not None:
             self.confirm_button.disabled = False
+            self.confirm_blocker.value = ""
             return
-        ready = getattr(self, "_review_ok", False) and self.preview_checked.value
-        self.confirm_button.disabled = not ready
+        blockers = self._confirm_blockers()
+        self.confirm_button.disabled = bool(blockers)
+        self.confirm_blocker.value = blocked_line(blockers)
         self.confirm_button.tooltip = (
-            "Use these roles for every image of the experiment"
-            if ready
-            else "Fix the axis messages and check the preview first"
+            "Fix the axis messages and check the preview first"
+            if blockers
+            else "Use these roles for every image of the experiment"
         )
+
+    def _confirm_blockers(self) -> list[str]:
+        """Return what stops *Confirm axis roles* now, the first thing to do first."""
+        blockers = []
+        if not getattr(self, "_review_ok", False):
+            codes = getattr(self, "_review_errors", ())
+            named = f" ({', '.join(codes)})" if codes else ""
+            blockers.append(f"these roles have an error{named}: see the red message above")
+        if not self._preview_of(self.mapping):
+            blockers.append("no preview of these roles is drawn: click Show preview")
+        elif not self.preview_checked.value:
+            blockers.append("the preview is not ticked: click Yes, the preview looks right")
+        return blockers

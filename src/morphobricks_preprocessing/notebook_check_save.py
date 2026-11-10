@@ -60,6 +60,7 @@ from .notebook_check_view import (
     todo_html,
 )
 from .notebook_description import _with_ids
+from .notebook_render import blocked_line
 from .notebook_row_fold import RowFold, row_status
 from .notebook_thumb_tile import ThumbTile, show_detail
 from .preview_crop import TilePictures
@@ -121,6 +122,7 @@ class _CheckSaveScreen:
         self.save_note = widgets.HTML(layout=widgets.Layout(margin="0 0 0 12px"))
         ui.set_visible(self.save_note, False)
         self.save_row = widgets.HBox([self.save_button, self.save_note])
+        self.save_blocker = widgets.HTML()
         self.save_status = widgets.HTML()
         self.check_card = ui.card(
             "Your experiment, in words",
@@ -134,6 +136,7 @@ class _CheckSaveScreen:
                 self.todo,
                 self.checks,
                 self.save_row,
+                self.save_blocker,
                 self.save_status,
             ],
             visible=False,
@@ -233,7 +236,17 @@ class _CheckSaveScreen:
         self.save_button.disabled = not ready or self._saved_current()
         self.save_note.value = "" if self.save_button.disabled else run_stop_html(self._check)
         ui.set_visible(self.save_note, bool(self.save_note.value))
+        self.save_blocker.value = blocked_line(self._save_blockers(todo))
         self._show_saved_state()
+
+    def _save_blockers(self, todo: tuple[list, list[str]]) -> list[str]:
+        """Return what stops the save button now (shown beside it), or nothing when saved."""
+        if not self.save_button.disabled or self._saved_current():
+            return []  # saved already (the green line says so): nothing is blocked
+        missing = len(todo[0]) + len(todo[1])
+        if missing:
+            return [f"{plural(missing, 'answer')} still missing (listed above the button)"]
+        return ["these answers are refused: see the red message above the button"]
 
     def _blocked(self, state: object) -> str:
         """Say what already stops the run while the candidate cannot be checked (answers missing).

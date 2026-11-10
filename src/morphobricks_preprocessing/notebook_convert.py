@@ -39,7 +39,7 @@ from .conversion_plan import ConversionPreview, preview_conversion
 from .conversion_record import RECORD_FILENAME
 from .notebook_options import _WIDE
 from .notebook_output import _LockCard
-from .notebook_render import issues_html
+from .notebook_render import blocked_line, issues_html
 from .planes import format_bytes
 from .run.output_guard import recorded_masks_of
 from .validation import plural
@@ -78,6 +78,8 @@ class _ConvertCard:
             "Undo: the roles are not right",
         )
         self.convert_plan = widgets.HTML()
+        self.convert_tick_blocker = widgets.HTML()
+        self.convert_blocker = widgets.HTML()
         self.convert_button = ui.button(
             _LABEL,
             style="success",
@@ -140,8 +142,10 @@ class _ConvertCard:
             ),
             self.convert_roles,
             self.convert_roles_checked.widget,
+            self.convert_tick_blocker,
             self.convert_plan,
             self.convert_button,
+            self.convert_blocker,
             self.convert_progress,
             self.convert_status,
             self.convert_lock.card,
@@ -170,6 +174,11 @@ class _ConvertCard:
         roles = self._copy_roles()
         confirmed = self.confirmed_mapping is not None
         self.convert_roles_checked.disabled = not self.preview_checked.value
+        self.convert_tick_blocker.value = blocked_line(
+            []
+            if confirmed or self.preview_checked.value
+            else ["the preview is not ticked: click Yes, the preview looks right first"]
+        )
         ui.set_visible(
             self.convert_roles_checked.widget, not confirmed and self.mapping is not None
         )
@@ -229,11 +238,22 @@ class _ConvertCard:
             return masks.folder
         return recorded_masks_of(self._output_path(self.preflight.discovery.root))
 
+    def _convert_blocker(self, preview: ConversionPreview | None) -> str:
+        """Return what stops *Make named-axis copies* (the plan above gives the details)."""
+        if preview is None:
+            if self._copy_roles() is None:
+                return "the roles of the copies are not confirmed"
+            return "no folder for the copies is given"
+        if not preview.ok:
+            return "the plan above has an error to fix first"
+        return "the folder for the copies has too little free space (see the plan above)"
+
     def _update_convert_button(self) -> None:
         """Enable the button once the plan shows nothing that stops the conversion."""
         preview = self._convert_preview
         ready = preview is not None and preview.ok and (preview.fits or preview.earlier_conversion)
         self.convert_button.disabled = not ready
+        self.convert_blocker.value = blocked_line([] if ready else [self._convert_blocker(preview)])
         self.convert_button.tooltip = (
             "Write the copies into the folder above (the originals are only read)"
             if ready
