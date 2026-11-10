@@ -11,7 +11,6 @@ touched). A log is refused:
 - as, or inside, a file or folder the run writes or keeps in its output folder
   (:data:`PROTECTED_OUTPUTS`, the lock and the staging folders). Any other name in the
   output folder is fine;
-- as the design file given with ``--design`` (an input of the run);
 - when it is a folder, or its folder does not exist.
 
 Paths are compared resolved, so a link to a protected file is refused as the file, and by

@@ -228,6 +228,18 @@ def describe_tree(
     return path
 
 
+def publish_any(output):
+    """Publish a valid description (``clean_description(1)``) in ``output``; return ``output``.
+
+    For the tests of what is refused after the description check (a missing recorded run).
+    """
+    from morphobricks_preprocessing.testing import clean_description
+
+    Path(output).mkdir(parents=True, exist_ok=True)
+    (Path(output) / DESCRIPTION_FILENAME).write_bytes(canonical_bytes(clean_description(1)))
+    return Path(output)
+
+
 def run_described(experiment_root=None, mapping=None, **kwargs):
     """Publish the tree's description (:func:`describe_tree`), then call ``run_experiment``.
 
@@ -256,7 +268,7 @@ def run_described(experiment_root=None, mapping=None, **kwargs):
     return run_experiment(experiment_root, mapping, **kwargs)
 
 
-__all__ = ["describe_tree", "run_described", "tree_description"]
+__all__ = ["describe_tree", "publish_any", "run_described", "tree_description"]
 
 
 def _option(argv, name):

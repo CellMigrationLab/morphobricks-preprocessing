@@ -160,3 +160,39 @@ def test_a_malformed_manifest_entry_is_refused_on_read(tmp_path):
     (out / "run_manifest.json").write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ManifestFormatError, match="SHA-256"):
         read_manifest(out / "run_manifest.json")
+
+
+def test_without_a_description_no_image_or_recorded_run_is_read(tmp_path, monkeypatch):
+    # Review of PP-C: an output folder inside the experiment or the masks was checked first,
+    # by reading every image header (the preflight) and the recorded run.
+    from morphobricks_preprocessing.run import pipeline
+
+    def no_read(*args, **kwargs):
+        raise AssertionError("read before the description was checked")
+
+    monkeypatch.setattr(pipeline, "preflight", no_read)
+    monkeypatch.setattr(pipeline, "output_masks_issues", no_read)
+    monkeypatch.setattr(pipeline, "recorded_experiment_root", no_read)
+    root, out = _folder(tmp_path)
+    inside = run_experiment(root, MAPPING, output_folder=root / "results")
+    codes = [issue.code for issue in inside.issues]
+    assert codes == ["A_DESCRIPTION_REQUIRED", "output_inside_experiment"] and not inside.written
+    masks = tmp_path / "masks"
+    masks.mkdir()
+    in_masks = run_experiment(root, MAPPING, output_folder=masks / "out", masks_folder=masks)
+    assert [i.code for i in in_masks.issues] == ["A_DESCRIPTION_REQUIRED", "output_inside_masks"]
+    (out / "run_manifest.json").write_text("not json", encoding="utf-8")  # never read
+    recorded = run_experiment(None, output_folder=out)
+    assert [i.code for i in recorded.issues] == ["A_DESCRIPTION_REQUIRED"]
+    assert not (root / "results").exists() and not (masks / "out").exists()
+    assert [p.name for p in out.iterdir()] == ["run_manifest.json"]
+
+
+def test_the_mask_step_refuses_before_the_recorded_run_is_read(tmp_path):
+    from morphobricks_preprocessing.run.mask_step import prepare_mask_step
+
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "run_manifest.json").write_text("not json", encoding="utf-8")
+    step = prepare_mask_step(None, out)
+    assert step.refusal.code == "A_DESCRIPTION_REQUIRED" and not step.ready

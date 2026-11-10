@@ -271,7 +271,7 @@ def test_inner_whitespace_of_channel_names_still_differs(tmp_path):
     root = tmp_path / "exp"
     write_named(root, [["DAPI", "GFP"], ["DA PI", "GFP"]])
     found = issue(preflight(root).issues, "channel_names_differ")  # the folder check
-    assert "channel 0: DA PI (1 image), DAPI (1 image)" in found.message
+    assert found.is_error and "channel 0: DA PI (1 image), DAPI (1 image)" in found.message
     result = run_described(root, prefill_mapping("CYX"), output_folder=tmp_path / "out")
     assert not result.written and "R_UNIT_NOT_HOMOGENEOUS" in codes(result.issues)
 
@@ -288,7 +288,7 @@ def test_differing_channel_names_stop_the_run(tmp_path):
             metadata={"axes": "CYX", "Channel": {"Name": names}},
         )
     found = issue(preflight(root).issues, "channel_names_differ")  # the folder check
-    assert "channel 0: Actin (1 image), DAPI (1 image)" in found.message
+    assert found.is_error and "channel 0: Actin (1 image), DAPI (1 image)" in found.message
     result = run_described(root, prefill_mapping("CYX"), output_folder=tmp_path / "out")
     assert not result.written and "R_UNIT_NOT_HOMOGENEOUS" in codes(result.issues)
     assert not (tmp_path / "out" / "plane_histograms.csv").exists()

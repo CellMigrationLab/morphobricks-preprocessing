@@ -125,7 +125,10 @@ def test_the_run_writes_nothing_into_the_masks_folder(tmp_path):
     # I1: the output folder, its lock and the report were made before output_inside_masks.
     root, masks = masks_next_to(tmp_path)
     result = run_described(root, YX, masks_folder=masks, output_folder=masks / "out")
-    assert not result.written and errors(result.issues) == ["output_inside_masks"]
+    assert not result.written and errors(result.issues) == [
+        "A_DESCRIPTION_REQUIRED",
+        "output_inside_masks",
+    ]
     assert not (masks / "out").exists()
 
 
@@ -195,7 +198,10 @@ def test_the_masks_folder_spelled_in_another_case_is_the_same_folder(tmp_path):
     if not other.is_dir():
         pytest.skip("this file system tells names apart by case")
     result = run_described(root, YX, masks_folder=masks, output_folder=other / "out")
-    assert not result.written and errors(result.issues) == ["output_inside_masks"]
+    assert not result.written and errors(result.issues) == [
+        "A_DESCRIPTION_REQUIRED",
+        "output_inside_masks",
+    ]
     assert not (masks / "out").exists()
     result = convert_experiment(root, YX, other / "copies", masks_folder=masks)
     assert errors(result.issues) == ["copy_folder_overlaps_masks"]

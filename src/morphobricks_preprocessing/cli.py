@@ -122,6 +122,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ValueError as exc:
             print(exc)
             return 1
+    if args.command in ("check", "run", "masks") and (args.output or args.experiment):
+        # Every run is described: refused before anything is read (the recorded experiment)
+        # or written (the log, the stale lock's removal).
+        refusal = description_refusal(args)
+        if refusal is not None:
+            print(format_issues([refusal]))
+            return 1
     if args.command in ("run", "masks") and not use_recorded_experiment(args):
         return 1
     # The log is opened only now, once the arguments are checked, and never inside the

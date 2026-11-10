@@ -55,7 +55,7 @@ from ..mask_binding import (
 from ..mask_record import mask_manifest
 from ..mask_scan import MASK_REPORT_FILENAME
 from ..planes import DEFAULT_MEMORY_LIMIT
-from ..required_description import description_required_issue, is_published
+from ..required_description import is_published, undescribed_issues
 from ..source_content import content_changed
 from ..validation import ValidationIssue, has_errors, warning
 from .description_run import (
@@ -183,15 +183,20 @@ def run_experiment(  # noqa: PLR0913
     _check_arguments(mode, image_type, missing_as_singleton)
     chosen = run_mode(mode)
     mode = chosen.name
+    if output_folder is not None and not is_published(output_folder):
+        # Before the recorded run or any image is read: only where the folders are is said.
+        issues = undescribed_issues(experiment_root, Path(output_folder).resolve(), masks_folder)
+        return RunResult(Path(output_folder).resolve(), False, _sorted(issues), mode=mode)
     output, root = _folders(experiment_root, output_folder)
+    if not is_published(output):  # the default output folder next to the experiment
+        issues = undescribed_issues(root, output, masks_folder)
+        return RunResult(output, False, _sorted(issues), mode=mode)
     inside_masks = output_masks_issues(output, masks_folder)
     if check_output_folder(root, output) or inside_masks:
         # Nothing is written inside the experiment or the masks: not the lock, not the report.
         pre = preflight(root, output, exclude=exclude or ())
         issues = _sorted([*pre.issues, *inside_masks])
         return RunResult(output, False, issues, excluded=pre.excluded)
-    if not is_published(output):
-        return RunResult(output, False, (description_required_issue(output),), mode=mode)
     given = GivenInputs(
         experiment_root=root,
         mapping=mapping,

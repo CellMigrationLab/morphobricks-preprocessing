@@ -370,8 +370,8 @@ def _missing_issues(balance: BalanceTable) -> list[ValidationIssue]:
             ],
             "No action needed if a repeat was not acquired for every condition. If the "
             "same repeat has a different folder name in another condition, pair the "
-            "folders in the experiment design (Replicates in the notebook, or the "
-            "repeat_group column of experiment_design.csv).",
+            "folders on the notebook's Replicates page and save the experiment description "
+            "again (Check and save).",
         )
     ]
 

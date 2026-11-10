@@ -225,7 +225,7 @@ class _DesignCard:
         self._refresh_design_status()
 
     def _edit_design(self, edit: DesignEdit) -> bool:
-        """Apply an answer with the ``design`` command's rules; False when it is refused.
+        """Apply an answer with the design's own rules; False when it is refused.
 
         :func:`.design_edit.apply_design_edit` confirms a repeat group only when its rows
         pass the run's validator; a refused answer changes nothing and is shown.
