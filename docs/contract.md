@@ -330,7 +330,7 @@ It gives:
   (v0.4.0, plan §12 question 54). A `z` or `t` outside the image (`Fov.z_count`,
   `Fov.t_count`) is an `IndexError` for both reads (audit I5).
   There is no read by `plane_id`: a row gives its `z` and `t`;
-- `histograms()` (the table as read when opened), `design()` and `image_type()`. `design()`
+- `histograms()` (the table as read when opened) and `design()`. `design()`
   reads `experiment_design.csv` with the strict `read_confirmed_design` (§16) and the
   manifest's `experiment_design_sha256` (issue #83, plan §12 question 62; it used the lenient
   reader before): a design that reader refuses raises `RunInputsError`, with the refusal
@@ -340,10 +340,17 @@ It gives:
   `DescriptionRequiredError`, `A_DESCRIPTION_REQUIRED`, and an older manifest with
   `ManifestFormatError`, "run preprocessing again"). `Fov.repeat_group`, `Fov.condition_id`, `Fov.technical_repeat_id` (the canonical
   IDs, added beside the unchanged `Fov.key`, whose condition, repeat and technical repeat stay
-  the source folder labels: owner decision Q8, experiment-v1 §3.4) and `Fov.channel_ids` (the
+  the source folder labels: owner decision Q8, experiment-v1 §3.4), `Fov.channel_ids` (the
   canonical channel ID of each C index, as the unit declares them; a unit whose channel count
   is not the image's, or folders that name no declared unit, is a `RunInputsError`: nothing is
-  guessed). `channel_index(fov, channel_id)` gives the C index, `ChannelNotFoundError` for a
+  guessed) and `Fov.image_type` (v0.5.1, PP-1: the unit's declared type, `"rgb"` or
+  `"channels"` for a unit that declares none, experiment-v1 §4.4b; from the published
+  description only, never from a header, and never None on a `Fov` of `fovs()`). Each position
+  carries its own unit's type, through `FovIdentity` (`fov_identity`), the one source of
+  `Fov.image_type` and `FovSelection.image_type` alike. There is no run-wide image type:
+  `RunInputs.image_type()` is removed (v0.5.1, PP-1; it returned the manifest's run-level
+  `image_type`, null on every described run, which would hide per-unit types). The manifest's
+  `image_type` (§9, §13) stays a record of the command line's review, not an input of a brick. `channel_index(fov, channel_id)` gives the C index, `ChannelNotFoundError` for a
   channel the image lacks (never a default). `references()` is the condition reference graph
   (condition ID to the ID it references, or `None`); `mask_semantics()` maps mask ID to
   `MaskSemantics(source_type, representation, source_channels)`; `mask_check_status(mask_id,
@@ -365,7 +372,8 @@ It gives:
   one t), the consumer's `Capabilities` (`rgb_support`, `volume_support`, both False by
   default) and the explicit `device` (`cpu` or `cuda`; recorded, never chosen here). It returns
   an immutable, picklable `ResolvedRequest`: one `FovSelection` per position (the unchanged key,
-  `repeat_group`, `condition_id`, `technical_repeat_id`, the unit's declared `image_type`, the C
+  `repeat_group`, `condition_id`, `technical_repeat_id`, the unit's declared `image_type`
+  (`rgb` or `channels`, the position's `Fov.image_type`), the C
   index of every requested channel **in that image** (`channel_indices`, `index_of`), the masks
   as `MaskSelection(mask_id, source_type, representation, role, check_status, conversion)` and
   the `PlaneSelection`s to read), the `refusals`, the `coverage` of every biological repeat per
@@ -380,7 +388,9 @@ It gives:
   (`VolumeNotSupportedError`, the resolver contract's own code: a volume without
   `volume_support`). `ResolvedRequest.require()` returns the selections or raises the first
   refusal's error class with every refusal in its text. The resolver reads the manifest, the
-  published description and `mask_representation.json` only: no pixel, no kernel, no brick,
+  published description and `mask_representation.json` only (both read on every call; the
+  parse of the same bytes is reused, by content, so a file rewritten since is parsed again:
+  PP-1): no pixel, no kernel, no brick,
   CellPatcher or provider import (a test scans its modules), and it writes nothing. It converts
   nothing: a recorded policy comes back as `MaskSelection.conversion` and each route applies it
   with the one shared labeller (CellPatcher's), so both routes give the same objects. The
@@ -402,10 +412,25 @@ runs preprocessing and, with masks, the mask step: a described run, for the bric
 (v0.5.1; before, it was an undescribed run).
 `make_clean_run(folder, description=<bytes, text or Description>)` (also `testing.make_described_run`)
 writes instead the tree a published experiment description declares (`image_count` tiny images per
-member, `rgb` units as RGB colour, one mask per image for each declared mask ID in `mask_types`),
+member, `rgb` units as RGB colour, one mask per image for each declared mask ID in `mask_types`;
+`make_described_run(..., masks=IDS, mask_images=PATHS)` writes the masks for the named images only,
+a declared subset as `testing.described_images(description)` lists them, for a run with partial
+masks such as Spec `v09` on 2 of 6: v0.5.1, PP-1; nothing is chosen at random, and a path outside
+the tree, an empty subset or a subset without masks is a `ValueError` before anything is written),
 publishes the bytes as `morphobricks.toml`, runs preprocessing and the mask step, and returns
 the same `CleanRun` with `description` set; `axes`, `shape`, `pixel_size`, `design` and `seed` then
-raise `ValueError`. Tested for the Spec fixtures `v03 v08 v13 v28 v30 v33 v34`.
+raise `ValueError`. Tested for the Spec fixtures `v03 v08 v09 v13 v28 v30 v33 v34`.
+
+**The pinned surface (v0.5.1, PP-1).** `tests/test_brick_api_surface.py` pins, by name and type,
+what the consuming bricks use: `RunInputs`'s public methods and their signatures (`open`, `fovs`,
+`files`, `projection`, `pixel_sizes`, `read_plane`, `read_image`, `mask_types`, `read_mask`,
+`histograms`, `design`, `description`, `section_digests`, `images_without_header_channel_names`,
+`channel_index`, `references`, `mask_semantics`, `mask_check_status`, `require_checked`,
+`resolve_request`), the fields and types of `Fov`, `RunInputs`, the resolver's records (`Request`,
+`MaskRequest`, `Capabilities`, `ResolvedRequest`, `FovSelection`, `MaskSelection`,
+`PlaneSelection`, `Provenance`, `Refusal`, `RepeatCoverage`) and `CleanRun`, `RESOLVER_VERSION`,
+and the signatures of `make_described_run`, `make_clean_run` and `described_images`. A change to
+any of them changes that test, this section and the CHANGELOG together.
 
 ### 9.2 Modes, recorded inputs, lock and report (v0.4.0, design v0.4 §1, §4)
 
@@ -710,7 +735,7 @@ instead of keeping copies.
 | Masks named as images (D-i) | `mask_name_issues(leaves, mask_names=())`, `images_named_as_masks(leaves, suffixes=MASK_NAME_SUFFIXES)`, `mask_folder_part(path)`, `MASK_NAME_SUFFIXES`, `MASK_FOLDER_WORDS` (`discovery`) | The screen MorphoRelate's `init` ran (`project_image_names`), now discovery's warnings `image_named_as_mask` and `mask_folder_in_experiment` (§1) for every brick. Names are compared in lower case across the whole experiment; the longest `position_id` owns a file, an image of the same folder first. `mask_names` adds the caller's expected mask names (`cells` for `f1_cells.tif`) to `MASK_NAME_SUFFIXES`; `discover_experiment` gives none. A folder counts as a masks folder when a word of its name (`CellLabels` is `Cell` and `Labels`) is in `MASK_FOLDER_WORDS`. `images_named_as_masks` returns the `(image, owner)` pairs of that detection for the caller's own name endings (`["_cells"]`), for a brick that acts on the files itself (MorphoRelate leaves out the images named with a declared mask name). |
 | Pixel sizes (D-a) | `same_pixel_size(a, b, roles=("X", "Y"))`, `pixel_size_groups(sizes, roles=)`, `PIXEL_SIZE_TOLERANCE` (`physical_sizes`) | Two pixel sizes are the same when `|a - b| <= 1e-3 * max(a, b)` on every compared axis, in micrometres; one rule for a declared size against a header and for two headers. `same_pixel_size` takes `PhysicalSizes` (converted with `micrometers`) or sizes already in micrometres, one per role, and returns None when either is unknown (no size, or a unit that cannot be converted), never True. The rule is not transitive (1.0 ≈ 1.0009 ≈ 1.0018, but 1.0 ≠ 1.0018), so there is no per-image grouping key: `pixel_size_groups` links images by single linkage, so images of two groups always differ while the extremes of one group may drift; unknown sizes are left out; the largest group first. A size that cannot be converted to a positive finite length in micrometres (`1e308 m`) is unknown, never infinite, and an infinite or NaN value is never the same as any other (issue #93; before, `inf` matched every size). The folder check's `different_pixel_sizes` uses both (§11). |
 | Experiment design | `read_confirmed_design(path, expected_sha256=)`, `ConfirmedDesign`, `DesignCheckError` (`design`) | The one reader of `experiment_design.csv` (§12) for a brick that pools biological repeats (formerly CellPatcher `load_experiment_design` and MorphoFeature `ExperimentDesign.read`). It takes the file as this brick writes it and fills nothing in: UTF-8 without a byte-order mark; the header exactly the §12 columns in order (a column named twice or without a name is refused naming it, as by the lenient reader, §12); one value per column in every row (an unclosed quote, a missing or extra value, or a blank line is refused); no value with outer whitespace; `control` and `confirmed` exactly `true` or `false`; counts written as whole numbers of at least 0; `schema_version` 1; `confirmed_on` empty or `YYYY-MM-DD`; `condition`, `biological_repeat` and `repeat_group` pass `check_identity_text` and do not differ only in case (`check_identity_case`); no folder twice, one `control` per condition, at least one row; every group confirmed with one folder per condition (`design_issues`); with `expected_sha256` (the manifest's `experiment_design_sha256`) the file must be that one. The SHA-256 is of the bytes parsed. `ConfirmedDesign` gives `path`, `sha256`, the `design`, read-only `repeat_groups` (`{(condition, biological_repeat): repeat_group}`, the normalization brick's input), `group_members()` (`{repeat_group: {condition: biological_repeat}}`), `conditions`, `controls` and `groups`. Refusals raise `DesignCheckError` (a `ValueError`) with its `issues`: `missing_experiment_design`, `unreadable_experiment_design`, `invalid_experiment_design`, `repeat_group_conflict`, `design_not_confirmed` or `changed_experiment_design`, each an error naming the file (or the group's folders). This brick's step 1 and `check` read the file being edited with the lenient `load_design(output_folder, repeats)` (§12), which returns `(design, changes)`: the saved design brought up to date with the folders, or the default design when there is no file. A saved file that cannot be read raises `DesignCheckError` with the one error `unreadable_experiment_design`, whose message is the same "The experiment design cannot be read: …" as here followed by the lenient reader's refusal, naming the line and column where it can (the `DesignFormatError` is its `__cause__`); no default design is returned and the file is not touched (owner decision of 31 October 2026, plan §12 question 43). **Breaking in v0.4.0:** up to v0.3.4 `load_design` returned a third value, `problem`, the reason as text, together with the default design. |
-| Analysis refusals (Stage 2) | `ChannelNotFoundError` (`A_SCOPE_INCOMPLETE`), `MaskNotInstancesError` (`A_MASK_NOT_INSTANCES`), `RgbNotSupportedError` (`A_RGB_NOT_SUPPORTED`), `DraftRefusedError` (`A_DRAFT_REFUSED`), `MaskUncheckedError` (`A_MASK_UNCHECKED`), `RunInputsError.code` (`run_inputs_error`, exported at the package top level) | The Spec's analysis-layer codes (experiment-v1 §8) as one class each, all `RunInputsError` subclasses (a `ValueError`) with the code as the class attribute `code` (`None` on `RunInputsError` itself), so a brick matches the class or the code and keeps no copy. Preprocessing raises `A_DRAFT_REFUSED`, `A_MASK_UNCHECKED` and `A_SCOPE_INCOMPLETE` itself (§9.1); `A_MASK_NOT_INSTANCES` (a mask that is not `instances` used as an object set) and `A_RGB_NOT_SUPPORTED` (`rgb` units given to a brick that does not declare RGB support) are found by `resolve_request` (§9.1) against the consumer's declared capability, and a brick raises them through `ResolvedRequest.require()` (or reports its `refusals`). A brick writes the code in its message text, as preprocessing does. The classes pickle, so a worker process can raise them. `RunInputs.section_digests()` (§9.1) gives the description's section digests for cache keys. `RunInputs.resolve_request()` (§9.1) is the one interpreter of a described run for every route: a brick builds a `Request` and reads through the `FovSelection`s it returns, so channel-by-ID, scope, mask-representation and RGB rules have one implementation; `VolumeNotSupportedError` (`A_VOLUME_NOT_SUPPORTED`) and `DescriptionRequiredError` (`A_DESCRIPTION_REQUIRED`, raised by `RunInputs.open`) are the resolver contract's own codes (MorphoBricks-Spec ADR 0002), not experiment-v1 §8's. |
+| Analysis refusals (Stage 2) | `ChannelNotFoundError` (`A_SCOPE_INCOMPLETE`), `MaskNotInstancesError` (`A_MASK_NOT_INSTANCES`), `RgbNotSupportedError` (`A_RGB_NOT_SUPPORTED`), `DraftRefusedError` (`A_DRAFT_REFUSED`), `MaskUncheckedError` (`A_MASK_UNCHECKED`), `RunInputsError.code` (`run_inputs_error`, exported at the package top level) | The Spec's analysis-layer codes (experiment-v1 §8) as one class each, all `RunInputsError` subclasses (a `ValueError`) with the code as the class attribute `code` (`None` on `RunInputsError` itself), so a brick matches the class or the code and keeps no copy. Preprocessing raises `A_DRAFT_REFUSED`, `A_MASK_UNCHECKED` and `A_SCOPE_INCOMPLETE` itself (§9.1); `A_MASK_NOT_INSTANCES` (a mask that is not `instances` used as an object set) and `A_RGB_NOT_SUPPORTED` (`rgb` units given to a brick that does not declare RGB support) are found by `resolve_request` (§9.1) against the consumer's declared capability, and a brick raises them through `ResolvedRequest.require()` (or reports its `refusals`). A brick writes the code in its message text, as preprocessing does. The classes pickle, so a worker process can raise them. `RunInputs.section_digests()` (§9.1) gives the description's section digests for cache keys. `Fov.image_type` (§9.1) is each position's declared `rgb` or `channels`; there is no run-wide image type. `RunInputs.resolve_request()` (§9.1) is the one interpreter of a described run for every route: a brick builds a `Request` and reads through the `FovSelection`s it returns, so channel-by-ID, scope, mask-representation and RGB rules have one implementation; `VolumeNotSupportedError` (`A_VOLUME_NOT_SUPPORTED`) and `DescriptionRequiredError` (`A_DESCRIPTION_REQUIRED`, raised by `RunInputs.open`) are the resolver contract's own codes (MorphoBricks-Spec ADR 0002), not experiment-v1 §8's. |
 | Experiment description (Stage 1) | `read_description(path)`, `description_consume.read_published_description(path)` (the published `morphobricks.toml` only), `run.description_file.publish_description` (the only writer), `draft.draft_from_discovery`, `draft.migrate_legacy_design`, `description_reconcile.reconcile` | A brick reads the **published** `morphobricks.toml` through `RunInputs` (§9.1) and never a draft: a draft is internal to preprocessing, is never named `morphobricks.toml` and is refused with `A_DRAFT_REFUSED` (experiment-v1 §12). The command line shows the draft (`describe`, §12) and confirms nothing: the user's answers are the only way an ID, a repeat or a removal becomes confirmed. The owner's answers Q1 to Q8 of the Stage 1 design are in plan §12, question 78. |
 
 ## 17. Named-axis copies (`convert`, v0.4.0, design v0.4 §5)

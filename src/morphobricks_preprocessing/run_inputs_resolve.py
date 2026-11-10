@@ -31,7 +31,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .description import Description
-from .fov_identity import fov_identity
 from .manifest import RunManifest
 from .mask_representation import CHECKED, file_status, read_checked
 from .run_inputs_request import (
@@ -111,11 +110,10 @@ class ResolvingInputs:
             found, more = self._mask(mask, description, fovs, repeats, masks_table)
             refusals.extend(found)
             covered.extend(more)
-        types = {f.relative_path: _image_type(description, f) for f in fovs}
-        rgb = [path for path, kind in types.items() if kind == RGB]
+        rgb = [f.relative_path for f in fovs if f.image_type == RGB]
         refusals.extend(_some(rgb_refusal(request.capabilities, rgb)))
         refusals.extend(_some(volume_refusal(request)))
-        selections = () if refusals else self._selections(request, description, fovs, types)
+        selections = () if refusals else self._selections(request, description, fovs)
         return ResolvedRequest(
             selections, tuple(refusals), tuple(covered), self._provenance(request)
         )
@@ -155,7 +153,6 @@ class ResolvingInputs:
         request: Request,
         description: Description,
         fovs: tuple[Fov, ...],
-        types: Mapping[str, str | None],
     ) -> tuple[FovSelection, ...]:
         """Build one selection per position; nothing here can refuse any more."""
         masks = tuple(
@@ -176,7 +173,7 @@ class ResolvingInputs:
                 repeat_group=fov.repeat_group,
                 condition_id=fov.condition_id,
                 technical_repeat_id=fov.technical_repeat_id,
-                image_type=types[fov.relative_path],
+                image_type=fov.image_type,
                 channel_ids=request.channel_ids,
                 channel_indices=tuple(fov.channel_ids.index(c) for c in request.channel_ids),
                 masks=masks,
@@ -209,8 +206,3 @@ def _mask_entries(manifest: RunManifest, source_type: str) -> dict[str, Mapping]
     """Return the recorded mask entries of one source type, by image path."""
     files = (manifest.masks or {}).get("files", ())
     return {entry["image"]: entry for entry in files if entry["type"] == source_type}
-
-
-def _image_type(description: Description, fov: Fov) -> str | None:
-    """Return the declared image type of a position's unit (``rgb`` or None)."""
-    return fov_identity(description, fov.key[:3]).image_type

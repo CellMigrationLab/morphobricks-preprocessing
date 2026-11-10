@@ -18,6 +18,7 @@ import tifffile
 from .axes import prefill_mapping
 from .description import Channel, Condition, Description, Mask, Member, Repeat, Unit
 from .testing_described import CleanRun as CleanRun
+from .testing_described import described_images as described_images
 from .testing_described import make_described_run as make_described_run
 from .testing_described import publish_and_run
 

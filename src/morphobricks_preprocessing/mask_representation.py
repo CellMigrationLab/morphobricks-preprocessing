@@ -23,6 +23,7 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -133,17 +134,32 @@ def check_representation(
 
 
 def read_checked(output_folder: str | os.PathLike) -> Mapping[str, Mapping]:
-    """Return the status file's ``masks`` table, or empty when there is none to trust."""
+    """Return the status file's ``masks`` table, or empty when there is none to trust.
+
+    The file is read on every call; its parse is reused for the same bytes only
+    (:func:`_parsed_checked`, PP-1), so a status file the mask step rewrote is parsed again.
+    The table is shared between calls on the same bytes: read it, never change it.
+    """
     path = Path(output_folder) / REPRESENTATION_FILENAME
     try:
         if path.is_symlink():
             return {}
-        document = json.loads(path.read_text(encoding="utf-8"))
+        data = path.read_bytes()
+    except OSError:
+        return {}
+    return _parsed_checked(data)
+
+
+@lru_cache(maxsize=8)
+def _parsed_checked(data: bytes) -> Mapping[str, Mapping]:
+    """Return the ``masks`` table of a status file's bytes (cached by content), else empty."""
+    try:
+        document = json.loads(data.decode("utf-8"))
         masks = document["masks"]
         if document["version"] != REPRESENTATION_VERSION or not isinstance(masks, dict):
             return {}
         return masks
-    except (OSError, ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError):
         return {}
 
 

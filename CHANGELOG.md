@@ -130,6 +130,52 @@ contract §9.1 and §16). **API additions only.**
   `VolumeNotSupportedError`. Suite: `tests/test_spec_resolve_request.py`, a Spec module
   (`spec_gate.EXPECTED_MODULES`).
 
+### PP-1: `Fov.image_type` per position, the partial-mask test helper, the pinned surface
+
+Stage 2 plan row PP-1 (MorphoBricks-Spec ADR 0002 AR8, contract §9.1 and §16). **Breaking** for a
+reader of `RunInputs.image_type()`.
+
+- **`Fov.image_type`: each position's declared type.** `"rgb"` or `"channels"` (a unit that
+  declares no `image_type`, experiment-v1 §4.4b), from the published description only, never
+  from a header, and never None on a `Fov` of `fovs()`. One source: `FovIdentity.image_type`
+  (`fov_identity.declared_image_type`), which `Fov` and the resolver's `FovSelection` both carry,
+  so the two always agree; `resolve_request` reads the position's `Fov.image_type` instead of
+  looking the unit up again. `FovIdentity.image_type` and `FovSelection.image_type` are now `str`
+  (`"channels"` where PP-0 gave None; resolver contract still version 1, unreleased before
+  v0.5.1); `run_inputs_request.CHANNELS` and `IMAGE_TYPES` name the two values.
+- **Removed: `RunInputs.image_type()`.** It returned the manifest's run-level `image_type` (the
+  command line's review, null on every described run), a run-wide value that would hide a
+  unit's own type. Read `Fov.image_type` (or `FovSelection.image_type`). The manifest field
+  stays as a record. Downstream: CellPatcher reads `inputs.image_type()` today
+  (`run_open.py`, `normalization.py`, `notebook_session.py`); its v0.5.1 pin (CP-4) moves to
+  `Fov.image_type`.
+- **`make_described_run(..., masks=IDS, mask_images=PATHS)`** writes the masks of `IDS` for the
+  named images only (relative paths, as the new `testing.described_images(description)` lists
+  them), so a run with partial masks, such as Spec `v09` with `Nuclei` on 2 of 6 images, is
+  built as a real run; `None` (the default) is every image, as before. Explicit only: nothing
+  is chosen at random; a path outside the tree, an empty subset, a single text or a subset
+  without masks is a `ValueError` before anything is written. `write_described_tree` takes the
+  same `mask_images`.
+- **The mask step's status file is parsed once per content.** `read_checked` still reads
+  `mask_representation.json` on every call but reuses the parse of the same bytes
+  (`lru_cache` keyed by the bytes, as `description_consume` already does for the description),
+  so the result is the one an uncached read gives and a rewritten file is parsed again;
+  `RunInputs` holds no memo and pickles as before. Measured on a 10,000-position `v09` run with
+  `Nuclei` masks (one machine, best of runs): `mask_check_status` for 1,000 positions 6.6 s
+  before, 0.85 s after, the same 1,000 answers and the same `resolve_request` result. The
+  description itself was already parsed once per content (`description_consume`), so it needed
+  no memo. Left as found (a later item): `resolve_request` takes about 3 s on that run and
+  `mask_check_status` for all 10,000 positions about 12 s, both from linear scans per file
+  (`file_status` over the status file's list, `_mask_entry` over the manifest's), not from
+  reading the description.
+- **The pinned surface.** `tests/test_brick_api_surface.py` pins the names, fields, types and
+  signatures the bricks use (`RunInputs`, `Fov`, the resolver records, `resolve_request`,
+  `make_described_run`, `make_clean_run`, `described_images`, `RESOLVER_VERSION`); contract
+  §9.1 lists them. New Spec module `tests/test_spec_fov_image_type.py` (`v28` rgb on every
+  position; `v13`, `v01` channels; `v29`'s two units through the identity; `v09` on 2 of 6
+  through the helper equal to PP-0's hand-built tree), in `spec_gate.EXPECTED_MODULES`; PP-0's
+  `v09` test now uses the helper.
+
 ## 0.5.0 - 2026-11-09
 
 Stage 1 of the experiment description (MorphoBricks-Spec experiment-v1, pinned at `1bed024`):
