@@ -237,6 +237,14 @@ already removed is not repeated here. **Breaking** where it says so.
   size and modification time only; no source caller in the nine repositories. Use
   `inventory.source_signature` (size, modification time and the OME-Zarr inventory digest).
 
+- **Conversion record: version 3 only** (inventory PP-06). **Breaking.** A
+  `.morphobricks-conversion.json` of any other version (2 was still read as a tree without a
+  projection; 1 had its own message) is refused by `convert`, the run's `review_conversion` and
+  `RunInputs` with `conversion_record_unreadable`, naming its version and the fix: convert the
+  originals again into a new folder. The record's and each entry's `projection` key is required
+  (version 3 always writes it). Removed: `_READABLE_VERSIONS`, `_OLD_VERSIONS` and the "version 2
+  cannot hold a projection" check.
+
 ## 0.5.0 - 2026-11-09
 
 Stage 1 of the experiment description (MorphoBricks-Spec experiment-v1, pinned at `1bed024`):

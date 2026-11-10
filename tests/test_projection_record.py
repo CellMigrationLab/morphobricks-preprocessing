@@ -109,7 +109,7 @@ def test_a_record_without_a_projection_is_version_3_with_null(tmp_path):
     assert read_conversion_record(copies)[0].projection is None
 
 
-def test_a_version_2_record_is_still_read(tmp_path):
+def test_a_version_2_record_is_refused_naming_the_fix(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
     path = copies / RECORD_FILENAME
@@ -119,21 +119,19 @@ def test_a_version_2_record_is_still_read(tmp_path):
     for entry in data["files"]:
         del entry["projection"]
     path.write_text(json.dumps(data))
-    old, _ = read_conversion_record(copies)
-    assert old.projection is None and old.files
-    assert all(entry.projection is None for entry in old.files)
+    with pytest.raises(ConversionRecordError, match="version 2,.*convert the originals again"):
+        read_conversion_record(copies)
 
 
-def test_a_version_2_record_cannot_hold_a_projection():
-    data = edited(lambda d: d.update(record_version="2"))
-    with pytest.raises(ConversionRecordError, match="version 2.*projection"):
-        ConversionRecord.from_dict(data)
-
-
-@pytest.mark.parametrize("version", ["1", "4", None])
+@pytest.mark.parametrize("version", ["1", "2", "4", None])
 def test_other_versions_are_refused(version):
-    with pytest.raises(ConversionRecordError):
+    with pytest.raises(ConversionRecordError, match="reads version 3 only"):
         ConversionRecord.from_dict(edited(lambda d: d.update(record_version=version)))
+
+
+def test_a_record_without_its_projection_key_is_refused():
+    with pytest.raises(ConversionRecordError, match="projection"):
+        ConversionRecord.from_dict(edited(lambda d: d.pop("projection")))
 
 
 def test_the_record_is_written_and_read_from_the_copy_tree(tmp_path):
