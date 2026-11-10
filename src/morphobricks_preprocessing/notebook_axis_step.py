@@ -14,9 +14,19 @@ from .description_layouts import declared_layouts, is_heterogeneous, layout_kind
 from .image_type import FLUORESCENCE
 from .notebook_axes import axis_check_html, header_marks
 from .notebook_options import IMAGE_TYPE_OPTIONS, ROLE_OPTIONS
-from .notebook_render import blocked_line, issues_html, plane_summary_html, role_effect
+from .notebook_render import (
+    blocked_line,
+    issues_brief_html,
+    plane_summary_html,
+    role_effect,
+)
 from .run import Preflight
 from .validation import plural
+
+ROLES_HELP = (
+    "One box per dimension, in the order stored in the files. Exactly one Y and one X; a "
+    "dimension with more than one plane needs Z, C or T."
+)
 
 
 class _AxisStep:
@@ -131,6 +141,7 @@ class _AxisStep:
             ],
         )
         self.axis_sizes_slot = widgets.VBox()  # the pixel size card, in the shipped notebook
+        self.roles_help = ui.help_text(ROLES_HELP)  # folded into About this step there
 
     def _build_image_type_card(self) -> None:
         """Build the image type card, hidden until the axis roles are confirmed."""
@@ -182,14 +193,7 @@ class _AxisStep:
         self._set_locked(False)
         roles = ui.card(
             "Axis roles",
-            [
-                ui.help_text(
-                    "One box per dimension, in the order stored in the files. Exactly one Y "
-                    "and one X; a dimension with more than one plane needs Z, C or T."
-                ),
-                grid,
-                self.plane_summary,
-            ],
+            [self.roles_help, grid, self.plane_summary],
         )
         left = widgets.VBox(
             [roles, self.missing_card, self.axis_status, self.axis_sizes_slot],
@@ -279,7 +283,7 @@ class _AxisStep:
         return widgets.GridBox(
             axis_cards,
             layout=widgets.Layout(
-                grid_template_columns="repeat(auto-fill, minmax(240px, 1fr))", grid_gap="10px"
+                grid_template_columns="repeat(auto-fill, minmax(170px, 1fr))", grid_gap="8px"
             ),
         )
 
@@ -368,7 +372,7 @@ class _AxisStep:
         if review.issues:
             others = [i for i in review.issues if i.code not in AXIS_CHECK_CODES]
             self.axis_status.value = axis_check_html(review) + (
-                issues_html(others) if others else ""
+                issues_brief_html(others) if others else ""
             )
             self.axis_next.value = ""
         else:

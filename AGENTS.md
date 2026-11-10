@@ -314,9 +314,21 @@ src/morphobricks_preprocessing/
                     (plan §12 Q26, Q31). Since PP-9 it holds the page methods, __init__ and
                     the shared helpers; the step methods live on mixin classes in the modules
                     below, and it re-exports every public name it had (`__all__`)
-  notebook_steps.py         steps(): the shipped notebook's 13 steps, one at a time (PR 17a; pure
-                            composition of the cards below); notebook_stepper.py the strip, Back/Next
-                            and the overview; notebook_step_states.py each step's done/one-line state
+  notebook_steps.py         steps(): the shipped notebook's 12 steps, one at a time (PR 17a; pure
+                            composition of the cards below); notebook_stepper.py the strip, Back/Next,
+                            the overview, the compact page (one screen per step: the cards scroll in
+                            their own box) and about()/field_rows(); notebook_step_states.py each
+                            step's done/one-line state
+  notebook_compact.py       the Images and Run steps arranged for one screen: one Folders card, the
+                            collapsed panels, and Compare groups (the former statistics page) in the
+                            run step (redesign of 10 November 2026)
+  notebook_progress.py      Wait: one line per wait (done of total, item, elapsed, time left once
+                            measurable); progress_html, time_left (pure parts)
+  notebook_quick_scan.py    the first step's quick scan: the folder walk only, one random image for
+                            looking only, then the explicit click that reads every header
+  axis_example.py           which planes the axes step's example shows (pure): one tile per channel,
+                            a few time points or slices; notebook_plots.example_png draws them
+  pixel_size_summary.py     the pixel size in one line, which images differ and where (pure)
   notebook_names.py         the names card's rows (conditions on step 4, replicates on step 5)
   notebook_axes_quick.py    the stepper's one-click Confirm these axes (Q3, PR 17b)
   notebook_row_fold.py      reopen: unchanged, answered rows fold; new or changed rows orange
@@ -746,9 +758,12 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Masks (Q32) | Optional masks folder outside the experiment, one subfolder per mask type mirroring the experiment's folders, or the experiment's folders with `<image>_<type>.tif` (both may be mixed; `ambiguous_mask` when a name could fit two images or both layouts), paired by leaf folder + `position_id`; OME-Zarr label images are masks too. Header-only errors (`masks_folder_not_found`, `masks_inside_experiment`, `mask_names_differ_in_case`, `duplicate_mask`, `ambiguous_mask`, `unreadable_mask`, `mask_not_2d`, `mask_size_mismatch`, `mask_pixel_type`) and warnings (`mask_missing`, `mask_without_image`, `mask_outside_type_folder`) in `check`/`run`; manifest key `masks` (optional, version 1). Optional mask step (`masks` command, `scan_masks`): kinds, relations with evidence, direct-parent hierarchy, `mask_relationships.json` (report version 1); default thresholds the user may change (`thresholds=` keyword, one CLI option each, checked by `mask_thresholds`, written in the report); suggestions only, the user names and confirms. SciPy core dependency. Confirmed by the owner: 2D masks at the image's YX, integer/bool pixels, masks folder outside the experiment. Next: notebook step and a file of the user's answers; tag v0.2.0 proposed after merge. Plane identity (issue #36): masks may have Z and/or T named in their own metadata (never guessed: unnamed axes are `mask_not_2d`); the masks of an image share their planes (`mask_planes_differ`) and `run` checks them against the image's confirmed roles (`mask_planes_mismatch`, `mask_plane_issues`), so a 2D mask is refused for a Z-stack or time-lapse; manifest mask entries gain `axes` and `shape` (optional keys, version 1); `read_mask(z=, t=)` reads one plane; `scan_masks` scans plane by plane |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
+| Waits | Every wait over about a second shows `notebook_progress.Wait`: done of total, the item, elapsed time, time left once measurable. Readers take a `progress` callback; no bare spinner (owner, 10 November 2026) |
+| Disabled actions | Every disabled button has a visible `notebook_render.blocked_line` beside it saying what blocks it; a tooltip alone is a hidden refusal (owner, 10 November 2026) |
+| One screen per step | The shipped notebook's steps fit 1366 x 768: one row of chips, explanations under *About this step*, details in collapsed panels, long lists scrolling in their own box (owner, 10 November 2026) |
 | Paths and filenames in widget HTML and notebook text | **`<b>…</b>` / `**…**`, never `<code>` or inline code** |
 | Things the user must confirm | **Large buttons** in a highlighted question box (`ConfirmToggle`), never small checkboxes |
-| Statistics step | "Step 4 · Calculate the statistics (optional)": clearly optional, writes nothing. A CSV chooser (Browse…) is prefilled with the table just computed, otherwise empty. Not calculated automatically |
+| Statistics step | **Shipped notebook since v0.5.1: the collapsed *Compare groups* panel of the run step, for that run's table; no table chooser, no second intensity check (owner, 10 November 2026). The page below remains for `results_step()` without `steps()`.** "Step 4 · Calculate the statistics (optional)": clearly optional, writes nothing. A CSV chooser (Browse…) is prefilled with the table just computed, otherwise empty. Not calculated automatically |
 
 ---
 

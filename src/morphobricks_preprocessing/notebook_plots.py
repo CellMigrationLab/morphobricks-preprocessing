@@ -468,7 +468,7 @@ def plane_png(plane: Plane, size: float = 4.2) -> bytes:
     return buffer.getvalue()
 
 
-TILE_INCHES = 1.9
+TILE_INCHES = 1.6
 DRAWN_SIDE = 384
 """The most pixels along a side handed to the drawing (a larger plane is strided)."""
 DPI = 100

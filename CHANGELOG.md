@@ -8,6 +8,38 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased (v0.5.1)
 
+### Notebook redesign 4: each step fits a laptop screen; Compare groups in the run step
+
+Owner test of v0.5.0 (10 November 2026), items (a) and (b): "simple and minimalistic".
+Layout only: no answer, check, refusal, draft, description or run output changes.
+
+- **One screen per step (1366 x 768).** The strip is one row (shorter chip names: *Images*,
+  *Compared to*, *Tags*, *Save*, *Describe masks*; the page keeps the full title). A step's
+  title and purpose are one line; its cards are in a box that scrolls by itself when they are
+  higher than the screen, so the title, the strip and Back/Next stay in view. Cards, tiles,
+  tables, buttons and pictures are denser. Each step's explanation is folded under **About
+  this step**; a card's help paragraph is one line that opens when pointed at.
+- **Images:** one *Folders* card with three labelled rows (images, masks, output); **Scan the
+  folders** and **Looks right: read all image headers** side by side; after the check the scan
+  makes way for the result, and the pictures per folder, the check report and *Exclude images*
+  are collapsed panels.
+- **Axes:** a refusal of the roles is one sentence with *Files and what to do* on demand
+  (`notebook_render.issues_brief_html`), e.g. "Error · different channel counts: The images
+  have different numbers of channels: 3 channels (10 images), 4 channels (4 images)."
+- **Run:** *Before you run* is shown only while something is missing; *Settings and mode* and
+  *What will happen* are collapsed; after a run the intensity checks and plots, **Compare
+  groups** and the report are collapsed panels.
+- **Compare groups replaces the optional statistics page** in the shipped notebook: the
+  grouping, the percentiles, the pooled statistics and the distribution plot of the table this
+  run wrote. There is no table to choose and the intensity checks are not repeated.
+  `results_step()` after `steps()` returns an empty hidden box, so the shipped notebook's cell
+  needs no change; called without `steps()` it is the page it was.
+- **`welcome()` is one line** (name, version, "the notebook is ready"); the *What next?* boxes
+  are not shown in the stepper.
+- The notebook's Markdown cells and the user guide (§4, "The app in short") describe this
+  flow. `RELEASE_REF` and the code cells are unchanged: the shipped file opens the redesigned
+  app once the v0.5.1 release moves the pin.
+
 ### Notebook redesign 3: the axes step shows the data as the roles read it; pixel size in one line
 
 Owner test of v0.5.0 (10 November 2026), items (e) and (f). The shipped notebook has 12 steps:

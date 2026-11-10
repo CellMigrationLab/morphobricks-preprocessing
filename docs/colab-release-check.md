@@ -101,7 +101,7 @@ The notebook has three code cells, run in order: **1. Install MorphoBricks prepr
     press **Check folder**.
 17. - [ ] In Step 2, swap the Y and X roles. The red axis check appears, with the **Make
     named-axis copies (optional)** card under it. Its button is disabled.
-18. - [ ] Press **Show preview** and **Yes, the preview looks right**, then **Yes, write the
+18. - [ ] Look at the example (drawn by itself) and press **Yes, the example looks right**, then **Yes, write the
     copies with these roles**.
 19. - [ ] Press **Browse…**: the amber card names **Copy path**. Paste a Drive folder inside
     the experiment and check that it is refused. Then paste one next to the experiment.

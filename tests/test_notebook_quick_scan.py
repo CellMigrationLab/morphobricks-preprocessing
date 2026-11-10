@@ -72,7 +72,8 @@ def test_the_scan_reads_no_header_but_the_one_image_it_shows(exp, monkeypatch): 
     assert nb.check_blocker.value == ""
     said = _text(nb.scan_status.value)
     assert (
-        f"Found {scan_summary(found, frozenset())}" in said and "No image header was read" in said
+        f"Found {scan_summary(found, frozenset())}" in said
+        and "No image header was read yet" in said
     )
     assert nb.scan_tree.value == tree_html(found, frozenset())
 

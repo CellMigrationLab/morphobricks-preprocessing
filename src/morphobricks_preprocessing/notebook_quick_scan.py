@@ -35,7 +35,7 @@ from .validation import plural
 
 SCAN_LABEL, DEEP_LABEL = " Scan the folders", " Looks right: read all image headers"
 SEED_RANGE = 1_000_000
-EXAMPLE_SIDE = 320
+EXAMPLE_SIDE = 190
 """The largest side of the quick scan's picture, in pixels."""
 
 
@@ -112,7 +112,10 @@ class _QuickScan:
         )
         self.scan_box = widgets.HBox(
             [
-                widgets.VBox([self.scan_tree], layout=widgets.Layout(flex="1 1 0", min_width="0")),
+                widgets.VBox(
+                    [self.scan_tree],
+                    layout=widgets.Layout(flex="1 1 0", min_width="0", max_height="240px"),
+                ),
                 widgets.VBox(
                     [self.scan_example, self.scan_another],
                     layout=widgets.Layout(flex="0 0 auto", margin="0 0 0 16px"),
@@ -202,8 +205,8 @@ class _QuickScan:
         errors = [issue for issue in found.issues if issue.is_error]
         self.scan_status.value = ui.status(
             "error" if errors else "ok" if found.images else "warn",
-            f"Found {scan_summary(found, excluded)} (listed in {wait.took()}).",
-            ["No image header was read. If this is your experiment, read the headers below."],
+            f"Found {scan_summary(found, excluded)} (listed in {wait.took()}). No image header "
+            "was read yet: if this is your experiment, read the headers below.",
         ) + (issues_html(errors) if errors else "")
         ui.set_visible(self.scan_box, bool(found.leaves))
         self._refresh_scan_gate()
@@ -238,7 +241,7 @@ class _QuickScan:
             width=f"{EXAMPLE_SIDE}px",
         )
         chosen = (
-            "<div class='mb-help' style='max-width:660px'>One image chosen at random (seed "
+            "<div class='mb-help' style='max-width:400px'>One image chosen at random (seed "
             f"{self.scan_seed}), for looking only:<br><b>{html.escape(self.scan_image)}</b></div>"
         )
         self.scan_example.children = [widgets.HTML(chosen), tile.widget]

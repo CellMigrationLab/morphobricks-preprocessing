@@ -200,10 +200,8 @@ class _AxisPreview:
             return ui.status("ok", "Preview with the confirmed axis roles.")
         return ui.status(
             "info",
-            "Preview of the roles above, not confirmed yet.",
-            [
-                "Nothing is written: the run uses only the roles you confirm below.",
-            ],
+            "Preview of the roles above, not confirmed yet. Nothing is written: the run uses "
+            "only the roles you confirm.",
         )
 
     def _preview_header(self):  # noqa: ANN202
