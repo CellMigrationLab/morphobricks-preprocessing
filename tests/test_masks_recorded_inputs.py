@@ -11,7 +11,7 @@ import json
 import numpy as np
 import pytest
 
-from described_tree import main_described, run_described
+from described_tree import main_described, publish_any, run_described
 from morphobricks_preprocessing import (
     prefill_mapping,
     read_manifest,
@@ -44,7 +44,8 @@ def test_masks_takes_the_recorded_masks_folder(tmp_path, capsys):
 
 
 def test_masks_without_an_experiment_or_a_recorded_run_stops(tmp_path, capsys):
-    assert main_described(["masks", "--output", str(tmp_path / "out")]) == 1
+    out_folder = publish_any(tmp_path / "out")  # described: the missing run is what is refused
+    assert main_described(["masks", "--output", str(out_folder)]) == 1
     out = capsys.readouterr().out
     assert "No experiment folder was given" in out
     assert not (tmp_path / "out" / RELATIONS).exists()
