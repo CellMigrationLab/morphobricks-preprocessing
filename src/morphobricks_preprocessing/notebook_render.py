@@ -41,6 +41,18 @@ def issues_html(issues: Iterable[ValidationIssue]) -> str:
     return "".join(parts)
 
 
+def blocked_line(reasons: Sequence[str]) -> str:
+    """Return the visible line beside a disabled action saying what blocks it (HTML), or "".
+
+    Every disabled button has one (owner test, 10 November 2026): a tooltip alone is a hidden
+    refusal. ``reasons`` are short plain-text phrases; the first is the one to act on.
+    """
+    if not reasons:
+        return ""
+    text = "; ".join(html.escape(reason) for reason in reasons)
+    return f"<div class='mb-blocker'>🔒 <b>Not available yet:</b> {text}.</div>"
+
+
 def issue_count_chips(issues: Sequence[ValidationIssue]) -> str:
     """Red error and orange warning counts, shown outside a folded list of issues."""
     errors = [i for i in issues if i.is_error]

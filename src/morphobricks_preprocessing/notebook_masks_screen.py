@@ -45,7 +45,7 @@ INTRO = (
     "has its own number, as nuclei or cells from a segmentation) or <b>regions</b> (inside or "
     "outside, as a tissue area). Nothing is chosen for you: the pixel type and the number of "
     "values are shown only to help you answer. The mask ID is the folder name when it can be "
-    "one; it is used everywhere after, also by <i>Describe the masks</i> (step 13)."
+    "one; it is used everywhere after, also by <i>Describe the masks</i>."
 )
 
 

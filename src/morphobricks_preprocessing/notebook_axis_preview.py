@@ -6,11 +6,13 @@ import html
 
 from . import notebook_style as ui
 from .axes import AxisMapping, axis_name, file_mapping_for
+from .axis_example import example_rows
 from .axis_review import review_axes
 from .image_type import review_image_type
 from .notebook_options import IMAGE_TYPE_NAMES
-from .notebook_plots import plane_png
-from .notebook_render import preview_caption
+from .notebook_plots import example_png, tile_label
+from .notebook_progress import Wait
+from .notebook_render import blocked_line, preview_caption
 from .planes import Plane, PlaneReadError, read_plane
 from .preview import PreviewRefused, check_unchanged, checked_fingerprint
 from .validation import plural
@@ -101,6 +103,13 @@ class _AxisPreview:
         if not shown and not locked and self.preview_checked.value:
             self.preview_checked.set(False)  # a tick says nothing about a preview not shown
         self.preview_checked.disabled = locked or not shown
+        self.preview_blocker.value = (
+            ""
+            if locked or shown
+            else blocked_line(["no example of these roles is drawn: see the message above"])
+        )
+        if not locked:
+            self._update_confirm_button()
 
     def _draw_preview(self) -> None:
         """Draw the chosen plane with the roles shown, labelled confirmed or not (PP-10)."""
@@ -112,13 +121,14 @@ class _AxisPreview:
             self.preview_caption.value = ui.status("warn", "No image fits these axis roles.")
             return
         file_mapping = file_mapping_for(header, self.mapping)
-        coords = {
-            role.lower(): self.preview_sliders[role].value
+        lengths = {
+            role: header.shape[dim]
             for role in ("Z", "C", "T")
-            if file_mapping.index_of(role) is not None
+            if (dim := file_mapping.index_of(role)) is not None
         }
+        at = {role: self.preview_sliders[role].value for role in lengths}
         try:
-            plane = self._bound_plane(header.relative_path, file_mapping, coords)
+            rows, shown = self._read_example(header.relative_path, file_mapping, lengths, at)
         except (PreviewRefused, PlaneReadError, IndexError, ValueError, OSError) as exc:
             self.preview_image.value = b""
             ui.set_visible(self.preview_image, False)
@@ -126,13 +136,39 @@ class _AxisPreview:
                 "warn", "This plane cannot be shown with these roles.", [str(exc)]
             )
             return
-        self.preview_image.value = plane_png(plane)
+        self.preview_image.value = example_png(rows)
         ui.set_visible(self.preview_image, True)
         self._preview_drawn = self.mapping
         self.preview_caption.value = self._preview_label() + preview_caption(
-            header.relative_path, plane
+            header.relative_path, shown
         )
         self._show_log()
+
+    def _read_example(
+        self, rel: str, file_mapping: AxisMapping, lengths: dict[str, int], at: dict[str, int]
+    ) -> tuple[list, Plane]:
+        """Read the planes of the example (:func:`.axis_example.example_rows`), with a wait line.
+
+        Returns the rows as :func:`.notebook_plots.example_png` draws them, and the plane
+        at the sliders' position (the first tile when no tile is there) for the caption.
+        """
+        rows = example_rows(lengths, at)
+        total = sum(len(row.tiles) for row in rows)
+        wait = Wait(self.preview_caption)
+        wait.start("Drawing the example", total)
+        wanted = {role.lower(): value for role, value in at.items()}
+        drawn, shown, done = [], None, 0
+        for row in rows:
+            tiles = []
+            for tile in row.tiles:
+                wait.step(done, total, tile.label)
+                plane = self._bound_plane(rel, file_mapping, tile.at())
+                done += 1
+                tiles.append((tile_label(tile.label, plane.shape), plane.pixels))
+                if shown is None or tile.at() == wanted:
+                    shown = plane
+            drawn.append((row.title, tiles))
+        return drawn, shown
 
     def _bound_plane(self, rel: str, file_mapping: AxisMapping, coords: dict) -> Plane:
         """Read the preview plane of the image only as the folder check read its header.

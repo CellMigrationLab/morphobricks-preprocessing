@@ -26,12 +26,15 @@ from .notebook_options import (
     VERIFY_CONTENT_HELP,
 )
 from .notebook_plots import IntensityPanel
-from .notebook_render import _bins_help, _label, change_lines, issues_html
+from .notebook_progress import Wait
+from .notebook_render import _bins_help, _label, blocked_line, change_lines, issues_html
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import issue_counts, rebuild_line
 from .run import RESTART, Preflight, RunMode, RunResult, run_experiment
 from .run_labels import recorded_labels
 from .validation import has_errors, plural
+
+READING = "Reading images"
 
 
 class _RunStep:
@@ -57,6 +60,7 @@ class _RunStep:
             value=0, min=0, max=1, bar_style="info", layout=widgets.Layout(width="99%")
         )
         ui.set_visible(self.progress, False)
+        self.run_blocker = widgets.HTML()
         self.run_status = widgets.HTML()
         self.run_next = widgets.HTML()
         self.run_tiles = widgets.HTML()
@@ -266,6 +270,10 @@ class _RunStep:
             title = ui.status("ok", "Ready to run.")
         self.readiness.value = title + ui.checklist(items)
         self.run_button.disabled = bool(missing)
+        self.run_blocker.value = blocked_line(
+            [f"still to do: {text[0].lower()}{text[1:]}" for text in missing[:1]]
+            + ([f"and {len(missing) - 1} more (see Before you run)"] if len(missing) > 1 else [])
+        )
         self.plan.value = self._plan_html(review if folder_ok else None)
         self._refresh_plan_card()
         self._refresh_mask_step()
@@ -310,7 +318,8 @@ class _RunStep:
         self._mask_step_stale()
         ui.set_visible(self.progress, True)
         self.progress.value, self.progress.max, self.progress.bar_style = 0, 1, "info"
-        self.run_status.value = ui.working("Preparing: checking everything again…")
+        self._run_wait = Wait(self.run_status, bar=False)  # the bar is the widget above
+        self._run_wait.start("Preparing: checking the folders and the image headers again")
         self.run_tiles.value = self.run_issues.value = ""
 
     def _call_run(self, histogram_settings: HistogramSettings) -> RunResult:
@@ -452,7 +461,10 @@ class _RunStep:
     def _progress(self, done: int, total: int, path: str) -> None:
         self.progress.max = max(total, 1)
         self.progress.value = done
-        if path:
-            self.run_status.value = ui.working(f"Reading image {done + 1} of {total}: {path}")
-        else:
-            self.run_status.value = ui.working("Writing the table…")
+        wait = self._run_wait
+        if not path:
+            wait.phase("Writing the table")
+            return
+        if wait.label != READING:
+            wait.phase(READING, total)
+        wait.step(done, total, path)

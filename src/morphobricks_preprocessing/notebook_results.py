@@ -13,8 +13,12 @@ from morphobricks_normalization.records import group_records
 from . import notebook_style as ui
 from .notebook_options import _WIDE, LEVEL_OPTIONS
 from .notebook_plots import IntensityPanel, distribution_png
+from .notebook_progress import Wait
 from .report import LEVEL_NAMES, group_summaries, group_table
 from .validation import plural
+
+STAGES = 4
+"""The parts of the statistics: read the table, pool, plot, check."""
 
 
 class _ResultsStep:
@@ -186,7 +190,8 @@ class _ResultsStep:
             )
             return
         self._busy(self.statistics_button, "Calculating…")
-        self.stats_status.value = ui.working("Reading the histogram table…")
+        self._stats_wait = Wait(self.stats_status)
+        self._stats_wait.start("Reading the histogram table")
         self.stats_tiles.value = self.statistics.value = ""
         ui.set_visible(self.statistics_card, False)
         ui.set_visible(self.distribution_card, False)
@@ -212,7 +217,8 @@ class _ResultsStep:
         except (CsvFormatError, OSError) as exc:
             self.stats_status.value = ui.status("error", "The table cannot be read.", [str(exc)])
             return
-        self.stats_status.value = ui.working("Calculating statistics for each group…")
+        wait = self._stats_wait
+        wait.phase("Pooling the planes of each group", STAGES, 1)
         level = self.level.value
         summaries = group_summaries(records, level, percentiles)
         groups = group_records(records, level)
@@ -233,11 +239,11 @@ class _ResultsStep:
         # The labels and the channel column are text; the counts and statistics numbers.
         self.statistics.value = ui.table(rows, numeric_from=depth + 1)
         ui.set_visible(self.statistics_card, True)
-        self.stats_status.value = ui.working("Drawing the intensity distributions…")
+        wait.phase("Drawing the intensity distributions", STAGES, 2)
         png = distribution_png(groups)
         self.distribution.value = png or b""
         ui.set_visible(self.distribution_card, bool(png))
-        self.stats_status.value = ui.working("Checking the intensities of every image…")
+        wait.phase("Checking the intensities of every image", STAGES, 3)
         self.table_checks.show(records)
         self.stats_status.value = ui.status(
             "ok",

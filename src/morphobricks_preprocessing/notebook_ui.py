@@ -392,6 +392,7 @@ class PreprocessingNotebook(
                 self.settings_card,
                 self.plan_card,
                 self.run_button,
+                self.run_blocker,
                 self.progress,
                 self.run_status,
                 self.run_lock.card,

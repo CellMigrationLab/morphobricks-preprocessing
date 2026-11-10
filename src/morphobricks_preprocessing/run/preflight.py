@@ -203,7 +203,9 @@ def preflight(
         Called as ``progress(phase, done, total, path)`` while the check runs, with a phase of
         :data:`.phases.PHASES` (``folders``, ``headers``, ``masks``, ``acquisitions``): a phase
         is announced as ``(phase, 0, total, "")`` and ends with ``(phase, total, total, "")``;
-        the headers phase also reports ``(phase, done, total, path)`` before each image.
+        the headers phase also reports ``(phase, done, total, path)`` before each image, the
+        masks phase ``("masks", done, total, mask_path)`` before each mask's header, and the
+        folders phase ``("folders", 0, 1, folder)`` before each folder is listed.
         :func:`.phases.progress_text` words it. It changes nothing about the result.
 
     Returns
@@ -214,7 +216,9 @@ def preflight(
     root = Path(experiment_root).resolve()
     output = default_output_folder(root) if output_folder is None else Path(output_folder)
     report("folders", 0, 1, "")
-    discovery = discover_experiment(root, output)
+    discovery = discover_experiment(
+        root, output, progress=lambda folder: report("folders", 0, 1, folder)
+    )
     # Every run is described: a folder label that is not NFC cannot be a source folder.
     discovery = replace(
         discovery, issues=(*discovery.issues, *non_nfc_folders_issue(discovery.leaves))
@@ -226,7 +230,15 @@ def preflight(
     inspected, bound = _inspected(root, images, bind_headers, progress)
     metadata, calibration = _calibrated(inspected, discovery.images, output)
     report("masks", 0, 1, "")
-    masks = _masks(discovery, metadata, masks_folder, mask_axes, output, bind_headers)
+    masks = _masks(
+        discovery,
+        metadata,
+        masks_folder,
+        mask_axes,
+        output,
+        bind_headers,
+        lambda done, total, path: report("masks", done, total, path),
+    )
     report("masks", 1, 1, "")
     report("acquisitions", 0, 1, "")
     result = Preflight(
@@ -288,6 +300,7 @@ def remasked(
     masks_folder: str | os.PathLike | None,
     mask_axes: Mapping[str, str] | None,
     output_folder: str | os.PathLike,
+    progress: Callable[[int, int, str], None] | None = None,
 ) -> Preflight:
     """Return the preflight with its masks paired again, as :func:`preflight` pairs them.
 
@@ -306,6 +319,8 @@ def remasked(
         As :func:`preflight`.
     output_folder
         The output folder (it may not be inside the masks folder).
+    progress
+        Called as ``progress(done, total, mask_path)`` before each mask's header is read.
 
     Returns
     -------
@@ -319,6 +334,7 @@ def remasked(
         mask_axes,
         Path(output_folder),
         bind=bool(pre.header_fingerprints),
+        progress=progress,
     )
     return replace(pre, masks=masks)
 
@@ -330,6 +346,7 @@ def _masks(
     mask_axes: Mapping[str, str] | None,
     output: Path,
     bind: bool = False,
+    progress: Callable[[int, int, str], None] | None = None,
 ) -> MaskInventory | None:
     """Pair the analysed images with their masks; None without masks folder or label image."""
     masks = find_masks(
@@ -339,6 +356,7 @@ def _masks(
         mask_axes=mask_axes,
         output_folder=output,
         bind=bind,
+        progress=progress,
     )
     if masks_folder is None and not masks.files and not masks.issues:
         return None  # no masks folder and no label images: the run has no masks

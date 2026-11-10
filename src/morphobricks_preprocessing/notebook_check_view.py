@@ -150,7 +150,7 @@ def run_stop_html(check: CandidateCheck | None) -> str:
     )
     return ui.status(
         "warn",
-        "You can save, but the run (step 12) will stop.",
+        "You can save, but the run will stop.",
         [f"Refused: {named}.", "Each reason is listed above, with the folder it names."],
     )
 
@@ -195,7 +195,7 @@ def blocked_html(
                 "the axis roles are confirmed, step 2)"
             )
         )
-    return ui.status("error", "The run (step 12) is blocked by both:", lines, raw=True)
+    return ui.status("error", "The run is blocked by both:", lines, raw=True)
 
 
 def checks_html(check: CandidateCheck | None) -> str:

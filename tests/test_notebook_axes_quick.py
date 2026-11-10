@@ -30,12 +30,12 @@ def stepper(root, masks, out):
 
 def test_complete_header_roles_are_offered_with_a_preview_and_one_button(exp):  # noqa: F811
     nb = stepper(*exp)
-    assert ui.is_visible(nb.quick_card) and not ui.is_visible(nb.axis_box)
-    assert ui.is_visible(nb.quick_image) and nb.quick_image.value[:4] == b"\x89PNG"
+    assert ui.is_visible(nb.quick_card) and ui.is_visible(nb.axis_box)  # roles and example
+    assert ui.is_visible(nb.preview_image) and nb.preview_image.value[:4] == b"\x89PNG"
     assert "Nothing is confirmed until you click" in nb.quick_text.value
     assert nb.confirmed_mapping is None and not nb.preview_checked.value  # never automatic
-    nb.axes_details.click()  # the role boxes stay one click away
-    assert ui.is_visible(nb.axis_box)
+    assert not ui.is_visible(nb.confirm_button)  # one button while the roles are offered
+    assert not ui.is_visible(nb.preview_checked.widget)
 
 
 def test_the_one_click_records_what_the_two_clicks_record(exp):  # noqa: F811
@@ -43,7 +43,6 @@ def test_the_one_click_records_what_the_two_clicks_record(exp):  # noqa: F811
     quick.quick_confirm.click()
     root, masks, out = exp
     manual = stepper(root, masks, out.parent / "manual")
-    manual.axes_details.click()
     manual.preview_checked.set(True)
     manual.confirm_button.click()
     assert quick.confirmed_mapping == manual.confirmed_mapping is not None
@@ -64,7 +63,7 @@ def test_roles_the_header_does_not_name_are_not_offered(tmp_path):
     nb.steps()
     nb.check_button.click()
     assert not ui.is_visible(nb.quick_card) and ui.is_visible(nb.axis_box)
-    assert not ui.is_visible(nb.axes_details)
+    assert ui.is_visible(nb.confirm_button) and ui.is_visible(nb.preview_checked.widget)
 
 
 def test_an_unchanged_reopen_offers_the_run_s_roles_and_moves_on(exp):  # noqa: F811
@@ -78,13 +77,12 @@ def test_an_unchanged_reopen_offers_the_run_s_roles_and_moves_on(exp):  # noqa: 
     assert "the earlier run of this experiment recorded" in nb.quick_text.value
     nb.quick_confirm.click()
     assert nb.confirmed_mapping == first.confirmed_mapping
-    assert nb._stepper.current == 11  # every answer is saved: the run is next
+    assert nb._stepper.current == 10  # every answer is saved: the run is next
 
 
 def test_a_role_edited_after_the_offer_is_not_confirmed_by_the_old_offer(exp):  # noqa: F811
     nb = stepper(*exp)
     offer = nb._quick_offer
-    nb.axes_details.click()
     nb.role_dropdowns[0].value = "Z"  # C becomes Z: the axis check now has something to say
     assert offer is not None and nb._quick_offer is None  # the header names C: no offer now
     assert not ui.is_visible(nb.quick_card) and ui.is_visible(nb.axis_box)
@@ -100,7 +98,6 @@ def test_a_role_edited_on_a_reopen_is_kept_not_put_back_to_the_run_s_roles(exp):
     assert first.run().written
     nb = stepper(*exp)
     assert nb._quick_offer is not None
-    nb.axes_details.click()
     nb.role_dropdowns[0].value = "Z"
     assert nb.role_dropdowns[0].value == "Z"  # the user's edit stands
     assert nb._quick_offer is None and not ui.is_visible(nb.quick_card)
@@ -121,14 +118,14 @@ def test_a_preview_that_cannot_be_read_is_not_confirmed_by_one_click(exp, monkey
     monkeypatch.setattr(notebook_axis_preview, "read_plane", broken)
     nb = stepper(*exp)
     assert nb._quick_offer is not None and ui.is_visible(nb.quick_card)
-    assert nb.preview_image.value == b"" and nb.quick_image.value == b""
-    assert not ui.is_visible(nb.quick_image)  # no image is shown
-    assert "the pixels cannot be decoded" in nb.quick_caption.value  # the failure stays visible
-    assert "This plane cannot be shown with these roles." in nb.quick_caption.value
+    assert nb.preview_image.value == b"" and not ui.is_visible(nb.preview_image)
+    assert "the pixels cannot be decoded" in nb.preview_caption.value  # the failure stays visible
+    assert "This plane cannot be shown with these roles." in nb.preview_caption.value
+    assert "no example of these roles is drawn" in nb.quick_caption.value
     assert nb.quick_confirm.disabled
     assert not nb._confirm_quick_axes()  # even a click that reaches it is refused
     assert nb.confirmed_mapping is None and not nb.preview_checked.value
-    assert "the pixels cannot be decoded" in nb.quick_caption.value
+    assert "the pixels cannot be decoded" in nb.preview_caption.value
 
 
 def test_a_preview_that_fails_later_withdraws_the_click(exp, monkeypatch):  # noqa: F811
@@ -185,8 +182,8 @@ def test_an_image_changed_since_the_folder_check_is_not_previewed_or_confirmed(e
     stat = path.stat()
     os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**10))
     nb._refresh_quick_axes()
-    assert nb.preview_image.value == b"" and not ui.is_visible(nb.quick_image)
-    assert "changed since the folder check read it" in nb.quick_caption.value
+    assert nb.preview_image.value == b"" and not ui.is_visible(nb.preview_image)
+    assert "changed since the folder check read it" in nb.preview_caption.value
     assert nb.quick_confirm.disabled
     assert not nb._confirm_quick_axes()
     assert nb.confirmed_mapping is None and not nb.preview_checked.value
@@ -216,6 +213,6 @@ def test_an_image_changed_during_the_preview_read_is_not_shown(exp, monkeypatch)
     monkeypatch.setattr(notebook_axis_preview, "read_plane", read_then_rewrite)
     nb._refresh_quick_axes()
     assert nb.preview_image.value == b"" and nb._preview_drawn is None
-    assert "changed since the folder check read it" in nb.quick_caption.value
+    assert "changed since the folder check read it" in nb.preview_caption.value
     assert nb.quick_confirm.disabled and not nb._confirm_quick_axes()
     assert nb.confirmed_mapping is None and not nb.preview_checked.value

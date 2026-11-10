@@ -86,6 +86,7 @@ class _DescriptionCard(_NameRows, _SavedDraft):
         self.name_hints: dict[tuple[str, str], widgets.HTML] = {}
         self.single_note = widgets.HTML()
         self.reference_boxes: dict[str, widgets.Dropdown] = {}
+        self.reference_notes: dict[str, widgets.HTML] = {}
         self._id_states: dict[tuple[str, str], widgets.HTML] = {}
         self.names_status = widgets.HTML()
         self.names_grid = widgets.VBox()
@@ -330,13 +331,33 @@ class _DescriptionCard(_NameRows, _SavedDraft):
     # The references card -----------------------------------------------------------------
 
     def _build_references(self) -> None:
-        """Rebuild one dropdown per condition from the draft's references."""
+        """Show one dropdown per condition from the draft's references.
+
+        The dropdowns are built once for the conditions there are and then updated in place: a
+        choice must not replace the control the user is using (owner test, 10 November 2026).
+        """
         conditions = sorted(self.draft.conditions)
+        if list(self.reference_boxes) != conditions or not self.references_grid.children:
+            self._new_reference_rows(conditions)
         references = self.draft.references
+        for condition in conditions:
+            box = self.reference_boxes[condition]
+            options, chosen = self._reference_options(condition), self._chosen_reference(condition)
+            if list(box.options) != options:
+                box.options = options
+            if box.value != chosen:
+                box.value = chosen
+            users = sorted(c for c, target in references.items() if target == condition)
+            note = f"the reference of {', '.join(users)}" if users else ""
+            self.reference_notes[condition].value = html.escape(note)
+        self.references_status.value = self._references_refusal
+
+    def _new_reference_rows(self, conditions: list[str]) -> None:
+        """Build the rows of the references card: a dropdown and a note per condition."""
         rows: list[widgets.Widget] = [
             header_row("Condition", "Is compared against", "", layout=REFERENCE_COLUMNS)
         ]
-        self.reference_boxes = {}
+        self.reference_boxes, self.reference_notes = {}, {}
         for condition in conditions:
             box = widgets.Dropdown(
                 options=self._reference_options(condition),
@@ -347,20 +368,18 @@ class _DescriptionCard(_NameRows, _SavedDraft):
                 lambda change, c=condition: self._reference_chosen(c, change["new"]), names="value"
             )
             self.reference_boxes[condition] = box
-            users = sorted(c for c, target in references.items() if target == condition)
-            note = f"the reference of {', '.join(users)}" if users else ""
+            self.reference_notes[condition] = widgets.HTML()
             rows.append(
                 widgets.GridBox(
                     [
                         widgets.HTML(f"<b>{html.escape(condition)}</b>"),
                         box,
-                        widgets.HTML(html.escape(note)),
+                        self.reference_notes[condition],
                     ],
                     layout=REFERENCE_COLUMNS,
                 )
             )
         self.references_grid.children = rows
-        self.references_status.value = self._references_refusal
 
     def _chosen_reference(self, condition: str) -> str | None:
         """Return the saved choice: None if not answered, ``""`` for no comparison, a folder."""
@@ -409,7 +428,8 @@ class _DescriptionCard(_NameRows, _SavedDraft):
             return
         self._draft_note = ""
         new = _updated(answers, "conditions", condition, reference=target)
-        if self._answer(new):
+        # One refresh, of the cards as they are: the dropdown chosen in stays on the page.
+        if self._answer(new, rebuild=False):
             self._references_refusal = ""
         else:
             self._references_refusal = refusal_card(

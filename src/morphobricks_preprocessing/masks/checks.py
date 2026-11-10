@@ -6,7 +6,7 @@ Moved from ``masks.py`` (PP-5).
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -36,6 +36,7 @@ def _header_issues(
     unreadable: Iterable[str] = (),
     stated: Mapping[str, str] | None = None,
     bind: bool = False,
+    progress: Callable[[int, int, str], None] | None = None,
 ) -> list[ValidationIssue]:
     """Read each mask's header (axes, shape, pixel type) and check it against its image.
 
@@ -46,10 +47,13 @@ def _header_issues(
     decision of 5 November 2026). ``unreadable`` are paths already known not to open
     (OME-Zarr ``labels`` groups). With ``bind``, each mask is fingerprinted before and
     after its header is read (:attr:`.model.MaskFile.bound`, issue #160); a mask whose two
-    fingerprints differ is ``mask_changed_during_check``.
+    fingerprints differ is ``mask_changed_during_check``. ``progress(done, total, path)`` is
+    called before each mask's header is read.
     """
     found: list[tuple[str, str, str]] = [("unreadable_mask", path, "") for path in unreadable]
     for index, mask in enumerate(files):
+        if progress is not None:
+            progress(index, len(files), mask.path)
         where = mask.location(folder, root) if bind else None
         before = _fingerprint(where)
         checked, problems = _check_header(mask, images[mask.image], folder, root, stated or {})

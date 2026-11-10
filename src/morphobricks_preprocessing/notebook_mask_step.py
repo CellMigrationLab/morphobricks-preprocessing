@@ -37,6 +37,7 @@ from .mask_text import (
     mask_type_rows,
 )
 from .notebook_output import _LockCard
+from .notebook_progress import Wait
 from .notebook_render import issues_html
 from .run import MaskStep, MaskStepResult, RecordedMasks, mask_step
 from .validation import has_errors, plural
@@ -45,9 +46,10 @@ _STALE = object()
 """Marks the step as describing no run (a run is going on): the next refresh reads it again."""
 _LABEL = " Describe the masks"
 _ICON = "sitemap"
+READING_MASKS = "Reading the masks, one image at a time"
 _SUGGESTIONS = (
     "These are suggestions from the masks' pixels: check the relationships before using them. "
-    "Each mask keeps the ID it was given on Masks (step 10)."
+    "Each mask keeps the ID it was given on Masks."
 )
 
 
@@ -151,7 +153,8 @@ class _MaskStepCard:
             return None
         self._busy(self.mask_step_button, "Reading the masks…")
         self._clear_mask_step()
-        self.mask_step_status.value = ui.working("Pairing the masks the run recorded…")
+        self._mask_wait = Wait(self.mask_step_status, bar=False)  # the bar is the widget above
+        self._mask_wait.start("Pairing the masks the run recorded")
         try:
             with self.log.attached():
                 return self._describe_recorded_masks()
@@ -205,10 +208,13 @@ class _MaskStepCard:
     def _mask_step_progressed(self, done: int, total: int, image: str) -> None:
         self.mask_step_progress.max = max(total, 1)
         self.mask_step_progress.value = done
-        if image:
-            self.mask_step_status.value = ui.working(
-                f"Reading the masks of image {done + 1} of {total}: {image}"
-            )
+        wait = self._mask_wait
+        if not image:
+            wait.phase("Writing the description")
+            return
+        if wait.label != READING_MASKS:
+            wait.phase(READING_MASKS, total)
+        wait.step(done, total, image)
 
     def _mask_step_failed(self, title: str, lines: list[str]) -> None:
         """Show a failure as a red card; nothing was written."""

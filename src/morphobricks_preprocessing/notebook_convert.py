@@ -39,13 +39,15 @@ from .conversion_plan import ConversionPreview, preview_conversion
 from .conversion_record import RECORD_FILENAME
 from .notebook_options import _WIDE
 from .notebook_output import _LockCard
-from .notebook_render import issues_html
+from .notebook_progress import Wait
+from .notebook_render import blocked_line, issues_html
 from .planes import format_bytes
 from .run.output_guard import recorded_masks_of
 from .validation import plural
 
 _LABEL = " Make named-axis copies"
 _ICON = "copy"
+COPYING = "Copying images"
 _RECHECK_LABEL = " Check the copies in step 1"
 _COPY_HOLDERS = (
     "Another conversion is writing into this folder, or one was stopped (for example Colab "
@@ -78,6 +80,8 @@ class _ConvertCard:
             "Undo: the roles are not right",
         )
         self.convert_plan = widgets.HTML()
+        self.convert_tick_blocker = widgets.HTML()
+        self.convert_blocker = widgets.HTML()
         self.convert_button = ui.button(
             _LABEL,
             style="success",
@@ -140,8 +144,10 @@ class _ConvertCard:
             ),
             self.convert_roles,
             self.convert_roles_checked.widget,
+            self.convert_tick_blocker,
             self.convert_plan,
             self.convert_button,
+            self.convert_blocker,
             self.convert_progress,
             self.convert_status,
             self.convert_lock.card,
@@ -170,6 +176,11 @@ class _ConvertCard:
         roles = self._copy_roles()
         confirmed = self.confirmed_mapping is not None
         self.convert_roles_checked.disabled = not self.preview_checked.value
+        self.convert_tick_blocker.value = blocked_line(
+            []
+            if confirmed or self.preview_checked.value
+            else ["the example is not ticked: click Yes, the example looks right first"]
+        )
         ui.set_visible(
             self.convert_roles_checked.widget, not confirmed and self.mapping is not None
         )
@@ -229,11 +240,22 @@ class _ConvertCard:
             return masks.folder
         return recorded_masks_of(self._output_path(self.preflight.discovery.root))
 
+    def _convert_blocker(self, preview: ConversionPreview | None) -> str:
+        """Return what stops *Make named-axis copies* (the plan above gives the details)."""
+        if preview is None:
+            if self._copy_roles() is None:
+                return "the roles of the copies are not confirmed"
+            return "no folder for the copies is given"
+        if not preview.ok:
+            return "the plan above has an error to fix first"
+        return "the folder for the copies has too little free space (see the plan above)"
+
     def _update_convert_button(self) -> None:
         """Enable the button once the plan shows nothing that stops the conversion."""
         preview = self._convert_preview
         ready = preview is not None and preview.ok and (preview.fits or preview.earlier_conversion)
         self.convert_button.disabled = not ready
+        self.convert_blocker.value = blocked_line([] if ready else [self._convert_blocker(preview)])
         self.convert_button.tooltip = (
             "Write the copies into the folder above (the originals are only read)"
             if ready
@@ -263,7 +285,8 @@ class _ConvertCard:
         self._busy(self.convert_button, "Making the copies…")
         ui.set_visible(self.convert_progress, True)
         self.convert_progress.value, self.convert_progress.bar_style = 0, "info"
-        self.convert_status.value = ui.working("Checking the images and the folder…")
+        self._convert_wait = Wait(self.convert_status, bar=False)  # the bar widget is above
+        self._convert_wait.start("Checking the images and the folder")
         try:
             with self.log.attached():
                 result = convert_experiment(
@@ -294,8 +317,11 @@ class _ConvertCard:
     def _convert_progressed(self, done: int, total: int, image: str) -> None:
         self.convert_progress.max = max(total, 1)
         self.convert_progress.value = done
+        wait = self._convert_wait
+        if image and wait.label != COPYING:
+            wait.phase(COPYING, total)
         if image:
-            self.convert_status.value = ui.working(f"Copying image {done + 1} of {total}: {image}")
+            wait.step(done, total, image)
 
     def _show_conversion(self, result: ConversionResult) -> None:
         """Show a refusal with its card, or the copies, the record and the next step."""
@@ -349,7 +375,7 @@ def _roles_html(mapping: AxisMapping | None, roles: AxisMapping | None, confirme
             "The roles for the copies are not confirmed yet.",
             [
                 *lines,
-                "Check them with Show preview and press Yes, the preview looks right; then "
+                "Check them with the example and press Yes, the example looks right; then "
                 "answer the question below.",
             ],
             raw=True,
