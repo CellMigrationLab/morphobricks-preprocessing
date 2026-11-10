@@ -38,7 +38,7 @@ from .metadata import TiffMetadata
 from .notebook_options import _WIDE
 from .notebook_render import issue_count_chips, issues_html
 from .run.planned import PlannedMasks, planned_masks
-from .run.preflight import remasked
+from .run.preflight import description_in_use, remasked
 from .run.recorded import GivenInputs
 from .validation import ValidationIssue, has_errors, plural
 
@@ -161,7 +161,13 @@ class _MasksCard:
         plan = self._planned_masks(root)
         output = self._output_folder() or default_output_folder(root)
         with self.log.attached():
-            self.preflight = remasked(self.preflight, plan.folder, plan.mask_axes or None, output)
+            self.preflight = remasked(
+                self.preflight,
+                plan.folder,
+                plan.mask_axes or None,
+                output,
+                with_description=self._describe or description_in_use(root, output),
+            )
         self._paired_masks = _pairing(plan)
         self._show_issue_summary()
         self._refresh_run_step()

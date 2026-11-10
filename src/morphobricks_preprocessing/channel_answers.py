@@ -130,19 +130,30 @@ def untagged_by(answers: DraftAnswers, labels: Collection[str]) -> int:
     )
 
 
-def synced(answers: DraftAnswers, layouts: Sequence[UnitLayout]) -> DraftAnswers:
+def synced(
+    answers: DraftAnswers,
+    layouts: Sequence[UnitLayout],
+    tagged: Collection[tuple[UnitKey, int]] = (),
+) -> DraftAnswers:
     """Return the answers with the derived parts recomputed from the saved tags.
 
-    Each label's ``header_names`` become the raw header names of every cell tagged with it (None
-    when none has a name), and ``R``, ``G``, ``B`` are declared exactly when some unit is a
-    colour unit.
+    ``tagged`` are the cells ``(unit key, C index)`` the user tagged with this answer. A label's
+    ``header_names`` are the raw header names of the cells tagged with it that the user
+    confirmed: the names of the cells of ``tagged``, and of the names the label already had,
+    those some tagged cell still has (None when none is left). A tag saved while the cell's
+    header had another name confirms nothing about the name it has now: that name is never
+    added for the user, so the run's ``R_HEADER_CONTRADICTION`` stays until that cell is
+    tagged again. ``R``, ``G``, ``B`` are declared exactly when some unit is a colour unit.
     """
     found = aliases(layouts, answers.units)
-    channels = {
-        k: replace(v, header_names=found.get(k))
-        for k, v in answers.channels.items()
-        if k not in RGB_IDS
-    }
+    fresh = aliases(layouts, answers.units, set(tagged))
+    channels = {}
+    for key, channel in answers.channels.items():
+        if key in RGB_IDS:
+            continue
+        before = set(channel.header_names or ())
+        names = {name for name in found.get(key, ()) if name in before} | set(fresh.get(key, ()))
+        channels[key] = replace(channel, header_names=tuple(sorted(names)) or None)
     if any(u.image_type == "rgb" for u in answers.units.values()):
         channels.update({token: ChannelAnswer() for token in RGB_IDS})
     return replace(answers, channels=channels)

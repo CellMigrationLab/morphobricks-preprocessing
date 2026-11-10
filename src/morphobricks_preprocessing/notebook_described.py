@@ -40,7 +40,14 @@ from .draft import Draft, DraftError, draft_from_discovery
 from .draft_answers import DraftAnswers, UnitKey, apply_answers, carry_over
 from .fingerprint import current_fingerprint
 from .notebook_row_fold import reopen_units
-from .published_answers import published_answers, reasked, reopened, retired_ids
+from .published_answers import (
+    confirmed_layouts,
+    published_answers,
+    reasked,
+    reopened,
+    resumed,
+    retired_ids,
+)
 from .run import Preflight
 
 
@@ -215,14 +222,34 @@ class _DescribedRun:
         dropped (:func:`.published_answers.reasked`). A header name added to a channel changes
         no layout and keeps the date (section 4.4a). Nothing is ticked for the user.
         """
-        state = self._published() if self._describe else None
         before = self.draft_answers
-        if state is not None and before is not None and self._draft_base is not None:
+        if self._describe and before is not None and self._draft_base is not None:
+            state = self._published()
+            published = None if state is None else state.description
             try:
-                answers, _ = reasked(self._draft_base, before, answers, state.description)
+                # The layouts "same way?" was answered for: kept while a tag passes through
+                # no tag, forgotten at each new check of the folders (the base draft changes).
+                if getattr(self, "_same_way_base", None) is not self._draft_base:
+                    self._same_way_base, self._same_way_for = self._draft_base, {}
+                self._same_way_for.update(confirmed_layouts(self._draft_base, before))
+                answers, _ = reasked(
+                    self._draft_base, before, answers, published, self._same_way_for
+                )
             except DraftError:
                 pass  # the answer itself is refused below, with its reason
         return super()._answer(answers, rebuild=rebuild)
+
+    def _still_confirmed(
+        self, saved: DraftAnswers, kept: DraftAnswers
+    ) -> tuple[DraftAnswers, tuple[str, ...]]:
+        """Take back the saved "same way?" of a replicate whose folders are not those answered.
+
+        The draft file is read after a new check of the folders: a folder that joined or left
+        a replicate since the answer reopens it (:func:`.published_answers.resumed`).
+        """
+        if not self._describe:
+            return super()._still_confirmed(saved, kept)
+        return resumed(self._draft_base, saved, kept)
 
     def _sync_description(self) -> None:
         """Take the design card's pairing into the answers; changed replicates are asked again."""

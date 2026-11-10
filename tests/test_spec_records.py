@@ -4,7 +4,8 @@ The published file is a Spec fixture in a real output folder; the folder shows f
 another count, the draft and the user's answers come from the real reconciliation, and the lines
 are what ``publish_description`` appends to ``morphobricks.records.jsonl``, read back with
 ``read_records``. Dates are the user's: the confirmation date of a removal, ``recorded_on`` of a
-count change.
+count change. Conformance P34 and P35 also run on the fixtures the plan names: ``v01``, and
+``v25`` with ``t07`` (a confirmed removal from ``v01`` publishes exactly ``t07`` or ``v25``).
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from morphobricks_preprocessing.description_removal import (
     reconfirmations,
     removal_questions,
 )
+from morphobricks_preprocessing.description_write import canonical_bytes
 from morphobricks_preprocessing.run import description_file
 from morphobricks_preprocessing.run.description_file import (
     ABSENT,
@@ -76,14 +78,14 @@ def on_disk(description, changes=None, without=()):
     return seen
 
 
-def removal(published, gone, changes=None):
+def removal(published, gone, changes=None, *, day=DAY):
     """The draft, re-confirmations and answers when the folder loses the ``gone`` units."""
     rec = reconcile(published, on_disk(published, changes, without=gone))
-    answers = [question.answer(DAY) for question in removal_questions(published, rec)]
+    answers = [question.answer(day) for question in removal_questions(published, rec)]
     draft = candidate(published, rec, answers)
     for repeat_id in rec.reopened:
         if repeat_id in draft.repeats:  # a repeat left without members is gone, not reopened
-            draft = confirm_repeat(draft, repeat_id, DAY)
+            draft = confirm_repeat(draft, repeat_id, day)
     found = reconfirmations(published, draft, rec, answers)
     assert found.open == ()
     return draft, found.accepted, answers
@@ -385,3 +387,151 @@ def test_a_removal_and_a_count_change_in_one_publication_write_both_in_order(tmp
     ]
     assert [(r["old_image_count"], r["new_image_count"]) for r in counts] == [(9, 4), (5, 7)]
     assert all(r["recorded_on"] == LATER and "confirmed_on" not in r for r in counts)
+
+
+# P34 on v01 and P35 on v25 and t07: the fixtures the conformance plan names -------------
+
+TRANSITION = {item.name.split("_")[0]: item for item in fixtures("transitions")}
+
+
+def _published_text(folder):
+    return (folder / DESCRIPTION_FILENAME).read_text(encoding="utf-8")
+
+
+def test_p34_v01_one_changed_count_appends_one_line_and_keeps_every_confirmed_on(tmp_path):
+    published = model("v01")
+    base = publish_first(tmp_path, published)
+    before = _published_text(tmp_path)
+    draft = _counted(published, {key("CTRL", "rep1"): ObservedUnit(13)})
+    publish_description(tmp_path, draft, base_sha256=base, recorded_on=LATER)
+    after = _published_text(tmp_path)
+    pairs = zip(before.split("\n"), after.split("\n"), strict=True)
+    changed = [(old, new) for old, new in pairs if old != new]
+    assert changed == [("image_count = 12", "image_count = 13")]  # confirmed_on byte-identical
+    assert read_records(tmp_path) == (
+        {
+            "type": "image_count_changed",
+            "condition_id": "CTRL",
+            "condition_source_folder": "CTRL",
+            "repeat_id": "rep1",
+            "source_repeat": "rep1",
+            "technical_repeats": [{"id": "single", "source_folder": "single"}],
+            "old_image_count": 12,
+            "new_image_count": 13,
+            "recorded_on": LATER,
+        },
+    )
+
+
+def test_p34_v01_a_removal_and_count_changes_write_removed_then_one_line_per_member(tmp_path):
+    published = model("v01")
+    base = publish_first(tmp_path, published)
+    changes = {key("CTRL", "rep1"): ObservedUnit(13), key("DrugA", "rep1"): ObservedUnit(9)}
+    draft, accepted, answers = removal(published, {key("DrugA", "rep2")}, changes)
+    assert draft.repeats["rep1"].confirmed_on == published.repeats["rep1"].confirmed_on
+    result = publish_description(
+        tmp_path,
+        draft,
+        base_sha256=base,
+        confirmations=accepted,
+        removals=tuple(answers),
+        recorded_on=LATER,
+    )
+    lines = read_records(tmp_path)
+    assert lines == result.records
+    assert [(r["type"], r.get("entity")) for r in lines] == [
+        *[("reconfirmation", None)] * len(accepted),
+        ("removed", "unit"),
+        ("image_count_changed", None),
+        ("image_count_changed", None),
+    ]
+    counts = [r for r in lines if r["type"] == "image_count_changed"]
+    assert [(r["condition_id"], r["old_image_count"], r["new_image_count"]) for r in counts] == [
+        ("CTRL", 12, 13),
+        ("DrugA", 11, 9),
+    ]
+    assert all(r["repeat_id"] == "rep1" and r["recorded_on"] == LATER for r in counts)
+
+
+def test_p35_t07_is_what_a_confirmed_removal_from_v01_publishes(tmp_path):
+    """(a) The member DrugA/rep2 removed on 2026-11-07: the published file is ``t07``."""
+    published = model("v01")
+    base = publish_first(tmp_path, published)
+    draft, accepted, answers = removal(published, {key("DrugA", "rep2")}, day="2026-11-07")
+    publish_description(
+        tmp_path, draft, base_sha256=base, confirmations=accepted, removals=tuple(answers)
+    )
+    t07 = description_from_bytes(TRANSITION["t07"].data)
+    assert t07.repeats["rep2"].confirmed_on == "2026-11-07"
+    assert (tmp_path / DESCRIPTION_FILENAME).read_bytes() == canonical_bytes(t07)
+    assert "DrugA" in t07.used_ids["conditions"] and "rep2" in t07.used_ids["repeats"]
+    reconfirmed = {r["old_id"] for r in read_records(tmp_path) if r["type"] == "reconfirmation"}
+    assert "rep2" in reconfirmed  # the reopened repeat is re-confirmed, as 4.6 requires
+    unit = unit_row("DrugA", "rep2", "rep2", "single", day="2026-11-07")
+    assert removed_lines(tmp_path) == [unit]
+
+
+def test_p35_t07_without_the_recorded_removal_is_refused_and_writes_nothing(tmp_path):
+    base = publish_first(tmp_path, model("v01"))
+    before = snapshot(tmp_path)
+    with pytest.raises(PublicationRefused) as refused:
+        publish_description(
+            tmp_path, description_from_bytes(TRANSITION["t07"].data), base_sha256=base
+        )
+    assert {i.code.value for i in refused.value.issues} == {"R_CONFIRMED_ID_CHANGED"}
+    assert snapshot(tmp_path) == before
+    assert not (tmp_path / RECORDS_FILENAME).exists()
+
+
+def test_p35_v25_is_what_removing_the_last_members_of_drug_a_from_v01_publishes(tmp_path):
+    """(b), (c) condition: every DrugA member removed on 2026-11-06 gives ``v25``."""
+    published = model("v01")
+    base = publish_first(tmp_path, published)
+    gone = {key("DrugA", "rep1"), key("DrugA", "rep2")}
+    draft, accepted, answers = removal(published, gone, day="2026-11-06")
+    publish_description(
+        tmp_path, draft, base_sha256=base, confirmations=accepted, removals=tuple(answers)
+    )
+    assert (tmp_path / DESCRIPTION_FILENAME).read_bytes() == canonical_bytes(model("v25"))
+    day = "2026-11-06"
+    assert removed_lines(tmp_path) == [
+        {
+            **NULLS,
+            "type": "removed",
+            "entity": "condition",
+            "condition_id": "DrugA",
+            "condition_source_folder": "DrugA",
+            "confirmed_on": day,
+        },
+        unit_row("DrugA", "rep1", "rep1", "single", day=day),
+        unit_row("DrugA", "rep2", "rep2", "single", day=day),
+    ]
+
+
+def test_p35_on_the_v25_base_a_removed_repeat_keeps_every_retired_id(tmp_path):
+    """(c) repeat: with ``v25`` published, CTRL/rep2 removed is the repeat, then its unit."""
+    published = model("v25")
+    base = publish_first(tmp_path, published)
+    draft, accepted, answers = removal(published, {key("CTRL", "rep2")})
+    assert draft.used_ids == published.used_ids  # DrugA and rep2 stay listed
+    publish_description(
+        tmp_path, draft, base_sha256=base, confirmations=accepted, removals=tuple(answers)
+    )
+    assert removed_lines(tmp_path) == [
+        {**NULLS, "type": "removed", "entity": "repeat", "repeat_id": "rep2", "confirmed_on": DAY},
+        unit_row("CTRL", "rep2", "rep2", "single"),
+    ]
+    assert (
+        "rep2" not in description_from_bytes((tmp_path / DESCRIPTION_FILENAME).read_bytes()).repeats
+    )
+
+
+def test_p35_on_the_v25_base_an_unconfirmed_removal_writes_nothing(tmp_path):
+    published = model("v25")
+    base = publish_first(tmp_path, published)
+    draft, accepted, _ = removal(published, {key("CTRL", "rep2")})
+    before = snapshot(tmp_path)
+    with pytest.raises(ValueError, match="no removal confirms"):
+        publish_description(tmp_path, draft, base_sha256=base, confirmations=accepted)
+    assert snapshot(tmp_path) == before
+    assert not (tmp_path / RECORDS_FILENAME).exists()

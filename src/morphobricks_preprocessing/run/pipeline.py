@@ -71,7 +71,7 @@ from .generation import staged_generation
 from .lock import OutputLockedError, lock_issue, output_lock
 from .modes import FULL, RESTART, RunMode, run_mode
 from .output_guard import output_masks_issues
-from .preflight import Preflight, fit_calibration, preflight
+from .preflight import Preflight, description_in_use, fit_calibration, preflight
 from .publish import write_report
 from .recorded import (
     GivenInputs,
@@ -256,6 +256,7 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
         masks_folder=inputs.masks_folder,
         mask_axes=inputs.mask_axes or None,
         bind_headers=True,
+        with_description=description_in_use(inputs.experiment_root, output),
     )
     design, design_problems, design_changed = design_for_run(options.design, output, previous[0])
     checked = header_checks(pre, inputs, design, options.memory_limit)

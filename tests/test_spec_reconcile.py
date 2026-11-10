@@ -343,8 +343,10 @@ def test_p33_a_a_renamed_condition_folder_is_not_attached_to_the_old_id():
             "ctrl": replace(published.conditions["ctrl"], source_folder="ctl"),
         },
     )
+    t12 = next(item for item in fixtures("transitions") if item.name.startswith("t12_"))
+    assert description_from_bytes(t12.data) == attached  # the hand-made attachment is t12
     codes = {i.code for i in transition_issues(published, attached)}
-    assert Refusal.R_CONFIRMED_ID_CHANGED in codes  # t12: a hand-made attachment is refused
+    assert codes == {Refusal.R_CONFIRMED_ID_CHANGED}  # refused without a recorded confirmation
 
 
 def test_p33_b_the_statement_keeps_the_id_moves_the_folder_and_reopens_the_repeats(tmp_path):

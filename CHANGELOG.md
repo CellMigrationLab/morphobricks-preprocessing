@@ -6,8 +6,44 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 [migration guide](docs/migration-0.3-to-0.4.md).
 
-## Unreleased
+## 0.5.0 - 2026-11-09
 
+Stage 1 of the experiment description (MorphoBricks-Spec experiment-v1, pinned at `1bed024`):
+the reader, the canonical writer, publication, reconciliation, the described run, semantic
+`RunInputs` and the notebook that writes `morphobricks.toml`. Runs without a description keep
+the v0.4.0 behaviour (with a warning). The release step: the version is 0.5.0, the notebook
+installs `v0.5.0` (its `RELEASE_REF` is the release-preparation commit), and the Gate G1 record
+of this release candidate is in `docs/conformance.md`. The normalization brick stays pinned at
+v0.3.4. It also carries the audit batches 33, 34a and 34b (#254, #255) and their
+pre-release follow-ups (#257).
+
+- **Fixed (final review of the release candidate): two confirmations the user did not give.**
+  (1) *A header refusal lifted by an answer about another cell.* Tagging any channel of any
+  folder recomputed every label's `header_names` from every saved tag, so after images were
+  rewritten with other header names (for example two channels swapped) the
+  `R_HEADER_CONTRADICTION` of folders the user had not tagged again vanished, *Check and save*
+  said the images agree and the run wrote the table. Now a tag confirms the header name of the
+  cell tagged, and nothing else: names no tagged cell has any more are dropped, and a name is
+  added only for the cells of that answer. The refusal stays until the channel it names is
+  tagged again. (2) *A "same way?" kept for other folders or another layout in a draft.* With
+  nothing published yet, the answer saved in `morphobricks.draft.json` was kept when a folder
+  joined or left the replicate before the next folder check, and when a tag or an image type
+  changed after it, and it was published as the user's confirmation. Now it is asked again in
+  both cases, as it already was against a published file (experiment-v1 §10); the names card
+  says which replicate is asked again, and a replicate tagged back to the layout it was
+  answered for keeps its answer.
+- **Fixed: `R_FOLDER_NOT_NFC` and `R_MASK_TYPE_NAME_INVALID` on the production paths
+  (conformance P21, P29).** They were raised only by `preflight(..., with_description=True)`,
+  which no production caller passed, so a run with a published `morphobricks.toml` refused a
+  decomposed folder only as `R_UNIT_NOT_DECLARED`, and the mask types `NA`, ` cells` and a
+  decomposed name only as `R_MASK_TYPE_NOT_DECLARED`. Now `run_experiment`, the mask step
+  (`prepare_mask_step`, the command line's `masks`) and the command line's `check` and `run`
+  pass `with_description` whenever the output folder holds a published description
+  (`run.preflight.description_in_use`); the notebook's folder check and its re-pairing of the
+  masks also pass it while the user describes the experiment, and *Check and save* is blocked
+  while either refusal stands; the command line's `describe` refuses a folder label that is not
+  NFC instead of drafting it. Nothing is renamed or normalized. A run, mask step or check
+  without a published description is unchanged (owner decision Q1).
 - **Pre-release follow-ups to #254 and #255.** A replicate's "prepared and imaged the same
   way?" is asked again when the candidate description changes its layout against the published
   one, as experiment-v1 §10 says ("a unit's ordered channel list", a new or removed unit or
@@ -70,7 +106,6 @@ are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
   `options: StripOptions, bound` in place of `cache, memory_limit`; `Thumbnails` takes the
   check's `header_fingerprints`. A draft saved before this change with no image type reopens
   with the image type asked, never as "channels".
-
 - **Notebook: folder pictures with a 1:1 crop, "Tag like the saved group", colour mask evidence
   (PR 17c).** *Images found* adds a picture of each folder's first image to the labels table,
   from the file header only and display only (`header_preview`, `notebook_folder_previews`):

@@ -1,26 +1,37 @@
 """Conformance P21, P26 (recorded header names) and P29: discovery before any description.
 
 Spec experiment-v1 §3.3 and §6, conformance plan section 4. The refusals apply only when a
-description is in use (owner decision Q1): a run without one accepts what v0.4 accepted.
+description is in use (owner decision Q1): a run without one accepts what v0.4 accepted. P21 and
+P29 are shown on their named fixtures (``v01``, ``v07``) through the run, the mask step and the
+command line (``check``, ``run``, ``masks``, ``describe``); the notebook's folder check and
+*Check and save* are in ``test_notebook_name_refusals.py``.
 P26's comparison of header names with a description's confirmed names (``R_HEADER_CONTRADICTION``)
 belongs to the physical checks (Stage 1, PR 8); here the names are recorded as read, untrimmed.
 """
 
 import numpy as np
+import pytest
 import tifffile
 
+from description_tree import MAPPING, build_experiment, write_image, write_mask
 from morphobricks_preprocessing import (
     prefill_mapping,
     preflight,
     read_manifest,
     run_experiment,
 )
-from morphobricks_preprocessing.discovery import discover_experiment
+from morphobricks_preprocessing.cli import main
+from morphobricks_preprocessing.description import description_from_bytes
+from morphobricks_preprocessing.discovery import default_output_folder, discover_experiment
 from morphobricks_preprocessing.metadata import inspect_tiff
+from morphobricks_preprocessing.run.mask_step import prepare_mask_step
+from morphobricks_preprocessing.run.preflight import description_in_use
+from spec_pin import fixtures
 from tiff_tree import write_data, write_tiff
 
 DECOMPOSED = "Café"
 COMPOSED = "Café"
+VALID = {item.name.split("_")[0]: item for item in fixtures("valid")}
 
 
 def codes(issues):
@@ -156,3 +167,171 @@ def test_p29_without_a_description_mask_types_are_accepted_as_in_v0_4(tmp_path):
     pre = preflight(root, masks_folder=masks)
     assert not {"R_FOLDER_NOT_NFC", "R_MASK_TYPE_NAME_INVALID"} & set(codes(pre.masks.issues))
     assert not any(i.is_error for i in pre.masks.issues)
+
+
+# P21 and P29 on their named fixtures, through the production paths --------------------
+#
+# A run, the mask step and the command line refuse these names when the output folder holds
+# a published description (``description_in_use``); the tests above call ``preflight``
+# directly. Without a published description everything stays as in v0.4 (owner decision Q1).
+
+NAME_CODES = {"R_FOLDER_NOT_NFC", "R_MASK_TYPE_NAME_INVALID"}
+P29_TYPES = ("nuclei", "cells", "NA", " cells", DECOMPOSED)
+
+
+def published(tmp_path, name, *, publish=True):
+    """Build the tree of fixture ``name``; publish it in the output folder unless told not to."""
+    data = VALID[name].data
+    root, out = tmp_path / "exp", tmp_path / "out"
+    out.mkdir(parents=True)
+    if publish:
+        (out / "morphobricks.toml").write_bytes(data)
+    return root, out, build_experiment(root, description_from_bytes(data))
+
+
+def p21_tree(tmp_path, *, publish=True):
+    """``v01`` with a decomposed folder ``CTRL/Cafe\\u0301`` holding one image."""
+    root, out, _ = published(tmp_path, "v01", publish=publish)
+    write_image(root / "CTRL" / DECOMPOSED / "a.tif", 2)
+    return root, out
+
+
+def p29_tree(tmp_path, *, publish=True):
+    """``v07`` with the mask folders of :data:`P29_TYPES`: two declared, three refused."""
+    root, out, images = published(tmp_path, "v07", publish=publish)
+    masks = tmp_path / "masks"
+    for mask_type in P29_TYPES:
+        for image in images:
+            write_mask(masks, mask_type, image, [0, 1, 2])
+    return root, out, masks
+
+
+def test_p21_a_run_with_published_v01_refuses_a_decomposed_folder(tmp_path):
+    root, out = p21_tree(tmp_path)
+    result = run_experiment(root, MAPPING, output_folder=out)
+    assert not result.written
+    found = issue(result.issues, "R_FOLDER_NOT_NFC")
+    assert found.is_error and found.paths == (f"CTRL/{DECOMPOSED}",)
+    assert "R_UNIT_NOT_DECLARED" in codes(result.issues)  # the unit is new, as before
+    # Nothing renamed or normalized: the folder is as written, no composed twin appears.
+    assert (root / "CTRL" / DECOMPOSED).is_dir()
+    assert sorted(p.name for p in (root / "CTRL").iterdir()) == sorted([DECOMPOSED, "rep1", "rep2"])
+    assert not (out / "plane_histograms.csv").exists()
+
+
+def test_p29_a_run_with_published_v07_refuses_the_mask_type_names(tmp_path):
+    root, out, masks = p29_tree(tmp_path)
+    result = run_experiment(root, MAPPING, output_folder=out, masks_folder=masks)
+    assert not result.written
+    invalid = issue(result.issues, "R_MASK_TYPE_NAME_INVALID")
+    assert invalid.is_error and invalid.paths == (" cells", "NA")
+    not_nfc = issue(result.issues, "R_FOLDER_NOT_NFC")
+    assert not_nfc.is_error and not_nfc.paths == (DECOMPOSED,)
+    assert "R_MASK_TYPE_NOT_DECLARED" in codes(result.issues)
+    assert sorted(p.name for p in masks.iterdir()) == sorted(P29_TYPES)  # never renamed
+
+
+def test_p21_p29_an_undescribed_run_of_the_same_trees_is_as_in_v0_4(tmp_path):
+    root, out = p21_tree(tmp_path / "p21", publish=False)
+    with pytest.warns(UserWarning, match="No experiment description"):
+        result = run_experiment(root, MAPPING, output_folder=out)
+    assert not NAME_CODES & set(codes(result.issues))
+    root, out, masks = p29_tree(tmp_path / "p29", publish=False)
+    with pytest.warns(UserWarning, match="No experiment description"):
+        result = run_experiment(root, MAPPING, output_folder=out, masks_folder=masks)
+    assert not NAME_CODES & set(codes(result.issues))
+
+
+def test_p29_the_mask_step_refuses_the_names_with_a_published_description(tmp_path):
+    root, out, masks = p29_tree(tmp_path)
+    step = prepare_mask_step(root, out, masks_folder=masks)
+    assert issue(step.issues, "R_MASK_TYPE_NAME_INVALID").paths == (" cells", "NA")
+    assert issue(step.issues, "R_FOLDER_NOT_NFC").paths == (DECOMPOSED,)
+    assert not step.ready
+
+
+def test_p21_the_mask_step_refuses_a_decomposed_experiment_folder(tmp_path):
+    root, out = p21_tree(tmp_path)
+    masks = tmp_path / "masks"
+    write_mask(masks, "nuclei", f"CTRL/{DECOMPOSED}/a.tif", [0, 1])
+    step = prepare_mask_step(root, out, masks_folder=masks)
+    assert issue(step.issues, "R_FOLDER_NOT_NFC").paths == (f"CTRL/{DECOMPOSED}",)
+    assert not step.ready
+
+
+def test_p21_p29_the_mask_step_without_a_description_is_as_in_v0_4(tmp_path):
+    root, out, masks = p29_tree(tmp_path, publish=False)
+    step = prepare_mask_step(root, out, masks_folder=masks)
+    assert not NAME_CODES & set(codes(step.issues))
+
+
+def test_description_in_use_looks_only_at_the_published_file(tmp_path):
+    root, out = tmp_path / "exp", tmp_path / "out"
+    out.mkdir()
+    assert not description_in_use(root, out)
+    (out / "morphobricks.draft.json").write_text("{}", encoding="utf-8")
+    assert not description_in_use(root, out)  # a draft is not a published description
+    (tmp_path / "elsewhere.toml").write_bytes(VALID["v01"].data)
+    (out / "morphobricks.toml").symlink_to(tmp_path / "elsewhere.toml")
+    assert description_in_use(root, out)  # the run refuses the link itself (R_FILE_SYMLINK)
+    default = default_output_folder(root.resolve())
+    default.mkdir()
+    (default / "morphobricks.toml").write_bytes(VALID["v01"].data)
+    assert description_in_use(root)
+
+
+# The command line ------------------------------------------------------------------------
+#
+# The command line prints the plain message; the report it writes holds the code.
+
+NFC_TEXT = "not in Unicode NFC form"
+INVALID_TEXT = "cannot identify a mask type"
+
+
+def reported(out):
+    """Return the codes of the issues in the output folder's ``discovery_report.json``."""
+    report = (out / "discovery_report.json").read_text(encoding="utf-8")
+    return {code for code in NAME_CODES | {"R_MASK_TYPE_NOT_DECLARED"} if f'"{code}"' in report}
+
+
+def test_p21_the_command_line_check_and_run_refuse_a_decomposed_folder(tmp_path, capsys):
+    root, out = p21_tree(tmp_path)
+    assert main(["check", str(root), "--output", str(out)]) == 1
+    assert NFC_TEXT in capsys.readouterr().out
+    assert reported(out) == {"R_FOLDER_NOT_NFC"}
+    assert main(["run", str(root), "--output", str(out), "--axes", "CYX"]) == 1
+    assert NFC_TEXT in capsys.readouterr().out
+    assert reported(out) == {"R_FOLDER_NOT_NFC"}
+    assert not (out / "plane_histograms.csv").exists()
+
+
+def test_p29_the_command_line_check_and_masks_refuse_the_mask_type_names(tmp_path, capsys):
+    root, out, masks = p29_tree(tmp_path)
+    assert main(["check", str(root), "--output", str(out), "--masks", str(masks)]) == 1
+    printed = capsys.readouterr().out
+    assert INVALID_TEXT in printed and NFC_TEXT in printed
+    assert {"R_MASK_TYPE_NAME_INVALID", "R_FOLDER_NOT_NFC"} <= reported(out)
+    assert main(["masks", str(root), "--output", str(out), "--masks", str(masks)]) == 1
+    printed = capsys.readouterr().out
+    assert INVALID_TEXT in printed and NFC_TEXT in printed
+    assert not (out / "mask_relationships.json").exists()
+
+
+def test_p21_the_command_line_describe_refuses_a_decomposed_folder(tmp_path, capsys):
+    root, out = p21_tree(tmp_path)
+    assert main(["describe", str(root), "--output", str(out)]) == 1
+    assert NFC_TEXT in capsys.readouterr().out
+    # Without a published description too: describe drafts a description from the folders.
+    root, out = p21_tree(tmp_path / "draft", publish=False)
+    assert main(["describe", str(root), "--output", str(out)]) == 1
+    assert NFC_TEXT in capsys.readouterr().out
+    assert list(out.iterdir()) == []  # describe writes nothing
+
+
+def test_p21_p29_the_command_line_check_without_a_description_is_as_in_v0_4(tmp_path, capsys):
+    root, out, masks = p29_tree(tmp_path, publish=False)
+    write_image(root / "CTRL" / DECOMPOSED / "a.tif", 2)
+    assert main(["check", str(root), "--output", str(out), "--masks", str(masks)]) == 0
+    printed = capsys.readouterr().out
+    assert NFC_TEXT not in printed and INVALID_TEXT not in printed
+    assert reported(out) == set()

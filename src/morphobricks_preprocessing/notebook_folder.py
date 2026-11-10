@@ -23,6 +23,7 @@ from .notebook_render import (
     labels_html,
 )
 from .run import Preflight, preflight
+from .run.preflight import description_in_use
 from .unit_consistency import unit_checked
 from .validation import ValidationIssue, plural
 
@@ -213,6 +214,7 @@ class _FolderStep:
                     exclude=self._excluded(),
                     masks_folder=masks,
                     mask_axes=mask_axes,
+                    with_description=self._with_description(folder),
                     # Each header is bound to the file's fingerprint: every picture and the
                     # save are of the images as this check read them (audit batch 33).
                     bind_headers=True,
@@ -237,6 +239,15 @@ class _FolderStep:
         self._refresh_run_step()
         self._show_log()
         return pre
+
+    def _with_description(self, folder: str) -> bool:
+        """Return True when the folder check is that of a description (Spec experiment-v1 §3.3).
+
+        While the user describes the experiment (a described run), and whenever the output
+        folder holds a published ``morphobricks.toml``, which the run uses: folder and mask
+        type names are then refused as the run refuses them.
+        """
+        return self._describe or description_in_use(folder, self._output_folder())
 
     def _show_folder_results(self, pre: Preflight) -> None:
         """Show the labels, messages and pixel sizes of a new check; the design starts over."""

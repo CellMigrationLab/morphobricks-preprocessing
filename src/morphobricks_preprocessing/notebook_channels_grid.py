@@ -221,7 +221,8 @@ class TagGrid:
         tags[index] = value
         for layout in units:  # every folder of the block holds these tags
             answers = with_tags(answers, layout, tags)
-        if self.store.update(synced(answers, self.layouts)):
+        cells = [(layout.key, index) for layout in units]  # the cells this answer tags
+        if self.store.update(synced(answers, self.layouts, cells)):
             self.message = ""
         else:
             self.message = ui.status("error", "Not saved.", [self.store.refusal()])
@@ -249,11 +250,13 @@ class TagGrid:
         """
         answers = self.store.answers()
         rgb = [u.key for u in units if self.place_types and self.types.proposed(u)]
+        cells = []
         for layout in units:
             shown, proposed = self.effective(layout)
             if proposed:
                 answers = with_tags(answers, layout, shown)
-        ok = self.store.update(synced(answers, self.layouts))
+                cells += [(layout.key, index) for index in proposed]
+        ok = self.store.update(synced(answers, self.layouts, cells))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
         if ok and rgb:
             self.types.confirm_header(rgb)
@@ -303,7 +306,8 @@ class TagGrid:
         answers = self.store.answers()
         for layout in units:
             answers = with_tags(answers, layout, tags)
-        ok = self.store.update(synced(answers, self.layouts))
+        cells = [(layout.key, index) for layout in units for index in range(layout.channels)]
+        ok = self.store.update(synced(answers, self.layouts, cells))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
         self.refresh()
         self._on_change()

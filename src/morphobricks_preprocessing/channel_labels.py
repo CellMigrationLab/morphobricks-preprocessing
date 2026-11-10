@@ -294,13 +294,16 @@ def positions(
 
 
 def aliases(
-    layouts: Sequence[UnitLayout], units: Mapping[UnitKey, UnitAnswer]
+    layouts: Sequence[UnitLayout],
+    units: Mapping[UnitKey, UnitAnswer],
+    only: Collection[tuple[UnitKey, int]] | None = None,
 ) -> dict[str, tuple[str, ...]]:
     """Return the raw header names of every cell tagged with a label, by label, sorted.
 
     The tag is the user's confirmation that the header name is evidence for the label
     (experiment-v1 section 4.3); names are kept exactly as read. A colour unit has none (``R``,
     ``G`` and ``B`` take no aliases), and a label whose cells have no header name is omitted.
+    With ``only``, just the cells ``(unit key, C index)`` it lists are read.
     """
     found: dict[str, set[str]] = {}
     for layout in layouts:
@@ -309,6 +312,8 @@ def aliases(
             continue
         for index, tag in enumerate(tags_of(layout, answer)):
             name = layout.name(index)
+            if only is not None and (layout.key, index) not in only:
+                continue
             if tag and name:
                 found.setdefault(tag, set()).add(name)
     return {label: tuple(sorted(names)) for label, names in found.items()}

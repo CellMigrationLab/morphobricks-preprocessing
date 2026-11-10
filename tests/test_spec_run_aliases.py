@@ -1,4 +1,4 @@
-"""A run with a published description: conformance P26 (per-unit header evidence), Stage 1 PR 13.
+"""A described run: conformance P26 (per-unit header evidence, Stage 1 PR 13) and P06.
 
 Experiment-v1 section 4.3 and 8. For a described run the experiment-wide v0.4 checks
 ``channel_names_differ`` and ``different_channel_counts`` are replaced by per-unit checks: each
@@ -9,11 +9,13 @@ without header names needs no evidence (``v12``). Without a description the v0.4
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 import tifffile
 
-from description_tree import MAPPING, unit_folder
+from description_tree import MAPPING, two_unnamed_units, unit_folder, write_fluorophores
 from morphobricks_preprocessing import run_experiment
 from morphobricks_preprocessing.description import description_from_bytes
 from spec_pin import fixtures
@@ -22,6 +24,7 @@ VALID = {item.name.split("_")[0]: item for item in fixtures("valid")}
 CONTRADICTION = "R_HEADER_CONTRADICTION"
 COUNT = "R_CHANNEL_COUNT_MISMATCH"
 HOMOGENEOUS = "R_UNIT_NOT_HOMOGENEOUS"
+FIELD = "images_without_header_channel_names"
 GLOBAL = {"channel_names_differ", "different_channel_counts"}
 COMPOSED, DECOMPOSED = "Café", "Café"
 
@@ -146,6 +149,35 @@ def test_p26_images_without_header_names_need_no_evidence_v12(tmp_path):
     root, out = _setup(tmp_path, "v12", {"*": None})
     result = _run(root, out)
     assert result.written, [(i.code, i.message) for i in result.issues]
+
+
+def _p06_run(tmp_path, *, swapped):
+    """Run the two-unit ``v12`` folder; DrugA's fluorophores are maybe physically swapped."""
+    root, out = tmp_path / f"exp_{swapped}", tmp_path / f"out_{swapped}"
+    out.mkdir()
+    (out / "morphobricks.toml").write_bytes(two_unnamed_units(VALID["v12"].data))
+    for condition in ("CTRL", "DrugA"):
+        for index in range(4):
+            path = root / condition / "rep1" / f"FOV{index}.tif"
+            write_fluorophores(path, swapped=swapped and condition == "DrugA")
+    result = _run(root, out)
+    manifest = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
+    return result, manifest["experiment_description"]
+
+
+def test_p06_two_unnamed_units_with_swapped_fluorophores_run_unrefused_on_the_confirmation(
+    tmp_path,
+):
+    """P06: a documented limit, not a refusal; the record shows the units stand on confirmation."""
+    result, entry = _p06_run(tmp_path, swapped=True)
+    assert result.written and result.issues == ()
+    _, unswapped = _p06_run(tmp_path, swapped=False)
+    assert entry == unswapped  # the described-run record cannot tell the two folders apart
+    listed = {
+        u["condition"]: [(i["header_names"], i["channel_positions"]) for i in u[FIELD]]
+        for u in entry["units"]
+    }
+    assert listed == {"CTRL": [("none", [0, 1])] * 4, "DrugA": [("none", [0, 1])] * 4}
 
 
 def test_p26_a_unit_with_named_and_unnamed_images_is_not_homogeneous(tmp_path):
