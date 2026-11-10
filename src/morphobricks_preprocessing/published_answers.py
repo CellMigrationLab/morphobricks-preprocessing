@@ -17,6 +17,7 @@ the IDs still in use are the published answers themselves, so they are not "used
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 
 from .description import USED_KINDS, Description
@@ -213,8 +214,26 @@ def _declared(layout: Layout | None) -> bool:
     )
 
 
+def confirmed_layouts(draft: Draft, answers: DraftAnswers) -> dict[str, Layout]:
+    """Return the layout of every repeat that has its date and declares every unit's channels.
+
+    The layout a "same way?" answer stands for, as long as the answers hold both.
+    """
+    return {
+        label: layout
+        for label, layout in layouts(draft, answers).items()
+        if _declared(layout)
+        and label in answers.repeats
+        and answers.repeats[label].confirmed_on is not None
+    }
+
+
 def reasked(
-    draft: Draft, before: DraftAnswers, after: DraftAnswers, published: Description
+    draft: Draft,
+    before: DraftAnswers,
+    after: DraftAnswers,
+    published: Description | None,
+    given: Mapping[str, Layout] | None = None,
 ) -> tuple[DraftAnswers, tuple[str, ...]]:
     """Return ``after`` with the date of every repeat an answer just reopened taken back.
 
@@ -225,9 +244,17 @@ def reasked(
     asked again; nothing is ever ticked here. A layout with an untagged channel declares no
     list yet (a tag being changed passes through it), so it reopens nothing by itself: the
     candidate cannot be saved while a tag is missing.
+
+    ``given`` are the layouts the user answered "same way?" for in the draft
+    (:func:`confirmed_layouts` of the answers that last held a whole layout with its date): a
+    repeat that comes back to that layout keeps its date, as one that comes back to the
+    published layout does. Without a published file (``published`` None) no layout is the
+    published one: a "same way?" answered in the draft stands for the layout it was given for,
+    and for no other.
     """
     old, new = layouts(draft, before), layouts(draft, after)
-    saved = published_layouts(published)
+    saved = {} if published is None else published_layouts(published)
+    answered = given or {}
     changed = tuple(
         sorted(
             label
@@ -236,12 +263,42 @@ def reasked(
             and _declared(new.get(label))
             and new.get(label) != old.get(label)
             and new.get(label) != saved.get(label)
+            and new.get(label) != answered.get(label)
         )
     )
     repeats = dict(after.repeats)
     for label in changed:
         repeats[label] = replace(repeats[label], confirmed_on=None)
     return replace(after, repeats=repeats), changed
+
+
+def resumed(
+    draft: Draft, saved: DraftAnswers, kept: DraftAnswers
+) -> tuple[DraftAnswers, tuple[str, ...]]:
+    """Return ``kept`` with the "same way?" taken back where the folders are not those answered.
+
+    ``saved`` are the answers as the draft file holds them and ``kept`` those that still apply
+    to ``draft``, the draft of the folders now (:func:`.draft_answers.carry_over`). The file
+    does not hold the folders a "same way?" was answered for, only the answers of each unit.
+    A repeat's date is kept only when every unit it has now has its whole saved channel list
+    and type, and no unit with a saved answer has left it (section 10: a new or removed unit or
+    member reopens the confirmation). A folder that joined the repeat has no saved answer, so
+    the repeat is asked again; so is a repeat confirmed before its channels were all tagged
+    (tagging them reopens it anyway, :func:`reasked`). Nothing is ticked here.
+    """
+    now = layouts(draft, kept)
+    left = {saved.pairing.get(key[:2], key[1]) for key in saved.units if key not in kept.units}
+    changed = tuple(
+        sorted(
+            label
+            for label, answer in kept.repeats.items()
+            if answer.confirmed_on is not None and (label in left or not _declared(now.get(label)))
+        )
+    )
+    repeats = dict(kept.repeats)
+    for label in changed:
+        repeats[label] = replace(repeats[label], confirmed_on=None)
+    return replace(kept, repeats=repeats), changed
 
 
 def kept_date(
@@ -264,11 +321,13 @@ def kept_date(
 
 __all__ = [
     "CHANNELS_TYPE",
+    "confirmed_layouts",
     "kept_date",
     "layouts",
     "published_answers",
     "published_layouts",
     "reasked",
     "reopened",
+    "resumed",
     "retired_ids",
 ]

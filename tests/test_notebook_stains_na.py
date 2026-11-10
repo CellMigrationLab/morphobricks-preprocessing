@@ -146,6 +146,12 @@ def test_labels_declared_before_every_folder_became_colour_stay_saved_and_unused
     nb.channel_types.radios[key].value = "rgb"  # every folder is colour again
     assert nb._stains_not_applicable and card.labels == ["ACTIN", "DNA", "PHASE"]
     assert "stay saved, unused" in card.na_note.value
+    # The folder's image type changed after its replicate's "same way?" was answered: that
+    # answer was for another layout, so it is asked again, never kept for the user.
+    assert nb.save_button.disabled and not nb.save_experiment()
+    asked = [label for label, toggle in nb.same_way.items() if not toggle.value]
+    assert asked == ["rep1"]
+    nb.same_way["rep1"].button.click()
     assert nb.save_experiment()
     text = (tmp_path / "out" / DESCRIPTION_FILENAME).read_text(encoding="utf-8")
     result = refval().validate(text.encode("utf-8"))[0]

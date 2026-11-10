@@ -43,16 +43,34 @@ class _SavedDraft:
         pairing = self._resume_pairing(saved)
         answers, dropped = carry_over(self._draft_base, saved, pairing)
         try:
+            answers, asked = self._still_confirmed(saved, answers)
             apply_answers(self._draft_base, answers)
         except DraftError as exc:
             return None, self._set_aside(str(exc))
         lines = [f"From {DRAFT_FILENAME} in the output folder."]
         if dict(saved.pairing) != pairing:
             lines.append("The pairing of the experiment design above is used.")
+        if asked:
+            lines.append(
+                "Asked again on Check and save (a folder joined or left it since your answer "
+                '"the same way", or its channels were not all tagged then): '
+                + ", ".join(asked)
+                + "."
+            )
         if dropped:
             lines.append("No longer in the experiment, so not kept: " + "; ".join(dropped) + ".")
+        if dropped or asked:
             return answers, ui.status("warn", "Your saved answers were read.", lines)
         return answers, ui.status("info", "Your saved answers were read.", lines)
+
+    def _still_confirmed(
+        self, saved: DraftAnswers, kept: DraftAnswers
+    ) -> tuple[DraftAnswers, tuple[str, ...]]:
+        """Return the kept answers and the repeats asked again (none here: the design card asks).
+
+        A described run overrides this: its "same way?" answers live in the draft.
+        """
+        return kept, ()
 
     def _resume_pairing(self, saved: DraftAnswers) -> dict[tuple[str, str], str]:
         """Return the pairing that holds on resume: the experiment design card's."""

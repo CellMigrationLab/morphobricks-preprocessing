@@ -17,6 +17,21 @@ of this release candidate is in `docs/conformance.md`. The normalization brick s
 v0.3.4. It also carries the audit batches 33, 34a and 34b (#254, #255) and their
 pre-release follow-ups (#257).
 
+- **Fixed (final review of the release candidate): two confirmations the user did not give.**
+  (1) *A header refusal lifted by an answer about another cell.* Tagging any channel of any
+  folder recomputed every label's `header_names` from every saved tag, so after images were
+  rewritten with other header names (for example two channels swapped) the
+  `R_HEADER_CONTRADICTION` of folders the user had not tagged again vanished, *Check and save*
+  said the images agree and the run wrote the table. Now a tag confirms the header name of the
+  cell tagged, and nothing else: names no tagged cell has any more are dropped, and a name is
+  added only for the cells of that answer. The refusal stays until the channel it names is
+  tagged again. (2) *A "same way?" kept for other folders or another layout in a draft.* With
+  nothing published yet, the answer saved in `morphobricks.draft.json` was kept when a folder
+  joined or left the replicate before the next folder check, and when a tag or an image type
+  changed after it, and it was published as the user's confirmation. Now it is asked again in
+  both cases, as it already was against a published file (experiment-v1 §10); the names card
+  says which replicate is asked again, and a replicate tagged back to the layout it was
+  answered for keeps its answer.
 - **Fixed: `R_FOLDER_NOT_NFC` and `R_MASK_TYPE_NAME_INVALID` on the production paths
   (conformance P21, P29).** They were raised only by `preflight(..., with_description=True)`,
   which no production caller passed, so a run with a published `morphobricks.toml` refused a
