@@ -10,12 +10,12 @@ import numpy as np
 import pytest
 import tifffile
 
+from described_tree import check_masks, run_described
 from morphobricks_preprocessing import (
     AxisMapping,
     inspect_images,
     prefill_mapping,
     read_physical_sizes,
-    run_experiment,
 )
 from morphobricks_preprocessing.length_units import to_micrometers
 from morphobricks_preprocessing.physical_sizes import same_pixel_size
@@ -62,7 +62,7 @@ def test_reading_a_plane_counts_no_histogram_memory(tmp_path, side, dtype):
 def test_run_inputs_reads_a_wide_integer_plane_within_its_limit(tmp_path):
     data = np.arange(300 * 300, dtype=np.uint32).reshape(300, 300)
     write_data(tmp_path / "exp/ctrl/a.tif", data, "YX")
-    result = run_experiment(tmp_path / "exp", prefill_mapping("YX"))
+    result = run_described(tmp_path / "exp", prefill_mapping("YX"))
     inputs = RunInputs.open(result.output_folder)
     np.testing.assert_array_equal(inputs.read_plane("ctrl/a.tif", memory_limit=LIMIT), data[None])
 
@@ -82,7 +82,7 @@ def test_a_header_size_in_an_unsupported_unit_is_not_recorded(tmp_path, unit):
     )
     recorded = {size.role: size for size in header_sizes(read_physical_sizes(path))}
     assert (recorded["X"].value, recorded["X"].unit, recorded["X"].source) == (None, None, None)
-    result = run_experiment(tmp_path / "exp", prefill_mapping("YX"))
+    result = run_described(tmp_path / "exp", prefill_mapping("YX"))
     sizes = RunInputs.open(result.output_folder).pixel_sizes("ctrl/a.ome.tif")
     assert sizes["X"].value is None and sizes["Y"].source is None
     assert f"X and Y in {unit!r}" in issue(result.issues, "unsupported_pixel_size_unit").message
@@ -97,10 +97,10 @@ def test_a_mask_is_not_read_outside_the_image(tmp_path):
     root, masks = tmp_path / "exp", tmp_path / "masks"
     write_plain(root / "ctrl/a.tif", np.zeros((3, 6, 8), np.uint8))
     write_plain(masks / "Cells/ctrl/a.tif", np.ones((3, 6, 8), np.uint16))
-    result = run_experiment(
+    result = run_described(
         root, AxisMapping("IYX", "TYX"), masks_folder=masks, mask_axes={"Cells": "TYX"}
     )
-    inputs = RunInputs.open(result.output_folder)
+    inputs = RunInputs.open(check_masks(result.output_folder))
     assert inputs.read_mask("ctrl/a.tif", "Cells", t=2).shape == (6, 8)
     for z, t in ((None, 7), (99, 0), (0, -1), (1, 0)):
         with pytest.raises(IndexError, match="outside"):
@@ -227,7 +227,7 @@ def test_an_ome_zarr_time_scale_without_a_unit_is_named_not_taken_as_seconds(tmp
         root / "c/b.ome.zarr", np.zeros((2, 8, 8), np.uint16), "tyx", scale=[3.0, 0.5, 0.5],
         units={"t": "second", "y": "micrometer", "x": "micrometer"},
     )  # fmt: skip
-    result = run_experiment(root, prefill_mapping("TYX"))
+    result = run_described(root, prefill_mapping("TYX"))
     found = issue(result.issues, "unsupported_pixel_size_unit")
     assert found.paths == ("c/a.ome.zarr",)
     assert "c/a.ome.zarr (T without a unit)" in found.message
@@ -240,7 +240,7 @@ def test_an_ome_zarr_scale_without_a_unit_is_unknown_and_named(tmp_path):
         root / "c/b.ome.zarr", np.zeros((8, 8), np.uint16), "yx", scale=[0.5, 0.5],
         units={"y": "micrometer", "x": "micrometer"},
     )  # fmt: skip
-    result = run_experiment(root, prefill_mapping("YX"))
+    result = run_described(root, prefill_mapping("YX"))
     found = issue(result.issues, "unsupported_pixel_size_unit")
     assert found.paths == ("c/a.ome.zarr",)
     assert "c/a.ome.zarr (X and Y without a unit)" in found.message
@@ -255,7 +255,7 @@ def test_a_time_step_without_a_unit_is_not_sent_to_calibration_csv(tmp_path):
         root / "c/b.ome.zarr", np.zeros((2, 8, 8), np.uint16), "tyx", scale=[3.0, 0.5, 0.5],
         units={"t": "second", "y": "micrometer", "x": "micrometer"},
     )  # fmt: skip
-    result = run_experiment(root, prefill_mapping("TYX"))
+    result = run_described(root, prefill_mapping("TYX"))
     found = issue(result.issues, "unsupported_pixel_size_unit")
     assert "T metadata" in found.action and "export the images again" in found.action
     assert "T without a unit" in found.message

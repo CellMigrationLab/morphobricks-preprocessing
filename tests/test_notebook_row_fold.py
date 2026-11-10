@@ -61,7 +61,7 @@ def test_a_row_folds_only_when_every_folder_is_as_saved_and_it_is_answered():
 
 
 def stepper(root, masks, out):
-    nb = PreprocessingNotebook(str(root), output_folder=str(out), describe=True)
+    nb = PreprocessingNotebook(str(root), output_folder=str(out))
     nb.welcome()
     nb.steps()
     nb.masks_folder.value = str(masks)
@@ -246,7 +246,7 @@ def test_a_header_change_before_the_axes_are_confirmed_is_shown_as_blocking(tmp_
     answer_all(first)
     assert first.save_experiment()
     write_channels(root / "ctrl/rep1/a.tif", ["Actin", "DAPI", "Ch3"], KINDS, seed=1)
-    nb = PreprocessingNotebook(str(root), output_folder=str(out), describe=True)
+    nb = PreprocessingNotebook(str(root), output_folder=str(out))
     nb.welcome()
     nb.steps()
     nb.masks_folder.value = str(masks)

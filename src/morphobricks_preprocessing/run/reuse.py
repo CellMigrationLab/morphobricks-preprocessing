@@ -21,7 +21,6 @@ from ..axes import (
     AxisMapping,
 )
 from ..manifest import (
-    LEGACY_MANIFEST_VERSION,
     MANIFEST_FILENAME,
     ManifestFormatError,
     RunManifest,
@@ -81,16 +80,16 @@ def recorded_experiment_root(
         paths: list[str] = []
     else:
         manifest, missing = read_previous(output)
-        if manifest is not None and manifest.manifest_version != LEGACY_MANIFEST_VERSION:
+        if manifest is not None:
             return Path(manifest.experiment_root), None
-        why = f"the output folder records none: {missing or 'its run is older than v0.4.0'}"
+        why = f"the output folder records none: {missing}"
         paths = [output.as_posix()]
     return None, error(
         "experiment_not_recorded",
         f"No experiment folder was given, and {why}.",
         paths,
-        "Give the experiment folder, or the output folder (--output) of a run of v0.4.0 or "
-        "later, whose manifest records it.",
+        "Give the experiment folder, or the output folder (--output) of a run written by this "
+        "version, whose manifest records it.",
     )
 
 
@@ -112,8 +111,6 @@ def _load_previous(
         return {}, missing
     if mode == FULL:
         return {}, "a full run was asked for (mode full)"
-    if manifest.manifest_version == LEGACY_MANIFEST_VERSION:
-        return {}, "the earlier run was written before v0.4.0, without the axis check"
     if manifest.schema_version != SCHEMA_VERSION:
         return {}, "the earlier table uses a different format version"
     if manifest.dtype != dtype:

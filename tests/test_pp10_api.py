@@ -3,14 +3,13 @@
 import numpy as np
 import pytest
 
-from morphobricks_preprocessing import prefill_mapping, preflight, run_experiment
+from described_tree import run_described
+from morphobricks_preprocessing import prefill_mapping, preflight
 from morphobricks_preprocessing.calibration import Calibration, calibration_entry
-from morphobricks_preprocessing.design import default_design, read_experiment_design
+from morphobricks_preprocessing.design import default_design
 from morphobricks_preprocessing.design_edit import DesignEdit, DesignEditError, apply_design_edit
-from morphobricks_preprocessing.run import OutputLockedError, write_calibration
+from morphobricks_preprocessing.run import write_calibration
 from morphobricks_preprocessing.run.check_step import suggested_review
-from morphobricks_preprocessing.run.design_file import write_design
-from morphobricks_preprocessing.run.lock import output_lock
 from morphobricks_preprocessing.run.planned import planned_changes
 from morphobricks_preprocessing.run.preflight import recalibrated
 from morphobricks_preprocessing.run.recorded import GivenInputs
@@ -46,15 +45,6 @@ def test_unconfirm_takes_a_confirmation_back_and_refuses_contradictions(experime
     assert not apply_design_edit(fresh, DesignEdit(unconfirm=fresh.groups), "2026-11-02").confirmed
 
 
-def test_write_design_holds_the_lock(experiment, tmp_path):
-    output = tmp_path / "out"
-    design = default_design(preflight(experiment, output).dataset.repeats)
-    path = write_design(design, output)
-    assert read_experiment_design(path) == design
-    with output_lock(output), pytest.raises(OutputLockedError):
-        write_design(design, output)
-
-
 def test_recalibrated_reads_calibration_again_and_replaces_its_issues(experiment, tmp_path):
     output = tmp_path / "out"
     pre = preflight(experiment, output)
@@ -74,11 +64,11 @@ def test_recalibrated_reads_calibration_again_and_replaces_its_issues(experiment
 def test_planned_changes_name_what_the_run_then_reports(experiment, tmp_path):
     output = tmp_path / "out"
     assert planned_changes(GivenInputs(experiment_root=experiment), output) == ()
-    assert run_experiment(experiment, TYX, output_folder=output).written
+    assert run_described(experiment, TYX, output_folder=output).written
     given = GivenInputs(experiment_root=experiment, exclude=("drug/rep2/a.tif",), bin_count=16)
     planned = planned_changes(given, output)
     assert [change.name for change in planned] == ["exclude", "bin_count"]
-    result = run_experiment(
+    result = run_described(
         experiment, TYX, output_folder=output, exclude=["drug/rep2/a.tif"], bin_count=16
     )
     assert result.input_changes == planned

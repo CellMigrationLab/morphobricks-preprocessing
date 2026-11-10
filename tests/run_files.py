@@ -8,23 +8,26 @@ from morphobricks_preprocessing.discovery_report import REPORT_FILENAME, REPORT_
 from morphobricks_preprocessing.run.staging import STAGING_FOLDER
 
 REPORT_FILES = {REPORT_FILENAME, REPORT_TEXT_FILENAME}
+DESCRIPTION_FILES = {"morphobricks.toml"}
+"""The published description a run needs (Spec ADR 0002 AR10): there before the run."""
 
 
 def only_the_report(folder, *, staged=False):
     """True when a stopped run wrote nothing but its report (with status "stopped").
 
-    With ``staged``, the staging folder of the rows it read is there too (design v0.4 §1).
+    The published description it was given is there too. With ``staged``, the staging folder
+    of the rows it read is there too (design v0.4 §1).
     """
-    expected = REPORT_FILES | ({STAGING_FOLDER} if staged else set())
+    expected = REPORT_FILES | DESCRIPTION_FILES | ({STAGING_FOLDER} if staged else set())
     if not folder.is_dir() or {p.name for p in folder.iterdir()} != expected:
         return False
     return json.loads((folder / REPORT_FILENAME).read_text(encoding="utf-8"))["status"] == "stopped"
 
 
 def check_outputs(folder):
-    """True when ``check`` wrote its report and the design template, and nothing else."""
+    """True when ``check`` wrote its report, and nothing else (beside the description)."""
     names = {p.name for p in folder.iterdir()} if folder.is_dir() else set()
-    return names == {*REPORT_FILES, "experiment_design.csv"}
+    return names == {*REPORT_FILES, *DESCRIPTION_FILES}
 
 
 def without_report(files):

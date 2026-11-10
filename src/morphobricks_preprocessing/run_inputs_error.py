@@ -1,11 +1,12 @@
 """The errors of :class:`.run_inputs.RunInputs` (moved from ``run_inputs``, which re-exports them).
 
 ``RunInputsError`` is the general refusal: run preprocessing again. The Spec's analysis-layer
-refusals (experiment-v1 section 8) are subclasses with their code, so a caller can match them:
+refusals (experiment-v1 section 8, ADR 0002) are subclasses with their code, so a caller can
+match them: :class:`DescriptionRequiredError` (``A_DESCRIPTION_REQUIRED``),
 :class:`DraftRefusedError` (``A_DRAFT_REFUSED``), :class:`MaskUncheckedError`
 (``A_MASK_UNCHECKED``), :class:`ChannelNotFoundError` (``A_SCOPE_INCOMPLETE``),
 :class:`MaskNotInstancesError` (``A_MASK_NOT_INSTANCES``) and :class:`RgbNotSupportedError`
-(``A_RGB_NOT_SUPPORTED``). Preprocessing raises the first three of these itself; the last two
+(``A_RGB_NOT_SUPPORTED``). Preprocessing raises the first four of these itself; the last two
 are for the bricks to raise (contract section 16, Stage 2 design PR 2), so that no brick keeps
 its own copy of the code.
 """
@@ -18,6 +19,16 @@ class RunInputsError(ValueError):
 
     code: str | None = None
     """The Spec's code when the refusal has one (``A_*``), else None."""
+
+
+class DescriptionRequiredError(RunInputsError):
+    """The run's output folder holds no published description (every run needs one).
+
+    Spec ADR 0002 AR10/AR11: there is no undescribed run; the message names the fix (the
+    notebook's describe steps, or the command line's ``describe``).
+    """
+
+    code = "A_DESCRIPTION_REQUIRED"
 
 
 class DraftRefusedError(RunInputsError):

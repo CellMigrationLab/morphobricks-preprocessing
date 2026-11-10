@@ -10,18 +10,17 @@ import json
 import numpy as np
 import pytest
 
+from described_tree import run_described
 from morphobricks_preprocessing import (
     AxisMapping,
     Projection,
     RunInputs,
     convert_experiment,
-    run_experiment,
 )
 from morphobricks_preprocessing.conversion_record import RECORD_FILENAME
 from morphobricks_preprocessing.manifest import ManifestFormatError, read_manifest
 from morphobricks_preprocessing.projection_run import MASKS_WARNING, RunProjection
 from morphobricks_preprocessing.run_inputs_error import RunInputsError
-from morphobricks_preprocessing.testing import _confirmed_design
 from test_projection_convert import (
     NAMES,
     ZCYX,
@@ -46,7 +45,7 @@ def projected_run(tmp_path, *, method="max", z_range=None, masks=False):
     done = convert_experiment(exp, ZCYX, copies, projection=Projection(method, z_range),
                               masks_folder=folder if masks else None)  # fmt: skip
     assert done.written, done.issues
-    run = run_experiment(copies, CYX, output_folder=out, design=_confirmed_design(copies),
+    run = run_described(copies, CYX, output_folder=out,
                          masks_folder=folder if masks else None)  # fmt: skip
     assert run.written, run.issues
     return copies, out, folder, run
@@ -91,7 +90,7 @@ def test_a_run_without_projection_has_no_projection_key(tmp_path):
             done = convert_experiment(exp, AxisMapping("CYX", tuple("CYX")), root)
             assert done.written, done.issues
         out = tmp_path / f"out_{label}"
-        run = run_experiment(root, CYX, output_folder=out, design=_confirmed_design(root))
+        run = run_described(root, CYX, output_folder=out)
         assert run.written, run.issues
         assert "projection" not in manifest_of(out)
         assert RunInputs.open(out).projection is None
@@ -112,8 +111,7 @@ def test_2d_masks_on_projected_images_record_the_warning(tmp_path):
 def test_3d_masks_next_to_projected_copies_stop_the_run(tmp_path):
     copies, out, masks, _ = projected_run(tmp_path)
     write_mask(masks / "Nuclei" / NAMES[0], (5, 8, 9), "ZYX")
-    stopped = run_experiment(copies, CYX, output_folder=tmp_path / "out2", masks_folder=masks,
-                             design=_confirmed_design(copies))  # fmt: skip
+    stopped = run_described(copies, CYX, output_folder=tmp_path / "out2", masks_folder=masks)
     assert not stopped.written and "mask_planes_mismatch" in codes(stopped.issues)
 
 

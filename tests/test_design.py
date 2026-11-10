@@ -1,7 +1,6 @@
-import json
-
 import pytest
 
+from described_tree import run_described
 from morphobricks_preprocessing import (
     DESIGN_FILENAME,
     DesignCheckError,
@@ -20,11 +19,7 @@ from morphobricks_preprocessing import (
     write_experiment_design,
 )
 from morphobricks_preprocessing.axes import prefill_mapping
-from morphobricks_preprocessing.cli import main
-from morphobricks_preprocessing.discovery_report import REPORT_FILENAME
 from morphobricks_preprocessing.manifest import file_sha256
-from morphobricks_preprocessing.run.lock import output_lock
-from run_files import only_the_report
 from tiff_tree import make_tree
 
 TODAY = "2026-10-26"
@@ -288,30 +283,6 @@ def test_the_writer_writes_only_iso_dates_and_valid_groups(tmp_path):
     assert read_experiment_design(write_experiment_design(dated, path)) == dated
 
 
-def test_a_run_with_an_invalid_date_stops_before_writing(tmp_path):
-    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
-    design = default_design(repeats_of(root)).with_confirmed("rep1", True, "26/10/2026")
-    result = run_experiment(root, prefill_mapping("YX"), design=design)
-    assert not result.written and "invalid_experiment_design" in codes(result.issues)
-    assert only_the_report(result.output_folder)
-
-
-def test_the_cli_dates_a_hand_confirmation_as_an_iso_date(tmp_path, capsys):
-    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
-    output = default_output_folder(root)
-    output.mkdir(parents=True)
-    (output / DESIGN_FILENAME).write_bytes(
-        (
-            HEADER + "control,rep1,rep1,false,1,0,true,,1\ntreated,rep1,rep1,false,1,0,true,,1\n"
-        ).encode("utf-8")
-    )
-    assert main(["run", str(root), "--axes", "YX"]) == 0
-    capsys.readouterr()
-    dates = {row.confirmed_on for row in read_experiment_design(output / DESIGN_FILENAME).rows}
-    (on,) = dates
-    assert len(on) == 10 and on[4] == on[7] == "-"
-
-
 @pytest.mark.parametrize(
     ("body", "message"),
     [
@@ -342,145 +313,68 @@ def test_files_without_the_columns_are_refused(tmp_path):
 # The run -----------------------------------------------------------------------------------
 
 
-def test_run_needs_a_confirmed_design_when_given_one(tmp_path):
+PAIRED_DESCRIPTION = """schema = "morphobricks-experiment"
+schema_version = 1
+
+[conditions.ctrl]
+source_folder = "control"
+
+[conditions.treated]
+source_folder = "treated"
+reference = "ctrl"
+
+[channels.ch1]
+
+[repeats.rep1]
+confirmed = true
+confirmed_on = "2026-10-26"
+
+[repeats.rep1.members.ctrl]
+source_repeat = "rep1"
+image_count = 1
+
+[repeats.rep1.members.ctrl.technical_repeats.single]
+source_folder = "single"
+channels = ["ch1"]
+
+[repeats.rep1.members.treated]
+source_repeat = "rep1b"
+image_count = 1
+
+[repeats.rep1.members.treated.technical_repeats.single]
+source_folder = "single"
+channels = ["ch1"]
+
+[used_ids]
+conditions = ["ctrl", "treated"]
+channels = ["ch1"]
+repeats = ["rep1"]
+technical_repeats = ["single"]
+"""
+
+
+def test_the_run_derives_the_design_from_the_description_and_records_its_hash(tmp_path):
+    # v0.5.1: experiment_design.csv is an output only, derived from the published description.
     root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1b": 1})
-    design = default_design(repeats_of(root))
-    result = run_experiment(root, prefill_mapping("YX"), design=design)
-    assert not result.written and "design_not_confirmed" in codes(result.issues)
-    assert only_the_report(result.output_folder)
-
-
-def test_run_writes_the_design_and_records_its_hash(tmp_path):
-    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1b": 1})
-    plain = run_experiment(root, prefill_mapping("YX"), output_folder=tmp_path / "plain")
-    assert "repeat_missing_conditions" in codes(plain.issues)
-    assert plain.design is None and plain.design_path is None
-    assert read_manifest(plain.manifest_path).experiment_design_sha256 is None
-    assert not (tmp_path / "plain" / DESIGN_FILENAME).exists()
-
-    design = default_design(repeats_of(root)).with_group(("treated", "rep1b"), "rep1")
-    design = confirm_all(design).with_control("control", True)
-    result = run_experiment(root, prefill_mapping("YX"), design=design)
+    plain = run_described(root, prefill_mapping("YX"), output_folder=tmp_path / "plain")
+    assert "repeat_missing_conditions" in codes(plain.issues)  # each folder its own repeat
+    output = default_output_folder(root)
+    output.mkdir(parents=True)
+    (output / "morphobricks.toml").write_text(PAIRED_DESCRIPTION, encoding="utf-8")
+    result = run_experiment(root, prefill_mapping("YX"))
     assert result.written
-    # Paired by the design, the repeat is found in every condition.
+    # Paired by the description, the repeat is found in every condition.
     assert "repeat_missing_conditions" not in codes(result.issues)
-    assert read_experiment_design(result.design_path) == design
+    design = read_experiment_design(result.design_path)
+    assert design.repeat_groups() == {("control", "rep1"): "rep1", ("treated", "rep1b"): "rep1"}
+    assert design.controls == ("control",) and design.confirmed
     manifest = read_manifest(result.manifest_path)
     assert manifest.experiment_design_sha256 == file_sha256(result.design_path)
     # The table does not depend on the design.
     assert result.csv_path.read_bytes() == plain.csv_path.read_bytes()
 
 
-def test_run_without_a_design_leaves_an_existing_one(tmp_path):
-    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
-    output = default_output_folder(root)
-    path = write_experiment_design(
-        confirm_all(default_design(repeats_of(root))), output / DESIGN_FILENAME
-    )
-    before = path.read_bytes()
-    assert run_experiment(root, prefill_mapping("YX")).written
-    assert path.read_bytes() == before
-
-
-def test_run_refuses_a_design_for_other_folders(tmp_path):
-    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
-    design = confirm_all(default_design(repeats_of(root)))
-    make_tree(root, ["treated/rep2/img_00.tif"])
-    result = run_experiment(root, prefill_mapping("YX"), design=design)
-    found = [i for i in result.issues if i.code == "design_not_confirmed"]
-    assert found and found[0].paths == ("treated/rep2",) and not result.written
-
-
 # Command line ------------------------------------------------------------------------------
-
-
-def test_cli_run_writes_a_template_and_stops(tmp_path, capsys):
-    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1b": 1})
-    assert main(["run", str(root), "--axes", "YX"]) == 1
-    out = capsys.readouterr().out
-    path = default_output_folder(root) / DESIGN_FILENAME
-    assert f"The experiment design was written to {path}" in out
-    assert "set it to true in every row of a repeat group" in out and out.isascii()
-    template = read_experiment_design(path)
-    assert template.groups == ("rep1", "rep1b") and not template.confirmed
-    assert not (path.parent / "plane_histograms.csv").exists()
-    # The run stopped on the design and its report says so (design v0.4 §1, §4).
-    report = json.loads((path.parent / REPORT_FILENAME).read_text(encoding="utf-8"))
-    assert report["status"] == "stopped" and report["step"] == "run"
-    assert "design_not_confirmed" in [issue["code"] for issue in report["issues"]]
-
-    # The user pairs the repeats and confirms them in the file.
-    text = path.read_text(encoding="utf-8").replace("rep1b,rep1b", "rep1b,rep1")
-    path.write_bytes(text.replace(",false,,1", ",true,,1").encode("utf-8"))
-    assert main(["run", str(root), "--axes", "YX"]) == 0
-    out = capsys.readouterr().out
-    assert "rep1: control/rep1, treated/rep1b (confirmed on" in out
-    design = read_experiment_design(path)
-    assert design.confirmed and all(row.confirmed_on for row in design.rows)
-    assert "Experiment design" in out
-
-
-def test_cli_writes_no_template_while_another_run_holds_the_lock(tmp_path, capsys):
-    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
-    output = default_output_folder(root)
-    output.mkdir(parents=True)
-    with output_lock(output):
-        assert main(["run", str(root), "--axes", "YX"]) == 1
-    assert "Another run is using this output folder" in capsys.readouterr().out
-    assert not (output / DESIGN_FILENAME).exists() and not (output / REPORT_FILENAME).exists()
-
-
-def test_cli_template_keeps_the_answers_given(tmp_path, capsys):
-    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
-    output = default_output_folder(root)
-    design = confirm_all(default_design(repeats_of(root))).with_control("control", True)
-    write_experiment_design(design, output / DESIGN_FILENAME)
-    make_tree(root, ["treated/rep2/img_00.tif"])
-    assert main(["run", str(root), "--axes", "YX"]) == 1
-    assert "1 repeat group (rep2) is not confirmed" in capsys.readouterr().out
-    template = read_experiment_design(output / DESIGN_FILENAME)
-    assert template.group_confirmed("rep1") and template.controls == ("control",)
-    assert template.unconfirmed_groups == ("rep2",)
-
-
-def test_cli_design_option(tmp_path, capsys):
-    root = tree(tmp_path / "exp", {"control": 1, "treated": 1})
-    elsewhere = write_experiment_design(
-        confirm_all(default_design(repeats_of(root))), tmp_path / "my_design.csv"
-    )
-    assert main(["run", str(root), "--axes", "YX", "--design", str(tmp_path / "nope.csv")]) == 1
-    assert "nope.csv does not exist" in capsys.readouterr().out
-    assert main(["run", str(root), "--axes", "YX", "--design", str(elsewhere)]) == 0
-    copy = default_output_folder(root) / DESIGN_FILENAME
-    assert read_experiment_design(copy) == read_experiment_design(elsewhere)
-    elsewhere.write_bytes(b"not a design")
-    assert main(["run", str(root), "--axes", "YX", "--design", str(elsewhere)]) == 1
-    assert "The experiment design cannot be read" in capsys.readouterr().out
-
-
-def test_cli_check_reports_the_design(tmp_path, capsys):
-    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
-    assert main(["check", str(root)]) == 0
-    assert "Experiment design: not confirmed yet" in capsys.readouterr().out
-    output = default_output_folder(root)
-    write_experiment_design(confirm_all(default_design(repeats_of(root))), output / DESIGN_FILENAME)
-    assert main(["check", str(root)]) == 0
-    out = capsys.readouterr().out
-    assert "rep1: control/rep1, treated/rep1 (confirmed on 2026-10-26)" in out
-    assert "Controls: none marked" in out
-
-
-def test_cli_check_refuses_an_unreadable_design_without_writing(tmp_path, capsys):
-    root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1": 1})
-    path = default_output_folder(root) / DESIGN_FILENAME
-    write_experiment_design(confirm_all(default_design(repeats_of(root))), path)
-    path.write_text(path.read_text(encoding="utf-8").replace(TODAY, "26/10/2026"), "utf-8")
-    unreadable = path.read_bytes()
-    assert main(["check", str(root)]) == 1  # an error printed (#130 review; it was 0)
-    out = capsys.readouterr().out
-    assert "Experiment design: The experiment design cannot be read" in out
-    assert "line 2, column confirmed_on" in out
-    assert path.read_bytes() == unreadable
 
 
 # load_design (owner decision of 31 October 2026, plan §12 question 43) ------------------

@@ -14,8 +14,8 @@ import os
 import numpy as np
 import pytest
 
+from described_tree import describe_tree, main_described
 from morphobricks_preprocessing import mask_scan
-from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.mask_scan import MASK_REPORT_FILENAME
 from morphobricks_preprocessing.run.lock import output_lock
 from tiff_tree import write_data
@@ -63,15 +63,12 @@ def ran(root, masks=None, *, show_output=True):
     page = nb.run_step()
     if masks is not None:
         nb.masks_folder.value = str(masks)
+    # The experiment described and saved first, as Check and save does (every run is).
+    describe_tree(root, output_of(root), "YX", masks_folder=masks)
     nb.check_button.click()
-    nb.labels_confirmed.button.click()
-    for toggle in nb.group_confirmations.values():
-        if not toggle.value:
-            toggle.button.click()
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
-    nb.image_type_checked.button.click()
     return nb, page
 
 
@@ -125,7 +122,7 @@ def test_describe_the_masks_writes_the_report_and_shows_the_cards(tmp_path, caps
     # The same report as the command line's masks step, with the recorded inputs.
     written = json.loads(path.read_text(encoding="utf-8"))
     path.unlink()
-    assert main(["masks", "--output", str(output_of(root))]) == 0
+    assert main_described(["masks", "--output", str(output_of(root))]) == 0
     again = json.loads(path.read_text(encoding="utf-8"))
     assert {k: v for k, v in again.items() if k != "versions"} == {
         k: v for k, v in written.items() if k != "versions"
@@ -139,6 +136,7 @@ def test_describe_the_masks_reuses_the_ids_of_your_masks_and_asks_no_name(tmp_pa
     question = nb.mask_card.questions["nuclei"]
     question.id_box.value = "Nuclei_seg"
     question.choice.value = "instances"
+    assert nb.save_experiment()  # the changed answer is saved before the run
     assert nb.run().written
     nb.mask_step_button.click()
     status, shown = nb.mask_step_status.value, nb.mask_step_result.value
@@ -146,7 +144,7 @@ def test_describe_the_masks_reuses_the_ids_of_your_masks_and_asks_no_name(tmp_pa
     assert "keeps the ID it was given on Masks (step 10)" in status
     assert "<th>Mask</th><th>Declared kind</th><th>Kind (suggested)</th>" in shown
     assert "<td>Nuclei_seg (nuclei)</td><td>objects</td><td>one object per label</td>" in shown
-    assert "<td>cells</td><td>not described yet</td><td>" in shown
+    assert "<td>cells</td><td>objects</td><td>" in shown  # declared when it was described
 
 
 def test_a_child_equally_in_two_parents_is_shown_with_no_parent(tmp_path):
@@ -276,7 +274,7 @@ def test_a_reopened_notebook_describes_the_earlier_run(tmp_path):
     assert result is not None and result.path == output_of(root).resolve() / MASK_REPORT_FILENAME
     written = json.loads(result.path.read_text(encoding="utf-8"))
     result.path.unlink()
-    assert main(["masks", "--output", str(output_of(root))]) == 0
+    assert main_described(["masks", "--output", str(output_of(root))]) == 0
     again = json.loads(result.path.read_text(encoding="utf-8"))
     assert {k: v for k, v in again.items() if k != "versions"} == {
         k: v for k, v in written.items() if k != "versions"

@@ -16,8 +16,8 @@ from morphobricks_normalization.histogram import compute_plane_histogram
 from morphobricks_normalization.records import PlaneRecord
 from morphobricks_normalization.summaries import image_summaries
 
+from described_tree import describe_tree, main_described, run_described
 from morphobricks_preprocessing import default_output_folder, prefill_mapping
-from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.intensity import (
     CHECK_TITLES,
     IMAGE_CODES,
@@ -27,7 +27,6 @@ from morphobricks_preprocessing.intensity import (
     intensity_summary,
     intensity_text,
 )
-from morphobricks_preprocessing.run import run_experiment
 from tiff_tree import write_data
 
 CODE = "channel_without_finite_pixels"
@@ -86,7 +85,7 @@ def test_check_table_reports_it_from_the_csv(tmp_path):
 
 def test_a_run_reports_it_with_the_intensity_warnings(tmp_path):
     root = nan_tree(tmp_path / "exp")
-    result = run_experiment(root, prefill_mapping("CYX"))
+    result = run_described(root, prefill_mapping("CYX"))
     assert result.written
     (found,) = [i for i in result.intensity.issues if i.code == CODE]
     assert found.items == ("ctrl/rep1/img_1.tif",) and found.channel == 1
@@ -99,9 +98,8 @@ def test_a_run_reports_it_with_the_intensity_warnings(tmp_path):
 def test_the_command_line_run_prints_it(tmp_path, capsys):
     root = nan_tree(tmp_path / "exp")
     output = default_output_folder(root)
-    assert main(["check", str(root)]) == 0  # writes the design template
-    assert main(["design", "--output", str(output), "--confirm-all"]) == 0
-    assert main(["run", str(root), "--axes", "CYX"]) == 0
+    assert main_described(["check", str(root)]) == 0
+    assert main_described(["run", str(root), "--axes", "CYX"]) == 0
     out = capsys.readouterr().out.split("Intensity checks:")[1]
     assert f"Image channels without finite pixels, not checked ({CODE}, 1):" in out
     assert "  - Image ctrl/rep1/img_1.tif, channel C1: it has no finite pixels" in out
@@ -113,17 +111,14 @@ def test_the_notebook_shows_it_with_the_other_intensity_warnings(tmp_path):
     pytest.importorskip("matplotlib")
     from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook
 
-    nb = PreprocessingNotebook(str(nan_tree(tmp_path / "exp")))
+    root = nan_tree(tmp_path / "exp")
+    describe_tree(root)  # the experiment described and saved, as Check and save does
+    nb = PreprocessingNotebook(str(root))
     for step in (nb.welcome, nb.folder_step, nb.axis_step, nb.run_step, nb.results_step):
         step()
     nb.check_button.click()
-    nb.labels_confirmed.button.click()
-    for toggle in nb.group_confirmations.values():
-        if not toggle.value:
-            toggle.button.click()
     for button in (nb.preview_button, nb.preview_checked.button, nb.confirm_button):
         button.click()
-    nb.image_type_checked.button.click()
     nb.run()
     panel = nb.run_checks
     assert "1 intensity warning" in panel.status.value

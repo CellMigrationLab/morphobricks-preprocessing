@@ -7,11 +7,11 @@ import numpy as np
 import pytest
 import tifffile
 
+from described_tree import run_described
 from morphobricks_preprocessing import (
     prefill_mapping,
     preflight,
     read_manifest,
-    run_experiment,
 )
 from morphobricks_preprocessing.manifest import FileEntry
 from morphobricks_preprocessing.run.phases import PHASES, progress_text
@@ -103,7 +103,7 @@ def write_named(path, names):
 
 def test_an_image_without_names_has_no_raw_names_and_no_manifest_key(experiment, tmp_path):
     out = tmp_path / "out"
-    run_experiment(experiment, prefill_mapping("YX"), output_folder=out)
+    run_described(experiment, prefill_mapping("YX"), output_folder=out)
     data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
     assert all("raw_channel_names" not in entry for entry in data["files"])
     assert all(f.raw_channel_names == () for f in read_manifest(out / "run_manifest.json").files)
@@ -122,7 +122,7 @@ def test_raw_names_round_trip_through_the_manifest(tmp_path):
     root = tmp_path / "exp"
     write_named(root / "ctrl" / "a.ome.tif", ["DAPI ", " GFP"])
     out = tmp_path / "out"
-    run_experiment(root, prefill_mapping("CYX"), output_folder=out)
+    run_described(root, prefill_mapping("CYX"), output_folder=out)
     data = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
     assert data["files"][0]["raw_channel_names"] == ["DAPI ", " GFP"]
     assert data["files"][0]["channel_names"] == ["DAPI", "GFP"]
@@ -133,7 +133,7 @@ def test_a_malformed_recorded_raw_name_list_is_refused(tmp_path):
     root = tmp_path / "exp"
     write_named(root / "ctrl" / "a.ome.tif", ["A", "B"])
     out = tmp_path / "out"
-    run_experiment(root, prefill_mapping("CYX"), output_folder=out)
+    run_described(root, prefill_mapping("CYX"), output_folder=out)
     path = out / "run_manifest.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     data["files"][0]["raw_channel_names"] = [1, 2]

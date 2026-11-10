@@ -125,7 +125,6 @@ class _RunPlan:
         return planned_changes(
             self._given_inputs(),
             output,
-            design=self._design_for_run(),
             calibration=self._shown_calibration(output)[0].calibration,
         )
 

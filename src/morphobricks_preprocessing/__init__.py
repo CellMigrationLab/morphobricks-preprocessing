@@ -202,7 +202,6 @@ from .run import (
     RunMode,
     RunResult,
     SamplePlane,
-    edit_design,
     preflight,
     run_experiment,
     sample_planes,
@@ -211,6 +210,7 @@ from .run import (
 from .run_inputs import Fov, LazyImage, RunInputs, RunInputsError, UnrecordedFilesError
 from .run_inputs_error import (
     ChannelNotFoundError,
+    DescriptionRequiredError,
     DraftRefusedError,
     MaskNotInstancesError,
     MaskUncheckedError,
@@ -319,6 +319,7 @@ __all__ = [
     "RunInputs",
     "RunInputsError",
     "ChannelNotFoundError",
+    "DescriptionRequiredError",
     "DraftRefusedError",
     "MaskNotInstancesError",
     "MaskUncheckedError",
@@ -362,7 +363,6 @@ __all__ = [
     "default_output_folder",
     "default_repeat_groups",
     "design_issues",
-    "edit_design",
     "discover_experiment",
     "file_mapping_for",
     "file_sha256",

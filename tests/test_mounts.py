@@ -16,14 +16,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from described_tree import main_described, run_described
 from morphobricks_preprocessing import (
     RunInputs,
     RunInputsError,
     prefill_mapping,
-    run_experiment,
 )
 from morphobricks_preprocessing import mounts as mounts_module
-from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.discovery import discover_experiment
 from morphobricks_preprocessing.mounts import MountCheck, mount_points
 from morphobricks_preprocessing.run import preflight
@@ -103,8 +102,8 @@ def test_check_and_run_refuse_a_mounted_folder_and_write_no_table(tree, mounted,
     root, _ = tree
     mounted(root / "drug/rep1")
     out = tmp_path / "out"
-    assert main(["check", str(root), "--output", str(out)]) == 1
-    result = run_experiment(root, prefill_mapping("YX"), output_folder=out)
+    assert main_described(["check", str(root), "--output", str(out)]) == 1
+    result = run_described(root, prefill_mapping("YX"), output_folder=out)
     assert not result.written
     assert "mounted_folder" in _errors(result.issues)
     assert not (out / "plane_histograms.csv").exists()
@@ -267,8 +266,8 @@ def test_a_real_bind_mount_of_the_same_file_system_is_refused(tree, bind, tmp_pa
     assert _issue(found.issues, "mounted_folder").paths == ("drug/rep2",)
     assert "drug/rep2/far.tif" not in found.images
     out = tmp_path / "out"
-    assert main(["check", str(root), "--output", str(out)]) == 1
-    result = run_experiment(root, prefill_mapping("YX"), output_folder=out)
+    assert main_described(["check", str(root), "--output", str(out)]) == 1
+    result = run_described(root, prefill_mapping("YX"), output_folder=out)
     assert not result.written and "mounted_folder" in _errors(result.issues)
 
 
@@ -302,8 +301,8 @@ def test_an_image_with_another_name_outside_is_a_warning(tree, tmp_path):
     assert not issue.is_error and issue.paths == ("ctrl/rep1/a.tif (2 names)",)
     assert found.images == ("ctrl/rep1/a.tif", "drug/rep1/a.tif")
     out = tmp_path / "out"
-    assert main(["check", str(root), "--output", str(out)]) == 0
-    result = run_experiment(root, prefill_mapping("YX"), output_folder=out)
+    assert main_described(["check", str(root), "--output", str(out)]) == 0
+    result = run_described(root, prefill_mapping("YX"), output_folder=out)
     assert result.written
     assert "hard_linked_file" in {issue.code for issue in result.issues}
 

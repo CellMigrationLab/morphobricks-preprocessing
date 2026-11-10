@@ -1,8 +1,8 @@
 """A run with a published ``morphobricks.toml`` (Stage 1 design section 3, "Run").
 
 ``run_experiment`` reads the published description under the output folder's lock, with the
-strict reader, on the exact bytes it hashes. Without one the run is the v0.4 run, and says so
-(:data:`NO_DESCRIPTION`). With one the run:
+strict reader, on the exact bytes it hashes. Every run needs one: without it the run is refused
+(``A_DESCRIPTION_REQUIRED``, :mod:`..required_description`). The run:
 
 - stops, with the Spec's own code and a plain message, when the file is not valid, its
   records file cannot be read, the units declare more than one channel layout
@@ -18,7 +18,6 @@ It reads no mask pixels: a mask file is ``checked`` only when the mask step reco
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Iterable, Mapping
 from dataclasses import astuple, dataclass, replace
 from pathlib import Path
@@ -30,17 +29,12 @@ from ..description_record import description_record, unit_records
 from ..description_run_text import heterogeneous_issue, physical_issue, reader_issue
 from ..mask_representation import NOT_CHECKED, file_status, read_checked
 from ..physical_check import HETEROGENEOUS_LAYOUT, PhysicalReport, check_physical
+from ..required_description import description_required_issue
 from ..unit_consistency import declared_type_issues
 from ..validation import ValidationIssue, error
 from .description_file import RecordsFileError, read_records
 from .preflight import Preflight
 from .steps import Checked
-
-NO_DESCRIPTION = (
-    "No experiment description (morphobricks.toml) was found in the output folder: this run "
-    "uses the folder names and the experiment design as before. Describe the experiment in "
-    "the notebook to state canonical channels, repeats and masks."
-)
 
 
 @dataclass(frozen=True)
@@ -60,8 +54,9 @@ def load_description(output: Path) -> tuple[RunDescription | None, list[Validati
     Returns
     -------
     tuple
-        ``(None, [])`` when there is no published file; ``(None, errors)`` when it, or its
-        records, cannot be used; else the description and no issue.
+        ``(None, [])`` when there is no published file (the ``describe`` command drafts one
+        then; every run refuses it, :func:`checked_description`); ``(None, errors)`` when it,
+        or its records, cannot be used; else the description and no issue.
     """
     try:
         data = read_file_bytes(output / DESCRIPTION_FILENAME)
@@ -123,16 +118,16 @@ def check_description(
 
 
 GLOBAL_CHANNEL_CODES = frozenset({"channel_names_differ", "different_channel_counts"})
-"""The v0.4 checks that compare channels across the whole experiment.
+"""The folder check's channel comparisons across the whole experiment.
 
-A description states each unit's channels and the header names confirmed for each, so for a
-described run they are replaced by the per-unit checks (``R_CHANNEL_COUNT_MISMATCH``,
+A description states each unit's channels and the header names confirmed for each, so in the
+run they are replaced by the per-unit checks (``R_CHANNEL_COUNT_MISMATCH``,
 ``R_UNIT_NOT_HOMOGENEOUS``, ``R_HEADER_CONTRADICTION``; experiment-v1 section 4.3 and 8),
 and by ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` for units with different channel lists."""
 
 
 GLOBAL_UNIT_CODES = frozenset({"mixed_dtypes", "inconsistent_dimensions"})
-"""The v0.4 folder checks that compare pixel types and dimensions across the whole experiment.
+"""The folder checks that compare pixel types and dimensions across the whole experiment.
 
 A description declares each unit's ``image_type``; they are replaced by the same checks per
 declared image type (:func:`..unit_consistency.declared_type_issues`; the axis review checks the
@@ -146,22 +141,29 @@ def without_global_channel_checks(issues: Iterable[ValidationIssue]) -> list[Val
     These are the channel checks (:data:`GLOBAL_CHANNEL_CODES`) and the pixel-type and
     dimension checks of every image of the experiment (``mixed_dtypes``,
     ``inconsistent_dimensions``), which :func:`check_description` makes per declared image
-    type. Described runs only.
+    type.
     """
     dropped = GLOBAL_CHANNEL_CODES | GLOBAL_UNIT_CODES
     return [issue for issue in issues if issue.code not in dropped]
 
 
-def checked_description(output: Path, pre: Preflight, checked: Checked) -> RunDescription | None:
-    """Read the published description, add every refusal to ``checked.issues``, return it.
+def checked_description(
+    output: Path,
+    pre: Preflight,
+    checked: Checked,
+    loaded: tuple[RunDescription | None, list[ValidationIssue]],
+) -> RunDescription | None:
+    """Check the published description, add every refusal to ``checked.issues``, return it.
 
-    Returns None without one (a v0.4 run: a warning says so) and when it cannot be used.
+    ``loaded`` is :func:`load_description`'s answer, read under the output folder's lock.
+    Returns None when there is none (``A_DESCRIPTION_REQUIRED``) or it cannot be used; the
+    refusal is then in ``checked.issues``.
     """
-    found, problems = load_description(output)
+    found, problems = loaded
     checked.issues.extend(problems)
     if found is None:
-        if not problems:
-            warnings.warn(NO_DESCRIPTION, UserWarning, stacklevel=4)
+        if not problems:  # removed since the run started
+            checked.issues.append(description_required_issue(output))
         return None
     checked.issues[:] = without_global_channel_checks(checked.issues)
     roles = None if checked.review is None else checked.review.file_mappings

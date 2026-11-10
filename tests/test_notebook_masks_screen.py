@@ -38,7 +38,6 @@ def open_masks(root, masks, out, *, confirm_axes=True):
         step()
     nb.masks_folder.value = str(masks)
     nb.check_button.click()
-    nb.labels_confirmed.button.click()
     if confirm_axes:
         nb.preview_checked.set(True)
         nb.show_preview()
@@ -159,7 +158,6 @@ def test_the_screen_waits_for_the_axis_roles_and_hides_without_masks(tmp_path, o
     for step in (plain.folder_step, plain.axis_step, plain.masks_step):
         step()
     plain.check_button.click()
-    plain.labels_confirmed.button.click()
     assert not ui.is_visible(plain.mask_card.widget)
     assert "No masks" in plain.masks_waiting.value
 

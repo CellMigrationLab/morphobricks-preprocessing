@@ -21,13 +21,11 @@ from . import notebook_style as ui
 from .discovery import default_output_folder
 from .discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
 from .run import (
-    CheckOutputs,
     LockHolder,
     OutputLockedError,
     Preflight,
     read_lock,
     remove_stale_lock,
-    write_check_outputs,
     write_check_report,
 )
 from .run.check_step import suggested_review
@@ -205,7 +203,6 @@ class _OutputCards:
         self.run_lock = _LockCard("Then click Compute histograms again.")
         self.check_report = _ReportView()
         self.run_report = _ReportView()
-        self._design_template: Path | None = None
 
     def _output_path(self, root: Path) -> Path:
         """Return the output folder in use for the experiment at ``root``, resolved."""
@@ -213,27 +210,22 @@ class _OutputCards:
         return (Path(output) if output else default_output_folder(root)).resolve()
 
     def _write_check(self, pre: Preflight, missing_as_singleton: bool = False) -> None:
-        """Write the check's report, and the design template, as the command line's ``check``.
+        """Write the check's report, as the command line's ``check`` writes it.
 
         Only for this notebook's own output folder: an embedding brick that hides it
-        (``show_output=False``) gets the check alone. The template is written with the
-        design card only, and never over a design (:func:`.run.write_check_outputs`).
-        Images lacking some axes are read by ``missing_as_singleton``, the answer step 2
+        (``show_output=False``) gets the check alone. No design is written: the run derives
+        ``experiment_design.csv`` from the published description. Images lacking some axes
+        are read by ``missing_as_singleton``, the answer step 2
         shows (the earlier run's, else no), as ``check --missing-as-singleton`` reads them.
         """
         self.folder_lock.hide()
         self.check_report.clear()
-        self._design_template = None
         if not self._show_output:
             return
         checked, review = suggested_review(pre, missing_as_singleton=missing_as_singleton)
         output = self._output_path(pre.discovery.root)
         try:
-            if self._show_design and not self._describe:
-                written = write_check_outputs(checked, output, review)
-            else:
-                report, refusal = write_check_report(checked, output, review)
-                written = CheckOutputs(report=report, refusal=refusal)
+            report, refusal = write_check_report(checked, output, review)
         except OSError as exc:
             logging.getLogger(__name__).warning("Cannot write the check report", exc_info=True)
             self.check_report.where.value = ui.status(
@@ -242,13 +234,12 @@ class _OutputCards:
                 [str(exc), "Choose an output folder you can write to; the run needs one too."],
             )
             return
-        if written.refusal is not None and written.refusal.code != "output_locked":
-            refusal = written.refusal  # output_inside_masks, of a recorded masks folder
+        if refusal is not None and refusal.code != "output_locked":
+            # output_inside_masks, of a recorded masks folder
             self.check_report.where.value = ui.status(
                 "error", "The check wrote nothing.", [refusal.message, refusal.action]
             )
-        elif written.refusal is not None:
+        elif refusal is not None:
             self.folder_lock.show(output)
-        elif written.report is not None:
+        elif report is not None:
             self.check_report.show(output, "The check")
-        self._design_template = written.design

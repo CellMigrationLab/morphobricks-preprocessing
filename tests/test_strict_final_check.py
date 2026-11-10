@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from morphobricks_preprocessing import RunMode, run_experiment
+from described_tree import run_described
+from morphobricks_preprocessing import RunMode
 from morphobricks_preprocessing import run as run_module
 from morphobricks_preprocessing.run.generation import (
     PUBLICATION_RECORD,
@@ -55,7 +56,7 @@ def outputs(out):
 @pytest.mark.parametrize("which", ["reused", "read", "both"])
 def test_a_rewrite_right_before_the_commit_is_refused(experiment, monkeypatch, which):
     root, out = experiment
-    assert run_experiment(root, TYX, output_folder=out, mode=STRICT).written
+    assert run_described(root, TYX, output_folder=out, mode=STRICT).written
     earlier = outputs(out)
     # IMAGES[0] changes for real (it is read again); IMAGES[1] and [2] are reused.
     write_data(root / IMAGES[0], stack(5), "TYX")
@@ -63,7 +64,7 @@ def test_a_rewrite_right_before_the_commit_is_refused(experiment, monkeypatch, w
     read, reused = root / IMAGES[0], root / IMAGES[1]
     paths = {"reused": [reused], "read": [read], "both": [read, reused]}[which]
     calls = rewrite_before_final_check(monkeypatch, paths)
-    result = run_experiment(root, output_folder=out)
+    result = run_described(root, output_folder=out)
     assert calls == [IMAGES]  # one last check, of every recorded image
     assert result.read == (IMAGES[0],) and result.unchanged == tuple(IMAGES[1:])
     assert not result.written and result.report_written
@@ -77,21 +78,21 @@ def test_a_rewrite_right_before_the_commit_is_refused(experiment, monkeypatch, w
 
 def test_the_next_strict_run_reads_the_rewritten_images_and_publishes(experiment, monkeypatch):
     root, out = experiment
-    assert run_experiment(root, TYX, output_folder=out, mode=STRICT).written
+    assert run_described(root, TYX, output_folder=out, mode=STRICT).written
     with monkeypatch.context() as patch:
         rewrite_before_final_check(patch, [root / IMAGES[1]])
-        assert not run_experiment(root, output_folder=out).written
-    again = run_experiment(root, output_folder=out)
+        assert not run_described(root, output_folder=out).written
+    again = run_described(root, output_folder=out)
     assert again.written and again.read == (IMAGES[1],)
 
 
 def test_a_default_run_has_no_final_content_check(experiment, monkeypatch):
     root, out = experiment
-    assert run_experiment(
+    assert run_described(
         root, TYX, output_folder=out, mode=RunMode("restart", verify_content=False)
     ).written
     calls = rewrite_before_final_check(monkeypatch, [root / IMAGES[1]])
-    result = run_experiment(root, TYX, output_folder=out, mode="full")
+    result = run_described(root, TYX, output_folder=out, mode="full")
     assert result.written and calls == []
 
 
@@ -101,8 +102,8 @@ def test_an_ome_zarr_chunk_rewritten_right_before_the_commit_is_refused(tmp_path
 
     root, out = tmp_path / "exp", tmp_path / "out"
     store = write_ngff(root / "ctrl/r1/z.ome.zarr", stack(1)[:, None], "tcyx")
-    write_data(root / "ctrl/r1/a.tif", stack(2), "TYX")
-    assert run_experiment(root, TYX, output_folder=out, mode=STRICT).written
+    write_data(root / "ctrl/r2/a.tif", stack(2), "TYX")  # a unit of its own: other axes
+    assert run_described(root, TYX, output_folder=out, mode=STRICT).written
     earlier = outputs(out)
     chunk = sorted(p for p in store.rglob("*") if p.is_file() and p.stat().st_size > 32)[-1]
     hashed = run_module.pipeline.content_changed
@@ -115,8 +116,8 @@ def test_an_ome_zarr_chunk_rewritten_right_before_the_commit_is_refused(tmp_path
         return hashed(entries, folder)
 
     monkeypatch.setattr(run_module.pipeline, "content_changed", chunk_rewritten_first)
-    result = run_experiment(root, output_folder=out)
-    assert not result.written and result.unchanged == ("ctrl/r1/a.tif", "ctrl/r1/z.ome.zarr")
+    result = run_described(root, output_folder=out)
+    assert not result.written and result.unchanged == ("ctrl/r1/z.ome.zarr", "ctrl/r2/a.tif")
     (issue,) = [i for i in result.issues if i.code == "source_changed_during_run"]
     assert issue.paths == ("ctrl/r1/z.ome.zarr",)
     assert outputs(out) == earlier
@@ -129,11 +130,11 @@ def test_an_identical_rerun_whose_final_check_fails_discards_its_publication(
     # clean-up took the refused publication for a committed one and logged "Finishing the
     # publication an earlier run left". The refused publication is discarded instead.
     root, out = experiment
-    assert run_experiment(root, TYX, output_folder=out, mode=STRICT).written
+    assert run_described(root, TYX, output_folder=out, mode=STRICT).written
     earlier = {p.name: p.read_bytes() for p in out.iterdir() if p.is_file()}
     rewrite_before_final_check(monkeypatch, [root / IMAGES[1]])
     with caplog.at_level("INFO", logger="morphobricks_preprocessing"):
-        result = run_experiment(root, output_folder=out)
+        result = run_described(root, output_folder=out)
     assert not result.written and result.unchanged == tuple(IMAGES)
     (issue,) = [i for i in result.issues if i.code == "source_changed_during_run"]
     assert "their content (SHA-256) is no longer the one the run checked" in issue.message
@@ -167,7 +168,7 @@ def test_a_refused_publication_that_cannot_be_removed_is_never_taken_for_committ
     # the leftover has no record, so the next run discards it even though its manifest is
     # byte-identical to the published one.
     root, out = experiment
-    assert run_experiment(root, TYX, output_folder=out, mode=STRICT).written
+    assert run_described(root, TYX, output_folder=out, mode=STRICT).written
     earlier = outputs(out)
     with monkeypatch.context() as patch:
         rewrite_before_final_check(patch, [root / IMAGES[1]])
@@ -176,14 +177,14 @@ def test_a_refused_publication_that_cannot_be_removed_is_never_taken_for_committ
             raise PermissionError(f"{path} is in use")
 
         patch.setattr(run_module.generation.shutil, "rmtree", held_open)
-        result = run_experiment(root, output_folder=out)
+        result = run_described(root, output_folder=out)
     assert not result.written
     assert "source_changed_during_run" in {i.code for i in result.issues}
     assert (out / PUBLISH_FOLDER).is_dir()
     assert not (out / PUBLISH_FOLDER / "publication.json").exists()
     assert outputs(out) == earlier
     with caplog.at_level("INFO", logger="morphobricks_preprocessing"):
-        again = run_experiment(root, output_folder=out)
+        again = run_described(root, output_folder=out)
     assert "Finishing the publication" not in caplog.text
     assert again.written and not (out / PUBLISH_FOLDER).exists()
 
@@ -198,7 +199,7 @@ def test_a_refused_publication_whose_record_cannot_be_removed_is_never_committed
     # generation is committed only once its manifest has left the publication folder.
     root, out = experiment
     full = RunMode("full", verify_content=True)
-    assert run_experiment(root, TYX, output_folder=out, mode=full).written
+    assert run_described(root, TYX, output_folder=out, mode=full).written
     (out / MASK_REPORT).write_text("{}\n", encoding="utf-8")  # a full run removes it
     earlier = outputs(out)
     record = out / PUBLISH_FOLDER / PUBLICATION_RECORD
@@ -213,7 +214,7 @@ def test_a_refused_publication_whose_record_cannot_be_removed_is_never_committed
 
         patch.setattr(Path, "unlink", record_held_open)
         with caplog.at_level("INFO", logger="morphobricks_preprocessing"):
-            result = run_experiment(root, output_folder=out, mode=full)
+            result = run_described(root, output_folder=out, mode=full)
         assert not result.written
         assert "source_changed_during_run" in {i.code for i in result.issues}
         # Nothing the refused generation would remove or replace was touched.

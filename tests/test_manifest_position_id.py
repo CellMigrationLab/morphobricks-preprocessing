@@ -1,12 +1,12 @@
-"""Round-2 audit A-m5: a version 2 manifest records each image's position_id, by its name.
+"""Round-2 audit A-m5: the manifest records each image's position_id, by its name.
 
 ``position_id`` is the image's name without its extension (``image_names.position_id``,
 MorphoBricks D02 and D85), never parsed or edited. The v2 reader accepted a missing or null
 one, and ``RunInputs`` then keyed the position by ``""``; an edited one was read as given.
 Both are now refused naming the entry, by the reader and by the writer; every manifest the
-writer produces opens, v0.4.0rc4's included (``tests/data/rc4_run_manifest.json``, written
-by ``tests/data/make_rc4_manifest.py``). A version 1 manifest is read for reporting as
-before.
+writer produces opens. ``position_id`` stays the file stem (owner ruling of 10 November 2026,
+ADR 0002 AR11): a position is always combined with the condition, repeat and technical-repeat
+IDs, never an identity alone.
 """
 
 import json
@@ -16,13 +16,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from described_tree import run_described
 from morphobricks_preprocessing import (
     ManifestFormatError,
-    RunManifest,
     RunMode,
     prefill_mapping,
     read_manifest,
-    run_experiment,
     write_manifest,
 )
 from morphobricks_preprocessing.image_names import position_id
@@ -30,7 +29,6 @@ from morphobricks_preprocessing.manifest_fields import recorded_position_id
 from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError, _fov
 from tiff_tree import write_data
 
-RC4 = Path(__file__).parent / "data" / "rc4_run_manifest.json"
 NAMES = ("a.tif", "B.TIFF", "img.01.ome.tif", "c d.tif", "x.ome.tiff")
 
 
@@ -40,7 +38,7 @@ def run(tmp_path):
     pixels = np.arange(64, dtype=np.uint8).reshape(8, 8)
     for name in NAMES:
         write_data(root / "ctrl/rep1" / name, pixels, "YX")
-    result = run_experiment(
+    result = run_described(
         root, prefill_mapping("YX"), mode=RunMode("restart", verify_content=False)
     )
     return Path(result.output_folder), Path(result.manifest_path)
@@ -63,21 +61,6 @@ def test_every_written_entry_opens_with_the_position_of_its_name(run):
     assert sorted(f.position_id for f in manifest.files) == sorted(["a", "B", "img.01", "c d", "x"])
     inputs = RunInputs.open(output)
     assert {fov.key[-1] for fov in inputs.fovs()} == {"a", "B", "img.01", "c d", "x"}
-
-
-def test_the_rc4_manifest_still_opens():
-    data = json.loads(RC4.read_text(encoding="utf-8"))
-    assert data["manifest_version"] == "2"
-    assert data["versions"]["morphobricks-preprocessing"] == "0.4.0rc4"
-    manifest = RunManifest.from_dict(data)
-    assert {f.relative_path: f.position_id for f in manifest.files} == {
-        "ctrl/rep1/B.TIFF": "B",
-        "ctrl/rep1/a.tif": "a",
-        "ctrl/rep1/c d.tif": "c d",
-        "ctrl/rep1/img.01.ome.tif": "img.01",
-        "treated/rep1/a.tif": "a",
-        "treated/rep1/z.ome.zarr": "z",
-    }
 
 
 @pytest.mark.parametrize("value", [KeyError, None])
@@ -122,16 +105,6 @@ def test_the_writer_refuses_what_the_reader_refuses(run, tmp_path):
     assert not (tmp_path / "m.json").exists()
 
 
-def test_a_version_1_manifest_is_still_read_without_or_with_any_position(run):
-    _, path = run
-    data = json.loads(path.read_text(encoding="utf-8"))
-    data["manifest_version"] = "1"
-    del data["files"][0]["position_id"]
-    data["files"][1]["position_id"] = "edited"
-    files = RunManifest.from_dict(data).files
-    assert files[0].position_id is None and files[1].position_id == "edited"
-
-
 def test_a_name_that_is_only_an_extension_is_refused():
     with pytest.raises(ValueError, match="only an extension"):
         recorded_position_id(".tif", "ctrl/.tif")
@@ -147,7 +120,7 @@ def test_a_run_after_a_manifest_without_positions_reads_every_image_again(run):
     for entry in data["files"]:
         del entry["position_id"]
     path.write_text(json.dumps(data), encoding="utf-8")
-    result = run_experiment(output.parent / "exp", prefill_mapping("YX"), output_folder=output)
+    result = run_described(output.parent / "exp", prefill_mapping("YX"), output_folder=output)
     assert result.written and "manifest could not be read" in result.rebuild_reason
     assert result.unchanged == () and (output / "plane_histograms.csv").read_bytes() == table
 

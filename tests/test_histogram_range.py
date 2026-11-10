@@ -12,13 +12,12 @@ import pytest
 from morphobricks_normalization.csv_io import read_plane_histograms
 from morphobricks_normalization.ranges import HistogramSettings
 
+from described_tree import main_described, run_described
 from morphobricks_preprocessing import (
     plane_layout,
     prefill_mapping,
     read_manifest,
-    run_experiment,
 )
-from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.run import rows as rows_module
 from tiff_tree import write_data
 
@@ -68,7 +67,7 @@ def narrow_warnings(result):
 
 
 def test_a_hot_pixel_gives_the_narrow_range_warning_with_the_default_range(hot_experiment):
-    result = run_experiment(hot_experiment, YX)
+    result = run_described(hot_experiment, YX)
 
     assert result.written
     (found,) = narrow_warnings(result)
@@ -86,7 +85,7 @@ def test_a_hot_pixel_gives_the_narrow_range_warning_with_the_default_range(hot_e
 
 
 def test_the_robust_range_avoids_the_warning(hot_experiment, tmp_path):
-    result = run_experiment(
+    result = run_described(
         hot_experiment, YX, output_folder=tmp_path / "out", histogram_settings=ROBUST
     )
 
@@ -102,7 +101,7 @@ def test_the_robust_range_avoids_the_warning(hot_experiment, tmp_path):
 
 
 def test_the_table_is_schema_version_4(hot_experiment):
-    result = run_experiment(hot_experiment, YX)
+    result = run_described(hot_experiment, YX)
     with result.csv_path.open(newline="", encoding="utf-8") as fh:
         header = next(csv.reader(fh))
     assert "Histogram_OverflowCount_C0" in header
@@ -114,16 +113,16 @@ def test_the_robust_range_changes_no_8_or_16_bit_table(tmp_path):
     rng = np.random.default_rng(2)
     write_data(root / "a/r/u8.tif", rng.integers(0, 256, (2, 32, 32), dtype=np.uint8), axes="TYX")
     zyx = prefill_mapping("TYX")
-    minmax = run_experiment(root, zyx, output_folder=tmp_path / "minmax")
-    robust = run_experiment(root, zyx, output_folder=tmp_path / "robust", histogram_settings=ROBUST)
+    minmax = run_described(root, zyx, output_folder=tmp_path / "minmax")
+    robust = run_described(root, zyx, output_folder=tmp_path / "robust", histogram_settings=ROBUST)
     assert minmax.csv_path.read_bytes() == robust.csv_path.read_bytes()
 
     root16 = tmp_path / "ints16"
     write_data(
         root16 / "a/r/u16.tif", rng.integers(0, 65536, (2, 32, 32), dtype=np.uint16), axes="TYX"
     )
-    minmax = run_experiment(root16, zyx, output_folder=tmp_path / "minmax16")
-    robust = run_experiment(
+    minmax = run_described(root16, zyx, output_folder=tmp_path / "minmax16")
+    robust = run_described(
         root16, zyx, output_folder=tmp_path / "robust16", histogram_settings=ROBUST
     )
     assert minmax.csv_path.read_bytes() == robust.csv_path.read_bytes()
@@ -131,13 +130,13 @@ def test_the_robust_range_changes_no_8_or_16_bit_table(tmp_path):
 
 @pytest.mark.parametrize("settings", [HistogramSettings(), ROBUST])
 def test_planes_read_in_blocks_give_the_same_table(hot_experiment, tmp_path, settings):
-    whole = run_experiment(
+    whole = run_described(
         hot_experiment, YX, output_folder=tmp_path / "whole", histogram_settings=settings
     )
     limit = plane_layout(
         hot_experiment / "ctrl/rep1/hot.tif", YX, memory_limit=1, histogram_settings=settings
     ).block_memory_estimate
-    blocks = run_experiment(
+    blocks = run_described(
         hot_experiment,
         YX,
         output_folder=tmp_path / "blocks",
@@ -150,15 +149,15 @@ def test_planes_read_in_blocks_give_the_same_table(hot_experiment, tmp_path, set
 
 
 def test_changing_the_range_recomputes_the_table(hot_experiment, reads):
-    run_experiment(hot_experiment, YX)
+    run_described(hot_experiment, YX)
     reads.clear()
-    result = run_experiment(hot_experiment, YX, histogram_settings=ROBUST)
+    result = run_described(hot_experiment, YX, histogram_settings=ROBUST)
     assert result.rebuild_reason == (
         "the histogram range changed from minimum to maximum to robust (0.01-99.99 %)"
     )
     assert len(reads) == 2 and narrow_warnings(result) == []
     reads.clear()
-    again = run_experiment(
+    again = run_described(
         hot_experiment, YX, histogram_settings=HistogramSettings(min_central_bins=50)
     )
     assert (
@@ -169,9 +168,9 @@ def test_changing_the_range_recomputes_the_table(hot_experiment, reads):
 
 
 def test_a_rerun_keeps_the_warning_without_reading(hot_experiment, reads):
-    first = run_experiment(hot_experiment, YX)
+    first = run_described(hot_experiment, YX)
     reads.clear()
-    again = run_experiment(hot_experiment, YX)
+    again = run_described(hot_experiment, YX)
     assert again.read == () and reads == []
     assert [i.message for i in narrow_warnings(again)] == [
         i.message for i in narrow_warnings(first)
@@ -185,12 +184,12 @@ def test_a_rerun_keeps_the_warning_without_reading(hot_experiment, reads):
 def test_a_table_of_schema_version_3_is_recomputed(hot_experiment, reads):
     import json
 
-    first = run_experiment(hot_experiment, YX)
+    first = run_described(hot_experiment, YX)
     manifest = json.loads(first.manifest_path.read_text(encoding="utf-8"))
     manifest["schema_version"] = "3"
     first.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     reads.clear()
-    result = run_experiment(hot_experiment, YX)
+    result = run_described(hot_experiment, YX)
     assert result.rebuild_reason == "the earlier table uses a different format version"
     assert len(reads) == 2
 
@@ -205,8 +204,13 @@ def test_the_command_line_takes_the_range(hot_experiment, tmp_path, capsys):
     output.mkdir()
     write_experiment_design(design, output / "experiment_design.csv")
     args = ["run", str(hot_experiment), "--axes", "YX", "--output", str(output)]
-    assert main([*args, "--histogram-range", "robust", "--robust-quantiles", "0.1", "99.9"]) == 0
+    assert (
+        main_described([*args, "--histogram-range", "robust", "--robust-quantiles", "0.1", "99.9"])
+        == 0
+    )
     settings = read_manifest(output / "run_manifest.json").settings.histogram
     assert (settings.histogram_range, settings.robust_quantiles) == ("robust", (0.1, 99.9))
-    assert main([*args, "--histogram-range", "robust", "--robust-quantiles", "99", "1"]) == 1
+    assert (
+        main_described([*args, "--histogram-range", "robust", "--robust-quantiles", "99", "1"]) == 1
+    )
     assert "0 <= low < high <= 100" in capsys.readouterr().out

@@ -1,23 +1,17 @@
-"""Manifest versions: which run manifests a reader may open (contract §9).
+"""The run manifest version: one version is written and read (contract §9, ADR 0002 AR11).
 
 A manifest's ``manifest_version`` says what its rows were checked against, so that a reader
-that does not know a rule refuses the manifest rather than read it under a weaker one:
+that does not know a rule refuses the manifest rather than read it under a weaker one. Before
+the first pipeline release there is no backward compatibility (Spec ADR 0002 AR10; owner ruling
+16 of 10 November 2026): this package writes and reads version ``"4"`` only, a described run's
+manifest (``experiment_description`` present). Content verification is
+``settings.verify_content``, with every file's ``content_sha256`` exactly when it is true.
 
-- ``"1"`` (before v0.4.0): read for reporting only; no row is reused, ``RunInputs`` refuses it;
-- ``"2"`` (v0.4.0): the default identity rule, each source's fingerprint;
-- ``"3"`` (v0.4.0rc5): a ``verify_content`` run (strict reuse, :mod:`.source_content`). It is
-  version 2 with ``settings.verify_content`` true and every file's ``content_sha256``. The
-  version, not only those keys, marks it: readers of v0.4.0rc4 and earlier ignore keys they
-  do not know, and refuse a version they do not know (``ManifestFormatError``), so they never
-  open a strict run as a fingerprint-only one (release review of rc5).
-
-- ``"4"`` (v0.5.0): a run with an ``experiment_description`` (Stage 2 design question 9). It is
-  version 2 or 3 (content verification as ``settings.verify_content`` says) plus the
-  description. A v0.4.0 reader skips keys it does not know, so it would open a described run
-  and name channels by header and pair by folder name; it refuses version ``"4"`` instead.
-
-A default run still writes version 2 (or 3), byte for byte as before. The writer and the reader
-apply the same rule (:func:`check_version`), so a written manifest always reads back.
+A manifest of any other version (``"1"`` before v0.4.0, ``"2"`` and ``"3"`` of v0.4.0 and the
+undescribed runs of v0.5.0, or a later one) is refused with
+:class:`UnsupportedVersionError`, which names the fix: run preprocessing again. Nothing is
+converted. The writer and the reader apply the same rule (:func:`check_version`), so a written
+manifest always reads back.
 """
 
 from __future__ import annotations
@@ -27,57 +21,27 @@ from collections.abc import Iterable
 from .description_record import KEY as DESCRIPTION_KEY
 from .manifest_fields import recorded_flag
 
-MANIFEST_VERSION = "2"
-"""The version of a default run's manifest (fingerprint identity)."""
-STRICT_MANIFEST_VERSION = "3"
-"""The version of a ``verify_content`` run's manifest (content SHA-256 identity)."""
-DESCRIBED_MANIFEST_VERSION = "4"
-"""The version of a described run's manifest (``experiment_description`` present)."""
-LEGACY_MANIFEST_VERSION = "1"
-"""Manifests written before v0.4.0: read for reporting, never trusted (no row is reused)."""
+MANIFEST_VERSION = "4"
+"""The version of every run manifest this package writes and reads (a described run)."""
 CONTENT_KEY = "content_sha256"
 """The key of a source's content SHA-256 in a manifest entry (``verify_content`` runs)."""
-READ_VERSIONS = (
-    LEGACY_MANIFEST_VERSION,
-    MANIFEST_VERSION,
-    STRICT_MANIFEST_VERSION,
-    DESCRIBED_MANIFEST_VERSION,
-)
-"""The versions this package reads."""
+READ_VERSIONS = (MANIFEST_VERSION,)
+"""The versions this package reads: the current one only (owner ruling 16)."""
+RERUN = "Run preprocessing again on the experiment (after describing it) to write a current one."
+"""The fix an old manifest's refusal names."""
 
 
 class UnsupportedVersionError(ValueError):
-    """Raised for a ``manifest_version`` this package does not read (a later version's)."""
-
-
-def version_for(verify_content: bool, described: bool = False) -> str:
-    """Return the manifest version a run with these settings writes.
-
-    Parameters
-    ----------
-    verify_content
-        Whether the run verifies each source's content (:attr:`.manifest.RunSettings`).
-    described
-        Whether the run carries an ``experiment_description``.
-
-    Returns
-    -------
-    str
-        :data:`DESCRIBED_MANIFEST_VERSION` for a described run, else
-        :data:`STRICT_MANIFEST_VERSION` for a strict run, else :data:`MANIFEST_VERSION`.
-    """
-    if described:
-        return DESCRIBED_MANIFEST_VERSION
-    return STRICT_MANIFEST_VERSION if verify_content else MANIFEST_VERSION
+    """Raised for a ``manifest_version`` this package does not read: re-run preprocessing."""
 
 
 def check_version(
     version: object,
     verify_content: bool,
     content: Iterable[tuple[str, str | None]],
-    described: bool = False,
+    described: bool = True,
 ) -> None:
-    """Refuse a manifest whose version does not match its content verification.
+    """Refuse a manifest that is not a current one, or whose content hashes do not match.
 
     Parameters
     ----------
@@ -93,47 +57,28 @@ def check_version(
     Raises
     ------
     UnsupportedVersionError
-        If the version is not one of :data:`READ_VERSIONS`.
+        If the version is not :data:`MANIFEST_VERSION` (an older run, or a later package's):
+        the message says to run preprocessing again.
     ValueError
-        If a version 3 manifest does
-        not verify content or lacks a file's ``content_sha256``; or if an older version
-        records content verification (a strict run must be version 3, which older
-        readers refuse); or if version 4 and the description do not go together (a described
-        run must be version 4, so that older readers refuse it, and version 4 needs one); or
-        if a version 4 manifest's content hashes do not match its ``verify_content``.
+        If the manifest carries no ``experiment_description`` (every run is described), or if
+        its entries hold a ``content_sha256`` other than exactly when ``verify_content`` is true.
     """
     if version not in READ_VERSIONS:
         raise UnsupportedVersionError(
-            f"Manifest version {version!r} is not supported (this version reads "
-            f"{', '.join(repr(v) for v in READ_VERSIONS)})."
+            f"Manifest version {version!r} is not supported: this version of preprocessing "
+            f"reads version {MANIFEST_VERSION!r} only (older runs are not converted). {RERUN}"
+        )
+    if not described:
+        raise ValueError(
+            f"a version {version} manifest carries the run's experiment_description; this one "
+            "lacks it"
         )
     content = list(content)
-    if (version == DESCRIBED_MANIFEST_VERSION) != described:
+    stray = [path for path, sha in content if (sha is None) == bool(verify_content)]
+    if stray:
         raise ValueError(
-            f"a version {version} manifest "
-            + ("carries" if described else "lacks")
-            + " experiment_description; a described run writes version "
-            f"{DESCRIBED_MANIFEST_VERSION}, and version {DESCRIBED_MANIFEST_VERSION} needs one"
-        )
-    hashed = [path for path, sha in content if sha is not None]
-    unhashed = [path for path, sha in content if sha is None]
-    if version == DESCRIBED_MANIFEST_VERSION:
-        stray = unhashed if verify_content else hashed
-        if stray:
-            raise ValueError(
-                f"a version {version} manifest holds a content_sha256 in every entry exactly "
-                f"when verify_content is true; the entry of {stray[0]!r} does not"
-            )
-    elif version == STRICT_MANIFEST_VERSION:
-        if not verify_content:
-            raise ValueError(f"a version {version} manifest must have verify_content true")
-        if unhashed:
-            raise ValueError(f"the entry of {unhashed[0]!r} has no content_sha256 (version 3)")
-    elif verify_content or hashed:
-        raise ValueError(
-            f"a version {version} manifest records content verification "
-            f"({'verify_content' if verify_content else hashed[0]!r}); a run that verifies "
-            f"content writes version {STRICT_MANIFEST_VERSION}"
+            f"a version {version} manifest holds a content_sha256 in every entry exactly "
+            f"when verify_content is true; the entry of {stray[0]!r} does not"
         )
 
 
@@ -153,9 +98,9 @@ def recorded_version(data: dict) -> str:
     Raises
     ------
     UnsupportedVersionError
-        If the version is not one this package reads (checked first);
-        :meth:`.manifest.RunManifest.from_dict` reports it as a ``ManifestFormatError``
-        with the same message.
+        If the version is not the current one (checked first, before any other key is read);
+        :meth:`.manifest.RunManifest.from_dict` reports it as a ``ManifestFormatError`` with
+        the same message.
     KeyError, TypeError, ValueError, AttributeError
         If a key is missing or malformed, or :func:`check_version` refuses it;
         :meth:`.manifest.RunManifest.from_dict` reports each as a ``ManifestFormatError``.

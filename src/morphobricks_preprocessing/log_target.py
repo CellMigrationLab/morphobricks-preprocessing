@@ -42,7 +42,7 @@ from .run.lock import LOCK_FILENAME
 from .run.recorded import recorded_masks_folder, usable
 from .run.reuse import read_previous
 from .run.staging import STAGING_FOLDER
-from .write_target import same_file, write_target_refusal
+from .write_target import write_target_refusal
 
 PROTECTED_OUTPUTS = frozenset(
     {
@@ -107,12 +107,11 @@ def run_log_refusal(
     experiment: str | os.PathLike,
     output: str | os.PathLike,
     masks: str | os.PathLike | None,
-    design: str | os.PathLike | None = None,
 ) -> str | None:
     """Return why the log of ``run`` or ``masks`` cannot be written, or None.
 
     The experiment and masks folders recorded by the earlier run in ``output`` are refused
-    too, as the given ones (the manifest is only read), and so is the design file given.
+    too, as the given ones (the manifest is only read).
 
     Parameters
     ----------
@@ -124,23 +123,18 @@ def run_log_refusal(
         The output folder.
     masks
         The masks folder given, or None.
-    design
-        The design file given with ``--design``, or None.
 
     Returns
     -------
     str or None
         As :func:`log_refusal`.
     """
-    files = {"design file given with --design": design}
-    if design is not None and same_file(Path(log), Path(design)):
-        return log_refusal(log, {}, files=files)  # before the earlier manifest is read
     recorded = usable(read_previous(Path(output).resolve())[0])
     folders = {"experiment folder": experiment, "masks folder": masks}
     if recorded is not None:
         folders["experiment folder of the earlier run"] = recorded.experiment_root
         folders["masks folder of the earlier run"] = recorded_masks_folder(recorded)
-    return log_refusal(log, folders, output, files=files)
+    return log_refusal(log, folders, output)
 
 
 def _refused(log: str | os.PathLike, why: str) -> str:

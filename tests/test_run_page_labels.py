@@ -84,13 +84,6 @@ def test_a_described_run_names_the_plot_tabs_and_titles_by_channel_id(tmp_path, 
     assert any("Channel ACTIN: one curve per biological repeat" in t for t in texts(figures[-1]))
 
 
-def test_an_undescribed_run_keeps_the_c_index(tmp_path, figures):
-    nb = confirmed(bright_tree(tmp_path / "exp"), output_folder=str(tmp_path / "out"))
-    nb.run()
-    assert [label for label, _ in nb.run_checks.channel.options] == ["C0", "C1"]
-    assert any("Channel C0" in t for t in texts(figures[-2]))
-
-
 def test_a_description_edited_after_the_run_is_not_used(tmp_path):
     nb, out = described(tmp_path)
     assert nb.run().written
@@ -144,12 +137,6 @@ def test_replicates_within_a_condition_are_ordered_by_replicate_id(tmp_path, fig
     assert [t.get_text() for t in drug.get_legend().get_texts()] == ["rep1", "rep2"]
 
 
-def test_an_undescribed_run_keeps_the_folder_names(tmp_path, figures):
-    nb = confirmed(bright_tree(tmp_path / "exp"), output_folder=str(tmp_path / "out"))
-    nb.run()
-    assert "ctrl / rep1" in texts(figures[-2]) and "rep1" in texts(figures[-1])
-
-
 # --- 3. the no-problems icon -------------------------------------------------------------------
 
 
@@ -162,7 +149,7 @@ def test_no_problems_found_has_no_warning_icon(tmp_path):
 
 
 def test_problems_keep_the_warning_icon(tmp_path):
-    nb = confirmed(bright_tree(tmp_path / "exp"), output_folder=str(tmp_path / "out"))
+    nb, _ = described(tmp_path)
     result = nb.run()
     assert not result.issues and "\u2705 no problems found" in nb.run_tiles.value
     nb._show_run_tiles(replace(result, issues=(warning("odd", "Something to read."),)))

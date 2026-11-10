@@ -13,13 +13,12 @@ import json
 import numpy as np
 import tifffile
 
+from described_tree import main_described, run_described
 from morphobricks_preprocessing import (
     RunInputs,
     prefill_mapping,
     read_manifest,
-    run_experiment,
 )
-from morphobricks_preprocessing.cli import main
 
 HEADER = {"PhysicalSizeX": 0.5, "PhysicalSizeY": 0.5, "PhysicalSizeZ": 0.43, "TimeIncrement": 2.0}
 
@@ -53,7 +52,7 @@ def state(output, text):
 def test_a_projection_records_no_z_or_t_size_from_its_header(tmp_path):
     root, output = tmp_path / "exp", tmp_path / "out"
     write(root / "ctrl" / "a.ome.tif", "CYX", (2, 8, 8), **HEADER)
-    result = run_experiment(root, prefill_mapping("CYX"), output_folder=output)
+    result = run_described(root, prefill_mapping("CYX"), output_folder=output)
     assert result.written
     found = sizes(output, "ctrl/a.ome.tif")
     assert found["X"]["source"] == found["Y"]["source"] == "header"
@@ -70,7 +69,7 @@ def test_an_image_with_the_role_keeps_its_header_size(tmp_path):
     # OME-TIFF's Z of one slice is no axis, so its z-step is not recorded.
     root, output = tmp_path / "exp", tmp_path / "out"
     write(root / "ctrl" / "a.ome.tif", "TZYX", (2, 1, 8, 8), **HEADER)
-    assert run_experiment(root, prefill_mapping("TYX"), output_folder=output).written
+    assert run_described(root, prefill_mapping("TYX"), output_folder=output).written
     found = sizes(output, "ctrl/a.ome.tif")
     assert found["Z"] == none("Z")
     assert found["T"]["value"] == 2.0 and found["T"]["source"] == "header"
@@ -81,7 +80,7 @@ def test_a_z_statement_is_not_recorded_for_images_without_z(tmp_path):
     write(root / "ctrl" / "a.ome.tif", "YX", (8, 8), PhysicalSizeX=0.5, PhysicalSizeY=0.5)
     write(root / "ctrl" / "b.ome.tif", "YX", (8, 8), PhysicalSizeX=0.5, PhysicalSizeY=0.5)
     state(output, ".,Z,2,um\nctrl/a.ome.tif,X,0.4,um\n")
-    result = run_experiment(root, prefill_mapping("YX"), output_folder=output)
+    result = run_described(root, prefill_mapping("YX"), output_folder=output)
     assert result.written
     (absent,) = [issue for issue in result.issues if issue.code == "calibration_axis_absent"]
     assert absent.severity.value == "warning"
@@ -103,7 +102,7 @@ def test_a_z_statement_sizes_no_image_of_one_slice(tmp_path):
     tifffile.imwrite(root / "ctrl/stack.ome.tif", stack, metadata={"axes": "ZYX"})
     write(root / "ctrl" / "flat.ome.tif", "YX", (8, 8))
     state(output, ".,Z,2,um\n")
-    result = run_experiment(
+    result = run_described(
         root, prefill_mapping("ZYX"), output_folder=output, missing_as_singleton=True
     )
     assert result.written, result.issues
@@ -116,7 +115,7 @@ def test_a_z_statement_sizes_no_image_of_one_slice(tmp_path):
 def test_rows_recorded_with_a_z_size_from_an_earlier_version_are_reused(tmp_path):
     root, output = tmp_path / "exp", tmp_path / "out"
     write(root / "ctrl" / "a.ome.tif", "CYX", (2, 8, 8), **HEADER)
-    assert run_experiment(root, prefill_mapping("CYX"), output_folder=output).written
+    assert run_described(root, prefill_mapping("CYX"), output_folder=output).written
     table = (output / "plane_histograms.csv").read_bytes()
     # The manifest as an earlier version wrote it: the unused z-step recorded.
     path = output / "run_manifest.json"
@@ -124,7 +123,7 @@ def test_rows_recorded_with_a_z_size_from_an_earlier_version_are_reused(tmp_path
     z_step = {"role": "Z", "value": 0.43, "unit": "micrometer", "source": "header"}
     data["files"][0]["pixel_sizes"][2] = z_step
     path.write_text(json.dumps(data), encoding="utf-8")
-    again = run_experiment(output_folder=output)
+    again = run_described(output_folder=output)
     assert again.written and again.reused == ("ctrl/a.ome.tif",) and again.read == ()
     assert (output / "plane_histograms.csv").read_bytes() == table
     assert sizes(output, "ctrl/a.ome.tif")["Z"] == none("Z")
@@ -133,7 +132,7 @@ def test_rows_recorded_with_a_z_size_from_an_earlier_version_are_reused(tmp_path
 def test_check_reports_no_z_size_for_a_projection(tmp_path, capsys):
     root, output = tmp_path / "exp", tmp_path / "out"
     write(root / "ctrl" / "a.ome.tif", "CYX", (2, 8, 8), **HEADER)
-    assert main(["check", str(root), "--output", str(output)]) == 0
+    assert main_described(["check", str(root), "--output", str(output)]) == 0
     assert set(report(output)["images"]["ctrl/a.ome.tif"]["pixel_sizes"]) == {"X", "Y"}
 
 
@@ -143,7 +142,7 @@ def test_the_text_report_counts_t_sizes_only_for_images_with_t(tmp_path):
     root, output = tmp_path / "exp", tmp_path / "out"
     write(root / "ctrl" / "stack.ome.tif", "TYX", (3, 8, 8), **HEADER)
     write(root / "ctrl" / "flat.ome.tif", "YX", (8, 8), **HEADER)
-    result = run_experiment(
+    result = run_described(
         root, prefill_mapping("TYX"), output_folder=output, missing_as_singleton=True
     )
     assert result.written

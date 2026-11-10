@@ -11,15 +11,11 @@ import json
 import numpy as np
 import pytest
 
+from described_tree import main_described, run_described
 from morphobricks_preprocessing import (
-    default_design,
     prefill_mapping,
-    preflight,
     read_manifest,
-    run_experiment,
 )
-from morphobricks_preprocessing.cli import main
-from morphobricks_preprocessing.dataset import biological_repeats
 from morphobricks_preprocessing.run.recorded import GivenInputs, resolve_inputs
 from morphobricks_preprocessing.run.reuse import read_previous
 from morphobricks_preprocessing.testing import make_clean_run
@@ -35,7 +31,7 @@ def relations(output):
 
 def test_masks_given_only_the_output_folder_uses_the_recorded_run(tmp_path, capsys):
     clean = make_clean_run(tmp_path, axes="YX", shape=(8, 8), mask_types=("Cells",))
-    assert main(["masks", "--output", str(clean.output)]) == 0
+    assert main_described(["masks", "--output", str(clean.output)]) == 0
     out = capsys.readouterr().out
     assert "Changed" not in out
     assert relations(clean.output)  # written, from the recorded experiment and masks
@@ -43,12 +39,12 @@ def test_masks_given_only_the_output_folder_uses_the_recorded_run(tmp_path, caps
 
 def test_masks_takes_the_recorded_masks_folder(tmp_path, capsys):
     clean = make_clean_run(tmp_path, axes="YX", shape=(8, 8), mask_types=("Cells",))
-    assert main(["masks", str(clean.experiment), "--output", str(clean.output)]) == 0
+    assert main_described(["masks", str(clean.experiment), "--output", str(clean.output)]) == 0
     assert (clean.output / RELATIONS).is_file()
 
 
 def test_masks_without_an_experiment_or_a_recorded_run_stops(tmp_path, capsys):
-    assert main(["masks", "--output", str(tmp_path / "out")]) == 1
+    assert main_described(["masks", "--output", str(tmp_path / "out")]) == 1
     out = capsys.readouterr().out
     assert "No experiment folder was given" in out
     assert not (tmp_path / "out" / RELATIONS).exists()
@@ -59,7 +55,7 @@ def test_masks_names_a_masks_folder_that_differs_from_the_recorded_one(tmp_path,
     other = tmp_path / "other_masks"
     (clean.masks / "Cells").rename(clean.masks / "Nuclei")
     clean.masks.rename(other)
-    assert main(["masks", "--output", str(clean.output), "--masks", str(other)]) == 0
+    assert main_described(["masks", "--output", str(clean.output), "--masks", str(other)]) == 0
     out = capsys.readouterr().out
     assert f"Changed masks_folder: {clean.masks.as_posix()} -> {other.as_posix()}" in out
     assert "the run keeps the recorded value until it is given this one" in out
@@ -72,18 +68,15 @@ def test_masks_takes_the_recorded_mask_axes_of_plain_stacks(tmp_path, capsys):
         labels = np.zeros((3, 8, 8), np.uint16)
         labels[:, 1:4, 1:4] = 1
         write_plain(masks / "Cells" / rel, labels)  # a plain stack: its axes are stated
-    design = default_design(biological_repeats(preflight(root).discovery))
-    design = design.with_confirmed("r1", True, "2026-11-02")
-    result = run_experiment(
+    result = run_described(
         root,
         prefill_mapping("TYX"),
         output_folder=output,
         masks_folder=masks,
         mask_axes={"Cells": "TYX"},
-        design=design,
     )
     assert result.written, result.issues
-    assert main(["masks", "--output", str(output)]) == 0
+    assert main_described(["masks", "--output", str(output)]) == 0
     assert (output / RELATIONS).is_file()
 
 
@@ -93,18 +86,15 @@ def test_dropping_the_masks_drops_the_mask_axes_stated_for_them(tmp_path, capsys
     for seed, rel in enumerate(["ctrl/r1/a.tif", "drug/r1/a.tif"]):
         write_data(root / rel, np.random.default_rng(seed).integers(0, 9, (3, 8, 8), "u1"), "TYX")
         write_plain(masks / "Cells" / rel, np.ones((3, 8, 8), np.uint16))
-    design = default_design(biological_repeats(preflight(root).discovery))
-    design = design.with_confirmed("r1", True, "2026-11-02")
-    stated = run_experiment(
+    stated = run_described(
         root,
         prefill_mapping("TYX"),
         output_folder=output,
         masks_folder=masks,
         mask_axes={"Cells": "TYX"},
-        design=design,
     )
     assert stated.written, stated.issues
-    assert main(["run", str(root), "--output", str(output), "--no-masks"]) == 0
+    assert main_described(["run", str(root), "--output", str(output), "--no-masks"]) == 0
     assert "invalid_mask_axes" not in capsys.readouterr().out
     manifest = json.loads((output / "run_manifest.json").read_text(encoding="utf-8"))
     assert manifest.get("masks") is None
@@ -120,15 +110,12 @@ def test_dropping_the_masks_keeps_the_mask_axes_of_label_images(tmp_path):
     for rel in ["ctrl/r1/b.tif", "drug/r1/b.tif"]:
         write_data(root / rel, np.ones((2, 8, 8), np.uint8), "TYX")
         write_plain(masks / "Cells" / rel, np.ones((2, 8, 8), np.uint16))
-    design = default_design(biological_repeats(preflight(root).discovery))
-    design = design.with_confirmed("r1", True, "2026-11-02")
-    first = run_experiment(
+    first = run_described(
         root,
         prefill_mapping("TYX"),
         output_folder=output,
         masks_folder=masks,
         mask_axes={"Cells": "TYX", "lab": "TYX"},
-        design=design,
     )
     assert first.written, first.issues
     previous = read_previous(output)[0]
@@ -141,7 +128,7 @@ def test_dropping_the_masks_keeps_the_mask_axes_of_label_images(tmp_path):
     added = resolve_inputs(GivenInputs(masks_folder=False, mask_axes={"N": "TYX"}), previous)
     change = next(change for change in added.changes if change.name == "mask_axes")
     assert "Cells" not in change.recorded + change.given and "N" in change.given
-    result = run_experiment(root, output_folder=output, masks_folder=False, design=design)
+    result = run_described(root, output_folder=output, masks_folder=False)
     assert result.written, result.issues
     recorded = read_manifest(result.manifest_path).masks
     assert {(f["type"], f["roles"], f["axes_from"]) for f in recorded["files"]} == {
@@ -153,10 +140,10 @@ def test_dropping_the_masks_keeps_the_mask_axes_of_label_images(tmp_path):
 def test_masks_takes_the_recorded_exclusions(tmp_path, capsys):
     clean = make_clean_run(tmp_path, axes="YX", shape=(8, 8), mask_types=("Cells",))
     excluded = "ctrl/rep1/b.ome.tif"
-    assert run_experiment(output_folder=clean.output, exclude=[excluded]).written
-    assert main(["masks", "--output", str(clean.output)]) == 0
+    assert run_described(output_folder=clean.output, exclude=[excluded]).written
+    assert main_described(["masks", "--output", str(clean.output)]) == 0
     out = capsys.readouterr().out
     assert "[3/3]" in out and "/4]" not in out  # the excluded image's mask is not read
     assert "Changed" not in out
-    assert main(["masks", "--output", str(clean.output), "--no-exclude"]) == 0
+    assert main_described(["masks", "--output", str(clean.output), "--no-exclude"]) == 0
     assert "Changed exclude: ctrl/rep1/b.ome.tif -> none" in capsys.readouterr().out

@@ -188,9 +188,10 @@ def build_report(
     outcome
         What the run did with the earlier results.
     unit_records
-        The manifest's unit records of a run with a published description, or None. Their
-        images without header channel names are listed under ``images_without_header_channel_names``
-        (:mod:`.description_unnamed`); the key is left out for a run without a description.
+        The manifest's unit records of the run's published description, or None (a run refused
+        before its description was read). Their images without header channel names are listed
+        under ``images_without_header_channel_names`` (:mod:`.description_unnamed`); the key is
+        left out without unit records.
 
     Returns
     -------

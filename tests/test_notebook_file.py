@@ -58,7 +58,7 @@ def test_notebook_uses_stable_page_api_not_a_new_app_method():
         assert call in source
     for page in ("folder_step(", "axis_step(", "channels_step(", "check_save_step(", "run_step("):
         assert f"notebook.{page}" not in source  # never shown twice beside the stepper
-    assert "PreprocessingNotebook(describe=True)" in source
+    assert "PreprocessingNotebook()" in source
     assert "display(app)" in source
 
 

@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import re
 from dataclasses import replace
-from datetime import date
 from fractions import Fraction
 from pathlib import Path
 from typing import Literal
@@ -29,17 +28,7 @@ from morphobricks_normalization.ranges import (
 
 from .axes import AxisMapping, reference_axes
 from .axis_review import review_axes
-from .cli_design import design_instructions
-from .design import (
-    DESIGN_FILENAME,
-    DesignFormatError,
-    ExperimentDesign,
-    design_issues,
-    read_experiment_design,
-    reconcile_design,
-    write_experiment_design,
-)
-from .discovery import check_output_folder, default_output_folder
+from .discovery import default_output_folder
 from .image_type import IMAGE_TYPES, RGB, ImageTypeReview, review_image_type
 from .intensity import intensity_text
 from .manifest import RunManifest
@@ -47,18 +36,15 @@ from .metadata import header_axes
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import (
     axis_check_summary,
-    design_summary,
     format_issues,
     mapping_summary,
     run_summary,
 )
+from .required_description import description_required_issue, is_published
 from .run import MODES, RESTART, Preflight, RunMode, preflight, run_experiment
-from .run.lock import OutputLockedError, lock_issue, output_lock
-from .run.output_guard import output_masks_issues
-from .run.preflight import description_in_use
 from .run.recorded import usable
 from .run.reuse import read_previous, recorded_experiment_root
-from .validation import ValidationIssue, has_errors
+from .validation import ValidationIssue
 
 _UNITS = {
     "": 1,
@@ -108,8 +94,17 @@ def command_preflight(args: argparse.Namespace) -> Preflight:
         exclude=args.exclude,
         masks_folder=args.masks,
         mask_axes=args.mask_axes,
-        with_description=description_in_use(args.experiment, args.output),
     )
+
+
+def description_refusal(args: argparse.Namespace) -> ValidationIssue | None:
+    """Return ``A_DESCRIPTION_REQUIRED`` when the output folder holds no published description.
+
+    ``check``, ``run`` and ``masks`` refuse such a folder before anything is read: every run
+    needs a published ``morphobricks.toml`` (Spec ADR 0002 AR10).
+    """
+    output = Path(args.output) if args.output else default_output_folder(Path(args.experiment))
+    return None if is_published(output) else description_required_issue(output.resolve())
 
 
 def use_recorded_experiment(args: argparse.Namespace) -> bool:
@@ -238,12 +233,6 @@ def _run_inputs(run: argparse.ArgumentParser) -> None:
         "new or changed",
     )
     run.add_argument(
-        "--design",
-        metavar="FILE",
-        help="the confirmed experiment design (default: experiment_design.csv in the output "
-        "folder); without a confirmed design, run writes a template there and stops",
-    )
-    run.add_argument(
         "--image-type",
         choices=IMAGE_TYPES,
         help="fluorescence (each channel a separate stain) or rgb (colour images with "
@@ -331,6 +320,10 @@ def run_command(args: argparse.Namespace) -> int:
     """Run pass 2 with the command's options, print what it did and return the status."""
     if not use_recorded_experiment(args):
         return 1
+    refusal = description_refusal(args)
+    if refusal is not None:
+        print(format_issues([refusal]))
+        return 1
     recorded = recorded_run(args)
     if recorded is not None and not args.exclude and not args.no_exclude:
         args.exclude = list(recorded.settings.exclude)  # the preflight leaves them out too
@@ -339,15 +332,7 @@ def run_command(args: argparse.Namespace) -> int:
     settings = _settings_options(args, recorded)
     if mapping is False or settings is None:
         return 1
-    design = None
-    # Folder problems are reported by the run itself; the design is only asked about
-    # once the folders can be processed.
-    if not has_errors([*pre.discovery.issues, *pre.exclusion_issues]):
-        design, message = _design_for_run(pre, args)
-        if design is None:
-            print(message)
-            return 1
-    image_type = _print_inputs(args, pre, mapping, design, recorded)
+    image_type = _print_inputs(args, pre, mapping, recorded)
     result = run_experiment(
         args.experiment,
         mapping,
@@ -358,26 +343,19 @@ def run_command(args: argparse.Namespace) -> int:
         exclude=[] if args.no_exclude else args.exclude or None,
         mode=RunMode(args.mode, args.verify_content),
         progress=print_progress,
-        design=design,
         masks_folder=False if args.no_masks else args.masks,
         mask_axes=args.mask_axes or None,
         image_type=image_type,
         intensity_settings=settings[0],
         histogram_settings=settings[1],
     )
-    template, instructions = None, ""
-    if _stopped_on_design(result.issues, design):
-        template, instructions = _design_template(design, pre, args)
     if result.issues:
         print(format_issues(result.issues))
         print()
-    print(run_summary(result, design_template=template is not None))
+    print(run_summary(result))
     if result.intensity is not None:
         print()
         print(intensity_text(result.intensity))
-    if instructions:
-        print()
-        print(instructions)
     return 0 if result.written else 1
 
 
@@ -469,10 +447,9 @@ def _print_inputs(
     args: argparse.Namespace,
     pre: Preflight,
     mapping: AxisMapping | None,
-    design: ExperimentDesign | None,
     recorded: RunManifest | None,
 ) -> str:
-    """Print the axis roles, image type and design the run uses; return the image type."""
+    """Print the axis roles and image type the run uses; return the image type."""
     missing = missing_as_singleton(args, recorded)
     review = review_axes(pre.metadata, mapping or recorded.mapping, missing_as_singleton=missing)
     if mapping is None:
@@ -493,71 +470,7 @@ def _print_inputs(
     print(f"Image type: {image_type}")
     print(_image_type_note(type_review, given))
     print()
-    if design is not None:
-        print("Experiment design:")
-        print(design_summary(design))
-        print()
     return image_type
-
-
-def _design_for_run(
-    pre: Preflight, args: argparse.Namespace
-) -> tuple[ExperimentDesign | None, str]:
-    """Return the experiment design brought up to date, or None and what went wrong.
-
-    A design that is not fully confirmed is returned too: the run stops on it and writes
-    its report, then :func:`_design_template` writes it for the user to fill in.
-    """
-    root = pre.discovery.root
-    output = Path(args.output) if args.output else default_output_folder(root)
-    source = Path(args.design) if args.design else output / DESIGN_FILENAME
-    previous = None
-    if source.exists():
-        try:
-            previous = read_experiment_design(source)
-        except DesignFormatError as exc:
-            return None, (
-                f"The experiment design cannot be read: {exc}\n"
-                f"Correct the file, or delete it to get a new template."
-            )
-    elif args.design:
-        return None, f"The experiment design {source} does not exist."
-    design, _ = reconcile_design(previous, pre.dataset.repeats)
-    # Rows confirmed by hand in the file get today's date.
-    return design.dated(date.today().isoformat()), ""
-
-
-def _stopped_on_design(
-    issues: tuple[ValidationIssue, ...], design: ExperimentDesign | None
-) -> bool:
-    """Return True when the run stopped on the design given (not, e.g., on the lock)."""
-    if design is None:
-        return False
-    found = {issue.code for issue in issues}
-    return any(issue.code in found for issue in design_issues(design))
-
-
-def _design_template(
-    design: ExperimentDesign, pre: Preflight, args: argparse.Namespace
-) -> tuple[Path | None, str]:
-    """Write the design for the user to fill in, holding the output folder's lock.
-
-    The run, given the design, stopped on it and wrote its report; the template keeps
-    every answer already given. Returns the file written (None when nothing was) and what
-    the user has to do.
-    """
-    root = pre.discovery.root
-    output = Path(args.output) if args.output else default_output_folder(root)
-    masks = pre.masks.folder if pre.masks is not None else None
-    if check_output_folder(root, output) or output_masks_issues(output, masks):
-        return None, ""  # the run reported it; nothing is written inside these folders
-    try:
-        with output_lock(output):
-            target = write_experiment_design(design, output / DESIGN_FILENAME)
-    except OutputLockedError as exc:
-        return None, format_issues([lock_issue(exc)])
-    lines = [*design_instructions(target, output), "Then run again."]
-    return target, "\n".join(lines)
 
 
 def _image_type_note(review: ImageTypeReview, given: str | None) -> str:

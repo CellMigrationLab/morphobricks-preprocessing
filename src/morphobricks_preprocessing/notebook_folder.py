@@ -23,7 +23,6 @@ from .notebook_render import (
     labels_html,
 )
 from .run import Preflight, preflight
-from .run.preflight import description_in_use
 from .unit_consistency import unit_checked
 from .validation import ValidationIssue, plural
 
@@ -214,13 +213,11 @@ class _FolderStep:
                     exclude=self._excluded(),
                     masks_folder=masks,
                     mask_axes=mask_axes,
-                    with_description=self._with_description(folder),
                     # Each header is bound to the file's fingerprint: every picture and the
                     # save are of the images as this check read them (audit batch 33).
                     bind_headers=True,
                 )
-                if self._describe:
-                    pre = unit_checked(pre)  # a described run checks inside each unit
+                pre = unit_checked(pre)  # a described run checks inside each unit
                 self._note_edits()  # a check fills only what the user left as filled
                 self.missing_as_singleton.set(self._recorded_missing_as_singleton(), notify=False)
                 # The report reads images lacking some axes by that answer, as 'check
@@ -240,15 +237,6 @@ class _FolderStep:
         self._show_log()
         return pre
 
-    def _with_description(self, folder: str) -> bool:
-        """Return True when the folder check is that of a description (Spec experiment-v1 §3.3).
-
-        While the user describes the experiment (a described run), and whenever the output
-        folder holds a published ``morphobricks.toml``, which the run uses: folder and mask
-        type names are then refused as the run refuses them.
-        """
-        return self._describe or description_in_use(folder, self._output_folder())
-
     def _show_folder_results(self, pre: Preflight) -> None:
         """Show the labels, messages and pixel sizes of a new check; the design starts over."""
         self.design = None
@@ -256,10 +244,9 @@ class _FolderStep:
         ui.set_visible(self.design_card, False)
         self._hide_description()
         self.labels_table.value = labels_html(pre)
-        if self._describe:
-            self.label_previews.show(pre)
-        ui.set_visible(self.labels_table, not self._describe)
-        ui.set_visible(self.label_previews.widget, self._describe)
+        self.label_previews.show(pre)
+        ui.set_visible(self.labels_table, False)
+        ui.set_visible(self.label_previews.widget, True)
         self.labels_confirmed.set(False, notify=False)
         self.labels_confirmed.disabled = not pre.discovery.leaves
         ui.set_visible(self.labels_card, bool(pre.discovery.leaves))
