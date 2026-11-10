@@ -75,17 +75,38 @@ def test_each_page_is_a_title_line_and_one_column_that_never_scrolls_by_itself(e
     assert "mb-label-rows" in nb.label_previews.rows._dom_classes
 
 
+def _panel(widget):
+    """Return True when ``widget`` is, or holds anywhere inside it, a card or a fold."""
+    if "mb-card" in getattr(widget, "_dom_classes", ()) or isinstance(widget, widgets.Accordion):
+        return True
+    return any(_panel(child) for child in getattr(widget, "children", ()))
+
+
 def _side_by_side(widget, found=None):
-    """Return the boxes that lay cards or panels out in a row (pictures and inputs may be)."""
+    """Return the boxes that lay cards or panels out in a row (pictures and inputs may be).
+
+    A row is an ``HBox`` or a ``GridBox`` (the earlier axes step put its cards in a grid), and
+    a card wrapped in another box is still a card in that row.
+    """
     found = [] if found is None else found
-    if isinstance(widget, widgets.HBox):
-        for child in widget.children:
-            classes = getattr(child, "_dom_classes", ())
-            if "mb-card" in classes or isinstance(child, widgets.Accordion):
-                found.append(widget)
+    if isinstance(widget, (widgets.HBox, widgets.GridBox)):
+        if len(widget.children) > 1 and any(_panel(child) for child in widget.children):
+            found.append(widget)
     for child in getattr(widget, "children", ()):
         _side_by_side(child, found)
     return found
+
+
+def test_a_row_of_cards_is_found_in_a_grid_and_inside_another_box():
+    # Review of #275: the walk looked only at HBox rows holding a card directly, so the cards
+    # side by side in a GridBox (main's axes step) or wrapped in a VBox were not found.
+    card = ui.card("A", [widgets.HTML("a")])
+    other = ui.card("B", [widgets.HTML("b")])
+    assert _side_by_side(widgets.GridBox([card, other])) != []
+    assert _side_by_side(widgets.HBox([widgets.VBox([card]), widgets.VBox([other])])) != []
+    assert _side_by_side(widgets.HBox([widgets.HTML("a"), widgets.Dropdown()])) == []
+    assert _side_by_side(widgets.VBox([card, other])) == []
+    assert _side_by_side(widgets.HBox([card])) == []
 
 
 def test_every_page_is_a_single_column_of_cards(exp):  # noqa: F811
@@ -99,6 +120,23 @@ def test_every_page_is_a_single_column_of_cards(exp):  # noqa: F811
     assert order.index(nb.preview_card) < order.index(nb.axis_sizes_slot)
     assert isinstance(nb.scan_box, widgets.VBox)
     assert list(nb.scan_box.children) == [nb.scan_example, nb.scan_another, nb.scan_tree]
+
+
+def _boxes(widget):
+    yield widget
+    for child in getattr(widget, "children", ()):
+        yield from _boxes(child)
+
+
+def test_the_run_log_is_text_in_the_page_not_a_box_that_scrolls(exp):  # noqa: F811
+    # Review of #275: the run step's technical log was a 14em read-only Textarea, a box with
+    # its own scroll bar. It is now wrapped text in its fold; the log is the same.
+    nb = _ran(exp)
+    for page in nb._stepper.pages:
+        assert not [w for w in _boxes(page) if isinstance(w, widgets.Textarea) and w.disabled]
+    assert nb.details.value and "run" in nb.details.value.lower()
+    assert _holds(nb.details_box, nb.log_text)
+    assert nb.details.value.splitlines()[-1].replace("&", "&amp;")[:20] in nb.log_text.value
 
 
 def test_explanations_are_folded_behind_about_this_step(exp):  # noqa: F811
