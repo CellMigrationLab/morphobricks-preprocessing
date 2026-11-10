@@ -65,6 +65,7 @@ from .run_inputs_error import DescriptionRequiredError
 from .run_inputs_error import RunInputsError as RunInputsError  # re-exported (moved)
 from .run_inputs_image import LazyImage as LazyImage  # re-exported (moved)
 from .run_inputs_projection import ProjectionInputs
+from .run_inputs_resolve import ResolvingInputs
 from .run_inputs_semantic import SemanticInputs, check_description, with_identity
 from .run_inputs_text import (
     _ZARR_MISSING,
@@ -153,7 +154,7 @@ class Fov:
 
 
 @dataclass(frozen=True)
-class RunInputs(SemanticInputs, ProjectionInputs):
+class RunInputs(SemanticInputs, ProjectionInputs, ResolvingInputs):
     """The inputs of a clean preprocessing run, read as the run recorded them.
 
     Use :meth:`open`; the attributes are the snapshot taken then.
