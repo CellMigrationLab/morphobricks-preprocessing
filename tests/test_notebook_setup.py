@@ -5,6 +5,7 @@ one namespace, as in a kernel.
 """
 
 import ast
+import functools
 import importlib
 import importlib.metadata
 import importlib.util
@@ -75,6 +76,20 @@ def install_git_double(monkeypatch, state):
     monkeypatch.setattr(subprocess, "check_output", check_output)
 
 
+def run_cells(state, *numbers, fresh=True):
+    """Run the code cells ``numbers`` (all three by default) in order, in one namespace.
+
+    ``fresh`` starts a new kernel namespace; ``/content/drive`` is ``state.drive`` (the fake
+    Drive's mount point).
+    """
+    if fresh:
+        state.namespace = {}
+    for number in numbers or (INSTALL, DRIVE, RUN):
+        source = cell_source(number).replace(COLAB_DRIVE, str(state.drive))
+        exec(source, state.namespace)
+    return state.namespace
+
+
 @pytest.fixture
 def setup_environment(tmp_path, monkeypatch):
     platform.platform()
@@ -138,20 +153,7 @@ def setup_environment(tmp_path, monkeypatch):
 
     monkeypatch.setattr(importlib, "import_module", import_interface)
 
-    def start(*numbers, fresh=True):
-        """Run the code cells ``numbers`` (all three by default) in order, in one namespace.
-
-        ``fresh`` starts a new kernel namespace; ``/content/drive`` is ``state.drive`` (the
-        fake Drive's mount point).
-        """
-        if fresh:
-            state.namespace = {}
-        for number in numbers or (INSTALL, DRIVE, RUN):
-            source = cell_source(number).replace(COLAB_DRIVE, str(state.drive))
-            exec(source, state.namespace)
-        return state.namespace
-
-    state.start = start
+    state.start = functools.partial(run_cells, state)
     return state
 
 
