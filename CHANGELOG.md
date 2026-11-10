@@ -8,6 +8,15 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased (v0.5.1)
 
+### Fixed: the notebook output is no longer flooded with debug messages
+
+ImageJ TIFFs have a plain-text description, so reading it as OME-XML failed for every image and
+logged a debug message with a traceback; and the notebook's own log capture set the package
+logger to DEBUG while records still reached the root logger, which Colab prints. Now only an
+OME-XML description is parsed (which images are marked is unchanged; a malformed one logs one
+debug line without a traceback), and while the capture is attached the package's DEBUG records
+go to the "Technical details" panel only, with WARNING and above still reaching the root handlers.
+
 ### The notebook has three code cells: install, mount Google Drive, run
 
 Owner request of 10 November 2026, as in the lab's ZeroCostDL4Mic and NucleiSky notebooks. The
