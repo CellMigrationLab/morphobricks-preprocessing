@@ -10,11 +10,9 @@ import os
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
-from .axes import file_mapping_for
 from .image_names import position_id
 from .inventory import source_signature
 from .manifest import RunManifest
-from .metadata import inspect_image
 from .validation import ValidationIssue, error, plural
 
 
@@ -50,8 +48,7 @@ def check_sources(
         The axes the caller reads each image with, one letter per dimension (``"ZYX"``),
         by path; every path must have one. A dimension the run gave no role (length 1)
         fits any letter; the others must have the run's role. The roles are the file's
-        own as recorded (:attr:`FileEntry.roles`), or for manifests written before they
-        were recorded, the run's mapping resolved for the image's header.
+        own as recorded (:attr:`FileEntry.roles`); none recorded fits no axes.
     identities
         The caller's ``(condition, biological_repeat, technical_repeat, position_id)`` of
         each image (:data:`.discovery.FOV_KEY` order), by path; every path must have one.
@@ -60,9 +57,8 @@ def check_sources(
     -------
     list of ValidationIssue
         Errors, each naming its images: ``images_not_in_manifest``, ``images_missing``
-        (no longer on disk), ``images_changed``, ``position_id_not_recorded`` (a manifest
-        from before ``position_id`` was recorded, when ``identities`` are checked),
-        ``identity_differs`` and ``axis_mapping_mismatch``. Empty when all images pass.
+        (no longer on disk), ``images_changed``, ``identity_differs`` and
+        ``axis_mapping_mismatch``. Empty when all images pass.
 
     Raises
     ------
@@ -93,27 +89,18 @@ def check_sources(
         if fingerprint != (entry.size, entry.mtime_ns, entry.inventory_sha256):
             report("images_changed", path)
         recorded = (*entry.labels, entry.position_id)
-        if entry.position_id is not None and entry.position_id != position_id(path):
+        if entry.position_id != position_id(path):
             report(
                 "identity_differs",
                 path,
                 f"recorded position_id {entry.position_id!r}, its name gives {position_id(path)!r}",
             )
-        elif identities is not None and entry.position_id is None:
-            report("position_id_not_recorded", path)
         elif identities is not None and tuple(identities[path]) != recorded:
             report(
                 "identity_differs", path, f"given {tuple(identities[path])}, recorded {recorded}"
             )
         if image_axes is not None:
             roles = entry.roles
-            if roles is None:
-                mapping = file_mapping_for(
-                    inspect_image(root / path, path),
-                    manifest.mapping,
-                    missing_as_singleton=manifest.settings.missing_as_singleton,
-                )
-                roles = None if mapping is None else mapping.roles
             axes = str(image_axes[path]).upper()
             if not _roles_agree(axes, roles):
                 described = "none fit" if roles is None else "".join(r or "-" for r in roles)
@@ -156,11 +143,6 @@ _SOURCE_TEXTS = {
         "{n} changed after the preprocessing brick read them: the size or modification "
         "time differs from the manifest, so their rows may not describe them.",
         _RERUN + "the images as they were.",
-    ),
-    "position_id_not_recorded": (
-        "The manifest does not record the position of {n}; it was written by a version "
-        "of the preprocessing brick before positions were recorded.",
-        "Run the preprocessing brick again on this experiment.",
     ),
     "identity_differs": (
         "The labels or position of {n} differ from those the preprocessing run recorded.",

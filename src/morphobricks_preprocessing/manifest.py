@@ -86,13 +86,11 @@ class RunSettings:
         Relative paths of images the user excluded from the run, sorted.
     histogram
         The histogram range of histograms that are not exact, with the limits of
-        the range check (the normalization brick's ``HistogramSettings``).
-        Manifests written before it was recorded read as the default, the
-        minimum to maximum.
+        the range check (the normalization brick's ``HistogramSettings``); always recorded.
     verify_content
         Strict reuse (CLI ``--verify-content``): each source's content SHA-256 is recorded
         (:attr:`FileEntry.content_sha256`) and must match before its staged or earlier rows
-        are reused. False (the default, and in manifests without it): the fingerprint only.
+        are reused. False: the fingerprint only. Always recorded.
     """
 
     bin_count: int
@@ -139,20 +137,21 @@ class FileEntry:
         For information only: the rows are the same either way.
     position_id
         The image's position identifier, its name without the extension
-        (:func:`~morphobricks_preprocessing.image_names.position_id`). Required in manifest
-        version 2, and equal to that rule (round-2 audit A-m5); None in older manifests.
+        (:func:`~morphobricks_preprocessing.image_names.position_id`). Required when written
+        and read, and equal to that rule (round-2 audit A-m5); None only before the entry is
+        complete.
     roles
         The role of each of the file's axes (``"X"``, ``"Y"``, ``"Z"``, ``"C"``, ``"T"`` or
         None), from its own mapping: for an OME-Zarr image whose declared order differs from
-        the experiment mapping's, these are its roles, not the experiment's. Required in
-        manifest version 2; None in older manifests.
+        the experiment mapping's, these are its roles, not the experiment's. Required when
+        written and read.
     axes_from
         Where the roles come from: ``"header"`` (the metadata names every axis and
         the roles agree) or ``"confirmed"`` (a plain stack: the user confirmed them).
-        Required in manifest version 2; None in older manifests.
+        Required when written and read.
     pixel_sizes
         The size of one step along X, Y, Z and T, each with its unit and source
-        (:class:`.recorded_sizes.RecordedSize`); empty in older manifests.
+        (:class:`.recorded_sizes.RecordedSize`); always written.
     inventory_sha256
         For an OME-Zarr folder, the SHA-256 of its inventory (each file's relative path,
         size and modification time, :func:`.inventory.source_signature`); None for a
@@ -328,25 +327,15 @@ class RunManifest:
                 ),
                 "exclude": list(self.settings.exclude),
                 "histogram": self.settings.histogram.to_dict(),
-                # Written by every version 2 and 3 manifest (#159): a run that opted out of
-                # content hashing says so. Manifests written before it have no key and read
-                # as not verified; version 1 is unchanged.
-                **(
-                    {
-                        "verify_content": recorded_flag(
-                            self.settings.verify_content, "verify_content"
-                        )
-                    }
-                    if self.manifest_version != "1"
-                    else {}
-                ),
+                # Always written (#159): a run that opted out of content hashing says so.
+                "verify_content": recorded_flag(self.settings.verify_content, "verify_content"),
             },
             "axis_mapping": {"axes": self.mapping.axes, "roles": list(self.mapping.roles)},
             "labels": [
                 dict(zip(_LABEL_KEYS, (folder, *labels), strict=True))
                 for folder, labels in self.leaves.items()
             ],
-            "files": [_file_dict(f, strict=self.manifest_version != "1") for f in self.files],
+            "files": [_file_dict(f) for f in self.files],
             "csv_sha256": self.csv_sha256,
             "experiment_design_sha256": self.experiment_design_sha256,
             "image_type": self.image_type,
@@ -390,15 +379,11 @@ class RunManifest:
                     memory_limit=int(settings["memory_limit"]),
                     missing_as_singleton=recorded_flag(settings["missing_as_singleton"]),
                     exclude=tuple(str(p) for p in settings["exclude"]),
-                    histogram=(
-                        HistogramSettings()
-                        if settings.get("histogram") is None
-                        else HistogramSettings.from_dict(settings["histogram"])
-                    ),
-                    verify_content=recorded_flag(settings.get("verify_content", False)),
+                    histogram=HistogramSettings.from_dict(settings["histogram"]),
+                    verify_content=recorded_flag(settings["verify_content"], "verify_content"),
                 ),
                 mapping=AxisMapping(str(mapping["axes"]), tuple(mapping["roles"])),
-                files=tuple(_file_entry(f, strict=version != "1") for f in data["files"]),
+                files=tuple(_file_entry(f) for f in data["files"]),
                 csv_sha256=str(data["csv_sha256"]),
                 versions={str(k): str(v) for k, v in data.get("versions", {}).items()},
                 written_at=str(data.get("written_at", "")),
@@ -520,14 +505,14 @@ def read_manifest(path: str | os.PathLike) -> RunManifest:
     return RunManifest.from_dict(data)
 
 
-def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
-    """Return a file entry as manifest data; ``strict`` (version 2) requires roles and source.
+def _file_dict(entry: FileEntry) -> dict:
+    """Return a file entry as manifest data; its roles, their source and position are required.
 
     The writer refuses what the reader would refuse, so a written manifest always reads back.
     """
-    if strict and (entry.roles is None or entry.axes_from not in AXES_FROM):
+    if entry.roles is None or entry.axes_from not in AXES_FROM:
         raise ValueError(f"the entry of {entry.relative_path!r} has no roles or axes_from")
-    recorded_position_id(entry.position_id, entry.relative_path, strict=strict)
+    recorded_position_id(entry.position_id, entry.relative_path)
     data = {
         "relative_path": entry.relative_path,
         "size": entry.size,
@@ -558,13 +543,16 @@ def _file_dict(entry: FileEntry, *, strict: bool = True) -> dict:
     return data
 
 
-def _file_entry(data: dict, *, strict: bool = True) -> FileEntry:
-    """Read a file entry; ``strict`` (manifest version 2) requires roles, source and position.
+def _file_entry(data: dict) -> FileEntry:
+    """Read a file entry; every key the writer always writes is required, none defaulted.
 
-    The ``position_id`` must be the one the entry's name gives (round-2 audit A-m5).
+    The roles, their source (``axes_from``), the pixel sizes and the ``position_id`` (the one
+    the entry's name gives, round-2 audit A-m5) are required. Only ``inventory_sha256``,
+    ``content_sha256`` and ``raw_channel_names`` may be absent: the writer leaves them out when
+    they do not apply.
     """
-    bits, path = data.get("significant_bits"), str(data["relative_path"])
-    if strict and (data.get("roles") is None or data.get("axes_from") not in AXES_FROM):
+    bits, path = data["significant_bits"], str(data["relative_path"])
+    if data.get("roles") is None or data.get("axes_from") not in AXES_FROM:
         raise ValueError(f"the entry of {path!r} has no roles or axes_from")
     return FileEntry(
         relative_path=path,
@@ -576,16 +564,16 @@ def _file_entry(data: dict, *, strict: bool = True) -> FileEntry:
             str(data["technical_repeat"]),
         ),
         axes=str(data["axes"]),
-        singleton_roles=tuple(str(r) for r in data.get("singleton_roles", [])),
+        singleton_roles=tuple(str(r) for r in data["singleton_roles"]),
         plane_count=int(data["plane_count"]),
-        channel_names=tuple(None if n is None else str(n) for n in data.get("channel_names", [])),
+        channel_names=tuple(None if n is None else str(n) for n in data["channel_names"]),
         significant_bits=None if bits is None else int(bits),
-        read_in_blocks=recorded_flag(data.get("read_in_blocks", False)),
-        position_id=recorded_position_id(data.get("position_id"), path, strict=strict),
-        channel_names_trimmed=recorded_flag(data.get("channel_names_trimmed", False)),
-        roles=recorded_roles(data.get("roles"), str(data["axes"])),
-        axes_from=optional_text(data.get("axes_from")),
-        pixel_sizes=sizes_from_data(data.get("pixel_sizes")),
+        read_in_blocks=recorded_flag(data["read_in_blocks"], "read_in_blocks"),
+        position_id=recorded_position_id(data.get("position_id"), path),
+        channel_names_trimmed=recorded_flag(data["channel_names_trimmed"], "channel_names_trimmed"),
+        roles=recorded_roles(data["roles"], str(data["axes"])),
+        axes_from=str(data["axes_from"]),
+        pixel_sizes=sizes_from_data(data["pixel_sizes"]),
         inventory_sha256=optional_text(data.get(INVENTORY_KEY)),
         content_sha256=optional_text(data.get(CONTENT_KEY)),
         raw_channel_names=recorded_raw_names(data.get(RAW_NAMES_KEY), path),

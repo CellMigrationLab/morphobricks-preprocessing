@@ -245,6 +245,19 @@ already removed is not repeated here. **Breaking** where it says so.
   (version 3 always writes it). Removed: `_READABLE_VERSIONS`, `_OLD_VERSIONS` and the "version 2
   cannot hold a projection" check.
 
+- **Run manifest: nothing read leniently** (inventory PP-05, owner ruling 16). **Breaking** for a
+  hand-edited or truncated manifest only (version 4 always writes these keys). Removed: the
+  `strict` argument of `manifest_fields.recorded_position_id` (version-1 entries kept any value,
+  or None), the `strict` branches of the file-entry reader and writer, and the defaults for
+  absent keys: a file entry needs `position_id`, `roles`, `axes_from`, `pixel_sizes`,
+  `singleton_roles`, `channel_names`, `significant_bits`, `read_in_blocks` and
+  `channel_names_trimmed`, the settings `histogram` and `verify_content`; a manifest without
+  one is refused (`ManifestFormatError`). `recorded_sizes.sizes_from_data` refuses an absent
+  list (also in a conversion record). `check_sources` no longer has the
+  `position_id_not_recorded` issue (an entry without a position is `identity_differs`) and no
+  longer resolves roles from the image header for an entry without them (it fits no axes,
+  `axis_mapping_mismatch`).
+
 ## 0.5.0 - 2026-11-09
 
 Stage 1 of the experiment description (MorphoBricks-Spec experiment-v1, pinned at `1bed024`):

@@ -187,7 +187,7 @@ class CopyEntry:
             source_axes=str(data.get("source_axes", "")),
             roles=None if roles is None else tuple(None if r is None else str(r) for r in roles),
             copy_axes=None if data.get("copy_axes") is None else str(data["copy_axes"]),
-            pixel_sizes=sizes_from_data(data.get("pixel_sizes")),
+            pixel_sizes=sizes_from_data(data["pixel_sizes"]),
             unknown_sizes={str(k): str(v) for k, v in (data.get("unknown_sizes") or {}).items()},
             copy_sha256=str(data["copy_sha256"]),
             channel_names=tuple(None if n is None else str(n) for n in data["channel_names"]),
