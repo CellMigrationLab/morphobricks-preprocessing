@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from pathlib import Path
 
 from ..discovery import (
@@ -46,6 +46,7 @@ def find_masks(
     mask_axes: Mapping[str, str] | None = None,
     output_folder: str | os.PathLike | None = None,
     bind: bool = False,
+    progress: Callable[[int, int, str], None] | None = None,
 ) -> MaskInventory:
     """Pair every image with its masks and check them from their headers, without pixels.
 
@@ -76,6 +77,9 @@ def find_masks(
         fingerprint with it (:attr:`.model.MaskFile.bound`, issue #160), so a run or the
         mask step refuses a mask that is no longer the one its header described; a mask
         that changed while its header was read is the error ``mask_changed_during_check``.
+    progress
+        Called as ``progress(done, total, mask_path)`` before each mask's header is read. It
+        changes nothing about the result.
 
     Returns
     -------
@@ -100,7 +104,9 @@ def find_masks(
     files.sort(key=lambda f: (f.image, f.mask_type))
     issues.extend(_duplicate_issues(files))
     stated = dict(mask_axes or {})
-    issues.extend(_header_issues(files, images, folder, discovery.root, unreadable, stated, bind))
+    issues.extend(
+        _header_issues(files, images, folder, discovery.root, unreadable, stated, bind, progress)
+    )
     types = tuple(sorted({f.mask_type for f in files}))
     issues.extend(_unknown_type_issues(stated, types))
     issues.extend(_missing_issues(types, files, images))

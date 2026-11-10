@@ -24,14 +24,16 @@ from .notebook_axes_quick import _QuickAxes
 from .notebook_channels_type import ImageTypeRows
 from .notebook_check_save import INTRO as CHECK_INTRO
 from .notebook_masks_screen import INTRO as MASKS_INTRO
+from .notebook_quick_scan import _QuickScan
 from .notebook_step_states import _StepStates
 from .notebook_stepper import Step, Stepper
 from .run import Preflight
 
 FOLDER_INTRO = (
-    "<b>What happens here:</b> the folders are scanned, the labels are taken from the folder "
-    "names (condition / biological repeat / technical repeat) and every image header is "
-    "checked. Problems are listed with what to do. Nothing in the folder is changed."
+    "<b>What happens here:</b> first the folders are listed (labels from the folder names: "
+    "condition / biological repeat / technical repeat) and one image is shown, so you can see "
+    "that this is the right experiment. Then every image header is read and checked; problems "
+    "are listed with what to do. Nothing in the folder is changed."
 )
 AXES_INTRO = (
     "<b>Why this matters:</b> every image is cut into flat 2D planes, one per depth slice, "
@@ -55,7 +57,7 @@ UNFOLDING = {4: "design_card", 5: "references_card", 9: "masks_box"}
 """The steps (0-based) that show a card the saved reopening folds."""
 
 
-class _StepsFlow(_QuickAxes, _StepStates):
+class _StepsFlow(_QuickScan, _QuickAxes, _StepStates):
     """``steps()``: the stepper of the shipped notebook, and the hooks that keep it current."""
 
     def steps(self) -> widgets.Widget:
@@ -81,6 +83,7 @@ class _StepsFlow(_QuickAxes, _StepStates):
         self.type_rows.reopen = self.channel_grid.reopen = self._reopen_units
         self.overview_box = widgets.VBox()
         self._build_quick_axes()
+        self._build_quick_scan()
         self.consistency_slot = widgets.VBox([self.consistency_card])
         self._stepper = Stepper(self._step_list(), self._step_shown)
         self.overview_box.children = [self._stepper.overview(OVERVIEW_STEPS)]
@@ -132,7 +135,11 @@ class _StepsFlow(_QuickAxes, _StepStates):
             self.output_card,
             self.masks_input_card,
             self.exclude_box,
+            self.scan_button,
+            self.scan_status,
+            self.scan_box,
             self.check_button,
+            self.check_blocker,
             self.folder_status,
             self.folder_lock.card,
             self.check_report.widget,

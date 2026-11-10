@@ -16,7 +16,6 @@
     "src/morphobricks_preprocessing/design.py _parse_row: private function of # lines without a docstring": 36,
     "src/morphobricks_preprocessing/discovery.py _check_names: private function of # lines without a docstring": 14,
     "src/morphobricks_preprocessing/discovery.py finish: # executable lines (max #)": 145,
-    "src/morphobricks_preprocessing/discovery.py: # lines (max #)": 609,
     "src/morphobricks_preprocessing/image_type.py _rgb_problem: private function of # lines without a docstring": 12,
     "src/morphobricks_preprocessing/manifest.py file_entry_for: # parameters (max #)": 9,
     "src/morphobricks_preprocessing/masks/files.py _duplicate_issues: private function of # lines without a docstring": 19,

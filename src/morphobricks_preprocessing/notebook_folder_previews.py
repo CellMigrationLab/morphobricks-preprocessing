@@ -12,7 +12,7 @@ check.
 from __future__ import annotations
 
 import html
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 import ipywidgets as widgets
@@ -97,8 +97,11 @@ class LabelPreviews:
         self._waiting = []
         ui.set_visible(self.more, False)
 
-    def show(self, pre: Preflight) -> None:
-        """Draw the table of a new check: labels, image count, folder and picture per folder."""
+    def show(self, pre: Preflight, progress: Callable[[int, int, str], None] | None = None) -> None:
+        """Draw the table of a new check: labels, image count, folder and picture per folder.
+
+        ``progress(done, total, folder)`` is called before each picture is drawn.
+        """
         self.clear()
         self._root, self._headers = Path(pre.discovery.root), first_headers(pre)
         self._bound = pre.header_fingerprints  # drawn only as the check read them
@@ -106,7 +109,9 @@ class LabelPreviews:
         top = widgets.GridBox([header, widgets.HTML("<b>Preview</b>")], layout=self._grid())
         leaves = pre.discovery.leaves
         rows = [self._row(leaf) for leaf in leaves[:DRAWN_AT_ONCE]]
-        for leaf in leaves[:DRAWN_AT_ONCE]:
+        for done, leaf in enumerate(leaves[:DRAWN_AT_ONCE]):
+            if progress is not None:
+                progress(done, min(len(leaves), DRAWN_AT_ONCE), leaf.relative_path)
             self.draw(leaf.relative_path)
         # The other folders are one HTML block until drawn: a widget per row costs time.
         self._waiting = list(leaves[DRAWN_AT_ONCE:])

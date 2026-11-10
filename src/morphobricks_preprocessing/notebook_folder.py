@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+from collections.abc import Callable
 from pathlib import Path
 
 import ipywidgets as widgets
@@ -12,8 +13,9 @@ from . import notebook_style as ui
 from .dataset import CONSISTENCY_CODES
 from .discovery import check_output_folder, default_output_folder
 from .manifest import MANIFEST_FILENAME
-from .notebook_folder_previews import LabelPreviews
+from .notebook_folder_previews import DRAWN_AT_ONCE, LabelPreviews
 from .notebook_options import _WIDE, EXCLUDABLE_CODES
+from .notebook_progress import Wait
 from .notebook_render import (
     _folder_tiles,
     _labels_explanation,
@@ -25,6 +27,38 @@ from .notebook_render import (
 from .run import Preflight, preflight
 from .unit_consistency import unit_checked
 from .validation import ValidationIssue, plural
+
+CHECK_LABEL = (" Check folder", "search")
+CHECK_PHASES = {
+    "folders": "Listing the folders",
+    "headers": "Reading image headers",
+    "masks": "Reading mask headers",
+    "acquisitions": "Comparing the images",
+}
+"""What the folder check's wait says in each phase of :data:`.run.phases.PHASES`."""
+
+
+def check_progress(wait: Wait) -> Callable[[str, int, int, str], None]:
+    """Return the folder check's progress callback: it words each phase in ``wait``.
+
+    The headers and the mask headers are counted (done of total, the file being read); the
+    folder walk says how many folders were listed so far, since its total is not known.
+    """
+    state = {"phase": "", "listed": 0}
+
+    def report(phase: str, done: int, total: int, path: str) -> None:
+        if phase != state["phase"]:
+            state["phase"] = phase
+            wait.phase(CHECK_PHASES[phase], total if phase == "headers" else 0)
+        if not path:
+            return
+        if phase == "folders":
+            state["listed"] += 1
+            wait.step(state["listed"], 0, path)
+        else:
+            wait.step(done, total, path)
+
+    return report
 
 
 class _FolderStep:
@@ -203,7 +237,8 @@ class _FolderStep:
             return None
         self._busy(self.check_button, "Checking…")
         self.folder_next.value = ""
-        self.folder_status.value = ui.working("Checking the folders and image headers…")
+        wait = self._folder_wait = Wait(self.folder_status)
+        wait.start(CHECK_PHASES["folders"])
         try:
             with self.log.attached():
                 masks, mask_axes = self._check_masks_arguments(Path(folder).resolve())
@@ -216,15 +251,17 @@ class _FolderStep:
                     # Each header is bound to the file's fingerprint: every picture and the
                     # save are of the images as this check read them (audit batch 33).
                     bind_headers=True,
+                    progress=check_progress(wait),
                 )
                 pre = unit_checked(pre)  # a described run checks inside each unit
                 self._note_edits()  # a check fills only what the user left as filled
                 self.missing_as_singleton.set(self._recorded_missing_as_singleton(), notify=False)
                 # The report reads images lacking some axes by that answer, as 'check
                 # --missing-as-singleton' does (F10); step 2 asks again before the run.
+                wait.phase("Writing the check report")
                 self._write_check(pre, self.missing_as_singleton.value)
         finally:
-            self._idle(self.check_button, " Check folder", "search")
+            self._idle(self.check_button, *getattr(self, "_check_label", CHECK_LABEL))
         self.preflight = pre
         self._checked_folder = folder
         self.mapping = pre.suggested_mapping
@@ -244,7 +281,12 @@ class _FolderStep:
         ui.set_visible(self.design_card, False)
         self._hide_description()
         self.labels_table.value = labels_html(pre)
-        self.label_previews.show(pre)
+        wait = getattr(self, "_folder_wait", None)
+        if wait is not None:
+            wait.phase(
+                "Drawing a picture per folder", min(len(pre.discovery.leaves), DRAWN_AT_ONCE)
+            )
+        self.label_previews.show(pre, None if wait is None else wait.step)
         ui.set_visible(self.labels_table, False)
         ui.set_visible(self.label_previews.widget, True)
         self.labels_confirmed.set(False, notify=False)

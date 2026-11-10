@@ -17,6 +17,35 @@ OME-XML description is parsed (which images are marked is unchanged; a malformed
 debug line without a traceback), and while the capture is attached the package's DEBUG records
 go to the "Technical details" panel only, with WARNING and above still reaching the root handlers.
 
+### Notebook redesign 2: progress for every wait, and a quick scan before the headers
+
+Owner test of v0.5.0 (10 November 2026), items (c) and (d).
+
+- **Every wait shows what is done of the total, the item being read, the time elapsed and,
+  once it can be measured, the time left** (`notebook_progress.Wait`, `progress_html`,
+  `time_left`): the folder walk ("Listing the folders: 14 so far"), the image headers
+  ("Reading image headers: 34 of 120, CTRL/rep1/a.tif"), the mask headers, the check report,
+  the pictures per folder, **Check the masks**, the run, the mask step, the named-axis copies
+  and the statistics (their stage of four). "Checking the folders and image headers…" is gone.
+  The time left is said only after one item and one second; uncounted work shows the elapsed
+  time alone.
+- **Progress callbacks from the readers.** `discover_experiment(..., progress=)` is called with
+  each folder before it is listed; `masks.find_masks(..., progress=)` and
+  `run.preflight.remasked(..., progress)` before each mask header; `preflight`'s `progress`
+  now also reports `("folders", 0, 1, folder)` and `("masks", done, total, mask_path)`. The
+  first and last call of each phase, and every result, are unchanged.
+- **Quick scan first (the shipped notebook's first step).** **Scan the folders** walks the
+  folders only (the folder check's own walk; no image header is read), shows every folder with
+  its labels and image count, and opens one image chosen at random, with its path and seed, for
+  looking only (drawn from that file's header by the rules of the folder pictures). Nothing of
+  the scan is kept. The folder check is then the explicit click **Looks right: read all image
+  headers**; it is disabled, with a line saying why, until the folders are scanned as they are
+  typed now, so changing a folder, the output or masks folder or the exclusions asks for a new
+  scan. `folder_step()` for other bricks is unchanged: **Check folder**, one click.
+- `is_tiff_name`, `is_system_name`, `TIFF_SUFFIXES` and `SYSTEM_NAMES` moved from `discovery`
+  to `image_names` (the functions are still importable from `discovery`), keeping
+  `discovery.py` under the 600-line rule (its baseline entry is gone).
+
 ### Notebook redesign 1: fixes from the owner's test of v0.5.0 (10 November 2026)
 
 - **Lists of files in a message draw no empty bullets.** `notebook_style.path_list` returns

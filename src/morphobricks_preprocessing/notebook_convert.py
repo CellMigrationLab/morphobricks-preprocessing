@@ -39,6 +39,7 @@ from .conversion_plan import ConversionPreview, preview_conversion
 from .conversion_record import RECORD_FILENAME
 from .notebook_options import _WIDE
 from .notebook_output import _LockCard
+from .notebook_progress import Wait
 from .notebook_render import blocked_line, issues_html
 from .planes import format_bytes
 from .run.output_guard import recorded_masks_of
@@ -46,6 +47,7 @@ from .validation import plural
 
 _LABEL = " Make named-axis copies"
 _ICON = "copy"
+COPYING = "Copying images"
 _RECHECK_LABEL = " Check the copies in step 1"
 _COPY_HOLDERS = (
     "Another conversion is writing into this folder, or one was stopped (for example Colab "
@@ -283,7 +285,8 @@ class _ConvertCard:
         self._busy(self.convert_button, "Making the copies…")
         ui.set_visible(self.convert_progress, True)
         self.convert_progress.value, self.convert_progress.bar_style = 0, "info"
-        self.convert_status.value = ui.working("Checking the images and the folder…")
+        self._convert_wait = Wait(self.convert_status, bar=False)  # the bar widget is above
+        self._convert_wait.start("Checking the images and the folder")
         try:
             with self.log.attached():
                 result = convert_experiment(
@@ -314,8 +317,11 @@ class _ConvertCard:
     def _convert_progressed(self, done: int, total: int, image: str) -> None:
         self.convert_progress.max = max(total, 1)
         self.convert_progress.value = done
+        wait = self._convert_wait
+        if image and wait.label != COPYING:
+            wait.phase(COPYING, total)
         if image:
-            self.convert_status.value = ui.working(f"Copying image {done + 1} of {total}: {image}")
+            wait.step(done, total, image)
 
     def _show_conversion(self, result: ConversionResult) -> None:
         """Show a refusal with its card, or the copies, the record and the next step."""
