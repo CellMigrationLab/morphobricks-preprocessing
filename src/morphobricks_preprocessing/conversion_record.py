@@ -265,10 +265,15 @@ class ConversionRecord:
         if not isinstance(data, Mapping) or "record_version" not in data:
             raise ConversionRecordError(f"not a conversion record of version {RECORD_VERSION}")
         if data["record_version"] != RECORD_VERSION:
+            version = data["record_version"]
+            if not isinstance(version, str):  # the number 3 is not the version "3"
+                raise ConversionRecordError(
+                    f"its record_version {version!r} is not text: this version of preprocessing "
+                    f'reads version "{RECORD_VERSION}" only; {_CONVERT_AGAIN}'
+                )
             raise ConversionRecordError(
-                f"its record_version {data['record_version']!r} is not {RECORD_VERSION!r}: this "
-                f"version of preprocessing reads record version {RECORD_VERSION!r} only (older "
-                f"records are not converted); {_CONVERT_AGAIN}"
+                f"it is a record of version {version}, and this version of preprocessing reads "
+                f"version {RECORD_VERSION} only (older records are not converted); {_CONVERT_AGAIN}"
             )
         try:
             mapping = data["mapping"]
