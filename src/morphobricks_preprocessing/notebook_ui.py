@@ -495,8 +495,10 @@ class _ToRootWarnings(logging.Handler):
         super().__init__(logging.WARNING)
 
     def emit(self, record: logging.LogRecord) -> None:
-        for handler in logging.getLogger().handlers:
-            if record.levelno >= handler.level:
+        # With no root handler (plain Jupyter), propagation would reach logging.lastResort.
+        handlers = logging.getLogger().handlers or [logging.lastResort]
+        for handler in handlers:
+            if handler is not None and record.levelno >= handler.level:
                 handler.handle(record)
 
 
