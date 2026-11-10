@@ -36,6 +36,8 @@ from .description_record import recorded_description
 from .image_names import position_id
 from .inventory import INVENTORY_KEY, source_signature
 from .inventory import source_fingerprint as source_fingerprint  # re-exported (moved, PP-12)
+from .lab_links import KEY as LAB_LINKS_KEY
+from .lab_links import recorded_lab_links
 from .manifest_fields import (
     RAW_NAMES_KEY,
     optional_text,
@@ -254,6 +256,9 @@ class RunManifest:
         (:mod:`.description_record`). Every manifest carries it; None is refused when written.
     projection
         The Z projection of the images (:mod:`.projection_run`); None (key left out) if none.
+    lab_links
+        The lab-tool links the user gave the run (:mod:`.lab_links`), provenance only; None
+        (key left out) if none.
     schema_version
         Version of the CSV format.
     manifest_version
@@ -279,6 +284,7 @@ class RunManifest:
     calibration_sha256: str | None = None
     experiment_description: dict | None = None
     projection: dict | None = None
+    lab_links: dict | None = None
     schema_version: str = SCHEMA_VERSION
     manifest_version: str = MANIFEST_VERSION
 
@@ -360,6 +366,7 @@ class RunManifest:
         }
         optional = {"masks": self.masks, DESCRIPTION_KEY: self.experiment_description}
         optional[PROJECTION_KEY] = self.projection
+        optional[LAB_LINKS_KEY] = recorded_lab_links(self.lab_links)
         data.update({key: value for key, value in optional.items() if value is not None})
         return data
 
@@ -421,6 +428,7 @@ class RunManifest:
                 calibration_sha256=optional_text(data.get("calibration_sha256")),
                 experiment_description=recorded_description(data.get(DESCRIPTION_KEY)),
                 projection=recorded_projection(data.get(PROJECTION_KEY)),
+                lab_links=recorded_lab_links(data.get(LAB_LINKS_KEY)),
                 schema_version=str(data["schema_version"]),
                 manifest_version=str(version),
             )

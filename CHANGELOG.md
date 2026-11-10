@@ -176,6 +176,47 @@ reader of `RunInputs.image_type()`.
   through the helper equal to PP-0's hand-built tree), in `spec_gate.EXPECTED_MODULES`; PP-0's
   `v09` test now uses the helper.
 
+### PP-2: lab-tool links, recorded in the run manifest only
+
+Stage 2 plan row PP-2 (owner decision of 9 November 2026; MorphoBricks-Spec experiment-v1 §9.3,
+conformance plan §2 "Provenance" row, its lab-tool-links part checked at the Stage 2 gate per
+ADR 0001 GS1; contract §9). **API and CLI additions only.**
+
+- **`run --lab-links FILE`**: a UTF-8 JSON object with exactly `repository_url`, `commit` and
+  `experiment_path` (non-empty text, nothing trimmed; `commit` a full lowercase SHA of 40 or 64
+  hexadecimal characters) and optionally `repeat_codes` (each lab-tool repeat code, such as
+  `R001`, to a canonical biological repeat ID). An unknown key, a missing one, a value of
+  another type, an empty value, outer whitespace or a control character, or a key given twice
+  in one object is refused before anything is read (`lab_links_invalid`). So is a
+  `repository_url` holding a credential (`user:password@` in any form, or a user name before
+  `@` outside an SSH remote: `https://TOKEN@host/...`), a query string or a fragment; the
+  refusal does not repeat the URL, and a credential is never written to the manifest
+  (coordinator decision on PR #264; `git@host:lab/db.git` is kept). API:
+  `run_experiment(mode=RunMode(lab_links=...))` with `LabLinks` or `read_lab_links` (new
+  exports `LabLinks`, `LabLinksError`, `read_lab_links`; `RunMode` gains `lab_links`, because
+  `run_experiment` is at its parameter limit).
+- **Repeat codes need the user's confirmation** (`--confirm-repeat-codes`;
+  `LabLinks(repeat_codes_confirmed=True)`, `read_lab_links(confirmed=True)`), never read from
+  the file: equal strings are not evidence (§9.3). The run prints each pair. A confirmed
+  mapping must name every biological repeat of the published description exactly once and no
+  other ID, compared exactly. Run errors, reported together before any pixel is read:
+  `lab_links_repeat_codes_not_confirmed`, `lab_links_repeat_unknown`, `lab_links_repeat_twice`,
+  `lab_links_repeat_missing`.
+- **Recorded verbatim in `run_manifest.json` under `lab_links` only** (left out without links,
+  so such a manifest is byte for byte as before; the manifest version stays 4). Never in
+  `morphobricks.toml` (`i99` stays `E_FORBIDDEN_FIELD`), and in no section digest, description
+  SHA-256, row or staging key, mask-step check, design, table or report: the manifest's own
+  SHA-256 is the only other value that changes (the report records it). Not a recorded input:
+  a later run not given links records none.
+- **No notebook input**: neither the Spec nor the plan asks for one; the CLI and the API only.
+- New Spec module `tests/test_spec_lab_links.py` (`v03`, `v08`, `i99`; in
+  `spec_gate.EXPECTED_MODULES`): the same run with, without and with changed links, in
+  `restart` and `full` mode, publishes the same files apart from the links block, reuses every
+  row, and keeps the four section digests, the description SHA-256, every row key, the
+  resolver's provenance and the mask step's check; unconfirmed, unknown, missing and
+  wrong-case repeat codes are refused; `i99` is still refused with links given. The input's
+  own checks and the CLI: `tests/test_lab_links.py`.
+
 ## 0.5.0 - 2026-11-09
 
 Stage 1 of the experiment description (MorphoBricks-Spec experiment-v1, pinned at `1bed024`):

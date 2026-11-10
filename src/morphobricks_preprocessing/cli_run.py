@@ -7,6 +7,8 @@ axes, design v0.4 §3) and for plain stacks that are new or changed;
 ``--mode full`` recomputes every row; rows are reused only for the same content SHA-256 unless
 ``--no-verify-content`` opts out (:class:`.run.modes.RunMode`). Given only ``--output``, ``run``
 uses the recorded experiment folder (``experiment_not_recorded`` without one).
+``--lab-links FILE`` gives lab-tool links, recorded in the run manifest only (never taken over
+by a later run), and ``--confirm-repeat-codes`` confirms their repeat codes (:mod:`.lab_links`).
 Also the helpers every command shares: :func:`parse_size` and :func:`command_preflight`.
 """
 
@@ -31,6 +33,8 @@ from .axis_review import review_axes
 from .discovery import default_output_folder
 from .image_type import IMAGE_TYPES, RGB, ImageTypeReview, review_image_type
 from .intensity import intensity_text
+from .lab_links import INVALID, LabLinks, LabLinksError
+from .lab_links_file import read_lab_links
 from .manifest import RunManifest
 from .metadata import header_axes
 from .planes import DEFAULT_MEMORY_LIMIT
@@ -44,7 +48,7 @@ from .required_description import description_required_issue, is_published
 from .run import MODES, RESTART, Preflight, RunMode, preflight, run_experiment
 from .run.recorded import usable
 from .run.reuse import read_previous, recorded_experiment_root
-from .validation import ValidationIssue
+from .validation import ValidationIssue, error
 
 _UNITS = {
     "": 1,
@@ -250,6 +254,19 @@ def _run_inputs(run: argparse.ArgumentParser) -> None:
     )
     add_missing_as_singleton(run)
     run.add_argument(
+        "--lab-links",
+        metavar="FILE",
+        help="a JSON file of lab-tool links (repository_url, commit, experiment_path and "
+        "optionally repeat_codes), recorded in the run manifest only: it changes no result. "
+        "Not taken over from the earlier run: give it to each run it belongs to",
+    )
+    run.add_argument(
+        "--confirm-repeat-codes",
+        action="store_true",
+        help="confirm that each repeat code of --lab-links names the biological repeat it is "
+        "mapped to (the run prints the pairs); needed whenever the file has repeat_codes",
+    )
+    run.add_argument(
         "--mode",
         choices=MODES,
         default=RESTART,
@@ -324,6 +341,9 @@ def run_command(args: argparse.Namespace) -> int:
     if refusal is not None:
         print(format_issues([refusal]))
         return 1
+    links = lab_links_option(args)
+    if links is False:
+        return 1
     recorded = recorded_run(args)
     if recorded is not None and not args.exclude and not args.no_exclude:
         args.exclude = list(recorded.settings.exclude)  # the preflight leaves them out too
@@ -333,6 +353,9 @@ def run_command(args: argparse.Namespace) -> int:
     if mapping is False or settings is None:
         return 1
     image_type = _print_inputs(args, pre, mapping, recorded)
+    if links is not None:
+        print(lab_links_text(links))
+        print()
     result = run_experiment(
         args.experiment,
         mapping,
@@ -341,7 +364,7 @@ def run_command(args: argparse.Namespace) -> int:
         memory_limit=args.memory_limit,
         missing_as_singleton=args.missing_as_singleton,
         exclude=[] if args.no_exclude else args.exclude or None,
-        mode=RunMode(args.mode, args.verify_content),
+        mode=RunMode(args.mode, args.verify_content, links),
         progress=print_progress,
         masks_folder=False if args.no_masks else args.masks,
         mask_axes=args.mask_axes or None,
@@ -357,6 +380,53 @@ def run_command(args: argparse.Namespace) -> int:
         print()
         print(intensity_text(result.intensity))
     return 0 if result.written else 1
+
+
+def lab_links_option(args: argparse.Namespace) -> LabLinks | None | Literal[False]:
+    """Return the links of ``--lab-links``, None without it, or False after printing a refusal.
+
+    The file is read before any image: a key not of the fixed set, a value of the wrong type
+    or an empty one stops the command (``lab_links_invalid``), and so does
+    ``--confirm-repeat-codes`` with nothing to confirm.
+    """
+    confirm = args.confirm_repeat_codes
+    if args.lab_links is None:
+        if confirm:
+            print(_links_issue("--confirm-repeat-codes is given without --lab-links.", ()))
+            return False
+        return None
+    try:
+        links = read_lab_links(args.lab_links, confirmed=confirm)
+    except LabLinksError as exc:
+        print(_links_issue(str(exc), (args.lab_links,)))
+        return False
+    if confirm and links.repeat_codes is None:
+        message = f"--confirm-repeat-codes is given, but {args.lab_links} has no repeat_codes."
+        print(_links_issue(message, (args.lab_links,)))
+        return False
+    return links
+
+
+def _links_issue(message: str, paths: tuple[str, ...]) -> str:
+    """Return the printed refusal of a lab-tool links option."""
+    action = (
+        "Give a JSON object with repository_url, commit and experiment_path (text), and "
+        "optionally repeat_codes (each lab-tool repeat code to a repeat ID); nothing else."
+    )
+    return format_issues([error(INVALID, message, paths, action)])
+
+
+def lab_links_text(links: LabLinks) -> str:
+    """Return the lines that show the run's lab-tool links and whether its codes are confirmed."""
+    lines = ["Lab-tool links (recorded in the run manifest only; they change no result):"]
+    lines += [
+        f"  {key}: {value}" for key, value in links.to_dict().items() if key != "repeat_codes"
+    ]
+    if links.repeat_codes is not None:
+        state = "confirmed" if links.repeat_codes_confirmed else "not confirmed"
+        lines.append(f"  repeat codes ({state}):")
+        lines += [f"    {code} -> {repeat}" for code, repeat in sorted(links.repeat_codes.items())]
+    return "\n".join(lines)
 
 
 def print_progress(done: int, total: int, path: str) -> None:
