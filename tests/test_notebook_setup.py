@@ -105,8 +105,8 @@ def setup_environment(tmp_path, monkeypatch):
         drive=tmp_path / "content/drive",
         namespace={},
         versions={
-            "morphobricks-preprocessing": "0.5.0",
-            "morphobricks-normalization": "0.3.4",
+            "morphobricks-preprocessing": "0.5.1",
+            "morphobricks-normalization": "0.4.0",
             "ipywidgets": "7.7.1",
         },
     )
@@ -131,7 +131,7 @@ def setup_environment(tmp_path, monkeypatch):
         assert check is True
         state.installs.append(command)
         state.available.update({*REQUIRED, ZARR})
-        state.versions["morphobricks-preprocessing"] = "0.5.0"
+        state.versions["morphobricks-preprocessing"] = "0.5.1"
 
     monkeypatch.setattr(subprocess, "run", install)
 
@@ -143,7 +143,7 @@ def setup_environment(tmp_path, monkeypatch):
         import ipywidgets as widgets
 
         class FakeNotebook:
-            def __init__(self, **options):  # describe=True, the shipped notebook's run
+            def __init__(self, **options):  # no options: every run is described (v0.5.1)
                 self.options = options
                 state.apps.append(options)
 
@@ -163,7 +163,7 @@ def checkout_at(path):
     package.mkdir(parents=True)
     (package / "__init__.py").write_text("", encoding="utf-8")
     (path / "pyproject.toml").write_text(
-        '[project]\nname = "morphobricks-preprocessing"\nversion = "0.5.0"\n',
+        '[project]\nname = "morphobricks-preprocessing"\nversion = "0.5.1"\n',
         encoding="utf-8",
     )
     return path
@@ -179,7 +179,7 @@ def test_setup_reuses_the_matching_installed_release(setup_environment, capsys):
         "morphobricks_preprocessing.notebook_ui",  # cell 3 shows it
     ]
     out = capsys.readouterr().out
-    assert "Ready: preprocessing 0.5.0" in out
+    assert "Ready: preprocessing 0.5.1" in out
     assert "ipywidgets 7.7.1" in out
 
 
@@ -194,7 +194,7 @@ def test_setup_installs_missing_package_from_the_exact_commit(setup_environment,
     assert target.startswith("morphobricks-preprocessing[notebook] @ git+")
     assert target.endswith("@" + namespace["RELEASE_REF"])
     assert namespace["RELEASE_REF"] == "fd7afd339bcaab7579c806a28a65bb7ecebe940c"
-    assert "pinned v0.5.0 candidate" in capsys.readouterr().out
+    assert "pinned v0.5.1 candidate" in capsys.readouterr().out
 
 
 def test_setup_replaces_a_mismatched_installed_release(setup_environment):
@@ -285,7 +285,7 @@ def test_an_explicit_development_override_uses_the_checkout_and_says_so(
     assert sys.path[0] == str(checkout / "src")
     assert f"commit {OTHER_COMMIT}, uncommitted changes" in out
     assert "DEVELOPMENT OVERRIDE is on" in out
-    assert "DEVELOPMENT OVERRIDE on" in out.split("Notebook 0.5.0")[1]
+    assert "DEVELOPMENT OVERRIDE on" in out.split("Notebook 0.5.1")[1]
     record = namespace["SETUP_RECORD"]
     assert record["checkout_commit"] == OTHER_COMMIT
     assert record["checkout_has_uncommitted_changes"] is True
@@ -425,7 +425,7 @@ def test_cell_1_installs_without_mounting_drive_or_showing_the_app(
     assert state.apps == []
     assert namespace["SETUP_RECORD"]["release_ref"] == RELEASE_REF
     out = capsys.readouterr().out
-    assert "Ready: preprocessing 0.5.0; normalization 0.3.4; ipywidgets 7.7.1." in out
+    assert "Ready: preprocessing 0.5.1; normalization 0.4.0; ipywidgets 7.7.1." in out
     assert "Next: run cell 2 (Mount Google Drive), then cell 3 (Run preprocessing)." in out
 
 
@@ -441,8 +441,8 @@ def test_running_cell_1_again_installs_nothing_more(setup_environment, capsys):
     assert len(state.installs) == 1
     assert "Installing notebook requirements" in first
     assert "Installing notebook requirements" not in again
-    assert "Ready: preprocessing 0.5.0" in again
-    assert state.namespace["SETUP_RECORD"]["preprocessing_version"] == "0.5.0"
+    assert "Ready: preprocessing 0.5.1" in again
+    assert state.namespace["SETUP_RECORD"]["preprocessing_version"] == "0.5.1"
     assert record["release_ref"] == state.namespace["SETUP_RECORD"]["release_ref"]
 
 
@@ -486,18 +486,80 @@ def test_cell_3_after_a_failed_cell_1_still_names_cell_1(setup_environment, monk
     assert state.apps == []
 
 
-def test_cell_3_on_colab_without_drive_names_cell_2(setup_environment, monkeypatch):
+NO_DRIVE = (
+    "Google Drive is not mounted: only files on this Colab runtime are visible, "
+    "and they are deleted when the runtime stops."
+)
+"""Cell 3's one line on Colab without Drive (owner, v0.5.1: the app opens anyway)."""
+
+
+def test_cell_3_on_colab_without_drive_opens_the_app_after_one_line(
+    setup_environment, monkeypatch, capsys
+):
     calls = colab(monkeypatch)
     state = setup_environment
     state.start(INSTALL)
-    imported = list(state.imports)
-    with pytest.raises(RuntimeError, match=r"Google Drive is not connected.*run cell 2"):
-        state.start(RUN, fresh=False)
+    capsys.readouterr()
+    state.start(RUN, fresh=False)
+    printed = capsys.readouterr().out.splitlines()
+    assert printed[0] == NO_DRIVE  # one line, then the app (``display`` prints it here)
+    assert [line for line in printed if "Drive" in line] == [NO_DRIVE]
     assert calls == []  # never mounted for the user
-    assert state.imports == imported
-    assert state.apps == []
-    state.start(DRIVE, RUN, fresh=False)
     assert state.apps == [APP_OPTIONS]
+    # With Drive mounted the line is not printed.
+    state.start(DRIVE, fresh=False)
+    capsys.readouterr()
+    state.start(RUN, fresh=False)
+    assert NO_DRIVE not in capsys.readouterr().out
+    assert state.apps == [APP_OPTIONS, APP_OPTIONS]
+
+
+def test_cell_3_outside_colab_never_prints_the_drive_line(setup_environment, capsys):
+    setup_environment.start(INSTALL, RUN)
+    assert NO_DRIVE not in capsys.readouterr().out
+
+
+# A cell that cannot go on stops with one line and no traceback (owner, v0.5.1): it raises the
+# cell's own CellStop, a RuntimeError whose ``_render_traceback_`` is its message alone (IPython,
+# and so Colab and JupyterLab, shows that instead of the traceback; tests/test_notebook_file.py
+# runs it in a real kernel).
+
+
+def _cell_tree(number):
+    return ast.parse(cell_source(number))
+
+
+@pytest.mark.parametrize("number", [INSTALL, DRIVE, RUN])
+def test_every_stop_of_a_cell_is_its_one_line_cell_stop(number):
+    tree = _cell_tree(number)
+    (stop,) = [node for node in tree.body if isinstance(node, ast.ClassDef)]
+    assert stop.name == "CellStop"
+    assert [ast.unparse(base) for base in stop.bases] == ["RuntimeError"]
+    namespace = {}
+    exec(compile(ast.Module(body=[stop], type_ignores=[]), "cell", "exec"), namespace)
+    error = namespace["CellStop"]("one clear message")
+    assert error._render_traceback_() == ["one clear message"]
+    raised = [node.exc for node in ast.walk(tree) if isinstance(node, ast.Raise)]
+    assert raised
+    for exc in raised:
+        assert isinstance(exc, ast.Call) and ast.unparse(exc.func) == "CellStop", ast.unparse(exc)
+
+
+def test_cell_1_checks_the_python_version_before_importing_tomllib():
+    # tomllib is Python 3.11: on 3.10 an import before the check would be a ModuleNotFoundError
+    # in place of the "Python 3.11 or newer" line.
+    tree = _cell_tree(INSTALL)
+    check = next(
+        position
+        for position, node in enumerate(tree.body)
+        if isinstance(node, ast.If) and "sys.version_info" in ast.unparse(node.test)
+    )
+    for position, node in enumerate(tree.body[:check]):
+        assert isinstance(node, (ast.Import, ast.ImportFrom, ast.ClassDef, ast.Expr)), position
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            assert {alias.name for alias in node.names} <= {"platform", "subprocess", "sys"}
+    for node in ast.walk(ast.Module(body=tree.body[:check], type_ignores=[])):
+        assert not (isinstance(node, ast.Import) and "tomllib" in ast.unparse(node))
 
 
 def test_cell_3_outside_colab_needs_no_drive(setup_environment):

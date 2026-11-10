@@ -6,7 +6,104 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
-## Unreleased (v0.5.1)
+## v0.5.1 (10 November 2026)
+
+The first release in which every run is described, with the shared request resolver for the
+other bricks and the seven-step notebook. There is no backward compatibility before the first
+pipeline release (MorphoBricks-Spec ADR 0002 AR10): older run folders, records and drafts are
+refused, never converted. Normalization is pinned at v0.4.0.
+
+**Breaking**
+
+- **Every run needs a published experiment description** (`morphobricks.toml`, saved by the
+  notebook's *Check and save*). The run, the mask step, `check`/`run`/`masks` and
+  `RunInputs.open` refuse an output folder without one with `A_DESCRIPTION_REQUIRED`, before
+  anything is read or written.
+- **Older files are refused, not converted**: run manifests of versions 1 to 3 (every run of
+  v0.5.0 or earlier: run preprocessing again, which reads every image again), conversion
+  records other than version 3 (convert the originals again), answer drafts saved under the
+  earlier Spec pin (`spec_commit_mismatch`), and hand-edited manifests missing a key.
+- **The legacy `experiment_design.csv` migration is gone**: the file is an output only and
+  nothing reads it back; the `design` command and `run --design` are removed.
+- **Normalization v0.4.0**: `PlaneRecord.position_id` is required, a blank `position_id` in a
+  table row is refused, and tables of schema versions 1 to 3 are refused.
+
+**New**
+
+- **`RunInputs.resolve_request`** (resolver contract version 1): one interpreter of a described
+  run for every analysis route, channels by canonical ID per position, every refusal at once,
+  coverage per biological repeat and the provenance.
+- **`Fov.image_type`**: each position's declared image type, `"rgb"` or `"channels"`.
+- **Lab-tool links**: `run --lab-links FILE` (and `--confirm-repeat-codes`), recorded in the
+  run manifest only.
+- **The seven-step notebook**: Images → Axes → Channels → Masks → Design → Check and save →
+  Run, with a quick scan and an example picture before the headers are read, progress for every
+  wait, one column and no box that scrolls on its own. Three code cells shown as Colab forms;
+  a cell that cannot go on stops with one line, without a traceback.
+
+**Fixes**
+
+- The notebook output is no longer flooded with debug messages from ImageJ TIFFs.
+- *Is compared against* keeps its dropdown; lists of files draw no empty bullets; every
+  disabled action says beside it what it waits for.
+- On Python 3.10, cell 1 says "Select a Python 3.11 or newer kernel" instead of failing on
+  `import tomllib`.
+
+### Migration from v0.5.0
+
+**Users.** Open the v0.5.1 notebook, describe the experiment (the seven steps) and run again
+into the same output folder: the run reads every image again and replaces the v0.5.0 output.
+Nothing in an old `experiment_design.csv` is carried over; describe the design in *Design*. On
+the command line, `check`, `run` and `masks` need the published description: write it in the
+notebook (`describe` shows what is still open). A `.morphobricks-conversion.json` written before
+v0.5.1 is refused: run `convert` again into a new folder.
+
+**Bricks** (each is unaffected until its pin moves to v0.5.1):
+
+| v0.5.0 | v0.5.1 |
+|---|---|
+| A run without a description | Refused (`A_DESCRIPTION_REQUIRED`, `DescriptionRequiredError`); tests use `testing.make_clean_run` (described) or publish a `morphobricks.toml` before `run_experiment` |
+| `run_experiment(design=...)`, `run --design`, the `design` command, `edit_design`, `write_check_outputs`/`CheckOutputs` | Removed: the design is derived from the description |
+| `read_confirmed_design`, `ConfirmedDesign`, `DesignCheckError`, `RunInputs.design()` | Removed: `Fov.repeat_group` or `RunInputs.resolve_request` |
+| `RunInputs.image_type()` | Removed: `Fov.image_type` (or `FovSelection.image_type`) |
+| `RunInputs.description()` and its siblings could be None | Never None |
+| `preflight`/`remasked`/`masks.find_masks(with_description=...)`, `run.preflight.description_in_use` | Removed: the name refusals always apply |
+| `STRICT_MANIFEST_VERSION`, `DESCRIBED_MANIFEST_VERSION`, `LEGACY_MANIFEST_VERSION`, `version_for` | Removed: `MANIFEST_VERSION` is `"4"`, the only version read |
+| `source_fingerprint` | Removed: `inventory.source_signature` |
+| `GroupSummary.plane_count` | Removed: `xyc_plane_count` or `channel_histogram_count` |
+| `discovery.TIFF_SUFFIXES`, `discovery.SYSTEM_NAMES` | Moved to `image_names` (`is_tiff_name` and `is_system_name` still import from `discovery`) |
+| `draft.migrate_legacy_design`, `LegacyMigrationRefused`, `MigrationNote`, `Draft.origin`, `Draft.legacy_missing`, `Draft.notes`, `Draft.unresolved_controls` | Removed |
+| `PreprocessingNotebook(describe=True)` | `PreprocessingNotebook()`: no `describe` argument; an embedding brick must let the user describe and save before the run |
+| `PreprocessingNotebook.design`; the widgets `group_confirmations`, `groups_box`, `controls_box`, `control_checks`, `design_change` | `.pairing`; the widgets are removed |
+| `welcome()`: a page with a *What next?* box | A one-line `VBox` (name, version, ready) |
+| `results_step()` | After `steps()`, an empty hidden box (*Compare groups* is in the run step); alone, the page it was |
+| `check_candidate(..., output)` | No `output` argument |
+| `PlaneRecord(...)` (normalization v0.3.4) | `PlaneRecord(..., position_id=...)`, keyword-only and required |
+
+Added for bricks: `Request`, `MaskRequest`, `Capabilities`, `ResolvedRequest`, `FovSelection`,
+`MaskSelection`, `PlaneSelection`, `Refusal`, `RepeatCoverage`, `Provenance`,
+`RESOLVER_VERSION`, `VolumeNotSupportedError`; `LabLinks`, `LabLinksError`, `read_lab_links`,
+`RunMode(lab_links=...)`; `make_described_run(..., mask_images=...)` and
+`testing.described_images`; `progress=` callbacks of `discover_experiment`, `masks.find_masks`
+and `run.preflight.remasked`. The pinned surface is `tests/test_brick_api_surface.py` (contract
+§9.1). The details are in the sections below.
+
+### Release v0.5.1: the shipped notebook
+
+- `RELEASE_TAG` `v0.5.1`, `current_version` `0.5.1`, and `RELEASE_REF` the v0.5.1 preparation
+  commit; cell 3 calls `PreprocessingNotebook()` (`test_notebook_file.RELEASE_CALLS` records
+  the pair).
+- Each code cell is a Colab form with its code hidden (`"cellView": "form"`, AGENTS.md §7).
+- A cell that cannot go on (cell 3 before cell 1, a refused checkout, a failed install or Drive
+  mount, Python 3.10) stops with its message on one line and no traceback: it raises the cell's
+  own `CellStop`, a `RuntimeError` whose `_render_traceback_` is the message (shown so by
+  IPython, so in Colab and JupyterLab; tested in a real kernel).
+- **Cell 3 on Colab without Drive opens the app** after one line: "Google Drive is not mounted:
+  only files on this Colab runtime are visible, and they are deleted when the runtime stops."
+  (It stopped and named cell 2 before.)
+- Cell 1 checks the Python version before `import tomllib`, so Python 3.10 gets the "Python
+  3.11 or newer" line.
+- The introduction describes the seven-step app in short.
 
 ### The legacy `experiment_design.csv` migration is removed (inventory PP-03)
 

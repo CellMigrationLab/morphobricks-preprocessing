@@ -19,7 +19,7 @@ from there.
 
 ## Status
 
-Pre-alpha; the current release is v0.5.0 (what is planned next is in
+Pre-alpha; the current release is v0.5.1 (what is planned next is in
 [docs/roadmap.md](docs/roadmap.md)). Implemented and tested:
 
 - Folder discovery and validation, TIFF and OME-Zarr header inspection without reading pixels
@@ -57,7 +57,7 @@ v0.5.1 is refused until it is run again; nothing is converted. See the [CHANGELO
 ## Installation
 
 ```bash
-pip install "git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.5.0"
+pip install "git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.5.1"
 ```
 
 For development, from a clone:
@@ -67,7 +67,7 @@ pip install -e ".[dev]"
 ```
 
 The optional `notebook` extra installs the widget dependencies for the notebook
-(`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.5.0"`).
+(`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.5.1"`).
 The notebook's first code cell (**1. Install**) can set this up automatically: it uses a compatible nearby
 checkout or installed package, and installs missing requirements into the active kernel. A standalone
 download installs from GitHub if needed (internet access and Git required).
@@ -85,9 +85,10 @@ LabConstrictor's
    code cells, each under a heading that explains it, as in the lab's ZeroCostDL4Mic and
    NucleiSky notebooks: **1. Install MorphoBricks preprocessing** (prepares the environment and
    reports versions), **2. Mount Google Drive** (Colab only; elsewhere a one-line note) and
-   **3. Run preprocessing** (explicitly displays the complete preprocessing UI). Cell 3 run out
-   of order says which cell to run first and never runs it for the user. Users never edit
-   code, so LabConstrictor may hide it.
+   **3. Run preprocessing** (explicitly displays the complete preprocessing UI). Cell 3 run
+   before cell 1 says in one line to run cell 1 and never runs it for the user; a cell that
+   cannot go on stops with one line, without a traceback. Users never edit code: each code
+   cell is a Colab form with its code hidden, and LabConstrictor may hide it.
 2. Colab-only setup stays inside `if "google.colab" in sys.modules:` and mounts Google Drive.
    The UI uses only core ipywidgets supported by both ipywidgets 7.7 and 8; it does not force an
    ipywidgets upgrade/restart or enable Colab's custom-widget manager. Locally the same notebook
@@ -223,7 +224,7 @@ ruff format .
 pytest
 ```
 
-Coding conventions are described in [docs/development.md](docs/development.md). Planned work after v0.5.0 is in [docs/roadmap.md](docs/roadmap.md).
+Coding conventions are described in [docs/development.md](docs/development.md). Planned work after v0.5.1 is in [docs/roadmap.md](docs/roadmap.md).
 
 ## License
 

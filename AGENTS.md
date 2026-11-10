@@ -834,13 +834,14 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
   tests skip without zarr; CI's Python 3.11 jobs pin zarr 2.18 and 3.13 jobs get zarr 3.
 - **The notebook file is tested too:**
   - valid nbformat 4, with no outputs;
-  - code cells hidden and titled `# @title <N>. …` (1. Install, 2. Mount Google Drive, 3. Run preprocessing);
+  - code cells hidden as Colab forms (`"cellView": "form"`) and titled `# @title <N>. …` (1. Install, 2. Mount Google Drive, 3. Run preprocessing);
   - Colab-only code and `/content` paths only inside the Colab guard; no magics;
   - the GitHub install pinned to `RELEASE_TAG`, equal to `current_version` and the
     version index;
   - exactly three code cells, in order: 1 installs and reports versions, 2 mounts Google Drive
     on Colab (a one-line note elsewhere), 3 displays only widgets built by `notebook_ui` and,
-    run out of order, names the cell to run first (`tests/test_notebook_setup.py`);
+    run before cell 1, names cell 1 (`tests/test_notebook_setup.py`); every stop of a cell is
+    one line without a traceback (the cell's `CellStop`, tested in a real kernel);
   - the buttons it names exist;
   - its cells execute, by `exec` and in a real kernel (`nbclient`, `tests/test_notebook_file.py`;
     cell 1's alternatives and the cells out of order in `tests/test_notebook_setup.py`).
@@ -874,8 +875,12 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
   - Outputs are stripped.
   - Three code cells (owner, 10 November 2026, as ZeroCostDL4Mic and NucleiSky): **1. Install**,
     **2. Mount Google Drive**, **3. Run preprocessing**, each under a Markdown heading that
-    explains it. Cell 3 checks that cell 1 ran (`SETUP_RECORD`) and, on Colab, that Drive is
-    mounted, and otherwise stops naming the cell to run; no cell runs another.
+    explains it. Cell 3 checks that cell 1 ran (`SETUP_RECORD`), and otherwise stops naming
+    cell 1; on Colab without Drive mounted it opens the app after one line saying that only
+    files on the runtime are visible (owner, v0.5.1). No cell runs another.
+  - A cell that cannot go on raises its own `CellStop` (a `RuntimeError` whose
+    `_render_traceback_` returns the message), so Colab and JupyterLab show one line and no
+    traceback (owner, v0.5.1). Cell 1 checks the Python version before `import tomllib`.
   - Cell 1 is a standalone standard-library bootstrap: nearby checkout, installed package,
     or GitHub installation of the release `RELEASE_TAG`, with missing requirements
     installed using the kernel's Python (`subprocess`, never `!pip`); on Colab with the
@@ -1051,14 +1056,14 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 
 ---
 
-## 11. Status (current state, v0.4.0)
+## 11. Status (current state, v0.5.1)
 
-- **Released:** v0.4.0 (5 November 2026), with the normalization brick pinned at v0.3.4. The
+- **Released:** v0.5.1 (10 November 2026), with the normalization brick pinned at v0.4.0. The
   per-release history is in [CHANGELOG.md](CHANGELOG.md); the milestones PP-0 to PP-13 are in
   [docs/archive/plan-milestones-v0.1-v0.4.md](docs/archive/plan-milestones-v0.1-v0.4.md); the older
   status log of this file is in
   [docs/archive/agents-status-history-v0.1-v0.3.md](docs/archive/agents-status-history-v0.1-v0.3.md).
-- **Unreleased:** see the changelog's "Unreleased" section.
+- **Unreleased:** none yet; later changes go in a new "Unreleased" section of the changelog.
 - **Scope:** 2-D per plane (a Z-stack is refused as `z_stack_not_supported`); TIFF and OME-Zarr
   input read directly (TIFF to OME-Zarr conversion and the `_moved.py` re-exports were removed);
   optional masks, the mask step and the notebook's **Describe the masks**; named-axis copies

@@ -74,6 +74,8 @@ def test_notebook_is_an_introduction_and_three_explained_code_cells():
         assert code["outputs"] == []
         assert code["execution_count"] is None
         assert code["metadata"].get("jupyter", {}).get("source_hidden") is True
+        # A Colab form with the code hidden (AGENTS.md section 7, as ZeroCostDL4Mic).
+        assert code["metadata"].get("cellView") == "form"
     for cell in cells:
         if cell["cell_type"] == "markdown":
             assert "\\n" not in "".join(cell["source"])
@@ -199,11 +201,12 @@ def test_version_metadata_matches_labconstrictor_index():
     assert index == {NOTEBOOK.stem: _setting("current_version")}
 
 
-def _kernel_notebook(nbformat, *, roles=(INSTALL, DRIVE, RUN), colab_drive=None):
+def _kernel_notebook(nbformat, *, roles=(INSTALL, DRIVE, RUN), colab_drive=None, override=True):
     """Return the notebook's code cells ``roles`` as a notebook ready for this checkout's kernel.
 
     With ``colab_drive``, a first cell fakes ``google.colab`` whose ``drive.mount`` makes a
-    ``MyDrive`` folder, and the cells' ``/content/drive`` is ``colab_drive``.
+    ``MyDrive`` folder, and the cells' ``/content/drive`` is ``colab_drive``. ``override=False``
+    leaves cell 1 as shipped, so it refuses this checkout (not the ``RELEASE_REF`` commit).
     """
     notebook = nbformat.read(NOTEBOOK, as_version=4)
     code = [cell for cell in notebook.cells if cell.cell_type == "code"]
@@ -211,9 +214,10 @@ def _kernel_notebook(nbformat, *, roles=(INSTALL, DRIVE, RUN), colab_drive=None)
     # The kernel runs in this checkout, whose commit is not RELEASE_REF (#103): the one edit a
     # developer makes to use a checkout is the explicit override.
     assert install.source.count("DEVELOPMENT_OVERRIDE = False") == 1
-    install.source = install.source.replace(
-        "DEVELOPMENT_OVERRIDE = False", "DEVELOPMENT_OVERRIDE = True"
-    )
+    if override:
+        install.source = install.source.replace(
+            "DEVELOPMENT_OVERRIDE = False", "DEVELOPMENT_OVERRIDE = True"
+        )
     # While RELEASE_REF is behind this checkout, the cell calls the released API: the kernel,
     # running this checkout, is given this checkout's call (the release PR makes them one).
     assert run.source.count(release_call()) == 1
@@ -306,6 +310,38 @@ def test_the_run_cell_alone_in_a_fresh_kernel_names_cell_1():
     _execute(notebook, allow_errors=True)
 
     (error,) = _errors(run)
-    assert error.ename == "RuntimeError"  # not an ImportError of the package
+    assert error.ename == "CellStop"  # the cell's own stop, not an ImportError of the package
     assert "run cell 1 (Install MorphoBricks preprocessing) first" in error.evalue
+    # One line, without a traceback (owner, v0.5.1): what Colab and JupyterLab show.
+    assert error.traceback == [error.evalue]
     assert not _shows_a_widget(run)
+
+
+def test_a_refusal_of_cell_1_in_a_kernel_is_one_line_without_a_traceback():
+    nbformat = _kernel_modules()
+    # As shipped, cell 1 refuses this checkout: its commit is not RELEASE_REF (#103).
+    notebook, (install,) = _kernel_notebook(nbformat, roles=(INSTALL,), override=False)
+    _execute(notebook, allow_errors=True)
+
+    (error,) = _errors(install)
+    assert error.ename == "CellStop"
+    assert "is not the release this notebook pins" in error.evalue
+    assert error.traceback == [error.evalue]
+    assert "\n" not in error.evalue
+
+
+def test_on_a_faked_colab_without_drive_cell_3_opens_the_app_after_one_line(tmp_path):
+    nbformat = _kernel_modules()
+    drive_root = tmp_path / "content/drive"
+    notebook, (install, run) = _kernel_notebook(
+        nbformat, roles=(INSTALL, RUN), colab_drive=drive_root
+    )
+    _execute(notebook)
+
+    assert not [*_errors(install), *_errors(run)]
+    assert _text(run).splitlines() == [
+        "Google Drive is not mounted: only files on this Colab runtime are visible, "
+        "and they are deleted when the runtime stops."
+    ]
+    assert not drive_root.exists()  # nothing mounted for the user
+    assert _shows_a_widget(run)
