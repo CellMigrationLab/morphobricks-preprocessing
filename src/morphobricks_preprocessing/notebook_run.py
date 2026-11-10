@@ -26,7 +26,7 @@ from .notebook_options import (
     VERIFY_CONTENT_HELP,
 )
 from .notebook_plots import IntensityPanel
-from .notebook_render import _bins_help, _label, change_lines, issues_html
+from .notebook_render import _bins_help, _label, blocked_line, change_lines, issues_html
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import issue_counts, rebuild_line
 from .run import RESTART, Preflight, RunMode, RunResult, run_experiment
@@ -57,6 +57,7 @@ class _RunStep:
             value=0, min=0, max=1, bar_style="info", layout=widgets.Layout(width="99%")
         )
         ui.set_visible(self.progress, False)
+        self.run_blocker = widgets.HTML()
         self.run_status = widgets.HTML()
         self.run_next = widgets.HTML()
         self.run_tiles = widgets.HTML()
@@ -266,6 +267,10 @@ class _RunStep:
             title = ui.status("ok", "Ready to run.")
         self.readiness.value = title + ui.checklist(items)
         self.run_button.disabled = bool(missing)
+        self.run_blocker.value = blocked_line(
+            [f"still to do: {text[0].lower()}{text[1:]}" for text in missing[:1]]
+            + ([f"and {len(missing) - 1} more (see Before you run)"] if len(missing) > 1 else [])
+        )
         self.plan.value = self._plan_html(review if folder_ok else None)
         self._refresh_plan_card()
         self._refresh_mask_step()

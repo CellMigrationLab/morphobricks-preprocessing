@@ -17,6 +17,23 @@ OME-XML description is parsed (which images are marked is unchanged; a malformed
 debug line without a traceback), and while the capture is attached the package's DEBUG records
 go to the "Technical details" panel only, with WARNING and above still reaching the root handlers.
 
+### Notebook redesign 1: fixes from the owner's test of v0.5.0 (10 November 2026)
+
+- **Lists of files in a message draw no empty bullets.** `notebook_style.path_list` returns
+  plain lines in a box (scrolling above about ten lines) instead of a nested list, and a status
+  card joins a list of paths to the line before it. The same paths are shown, folded behind
+  "Show N more" as before.
+- **"Is compared against" keeps its dropdown.** Choosing an option rebuilt every dropdown of the
+  card (twice), so the control vanished while the answer was saved. The rows are now built once
+  per set of conditions and updated in place; the answer, its refusal and the saved draft are
+  unchanged. Measured on 28 images of 2048 x 2048: 0.58 s to 0.35 s per choice (the rest is the
+  refresh of the other pages).
+- **Every disabled action says what blocks it, in a visible line beside it**
+  (`notebook_render.blocked_line`): *Confirm axis roles* (the axis error by name, the preview
+  not drawn, the preview not ticked), *Yes, the preview looks right*, *Compute histograms*,
+  *Yes, save the experiment description*, *Make named-axis copies* and its roles question, and
+  the stains confirmation. Nothing about when an action is allowed changed. Roles that are not
+  a mapping at all (two X) now also disable *Confirm axis roles* at once.
 ### Normalization pinned at v0.4.0 (#262)
 
 - **`morphobricks-normalization` moves from v0.3.4 to v0.4.0** (tag `c952263`). It is

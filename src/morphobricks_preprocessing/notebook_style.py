@@ -41,6 +41,10 @@ STYLE_CSS = """
   margin: 8px 0; overflow-wrap: anywhere; }
 .mb-status ul { margin: 4px 0 0 0; padding-left: 20px; }
 .mb-status details { margin-top: 4px; }
+.mb-paths { margin: 2px 0 2px 4px; max-height: 190px; overflow-y: auto; }
+.mb-paths div { padding: 1px 0; overflow-wrap: anywhere; }
+.mb-blocker { color: #92400E; font-size: 13px; line-height: 1.4; margin: 2px 0 6px 0;
+  overflow-wrap: anywhere; }
 .mb-next { background: #EFF6FF; border: 2px solid #93C5FD; border-radius: 8px;
   padding: 14px 16px; margin: 12px 0; overflow-wrap: anywhere; }
 .mb-next-title { color: #1E40AF; font-size: 16px; font-weight: 700; margin-bottom: 6px; }
@@ -91,6 +95,7 @@ STYLE_CSS = """
 
 _STATUS_CLASSES = {"ok": "mb-ok", "info": "mb-info", "warn": "mb-warn", "error": "mb-error"}
 _MAX_LIST = 20
+_PATHS_OPEN = "<div class='mb-paths'>"
 
 
 def page(title: str, subtitle: str, children: Sequence[widgets.Widget]) -> widgets.VBox:
@@ -161,7 +166,13 @@ def status(kind: str, title: str, lines: Iterable[str] = (), *, raw: bool = Fals
     raw
         Treat ``lines`` as HTML instead of plain text.
     """
-    items = [line if raw else html.escape(line) for line in lines]
+    items: list[str] = []
+    for line in lines:
+        text = line if raw else html.escape(line)
+        if raw and items and text.startswith(_PATHS_OPEN):
+            items[-1] += text  # a list of paths belongs to the line before it: no bullet of its own
+        else:
+            items.append(text)
     body = f"<ul>{''.join(f'<li>{item}</li>' for item in items)}</ul>" if items else ""
     return f"<div class='mb-status {_STATUS_CLASSES[kind]}'><b>{html.escape(title)}</b>{body}</div>"
 
@@ -183,15 +194,18 @@ def next_steps(action: str, detail: str = "") -> str:
 
 
 def path_list(paths: Sequence[str], limit: int = _MAX_LIST) -> str:
-    """HTML list of paths; long lists are folded behind a "show all" toggle."""
-    escaped = [f"<b>{html.escape(p)}</b>" for p in paths]
-    if len(escaped) <= limit:
-        return "<ul>" + "".join(f"<li>{p}</li>" for p in escaped) + "</ul>"
-    shown = "".join(f"<li>{p}</li>" for p in escaped[:limit])
-    rest = "".join(f"<li>{p}</li>" for p in escaped[limit:])
+    """HTML list of paths, one per line; long lists are folded behind a "show more" toggle.
+
+    The paths are plain lines in a box, never list items: a list nested in a status card's
+    bullet drew an empty bullet before it, and the folded part drew bullets of its own.
+    """
+    lines = [f"<div><b>{html.escape(p)}</b></div>" for p in paths]
+    shown = f"{_PATHS_OPEN}{''.join(lines[:limit])}</div>"
+    if len(lines) <= limit:
+        return shown
     return (
-        f"<ul>{shown}</ul><details><summary>Show {len(escaped) - limit:,} more</summary>"
-        f"<ul>{rest}</ul></details>"
+        f"{shown}<details><summary>Show {len(lines) - limit:,} more</summary>"
+        f"{_PATHS_OPEN}{''.join(lines[limit:])}</div></details>"
     )
 
 

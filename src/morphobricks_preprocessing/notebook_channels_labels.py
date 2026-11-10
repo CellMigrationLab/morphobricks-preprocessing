@@ -35,6 +35,7 @@ from .channel_labels import (
 )
 from .notebook_channels_view import AnswerStore, chip
 from .notebook_description_view import plain
+from .notebook_render import blocked_line
 
 ROW_COLUMNS = "minmax(150px, 1fr) minmax(150px, 1fr) minmax(200px, 2fr)"
 QUESTION = "Are these the labels you imaged?"
@@ -265,6 +266,8 @@ class LabelsCard:
             ui.status("error", "These labels cannot be used yet.", ["Fix the red entries."])
             if by_slot
             else ""
+            if filled or self.confirm.value
+            else blocked_line(["no label is typed: name at least one stain"])
         )
 
     # Look-alike groups -------------------------------------------------------------------
