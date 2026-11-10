@@ -119,6 +119,16 @@ Owner test of v0.5.0 (10 November 2026), items (c) and (d).
   *Yes, save the experiment description*, *Make named-axis copies* and its roles question, and
   the stains confirmation. Nothing about when an action is allowed changed. Roles that are not
   a mapping at all (two X) now also disable *Confirm axis roles* at once.
+
+### Fixed: the notebook output is no longer flooded with debug messages
+
+ImageJ TIFFs have a plain-text description, so reading it as OME-XML failed for every image and
+logged a debug message with a traceback; and the notebook's own log capture set the package
+logger to DEBUG while records still reached the root logger, which Colab prints. Now only an
+OME-XML description is parsed (which images are marked is unchanged; a malformed one logs one
+debug line without a traceback), and while the capture is attached the package's DEBUG records
+go to the "Technical details" panel only, with WARNING and above still reaching the root handlers.
+
 ### Normalization pinned at v0.4.0 (#262)
 
 - **`morphobricks-normalization` moves from v0.3.4 to v0.4.0** (tag `c952263`). It is
