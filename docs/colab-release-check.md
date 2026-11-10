@@ -12,15 +12,15 @@ named-axis copies). Items were updated for later changes: PP-10a replaced the st
 cell with a button, and PP-12 replaced the `.run-*` backup folders with `.publish` and
 `.staging`.
 
-**The notebook's pin.** The shipped notebook installs the package at its `RELEASE_REF`, not
-main's code, so its cell calls the API of the code at that commit. Between releases main's code
+**The notebook's pin.** The shipped notebook installs the package at its `RELEASE_REF` (set in
+cell 1), not main's code, so its cell 3 calls the API of the code at that commit. Between releases main's code
 moves on while the cell keeps the released call: after v0.5.1's PP-C, main has no `describe`
 argument, while `RELEASE_REF` is still v0.5.0's `fd7afd3`, whose cell calls
-`PreprocessingNotebook(describe=True)`. The release PR moves `RELEASE_REF` and the cell's call
+`PreprocessingNotebook(describe=True)`. The release PR moves `RELEASE_REF` and cell 3's call
 in the same commit and records the new pair in `RELEASE_CALLS` of `tests/test_notebook_file.py`,
 which fails for a `RELEASE_REF` without one.
 
-- [ ] `RELEASE_REF` is the release commit, and the cell's `PreprocessingNotebook(...)` call is
+- [ ] `RELEASE_REF` is the release commit, and cell 3's `PreprocessingNotebook(...)` call is
   that commit's API (v0.5.1: `PreprocessingNotebook()`).
 
 Use a dataset on Google Drive with a masks folder, and a second small experiment of
@@ -29,17 +29,28 @@ Report a failure as an issue before the final tag.
 
 ## A. Fresh runtime and app rendering
 
-1. Open the notebook on a fresh Google Colab runtime and run its single code cell.
-   - [ ] Drive authorisation appears and the mount succeeds.
+The notebook has three code cells, run in order: **1. Install MorphoBricks preprocessing**,
+**2. Mount Google Drive** and **3. Run preprocessing**.
+
+1. Open the notebook on a fresh Google Colab runtime and run cell 3 first.
+   - [ ] It stops at once with "run cell 1 (Install MorphoBricks preprocessing) first", not an
+     `ImportError`, and installs nothing.
+2. Run cell 1 (install).
    - [ ] Setup reports the expected notebook, preprocessing, normalization and ipywidgets
-     versions and the pinned source revision.
-   - [ ] No ipywidgets upgrade or runtime restart is requested.
-2. In the same cell output:
+     versions and the pinned source revision, then names cells 2 and 3.
+   - [ ] No ipywidgets upgrade or runtime restart is requested, and Drive is not mounted.
+   - [ ] Run cell 1 again: nothing is installed again and the same versions are reported.
+3. Run cell 3 before cell 2.
+   - [ ] It stops with "Google Drive is not connected … run cell 2 (Mount Google Drive)".
+4. Run cell 2 (Drive).
+   - [ ] Drive authorisation appears, the mount succeeds and the cell says Drive is connected.
+5. Run cell 3 (the app).
    - [ ] The complete preprocessing app renders inline; Colab does not open the Code snippets
      pane instead of the widget.
    - [ ] Buttons, dropdowns, accordions, preview image, sliders, progress bars and matplotlib
      plots render and react.
-3. Repeat the same single-cell smoke test in JupyterLab/LabConstrictor.
+6. Repeat cells 1 to 3 in JupyterLab/LabConstrictor.
+   - [ ] Cell 2 prints its one-line "Not Google Colab" note and does nothing else.
    - [ ] The same app renders and uses local paths without executing Colab-only setup.
 
 ## B. Step 1 (PR #118)

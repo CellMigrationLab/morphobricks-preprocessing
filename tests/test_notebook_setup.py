@@ -1,5 +1,10 @@
-"""Exercise the standalone setup cell without installing into the test environment."""
+"""Exercise the notebook's three code cells without installing into the test environment.
 
+Cell 1 installs, cell 2 mounts Google Drive on Colab, cell 3 shows the app; the cells run in
+one namespace, as in a kernel.
+"""
+
+import ast
 import importlib
 import importlib.metadata
 import importlib.util
@@ -26,12 +31,23 @@ REQUIRED = {
 ZARR = "zarr"
 
 
-def cell_source():
+INSTALL, DRIVE, RUN = 1, 2, 3
+"""The cells' numbers, as their titles and the notebook's text name them."""
+COLAB_DRIVE = "/content/drive"
+
+
+def cell_source(number=INSTALL):
     notebook = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
-    return "".join(next(c["source"] for c in notebook["cells"] if c["cell_type"] == "code"))
+    code = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
+    return "".join(code[number - 1]["source"])
 
 
 RELEASE_REF = re.search(r'RELEASE_REF = "([0-9a-f]{40})"', cell_source()).group(1)
+_APP_CALL = ast.parse(
+    re.search(r"PreprocessingNotebook\([^)]*\)", cell_source(RUN)).group(0), mode="eval"
+).body
+APP_OPTIONS = {keyword.arg: ast.literal_eval(keyword.value) for keyword in _APP_CALL.keywords}
+"""The options cell 3 passes, as its call names them (``test_notebook_file.RELEASE_CALLS``)."""
 
 
 def install_git_double(monkeypatch, state):
@@ -69,6 +85,9 @@ def setup_environment(tmp_path, monkeypatch):
         available={*REQUIRED, ZARR},
         installs=[],
         imports=[],
+        apps=[],
+        drive=tmp_path / "content/drive",
+        namespace={},
         versions={
             "morphobricks-preprocessing": "0.5.0",
             "morphobricks-normalization": "0.3.4",
@@ -110,6 +129,7 @@ def setup_environment(tmp_path, monkeypatch):
         class FakeNotebook:
             def __init__(self, **options):  # describe=True, the shipped notebook's run
                 self.options = options
+                state.apps.append(options)
 
             def __getattr__(self, name):  # welcome, folder_step, axis_step, channels_step, ...
                 return lambda: widgets.HTML(name)
@@ -118,13 +138,18 @@ def setup_environment(tmp_path, monkeypatch):
 
     monkeypatch.setattr(importlib, "import_module", import_interface)
 
-    def start():
-        notebook = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
-        source = next(c["source"] for c in notebook["cells"] if c["cell_type"] == "code")
-        namespace = {}
-        exec("".join(source), namespace)
-        state.namespace = namespace
-        return namespace
+    def start(*numbers, fresh=True):
+        """Run the code cells ``numbers`` (all three by default) in order, in one namespace.
+
+        ``fresh`` starts a new kernel namespace; ``/content/drive`` is ``state.drive`` (the
+        fake Drive's mount point).
+        """
+        if fresh:
+            state.namespace = {}
+        for number in numbers or (INSTALL, DRIVE, RUN):
+            source = cell_source(number).replace(COLAB_DRIVE, str(state.drive))
+            exec(source, state.namespace)
+        return state.namespace
 
     state.start = start
     return state
@@ -146,8 +171,9 @@ def test_setup_reuses_the_matching_installed_release(setup_environment, capsys):
     state.start()
     assert state.installs == []
     assert state.imports == [
-        "morphobricks_preprocessing.notebook_ui",
+        "morphobricks_preprocessing.notebook_ui",  # cell 1 checks the interface loads
         "morphobricks_preprocessing",
+        "morphobricks_preprocessing.notebook_ui",  # cell 3 shows it
     ]
     out = capsys.readouterr().out
     assert "Ready: preprocessing 0.5.0" in out
@@ -297,8 +323,14 @@ def test_setup_does_not_mix_an_already_loaded_package_with_another_checkout(
 
 
 def colab(monkeypatch):
+    """Fake ``google.colab``: its ``drive.mount`` records the mount point and makes MyDrive."""
     calls = []
-    fake = SimpleNamespace(drive=SimpleNamespace(mount=lambda path: calls.append(path)))
+
+    def mount(path):
+        calls.append(path)
+        (Path(path) / "MyDrive").mkdir(parents=True, exist_ok=True)
+
+    fake = SimpleNamespace(drive=SimpleNamespace(mount=mount))
     monkeypatch.setitem(sys.modules, "google.colab", fake)
     return calls
 
@@ -306,8 +338,12 @@ def colab(monkeypatch):
 def test_colab_mounts_drive_without_a_custom_widget_manager(setup_environment, monkeypatch, capsys):
     calls = colab(monkeypatch)
     setup_environment.start()
-    assert calls == ["/content/drive"]
-    assert "Google Colab: connecting Google Drive" in capsys.readouterr().out
+    assert f'drive.mount("{COLAB_DRIVE}")' in cell_source(DRIVE)
+    assert calls == [str(setup_environment.drive)]  # the cells' /content/drive, faked
+    out = capsys.readouterr().out
+    assert "Google Colab: connecting Google Drive" in out
+    assert "Google Drive is connected" in out
+    assert setup_environment.apps == [APP_OPTIONS]
 
 
 def test_colab_installs_the_zarr_extra(setup_environment, monkeypatch):
@@ -338,9 +374,13 @@ def test_setup_stops_when_drive_cannot_be_mounted(setup_environment, monkeypatch
         "google.colab",
         SimpleNamespace(drive=SimpleNamespace(mount=refuse)),
     )
+    state = setup_environment
+    state.start(INSTALL)
+    imported = list(state.imports)
     with pytest.raises(RuntimeError, match="Google Drive could not be connected"):
-        setup_environment.start()
-    assert setup_environment.imports == []
+        state.start(DRIVE, fresh=False)
+    assert state.imports == imported
+    assert state.apps == []
 
 
 def test_setup_rejects_old_python_before_installing(setup_environment, monkeypatch):
@@ -362,3 +402,103 @@ def test_setup_reports_failed_installation(setup_environment, monkeypatch):
     with pytest.raises(RuntimeError, match="could not install"):
         state.start()
     assert state.imports == []
+
+
+# The three cells (owner, 10 November 2026): each does its own part, and a cell run out of order
+# says which cell to run; no cell runs another for the user.
+
+
+def test_cell_1_installs_without_mounting_drive_or_showing_the_app(
+    setup_environment, monkeypatch, capsys
+):
+    calls = colab(monkeypatch)
+    state = setup_environment
+    state.available.clear()
+    state.versions.pop("morphobricks-preprocessing")
+    namespace = state.start(INSTALL)
+    assert len(state.installs) == 1
+    assert "morphobricks-preprocessing[notebook,zarr]" in state.installs[0][-1]
+    assert calls == []
+    assert state.apps == []
+    assert namespace["SETUP_RECORD"]["release_ref"] == RELEASE_REF
+    out = capsys.readouterr().out
+    assert "Ready: preprocessing 0.5.0; normalization 0.3.4; ipywidgets 7.7.1." in out
+    assert "Next: run cell 2 (Mount Google Drive), then cell 3 (Run preprocessing)." in out
+
+
+def test_running_cell_1_again_installs_nothing_more(setup_environment, capsys):
+    state = setup_environment
+    state.available.clear()
+    state.versions.pop("morphobricks-preprocessing")
+    state.start(INSTALL)
+    first = capsys.readouterr().out
+    record = dict(state.namespace["SETUP_RECORD"])
+    state.start(INSTALL, fresh=False)
+    again = capsys.readouterr().out
+    assert len(state.installs) == 1
+    assert "Installing notebook requirements" in first
+    assert "Installing notebook requirements" not in again
+    assert "Ready: preprocessing 0.5.0" in again
+    assert state.namespace["SETUP_RECORD"]["preprocessing_version"] == "0.5.0"
+    assert record["release_ref"] == state.namespace["SETUP_RECORD"]["release_ref"]
+
+
+def test_cell_2_outside_colab_prints_one_note_and_does_nothing(setup_environment, capsys):
+    state = setup_environment
+    assert "google.colab" not in sys.modules
+    state.start(DRIVE)
+    out = capsys.readouterr().out
+    assert out.strip().splitlines() == [
+        "Not Google Colab: there is no Google Drive to mount here, so nothing was done."
+    ]
+    assert state.installs == state.imports == state.apps == []
+    assert not state.drive.exists()
+
+
+def test_cell_2_alone_on_colab_only_mounts_drive(setup_environment, monkeypatch):
+    calls = colab(monkeypatch)
+    state = setup_environment
+    state.start(DRIVE)
+    assert calls == [str(state.drive)]
+    assert state.installs == state.imports == state.apps == []
+
+
+@pytest.mark.parametrize("on_colab", [False, True])
+def test_cell_3_without_cell_1_names_cell_1(setup_environment, monkeypatch, on_colab):
+    state = setup_environment
+    if on_colab:
+        colab(monkeypatch)
+    with pytest.raises(RuntimeError, match=r"run cell 1 \(Install MorphoBricks preprocessing\)"):
+        state.start(RUN)
+    assert state.installs == state.imports == state.apps == []
+
+
+def test_cell_3_after_a_failed_cell_1_still_names_cell_1(setup_environment, monkeypatch):
+    state = setup_environment
+    monkeypatch.setattr(sys, "version_info", (3, 10, 0))
+    with pytest.raises(RuntimeError, match="Python 3.11 or newer"):
+        state.start(INSTALL)
+    with pytest.raises(RuntimeError, match="run cell 1"):
+        state.start(RUN, fresh=False)
+    assert state.apps == []
+
+
+def test_cell_3_on_colab_without_drive_names_cell_2(setup_environment, monkeypatch):
+    calls = colab(monkeypatch)
+    state = setup_environment
+    state.start(INSTALL)
+    imported = list(state.imports)
+    with pytest.raises(RuntimeError, match=r"Google Drive is not connected.*run cell 2"):
+        state.start(RUN, fresh=False)
+    assert calls == []  # never mounted for the user
+    assert state.imports == imported
+    assert state.apps == []
+    state.start(DRIVE, RUN, fresh=False)
+    assert state.apps == [APP_OPTIONS]
+
+
+def test_cell_3_outside_colab_needs_no_drive(setup_environment):
+    state = setup_environment
+    state.start(INSTALL, RUN)  # cell 2 skipped: nothing to mount outside Colab
+    assert state.apps == [APP_OPTIONS]
+    assert "app" in state.namespace
