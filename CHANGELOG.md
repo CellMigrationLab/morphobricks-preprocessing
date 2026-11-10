@@ -228,6 +228,10 @@ already removed is not repeated here. **Breaking** where it says so.
   other import error is raised), so a plain `pip install -e '.[dev]'` passes the frozen-clock
   tests (`tests/test_frozen_clock_extras.py`).
 
+- **Removed: `GroupSummary.plane_count`** (inventory PP-07), the deprecated alias of
+  `channel_histogram_count` from before #104; use `xyc_plane_count` (XYC planes) or
+  `channel_histogram_count` (channel histograms pooled). No caller in the nine repositories.
+
 ## 0.5.0 - 2026-11-09
 
 Stage 1 of the experiment description (MorphoBricks-Spec experiment-v1, pinned at `1bed024`):
