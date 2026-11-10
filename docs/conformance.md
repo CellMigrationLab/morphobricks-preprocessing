@@ -10,13 +10,13 @@ in the suite is listed as **not run**, with its reason.
 
 | | |
 |---|---|
-| Release candidate | Measured on `5cc3b07` (branch `claude/release-0.5.0`: `main` at `bf733ee`, the v0.5.0 preparation `3b616a0`, `c74d717`, the first record `4437067`, the G1 gap tests `a6a0343`, the record `c675f13`, the P21/P29 fix `0a2e25b`, and `5cc3b07`, which points the notebook's `RELEASE_REF` at `0a2e25b`). The commit that updates this record changes only this file, so the code and tests are those of `5cc3b07`. `git diff 0a2e25b 5cc3b07 -- src pyproject.toml` is empty: the installed package is the one `RELEASE_REF` names. The earlier measurement on `a6a0343` (5028 passed, 1660 in the Spec modules) found P21 and P29 not met; `0a2e25b` fixes that source defect |
+| Release candidate | Measured on `ba415de` (branch `claude/release-0.5.0`: `main` at `bf733ee`, the v0.5.0 preparation `3b616a0`, `c74d717`, the first record `4437067`, the G1 gap tests `a6a0343`, the record `c675f13`, the P21/P29 fix `0a2e25b`, `5cc3b07`, the record `76e09c3`, then `0ea3254`, the merge of `main` at `8c573d6` (#254, #255, #257: the audit fixes listed below), and `ba415de`, which points the notebook's `RELEASE_REF` at `0ea3254`). The commit that updates this record changes only this file, so the code and tests are those of `ba415de`. `git diff 0ea3254 ba415de -- src pyproject.toml` is empty: the installed package is the one `RELEASE_REF` names. Earlier measurements: on `a6a0343` (5028 passed, 1660 in the Spec modules) P21 and P29 were not met, and `0a2e25b` fixes that source defect; on `5cc3b07`, before the merge of `main`, 5045 passed and 1671 in the Spec modules |
 | Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `1bed024e278d104ba4b8f63ae76c020fb2e3470d`. The G1 scope ruling (ADR 0001 GS1, conformance plan sections 4 and 5) was merged later as `cdc1841`, which changes only `docs/adr/0001-experiment-description-v1.md` and `docs/conformance-plan.md`, so the pinned files are unchanged. Fixtures tree `f61b1c2`, `experiment-v1.md` blob `b12678c`, `refval.py` blob `0ea8309`, `refrecords.py` blob `ef06a1e`, each also compared by hand with `git rev-parse 1bed024:<path>` in a fresh clone of the Spec: all four equal |
 | Environment | Linux, Python 3.13.18, `pip install -e '.[dev,notebook,zarr]'` in a fresh venv (package version 0.5.0, numpy 2.5.4, tifffile 2026.11.8, ipywidgets 8.1.9, zarr 3.4.2, pytest 9.2.0, normalization 0.3.4); run as root on a case-sensitive file system |
 | Commands | `python -m pytest -q -p no:cacheprovider -rsxX --junitxml=… tests/` (the whole suite, with a per-test JUnit report), and `python tools/check.py` (Ruff, Ruff format, pytest over `tests/`, code rules) |
-| Whole suite | 5049 collected: 5045 passed, 4 skipped (not run, below), 0 failed, 0 xfailed |
+| Whole suite | 5109 collected: 5105 passed, 4 skipped (not run, below), 0 failed, 0 xfailed (the 60 more than on `5cc3b07` are the tests of #254, #255 and #257) |
 | Spec modules (`tests/test_spec_*.py`) | 1671 passed, **0 skipped, 0 xfailed, 0 failed**, from all 21 modules of `tests/spec_gate.py` `EXPECTED_MODULES` |
-| `tools/check.py` (on `5cc3b07`) | Ruff clean, Ruff format 411 files already formatted, pytest 5045 passed and 4 skipped, code rules passed (exit status 0) |
+| `tools/check.py` (on `ba415de`) | Ruff clean, Ruff format 415 files already formatted, pytest 5105 passed and 4 skipped, code rules passed (exit status 0) |
 
 **How "no skips" was checked for the Spec modules.** (1) The JUnit report has 1671 test cases
 from `test_spec_*` modules, every one passed: none has a `skipped` (or xfail) element. (2) The
@@ -46,6 +46,31 @@ oracle (`test_spec_derived_design.py`) passed.
 | `tests/test_discovery.py:665` (`test_unreadable_folder_is_an_error`) | Run as root: file modes are ignored, so an unreadable folder cannot be made |
 
 These four behaviours are **not verified by this run**.
+
+### Fixes in this candidate since the previous measurement (merged from `main` in `0ea3254`)
+
+Each with its own tests, all passed in this run; none changes a Spec module or the Spec pin.
+
+- **Audit batches 33 and 34a (#254):** what is published is what was answered, of the image
+  checked. A block's saved tags are exactly those shown; a unit tagging one label twice is
+  refused (`E_DUPLICATE_CHANNEL_IN_UNIT`); an unanswered image type is an open question
+  (`unit_image_type_unanswered`); `publish_draft` requires each unit's channel count
+  (`unit_channels_stale`, `unit_channel_count_unknown`); the notebook's folder check binds each
+  header to its file's fingerprint (`bind_headers=True`, beside the P21/P29 `with_description`),
+  and pictures, mask evidence and the save are of that revision; records that the records reader
+  would refuse are never written (`R_RECORDS_FILE_INVALID`).
+- **Audit batch 34b (#255):** *Confirm these axes* is offered only while a preview of exactly
+  the offered roles is shown; the reopen reconciles with the folder check's header evidence
+  (channel count, raw header names, the RGB flag), so a header rewritten under the same files is
+  a channel change, not "nothing changed"; the axis preview is bound with the same header
+  fingerprints; non-finite pixels are no longer counted as crop detail.
+- **Pre-release follow-ups (#257):** "prepared and imaged the same way?" is asked again only for
+  a replicate whose declared layout changes against the published one (experiment-v1 §10),
+  every other `confirmed_on` kept byte for byte (§4.4a); header contradictions are the run's
+  `R_HEADER_CONTRADICTION`, shown at once; *Check and save* runs publication's transition checks
+  (`R_CONFIRMED_ON_CHANGED`, `R_CONFIRMED_ID_CHANGED`, `R_USED_ID_*`); `describe` reads the
+  headers (no pixel) when it compares a published description; a unit's channel count comes from
+  every image of the unit.
 
 ### Physical scenarios P01-P35 (conformance plan section 3)
 
@@ -84,7 +109,7 @@ GS1: a scenario that names fixtures is shown on those fixtures; further fixtures
 | P27 | Deferred to the Stage 2 gate per ADR 0001 GS1 (MorphoBricks-Spec `cdc1841`) | The outcome is a brick's (per-request `binary_mask_policy`). Preprocessing's own parts passed: `A_MASK_NOT_INSTANCES` (`test_a_error_classes`) and the section 2 "Mask fields" row (`i111`, `i112`, below) |
 | P28 | Passed | `test_spec_run_description`: `test_p28_each_new_batch_is_not_yet_checked_until_the_mask_step_has_read_it` (`v08`, with the 0-5 binary batch); `test_spec_run_inputs_semantic`: `test_p28_a_mask_file_not_yet_checked_is_refused_when_read_until_the_step_checked_it` (`v08`), `test_p28_on_v09_each_batch_of_masks_is_unchecked_until_the_mask_step_reads_it` (`v09`: three batches, each `not yet checked` and `A_MASK_UNCHECKED` until the mask step reads it, earlier batches stay `checked`) |
 | P29 | Passed | `test_spec_discovery` on `v07` published with mask folders `NA`, ` cells` and `Cafe\u0301` beside `nuclei` and `cells`: `test_p29_a_run_with_published_v07_refuses_the_mask_type_names` (`run_experiment` refuses with `R_MASK_TYPE_NAME_INVALID` naming ` cells`, `NA` and `R_FOLDER_NOT_NFC` naming `Cafe\u0301`, beside `R_MASK_TYPE_NOT_DECLARED`; nothing renamed), `test_p29_the_mask_step_refuses_the_names_with_a_published_description` (the step is not ready), `test_p29_the_command_line_check_and_masks_refuse_the_mask_type_names` (no `mask_relationships.json`); `test_notebook_name_refusals`: `test_p29_the_described_folder_check_refuses_the_mask_type_names`, `test_p29_pairing_the_masks_again_keeps_the_refusal`, `test_p21_p29_a_refused_name_blocks_check_and_save` (no `morphobricks.toml` is published, so the names never reach `E_ID_TEXT`). Without a description: the four `test_p21_p29_*_as_in_v0_4` above. Also the 5 synthetic-tree `test_p29_*`. Fixed in `0a2e25b` (on `a6a0343` the run gave only `R_MASK_TYPE_NOT_DECLARED`); the new tests fail on `c675f13` except those without a description |
-| P30 | Passed | `test_spec_derived_design`: `test_p30_the_derived_file_of_migrated_legacy_answers_differs_only_in_the_earlier_date` (`v13` tree, 2 cases): the `v13` legacy file migrated, answered with the proposed IDs and derived again is the legacy file byte for byte (and the golden); with `rep1` rows dated 2026-10-01 and 2026-10-15, the repeat takes 2026-10-15, the note lists both dates, and the derived file differs from the legacy file in one line only, the CTRL/rep1 date (the one-date groups `rep2`, `rep3` are byte-identical); under a frozen clock no clock is read. Also `test_draft`: `test_p30_a_group_with_two_dates_takes_the_latest_and_a_note_lists_both`, `test_a_confirmed_group_without_any_date_stays_open_and_takes_no_clock_date` |
+| P30 | Passed | `test_spec_derived_design`: `test_p30_the_derived_file_of_migrated_legacy_answers_differs_only_in_the_earlier_date` (`v13` tree, 2 cases): the `v13` legacy file migrated, answered with the proposed IDs and derived again is the legacy file byte for byte (and the golden); with `rep1` rows dated 2026-10-01 and 2026-10-15, the repeat takes 2026-10-15, the note lists both dates, and the derived file differs from the legacy file in one line only, the CTRL/rep1 date (the one-date groups `rep2`, `rep3` are byte-identical); under a frozen clock no clock is read. Also `test_draft`: `test_p30_a_group_with_two_dates_takes_the_latest_and_a_note_lists_both`, `test_a_confirmed_group_without_any_date_stays_open_and_takes_no_clock_date`. The answers state each unit's image type ("channels"): since audit batch 33 an unanswered image type is an open question (`unit_image_type_unanswered`), so the test answers it, as the merge `0ea3254` records |
 | P31 | Deferred to the Stage 2 gate per ADR 0001 GS1 (MorphoBricks-Spec `cdc1841`) | The outcome is MorphoCoverage's (prefill, confirmation). Preprocessing's own parts passed: `v27` valid with no warning, and editing `target` or `treatment_key` of `v27` changes no digest and no derived row (section 2 rows below) |
 | P32 | Passed | `test_draft`: `test_p32_forbidden_folders_get_no_proposal_and_nothing_is_adopted`, `test_p32_ordinary_folders_are_proposed_as_their_labels`; `test_spec_derived_design`: golden `v33`, `v34` and `test_the_file_names_folders_never_ids` |
 | P33 | Passed | `test_spec_reconcile`: `test_p33_a_a_renamed_condition_folder_is_not_attached_to_the_old_id`, `test_p33_b_the_statement_keeps_the_id_moves_the_folder_and_reopens_the_repeats`, `test_p33_c_the_old_folder_removal_needs_its_confirmation_and_the_id_stays_used` (`v33`; (a) asserts that the hand-made attachment is `t12` and gives exactly `R_CONFIRMED_ID_CHANGED`); `t10`, `t11`, `t12` against their predecessors in `test_spec_transitions`; `test_condition_folder_reopens` (2) |
