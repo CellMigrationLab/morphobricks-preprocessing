@@ -72,6 +72,7 @@ v0.5.1 is refused: run `convert` again into a new folder.
 | `source_fingerprint` | Removed: `inventory.source_signature` |
 | `GroupSummary.plane_count` | Removed: `xyc_plane_count` or `channel_histogram_count` |
 | `discovery.TIFF_SUFFIXES`, `discovery.SYSTEM_NAMES` | Moved to `image_names` (`is_tiff_name` and `is_system_name` still import from `discovery`) |
+| The design editor: `design.ExperimentDesign`, `DesignChanges`, `default_design`, `load_design`, `read_experiment_design`; the module `design_edit` (`DesignEdit`, `DesignEditError`, `apply_design_edit`, `parse_repeat_group`); `run.design_file` (`design_for_run`, `write_design`, `write_design_template`); `report.design_summary`, `design_table`; the module `cli_design` | Removed: the design rows are the read-only `DesignTable`, derived from the description |
 | `draft.migrate_legacy_design`, `LegacyMigrationRefused`, `MigrationNote`, `Draft.origin`, `Draft.legacy_missing`, `Draft.notes`, `Draft.unresolved_controls` | Removed |
 | `PreprocessingNotebook(describe=True)` | `PreprocessingNotebook()`: no `describe` argument; an embedding brick must let the user describe and save before the run |
 | `PreprocessingNotebook.design`; the widgets `group_confirmations`, `groups_box`, `controls_box`, `control_checks`, `design_change` | `.pairing`; the widgets are removed |
