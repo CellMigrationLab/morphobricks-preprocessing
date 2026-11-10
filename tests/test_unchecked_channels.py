@@ -7,6 +7,7 @@ brick reports with the other intensity warnings: in ``check_intensities`` and
 """
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -50,7 +51,14 @@ def table_rows():
     good = rng.normal(5, 1, (8, 8)).astype(np.float32)
     channels = {"a/r/x.tif": [good, empty], "a/r/y.tif": [good, good], "a/r/z.tif": [empty, good]}
     return [
-        PlaneRecord(path, "a", "r", "single", [compute_plane_histogram(c) for c in planes])
+        PlaneRecord(
+            path,
+            "a",
+            "r",
+            "single",
+            [compute_plane_histogram(c) for c in planes],
+            position_id=Path(path).stem,
+        )
         for path, planes in channels.items()
     ]
 

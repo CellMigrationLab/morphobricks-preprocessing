@@ -1,7 +1,6 @@
 import hashlib
 import json
 import os
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -9,8 +8,8 @@ import pytest
 import tifffile
 from morphobricks_normalization.csv_io import (
     OUTPUT_FILENAME,
+    CsvFormatError,
     read_plane_histograms,
-    write_plane_histograms,
 )
 from morphobricks_normalization.pooling import PooledHistogram
 from morphobricks_normalization.records import SINGLE, group_records
@@ -370,21 +369,22 @@ def test_images_with_the_same_position_id_are_refused(experiment):
     assert not preflight(experiment).ok
 
 
-def test_table_without_position_ids_is_filled_without_reading(experiment, reads):
+def test_table_without_position_ids_is_refused_and_rebuilt(experiment):
     first = run_described(experiment, TYX)
     table = csv_bytes(first)
-    # A table written before position identifiers were recorded.
-    blank = [replace(r, position_id=None) for r in read_plane_histograms(first.csv_path)]
-    write_plane_histograms(blank, first.csv_path)
-    data = json.loads(first.manifest_path.read_text(encoding="utf-8"))  # v2 keeps them (A-m5)
+    # A table from before position identifiers: the reader refuses it, the run rebuilds it.
+    lines = first.csv_path.read_text(encoding="utf-8").splitlines()
+    column = lines[0].split(",").index("position_id")
+    cells = [line.split(",") for line in lines]
+    for row in cells[1:]:
+        row[column] = ""
+    first.csv_path.write_text("\n".join(",".join(r) for r in cells) + "\n", encoding="utf-8")
+    data = json.loads(first.manifest_path.read_text(encoding="utf-8"))
     data["csv_sha256"] = hashlib.sha256(first.csv_path.read_bytes()).hexdigest()
     first.manifest_path.write_text(json.dumps(data), encoding="utf-8")
-    reads.clear()
     result = run_described(experiment, TYX)
-    assert result.written and result.rebuild_reason is None
-    assert result.unchanged == tuple(sorted(IMAGES)) and reads == []
-    assert csv_bytes(result) == table
-    assert all(f.position_id for f in read_manifest(result.manifest_path).files)
+    assert result.written and result.rebuild_reason.endswith("histogram table could not be read")
+    assert result.read == tuple(sorted(IMAGES)) and csv_bytes(result) == table
 
 
 def test_custom_output_folder(experiment, tmp_path):
@@ -844,7 +844,6 @@ def _tamper_plane_id(csv_path):
 def test_a_row_whose_plane_id_disagrees_with_its_columns_is_refused(experiment):
     # normalization v0.3.2 (normalization#19, issue #39): the reader checks the stored
     # plane_id, image_file and bit_depth against the row's other columns.
-    from morphobricks_normalization.csv_io import CsvFormatError
 
     result = run_described(experiment, TYX)
     _tamper_plane_id(result.csv_path)

@@ -182,7 +182,15 @@ def channel_records(levels, condition="c", repeat="r", planes=2, size=8, seed=0)
             for level in levels
         )
         records.append(
-            PlaneRecord(f"{condition}/{repeat}/x.tif", condition, repeat, "single", histograms, t=i)
+            PlaneRecord(
+                f"{condition}/{repeat}/x.tif",
+                condition,
+                repeat,
+                "single",
+                histograms,
+                t=i,
+                position_id="x",
+            )
         )
     return records
 
@@ -222,7 +230,10 @@ def test_an_all_channel_aggregate_is_explicit_and_labelled():
 def test_a_channel_without_finite_pixels_is_reported_alone():
     finite = compute_plane_histogram(np.full((8, 8), 5.0, np.float32), 16)
     empty = compute_plane_histogram(np.full((8, 8), np.nan, np.float32), 16)
-    records = [PlaneRecord("c/r/x.tif", "c", "r", "single", (finite, empty), t=t) for t in range(2)]
+    records = [
+        PlaneRecord("c/r/x.tif", "c", "r", "single", (finite, empty), t=t, position_id="x")
+        for t in range(2)
+    ]
     first, second = group_summaries(records, "condition")
     assert first.channel == 0 and first.mean == 5.0 and first.pixel_count == 128
     assert second.channel == 1 and second.pixel_count == 0 and second.mean is None

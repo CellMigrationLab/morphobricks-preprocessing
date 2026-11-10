@@ -15,6 +15,7 @@ import csv
 import json
 import shutil
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -150,7 +151,8 @@ def reference_records(dtype):
             valid_pixel_count=int(row["valid_pixel_count"]),
         )
         labels = (row["condition"], row["biological_repeat"], row["technical_repeat"])
-        records.append(PlaneRecord(row["source_relative_path"], *labels, histogram))
+        path = row["source_relative_path"]
+        records.append(PlaneRecord(path, *labels, histogram, position_id=Path(path).stem))
     return records
 
 

@@ -54,6 +54,37 @@ Owner test of v0.5.0 (10 November 2026), items (c) and (d).
   *Yes, save the experiment description*, *Make named-axis copies* and its roles question, and
   the stains confirmation. Nothing about when an action is allowed changed. Roles that are not
   a mapping at all (two X) now also disable *Confirm axis roles* at once.
+### Normalization pinned at v0.4.0 (#262)
+
+- **`morphobricks-normalization` moves from v0.3.4 to v0.4.0** (tag `c952263`). It is
+  breaking for the table: `PlaneRecord.position_id` is required and keyword-only, a blank
+  `position_id` in a CSV row is refused with `CsvFormatError`, and tables of schema versions
+  1 to 3 are refused. On valid inputs its output is bit-identical, so `plane_histograms.csv` is
+  unchanged byte for byte.
+- A table without position identifiers is no longer filled in without reading: the reader
+  refuses it and the run rebuilds every row ("the earlier histogram table could not be read").
+  The dead fill-in in `run/steps.py` is removed, and `run/rows.py` takes `position: str`.
+- Tests build every `PlaneRecord` with `position_id=`; the README example does too. The
+  `RELEASE_REF` install still pins v0.3.4 and is unchanged (the v0.5.1 release moves it).
+
+### The notebook has three code cells: install, mount Google Drive, run
+
+Owner request of 10 November 2026, as in the lab's ZeroCostDL4Mic and NucleiSky notebooks. The
+single code cell of `notebooks/MorphoBricks_Preprocessing.ipynb` is split into three, each under
+a Markdown heading that explains it; what the cells do together is unchanged (`RELEASE_REF`,
+the install target and `PreprocessingNotebook(describe=True)` stay as they were).
+
+- **1. Install MorphoBricks preprocessing**: the pinned install with its extras, the version
+  report and `SETUP_RECORD`, as before; it no longer mounts Drive. Running it again installs
+  nothing that is already there; no restart is requested.
+- **2. Mount Google Drive**: mounts Drive on Colab (the same refusal when the mount fails); in
+  JupyterLab or LabConstrictor it prints a one-line note and does nothing.
+- **3. Run preprocessing**: shows the app. Run before cell 1 it stops with "run cell 1 (Install
+  MorphoBricks preprocessing) first", not an `ImportError`; on Colab without Drive at
+  `/content/drive/MyDrive` it stops naming cell 2. It never runs an earlier cell.
+- Tests: exactly these three cells in order and each one's part (`test_notebook_file.py`), the
+  cells out of order and cell 1 run twice (`test_notebook_setup.py`), and the notebook in a
+  real kernel with and without a faked `google.colab`, and cell 3 alone.
 
 ### PP-C: every run is described; undescribed runs and their compatibility code removed
 

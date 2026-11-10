@@ -26,6 +26,7 @@ def record(path, condition, repeat, channels, z=0):
         technical_repeat="single",
         histograms=[compute_plane_histogram(c) for c in channels],
         z=z,
+        position_id=path.rsplit("/", 1)[-1].removesuffix(".tif"),
     )
 
 
