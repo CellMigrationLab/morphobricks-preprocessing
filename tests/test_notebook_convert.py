@@ -105,7 +105,8 @@ def test_the_card_is_offered_under_the_axis_check_for_swapped_axes(tmp_path):
     assert "swap the Y and X" in text(nb.axis_status)
     assert ui.is_visible(nb.convert_card)
     children = list(nb.axis_box.children)
-    assert children.index(nb.convert_card) == 1  # right under the roles, their check and example
+    # One column: right under the roles, their check and the example.
+    assert children.index(nb.convert_card) == children.index(nb.preview_card) + 1
     nb.role_dropdowns[1].value, nb.role_dropdowns[2].value = "Y", "X"
     assert not ui.is_visible(nb.convert_card)
 

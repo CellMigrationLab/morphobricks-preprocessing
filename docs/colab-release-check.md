@@ -93,7 +93,8 @@ The notebook has three code cells, run in order: **1. Install MorphoBricks prepr
     Step 1 without running. The button is enabled, names the earlier run, and works.
 14. - [ ] Move the masks folder on Drive and click: a red card says the masks folder does not
     exist, and nothing is written.
-15. - [ ] The tables scroll inside the card, with no horizontal page scrollbar.
+15. - [ ] The page scrolls as a whole: no box inside it has its own scroll bar, and there is no
+      horizontal page scrollbar.
 
 ## E. Make named-axis copies (PR #127)
 

@@ -76,6 +76,7 @@ class LabelPreviews:
 
     def __init__(self) -> None:
         self.rows = widgets.VBox(layout=widgets.Layout(max_height="960px", overflow="auto"))
+        self.rows.add_class("mb-label-rows")  # the stepper lets the page scroll instead
         self.detail = widgets.VBox()
         self.more = ui.button(" Draw the other pictures", icon="image")
         self.more.on_click(lambda _: self.draw_all())

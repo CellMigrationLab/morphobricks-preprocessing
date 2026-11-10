@@ -67,13 +67,14 @@ class _CompactPages:
         return [
             about(FOLDER_INTRO + FOLDERS_HELP),
             self.folders_card,
-            widgets.HBox([self.scan_button, self.check_button], layout=widgets.Layout(width="99%")),
+            self.scan_button,
+            self.scan_status,
+            self.scan_box,
+            self.check_button,
             self.check_blocker,
             self.folder_status,  # the check's progress, right under the button clicked
             self.folder_lock.card,
             self.folder_tiles,
-            self.scan_status,
-            self.scan_box,
             self.masks_card,
             self.issues_card,
             self.found_fold,

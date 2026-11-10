@@ -195,18 +195,14 @@ class _AxisStep:
             "Axis roles",
             [self.roles_help, grid, self.plane_summary],
         )
-        left = widgets.VBox(
-            [roles, self.missing_card, self.axis_status, self.axis_sizes_slot],
-            layout=widgets.Layout(flex="1 1 0", min_width="0"),
-        )
-        right = widgets.VBox(
-            [self.preview_card], layout=widgets.Layout(flex="1 1 0", min_width="0")
-        )
-        columns = widgets.HBox([left, right], layout=widgets.Layout(width="99%"))
-        columns.add_class("mb-columns")
+        # One column (owner, 10 November 2026): the roles, the example they give, the pixel size.
         self.axis_box.children = [
-            columns,
+            roles,
+            self.missing_card,
+            self.axis_status,
+            self.preview_card,
             self.convert_card,
+            self.axis_sizes_slot,
             self.confirm_button,
             self.confirm_blocker,
             self.confirmed_status,
@@ -267,23 +263,22 @@ class _AxisStep:
             self.role_dropdowns.append(dropdown)
             self.role_notes.append(note)
             length = f"{low}" if low == high else f"{low} to {high}"
-            box = widgets.VBox(
-                [
-                    widgets.HTML(
-                        f"<b>{html.escape(axis_name(axis))}</b> in the file"
-                        f"<div class='mb-help'>Length {length} · suggested: "
-                        f"{html.escape(role or 'no role')}</div>"
-                    ),
-                    dropdown,
-                    note,
-                ]
-            )
-            box.add_class("mb-card")
-            axis_cards.append(box)
+            axis_cards += [
+                widgets.HTML(
+                    f"<b>{html.escape(axis_name(axis))}</b> in the file"
+                    f"<div class='mb-help'>Length {length} · suggested: "
+                    f"{html.escape(role or 'no role')}</div>"
+                ),
+                dropdown,
+                note,
+            ]
+        # One row per dimension: what the file has, its role, what the role does.
         return widgets.GridBox(
             axis_cards,
             layout=widgets.Layout(
-                grid_template_columns="repeat(auto-fill, minmax(170px, 1fr))", grid_gap="8px"
+                grid_template_columns="minmax(150px, 1fr) minmax(170px, 1fr) minmax(0, 3fr)",
+                grid_gap="2px 12px",
+                align_items="center",
             ),
         )
 

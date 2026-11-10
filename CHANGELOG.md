@@ -17,24 +17,34 @@ OME-XML description is parsed (which images are marked is unchanged; a malformed
 debug line without a traceback), and while the capture is attached the package's DEBUG records
 go to the "Technical details" panel only, with WARNING and above still reaching the root handlers.
 
-### Notebook redesign 4: each step fits a laptop screen; Compare groups in the run step
+### Notebook redesign 4: one column, less on screen; Compare groups in the run step
 
-Owner test of v0.5.0 (10 November 2026), items (a) and (b): "simple and minimalistic".
-Layout only: no answer, check, refusal, draft, description or run output changes.
+Owner test of v0.5.0 (10 November 2026), items (a) and (b), and the owner's test of the first
+redesign the same day, items (m) and (n): "simple and minimalistic"; no box that scrolls inside
+the page; always one column. Layout only: no answer, check, refusal, draft, description or run
+output changes.
 
-- **One screen per step (1366 x 768).** The strip is one row (shorter chip names: *Images*,
-  *Compared to*, *Tags*, *Save*, *Describe masks*; the page keeps the full title). A step's
-  title and purpose are one line; its cards are in a box that scrolls by itself when they are
-  higher than the screen, so the title, the strip and Back/Next stay in view. Cards, tiles,
-  tables, buttons and pictures are denser. Each step's explanation is folded under **About
-  this step**; a card's help paragraph is one line that opens when pointed at.
+- **One column, and the page scrolls as a whole.** Nothing in a step scrolls on its own (no
+  fixed-height step body, no table or file list with its own scroll bar), and no cards, panels
+  or columns sit side by side. A step is short because it says less: its explanation is folded
+  under **About this step**, a card's help paragraph is one line that opens when pointed at,
+  details are collapsed panels, and cards, tiles, tables, buttons and pictures are denser. The
+  strip is one row; a step's title and purpose are one line.
 - **Images:** one *Folders* card with three labelled rows (images, masks, output); **Scan the
-  folders** and **Looks right: read all image headers** side by side; after the check the scan
-  makes way for the result, and the pictures per folder, the check report and *Exclude images*
-  are collapsed panels.
-- **Axes:** a refusal of the roles is one sentence with *Files and what to do* on demand
-  (`notebook_render.issues_brief_html`), e.g. "Error · different channel counts: The images
-  have different numbers of channels: 3 channels (10 images), 4 channels (4 images)."
+  folders**, what it found, then **Looks right: read all image headers**, one under the other.
+  The scan shows the conditions in a short table (every folder under *All N folders*). After
+  the check the scan makes way for the result, and the pictures per folder, the check report
+  and *Exclude images* are collapsed panels.
+- **The quick scan shows every channel of its one image side by side** across the page, each
+  with its own contrast and its `c=` index, when that image's header names a channel axis
+  (`header_preview.header_channels`): up to six, and with seven or more it shows six and says
+  "6 of N channels shown". Display only, read from that one image; a header that names no
+  channel axis gets the one picture as before (no channel is guessed from the shape).
+- **Axes:** one row per dimension (what the file has, its role, what the role does), then the
+  example, then the pixel size, one under the other. A refusal of the roles is one sentence
+  with *Files and what to do* on demand (`notebook_render.issues_brief_html`), e.g. "Error ·
+  different channel counts: The images have different numbers of channels: 3 channels (10
+  images), 4 channels (4 images)."
 - **Run:** *Before you run* is shown only while something is missing; *Settings and mode* and
   *What will happen* are collapsed; after a run the intensity checks and plots, **Compare
   groups** and the report are collapsed panels.
@@ -45,9 +55,8 @@ Layout only: no answer, check, refusal, draft, description or run output changes
   needs no change; called without `steps()` it is the page it was.
 - **`welcome()` is one line** (name, version, "the notebook is ready"); the *What next?* boxes
   are not shown in the stepper.
-- The notebook's Markdown cells and the user guide (§4, "The app in short") describe this
-  flow. `RELEASE_REF` and the code cells are unchanged: the shipped file opens the redesigned
-  app once the v0.5.1 release moves the pin.
+- The stacked pages other bricks embed (`folder_step`, `axis_step`) get the one-column axes
+  layout (roles, example, then the named-axis copies card); nothing else changes for them.
 
 ### Notebook redesign 3: the axes step shows the data as the roles read it; pixel size in one line
 

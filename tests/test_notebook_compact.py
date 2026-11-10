@@ -1,7 +1,8 @@
 """The compact layout of the shipped notebook, and Compare groups in the run step.
 
 Owner's test of v0.5.0 (10 November 2026): (a) each step fits a laptop screen: one row of
-chips, the step's cards in a box that scrolls on its own, explanations folded; (b) the optional
+chips, the step's cards in one column (the page scrolls, never a box inside it: owner's test of
+the redesign, same day), explanations folded; (b) the optional
 statistics page is gone: after a run, the run step has a collapsed *Compare groups* panel for
 that run's table, without a table chooser and without the intensity checks a second time.
 The pixel heights themselves are looked at in screenshots, not here.
@@ -61,16 +62,43 @@ def test_the_strip_is_short_names_and_the_page_keeps_the_full_title(exp):  # noq
     assert "Step 10 of 12 · Check and save" in head and "mb-purpose" in head
 
 
-def test_each_page_is_a_title_line_and_one_box_that_scrolls_by_itself(exp):  # noqa: F811
+def test_each_page_is_a_title_line_and_one_column_that_never_scrolls_by_itself(exp):  # noqa: F811
     nb = stepper(*exp)
     for page in nb._stepper.pages:
         head, body = page.children[1].children
         assert isinstance(head, widgets.HTML) and "mb-step-body" in body._dom_classes
-    assert (
-        ".mb-compact .mb-step-body { max-height:" in STEPPER_CSS
-        and "overflow-y: auto" in STEPPER_CSS
-    )
-    assert ".mb-step-body > * { flex: 0 0 auto; }" in STEPPER_CSS  # cards keep their height
+    # Owner's test of the redesign (10 November 2026): the page scrolls, never a box inside it.
+    compact = [line for line in STEPPER_CSS.splitlines() if ".mb-compact" in line]
+    assert not any("overflow-y: auto" in line or "calc(" in line for line in compact)
+    assert ".mb-compact .mb-table-wrap, .mb-compact .mb-paths { max-height: none;" in STEPPER_CSS
+    assert ".mb-compact .mb-label-rows { max-height: none !important;" in STEPPER_CSS
+    assert "mb-label-rows" in nb.label_previews.rows._dom_classes
+
+
+def _side_by_side(widget, found=None):
+    """Return the boxes that lay cards or panels out in a row (pictures and inputs may be)."""
+    found = [] if found is None else found
+    if isinstance(widget, widgets.HBox):
+        for child in widget.children:
+            classes = getattr(child, "_dom_classes", ())
+            if "mb-card" in classes or isinstance(child, widgets.Accordion):
+                found.append(widget)
+    for child in getattr(widget, "children", ()):
+        _side_by_side(child, found)
+    return found
+
+
+def test_every_page_is_a_single_column_of_cards(exp):  # noqa: F811
+    nb = _ran(exp)
+    for page in nb._stepper.pages:
+        assert _side_by_side(page) == []
+        body = page.children[1].children[1]
+        assert isinstance(body, widgets.VBox) and not isinstance(body, widgets.HBox)
+    # The axes step: roles, then the example, then the pixel size, one under the other.
+    order = list(nb.axis_box.children)
+    assert order.index(nb.preview_card) < order.index(nb.axis_sizes_slot)
+    assert isinstance(nb.scan_box, widgets.VBox)
+    assert list(nb.scan_box.children) == [nb.scan_example, nb.scan_another, nb.scan_tree]
 
 
 def test_explanations_are_folded_behind_about_this_step(exp):  # noqa: F811

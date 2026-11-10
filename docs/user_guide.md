@@ -268,20 +268,22 @@ notebook's step 3 (§4), also tells how they relate.
 ### The app in short (v0.5.1)
 
 Cell 3 opens the app: a strip of twelve steps, one on screen at a time, with **Back** and
-**Next** under it (**Next** is never blocked; a chip opens its step). Each step fits a laptop
-screen: what grows with the experiment (folder lists, pictures, tables) scrolls inside its own
-box, explanations are folded under **About this step**, and details are in collapsed panels.
+**Next** under it (**Next** is never blocked; a chip opens its step). The page is one column
+and scrolls as a whole: nothing scrolls inside its own box and nothing sits side by side.
+Explanations are folded under **About this step**, and details are in collapsed panels.
 Every wait shows a bar with what is done of the total, the file being read, the time elapsed
 and, once it can be measured, the time left. Every greyed-out button has a line beside it
 saying what it waits for.
 
 1. **Images.** Give the folders (images; masks and output are optional). **Scan the folders**
-   lists every folder with its labels and image count without reading any image header, and
-   shows one image chosen at random, with its path, for looking only: it is not used for
-   anything. If this is your experiment, click **Looks right: read all image headers**; the
+   lists the conditions and folders with their image counts without reading any image header,
+   and shows one image chosen at random, with its path, for looking only: it is not used for
+   anything. Every channel of it is shown side by side (`c=0`, `c=1`, …, each with its own
+   contrast; at most six, and then it says *6 of N channels shown*).
+   If this is your experiment, click **Looks right: read all image headers**; the
    headers are then read and checked. Changing a folder asks for a new scan. The pictures of
    each folder, the check's report and **Exclude images** are collapsed below.
-2. **Axes.** One box per image dimension with its role, and beside them an **example of one
+2. **Axes.** One row per image dimension with its role, and under them an **example of one
    image as these roles read it**: one tile per channel (`c=0`, `c=1`, …), a few time points
    or slices, or the single plane, each with its height and width. It is drawn by itself and
    redrawn whenever you change a role, so a wrong role looks wrong (a strip, stripes). Another

@@ -11,6 +11,10 @@ is still refused where it was (the save and the run say what is missing).
 What a step says about itself (done or not, a one-line summary) comes from a callable the owner
 gives, which reads the cards' own state; the stepper decides nothing. The same lines make the
 overview (:meth:`Stepper.overview`), each with a *change* button that opens its step.
+
+The page is one column and scrolls as a whole (owner's test of 10 November 2026): no box inside
+it scrolls on its own, and nothing is laid out in side-by-side cards. A step is short because it
+says less, folds its details and draws smaller pictures.
 """
 
 from __future__ import annotations
@@ -59,14 +63,13 @@ STEPPER_CSS = """
 .mb-compact .mb-question { margin-bottom: 4px; }
 .mb-compact .mb-table td { padding: 3px 10px; }
 .mb-compact .mb-table th { padding: 4px 10px; }
-.mb-compact .mb-table-wrap { max-height: 300px; }
+.mb-compact .mb-table-wrap, .mb-compact .mb-paths { max-height: none; overflow-y: visible; }
+.mb-compact .mb-label-rows { max-height: none !important; overflow: visible !important; }
 .mb-compact button.jupyter-button { height: 32px !important; line-height: 30px; }
 .mb-compact .mb-strip button.jupyter-button { height: auto !important; line-height: 1.5; }
 .mb-compact .widget-html-content { line-height: 1.4; }
-.mb-compact .mb-step-body { max-height: max(480px, calc(98vh - 196px)); overflow-y: auto;
-  overflow-x: hidden; padding-right: 4px; }
 .mb-compact .mb-step-body > * { flex: 0 0 auto; }
-.mb-compact .mb-card > *, .mb-compact .mb-columns > * > * { flex-shrink: 0; }
+.mb-compact .mb-card > * { flex-shrink: 0; }
 .mb-compact .mb-next { display: none; }
 .mb-compact .mb-card .mb-help { display: -webkit-box; -webkit-box-orient: vertical;
   -webkit-line-clamp: 1; overflow: hidden; cursor: help; }
@@ -77,6 +80,8 @@ STEPPER_CSS = """
   width: 108px !important; height: auto; }
 .mb-compact .mb-scan img.mb-grey, .mb-compact .mb-scan img.mb-colour,
 .mb-compact .mb-scan img.mb-crop { width: 180px !important; }
+.mb-channel-row { gap: 8px; }
+.mb-compact .mb-channel-row .mb-channel img.mb-grey { width: 99% !important; }
 .mb-about { margin: 0 0 6px 0; font-size: 12.5px; color: #475569; }
 .mb-about summary { cursor: pointer; color: #2563EB; }
 .mb-about .mb-intro { margin: 4px 0 0 0; }
@@ -186,10 +191,7 @@ class Stepper:
         return outer
 
     def _body(self, index: int) -> widgets.VBox:
-        """Return a step's cards in the box that scrolls when they are higher than a screen.
-
-        The title, the strip and Back/Next then stay in view (one screen per step).
-        """
+        """Return a step's cards, one under the other (the page scrolls, never a box in it)."""
         body = widgets.VBox([self.waits[index], *self.steps[index].children])
         body.add_class("mb-step-body")
         return body
