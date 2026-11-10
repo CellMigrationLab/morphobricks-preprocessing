@@ -6,6 +6,83 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. Upgrading from v0.3: see the
 [migration guide](docs/migration-0.3-to-0.4.md).
 
+## Unreleased (v0.5.1)
+
+### PP-C: every run is described; undescribed runs and their compatibility code removed
+
+No backward compatibility before the first pipeline release (owner policy of 10 November 2026,
+MorphoBricks-Spec ADR 0002 AR10 and AR11, Stage 2 plan §0.1 and §0.2). **Breaking.**
+
+- **Every run needs a published experiment description.** `run_experiment`,
+  `prepare_mask_step`, the command line's `check`, `run` and `masks`, and `RunInputs.open` refuse
+  an output folder without `morphobricks.toml` with the one code `A_DESCRIPTION_REQUIRED`
+  (owner ruling 1), before anything is read or written, naming the fix: the notebook's describe
+  steps (*Check and save*), or the command line's `describe` to see what is open. New:
+  `required_description` (`is_published`, `description_required_issue`) and
+  `DescriptionRequiredError` (a `RunInputsError`, exported). Contract §0.
+- **Removed: the undescribed ("v0.4") run.** Its `NO_DESCRIPTION` warning; the
+  `with_description` argument of `preflight`, `remasked` and `masks.find_masks` and
+  `run.preflight.description_in_use` (the name refusals `R_FOLDER_NOT_NFC` and
+  `R_MASK_TYPE_NAME_INVALID` always apply); the `None` answers of `RunInputs.description()`,
+  `section_digests()`, `images_without_header_channel_names()`, `references()` and
+  `mask_semantics()`; `make_clean_run`'s undescribed run (below).
+- **Removed: `experiment_design.csv` as an input to grouping.** `run_experiment(design=...)`,
+  `run --design FILE`, the `design` command (`cli_design.py`), `run.design_file`
+  (`write_design_template`, `write_design`, `edit_design`, `design_for_run`), `check`'s design
+  template (`run.write_check_outputs`, `CheckOutputs`; `write_check_report` stays),
+  `recorded.design_change` and `planned_changes(design=...)`, and the notebook's writes and reads
+  of the file. The run now derives the design from the published description
+  (`design_derive.derive_design`) and writes it with the table (`experiment_design_sha256` in
+  the manifest): an output only, for every run. Stays until SWEEP-PP: the lenient reader
+  `read_experiment_design` (only the one-way draft migration `migrate_legacy_design` uses it),
+  `ExperimentDesign`/`default_design`/`apply_design_edit` behind the notebook's pairing card
+  (owner answer 4), and the strict `read_confirmed_design`/`RunInputs.design` until CellPatcher
+  and MorphoFeature read `repeat_group` from the description (owner answer 3).
+- **Identities.** No identity is taken from a folder name in place of the description: the
+  run's grouping comes from the description's repeats. `position_id` stays the image file stem,
+  always together with the canonical condition, repeat and technical-repeat IDs (owner ruling 2;
+  no change).
+- **Run manifest: version `"4"` only** (owner ruling 16). Every run writes version 4 (with
+  `experiment_description`; content hashes exactly when `verify_content`), and only version 4
+  is read: `"1"`, `"2"`, `"3"` (and any later version) are refused with "Run preprocessing
+  again", never converted; the next run reads every image again. Removed:
+  `MANIFEST_VERSION = "2"`, `STRICT_MANIFEST_VERSION`, `DESCRIBED_MANIFEST_VERSION`,
+  `LEGACY_MANIFEST_VERSION`, `version_for`, the `manifest_before_v040` source issue and the
+  version-1 branches of row reuse, recorded inputs and `RunInputs`. The tolerant reading of
+  version-1 file fields (`manifest_fields`' `strict=False`) goes in SWEEP-PP.
+- **Notebook: always described.** `PreprocessingNotebook` has no `describe` argument and every
+  `_describe` branch is gone: the labels toggle and the global *Image type* card are never
+  shown (the type comes from the saved description), and the design card no longer reads or
+  writes `experiment_design.csv` (its undescribed `_open_design`, `_save_design`,
+  `_design_load_note`, `_refresh_design_status`, `_design_pending` and the check's design
+  template are removed). The widgets of the retired cards stay until SWEEP-PP. The embedding
+  API keeps `folder_step`, `axis_step`, `run_step` and `show_design`; an embedding brick must
+  now let the user describe and save before the run (below). The shipped notebook calls
+  `PreprocessingNotebook()`.
+- **`testing.make_clean_run` makes a described run.** Same tree and FOV keys as before
+  (`ctrl`/`drug`, `rep1`, `a`/`b`); it publishes `testing.clean_description(...)` (channels
+  `ch1`..`chN`, one `instances` mask per mask type, `design=True` makes `drug` reference
+  `ctrl`), writes the derived `experiment_design.csv` every time, and runs the mask step when
+  there are masks, so every mask is `checked`. New: `testing_described.publish_and_run`.
+- **Tests.** The undescribed-run tests now run described trees (`tests/described_tree.py`:
+  `run_described`, `main_described`, `describe_tree`, the description the user would confirm
+  for a tree the test wrote, every proposal accepted; never part of the package). Deleted as
+  undescribed- or legacy-only: `test_parity_v0_4_0.py` and `parity_datasets.py`,
+  `test_removed_in_v040.py`, `test_design_command.py`, `test_strict_manifest.py` and
+  `test_described_manifest_version.py` (replaced by `test_manifest_version.py`),
+  `released_code.py`, `tests/data/rc4_run_manifest.json` and `make_rc4_manifest.py`, and the
+  single tests of other files that checked only undescribed or legacy behaviour (listed in the
+  pull request). Kept as science goldens and renamed (owner ruling 6):
+  `test_schema_v2_equivalence.py` is `test_histogram_goldens.py` (`histogram_goldens.py`,
+  `tests/data/golden_*`, `make_histogram_goldens.py`), its version-2 manifest test deleted. CI
+  no longer fetches the whole history (`fetch-depth: 0` was only for the old-code runs).
+
+**Downstream** (each brick is unaffected until its pin moves past this change): every brick's
+test runs must be described (`make_clean_run` does it; a direct `run_experiment` call needs a
+published `morphobricks.toml` first), `run_experiment(design=...)` and the `describe` argument
+of `PreprocessingNotebook` are gone, and a run written by v0.5.0 or earlier is refused until it
+is run again.
+
 ## 0.5.0 - 2026-11-09
 
 Stage 1 of the experiment description (MorphoBricks-Spec experiment-v1, pinned at `1bed024`):

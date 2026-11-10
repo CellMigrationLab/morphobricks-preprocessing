@@ -33,7 +33,10 @@ Pre-alpha; the current release is v0.5.0 (what is planned next is in
 - Reading a run from another brick: `RunInputs.open(output_folder)`
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
   and a command line (`morphobricks-preprocessing check` / `run` / `masks` / `calibrate` /
-  `design` / `describe` / `convert`)
+  `describe` / `convert`)
+- **Every run is described** (v0.5.1): the output folder must hold a published experiment
+  description, `morphobricks.toml`, written by the notebook's describe steps (*Check and
+  save*). A run without one is refused with `A_DESCRIPTION_REQUIRED` on every route.
 
 Every feature, message code and output file is described in the [user guide](docs/user_guide.md).
 
@@ -128,10 +131,10 @@ reuses every input the earlier run recorded in the output folder (axis roles, ma
 exclusions, design, image type, settings); `mode="full"` recomputes everything, and
 `exclude=[...]` leaves out damaged files. One run at a time holds the output folder's lock,
 and every run, also one that stops, writes `discovery_report.json` and a text version. The notebook and the
-command line also ask for the experiment design (which biological repeats pair across
-conditions, and that they are comparable) and write `experiment_design.csv`; in Python,
-pass it with `design=` (see the [user guide](docs/user_guide.md) §9). Later bricks read it
-with `read_experiment_design`. They also ask for the image type, `fluorescence` or `rgb`
+notebook asks for the experiment description (conditions, which biological repeats pair
+across conditions and that they are comparable, channels, masks) and publishes
+`morphobricks.toml`; every run needs it, and writes the `experiment_design.csv` derived from
+it (an output only). They also ask for the image type, `fluorescence` or `rgb`
 (suggested by `review_image_type`), and record it in the manifest; in Python, pass it with
 `image_type=`. After writing, the run checks the images' intensities from the table
 (`result.intensity`); `check_table(path)` checks any table.
@@ -139,8 +142,8 @@ with `read_experiment_design`. They also ask for the image type, `fluorescence` 
 ## Command line
 
 ```bash
-morphobricks-preprocessing check /data/exp1          # report, suggested --axes, design template
-morphobricks-preprocessing design --output /data/exp1_MorphoBricks_Preprocessing --confirm-all
+morphobricks-preprocessing describe /data/exp1       # the draft description, what is open
+morphobricks-preprocessing check /data/exp1          # report, suggested --axes
 morphobricks-preprocessing run /data/exp1 --axes ZCYX
 morphobricks-preprocessing run --output /data/exp1_MorphoBricks_Preprocessing   # later runs
 morphobricks-preprocessing masks --output /data/exp1_MorphoBricks_Preprocessing # mask step
@@ -148,11 +151,10 @@ morphobricks-preprocessing calibrate --output /data/exp1_MorphoBricks_Preprocess
 morphobricks-preprocessing convert /data/exp1 --to /data/exp1_named_axes --axes ZXY  # axis errors
 ```
 
-`check` writes the report and, when the output folder holds no design, an
-`experiment_design.csv` prefilled from the folders. `design` prints it and confirms repeat
-groups (`--confirm GROUP`, `--confirm-all`), marks controls (`--control`, `--no-control`)
-and pairs repeats (`--repeat-group CONDITION/REPEAT=GROUP`) without editing the file;
-nothing is confirmed unless asked. `run` and `masks` reuse every input the run in the
+`check`, `run` and `masks` need the experiment description published in the output folder
+(the notebook's describe steps); without it they stop with `A_DESCRIPTION_REQUIRED` and write
+nothing. `describe` shows the draft and what is still to be answered. `check` writes the
+report. `run` and `masks` reuse every input the run in the
 output folder recorded. A run that stops writes its report and says so. Every output file
 gets the permissions a file you save yourself would (your umask). `convert` saves the
 images whose metadata name their axes wrongly or not at all as named-axis OME-TIFF copies
