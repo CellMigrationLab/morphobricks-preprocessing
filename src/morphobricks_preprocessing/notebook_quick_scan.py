@@ -8,9 +8,15 @@ right: read all image headers** starts the folder check (the "deep scan"), with 
 
 The random image is for looking only. Its path and the seed that chose it are shown; it is drawn
 from its own header by the rules of the folder pictures (:mod:`.header_preview`: only when the
-header names Y and X, bound to the file as read). Nothing of the quick scan is kept: no label,
+header names Y and X, bound to the file as read). When that header names a channel axis, every
+channel is drawn side by side across the page, each with its own contrast and its ``c=`` index,
+up to :data:`.header_preview.CHANNELS_SHOWN`; with more, the line under them says "6 of N
+channels shown" (owner, 10 November 2026). Nothing of the quick scan is kept: no label,
 axis, header or picture of it feeds the check, the draft or the run. Changing a folder makes the
 scan stale, and the check is not offered until the folders are scanned again.
+
+The page is one column (owner, same day): the picture row, then the conditions found in a short
+table, with every folder one click away.
 """
 
 from __future__ import annotations
@@ -25,7 +31,15 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .discovery import DiscoveryResult, discover_experiment
 from .fingerprint import current_fingerprint
-from .header_preview import HEADER_NOTE, HeaderPreview, header_preview
+from .header_preview import (
+    HEADER_NOTE,
+    READ_FAILURES,
+    HeaderChannels,
+    HeaderPreview,
+    PreviewUnavailable,
+    header_channels,
+    header_preview,
+)
 from .metadata import inspect_image
 from .notebook_progress import Wait
 from .notebook_render import blocked_line, issues_html
@@ -35,7 +49,7 @@ from .validation import plural
 
 SCAN_LABEL, DEEP_LABEL = " Scan the folders", " Looks right: read all image headers"
 SEED_RANGE = 1_000_000
-EXAMPLE_SIDE = 320
+EXAMPLE_SIDE = 190
 """The largest side of the quick scan's picture, in pixels."""
 
 
@@ -66,16 +80,35 @@ def scan_summary(discovery: DiscoveryResult, excluded: frozenset[str]) -> str:
     return " · ".join(parts)
 
 
+def conditions_html(discovery: DiscoveryResult, excluded: frozenset[str]) -> str:
+    """Return the folders found in short: one row per condition, every folder on demand (HTML)."""
+    rows = [("Condition", "Biological repeats", "Folders", "Images")]
+    by_condition: dict[str, list] = {}
+    for leaf in discovery.leaves:
+        by_condition.setdefault(leaf.condition, []).append(leaf)
+    for condition, leaves in by_condition.items():
+        repeats = list(dict.fromkeys(leaf.biological_repeat for leaf in leaves))
+        count = sum(image not in excluded for leaf in leaves for image in leaf.images)
+        rows.append((condition, ", ".join(repeats), f"{len(leaves):,}", f"{count:,}"))
+    every = (
+        f"<details class='mb-about'><summary>All {plural(len(discovery.leaves), 'folder')}"
+        f"</summary>{tree_html(discovery, excluded)}</details>"
+    )
+    return ui.table(rows, numeric_from=2) + every
+
+
 def random_image(images: list[str], seed: int) -> str | None:
     """Return the image the seed chooses among ``images`` (sorted first), None without one."""
     return random.Random(seed).choice(sorted(images)) if images else None
 
 
-def example_preview(root: Path, image: str) -> HeaderPreview:
-    """Return the picture of one image from its own header, or why there is none.
+def example_preview(root: Path, image: str) -> HeaderChannels | HeaderPreview:
+    """Return the pictures of one image from its own header, or why there is none.
 
-    The header is read here, for this picture only, and the file is fingerprinted before and
-    after, so the picture is of the file as that header describes it.
+    The header is read here, for these pictures only, and the file is fingerprinted before and
+    after, so they are of the file as that header describes it. A header that names a channel
+    axis gives one picture per channel (:func:`.header_preview.header_channels`); any other
+    gives the one picture of the folder check (:func:`.header_preview.header_preview`).
     """
     path = root / image
     try:
@@ -84,8 +117,43 @@ def example_preview(root: Path, image: str) -> HeaderPreview:
         after = current_fingerprint(path)
     except (OSError, ValueError) as exc:
         return HeaderPreview(image, problem=f"cannot be read for a preview: {exc}")
-    bound = {image: before if before is not None and before == after else None}
-    return header_preview(root, meta, EXAMPLE_SIDE, bound=bound)
+    same = before is not None and before == after
+    if same:
+        try:
+            channels = header_channels(path, meta, EXAMPLE_SIDE)
+        except PreviewUnavailable:
+            channels = None  # no channel axis named, or over the caps: the one picture says why
+        except READ_FAILURES as exc:
+            return HeaderPreview(image, problem=f"cannot be read for a preview: {exc}")
+        if channels is not None and current_fingerprint(path) == before:
+            return channels
+    return header_preview(root, meta, EXAMPLE_SIDE, bound={image: before if same else None})
+
+
+def channel_tiles(found: HeaderChannels) -> list[widgets.Widget]:
+    """Return the row of channel pictures (``c=`` labels) and the line under it."""
+    tiles = []
+    for tile in found.tiles:
+        label = f"<b>c={tile.c}</b>" + (f" · {html.escape(tile.note)}" if tile.note else "")
+        image = widgets.Image(
+            value=tile.png, format="png", layout=widgets.Layout(border="1px solid #CBD5E1")
+        )
+        image.add_class("mb-grey")
+        box = widgets.VBox(
+            [widgets.HTML(f"<div class='mb-help'>{label}</div>"), image],
+            layout=widgets.Layout(flex="1 1 0", min_width="0", max_width=f"{EXAMPLE_SIDE}px"),
+        )
+        box.add_class("mb-channel")
+        tiles.append(box)
+    shown = (
+        f"all {found.total} channels"
+        if len(found.tiles) == found.total
+        else f"<b>{len(found.tiles)} of {found.total} channels shown</b>"
+    )
+    row = widgets.HBox(tiles, layout=widgets.Layout(width="99%"))
+    row.add_class("mb-channel-row")
+    note = f"{shown}, each with its own contrast; {html.escape(found.text)}; {HEADER_NOTE}"
+    return [row, widgets.HTML(f"<div class='mb-help'>{note}</div>")]
 
 
 class _QuickScan:
@@ -110,14 +178,8 @@ class _QuickScan:
         self.scan_another = ui.button(
             " Show another image", icon="random", tooltip="Choose another image at random"
         )
-        self.scan_box = widgets.HBox(
-            [
-                widgets.VBox([self.scan_tree], layout=widgets.Layout(flex="1 1 0", min_width="0")),
-                widgets.VBox(
-                    [self.scan_example, self.scan_another],
-                    layout=widgets.Layout(flex="0 0 auto", margin="0 0 0 16px"),
-                ),
-            ],
+        self.scan_box = widgets.VBox(  # one column: the pictures, then the folders
+            [self.scan_example, self.scan_another, self.scan_tree],
             layout=widgets.Layout(width="99%"),
         )
         self.scan_box.add_class("mb-scan")
@@ -198,12 +260,12 @@ class _QuickScan:
         wait.phase("Opening one image")
         self._show_scan_example(None, status=False)
         excluded = frozenset(normalise_relative_path(path) for path in self._excluded())
-        self.scan_tree.value = tree_html(found, excluded)
+        self.scan_tree.value = conditions_html(found, excluded)
         errors = [issue for issue in found.issues if issue.is_error]
         self.scan_status.value = ui.status(
             "error" if errors else "ok" if found.images else "warn",
-            f"Found {scan_summary(found, excluded)} (listed in {wait.took()}).",
-            ["No image header was read. If this is your experiment, read the headers below."],
+            f"Found {scan_summary(found, excluded)} (listed in {wait.took()}). No image header "
+            "was read yet: if this is your experiment, read the headers below.",
         ) + (issues_html(errors) if errors else "")
         ui.set_visible(self.scan_box, bool(found.leaves))
         self._refresh_scan_gate()
@@ -230,6 +292,13 @@ class _QuickScan:
         finally:
             if status:
                 self._idle(self.scan_another, " Show another image", "random")
+        chosen = widgets.HTML(
+            f"<div class='mb-help'>One image chosen at random (seed {self.scan_seed}), for "
+            f"looking only: <b>{html.escape(self.scan_image)}</b></div>"
+        )
+        if isinstance(preview, HeaderChannels):
+            self.scan_example.children = [chosen, *channel_tiles(preview)]
+            return
         tile = ThumbTile(
             preview.pictures,
             caption=f"{preview.text}; {HEADER_NOTE}" if preview.pictures is not None else "",
@@ -237,17 +306,15 @@ class _QuickScan:
             colour=preview.colour,
             width=f"{EXAMPLE_SIDE}px",
         )
-        chosen = (
-            "<div class='mb-help' style='max-width:660px'>One image chosen at random (seed "
-            f"{self.scan_seed}), for looking only:<br><b>{html.escape(self.scan_image)}</b></div>"
-        )
-        self.scan_example.children = [widgets.HTML(chosen), tile.widget]
+        self.scan_example.children = [chosen, tile.widget]
 
 
 __all__ = [
     "DEEP_LABEL",
     "SCAN_LABEL",
     "_QuickScan",
+    "channel_tiles",
+    "conditions_html",
     "example_preview",
     "random_image",
     "scan_summary",

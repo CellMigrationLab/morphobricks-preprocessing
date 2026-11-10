@@ -41,6 +41,36 @@ def issues_html(issues: Iterable[ValidationIssue]) -> str:
     return "".join(parts)
 
 
+def issues_brief_html(issues: Iterable[ValidationIssue]) -> str:
+    """Render issues as short cards: what is wrong in one sentence, the rest on demand.
+
+    Each card says the issue's first sentence; the whole message, the files and what to do
+    are under *Files and what to do*. Nothing is left out: a refusal is still shown, shorter.
+    """
+    parts = []
+    for issue in sorted(issues, key=lambda issue: not issue.is_error):
+        first, stop, rest = issue.message.partition(". ")
+        more = [html.escape(rest)] if rest else []
+        if issue.paths:
+            more.append(ui.path_list(issue.paths, limit=5))
+        if issue.action:
+            more.append(f"<b>What to do:</b> {html.escape(issue.action)}")
+        label = "Error" if issue.is_error else "Warning"
+        details = (
+            "<details><summary>Files and what to do</summary>"
+            + "".join(f"<div>{line}</div>" for line in more)
+            + "</details>"
+            if more
+            else ""
+        )
+        parts.append(
+            f"<div class='mb-status {'mb-error' if issue.is_error else 'mb-warn'}'>"
+            f"<b>{label} · {html.escape(issue.code.replace('_', ' '))}:</b> "
+            f"{html.escape(first + stop.strip())}{details}</div>"
+        )
+    return "".join(parts)
+
+
 def blocked_line(reasons: Sequence[str]) -> str:
     """Return the visible line beside a disabled action saying what blocks it (HTML), or "".
 

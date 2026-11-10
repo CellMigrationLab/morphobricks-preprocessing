@@ -11,6 +11,10 @@ is still refused where it was (the save and the run say what is missing).
 What a step says about itself (done or not, a one-line summary) comes from a callable the owner
 gives, which reads the cards' own state; the stepper decides nothing. The same lines make the
 overview (:meth:`Stepper.overview`), each with a *change* button that opens its step.
+
+The page is one column and scrolls as a whole (owner's test of 10 November 2026): no box inside
+it scrolls on its own, and nothing is laid out in side-by-side cards. A step is short because it
+says less, folds its details and draws smaller pictures.
 """
 
 from __future__ import annotations
@@ -32,15 +36,57 @@ CHIP_CLASSES = (
 )
 STEPPER_CSS = """
 <style>
-.mb-strip { flex-wrap: wrap !important; gap: 6px; margin: 0 0 8px 0; }
-.mb-strip .mb-chip { border-radius: 999px; width: auto; height: auto; padding: 4px 12px;
-  font-size: 13px; line-height: 1.4; border: none; box-shadow: none; }
+.mb-strip { flex-wrap: wrap !important; gap: 4px; margin: 0 0 6px 0; }
+.mb-strip .mb-chip { border-radius: 999px; width: auto; height: auto; padding: 2px 9px;
+  font-size: 12px; line-height: 1.5; border: none; box-shadow: none; }
 .mb-chip.mb-chip-done { background: #16A34A; color: #FFFFFF; }
 .mb-chip.mb-chip-noted { background: #DCFCE7; color: #166534; border: 1px solid #16A34A; }
 .mb-chip.mb-chip-current { background: #2563EB; color: #FFFFFF; font-weight: 600; }
 .mb-chip.mb-chip-todo { background: #E2E8F0; color: #334155; }
 .mb-chip.mb-chip-changed { background: #EA580C; color: #FFFFFF; }
-.mb-nav { gap: 8px; margin: 4px 0 12px 0; }
+.mb-nav { gap: 8px; margin: 4px 0 4px 0; }
+.mb-compact .mb-root { padding: 10px 14px; }
+.mb-compact .mb-title { font-size: 17px; margin: 0 0 4px 0; }
+.mb-compact .mb-purpose { font-size: 13px; font-weight: 400; color: #475569; margin-left: 8px; }
+.mb-compact .jupyter-widget-Collapse-header, .mb-compact .p-Collapse-header,
+.mb-compact .lm-Collapse-header { padding: 3px 10px; font-size: 13px; }
+.mb-compact .jupyter-widget-Accordion, .mb-compact .p-Accordion { margin: 0 0 4px 0; }
+.mb-compact .mb-card { padding: 8px 12px; margin: 0 0 8px 0; }
+.mb-compact .mb-header { font-size: 11px; padding-bottom: 3px; margin-bottom: 5px; }
+.mb-compact .mb-help { font-size: 12px; margin: 1px 0 4px 0; line-height: 1.35; }
+.mb-compact .mb-status { padding: 5px 10px; margin: 4px 0; line-height: 1.4; }
+.mb-compact .mb-tiles { gap: 6px; margin: 4px 0 2px 0; }
+.mb-compact .mb-tile { padding: 3px 10px; min-width: 96px; flex: 1 1 96px; }
+.mb-compact .mb-tile .mb-tile-value { font-size: 15px; }
+.mb-compact .mb-tile .mb-tile-label { font-size: 11px; }
+.mb-compact .mb-confirm { padding: 6px 10px; margin: 6px 0 2px 0; }
+.mb-compact .mb-question { margin-bottom: 4px; }
+.mb-compact .mb-table td { padding: 3px 10px; }
+.mb-compact .mb-table th { padding: 4px 10px; }
+.mb-compact .mb-table-wrap, .mb-compact .mb-paths { max-height: none; overflow-y: visible; }
+.mb-compact .mb-label-rows { max-height: none !important; overflow: visible !important; }
+.mb-compact button.jupyter-button { height: 32px !important; line-height: 30px; }
+.mb-compact .mb-strip button.jupyter-button { height: auto !important; line-height: 1.5; }
+.mb-compact .widget-html-content { line-height: 1.4; }
+.mb-compact .mb-step-body > * { flex: 0 0 auto; }
+.mb-compact .mb-card > * { flex-shrink: 0; }
+.mb-compact .mb-next { display: none; }
+.mb-compact .mb-card .mb-help { display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1; overflow: hidden; cursor: help; }
+.mb-compact .mb-card .mb-help:hover, .mb-compact .mb-confirm .mb-help,
+.mb-compact .mb-card .mb-card .mb-help,
+.mb-compact .mb-table-wrap + .mb-help { -webkit-line-clamp: unset; display: block; }
+.mb-compact img.mb-grey, .mb-compact img.mb-colour, .mb-compact img.mb-crop {
+  width: 108px !important; height: auto; }
+.mb-compact .mb-scan img.mb-grey, .mb-compact .mb-scan img.mb-colour,
+.mb-compact .mb-scan img.mb-crop { width: 180px !important; }
+.mb-channel-row { gap: 8px; }
+.mb-compact .mb-channel-row .mb-channel img.mb-grey { width: 99% !important; }
+.mb-about { margin: 0 0 6px 0; font-size: 12.5px; color: #475569; }
+.mb-about summary { cursor: pointer; color: #2563EB; }
+.mb-about .mb-intro { margin: 4px 0 0 0; }
+.mb-fields { align-items: center; }
+.mb-fields .mb-field { font-weight: 600; white-space: nowrap; }
 .mb-overview .mb-change { width: auto; height: auto; padding: 0 6px; background: transparent;
   color: #2563EB; border: none; box-shadow: none; text-decoration: underline; }
 </style>
@@ -90,6 +136,8 @@ class Step:
         Returns the step's :class:`StepState` from the cards' current state.
     waiting
         Returns why the step cannot be answered yet (HTML), or an empty string.
+    chip
+        The name on the chip when it is shorter than the title (the strip is one row).
     """
 
     title: str
@@ -97,6 +145,7 @@ class Step:
     children: Sequence[widgets.Widget]
     state: Callable[[], StepState]
     waiting: Callable[[], str] = _no_wait
+    chip: str = ""
 
 
 class Stepper:
@@ -111,10 +160,7 @@ class Stepper:
         count = len(self.steps)
         self.chips = [self._chip(i) for i in range(count)]
         self.waits = [widgets.HTML() for _ in self.steps]
-        self.pages = [
-            ui.page(f"Step {i + 1} of {count} · {step.title}", step.purpose, [wait, *step.children])
-            for i, (step, wait) in enumerate(zip(self.steps, self.waits, strict=True))
-        ]
+        self.pages = [self._page(i, count) for i in range(count)]
         self.back = ui.button("Back", icon="arrow-left")
         self.next = ui.button("Next", style="primary", icon="arrow-right")
         self.back.on_click(lambda _: self.go(self.current - 1))
@@ -128,7 +174,27 @@ class Stepper:
             [widgets.HTML(STEPPER_CSS), self.strip, *self.pages, nav],
             layout=widgets.Layout(width="99%"),
         )
+        self.widget.add_class("mb-compact")
         self.go(0)
+
+    def _page(self, index: int, count: int) -> widgets.VBox:
+        """Return a step's page: its title and purpose on one line, then its cards."""
+        step = self.steps[index]
+        head = widgets.HTML(
+            f"<div class='mb-title'>Step {index + 1} of {count} · {html.escape(step.title)}"
+            f" <span class='mb-purpose'>{step.purpose}</span></div>"
+        )
+        root = widgets.VBox([head, self._body(index)])
+        root.add_class("mb-root")
+        outer = widgets.VBox([widgets.HTML(ui.STYLE_CSS), root], layout=widgets.Layout(width="99%"))
+        outer.add_class("mb-page")
+        return outer
+
+    def _body(self, index: int) -> widgets.VBox:
+        """Return a step's cards, one under the other (the page scrolls, never a box in it)."""
+        body = widgets.VBox([self.waits[index], *self.steps[index].children])
+        body.add_class("mb-step-body")
+        return body
 
     def _chip(self, index: int) -> widgets.Button:
         chip = widgets.Button(layout=widgets.Layout(width="auto"))
@@ -156,7 +222,8 @@ class Stepper:
                 chip.remove_class(name)
             chip.add_class(f"mb-chip-{chip_kind(state, i == self.current)}")
             noted = f" · {state.note}" if state.done and state.note else ""
-            chip.description = f"{'✓ ' if state.done else ''}{i + 1} {step.title}{noted}"
+            name = step.chip or step.title
+            chip.description = f"{'✓ ' if state.done else ''}{i + 1} {name}{noted}"
             chip.tooltip = state.text
         self.waits[self.current].value = self.steps[self.current].waiting()
         last = len(self.steps) - 1
@@ -207,12 +274,36 @@ def overview_line(title: str, state: StepState) -> str:
     )
 
 
+def about(text: str) -> widgets.HTML:
+    """Return a step's explanation folded behind *About this step* (``text`` is HTML)."""
+    return widgets.HTML(
+        "<details class='mb-about'><summary>About this step</summary>"
+        f"<div class='mb-intro'>{text}</div></details>"
+    )
+
+
+def field_rows(rows: Sequence[tuple[str, Sequence[widgets.Widget]]]) -> widgets.GridBox:
+    """Return labelled input rows: a short label, then the row's widgets side by side."""
+    cells: list[widgets.Widget] = []
+    for label, parts in rows:
+        name = widgets.HTML(f"<span class='mb-field'>{html.escape(label)}</span>")
+        cells += [name, widgets.HBox(list(parts), layout=widgets.Layout(width="99%"))]
+    box = widgets.GridBox(
+        cells,
+        layout=widgets.Layout(grid_template_columns="max-content 1fr", grid_gap="4px 10px"),
+    )
+    box.add_class("mb-fields")
+    return box
+
+
 __all__ = [
     "CHIP_CLASSES",
     "STEPPER_CSS",
     "Step",
     "StepState",
     "Stepper",
+    "about",
     "chip_kind",
+    "field_rows",
     "overview_line",
 ]

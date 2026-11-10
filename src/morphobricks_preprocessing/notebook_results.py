@@ -28,6 +28,7 @@ class _ResultsStep:
 
     def _build_results_step(self) -> None:
         """Build step 4: the table, the grouping, the statistics, plots and checks."""
+        self._compare_only = False  # the shipped notebook's Compare groups repeats no checks
         self._build_csv_card()
         self._build_grouping_card()
         self._build_statistics_cards()
@@ -243,8 +244,9 @@ class _ResultsStep:
         png = distribution_png(groups)
         self.distribution.value = png or b""
         ui.set_visible(self.distribution_card, bool(png))
-        wait.phase("Checking the intensities of every image", STAGES, 3)
-        self.table_checks.show(records)
+        if not self._compare_only:
+            wait.phase("Checking the intensities of every image", STAGES, 3)
+            self.table_checks.show(records)
         self.stats_status.value = ui.status(
             "ok",
             f"Statistics of {plural(len(groups), LEVEL_NAMES[level])} calculated.",

@@ -47,12 +47,15 @@ from .preview import (
     check_unchanged,
     checked_fingerprint,
 )
-from .preview_crop import TilePictures, tile_pictures
+from .preview_crop import TilePictures, downscale_factor, tile_pictures
+from .preview_render import display_panel, png_bytes
 
 PLANE_CAP = 8
 """Planes read for one picture, at most."""
 PIXEL_CAP = 4096 * 4096
 """Pixels read for one picture (all its planes and colours), and the largest plane, at most."""
+CHANNELS_SHOWN = 6
+"""Channels drawn for one image when its header names a channel axis, at most."""
 NO_YX = "preview after Axes (step 2)"
 HEADER_NOTE = "from the file header, axes not confirmed yet"
 _SLOTS = ("Z", "T", "C")
@@ -193,6 +196,98 @@ def header_planes(path: str | os.PathLike, meta: TiffMetadata) -> HeaderPlanes:
     return HeaderPlanes(tuple(stacks), s is not None, text)
 
 
+@dataclass(frozen=True)
+class ChannelTile:
+    """One channel of an image as its header reads it: its index, picture and what to say."""
+
+    c: int
+    png: bytes
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class HeaderChannels:
+    """The channels of one image drawn side by side from its header, for looking only.
+
+    ``total`` is the length of the channel axis the header names; ``tiles`` holds the first
+    :data:`CHANNELS_SHOWN` of them, each with its own contrast. ``text`` says what was projected.
+    """
+
+    image: str
+    tiles: tuple[ChannelTile, ...]
+    total: int
+    text: str
+
+
+def _channel_layout(meta: TiffMetadata) -> tuple[AxisMapping, list[int], int]:
+    """Return the reading layout of a header that names Y, X and a channel axis.
+
+    Raises
+    ------
+    PreviewUnavailable
+        When the header names no channel axis longer than one, says colour, or cannot be
+        stepped through (the single picture of :func:`header_preview` says why).
+    """
+    named = named_axes(meta)
+    if "C" not in named or _colour_axis(meta) is not None:
+        raise PreviewUnavailable("the header names no channel axis")
+    c = named.index("C")
+    if "Y" not in named or "X" not in named or meta.shape[c] < 2:
+        raise PreviewUnavailable("the header names no channel axis")
+    y, x = named.index("Y"), named.index("X")
+    roles: list[str | None] = [None] * len(meta.axes)
+    roles[y], roles[x], roles[c] = "Y", "X", "C"
+    projected = [d for d, n in enumerate(meta.shape) if d not in (y, x, c) and n > 1]
+    if len(projected) > 2:
+        raise PreviewUnavailable("the header has more axes than a preview here projects")
+    for d, role in zip(projected, ("Z", "T"), strict=False):
+        roles[d] = role
+    return AxisMapping(meta.axes, tuple(roles)), projected, c
+
+
+def header_channels(
+    path: str | os.PathLike, meta: TiffMetadata, side: int, shown: int = CHANNELS_SHOWN
+) -> HeaderChannels:
+    """Draw the first ``shown`` channels of an image by its header's axes, each on its own.
+
+    Only for a header that names Y, X and a channel axis (nothing is guessed from the shape);
+    every other axis is max-projected within the caps of this module, shared by the channels
+    drawn. Each channel gets its own contrast (:func:`.preview_render.display_panel`).
+
+    Raises
+    ------
+    PreviewUnavailable
+        Without a named channel axis, or over the caps.
+    PlaneReadError, OSError, ValueError, IndexError, MemoryError
+        When the file cannot be read.
+    """
+    if not meta.readable:
+        raise PreviewUnavailable(f"the header cannot be read: {meta.error or 'unknown reason'}")
+    mapping, projected, c_axis = _channel_layout(meta)
+    plane = meta.shape[mapping.index_of("Y")] * meta.shape[mapping.index_of("X")]
+    if plane > PIXEL_CAP:
+        raise PreviewUnavailable("planes over the pixel cap of a preview here")
+    total = meta.shape[c_axis]
+    channels = range(min(total, shown))
+    lengths = [meta.shape[d] for d in projected]
+    planes = math.prod(lengths)
+    chosen = _spread(planes, max(1, min(PLANE_CAP, PIXEL_CAP // (plane * len(channels)))))
+    tiles = []
+    for c in channels:
+        stack: np.ndarray | None = None
+        for number in chosen:
+            where = dict(zip(projected, np.unravel_index(number, lengths), strict=True))
+            coords = {mapping.roles[d].lower(): int(i) for d, i in where.items()}
+            pixels = _read(path, mapping, {**coords, "c": c})
+            stack = pixels if stack is None else np.maximum(stack, pixels)
+        factor = downscale_factor(stack.shape, side)
+        panel = display_panel(np.ascontiguousarray(stack[::factor, ::factor]))
+        tiles.append(ChannelTile(c, png_bytes(panel.pixels), panel.note))
+    return HeaderChannels(
+        meta.relative_path, tuple(tiles), total, _caption(meta, projected, len(chosen), planes)
+    )
+
+
 def header_preview(
     root: Path,
     meta: TiffMetadata | None,
@@ -231,13 +326,17 @@ def header_preview(
 
 
 __all__ = [
+    "CHANNELS_SHOWN",
     "HEADER_NOTE",
     "NO_YX",
     "PIXEL_CAP",
     "PLANE_CAP",
+    "ChannelTile",
+    "HeaderChannels",
     "HeaderPlanes",
     "HeaderPreview",
     "PreviewUnavailable",
+    "header_channels",
     "header_planes",
     "header_preview",
 ]

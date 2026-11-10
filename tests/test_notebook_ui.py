@@ -67,13 +67,13 @@ def test_pages_build_without_a_folder():
     assert "Enter the experiment folder first" in nb.folder_status.value
 
 
-def test_welcome_shows_the_version():
-    page = PreprocessingNotebook().welcome()
-    root = page.children[1]
-    assert "The notebook is ready" in root.children[-2].value
-    assert "What next?" in root.children[-1].value
-    assert "Go to Step 1" in root.children[-1].value
-    assert "<li>" not in root.children[-1].value
+def test_welcome_is_one_line_with_the_version():
+    from morphobricks_preprocessing import __version__
+
+    (line,) = PreprocessingNotebook().welcome().children
+    assert f"<b>MorphoBricks preprocessing</b> {__version__}" in line.value
+    assert "the notebook is ready" in line.value
+    assert "What next?" not in line.value  # the steps say where to go
 
 
 def test_check_shows_status_tiles_labels_and_roles(experiment):

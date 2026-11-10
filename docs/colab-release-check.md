@@ -93,7 +93,8 @@ The notebook has three code cells, run in order: **1. Install MorphoBricks prepr
     Step 1 without running. The button is enabled, names the earlier run, and works.
 14. - [ ] Move the masks folder on Drive and click: a red card says the masks folder does not
     exist, and nothing is written.
-15. - [ ] The tables scroll inside the card, with no horizontal page scrollbar.
+15. - [ ] The page scrolls as a whole: no box inside it has its own scroll bar, and there is no
+      horizontal page scrollbar.
 
 ## E. Make named-axis copies (PR #127)
 
@@ -101,7 +102,7 @@ The notebook has three code cells, run in order: **1. Install MorphoBricks prepr
     press **Check folder**.
 17. - [ ] In Step 2, swap the Y and X roles. The red axis check appears, with the **Make
     named-axis copies (optional)** card under it. Its button is disabled.
-18. - [ ] Press **Show preview** and **Yes, the preview looks right**, then **Yes, write the
+18. - [ ] Look at the example (drawn by itself) and press **Yes, the example looks right**, then **Yes, write the
     copies with these roles**.
 19. - [ ] Press **Browse…**: the amber card names **Copy path**. Paste a Drive folder inside
     the experiment and check that it is refused. Then paste one next to the experiment.

@@ -19,6 +19,7 @@ from morphobricks_preprocessing import metadata, notebook_folder, notebook_quick
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.notebook_quick_scan import (  # noqa: E402
     DEEP_LABEL,
+    conditions_html,
     random_image,
     scan_summary,
     tree_html,
@@ -72,9 +73,11 @@ def test_the_scan_reads_no_header_but_the_one_image_it_shows(exp, monkeypatch): 
     assert nb.check_blocker.value == ""
     said = _text(nb.scan_status.value)
     assert (
-        f"Found {scan_summary(found, frozenset())}" in said and "No image header was read" in said
+        f"Found {scan_summary(found, frozenset())}" in said
+        and "No image header was read yet" in said
     )
-    assert nb.scan_tree.value == tree_html(found, frozenset())
+    assert nb.scan_tree.value == conditions_html(found, frozenset())
+    assert tree_html(found, frozenset()) in nb.scan_tree.value  # every folder, one click away
 
 
 def test_the_tree_lists_every_folder_with_its_labels_and_image_count(exp):  # noqa: F811
@@ -101,7 +104,7 @@ def test_the_random_image_is_named_with_its_seed_and_is_reproducible(exp):  # no
     assert (
         f"seed {nb.scan_seed}" in shown and nb.scan_image in shown and "for looking only" in shown
     )
-    assert "from the file header" in _text(nb.scan_example.children[1].children[1].value)
+    assert "from the file header" in _text(nb.scan_example.children[-1].value)
     nb._show_scan_example(7)
     assert nb.scan_seed == 7 and nb.scan_image == random_image(images, 7)
     assert random_image(images, 7) == random_image(list(reversed(images)), 7)  # order-free
@@ -190,3 +193,99 @@ def test_a_new_folder_appears_only_after_scanning_again(exp):  # noqa: F811
     assert nb.scan_tree.value == before
     nb.scan_button.click()
     assert "rep9" in nb.scan_tree.value and "rep9" not in before
+
+
+# --- every channel of the one image, side by side (owner, 10 November 2026, item (m)) -----------
+
+
+def _channel_image(folder, channels, *, axes="CYX", shape=(40, 48)):
+    import numpy as np
+    import tifffile
+
+    folder.mkdir(parents=True)
+    rng = np.random.default_rng(channels)
+    data = rng.integers(0, 4000, (channels, *shape), dtype=np.uint16)
+    data += (np.arange(channels, dtype=np.uint16) * 5000)[:, None, None]
+    tifffile.imwrite(
+        folder / "a.tif", data, ome=True, photometric="minisblack", metadata={"axes": axes}
+    )
+    return data
+
+
+def _scanned(tmp_path, channels, **how):
+    data = _channel_image(tmp_path / "exp" / "ctrl" / "rep1", channels, **how)
+    nb = PreprocessingNotebook(str(tmp_path / "exp"), output_folder=str(tmp_path / "out"))
+    nb.steps()
+    nb.scan_button.click()
+    return nb, data
+
+
+def test_the_scan_shows_every_channel_side_by_side_with_its_index(exp):  # noqa: F811
+    nb = fresh(*exp)
+    nb.scan_button.click()
+    chosen, row, note = nb.scan_example.children
+    assert "for looking only" in _text(chosen.value)
+    assert "mb-channel-row" in row._dom_classes and len(row.children) == 3
+    assert [_text(tile.children[0].value) for tile in row.children] == ["c=0", "c=1", "c=2"]
+    for tile in row.children:
+        assert tile.children[1].value[:4] == b"\x89PNG"
+    said = _text(note.value)
+    assert said.startswith("all 3 channels, each with its own contrast")
+    assert "from the file header, axes not confirmed yet" in said
+
+
+def test_seven_or_more_channels_show_six_and_say_so(tmp_path):
+    nb, _ = _scanned(tmp_path, 9)
+    _, row, note = nb.scan_example.children
+    assert [_text(tile.children[0].value) for tile in row.children] == [f"c={c}" for c in range(6)]
+    assert "6 of 9 channels shown" in _text(note.value)
+    six, _ = _scanned(tmp_path / "six", 6)
+    assert len(six.scan_example.children[1].children) == 6
+    assert "all 6 channels" in _text(six.scan_example.children[2].value)
+
+
+def test_each_channel_has_its_own_contrast(tmp_path):
+    from test_notebook_check_save import decode
+
+    nb, data = _scanned(tmp_path, 3)
+    for tile in nb.scan_example.children[1].children:
+        shown = decode(bytes(tile.children[1].value))
+        # A channel 5000 counts brighter than the one before still spans black to white.
+        assert shown.min() == 0 and shown.max() == 255
+    assert data[2].min() > data[0].max()
+
+
+def test_a_header_without_a_named_channel_axis_gets_the_one_picture_as_before(tmp_path):
+    import numpy as np
+    import tifffile
+
+    folder = tmp_path / "exp" / "ctrl" / "rep1"
+    folder.mkdir(parents=True)
+    plain = np.zeros((4, 40, 48), np.uint16)  # a plain stack of pages: QYX, no axis named
+    tifffile.imwrite(folder / "a.tif", plain, photometric="minisblack")
+    nb = PreprocessingNotebook(str(tmp_path / "exp"), output_folder=str(tmp_path / "out"))
+    nb.steps()
+    nb.scan_button.click()
+    assert len(nb.scan_example.children) == 2  # no channel is guessed from the shape
+    assert "preview after Axes" in _text(nb.scan_example.children[1].value)
+
+
+def test_the_channel_pictures_read_only_that_one_image(tmp_path, monkeypatch):
+    from morphobricks_preprocessing import header_preview
+
+    _channel_image(tmp_path / "exp" / "ctrl" / "rep1", 3)
+    _channel_image(tmp_path / "exp" / "ctrl" / "rep2", 3)
+    read = []
+    real = header_preview.read_plane
+
+    def spy(path, mapping, **coords):
+        read.append((str(path), coords.get("c")))
+        return real(path, mapping, **coords)
+
+    monkeypatch.setattr(header_preview, "read_plane", spy)
+    nb = PreprocessingNotebook(str(tmp_path / "exp"), output_folder=str(tmp_path / "out"))
+    nb.steps()
+    nb.scan_button.click()
+    assert {path for path, _ in read} == {str(tmp_path / "exp" / nb.scan_image)}
+    assert [c for _, c in read] == [0, 1, 2]
+    assert nb.preflight is None and nb.mapping is None  # display only: nothing is kept

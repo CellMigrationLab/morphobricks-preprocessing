@@ -265,6 +265,65 @@ notebook's step 3 (§4), also tells how they relate.
 
 ## 4. The notebook, step by step
 
+### The app in short (v0.5.1)
+
+Cell 3 opens the app: a strip of twelve steps, one on screen at a time, with **Back** and
+**Next** under it (**Next** is never blocked; a chip opens its step). The page is one column
+and scrolls as a whole: nothing scrolls inside its own box and nothing sits side by side.
+Explanations are folded under **About this step**, and details are in collapsed panels.
+Every wait shows a bar with what is done of the total, the file being read, the time elapsed
+and, once it can be measured, the time left. Every greyed-out button has a line beside it
+saying what it waits for.
+
+1. **Images.** Give the folders (images; masks and output are optional). **Scan the folders**
+   lists the conditions and folders with their image counts without reading any image header,
+   and shows one image chosen at random, with its path, for looking only: it is not used for
+   anything. Every channel of it is shown side by side (`c=0`, `c=1`, …, each with its own
+   contrast; at most six, and then it says *6 of N channels shown*).
+   If this is your experiment, click **Looks right: read all image headers**; the
+   headers are then read and checked. Changing a folder asks for a new scan. The pictures of
+   each folder, the check's report and **Exclude images** are collapsed below.
+2. **Axes.** One row per image dimension with its role, and under them an **example of one
+   image as these roles read it**: one tile per channel (`c=0`, `c=1`, …), a few time points
+   or slices, or the single plane, each with its height and width. It is drawn by itself and
+   redrawn whenever you change a role, so a wrong role looks wrong (a strip, stripes). Another
+   image or other planes are under **Another image, or other planes**. Nothing is confirmed
+   for you: click **Confirm these axes** (offered when the headers name every axis and
+   nothing is open), or **Yes, the example looks right** and then **Confirm axis roles**.
+   - **Pixel size** is one line here: for example *Pixel size: 0.108 × 0.108 µm (from the
+     headers, same in all 270 images)*. When the headers give none, type it once and click
+     **Use for all images** (or choose *pixels: deliberately uncalibrated*); leaving it empty
+     records the images as uncalibrated, nothing is guessed. When the headers do not agree,
+     the line says how many images have which size and in which folders, and **Set per
+     imaging unit…** opens: there you state a size for one folder (imaging unit) or image.
+     **Use for all images** is your statement for every image: it replaces sizes stated per
+     folder, and a size that differs from an image's header is still listed as a warning.
+3. **Conditions**, 4. **Replicates**, 5. **Compared against**, 6. **Image type**, 7. **Stains**,
+   8. **Tag channels**, 9. **Masks**: one kind of answer per step, saved as you give it.
+10. **Check and save.** Your experiment in sentences, one question per replicate, then **Yes,
+    save the experiment description**. The line beside the button says what is still missing.
+11. **Run.** **Compute histograms**; what is still to do is listed only while something is.
+    The settings and *What will happen* are collapsed. After the run: its result, and collapsed
+    panels for the **intensity checks and plots**, **Compare groups** and the report.
+    **Compare groups** replaces the former optional statistics page: choose how to group
+    (condition, biological repeat, technical repeat or image) and click **Calculate
+    statistics** for the pooled statistics and the distribution plot of the table this run
+    wrote. It writes nothing.
+12. **Describe the masks** (optional), after a run that recorded masks.
+
+Images with different numbers of channels (for example three in most folders and four in
+one) are refused in this version (`different_channel_counts`): the axes step names the error in
+one sentence, with the files and what to do one click away, and **Confirm axis roles** says
+that this is what it waits for.
+
+The rest of this section describes each card in detail. It is written for the same cards
+shown as stacked pages (as other bricks embed them); where the app differs, the list above
+is what you see. In particular: **Show preview** and **Yes, the preview looks right** are the
+example and **Yes, the example looks right**; **Check folder** is **Looks right: read all
+image headers**; and step 4 below is the **Compare groups** panel.
+
+### The cards in detail
+
 The notebook's code cells are hidden: run them from top to bottom (click a cell and press
 **Shift + Enter**). Each step is a page of boxes. A blue box at the top says what the step
 is for, every control has a grey help line, and one coloured message says what happened

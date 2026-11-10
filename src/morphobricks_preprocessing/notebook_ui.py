@@ -220,24 +220,12 @@ class PreprocessingNotebook(
         """Confirm that the notebook started, with the package version and what to do next."""
         from . import __version__
 
-        return ui.page(
-            "MorphoBricks preprocessing",
-            "Per-plane intensity histograms for an experiment folder of TIFF and OME-Zarr images.",
-            [
-                widgets.HTML(
-                    ui.status(
-                        "ok",
-                        f"The notebook is ready (morphobricks-preprocessing {__version__}).",
-                    )
-                ),
-                widgets.HTML(
-                    ui.next_steps(
-                        "Go to Step 1 and check your experiment folder.",
-                        "Run its cell, choose your image folder, then click Check folder.",
-                    )
-                ),
-            ],
+        line = (
+            "<div class='mb-root' style='padding:6px 14px;margin-bottom:6px'>"
+            f"<b>MorphoBricks preprocessing</b> {__version__} · "
+            "<span style='color:#166534'>the notebook is ready</span></div>"
         )
+        return widgets.VBox([widgets.HTML(ui.STYLE_CSS + line)], layout=widgets.Layout(width="99%"))
 
     def folder_step(
         self,
@@ -407,7 +395,13 @@ class PreprocessingNotebook(
         )
 
     def results_step(self) -> widgets.Widget:
-        """Step 4: pooled statistics and intensity distributions from the table."""
+        """Step 4: pooled statistics and intensity distributions from the table.
+
+        In the shipped notebook (after :meth:`steps`) this is an empty, hidden box: the
+        statistics are the **Compare groups** panel of the run step (owner, 10 November 2026).
+        """
+        if getattr(self, "_stepper", None) is not None:
+            return widgets.VBox(layout=widgets.Layout(display="none"))
         return ui.page(
             "Calculate the statistics (optional)",  # the stepper numbers the steps
             "Compare conditions and repeats using the histograms computed by the run.",
