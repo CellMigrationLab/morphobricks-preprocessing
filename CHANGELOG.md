@@ -187,7 +187,11 @@ ADR 0001 GS1; contract §9). **API and CLI additions only.**
   hexadecimal characters) and optionally `repeat_codes` (each lab-tool repeat code, such as
   `R001`, to a canonical biological repeat ID). An unknown key, a missing one, a value of
   another type, an empty value, outer whitespace or a control character, or a key given twice
-  in one object is refused before anything is read (`lab_links_invalid`). API:
+  in one object is refused before anything is read (`lab_links_invalid`). So is a
+  `repository_url` holding a credential (`user:password@` in any form, or a user name before
+  `@` outside an SSH remote: `https://TOKEN@host/...`), a query string or a fragment; the
+  refusal does not repeat the URL, and a credential is never written to the manifest
+  (coordinator decision on PR #264; `git@host:lab/db.git` is kept). API:
   `run_experiment(mode=RunMode(lab_links=...))` with `LabLinks` or `read_lab_links` (new
   exports `LabLinks`, `LabLinksError`, `read_lab_links`; `RunMode` gains `lab_links`, because
   `run_experiment` is at its parameter limit).

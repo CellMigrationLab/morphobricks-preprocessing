@@ -27,6 +27,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 from .validation import ValidationIssue, agree, error, plural
 
@@ -46,6 +47,8 @@ UNKNOWN_REPEAT = "lab_links_repeat_unknown"
 MISSING_REPEAT = "lab_links_repeat_missing"
 REPEAT_TWICE = "lab_links_repeat_twice"
 _COMMIT = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+_SSH_SCHEMES = frozenset({"ssh", "git+ssh", "ssh+git"})
+"""Schemes whose user name (``ssh://git@host/...``) is a login name, not a credential."""
 _CONFIRM = "check each pair and give --confirm-repeat-codes (repeat_codes_confirmed=True)"
 
 
@@ -60,7 +63,8 @@ class LabLinks:
     Attributes
     ----------
     repository_url
-        The lab tool's repository, as given (any non-empty text: a URL or an SSH remote).
+        The lab tool's repository, as given (a URL or an SSH remote such as
+        ``git@host:lab/db.git``); never with a credential, a query string or a fragment.
     commit
         The repository's commit: a full lowercase SHA-1 (40) or SHA-256 (64) in hexadecimal.
     experiment_path
@@ -75,7 +79,9 @@ class LabLinks:
     ------
     LabLinksError
         If a value is not of its type, is empty, or has outer whitespace or control
-        characters; if the commit is not a full lowercase SHA; if ``repeat_codes`` is empty
+        characters; if ``repository_url`` holds a credential (a password, or a user name
+        outside an SSH remote), a query string or a fragment; if the commit is not a full
+        lowercase SHA; if ``repeat_codes`` is empty
         or its codes or IDs are not such text.
     """
 
@@ -86,6 +92,8 @@ class LabLinks:
     repeat_codes_confirmed: bool = False
 
     def __post_init__(self) -> None:
+        if isinstance(self.repository_url, str):  # first: other refusals repeat the value
+            _check_repository_url(self.repository_url)
         for key in REQUIRED_KEYS:
             _check_text(getattr(self, key), key)
         if not _COMMIT.fullmatch(self.commit):
@@ -268,6 +276,40 @@ def _check_text(value: object, key: str) -> None:
         raise LabLinksError(
             f"{key} {value!r} has spaces around it or control characters: nothing is trimmed, "
             "so correct it in the file"
+        )
+
+
+def _check_repository_url(url: str) -> None:
+    """Refuse a repository URL that holds a credential, a query string or a fragment.
+
+    The manifest records the URL verbatim, so a credential in it would be written to disk. A
+    password (``user:password@``) is refused in every form; a user name alone only in a URL
+    whose scheme is not SSH (``https://TOKEN@host/...`` carries a token there). The user name
+    of an SSH remote (``git@host:lab/db.git``, ``ssh://git@host/lab/db.git``) is a login name.
+    The refusal never repeats the URL, which may hold the secret.
+    """
+    found = None
+    if "?" in url or "#" in url:
+        found = "a query string or a fragment ('?' or '#')"
+    elif "://" in url:
+        try:
+            split = urlsplit(url)
+        except ValueError as exc:  # such as an unclosed IPv6 host
+            raise LabLinksError(f"repository_url is not a URL that can be read: {exc}") from exc
+        userinfo, at, _ = split.netloc.rpartition("@")
+        if at and ":" in userinfo:
+            found = "a password before '@' (user:password@)"
+        elif at and split.scheme.lower() not in _SSH_SCHEMES:
+            found = f"a user name before '@' in a {split.scheme} URL, which can be a token"
+    else:
+        userinfo, at, _ = url.partition("@")
+        if at and ":" in userinfo and not {"/", "\\"} & set(userinfo):
+            found = "a password before '@' (user:password@)"
+    if found:
+        raise LabLinksError(
+            f"repository_url has {found}: a credential, query or fragment is never written to "
+            "the run manifest, so give the repository's plain URL (scheme, host and path) or "
+            "SSH remote (such as git@host:lab/database.git)"
         )
 
 

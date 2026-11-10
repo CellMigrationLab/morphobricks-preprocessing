@@ -287,3 +287,61 @@ def test_cli_refuses_the_confirmation_without_links(described, capsys):
     assert _run(root, out, "--confirm-repeat-codes") == 1
     assert "--confirm-repeat-codes is given without --lab-links" in capsys.readouterr().out
     assert sorted(p.name for p in out.iterdir()) == ["morphobricks.toml"]
+
+
+@pytest.mark.parametrize(
+    ("url", "found"),
+    [
+        ("https://user:secret@example.org/lab/database", "a password before '@'"),
+        ("https://user:@example.org/lab/database", "a password before '@'"),
+        ("ssh://git:secret@example.org/lab/database.git", "a password before '@'"),
+        ("user:secret@example.org:lab/database.git", "a password before '@'"),
+        ("https://ghp_0123456789abcdef@example.org/lab/database", "a user name before '@'"),
+        ("HTTP://user@example.org/lab/database", "a user name before '@' in a http URL"),
+        ("https://example.org/lab/database?token=secret", "a query string or a fragment"),
+        ("https://example.org/lab/database?", "a query string or a fragment"),
+        ("https://example.org/lab/database#main", "a query string or a fragment"),
+        ("https://[::1/lab/database", "not a URL that can be read"),
+        (" https://user:secret@example.org/db", "a password before '@'"),  # not echoed
+    ],
+)
+def test_a_repository_url_with_a_credential_query_or_fragment_is_refused(url, found):
+    # Coordinator decision (PR #264): the manifest records the URL verbatim, so a credential
+    # must never reach it; the refusal does not repeat the secret either.
+    with pytest.raises(LabLinksError) as caught:
+        parse_lab_links(_bytes(_with(repository_url=url)))
+    assert found in str(caught.value)
+    assert "secret" not in str(caught.value) and "ghp_" not in str(caught.value)
+    with pytest.raises(LabLinksError):
+        LabLinks(url, COMMIT, "experiments/2026-11-06")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.org/lab/database",
+        "https://example.org:8443/lab/database.git",
+        "git@example.org:lab/database.git",
+        "ssh://git@example.org/lab/database.git",
+        "git+ssh://git@example.org/lab/database.git",
+        "ssh://example.org:2222/lab/database.git",
+        "/srv/lab/database",
+        "https://example.org/lab/data@2026",
+        "C:\\lab\\data@2026",
+    ],
+)
+def test_a_plain_repository_url_or_ssh_remote_is_accepted_verbatim(url):
+    assert parse_lab_links(_bytes(_with(repository_url=url))).repository_url == url
+
+
+def test_cli_refuses_a_url_with_a_credential_before_anything_is_written(
+    described, tmp_path, capsys
+):
+    root, out = described
+    path = tmp_path / "links.json"
+    path.write_bytes(_bytes(_with(repository_url="https://u:secret@example.org/db")))
+    assert _run(root, out, "--lab-links", str(path), "--confirm-repeat-codes") == 1
+    printed = capsys.readouterr().out
+    assert "is refused" in printed and "a password before '@'" in printed
+    assert "secret" not in printed
+    assert sorted(p.name for p in out.iterdir()) == ["morphobricks.toml"]  # nothing written
