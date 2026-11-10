@@ -224,9 +224,7 @@ def compute_rows(
     records: list[PlaneRecord] = []
     narrow: list[NarrowRange] = []
     for rel in found.unchanged if not reason else ():
-        # Tables written before position identifiers were recorded have them blank;
-        # the identifier depends only on the path, so it is filled without reading.
-        records.extend(replace(r, position_id=entries[rel].position_id) for r in earlier[rel])
+        records.extend(earlier[rel])
         # Kept rows keep the range checks they were written with.
         narrow.extend(entry for entry in previous[0].narrow_ranges if entry.relative_path == rel)
     job = FileJob(pre, review, settings, entries, output, mode == FULL)

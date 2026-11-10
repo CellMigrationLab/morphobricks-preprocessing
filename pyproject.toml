@@ -26,7 +26,7 @@ dependencies = [
     "scipy>=1.10",
     # Per-plane histograms, the CSV table, pooling and normalization, pinned to a release tag;
     # what each pin brought is in CHANGELOG.md.
-    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.3.4",
+    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.4.0",
 ]
 
 [project.optional-dependencies]
