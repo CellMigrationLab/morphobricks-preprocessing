@@ -1,4 +1,4 @@
-"""Write the schema-version-2 fixture of ``test_schema_v2_equivalence.py``.
+"""Write the reference histograms (science goldens) of ``test_histogram_goldens.py``.
 
 Run once, from the repository root, with the code of version 2: this repository at
 commit ``55f1074`` (before follow-up P3b) and morphobricks-normalization v0.1.0,
@@ -7,13 +7,13 @@ in an environment of their own:
     git worktree add ../v2 55f1074
     git clone -b v0.1.0 https://github.com/CellMigrationLab/morphobricks-normalization ../n1
     pip install ../n1 tifffile zarr pytest
-    PYTHONPATH=../v2/src python tests/data/make_v2_fixture.py
+    PYTHONPATH=../v2/src python tests/data/make_histogram_goldens.py
 
 It writes, next to this script:
 
-- ``v2_pixels.npz``: the pixels of every image of the experiments in
-  ``tests/v2_fixture.py``;
-- ``v2_<dtype>.csv``: the ``plane_histograms.csv`` that version's
+- ``golden_pixels.npz``: the pixels of every image of the experiments in
+  ``tests/histogram_goldens.py``;
+- ``golden_<dtype>.csv``: the ``plane_histograms.csv`` that version's
   ``run_experiment`` wrote for them (schema version 2, one row per plane and
   channel).
 
@@ -35,8 +35,8 @@ sys.path.insert(0, str(HERE.parent))
 
 from morphobricks_normalization.csv_io import SCHEMA_VERSION  # noqa: E402
 
+from histogram_goldens import EXPERIMENTS, PIXELS, make_pixels, write_experiment  # noqa: E402
 from morphobricks_preprocessing import prefill_mapping, run_experiment  # noqa: E402
-from v2_fixture import EXPERIMENTS, PIXELS, make_pixels, write_experiment  # noqa: E402
 
 
 def main() -> None:
@@ -52,7 +52,7 @@ def main() -> None:
             result = run_experiment(root, prefill_mapping(axes), bin_count=bins)
             if not result.written:
                 sys.exit(f"{dtype}: {[issue.message for issue in result.issues]}")
-            shutil.copyfile(result.csv_path, HERE / f"v2_{dtype}.csv")
+            shutil.copyfile(result.csv_path, HERE / f"golden_{dtype}.csv")
         print(f"{dtype}: {result.plane_count} rows")
 
 

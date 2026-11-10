@@ -1362,7 +1362,7 @@ def test_statistics_by_level_and_percentiles(experiment):
 
 def test_statistics_explain_a_table_of_an_earlier_version(experiment, tmp_path):
     nb = checked(experiment)
-    nb.csv_file.value = str(Path(__file__).parent / "data" / "v2_float32.csv")
+    nb.csv_file.value = str(Path(__file__).parent / "data" / "golden_float32.csv")
     nb.statistics_button.click()
     assert "The table cannot be read" in nb.stats_status.value
     assert "schema version 2" in nb.stats_status.value
