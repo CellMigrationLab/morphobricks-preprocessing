@@ -91,7 +91,7 @@ and `run.preflight.remasked`. The pinned surface is `tests/test_brick_api_surfac
 ### Release v0.5.1: the shipped notebook
 
 - `RELEASE_TAG` `v0.5.1`, `current_version` `0.5.1`, and `RELEASE_REF` the v0.5.1 preparation
-  commit; cell 3 calls `PreprocessingNotebook()` (`test_notebook_file.RELEASE_CALLS` records
+  commit `d023ff9`; cell 3 calls `PreprocessingNotebook()` (`test_notebook_file.RELEASE_CALLS` records
   the pair).
 - Each code cell is a Colab form with its code hidden (`"cellView": "form"`, AGENTS.md §7).
 - A cell that cannot go on (cell 3 before cell 1, a refused checkout, a failed install or Drive

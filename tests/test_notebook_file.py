@@ -120,6 +120,8 @@ def test_notebook_uses_stable_page_api_not_a_new_app_method():
 RELEASE_CALLS = {
     # v0.5.0: the described run is ``describe=True``; the default is the undescribed v0.4 run.
     "fd7afd339bcaab7579c806a28a65bb7ecebe940c": "PreprocessingNotebook(describe=True)",
+    # v0.5.1: every run is described; there is no describe argument.
+    "d023ff91289a2d2204e1ae56f7dee114d1a665e4": "PreprocessingNotebook()",
 }
 CHECKOUT_CALL = "PreprocessingNotebook()"
 """The call of this checkout's code (every run described, no ``describe`` argument)."""
