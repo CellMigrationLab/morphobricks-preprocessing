@@ -45,6 +45,9 @@ RECORD_VERSION = "3"
 """The one version written and read (issue #176): the record-level projection and projected
 entries, with each copy's SHA-256, channel names and significant bits (PP-11c)."""
 
+_CONVERT_AGAIN = "convert the originals again into a new folder"
+"""The fix a refused record names."""
+
 CONVERTED = "converted"
 """An image written as a named-axis OME-TIFF with the confirmed roles."""
 
@@ -263,9 +266,9 @@ class ConversionRecord:
             raise ConversionRecordError(f"not a conversion record of version {RECORD_VERSION}")
         if data["record_version"] != RECORD_VERSION:
             raise ConversionRecordError(
-                f"it is a record of version {data['record_version']}, and this version of "
-                f"preprocessing reads version {RECORD_VERSION} only (older records are not "
-                "converted); convert the originals again into a new folder"
+                f"its record_version {data['record_version']!r} is not {RECORD_VERSION!r}: this "
+                f"version of preprocessing reads record version {RECORD_VERSION!r} only (older "
+                f"records are not converted); {_CONVERT_AGAIN}"
             )
         try:
             mapping = data["mapping"]
@@ -280,7 +283,12 @@ class ConversionRecord:
                     None if data["projection"] is None else projection_from_data(data["projection"])
                 ),
             )
-        except (KeyError, TypeError, ValueError) as exc:
+        except KeyError as exc:  # a key every version 3 record writes: never defaulted (PP-06)
+            raise ConversionRecordError(
+                f"the record has no {exc.args[0]!r}, which every version {RECORD_VERSION} record "
+                f"holds; {_CONVERT_AGAIN}"
+            ) from exc
+        except (TypeError, ValueError) as exc:
             raise ConversionRecordError(f"not a valid conversion record: {exc}") from exc
 
     def entry(self, relative_path: str) -> CopyEntry | None:

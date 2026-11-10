@@ -216,7 +216,7 @@ class RunInputs(SemanticInputs, ProjectionInputs, ResolvingInputs):
             inside the masks folder or a masks folder inside the experiment
             (:mod:`.folder_rules`), a table, design, calibration or conversion record (of a
             run on named-axis copies) changed or gone since the run, a named-axis copy whose
-            SHA-256 is not its record's (or a record of version 1, without them),
+            SHA-256 is not its record's (or a record of another version than 3),
             an image or mask changed or gone, a mask recorded without axes, OME-Zarr images
             without the ``zarr`` extra (``morphobricks-preprocessing[zarr]``), or an OME-Zarr
             image whose ``labels`` group cannot be read.

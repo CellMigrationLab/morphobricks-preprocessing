@@ -48,6 +48,7 @@ from .manifest_fields import (
 )
 from .manifest_versions import (
     CONTENT_KEY,
+    RERUN,
     UnsupportedVersionError,
     check_version,
     recorded_version,
@@ -420,7 +421,12 @@ class RunManifest:
             raise
         except UnsupportedVersionError as exc:  # a later version's manifest: plainly refused
             raise ManifestFormatError(str(exc)) from exc
-        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        except KeyError as exc:  # a key every current manifest writes: never defaulted (PP-05)
+            raise ManifestFormatError(
+                f"The manifest is incomplete: it has no {exc.args[0]!r}, which every version "
+                f"{MANIFEST_VERSION} manifest records. {RERUN}"
+            ) from exc
+        except (TypeError, ValueError, AttributeError) as exc:
             raise ManifestFormatError(f"The manifest is incomplete or malformed: {exc}") from exc
 
 
