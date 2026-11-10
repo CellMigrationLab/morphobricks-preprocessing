@@ -17,8 +17,11 @@ MorphoBricks-Spec ADR 0002 AR10 and AR11, Stage 2 plan §0.1 and §0.2). **Break
   `prepare_mask_step`, the command line's `check`, `run` and `masks`, and `RunInputs.open` refuse
   an output folder without `morphobricks.toml` with the one code `A_DESCRIPTION_REQUIRED`
   (owner ruling 1), before anything is read or written, naming the fix: the notebook's describe
-  steps (*Check and save*), or the command line's `describe` to see what is open. New:
-  `required_description` (`is_published`, `description_required_issue`) and
+  steps (*Check and save*), or the command line's `describe` to see what is open. The refusal
+  comes before the recorded run or any image header is read (also for an output folder inside
+  the experiment or the masks, which is said beside it) and, on the command line, before
+  `--log` is opened or `--remove-stale-lock` applied. New:
+  `required_description` (`is_published`, `description_required_issue`, `undescribed_issues`) and
   `DescriptionRequiredError` (a `RunInputsError`, exported). Contract §0.
 - **Removed: the undescribed ("v0.4") run.** Its `NO_DESCRIPTION` warning; the
   `with_description` argument of `preflight`, `remasked` and `masks.find_masks` and
@@ -57,8 +60,14 @@ MorphoBricks-Spec ADR 0002 AR10 and AR11, Stage 2 plan §0.1 and §0.2). **Break
   `_design_load_note`, `_refresh_design_status`, `_design_pending` and the check's design
   template are removed). The widgets of the retired cards stay until SWEEP-PP. The embedding
   API keeps `folder_step`, `axis_step`, `run_step` and `show_design`; an embedding brick must
-  now let the user describe and save before the run (below). The shipped notebook calls
-  `PreprocessingNotebook()`.
+  now let the user describe and save before the run (below). **The shipped notebook is
+  unchanged** until the v0.5.1 release: it installs `RELEASE_REF` (v0.5.0, `fd7afd3`) and calls
+  that code's `PreprocessingNotebook(describe=True)`; the release PR moves `RELEASE_REF` and the
+  call to `PreprocessingNotebook()` together (`test_notebook_file.RELEASE_CALLS`, the release
+  check list).
+- **Refusal texts.** `design_not_confirmed`, `repeat_group_conflict` and
+  `repeat_missing_conditions` name the notebook's describe steps / *Replicates* page and
+  *Check and save*, not the removed `design` command or an edit of `experiment_design.csv`.
 - **`testing.make_clean_run` makes a described run.** Same tree and FOV keys as before
   (`ctrl`/`drug`, `rep1`, `a`/`b`); it publishes `testing.clean_description(...)` (channels
   `ch1`..`chN`, one `instances` mask per mask type, `design=True` makes `drug` reference
