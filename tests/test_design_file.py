@@ -1,22 +1,26 @@
-"""The shared strict reader of experiment_design.csv (contract §16, plan question 40)."""
+"""The derived experiment_design.csv as a file: the run's output, and the strict parser.
 
-import hashlib
-import re
+The file is an output only (v0.5.1, Spec ADR 0002 AR11 (3)): no brick reads it back for its
+repeat groups (they come from the description through ``RunInputs``). Its golden here is parsed
+in the test with the standard ``csv`` module; :func:`parse_design_bytes` is the strict parser of
+the draft's experiment-v1 section 7 migration, which refuses anything doubtful. The strict
+reader for other bricks (``read_confirmed_design``, ``ConfirmedDesign``, ``DesignCheckError``)
+was removed in SWEEP-PP.
+"""
+
+import csv
+import io
 
 import pytest
 
 from morphobricks_preprocessing import (
     DESIGN_FILENAME,
-    ConfirmedDesign,
-    DesignCheckError,
     DesignFormatError,
-    biological_repeats,
-    default_design,
+    DesignRow,
+    DesignTable,
     default_output_folder,
-    discover_experiment,
-    load_design,
-    read_confirmed_design,
-    read_experiment_design,
+    design_issues,
+    parse_design_bytes,
     read_manifest,
     run_experiment,
     write_experiment_design,
@@ -25,7 +29,6 @@ from morphobricks_preprocessing.axes import prefill_mapping
 from morphobricks_preprocessing.manifest import file_sha256
 from tiff_tree import make_tree
 
-TODAY = "2026-10-31"
 HEADER = (
     "condition,biological_repeat,repeat_group,control,image_count,technical_repeat_count,"
     "confirmed,confirmed_on,schema_version\n"
@@ -38,28 +41,7 @@ def tree(root, counts):
     return root
 
 
-def confirm_all(design):
-    for group in design.groups:
-        design = design.with_confirmed(group, True, TODAY)
-    return design
-
-
-def write(tmp_path, text):
-    path = tmp_path / DESIGN_FILENAME
-    path.write_bytes(text.encode("utf-8") if isinstance(text, str) else text)
-    return path
-
-
-def refusal(path, **kwargs):
-    with pytest.raises(DesignCheckError) as caught:
-        read_confirmed_design(path, **kwargs)
-    (issue,) = caught.value.issues
-    assert issue.is_error and issue.paths == (str(path),)
-    assert issue.code in str(caught.value)
-    return issue
-
-
-# What both bricks need ---------------------------------------------------------------------
+# The run's output ---------------------------------------------------------------------------
 
 
 def _unit(repeat, condition, folder):
@@ -85,51 +67,42 @@ PAIRED = (
 )
 
 
-def test_a_design_written_by_a_run_reads_with_everything_both_bricks_need(tmp_path):
+def test_the_run_writes_the_derived_file_and_records_its_hash(tmp_path):
     # The run derives the design from the published description (v0.5.1): the pairing and
-    # the control are the description's, and the strict reader gives both bricks all of it.
+    # the control are the description's. Parsed here with the csv module only.
     root = tree(tmp_path / "exp", {"control/rep1": 1, "treated/rep1b": 1, "treated/rep2": 1})
     output = default_output_folder(root)
     output.mkdir(parents=True)
     (output / "morphobricks.toml").write_text(PAIRED, encoding="utf-8")
     result = run_experiment(root, prefill_mapping("YX"))
     assert result.written, result.issues
-    recorded = read_manifest(result.manifest_path).experiment_design_sha256
-
-    read = read_confirmed_design(result.design_path, expected_sha256=recorded)
-    assert isinstance(read, ConfirmedDesign)
-    assert read.path == result.design_path
-    assert read.sha256 == recorded == file_sha256(result.design_path)
-    assert dict(read.repeat_groups) == {
+    data = result.design_path.read_bytes()
+    assert data == (
+        HEADER + "control,rep1,rep1,true,1,0,true,2026-10-26,1\n"
+        "treated,rep1b,rep1,false,1,0,true,2026-10-26,1\n"
+        "treated,rep2,rep2,false,1,0,true,2026-10-26,1\n"
+    ).encode("utf-8")
+    rows = list(csv.DictReader(io.StringIO(data.decode("utf-8"))))
+    assert {(r["condition"], r["biological_repeat"]): r["repeat_group"] for r in rows} == {
         ("control", "rep1"): "rep1",
         ("treated", "rep1b"): "rep1",
         ("treated", "rep2"): "rep2",
     }
-    assert {g: dict(m) for g, m in read.group_members().items()} == {
-        "rep1": {"control": "rep1", "treated": "rep1b"},
-        "rep2": {"treated": "rep2"},
-    }
-    assert read.conditions == ("control", "treated") and read.controls == ("control",)
-    assert read.groups == ("rep1", "rep2")
-    with pytest.raises(TypeError):
-        read.repeat_groups[("control", "rep1")] = "other"  # read-only
+    recorded = read_manifest(result.manifest_path).experiment_design_sha256
+    assert recorded == file_sha256(result.design_path)
 
 
-def test_the_hash_is_of_the_bytes_read(tmp_path):
-    path = write(tmp_path, HEADER + GOOD)
-    read = read_confirmed_design(path)
-    assert read.sha256 == hashlib.sha256((HEADER + GOOD).encode()).hexdigest()
-    # Windows line endings are the same rows (the hash differs, as the bytes do).
-    crlf = write(tmp_path, (HEADER + GOOD).replace("\n", "\r\n"))
-    assert read_confirmed_design(crlf).repeat_groups == read.repeat_groups
+def test_every_design_the_brick_writes_is_parsed_back(tmp_path):
+    rows = (
+        DesignRow("FALSE", "001", "001", True, 1, 1, True, "2026-10-31"),
+        DesignRow("FALSE", "TRUE", "TRUE", True, 2, 0, True, "2026-10-31"),
+        DesignRow("single", "single", "single", False, 1, 0, True, "2026-10-31"),
+    )
+    path = write_experiment_design(DesignTable(rows), tmp_path / DESIGN_FILENAME)
+    assert parse_design_bytes(path.read_bytes()) == DesignTable(rows)
 
 
-# Refusals ----------------------------------------------------------------------------------
-
-
-def test_a_missing_file_is_refused(tmp_path):
-    assert refusal(tmp_path / DESIGN_FILENAME).code == "missing_experiment_design"
-    assert refusal(tmp_path).code == "missing_experiment_design"  # a folder
+# The strict parser: anything doubtful is refused ---------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -178,18 +151,10 @@ def test_a_missing_file_is_refused(tmp_path):
         ),
     ],
 )
-def test_anything_doubtful_is_refused(tmp_path, text, message):
-    issue = refusal(write(tmp_path, text))
-    assert issue.code == "unreadable_experiment_design"
-    assert re.search(message, issue.message), issue.message
-
-
-def test_the_lenient_reader_takes_what_the_shared_reader_refuses(tmp_path):
-    # The copies in CellPatcher and MorphoFeature used the lenient reader: spreadsheet
-    # spellings of booleans and spaces around labels were read.
-    path = write(tmp_path, HEADER + "ctrl ,rep1,rep1,TRUE,2,0,yes,,1\n")
-    assert read_experiment_design(path).repeat_groups() == {("ctrl", "rep1"): "rep1"}
-    assert refusal(path).code == "unreadable_experiment_design"
+def test_anything_doubtful_is_refused(text, message):
+    data = text.encode("utf-8") if isinstance(text, str) else text
+    with pytest.raises(DesignFormatError, match=message):
+        parse_design_bytes(data)
 
 
 DUPLICATED = HEADER.replace("\n", ",repeat_group\n")
@@ -229,50 +194,19 @@ DUPLICATED = HEADER.replace("\n", ",repeat_group\n")
         ),
     ],
 )
-def test_every_reader_refuses_a_column_named_twice_or_not_at_all(tmp_path, text, message):
-    path = write(tmp_path, text)
+def test_a_column_named_twice_or_not_at_all_is_refused(text, message):
     with pytest.raises(DesignFormatError, match=message):
-        read_experiment_design(path)
-    issue = refusal(path)
-    assert issue.code == "unreadable_experiment_design"
-    assert re.search(message, issue.message), issue.message
-    # The step-1 reader refuses it too, and leaves the file as it is.
-    with pytest.raises(DesignCheckError, match=message):
-        load_design(tmp_path, [])
-    assert path.read_text(encoding="utf-8") == text
+        parse_design_bytes(text.encode("utf-8"))
 
 
-def test_an_unconfirmed_group_is_refused(tmp_path):
-    path = write(tmp_path, HEADER + "ctrl,rep1,rep1,true,2,0,false,,1\n")
-    with pytest.raises(DesignCheckError) as caught:
-        read_confirmed_design(path)
-    # design_issues names the folders of the group, as in the preprocessing run.
-    (issue,) = caught.value.issues
+def test_an_unconfirmed_group_is_parsed_and_refused_by_the_check():
+    design = parse_design_bytes((HEADER + "ctrl,rep1,rep1,true,2,0,false,,1\n").encode())
+    (issue,) = design_issues(design)
     assert issue.code == "design_not_confirmed" and issue.paths == ("ctrl/rep1",)
 
 
-def test_a_group_with_two_folders_of_a_condition_is_refused(tmp_path):
-    path = write(
-        tmp_path,
-        HEADER + "ctrl,rep1,g,true,2,0,true,,1\nctrl,rep2,g,true,2,0,true,,1\n",
-    )
-    with pytest.raises(DesignCheckError) as caught:
-        read_confirmed_design(path)
-    assert "repeat_group_conflict" in [issue.code for issue in caught.value.issues]
-
-
-def test_a_design_other_than_the_runs_is_refused(tmp_path):
-    path = write(tmp_path, HEADER + GOOD)
-    assert refusal(path, expected_sha256="0" * 64).code == "changed_experiment_design"
-    assert read_confirmed_design(path, expected_sha256=file_sha256(path)).sha256 == file_sha256(
-        path
-    )
-
-
-def test_every_design_the_brick_writes_is_read(tmp_path):
-    root = tree(tmp_path / "exp", {"FALSE/001/t1": 1, "FALSE/TRUE": 2, "single": 1})
-    design = confirm_all(
-        default_design(biological_repeats(discover_experiment(root))).with_control("FALSE", True)
-    )
-    path = write_experiment_design(design, tmp_path / DESIGN_FILENAME)
-    assert read_confirmed_design(path).design == design
+def test_a_group_with_two_folders_of_a_condition_is_refused_by_the_check():
+    text = HEADER + "ctrl,rep1,g,true,2,0,true,,1\nctrl,rep2,g,true,2,0,true,,1\n"
+    assert "repeat_group_conflict" in [
+        i.code for i in design_issues(parse_design_bytes(text.encode()))
+    ]

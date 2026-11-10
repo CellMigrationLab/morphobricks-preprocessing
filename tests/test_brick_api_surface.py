@@ -55,7 +55,6 @@ RUN_INPUTS_METHODS = {
         "t: 'int | None' = None) -> 'np.ndarray'"
     ),
     "histograms": "(self) -> 'tuple[PlaneRecord, ...]'",
-    "design": "(self) -> 'ExperimentDesign | None'",
     "description": "(self) -> 'Description'",
     "section_digests": "(self) -> 'dict[str, str]'",
     "images_without_header_channel_names": "(self) -> 'dict[str, tuple[int, ...]]'",

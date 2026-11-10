@@ -6,8 +6,6 @@ import pytest
 from described_tree import run_described
 from morphobricks_preprocessing import prefill_mapping, preflight
 from morphobricks_preprocessing.calibration import Calibration, calibration_entry
-from morphobricks_preprocessing.design import default_design
-from morphobricks_preprocessing.design_edit import DesignEdit, DesignEditError, apply_design_edit
 from morphobricks_preprocessing.run import write_calibration
 from morphobricks_preprocessing.run.check_step import suggested_review
 from morphobricks_preprocessing.run.planned import planned_changes
@@ -24,25 +22,6 @@ def experiment(tmp_path):
     for rel in ["ctrl/rep1/a.tif", "drug/rep1/a.tif", "drug/rep2/a.tif"]:
         write_data(root / rel, np.ones((2, 8, 8), np.uint8), axes="TYX")
     return root
-
-
-def test_unconfirm_takes_a_confirmation_back_and_refuses_contradictions(experiment):
-    pre = preflight(experiment, experiment.parent / "out")
-    design = apply_design_edit(
-        default_design(pre.dataset.repeats), DesignEdit(confirm_all=True), "2026-11-02"
-    )
-    assert design.confirmed
-    undone = apply_design_edit(design, DesignEdit(unconfirm=("rep1",)), "2026-11-02")
-    assert not undone.group_confirmed("rep1") and undone.group_confirmed("rep2")
-    with pytest.raises(DesignEditError, match="unknown repeat group 'nope'"):
-        apply_design_edit(design, DesignEdit(unconfirm=("nope",)), "2026-11-02")
-    with pytest.raises(DesignEditError, match="cannot be confirmed and unconfirmed"):
-        apply_design_edit(design, DesignEdit(confirm=("rep1",), unconfirm=("rep1",)), "2026-11-02")
-    with pytest.raises(DesignEditError, match="cannot be confirmed and unconfirmed"):
-        apply_design_edit(design, DesignEdit(unconfirm=("rep1",), confirm_all=True), "2026-11-02")
-    # Taking back a confirmation never confirms anything.
-    fresh = default_design(pre.dataset.repeats)
-    assert not apply_design_edit(fresh, DesignEdit(unconfirm=fresh.groups), "2026-11-02").confirmed
 
 
 def test_recalibrated_reads_calibration_again_and_replaces_its_issues(experiment, tmp_path):

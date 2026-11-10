@@ -1,9 +1,9 @@
 """PP-10: the notebook's cards for calibration, design, recorded inputs, report and lock.
 
 The notebook catches up with the command line and API of PP-7, PP-8, PP-8b and PP-8c, with
-the same functions: the check writes its report and the design template; pixel sizes are
-shown with their source and stated through ``update_calibration``; design answers go
-through ``apply_design_edit`` and are saved under the lock; the run step shows the mode
+the same functions: the check writes its report; pixel sizes are shown with their source and
+stated through ``update_calibration``; the pairing is a draft answer (SWEEP-PP); the run step
+shows the mode
 and the input changes; a run that stops says what it wrote; a stale lock is removed only on
 an explicit click, never one of a process still running here.
 """

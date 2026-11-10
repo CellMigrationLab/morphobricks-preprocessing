@@ -11,7 +11,7 @@ from morphobricks_normalization.csv_io import (
 
 from ..design import (
     DESIGN_FILENAME,
-    ExperimentDesign,
+    DesignTable,
 )
 from ..discovery_report import REPORT_FILENAME
 from ..intensity import IntensityReport
@@ -83,7 +83,7 @@ class RunResult:
     excluded: tuple[str, ...] = ()
     rebuild_reason: str | None = None
     plane_count: int = 0
-    design: ExperimentDesign | None = None
+    design: DesignTable | None = None
     image_type: str | None = None
     intensity: IntensityReport | None = None
     mode: str = RESTART

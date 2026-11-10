@@ -25,7 +25,7 @@ from .description_identity import nfc
 from .description_read import PHASES
 from .description_report import DescriptionIssue
 from .description_rules import SCHEMA_ID
-from .design import ExperimentDesign, design_issues, parse_design_bytes
+from .design import DesignTable, design_issues, parse_design_bytes
 from .discovery import DiscoveryResult
 from .draft_ids import IdKind, id_problems, propose_id
 
@@ -370,8 +370,8 @@ def draft_from_discovery(
 ) -> Draft:
     """Build the draft of a folder before any answer: proposed IDs, units, counts, pairing.
 
-    Biological-repeat folders with the same name are one repeat, as in the default design
-    (:func:`.design.default_design`); nothing is confirmed. IDs are proposed as the folder
+    Biological-repeat folders with the same name are one repeat (the default pairing, which the
+    notebook's pairing card starts from); nothing is confirmed. IDs are proposed as the folder
     labels where allowed (Q6: the same rule for conditions, technical repeats and repeats), and
     ``used_ids`` (the IDs a published file of this lineage lists) are never proposed again.
     No image is opened, no folder renamed and no file written.
@@ -380,7 +380,7 @@ def draft_from_discovery(
     return _draft(_members(discovery, set(excluded)), {}, used)
 
 
-def _legacy_groups(legacy: ExperimentDesign) -> dict[tuple[str, str], str]:
+def _legacy_groups(legacy: DesignTable) -> dict[tuple[str, str], str]:
     issues = [issue for issue in design_issues(legacy) if issue.code == "repeat_group_conflict"]
     if issues:
         raise LegacyMigrationRefused(issues[0].message)
@@ -461,7 +461,7 @@ def _check_legacy_rules(draft: Draft) -> None:
 
 
 def _migrated_repeat(
-    group: str, repeat: DraftRepeat, legacy: ExperimentDesign
+    group: str, repeat: DraftRepeat, legacy: DesignTable
 ) -> tuple[DraftRepeat, MigrationNote | None]:
     """Carry a legacy group's confirmation: only if every folder is confirmed, latest date."""
     rows = [legacy.row(member.key) for member in repeat.members]

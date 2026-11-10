@@ -195,14 +195,8 @@ def test_a_table_of_schema_version_3_is_recomputed(hot_experiment, reads):
 
 
 def test_the_command_line_takes_the_range(hot_experiment, tmp_path, capsys):
-    from morphobricks_preprocessing import default_design, preflight, write_experiment_design
-
     output = tmp_path / "cli"
-    design = default_design(preflight(hot_experiment).dataset.repeats)
-    for group in design.groups:
-        design = design.with_confirmed(group, True, "2026-10-28")
     output.mkdir()
-    write_experiment_design(design, output / "experiment_design.csv")
     args = ["run", str(hot_experiment), "--axes", "YX", "--output", str(output)]
     assert (
         main_described([*args, "--histogram-range", "robust", "--robust-quantiles", "0.1", "99.9"])

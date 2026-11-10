@@ -985,9 +985,9 @@ The default output folder is next to the experiment folder:
   run; later bricks ask you to run this brick again on it.
 - **`experiment_design.csv`:** one row per biological-repeat folder of each condition: its
   repeat group, whether its condition is a control, its image and technical-repeat counts,
-  and whether and when the repeat group was confirmed. Written in step 1 and by every run.
-  Later bricks read the pairing from it (`read_experiment_design`). Format in
-  [contract.md](contract.md) §12.
+  and whether and when the repeat group was confirmed. Derived from the saved description and
+  written by every run (and by *Check and save*); a record for people, never read back: later
+  bricks take the pairing from the description. Format in [contract.md](contract.md) §12.
 - **`run_manifest.json`:** what the run read and with which settings: labels, axis roles,
   the image type (and whether the channels are RGB colour samples), bin count, histogram
   range, memory limit, excluded images, the limits of the intensity checks, the planes with a
@@ -1202,10 +1202,7 @@ continues.
 | `lab_links_repeat_missing` | Error | The lab-tool repeat codes leave out a biological repeat of the description; a mapping names every repeat. Add its code, or leave `repeat_codes` out. |
 | `rgb_not_possible` | Error | The image type RGB was chosen, but the images are not three channels of a whole-number pixel type. Choose fluorescence, or check the axis roles: the RGB samples must have the role C. |
 | `repeat_group_conflict` | Error | A repeat group holds two folders of the same condition. Move one into another replicate on the *Replicates* page and save the description again (*Check and save*). |
-| `invalid_experiment_design` | Error | A repeat group has no usable name (empty, `NA`, `nan`, `none`, `null`, `n/a`, `<NA>`, or spaces around it), two repeat groups are spelled the same apart from upper and lower case, or a confirmation date is not written `YYYY-MM-DD`. Correct `experiment_design.csv` (the message names the line and column). |
-| `missing_experiment_design`, `unreadable_experiment_design` | Error (other bricks) | A brick that pools biological repeats as `experiment_design.csv` pairs them found no such file, or one it cannot use as written by the preprocessing brick (another column order, a column named twice or without a name, a value with spaces around it, `TRUE` or `yes` for `true`, an empty repeat group, a byte-order mark from a spreadsheet program, ...). Run the preprocessing brick on the experiment again: its run writes the file as other bricks read it. |
-| `unreadable_experiment_design` | Error (`load_design`, notebook step 1, `check`) | The saved `experiment_design.csv` in the output folder cannot be read even leniently (for example a date a spreadsheet program rewrote as 26/10/2026, a repeat group `NA`, or a header that names a column twice, such as two `repeat_group` columns, or has a column without a name); the message names the line and column. No reader chooses between two columns of one name: delete one. The file is left as it is. Correct it, or answer the questions again in step 1, which replaces it. |
-| `changed_experiment_design` | Error (other bricks) | `experiment_design.csv` is not the file the preprocessing run that wrote the statistics used (its SHA-256 differs from the one in the run manifest). Give that run's design, or run the preprocessing brick again. |
+| `invalid_experiment_design` | Error | A repeat group has no usable name (empty, `NA`, `nan`, `none`, `null`, `n/a`, `<NA>`, or spaces around it), two repeat groups are spelled the same apart from upper and lower case, or a confirmation date is not written `YYYY-MM-DD`. It comes from a description edited by hand or rows built in code; correct the description (the message names the folder). |
 | `image_intensity_outlier` | Warning (intensity check) | An image's median or high percentile in a channel is far from the other images of its condition and biological repeat. Look at it: it may be out of focus, contain debris or bubbles, or have been acquired differently. Exclude it if it is faulty. |
 | `repeat_intensity_shift` | Warning (intensity check) | A biological repeat is brighter or darker than the other repeats of its condition. Check whether it was prepared or acquired differently; normalising per biological repeat in later bricks removes such differences. |
 | `saturated_image` | Warning (intensity check) | More than the limit (default 1 %) of an image's pixels in a channel are at the largest value of its pixel type, so their true intensity is lost. Check the exposure, gain or laser power. |

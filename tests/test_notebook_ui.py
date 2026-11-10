@@ -11,7 +11,7 @@ pytest.importorskip("matplotlib")
 from morphobricks_normalization.csv_io import read_plane_histograms
 
 from described_tree import describe_tree  # noqa: E402
-from morphobricks_preprocessing import Plane, notebook_ui, read_experiment_design, read_manifest
+from morphobricks_preprocessing import Plane, notebook_ui, read_manifest
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.axes import AxisMapping  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import (  # noqa: E402
@@ -46,13 +46,6 @@ def checked(experiment, **kwargs):
         step()
     nb.check_button.click()
     return nb
-
-
-def confirm_repeats(nb):
-    """Answer every experiment-design question of step 1 with yes."""
-    for toggle in nb.group_confirmations.values():
-        if not toggle.value:
-            toggle.button.click()
 
 
 def confirmed(experiment, **kwargs):
@@ -190,7 +183,6 @@ def test_different_channel_counts_are_an_error_in_the_consistency_panel(experime
     assert "different channel counts" not in nb.folder_issues.value
     assert "Action required" in nb.folder_status.value
     # Confirming the axis roles does not lift it: the run stays locked.
-    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
@@ -222,24 +214,11 @@ def labelled(root, tmp_path):
     return nb
 
 
-def test_without_repeat_folders_one_question_is_asked(tmp_path):
+def test_without_repeat_folders_nothing_is_paired(tmp_path):
     root = design_tree(tmp_path / "exp", ["ctrl", "drug"])
     nb = labelled(root, tmp_path)
     assert not ui.is_visible(nb.pairing_box)
-    (toggle,) = nb.group_confirmations.values()
-    assert "All images of every condition come from one biological repeat" in toggle.prompt.value
-    toggle.button.click()
-    assert nb.design.confirmed
-
-
-def spreadsheet_saved(path):
-    """Rewrite the ISO dates of a saved design as a spreadsheet program may (26/10/2026)."""
-    text = path.read_text(encoding="utf-8")
-    for on in {row.confirmed_on for row in read_experiment_design(path).rows} - {""}:
-        year, month, day = on.split("-")
-        text = text.replace(on, f"{day}/{month}/{year}")
-    path.write_text(text, encoding="utf-8")
-    return path.read_bytes()
+    assert nb.pairing == {("ctrl", "single"): "single", ("drug", "single"): "single"}
 
 
 def test_changing_the_folder_resets_later_steps(experiment):
@@ -607,7 +586,6 @@ def test_folder_step_with_its_own_words_and_no_output_card(experiment):
     # The check works without the card, with the default output folder.
     nb.check_button.click()
     assert nb.preflight is not None and nb.preflight.ok
-    confirm_repeats(nb)  # embedded steps keep the experiment-design gating (P3)
     assert "Go to Step 2" in nb.folder_next.value and not ui.is_visible(nb.folder_next)
 
 
@@ -770,7 +748,6 @@ def test_plan_names_images_read_in_blocks(tmp_path, monkeypatch):
     def fail(*args, **kwargs):
         raise AssertionError("pixel data was read")
 
-    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     for cls in (tifffile.TiffFile, tifffile.TiffPage, tifffile.TiffFrame, tifffile.TiffPageSeries):
@@ -821,7 +798,6 @@ def test_plan_layouts_are_cached_until_their_inputs_change(tmp_path, monkeypatch
     nb = checked(root)
     nb.recommended.value = False
     assert calls == []  # nothing is opened before the axis roles are confirmed
-    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
@@ -845,7 +821,6 @@ def test_plan_layouts_are_cached_until_their_inputs_change(tmp_path, monkeypatch
     nb.confirm_button.click()
     assert recomputed() == 0  # the same roles and settings as before
     nb.check_button.click()
-    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()
@@ -1009,7 +984,6 @@ def test_statistics_need_a_table_and_valid_percentiles(experiment):
     nb.csv_file.value = str(experiment / "missing.csv")
     nb.show_statistics()
     assert "does not exist" in nb.stats_status.value
-    confirm_repeats(nb)
     nb.preview_button.click()
     nb.preview_checked.button.click()
     nb.confirm_button.click()

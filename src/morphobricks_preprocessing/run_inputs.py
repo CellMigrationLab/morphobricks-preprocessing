@@ -1,7 +1,7 @@
 """What a clean preprocessing run gives the other bricks: :class:`RunInputs` (design v0.4 §6).
 
 A brick that works on files reads them only through a clean run: the images, their axis
-roles, pixel sizes, masks, histograms, design and each unit's declared image type
+roles, pixel sizes, masks, histograms and each unit's declared image type
 (``Fov.image_type``), all as the run recorded them. Nothing is parsed from names, guessed or
 transposed, and no file is read once it changed:
 
@@ -27,6 +27,11 @@ transposed, and no file is read once it changed:
 
 A :class:`RunInputs` is picklable: it holds paths and the records read when it opened (its
 snapshot of the table), and opens files only to read them.
+
+The derived ``experiment_design.csv`` is an output only (Spec ADR 0002 AR11 (3)): its SHA-256
+is checked at open with the other outputs, but it is not read back. A brick takes the repeat
+groups from the published description (``Fov.repeat_group``, :meth:`RunInputs.resolve_request`);
+``RunInputs.design()`` was removed in v0.5.1 (SWEEP-PP).
 """
 
 from __future__ import annotations
@@ -44,7 +49,7 @@ from .axes import AxisMapping
 from .calibration import CALIBRATION_FILENAME
 from .conversion_check import conversion_problem
 from .description import Description
-from .design import DESIGN_FILENAME, DesignCheckError, ExperimentDesign, read_confirmed_design
+from .design import DESIGN_FILENAME
 from .fingerprint import Fingerprint
 from .folder_rules import masks_folder_issues
 from .links import LinkRefusedError
@@ -381,30 +386,6 @@ class RunInputs(SemanticInputs, ProjectionInputs, ResolvingInputs):
     def histograms(self) -> tuple[PlaneRecord, ...]:
         """Return the table's rows, as read when the run was opened."""
         return self.records
-
-    def design(self) -> ExperimentDesign | None:
-        """Return the run's experiment design, or None when it had none.
-
-        Read with the strict :func:`.design.read_confirmed_design` (issue #83), checked
-        against the manifest's ``experiment_design_sha256`` on the bytes it parses.
-
-        Raises
-        ------
-        RunInputsError
-            If the design is missing, changed since the run, or not one the strict reader
-            takes (its refusal is the ``__cause__``).
-        """
-        expected = self.manifest.experiment_design_sha256
-        if expected is None:
-            return None
-        path = published_path(self.output_folder, DESIGN_FILENAME, expected)
-        try:
-            return read_confirmed_design(path, expected_sha256=expected).design
-        except DesignCheckError as exc:
-            raise RunInputsError(
-                f"The design {DESIGN_FILENAME} cannot be used: {exc.issues[0].message} "
-                "Run preprocessing again."
-            ) from exc
 
     def _check_files(self) -> None:
         """Refuse changed or gone files, masks without axes or shared, unrecorded files."""

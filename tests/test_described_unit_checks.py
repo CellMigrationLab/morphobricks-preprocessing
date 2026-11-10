@@ -84,7 +84,7 @@ def test_the_described_folder_check_of_a_mixed_experiment_passes(tmp_path):
 def test_the_check_and_save_screen_explains_the_refusal_in_words(tmp_path):
     root, out = mixed_experiment(tmp_path)
     pre = unit_checked(preflight(root, out))
-    check = check_candidate(description_from_bytes(VALID["v29"].data), pre, None, out)
+    check = check_candidate(description_from_bytes(VALID["v29"].data), pre, None)
     assert check.can_save
     assert check.heterogeneous is not None and not check.can_run
     text = checks_html(check)

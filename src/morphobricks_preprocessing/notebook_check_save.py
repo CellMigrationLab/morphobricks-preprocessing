@@ -186,7 +186,7 @@ class _CheckSaveScreen:
         if getattr(self, "_published_check_key", None) != key:
             self._published_check_key = key
             self._published_checked = check_candidate(
-                state.description, self.preflight, roles, self._design_folder()
+                state.description, self.preflight, roles, state.description
             )
         return self._published_checked
 
@@ -297,9 +297,7 @@ class _CheckSaveScreen:
         state = self._published()
         published = state.description if state is not None else None
         _, confirmations = self._publication_terms(state, candidate)
-        return check_candidate(
-            candidate, self.preflight, roles, self._design_folder(), published, confirmations
-        )
+        return check_candidate(candidate, self.preflight, roles, published, confirmations)
 
     def _show_replicates(self, applied: object, answers: object, labels: list[str]) -> None:
         """One box per replicate: folders, pictures, channels, and its own question."""
