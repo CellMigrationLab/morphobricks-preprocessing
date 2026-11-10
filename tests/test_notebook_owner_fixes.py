@@ -52,7 +52,7 @@ def test_a_path_list_in_an_issue_card_has_no_empty_bullet(count):
 def test_a_path_list_alone_keeps_its_fold_and_no_list_markup():
     html = ui.path_list([f"p{i}" for i in range(7)], limit=5)
     assert "<li" not in html and "<ul" not in html
-    assert html.count("<div>p") == 7 and "Show 2 more" in html
+    assert html.count("<div><b>p") == 7 and "Show 2 more" in html
     assert "<details" not in ui.path_list(["a", "b"], limit=5)
 
 

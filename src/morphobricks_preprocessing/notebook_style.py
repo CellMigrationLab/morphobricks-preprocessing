@@ -41,7 +41,7 @@ STYLE_CSS = """
   margin: 8px 0; overflow-wrap: anywhere; }
 .mb-status ul { margin: 4px 0 0 0; padding-left: 20px; }
 .mb-status details { margin-top: 4px; }
-.mb-paths { margin: 2px 0 2px 4px; max-height: 190px; overflow-y: auto; font-weight: 600; }
+.mb-paths { margin: 2px 0 2px 4px; max-height: 190px; overflow-y: auto; }
 .mb-paths div { padding: 1px 0; overflow-wrap: anywhere; }
 .mb-blocker { color: #92400E; font-size: 13px; line-height: 1.4; margin: 2px 0 6px 0;
   overflow-wrap: anywhere; }
@@ -199,7 +199,7 @@ def path_list(paths: Sequence[str], limit: int = _MAX_LIST) -> str:
     The paths are plain lines in a box, never list items: a list nested in a status card's
     bullet drew an empty bullet before it, and the folded part drew bullets of its own.
     """
-    lines = [f"<div>{html.escape(p)}</div>" for p in paths]
+    lines = [f"<div><b>{html.escape(p)}</b></div>" for p in paths]
     shown = f"{_PATHS_OPEN}{''.join(lines[:limit])}</div>"
     if len(lines) <= limit:
         return shown
