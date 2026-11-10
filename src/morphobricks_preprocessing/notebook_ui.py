@@ -488,6 +488,20 @@ class _LogCapture(logging.Handler):
         return _Attached(self)
 
 
+class _ToRootWarnings(logging.Handler):
+    """Hands WARNING and above to the root logger's handlers (as propagation would)."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        # With no root handler (plain Jupyter), propagation would reach logging.lastResort.
+        handlers = logging.getLogger().handlers or [logging.lastResort]
+        for handler in handlers:
+            if handler is not None and record.levelno >= handler.level:
+                handler.handle(record)
+
+
 class _Attached:
     def __init__(self, handler: logging.Handler):  # noqa: ANN204
         self.handler = handler
@@ -495,11 +509,18 @@ class _Attached:
 
     def __enter__(self):  # noqa: ANN204
         self.level = self.logger.level
+        self.propagate = self.logger.propagate
         self.logger.addHandler(self.handler)
         self.logger.setLevel(logging.DEBUG)
+        # DEBUG is for the panel only: a root handler (Colab's) would print every record.
+        self.logger.propagate = False
+        self.forward = _ToRootWarnings()
+        self.logger.addHandler(self.forward)
         return self.handler
 
     def __exit__(self, *exc):  # noqa: ANN002, ANN204
         self.logger.removeHandler(self.handler)
+        self.logger.removeHandler(self.forward)
+        self.logger.propagate = self.propagate
         self.logger.setLevel(self.level)
         return False

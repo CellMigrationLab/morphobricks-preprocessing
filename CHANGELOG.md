@@ -36,6 +36,15 @@ saved under `1bed024` is refused as before (`spec_commit_mismatch`) and not carr
   and manifest (apart from times) before and after; the refusal codes of the 135 invalid
   fixtures are unchanged.
 
+### Fixed: the notebook output is no longer flooded with debug messages
+
+ImageJ TIFFs have a plain-text description, so reading it as OME-XML failed for every image and
+logged a debug message with a traceback; and the notebook's own log capture set the package
+logger to DEBUG while records still reached the root logger, which Colab prints. Now only an
+OME-XML description is parsed (which images are marked is unchanged; a malformed one logs one
+debug line without a traceback), and while the capture is attached the package's DEBUG records
+go to the "Technical details" panel only, with WARNING and above still reaching the root handlers.
+
 ### Normalization pinned at v0.4.0 (#262)
 
 - **`morphobricks-normalization` moves from v0.3.4 to v0.4.0** (tag `c952263`). It is
