@@ -220,8 +220,8 @@ def _kernel_notebook(nbformat, *, roles=(INSTALL, DRIVE, RUN), colab_drive=None)
     run.source = run.source.replace(release_call(), CHECKOUT_CALL)
     cells = [code[role] for role in roles]
     if colab_drive is not None:
-        for cell in cells:
-            cell.source = cell.source.replace("/content/drive", str(colab_drive))
+        for cell in cells:  # the path goes into a Python string: no backslashes (Windows)
+            cell.source = cell.source.replace("/content/drive", colab_drive.as_posix())
         fake = nbformat.v4.new_code_cell(
             "import sys, types\n"
             "from pathlib import Path\n"

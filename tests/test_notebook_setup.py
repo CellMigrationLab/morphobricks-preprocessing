@@ -85,7 +85,8 @@ def run_cells(state, *numbers, fresh=True):
     if fresh:
         state.namespace = {}
     for number in numbers or (INSTALL, DRIVE, RUN):
-        source = cell_source(number).replace(COLAB_DRIVE, str(state.drive))
+        # The path goes into a Python string: no backslashes (Windows).
+        source = cell_source(number).replace(COLAB_DRIVE, state.drive.as_posix())
         exec(source, state.namespace)
     return state.namespace
 
@@ -341,7 +342,7 @@ def test_colab_mounts_drive_without_a_custom_widget_manager(setup_environment, m
     calls = colab(monkeypatch)
     setup_environment.start()
     assert f'drive.mount("{COLAB_DRIVE}")' in cell_source(DRIVE)
-    assert calls == [str(setup_environment.drive)]  # the cells' /content/drive, faked
+    assert calls == [setup_environment.drive.as_posix()]  # the cells' /content/drive, faked
     out = capsys.readouterr().out
     assert "Google Colab: connecting Google Drive" in out
     assert "Google Drive is connected" in out
@@ -461,7 +462,7 @@ def test_cell_2_alone_on_colab_only_mounts_drive(setup_environment, monkeypatch)
     calls = colab(monkeypatch)
     state = setup_environment
     state.start(DRIVE)
-    assert calls == [str(state.drive)]
+    assert calls == [state.drive.as_posix()]
     assert state.installs == state.imports == state.apps == []
 
 
