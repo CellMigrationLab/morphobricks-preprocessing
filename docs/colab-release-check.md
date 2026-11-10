@@ -12,6 +12,17 @@ named-axis copies). Items were updated for later changes: PP-10a replaced the st
 cell with a button, and PP-12 replaced the `.run-*` backup folders with `.publish` and
 `.staging`.
 
+**The notebook's pin.** The shipped notebook installs the package at its `RELEASE_REF`, not
+main's code, so its cell calls the API of the code at that commit. Between releases main's code
+moves on while the cell keeps the released call: after v0.5.1's PP-C, main has no `describe`
+argument, while `RELEASE_REF` is still v0.5.0's `fd7afd3`, whose cell calls
+`PreprocessingNotebook(describe=True)`. The release PR moves `RELEASE_REF` and the cell's call
+in the same commit and records the new pair in `RELEASE_CALLS` of `tests/test_notebook_file.py`,
+which fails for a `RELEASE_REF` without one.
+
+- [ ] `RELEASE_REF` is the release commit, and the cell's `PreprocessingNotebook(...)` call is
+  that commit's API (v0.5.1: `PreprocessingNotebook()`).
+
 Use a dataset on Google Drive with a masks folder, and a second small experiment of
 Y/X-swapped OME-TIFFs for section F. Note the tag, the date and any failure next to each item.
 Report a failure as an issue before the final tag.
