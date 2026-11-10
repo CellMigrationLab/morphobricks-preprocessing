@@ -57,7 +57,12 @@ def test_distribution_png_uses_the_owner_cumulative_share(monkeypatch):
 
     pixels = np.arange(64, dtype=np.uint8).reshape(8, 8)
     record = PlaneRecord(
-        "c/r/t/a.tif", "c", "r", "t", histograms=(compute_plane_histogram(pixels, 256),)
+        "c/r/t/a.tif",
+        "c",
+        "r",
+        "t",
+        histograms=(compute_plane_histogram(pixels, 256),),
+        position_id="a",
     )
     used = []
     real = notebook_plots.cumulative_share
@@ -92,6 +97,7 @@ def test_distribution_png_draws_one_panel_per_channel(monkeypatch):
         "r",
         "t",
         histograms=tuple(compute_plane_histogram(p, 16) for p in channels),
+        position_id="a",
     )
     used = []
     real = notebook_plots.cumulative_share
