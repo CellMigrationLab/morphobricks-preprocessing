@@ -1157,6 +1157,11 @@ Raised during review; to be decided before the milestones that need them:
     Colab, Step 0 installs the `notebook` and `zarr` extras (locally `notebook`, unchanged),
     so OME-Zarr images can be read there; (5) `RELEASE_TAG` stays `v0.4.0rc2`; the owner
     tags it after PP-8c and PP-8d are merged.*
+    *Amended (10 November 2026, owner): the notebook has three code cells, as the lab's
+    ZeroCostDL4Mic and NucleiSky notebooks: 1. Install (the pinned install and the version
+    report), 2. Mount Google Drive (Colab only; elsewhere a one-line note), 3. Run
+    preprocessing (the app). Cell 3 run before cell 1, or on Colab without Drive, stops and
+    names the cell to run; no cell runs another.*
 59. How are images with axis errors saved as named-axis copies (design v0.4 §5, PP-11)?
     *Decided (owner, 2 November 2026; implemented in PP-11) as design v0.4 §5 says: images
     only, as named-axis OME-TIFF (BigTIFF when large); copies keep the file name and folder
