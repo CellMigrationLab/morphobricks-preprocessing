@@ -88,6 +88,12 @@ STYLE_CSS = """
   border: 2px solid #93C5FD; border-top-color: #2563EB; border-radius: 50%;
   animation: mb-spin 0.8s linear infinite; vertical-align: -1px; }
 @keyframes mb-spin { to { transform: rotate(360deg); } }
+.mb-wait-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.mb-wait-time { color: #475569; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mb-bar { height: 8px; background: #DBEAFE; border-radius: 4px; margin-top: 6px; overflow: hidden; }
+.mb-bar-fill { height: 8px; background: #2563EB; border-radius: 4px; }
+.mb-bar-unknown { width: 30%; animation: mb-slide 1.2s ease-in-out infinite alternate; }
+@keyframes mb-slide { from { margin-left: 0; } to { margin-left: 70%; } }
 .mb-root .widget-button { border-radius: 6px; }
 .mb-root .widget-button:disabled { opacity: 0.45; cursor: not-allowed; }
 </style>

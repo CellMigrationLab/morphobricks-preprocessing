@@ -25,27 +25,20 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 from morphobricks_normalization.records import LEVELS, SINGLE
 
-from .image_names import position_id
+from .image_names import is_system_name, is_tiff_name, position_id
 from .links import LinkGuard, relative_inside
 from .mask_names import mask_name_issues
 from .validation import ValidationIssue, agree, error, has_errors, plural, warning
 from .zarr_input import is_zarr_name
 
 logger = logging.getLogger(__name__)
-
-TIFF_SUFFIXES = (".tif", ".tiff")
-
-# Files and folders created by operating systems and tools, not by users. They
-# are skipped without a warning so that copying an experiment from a Mac or
-# opening it in Jupyter does not flood the preflight with messages.
-SYSTEM_NAMES = frozenset({"thumbs.db", "desktop.ini", "__macosx"})
 
 OUTPUT_FOLDER_SUFFIX = "_MorphoBricks_Preprocessing"
 
@@ -189,20 +182,6 @@ def _same_spelling(seen: dict[str, str], value: str, field: str, scope: str) -> 
         )
 
 
-def is_system_name(name: str) -> bool:
-    """Return True for system files and folders that are skipped silently.
-
-    These are dot-files and dot-folders (``.DS_Store``, ``._image.tif``,
-    ``.ipynb_checkpoints``), ``Thumbs.db``, ``desktop.ini`` and ``__MACOSX``.
-    """
-    return name.startswith(".") or name.lower() in SYSTEM_NAMES
-
-
-def is_tiff_name(name: str) -> bool:
-    """Return True if ``name`` has a TIFF extension (``.tif`` or ``.tiff``, any case)."""
-    return name.lower().endswith(TIFF_SUFFIXES)
-
-
 def is_ome_zarr_folder(entry: os.DirEntry) -> bool:
     """Return True for a folder that is an OME-Zarr image (its name ends in ``.zarr``).
 
@@ -315,7 +294,10 @@ def check_output_folder(
 
 
 def discover_experiment(
-    experiment_root: str | os.PathLike, output_folder: str | os.PathLike | None = None
+    experiment_root: str | os.PathLike,
+    output_folder: str | os.PathLike | None = None,
+    *,
+    progress: Callable[[str], None] | None = None,
 ) -> DiscoveryResult:
     """Walk an experiment folder, find its leaf folders and check its structure.
 
@@ -330,6 +312,10 @@ def discover_experiment(
         The planned output folder, if known. It is checked with
         :func:`check_output_folder` and, if it lies inside the experiment, it is
         not scanned.
+    progress
+        Called with each folder's relative path (``"."`` for the experiment folder) before it
+        is listed, so a caller can show how far the walk is. It changes nothing about the
+        result.
 
     Returns
     -------
@@ -346,6 +332,7 @@ def discover_experiment(
         return DiscoveryResult(root=root, issues=(issue,))
 
     walker = _Walker(root)
+    walker.progress = progress
     if output_folder is not None:
         walker.issues.extend(found := check_output_folder(root, output_folder))
         walker.excluded = root.joinpath(found[0].paths[0]) if found else None  # walk's name
@@ -361,6 +348,7 @@ class _Walker:
         self.root = root
         self.links = LinkGuard(root, "experiment folder")
         self.excluded: Path | None = None
+        self.progress: Callable[[str], None] | None = None
         self.leaves: list[LeafFolder] = []
         self.issues: list[ValidationIssue] = []
         self.reserved: list[str] = []
@@ -380,6 +368,8 @@ class _Walker:
 
     def visit(self, folder: Path, names: tuple[str, ...]) -> None:
         """Sort the entries of ``folder`` (labels ``names``), following links by the guard."""
+        if self.progress is not None:
+            self.progress(self.relative(folder))
         try:
             entries = sorted(os.scandir(folder), key=lambda entry: entry.name)
         except OSError:

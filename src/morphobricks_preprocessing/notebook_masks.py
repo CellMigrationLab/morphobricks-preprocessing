@@ -36,6 +36,7 @@ from .mask_review import MaskAxesQuestion, mask_axes_questions, mask_type_rows
 from .masks import MaskInventory
 from .metadata import TiffMetadata
 from .notebook_options import _WIDE
+from .notebook_progress import Wait
 from .notebook_render import issue_count_chips, issues_html
 from .run.planned import PlannedMasks, planned_masks
 from .run.preflight import remasked
@@ -102,6 +103,7 @@ class _MasksCard:
             icon="refresh",
             tooltip="Pair the masks again with the masks folder and the mask axes above",
         )
+        self.masks_wait = widgets.HTML()
         self.masks_counts = widgets.HTML()
         self.masks_issues = widgets.HTML()
         self.masks_card = ui.card(
@@ -111,6 +113,7 @@ class _MasksCard:
                 self.masks_table,
                 self.mask_axes_box,
                 self.masks_button,
+                self.masks_wait,
                 self.masks_counts,
                 self.masks_issues,
             ],
@@ -160,13 +163,13 @@ class _MasksCard:
         root = self.preflight.discovery.root
         plan = self._planned_masks(root)
         output = self._output_folder() or default_output_folder(root)
+        wait = Wait(self.masks_wait)
+        wait.start("Reading mask headers")
         with self.log.attached():
             self.preflight = remasked(
-                self.preflight,
-                plan.folder,
-                plan.mask_axes or None,
-                output,
+                self.preflight, plan.folder, plan.mask_axes or None, output, wait.step
             )
+        self.masks_wait.value = ""
         self._paired_masks = _pairing(plan)
         self._show_issue_summary()
         self._refresh_run_step()

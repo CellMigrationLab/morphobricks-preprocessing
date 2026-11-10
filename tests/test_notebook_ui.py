@@ -919,7 +919,7 @@ def test_statistics_stay_busy_until_finished_and_recover_on_failure(
             assert nb.statistics_button.disabled
             assert nb.statistics_button.description.strip() == "Calculating…"
             assert nb.statistics_button.icon == "spinner"
-            assert "mb-spinner" in nb.stats_status.value
+            assert "mb-wait" in nb.stats_status.value  # the wait line with its bar
             assert nb.stats_next.value == ""
             assert "calculated." not in nb.stats_status.value
             stages.append(stage)

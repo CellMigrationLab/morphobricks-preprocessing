@@ -26,12 +26,15 @@ from .notebook_options import (
     VERIFY_CONTENT_HELP,
 )
 from .notebook_plots import IntensityPanel
+from .notebook_progress import Wait
 from .notebook_render import _bins_help, _label, blocked_line, change_lines, issues_html
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import issue_counts, rebuild_line
 from .run import RESTART, Preflight, RunMode, RunResult, run_experiment
 from .run_labels import recorded_labels
 from .validation import has_errors, plural
+
+READING = "Reading images"
 
 
 class _RunStep:
@@ -315,7 +318,8 @@ class _RunStep:
         self._mask_step_stale()
         ui.set_visible(self.progress, True)
         self.progress.value, self.progress.max, self.progress.bar_style = 0, 1, "info"
-        self.run_status.value = ui.working("Preparing: checking everything again…")
+        self._run_wait = Wait(self.run_status, bar=False)  # the bar is the widget above
+        self._run_wait.start("Preparing: checking the folders and the image headers again")
         self.run_tiles.value = self.run_issues.value = ""
 
     def _call_run(self, histogram_settings: HistogramSettings) -> RunResult:
@@ -457,7 +461,10 @@ class _RunStep:
     def _progress(self, done: int, total: int, path: str) -> None:
         self.progress.max = max(total, 1)
         self.progress.value = done
-        if path:
-            self.run_status.value = ui.working(f"Reading image {done + 1} of {total}: {path}")
-        else:
-            self.run_status.value = ui.working("Writing the table…")
+        wait = self._run_wait
+        if not path:
+            wait.phase("Writing the table")
+            return
+        if wait.label != READING:
+            wait.phase(READING, total)
+        wait.step(done, total, path)

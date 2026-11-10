@@ -1,6 +1,7 @@
 """An image's position identifier, from its name (contract §1, MorphoBricks D02, D85).
 
-Moved from ``discovery.py`` (PP-5), so that the mask-name screen can use it.
+Moved from ``discovery.py`` (PP-5), so that the mask-name screen can use it; the names of
+TIFF images and of system files (``is_tiff_name``, ``is_system_name``) are here too.
 """
 
 from __future__ import annotations
@@ -57,3 +58,25 @@ def position_id(image: str) -> str:
                 )
             return name[: -len(suffix)]
     return name
+
+
+TIFF_SUFFIXES = (".tif", ".tiff")
+
+# Files and folders created by operating systems and tools, not by users. They
+# are skipped without a warning so that copying an experiment from a Mac or
+# opening it in Jupyter does not flood the preflight with messages.
+SYSTEM_NAMES = frozenset({"thumbs.db", "desktop.ini", "__macosx"})
+
+
+def is_system_name(name: str) -> bool:
+    """Return True for system files and folders that are skipped silently.
+
+    These are dot-files and dot-folders (``.DS_Store``, ``._image.tif``,
+    ``.ipynb_checkpoints``), ``Thumbs.db``, ``desktop.ini`` and ``__MACOSX``.
+    """
+    return name.startswith(".") or name.lower() in SYSTEM_NAMES
+
+
+def is_tiff_name(name: str) -> bool:
+    """Return True if ``name`` has a TIFF extension (``.tif`` or ``.tiff``, any case)."""
+    return name.lower().endswith(TIFF_SUFFIXES)
