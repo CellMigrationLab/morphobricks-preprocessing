@@ -144,7 +144,7 @@ class _ProjectionCard:
             box.observe(lambda _: self._projection_changed(), names="value")
         self.preview_checked.observe(lambda _: self._projection_changed())
         self.projection_look.on_click(lambda _: self._show_projection())
-        self.projection_button.on_click(lambda _: self.write_projection())
+        self.projection_button.on_click(lambda _: self._write_projection())
 
     def _lay_out_projection_card(self) -> None:
         """Put the card's widgets in one column: the choice, the look, what is kept, the click."""
@@ -288,7 +288,7 @@ class _ProjectionCard:
 
     # Writing -------------------------------------------------------------------------------
 
-    def write_projection(self) -> ConversionResult | None:
+    def _write_projection(self) -> ConversionResult | None:
         """Write the projected copies with the roles shown, then open them as the experiment.
 
         Returns
