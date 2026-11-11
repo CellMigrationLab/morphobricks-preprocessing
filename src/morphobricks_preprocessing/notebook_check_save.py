@@ -57,6 +57,7 @@ from .notebook_check_view import (
     removal_text,
     replicate_title,
     run_stop_html,
+    saved_html,
     todo_html,
 )
 from .notebook_description import _with_ids
@@ -323,7 +324,8 @@ class _CheckSaveScreen:
             if state is None
             else {key: r.confirmed_on for key, r in state.description.repeats.items()}
         )
-        for view in replicates(applied, answers):
+        views = replicates(applied, answers)
+        for view in views:
             toggle = ui.ConfirmToggle(
                 SAME_WAY,
                 SAME_WAY_HELP,
@@ -362,6 +364,13 @@ class _CheckSaveScreen:
             )
             boxes.append((box, row_status(units, keys, settled)))
         self.same_way = toggles
+        shown = (
+            self._channel_thumbs,
+            [[(m.condition, m.source_repeat) for m in v.members] for v in views],
+        )
+        if shown != getattr(self, "_replicates_shown", None):  # other folders or pictures (#252)
+            self.replicates_detail.children = []  # an Enlarge of the boxes before is closed
+        self._replicates_shown = shown
         if not hasattr(self, "_replicate_fold"):
             self._replicate_fold = RowFold("replicate")
         self.replicates_box.children = self._replicate_fold.arrange(boxes)
@@ -415,7 +424,9 @@ class _CheckSaveScreen:
             self._folded = False  # a refusal of the run's checks is never folded away
         if self._saved_current() and not self._published_refused():
             when = self._saved_on or (state.saved_on if state else "")
-            self.save_status.value = self._saved_status(when)
+            self.save_status.value = saved_html(
+                when, self._run_allowed(), self.confirmed_mapping is not None
+            )
             self.saved_line.value = ui.status("ok", f"Saved on {when}, nothing changed.")
         else:
             self.saved_line.value = ""
@@ -426,25 +437,6 @@ class _CheckSaveScreen:
         for name in FOLDED:
             ui.set_visible(getattr(self, name), not self._folded)
         self._refresh_run_step()
-
-    def _saved_status(self, when: str) -> str:
-        """Say that the description is saved, and that the run can start only once it can.
-
-        The run's checks need the confirmed axis roles: before them nothing says the run can
-        start, only that the axes come first.
-        """
-        if self._run_allowed():
-            return ui.status("ok", f"Saved {when}. The run can start.")
-        if self.confirmed_mapping is None:
-            return ui.status(
-                "info",
-                f"Saved {when}.",
-                [
-                    "Confirm the axis roles (step 2) first: the run's checks of the images "
-                    "need them, and the run waits for those checks."
-                ],
-            )
-        return ui.status("ok", f"Saved {when}.", ["See Run for what is still to do."])
 
     # Answers -----------------------------------------------------------------------------
 

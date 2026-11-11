@@ -21,6 +21,13 @@ v0.5.1: no run before v0.5.1 is read.)
 - **CLI `describe`: a header-only change no longer asks to confirm the repeat again (#258)**,
   as in the notebook since #257 (experiment-v1 §10). It says that the run stops until the
   headers fit, and `--publish` exits with status 0 (nothing to publish) instead of refusing.
+- **Notebook small cleanups (#252).** *Check and save* lists the strict reader's warnings of
+  the description (`W_UNUSED_CHANNEL`, `W_REPEAT_MISSING_CONDITIONS`, `W_REFERENCE_UNPAIRED`:
+  valid, never blocking, experiment-v1 §4.3) and closes an **Enlarge** view once its replicate
+  boxes show other folders or pictures; a preview that cannot be read names the image relative
+  to the experiment folder, not by its absolute path; a panel says "1 non-finite pixel" (the
+  plural helper); the `PIXEL_CAP` docstring says that at least one plane of each colour or
+  channel is read. No result or published file changes.
 
 ## v0.5.1 (10 November 2026)
 

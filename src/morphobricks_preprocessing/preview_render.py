@@ -26,6 +26,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .validation import plural
+
 LOW_PERCENTILE = 0.5
 HIGH_PERCENTILE = 99.5
 MAGENTA = (255, 0, 255)
@@ -124,7 +126,7 @@ def _with_missing(panel: Panel, finite: np.ndarray) -> Panel:
         return panel
     colour = np.repeat(panel.pixels[..., None], 3, axis=2)
     colour[~finite] = MAGENTA
-    note = f"{panel.nonfinite} non-finite pixels shown in magenta"
+    note = f"{plural(panel.nonfinite, 'non-finite pixel')} shown in magenta"
     note = f"{panel.note}; {note}" if panel.note else note
     return Panel(colour, panel.kind, panel.low, panel.high, panel.nonfinite, note)
 

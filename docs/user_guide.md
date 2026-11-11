@@ -320,7 +320,9 @@ proposes is recorded only when you click.
    in the grid, or a name or the pairing under **Edit names or pairing…**, first.
 6. **Check and save.** Your experiment in sentences and one question per replicate (*Were
    these prepared and imaged the same way?*), then **Yes, save the experiment description**.
-   The line beside the button says what is still missing.
+   The line beside the button says what is still missing. Warnings of the description (for
+   example a label declared that no folder uses, `W_UNUSED_CHANNEL`) are listed above the
+   button; they do not stop the save.
 7. **Run.** **Compute histograms**; what is still to do is listed only while something is.
    After the run: its result, and collapsed panels for the **intensity checks and plots**,
    **Compare groups** (pooled statistics and a distribution plot per condition, repeat or

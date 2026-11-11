@@ -39,6 +39,7 @@ from .header_preview import (
     PreviewUnavailable,
     header_channels,
     header_preview,
+    read_failure,
 )
 from .metadata import inspect_image
 from .notebook_progress import Wait
@@ -116,7 +117,7 @@ def example_preview(root: Path, image: str) -> HeaderChannels | HeaderPreview:
         meta = inspect_image(path, image)
         after = current_fingerprint(path)
     except (OSError, ValueError) as exc:
-        return HeaderPreview(image, problem=f"cannot be read for a preview: {exc}")
+        return HeaderPreview(image, problem=read_failure(exc, root))
     same = before is not None and before == after
     if same:
         try:
@@ -124,7 +125,7 @@ def example_preview(root: Path, image: str) -> HeaderChannels | HeaderPreview:
         except PreviewUnavailable:
             channels = None  # no channel axis named, or over the caps: the one picture says why
         except READ_FAILURES as exc:
-            return HeaderPreview(image, problem=f"cannot be read for a preview: {exc}")
+            return HeaderPreview(image, problem=read_failure(exc, root))
         if channels is not None and current_fingerprint(path) == before:
             return channels
     return header_preview(root, meta, EXAMPLE_SIDE, bound={image: before if same else None})
