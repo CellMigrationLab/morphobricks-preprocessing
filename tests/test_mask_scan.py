@@ -75,7 +75,7 @@ def by_pair(report):
 
 
 def reference_pieces(mask):
-    """Pieces per label by breadth-first search (independent of the brick's code)."""
+    """Pieces per label by 8-connected breadth-first search (independent of the brick's code)."""
     seen = np.zeros(mask.shape, dtype=bool)
     pieces = {}
     for start in zip(*np.nonzero(mask), strict=True):
@@ -87,7 +87,7 @@ def reference_pieces(mask):
         seen[start] = True
         while queue:
             r, c = queue.popleft()
-            for nr, nc in ((r + 1, c), (r - 1, c), (r, c + 1), (r, c - 1)):
+            for nr, nc in ((r + dr, c + dc) for dr in (-1, 0, 1) for dc in (-1, 0, 1)):
                 inside = 0 <= nr < mask.shape[0] and 0 <= nc < mask.shape[1]
                 if inside and not seen[nr, nc] and mask[nr, nc] == label:
                     seen[nr, nc] = True
@@ -95,14 +95,18 @@ def reference_pieces(mask):
     return pieces
 
 
-def test_pieces_are_4_connected_and_counted_per_label():
+def test_pieces_are_8_connected_and_counted_per_label():
     rng = np.random.default_rng(0)
     for _ in range(50):
         mask = rng.integers(0, 4, size=tuple(rng.integers(1, 20, 2))).astype(np.int32)
         labels, counts = piece_counts(mask)
         assert dict(zip(labels.tolist(), counts.tolist(), strict=True)) == reference_pieces(mask)
-    diagonal = np.eye(3, dtype=np.uint8)  # touching only at corners: three pieces
-    assert piece_counts(diagonal)[1].tolist() == [3]
+    # Touching only at corners: one piece, as CellPatcher's BINARY_MASK_CONNECTIVITY = 2
+    # (owner decision "8-connected everywhere", 11 November 2026); 4-connected it was three.
+    diagonal = np.eye(3, dtype=np.uint8)
+    assert piece_counts(diagonal)[1].tolist() == [1]
+    apart = np.array([[1, 0, 1]], np.uint8)  # a gap of one pixel: still two pieces
+    assert piece_counts(apart)[1].tolist() == [2]
     assert piece_counts(np.zeros((3, 3), np.uint8))[0].size == 0
     assert piece_counts(np.full((2, 2), 7, np.uint8))[1].tolist() == [1]
 
@@ -226,7 +230,7 @@ def test_report_file(tmp_path):
     raw = path.read_bytes()
     assert b"\r\n" not in raw
     data = json.loads(raw)
-    assert data["report_version"] == "3"
+    assert data["report_version"] == "4"
     assert data["thresholds"]["inside_object_share"] == 0.9
     assert data["hierarchy"]["Nucleoli"] == ["Nuclei", "NucleiAlt"]
     assert data["same_objects"] == [["Nuclei", "NucleiAlt"]]

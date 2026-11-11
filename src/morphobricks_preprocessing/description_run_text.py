@@ -152,5 +152,9 @@ def representation_issue(
         f"Mask {mask_id!r} is declared {representation!r}, but its file holds {values} "
         "different values. A binary mask has at most two."
     )
-    action = "Declare the mask as instances in the description if each value is an object."
+    action = (
+        "Declare the mask as instances in the description if each value is an object, or as "
+        "parent_labels (grouped labels) if each value is one group, such as the mitochondria "
+        "of one cell."
+    )
     return error(MASK_CONTRADICTS_REPRESENTATION, message, (path,), action)

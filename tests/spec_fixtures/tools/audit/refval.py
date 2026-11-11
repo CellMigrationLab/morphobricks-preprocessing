@@ -53,7 +53,7 @@ MEM = ("source_repeat", "image_count", "technical_repeats")
 UNIT = ("source_folder", "display_name", "channels", "image_type")
 MASK = ("source_type", "representation", "source_channels", "display_name")
 USED = ("conditions", "channels", "repeats", "technical_repeats")
-REPRESENTATIONS = ("instances", "binary")
+REPRESENTATIONS = ("instances", "binary", "parent_labels")  # parent_labels: owner decision PL1
 
 
 class Report:

@@ -110,9 +110,9 @@ def mask_type_rows(
     The first column, *Mask*, is the mask's ID when ``ids`` (mask type -> mask ID, from
     *Your masks* or the published description) gives one, followed by the folder name in
     brackets only when the two differ; it is one column, not a type and an ID that repeat
-    each other. With ``declared`` (mask type -> ``objects`` or ``regions``, what the user
-    answered) a *Declared kind* column states that answer beside the suggested kind, which
-    stays a suggestion; a type the user has not answered says :data:`NOT_DESCRIBED`.
+    each other. With ``declared`` (mask type -> ``objects``, ``regions`` or ``grouped labels``,
+    what the user answered) a *Declared kind* column states that answer beside the suggested
+    kind, which stays a suggestion; a type the user has not answered says :data:`NOT_DESCRIBED`.
     """
     shown = declared is not None
     header = ["Mask", *(["Declared kind"] if shown else []), "Kind (suggested)"]

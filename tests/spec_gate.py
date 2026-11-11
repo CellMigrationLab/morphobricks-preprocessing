@@ -35,6 +35,7 @@ EXPECTED_MODULES = (
     "test_spec_lab_links.py",
     "test_spec_gate.py",
     "test_spec_no_fallback.py",
+    "test_spec_parent_labels.py",
     "test_spec_pin.py",
     "test_spec_publication.py",
     "test_spec_reader.py",

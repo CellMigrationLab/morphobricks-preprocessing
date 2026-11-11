@@ -1,4 +1,4 @@
-"""The request resolver's types and pure rules (resolver contract version 1).
+"""The request resolver's types and pure rules (resolver contract version 2).
 
 ``RunInputs.resolve_request`` (:mod:`.run_inputs_resolve`) is the one interpreter of an
 experiment description for an analysis run, on every route (a direct brick run and a run
@@ -15,6 +15,11 @@ module holds what it takes and gives, and the rules that need no file:
 - the resolver classifies and refuses; it never labels, converts, reads a pixel or chooses a
   device. A recorded ``binary_mask_policy`` comes back as ``MaskSelection.conversion`` for the
   consumer to apply with the one shared labeller (CellPatcher's), on every route.
+- a ``parent_labels`` mask (experiment-v1 section 4.5b, resolver contract version 2, Spec ADR
+  0002) is never an object set (``A_MASK_NOT_INSTANCES`` with or without the capability). In the
+  role ``region`` it is selected as the groups for a consumer that declares
+  ``parent_labels_support``, else with ``conversion = "parent_labels_as_area"``: that consumer
+  reads every non-zero pixel as inside, records the marker and shows it. Never split or relabelled.
 
 Codes (experiment-v1 section 8, as the classes of :mod:`.run_inputs_error`): ``A_SCOPE_INCOMPLETE``
 ("present in k of n acquisitions", k may be 0, one rule for channels and masks, owner decision
@@ -32,8 +37,10 @@ from dataclasses import dataclass, field
 
 from .run_inputs_error import RunInputsError
 
-RESOLVER_VERSION = 1
-"""The resolver contract version a :class:`Provenance` records."""
+RESOLVER_VERSION = 2
+"""The resolver contract version a :class:`Provenance` records: 2 since parent-label masks (the
+input ``parent_labels_support`` and the output ``conversion = "parent_labels_as_area"``, Spec ADR
+0002 "Resolver contract version 2")."""
 
 OBJECTS = "objects"
 REGION = "region"
@@ -43,6 +50,11 @@ MASK_ROLES = (OBJECTS, REGION)
 CONNECTED_COMPONENTS = "connected_components"
 BINARY_MASK_POLICIES = (CONNECTED_COMPONENTS,)
 """The recorded conversions of a ``binary`` mask to objects (experiment-v1 section 4.5c)."""
+
+PARENT_LABELS_AS_AREA = "parent_labels_as_area"
+"""The recorded marker of a ``parent_labels`` mask used as a region by a consumer without
+``parent_labels_support`` (experiment-v1 section 4.5b): every non-zero pixel is inside, 0 is
+outside, the groups are not kept. Not a request field: the resolver sets it."""
 
 PLANE = "plane"
 VOLUME = "volume"
@@ -64,6 +76,7 @@ COVERAGE = (FULL, PARTIAL, UNAVAILABLE)
 
 BINARY = "binary"
 INSTANCES = "instances"
+PARENT_LABELS = "parent_labels"
 RGB = "rgb"
 CHANNELS = "channels"
 IMAGE_TYPES = (CHANNELS, RGB)
@@ -94,10 +107,16 @@ class Capabilities:
     volume_support
         True when the consumer takes a Z-volume as one selection. False refuses a ``volume``
         request. No consumer declares it today.
+    parent_labels_support
+        True when the consumer reads the groups of a ``parent_labels`` mask (its provider
+        manifest's ``parent_labels_support = true``, experiment-v1 section 4.5b, with the rules
+        of ``rgb_support``). False: such a mask in the role ``region`` is selected with the
+        marker ``conversion = "parent_labels_as_area"``. Either way it is never an object set.
     """
 
     rgb_support: bool = False
     volume_support: bool = False
+    parent_labels_support: bool = False
 
 
 @dataclass(frozen=True)
@@ -183,7 +202,10 @@ class MaskSelection:
     """One mask as the consumer reads it: ``read_mask(fov, source_type, ...)``.
 
     ``conversion`` is the recorded ``binary_mask_policy`` the consumer applies with the shared
-    labeller (None when the mask is used as declared). ``check_status`` is ``checked``.
+    labeller, or ``parent_labels_as_area`` for a ``parent_labels`` region read as an area by a
+    consumer without ``parent_labels_support`` (it records the marker and shows it); None when
+    the mask is used as declared. ``representation`` is always the declared one.
+    ``check_status`` is ``checked``.
     """
 
     mask_id: str
@@ -303,8 +325,9 @@ def check_request(request: Request, declared_masks: Mapping[str, str]) -> None:
         Channels or masks not given as a tuple (of ``str`` IDs, of :class:`MaskRequest`), a
         capability that is not a ``bool``, a channel ID named twice, a mask ID named twice, a
         role or policy outside the contract, a policy on a mask that is not ``binary`` (nothing
-        to convert) or on a ``region`` role, an unknown plane kind, or a device that is neither
-        ``cpu`` nor ``cuda``.
+        to convert; for a ``parent_labels`` mask the message says it is never converted) or on
+        a ``region`` role, an unknown plane kind, or a device that is neither ``cpu`` nor
+        ``cuda``.
     """
     _check_shape(request)
     if len(set(request.channel_ids)) != len(request.channel_ids):
@@ -325,6 +348,13 @@ def check_request(request: Request, declared_masks: Mapping[str, str]) -> None:
             raise ValueError(
                 f"binary_mask_policy must be one of {BINARY_MASK_POLICIES}, "
                 f"not {mask.binary_mask_policy!r}"
+            )
+        if declared_masks.get(mask.mask_id) == PARENT_LABELS:
+            raise ValueError(
+                f"binary_mask_policy cannot be applied to {mask.mask_id!r}: it is declared "
+                "parent_labels (each non-zero value one group, in any number of pieces), which "
+                "is never split, relabelled or converted to objects (experiment-v1 section "
+                "4.5b). Remove the policy; use the mask in the role 'region'."
             )
         if mask.role != OBJECTS or declared_masks.get(mask.mask_id, BINARY) != BINARY:
             raise ValueError(
@@ -348,9 +378,12 @@ def _check_shape(request: Request) -> None:
     ):
         raise ValueError(f"masks must be a tuple of MaskRequest (str IDs), not {request.masks!r}")
     capabilities = request.capabilities
-    if not isinstance(capabilities, Capabilities) or not all(
-        isinstance(v, bool) for v in (capabilities.rgb_support, capabilities.volume_support)
-    ):
+    flags = (
+        capabilities.rgb_support,
+        capabilities.volume_support,
+        capabilities.parent_labels_support,
+    )
+    if not isinstance(capabilities, Capabilities) or not all(isinstance(v, bool) for v in flags):
         raise ValueError(f"capabilities must be Capabilities of bool, not {capabilities!r}")
 
 
@@ -416,9 +449,23 @@ def plane_selections(t_count: int, z_count: int, kind: str) -> tuple[PlaneSelect
 
 
 def mask_representation_refusal(mask: MaskRequest, representation: str) -> Refusal | None:
-    """Return ``A_MASK_NOT_INSTANCES`` for a non-instances mask used as objects without a policy."""
+    """Return ``A_MASK_NOT_INSTANCES`` for a non-instances mask used as objects without a policy.
+
+    A ``parent_labels`` mask as objects is refused with or without ``parent_labels_support``,
+    and its message offers no conversion: there is none (experiment-v1 section 4.5b).
+    """
     if mask.role != OBJECTS or representation == INSTANCES or mask.binary_mask_policy:
         return None
+    if representation == PARENT_LABELS:
+        return Refusal(
+            "A_MASK_NOT_INSTANCES",
+            mask.mask_id,
+            f"The mask {mask.mask_id!r} is declared parent_labels: each non-zero value is one "
+            "group (for example the mitochondria of one cell) in any number of pieces, not one "
+            "object, so it cannot be an object set. It is never split, relabelled or converted. "
+            "Use it in the role 'region', or name an instances mask as the objects "
+            "(A_MASK_NOT_INSTANCES).",
+        )
     return Refusal(
         "A_MASK_NOT_INSTANCES",
         mask.mask_id,
@@ -427,6 +474,26 @@ def mask_representation_refusal(mask: MaskRequest, representation: str) -> Refus
         f"binary_mask_policy={CONNECTED_COMPONENTS!r} in this request, or declare the mask "
         "instances (A_MASK_NOT_INSTANCES).",
     )
+
+
+def mask_conversion(
+    mask: MaskRequest, representation: str, capabilities: Capabilities
+) -> str | None:
+    """Return the ``MaskSelection.conversion`` of an accepted mask request, or None.
+
+    The recorded ``binary_mask_policy`` when the request gives one; ``parent_labels_as_area``
+    for a ``parent_labels`` mask in the role ``region`` when the consumer does not declare
+    ``parent_labels_support`` (experiment-v1 section 4.5b); otherwise None (used as declared).
+    """
+    if mask.binary_mask_policy is not None:
+        return mask.binary_mask_policy
+    if (
+        representation == PARENT_LABELS
+        and mask.role == REGION
+        and not capabilities.parent_labels_support
+    ):
+        return PARENT_LABELS_AS_AREA
+    return None
 
 
 def unchecked_refusal(mask_id: str, unchecked: Iterable[str], total: int) -> Refusal | None:

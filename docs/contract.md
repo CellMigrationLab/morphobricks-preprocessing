@@ -378,15 +378,16 @@ It gives:
   of a mask file the mask step has not checked (§15; `mask_representation.json`) is refused with
   `MaskUncheckedError` (`A_MASK_UNCHECKED`); the error classes carry the Spec code as `code`. `ChannelNotFoundError` is `A_SCOPE_INCOMPLETE` (Stage 2, owner answer 2): one rule and one code for a channel that no image has and for one that some images lack, and its message names the image. `section_digests()` returns a copy of the manifest's `experiment_description.section_digests` (SHA-256 of the `conditions`, `channels`, `repeats` and `masks` sections; the published file is not read again).
 
-- **The request resolver (resolver contract version 1, `RESOLVER_VERSION`; MorphoBricks
-  architecture decision of 10 November 2026).** `resolve_request(request)` is the one
+- **The request resolver (resolver contract version 2, `RESOLVER_VERSION`; MorphoBricks
+  architecture decision of 10 November 2026; version 2 since parent-label masks, Spec ADR 0002
+  "Resolver contract version 2" and experiment-v1 §4.5b at MorphoBricks-Spec `69a58b3`).** `resolve_request(request)` is the one
   interpreter of a described run for an analysis, on every route (a brick's direct run and a run
   through MorphoFeature alike; `run_inputs_request`, `run_inputs_resolve`). A `Request` names
   canonical channel IDs, masks by ID with a role (`objects` or `region`) and, for a `binary`
   mask used as objects, the explicit `binary_mask_policy` (`connected_components`,
   experiment-v1 §4.5c), the planes (`plane`, one selection per (t, z), or `volume`, every Z of
-  one t), the consumer's `Capabilities` (`rgb_support`, `volume_support`, both False by
-  default) and the explicit `device` (`cpu` or `cuda`; recorded, never chosen here). It returns
+  one t), the consumer's `Capabilities` (`rgb_support`, `volume_support`,
+  `parent_labels_support`, all False by default) and the explicit `device` (`cpu` or `cuda`; recorded, never chosen here). It returns
   an immutable, picklable `ResolvedRequest`: one `FovSelection` per position (the unchanged key,
   `repeat_group`, `condition_id`, `technical_repeat_id`, the unit's declared `image_type`
   (`rgb` or `channels`, the position's `Fov.image_type`), the C
@@ -399,7 +400,9 @@ It gives:
   applicable refusal is reported, each a `Refusal(code, subject, message, files)`:
   `A_SCOPE_INCOMPLETE` for a channel or mask some or all images lack ("present in k of n
   acquisitions", k may be 0; an undeclared mask ID is 0 of n), `A_MASK_UNCHECKED` ("k of n
-  files"), `A_MASK_NOT_INSTANCES` (a non-`instances` mask as objects without the policy),
+  files"), `A_MASK_NOT_INSTANCES` (a `binary` mask as objects without the policy, and a
+  `parent_labels` mask as objects always, with or without `parent_labels_support`: it is never
+  split, relabelled or converted, and the message offers no policy),
   `A_RGB_NOT_SUPPORTED` (`rgb` units without `rgb_support`) and `A_VOLUME_NOT_SUPPORTED`
   (`VolumeNotSupportedError`, the resolver contract's own code: a volume without
   `volume_support`). `ResolvedRequest.require()` returns the selections or raises the first
@@ -409,10 +412,17 @@ It gives:
   PP-1): no pixel, no kernel, no brick,
   CellPatcher or provider import (a test scans its modules), and it writes nothing. It converts
   nothing: a recorded policy comes back as `MaskSelection.conversion` and each route applies it
-  with the one shared labeller (CellPatcher's), so both routes give the same objects. The
+  with the one shared labeller (CellPatcher's), so both routes give the same objects. A
+  `parent_labels` mask in the role `region` comes back with `representation = "parent_labels"`
+  and, for a consumer without `parent_labels_support`, `conversion = "parent_labels_as_area"`
+  (`PARENT_LABELS_AS_AREA`): that consumer reads every non-zero pixel as inside and 0 as outside,
+  records the marker with the mask ID in its run provenance or output and shows it to the user
+  ("`Mito`: parent_labels used as an area; grouping not kept"); with the capability it comes back
+  with no conversion and the consumer reads the groups. The
   `device` is checked for its spelling only and recorded in the provenance; the consumer refuses
   `cuda` without a GPU and never switches. A malformed request (an ID twice, an unknown role,
-  policy, plane kind or device, a policy on a mask that is not `binary` or in a `region` role,
+  policy, plane kind or device, a policy on a mask that is not `binary` or in a `region` role
+  (on a `parent_labels` mask the message says it is never converted),
   channels or masks not a tuple of `str` IDs or of `MaskRequest`, a capability that is not a
   `bool`) is a `ValueError`, not a refusal. Every run the resolver sees is described: a run
   without a published description is refused by `open` with `A_DESCRIPTION_REQUIRED` (§0;
@@ -627,11 +637,15 @@ masks/                         masks folder, outside the experiment folder
 | Warnings | `mask_missing` (images without a mask of a type that other images have: their objects of that type cannot be measured), `mask_without_image` (files matching no image of the experiment), `mask_of_excluded_image` (masks of excluded images, not used), `mask_outside_type_folder` (files directly in the masks folder that are not TIFF masks). |
 | Run | `run_experiment(..., masks_folder=..., mask_axes=...)` stops on a mask error and records the masks in the manifest's `masks` key (§9). Without masks, the run and its outputs are unchanged. |
 
-### 15.1 The mask step (`mask_relationships.json`, report version 3)
+### 15.1 The mask step (`mask_relationships.json`, report version 4)
 
 The optional mask step reads every image's masks, one image at a time, and describes each
-mask type and every ordered pair of types over the whole experiment. Pieces are counted with
-4-connectivity; label 0 is background and every object has a positive label: a mask holding
+mask type and every ordered pair of types over the whole experiment. Pieces are counted
+8-connected (a pixel joined to its 8 edge and corner neighbours, `scipy.ndimage` structure
+`generate_binary_structure(2, 2)`, the connectivity of CellPatcher's `BINARY_MASK_CONNECTIVITY =
+2`; CellPatcher is not imported; owner decision "8-connected everywhere", 11 November 2026; report
+version 4: before, 4-connected, so two pieces of one label touching only at a corner counted as
+two and a mask's `median_pieces_per_label`, and so its kind, could differ); label 0 is background and every object has a positive label: a mask holding
 a negative value (possible in a signed integer type, which the header check accepts) raises
 an error when its pixels are read, and no report is written, so the background or a negative
 value is never counted as an object. Every conclusion is a suggestion with its evidence:
@@ -798,7 +812,7 @@ One JSON object, UTF-8, two-space indent, sorted keys, LF, a final newline, no d
 | `pairing` | Condition source folder → source repeat folder → the pairing label of the repeat the user paired that folder with (only folders not in the repeat of their own name; applied to the draft first, so the `repeats` keys are the paired labels; refused with `pairing_after_confirmation` once a repeat is named or confirmed, `unknown_key` for a folder the draft lacks). A reference to the condition itself or one that closes a loop is refused when saved (`E_REFERENCE_SELF`, `E_REFERENCE_CYCLE`). |
 | `units` | `condition folder` → `source repeat folder` → `technical-repeat folder` → `{channels, image_type?, display_name?}`; `channels` lists, for C0, C1, ... in order, a channel ID (every position needs a label the user declared, for example `unused`; an empty string is refused) or `null` (not tagged yet); `image_type` is `"rgb"` or `"channels"` (an ordinary channel image; absent means not answered), any other value is refused |
 | `channels` | Channel ID → `{display_name?, header_names?}` (the label list of the notebook's *Your channels* screen; `header_names` are the raw header names of the cells the user tagged with that label: the tag is the alias confirmation, of the name the cell's header has when it is tagged. At each tag the names no tagged cell has any more are dropped, and only the names of the cells just tagged are added: a tag saved while the header had another name never confirms the name it has now, so `R_HEADER_CONTRADICTION` stays until that cell is tagged again) |
-| `masks` | Mask ID → `{source_type, representation, source_channels?, display_name?}` (the notebook's *Your masks* screen: one answer per mask type, `representation` `instances` or `binary` with no default; the ID is the mask type's folder name when it is a valid mask ID, else typed by the user; `source_channels` are declared channel IDs) |
+| `masks` | Mask ID → `{source_type, representation, source_channels?, display_name?}` (the notebook's *Your masks* screen: one answer per mask type, `representation` `instances`, `binary` or `parent_labels` (*grouped labels*, Spec experiment-v1 §4.5b) with no default and never the mask step's `grouped` kind; the ID is the mask type's folder name when it is a valid mask ID, else typed by the user; `source_channels` are declared channel IDs) |
 
 Rules.
 
