@@ -417,6 +417,33 @@ def test_a_member_folder_rename_is_stated_under_its_condition():
     assert ("repeats", "Day1") in {(c.kind, c.old_id) for c in found.accepted}
 
 
+def test_a_member_folder_rename_does_not_accept_a_move_inside_that_folder():
+    # Issue #279: the rename answer re-confirms DNA and ACTIN by ID (4.6). Channels re-ordered
+    # inside the renamed folder are a move the user never saw: those IDs stay open.
+    published = model("v03")
+    statement = FolderRename("member", "experiment_23", "experiment_23b", DAY, condition="DrugA")
+    rec = reconcile(published, renamed_member_folder(published), [statement])
+    draft = candidate(published, rec)
+    member = draft.repeats["Day1"].members["DrugA"]
+    unit = member.technical_repeats["single"]
+    assert unit.channels == ("DNA", "ACTIN")
+    swapped = replace(
+        member, technical_repeats={"single": replace(unit, channels=("ACTIN", "DNA"))}
+    )
+    day1 = replace(
+        draft.repeats["Day1"], members={**draft.repeats["Day1"].members, "DrugA": swapped}
+    )
+    moved = replace(draft, repeats={**draft.repeats, "Day1": day1})
+    found = reconfirmations(published, moved, rec)
+    assert {(c.kind, c.old_id) for c in found.accepted} & {
+        ("channels", "DNA"),
+        ("channels", "ACTIN"),
+    } == set()
+    where = key("DrugA", "experiment_23b")
+    assert found.unseen == (("ACTIN", where, "position"), ("DNA", where, "position"))
+    assert reconfirmations(published, draft, rec).unseen == ()  # the rename alone: nothing open
+
+
 def test_a_technical_folder_rename_is_stated_by_its_folder_label():
     published = model("v06")
     units = published_units(published)
