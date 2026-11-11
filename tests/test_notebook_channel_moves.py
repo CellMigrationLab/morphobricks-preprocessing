@@ -18,7 +18,7 @@ import pytest
 
 from morphobricks_preprocessing.channel_moves import ChannelMove, Moved, channel_moves
 from morphobricks_preprocessing.description_file import RECORDS_FILENAME, sha256_hex
-from test_notebook_check_save import exp  # noqa: F401
+from test_notebook_check_save import answer_all, exp  # noqa: F401
 from test_notebook_prerelease import (
     KEY,
     SAVED_ON,
@@ -35,9 +35,12 @@ pytest.importorskip("matplotlib")
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 
 
-def _retag_swapped(exp, monkeypatch):  # noqa: F811
-    """Save on 2026-01-01, swap ctrl/rep1's first two header channels, re-tag them to match."""
-    nb = _saved_long_ago(exp, monkeypatch, ["Actin", "DAPI", "Ch3"])
+def _retag_swapped(exp, monkeypatch, gone=None):  # noqa: F811
+    """Save on 2026-01-01, swap ctrl/rep1's first two header channels, re-tag them to match.
+
+    ``gone`` is a folder deleted (images and masks) after the save, before reopening.
+    """
+    nb = _saved_long_ago(exp, monkeypatch, ["Actin", "DAPI", "Ch3"], gone)
     for index in (0, 1):
         nb.channel_grid.cells[(KEY, index)].value = None
     nb.channel_grid.cells[(KEY, 0)].value = "ACTIN"
@@ -129,6 +132,25 @@ def test_a_confirmation_covers_only_the_moves_shown_when_it_was_clicked(exp, mon
     assert nb.save_button.disabled
     nb.moves_confirm.button.click()
     assert not nb.save_button.disabled
+
+
+def test_a_removal_elsewhere_does_not_confirm_a_move(exp, monkeypatch):  # noqa: F811
+    # Yes, remove of drug/rep2 records a re-confirmation of every channel ID it held (4.6 keys
+    # it by ID). The move in ctrl/rep1 is still shown and still needs its own click.
+    nb = _retag_swapped(exp, monkeypatch, gone="drug/rep2")
+    answer_all(nb)
+    (row,) = nb.removals_box.children
+    row.children[1].click()
+    assert ui.is_visible(nb.moves_box) and not nb.moves_confirm.value
+    assert "ACTIN: ctrl/rep1 channel 2 → channel 1" in _text(nb.moves_list.value)
+    assert nb.save_button.disabled and not nb.save_experiment()
+    assert "the moved channels are not confirmed: see Channels" in nb.save_blocker.value
+    assert not (exp[2] / RECORDS_FILENAME).exists()
+    nb.moves_confirm.button.click()
+    assert nb.save_experiment(), _text(nb.save_status.value)
+    lines = [json.loads(x) for x in (exp[2] / RECORDS_FILENAME).read_text().splitlines()]
+    kept = [(r["id_kind"], r["old_id"]) for r in lines if r["type"] == "reconfirmation"]
+    assert len(kept) == len(set(kept))  # one line per ID, the removal's and the move's alike
 
 
 def test_no_question_when_no_saved_channel_moved(exp, monkeypatch):  # noqa: F811

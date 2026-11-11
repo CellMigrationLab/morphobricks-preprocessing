@@ -234,7 +234,7 @@ class _CheckSaveScreen:
             self._check = self._candidate_check(answers)
         self.todo.value = todo_html(*todo)
         self.checks.value = checks_html(self._check) or self._blocked(state)
-        ready = self._check is not None and self._check.can_save
+        ready = self._check is not None and self._check.can_save and not self._moves_open()
         self.save_button.disabled = not ready or self._saved_current()
         self.save_note.value = "" if self.save_button.disabled else run_stop_html(self._check)
         ui.set_visible(self.save_note, bool(self.save_note.value))
@@ -248,6 +248,8 @@ class _CheckSaveScreen:
         missing = len(todo[0]) + len(todo[1])
         if missing:
             return [f"{plural(missing, 'answer')} still missing (listed above the button)"]
+        if self._moves_open():
+            return ["the moved channels are not confirmed: see Channels"]
         return ["these answers are refused: see the red message above the button"]
 
     def _blocked(self, state: object) -> str:

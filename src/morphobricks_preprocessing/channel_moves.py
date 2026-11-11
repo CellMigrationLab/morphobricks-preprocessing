@@ -8,9 +8,12 @@ notebook lists each such move (:func:`channel_moves`) and records the re-confirm
 user's click; :func:`move_confirmations` turns the clicks into the records publication is given,
 for exactly the moves that were shown when the user clicked. Nothing is confirmed here.
 
-Only a move inside units that are still in the candidate is offered, and only when the channel
-keeps every header name it had: a removed folder has its own question (Yes, remove), and a lost
-header name is not a move, so neither is waived by this confirmation.
+Only a position inside a unit that is still in the candidate is offered, and only when the
+channel keeps every header name it had: a removed folder has its own question (Yes, remove), and
+a lost header name is not a move, so neither is waived by this confirmation. A removal or rename
+answer that touches the channel elsewhere does not confirm its move either: section 4.6 keys a
+re-confirmation by ID, so that answer would accept the move unseen; the move is still listed and
+still needs its own click.
 """
 
 from __future__ import annotations
@@ -66,15 +69,13 @@ def _move(channel: str, saved: Mapping[Unit, tuple], now: Mapping[Unit, tuple]) 
     return ChannelMove(channel, tuple(moved))
 
 
-def channel_moves(
-    published: Description, candidate: Description, accepted: tuple[Reconfirmation, ...] = ()
-) -> tuple[ChannelMove, ...]:
+def channel_moves(published: Description, candidate: Description) -> tuple[ChannelMove, ...]:
     """Return the confirmed channels re-ordered within their units, each with its moves.
 
-    A channel is listed when publication would refuse it as a changed entity
-    (``R_CONFIRMED_ID_CHANGED`` with no new ID), no re-confirmation in ``accepted`` (a removal or
-    a folder rename the user answered) already accepts it, it keeps every header name it had,
-    and every position it lost is in a unit the candidate still has.
+    A channel is listed when publication would refuse it as a changed entity without any
+    re-confirmation (``R_CONFIRMED_ID_CHANGED`` with no new ID), it keeps every header name it
+    had, and it lost a position in a unit the candidate still has (positions in removed units
+    are not listed). A removal or rename answer does not take a channel off this list.
     """
     refused = {
         issue.old_id
@@ -83,16 +84,14 @@ def channel_moves(
         and issue.kind == CHANNELS
         and issue.new_id is None
     }
-    refused -= {c.old_id for c in accepted if c.kind == CHANNELS and c.new_id is None}
     saved, now = _units(published), _units(candidate)
     out = []
     for channel in sorted(refused):
         names = set(published.channels[channel].header_names or ())
         if not names <= set(candidate.channels[channel].header_names or ()):
             continue  # a header name lost: not a move
-        lost = [u for u, held in saved.items() if channel in held and u not in now]
         move = _move(channel, saved, now)
-        if move.moved and not lost:
+        if move.moved:
             out.append(move)
     return tuple(out)
 

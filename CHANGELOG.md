@@ -16,7 +16,9 @@ v0.5.1: no run before v0.5.1 is read.)
   saved channel that moved (folder, position saved and now) and asks once (**Yes, these are the
   new positions**); only that click gives publication one `reconfirmation` record per channel
   (`new_id` null, the date of the click; experiment-v1 §4.6). A move changed after the click is
-  asked again. The reopened replicate takes the date of its *same way?* answer; every other
+  asked again. A **Yes, remove** or a folder rename that touches the same channel ID elsewhere
+  does not confirm the move: it is still listed, and Save waits for its own click (one record
+  per ID). The reopened replicate takes the date of its *same way?* answer; every other
   replicate keeps its date byte for byte.
 - **CLI `describe`: a header-only change no longer asks to confirm the repeat again (#258)**,
   as in the notebook since #257 (experiment-v1 §10). It says that the run stops until the

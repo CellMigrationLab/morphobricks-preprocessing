@@ -74,15 +74,22 @@ class _ChannelMoves:
         self._refresh_check_save()
 
     def _moves_of(self, state: object, candidate: Description) -> tuple[ChannelMove, ...]:
-        """Return the moves of ``candidate`` that no removal or rename answer already covers."""
-        if state is None:
-            return ()
-        accepted = self._removal_terms(state, candidate)[1]
-        return channel_moves(state.description, candidate, accepted)
+        """Return the moves of ``candidate`` (a removal or rename answer confirms none)."""
+        return () if state is None else channel_moves(state.description, candidate)
+
+    def _moves_open(self) -> bool:
+        """Return True while a move shown on Channels is not confirmed (Save waits for it)."""
+        return any(move not in self._moves_clicked for move in self._moves_shown)
 
     def _move_terms(self, state: object, candidate: Description) -> tuple[Reconfirmation, ...]:
-        """Return the re-confirmations of the moves the user confirmed (for publication)."""
-        return move_confirmations(self._moves_of(state, candidate), self._moves_clicked)
+        """Return the re-confirmations of the moves the user confirmed (for publication).
+
+        An ID a removal or rename answer already re-confirms keeps that one record (one line per
+        ID); the move's click is still required before saving (:meth:`_moves_open`).
+        """
+        taken = {(c.kind, c.old_id) for c in self._removal_terms(state, candidate)[1]}
+        clicked = move_confirmations(self._moves_of(state, candidate), self._moves_clicked)
+        return tuple(c for c in clicked if (c.kind, c.old_id) not in taken)
 
     def _refresh_channel_moves(self) -> None:
         """Show the moved channels of the answers now and whether the user confirmed them."""

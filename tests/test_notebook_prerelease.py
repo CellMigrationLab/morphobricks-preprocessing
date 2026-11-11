@@ -13,6 +13,7 @@
 """
 
 import re
+import shutil
 from dataclasses import replace
 from datetime import date
 
@@ -64,8 +65,11 @@ class _FirstOfJanuary(date):
 SAVED_ON = "2026-01-01"
 
 
-def _saved_long_ago(exp, monkeypatch, names):  # noqa: F811
-    """Save the experiment on 2026-01-01, then rewrite ctrl/rep1's header with ``names``."""
+def _saved_long_ago(exp, monkeypatch, names, gone=None):  # noqa: F811
+    """Save the experiment on 2026-01-01, then rewrite ctrl/rep1's header with ``names``.
+
+    ``gone`` names a folder (``condition/repeat``) deleted with its masks after the save.
+    """
     monkeypatch.setattr(notebook_check_save, "date", _FirstOfJanuary)
     first = stepper(*exp)
     first.quick_confirm.click()
@@ -74,6 +78,9 @@ def _saved_long_ago(exp, monkeypatch, names):  # noqa: F811
     monkeypatch.setattr(notebook_check_save, "date", date)
     assert {r.confirmed_on for r in first.draft_answers.repeats.values()} == {SAVED_ON}
     write_channels(exp[0] / "ctrl/rep1/a.tif", names, KINDS, seed=1)
+    if gone is not None:
+        shutil.rmtree(exp[0] / gone)
+        shutil.rmtree(exp[1] / "Nuclei" / gone)
     nb = stepper(*exp)
     nb.quick_confirm.click()
     return nb
