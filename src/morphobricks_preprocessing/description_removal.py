@@ -43,6 +43,9 @@ from .description_transition import (
 Change = tuple[str, str, str | None]
 """A changed confirmed ID as ``Reconfirmation`` names it: (kind, old ID, new ID or None)."""
 
+POSITION, HEADER_NAME = "position", "header name"
+"""What a channel lost in a folder still there (:attr:`Reconfirmations.unseen`)."""
+
 
 @dataclass(frozen=True)
 class RemovalQuestion:
@@ -81,10 +84,16 @@ class Removal:
 
 @dataclass(frozen=True)
 class Reconfirmations:
-    """The records the candidate needs: those the user's answers cover, and those they do not."""
+    """The records the candidate needs: those the user's answers cover, and those they do not.
+
+    ``unseen`` are the channel changes in folders still there that keep an ID open although an
+    answer touches it: each the channel ID, the folder and what it lost there (``POSITION`` or
+    ``HEADER_NAME``; issue #279).
+    """
 
     accepted: tuple[Reconfirmation, ...]
     open: tuple[TransitionIssue, ...]
+    unseen: tuple[tuple[str, UnitFolders, str], ...] = ()
 
 
 def _moves(
@@ -236,6 +245,44 @@ def candidate(
     return built
 
 
+def _unanswered(
+    issue: TransitionIssue,
+    published: Description,
+    built: Description,
+    rec: Reconciliation,
+    answered: set[UnitFolders],
+) -> set[tuple[UnitFolders, str]]:
+    """Return the folders still there where a channel changed in a way no answer covers.
+
+    Section 4.6 keys a re-confirmation by ID only: a removal or rename answer that touches a
+    channel would also accept its other changes. Those are a position lost in a unit no answer
+    names (a move, confirmed on its own, #258) and a lost header name while a folder still there
+    no longer gives a saved name at the channel's position (#279).
+    """
+    if issue.kind != CHANNELS or issue.new_id is not None:
+        return set()
+    channel, units = issue.old_id, published_units(published)
+    by_ids = {(u.condition_id, k.source_repeat, u.technical_id): k for k, u in units.items()}
+    before = _positions_of(published, channel)
+    lost = {by_ids[p[:3]] for p in before - _positions_of(built, channel)} - answered
+    out = {(folders, POSITION) for folders in lost}
+    names = set(published.channels[channel].header_names or ())
+    if not names <= set(built.channels[channel].header_names or ()):
+        out |= {(u.folders, HEADER_NAME) for u in rec.unchanged if channel in u.headers_changed}
+    return out
+
+
+def _positions_of(description: Description, channel: str) -> set[tuple[str, str, str, int]]:
+    """Return the positions ``(condition, source repeat, technical, index)`` of one channel."""
+    return {
+        (cond, member.source_repeat, tid, unit.channels.index(channel))
+        for repeat in description.repeats.values()
+        for cond, member in repeat.members.items()
+        for tid, unit in member.technical_repeats.items()
+        if channel in unit.channels
+    }
+
+
 def reconfirmations(
     published: Description,
     built: Description,
@@ -245,7 +292,9 @@ def reconfirmations(
     """Return the re-confirmations of ``built`` that the user's answers cover, and the rest.
 
     Each changed confirmed ID takes the date of the first answer that touches one of its units;
-    an ID no answer touches is in ``open`` (the candidate would be refused for it).
+    an ID no answer touches is in ``open`` (the candidate would be refused for it). A channel
+    that also changed in a folder still there in a way no answer covers is open as well, with
+    those folders in ``unseen``: the record cannot say "this ID, only in that folder" (4.6).
     """
     units = published_units(published)
     answers = [(set(r.units), r.confirmed_on) for r in removals]
@@ -254,12 +303,15 @@ def reconfirmations(
         after = {key: renamed_key(current, rename) for key, current in now.items()}
         answers.append(({key for key in units if after[key] != now[key]}, rename.confirmed_on))
         now = after
-    accepted, left = set(), []
+    answered = {key for held, _ in answers for key in held}
+    accepted, left, unseen = set(), [], set()
     for issue in _changes(published, built):
         reached = _affected(issue, units)
         dates = [day for held, day in answers if held & reached]
-        if dates:
+        others = _unanswered(issue, published, built, rec, answered) if dates else set()
+        if dates and not others:
             accepted.add(Reconfirmation(issue.kind, issue.old_id, issue.new_id, dates[0]))
         else:
             left.append(issue)
-    return Reconfirmations(tuple(sorted(accepted)), tuple(left))
+            unseen |= {(issue.old_id, *other) for other in others}
+    return Reconfirmations(tuple(sorted(accepted)), tuple(left), tuple(sorted(unseen)))

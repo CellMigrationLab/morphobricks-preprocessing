@@ -119,7 +119,10 @@ class UnitChange:
 
     ``repeat_id``, ``condition_id`` and ``technical_id`` are the published IDs of an unchanged or
     removed unit, None for a new one, which is pending. ``proposed_repeat`` is the only proposal
-    for a new unit: the published repeat ID equal to its source repeat label.
+    for a new unit: the published repeat ID equal to its source repeat label. ``headers_changed``
+    are the saved channels of a unit still in the folder whose header, at their saved position,
+    no longer gives one of their saved header names (another name, or none): a change in this
+    folder that no removal or rename answer elsewhere confirms (issue #279).
     """
 
     folders: UnitFolders
@@ -130,6 +133,7 @@ class UnitChange:
     proposed_repeat: str | None = None
     reasons: tuple[str, ...] = ()
     image_count: int | None = None
+    headers_changed: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -245,6 +249,27 @@ def _channels_differ(
     return False
 
 
+def _headers_changed(
+    published: PublishedUnit, seen: ObservedUnit, description: Description
+) -> tuple[str, ...]:
+    """Return the unit's saved channels whose header name at their position is not a saved one.
+
+    A position whose header now gives no name counts too when the channel has saved names: the
+    name it may have given is lost. Nothing is known without read header names or for a colour
+    unit.
+    """
+    unit = published.unit
+    if seen.header_names is None or unit.image_type == "rgb":
+        return ()
+    out = set()
+    for index, channel in enumerate(unit.channels):
+        known = {_nfc(entry) for entry in description.channels[channel].header_names or ()}
+        name = seen.header_names[index] if index < len(seen.header_names) else None
+        if known and (not name or _nfc(name) not in known):
+            out.add(channel)
+    return tuple(sorted(out))
+
+
 def _nfc(text: str) -> str:
     return unicodedata.normalize("NFC", text)
 
@@ -319,7 +344,7 @@ def reconcile(
         found = [RENAMED_FOLDER] * (key in renamed)
         found += [CHANNELS_CHANGED] * _channels_differ(unit, seen, published)
         reasons[key].update(found)
-        changes.append(_change(unit, Status.UNCHANGED, tuple(found), current, seen))
+        changes.append(_change(unit, Status.UNCHANGED, tuple(found), current, seen, published))
     known = set(now.values())
     pending = [key for key in observed if key not in known]
     changes += [_new(key, observed[key], published, now, reasons, units) for key in sorted(pending)]
@@ -336,7 +361,9 @@ def _change(
     reasons: tuple[str, ...],
     folders: UnitFolders | None = None,
     seen: ObservedUnit | None = None,
+    description: Description | None = None,
 ) -> UnitChange:
+    """Return one published unit's change (``seen`` and ``description`` for a unit still there)."""
     return UnitChange(
         folders or unit.folders,
         status,
@@ -346,6 +373,7 @@ def _change(
         None,
         tuple(sorted(reasons)),
         seen.image_count if seen else None,
+        _headers_changed(unit, seen, description) if seen and description else (),
     )
 
 

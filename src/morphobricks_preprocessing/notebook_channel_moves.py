@@ -11,7 +11,7 @@ after the click is asked again; nothing is ticked for the user.
 from __future__ import annotations
 
 import html
-from dataclasses import replace
+from dataclasses import astuple, replace
 from datetime import date
 
 import ipywidgets as widgets
@@ -19,6 +19,7 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .channel_moves import ChannelMove, channel_moves, move_confirmations
 from .description import Description
+from .description_removal import reconfirmations
 from .description_transition import Reconfirmation
 from .draft import DraftError
 from .draft_answers import description_from_draft
@@ -90,6 +91,30 @@ class _ChannelMoves:
         taken = {(c.kind, c.old_id) for c in self._removal_terms(state, candidate)[1]}
         clicked = move_confirmations(self._moves_of(state, candidate), self._moves_clicked)
         return tuple(c for c in clicked if (c.kind, c.old_id) not in taken)
+
+    def _unseen_lines(self) -> list[str]:
+        """Say which channel changed in a folder still there that no answer confirms (#279).
+
+        A removal or rename answer re-confirms a channel ID, never one folder of it, so that
+        change keeps the ID refused until it is undone; nothing is confirmed for the user.
+        """
+        state, check = self._published(), self._check
+        if state is None or check is None or check.description is None:
+            return []
+        candidate = check.description
+        found = reconfirmations(
+            state.description,
+            candidate,
+            state.reconciliation,
+            self._removal_terms(state, candidate)[0],
+        )
+        kept = {c.old_id for c in self._publication_terms(state, candidate)[1]}
+        return [
+            f"{channel} lost a saved {what} in {_where(astuple(folders))}, which is still there:"
+            " a removal or rename does not confirm it (undo that tag on Channels)"
+            for channel, folders, what in found.unseen
+            if channel not in kept
+        ]
 
     def _refresh_channel_moves(self) -> None:
         """Show the moved channels of the answers now and whether the user confirmed them."""
