@@ -10,13 +10,31 @@ v0.5.1: no run before v0.5.1 is read.)
 
 **Fixed**
 
+- **Notebook: a lost header name is confirmed with one click on Channels (#281).** A saved
+  channel that loses a header name (the images now give another name or none, or the folder
+  that gave it is gone) was refused with `R_CONFIRMED_ID_CHANGED` and no way forward: after a
+  removal saved without a re-tag, any later re-tag of that channel was refused for good. The
+  Channels step now lists each such channel with its header names saved and now (*DNA: header
+  names “DAPI”, “Hoechst” → “DAPI”*) and asks once (**Yes, this header name changed**); only
+  that click gives publication one `reconfirmation` per channel (`new_id` null, the date of
+  the click; experiment-v1 §4.6), as for a move. A change after the click is asked again, and
+  the line beside the disabled Save names each change still waiting, also while another answer
+  is still missing; a change made after reopening a saved experiment unfolds Check and save, so
+  that line is never hidden behind the folded *Saved on …, nothing changed* bar. A **Yes,
+  remove** or a folder rename no longer accepts a lost header name, even one only the removed
+  folder gave:
+  the published file keeps no names per folder, so a switch to another saved name ("Hoechst"
+  to "DAPI") with a removal no longer publishes unseen. Folders whose headers never stated
+  names are no longer told they "lost a saved header name"; the line says what changed in the
+  saved description. A channel that moved and lost a name is asked both questions; publication
+  gets one record per ID.
 - **Notebook: a removal or rename answer confirms only the change it answers (#279).** A
   re-confirmation names a channel ID, not a folder (experiment-v1 §4.6), so **Yes, remove** of
   one folder accepted any change of its channel IDs, including a saved header name lost in
   another folder that is still there. Such an ID now stays refused (`R_CONFIRMED_ID_CHANGED`) and
-  the line beside Save names the channel and the folder (undo that tag on Channels). A header
-  name held only by the removed folder is still the removal's, and a moved position still needs
-  its own click (#258). A header that now states no channel names at all counts as a lost name
+  the line beside Save names the channel and the folder (undo that tag on Channels; since #281,
+  a lost header name is confirmed on Channels instead), and a moved position still needs its own
+  click (#258). A header that now states no channel names at all counts as a lost name
   too, and a folder rename answer does not accept channels re-ordered inside the renamed folder.
 - **Notebook: a channel re-confirmation after re-ordering a unit's channels (#258).** A saved
   unit re-tagged in another order (its images re-exported with the channels re-ordered) was

@@ -79,6 +79,7 @@ class _ChannelsStep:
                 self.channel_labels.widget,
                 self.channel_grid.widget,
                 self.moves_box,
+                self.names_box,
             ]
         )
 

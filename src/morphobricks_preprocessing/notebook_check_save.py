@@ -246,13 +246,14 @@ class _CheckSaveScreen:
         if not self.save_button.disabled or self._saved_current():
             return []  # saved already (the green line says so): nothing is blocked
         missing = len(todo[0]) + len(todo[1])
-        if missing:
-            return [f"{plural(missing, 'answer')} still missing (listed above the button)"]
-        if self._moves_open():
-            return ["the moved channels are not confirmed: see Channels"]
-        return self._unseen_lines() or [
-            "these answers are refused: see the red message above the button"
-        ]
+        if missing:  # and the Channels questions waiting, so none is found only afterwards
+            line = f"{plural(missing, 'answer')} still missing (listed above the button)"
+            return [line, *self._open_change_lines()]
+        return (
+            self._open_change_lines()
+            or self._unseen_lines()
+            or ["these answers are refused: see the red message above the button"]
+        )
 
     def _blocked(self, state: object) -> str:
         """Say what already stops the run while the candidate cannot be checked (answers missing).
@@ -424,9 +425,9 @@ class _CheckSaveScreen:
     def _show_saved_state(self) -> None:
         """Show the green saved line (folded or not) and the run gate."""
         state = self._published()
-        if self._published_refused():
-            self._folded = False  # a refusal of the run's checks is never folded away
-        if self._saved_current() and not self._published_refused():
+        current = self._saved_current() and not self._published_refused()
+        self._folded = self._folded and current  # a refusal or a change since saved: unfolded
+        if current:
             when = self._saved_on or (state.saved_on if state else "")
             self.save_status.value = saved_html(
                 when, self._run_allowed(), self.confirmed_mapping is not None
@@ -536,7 +537,8 @@ class _CheckSaveScreen:
             return False
         self._saved_on = date.today().isoformat()
         self.draft_answers = replace(self.draft_answers, base_sha256=publication.sha256)
-        self._removals, self._moves_clicked = {}, {}
+        self._removals = {}
+        self._forget_channel_clicks()
         self._draft_note = ""
         self._forget_published()
         self.confirmed_image_type = self._described_image_type()
@@ -554,7 +556,8 @@ class _CheckSaveScreen:
         """Return the removals the user confirmed and the re-confirmations they give publication.
 
         The same terms go to publication (:meth:`_publish`) and to the pre-save check, so Save
-        is enabled only for what publication accepts (with the channel moves of Channels, #258).
+        is enabled only for what publication accepts (with the moves and header-name changes
+        confirmed on Channels, #258 and #281).
         """
         removals, accepted = self._removal_terms(state, candidate)
         return removals, accepted + self._move_terms(state, candidate)
@@ -568,8 +571,9 @@ class _CheckSaveScreen:
             for q in state.removals
             if q.condition_id in self._removals
         )
+        names = self._names_confirmed(state, candidate)
         confirmations = reconfirmations(
-            state.description, candidate, state.reconciliation, removals
+            state.description, candidate, state.reconciliation, removals, names
         ).accepted
         return removals, confirmations
 

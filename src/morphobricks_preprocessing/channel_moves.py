@@ -1,4 +1,4 @@
-"""Confirmed channels at new positions of their units, and their re-confirmations (pure).
+"""Confirmed channels at new positions or with lost header names, and their re-confirmations.
 
 Experiment-v1 section 4.6 (c): a confirmed channel ID that loses a unit position it held in the
 published file (the images were re-exported with their channels in another order, and the user
@@ -8,17 +8,23 @@ notebook lists each such move (:func:`channel_moves`) and records the re-confirm
 user's click; :func:`move_confirmations` turns the clicks into the records publication is given,
 for exactly the moves that were shown when the user clicked. Nothing is confirmed here.
 
-Only a position inside a unit that is still in the candidate is offered, and only when the
-channel keeps every header name it had: a removed folder has its own question (Yes, remove), and
-a lost header name is not a move, so neither is waived by this confirmation. A removal or rename
-answer that touches the channel elsewhere does not confirm its move either: section 4.6 keys a
-re-confirmation by ID, so that answer would accept the move unseen; the move is still listed and
-still needs its own click.
+Only a position inside a unit that is still in the candidate is offered: a removed folder has
+its own question (Yes, remove). A removal or rename answer that touches the channel elsewhere
+does not confirm its move either: section 4.6 keys a re-confirmation by ID, so that answer would
+accept the move unseen; the move is still listed and still needs its own click.
+
+A saved header name the candidate no longer holds is the other half of a channel's entity
+(section 4.6, AQ1): :func:`name_changes` lists each such channel with its saved names and its
+names now, and only the user's own click confirms it (issue #281), whether the loss comes alone
+or with a removal or rename. The published file keeps no header names per folder, so a removal
+cannot tell a name only the removed folder gave from a name another folder no longer gives: no
+removal or rename answer confirms a lost header name. A channel that both moved and lost a name
+is in both lists and needs both clicks; publication gets one record per ID.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from .description import Description
@@ -36,6 +42,15 @@ class Moved:
     unit: Unit
     saved: int
     now: int | None
+
+
+@dataclass(frozen=True, order=True)
+class NameChange:
+    """A confirmed channel that lost a saved header name: its names saved and its names now."""
+
+    channel: str
+    saved: tuple[str, ...]
+    now: tuple[str, ...]
 
 
 @dataclass(frozen=True, order=True)
@@ -73,9 +88,10 @@ def channel_moves(published: Description, candidate: Description) -> tuple[Chann
     """Return the confirmed channels re-ordered within their units, each with its moves.
 
     A channel is listed when publication would refuse it as a changed entity without any
-    re-confirmation (``R_CONFIRMED_ID_CHANGED`` with no new ID), it keeps every header name it
-    had, and it lost a position in a unit the candidate still has (positions in removed units
-    are not listed). A removal or rename answer does not take a channel off this list.
+    re-confirmation (``R_CONFIRMED_ID_CHANGED`` with no new ID) and it lost a position in a unit
+    the candidate still has (positions in removed units are not listed). A removal or rename
+    answer does not take a channel off this list, and neither does a lost header name: that is
+    asked on its own (:func:`name_changes`).
     """
     refused = {
         issue.old_id
@@ -87,28 +103,50 @@ def channel_moves(published: Description, candidate: Description) -> tuple[Chann
     saved, now = _units(published), _units(candidate)
     out = []
     for channel in sorted(refused):
-        names = set(published.channels[channel].header_names or ())
-        if not names <= set(candidate.channels[channel].header_names or ()):
-            continue  # a header name lost: not a move
         move = _move(channel, saved, now)
         if move.moved:
             out.append(move)
     return tuple(out)
 
 
-def move_confirmations(
-    moves: tuple[ChannelMove, ...], clicked: Mapping[ChannelMove, str]
-) -> tuple[Reconfirmation, ...]:
-    """Return the re-confirmations of the moves the user confirmed, as they were shown.
+def name_changes(published: Description, candidate: Description) -> tuple[NameChange, ...]:
+    """Return the confirmed channels that lost a saved header name, in channel ID order.
 
-    ``clicked`` maps each move the user confirmed to the date of the click. A move that changed
-    since (another re-order) is not the one confirmed and gets no record.
+    The comparison is publication's own (section 4.6 (c): a saved ``header_names`` entry the
+    candidate does not hold, compared as stored), so a channel is listed exactly when that loss
+    alone makes publication refuse it as ``R_CONFIRMED_ID_CHANGED``. A name added is no change.
+    """
+    out = []
+    for channel in sorted(published.channels.keys() & candidate.channels.keys()):
+        saved = tuple(sorted(published.channels[channel].header_names or ()))
+        now = tuple(sorted(candidate.channels[channel].header_names or ()))
+        if not set(saved) <= set(now):
+            out.append(NameChange(channel, saved, now))
+    return tuple(out)
+
+
+def move_confirmations(
+    changes: Sequence[ChannelMove | NameChange], clicked: Mapping[ChannelMove | NameChange, str]
+) -> tuple[Reconfirmation, ...]:
+    """Return the re-confirmations of the changes the user confirmed, as they were shown.
+
+    ``changes`` are moves or header-name changes; ``clicked`` maps each one the user confirmed
+    to the date of the click. A change that differs since (another re-order, another name lost)
+    is not the one confirmed and gets no record.
     """
     return tuple(
-        Reconfirmation(CHANNELS, move.channel, None, clicked[move])
-        for move in moves
-        if move in clicked
+        Reconfirmation(CHANNELS, change.channel, None, clicked[change])
+        for change in changes
+        if change in clicked
     )
 
 
-__all__ = ["ChannelMove", "Moved", "Unit", "channel_moves", "move_confirmations"]
+__all__ = [
+    "ChannelMove",
+    "Moved",
+    "NameChange",
+    "Unit",
+    "channel_moves",
+    "move_confirmations",
+    "name_changes",
+]
