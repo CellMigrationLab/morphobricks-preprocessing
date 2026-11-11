@@ -32,6 +32,7 @@ def entry(path="cond/rep/a.tif", **kwargs):
         "roles": ("Z", "Y", "X"),
         "axes_from": "header",
         "position_id": position_id(path),
+        "channel_ids": ("DNA",),
     }
     return FileEntry(**{**values, **kwargs})
 
@@ -70,7 +71,7 @@ def test_written_json_is_readable_and_stable(tmp_path):
     raw = path.read_bytes()
     assert b"\r\n" not in raw and raw.endswith(b"\n")
     data = json.loads(raw)
-    assert data["manifest_version"] == "4" and data["schema_version"] == "4"
+    assert data["manifest_version"] == "5" and data["schema_version"] == "5"
     assert data["axis_mapping"] == {"axes": "ZYX", "roles": ["Z", "Y", "X"]}
     assert data["settings"]["exclude"] == ["a.tif", "b.tif"]
     assert data["labels"] == [
@@ -155,7 +156,7 @@ def test_image_type_round_trips_and_is_none_when_absent(tmp_path):
     assert read_manifest(path) == original
     data = json.loads(path.read_bytes())
     assert (data["image_type"], data["channels_from_rgb_samples"]) == ("rgb", True)
-    assert data["manifest_version"] == "4"
+    assert data["manifest_version"] == "5"
     del data["image_type"], data["channels_from_rgb_samples"]  # written before P4
     path.write_text(json.dumps(data), encoding="utf-8")
     read = read_manifest(path)
@@ -195,7 +196,7 @@ def test_histogram_settings_and_narrow_ranges_round_trip(tmp_path):
         robust_central_bins=6971,
         min_central_bins=100,
     )
-    narrow = (NarrowRange("cond/rep/a.tif", "cond/rep/a.tif::z=0,t=0", 0, check),)
+    narrow = (NarrowRange("cond/rep/a.tif", "cond/rep/a.tif::z=0,t=0", "DNA", check),)
     path = write_manifest(manifest(settings=settings, narrow_ranges=narrow), tmp_path / "m.json")
     read = read_manifest(path)
     assert read.settings.histogram == settings.histogram and read.narrow_ranges == narrow

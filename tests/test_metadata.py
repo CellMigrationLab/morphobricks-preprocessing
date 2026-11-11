@@ -483,7 +483,7 @@ def test_different_plane_counts(tmp_path):
     channels = issue(report.issues, "different_channel_counts")
     assert channels.severity is Severity.ERROR and channels.paths == ("c.tif",)
     assert "3 channels (2 images), 2 channels (1 image)" in channels.message
-    assert "separate experiment" in channels.action
+    assert "folder of their own" in channels.action  # one folder: one acquisition
 
 
 def test_plane_counts_compare_rgb_samples_and_unlabelled_dimensions():

@@ -58,6 +58,7 @@ def table_rows():
             "single",
             [compute_plane_histogram(c) for c in planes],
             position_id=Path(path).stem,
+            channels=("C0", "C1"),
         )
         for path, planes in channels.items()
     ]
@@ -76,7 +77,10 @@ def test_check_intensities_adds_the_unchecked_channels_after_the_checks():
     expected = (*intensity_checks(summaries), *unchecked_channels(summaries))
     assert report.issues == expected
     unchecked = [i for i in report.issues if i.code == CODE]
-    assert [(i.items, i.channel) for i in unchecked] == [(("a/r/x.tif",), 1), (("a/r/z.tif",), 0)]
+    assert [(i.items, i.channel) for i in unchecked] == [
+        (("a/r/x.tif",), "C1"),
+        (("a/r/z.tif",), "C0"),
+    ]
     assert all(not issue.is_error for issue in report.validation_issues())
     assert intensity_summary(report) == "3 images checked: 2 intensity warnings."
     text = intensity_text(report)
@@ -86,7 +90,9 @@ def test_check_intensities_adds_the_unchecked_channels_after_the_checks():
 
 
 def test_check_table_reports_it_from_the_csv(tmp_path):
-    path = write_plane_histograms(table_rows(), tmp_path / "plane_histograms.csv")
+    path = write_plane_histograms(
+        table_rows(), tmp_path / "plane_histograms.csv", channel_ids=("C0", "C1")
+    )
     _, report = check_table(path)
     assert [i.code for i in report.issues].count(CODE) == 2
 
@@ -96,7 +102,8 @@ def test_a_run_reports_it_with_the_intensity_warnings(tmp_path):
     result = run_described(root, prefill_mapping("CYX"))
     assert result.written
     (found,) = [i for i in result.intensity.issues if i.code == CODE]
-    assert found.items == ("ctrl/rep1/img_1.tif",) and found.channel == 1
+    # The described tree names the unnamed C0 and C1 ch1 and ch2.
+    assert found.items == ("ctrl/rep1/img_1.tif",) and found.channel == "ch2"
     # The run's own issues keep their warning about the empty plane.
     assert CODE not in [i.code for i in result.issues]
     report = json.loads((result.output_folder / "discovery_report.json").read_text("utf-8"))
@@ -110,7 +117,7 @@ def test_the_command_line_run_prints_it(tmp_path, capsys):
     assert main_described(["run", str(root), "--axes", "CYX"]) == 0
     out = capsys.readouterr().out.split("Intensity checks:")[1]
     assert f"Image channels without finite pixels, not checked ({CODE}, 1):" in out
-    assert "  - Image ctrl/rep1/img_1.tif, channel C1: it has no finite pixels" in out
+    assert "  - Image ctrl/rep1/img_1.tif, channel ch2: it has no finite pixels" in out
     assert (output / "plane_histograms.csv").is_file()
 
 

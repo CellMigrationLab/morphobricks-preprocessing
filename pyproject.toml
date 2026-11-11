@@ -26,7 +26,7 @@ dependencies = [
     "scipy>=1.10",
     # Per-plane histograms, the CSV table, pooling and normalization, pinned to a release tag;
     # what each pin brought is in CHANGELOG.md.
-    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.4.0",
+    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.5.0",
 ]
 
 [project.optional-dependencies]
@@ -259,6 +259,7 @@ baseline = "tools/code_rules_baseline.json"
 "morphobricks_preprocessing.run_inputs_image" = "pure"
 "morphobricks_preprocessing.description_layouts" = "pure"
 "morphobricks_preprocessing.description_record" = "pure"
+"morphobricks_preprocessing.channel_plan" = "pure"
 "morphobricks_preprocessing.description_unnamed" = "pure"
 "morphobricks_preprocessing.description_run_text" = "pure"
 "morphobricks_preprocessing.mask_representation" = "io"

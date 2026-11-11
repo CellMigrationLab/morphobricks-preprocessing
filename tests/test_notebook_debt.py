@@ -63,6 +63,7 @@ def test_distribution_png_uses_the_owner_cumulative_share(monkeypatch):
         "t",
         histograms=(compute_plane_histogram(pixels, 256),),
         position_id="a",
+        channels=("DNA",),
     )
     used = []
     real = notebook_plots.cumulative_share
@@ -98,6 +99,7 @@ def test_distribution_png_draws_one_panel_per_channel(monkeypatch):
         "t",
         histograms=tuple(compute_plane_histogram(p, 16) for p in channels),
         position_id="a",
+        channels=("C0", "C1"),
     )
     used = []
     real = notebook_plots.cumulative_share

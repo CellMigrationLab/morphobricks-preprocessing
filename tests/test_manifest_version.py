@@ -1,9 +1,10 @@
-"""One run manifest version is written and read: "4" (owner ruling 16, Spec ADR 0002 AR11).
+"""One run manifest version is written and read: "5" (owner ruling 16, Spec ADR 0002 AR11).
 
 Every run is described, so its manifest carries ``experiment_description``; content verification
 is ``settings.verify_content`` with a ``content_sha256`` in every entry exactly when it is true.
-An older manifest ("1" before v0.4.0, "2" and "3" of the undescribed runs) is refused with "run
-preprocessing again", never converted; a later one too. A refused manifest is replaced by the
+An older manifest ("1" before v0.4.0, "2" and "3" of the undescribed runs, "4" of v0.5.1 with
+its schema version 4 table) is refused with "run preprocessing again", never converted; a later
+one too. A refused manifest is replaced by the
 next run, which reads every image again.
 """
 
@@ -38,11 +39,11 @@ def test_every_run_writes_version_4_with_its_description(experiment, verify_cont
     mode = RunMode("restart", verify_content=verify_content)
     assert run_described(root, TYX, output_folder=out, mode=mode).written
     data = _data(out)
-    assert data["manifest_version"] == MANIFEST_VERSION == "4"
+    assert data["manifest_version"] == MANIFEST_VERSION == "5"
     assert data["experiment_description"]["sha256"]
     assert data["settings"]["verify_content"] is verify_content
     assert all(bool(e.get("content_sha256")) is verify_content for e in data["files"])
-    assert RunInputs.open(out).manifest.manifest_version == "4"
+    assert RunInputs.open(out).manifest.manifest_version == "5"
 
 
 def test_turning_content_verification_off_recomputes_every_row(experiment):
@@ -53,10 +54,10 @@ def test_turning_content_verification_off_recomputes_every_row(experiment):
     off = run_described(root, output_folder=out, mode=RunMode("restart", verify_content=False))
     assert off.written and off.read == tuple(IMAGES)
     assert off.rebuild_reason == "content verification (verify_content) was turned off"
-    assert _data(out)["manifest_version"] == "4"
+    assert _data(out)["manifest_version"] == "5"
 
 
-@pytest.mark.parametrize("version", ["1", "2", "3", "5"])
+@pytest.mark.parametrize("version", ["1", "2", "3", "4", "6"])
 def test_any_other_version_is_refused_naming_the_fix(experiment, version):
     root, out = experiment
     assert run_described(root, TYX, output_folder=out).written
@@ -79,7 +80,7 @@ def test_a_refused_older_manifest_is_replaced_by_the_next_run(experiment):
     _write(out, data)
     again = run_described(root, TYX, output_folder=out)
     assert again.written and again.read == tuple(IMAGES)  # nothing reused from it
-    assert _data(out)["manifest_version"] == "4"
+    assert _data(out)["manifest_version"] == "5"
 
 
 def test_a_manifest_without_its_description_is_refused(experiment):
@@ -109,11 +110,13 @@ def test_the_content_hashes_must_match_verify_content(experiment, tmp_path):
 
 
 def test_check_version():
-    check_version("4", True, [("a.tif", "0" * 64)])
-    check_version("4", False, [("a.tif", None)])
+    check_version("5", True, [("a.tif", "0" * 64)])
+    check_version("5", False, [("a.tif", None)])
     with pytest.raises(ValueError, match="'a.tif'"):
-        check_version("4", False, [("a.tif", "0" * 64)])
+        check_version("5", False, [("a.tif", "0" * 64)])
     with pytest.raises(ValueError, match="lacks it"):
-        check_version("4", False, [], described=False)
+        check_version("5", False, [], described=False)
+    with pytest.raises(ValueError, match="'4' is not supported"):  # v0.5.1, table version 4
+        check_version("4", True, [("a.tif", "0" * 64)])
     with pytest.raises(ValueError, match="'3' is not supported"):
         check_version("3", True, [("a.tif", "0" * 64)])

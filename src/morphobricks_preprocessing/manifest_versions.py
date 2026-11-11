@@ -3,15 +3,18 @@
 A manifest's ``manifest_version`` says what its rows were checked against, so that a reader
 that does not know a rule refuses the manifest rather than read it under a weaker one. Before
 the first pipeline release there is no backward compatibility (Spec ADR 0002 AR10; owner ruling
-16 of 10 November 2026): this package writes and reads version ``"4"`` only, a described run's
-manifest (``experiment_description`` present). Content verification is
+16 of 10 November 2026): this package writes and reads version ``"5"`` only, a described run's
+manifest (``experiment_description`` present) whose table is ``plane_histograms.csv`` schema
+version 5 (Stage 3, S3.3, ADR 0003): every file entry records its canonical ``channel_ids``,
+the narrow-range entries name a channel by ID, and the description entry records the
+channel coverage of every biological repeat. Content verification is
 ``settings.verify_content``, with every file's ``content_sha256`` exactly when it is true.
 
 A manifest of any other version (``"1"`` before v0.4.0, ``"2"`` and ``"3"`` of v0.4.0 and the
-undescribed runs of v0.5.0, or a later one) is refused with
-:class:`UnsupportedVersionError`, which names the fix: run preprocessing again. Nothing is
-converted. The writer and the reader apply the same rule (:func:`check_version`), so a written
-manifest always reads back.
+undescribed runs of v0.5.0, ``"4"`` of v0.5.1 with its schema version 4 table, or a later
+one) is refused with :class:`UnsupportedVersionError`, which names the fix: run preprocessing
+again. Nothing is converted. The writer and the reader apply the same rule
+(:func:`check_version`), so a written manifest always reads back.
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ from collections.abc import Iterable
 from .description_record import KEY as DESCRIPTION_KEY
 from .manifest_fields import recorded_flag
 
-MANIFEST_VERSION = "4"
+MANIFEST_VERSION = "5"
 """The version of every run manifest this package writes and reads (a described run)."""
 CONTENT_KEY = "content_sha256"
 """The key of a source's content SHA-256 in a manifest entry (``verify_content`` runs)."""

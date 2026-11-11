@@ -8,6 +8,33 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+**Stage 3 S3.3: different channels per acquisition; `plane_histograms.csv` schema version 5**
+(owner decision of 11 November 2026; Spec roadmap S3.3, ADR 0003)
+
+- **Breaking: normalization v0.5.0** (`@v0.5.0`). The histogram table is schema version 5: one
+  row per plane, the presence column `channels`, the per-channel columns of every declared
+  channel ID (`Histogram_Count_DNA_00042`), an absent channel blank, never zero; centred tail
+  moments. A version 4 table is refused and recomputed by the next run. **Run manifest version
+  5**: each file entry records its `channel_ids` (part of the row key), narrow-range entries
+  name a channel by ID, and `experiment_description` records each unit's `channels` and the
+  `channel_coverage` of every biological repeat (`full`, `partial`, `unavailable`). Manifests of
+  version 4 are refused (run again).
+- **Different channel lists are accepted.** `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` now refuses only
+  units of different image types (RGB beside channel units, Spec `v29`). `different_channel_counts`
+  compares the images of one folder only; the run checks each image against its own unit
+  (`R_CHANNEL_COUNT_MISMATCH`, `R_UNIT_NOT_HOMOGENEOUS`). New warning `partial_channel_coverage`
+  for a repeat with a stain in only some acquisitions.
+- **Everything by channel ID:** the intensity checks (`IntensityReport.channel_ids`,
+  `repeat_boxes(report, "DNA")`), the group statistics (`group_summaries` sorted by ID; a channel
+  only some planes of a group have raises `ChannelScopeIncompleteError`, `A_SCOPE_INCOMPLETE`,
+  unless `partial_channels="planes_with_channel"`, shown in the table), the plots, and
+  `RunInputs` (reads the version 5 table and refuses rows whose channels are not the recorded
+  ones). `RunLabels` no longer maps channel positions (the table names the channels).
+- **Notebook:** the axes step accepts folders with different channel counts, the Channels step
+  tags each folder's list, and *Compare groups* asks before pooling a partly present stain.
+- Histogram numbers of present channels are unchanged (counts, extrema, binning limits, pixel
+  counts and tail moments identical on `v13`, `v01` and simulated uint8/uint16/float32 trees).
+
 **Changed (notebook, owner's test of v0.5.1; no result or published file changes)**
 
 - **One image viewer for every step.** *Images*, *Axes*, *Channels* and *Check and save* show

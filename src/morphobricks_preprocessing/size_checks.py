@@ -86,10 +86,14 @@ def z_stack_issues(slices: Mapping[str, int]) -> list[ValidationIssue]:
 
 
 def channel_count_issues(counts: Mapping[str, int]) -> list[ValidationIssue]:
-    """Report images with different numbers of channels (normalization plan N43).
+    """Report images of one imaging unit with different numbers of channels.
 
-    Each row of ``plane_histograms.csv`` holds every channel of a plane, so all
-    images of an experiment must have the same number of channels.
+    From Stage 3 (Spec roadmap S3.3, owner decision of 11 November 2026) the units of one
+    experiment may have different channels: each unit lists its own by canonical ID and the
+    table names every channel by ID (``plane_histograms.csv`` schema version 5). Inside one
+    unit (a leaf folder: condition, biological repeat and technical repeat) every image has the
+    same channels, so a different count there is still refused; the run names it with the
+    Spec's ``R_UNIT_NOT_HOMOGENEOUS``. Images of different folders are never compared here.
 
     Parameters
     ----------
@@ -99,9 +103,19 @@ def channel_count_issues(counts: Mapping[str, int]) -> list[ValidationIssue]:
     Returns
     -------
     list of ValidationIssue
-        The error ``different_channel_counts`` naming the images not having the
-        most common number, or nothing.
+        One error ``different_channel_counts`` per folder whose images differ, naming the images
+        not having that folder's most common number, or nothing.
     """
+    folders: dict[str, dict[str, int]] = {}
+    for path, count in sorted(counts.items()):
+        folders.setdefault(path.rpartition("/")[0] or ".", {})[path] = count
+    return [
+        found for folder in sorted(folders) for found in _folder_counts(folder, folders[folder])
+    ]
+
+
+def _folder_counts(folder: str, counts: Mapping[str, int]) -> list[ValidationIssue]:
+    """Return ``different_channel_counts`` for one folder's images, or nothing."""
     groups: dict[int, list[str]] = {}
     for path, count in sorted(counts.items()):
         groups.setdefault(count, []).append(path)
@@ -114,13 +128,14 @@ def channel_count_issues(counts: Mapping[str, int]) -> list[ValidationIssue]:
     return [
         error(
             "different_channel_counts",
-            f"The images have different numbers of channels: {summary}. Each row of the "
-            "histogram table holds every channel of a plane, so every image of an experiment "
-            "must have the same channels. The images listed are those without the most "
+            f"The images of the folder {folder} have different numbers of channels: {summary}. "
+            "The images of one acquisition must all have the same channels (other folders may "
+            "have other channels). The images listed are those without the folder's most "
             "common number of channels.",
             sorted(path for _, paths in ordered[1:] for path in paths),
-            "Split the images with other channels into a separate experiment, or exclude "
-            "them. If a channel axis was assigned the wrong role, correct the axis roles.",
+            "Move the images with other channels into a folder of their own (an acquisition "
+            "of its own), or exclude them. If a channel axis was assigned the wrong role, "
+            "correct the axis roles.",
         )
     ]
 

@@ -146,6 +146,7 @@ class _CompactPages:
                 percentiles,
                 self.statistics_button,
                 self.stats_status,
+                self.partial_box,
                 self.stats_tiles,
                 self.statistics_card,
                 self.distribution_card,

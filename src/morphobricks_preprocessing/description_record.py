@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
+from .channel_plan import channel_coverage
 from .description import Description
 from .description_unnamed import FIELD, checked_items, unnamed_items
 from .description_write import section_digests
@@ -19,7 +20,15 @@ from .description_write import section_digests
 KEY = "experiment_description"
 """The manifest key of the entry."""
 SHA256 = re.compile(r"[0-9a-f]{64}")
-_FIELDS = ("sha256", "schema_version", "section_digests", "units", "masks", "records")
+_FIELDS = (
+    "sha256",
+    "schema_version",
+    "section_digests",
+    "units",
+    "masks",
+    "records",
+    "channel_coverage",
+)
 
 
 def unit_records(
@@ -51,6 +60,7 @@ def unit_records(
                     "repeat": repeat_id,
                     "condition": condition_id,
                     "technical_repeat": unit_id,
+                    "channels": list(unit.channels),
                     "image_type_header_verified": verified.get(key, False),
                 }
                 if (unnamed or {}).get(key):
@@ -66,7 +76,13 @@ def description_record(
     masks: dict[str, dict],
     records: tuple[dict, ...],
 ) -> dict[str, object]:
-    """Return the manifest entry for a description read from the bytes with this SHA-256."""
+    """Return the manifest entry for a description read from the bytes with this SHA-256.
+
+    ``channel_coverage`` classifies every biological repeat for every declared channel ID as
+    ``full``, ``partial`` or ``unavailable``, with the units that lack it
+    (:func:`.channel_plan.channel_coverage`; Stage 3, S3.3); each unit record lists its
+    channels in source order.
+    """
     return {
         "sha256": sha256,
         "schema_version": description.schema_version,
@@ -74,6 +90,7 @@ def description_record(
         "units": units,
         "masks": masks,
         "records": list(records),
+        "channel_coverage": channel_coverage(description),
     }
 
 
@@ -99,6 +116,7 @@ def recorded_description(value: object) -> dict | None:
         ("masks", dict),
         ("units", list),
         ("records", list),
+        ("channel_coverage", dict),
     ):
         if not isinstance(value[name], kind):
             raise ValueError(f"{KEY}.{name} is not a {kind.__name__}")

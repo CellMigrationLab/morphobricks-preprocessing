@@ -34,6 +34,14 @@ from .resume import FileJob, changed_during_check, new_rows
 from .reuse import _load_previous
 from .rows import _bin_count
 
+GLOBAL_CHANNEL_CODES = frozenset({"channel_names_differ", "different_channel_counts"})
+"""The folder check's channel comparisons across the whole experiment.
+
+A description states each unit's channels and the header names confirmed for each, so in the
+run they are replaced by the per-unit checks (``R_CHANNEL_COUNT_MISMATCH``,
+``R_UNIT_NOT_HOMOGENEOUS``, ``R_HEADER_CONTRADICTION``; experiment-v1 section 4.3 and 8):
+units may list different channels from Stage 3 (S3.3)."""
+
 
 @dataclass(frozen=True)
 class Checked:
@@ -49,6 +57,12 @@ class Checked:
         Every issue found so far.
     bins
         Bins per plane, or None when the pixel type is unknown.
+    channels
+        Each image's canonical channel IDs in source order, its unit's confirmed list
+        (:func:`..channel_plan.file_channel_ids`); empty until the published description is
+        checked (:func:`.description_run.with_channels`).
+    channel_ids
+        Every channel ID the description declares, sorted: the table's header IDs.
     """
 
     review: AxisReview | None
@@ -56,6 +70,8 @@ class Checked:
     design: DesignTable | None
     issues: list[ValidationIssue] = field(default_factory=list)
     bins: int | None = None
+    channels: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    channel_ids: tuple[str, ...] = ()
 
 
 def header_checks(
@@ -73,7 +89,11 @@ def header_checks(
     inputs
         The run's resolved inputs.
     design
-        The design derived from the published description, or None.
+        The design derived from the published description, or None. With one, the
+        experiment-wide channel checks the description replaces with per-unit ones
+        (:data:`GLOBAL_CHANNEL_CODES`; units may list different channels from Stage 3, S3.3)
+        are left out before the bin count and the plane checks are decided, so a different
+        channel count between units never skips them.
     memory_limit
         Working-memory limit per plane, in bytes.
 
@@ -103,6 +123,8 @@ def header_checks(
         *(mask_issues(pre.masks, pre.metadata, review) if pre.masks is not None else ()),
         *(pre.conversion.issues if pre.conversion is not None else ()),
     ]
+    if design is not None:
+        issues = [issue for issue in issues if issue.code not in GLOBAL_CHANNEL_CODES]
     bins = _bins(pre, inputs, issues)
     if not has_errors(issues):
         issues.extend(
@@ -217,7 +239,7 @@ def compute_rows(
     dtype = pre.metadata.dtype.name
     earlier, reason = _load_previous(output, previous, settings, review.mapping, dtype, mode)
     in_blocks = {p for i in checked.issues if i.code == "planes_read_in_blocks" for p in i.paths}
-    entries = file_entries(pre, review, root, in_blocks)
+    entries = file_entries(pre, review, root, in_blocks, checked.channels)
     # Strict reuse: each image's content SHA-256 joins its row key; an unreadable one fails.
     entries, unhashed = with_content(entries, root) if settings.verify_content else (entries, [])
     found = compare_with_previous(entries, previous[0], earlier, reason is not None, settings, root)

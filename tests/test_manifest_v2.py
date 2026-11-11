@@ -67,7 +67,7 @@ def test_version_2_records_roles_their_source_and_pixel_sizes(tmp_path):
         mode=RunMode("restart", verify_content=False),
     )
     data = json.loads(result.manifest_path.read_text(encoding="utf-8"))
-    assert data["manifest_version"] == MANIFEST_VERSION == "4"
+    assert data["manifest_version"] == MANIFEST_VERSION == "5"
     (entry,) = data["files"]
     assert entry["roles"] == ["T", "Y", "X"] and entry["axes_from"] == "header"
     sizes = {size["role"]: size for size in entry["pixel_sizes"]}
