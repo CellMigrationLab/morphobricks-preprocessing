@@ -20,6 +20,7 @@ import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict, Unpack
 
 from ._io import free_space
 from .axes import AxisMapping, AxisReview
@@ -34,6 +35,7 @@ from .axis_review import review_axes
 from .conversion_issues import (
     header_changed_issue,
     masks_overlap_issue,
+    names_collide_issue,
     not_a_folder_issue,
     overlap_issue,
     pixel_type_issue,
@@ -44,6 +46,7 @@ from .fingerprint import Fingerprint
 from .links import relative_inside
 from .metadata import TiffMetadata
 from .ome_tiff_copy import copy_nbytes
+from .ome_zarr_copy import OME_TIFF, OME_ZARR, as_zarr_copy
 from .planes import DEFAULT_MEMORY_LIMIT, check_planes
 from .planned_copy import PlannedCopy
 from .projection import Projection
@@ -64,8 +67,7 @@ def plan_conversion(
     exclude: Iterable[str] = (),
     missing_as_singleton: bool = False,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
-    projection: Projection | None = None,
-    masks_folder: str | os.PathLike | None = None,
+    **how: Unpack[PlanOptions],
 ) -> tuple[tuple[PlannedCopy, ...], list[ValidationIssue]]:
     """Check the experiment with the confirmed roles and plan each image's copy.
 
@@ -97,6 +99,11 @@ def plan_conversion(
         (``masks_folder``, :func:`.projection_masks.projection_mask_issues`) do.
     masks_folder
         The masks folder, scanned for 3-D masks when ``projection`` is given.
+    store
+        ``"ome-zarr"`` plans every image that is read as an OME-Zarr copy
+        (:mod:`.ome_zarr_copy`): also the images whose headers name their axes as confirmed,
+        which are otherwise copied byte for byte. Two images that would get the same copy
+        name stop the plan (``copy_names_collide``). Default ``"ome-tiff"``.
 
     Returns
     -------
@@ -104,6 +111,8 @@ def plan_conversion(
         The planned copies, sorted by path (empty when an error stops the conversion),
         and the issues: the errors that stop it, and the warnings.
     """
+    projection, masks_folder = how.get("projection"), how.get("masks_folder")
+    as_zarr = how.get("store", OME_TIFF) == OME_ZARR
     pre = preflight(root, destination, exclude=exclude, bind_headers=True)
     unsettled = sorted(rel for rel, bound in pre.header_fingerprints.items() if bound is None)
     if unsettled:
@@ -120,9 +129,16 @@ def plan_conversion(
     to_convert = set(review.axis_error_files) | set(review.confirmed_files)
     headers = {meta.relative_path: meta for meta in pre.metadata.files}
     if projection is not None:
-        return _plan_projected(
+        planned, issues = _plan_projected(
             pre, review, mapping, projection, issues, (memory_limit, masks_folder)
         )
+        return _stored(planned, issues, as_zarr)
+    if as_zarr:  # every TIFF image that is read is written, not only those to correct
+        to_convert = {
+            rel
+            for rel, meta in headers.items()
+            if rel in review.file_mappings and not meta.is_ome_zarr
+        }
     issues += _cannot_convert(root, to_convert, headers, review.file_mappings, memory_limit)
     if has_errors(issues):
         return (), issues
@@ -134,7 +150,31 @@ def plan_conversion(
             planned.append(_converted(headers[rel], review.file_mappings[rel], source))
         else:
             planned.append(_copied(rel, headers.get(rel), source, rel in pre.excluded))
-    return tuple(planned), issues
+    return _stored(tuple(planned), issues, as_zarr)
+
+
+class PlanOptions(TypedDict, total=False):
+    """The keyword options of :func:`plan_conversion` besides the folders and the limit."""
+
+    projection: Projection | None
+    masks_folder: str | os.PathLike | None
+    store: str
+
+
+def _stored(
+    planned: tuple[PlannedCopy, ...], issues: list[ValidationIssue], as_zarr: bool
+) -> tuple[tuple[PlannedCopy, ...], list[ValidationIssue]]:
+    """Return the plan with its copies as OME-Zarr when asked; refuse two with one name."""
+    if not as_zarr or not planned:
+        return planned, issues
+    renamed = tuple(as_zarr_copy(item) for item in planned)
+    names: dict[str, list[str]] = {}
+    for item in renamed:
+        names.setdefault(item.relative_path.casefold(), []).append(item.source_path)
+    twice = sorted(path for paths in names.values() if len(paths) > 1 for path in paths)
+    if twice:
+        return (), [*issues, names_collide_issue(twice)]
+    return tuple(sorted(renamed, key=lambda item: item.relative_path)), issues
 
 
 def _plan_projected(

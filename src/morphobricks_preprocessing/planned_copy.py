@@ -28,6 +28,9 @@ class PlannedCopy:
     dtype
         The pixel type a converted or projected image's header gives (native byte order,
         the source's: a projected copy's own type is in its entry), else None.
+    store
+        ``"ome-tiff"`` (a named-axis OME-TIFF) or ``"ome-zarr"`` (:mod:`.ome_zarr_copy`) for
+        a converted or projected image.
     """
 
     entry: CopyEntry
@@ -35,8 +38,14 @@ class PlannedCopy:
     mapping: AxisMapping | None = None
     nbytes: int = 0
     dtype: np.dtype | None = None
+    store: str = "ome-tiff"
+
+    @property
+    def source_path(self) -> str:
+        """The source image, relative to the experiment (the copy's path unless renamed)."""
+        return self.entry.source_path
 
     @property
     def relative_path(self) -> str:
-        """The image, relative to the experiment and to the copy tree."""
+        """The copy, relative to the copy tree (the source's path too unless renamed)."""
         return self.entry.relative_path

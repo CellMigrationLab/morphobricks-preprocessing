@@ -18,6 +18,7 @@ from .conversion_issues import failed_issue
 from .conversion_record import CopyEntry
 from .fingerprint import Fingerprint, current_fingerprint
 from .ome_tiff_copy import CopyWriteError, write_named_copy, write_projected_copy
+from .ome_zarr_copy import OME_ZARR, write_named_zarr, write_projected_zarr
 from .planes import PlaneReadError
 from .planned_copy import PlannedCopy
 from .projection import ProjectionRefused
@@ -127,7 +128,7 @@ def _write_partial(root: Path, dest: Path, item: PlannedCopy, memory_limit: int)
     Returns the source's content SHA-256 for a projected copy (taken before and after the
     projection, which must agree), else None.
     """
-    source, partial = root / item.relative_path, partial_path(dest, item)
+    source, partial = root / item.source_path, partial_path(dest, item)
     partial.parent.mkdir(parents=True, exist_ok=True)
     _remove(partial)  # left by an interrupted conversion: it is never reused
     if current_fingerprint(source) != item.entry.source:
@@ -136,13 +137,13 @@ def _write_partial(root: Path, dest: Path, item: PlannedCopy, memory_limit: int)
     if item.entry.projection is not None:
         content = source_content_sha256(source)
         details = item.entry.projection.with_content(content)
-        write_projected_copy(
-            source, partial, item.layout, item.mapping, details, memory_limit=memory_limit
-        )
+        project = write_projected_zarr if item.store == OME_ZARR else write_projected_copy
+        project(source, partial, item.layout, item.mapping, details, memory_limit=memory_limit)
         if source_content_sha256(source) != content:
             raise _SourceChanged("its content changed while it was projected")
     elif item.layout is not None:
-        write_named_copy(
+        write = write_named_zarr if item.store == OME_ZARR else write_named_copy
+        write(
             source, partial, item.layout, item.mapping, dtype=item.dtype, memory_limit=memory_limit
         )
     elif source.is_dir():

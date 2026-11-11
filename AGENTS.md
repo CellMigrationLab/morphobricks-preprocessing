@@ -330,6 +330,9 @@ src/morphobricks_preprocessing/
                             notebook_viewers.py which roles each step reads an image with
   notebook_scan_axes.py     the quick scan's "Axes of this image": roles proposed from the header,
                             changed right there, the proposal the Axes step starts from
+  notebook_zarr_copy.py     the first screen's "Also save a copy as OME-Zarr" and the Axes step's
+                            card that writes it once the roles are confirmed; ome_zarr_copy.py
+                            the writers (OME-NGFF 0.4, written directly) and the copy's name
   notebook_projection.py    the Axes step's card for Z-stacks: choose the projection, write the
                             projected copies into the output folder (convert_experiment), open
                             them as the experiment; the greyed 3-D option
@@ -1080,7 +1083,8 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   [docs/archive/agents-status-history-v0.1-v0.3.md](docs/archive/agents-status-history-v0.1-v0.3.md).
 - **Unreleased:** none yet; later changes go in a new "Unreleased" section of the changelog.
 - **Scope:** 2-D per plane (a Z-stack is refused as `z_stack_not_supported`); TIFF and OME-Zarr
-  input read directly (TIFF to OME-Zarr conversion and the `_moved.py` re-exports were removed);
+  input read directly (the v0.3 TIFF to OME-Zarr export and the `_moved.py` re-exports were
+  removed; since v0.5.2 `convert_experiment(store="ome-zarr")` writes recorded OME-Zarr copies);
   optional masks, the mask step and the notebook's **Describe the masks**; named-axis copies
   (`convert`, notebook card); calibration; resumable, crash-consistent runs.
 - **Command line:** `check`, `run`, `masks`, `calibrate`, `describe`, `convert` (`check`,
