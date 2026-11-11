@@ -26,6 +26,7 @@ from .header_preview import CHANNELS_SHOWN
 from .planes import DEFAULT_MEMORY_LIMIT
 from .preview import THUMBNAIL_SIDE, ReducedPlane, check_unchanged, read_plane
 from .preview_render import colour_composite, display_panel, png_bytes
+from .projection import PlaneAccumulator, Projection
 
 SLIDER_ROLES = ("T", "Z")
 """The roles a viewer steps through with a slider, in the order shown."""
@@ -198,6 +199,64 @@ def read_view(
     )
 
 
+def read_projection_view(
+    path: str | os.PathLike,
+    mapping: AxisMapping,
+    shape: Sequence[int],
+    projection: Projection,
+    request: ViewRequest = ViewRequest(),  # noqa: B008 - frozen, the defaults
+) -> ImageView:
+    """Draw what a Z projection of one time point gives, channel by channel, for looking.
+
+    The planes are read reduced, as every view, and projected with the arithmetic of the
+    projected copies (:class:`.projection.PlaneAccumulator`, ascending z, the slices of
+    ``projection``), so the picture is of the reduced pixels: it shows what the method does,
+    it is not the copy. ``request.z`` is not used.
+
+    Raises
+    ------
+    ProjectionRefused, ValueError
+        When the projection cannot be made (no Z, a range outside the image, a type that
+        cannot hold it exactly).
+    PreviewRefused, IndexError, OSError
+        As :func:`read_view`.
+    """
+    if mapping.index_of("Z") is None:
+        raise ValueError("these roles have no depth (Z) dimension to project")
+    lengths = view_lengths(shape, mapping)
+    start, stop = projection.resolve(lengths["Z"])
+    t = _coordinate(mapping, "T", lengths, request.t)
+    has_c = mapping.index_of("C") is not None
+    if request.expected is not None:
+        check_unchanged(path, request.expected)
+    tiles, first = [], None
+    for c in range(min(lengths["C"], request.shown)):
+        running = None
+        for z in range(start, stop):
+            plane = read_plane(
+                path,
+                mapping,
+                max_side=request.side,
+                z=z,
+                c=c if has_c else None,
+                t=t,
+                memory_limit=request.memory_limit,
+            )
+            first = first or plane
+            if running is None:
+                running = PlaneAccumulator(
+                    plane.pixels.shape, plane.pixels.dtype, projection.method, stop - start
+                )
+            running.add(plane.pixels)
+        panel = display_panel(running.result())
+        tiles.append(ViewTile(c if has_c else None, png_bytes(panel.pixels), panel.note))
+    if request.expected is not None:
+        check_unchanged(path, request.expected)
+    return ImageView(
+        tuple(tiles), lengths["C"], False, None, t, first.source_shape, first.step, "projection"
+    )
+
+
 def _coordinate(
     mapping: AxisMapping, role: str, lengths: dict[str, int], wanted: int | None
 ) -> int | None:
@@ -216,6 +275,7 @@ __all__ = [
     "ViewRequest",
     "ViewTile",
     "middle_slice",
+    "read_projection_view",
     "read_view",
     "view_lengths",
 ]

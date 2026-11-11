@@ -49,6 +49,21 @@ v0.5.1: no run before v0.5.1 is read.)
   recorded with its own header's size, as before.
 - **Run messages are short cards**: a message whose first sentence lists every image shows
   its first 200 characters, with the whole message, the files and what to do one click away.
+- **Z-stacks: the projection path in the notebook (#176).** When the roles on Axes give
+  Z-stacks (still refused, `z_stack_not_supported`), the step offers **Z-stacks: save the
+  dataset as projections**: the method (maximum, mean or sum; no default), the slices, a look
+  at the projection of the example's image, and one click that writes the projected copies
+  with `convert_experiment(projection=...)` (the copies, record version 3 and every refusal
+  of `convert --project`) into `<output>/projected_<method>[_z<start>-<stop>]` and opens them
+  as the experiment (scanned and checked again; nothing is confirmed for the user). The
+  viewer has the **z** and **t** sliders on every step; a time-lapse needs nothing new.
+- **3-D kept compatible.** The original stacks are only read and stay recorded: the
+  conversion record names their folder and, per image, the path, fingerprint, content SHA-256,
+  depth axis and slices used, and a run on the copies records that record
+  (`RunInputs.projection`). **Keep the 3-D stacks for 3-D-capable tools (fiberfeatures)** is
+  shown greyed out with "3-D analysis is not enabled yet"; `Capabilities.volume_support` and
+  `A_VOLUME_NOT_SUPPORTED` are unchanged. Copies written earlier are offered when the stacks
+  are opened again.
 - **Notebook file, cell 3:** on Google Colab it calls
   `google.colab.output.no_vertical_scroll()`, so the app is not shown in an output frame that
   scrolls on its own. Nothing changes elsewhere.

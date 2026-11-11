@@ -36,6 +36,7 @@ from .notebook_compact import CHIPS, _CompactPages
 from .notebook_design_step import _DesignStep
 from .notebook_image_type_line import ImageTypeLine
 from .notebook_masks_screen import INTRO as MASKS_INTRO
+from .notebook_projection import _ProjectionCard
 from .notebook_quick_scan import _QuickScan
 from .notebook_scan_axes import _ScanAxes
 from .notebook_step_states import _StepStates
@@ -85,7 +86,14 @@ UNFOLDING = (MASKS_STEP, DESIGN_STEP)
 
 
 class _StepsFlow(
-    _CompactPages, _DesignStep, _QuickScan, _QuickAxes, _ScanAxes, _Viewers, _StepStates
+    _CompactPages,
+    _DesignStep,
+    _QuickScan,
+    _QuickAxes,
+    _ScanAxes,
+    _ProjectionCard,
+    _Viewers,
+    _StepStates,
 ):
     """``steps()``: the stepper of the shipped notebook, and the hooks that keep it current."""
 
@@ -120,6 +128,7 @@ class _StepsFlow(
         self._build_viewers()
         self._use_viewers()
         self._build_scan_axes()
+        self._build_projection_card()
         self._build_quick_scan()
         self.consistency_slot = widgets.VBox([self.consistency_card])
         self._build_design_step()
@@ -139,8 +148,8 @@ class _StepsFlow(
             ("Images", "Choose the folders, look at one image, then read every header.",
              self._images_page()),
             ("Axes", "What each image dimension is, the pixel size and the image type.",
-             [about(AXES_INTRO), self.axes_change_note, self.axis_box, self.quick_card,
-              self.type_line.widget]),
+             [about(AXES_INTRO), self.copy_note, self.axes_change_note, self.axis_box,
+              self.projection_card, self.quick_card, self.type_line.widget]),
             ("Channels", "Name what you stained, then tag each folder's channels.",
              [about(CHANNELS_INTRO), self.channel_labels.widget, self.channels_look,
               self.channel_grid.widget, self.moves_box, self.names_box]),
@@ -239,6 +248,7 @@ class _StepsFlow(
             # The headers are read: the viewer now shows the images as the check read them.
             self._show_checked_viewer()
             self._show_scan_axes()
+            self._show_copy_note()
             self.scan_status.value = ""
             self._refresh_folds()
             self._go_first_open()
@@ -275,6 +285,20 @@ class _StepsFlow(
     def _toggle_confirmation(self) -> None:
         super()._toggle_confirmation()
         self._refresh_quick_axes()
+
+    def _refresh_convert_card(self, review: object) -> None:
+        super()._refresh_convert_card(review)
+        self._refresh_projection_card(review)
+
+    def _confirm_blockers(self) -> list[str]:
+        """Name the projection card when Z-stacks are all that stops the confirmation."""
+        blockers = super()._confirm_blockers()
+        if getattr(self, "_review_errors", ()) == ("z stack not supported",) and blockers:
+            blockers[0] = (
+                "the images are Z-stacks: choose a projection under Z-stacks below and "
+                "continue with the projected copies"
+            )
+        return blockers
 
     def _refresh_type_rows(self) -> None:
         """Open the image type for the folders the channel step opened, or close it."""
