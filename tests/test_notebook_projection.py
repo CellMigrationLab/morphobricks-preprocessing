@@ -114,6 +114,7 @@ def test_a_z_stack_offers_the_projection_and_chooses_nothing(tmp_path):
     assert nb.projection_button.disabled  # the roles are the user's: the example first
     nb.preview_checked.button.click()
     assert not nb.projection_button.disabled and nb.projection_blocker.value == ""
+    assert "Now choose the projection under Z-stacks below" in nb.preview_checked.message.value
     assert str(out / "projected_max") in nb.projection_where.value
     nb.projection_method.value = ""  # taken back: nothing can be written again
     assert nb.projection_button.disabled
