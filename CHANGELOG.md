@@ -10,6 +10,14 @@ v0.5.1: no run before v0.5.1 is read.)
 
 **Fixed**
 
+- **Notebook: a removal or rename answer confirms only the change it answers (#279).** A
+  re-confirmation names a channel ID, not a folder (experiment-v1 §4.6), so **Yes, remove** of
+  one folder accepted any change of its channel IDs, including a saved header name lost in
+  another folder that is still there. Such an ID now stays refused (`R_CONFIRMED_ID_CHANGED`) and
+  the line beside Save names the channel and the folder (undo that tag on Channels). A header
+  name held only by the removed folder is still the removal's, and a moved position still needs
+  its own click (#258). A header that now states no channel names at all counts as a lost name
+  too, and a folder rename answer does not accept channels re-ordered inside the renamed folder.
 - **Notebook: a channel re-confirmation after re-ordering a unit's channels (#258).** A saved
   unit re-tagged in another order (its images re-exported with the channels re-ordered) was
   refused with `R_CONFIRMED_ID_CHANGED` with no way forward. The Channels step now lists each

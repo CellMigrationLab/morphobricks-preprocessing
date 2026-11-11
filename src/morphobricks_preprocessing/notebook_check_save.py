@@ -250,7 +250,9 @@ class _CheckSaveScreen:
             return [f"{plural(missing, 'answer')} still missing (listed above the button)"]
         if self._moves_open():
             return ["the moved channels are not confirmed: see Channels"]
-        return ["these answers are refused: see the red message above the button"]
+        return self._unseen_lines() or [
+            "these answers are refused: see the red message above the button"
+        ]
 
     def _blocked(self, state: object) -> str:
         """Say what already stops the run while the candidate cannot be checked (answers missing).
