@@ -246,8 +246,9 @@ class _CheckSaveScreen:
         if not self.save_button.disabled or self._saved_current():
             return []  # saved already (the green line says so): nothing is blocked
         missing = len(todo[0]) + len(todo[1])
-        if missing:
-            return [f"{plural(missing, 'answer')} still missing (listed above the button)"]
+        if missing:  # and the Channels questions waiting, so none is found only afterwards
+            line = f"{plural(missing, 'answer')} still missing (listed above the button)"
+            return [line, *self._open_change_lines()]
         return (
             self._open_change_lines()
             or self._unseen_lines()

@@ -179,3 +179,24 @@ def test_no_question_when_no_saved_header_name_is_lost(exp):  # noqa: F811
     _tag(nb, 0, "DNA")
     assert not ui.is_visible(nb.names_box) and nb.names_list.value == ""
     assert not nb.save_button.disabled or nb._saved_current()
+
+
+def test_the_line_beside_save_names_the_changes_waiting_while_an_answer_is_missing(exp):  # noqa: F811
+    # Re-exported with DNA and ACTIN swapped and DNA renamed: rep1's "same way?" is reopened
+    # (an answer missing) and both Channels questions wait. The line beside Save names them
+    # all, not only the missing answer, so nothing waiting is found only after answering.
+    _saved(exp, {"ctrl/rep1": ["Hoechst", "Actin", "Ch3"]})
+    write_channels(exp[0] / "ctrl/rep1/a.tif", ["Actin", "Nuc", "Ch3"], KINDS, seed=1)
+    nb = _reopen(exp)
+    key = ("ctrl", "rep1", "single")
+    for index in (0, 1):
+        nb.channel_grid.cells[(key, index)].value = None
+    nb.channel_grid.cells[(key, 0)].value = "ACTIN"
+    nb.channel_grid.cells[(key, 1)].value = "DNA"
+    assert ui.is_visible(nb.moves_box) and ui.is_visible(nb.names_box)
+    blocker = _text(nb.save_blocker.value)
+    assert nb.save_button.disabled
+    assert "1 answer still missing (listed above the button)" in blocker
+    assert "the moved channels are not confirmed: see Channels" in blocker
+    change = "DNA: header names “DAPI”, “Hoechst” → “DAPI”, “Nuc”"
+    assert f"{change} is not confirmed: see Channels" in blocker
