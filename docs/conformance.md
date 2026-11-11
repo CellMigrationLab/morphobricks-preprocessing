@@ -6,6 +6,46 @@ real run; a skip is never counted as a pass. Owner rulings of 8 November 2026 (i
 "no skips" applies to the Spec conformance modules (`tests/test_spec_*.py`); a skip elsewhere
 in the suite is listed as **not run**, with its reason.
 
+## Release record: v0.5.1 (10 November 2026)
+
+A G1-style record of the v0.5.1 release candidate (as for v0.5.0 below). It does not decide a
+gate: the Stage 2 gate (G2) also needs the bricks' items, and deciding a gate is the owner's.
+
+| | |
+|---|---|
+| Release candidate | Measured on `9f61cb9` (branch `claude/release-0.5.1`: `main` at `9a5da03`, the v0.5.1 preparation `d023ff9` (commit A), `a4154ad` (commit B), which points the notebook's `RELEASE_REF` at `d023ff91289a2d2204e1ae56f7dee114d1a665e4`, the first record `7607617`, then the review fixes `7beac12` (a cell's one-line stop names the error that caused it; notebook, tests and docs only) and `9f61cb9` (CHANGELOG)). The commit that updates this record changes only this file. `git diff d023ff9 9f61cb9 -- src pyproject.toml` is empty: the installed package is the one `RELEASE_REF` names. Earlier measurement, on `a4154ad` before the review: 5270 passed, 4 skipped; 1732 in the Spec modules, 0 skipped (reproduced by the review) |
+| Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `cc9820f5b84f01bbbb5c8e3f54e70ee13cb5e9eb` (fixtures tree `40fe48c`), checked by `test_spec_pin` (16 passed) |
+| Environment | Linux, Python 3.13.18, `pip install -e '.[dev,notebook,zarr]'` in a fresh venv (package version 0.5.1, normalization 0.4.0, numpy 2.5.4, tifffile 2026.11.8, ipywidgets 8.1.9, zarr 3.4.2, pytest 9.2.0); run as root on a case-sensitive file system |
+| Commands | `python tools/check.py` (Ruff, Ruff format, pytest over `tests/`, code rules); `python -m pytest -q -p no:cacheprovider -rsxX --junitxml=… tests/test_spec_*.py` |
+| `tools/check.py` | Ruff clean, Ruff format 432 files already formatted, pytest **5274 passed, 4 skipped** (not run, below), 0 failed, code rules passed (exit status 0) |
+| Spec modules (`tests/test_spec_*.py`) | **1732 passed, 0 skipped, 0 xfailed, 0 failed**, from all 24 modules of `tests/spec_gate.py` `EXPECTED_MODULES` (JUnit: no `skipped`, `failure` or `error` element in any case) |
+| Install | `pip install "morphobricks-preprocessing[notebook] @ git+…@d023ff9…"` in a fresh venv reports 0.5.1 (normalization 0.4.0), its package files equal this branch's `src/morphobricks_preprocessing` (`diff -r`), and `PreprocessingNotebook()` builds `welcome()`, `steps()` and `results_step()` |
+| Shipped notebook | Its three code cells, unmodified, in a real kernel (`nbclient`) in a fresh venv: cell 3 first stops with one line naming cell 1; cell 1 installs `RELEASE_REF` from GitHub and prints **Ready** (0.5.1, normalization 0.4.0); cell 2 prints its one-line note; cell 3 displays the app. With `google.colab` faked: cell 3 before cell 2 prints the one Drive line and opens the app; after cell 2 it opens without it. Cell 1 on a Python 3.10 kernel stops with the one "Python 3.11 or newer" line (on `a4154ad`). Re-run by the review on `9f61cb9` in a fresh venv (cell 3 alone, cell 1 twice, cell 2 outside Colab, cell 3; faked Colab: cell 1 adds the `zarr` extra, cell 3 without Drive prints the one line and opens the app), plus an interface that cannot load (one line naming the `ModuleNotFoundError`), a failed Drive mount (one line naming the `ValueError`) and an unexpected error in cell 3 (its full traceback) |
+
+Test cases per Spec module: catalogue 376, derived design 80, discovery 17, encoding 58, Fov
+image type 14, gate 9, lab links 11, no fallback 15, pin 16, publication 20, reader 330, reader
+phases 1-3 287, reader refusal paths 8, reconcile 25, records 22, records goldens 76, refval
+cross-check 203, resolve request 43, rules table 14, run aliases 15, run description 9,
+RunInputs semantic 8, transitions 73, vendored missing 3. New since v0.5.0:
+`test_spec_resolve_request` (PP-0), `test_spec_fov_image_type` (PP-1) and
+`test_spec_lab_links` (PP-2, the lab-tool-links part of the section 2 "Provenance" row, which
+ADR 0001 GS1 deferred from G1 to the Stage 2 gate). The cases removed since v0.5.0 are the
+undescribed and legacy ones (PP-C, SWEEP-PP, PP-03; the P30 legacy case per Spec `cc9820f`).
+
+**Not run (4 environment skips, outside the Spec modules):**
+
+| Test | Reason |
+|---|---|
+| `tests/test_cli_log.py:166` | Case-sensitive file system: the case-only collision cannot be built |
+| `tests/test_folder_rules.py:199` | Same |
+| `tests/test_folder_rules.py:230` | Same |
+| `tests/test_discovery.py:665` | Run as root: file modes are ignored, so an unreadable folder cannot be made |
+
+These four behaviours are **not verified by this run**.
+
+**Still the owner's:** the Colab and JupyterLab browser check (`docs/colab-release-check.md`),
+before tagging. P24, P27 and P31 stay brick outcomes for the Stage 2 gate.
+
 ## Gate G1 record: release candidate v0.5.0 (10 November 2026)
 
 | | |

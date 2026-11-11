@@ -21,8 +21,10 @@ open it and run its three code cells in order:
 2. **Mount Google Drive** connects Google Drive on Google Colab. In JupyterLab or
    LabConstrictor it prints a one-line note and does nothing.
 3. **Run preprocessing** displays the complete preprocessing widget app. Run before cell 1,
-   it stops and says to run cell 1; on Colab without Drive connected, it says to run cell 2.
-   It never runs an earlier cell for you.
+   it stops with one line saying to run cell 1. On Colab without Drive mounted it opens the
+   app after one line: "Google Drive is not mounted: only files on this Colab runtime are
+   visible, and they are deleted when the runtime stops." It never runs an earlier cell for
+   you.
 
 Cell 1 chooses one source:
 

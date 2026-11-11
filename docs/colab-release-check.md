@@ -1,124 +1,84 @@
-# Colab and JupyterLab release smoke check
+# Colab and JupyterLab release check
 
-Automated tests execute the notebook in a local kernel and fake `google.colab`, but they
-cannot prove that a browser frontend renders or reacts to widgets correctly. Any release
-candidate that changes the notebook, bootstrap, ipywidgets support or notebook UI must be
-smoke-tested in both a fresh Google Colab runtime and JupyterLab/LabConstrictor before tagging.
+The tests run the notebook in a real kernel, with `google.colab` faked, but they cannot show
+that a browser draws the widgets and reacts to clicks. So before a release is tagged, the owner
+opens the release PR's notebook (its Colab link and its raw download, both pinned to the
+`RELEASE_REF` commit) and ticks this list once in a fresh Google Colab runtime and once in
+JupyterLab or LabConstrictor. A failure here blocks the tag, even when every test passes.
 
-This is a release gate, not an optional final-major-release check. A frontend failure is a
-release blocker even when all headless notebook tests pass. The list collects the hand-check lists of PR #118
-(PP-8d, Colab readiness), PR #123 (PP-10d, Describe the masks) and PR #127 (PP-11b, Make
-named-axis copies). Items were updated for later changes: PP-10a replaced the stale-lock code
-cell with a button, and PP-12 replaced the `.run-*` backup folders with `.publish` and
-`.staging`.
+Use an experiment on Google Drive (Colab) or on disk (JupyterLab) with two conditions, at least
+two biological repeats and a masks folder. Write the date, the commit and any failure (as an
+issue number) next to each item.
 
-**The notebook's pin.** The shipped notebook installs the package at its `RELEASE_REF` (set in
-cell 1), not main's code, so its cell 3 calls the API of the code at that commit. Between releases main's code
-moves on while the cell keeps the released call: after v0.5.1's PP-C, main has no `describe`
-argument, while `RELEASE_REF` is still v0.5.0's `fd7afd3`, whose cell calls
-`PreprocessingNotebook(describe=True)`. The release PR moves `RELEASE_REF` and cell 3's call
-in the same commit and records the new pair in `RELEASE_CALLS` of `tests/test_notebook_file.py`,
-which fails for a `RELEASE_REF` without one.
+**Before opening it.** `RELEASE_REF` in cell 1 is the release preparation commit, and cell 3's
+`PreprocessingNotebook(...)` call is that commit's API (v0.5.1: `PreprocessingNotebook()`). The
+release PR moves both together and records the pair in `RELEASE_CALLS` of
+`tests/test_notebook_file.py`, which fails for a `RELEASE_REF` without one.
 
-- [ ] `RELEASE_REF` is the release commit, and cell 3's `PreprocessingNotebook(...)` call is
-  that commit's API (v0.5.1: `PreprocessingNotebook()`).
+## A. The three cells (Colab)
 
-Use a dataset on Google Drive with a masks folder, and a second small experiment of
-Y/X-swapped OME-TIFFs for section F. Note the tag, the date and any failure next to each item.
-Report a failure as an issue before the final tag.
+1. - [ ] The code of the three cells is hidden: each shows its title (a Colab form).
+2. Fresh runtime, run **cell 3** first.
+   - [ ] One line: "… run cell 1 (Install MorphoBricks preprocessing) first …", no traceback;
+     nothing is installed.
+3. Run **cell 1**.
+   - [ ] It prints **Ready** with the preprocessing (0.5.1), normalization (0.4.0) and
+     ipywidgets versions and the pinned source, then names cells 2 and 3. No restart or
+     ipywidgets upgrade is asked for; Drive is not mounted.
+   - [ ] Run it again: nothing is installed again, the same versions.
+4. Run **cell 3** before cell 2.
+   - [ ] One line, "Google Drive is not mounted: only files on this Colab runtime are visible,
+     and they are deleted when the runtime stops.", then the app opens.
+5. Run **cell 2**, allow access.
+   - [ ] "Google Drive is connected: your files are in /content/drive/MyDrive."
+6. Run **cell 3** again.
+   - [ ] No Drive line; the app renders inline (not the Code snippets pane): the one-line
+     welcome, the strip of seven steps and the first step.
 
-## A. Fresh runtime and app rendering
+## B. The seven steps (Colab, the experiment on Drive)
 
-The notebook has three code cells, run in order: **1. Install MorphoBricks preprocessing**,
-**2. Mount Google Drive** and **3. Run preprocessing**.
+7. - [ ] **Images:** paste the Drive paths (experiment, masks, output); **Browse…** says it
+   cannot open here and offers **Copy path**. **Scan the folders** shows the folders and an
+   example picture with a progress line; **Looks right: read all image headers** shows its
+   progress (done of total, time left) and the result.
+8. - [ ] **Axes:** one row per dimension with its role, the example redrawn when a role changes,
+   the pixel size in one line, the image type in one line (**Use for all folders**). The roles
+   are confirmed only by the click.
+9. - [ ] **Channels:** name the stains, then tag each folder's channels.
+10. - [ ] **Masks:** **Check the masks** runs with progress; each mask type can be described.
+    **Describe the masks** is greyed out, with its reason, until a run exists.
+11. - [ ] **Design:** the grid of conditions by biological repeats; **Looks right: confirm the
+    design**.
+12. - [ ] **Check and save:** the experiment in words; **Yes, save the experiment description**
+    writes `morphobricks.toml` in the output folder.
+13. - [ ] **Run:** **Compute histograms** finishes with progress; the intensity checks,
+    **Compare groups** and the report are collapsed panels and open. The output folder holds
+    `plane_histograms.csv`, `run_manifest.json`, `experiment_design.csv` and the report, with
+    no "(1)" copies, no `.publish`, `.staging` or `.tmp` leftovers and no lock file.
+14. - [ ] Back in **Masks**, **Describe the masks** is enabled and writes
+    `mask_relationships.json`.
+15. - [ ] Throughout: one column, the page scrolls as a whole (no box with its own scroll bar,
+    no horizontal page scroll bar); every greyed-out button says beside it what it waits for;
+    no flood of debug messages under the cell.
 
-1. Open the notebook on a fresh Google Colab runtime and run cell 3 first.
-   - [ ] It stops at once with "run cell 1 (Install MorphoBricks preprocessing) first", not an
-     `ImportError`, and installs nothing.
-2. Run cell 1 (install).
-   - [ ] Setup reports the expected notebook, preprocessing, normalization and ipywidgets
-     versions and the pinned source revision, then names cells 2 and 3.
-   - [ ] No ipywidgets upgrade or runtime restart is requested, and Drive is not mounted.
-   - [ ] Run cell 1 again: nothing is installed again and the same versions are reported.
-3. Run cell 3 before cell 2.
-   - [ ] It stops with "Google Drive is not connected … run cell 2 (Mount Google Drive)".
-4. Run cell 2 (Drive).
-   - [ ] Drive authorisation appears, the mount succeeds and the cell says Drive is connected.
-5. Run cell 3 (the app).
-   - [ ] The complete preprocessing app renders inline; Colab does not open the Code snippets
-     pane instead of the widget.
-   - [ ] Buttons, dropdowns, accordions, preview image, sliders, progress bars and matplotlib
-     plots render and react.
-6. Repeat cells 1 to 3 in JupyterLab/LabConstrictor.
-   - [ ] Cell 2 prints its one-line "Not Google Colab" note and does nothing else.
-   - [ ] The same app renders and uses local paths without executing Colab-only setup.
+## C. Again later (Colab)
 
-## B. Step 1 (PR #118)
+16. - [ ] Disconnect and delete the runtime, open a new one, run cells 1-3 on the same Drive
+    folders: the steps open answered, and **Compute histograms** reuses every row.
+17. - [ ] Optional: stop a run part-way. The next check names the lock; **Remove the lock of a
+    stopped run** clears it, and the next run resumes.
 
-3. - [ ] **Browse…** shows the "could not be opened … Copy path" message.
-   - [ ] A pasted **/content/drive/MyDrive/…** path checks fine.
-   - [ ] The default output folder lands on Drive next to the experiment.
+## D. JupyterLab or LabConstrictor
 
-## C. Step 3 on the full dataset (PR #118)
-
-4. - [ ] The run finishes.
-   - [ ] On Drive, the output folder has `plane_histograms.csv`, `run_manifest.json`,
-     `experiment_design.csv` and the report (`discovery_report.txt` and `.json`).
-   - [ ] There are no "(1)" duplicate files, and no leftover `.publish`, `.staging` or
-     `.<name>.<random>.tmp` files.
-   - [ ] There is no lock file (`.morphobricks-preprocessing.lock`) after the run.
-5. - [ ] Run Step 3 again in the same session. Everything is unchanged and nothing is read.
-6. - [ ] Disconnect the runtime (Runtime › Disconnect and delete runtime) and open a new one.
-     Run Steps 0–3 again on the same Drive folders. The rows are reused (unchanged). This
-     shows the Drive times are stable across mounts.
-7. Optional: stop a run part-way (interrupt, or disconnect the runtime).
-   - [ ] The next check names the lock holder (`output_locked`), and **Remove the lock of a
-     stopped run** clears it.
-   - [ ] The next run resumes: the report lists the images read before the stop as
-     `resumed`.
-8. - [ ] Optional: an experiment with OME-Zarr images on Drive checks and runs (the `zarr`
-     extra is installed).
-
-## D. Describe the masks (PR #123)
-
-9. - [ ] In Steps 1–3 with an experiment and a masks folder on Drive, before **Compute
-     histograms**, the card shows a greyed button: "Available when the output folder holds a
-     run that recorded masks".
-10. - [ ] After the run, the help line says "Describes the run in … written …, of …: N mask
-    types from …", and the button is enabled.
-11. - [ ] Click it: a spinner, a progress bar per image, then a green bar. The tables are
-    labelled as suggestions, and `mask_relationships.json` appears in the output folder.
-12. - [ ] Run Step 3 again: the card clears.
-13. - [ ] **Reopen** the notebook (Runtime › Restart session) and choose the same folders in
-    Step 1 without running. The button is enabled, names the earlier run, and works.
-14. - [ ] Move the masks folder on Drive and click: a red card says the masks folder does not
-    exist, and nothing is written.
-15. - [ ] The page scrolls as a whole: no box inside it has its own scroll bar, and there is no
-      horizontal page scrollbar.
-
-## E. Make named-axis copies (PR #127)
-
-16. - [ ] Run Step 0, then Step 1 on an experiment of Y/X-swapped OME-TIFFs on Drive, and
-    press **Check folder**.
-17. - [ ] In Step 2, swap the Y and X roles. The red axis check appears, with the **Make
-    named-axis copies (optional)** card under it. Its button is disabled.
-18. - [ ] Look at the example (drawn by itself) and press **Yes, the example looks right**, then **Yes, write the
-    copies with these roles**.
-19. - [ ] Press **Browse…**: the amber card names **Copy path**. Paste a Drive folder inside
-    the experiment and check that it is refused. Then paste one next to the experiment.
-20. - [ ] Check the plan lists and the space, then press **Make named-axis copies**. The bar
-    moves, the green card shows the record path, and the pixel-size note lists the copies.
-21. - [ ] Press **Check the copies in step 1**. Step 1 shows the copy folder, the same output
-    folder and a clean check. The roles are suggested from the copies.
-22. - [ ] Confirm the labels, preview, roles and image type, then run Step 3. The report says
-    "named-axis copies of …".
-23. - [ ] Optional: disconnect the runtime during a conversion, reconnect, and convert into
-    the same folder. The lock card appears. Press **Remove the lock of a stopped run**, then
-    convert again.
+18. - [ ] Download the raw notebook; run cell 3 first (the one line naming cell 1), then cells
+    1, 2 and 3. Cell 2 prints only "Not Google Colab: there is no Google Drive to mount here,
+    so nothing was done."; cell 3 prints no Drive line.
+19. - [ ] Repeat B (7-15) with local paths; **Browse…** opens a folder chooser on a local
+    kernel with a display (otherwise it says to paste the path).
+20. - [ ] On a Python 3.10 kernel, if one is at hand: cell 1 says in one line to select Python
+    3.11 or newer.
 
 ## After the check
 
-- Record the result (tag, date, items passed, failures with their issue numbers) in the
-  release PR of v0.4.0.
-- Then update this file's first paragraph, the README's "Notebook" section and plan §10
-  (release checklist) to say which release was checked on Colab.
+Write the result (date, commit, items passed, failures with their issue numbers) in the release
+PR. Then tag.
