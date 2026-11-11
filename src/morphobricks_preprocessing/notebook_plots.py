@@ -219,8 +219,9 @@ class IntensityPanel:
         self.records = list(records)
         self.labels = labels
         channels = sorted({c for record in self.records for c in record.channels})
-        # Setting the options selects the first one (and redraws once the report exists).
+        # The first ID is chosen explicitly: not every ipywidgets version selects it.
         self.channel.options = [(c, c) for c in channels] or [("-", None)]
+        self.channel.value = channels[0] if channels else None
         ui.set_visible(self.channel_row, len(channels) > 1)
         self._check()
         ui.set_visible(self.card, True)

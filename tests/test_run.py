@@ -648,7 +648,7 @@ def test_missing_channel_axis_next_to_several_channels_is_an_error(tmp_path, rea
     found = issue(preflight(root).issues, "different_channel_counts")  # the folder check
     assert found.severity is Severity.ERROR and found.paths == ("a.tif",)
     assert "1 channel (2 images), 2 channels (1 image)" in found.message
-    assert "separate experiment" in found.action
+    assert "folder of their own" in found.action
     result = run_described(root, prefill_mapping("TCYX"), missing_as_singleton=True)
     assert "R_UNIT_NOT_HOMOGENEOUS" in codes(result.issues)  # one described unit
     assert not result.written and reads == []
