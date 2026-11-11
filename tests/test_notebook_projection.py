@@ -159,7 +159,8 @@ def test_the_projected_copies_are_written_recorded_and_used_by_the_later_steps(
     assert nb.preflight.discovery.root == copies and nb.confirmed_mapping is None
     assert "Z" not in nb.mapping.roles and not ui.is_visible(nb.projection_card)
     note = _text(nb.copy_note.value)
-    assert "recorded 2-D copies (max projection of all slices)" in note and str(root) in note
+    assert "recorded 2-D copies (max projection of all slices)" in note
+    assert root.resolve().as_posix() in note  # the record's spelling of the folder
     assert "originals are kept" in note and nb.copy_note_images.value == nb.copy_note.value
     assert ui.is_visible(nb.quick_card)  # the copies name their axes: one click, the user's
     nb.quick_confirm.click()
