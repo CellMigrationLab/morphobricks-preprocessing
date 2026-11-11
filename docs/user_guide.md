@@ -306,7 +306,14 @@ proposes is recorded only when you click.
    **Yes, these are the new positions**. Only that click records the change (experiment-v1
    §4.6, one re-confirmation per channel, written when you save); without it the save is
    refused with `R_CONFIRMED_ID_CHANGED`. That replicate's *same way?* is asked again on
-   **Check and save**; every other replicate keeps its date.
+   **Check and save**; every other replicate keeps its date. When a tag leaves a saved channel
+   without a header name it had (the images now give another name or none, or the folder that
+   gave it is gone), that channel is listed with its names saved and now (*DNA: header names
+   “DAPI”, “Hoechst” → “DAPI”*) and **Yes, this header name changed**. Only that click records
+   it (one re-confirmation per channel, written when you save), also when a folder is removed
+   or renamed in the same save: the saved file keeps no header names per folder, so **Yes,
+   remove** cannot show that a name went with its folder. A change after the click is asked
+   again.
 4. **Masks.** The masks the check paired with the images (and, for masks whose files do not
    name their axes, the axes to state), then for each mask type: *separate objects* or
    *regions*. **Describe the masks** reads every mask and reports how the types relate. It
@@ -530,7 +537,8 @@ what each of two controls is compared against.
   change in both. A header change alone reopens no repeat (experiment-v1 §10: only a change of
   a unit's ordered channel list, its folders or the pairing does): the repeat keeps its date,
   and the run stops until the description fits the headers again (give the channel the new
-  header name, or tag the channels again, in the notebook).
+  header name, or tag the channels again, in the notebook; a saved header name that a new
+  tag drops is confirmed there with **Yes, this header name changed**).
 - **Nothing is confirmed by the command.** An ID, the comparability of a repeat, a reference
   and the removal of a folder are your answers, given in the notebook; the command never
   answers for you and never fills in a date.

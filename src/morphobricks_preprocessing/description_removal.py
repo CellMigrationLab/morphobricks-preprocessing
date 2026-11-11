@@ -43,7 +43,7 @@ from .description_transition import (
 Change = tuple[str, str, str | None]
 """A changed confirmed ID as ``Reconfirmation`` names it: (kind, old ID, new ID or None)."""
 
-POSITION, HEADER_NAME = "position", "header name"
+POSITION = "position"
 """What a channel lost in a folder still there (:attr:`Reconfirmations.unseen`)."""
 
 
@@ -87,8 +87,9 @@ class Reconfirmations:
     """The records the candidate needs: those the user's answers cover, and those they do not.
 
     ``unseen`` are the channel changes in folders still there that keep an ID open although an
-    answer touches it: each the channel ID, the folder and what it lost there (``POSITION`` or
-    ``HEADER_NAME``; issue #279).
+    answer touches it: each the channel ID, the folder and what it lost there (``POSITION``;
+    issue #279). A lost header name is not among them: it is asked on Channels on its own
+    (:func:`.channel_moves.name_changes`, issue #281) and keeps the ID open until confirmed.
     """
 
     accepted: tuple[Reconfirmation, ...]
@@ -249,18 +250,17 @@ def _unanswered(
     issue: TransitionIssue,
     published: Description,
     built: Description,
-    rec: Reconciliation,
     removed: set[UnitFolders],
     now: dict[UnitFolders, UnitFolders],
 ) -> set[tuple[UnitFolders, str]]:
-    """Return the folders still there where a channel changed in a way no answer covers.
+    """Return the folders still there where a channel lost a position no answer covers.
 
     Section 4.6 keys a re-confirmation by ID only: a removal or rename answer that touches a
-    channel would also accept its other changes. Those are a position lost in a unit no answer
-    names (a move, confirmed on its own, #258) and a lost header name while a folder still there
-    no longer gives a saved name at the channel's position (#279). A position is compared in
-    the unit's folders after the renames (``now``), so a move inside a renamed folder is lost
-    too; only a unit the user confirmed removed (``removed``) loses its positions by the answer.
+    channel would also accept its other changes. A position lost in a unit no answer names is a
+    move, confirmed on its own (#258). A position is compared in the unit's folders after the
+    renames (``now``), so a move inside a renamed folder is lost too; only a unit the user
+    confirmed removed (``removed``) loses its positions by the answer. A lost header name is
+    the caller's (:func:`_names_lost`).
     """
     if issue.kind != CHANNELS or issue.new_id is not None:
         return set()
@@ -273,11 +273,19 @@ def _unanswered(
         if (key := by_ids[cond, repeat, tid]) not in removed
         and (cond, now[key].source_repeat, tid, index) not in after
     }
-    out = {(now[key], POSITION) for key in lost}
-    names = set(published.channels[channel].header_names or ())
-    if not names <= set(built.channels[channel].header_names or ()):
-        out |= {(u.folders, HEADER_NAME) for u in rec.unchanged if channel in u.headers_changed}
-    return out
+    return {(now[key], POSITION) for key in lost}
+
+
+def _names_lost(issue: TransitionIssue, published: Description, built: Description) -> bool:
+    """Return whether a changed channel lost a saved header name (section 4.6 (c), #281).
+
+    The published file keeps no header names per folder, so no removal or rename answer can
+    show that the name went with its folder: only the user's own click on Channels confirms it.
+    """
+    if issue.kind != CHANNELS or issue.new_id is not None:
+        return False
+    saved = set(published.channels[issue.old_id].header_names or ())
+    return not saved <= set(built.channels[issue.old_id].header_names or ())
 
 
 def _positions_of(description: Description, channel: str) -> set[tuple[str, str, str, int]]:
@@ -296,13 +304,16 @@ def reconfirmations(
     built: Description,
     rec: Reconciliation,
     removals: Iterable[Removal] = (),
+    names: Collection[str] = (),
 ) -> Reconfirmations:
     """Return the re-confirmations of ``built`` that the user's answers cover, and the rest.
 
     Each changed confirmed ID takes the date of the first answer that touches one of its units;
     an ID no answer touches is in ``open`` (the candidate would be refused for it). A channel
-    that also changed in a folder still there in a way no answer covers is open as well, with
-    those folders in ``unseen``: the record cannot say "this ID, only in that folder" (4.6).
+    that also lost a position in a folder still there is open as well, with those folders in
+    ``unseen``: the record cannot say "this ID, only in that folder" (4.6). A channel that lost
+    a saved header name is open unless it is in ``names``, the channels whose header-name change
+    the user confirmed as shown (issue #281).
     """
     units = published_units(published)
     answers = [(set(r.units), r.confirmed_on) for r in removals]
@@ -316,8 +327,9 @@ def reconfirmations(
     for issue in _changes(published, built):
         reached = _affected(issue, units)
         dates = [day for held, day in answers if held & reached]
-        others = _unanswered(issue, published, built, rec, removed, now) if dates else set()
-        if dates and not others:
+        others = _unanswered(issue, published, built, removed, now) if dates else set()
+        unconfirmed = _names_lost(issue, published, built) and issue.old_id not in names
+        if dates and not others and not unconfirmed:
             accepted.add(Reconfirmation(issue.kind, issue.old_id, issue.new_id, dates[0]))
         else:
             left.append(issue)
