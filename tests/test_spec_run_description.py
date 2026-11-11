@@ -1,10 +1,12 @@
 """A run with a published description: conformance P04, P05, P11 and P28 (Stage 1 PR 11).
 
-P04: units with different channel layouts are refused at Stage 1 with
-``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` and nothing is processed. P05, P11 and P28: the mask step
-checks a declared mask's representation (never publication or the run), a mask with files for
-none, some or all images is valid at every step, completeness is in the manifest, and a file
-is ``not yet checked`` until the mask step has read it, again for each new batch.
+P04: lifted at Stage 3 (Spec roadmap S3.3, owner decision of 11 November 2026): units with
+different channel lists (v04, v05, v06, v17) are processed; units of different image types (v29)
+are still refused with ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` and nothing is processed. P05, P11
+and P28: the mask step checks a declared mask's representation (never publication or the run), a
+mask with files for none, some or all images is valid at every step, completeness is in the
+manifest, and a file is ``not yet checked`` until the mask step has read it, again for each new
+batch.
 """
 
 from __future__ import annotations
@@ -49,24 +51,29 @@ def _mask_step(out):
 
 
 @pytest.mark.parametrize("name", ["v04", "v05", "v06", "v17"])
-def test_p04_heterogeneous_layouts_are_refused_and_nothing_is_processed(tmp_path, name):
-    root, out, _ = _setup(tmp_path, name)
+def test_p04_lifted_at_stage_3_different_channel_lists_are_processed(tmp_path, name):
+    # Spec roadmap Stage 3 S3.3 (owner decision of 11 November 2026) and experiment-v1 section 8
+    # ("R_HETEROGENEOUS_LAYOUT_NOT_ENABLED: Stage 1-2 only ... lifted at Stage 3"): units with
+    # different channel lists are processed, each image checked against its own unit.
+    root, out, images = _setup(tmp_path, name)
+    result = run_described(root, MAPPING, output_folder=out)
+    assert result.written, [(i.code, i.message) for i in result.issues]
+    assert CODE not in {i.code for i in result.issues}
+    assert result.plane_count == len(images)
+    manifest = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == "5"
+
+
+def test_p04_units_of_different_image_types_are_still_refused_naming_the_units(tmp_path):
+    # Not lifted by the owner's decision: RGB units beside channel units (v29) stay refused.
+    root, out, _ = _setup(tmp_path, "v29")
     result = run_described(root, MAPPING, output_folder=out)
     assert not result.written
-    assert CODE in {i.code for i in result.issues}
-    assert not (out / "plane_histograms.csv").exists()
-    assert not (out / "run_manifest.json").exists()
-
-
-def test_p04_the_message_names_the_layouts_and_the_units_in_plain_words(tmp_path):
-    root, out, _ = _setup(tmp_path, "v04")
-    issue = next(
-        i for i in run_described(root, MAPPING, output_folder=out).issues if i.code == CODE
-    )
-    assert "2 channel layouts" in issue.message
-    assert "A: DNA, ACTIN in 1 acquisition; B: ACTIN, DNA in 1 acquisition" in issue.message
+    issue = next(i for i in result.issues if i.code == CODE)
+    assert "2 channel layouts of different image types" in issue.message
     assert "Nothing was processed" in issue.message
-    assert "rep1/CTRL/single" in issue.action and "rep1/DrugA/single" in issue.action
+    assert "rep1/CTRL/" in issue.action
+    assert not (out / "plane_histograms.csv").exists()
 
 
 def test_p05_binary_mask_with_values_0_to_5_is_refused_by_the_mask_step_not_the_run(tmp_path):

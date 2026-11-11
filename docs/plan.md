@@ -1603,3 +1603,14 @@ Raised during review; to be decided before the milestones that need them:
     The draft file that would hold the user's answers outside the notebook is not part of the
     package yet, so `--publish` cannot complete a draft built from folders (open question to
     the owner, PR 17).
+79. Stage 3 S3.3, different channels per imaging unit (Spec roadmap S3.3; ADR 0003). *Decided
+    (owner, 11 November 2026): enable different channel counts across repeats now.* Each unit
+    lists its channels by canonical ID; the same ID is the same stain; an image's count is
+    checked against its own unit, and the images of one folder must agree
+    (`different_channel_counts` per folder, `R_UNIT_NOT_HOMOGENEOUS` in the run). The run writes
+    `plane_histograms.csv` schema version 5 with normalization v0.5.0 (header: every declared
+    ID; an absent channel blank), the manifest is version 5 (each file's `channel_ids`, the
+    per-repeat `channel_coverage`), and *Compare groups* refuses partial presence in a group
+    unless the user explicitly chooses the planes that have the channel. *Kept refused, pending
+    an owner decision:* RGB units beside channel units (`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`,
+    Spec `v29`), although the Spec lists that refusal as lifted at Stage 3.

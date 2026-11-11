@@ -41,8 +41,9 @@ Pre-alpha; the current release is v0.5.1 (what is planned next is in
 Every feature, message code and output file is described in the [user guide](docs/user_guide.md).
 
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
-to its release v0.4.0): per-plane histograms with the robust range and the range check
-(`histogram`, `ranges`), the histogram table (`csv_io`, schema version 4), pooled group statistics
+to its release v0.5.0): per-plane histograms with the robust range and the range check
+(`histogram`, `ranges`), the histogram table (`csv_io`, schema version 5: channels by canonical
+ID, so acquisitions may have different channels), pooled group statistics
 (`pooling`) and normalization parameters (`normalization`); import them from
 `morphobricks_normalization` (the deprecated paths through `morphobricks_preprocessing` were
 removed in v0.4.0).

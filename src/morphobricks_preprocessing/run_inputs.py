@@ -42,7 +42,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from morphobricks_normalization.csv_io import OUTPUT_FILENAME, read_plane_histograms
+from morphobricks_normalization.csv_io import (
+    OUTPUT_FILENAME,
+    CsvFormatError,
+    read_plane_histogram_table,
+)
 from morphobricks_normalization.records import PlaneRecord
 
 from .axes import AxisMapping
@@ -264,7 +268,7 @@ class RunInputs(SemanticInputs, ProjectionInputs, ResolvingInputs):
             experiment_root=root,
             masks_root=None if masks is None else Path(masks).resolve(),
             manifest=manifest,
-            records=tuple(read_plane_histograms(table)),
+            records=_records(table, manifest),
         )
 
     def fovs(self) -> tuple[Fov, ...]:
@@ -532,6 +536,29 @@ def _check_conversion(root: Path, manifest: RunManifest) -> None:
     )
     if problem is not None:
         raise RunInputsError(problem)
+
+
+def _records(table: Path, manifest: RunManifest) -> tuple[PlaneRecord, ...]:
+    """Read the histogram table (schema version 5); each row's channels are its entry's.
+
+    A table of another version (version 4 is refused by the version 5 reader, ADR 0003 HV4)
+    or rows whose channel IDs are not the ones the manifest recorded for their image are
+    refused: nothing is converted or relabelled.
+    """
+    try:
+        records = read_plane_histogram_table(table).records
+    except CsvFormatError as exc:
+        raise RunInputsError(f"The histogram table cannot be used: {exc}") from exc
+    recorded = {entry.relative_path: tuple(entry.channel_ids) for entry in manifest.files}
+    for record in records:
+        if record.channels != recorded.get(record.source_relative_path):
+            raise RunInputsError(
+                f"The histogram table's row {record.plane_id} has the channels "
+                f"{', '.join(record.channels)}, but the run manifest records "
+                f"{', '.join(recorded.get(record.source_relative_path, ())) or 'none'} for its "
+                "image. Run preprocessing again."
+            )
+    return tuple(records)
 
 
 def _mapping(entry: FileEntry) -> AxisMapping:

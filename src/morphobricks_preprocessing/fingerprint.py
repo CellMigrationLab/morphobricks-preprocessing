@@ -120,6 +120,9 @@ class RowKey:
         The histogram settings (range, robust quantiles, range-check limit), as data.
     content_sha256
         The file's content SHA-256 in a ``verify_content`` run; None otherwise.
+    channel_ids
+        The image's canonical channel IDs in source order (its unit's confirmed list, Stage 3):
+        rows recorded under other IDs are recomputed, never relabelled.
     """
 
     relative_path: str
@@ -133,6 +136,7 @@ class RowKey:
     bin_count: int
     histogram: tuple
     content_sha256: str | None = None
+    channel_ids: tuple[str, ...] = ()
 
     @classmethod
     def of(cls, entry: FileEntry, settings: RunSettings, experiment_root: str) -> RowKey:
@@ -159,6 +163,7 @@ class RowKey:
             bin_count=settings.bin_count,
             histogram=tuple(sorted(_frozen(settings.histogram.to_dict()).items())),
             content_sha256=entry.content_sha256,
+            channel_ids=tuple(entry.channel_ids),
         )
 
 

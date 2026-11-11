@@ -120,7 +120,9 @@ def stage_file(
     folder.mkdir(exist_ok=True)
     relative = records[0].source_relative_path
     stem = _stem(relative)
-    rows = write_plane_histograms(records, folder / f"{stem}.csv")
+    # The file's own channel IDs: a staged file is read back on its own, never merged as bytes.
+    ids = sorted({channel for record in records for channel in record.channels})
+    rows = write_plane_histograms(records, folder / f"{stem}.csv", channel_ids=ids)
     record = {
         "staging_version": STAGING_VERSION,
         "relative_path": relative,

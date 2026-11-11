@@ -1,9 +1,15 @@
-"""The channel layouts a description declares, and the Stage 1 refusal of more than one.
+"""The channel layouts a description declares, and the refusal of mixed image types.
 
 A unit's layout is its ordered channel list and its image type (experiment-v1 section 8).
-Stage 1 processes one layout per experiment: ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` when the
-units do not all declare the same one. This is decided from the description alone; nothing
-here reads a folder or a header.
+Stages 1-2 processed one layout per experiment. Stage 3 (S3.3, owner decision of 11 November
+2026: different channel counts across repeats now) accepts units with **different channel
+lists**: each unit's channels are tagged with canonical IDs, the same ID is the same stain, and
+each image's channel count is checked against its own unit (``R_CHANNEL_COUNT_MISMATCH``,
+``R_UNIT_NOT_HOMOGENEOUS``, :mod:`.physical_check`). Units of **different image types** (RGB
+beside ordinary channel units, fixture ``v29``) are still refused with
+``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``: the owner enabled different channel lists, not mixed
+image types, which stay refused until decided (one pixel type and one table per run). This is
+decided from the description alone; nothing here reads a folder or a header.
 """
 
 from __future__ import annotations
@@ -51,8 +57,11 @@ def declared_layouts(description: Description) -> tuple[DeclaredLayout, ...]:
 
 
 def is_heterogeneous(layouts: tuple[DeclaredLayout, ...]) -> bool:
-    """Return True when the units declare more than one layout."""
-    return len(layouts) > 1
+    """Return True when the units declare more than one image type (still refused).
+
+    Different channel lists of one image type are accepted from Stage 3 (S3.3).
+    """
+    return len({layout.image_type for layout in layouts}) > 1
 
 
 def _label(index: int) -> str:
@@ -77,9 +86,10 @@ def heterogeneous_message(layouts: tuple[DeclaredLayout, ...]) -> str:
         names = ", ".join(layout.channels)
         parts.append(f"{_label(index)}: {names}{kind} in {_acquisitions(len(layout.units))}")
     return (
-        f"This experiment has {len(layouts)} channel layouts ({'; '.join(parts)}). "
-        "Your description is saved and valid, but this version processes one layout per "
-        "experiment. Nothing was processed."
+        f"This experiment has {len(layouts)} channel layouts of different image types "
+        f"({'; '.join(parts)}). Your description is saved and valid, but this version processes "
+        "one image type per experiment (RGB and separate channels are not mixed). Nothing was "
+        "processed."
     )
 
 

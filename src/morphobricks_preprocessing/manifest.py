@@ -38,8 +38,10 @@ from .inventory import INVENTORY_KEY, source_signature
 from .lab_links import KEY as LAB_LINKS_KEY
 from .lab_links import recorded_lab_links
 from .manifest_fields import (
+    CHANNEL_IDS_KEY,
     RAW_NAMES_KEY,
     optional_text,
+    recorded_channel_ids,
     recorded_flag,
     recorded_masks,
     recorded_position_id,
@@ -163,6 +165,11 @@ class FileEntry:
         :func:`.source_content.source_content_sha256`) in a ``verify_content`` run; else None.
     raw_channel_names
         Header channel names, untrimmed; written only when not empty; not in :meth:`same_source`.
+    channel_ids
+        The image's canonical channel IDs in source order: its imaging unit's confirmed
+        ``channels`` list (Stage 3, S3.3; units may list different channels). Required when
+        written and read; part of the row key (:class:`.fingerprint.RowKey`), so rows named
+        by other IDs are never reused.
     """
 
     relative_path: str
@@ -183,6 +190,7 @@ class FileEntry:
     inventory_sha256: str | None = None
     content_sha256: str | None = None
     raw_channel_names: tuple[str | None, ...] = ()
+    channel_ids: tuple[str, ...] = ()
 
     def same_source(self, other: FileEntry) -> bool:
         """Return True if ``other`` describes the same unchanged file, read the same way."""
@@ -546,6 +554,7 @@ def _file_dict(entry: FileEntry) -> dict:
         data[CONTENT_KEY] = entry.content_sha256
     if entry.raw_channel_names:
         data[RAW_NAMES_KEY] = list(entry.raw_channel_names)
+    data[CHANNEL_IDS_KEY] = list(recorded_channel_ids(entry.channel_ids, entry.relative_path))
     return data
 
 
@@ -583,6 +592,7 @@ def _file_entry(data: dict) -> FileEntry:
         inventory_sha256=optional_text(data.get(INVENTORY_KEY)),
         content_sha256=optional_text(data.get(CONTENT_KEY)),
         raw_channel_names=recorded_raw_names(data.get(RAW_NAMES_KEY), path),
+        channel_ids=recorded_channel_ids(data.get(CHANNEL_IDS_KEY), path),
     )
 
 

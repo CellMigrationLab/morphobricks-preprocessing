@@ -350,9 +350,15 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    image, for the table this run wrote; it writes nothing) and the report (formatted, with the
    plain text of `discovery_report.txt` folded last).
 
-Images with different numbers of channels (for example three in most folders and four in
-one) are refused in this version (`different_channel_counts`): the axes step names the error
-in one sentence, with the files and what to do one click away.
+Folders may have different numbers of channels (for example three stains everywhere and a
+fourth only in `Biological_repeat_2`): on **Channels** you give each label once and tag each
+folder's channels; the same label means the same stain in every folder. A stain a folder does
+not have is left blank in the histogram table, never zero. Inside one folder every image must
+have the same channels (`different_channel_counts`, naming the folder). In **Compare groups**,
+a grouping in which a stain is in only some planes of a group (for example a condition whose
+second repeat has the extra stain) is not calculated: the panel asks *Summarise only the planes
+that have the channel?* and calculates only after you answer **Yes**; the table then marks
+those rows and the choice is written to Technical details.
 
 When you open the notebook again on an experiment that is already saved and whose folders
 did not change, it opens on the first step still to do (usually **Run**).
@@ -768,8 +774,10 @@ The default output folder is next to the experiment folder:
   so spreadsheet programs may not open it completely; read it in Python with
   `read_plane_histograms()`. The columns are defined in the [normalization brick's
   contract](https://github.com/CellMigrationLab/morphobricks-normalization/blob/main/docs/contract.md)
-  §6.2 (schema version 4: each channel also has its underflow and overflow, zero unless the
-  robust range is used). A table written by an earlier version is recomputed on the next
+  §6.2 (schema version 5: the columns are named by channel ID, for example
+  `Histogram_Count_DNA_00042`; a `channels` column lists the stains of each plane, and a stain
+  the image does not have is blank; each channel also has its underflow and overflow, zero
+  unless the robust range is used). A table written by an earlier version is recomputed on the next
   run; later bricks ask you to run this brick again on it.
 - **`experiment_design.csv`:** one row per biological-repeat folder of each condition: its
   repeat group, whether its condition is a control, its image and technical-repeat counts,
@@ -893,7 +901,8 @@ continues.
 | Message code | Severity | Meaning and what to do |
 |---|---|---|
 | `experiment_not_found` | Error | The folder does not exist. Select an existing folder. |
-| `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` | Error | The published experiment description declares acquisitions with different channel layouts (another channel list, order or image type). This version processes one layout per experiment and nothing was processed: the message names the layouts and units. Process the layouts as separate experiments. |
+| `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` | Error | The published experiment description declares colour (RGB) acquisitions next to acquisitions of separate channels. This version processes one image type per experiment and nothing was processed: the message names the layouts and units. Process them as separate experiments. Different channel lists or orders of one image type are accepted. |
+| `partial_channel_coverage` | Warning | A biological repeat has a stain in only some of its acquisitions (for example one technical repeat imaged an extra stain). The images are measured as acquired (the stain is blank where it was not acquired) and the coverage is in the manifest. Later analyses that pool the stain over the whole repeat refuse it (`A_SCOPE_INCOMPLETE`) unless you choose the acquisitions that have it. |
 | `R_MASK_CONTRADICTS_REPRESENTATION` | Error | The masks step found a mask file declared `binary` with more than two values. Declare the mask as `instances` in the description if every value is an object. |
 | `R_UNIT_NOT_FOUND`, `R_UNIT_NOT_DECLARED`, `R_UNIT_NOT_HOMOGENEOUS`, `R_CHANNEL_COUNT_MISMATCH`, `R_HEADER_CONTRADICTION`, `R_IMAGE_TYPE_CONTRADICTS_HEADER`, `R_MASK_TYPE_NOT_DECLARED` | Error | The published description and the folder or the image headers disagree (the message says where). Correct the description, publish it again and run again. |
 | `description_unreadable` | Error | `morphobricks.toml` or `morphobricks.records.jsonl` cannot be read. A description the reader refuses is reported with its own code (`E_*`, `R_FILE_SYMLINK`) and table path. |
@@ -916,7 +925,7 @@ continues.
 | `multiple_series` | Error | A file or OME-Zarr folder holds several images (positions, scenes, series, wells or fields). Export them separately, or exclude it. |
 | `unsupported_dtype` | Error | Unsupported pixel type (e.g. float16). Convert, or exclude it. |
 | `mixed_dtypes` | Error | Images have different pixel types. Process them separately or convert. With a saved experiment description the images are compared within each unit (and, in the run, among units of the same image type): colour (RGB) and fluorescence units in one description are not reported here but stop the run with `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`. |
-| `different_channel_counts` | Error | Images have different numbers of channels (an image without a channel dimension has one). Every image of an experiment must have the same channels: split the others into a separate experiment, or exclude them. If a dimension got the channel role by mistake, correct the axis roles. |
+| `different_channel_counts` | Error | Images of one folder have different numbers of channels (an image without a channel dimension has one). Folders may differ; the images of one folder (one acquisition) must not: move the others into a folder of their own, or exclude them. If a dimension got the channel role by mistake, correct the axis roles. |
 | `inconsistent_dimensions`, `inconsistent_mapping` | Error | Images have their dimensions in a different order. Export them the same way or process separately; named-axis copies (`convert`) keep each image's order, so they do not solve this. |
 | `missing_axes` | Error | Some images lack a dimension. Confirm they have one plane along it (step 2, or `--missing-as-singleton` for `check` and `run`), or export them again. |
 | `ambiguous_missing_axes` | Error | It is unclear which dimension an image lacks. Export it again. |

@@ -84,8 +84,8 @@ def with_identity(fov: Fov, entry: FileEntry, description: Description) -> Fov:
     Raises
     ------
     RunInputsError
-        When the entry's folders name no unit of the description, or the unit declares another
-        number of channels than the image has.
+        When the entry's folders name no unit of the description, the unit declares another
+        number of channels than the image has, or other channel IDs than the run recorded.
     """
     identity = _identity(entry.labels, description)
     if len(identity.channel_ids) != fov.c_count:
@@ -93,6 +93,12 @@ def with_identity(fov: Fov, entry: FileEntry, description: Description) -> Fov:
             f"{entry.relative_path} has {fov.c_count} channels but its unit declares "
             f"{len(identity.channel_ids)} ({', '.join(identity.channel_ids)}). "
             "Run preprocessing again."
+        )
+    if entry.channel_ids and tuple(entry.channel_ids) != identity.channel_ids:
+        raise RunInputsError(
+            f"{entry.relative_path} was measured with the channels "
+            f"{', '.join(entry.channel_ids)}, but its unit now declares "
+            f"{', '.join(identity.channel_ids)}. Run preprocessing again."
         )
     return replace(
         fov,

@@ -26,7 +26,11 @@ logger = logging.getLogger(__name__)
 
 
 def file_entries(
-    pre: Preflight, review: AxisReview, root: Path, in_blocks: set[str]
+    pre: Preflight,
+    review: AxisReview,
+    root: Path,
+    in_blocks: set[str],
+    channels: Mapping[str, tuple[str, ...]],
 ) -> dict[str, FileEntry]:
     """Describe every analysed file as it is now, with its roles and pixel sizes.
 
@@ -40,6 +44,8 @@ def file_entries(
         The experiment folder.
     in_blocks
         Files whose planes are read in blocks.
+    channels
+        Each image's canonical channel IDs (its unit's confirmed list, Stage 3).
 
     Returns
     -------
@@ -68,6 +74,7 @@ def file_entries(
             entry,
             axes_from=review.axes_from.get(rel),
             pixel_sizes=pre.calibration.sizes[rel],
+            channel_ids=tuple(channels.get(rel, ())),
         )
         if header.channel_names_trimmed:
             logger.info(

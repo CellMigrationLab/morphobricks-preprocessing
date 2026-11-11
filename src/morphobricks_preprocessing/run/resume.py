@@ -180,6 +180,7 @@ def _read_one(job: FileJob, rel: str, key: dict, found: NewRows) -> None:
             job.review.file_mappings[rel],
             job.settings,
             job.entries[rel].position_id,
+            job.entries[rel].channel_ids,
         )
     except PlaneReadError:
         logger.warning("Cannot read the planes of %s", rel, exc_info=True)

@@ -25,14 +25,15 @@ brick**.
 
 - **Input:** one experiment folder of TIFF images and/or OME-Zarr images (OME-NGFF 0.4/0.5,
   `zarr` extra).
-- **Output:** `plane_histograms.csv` (schema version 4): one row per XYC plane (an image at
-  one Z and T), with one intensity histogram per channel in its own columns, plus
+- **Output:** `plane_histograms.csv` (schema version 5, Spec ADR 0003): one row per XYC plane
+  (an image at one Z and T), with one intensity histogram per channel in its own columns named
+  by canonical channel ID (an absent channel is blank, never zero), plus
   `experiment_design.csv` (repeat groups, confirmation, controls) and `run_manifest.json`,
   all in an output folder outside the experiment.
 - **Statistics code (from the normalization brick):** the per-plane histogram, the CSV
   reader and writer, pooling (`PooledHistogram`) and normalization parameters (`min_max`,
   `percentile_range`, `z_score`, `robust_z_score`) live in the required dependency
-  `morphobricks_normalization` (pinned to its release v0.4.0; first pinned at v0.2.0, plan §12 questions 27 and
+  `morphobricks_normalization` (pinned to its release v0.5.0; first pinned at v0.2.0, plan §12 questions 27 and
   28). This brick runs them over
   the experiment. Later bricks such as patch extraction use them to normalise any group of
   planes without rereading pixels. Import them from `morphobricks_normalization`; the
@@ -110,6 +111,9 @@ src/morphobricks_preprocessing/
   description.py        the model (Description, Condition, Channel, Repeat, Member, Unit, Mask)
                     built from a reader-accepted document; description_from_bytes -> DescriptionError
   description_write.py  the canonical writer (Spec experiment-v1 9.1) and section digests (9.3)
+  channel_plan.py   Stage 3 (S3.3): each image's canonical channel IDs from its unit's confirmed
+                    list (file_channel_ids), the declared IDs (the table header), the per-repeat
+                    channel coverage full/partial/unavailable (channel_coverage, in the manifest)
   physical_check.py the physical R_* checks of a description against the folder and image headers
                     (units found/declared, homogeneity, header evidence, image type, mask types
                     declared); layout_groups (header-named layouts are batch-confirmable, Q3)
@@ -490,11 +494,17 @@ functions the tests use.
   written: 0 when the image has no such axis (question 17). Channels are columns,
   numbered from 0 (question 27). `PlaneRecord` stores None as 0; `Plane` (2D, with
   `z, c, t`) and `XycPlane` coordinates stay None for axes the file lacks.
-- **Channel counts (N43, question 27):** every image has the same number of channels (the
-  C axis, 1 without one, also for a confirmed missing C), else the error
-  `different_channel_counts`: from the headers in `metadata.check_metadata` (C, or S
-  without C) and from the confirmed roles in `review_axes`, which supersedes it
-  (`axes._SUPERSEDED_METADATA_CODES`). Shared builder `size_checks.channel_count_issues`.
+- **Channel counts (Stage 3 S3.3, owner decision of 11 November 2026; N43 replaced):**
+  imaging units may have different channels: each unit lists its own by canonical ID in the
+  description, the same ID is the same stain, and the table names channels by ID
+  (`channel_plan.file_channel_ids`). Inside one unit (a leaf folder) every image has the same
+  number of channels (the C axis, 1 without one), else the error `different_channel_counts`
+  naming the folder: from the headers in `metadata.check_metadata` (C, or S without C) and
+  from the confirmed roles in `review_axes`, which supersedes it; the run names it
+  `R_UNIT_NOT_HOMOGENEOUS` and checks each image's count against its unit
+  (`R_CHANNEL_COUNT_MISMATCH`). Shared builder `size_checks.channel_count_issues`. Units of
+  different image types (RGB beside channel units) stay refused
+  (`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`).
 - **OME-Zarr axes:** translated from OME-NGFF metadata (`zarr_input.ngff_axes`: time -> T,
   channel -> C, space z/y/x -> Z/Y/X, anything else -> Q). The experiment mapping is
   defined on the TIFF arrangement if there are TIFFs; every OME-Zarr image, also one with
@@ -549,10 +559,17 @@ functions the tests use.
   Percentile range defaults to 1–99.8. Robust z-score uses MAD × 1.4826. A zero or
   non-finite scale is an error.
 
-### CSV (normalization contract §6.2, schema version 4, follow-ups P3b and P6)
+### CSV (normalization contract §6.2, schema version 5 since S3.3; 4 below is history)
 
+- **Schema version 5 (ADR 0003 HV1-HV4, normalization v0.5.0):** written with
+  `write_plane_histograms(records, path, channel_ids=<every declared channel ID>)` from
+  `PlaneRecord(..., channels=<the unit's confirmed list>)`; the presence column `channels`
+  after the plane columns, per-channel columns `<Category>_<Feature>_<ID>` for every
+  declared ID, sorted; an absent channel blank; a version 4 table refused (recomputed by the
+  next run, `RunInputs` refuses it). The manifest (version 5) records each file's
+  `channel_ids` (part of the row key) and the per-repeat `channel_coverage`.
 - **Rows:** one per XYC plane (image, Z, T), written with the brick's writer from
-  `PlaneRecord(path, *labels, histograms=…, z=, t=, position_id=)`.
+  `PlaneRecord(path, *labels, histograms=…, z=, t=, position_id=, channels=)`.
 - **Columns:**
   `position_id, image_file, z, t, condition, biological_repeat, technical_repeat,
   source_relative_path, plane_id, dtype, bit_depth, channel_count, total_pixel_count,
