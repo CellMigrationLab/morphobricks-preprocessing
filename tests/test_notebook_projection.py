@@ -109,7 +109,7 @@ def test_a_z_stack_offers_the_projection_and_chooses_nothing(tmp_path):
         )
     )
     assert NOT_ENABLED in card and "never changed, moved or deleted" in card
-    assert nb.write_projection() is None and not out.joinpath("projected_max").exists()
+    assert nb._write_projection() is None and not out.joinpath("projected_max").exists()
     nb.projection_method.value = "max"
     assert nb.projection_button.disabled  # the roles are the user's: the example first
     nb.preview_checked.button.click()
@@ -138,7 +138,7 @@ def test_the_projected_copies_are_written_recorded_and_used_by_the_later_steps(
     before = digests(root)
     nb.projection_method.value = "max"
     nb.preview_checked.button.click()
-    result = nb.write_projection()
+    result = nb._write_projection()
     copies = out / "projected_max"
     assert result.written and len(result.projected) == len(FOLDERS)
     assert digests(root) == before  # the original stacks are only read
@@ -179,7 +179,7 @@ def test_a_slice_range_and_another_method_go_to_their_own_folder(tmp_path):
     nb.projection_first.value, nb.projection_last.value = 1, 3
     nb.preview_checked.button.click()
     assert "mean projection of slices 1 to 3" in _text(nb.projection_where.value)
-    result = nb.write_projection()
+    result = nb._write_projection()
     copies = out / "projected_mean_z1-4"
     assert result.written and result.destination == copies
     stack = data["drug/rep2/a.tif"]
@@ -202,7 +202,7 @@ def test_opening_the_stacks_again_offers_the_copies_written_earlier(tmp_path):
     nb, root, out, _ = started(tmp_path, "ZCYX", (5, 3, 16, 16))
     nb.projection_method.value = "sum"
     nb.preview_checked.button.click()
-    assert nb.write_projection().written
+    assert nb._write_projection().written
     assert [(p.name, made.method) for p, made in earlier_projections(root.resolve(), out)] == [
         ("projected_sum", "sum")
     ]
