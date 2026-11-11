@@ -34,6 +34,7 @@ v0.5.1: no run before v0.5.1 is read.)
   tags each folder's list, and *Compare groups* asks before pooling a partly present stain.
 - Histogram numbers of present channels are unchanged (counts, extrema, binning limits, pixel
   counts and tail moments identical on `v13`, `v01` and simulated uint8/uint16/float32 trees).
+
 **Changed (notebook, owner's test of v0.5.1; no result or published file changes)**
 
 - **One image viewer for every step.** *Images*, *Axes*, *Channels* and *Check and save* show
