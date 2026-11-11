@@ -119,7 +119,12 @@ def test_every_page_is_a_single_column_of_cards(exp):  # noqa: F811
     order = list(nb.axis_box.children)
     assert order.index(nb.preview_card) < order.index(nb.axis_sizes_slot)
     assert isinstance(nb.scan_box, widgets.VBox)
-    assert list(nb.scan_box.children) == [nb.scan_example, nb.scan_another, nb.scan_tree]
+    assert list(nb.scan_box.children) == [
+        nb.scan_example,
+        nb.scan_roles_card,  # the axes of the image shown, under its pictures
+        nb.scan_another,
+        nb.scan_tree,
+    ]
 
 
 def _boxes(widget):

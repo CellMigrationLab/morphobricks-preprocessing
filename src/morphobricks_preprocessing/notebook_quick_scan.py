@@ -113,7 +113,7 @@ class _QuickScan:
             " Show another image", icon="random", tooltip="Choose another image at random"
         )
         self.scan_box = widgets.VBox(  # one column: the pictures, then the folders
-            [self.scan_example, self.scan_another, self.scan_tree],
+            [self.scan_example, self.scan_roles_card, self.scan_another, self.scan_tree],
             layout=widgets.Layout(width="99%"),
         )
         self.scan_box.add_class("mb-scan")
@@ -192,6 +192,7 @@ class _QuickScan:
             self._idle(self.scan_button, SCAN_LABEL, "search")
         self._scan, self._scanned = found, self._scan_inputs()
         self._scan_headers = {}  # a new scan reads the headers of its pictures again
+        self._reset_scan_axes()
         wait.phase("Opening one image")
         self._show_scan_example(None, status=False)
         excluded = frozenset(normalise_relative_path(path) for path in self._excluded())

@@ -291,11 +291,19 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
 1. **Images.** Give the folders (images; masks and output are optional) and click **Scan the
    folders**. The scan lists the conditions and folders without reading any image header and
    shows one image chosen at random in the viewer, for looking only; any other image can be
-   chosen there. If this is your experiment, click **Looks right: read all image headers**.
-   The viewer then shows the images as the check read them; the folders found, the check's
+   chosen there. Under the pictures, **Axes of this image** proposes a role for each of its
+   dimensions from its header. If a picture looks wrong (a strip, stripes, channels that are
+   really slices), change a role right there: the pictures are redrawn, and a header that
+   names no axes gets its picture once you say what its dimensions are. What you leave there
+   is the proposal for every image; nothing is confirmed yet. If this is your experiment,
+   click **Looks right: read all image headers**: every header is read and the proposal is
+   checked against every image (one line says whether it fits them all). The viewer then
+   shows the images as the check read them; the folders found, the check's
    report (formatted: a summary, then tables with the details folded) and **Exclude images**
    are collapsed below.
-2. **Axes.** What the files hold, in three parts.
+2. **Axes.** What the files hold, in three parts. The roles start from the proposal of step
+   1 (the header's, or what you chose on the example) and can be changed here at any time;
+   once confirmed, **Change axis roles** takes the confirmation back.
    - **Axis roles:** one row per image dimension with its role, and under them the viewer
      with one image as these roles read it, redrawn whenever you change a role (a wrong role
      looks wrong: a strip, stripes); choose any other image, time point or slice there. Click **Confirm these axes** (offered when the headers name
@@ -304,8 +312,13 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
      same in all 270 images)*. When the headers give none, type it once under **Pixel size X**
      (**Y** follows while **same for X and Y** is ticked; untick it to type another Y) and
      click **Use for all images**, or leave the images uncalibrated; nothing is guessed. When the headers
-     disagree, the line says how many images have which size, and **Set per imaging unit…**
-     opens.
+     disagree, the line says how many images have which size; with three or more sizes it
+     gives their range instead (*Pixel sizes differ slightly: 0.10047–0.10054 µm (spread
+     0.07 %) across 138 images, 25 combinations*), with the sizes in a folded table. Nothing
+     is chosen for you: until you choose, each image is recorded with the size of its own
+     header. Either state one size for all images (it is shown what it replaces before it is
+     written, and it is recorded as stated by you), or state sizes per folder under **Set per
+     imaging unit…**.
    - **Image type:** what the channel dimension holds, *separate stains or markers* or
      *colour (RGB)*. It is proposed from the image headers and recorded when you click **Use
      for all folders**. **Set per folder…** holds one row per folder; it opens when the
