@@ -5,8 +5,9 @@ strict reader, on the exact bytes it hashes. Every run needs one: without it the
 (``A_DESCRIPTION_REQUIRED``, :mod:`..required_description`). The run:
 
 - stops, with the Spec's own code and a plain message, when the file is not valid, its
-  records file cannot be read, the units declare more than one channel layout
-  (``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``, Stage 1) or the description contradicts the folder
+  records file cannot be read, the units declare different image types
+  (``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``; different channel lists are accepted from Stage 3,
+  S3.3, and checked per unit) or the description contradicts the folder
   or the image headers (the physical ``R_*`` checks, :mod:`..physical_check`);
 - records in its manifest the file's SHA-256, the section digests, which units' image type was
   checked against a header, the status of every declared mask file, and the publication
@@ -22,11 +23,17 @@ from collections.abc import Iterable, Mapping
 from dataclasses import astuple, dataclass, replace
 from pathlib import Path
 
+from ..channel_plan import declared_channel_ids, file_channel_ids
 from ..description import Description, DescriptionError, description_from_bytes
 from ..description_file import DESCRIPTION_FILENAME, read_file_bytes, sha256_hex
 from ..description_layouts import declared_layouts, is_heterogeneous
 from ..description_record import description_record, unit_records
-from ..description_run_text import heterogeneous_issue, physical_issue, reader_issue
+from ..description_run_text import (
+    coverage_issues,
+    heterogeneous_issue,
+    physical_issue,
+    reader_issue,
+)
 from ..mask_representation import NOT_CHECKED, file_status, read_checked
 from ..physical_check import HETEROGENEOUS_LAYOUT, PhysicalReport, check_physical
 from ..required_description import description_required_issue
@@ -34,7 +41,7 @@ from ..unit_consistency import declared_type_issues
 from ..validation import ValidationIssue, error
 from .description_file import RecordsFileError, read_records
 from .preflight import Preflight
-from .steps import Checked
+from .steps import GLOBAL_CHANNEL_CODES, Checked
 
 
 @dataclass(frozen=True)
@@ -81,8 +88,11 @@ def check_description(
 ) -> tuple[RunDescription, list[ValidationIssue]]:
     """Return the description with its physical report, and every refusal that applies.
 
-    The layouts are checked first: with more than one layout the run stops with
-    ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` and the physical checks do not run. The folder's
+    The layouts are checked first: with units of different image types the run stops with
+    ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` and the physical checks do not run. Units with
+    different channel lists of one image type are accepted (Stage 3, S3.3): each image is
+    checked against its own unit (``R_CHANNEL_COUNT_MISMATCH``, ``R_UNIT_NOT_HOMOGENEOUS``,
+    ``R_HEADER_CONTRADICTION``). The folder's
     pixel-type and dimension checks apply per declared image type
     (:func:`..unit_consistency.declared_type_issues`), so units of different image types
     never produce ``mixed_dtypes`` or ``inconsistent_dimensions`` between them. The physical
@@ -117,22 +127,13 @@ def check_description(
     return replace(found, physical=report), [*units, *(physical_issue(i) for i in report.issues)]
 
 
-GLOBAL_CHANNEL_CODES = frozenset({"channel_names_differ", "different_channel_counts"})
-"""The folder check's channel comparisons across the whole experiment.
-
-A description states each unit's channels and the header names confirmed for each, so in the
-run they are replaced by the per-unit checks (``R_CHANNEL_COUNT_MISMATCH``,
-``R_UNIT_NOT_HOMOGENEOUS``, ``R_HEADER_CONTRADICTION``; experiment-v1 section 4.3 and 8),
-and by ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` for units with different channel lists."""
-
-
 GLOBAL_UNIT_CODES = frozenset({"mixed_dtypes", "inconsistent_dimensions"})
 """The folder checks that compare pixel types and dimensions across the whole experiment.
 
 A description declares each unit's ``image_type``; they are replaced by the same checks per
 declared image type (:func:`..unit_consistency.declared_type_issues`; the axis review checks the
 arrangement of dimensions). Units of different image types are then refused as a layout
-(``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``), not by these."""
+(``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``, still refused), not by these."""
 
 
 def without_global_channel_checks(issues: Iterable[ValidationIssue]) -> list[ValidationIssue]:
@@ -178,7 +179,7 @@ SECONDARY_CODES = frozenset({"inconsistent_mapping", "missing_axes", "ambiguous_
 
 SECONDARY_ADVICE = (
     "Do not export the images again for this: it follows from the different layouts "
-    f"({HETEROGENEOUS_LAYOUT}, listed first). This version runs one layout per experiment."
+    f"({HETEROGENEOUS_LAYOUT}, listed first). This version runs one image type per experiment."
 )
 
 
@@ -201,6 +202,41 @@ def heterogeneous_first(issues: Iterable[ValidationIssue]) -> list[ValidationIss
         if i.code != HETEROGENEOUS_LAYOUT
     ]
     return [*layout, *rest]
+
+
+def described_checks(
+    output: Path,
+    pre: Preflight,
+    checked: Checked,
+    loaded: tuple[RunDescription | None, list[ValidationIssue]],
+) -> tuple[Checked, RunDescription | None]:
+    """Check the published description and give the run each image's channel IDs.
+
+    :func:`checked_description`, then (with a description) :func:`with_channels` and, unless the
+    image types are refused, the warning naming every partially represented repeat
+    (``partial_channel_coverage``, :func:`..description_run_text.coverage_issues`).
+    """
+    described = checked_description(output, pre, checked, loaded)
+    if described is None:
+        return checked, None
+    checked = with_channels(checked, described.description, pre)
+    if HETEROGENEOUS_LAYOUT not in {issue.code for issue in checked.issues}:
+        checked.issues.extend(coverage_issues(described.description))
+    return checked, described
+
+
+def with_channels(checked: Checked, description: Description, pre: Preflight) -> Checked:
+    """Return ``checked`` with each image's channel IDs and the declared channel IDs.
+
+    Each image's channels are its unit's confirmed list (Stage 3, S3.3); the issues list is
+    the same object, so refusals added to it later are kept.
+    """
+    images = ((leaf.labels, image) for leaf in pre.discovery.leaves for image in leaf.images)
+    return replace(
+        checked,
+        channels=file_channel_ids(description, images),
+        channel_ids=declared_channel_ids(description),
+    )
 
 
 def mask_records(

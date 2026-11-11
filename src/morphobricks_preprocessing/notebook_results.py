@@ -8,6 +8,7 @@ from pathlib import Path
 
 import ipywidgets as widgets
 from morphobricks_normalization.csv_io import CsvFormatError, read_plane_histograms
+from morphobricks_normalization.fitting import ChannelScopeIncompleteError
 from morphobricks_normalization.records import group_records
 
 from . import notebook_style as ui
@@ -19,6 +20,13 @@ from .validation import plural
 
 STAGES = 4
 """The parts of the statistics: read the table, pool, plot, check."""
+
+REFUSE, SUBSET = "refuse", "planes_with_channel"
+PARTIAL_OPTIONS = [
+    ("No: stop (default)", REFUSE),
+    ("Yes: summarise only the planes that have the channel", SUBSET),
+]
+"""The explicit question asked when a group has a channel in only some of its planes."""
 
 
 class _ResultsStep:
@@ -42,6 +50,7 @@ class _ResultsStep:
         self.csv_browse.on_click(lambda _: self._browse_csv())
         self.csv_file.observe(lambda _: self._csv_changed(), names="value")
         self.level.observe(lambda _: self._statistics_option_changed(), names="value")
+        self.partial_choice.observe(lambda _: self._partial_changed(), names="value")
 
     def _build_csv_card(self) -> None:
         """Build the card that chooses the histogram table."""
@@ -88,6 +97,25 @@ class _ResultsStep:
         )
         self.stats_status = widgets.HTML()
         self.stats_next = widgets.HTML()
+        # Partial channel presence (Stage 3): refused unless the user explicitly says yes.
+        self.partial_choice = widgets.ToggleButtons(
+            options=PARTIAL_OPTIONS, value=REFUSE, style={"button_width": "auto"}
+        )
+        self.partial_box = widgets.VBox(
+            [
+                widgets.HTML(
+                    "<b>Some groups have a channel in only some of their planes.</b> "
+                    "Summarise only the planes that have it?"
+                ),
+                self.partial_choice,
+                ui.help_text(
+                    "Their statistics then describe part of the group only (A_SCOPE_INCOMPLETE "
+                    "otherwise). Your choice is shown in the table and written to Technical "
+                    "details; nothing is written to the output folder."
+                ),
+            ]
+        )
+        ui.set_visible(self.partial_box, False)
         self.results_card = ui.card(
             "Group by",
             [
@@ -101,6 +129,7 @@ class _ResultsStep:
                 ),
                 self.statistics_button,
                 self.stats_status,
+                self.partial_box,
             ],
         )
 
@@ -150,6 +179,15 @@ class _ResultsStep:
         ui.set_visible(self.statistics_card, False)
         ui.set_visible(self.distribution_card, False)
         self.table_checks.clear()
+        # A choice about one table's planes is never carried over to another table. The
+        # question is hidden first, so resetting the answer calculates nothing.
+        ui.set_visible(self.partial_box, False)
+        self.partial_choice.value = REFUSE
+
+    def _partial_changed(self) -> None:
+        """Calculate again with the user's answer to the partial-presence question."""
+        if ui.is_visible(self.partial_box):
+            self.show_statistics()
 
     def _statistics_option_changed(self) -> None:
         if self.statistics.value:
@@ -211,6 +249,33 @@ class _ResultsStep:
             self._idle(self.statistics_button, " Calculate statistics", "calculator")
             self._show_log()
 
+    def _group_summaries(
+        self, records: list, path: Path, percentiles: Sequence[float]
+    ) -> list | None:
+        """Pool the groups, asking the user when a channel is in only some planes of a group.
+
+        Partial channel presence is refused (``A_SCOPE_INCOMPLETE``) and the question shown,
+        unless the user answered yes; that answer is written to Technical details. Returns
+        None when refused (the status says why).
+        """
+        level, chosen = self.level.value, self.partial_choice.value
+        try:
+            summaries = group_summaries(records, level, percentiles, partial_channels=chosen)
+        except ChannelScopeIncompleteError as exc:
+            self.stats_status.value = ui.status(
+                "error", "Partial channel presence: the statistics are not calculated.", [str(exc)]
+            )
+            ui.set_visible(self.partial_box, True)
+            return None
+        partial = any(summary.planes_without_channel for summary in summaries)
+        ui.set_visible(self.partial_box, partial or chosen != REFUSE)
+        if partial:
+            self.log.lines.append(
+                "Compare groups: partial_channels='planes_with_channel' chosen by the user for "
+                f"{path} ({LEVEL_NAMES[level]} groups)."
+            )
+        return summaries
+
     def _calculate_statistics(self, path: Path, percentiles: Sequence[float]) -> None:
         """Read, summarise and plot the table while reporting the current stage."""
         try:
@@ -221,16 +286,20 @@ class _ResultsStep:
         wait = self._stats_wait
         wait.phase("Pooling the planes of each group", STAGES, 1)
         level = self.level.value
-        summaries = group_summaries(records, level, percentiles)
+        summaries = self._group_summaries(records, path, percentiles)
+        if summaries is None:
+            return
+        partial = any(summary.planes_without_channel for summary in summaries)
         groups = group_records(records, level)
         images = {r.source_relative_path for r in records}
-        first = records[0].channel_histogram(0) if records else None
+        channel_ids = sorted({c for record in records for c in record.channels})
+        first = records[0].histograms[0] if records else None
         self.stats_tiles.value = ui.tiles(
             [
                 ("🧪", f"{len(groups):,}", f"{LEVEL_NAMES[level]} groups"),
                 ("🖼️", f"{len(images):,}", "images"),
                 ("🧩", f"{len(records):,}", "XYC planes"),
-                ("🎨", f"{records[0].channel_count:,}" if records else "-", "channels"),
+                ("🎨", f"{len(channel_ids):,}" if records else "-", "channels"),
                 ("🔢", first.dtype.name if first else "-", "pixel type"),
                 ("📊", f"{first.bin_count:,}" if first else "-", "bins per plane"),
             ]
@@ -250,7 +319,15 @@ class _ResultsStep:
         self.stats_status.value = ui.status(
             "ok",
             f"Statistics of {plural(len(groups), LEVEL_NAMES[level])} calculated.",
-            [f"From the table {path}"],
+            [f"From the table {path}"]
+            + (
+                [
+                    "Your choice: channels present in only some planes of a group are "
+                    "summarised over the planes that have them (marked in the table)."
+                ]
+                if partial
+                else []
+            ),
         )
         self.stats_next.value = ui.next_steps(
             "Review the group statistics, intensity distributions and intensity checks above.",

@@ -141,7 +141,7 @@ def test_run_prints_the_intensity_checks(tmp_path, capsys):
     assert "Intensity checks: 9 images checked: " in out
     assert "Limits: more than 3 robust deviations from the others, more than 1 % saturated" in out
     assert "Images far from the others of their biological repeat (image_intensity_outlier" in out
-    assert "  - Image ctrl/rep1/img_5.tif, channel C0: its " in out
+    assert "  - Image ctrl/rep1/img_5.tif, channel ch1: its " in out
     assert out.count("What to do: Look at the image") == 1
     # drug is brighter than ctrl, but conditions are never compared.
     assert "drug/rep1" not in out.split("Intensity checks:")[1]

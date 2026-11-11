@@ -37,7 +37,7 @@
     "tests/test_metadata.py: # lines (max #)": 629,
     "tests/test_notebook_ui.py: # lines (max #)": 1131,
     "tests/test_planes.py: # lines (max #)": 818,
-    "tests/test_run.py: # lines (max #)": 859,
+    "tests/test_run.py: # lines (max #)": 849,
     "tests/test_zarr_input.py: # lines (max #)": 850,
     "tests/zarr_tree.py write_ngff: # parameters (max #)": 12
   }

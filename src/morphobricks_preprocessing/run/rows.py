@@ -31,12 +31,14 @@ def _read_file(
     mapping: AxisMapping,
     settings: RunSettings,
     position: str,
+    channels: tuple[str, ...],
 ) -> tuple[list[PlaneRecord], list[NarrowRange]]:
     """Histogram every XYC plane of ``path``, recording the rows under the source ``rel``.
 
-    One row per plane holds the histograms of all its channels (schema version 4),
-    binned with the run's histogram range. Also returns the channel planes whose
-    range check found the central range too narrow.
+    One row per plane holds the histograms of all its channels (schema version 5), named by
+    ``channels``, the canonical IDs of its unit's confirmed list (entry ``i`` is source
+    channel ``C<i>``), binned with the run's histogram range. Also returns the channel planes
+    whose range check found the central range too narrow, by channel ID.
     """
     records, narrow = [], []
     for plane in iter_xyc_planes(
@@ -54,11 +56,12 @@ def _read_file(
             z=plane.z,
             t=plane.t,
             position_id=position,
+            channels=channels,
         )
         records.append(record)
         narrow.extend(
             NarrowRange(rel, record.plane_id, channel, check)
-            for channel, (_, check) in enumerate(measured)
+            for channel, (_, check) in zip(channels, measured, strict=True)
             if check is not None and check.narrow
         )
     return records, narrow

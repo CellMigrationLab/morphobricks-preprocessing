@@ -659,7 +659,7 @@ def test_ome_zarr_experiment_end_to_end(zarr_experiment):
         assert record.channel_count == 2 and record.z == 0
         for c in range(2):
             expected = compute_plane_histogram(np.asarray(data[c, record.t]))
-            np.testing.assert_array_equal(record.channel_histogram(c).counts, expected.counts)
+            np.testing.assert_array_equal(record.histograms[c].counts, expected.counts)
     assert records[0].plane_id == "ctrl/rep1/a.ome.zarr::z=0,t=0"
     assert {(r.condition, r.position_id) for r in records} == {
         ("ctrl", "a"),
@@ -700,8 +700,8 @@ def test_mixed_tiff_and_ome_zarr_experiment(tmp_path):
     assert pre.suggested_mapping == prefill_mapping("TCYX")
     blocked = run_described(root, pre.suggested_mapping).issues  # without missing_as_singleton
     assert issue(blocked, "missing_axes").paths == ("drug/c.ome.zarr",)  # with it: 1 channel, N43
-    one_channel = run_described(root, pre.suggested_mapping, missing_as_singleton=True)
-    assert codes(one_channel.issues)[0] == "R_HETEROGENEOUS_LAYOUT_NOT_ENABLED"
+    found = run_described(root, pre.suggested_mapping, missing_as_singleton=True).csv_path  # S3.3
+    assert {r.channels for r in read_plane_histograms(found)} == {("ch1", "ch2"), ("ch1",)}
     write_ngff(root / "drug/d.ome.zarr", random_data((3, 2, 8, 8), "uint8", seed=3), "tcyx")
     result = run_described(
         root, pre.suggested_mapping, missing_as_singleton=True, exclude=["drug/c.ome.zarr"]
@@ -711,11 +711,11 @@ def test_mixed_tiff_and_ome_zarr_experiment(tmp_path):
     # The same coordinates mean the same plane, whatever the storage order.
     b = rows["ctrl/b.ome.zarr::z=0,t=2"]
     np.testing.assert_array_equal(
-        b.channel_histogram(1).counts, compute_plane_histogram(zarr_data[1, 2]).counts
+        b.histograms[1].counts, compute_plane_histogram(zarr_data[1, 2]).counts
     )
     a = rows["ctrl/a.tif::z=0,t=2"]
     np.testing.assert_array_equal(
-        a.channel_histogram(1).counts, compute_plane_histogram(tiff_data[2, 1]).counts
+        a.histograms[1].counts, compute_plane_histogram(tiff_data[2, 1]).counts
     )
     assert {r.t for r in rows.values() if r.source_relative_path == "drug/d.ome.zarr"} == {0, 1, 2}
 
