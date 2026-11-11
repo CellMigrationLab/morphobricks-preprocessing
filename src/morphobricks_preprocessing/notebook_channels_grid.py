@@ -122,8 +122,8 @@ class TagGrid:
             [
                 ui.help_text(
                     "Folders whose image headers are identical are one block: say once which "
-                    "label each channel is, looking at the pictures. The same label should be in the "
-                    "same column in every block; a label "
+                    "label each channel is, looking at the pictures. The same label should be in "
+                    "the same column in every block; a label "
                     "used in only some folders is shown in orange. Every channel and every "
                     "image type must be answered."
                 ),
