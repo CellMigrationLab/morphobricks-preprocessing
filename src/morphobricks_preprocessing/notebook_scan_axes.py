@@ -179,10 +179,10 @@ class _ScanAxes:
         chosen = self._scan_roles.get(mapping.axes)
         suggested = pre.suggested_mapping
         source = (
-            "chosen by you on the example"
-            if chosen is not None and chosen.roles == mapping.roles
-            else "proposed from the image headers"
+            "proposed from the image headers"
             if suggested is not None and suggested.roles == mapping.roles
+            else "chosen by you on the example"
+            if chosen is not None and chosen.roles == mapping.roles
             else "as edited on Axes"
         )
         words = f"Axes {roles_words(mapping)} ({source})"
