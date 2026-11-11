@@ -16,7 +16,13 @@ from datetime import date
 
 import pytest
 
-from morphobricks_preprocessing.channel_moves import ChannelMove, Moved, channel_moves
+from morphobricks_preprocessing.channel_moves import (
+    ChannelMove,
+    Moved,
+    NameChange,
+    channel_moves,
+    name_changes,
+)
 from morphobricks_preprocessing.description_file import RECORDS_FILENAME, sha256_hex
 from test_notebook_check_save import answer_all, exp  # noqa: F401
 from test_notebook_prerelease import (
@@ -188,10 +194,14 @@ def test_channel_moves_lists_each_moved_position_from_and_to(exp, monkeypatch): 
     )
 
 
-def test_a_lost_header_name_is_not_offered_as_a_move(exp, monkeypatch):  # noqa: F811
+def test_a_lost_header_name_is_asked_besides_the_move(exp, monkeypatch):  # noqa: F811
+    # Issue #281: a channel that moved and lost a header name is in both lists, so neither
+    # click accepts the other change unseen (publication gets one record per ID).
     published, candidate = _published_and_swapped(exp, monkeypatch)
+    assert name_changes(published, candidate) == ()
     dna = candidate.channels["DNA"]
     names = tuple(n for n in dna.header_names if n != "DAPI")
     channels = {**candidate.channels, "DNA": replace(dna, header_names=names)}
     lost = replace(candidate, channels=channels)
-    assert [m.channel for m in channel_moves(published, lost)] == ["ACTIN"]
+    assert [m.channel for m in channel_moves(published, lost)] == ["ACTIN", "DNA"]
+    assert name_changes(published, lost) == (NameChange("DNA", ("DAPI",), names),)

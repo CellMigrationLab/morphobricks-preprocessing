@@ -134,7 +134,7 @@ class _StepsFlow(_CompactPages, _DesignStep, _QuickScan, _QuickAxes, _StepStates
              [about(AXES_INTRO), self.axis_box, self.quick_card, self.type_line.widget]),
             ("Channels", "Name what you stained, then tag each folder's channels.",
              [about(CHANNELS_INTRO), self.channel_labels.widget, self.channel_grid.widget,
-              self.moves_box]),
+              self.moves_box, self.names_box]),
             ("Masks", "What each mask type is; after a run, how the types relate.",
              [about(MASKS_INTRO), self.masks_card, self.masks_box, self.mask_step_card]),
             ("Design", "Conditions, biological repeats and comparisons.",

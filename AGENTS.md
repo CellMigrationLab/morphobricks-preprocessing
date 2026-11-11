@@ -333,9 +333,10 @@ src/morphobricks_preprocessing/
   notebook_axes_quick.py    the stepper's one-click Confirm these axes (Q3, PR 17b)
   notebook_row_fold.py      reopen: unchanged, answered rows fold; new or changed rows orange
   notebook_channels_rows.py the tag grid's folder rows: pictures (colour for RGB), Enlarge
-  notebook_channel_moves.py the Channels step's question about saved channels at new positions
-                            (#258); channel_moves.py (pure) lists them (channel_moves) and turns
-                            the user's click into the 4.6 re-confirmations (move_confirmations)
+  notebook_channel_moves.py the Channels step's questions about saved channels at new positions
+                            (#258) and saved header names lost (#281); channel_moves.py (pure)
+                            lists them (channel_moves, name_changes) and turns the user's click
+                            into the 4.6 re-confirmations (move_confirmations)
   notebook_folder_previews.py Images found: a header picture per folder (header_preview.py,
                             display only, Y/X named, capped reads); notebook_thumb_tile.py the
                             shared thumbnail with its 1:1 crop (preview_crop.py, pure) and Enlarge

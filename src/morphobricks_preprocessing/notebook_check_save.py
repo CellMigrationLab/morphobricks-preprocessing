@@ -248,11 +248,11 @@ class _CheckSaveScreen:
         missing = len(todo[0]) + len(todo[1])
         if missing:
             return [f"{plural(missing, 'answer')} still missing (listed above the button)"]
-        if self._moves_open():
-            return ["the moved channels are not confirmed: see Channels"]
-        return self._unseen_lines() or [
-            "these answers are refused: see the red message above the button"
-        ]
+        return (
+            self._open_change_lines()
+            or self._unseen_lines()
+            or ["these answers are refused: see the red message above the button"]
+        )
 
     def _blocked(self, state: object) -> str:
         """Say what already stops the run while the candidate cannot be checked (answers missing).
@@ -536,7 +536,8 @@ class _CheckSaveScreen:
             return False
         self._saved_on = date.today().isoformat()
         self.draft_answers = replace(self.draft_answers, base_sha256=publication.sha256)
-        self._removals, self._moves_clicked = {}, {}
+        self._removals = {}
+        self._forget_channel_clicks()
         self._draft_note = ""
         self._forget_published()
         self.confirmed_image_type = self._described_image_type()
@@ -554,7 +555,8 @@ class _CheckSaveScreen:
         """Return the removals the user confirmed and the re-confirmations they give publication.
 
         The same terms go to publication (:meth:`_publish`) and to the pre-save check, so Save
-        is enabled only for what publication accepts (with the channel moves of Channels, #258).
+        is enabled only for what publication accepts (with the moves and header-name changes
+        confirmed on Channels, #258 and #281).
         """
         removals, accepted = self._removal_terms(state, candidate)
         return removals, accepted + self._move_terms(state, candidate)
@@ -568,8 +570,9 @@ class _CheckSaveScreen:
             for q in state.removals
             if q.condition_id in self._removals
         )
+        names = self._names_confirmed(state, candidate)
         confirmations = reconfirmations(
-            state.description, candidate, state.reconciliation, removals
+            state.description, candidate, state.reconciliation, removals, names
         ).accepted
         return removals, confirmations
 
