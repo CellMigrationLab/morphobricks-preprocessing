@@ -22,6 +22,8 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
+import ipywidgets as widgets
+
 from . import notebook_style as ui
 from .axes import AxisMapping, file_mapping_for, prefill_mapping
 from .channel_labels import UnitLayout
@@ -287,6 +289,12 @@ class _Viewers:
             and (drawn.axes, drawn.roles) == (mapping.axes, mapping.roles)
             and viewer.view is not None
         )
+
+    def _member_picture(self, key: tuple[str, str], detail: widgets.VBox) -> widgets.Widget:
+        """Return no picture of a folder where the step's viewer shows any of its images."""
+        if getattr(self, "check_viewer", None) is None:
+            return super()._member_picture(key, detail)
+        return widgets.HTML("")
 
     # Images --------------------------------------------------------------------------------
 
