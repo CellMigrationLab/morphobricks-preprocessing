@@ -73,7 +73,7 @@ class _ZarrCopyCard:
         )
         self.zarr_option.observe(lambda _: self._refresh_zarr_card(), names="value")
         self.zarr_option.observe(lambda _: self._projection_changed(), names="value")
-        self.zarr_button.on_click(lambda _: self.write_zarr_copy())
+        self.zarr_button.on_click(lambda _: self._write_zarr_copy())
 
     def _copy_store(self) -> str:
         """Return the store the copies are written in: OME-Zarr when the option is ticked."""
@@ -125,7 +125,7 @@ class _ZarrCopyCard:
         self.zarr_button.disabled = bool(reasons)
         self.zarr_blocker.value = blocked_line(reasons)
 
-    def write_zarr_copy(self) -> ConversionResult | None:
+    def _write_zarr_copy(self) -> ConversionResult | None:
         """Write the OME-Zarr copies with the confirmed roles, then open them as the experiment.
 
         Returns

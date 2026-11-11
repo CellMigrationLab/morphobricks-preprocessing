@@ -202,7 +202,7 @@ def test_the_option_is_on_the_first_screen_unticked_and_writes_nothing(tmp_path)
     assert nb.zarr_option_row in nb.folders_card.children
     assert not ui.is_visible(nb.zarr_card)
     nb.quick_confirm.click()
-    assert not ui.is_visible(nb.zarr_card) and nb.write_zarr_copy() is None
+    assert not ui.is_visible(nb.zarr_card) and nb._write_zarr_copy() is None
     nb.zarr_option.value = True  # ticked later: offered at once, the roles being confirmed
     assert ui.is_visible(nb.zarr_card) and not nb.zarr_button.disabled
     assert not out.joinpath("ome_zarr").exists()
@@ -212,7 +212,7 @@ def test_the_copy_waits_for_the_confirmed_axes_and_says_so(tmp_path):
     nb, root, out, _ = started(tmp_path, "CYX", (3, 16, 16))
     assert ui.is_visible(nb.zarr_card) and nb.zarr_button.disabled
     assert "the axis roles are not confirmed" in _text(nb.zarr_blocker.value)
-    assert nb.write_zarr_copy() is None and not out.joinpath("ome_zarr").exists()
+    assert nb._write_zarr_copy() is None and not out.joinpath("ome_zarr").exists()
     nb.quick_confirm.click()
     assert not nb.zarr_button.disabled and nb.zarr_blocker.value == ""
     assert str(out / "ome_zarr") in nb.zarr_where.value
@@ -222,7 +222,7 @@ def test_the_copy_is_written_recorded_and_used_by_the_later_steps(tmp_path):
     nb, root, out, data = started(tmp_path, "TCYX", (2, 3, 16, 16))
     before = digests(root)
     nb.quick_confirm.click()
-    result = nb.write_zarr_copy()
+    result = nb._write_zarr_copy()
     copies = out / "ome_zarr"
     assert result.written and len(result.converted) == len(FOLDERS)
     assert nb.folder.value == str(copies) and nb.output.value == str(out)
@@ -248,7 +248,7 @@ def test_ticked_with_z_stacks_the_projection_is_written_as_ome_zarr(tmp_path):
     nb.projection_method.value = "max"
     nb.preview_checked.button.click()
     assert "as OME-Zarr" in _text(nb.projection_where.value)
-    result = nb.write_projection()
+    result = nb._write_projection()
     copies = out / "projected_max_zarr"
     assert result.written and result.destination == copies
     assert (copies / "ctrl/rep1/a.ome.zarr/.zattrs").is_file()
