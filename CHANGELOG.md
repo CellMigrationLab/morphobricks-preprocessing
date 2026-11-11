@@ -8,6 +8,33 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+**Changed (notebook, owner's test of v0.5.1; no result or published file changes)**
+
+- **One image viewer for every step.** *Images*, *Axes*, *Channels* and *Check and save* show
+  images through one component (`notebook_viewer.ImageViewer`) and one reader
+  (`image_view.read_view`): four dropdowns that narrow each other (condition, biological
+  repeat, technical repeat, image; `image_tree`) instead of a list of pictures per folder, a
+  time slider and a depth slider when the image has those axes, and every channel of the plane
+  side by side (at most six, then "6 of N channels shown"; a colour folder is one colour
+  picture). Each step says which roles an image is read with: the header's (not confirmed),
+  the ones being edited, or the confirmed ones; an image is read only as the folder check (or
+  the quick scan) fingerprinted it. The folder check no longer draws a picture per folder, the
+  tag grid and the replicate boxes hold no pictures, and a block of more than three folders
+  folds its folder rows. The stacked pages other bricks embed are unchanged.
+- **Fixed: the axes step's "Another image, or other planes" could not be used in Google
+  Colab.** The image, time point and slice are chosen in the viewer's own row of the page; no
+  control of it is inside a folded panel.
+- **The check's and the run's report are formatted**: a summary table, then one heading per
+  part (folders, axes and pixel sizes, design, masks, what the run did, checks) with tables,
+  long lists and each message folded, and the plain text last (`report_view.report_html`,
+  from `discovery_report.json`; the files are unchanged).
+- **Pixel size: two labelled inputs, X and Y**, with **same for X and Y** (ticked: Y follows
+  X), instead of "One pixel is …". What is stated is unchanged (`calibration.csv`, X and Y for
+  `.`).
+- **Notebook file, cell 3:** on Google Colab it calls
+  `google.colab.output.no_vertical_scroll()`, so the app is not shown in an output frame that
+  scrolls on its own. Nothing changes elsewhere.
+
 **Fixed**
 
 - **Notebook: a lost header name is confirmed with one click on Channels (#281).** A saved

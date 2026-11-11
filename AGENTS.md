@@ -324,6 +324,11 @@ src/morphobricks_preprocessing/
                             run step (redesign of 10 November 2026)
   notebook_progress.py      Wait: one line per wait (done of total, item, elapsed, time left once
                             measurable); progress_html, time_left (pure parts)
+  notebook_viewer.py        ImageViewer: the one image viewer of the shipped notebook (narrowing
+                            dropdowns from image_tree.py, t and z sliders, every channel of one
+                            plane, at most 6); image_view.py read_view, the one reader behind it;
+                            notebook_viewers.py which roles each step reads an image with
+  report_view.py            report_html: the check's or run's report as headings and tables (pure)
   notebook_quick_scan.py    the first step's quick scan: the folder walk only, one random image for
                             looking only, then the explicit click that reads every header
   axis_example.py           which planes the axes step's example shows (pure): one tile per channel,
