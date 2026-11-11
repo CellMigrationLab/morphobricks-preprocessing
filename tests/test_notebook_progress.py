@@ -196,7 +196,8 @@ def test_the_folder_check_shows_its_phases_with_counts(exp):  # noqa: F811
         assert any(line.startswith(label) for line in waits), label
     assert any(re.match(r"Reading image headers · 0 of \d+", line) for line in waits)
     assert any(line.startswith("Writing the check report") for line in waits)
-    assert any(re.match(r"Drawing a picture per folder · 0 of \d+", line) for line in waits)
+    # No picture per folder is drawn by the check: the step's viewer shows any image.
+    assert not any(line.startswith("Drawing a picture per folder") for line in waits)
     assert "elapsed" not in _text(nb.folder_status.value)  # the result replaced the wait
     assert not any("Checking the folders and image headers" in line for line in seen)
 

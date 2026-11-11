@@ -144,7 +144,12 @@ def test_the_pages_hold_the_existing_cards_in_the_new_places(exp):  # noqa: F811
     assert contains(AXES, nb.type_line.widget) and contains(AXES, nb.type_rows.widget)
     # Channels: the stains, then the tags, then the saved channels that moved (#258).
     page = nb._stepper.pages[CHANNELS].children[1].children[1].children
-    assert list(page[-3:]) == [nb.channel_labels.widget, nb.channel_grid.widget, nb.moves_box]
+    assert list(page[-4:]) == [
+        nb.channel_labels.widget,
+        nb.channels_look,  # the one viewer, between the stains and the tags
+        nb.channel_grid.widget,
+        nb.moves_box,
+    ]
     # Masks: the masks paired, what each is, then the mask step (it needs the run's record).
     page = nb._stepper.pages[MASKS].children[1].children[1].children
     assert list(page[-3:]) == [nb.masks_card, nb.masks_box, nb.mask_step_card]
@@ -155,6 +160,7 @@ def test_the_pages_hold_the_existing_cards_in_the_new_places(exp):  # noqa: F811
         assert _holds(nb.design_edit, card) and contains(DESIGN, card)
     assert all(_holds(nb.design_table, box) for box in nb.reference_boxes.values())
     assert contains(SAVE, nb.check_card) and contains(SAVE, nb.overview_box)
+    assert contains(SAVE, nb.check_look)
     assert contains(RUN, nb.run_button) and contains(RUN, nb.compare_fold)
     # The names rows are still the names card's grid (the pages other bricks embed).
     (conditions,) = nb.condition_rows.children
@@ -265,9 +271,9 @@ def test_the_axes_page_has_no_stale_image_type_sentence_and_no_broken_picture(ex
     assert "fluorescence or RGB" not in text
     # never a broken picture: the image is shown only with a plane in it (the one-click card
     # shows the preview of the roles it offers)
-    assert ui.is_visible(nb.preview_image) == bool(nb.preview_image.value)
+    assert nb.preview_image not in nb.preview_card.children  # the example is the viewer
     nb.show_preview()
-    assert ui.is_visible(nb.preview_image) and nb.preview_image.value
+    assert nb.axes_viewer.view is not None and nb.axes_viewer.tiles.children
     described = nb.axis_step()
     assert "fluorescence or RGB" not in described.children[1].children[2].value
 

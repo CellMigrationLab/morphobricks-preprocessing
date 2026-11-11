@@ -67,19 +67,24 @@ def _button(widget, text):
     return None
 
 
-def test_an_enlarge_of_check_and_save_is_closed_when_the_boxes_show_other_pictures(exp):  # noqa: F811
+def test_check_and_save_has_one_viewer_and_no_picture_per_folder(exp):  # noqa: F811
     nb = stepper(*exp)
     nb.quick_confirm.click()
     answer_all(nb)
     nb._refresh_check_save()
-    _button(nb.replicates_box, "Enlarge").click()
-    assert nb.replicates_detail.children  # the Enlarge view is open
-    nb._refresh_check_save()  # the same folders and pictures: it stays
-    assert nb.replicates_detail.children
-    nb.check_button.click()  # a new folder check: new pictures
-    nb.quick_confirm.click()
-    nb._refresh_check_save()
-    assert nb.replicates_detail.children == ()
+    assert not [w for w in _all(nb.replicates_box) if isinstance(w, widgets.Image)]
+    assert not [w for w in _all(nb.replicates_box) if getattr(w, "description", "") == " Enlarge"]
+    viewer = nb.check_viewer
+    assert viewer.view is not None and len(viewer.entries) == len(nb.preflight.discovery.images)
+    assert "read with the confirmed axis roles" in viewer.caption.value
+    nb.check_button.click()  # a new folder check: no picture of unconfirmed roles
+    assert viewer.entries == () and viewer.view is None
+
+
+def _all(widget):
+    yield widget
+    for child in getattr(widget, "children", ()):
+        yield from _all(child)
 
 
 def test_check_and_save_lists_the_reader_s_warnings(exp):  # noqa: F811

@@ -174,7 +174,7 @@ def test_the_folders_are_one_card_of_three_labelled_rows(exp):  # noqa: F811
     assert [_text(v) for v in labels] == ["Images", "Masks (optional)"]
 
 
-def test_after_the_check_the_scan_makes_way_and_the_details_are_folded(exp):  # noqa: F811
+def test_after_the_check_the_viewer_stays_and_the_details_are_folded(exp):  # noqa: F811
     nb = PreprocessingNotebook(str(exp[0]), output_folder=str(exp[2]))
     nb.steps()
     nb.masks_folder.value = str(exp[1])
@@ -182,7 +182,11 @@ def test_after_the_check_the_scan_makes_way_and_the_details_are_folded(exp):  # 
     nb.scan_button.click()
     assert ui.is_visible(nb.scan_box)
     nb.check_button.click()
-    assert not ui.is_visible(nb.scan_box) and nb.scan_status.value == ""
+    # The viewer stays, now over the images as the check read them; the scan's table is gone.
+    assert ui.is_visible(nb.scan_box) and nb.scan_status.value == ""
+    assert not ui.is_visible(nb.scan_tree) and len(nb.scan_viewer.entries) == len(
+        nb.preflight.discovery.images
+    )
     assert ui.is_visible(nb.found_fold) and nb.found_fold.selected_index is None
     assert ui.is_visible(nb.report_fold) and nb.report_fold.selected_index is None
     assert _holds(nb.found_fold, nb.labels_card) and _holds(nb.report_fold, nb.check_report.widget)

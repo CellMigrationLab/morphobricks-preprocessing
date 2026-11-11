@@ -385,6 +385,8 @@ class _CheckSaveScreen:
         A large image gets its crop at native pixels beside it; **Enlarge** shows both in
         ``detail``.
         """
+        if getattr(self, "check_viewer", None) is not None:
+            return widgets.HTML("")  # the step's viewer shows any image of the folder
         thumbs, layouts = self._channel_thumbs, self._channel_layouts
         layout = next((u for u in layouts if u.key[:2] == key), None)
         if thumbs is None or layout is None:

@@ -234,7 +234,8 @@ def _kernel_notebook(nbformat, *, roles=(INSTALL, DRIVE, RUN), colab_drive=None,
             "drive = types.SimpleNamespace(\n"
             "    mount=lambda path: (Path(path) / 'MyDrive').mkdir(parents=True, exist_ok=True)\n"
             ")\n"
-            "sys.modules['google.colab'] = types.SimpleNamespace(drive=drive)\n"
+            "output = types.SimpleNamespace(no_vertical_scroll=lambda: None)\n"
+            "sys.modules['google.colab'] = types.SimpleNamespace(drive=drive, output=output)\n"
         )
         cells = [fake, *cells]
     notebook.cells = cells

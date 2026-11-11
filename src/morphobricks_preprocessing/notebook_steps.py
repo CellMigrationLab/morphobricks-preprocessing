@@ -39,6 +39,7 @@ from .notebook_masks_screen import INTRO as MASKS_INTRO
 from .notebook_quick_scan import _QuickScan
 from .notebook_step_states import _StepStates
 from .notebook_stepper import Step, Stepper, about
+from .notebook_viewers import VIEW_HELP, _Viewers
 from .run import Preflight
 
 AXES_INTRO = (
@@ -82,7 +83,7 @@ UNFOLDING = (MASKS_STEP, DESIGN_STEP)
 """The steps (0-based) that show a card the saved reopening folds."""
 
 
-class _StepsFlow(_CompactPages, _DesignStep, _QuickScan, _QuickAxes, _StepStates):
+class _StepsFlow(_CompactPages, _DesignStep, _QuickScan, _QuickAxes, _Viewers, _StepStates):
     """``steps()``: the stepper of the shipped notebook, and the hooks that keep it current."""
 
     def steps(self) -> widgets.Widget:
@@ -112,6 +113,8 @@ class _StepsFlow(_CompactPages, _DesignStep, _QuickScan, _QuickAxes, _StepStates
         self._build_quick_axes()
         self.axis_sizes_slot.children = [self.calibration_card]  # with the axes (owner)
         ui.set_visible(self.roles_help, False)  # said under About this step
+        self._build_viewers()
+        self._use_viewers()
         self._build_quick_scan()
         self.consistency_slot = widgets.VBox([self.consistency_card])
         self._build_design_step()
@@ -133,16 +136,16 @@ class _StepsFlow(_CompactPages, _DesignStep, _QuickScan, _QuickAxes, _StepStates
             ("Axes", "What each image dimension is, the pixel size and the image type.",
              [about(AXES_INTRO), self.axis_box, self.quick_card, self.type_line.widget]),
             ("Channels", "Name what you stained, then tag each folder's channels.",
-             [about(CHANNELS_INTRO), self.channel_labels.widget, self.channel_grid.widget,
-              self.moves_box]),
+             [about(CHANNELS_INTRO), self.channel_labels.widget, self.channels_look,
+              self.channel_grid.widget, self.moves_box]),
             ("Masks", "What each mask type is; after a run, how the types relate.",
              [about(MASKS_INTRO), self.masks_card, self.masks_box, self.mask_step_card]),
             ("Design", "Conditions, biological repeats and comparisons.",
              [about(DESIGN_INTRO), self.design_step_card, self.design_edit,
               self.consistency_slot]),
             ("Check and save", "Check your experiment, confirm each replicate, then save.",
-             [about(CHECK_INTRO), self.fold_bar, self.check_waiting, self.check_card,
-              self.overview_fold]),
+             [about(CHECK_INTRO), self.fold_bar, self.check_waiting, self.check_look,
+              self.check_card, self.overview_fold]),
             ("Run", "Compute the histogram table; then check and compare the groups.",
              self._run_page()),
         ]  # fmt: skip
@@ -225,8 +228,8 @@ class _StepsFlow(_CompactPages, _DesignStep, _QuickScan, _QuickAxes, _StepStates
         """Check the folder; a reopened experiment opens on its first step still to do."""
         pre = super().check_folder()
         if pre is not None and getattr(self, "_stepper", None) is not None:
-            # The headers are read: the quick look made way for what the check found.
-            ui.set_visible(self.scan_box, False)
+            # The headers are read: the viewer now shows the images as the check read them.
+            self._show_checked_viewer()
             self.scan_status.value = ""
             self._refresh_folds()
             self._go_first_open()
@@ -253,6 +256,9 @@ class _StepsFlow(_CompactPages, _DesignStep, _QuickScan, _QuickAxes, _StepStates
 
     def _mapping_changed(self) -> None:
         super()._mapping_changed()
+        viewer = getattr(self, "axes_viewer", None)
+        if viewer is not None and self._preview_drawn is None and viewer.view is not None:
+            self.axes_viewer.draw()  # roles that cannot be used together: no picture of them
         self._refresh_quick_axes(drawn=True)  # the example was just redrawn
 
     def _toggle_confirmation(self) -> None:
@@ -275,14 +281,46 @@ class _StepsFlow(_CompactPages, _DesignStep, _QuickScan, _QuickAxes, _StepStates
     def _refresh_channels(self) -> None:
         super()._refresh_channels()
         self._refresh_type_rows()
+        self._refresh_confirmed_viewers()
+
+    def _channels_changed(self) -> None:
+        super()._channels_changed()
+        if getattr(self, "channels_viewer", None) is not None:
+            for viewer in (self.channels_viewer, self.check_viewer):
+                viewer.relabel()  # the tags under the pictures
+
+    def _use_viewers(self) -> None:
+        """Put the viewers where the steps showed their own pictures (one component)."""
+        self._folder_pictures = False  # Images: the viewer, not a picture per folder
+        self.channel_grid.rows.pictures = False
+        self.preview_card.children = [
+            self.axes_viewer.widget,
+            self.preview_caption,
+            self.preview_checked.widget,
+            self.preview_blocker,
+        ]
+        self.channels_look = ui.card(
+            "Look at any image", [ui.help_text(VIEW_HELP), self.channels_viewer.widget]
+        )
+        self.check_look = ui.card(
+            "Look at any image", [ui.help_text(VIEW_HELP), self.check_viewer.widget]
+        )
+        for card, viewer in (
+            (self.channels_look, self.channels_viewer),
+            (self.check_look, self.check_viewer),
+        ):
+            viewer.on_draw(lambda c=card, v=viewer: ui.set_visible(c, bool(v.entries)))
+            ui.set_visible(card, False)
 
     def _hide_channels(self, why: str = "") -> None:
         super()._hide_channels(why)
         self._refresh_type_rows()
+        self._refresh_confirmed_viewers()
 
     def _types_changed(self) -> None:
         super()._types_changed()
         self._refresh_type_rows()
+        self._refresh_confirmed_viewers()
         self._refresh_steps()
 
 

@@ -15,7 +15,12 @@ from test_notebook_check_save import add_folder, exp  # noqa: F401
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
 
-from morphobricks_preprocessing import metadata, notebook_folder, notebook_quick_scan  # noqa: E402
+from morphobricks_preprocessing import (  # noqa: E402
+    metadata,
+    notebook_folder,
+    notebook_quick_scan,
+    notebook_viewers,
+)
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.notebook_quick_scan import (  # noqa: E402
     DEEP_LABEL,
@@ -61,7 +66,7 @@ def test_the_scan_reads_no_header_but_the_one_image_it_shows(exp, monkeypatch): 
     def no_check(*args, **kwargs):
         raise AssertionError("the folder check ran")
 
-    monkeypatch.setattr(notebook_quick_scan, "inspect_image", one_header)
+    monkeypatch.setattr(notebook_viewers, "inspect_image", one_header)
     monkeypatch.setattr(metadata, "inspect_image", no_check)
     monkeypatch.setattr(notebook_folder, "preflight", no_check)
     nb.scan_button.click()
@@ -104,7 +109,9 @@ def test_the_random_image_is_named_with_its_seed_and_is_reproducible(exp):  # no
     assert (
         f"seed {nb.scan_seed}" in shown and nb.scan_image in shown and "for looking only" in shown
     )
-    assert "from the file header" in _text(nb.scan_example.children[-1].value)
+    assert nb.scan_example.children[-1] is nb.scan_viewer.widget
+    assert "from the file header" in _text(nb.scan_viewer.caption.value)
+    assert nb.scan_viewer.image == nb.scan_image
     nb._show_scan_example(7)
     assert nb.scan_seed == 7 and nb.scan_image == random_image(images, 7)
     assert random_image(images, 7) == random_image(list(reversed(images)), 7)  # order-free
@@ -220,42 +227,63 @@ def _scanned(tmp_path, channels, **how):
     return nb, data
 
 
+def _tiles(nb):
+    return nb.scan_viewer.tiles.children
+
+
 def test_the_scan_shows_every_channel_side_by_side_with_its_index(exp):  # noqa: F811
     nb = fresh(*exp)
     nb.scan_button.click()
-    chosen, row, note = nb.scan_example.children
-    assert "for looking only" in _text(chosen.value)
+    chosen, viewer = nb.scan_example.children
+    assert "for looking only" in _text(chosen.value) and viewer is nb.scan_viewer.widget
+    row = nb.scan_viewer.tiles
     assert "mb-channel-row" in row._dom_classes and len(row.children) == 3
     assert [_text(tile.children[0].value) for tile in row.children] == ["c=0", "c=1", "c=2"]
     for tile in row.children:
         assert tile.children[1].value[:4] == b"\x89PNG"
-    said = _text(note.value)
-    assert said.startswith("all 3 channels, each with its own contrast")
+    said = _text(nb.scan_viewer.caption.value)
+    assert "all 3 channels, each with its own contrast" in said
     assert "from the file header, axes not confirmed yet" in said
+
+
+def test_any_scanned_image_can_be_chosen_by_the_narrowing_dropdowns(exp):  # noqa: F811
+    nb = fresh(*exp)
+    nb.scan_button.click()
+    viewer = nb.scan_viewer
+    found = discover_experiment(exp[0], exp[2])
+    assert [e.image for e in viewer.entries] == list(found.images)
+    condition, repeat, _technical, image = viewer.pickers
+    other = next(c for c in condition.options if c != condition.value)
+    condition.value = other
+    assert viewer.image.startswith(other + "/")
+    assert set(repeat.options) == {
+        leaf.biological_repeat for leaf in found.leaves if leaf.condition == other
+    }
+    assert all(value.startswith(f"{other}/{repeat.value}/") for _, value in image.options)
+    assert nb.preflight is None  # looking reads no other header and checks nothing
 
 
 def test_seven_or_more_channels_show_six_and_say_so(tmp_path):
     nb, _ = _scanned(tmp_path, 9)
-    _, row, note = nb.scan_example.children
-    assert [_text(tile.children[0].value) for tile in row.children] == [f"c={c}" for c in range(6)]
-    assert "6 of 9 channels shown" in _text(note.value)
+    assert [_text(tile.children[0].value) for tile in _tiles(nb)] == [f"c={c}" for c in range(6)]
+    assert "6 of 9 channels shown" in _text(nb.scan_viewer.caption.value)
     six, _ = _scanned(tmp_path / "six", 6)
-    assert len(six.scan_example.children[1].children) == 6
-    assert "all 6 channels" in _text(six.scan_example.children[2].value)
+    assert len(_tiles(six)) == 6
+    assert "all 6 channels" in _text(six.scan_viewer.caption.value)
 
 
 def test_each_channel_has_its_own_contrast(tmp_path):
     from test_notebook_check_save import decode
 
     nb, data = _scanned(tmp_path, 3)
-    for tile in nb.scan_example.children[1].children:
+    for tile in _tiles(nb):
         shown = decode(bytes(tile.children[1].value))
         # A channel 5000 counts brighter than the one before still spans black to white.
         assert shown.min() == 0 and shown.max() == 255
     assert data[2].min() > data[0].max()
 
 
-def test_a_header_without_a_named_channel_axis_gets_the_one_picture_as_before(tmp_path):
+def test_a_header_that_does_not_name_its_axes_gets_a_sentence_not_a_guess(tmp_path):
     import numpy as np
     import tifffile
 
@@ -266,23 +294,23 @@ def test_a_header_without_a_named_channel_axis_gets_the_one_picture_as_before(tm
     nb = PreprocessingNotebook(str(tmp_path / "exp"), output_folder=str(tmp_path / "out"))
     nb.steps()
     nb.scan_button.click()
-    assert len(nb.scan_example.children) == 2  # no channel is guessed from the shape
-    assert "preview after Axes" in _text(nb.scan_example.children[1].value)
+    assert not _tiles(nb) and nb.scan_viewer.view is None  # no channel guessed from the shape
+    assert "preview after Axes" in _text(nb.scan_viewer.caption.value)
 
 
 def test_the_channel_pictures_read_only_that_one_image(tmp_path, monkeypatch):
-    from morphobricks_preprocessing import header_preview
+    from morphobricks_preprocessing import image_view
 
     _channel_image(tmp_path / "exp" / "ctrl" / "rep1", 3)
     _channel_image(tmp_path / "exp" / "ctrl" / "rep2", 3)
     read = []
-    real = header_preview.read_plane
+    real = image_view.read_plane
 
     def spy(path, mapping, **coords):
         read.append((str(path), coords.get("c")))
         return real(path, mapping, **coords)
 
-    monkeypatch.setattr(header_preview, "read_plane", spy)
+    monkeypatch.setattr(image_view, "read_plane", spy)
     nb = PreprocessingNotebook(str(tmp_path / "exp"), output_folder=str(tmp_path / "out"))
     nb.steps()
     nb.scan_button.click()

@@ -94,31 +94,27 @@ def _colour(png):
     return pixels.shape[2] == 3 and bool((pixels[..., 0] != pixels[..., 2]).any())
 
 
-def test_every_colour_folder_is_one_colour_picture_on_tags_and_image_type(rgb_nb):
-    grid = [w for w in _images(rgb_nb.channel_grid.blocks)]
-    assert len(grid) == len(FOLDERS)  # one picture per folder, not three grey planes
-    assert all("mb-colour" in w._dom_classes and _colour(w.value) for w in grid)
+def test_every_colour_folder_is_one_colour_picture_in_the_viewer_and_on_image_type(rgb_nb):
+    assert not list(_images(rgb_nb.channel_grid.blocks))  # the grid names channels, undrawn
+    viewer = rgb_nb.channels_viewer
+    shown = list(_images(viewer.tiles))
+    assert len(shown) == 1 and viewer.view.colour  # one picture, not three grey planes
+    assert "mb-colour" in shown[0]._dom_classes and _colour(shown[0].value)
+    assert "one colour picture of the 3 channels" in viewer.caption.value
     types = [w for w in _images(rgb_nb.type_rows.widget)]
     assert len(types) == len(FOLDERS) and all(_colour(w.value) for w in types)
     assert "channel 1 red, 2 green, 3 blue" in repr(rgb_nb.type_rows.rows.children)
 
 
-def test_the_enlarged_colour_picture_is_the_1024_px_view(rgb_nb):
-    grid = rgb_nb.channel_grid
-    zoom = next(w for w in _all(grid.blocks) if getattr(w, "description", "").strip() == "Enlarge")
-    zoom.click()
-    assert "colour picture" in grid.detail.children[0].value
-    assert _colour(grid.detail.children[1].value)
+def test_larger_pictures_read_the_colour_picture_again_for_the_detail_view(rgb_nb):
+    viewer = rgb_nb.channels_viewer
+    small = viewer.view
+    viewer.larger.value = True
+    assert viewer.view is not small and viewer.view.colour
+    assert _colour(next(_images(viewer.tiles)).value)
 
 
-def _all(widget):
-    yield widget
-    for child in getattr(widget, "children", ()):
-        yield from _all(child)
-
-
-def test_pairing_and_check_and_save_draw_colour_folders_in_colour(rgb_nb):
-    pictures = [w for w in _images(rgb_nb.replicates_box)] + [
-        w for w in _images(rgb_nb.design_card)
-    ]
+def test_check_and_save_draws_colour_folders_in_colour(rgb_nb):
+    assert not list(_images(rgb_nb.replicates_box))  # no picture per folder: the viewer
+    pictures = list(_images(rgb_nb.check_viewer.tiles))
     assert pictures and all(_colour(w.value) for w in pictures)

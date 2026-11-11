@@ -76,6 +76,12 @@ def replaced_by_one_size(
     )
 
 
+def _xy_words(new: tuple[CalibrationEntry, ...]) -> str:
+    """Return the X and Y sizes about to be stated: one size when they are equal."""
+    x, y = new[0].describe(), new[1].describe()
+    return f"{x} (X and Y)" if x == y else f"X {x} and Y {y}"
+
+
 def _statement_words(entry: CalibrationEntry) -> str:
     """Return one statement as the confirmation lists it: ``drug/rep1: X 0.108 micrometer``."""
     return f"{entry.target}: {entry.axis} {entry.describe()}"
@@ -158,11 +164,18 @@ class _CalibrationCard:
         """Build the one line about the pixel size and the one input for the whole experiment."""
         self.pixel_line = widgets.HTML()
         self.unit_table = widgets.HTML()
-        self.pixel_size = widgets.Text(
-            placeholder="e.g. 0.325", layout=widgets.Layout(width="120px")
+        narrow = widgets.Layout(width="110px")
+        self.pixel_x = widgets.Text(placeholder="e.g. 0.325", layout=narrow)
+        self.pixel_y = widgets.Text(placeholder="e.g. 0.325", layout=narrow)
+        self.pixel_size = self.pixel_x  # the name the form had with one input
+        self.pixel_same = widgets.Checkbox(
+            value=True,
+            description="same for X and Y",
+            indent=False,
+            layout=widgets.Layout(width="auto"),
         )
         self.pixel_unit = widgets.Dropdown(
-            options=UNIT_OPTIONS, value="micrometer", layout=widgets.Layout(width="260px")
+            options=UNIT_OPTIONS, value="micrometer", layout=widgets.Layout(width="230px")
         )
         self.pixel_apply = ui.button(
             " Use for all images",
@@ -172,13 +185,19 @@ class _CalibrationCard:
         )
         self.pixel_form = widgets.HBox(
             [
-                widgets.HTML("<b>One pixel is</b>&nbsp;"),
-                self.pixel_size,
+                widgets.HTML("<b>Pixel size&nbsp; X</b>&nbsp;"),
+                self.pixel_x,
+                widgets.HTML("&nbsp;<b>Y</b>&nbsp;"),
+                self.pixel_y,
                 self.pixel_unit,
+                self.pixel_same,
                 self.pixel_apply,
             ],
             layout=widgets.Layout(align_items="center", flex_flow="row wrap"),
         )
+        self.pixel_x.observe(lambda _: self._pixel_xy_changed(), names="value")
+        self.pixel_same.observe(lambda _: self._pixel_xy_changed(), names="value")
+        self._pixel_xy_changed()
         self.pixel_change = ui.button(
             " Change the pixel size…", icon="pencil", tooltip="State one size for all images"
         )
@@ -202,12 +221,21 @@ class _CalibrationCard:
         ui.set_visible(self.pixel_replace_box, False)
         self.pixel_replace_yes.on_click(lambda _: self._confirm_for_all())
         self.pixel_replace_no.on_click(lambda _: self._cancel_for_all())
-        for box in (self.pixel_size, self.pixel_unit):
+        for box in (self.pixel_x, self.pixel_y, self.pixel_same, self.pixel_unit):
             box.observe(lambda _: self._cancel_for_all(), names="value")
 
     def _pixel_unit_changed(self) -> None:
-        """Disable the size for ``pixels``, which states no value."""
-        self.pixel_size.disabled = self.pixel_unit.value == PIXELS
+        """Disable the sizes for ``pixels``, which states no value."""
+        self._pixel_xy_changed()
+
+    def _pixel_xy_changed(self) -> None:
+        """Keep Y as X while *same for X and Y* is ticked (Y is then not typed)."""
+        pixels = self.pixel_unit.value == PIXELS
+        same = self.pixel_same.value
+        if same and self.pixel_y.value != self.pixel_x.value:
+            self.pixel_y.value = self.pixel_x.value
+        self.pixel_x.disabled = pixels
+        self.pixel_y.disabled = pixels or same
 
     def _toggle_pixel_form(self) -> None:
         ui.set_visible(self.pixel_form, not ui.is_visible(self.pixel_form))
@@ -224,9 +252,14 @@ class _CalibrationCard:
         """
         self._cancel_for_all()
         unit = self.pixel_unit.value
-        size = None if unit == PIXELS else self.pixel_size.value.strip()
+        typed = {"X": self.pixel_x.value.strip(), "Y": self.pixel_y.value.strip()}
+        if self.pixel_same.value:
+            typed["Y"] = typed["X"]
         try:
-            new = tuple(calibration_entry(EXPERIMENT, axis, size, unit) for axis in ("X", "Y"))
+            new = tuple(
+                calibration_entry(EXPERIMENT, axis, None if unit == PIXELS else typed[axis], unit)
+                for axis in ("X", "Y")
+            )
             current = self._calibration_statements()
         except (CalibrationFormatError, OSError, ValueError) as exc:
             self.calibration_message.value = ui.status("error", "Nothing was changed.", [str(exc)])
@@ -241,7 +274,7 @@ class _CalibrationCard:
         lines += [f"The images have now: {line}" for line in overridden]
         self.pixel_replace_text.value = ui.status(
             "warn",
-            f"Use {new[0].describe()} (X and Y) for all images? This replaces what gives "
+            f"Use {_xy_words(new)} for all images? This replaces what gives "
             "their size now; nothing is written until you click Replace them.",
             lines,
         )
@@ -258,12 +291,12 @@ class _CalibrationCard:
         if self.preflight is None:
             return []
         groups = xy_groups(self._shown_calibration()[0].calibration.sizes)
-        stated = (new[0].size, None if new[0].in_pixels else new[0].unit)
+        stated = [(entry.size, None if entry.in_pixels else entry.unit) for entry in new]
         differs = any(
-            (size.value, size.unit) != stated
+            (size.value, size.unit) != wanted
             for group in groups
             if group.calibrated
-            for size in (group.x, group.y)
+            for size, wanted in zip((group.x, group.y), stated, strict=True)
         )
         return [summary_line(groups)[1]] if differs else []
 

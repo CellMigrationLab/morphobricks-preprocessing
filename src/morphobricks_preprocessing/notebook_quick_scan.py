@@ -24,27 +24,14 @@ from __future__ import annotations
 import html
 import random
 import secrets
-from pathlib import Path
 
 import ipywidgets as widgets
 
 from . import notebook_style as ui
 from .discovery import DiscoveryResult, discover_experiment
-from .fingerprint import current_fingerprint
-from .header_preview import (
-    HEADER_NOTE,
-    READ_FAILURES,
-    HeaderChannels,
-    HeaderPreview,
-    PreviewUnavailable,
-    header_channels,
-    header_preview,
-    read_failure,
-)
-from .metadata import inspect_image
+from .image_tree import entries_of
 from .notebook_progress import Wait
 from .notebook_render import blocked_line, issues_html
-from .notebook_thumb_tile import ThumbTile
 from .run.recorded import normalise_relative_path
 from .validation import plural
 
@@ -101,60 +88,6 @@ def conditions_html(discovery: DiscoveryResult, excluded: frozenset[str]) -> str
 def random_image(images: list[str], seed: int) -> str | None:
     """Return the image the seed chooses among ``images`` (sorted first), None without one."""
     return random.Random(seed).choice(sorted(images)) if images else None
-
-
-def example_preview(root: Path, image: str) -> HeaderChannels | HeaderPreview:
-    """Return the pictures of one image from its own header, or why there is none.
-
-    The header is read here, for these pictures only, and the file is fingerprinted before and
-    after, so they are of the file as that header describes it. A header that names a channel
-    axis gives one picture per channel (:func:`.header_preview.header_channels`); any other
-    gives the one picture of the folder check (:func:`.header_preview.header_preview`).
-    """
-    path = root / image
-    try:
-        before = current_fingerprint(path)
-        meta = inspect_image(path, image)
-        after = current_fingerprint(path)
-    except (OSError, ValueError) as exc:
-        return HeaderPreview(image, problem=read_failure(exc, root))
-    same = before is not None and before == after
-    if same:
-        try:
-            channels = header_channels(path, meta, EXAMPLE_SIDE)
-        except PreviewUnavailable:
-            channels = None  # no channel axis named, or over the caps: the one picture says why
-        except READ_FAILURES as exc:
-            return HeaderPreview(image, problem=read_failure(exc, root))
-        if channels is not None and current_fingerprint(path) == before:
-            return channels
-    return header_preview(root, meta, EXAMPLE_SIDE, bound={image: before if same else None})
-
-
-def channel_tiles(found: HeaderChannels) -> list[widgets.Widget]:
-    """Return the row of channel pictures (``c=`` labels) and the line under it."""
-    tiles = []
-    for tile in found.tiles:
-        label = f"<b>c={tile.c}</b>" + (f" · {html.escape(tile.note)}" if tile.note else "")
-        image = widgets.Image(
-            value=tile.png, format="png", layout=widgets.Layout(border="1px solid #CBD5E1")
-        )
-        image.add_class("mb-grey")
-        box = widgets.VBox(
-            [widgets.HTML(f"<div class='mb-help'>{label}</div>"), image],
-            layout=widgets.Layout(flex="1 1 0", min_width="0", max_width=f"{EXAMPLE_SIDE}px"),
-        )
-        box.add_class("mb-channel")
-        tiles.append(box)
-    shown = (
-        f"all {found.total} channels"
-        if len(found.tiles) == found.total
-        else f"<b>{len(found.tiles)} of {found.total} channels shown</b>"
-    )
-    row = widgets.HBox(tiles, layout=widgets.Layout(width="99%"))
-    row.add_class("mb-channel-row")
-    note = f"{shown}, each with its own contrast; {html.escape(found.text)}; {HEADER_NOTE}"
-    return [row, widgets.HTML(f"<div class='mb-help'>{note}</div>")]
 
 
 class _QuickScan:
@@ -258,6 +191,7 @@ class _QuickScan:
         finally:
             self._idle(self.scan_button, SCAN_LABEL, "search")
         self._scan, self._scanned = found, self._scan_inputs()
+        self._scan_headers = {}  # a new scan reads the headers of its pictures again
         wait.phase("Opening one image")
         self._show_scan_example(None, status=False)
         excluded = frozenset(normalise_relative_path(path) for path in self._excluded())
@@ -286,37 +220,41 @@ class _QuickScan:
         if self.scan_image is None:
             self.scan_example.children = []
             return
+        chosen = widgets.HTML(
+            f"<div class='mb-help'>One image chosen at random (seed {self.scan_seed}), for "
+            f"looking only: <b>{html.escape(self.scan_image)}</b>. Choose any other below.</div>"
+        )
         if status:
             self._busy(self.scan_another, "Opening…")
         try:
-            preview = example_preview(Path(found.root), self.scan_image)
+            self._scan_entries(found, images)
         finally:
             if status:
                 self._idle(self.scan_another, " Show another image", "random")
-        chosen = widgets.HTML(
-            f"<div class='mb-help'>One image chosen at random (seed {self.scan_seed}), for "
-            f"looking only: <b>{html.escape(self.scan_image)}</b></div>"
-        )
-        if isinstance(preview, HeaderChannels):
-            self.scan_example.children = [chosen, *channel_tiles(preview)]
+        self.scan_example.children = [chosen, self.scan_viewer.widget]
+        ui.set_visible(self.scan_tree, self.preflight is None or not self._checked_current())
+
+    def _scan_entries(self, found: DiscoveryResult, images: list[str]) -> None:
+        """List the scanned images in the viewer and show the one chosen."""
+        if self._checked_current():
+            self.scan_viewer.select(self.scan_image)  # the check's images are listed already
             return
-        tile = ThumbTile(
-            preview.pictures,
-            caption=f"{preview.text}; {HEADER_NOTE}" if preview.pictures is not None else "",
-            problem=preview.problem,
-            colour=preview.colour,
-            width=f"{EXAMPLE_SIDE}px",
+        kept = set(images)
+        entries = tuple(e for e in entries_of(found.leaves) if e.image in kept)
+        self.scan_viewer.set_entries(entries, self.scan_image)
+
+    def _checked_current(self) -> bool:
+        """Return whether the folder check on screen is of the folder typed now."""
+        return self.preflight is not None and self._checked_folder == ui.clean_path(
+            self.folder.value
         )
-        self.scan_example.children = [chosen, tile.widget]
 
 
 __all__ = [
     "DEEP_LABEL",
     "SCAN_LABEL",
     "_QuickScan",
-    "channel_tiles",
     "conditions_html",
-    "example_preview",
     "random_image",
     "scan_summary",
     "tree_html",

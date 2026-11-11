@@ -306,31 +306,31 @@ def test_the_preview_tick_is_offered_only_while_a_preview_of_these_roles_is_show
 ):
     # Regression: Show preview enabled the tick even when no plane could be drawn, and a
     # preview that failed later left it enabled (the one-click gate of #255 did not apply).
-    from morphobricks_preprocessing import notebook_axis_preview
+    from morphobricks_preprocessing import image_view
     from morphobricks_preprocessing.planes import PlaneReadError
 
     nb = stepper(*exp)
     nb.show_preview()
     assert nb._preview_drawn is not None and not nb.preview_checked.disabled  # the control
-    real = notebook_axis_preview.read_plane
+    real = image_view.read_plane
 
     def broken(*_args, **_kwargs):
         raise PlaneReadError("the pixels cannot be decoded")
 
-    monkeypatch.setattr(notebook_axis_preview, "read_plane", broken)
+    monkeypatch.setattr(image_view, "read_plane", broken)
     nb._render_preview()  # another plane, which cannot be read
     assert nb._preview_drawn is None and nb.preview_checked.disabled
     assert not nb.preview_checked.value
     nb.show_preview()  # Show preview again: still nothing drawn, still nothing offered
     assert nb.preview_checked.disabled and not nb.preview_checked.value
     assert nb.confirm_button.disabled
-    monkeypatch.setattr(notebook_axis_preview, "read_plane", real)
+    monkeypatch.setattr(image_view, "read_plane", real)
     nb.show_preview()
     assert not nb.preview_checked.disabled and not nb.preview_checked.value  # never ticked
 
 
 def test_a_ticked_preview_that_then_fails_is_unticked(exp, monkeypatch):  # noqa: F811
-    from morphobricks_preprocessing import notebook_axis_preview
+    from morphobricks_preprocessing import image_view
     from morphobricks_preprocessing.planes import PlaneReadError
 
     nb = stepper(*exp)
@@ -338,7 +338,7 @@ def test_a_ticked_preview_that_then_fails_is_unticked(exp, monkeypatch):  # noqa
     nb.preview_checked.button.click()
     assert nb.preview_checked.value and not nb.confirm_button.disabled
     monkeypatch.setattr(
-        notebook_axis_preview,
+        image_view,
         "read_plane",
         lambda *_a, **_k: (_ for _ in ()).throw(PlaneReadError("gone")),
     )

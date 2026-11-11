@@ -58,6 +58,9 @@ from .notebook_channels_view import (
 from .notebook_row_fold import UNCHANGED, RowFold, row_status
 from .notebook_values import natural_key
 
+FOLDERS_LISTED = 3
+"""Folders of a block listed at once where the page has the image viewer; more are folded."""
+
 
 def partial_text(label: str, used: int, total: int) -> str:
     """Return the sentence for a label used in only some units, with its consequence."""
@@ -119,8 +122,7 @@ class TagGrid:
             [
                 ui.help_text(
                     "Folders whose image headers are identical are one block: say once which "
-                    "label each channel is, looking at the pictures of every folder of the "
-                    "block. The same label should be in the same column in every block; a label "
+                    "label each channel is, looking at the pictures. The same label should be in the same column in every block; a label "
                     "used in only some folders is shown in orange. Every channel and every "
                     "image type must be answered."
                 ),
@@ -368,7 +370,12 @@ class TagGrid:
             self.confirm_buttons.append(button)
             out.append(button)
         out += [self._like_button(units, tags, n) for tags, n in self.saved_like(units)]
-        out += [self._folder_row(u, units, width, colour) for u in units]
+        rows = [self._folder_row(u, units, width, colour) for u in units]
+        if self.rows.pictures or len(rows) <= FOLDERS_LISTED:
+            out += rows
+        else:  # with the viewer the rows hold no picture: a long list is one click away
+            title = f"The {len(rows)} folders tagged together (a folder can be tagged on its own)"
+            out.append(ui.accordion(title, [widgets.VBox(rows)]))
         box = widgets.VBox(out)
         box.add_class("mb-tag-block")
         return box
