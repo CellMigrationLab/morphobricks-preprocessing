@@ -228,7 +228,8 @@ def test_the_copy_is_written_recorded_and_used_by_the_later_steps(tmp_path):
     assert nb.folder.value == str(copies) and nb.output.value == str(out)
     assert nb.preflight.discovery.root == copies and nb.confirmed_mapping is None
     assert all(f.is_ome_zarr for f in nb.preflight.metadata.files)
-    assert "recorded copies of" in _text(nb.copy_note.value) and str(root) in nb.copy_note.value
+    assert "recorded copies of" in _text(nb.copy_note.value)
+    assert root.resolve().as_posix() in nb.copy_note.value  # as the record spells it
     assert "OME-Zarr already" in _text(nb.zarr_where.value)  # nothing more to write
     assert nb.scan_viewer.view is not None  # the viewer reads the copies
     nb.quick_confirm.click()
