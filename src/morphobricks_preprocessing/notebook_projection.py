@@ -62,6 +62,8 @@ INTRO = (
     "One click writes a projected copy of every image, with a conversion record, into the "
     "output folder; the later steps use the copies. Nothing is chosen for you."
 )
+TICKED = "Example checked. Now click Confirm axis roles below."
+TICKED_STACKS = "Example checked. Now choose the projection under Z-stacks below."
 KEPT = (
     "The original Z-stacks are only read: never changed, moved or deleted. The conversion "
     "record lists each one (folder, path, fingerprint, SHA-256, slices used), so a tool that "
@@ -196,6 +198,8 @@ class _ProjectionCard:
         stacks = [i for i in getattr(review, "issues", ()) if i.code == Z_STACK_CODE]
         offered = bool(stacks) and self.preflight is not None and self.confirmed_mapping is None
         ui.set_visible(self.projection_card, offered)
+        # With Z-stacks the tick leads to the projection, not to Confirm axis roles.
+        self.preview_checked.confirmed_text = TICKED_STACKS if offered else TICKED
         if not offered:
             return
         slices = self._stack_slices()
@@ -241,10 +245,10 @@ class _ProjectionCard:
         store = self._copy_store()
         dest = copies_folder(self._output_path(self.preflight.discovery.root), chosen, store)
         kind = " as OME-Zarr (asked on Images)" if store == OME_ZARR else ""
-        self.projection_where.value = ui.help_text(
-            f"The {html.escape(projection_words(chosen.method, chosen.z_range))} of every "
-            f"image is written{kind} to <b>{html.escape(str(dest))}</b>."
-        ).value
+        self.projection_where.value = (
+            f"<div>The {html.escape(projection_words(chosen.method, chosen.z_range))} of every "
+            f"image is written{kind} to <b>{html.escape(str(dest))}</b>.</div>"
+        )
 
     # Looking -------------------------------------------------------------------------------
 
