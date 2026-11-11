@@ -247,6 +247,9 @@ def _execute(notebook, **options):
     client = nbclient.NotebookClient(
         notebook,
         timeout=300,
+        # The app's widgets reach the client after the cell's reply; 4 s (the default) was
+        # too short for the display message on a slow runner (macOS CI).
+        iopub_timeout=120,
         kernel_name="python3",
         resources={"metadata": {"path": str(NOTEBOOK.parent)}},
         **options,
