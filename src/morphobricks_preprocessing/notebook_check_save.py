@@ -205,6 +205,7 @@ class _CheckSaveScreen:
 
     def _refresh_check_save(self) -> None:
         """Restate the experiment from the answers and say what the save would do."""
+        self._refresh_channel_moves()
         if self.draft is None or self.draft_answers is None:
             ui.set_visible(self.check_card, False)
             ui.set_visible(self.fold_bar, False)
@@ -539,7 +540,7 @@ class _CheckSaveScreen:
             return False
         self._saved_on = date.today().isoformat()
         self.draft_answers = replace(self.draft_answers, base_sha256=publication.sha256)
-        self._removals = {}
+        self._removals, self._moves_clicked = {}, {}
         self._draft_note = ""
         self._forget_published()
         self.confirmed_image_type = self._described_image_type()
@@ -557,8 +558,13 @@ class _CheckSaveScreen:
         """Return the removals the user confirmed and the re-confirmations they give publication.
 
         The same terms go to publication (:meth:`_publish`) and to the pre-save check, so Save
-        is enabled only for what publication accepts.
+        is enabled only for what publication accepts (with the channel moves of Channels, #258).
         """
+        removals, accepted = self._removal_terms(state, candidate)
+        return removals, accepted + self._move_terms(state, candidate)
+
+    def _removal_terms(self, state: object, candidate: object) -> tuple[tuple, tuple]:
+        """Return the removals the user confirmed and their (and the renames') re-confirmations."""
         if state is None:
             return (), ()
         removals = tuple(

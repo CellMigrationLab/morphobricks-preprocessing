@@ -300,7 +300,13 @@ proposes is recorded only when you click.
      headers differ. An experiment that mixes colour and separate-channel folders is refused
      in this version.
 3. **Channels.** Name what you stained and confirm the list; then tag each folder's channels
-   with those names, looking at their pictures.
+   with those names, looking at their pictures. On a saved experiment whose images were
+   re-exported with their channels in another order, tag that folder again in the new order:
+   each saved channel that moved is listed (*DNA: ctrl/rep1 channel 1 → channel 2*) with
+   **Yes, these are the new positions**. Only that click records the change (experiment-v1
+   §4.6, one re-confirmation per channel, written when you save); without it the save is
+   refused with `R_CONFIRMED_ID_CHANGED`. That replicate's *same way?* is asked again on
+   **Check and save**; every other replicate keeps its date.
 4. **Masks.** The masks the check paired with the images (and, for masks whose files do not
    name their axes, the axes to state), then for each mask type: *separate objects* or
    *regions*. **Describe the masks** reads every mask and reports how the types relate. It
@@ -519,7 +525,10 @@ what each of two controls is compared against.
   which units' image headers no longer fit their published channels and which repeats must
   be confirmed again. The headers of the images are read (no pixel) and compared as the
   notebook compares them on reopening, so a header rewritten under the same files is a
-  change in both.
+  change in both. A header change alone reopens no repeat (experiment-v1 §10: only a change of
+  a unit's ordered channel list, its folders or the pairing does): the repeat keeps its date,
+  and the run stops until the description fits the headers again (give the channel the new
+  header name, or tag the channels again, in the notebook).
 - **Nothing is confirmed by the command.** An ID, the comparability of a repeat, a reference
   and the removal of a folder are your answers, given in the notebook; the command never
   answers for you and never fills in a date.
@@ -533,8 +542,10 @@ otherwise it prints `Not published. What is missing:` with every item and exits 
 In this version the command line holds none of your answers (they are given in the notebook),
 so `--publish` publishes nothing from a draft made of folders: it lists what is missing. For
 a published description that matches the folders it says `Nothing to publish` and exits with
-status 0; for one that no longer matches, it lists the new, gone or changed folders and leaves
-the file as it is. Like the other commands, `describe` exits with status 1 when it reports an
+status 0; for one whose only change is in the image headers, it says that no answer is
+missing and that the run stops until the headers fit, and exits with status 0; for one that
+no longer matches otherwise, it lists the new, gone or changed folders and leaves the file as
+it is. Like the other commands, `describe` exits with status 1 when it reports an
 error (an experiment folder that is not found, an unreadable description) and 0 otherwise.
 
 ### Stating pixel sizes (`calibrate`)

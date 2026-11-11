@@ -51,6 +51,7 @@ from .image_type import ImageTypeReview
 from .notebook_axis_preview import _AxisPreview
 from .notebook_axis_step import _AxisStep
 from .notebook_calibration import _CalibrationCard
+from .notebook_channel_moves import _ChannelMoves
 from .notebook_channels import _ChannelsStep
 from .notebook_check_save import _CheckSaveScreen
 from .notebook_convert import _ConvertCard
@@ -132,6 +133,7 @@ class PreprocessingNotebook(
     _DesignCard,
     _DescriptionCard,
     _ChannelsStep,
+    _ChannelMoves,
     _MasksScreen,
     _CalibrationCard,
     _OutputCards,
@@ -199,6 +201,7 @@ class PreprocessingNotebook(
         self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None
         self._init_prefill()
         self._build_check_save()
+        self._build_channel_moves()
         self._build_output_cards()
         self._build_calibration_card()
         self._build_masks_cards()

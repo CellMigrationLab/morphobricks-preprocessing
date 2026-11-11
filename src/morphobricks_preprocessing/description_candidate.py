@@ -44,7 +44,8 @@ _TRANSITION_TEXT = {
     Refusal.R_CONFIRMED_ID_CHANGED: (
         "The confirmed ID {id} would lose or move something it held in the saved description "
         "(a folder, a channel position or a header name; experiment-v1 4.6).",
-        "Undo that change. A folder that is gone is removed with Yes, remove.",
+        "Undo that change. A folder that is gone is removed with Yes, remove; a channel that "
+        "moved is confirmed on Channels.",
     ),
 }
 

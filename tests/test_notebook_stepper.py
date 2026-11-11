@@ -142,9 +142,9 @@ def test_the_pages_hold_the_existing_cards_in_the_new_places(exp):  # noqa: F811
     assert contains(AXES, nb.axis_box) and contains(AXES, nb.calibration_card)
     assert _holds(nb.axis_box, nb.calibration_card) and contains(AXES, nb.quick_card)
     assert contains(AXES, nb.type_line.widget) and contains(AXES, nb.type_rows.widget)
-    # Channels: the stains, then the tags.
+    # Channels: the stains, then the tags, then the saved channels that moved (#258).
     page = nb._stepper.pages[CHANNELS].children[1].children[1].children
-    assert list(page[-2:]) == [nb.channel_labels.widget, nb.channel_grid.widget]
+    assert list(page[-3:]) == [nb.channel_labels.widget, nb.channel_grid.widget, nb.moves_box]
     # Masks: the masks paired, what each is, then the mask step (it needs the run's record).
     page = nb._stepper.pages[MASKS].children[1].children[1].children
     assert list(page[-3:]) == [nb.masks_card, nb.masks_box, nb.mask_step_card]

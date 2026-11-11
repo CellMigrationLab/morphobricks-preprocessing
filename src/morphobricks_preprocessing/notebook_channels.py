@@ -74,7 +74,12 @@ class _ChannelsStep:
         self.channel_intro = ui.intro(INTRO)  # hidden while the stains are not applicable
         self.channels_waiting = widgets.HTML()
         self.channels_box = widgets.VBox(
-            [self.channels_waiting, self.channel_labels.widget, self.channel_grid.widget]
+            [
+                self.channels_waiting,
+                self.channel_labels.widget,
+                self.channel_grid.widget,
+                self.moves_box,
+            ]
         )
 
     def channels_step(self, title: str | None = None, purpose: str | None = None) -> widgets.Widget:

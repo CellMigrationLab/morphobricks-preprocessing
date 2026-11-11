@@ -6,6 +6,22 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+**Fixed**
+
+- **Notebook: a channel re-confirmation after re-ordering a unit's channels (#258).** A saved
+  unit re-tagged in another order (its images re-exported with the channels re-ordered) was
+  refused with `R_CONFIRMED_ID_CHANGED` with no way forward. The Channels step now lists each
+  saved channel that moved (folder, position saved and now) and asks once (**Yes, these are the
+  new positions**); only that click gives publication one `reconfirmation` record per channel
+  (`new_id` null, the date of the click; experiment-v1 §4.6). A move changed after the click is
+  asked again. The reopened replicate takes the date of its *same way?* answer; every other
+  replicate keeps its date byte for byte.
+- **CLI `describe`: a header-only change no longer asks to confirm the repeat again (#258)**,
+  as in the notebook since #257 (experiment-v1 §10). It says that the run stops until the
+  headers fit, and `--publish` exits with status 0 (nothing to publish) instead of refusing.
+
 ## v0.5.1 (10 November 2026)
 
 The first release in which every run is described, with the shared request resolver for the
