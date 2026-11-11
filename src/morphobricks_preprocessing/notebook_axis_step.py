@@ -221,10 +221,10 @@ class _AxisStep:
             if kinds:
                 return ui.status(
                     "error",
-                    "No axis roles are suggested: the units declare different layouts.",
+                    "No axis roles are suggested: the units declare different image types.",
                     [
-                        f"The saved description declares different layouts ({kinds}). "
-                        "This version runs one layout per experiment, so the "
+                        f"The saved description declares different image types ({kinds}). "
+                        "This version runs one image type per experiment, so the "
                         "run stops with R_HETEROGENEOUS_LAYOUT_NOT_ENABLED (see Check and "
                         "save). Exporting the images again would not change that."
                     ],

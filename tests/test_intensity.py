@@ -17,8 +17,8 @@ from morphobricks_preprocessing.intensity import (
 )
 
 
-def record(path, condition, repeat, channels, z=0):
-    """One table row: ``channels`` are 2D arrays, one per channel."""
+def record(path, condition, repeat, channels, z=0, ids=None):
+    """One table row: ``channels`` are 2D arrays, one per channel, named ``C0``, ``C1``, ..."""
     return PlaneRecord(
         source_relative_path=path,
         condition=condition,
@@ -27,6 +27,7 @@ def record(path, condition, repeat, channels, z=0):
         histograms=[compute_plane_histogram(c) for c in channels],
         z=z,
         position_id=path.rsplit("/", 1)[-1].removesuffix(".tif"),
+        channels=tuple(ids or (f"C{c}" for c in range(len(channels)))),
     )
 
 
@@ -80,14 +81,14 @@ def test_the_checks_are_the_normalization_bricks(table):
     assert report.issues == tuple(intensity_checks(summaries))
     # Every channel has finite pixels, so the fifth code (normalization #57) is absent.
     assert set(codes(report.issues)) == set(INTENSITY_CODES) - {"channel_without_finite_pixels"}
-    assert report.channel_count == 2 and report.high_percentile == 99.8
+    assert report.channel_ids == ("C0", "C1") and report.high_percentile == 99.8
 
 
 def test_each_finding_names_the_channel(table):
     report = check_intensities(table)
     outliers = [i for i in report.issues if i.code == "image_intensity_outlier"]
     assert {i.items for i in outliers} >= {("ctrl/rep1/img_5.tif",)}
-    assert {i.channel for i in outliers} == {0}
+    assert {i.channel for i in outliers} == {"C0"}
     assert all("channel C0" in i.message for i in outliers)
     shifts = [i for i in report.issues if i.code == "repeat_intensity_shift"]
     assert ("ctrl/rep3",) in {i.items for i in shifts}
@@ -107,13 +108,13 @@ def test_settings_change_the_findings(table):
 
 def test_flagged_images_and_shifted_repeats_per_channel(table):
     report = check_intensities(table)
-    flagged = report.flagged_images(0)
+    flagged = report.flagged_images("C0")
     assert "image_intensity_outlier" in flagged["ctrl/rep1/img_5.tif"]
     assert "saturated_image" in flagged["drug/rep1/img_0.tif"]
     assert "no_intensity_spread" in flagged["drug/rep2/img_4.tif"]
-    assert report.flagged_images(1) == {}
-    assert ("ctrl", "rep3") in report.shifted_repeats(0)
-    assert report.shifted_repeats(1) == set()
+    assert report.flagged_images("C1") == {}
+    assert ("ctrl", "rep3") in report.shifted_repeats("C0")
+    assert report.shifted_repeats("C1") == set()
 
 
 def test_validation_issues_are_warnings_with_paths(table):
@@ -128,7 +129,7 @@ def test_validation_issues_are_warnings_with_paths(table):
 
 def test_repeat_boxes(table):
     report = check_intensities(table)
-    boxes = repeat_boxes(report, 0)
+    boxes = repeat_boxes(report, "C0")
     assert [b.label for b in boxes] == [
         "ctrl / rep1",
         "ctrl / rep2",
@@ -140,11 +141,11 @@ def test_repeat_boxes(table):
     assert len(rep1.paths) == len(rep1.medians) == len(rep1.highs) == 6
     assert rep1.flagged[5] and not any(rep1.flagged[:5])
     assert [b.shifted for b in boxes] == [False, False, True, False, False]
-    assert not any(any(b.flagged) for b in repeat_boxes(report, 1))
+    assert not any(any(b.flagged) for b in repeat_boxes(report, "C1"))
 
 
 def test_repeat_distributions_pool_one_channel_per_repeat(table):
-    curves = repeat_distributions(table, 0)
+    curves = repeat_distributions(table, "C0")
     assert list(curves) == ["ctrl", "drug"] and list(curves["ctrl"]) == ["rep1", "rep2", "rep3"]
     pooled = curves["ctrl"]["rep2"]
     # Five images, two planes each, 256 pixels per plane.
@@ -162,12 +163,33 @@ def test_channels_without_finite_pixels_are_left_out():
         record("a/r/y.tif", "a", "r", [good, good]),
     ]
     report = check_intensities(table)
-    assert [b.paths for b in repeat_boxes(report, 0)] == [("a/r/y.tif",)]
-    assert list(repeat_distributions(table, 0)["a"]) == ["r"]
+    assert [b.paths for b in repeat_boxes(report, "C0")] == [("a/r/y.tif",)]
+    assert list(repeat_distributions(table, "C0")["a"]) == ["r"]
+
+
+def test_images_with_different_channels_are_checked_by_id():
+    # Stage 3: an image without a channel is neither plotted nor pooled for it, never zero.
+    rng = np.random.default_rng(2)
+    good = rng.normal(50, 5, (8, 8)).clip(0, 254).astype(np.uint8)
+    table = [
+        record("a/r1/x.tif", "a", "r1", [good, good], ids=("DNA", "EXTRA")),
+        record("a/r2/y.tif", "a", "r2", [good], ids=("DNA",)),
+        record("a/r3/z.tif", "a", "r3", [good, good], ids=("EXTRA", "DNA")),
+        record("a/r3/w.tif", "a", "r3", [good], ids=("DNA",)),
+    ]
+    report = check_intensities(table)
+    assert report.channel_ids == ("DNA", "EXTRA")
+    assert [b.paths for b in repeat_boxes(report, "EXTRA")] == [("a/r1/x.tif",), ("a/r3/z.tif",)]
+    assert len(repeat_boxes(report, "DNA")) == 3
+    # r3 has EXTRA in only one of its two images: its curve is not drawn (no silent subset).
+    assert list(repeat_distributions(table, "EXTRA")["a"]) == ["r1"]
+    assert list(repeat_distributions(table, "DNA")["a"]) == ["r1", "r2", "r3"]
 
 
 def test_check_table_reads_the_csv(table, tmp_path):
-    path = write_plane_histograms(table, tmp_path / "plane_histograms.csv")
+    path = write_plane_histograms(
+        table, tmp_path / "plane_histograms.csv", channel_ids=("C0", "C1")
+    )
     records, report = check_table(path)
     assert len(records) == len(table)
     assert report.issues == check_intensities(table).issues

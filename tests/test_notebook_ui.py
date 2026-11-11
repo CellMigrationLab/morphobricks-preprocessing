@@ -467,17 +467,17 @@ def test_intensity_checks_follow_a_successful_run(tmp_path):
     panel = nb.run_checks
     assert ui.is_visible(panel.card) and "intensity warning" in panel.status.value
     assert "9 images checked" in panel.status.value
-    assert "ctrl/rep1/img_5.tif" in panel.findings.value and "C0" in panel.findings.value
+    assert "ctrl/rep1/img_5.tif" in panel.findings.value and "ch1" in panel.findings.value
     assert "What to do" in panel.findings.value
     assert "drug/rep1" not in panel.findings.value  # conditions are never compared
     assert bytes(panel.boxes.value).startswith(b"\x89PNG")
     assert bytes(panel.curves.value).startswith(b"\x89PNG")
-    assert ui.is_visible(panel.channel_row) and [o[1] for o in panel.channel.options] == [0, 1]
+    assert ui.is_visible(panel.channel_row) and panel.channel.value == "ch1"
     assert "Read the intensity checks above" in nb.run_next.value
     assert panel.report.issues == nb.result.intensity.issues
-    # Channel C1 has no warning; its plots are drawn too.
+    # Channel ch2 has no warning; its plots are drawn too.
     first = bytes(panel.boxes.value)
-    panel.channel.value = 1
+    panel.channel.value = "ch2"
     assert bytes(panel.boxes.value) != first
     # Changing a limit updates the warnings at once, without writing anything.
     stamp = (out / "run_manifest.json").stat().st_mtime_ns
@@ -514,9 +514,9 @@ def test_intensity_plots_mark_flagged_images_and_skip_empty_input():
     from morphobricks_preprocessing.notebook_ui import intensity_boxes_png, repeat_curves_png
 
     box = RepeatBox("a", "r", ("x", "y"), (1.0, 5.0), (2.0, 9.0), ((), ("saturated_image",)), True)
-    assert intensity_boxes_png([box], 99.8, 0).startswith(b"\x89PNG")
-    assert intensity_boxes_png([], 99.8, 0) is None
-    assert repeat_curves_png({}, set(), 0) is None
+    assert intensity_boxes_png([box], 99.8, "DNA").startswith(b"\x89PNG")
+    assert intensity_boxes_png([], 99.8, "DNA") is None
+    assert repeat_curves_png({}, set(), "DNA") is None
 
 
 def test_conflicting_axes_explain_why_no_roles_are_offered(tmp_path):

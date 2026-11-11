@@ -3,6 +3,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 from morphobricks_normalization.csv_io import read_plane_histograms
+from morphobricks_normalization.fitting import ChannelScopeIncompleteError
 from morphobricks_normalization.histogram import compute_plane_histogram
 from morphobricks_normalization.pooling import PooledHistogram
 from morphobricks_normalization.records import PlaneRecord, group_records
@@ -136,14 +137,14 @@ def test_group_summaries_pool_the_planes(experiment):
         summaries, group_records(records, "biological_repeat").values(), strict=True
     ):
         pooled = PooledHistogram(members)
-        assert summary.channel == 0
+        assert summary.channel == "ch1"  # the described tree's ID of the unnamed C0
         assert summary.xyc_plane_count == summary.channel_histogram_count == len(members)
         assert summary.pixel_count == pooled.pixel_count
         assert summary.mean == pooled.mean and summary.median == pooled.median
         assert summary.percentiles == {5: pooled.percentile(5), 95: pooled.percentile(95)}
     # One channel pooled "across channels" is the same summary, labelled as an aggregate.
     pooled = group_summaries(records, "biological_repeat", (5, 95), pool_channels=True)
-    assert [replace(s, channel=0) for s in pooled] == summaries
+    assert [replace(s, channel="ch1") for s in pooled] == summaries
 
 
 def test_group_table_and_text(experiment):
@@ -165,13 +166,19 @@ def test_group_table_and_text(experiment):
         "p99.8",
     ]
     assert [row[0] for row in rows[1:]] == ["ctrl", "drug"]
-    assert rows[1][1:5] == ["C0", "6", "6", "864"]
+    assert rows[1][1:5] == ["ch1", "6", "6", "864"]
     text = format_table(rows)
     assert text.splitlines()[0].startswith("condition  channel  XYC planes")
 
 
-def channel_records(levels, condition="c", repeat="r", planes=2, size=8, seed=0):
-    """Records of ``planes`` XYC planes whose channel ``c`` holds values around ``levels[c]``."""
+def channel_records(
+    levels, condition="c", repeat="r", planes=2, size=8, seed=0, ids=None, path="x"
+):
+    """Records of ``planes`` XYC planes whose channel ``C<c>`` holds values around ``levels[c]``.
+
+    ``ids`` names the channels (default ``C0``, ``C1``, ...: canonical IDs, schema version 5).
+    """
+    ids = tuple(ids or (f"C{c}" for c in range(len(levels))))
     rng = np.random.default_rng(seed)
     records = []
     for i in range(planes):
@@ -183,13 +190,14 @@ def channel_records(levels, condition="c", repeat="r", planes=2, size=8, seed=0)
         )
         records.append(
             PlaneRecord(
-                f"{condition}/{repeat}/x.tif",
+                f"{condition}/{repeat}/{path}.tif",
                 condition,
                 repeat,
                 "single",
                 histograms,
                 t=i,
-                position_id="x",
+                position_id=path,
+                channels=ids,
             )
         )
     return records
@@ -203,10 +211,10 @@ def test_group_summaries_keep_fluorescence_channels_apart(levels):
     records = channel_records(levels) + channel_records(levels, condition="d", seed=1)
     summaries = group_summaries(records, "condition", percentiles=(50,))
     assert [(s.labels, s.channel) for s in summaries] == [
-        ((condition,), c) for condition in ("c", "d") for c in range(len(levels))
+        ((condition,), f"C{c}") for condition in ("c", "d") for c in range(len(levels))
     ]
     for s in summaries:
-        level = levels[s.channel]
+        level = levels[int(s.channel[1:])]
         assert level <= s.minimum and s.maximum <= level + 2
         assert level <= s.mean <= level + 2
         # Two XYC planes, one histogram of this channel each: not planes x channels.
@@ -231,12 +239,21 @@ def test_a_channel_without_finite_pixels_is_reported_alone():
     finite = compute_plane_histogram(np.full((8, 8), 5.0, np.float32), 16)
     empty = compute_plane_histogram(np.full((8, 8), np.nan, np.float32), 16)
     records = [
-        PlaneRecord("c/r/x.tif", "c", "r", "single", (finite, empty), t=t, position_id="x")
+        PlaneRecord(
+            "c/r/x.tif",
+            "c",
+            "r",
+            "single",
+            (finite, empty),
+            t=t,
+            position_id="x",
+            channels=("C0", "C1"),
+        )
         for t in range(2)
     ]
     first, second = group_summaries(records, "condition")
-    assert first.channel == 0 and first.mean == 5.0 and first.pixel_count == 128
-    assert second.channel == 1 and second.pixel_count == 0 and second.mean is None
+    assert first.channel == "C0" and first.mean == 5.0 and first.pixel_count == 128
+    assert second.channel == "C1" and second.pixel_count == 0 and second.mean is None
     assert second.xyc_plane_count == 2
     assert group_table([first, second], "condition")[2][1:] == ["C1", "2", "2", "0"] + ["–"] * 7
 
@@ -248,17 +265,54 @@ def test_rgb_channels_are_summarised_one_by_one(tmp_path):
     result = run_described(root, prefill_mapping("CYX"), image_type="rgb")
     assert result.written
     summaries = group_summaries(read_plane_histograms(result.csv_path), "condition")
+    # By canonical ID (the described tree names the unnamed samples ch1, ch2, ch3).
     assert [(s.channel, s.mean, s.xyc_plane_count) for s in summaries] == [
-        (0, 20.0, 1),
-        (1, 120.0, 1),
-        (2, 240.0, 1),
+        ("ch1", 20.0, 1),
+        ("ch2", 120.0, 1),
+        ("ch3", 240.0, 1),
     ]
 
 
-def test_a_group_with_different_channel_counts_is_refused():
-    records = channel_records((10, 1000)) + channel_records((10,), seed=1)
-    with pytest.raises(ValueError, match="different numbers of channels"):
+def test_channels_are_matched_by_id_not_by_position():
+    # Stage 3 (v04): the same stains in the opposite source order are pooled by ID.
+    one = channel_records((10, 1000), ids=("DNA", "ACTIN"), path="a")
+    two = channel_records((1000, 10), ids=("ACTIN", "DNA"), path="b", seed=1)
+    summaries = group_summaries(one + two, "condition")
+    assert [(s.channel, s.xyc_plane_count, s.channel_histogram_count) for s in summaries] == [
+        ("ACTIN", 4, 4),
+        ("DNA", 4, 4),
+    ]
+    assert summaries[0].minimum >= 1000 and summaries[1].maximum <= 12
+
+
+def test_a_group_with_a_channel_in_only_some_planes_is_refused_by_default():
+    # Stage 3 partial presence: A_SCOPE_INCOMPLETE unless the user chooses the subset.
+    records = channel_records((10, 1000), ids=("DNA", "EXTRA")) + channel_records(
+        (10,), ids=("DNA",), path="y", seed=1
+    )
+    with pytest.raises(ChannelScopeIncompleteError, match="present in 2 of 4 planes") as found:
         group_summaries(records, "condition")
+    assert found.value.channels == {"c: EXTRA": ("c/r/y.tif::z=0,t=0", "c/r/y.tif::z=0,t=1")}
+    chosen = group_summaries(records, "condition", partial_channels="planes_with_channel")
+    dna, extra = chosen
+    assert (dna.channel, dna.channel_histogram_count, dna.planes_without_channel) == ("DNA", 4, 0)
+    assert (extra.channel, extra.channel_histogram_count, extra.planes_without_channel) == (
+        "EXTRA",
+        2,
+        2,
+    )
+    # The choice is shown with the results.
+    row = group_table(chosen, "condition")[2]
+    assert row[1] == "EXTRA (only the 2 of 4 planes that have it, as chosen)"
+    # A grouping in which every plane of a group has the channel needs no choice.
+    by_image = group_summaries(records, "image")
+    assert [(s.labels[-1], s.channel) for s in by_image] == [
+        ("c/r/x.tif", "DNA"),
+        ("c/r/x.tif", "EXTRA"),
+        ("c/r/y.tif", "DNA"),
+    ]
+    with pytest.raises(ValueError, match="does not exist"):
+        group_summaries(records, "condition", partial_channels="impute")
 
 
 def test_pooled_channels_count_each_channel_histogram():

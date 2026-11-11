@@ -45,7 +45,7 @@ def test_the_axis_issue_stays_an_error_without_the_advice_to_export_again(tmp_pa
     (axis,) = [i for i in result.issues if i.code == "inconsistent_mapping"]
     assert axis.is_error
     assert "Export the images again" not in axis.action
-    assert LAYOUT in axis.action and "one layout per experiment" in axis.action
+    assert LAYOUT in axis.action and "one image type per experiment" in axis.action
 
 
 def test_a_run_of_one_layout_keeps_the_advice_of_the_axis_review(tmp_path):
@@ -79,9 +79,9 @@ def test_the_axis_step_says_the_layouts_are_why_no_roles_are_suggested(tmp_path)
     nb = _checked_notebook(root, out)
     assert nb.mapping is None
     text = nb._axis_waiting()
-    assert "the units declare different layouts" in text
+    assert "the units declare different image types" in text
     assert "fluorescence and RGB" in text
-    assert "one layout per experiment" in text
+    assert "one image type per experiment" in text
     assert "dimensions are arranged differently" not in text
 
 
@@ -91,7 +91,7 @@ def test_the_axis_step_keeps_its_general_message_without_a_description(tmp_path)
     assert nb.mapping is None
     text = nb._axis_waiting()
     assert "No axis roles can be suggested." in text
-    assert "different layouts" not in text
+    assert "different image types" not in text
 
 
 BASE = ["TCZYX", "TCYX", "CTYX", "TZYX", "CYX", "TYX", "ZYX", "YX"]

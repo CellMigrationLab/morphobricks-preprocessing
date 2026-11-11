@@ -72,13 +72,13 @@ def test_a_hot_pixel_gives_the_narrow_range_warning_with_the_default_range(hot_e
     assert result.written
     (found,) = narrow_warnings(result)
     assert found.paths == ("ctrl/rep1/hot.tif::z=0,t=0",)
-    assert "C0" in found.message and "robust histogram range" in found.action
+    assert "ch1" in found.message and "robust histogram range" in found.action
     manifest = read_manifest(result.manifest_path)
     assert manifest.settings.histogram == HistogramSettings()
     (entry,) = manifest.narrow_ranges
     assert (entry.relative_path, entry.channel, entry.check.histogram_range) == (
         "ctrl/rep1/hot.tif",
-        0,
+        "ch1",
         "minmax",
     )
     assert entry.check.robust_central_bins >= entry.check.min_central_bins
@@ -97,15 +97,15 @@ def test_the_robust_range_avoids_the_warning(hot_experiment, tmp_path):
         for r in read_plane_histograms(result.csv_path)
         if r.source_relative_path.endswith("hot.tif")
     )
-    assert hot.channel_histogram(0).overflow.count >= 1  # the hot pixel, counted outside the bins
+    assert hot.histograms[0].overflow.count >= 1  # the hot pixel, counted outside the bins
 
 
-def test_the_table_is_schema_version_4(hot_experiment):
+def test_the_table_is_schema_version_5(hot_experiment):
     result = run_described(hot_experiment, YX)
     with result.csv_path.open(newline="", encoding="utf-8") as fh:
         header = next(csv.reader(fh))
-    assert "Histogram_OverflowCount_C0" in header
-    assert read_manifest(result.manifest_path).schema_version == "4"
+    assert "Histogram_OverflowCount_ch1" in header
+    assert read_manifest(result.manifest_path).schema_version == "5"
 
 
 def test_the_robust_range_changes_no_8_or_16_bit_table(tmp_path):

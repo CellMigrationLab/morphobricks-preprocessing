@@ -50,7 +50,8 @@ PHYSICAL_CODES = frozenset(
 )
 """The codes of this module (the rest of §8's ``R_*`` belong to publication and the run).
 
-``HETEROGENEOUS_LAYOUT`` (Stage 1 refusal of more than one layout, decided from the
+``HETEROGENEOUS_LAYOUT`` (the refusal of units of different image types; different channel
+lists are accepted from Stage 3, S3.3; decided from the
 description alone) and ``MASK_CONTRADICTS_REPRESENTATION`` (the mask step's) are named here so
 the reader's modules hold no code literal; they are not folder checks and are not in the set."""
 
