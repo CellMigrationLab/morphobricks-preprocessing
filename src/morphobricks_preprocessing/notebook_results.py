@@ -179,9 +179,10 @@ class _ResultsStep:
         ui.set_visible(self.statistics_card, False)
         ui.set_visible(self.distribution_card, False)
         self.table_checks.clear()
-        # A choice about one table's planes is never carried over to another table.
-        self.partial_choice.value = REFUSE
+        # A choice about one table's planes is never carried over to another table. The
+        # question is hidden first, so resetting the answer calculates nothing.
         ui.set_visible(self.partial_box, False)
+        self.partial_choice.value = REFUSE
 
     def _partial_changed(self) -> None:
         """Calculate again with the user's answer to the partial-presence question."""

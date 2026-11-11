@@ -75,3 +75,19 @@ def test_compare_groups_asks_before_pooling_a_partly_present_stain(tmp_path):
     nb.level.value = "biological_repeat"
     nb.show_statistics()
     assert "calculated" in nb.stats_status.value and "Your choice" not in nb.stats_status.value
+
+
+def test_choosing_another_table_resets_the_answer_without_calculating(tmp_path):
+    # Review of PR 288: resetting the answer while the question was shown recalculated the
+    # statistics of the newly chosen table unasked (the observer saw the box still visible).
+    nb, out = extra_stain_notebook(tmp_path)
+    assert nb.run().written
+    nb.level.value = "condition"
+    nb.show_statistics()
+    nb.partial_choice.value = SUBSET
+    assert "calculated" in nb.stats_status.value
+    nb.csv_file.value = str(out / "other.csv")
+    assert nb.partial_choice.value == REFUSE
+    assert not ui.is_visible(nb.partial_box)
+    assert nb.stats_status.value == ""
+    assert not ui.is_visible(nb.statistics_card)
