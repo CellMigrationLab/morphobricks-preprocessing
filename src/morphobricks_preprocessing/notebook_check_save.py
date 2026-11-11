@@ -425,9 +425,9 @@ class _CheckSaveScreen:
     def _show_saved_state(self) -> None:
         """Show the green saved line (folded or not) and the run gate."""
         state = self._published()
-        if self._published_refused():
-            self._folded = False  # a refusal of the run's checks is never folded away
-        if self._saved_current() and not self._published_refused():
+        current = self._saved_current() and not self._published_refused()
+        self._folded = self._folded and current  # a refusal or a change since saved: unfolded
+        if current:
             when = self._saved_on or (state.saved_on if state else "")
             self.save_status.value = saved_html(
                 when, self._run_allowed(), self.confirmed_mapping is not None

@@ -19,8 +19,10 @@ v0.5.1: no run before v0.5.1 is read.)
   that click gives publication one `reconfirmation` per channel (`new_id` null, the date of
   the click; experiment-v1 §4.6), as for a move. A change after the click is asked again, and
   the line beside the disabled Save names each change still waiting, also while another answer
-  is still missing. A **Yes, remove** or a
-  folder rename no longer accepts a lost header name, even one only the removed folder gave:
+  is still missing; a change made after reopening a saved experiment unfolds Check and save, so
+  that line is never hidden behind the folded *Saved on …, nothing changed* bar. A **Yes,
+  remove** or a folder rename no longer accepts a lost header name, even one only the removed
+  folder gave:
   the published file keeps no names per folder, so a switch to another saved name ("Hoechst"
   to "DAPI") with a removal no longer publishes unseen. Folders whose headers never stated
   names are no longer told they "lost a saved header name"; the line says what changed in the

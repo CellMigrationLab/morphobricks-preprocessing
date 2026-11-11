@@ -200,3 +200,18 @@ def test_the_line_beside_save_names_the_changes_waiting_while_an_answer_is_missi
     assert "the moved channels are not confirmed: see Channels" in blocker
     change = "DNA: header names “DAPI”, “Hoechst” → “DAPI”, “Nuc”"
     assert f"{change} is not confirmed: see Channels" in blocker
+
+
+def test_a_change_on_channels_unfolds_the_saved_reopening(exp):  # noqa: F811
+    # The #281 flow: reopened as saved (folded behind "Saved on …, nothing changed"), then a
+    # re-tag on Channels. The Save step showed only [Run] [Change…] with no line at all, so the
+    # waiting question and the line beside Save were hidden; a change unfolds it.
+    _saved(exp, {"ctrl/rep1": ["Hoechst", "Actin", "Ch3"]})
+    write_channels(exp[0] / "ctrl/rep1/a.tif", ["DAPI", "Actin", "Ch3"], KINDS, seed=1)
+    nb = _reopen(exp)
+    answer_all(nb)
+    _tag(nb, 0, "DNA")
+    assert not nb._saved_current()
+    assert not nb._folded and not ui.is_visible(nb.fold_bar)
+    assert ui.is_visible(nb.check_card) and ui.is_visible(nb.save_blocker)
+    assert "is not confirmed: see Channels" in _text(nb.save_blocker.value)
