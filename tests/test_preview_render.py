@@ -83,7 +83,7 @@ def test_a_flat_image_with_nan_keeps_both_statements():
     plane[0, 0] = np.nan
     panel = display_panel(plane)
     assert panel.kind == FLAT and panel.note == (
-        "flat: every finite value is 7; 1 non-finite pixels shown in magenta"
+        "flat: every finite value is 7; 1 non-finite pixel shown in magenta"
     )
     assert tuple(panel.pixels[0, 0]) == MAGENTA and tuple(panel.pixels[1, 1]) == (128, 128, 128)
 

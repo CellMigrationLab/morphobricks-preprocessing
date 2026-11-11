@@ -168,6 +168,26 @@ def run_stop_html(check: CandidateCheck | None) -> str:
     )
 
 
+def saved_html(when: str, run_allowed: bool, roles_confirmed: bool) -> str:
+    """Say that the description is saved, and that the run can start only once it can.
+
+    The run's checks need the confirmed axis roles: before them nothing says the run can
+    start, only that the axes come first.
+    """
+    if run_allowed:
+        return ui.status("ok", f"Saved {when}. The run can start.")
+    if not roles_confirmed:
+        return ui.status(
+            "info",
+            f"Saved {when}.",
+            [
+                "Confirm the axis roles (step 2) first: the run's checks of the images "
+                "need them, and the run waits for those checks."
+            ],
+        )
+    return ui.status("ok", f"Saved {when}.", ["See Run for what is still to do."])
+
+
 def blocked_html(
     published: CandidateCheck | None, rec: Reconciliation | None, asked: Sequence[str]
 ) -> str:
@@ -247,6 +267,10 @@ def checks_html(check: CandidateCheck | None) -> str:
         )
     else:
         parts.append(ui.status("ok", "The images agree with it (headers checked)."))
+    if check.warnings:
+        parts.append(
+            ui.status("warn", "Valid, with warnings:", _issue_lines(check.warnings), raw=True)
+        )
     changes = check.changes or ("no row changes",)
     details = (
         ui.status("ok", "The strict reader accepts the exact bytes that will be saved.")
@@ -315,5 +339,6 @@ __all__ = [
     "removal_text",
     "replicate_title",
     "run_stop_html",
+    "saved_html",
     "todo_html",
 ]

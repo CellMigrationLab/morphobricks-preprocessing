@@ -18,12 +18,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from .description import Description, DescriptionError, description_from_bytes
+from .description import Description, from_document
 from .description_file import sha256_hex
+from .description_read import read_description_bytes
 from .description_report import DescriptionIssue
 from .description_review import design_changes
 from .description_rules import Refusal
-from .description_run_text import reader_issue
+from .description_run_text import reader_issue, reader_warning
 from .description_transition import Reconfirmation
 from .description_write import canonical_bytes
 from .design import DesignFormatError
@@ -44,20 +45,26 @@ _TRANSITION_TEXT = {
     Refusal.R_CONFIRMED_ID_CHANGED: (
         "The confirmed ID {id} would lose or move something it held in the saved description "
         "(a folder, a channel position or a header name; experiment-v1 4.6).",
-        "Undo that change. A folder that is gone is removed with Yes, remove.",
+        "Undo that change. A folder that is gone is removed with Yes, remove; a channel that "
+        "moved is confirmed on Channels.",
     ),
 }
 
 
 @dataclass(frozen=True)
 class CandidateCheck:
-    """What the checks found; ``physical_run`` is False when the axis roles are not confirmed."""
+    """What the checks found; ``physical_run`` is False when the axis roles are not confirmed.
+
+    ``warnings`` are the strict reader's warnings of the bytes (experiment-v1 4.3 and 5: valid,
+    never blocking; shown on *Check and save*, issue #252).
+    """
 
     description: Description | None
     refusals: tuple[ValidationIssue, ...] = ()
     run_refusals: tuple[ValidationIssue, ...] = ()
     physical_run: bool = False
     changes: tuple[str, ...] = ()
+    warnings: tuple[ValidationIssue, ...] = ()
 
     @property
     def can_save(self) -> bool:
@@ -114,10 +121,11 @@ def check_candidate(
         The user's recorded re-confirmations that publication will be given.
     """
     data = canonical_bytes(candidate)
-    try:
-        parsed = description_from_bytes(data)
-    except DescriptionError as exc:
-        return CandidateCheck(None, tuple(reader_issue(i) for i in exc.issues))
+    report = read_description_bytes(data)
+    if not report.ok:
+        return CandidateCheck(None, tuple(reader_issue(i) for i in report.errors))
+    parsed = from_document(report.document)
+    warned = tuple(reader_warning(i) for i in report.warnings)
     refused = tuple(
         transition_issue(i) for i in transition_refusals(published, parsed, confirmations)
     )
@@ -129,7 +137,7 @@ def check_candidate(
     except DesignFormatError as exc:
         changes = [f"cannot be derived: {exc}"]
     physical = checked.physical is not None
-    return CandidateCheck(parsed, refused, tuple(problems), physical, tuple(changes))
+    return CandidateCheck(parsed, refused, tuple(problems), physical, tuple(changes), warned)
 
 
 __all__ = ["CandidateCheck", "check_candidate", "transition_issue"]

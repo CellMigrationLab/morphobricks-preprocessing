@@ -14,6 +14,7 @@ from .description_layouts import (
     heterogeneous_units,
 )
 from .description_report import DescriptionIssue
+from .description_rules import Code
 from .physical_check import (
     CHANNEL_COUNT_MISMATCH,
     HEADER_CONTRADICTION,
@@ -27,7 +28,7 @@ from .physical_check import (
     PhysicalIssue,
     UnitKey,
 )
-from .validation import ValidationIssue, error
+from .validation import ValidationIssue, error, warning
 
 FIX = (
     "Open the experiment description in the notebook, correct it, publish it again, and run again."
@@ -82,6 +83,25 @@ def reader_issue(issue: DescriptionIssue) -> ValidationIssue:
         f"{issue.path}{shown}."
     )
     return error(code, message, (), FIX)
+
+
+_WARNINGS = {
+    Code.W_UNUSED_CHANNEL: "The label {key} is declared, but no folder's channels use it.",
+    Code.W_REPEAT_MISSING_CONDITIONS: "Replicate {key} has no folder of {value}.",
+    Code.W_REFERENCE_UNPAIRED: (
+        "{key} and {value}, the condition it is compared against, share no replicate."
+    ),
+}
+
+
+def reader_warning(issue: DescriptionIssue) -> ValidationIssue:
+    """Return one warning of the strict reader (valid, never blocking) in plain words."""
+    code = issue.code.value
+    key = issue.path.partition(".")[2].strip('"')
+    value = issue.value
+    shown = ", ".join(map(str, value)) if isinstance(value, list | tuple) else str(value)
+    text = _WARNINGS.get(issue.code, "{code} at {path}.")
+    return warning(code, text.format(key=key, value=shown, code=code, path=issue.path))
 
 
 def heterogeneous_issue(layouts: tuple[DeclaredLayout, ...]) -> ValidationIssue:

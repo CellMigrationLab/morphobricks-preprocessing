@@ -13,6 +13,7 @@
 """
 
 import re
+import shutil
 from dataclasses import replace
 from datetime import date
 
@@ -64,8 +65,11 @@ class _FirstOfJanuary(date):
 SAVED_ON = "2026-01-01"
 
 
-def _saved_long_ago(exp, monkeypatch, names):  # noqa: F811
-    """Save the experiment on 2026-01-01, then rewrite ctrl/rep1's header with ``names``."""
+def _saved_long_ago(exp, monkeypatch, names, gone=None):  # noqa: F811
+    """Save the experiment on 2026-01-01, then rewrite ctrl/rep1's header with ``names``.
+
+    ``gone`` names a folder (``condition/repeat``) deleted with its masks after the save.
+    """
     monkeypatch.setattr(notebook_check_save, "date", _FirstOfJanuary)
     first = stepper(*exp)
     first.quick_confirm.click()
@@ -74,6 +78,9 @@ def _saved_long_ago(exp, monkeypatch, names):  # noqa: F811
     monkeypatch.setattr(notebook_check_save, "date", date)
     assert {r.confirmed_on for r in first.draft_answers.repeats.values()} == {SAVED_ON}
     write_channels(exp[0] / "ctrl/rep1/a.tif", names, KINDS, seed=1)
+    if gone is not None:
+        shutil.rmtree(exp[0] / gone)
+        shutil.rmtree(exp[1] / "Nuclei" / gone)
     nb = stepper(*exp)
     nb.quick_confirm.click()
     return nb
@@ -141,8 +148,9 @@ def test_b_a_swap_resolved_by_the_unit_s_channel_order_reopens_only_that_repeat(
     # "same way?" is asked again (never ticked for the user); answered, it takes today's date
     # for that repeat only, and the transition check (section 4.4a) accepts it. Moving the two
     # channels is also a changed channel entity (section 4.6 (c): a position it held is
-    # reassigned), which needs a recorded re-confirmation this notebook does not make: Save is
-    # disabled with that reason, never with R_CONFIRMED_ON_CHANGED.
+    # reassigned), which needs a recorded re-confirmation: until it is given on Channels (#258,
+    # test_notebook_channel_moves.py) Save is disabled with that reason, never with
+    # R_CONFIRMED_ON_CHANGED.
     nb = _saved_long_ago(exp, monkeypatch, ["Actin", "DAPI", "Ch3"])
     rid = _repeat_of(nb, UNIT)
     other = next(label for label in _dates(nb) if label != rid)
@@ -224,7 +232,10 @@ def test_c_a_date_publication_would_refuse_never_reaches_a_save_click(exp, monke
 
 def test_the_cli_reports_a_header_only_rewrite_as_the_notebook_does(exp, capsys):  # noqa: F811
     # Regression: describe compared folders and image counts only and said "No change." for
-    # headers rewritten under the same files, where the notebook reopens the replicate.
+    # headers rewritten under the same files. Since #257 the notebook keeps the replicate's date
+    # for a header-only change (section 10: only the unit's ordered channel list reopens it), and
+    # the run refuses the images until the description fits them; #258: describe says the same,
+    # and --publish no longer asks to confirm the replicate again.
     _saved_then_rewritten(exp)
     nb = stepper(*exp)
     rid = _repeat_of(nb, UNIT)
@@ -233,10 +244,13 @@ def test_the_cli_reports_a_header_only_rewrite_as_the_notebook_does(exp, capsys)
     assert main(["describe", str(root), "--output", str(out)]) == 0
     printed = capsys.readouterr().out
     assert "No change." not in printed
-    assert f"repeat {rid} must be confirmed again: the channels in its image headers" in printed
+    assert "must be confirmed again" not in printed
     assert "headers changed: ctrl / rep1 / single" in printed
-    assert main(["describe", str(root), "--output", str(out), "--publish"]) == 1
-    assert f"repeat {rid}: confirm it again" in capsys.readouterr().out
+    assert "the run stops until they do" in printed
+    assert main(["describe", str(root), "--output", str(out), "--publish"]) == 0
+    printed = capsys.readouterr().out
+    assert f"repeat {rid}: confirm it again" not in printed and "Not published" not in printed
+    assert "Nothing to publish: no answer is missing. The run stops until" in printed
 
 
 def test_the_cli_says_nothing_changed_when_the_headers_are_as_saved(exp, capsys):  # noqa: F811

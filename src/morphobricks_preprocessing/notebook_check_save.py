@@ -57,6 +57,7 @@ from .notebook_check_view import (
     removal_text,
     replicate_title,
     run_stop_html,
+    saved_html,
     todo_html,
 )
 from .notebook_description import _with_ids
@@ -205,6 +206,7 @@ class _CheckSaveScreen:
 
     def _refresh_check_save(self) -> None:
         """Restate the experiment from the answers and say what the save would do."""
+        self._refresh_channel_moves()
         if self.draft is None or self.draft_answers is None:
             ui.set_visible(self.check_card, False)
             ui.set_visible(self.fold_bar, False)
@@ -232,7 +234,7 @@ class _CheckSaveScreen:
             self._check = self._candidate_check(answers)
         self.todo.value = todo_html(*todo)
         self.checks.value = checks_html(self._check) or self._blocked(state)
-        ready = self._check is not None and self._check.can_save
+        ready = self._check is not None and self._check.can_save and not self._moves_open()
         self.save_button.disabled = not ready or self._saved_current()
         self.save_note.value = "" if self.save_button.disabled else run_stop_html(self._check)
         ui.set_visible(self.save_note, bool(self.save_note.value))
@@ -246,6 +248,8 @@ class _CheckSaveScreen:
         missing = len(todo[0]) + len(todo[1])
         if missing:
             return [f"{plural(missing, 'answer')} still missing (listed above the button)"]
+        if self._moves_open():
+            return ["the moved channels are not confirmed: see Channels"]
         return ["these answers are refused: see the red message above the button"]
 
     def _blocked(self, state: object) -> str:
@@ -322,7 +326,8 @@ class _CheckSaveScreen:
             if state is None
             else {key: r.confirmed_on for key, r in state.description.repeats.items()}
         )
-        for view in replicates(applied, answers):
+        views = replicates(applied, answers)
+        for view in views:
             toggle = ui.ConfirmToggle(
                 SAME_WAY,
                 SAME_WAY_HELP,
@@ -361,6 +366,13 @@ class _CheckSaveScreen:
             )
             boxes.append((box, row_status(units, keys, settled)))
         self.same_way = toggles
+        shown = (
+            self._channel_thumbs,
+            [[(m.condition, m.source_repeat) for m in v.members] for v in views],
+        )
+        if shown != getattr(self, "_replicates_shown", None):  # other folders or pictures (#252)
+            self.replicates_detail.children = []  # an Enlarge of the boxes before is closed
+        self._replicates_shown = shown
         if not hasattr(self, "_replicate_fold"):
             self._replicate_fold = RowFold("replicate")
         self.replicates_box.children = self._replicate_fold.arrange(boxes)
@@ -414,7 +426,9 @@ class _CheckSaveScreen:
             self._folded = False  # a refusal of the run's checks is never folded away
         if self._saved_current() and not self._published_refused():
             when = self._saved_on or (state.saved_on if state else "")
-            self.save_status.value = self._saved_status(when)
+            self.save_status.value = saved_html(
+                when, self._run_allowed(), self.confirmed_mapping is not None
+            )
             self.saved_line.value = ui.status("ok", f"Saved on {when}, nothing changed.")
         else:
             self.saved_line.value = ""
@@ -425,25 +439,6 @@ class _CheckSaveScreen:
         for name in FOLDED:
             ui.set_visible(getattr(self, name), not self._folded)
         self._refresh_run_step()
-
-    def _saved_status(self, when: str) -> str:
-        """Say that the description is saved, and that the run can start only once it can.
-
-        The run's checks need the confirmed axis roles: before them nothing says the run can
-        start, only that the axes come first.
-        """
-        if self._run_allowed():
-            return ui.status("ok", f"Saved {when}. The run can start.")
-        if self.confirmed_mapping is None:
-            return ui.status(
-                "info",
-                f"Saved {when}.",
-                [
-                    "Confirm the axis roles (step 2) first: the run's checks of the images "
-                    "need them, and the run waits for those checks."
-                ],
-            )
-        return ui.status("ok", f"Saved {when}.", ["See Run for what is still to do."])
 
     # Answers -----------------------------------------------------------------------------
 
@@ -539,7 +534,7 @@ class _CheckSaveScreen:
             return False
         self._saved_on = date.today().isoformat()
         self.draft_answers = replace(self.draft_answers, base_sha256=publication.sha256)
-        self._removals = {}
+        self._removals, self._moves_clicked = {}, {}
         self._draft_note = ""
         self._forget_published()
         self.confirmed_image_type = self._described_image_type()
@@ -557,8 +552,13 @@ class _CheckSaveScreen:
         """Return the removals the user confirmed and the re-confirmations they give publication.
 
         The same terms go to publication (:meth:`_publish`) and to the pre-save check, so Save
-        is enabled only for what publication accepts.
+        is enabled only for what publication accepts (with the channel moves of Channels, #258).
         """
+        removals, accepted = self._removal_terms(state, candidate)
+        return removals, accepted + self._move_terms(state, candidate)
+
+    def _removal_terms(self, state: object, candidate: object) -> tuple[tuple, tuple]:
+        """Return the removals the user confirmed and their (and the renames') re-confirmations."""
         if state is None:
             return (), ()
         removals = tuple(

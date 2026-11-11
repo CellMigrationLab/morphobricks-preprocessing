@@ -75,9 +75,26 @@ NOT_IN_DRAFT = (
 REASON_TEXT = {
     NEW_UNIT: "a new folder joined it",
     REMOVED_UNIT: "a folder of it is gone",
-    CHANNELS_CHANGED: "the channels in its image headers no longer fit the published ones",
     RENAMED_FOLDER: "a folder of it was renamed",
 }
+"""Why a repeat must be confirmed again. A header change alone is not one (experiment-v1
+section 10: only a change of a unit's ordered channel list, its folders or its grouping reopens
+it): the date stays, and the run refuses the images until the description fits them, as in the
+notebook (#258)."""
+HEADERS_TEXT = (
+    "  headers changed: {folders} (its image headers no longer fit the published channels: the "
+    "run stops until they do; give the channel the new header name, or tag the channels again, "
+    "in the notebook, Channels)"
+)
+
+
+def _confirm_again(rec: Reconciliation) -> dict[str, tuple[str, ...]]:
+    """Return, per repeat, the reasons that reopen its confirmation (header changes left out)."""
+    found = {
+        repeat: tuple(r for r in reasons if r != CHANNELS_CHANGED)
+        for repeat, reasons in rec.reopened.items()
+    }
+    return {repeat: reasons for repeat, reasons in found.items() if reasons}
 
 
 def add_describe_parser(commands: argparse._SubParsersAction) -> argparse.ArgumentParser:
@@ -138,6 +155,12 @@ def describe_command(args: argparse.Namespace) -> int:
     if not args.publish:
         return 0
     print()
+    if not blockers and any(line.startswith("  headers changed:") for line in lines):
+        print(
+            "Nothing to publish: no answer is missing. The run stops until the image headers "
+            "fit the published description (headers changed, above)."
+        )
+        return 0
     if not blockers:
         print("Nothing to publish: the published description matches the folders.")
         return 0
@@ -230,8 +253,7 @@ def reconciliation_lines(rec: Reconciliation, output: Path) -> list[str]:
     ]
     out += [f"  new, no ID yet: {_folders(u.folders)}" for u in rec.new]
     out += [
-        f"  headers changed: {_folders(u.folders)} (its image headers no longer fit the "
-        "published channels)"
+        HEADERS_TEXT.format(folders=_folders(u.folders))
         for u in rec.unchanged
         if CHANNELS_CHANGED in u.reasons
     ]
@@ -241,7 +263,7 @@ def reconciliation_lines(rec: Reconciliation, output: Path) -> list[str]:
             f"  {change.repeat_id} / {change.condition_id}: {change.before} images published, "
             f"{change.after} now"
         )
-    for repeat, reasons in rec.reopened.items():
+    for repeat, reasons in _confirm_again(rec).items():
         why = ", ".join(REASON_TEXT.get(reason, reason) for reason in reasons)
         out.append(f"  repeat {repeat} must be confirmed again: {why}")
     if not (rec.new or rec.removed or rec.counts or rec.reopened):
@@ -259,7 +281,7 @@ def reconciliation_blockers(rec: Reconciliation) -> list[str]:
         f"{_folders(u.folders)} is gone: confirm that it is removed, or restore it"
         for u in rec.with_status(Status.REMOVED)
     ]
-    blockers += [f"repeat {repeat}: confirm it again" for repeat in rec.reopened]
+    blockers += [f"repeat {repeat}: confirm it again" for repeat in _confirm_again(rec)]
     blockers += [
         f"{c.repeat_id} / {c.condition_id}: the image count changed ({c.before} to {c.after}); "
         "this command cannot publish it"

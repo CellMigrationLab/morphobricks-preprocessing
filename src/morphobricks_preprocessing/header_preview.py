@@ -12,8 +12,9 @@ read here feeds an answer, an axis role, the draft or the run. The rules:
   (:func:`.preview_render.colour_composite`); its other axes are projected per colour.
 - **Bounded reads:** planes of at most :data:`PIXEL_CAP` pixels, read whole within
   :data:`.preview.READ_BUDGET` (a plane that would need reading in blocks is not read here), and
-  at most :data:`PLANE_CAP` planes and :data:`PIXEL_CAP` pixels per picture, evenly spread over
-  the planes (the caption says so). OME-Zarr images are read from level 0 by the same rule.
+  at most :data:`PLANE_CAP` planes and :data:`PIXEL_CAP` pixels per picture (at least one
+  plane of each colour or channel), evenly spread over the planes (the caption says so).
+  OME-Zarr images are read from level 0 by the same rule.
 - **A failure is a sentence in the cell** (:class:`HeaderPreview.problem`), never an exception
   that stops the folder check.
 - **Only the image as the check read it:** the picture is drawn only when the file still has the
@@ -53,7 +54,12 @@ from .preview_render import display_panel, png_bytes
 PLANE_CAP = 8
 """Planes read for one picture, at most."""
 PIXEL_CAP = 4096 * 4096
-"""Pixels read for one picture (all its planes and colours), and the largest plane, at most."""
+"""The largest plane read for a preview, in pixels; also the pixels read for one picture.
+
+The planes of a picture are chosen so that planes times colours (or channels) stay within it,
+but at least one plane of each colour or channel is read: an RGB picture of a 4096 x 4096
+plane reads 3 x 16.7 M pixels. Memory stays bounded by the plane, read whole within
+:data:`.preview.READ_BUDGET` (64 MiB), one plane at a time (issue #252)."""
 CHANNELS_SHOWN = 6
 """Channels drawn for one image when its header names a channel axis, at most."""
 NO_YX = "preview after Axes (step 2)"
@@ -288,6 +294,20 @@ def header_channels(
     )
 
 
+def read_failure(exc: BaseException, root: Path) -> str:
+    """Return the cell's sentence for a failed read, paths relative to the experiment folder.
+
+    The reader's message may name the file by its absolute path; the cell names it as the
+    folder check does, relative to ``root`` (issue #252). Nothing else of the message changes.
+    """
+    text = str(exc)
+    bases = {str(root), str(Path(root).resolve()), Path(root).as_posix()}
+    for base in sorted(bases, key=len, reverse=True):
+        for separator in sorted({os.sep, "/"}):
+            text = text.replace(base + separator, "")
+    return f"cannot be read for a preview: {text}"
+
+
 def header_preview(
     root: Path,
     meta: TiffMetadata | None,
@@ -321,7 +341,7 @@ def header_preview(
     except (PreviewUnavailable, PreviewRefused) as exc:
         return HeaderPreview(meta.relative_path, problem=str(exc))
     except READ_FAILURES as exc:
-        return HeaderPreview(meta.relative_path, problem=f"cannot be read for a preview: {exc}")
+        return HeaderPreview(meta.relative_path, problem=read_failure(exc, root))
     return HeaderPreview(meta.relative_path, pictures, found.colour, found.text)
 
 
@@ -339,4 +359,5 @@ __all__ = [
     "header_channels",
     "header_planes",
     "header_preview",
+    "read_failure",
 ]
