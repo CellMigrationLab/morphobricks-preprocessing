@@ -243,18 +243,31 @@ def _kernel_notebook(nbformat, *, roles=(INSTALL, DRIVE, RUN), colab_drive=None,
 
 
 def _execute(notebook, **options):
+    """Run the notebook in a fresh kernel; run it again when the kernel's output was lost.
+
+    The app sends a message per widget. On a slow runner (macOS CI) the client sometimes loses
+    the end of that stream ("Timeout waiting for IOPub output"), and with it the cell's
+    display. That is the transport, not the notebook: the run is repeated, twice at most, and
+    a notebook that really shows nothing still fails every time.
+    """
     nbclient = pytest.importorskip("nbclient", reason="the dev extra installs nbclient")
-    client = nbclient.NotebookClient(
-        notebook,
-        timeout=300,
-        # The app's widgets reach the client after the cell's reply; 4 s (the default) was
-        # too short for the display message on a slow runner (macOS CI).
-        iopub_timeout=120,
-        kernel_name="python3",
-        resources={"metadata": {"path": str(NOTEBOOK.parent)}},
-        **options,
-    )
-    client.execute()
+    for attempt in range(3):
+        client = nbclient.NotebookClient(
+            notebook,
+            timeout=300,
+            iopub_timeout=60,
+            raise_on_iopub_timeout=True,
+            kernel_name="python3",
+            resources={"metadata": {"path": str(NOTEBOOK.parent)}},
+            **options,
+        )
+        try:
+            client.execute()
+        except RuntimeError as exc:
+            if "IOPub" not in str(exc) or attempt == 2:
+                raise
+        else:
+            return
 
 
 def _text(cell):
