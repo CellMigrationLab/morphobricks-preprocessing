@@ -24,6 +24,8 @@ from test_notebook_axes_quick import stepper  # noqa: E402
 from test_notebook_prerelease import _tag, _text  # noqa: E402
 
 GONE = "drug/rep2"
+NO_NAMES = object()
+"""The rewritten header states no channel name at all (not one empty name)."""
 
 
 def _reopened(exp, unique, now):  # noqa: F811
@@ -34,7 +36,8 @@ def _reopened(exp, unique, now):  # noqa: F811
     answer_all(first)
     assert first.save_experiment()
     assert first.draft_answers.channels["DNA"].header_names == ("DAPI", unique)
-    write_channels(exp[0] / "ctrl/rep1/a.tif", [now, "Actin", "Ch3"], KINDS, seed=1)
+    names = None if now is NO_NAMES else [now, "Actin", "Ch3"]
+    write_channels(exp[0] / "ctrl/rep1/a.tif", names, KINDS, seed=1)
     shutil.rmtree(exp[0] / GONE)
     shutil.rmtree(exp[1] / "Nuclei" / GONE)
     nb = stepper(*exp)
@@ -54,7 +57,9 @@ def _records(exp):  # noqa: F811
     return [json.loads(x) for x in path.read_text().splitlines()] if path.exists() else []
 
 
-@pytest.mark.parametrize("now", ["Nuc", None], ids=["other-name", "no-name"])
+@pytest.mark.parametrize(
+    "now", ["Nuc", None, NO_NAMES], ids=["other-name", "no-name", "no-header-names"]
+)
 def test_a_removal_does_not_accept_a_header_name_lost_in_a_folder_still_there(exp, now):  # noqa: F811
     nb = _reopened(exp, "Hoechst", now)
     before = len(_records(exp))

@@ -255,16 +255,18 @@ def _headers_changed(
     """Return the unit's saved channels whose header name at their position is not a saved one.
 
     A position whose header now gives no name counts too when the channel has saved names: the
-    name it may have given is lost. Nothing is known without read header names or for a colour
-    unit.
+    name it may have given is lost. Headers that state no names at all (or were not read) give
+    no saved name either, so they count the same: no name is known to be still given there.
+    A colour unit has no header names.
     """
     unit = published.unit
-    if seen.header_names is None or unit.image_type == "rgb":
+    if unit.image_type == "rgb":
         return ()
+    names = seen.header_names or ()
     out = set()
     for index, channel in enumerate(unit.channels):
         known = {_nfc(entry) for entry in description.channels[channel].header_names or ()}
-        name = seen.header_names[index] if index < len(seen.header_names) else None
+        name = names[index] if index < len(names) else None
         if known and (not name or _nfc(name) not in known):
             out.add(channel)
     return tuple(sorted(out))
