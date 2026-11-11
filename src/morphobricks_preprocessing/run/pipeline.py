@@ -1,10 +1,10 @@
 """Pass 2: :func:`run_experiment`, which checks everything and writes the table.
 
 The run is one step (design v0.4 §1): discover, header checks, provisional report, stop on
-errors, histograms with the pixel checks, dataset-wide checks, final report, publish. It
-holds the output folder's lock throughout (:mod:`.lock`), takes every input it is not
-given from the earlier run (:mod:`.recorded`), and writes its report on every run,
-including runs that stop (:mod:`..discovery_report`). Moved from ``run.py`` (PP-3).
+errors, histograms with the pixel checks, dataset-wide checks, final report, publish. It holds
+the output folder's lock throughout (:mod:`.lock`), takes every input it is not given from the
+earlier run (:mod:`.recorded`), and writes its report on every run, including runs that stop
+(:mod:`..discovery_report`). Moved from ``run.py`` (PP-3).
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ from ..source_content import content_changed
 from ..validation import ValidationIssue, has_errors, warning
 from .description_run import (
     RunDescription,
-    checked_description,
+    described_checks,
     load_description,
     manifest_entry,
     unit_entries,
@@ -268,7 +268,7 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
     # The design is the description's (experiment-v1 section 11), never a file read back.
     design = None if loaded[0] is None else derive_design(loaded[0].description)
     checked = header_checks(pre, inputs, design, options.memory_limit)
-    described = checked_description(output, pre, checked, loaded)
+    checked, described = described_checks(output, pre, checked, loaded)
     links = options.lab_links  # provenance only (experiment-v1 9.3): checked, never a key
     checked.issues.extend(repeat_code_issues(links, described and described.description))
     if checked.review is not None:
@@ -485,11 +485,11 @@ def _write_generation(
     ``checks`` are the masks entry and the intensity checks. Returns the manifest's
     SHA-256 (the report, which names it, is written once the images are checked again).
     """
-    pre, design = run.pre, run.checked.design
+    pre, design, ids = run.pre, run.checked.design, run.checked.channel_ids
     masks, intensity = checks
     described = run.description
     per_file = Counter(record.source_relative_path for record in records)
-    csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME)
+    csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME, channel_ids=ids)
     design_sha256 = None
     if design is not None:
         design_sha256 = file_sha256(write_experiment_design(design, staged / DESIGN_FILENAME))

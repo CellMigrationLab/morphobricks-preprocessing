@@ -29,7 +29,7 @@ def test_a_run_given_no_mode_hashes_every_source_and_records_it(experiment):
     root, out = experiment
     assert run_described(root, TYX, output_folder=out).written
     data = settings_of(out)
-    assert data["manifest_version"] == "4" and data["settings"]["verify_content"] is True
+    assert data["manifest_version"] == "5" and data["settings"]["verify_content"] is True
     assert all(entry["content_sha256"] for entry in data["files"])
     assert read_manifest(out / "run_manifest.json").settings.verify_content
 
@@ -46,7 +46,7 @@ def test_an_opt_out_is_recorded_as_false_and_the_rewrite_is_not_seen(experiment)
     root, out = experiment
     assert run_described(root, TYX, output_folder=out, mode=OFF).written
     data = settings_of(out)
-    assert data["manifest_version"] == "4" and data["settings"]["verify_content"] is False
+    assert data["manifest_version"] == "5" and data["settings"]["verify_content"] is False
     assert not any("content_sha256" in entry for entry in data["files"])
     rewrite_keeping_metadata(root / IMAGES[0])
     again = run_described(root, output_folder=out)  # the earlier run's choice is kept

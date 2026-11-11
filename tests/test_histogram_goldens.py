@@ -34,13 +34,13 @@ from morphobricks_preprocessing import (
 from morphobricks_preprocessing.manifest import file_sha256
 from morphobricks_preprocessing.report import group_summaries, group_table
 
-# Reference column -> current column of channel c.
+# Reference column -> current column of the channel with ID c (schema version 5).
 CHANNEL_COLUMNS = {
-    "pixel_min": "Intensity_MinIntensity_C{c}",
-    "pixel_max": "Intensity_MaxIntensity_C{c}",
-    "valid_pixel_count": "Histogram_ValidPixelCount_C{c}",
-    "binning_min": "Histogram_BinningMin_C{c}",
-    "binning_max": "Histogram_BinningMax_C{c}",
+    "pixel_min": "Intensity_MinIntensity_{c}",
+    "pixel_max": "Intensity_MaxIntensity_{c}",
+    "valid_pixel_count": "Histogram_ValidPixelCount_{c}",
+    "binning_min": "Histogram_BinningMin_{c}",
+    "binning_max": "Histogram_BinningMax_{c}",
 }
 # Columns the reference and the current table share, with the same meaning.
 SHARED_COLUMNS = (
@@ -110,16 +110,18 @@ def test_histograms_equal_the_reference_values(tmp_path, pixels, dtype, blocks):
     new = read_rows(result.csv_path)
     matched = 0
     for row in new:
-        assert row["schema_version"] == "4"
+        assert row["schema_version"] == "5"
+        ids = row["channels"].split(";")  # the plane's channel IDs, in source order
         for c in range(int(row["channel_count"])):
+            channel = ids[c]
             for tail in ("Underflow", "Overflow"):
-                assert float(row[f"Histogram_{tail}Count_C{c}"]) == 0
+                assert float(row[f"Histogram_{tail}Count_{channel}"]) == 0
             before = old[(row["plane_id"], c)]
             for column in SHARED_COLUMNS:
                 assert row[column] == before[column], (row["plane_id"], column)
             for old_column, column in CHANNEL_COLUMNS.items():
-                assert row[column.format(c=c)] == before[old_column], (row["plane_id"], c)
-            counts = [row[f"Histogram_Count_C{c}_{i:05d}"] for i in range(bins)]
+                assert row[column.format(c=channel)] == before[old_column], (row["plane_id"], c)
+            counts = [row[f"Histogram_Count_{channel}_{i:05d}"] for i in range(bins)]
             assert counts == [before[f"histogram_bin_{i:05d}"] for i in range(bins)]
             matched += 1
     # Every reference row is a channel of exactly one current row.
@@ -127,8 +129,11 @@ def test_histograms_equal_the_reference_values(tmp_path, pixels, dtype, blocks):
     assert len(new) == len(old) // int(new[0]["channel_count"])
 
 
-def reference_records(dtype):
-    """The reference rows as one-channel records."""
+def reference_records(dtype, ids):
+    """The reference rows as one-channel records, named by the run's IDs of each image's ``c``.
+
+    ``ids`` maps each image to its channel IDs in source order (the described run's).
+    """
     records = []
     for row in read_rows(DATA / f"golden_{dtype}.csv"):
         number = int if np.dtype(row["dtype"]).kind in "iu" else float
@@ -152,7 +157,10 @@ def reference_records(dtype):
         )
         labels = (row["condition"], row["biological_repeat"], row["technical_repeat"])
         path = row["source_relative_path"]
-        records.append(PlaneRecord(path, *labels, histogram, position_id=Path(path).stem))
+        channel = ids[path][int(row["c"])]
+        records.append(
+            PlaneRecord(path, *labels, histogram, position_id=Path(path).stem, channels=(channel,))
+        )
     return records
 
 
@@ -164,14 +172,15 @@ def test_step_4_statistics_equal_the_reference_values(tmp_path, pixels, dtype, l
     bins, axes = write_experiment(root, dtype, pixels)
     result = run_described(root, prefill_mapping(axes), bin_count=bins)
     records = read_plane_histograms(result.csv_path)
+    ids = {record.source_relative_path: record.channels for record in records}
     # Issue #104: each channel on its own, from the reference rows of that channel.
     now = group_summaries(records, level, (1.0, 99.8))
-    before = group_summaries(reference_planes(dtype), level, (1.0, 99.8))
+    before = group_summaries(reference_planes(dtype, ids), level, (1.0, 99.8))
     assert now == before
     assert group_table(now, level) == group_table(before, level)
     # The all-channel aggregate, asked for, equals the reference's pooled numbers.
     pooled = group_summaries(records, level, (1.0, 99.8), pool_channels=True)
-    legacy = group_summaries(reference_records(dtype), level, (1.0, 99.8), pool_channels=True)
+    legacy = group_summaries(reference_records(dtype, ids), level, (1.0, 99.8), pool_channels=True)
     statistics = ("pixel_count", "minimum", "maximum", "mean", "std", "median", "percentiles")
     for p, old in zip(pooled, legacy, strict=True):
         assert p.labels == old.labels
@@ -179,16 +188,20 @@ def test_step_4_statistics_equal_the_reference_values(tmp_path, pixels, dtype, l
         assert [getattr(p, f) for f in statistics] == [getattr(old, f) for f in statistics]
 
 
-def reference_planes(dtype):
+def reference_planes(dtype, ids):
     """The reference rows gathered into XYC planes, channels in order (``c``)."""
     planes = {}
     for record, row in zip(
-        reference_records(dtype), read_rows(DATA / f"golden_{dtype}.csv"), strict=True
+        reference_records(dtype, ids), read_rows(DATA / f"golden_{dtype}.csv"), strict=True
     ):
         key = (record.source_relative_path, row["z"], row["t"])
         planes.setdefault(key, {})[int(row["c"])] = record
     return [
-        replace(first, histograms=tuple(channels[c].histograms[0] for c in sorted(channels)))
+        replace(
+            first,
+            histograms=tuple(channels[c].histograms[0] for c in sorted(channels)),
+            channels=tuple(channels[c].channels[0] for c in sorted(channels)),
+        )
         for channels in planes.values()
         for first in [channels[min(channels)]]
     ]

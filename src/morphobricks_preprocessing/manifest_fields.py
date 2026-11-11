@@ -13,11 +13,37 @@ Pure: no I/O.
 
 from __future__ import annotations
 
+from morphobricks_normalization.channels import check_channel_ids
+
 from .axes import AxisMapping
 from .image_names import position_id
 
 RAW_NAMES_KEY = "raw_channel_names"
 """The file entry's key for the channel names as the header gave them (written when not empty)."""
+
+
+CHANNEL_IDS_KEY = "channel_ids"
+"""The key of an image's canonical channel IDs in a manifest file entry (Stage 3, S3.3)."""
+
+
+def recorded_channel_ids(value: object, relative_path: str) -> tuple[str, ...]:
+    """Check an image's recorded canonical channel IDs, as written and as read.
+
+    One ID per source channel, in source order: the confirmed ``channels`` list of the image's
+    imaging unit (experiment-v1 section 4.4). Required, non-empty, distinct channel IDs; never
+    filled in or guessed.
+
+    Raises
+    ------
+    ValueError
+        When the value is not a non-empty list of distinct channel IDs.
+    """
+    if not isinstance(value, list | tuple) or not value:
+        raise ValueError(f"the entry of {relative_path!r} records no channel_ids")
+    try:
+        return check_channel_ids(value, f"The channel_ids of {relative_path!r}")
+    except (TypeError, ValueError) as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def recorded_raw_names(value: object, relative_path: str) -> tuple[str | None, ...]:

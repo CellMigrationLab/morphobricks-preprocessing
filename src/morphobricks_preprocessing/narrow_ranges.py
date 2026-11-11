@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 
 import numpy as np
+from morphobricks_normalization.channels import check_channel_id
 from morphobricks_normalization.ranges import RangeCheck
 
 
@@ -23,14 +24,14 @@ class NarrowRange:
     plane_id
         The plane's ``plane_id`` in the table.
     channel
-        The zero-based channel.
+        The channel's canonical ID (Stage 3, S3.3; ADR 0003 HV2).
     check
         The normalization brick's ``RangeCheck`` of the plane's channel.
     """
 
     relative_path: str
     plane_id: str
-    channel: int
+    channel: str
     check: RangeCheck
 
     def to_dict(self) -> dict:
@@ -49,7 +50,7 @@ class NarrowRange:
         return cls(
             relative_path=str(data["relative_path"]),
             plane_id=str(data["plane_id"]),
-            channel=int(data["channel"]),
+            channel=check_channel_id(data["channel"], "A narrow-range entry"),
             check=RangeCheck(
                 histogram_range=str(data["histogram_range"]),
                 central_percentiles=tuple(float(v) for v in data["central_percentiles"]),

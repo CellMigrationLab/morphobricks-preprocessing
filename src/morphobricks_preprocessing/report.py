@@ -8,12 +8,14 @@ masks have theirs in :mod:`.mask_text`.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
+from morphobricks_normalization.fitting import ChannelScopeIncompleteError
 from morphobricks_normalization.histogram import PlaneHistogram
 from morphobricks_normalization.pooling import NoValidPixelsError, PooledHistogram
 from morphobricks_normalization.records import LEVELS, PlaneRecord, group_records
+from morphobricks_normalization.settings import PARTIAL_CHANNELS
 
 from .axes import AxisMapping, AxisReview, axis_length_ranges, axis_name
 from .dataset import BalanceTable
@@ -256,24 +258,28 @@ class GroupSummary:
     labels
         The group's labels, from condition down to the chosen level.
     channel
-        The channel summarised (0 for C0), or :data:`ALL_CHANNELS` (None) for a
+        The canonical channel ID summarised (``DNA``), or :data:`ALL_CHANNELS` (None) for a
         deliberate aggregate of every channel, asked for with ``pool_channels=True``.
     xyc_plane_count
         XYC planes (rows of the table: an image at one Z and T) in the group, including
-        planes without finite pixels.
+        planes without finite pixels and planes without the channel.
     channel_histogram_count
-        Channel histograms pooled: equal to ``xyc_plane_count`` for one channel, and the
-        planes times their channels for an all-channel aggregate.
+        Channel histograms pooled: the planes that have the channel for one channel, and
+        the planes times their channels for an all-channel aggregate.
     pixel_count
         Finite pixels pooled.
     minimum, maximum, mean, std, median
         Pooled statistics; None if the group has no finite pixels in that channel.
     percentiles
         ``{q: value}`` for the requested percentiles.
+    planes_without_channel
+        The planes of the group that lack the channel (its acquisitions do not list it),
+        left out by the user's recorded choice ``partial_channels="planes_with_channel"``;
+        0 when every plane has it.
     """
 
     labels: tuple[str, ...]
-    channel: int | None
+    channel: str | None
     xyc_plane_count: int
     channel_histogram_count: int
     pixel_count: int
@@ -283,6 +289,7 @@ class GroupSummary:
     std: float | None = None
     median: float | None = None
     percentiles: dict[float, float] | None = None
+    planes_without_channel: int = 0
 
 
 def group_summaries(
@@ -291,12 +298,16 @@ def group_summaries(
     percentiles: Sequence[float] = (1.0, 99.8),
     *,
     pool_channels: bool = False,
+    partial_channels: str = "refuse",
 ) -> list[GroupSummary]:
     """Summarise every channel of every group at ``level``, each channel on its own.
 
     Distinct channels are different measurements (two fluorescence markers, or the red,
     green and blue of an RGB image), so by default each group has one summary per
-    channel, channels in order, and nothing is pooled across channels (issue #104).
+    channel ID, IDs sorted, and nothing is pooled across channels (issue #104). Channels are
+    matched by canonical ID, never by position in the image (Stage 3: units may list
+    different channels, in any order). A group whose planes all lack a channel has no
+    summary for it.
 
     Parameters
     ----------
@@ -311,48 +322,85 @@ def group_summaries(
         True pools every channel of a group into one summary whose ``channel`` is
         :data:`ALL_CHANNELS`, the behaviour before issue #104. Only on explicit request:
         the table labels it as an aggregate of all channels.
+    partial_channels
+        What to do with a channel only some planes of a group have (partial presence):
+        ``"refuse"`` (default) raises; ``"planes_with_channel"`` summarises the planes that
+        have it, an explicit choice of the user that each summary records
+        (``planes_without_channel``). The values of normalization's
+        ``NormalizationSettings.partial_channels``.
 
     Raises
     ------
+    ChannelScopeIncompleteError
+        With ``partial_channels="refuse"``, for every channel only some planes of a group
+        have (Spec ``A_SCOPE_INCOMPLETE``, "present in k of n planes"); nothing is
+        summarised. ``channels`` maps ``"<group>: <channel>"`` to the planes that lack it.
     ValueError
-        If the rows of one group have different numbers of channels: which channel is
-        which cannot be known, so nothing is summarised.
+        For an unknown ``partial_channels``.
     """
+    if partial_channels not in PARTIAL_CHANNELS:
+        raise ValueError(
+            f"partial_channels {partial_channels!r} does not exist; choose one of "
+            f"{', '.join(PARTIAL_CHANNELS)}."
+        )
+    groups = group_records(list(records), level)
+    if not pool_channels and partial_channels == "refuse":
+        _refuse_partial(groups)
     summaries = []
-    for key, members in group_records(list(records), level).items():
-        counts = {record.channel_count for record in members}
-        if len(counts) > 1:
-            raise ValueError(
-                f"The planes of group {' / '.join(key)} have different numbers of channels "
-                f"({', '.join(map(str, sorted(counts)))}); their statistics cannot be "
-                "matched channel by channel."
-            )
+    for key, members in groups.items():
         if pool_channels:
-            selections = [(ALL_CHANNELS, channel_histograms(members))]
+            selections = [(ALL_CHANNELS, channel_histograms(members), 0)]
         else:
-            selections = [
-                (c, [record.channel_histogram(c) for record in members])
-                for c in range(counts.pop())
-            ]
+            selections = []
+            for channel in sorted({c for record in members for c in record.channels}):
+                having = [r.channel_histogram(channel) for r in members if r.has_channel(channel)]
+                selections.append((channel, having, len(members) - len(having)))
         summaries += [
-            _summary(key, channel, len(members), histograms, percentiles)
-            for channel, histograms in selections
+            _summary(key, channel, len(members), histograms, percentiles, lacking)
+            for channel, histograms, lacking in selections
         ]
     return summaries
 
 
+def _refuse_partial(groups: Mapping[tuple[str, ...], list[PlaneRecord]]) -> None:
+    """Raise ``ChannelScopeIncompleteError`` naming every partially present channel."""
+    lacking: dict[str, tuple[str, ...]] = {}
+    lines = []
+    for key, members in groups.items():
+        for channel in sorted({c for record in members for c in record.channels}):
+            without = tuple(r.plane_id for r in members if not r.has_channel(channel))
+            if without:
+                name = f"{' / '.join(key)}: {channel}"
+                lacking[name] = without
+                have = len(members) - len(without)
+                lines.append(f"{name} (present in {have} of {len(members)} planes)")
+    if lacking:
+        raise ChannelScopeIncompleteError(
+            "A_SCOPE_INCOMPLETE: some groups have a channel in only some of their planes, so "
+            "their statistics would not describe the whole group: "
+            + "; ".join(lines)
+            + ". Choose a grouping in which every plane of a group has the channel, or "
+            "explicitly choose to summarise only the planes that have it "
+            "(partial_channels='planes_with_channel'); that choice is shown with the results.",
+            lacking,
+        )
+
+
 def _summary(
     labels: tuple[str, ...],
-    channel: int | None,
+    channel: str | None,
     planes: int,
     histograms: list[PlaneHistogram],
     percentiles: Sequence[float],
+    lacking: int = 0,
 ) -> GroupSummary:
     """Pool ``histograms`` (one channel of a group, or all of them) and summarise them."""
     try:
         pooled = PooledHistogram(histograms)
     except NoValidPixelsError:
-        return GroupSummary(labels, channel, planes, len(histograms), 0)
+        return GroupSummary(
+            labels, channel, planes, len(histograms), 0, planes_without_channel=lacking
+        )
     return GroupSummary(
         labels=labels,
         channel=channel,
@@ -365,6 +413,7 @@ def _summary(
         std=pooled.std,
         median=pooled.median,
         percentiles={q: pooled.percentile(q) for q in percentiles},
+        planes_without_channel=lacking,
     )
 
 
@@ -377,9 +426,9 @@ def channel_histograms(records: Iterable[PlaneRecord]) -> list[PlaneHistogram]:
     return [histogram for record in records for histogram in record.histograms]
 
 
-def channel_label(channel: int | None) -> str:
-    """Return how the tables name a channel: ``C0``, or ``all channels (pooled)``."""
-    return "all channels (pooled)" if channel is ALL_CHANNELS else f"C{channel}"
+def channel_label(channel: str | None) -> str:
+    """Return how the tables name a channel: its ID, or ``all channels (pooled)``."""
+    return "all channels (pooled)" if channel is ALL_CHANNELS else channel
 
 
 def group_table(summaries: Sequence[GroupSummary], level: str) -> list[list[str]]:
@@ -413,12 +462,23 @@ def group_table(summaries: Sequence[GroupSummary], level: str) -> list[list[str]
         rows.append(
             [
                 *s.labels,
-                channel_label(s.channel),
+                _channel_cell(s),
                 *(f"{n:,}" for n in counts),
                 *map(_number, values),
             ]
         )
     return rows
+
+
+def _channel_cell(summary: GroupSummary) -> str:
+    """Return the channel's name, with the planes it covers when the user chose a subset."""
+    name = channel_label(summary.channel)
+    if not summary.planes_without_channel:
+        return name
+    return (
+        f"{name} (only the {summary.channel_histogram_count:,} of "
+        f"{summary.xyc_plane_count:,} planes that have it, as chosen)"
+    )
 
 
 def format_table(rows: Sequence[Sequence[str]]) -> str:

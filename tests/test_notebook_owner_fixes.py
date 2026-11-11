@@ -136,11 +136,11 @@ def test_blocked_line_is_empty_without_reasons_and_escapes():
     assert "Not available yet" in line and "&lt;first&gt;; second." in line
 
 
-def _mixed_channels(tmp_path):
+def _mixed_channels(tmp_path, images):
     root = tmp_path / "exp"
-    for folder, channels in (("ctrl/rep1", 3), ("ctrl/rep2", 4), ("drug/rep1", 3)):
-        path = root / folder / "a.tif"
-        path.parent.mkdir(parents=True)
+    for rel, channels in images:
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
         data = np.zeros((channels, 16, 16), np.uint16)
         tifffile.imwrite(path, data, photometric="minisblack", metadata={"axes": "CYX"})
     nb = PreprocessingNotebook(str(root), output_folder=str(tmp_path / "out"))
@@ -149,8 +149,23 @@ def _mixed_channels(tmp_path):
     return nb
 
 
-def test_confirm_axis_roles_says_that_different_channel_counts_block_it(tmp_path):
-    nb = _mixed_channels(tmp_path)  # the owner's data: 3 and 4 channels
+OWNER_DATA = (("ctrl/rep1/a.tif", 3), ("ctrl/rep2/a.tif", 4), ("drug/rep1/a.tif", 3))
+
+
+def test_the_owner_s_3_and_4_channel_folders_can_be_confirmed(tmp_path):
+    # Stage 3 S3.3 (owner decision of 11 November 2026): folders may have different channels.
+    nb = _mixed_channels(tmp_path, OWNER_DATA)
+    nb.show_preview()
+    assert "different channel counts" not in _text(nb.confirm_blocker.value)
+    nb.preview_checked.button.click()
+    assert not nb.confirm_button.disabled
+    nb.confirm_button.click()
+    assert nb.confirmed_mapping is not None
+
+
+def test_confirm_axis_roles_says_that_different_channel_counts_in_one_folder_block_it(tmp_path):
+    # Inside one acquisition every image has the same channels (Spec R_UNIT_NOT_HOMOGENEOUS).
+    nb = _mixed_channels(tmp_path, (("ctrl/rep1/a.tif", 3), ("ctrl/rep1/b.tif", 4)))
     nb.show_preview()
     assert nb.confirm_button.disabled
     said = _text(nb.confirm_blocker.value)

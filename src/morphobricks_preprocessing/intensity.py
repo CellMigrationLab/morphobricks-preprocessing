@@ -81,16 +81,20 @@ class IntensityReport:
     settings: IntensityCheckSettings = field(default_factory=IntensityCheckSettings)
 
     @property
-    def channel_count(self) -> int:
-        """Number of channels of the images; 0 without images."""
-        return self.summaries[0].channel_count if self.summaries else 0
+    def channel_ids(self) -> tuple[str, ...]:
+        """Every channel ID some image has, sorted; empty without images.
+
+        Images may have different channels (Stage 3): each channel is checked among the
+        images that have it, by ID.
+        """
+        return tuple(sorted({c for summary in self.summaries for c in summary.channels}))
 
     @property
     def high_percentile(self) -> float:
         """The high percentile of the summaries, in percent (99.8 by default)."""
         return self.summaries[0].percentile[1] if self.summaries else 99.8
 
-    def flagged_images(self, channel: int) -> dict[str, tuple[str, ...]]:
+    def flagged_images(self, channel: str) -> dict[str, tuple[str, ...]]:
         """Return the codes of the warnings about each image in ``channel``, by path."""
         found: dict[str, list[str]] = {}
         for issue in self.issues:
@@ -101,7 +105,7 @@ class IntensityReport:
                         codes.append(issue.code)
         return {path: tuple(codes) for path, codes in found.items()}
 
-    def shifted_repeats(self, channel: int) -> set[tuple[str, str]]:
+    def shifted_repeats(self, channel: str) -> set[tuple[str, str]]:
         """Return the ``(condition, biological_repeat)`` reported as shifted in ``channel``."""
         shifted = set()
         for issue in self.issues:
@@ -192,27 +196,32 @@ def check_table(
     return records, check_intensities(records, settings)
 
 
-def repeat_boxes(report: IntensityReport, channel: int) -> list[RepeatBox]:
+def repeat_boxes(report: IntensityReport, channel: str) -> list[RepeatBox]:
     """Return the image values of every condition and biological repeat in ``channel``.
 
-    Images without finite pixels in the channel are left out; a repeat with no
-    such image is left out too. Sorted by condition, then biological repeat.
+    ``channel`` is a canonical channel ID. Images without the channel (absent from their
+    unit) or without finite pixels in it are left out; a repeat with no such image is left
+    out too. Sorted by condition, then biological repeat.
     """
     flagged = report.flagged_images(channel)
     shifted = report.shifted_repeats(channel)
-    groups: dict[tuple[str, str], list[ImageSummary]] = {}
+    groups: dict[tuple[str, str], list[tuple[ImageSummary, int]]] = {}
     for summary in report.summaries:
-        if summary.median[channel] is None:
+        if channel not in summary.channels:
             continue
-        groups.setdefault((summary.condition, summary.biological_repeat), []).append(summary)
+        index = summary.channels.index(channel)
+        if summary.median[index] is None:
+            continue
+        key = (summary.condition, summary.biological_repeat)
+        groups.setdefault(key, []).append((summary, index))
     return [
         RepeatBox(
             condition,
             repeat,
-            tuple(s.source_relative_path for s in members),
-            tuple(s.median[channel] for s in members),
-            tuple(s.p_high[channel] for s in members),
-            tuple(flagged.get(s.source_relative_path, ()) for s in members),
+            tuple(s.source_relative_path for s, _ in members),
+            tuple(s.median[i] for s, i in members),
+            tuple(s.p_high[i] for s, i in members),
+            tuple(flagged.get(s.source_relative_path, ()) for s, _ in members),
             (condition, repeat) in shifted,
         )
         for (condition, repeat), members in sorted(groups.items())
@@ -220,9 +229,14 @@ def repeat_boxes(report: IntensityReport, channel: int) -> list[RepeatBox]:
 
 
 def repeat_distributions(
-    records: Iterable[PlaneRecord], channel: int
+    records: Iterable[PlaneRecord], channel: str
 ) -> dict[str, dict[str, PooledHistogram]]:
     """Pool ``channel`` of every biological repeat, condition by condition.
+
+    ``channel`` is a canonical channel ID. A condition's repeat is drawn only when every
+    plane of it has the channel: a repeat whose acquisitions have it only partly is left out
+    (never pooled over the planes that have it without the user's choice, Spec
+    ``A_SCOPE_INCOMPLETE``), and so is a repeat without it.
 
     Returns
     -------
@@ -233,6 +247,11 @@ def repeat_distributions(
     groups: dict[tuple[str, str], list[PlaneRecord]] = {}
     for record in records:
         groups.setdefault((record.condition, record.biological_repeat), []).append(record)
+    groups = {
+        key: members
+        for key, members in groups.items()
+        if all(record.has_channel(channel) for record in members)
+    }
     curves: dict[str, dict[str, PooledHistogram]] = {}
     for (condition, repeat), members in sorted(groups.items()):
         try:
@@ -269,7 +288,7 @@ def describe_settings(settings: IntensityCheckSettings) -> str:
 def intensity_text(report: IntensityReport) -> str:
     """Describe the checks as plain text: the summary, the limits, then each kind of warning.
 
-    Each kind lists its findings (image or repeat, channel ``C<i>`` and the
+    Each kind lists its findings (image or repeat, channel ID and the
     compared values, as the normalization brick words them) and says once what
     to do.
     """

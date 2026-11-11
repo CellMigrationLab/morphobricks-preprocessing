@@ -8,6 +8,8 @@ the reader, the physical checks and the layouts, never here.
 
 from __future__ import annotations
 
+from .channel_plan import channel_coverage, partial_repeats
+from .description import Description
 from .description_layouts import (
     DeclaredLayout,
     heterogeneous_message,
@@ -105,12 +107,41 @@ def reader_warning(issue: DescriptionIssue) -> ValidationIssue:
 
 
 def heterogeneous_issue(layouts: tuple[DeclaredLayout, ...]) -> ValidationIssue:
-    """Return the Stage 1 refusal of an experiment with more than one channel layout."""
+    """Return the refusal of an experiment whose units declare different image types."""
     action = (
-        "Process the layouts as separate experiments, or wait for mixed-layout support. "
+        "Process the RGB and the separate-channel units as separate experiments. "
         "Units: " + "; ".join(heterogeneous_units(layouts)) + "."
     )
     return error(HETEROGENEOUS_LAYOUT, heterogeneous_message(layouts), (), action)
+
+
+PARTIAL_COVERAGE = "partial_channel_coverage"
+"""The run's warning naming each biological repeat that has a channel in only some acquisitions."""
+
+
+def coverage_issues(description: Description) -> list[ValidationIssue]:
+    """Return the warning listing every partially represented repeat and channel, or nothing.
+
+    Never a refusal: the table holds what was acquired (an absent channel is blank, never zero)
+    and the coverage is recorded in the manifest. A brick asked to compare or normalize such a
+    channel across the repeat refuses (``A_SCOPE_INCOMPLETE``) unless the user selects and
+    records the acquisitions that have it.
+    """
+    partial = partial_repeats(channel_coverage(description))
+    if not partial:
+        return []
+    return [
+        warning(
+            PARTIAL_COVERAGE,
+            "Some biological repeats have a channel in only some of their acquisitions (partial "
+            "presence). Their images are measured as acquired: the missing channel is blank in "
+            "the histogram table, never zero.",
+            partial,
+            "No action needed for this run. Later analyses that pool such a channel over a "
+            "whole repeat refuse it (A_SCOPE_INCOMPLETE) unless you choose to use only the "
+            "acquisitions that have it; that choice is recorded.",
+        )
+    ]
 
 
 def representation_issue(

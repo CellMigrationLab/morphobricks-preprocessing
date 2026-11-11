@@ -154,7 +154,7 @@ class IntensityPanel:
 
     def _build_plots(self) -> None:
         """Build the channel choice and the two plots of the chosen channel."""
-        self.channel = widgets.ToggleButtons(options=[("C0", 0)], style={"button_width": "96px"})
+        self.channel = widgets.ToggleButtons(options=[("-", None)], style={"button_width": "96px"})
         self.channel_row = widgets.VBox(
             [
                 widgets.HTML("<b>Channel</b>"),
@@ -212,16 +212,17 @@ class IntensityPanel:
     def show(self, records: Sequence[PlaneRecord], labels: RunLabels = NO_LABELS) -> None:
         """Check the intensities of ``records`` and show the warnings and plots.
 
-        ``labels`` names the channels and biological repeats by the IDs of the run's
-        description; the default keeps the table's own names (``C0``, the folder labels).
+        The table names channels by canonical ID (schema version 5); one button per ID some
+        image has. ``labels`` names the biological repeats by the IDs of the run's
+        description; the default keeps the folder labels.
         """
         self.records = list(records)
         self.labels = labels
-        channels = self.records[0].channel_count if self.records else 1
-        with self.channel.hold_trait_notifications():
-            self.channel.options = [(labels.channel(c), c) for c in range(channels)]
-            self.channel.value = 0
-        ui.set_visible(self.channel_row, channels > 1)
+        channels = sorted({c for record in self.records for c in record.channels})
+        # The first ID is chosen explicitly: not every ipywidgets version selects it.
+        self.channel.options = [(c, c) for c in channels] or [("-", None)]
+        self.channel.value = channels[0] if channels else None
+        ui.set_visible(self.channel_row, len(channels) > 1)
         self._check()
         ui.set_visible(self.card, True)
 
@@ -286,7 +287,10 @@ class IntensityPanel:
         if report is None or not report.summaries:
             self.boxes.value = self.curves.value = b""
             return
-        channel = self.channel.value or 0
+        channel = self.channel.value
+        if channel is None:
+            self.boxes.value = self.curves.value = b""
+            return
         labels = self.labels
         boxes = sorted(
             repeat_boxes(report, channel),
@@ -332,7 +336,7 @@ def intensity_findings_html(report: IntensityReport, labels: RunLabels = NO_LABE
 def intensity_boxes_png(
     boxes: Sequence[RepeatBox],
     high_percentile: float,
-    channel: int,
+    channel: str,
     labels: RunLabels = NO_LABELS,
 ) -> bytes | None:
     """Box plots of the image medians and high percentiles per condition and biological repeat.
@@ -399,7 +403,7 @@ def intensity_boxes_png(
 def repeat_curves_png(
     curves: dict,
     shifted: set[tuple[str, str]],
-    channel: int,
+    channel: str,
     labels: RunLabels = NO_LABELS,
 ) -> bytes | None:
     """Overlay the cumulative intensity distribution of each biological repeat, per condition.
@@ -521,19 +525,25 @@ def example_png(rows: Sequence[tuple[str, Sequence[tuple[str, np.ndarray]]]]) ->
 
 
 def distribution_png(groups: dict[tuple[str, ...], list]) -> bytes | None:
-    """Plot the cumulative intensity distribution of each group, one panel per channel.
+    """Plot the cumulative intensity distribution of each group, one panel per channel ID.
 
-    Channels are never pooled together (issue #104): each panel holds one channel's
-    curves, one per group (up to 12 groups), each with its own intensity axis.
+    Channels are never pooled together (issue #104) and are matched by canonical ID, never by
+    position: each panel holds one channel's curves, one per group that has it (up to 12
+    groups), each with its own intensity axis. A group's curve pools the planes that have the
+    channel: call it only after :func:`.report.group_summaries` accepted the grouping (it
+    refuses partial presence unless the user chose ``planes_with_channel``).
     """
     shown = list(groups.items())[:_MAX_PLOTTED_GROUPS]
-    channels = max((r.channel_count for _, members in shown for r in members), default=0)
+    channels = sorted({c for _, members in shown for r in members for c in r.channels})
     panels = []
-    for channel in range(channels):
+    for channel in channels:
         curves = []
         for key, members in shown:
+            having = [r.channel_histogram(channel) for r in members if r.has_channel(channel)]
+            if not having:
+                continue
             try:
-                pooled = PooledHistogram([r.channel_histogram(channel) for r in members])
+                pooled = PooledHistogram(having)
             except NoValidPixelsError:
                 continue
             label = " / ".join(key[-2:]) if len(key) > 1 else key[0]
@@ -552,11 +562,11 @@ def distribution_png(groups: dict[tuple[str, ...], list]) -> bytes | None:
         if high > low:
             axes.set_xlim(low, high)
         axes.set_ylim(0, 1)
-        axes.set_xlabel(f"Intensity, channel C{channel}")
+        axes.set_xlabel(f"Intensity, channel {channel}")
         axes.set_ylabel("Share of pixels at or below")
         axes.grid(alpha=0.3)
         axes.legend(fontsize=8, loc="lower right", frameon=False)
-        title = f"Channel C{channel}"
+        title = f"Channel {channel}"
         if len(groups) > _MAX_PLOTTED_GROUPS:
             title += f": first {_MAX_PLOTTED_GROUPS} of {len(groups)} groups"
         axes.set_title(title, fontsize=9)
