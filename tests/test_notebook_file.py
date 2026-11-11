@@ -245,12 +245,14 @@ def _kernel_notebook(nbformat, *, roles=(INSTALL, DRIVE, RUN), colab_drive=None,
 def _execute(notebook, **options):
     """Run the notebook in a fresh kernel; run it again when the kernel's output was lost.
 
-    The app sends a message per widget. On a slow runner (macOS CI) the client sometimes loses
-    the end of that stream ("Timeout waiting for IOPub output"), and with it the cell's
-    display. That is the transport, not the notebook: the run is repeated, twice at most, and
-    a notebook that really shows nothing still fails every time.
+    The app sends a message per widget, about two thousand at once. On a slow runner (macOS
+    CI) the client lost the end of that stream ("Timeout waiting for IOPub output"), and with
+    it the cell's display. That is the transport, not the notebook: the client's queue is made
+    unlimited, and a run that still loses its output is repeated, twice at most; a notebook
+    that really shows nothing still fails every time.
     """
     nbclient = pytest.importorskip("nbclient", reason="the dev extra installs nbclient")
+    zmq = pytest.importorskip("zmq", reason="the kernel's transport")
     for attempt in range(3):
         client = nbclient.NotebookClient(
             notebook,
@@ -261,6 +263,9 @@ def _execute(notebook, **options):
             resources={"metadata": {"path": str(NOTEBOOK.parent)}},
             **options,
         )
+        # ZeroMQ drops messages for a subscriber whose queue is full (1,000 by default); the
+        # app's burst of widget messages is larger, so this client's queue has no limit.
+        client.create_kernel_manager().context.setsockopt(zmq.RCVHWM, 0)
         try:
             client.execute()
         except (RuntimeError, TimeoutError) as exc:  # nbclient's CellTimeoutError is the latter
