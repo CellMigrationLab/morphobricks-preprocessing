@@ -1,8 +1,9 @@
 """Step 3's run page: the labels of a described run (UX proposal 2026-11-09, Q4).
 
-Channel IDs and replicate IDs come from the published description the run recorded (its
-SHA-256 is in the manifest); an undescribed run, or a file edited since, keeps the table's
-own names. The widgets are driven headless; plots are read from the figures they draw.
+Channel IDs are the table's own (schema version 5 names channels by canonical ID); replicate IDs
+come from the published description the run recorded (its SHA-256 is in the manifest); a file
+edited since keeps the folder labels. The widgets are driven headless; plots are read from the
+figures they draw.
 """
 
 from dataclasses import replace
@@ -74,45 +75,36 @@ def texts(figure):
 
 
 def test_a_described_run_names_the_plot_tabs_and_titles_by_channel_id(tmp_path, figures):
+    # Schema version 5: the table itself names the channels by canonical ID, sorted.
     nb, _ = described(tmp_path)
     assert nb.run().written
     panel = nb.run_checks
-    assert [label for label, _ in panel.channel.options] == TAGS
-    assert [value for _, value in panel.channel.options] == [0, 1, 2]
-    assert any("Channel DNA: one point per image" in t for t in texts(figures[-2]))
-    panel.channel.value = 1
-    assert any("Channel ACTIN: one curve per biological repeat" in t for t in texts(figures[-1]))
+    assert [label for label, _ in panel.channel.options] == sorted(TAGS)
+    assert [value for _, value in panel.channel.options] == sorted(TAGS)
+    assert any("Channel ACTIN: one point per image" in t for t in texts(figures[-2]))
+    panel.channel.value = "DNA"
+    assert any("Channel DNA: one curve per biological repeat" in t for t in texts(figures[-1]))
 
 
 def test_a_description_edited_after_the_run_is_not_used(tmp_path):
     nb, out = described(tmp_path)
     assert nb.run().written
-    assert recorded_labels(out).channel(0) == "DNA"
+    assert recorded_labels(out).repeat("drug", "day2") == "rep2"
     path = out / DESCRIPTION_FILENAME
     path.write_bytes(path.read_bytes() + b"\n# edited\n")  # not the bytes the run read
-    assert recorded_labels(out) is NO_LABELS and NO_LABELS.channel(0) == "C0"
+    assert recorded_labels(out) is NO_LABELS and NO_LABELS.repeat("drug", "day2") == "day2"
     assert recorded_labels(out / "missing") is NO_LABELS
 
 
-def test_a_channel_position_the_units_do_not_agree_on_keeps_its_index(tmp_path):
+def test_channels_are_shown_by_the_table_ids_whatever_their_position(tmp_path):
+    # Stage 3: units may list their channels in any order; the labels never map positions.
     nb, out = described(tmp_path)
     assert nb.run().written
     from morphobricks_preprocessing.description_file import read_description
 
-    description = read_description(out / DESCRIPTION_FILENAME)
-    assert labels_from_description(description).channels == tuple(TAGS)
-    unit = next(
-        u
-        for r in description.repeats.values()
-        for m in r.members.values()
-        for u in m.technical_repeats.values()
-    )
-    swapped = type(unit)(unit.source_folder, ("ACTIN", "DNA", "PHASE"), unit.display_name)
-    member = next(iter(next(iter(description.repeats.values())).members.values()))
-    changed = {**member.technical_repeats, next(iter(member.technical_repeats)): swapped}
-    object.__setattr__(member, "technical_repeats", changed)
-    assert labels_from_description(description).channels == (None, None, "PHASE")
-    assert labels_from_description(description).channel(0) == "C0"
+    labels = labels_from_description(read_description(out / DESCRIPTION_FILENAME))
+    assert [labels.channel(channel) for channel in TAGS] == TAGS
+    assert NO_LABELS.channel("PHASE") == "PHASE"
 
 
 # --- 2. replicate IDs in plots and legends ----------------------------------------------------
@@ -221,7 +213,6 @@ def test_replicate_ids_are_shown_in_natural_order_rep2_before_rep10():
     # Display convention (PR 17b): numbers in an ID are compared as numbers; the folder breaks
     # a tie. Nothing is renamed or stored in this order.
     labels = RunLabels(
-        (),
         {
             ("drug", "b"): "rep10",
             ("drug", "a"): "rep2",

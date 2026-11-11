@@ -255,7 +255,7 @@ def _execute(notebook, **options):
         client = nbclient.NotebookClient(
             notebook,
             timeout=300,
-            iopub_timeout=60,
+            iopub_timeout=120,
             raise_on_iopub_timeout=True,
             kernel_name="python3",
             resources={"metadata": {"path": str(NOTEBOOK.parent)}},
@@ -263,7 +263,7 @@ def _execute(notebook, **options):
         )
         try:
             client.execute()
-        except RuntimeError as exc:
+        except (RuntimeError, TimeoutError) as exc:  # nbclient's CellTimeoutError is the latter
             if "IOPub" not in str(exc) or attempt == 2:
                 raise
         else:
