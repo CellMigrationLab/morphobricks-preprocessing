@@ -117,7 +117,7 @@ def test_each_copys_sha256_is_recorded(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
     data = json.loads((copies / CONVERSION_RECORD_FILENAME).read_text())
-    assert data["record_version"] == "3"
+    assert data["record_version"] == "4"
     for entry in data["files"]:
         assert entry["copy_sha256"] == file_sha256(copies / entry["relative_path"])
 
@@ -195,6 +195,18 @@ def test_a_version_1_record_is_refused_with_a_reason(tmp_path):
     manifest["conversion_record_sha256"] = sha256
     (out / "run_manifest.json").write_bytes(json.dumps(manifest, indent=2).encode())
     with pytest.raises(RunInputsError, match="version 1.*Convert the originals again"):
+        RunInputs.open(out)
+
+
+def test_runinputs_refuses_a_version_3_record_naming_the_fix(tmp_path):
+    exp, copies, out = swapped_experiment(tmp_path / "exp"), tmp_path / "copies", tmp_path / "o"
+    assert convert_experiment(exp, SWAPPED, copies).written
+    assert run_described(copies, NAMED, output_folder=out).written
+    sha256 = edit_record(copies, lambda data: data.update(record_version="3"))
+    manifest = json.loads((out / "run_manifest.json").read_text())
+    manifest["conversion_record_sha256"] = sha256
+    (out / "run_manifest.json").write_bytes(json.dumps(manifest, indent=2).encode())
+    with pytest.raises(RunInputsError, match="version 3,.*reads version 4 only.*convert the"):
         RunInputs.open(out)
 
 

@@ -179,6 +179,28 @@ Owner decision of 11 November 2026; Spec roadmap S3.3, ADR 0003.
 - Histogram numbers of present channels are unchanged (counts, extrema, binning limits, pixel
   counts and tail moments identical on `v13`, `v01` and simulated uint8/uint16/float32 trees).
 
+### Conversion record version 4 (#291; owner decision of 12 November 2026, before v0.5.2)
+
+- **Breaking: `RECORD_VERSION` is `"4"`.** The OME-Zarr copy (#287) added the entry key
+  `source_relative_path` under version 3, which v0.5.1 reads while ignoring the key: it looked
+  for each source at the copy's path and warned `conversion_source_changed`. Version 4 is the
+  only version written and read; a record of version 3 (v0.5.1), like 1 and 2, is refused by
+  `convert`, the run's `review_conversion`, `RunInputs` and the notebook's earlier projections
+  with `conversion_record_unreadable`, naming its version and the fix: convert the originals
+  again into a new folder. Nothing is converted (Spec ADR 0002 AR10).
+- **`source_relative_path` is required exactly where it is written**: on an entry `converted`
+  or `projected` into an OME-Zarr copy (`relative_path` ending `.ome.zarr`), as text other
+  than the copy's path; any other entry with the key is refused. It stays absent from OME-TIFF
+  and byte-for-byte entries, which keep their source's path, so those entries are written as
+  before; such records differ from v0.5.1's only in `record_version`.
+- **A projected entry names one source.** Its projection's `source_relative_path` must be the
+  entry's source (its `source_relative_path` on an OME-Zarr copy, else `relative_path`), so a
+  run never checks one source and records another as projected; a record that differs is
+  refused (`conversion_record_unreadable`).
+- **Notebook:** projected copies written earlier whose record cannot be used (version 3) are
+  not offered, and the Axes step says so in one line naming the folder, the reason and the fix
+  (another output folder), instead of skipping them silently.
+
 ### Notebook redesign iteration 3 (#284-#287; owner's test of v0.5.1; no result or published file changes)
 
 - **One image viewer for every step.** *Images*, *Axes*, *Channels* and *Check and save* show
@@ -224,7 +246,7 @@ Owner decision of 11 November 2026; Spec roadmap S3.3, ADR 0003.
   Z-stacks (still refused, `z_stack_not_supported`), the step offers **Z-stacks: save the
   dataset as projections**: the method (maximum, mean or sum; no default), the slices, a look
   at the projection of the example's image, and one click that writes the projected copies
-  with `convert_experiment(projection=...)` (the copies, record version 3 and every refusal
+  with `convert_experiment(projection=...)` (the copies, record version 4 and every refusal
   of `convert --project`) into `<output>/projected_<method>[_z<start>-<stop>]` and opens them
   as the experiment (scanned and checked again; nothing is confirmed for the user). The
   viewer has the **z** and **t** sliders on every step; a time-lapse needs nothing new.
@@ -245,8 +267,8 @@ Owner decision of 11 November 2026; Spec roadmap S3.3, ADR 0003.
   `window` OME-NGFF 0.4 requires, white and the pixel type's whole range) into `<output>/ome_zarr`, with the conversion
   record, and the copies are opened as the experiment. With Z-stacks the projected copies are
   written as OME-Zarr. The record's entry of such a copy has the copy's path as
-  `relative_path` and the new key `source_relative_path`; records without OME-Zarr copies are
-  byte for byte as before (record version 3 is kept). New refusal: `copy_names_collide`.
+  `relative_path` and the new key `source_relative_path` (record version 4, below). New refusal:
+  `copy_names_collide`.
   `plan_conversion` takes `projection`, `masks_folder` and `store` as keywords.
 - **Notebook file, cell 3:** on Google Colab it calls
   `google.colab.output.no_vertical_scroll()`, so the app is not shown in an output frame that

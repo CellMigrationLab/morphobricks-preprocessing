@@ -221,6 +221,26 @@ def test_opening_the_stacks_again_offers_the_copies_written_earlier(tmp_path):
     assert (out / "projected_sum" / RECORD_FILENAME).stat().st_mtime_ns == stamp  # not rewritten
 
 
+def test_copies_written_earlier_that_cannot_be_used_are_said_not_hidden(tmp_path):
+    # A projected tree of v0.5.1 (record version 3) is not offered, and the user is told why:
+    # writing the same projection into that folder again is refused.
+    nb, root, out, _ = started(tmp_path, "ZCYX", (5, 3, 16, 16))
+    nb.projection_method.value = "max"
+    nb.preview_checked.button.click()
+    assert nb._write_projection().written
+    path = out / "projected_max" / RECORD_FILENAME
+    path.write_text(path.read_text().replace('"record_version": "4"', '"record_version": "3"'))
+    again = PreprocessingNotebook(str(root), output_folder=str(out))
+    again.steps()
+    again.scan_button.click()
+    again.check_button.click()
+    (note,) = again.projection_earlier.children
+    assert not hasattr(note, "on_click")
+    said = _text(note.value)
+    assert f"Not offered: the copies written earlier in {out / 'projected_max'}" in said
+    assert "record of version 3" in said and "choose another output folder" in said
+
+
 def test_the_projection_can_be_looked_at_before_anything_is_written(tmp_path):
     nb, root, out, data = started(tmp_path, "ZCYX", (5, 3, 16, 16))
     assert nb.projection_look.disabled  # no method yet
