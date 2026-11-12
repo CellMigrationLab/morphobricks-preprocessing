@@ -277,7 +277,7 @@ class _CheckSaveScreen:
         questions = list(missing_confirmations(applied, answers, channel_counts=counts))
         extra = [problem] if problem else []
         left = masks_unanswered(answers, self._mask_types())
-        extra += [f"mask {m}: separate objects or regions? (Masks)" for m in left]
+        extra += [f"mask {m}: separate objects, regions or grouped labels? (Masks)" for m in left]
         if len(applied.conditions) > 1:
             extra += [
                 f"what {folder} is compared against (choose, or no comparison)"

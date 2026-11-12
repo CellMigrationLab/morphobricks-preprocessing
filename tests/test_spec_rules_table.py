@@ -65,7 +65,7 @@ def test_the_forbidden_names_are_section_4_7():
 
 def test_the_enumerations_and_the_schema_header_are_the_text():
     mask_rule = next(r for r in table_rows(section("4.5"), "Key") if r[0] == "`representation`")
-    assert set(rules.REPRESENTATIONS) == {"instances", "binary"}
+    assert rules.REPRESENTATIONS == ("instances", "binary", "parent_labels")
     assert all(f"`{value}`" in mask_rule[3] for value in rules.REPRESENTATIONS)
     units = table_rows(section("4.4"), "Key", 2)
     unit_rule = next(r for r in units if r[0] == "`image_type`")

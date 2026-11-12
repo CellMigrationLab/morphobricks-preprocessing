@@ -1,8 +1,10 @@
 """One mask type's question on the *Your masks* screen (a self-contained widget).
 
-"What is this mask?" with two answers and **no default**: *separate objects, each with its own
-number* (``instances``) or *regions: inside or outside* (``binary``), beside the evidence (how
-many images have it, its pixel type, the number of different values in one image, the mask
+"What is this mask?" with three answers and **no default**: *separate objects, each with its own
+number* (``instances``), *regions: inside or outside* (``binary``) or *grouped labels (one value
+per parent, e.g. mitochondria by cell)* (``parent_labels``, Spec experiment-v1 section 4.5b; never
+pre-selected from the mask step's ``grouped`` kind, which is evidence only), beside the evidence
+(how many images have it, its pixel type, the number of different values in one image, the mask
 drawn on that image). The mask ID is the folder name when it is a valid mask ID; otherwise the
 box is empty and says why, and the user types one. Optional *made from* channels are the declared
 labels, offered as toggles once the question is answered. Every answer is saved through the
@@ -20,6 +22,7 @@ from . import notebook_style as ui
 from .mask_answers import (
     BINARY,
     INSTANCES,
+    PARENT_LABELS,
     MaskAnswerRefused,
     mask_of_type,
     proposed_mask_id,
@@ -33,6 +36,7 @@ from .validation import plural
 OPTIONS = [
     ("separate objects, each with its own number", INSTANCES),
     ("regions: inside or outside", BINARY),
+    ("grouped labels (one value per parent, e.g. mitochondria by cell)", PARENT_LABELS),
 ]
 PICTURE = widgets.Layout(width="49%", max_width="256px", border="1px solid #CBD5E1")
 
@@ -181,6 +185,8 @@ class MaskQuestion:
         how = {
             INSTANCES: "each object outlined in its own colour, as you declared",
             BINARY: "the inside tinted, as you declared",
+            PARENT_LABELS: "each group outlined in its own colour, all its pieces alike, as "
+            "you declared",
         }.get(representation or "", "the mask alone in grey: answer the question to draw it")
         where = f"{html.escape(found.image or '')}, {on}{html.escape(channel)} "
         return f"Left: {where}({html.escape(found.plane)}). Right: {how}."
