@@ -257,3 +257,30 @@ def test_ticked_with_z_stacks_the_projection_is_written_as_ome_zarr(tmp_path):
     nb.quick_confirm.click()
     answer_all(nb)
     assert nb.save_experiment() and nb.run().written
+
+
+def test_the_omero_channels_have_what_ome_ngff_0_4_requires(tmp_path):
+    # Review of #287: the OME-NGFF 0.4 image schema requires a ``window`` (start, end, min,
+    # max) and a ``color`` for every omero channel; a label alone is not valid 0.4. They are
+    # display only: white and the pixel type's whole range, never read from the pixels.
+    root, dest = tmp_path / "exp", tmp_path / "copies"
+    write_stacks(root, "TCYX", (2, 3, 16, 20))
+    assert convert_experiment(root, prefill_mapping("TCYX"), dest, store="ome-zarr").written
+    attrs = json.loads((dest / "ctrl/rep1/a.ome.zarr/.zattrs").read_text(encoding="utf-8"))
+    channels = attrs["omero"]["channels"]
+    assert [c["label"] for c in channels] == NAMES
+    for channel in channels:
+        assert channel["color"] == "FFFFFF"
+        assert channel["window"] == {"min": 0, "max": 65535, "start": 0, "end": 65535}
+    meta, _copy = read_copy(dest, "ctrl/rep1/a.ome.zarr")
+    assert meta.channel_names == tuple(NAMES)  # the brick still reads the labels
+    stacks, projected = tmp_path / "stacks", tmp_path / "projected"
+    write_stacks(stacks, "ZCYX", (4, 3, 16, 16))
+    mean = Projection("mean")  # written as 64-bit floats: the float64 range
+    assert convert_experiment(
+        stacks, prefill_mapping("ZCYX"), projected, projection=mean, store="ome-zarr"
+    ).written
+    attrs = json.loads((projected / "ctrl/rep1/a.ome.zarr/.zattrs").read_text(encoding="utf-8"))
+    top = float(np.finfo(np.float64).max)
+    for channel in attrs["omero"]["channels"]:
+        assert channel["window"] == {"min": -top, "max": top, "start": -top, "end": top}

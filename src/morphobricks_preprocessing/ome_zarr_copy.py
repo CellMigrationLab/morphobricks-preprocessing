@@ -15,8 +15,10 @@ confirmed roles, bit for bit; a projected copy's planes are computed as in
 (:class:`.copy_axes.CopyLayout`): the axes by role with their units, the level-0 ``scale`` from
 the pixel sizes (an unknown size is the placeholder 1, named under ``metadata`` /
 ``unknown_scale`` so it is read as unknown, :mod:`.physical_sizes`), the channel names under
-``omero``, and a projected copy's description under ``morphobricks``. Significant bits cannot
-be stated in OME-NGFF 0.4 and are not written (the record says so).
+``omero`` (with the ``color`` and ``window`` OME-NGFF 0.4 requires: white and the pixel type's
+whole range, never read from the pixels), and a projected copy's description under
+``morphobricks``. Significant bits cannot be stated in OME-NGFF 0.4 and are not written (the
+record says so).
 
 A copy's name is the image's with ``.ome.zarr`` in place of its TIFF extension
 (:func:`zarr_copy_name`), so its position ID is unchanged; the record keeps the source's own
@@ -51,6 +53,8 @@ ZARR_COPY_SUFFIX = ".ome.zarr"
 NGFF_VERSION = "0.4"
 _AXIS_TYPES = {"T": "time", "C": "channel", "Z": "space", "Y": "space", "X": "space"}
 BITS_NOT_WRITTEN = "OME-NGFF 0.4 has no field for significant bits"
+OMERO_COLOUR = "FFFFFF"
+"""The ``color`` of every ``omero`` channel (required by OME-NGFF 0.4; display only)."""
 
 
 def zarr_copy_name(relative_path: str) -> str:
@@ -79,7 +83,23 @@ def as_zarr_copy(planned: PlannedCopy) -> PlannedCopy:
     return replace(planned, entry=entry, layout=layout, store=OME_ZARR)
 
 
-def _metadata(layout: CopyLayout, description: str | None) -> dict:
+def _window(dtype: np.dtype) -> dict:
+    """Return an ``omero`` channel window: the pixel type's whole range (display only).
+
+    OME-NGFF 0.4 requires a ``window`` and a ``color`` for every ``omero`` channel. Neither is
+    read from the pixels: the window is the type's own range, so nothing about the data (no
+    contrast, no normalization) is stated, and the same copy stays the same bytes.
+    """
+    if dtype.kind in "iu":
+        low, high = int(np.iinfo(dtype).min), int(np.iinfo(dtype).max)
+    elif dtype.kind == "f":
+        low, high = float(np.finfo(dtype).min), float(np.finfo(dtype).max)
+    else:  # a boolean image: off and on
+        low, high = 0, 1
+    return {"min": low, "max": high, "start": low, "end": high}
+
+
+def _metadata(layout: CopyLayout, dtype: np.dtype, description: str | None) -> dict:
     """Return the group's attributes: OME-NGFF 0.4 multiscales, channel names, description."""
     sizes = {size.role: size for size in layout.sizes}
     axes, scale, unknown = [], [], []
@@ -103,7 +123,13 @@ def _metadata(layout: CopyLayout, description: str | None) -> dict:
         multiscale["metadata"] = {UNKNOWN_SCALE_KEY: unknown}
     attrs: dict = {"multiscales": [multiscale]}
     if layout.channel_names:
-        attrs["omero"] = {"channels": [{"label": name} for name in layout.channel_names]}
+        window = _window(dtype)
+        attrs["omero"] = {
+            "channels": [
+                {"color": OMERO_COLOUR, "label": name, "window": dict(window)}
+                for name in layout.channel_names
+            ]
+        }
     if description:
         attrs["morphobricks"] = {"description": description}
     return attrs
@@ -121,7 +147,7 @@ def _lay_out(target: Path, layout: CopyLayout, dtype: np.dtype, description: str
     array = target / "0"
     array.mkdir()
     _json(target / ".zgroup", {"zarr_format": 2})
-    _json(target / ".zattrs", _metadata(layout, description))
+    _json(target / ".zattrs", _metadata(layout, dtype, description))
     rows, cols = layout.plane_shape
     stored = dtype.newbyteorder("<") if dtype.itemsize > 1 else dtype
     _json(
@@ -256,6 +282,7 @@ def write_projected_zarr(
 __all__ = [
     "BITS_NOT_WRITTEN",
     "NGFF_VERSION",
+    "OMERO_COLOUR",
     "OME_TIFF",
     "OME_ZARR",
     "STORES",

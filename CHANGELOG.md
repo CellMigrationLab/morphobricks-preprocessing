@@ -123,7 +123,8 @@ experiment-v1 §4.5, §4.5a-§4.5c, §7, §8; ADR 0002 resolver contract version
   nothing). Once the axis roles are confirmed, the Axes step offers **Write the OME-Zarr copy
   and continue with it**: `convert_experiment(store="ome-zarr")` writes every image that is
   read as `<position>.ome.zarr` (OME-NGFF 0.4, written directly: uncompressed, one chunk per
-  plane, the same bytes for the same source) into `<output>/ome_zarr`, with the conversion
+  plane, the same bytes for the same source; each `omero` channel has the `color` and
+  `window` OME-NGFF 0.4 requires, white and the pixel type's whole range) into `<output>/ome_zarr`, with the conversion
   record, and the copies are opened as the experiment. With Z-stacks the projected copies are
   written as OME-Zarr. The record's entry of such a copy has the copy's path as
   `relative_path` and the new key `source_relative_path`; records without OME-Zarr copies are
