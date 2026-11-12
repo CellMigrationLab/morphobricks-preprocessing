@@ -9,7 +9,9 @@ asks for and gives back an immutable :class:`.run_inputs_request.ResolvedRequest
 - every requested mask by its declared ID, refused as ``A_SCOPE_INCOMPLETE`` when some images
   have no file of it, ``A_MASK_UNCHECKED`` when the mask step has not read every file, and
   ``A_MASK_NOT_INSTANCES`` for a non-instances mask used as objects without the recorded
-  ``binary_mask_policy`` (experiment-v1 sections 4.5a, 4.5c, 8);
+  ``binary_mask_policy`` and for a ``parent_labels`` mask used as objects, always
+  (experiment-v1 sections 4.5a, 4.5b, 4.5c, 8); a ``parent_labels`` region for a consumer
+  without ``parent_labels_support`` is selected with ``conversion = "parent_labels_as_area"``;
 - ``rgb`` units refused as ``A_RGB_NOT_SUPPORTED`` unless the consumer declares ``rgb_support``
   (section 4.4b), and a Z-volume refused as ``A_VOLUME_NOT_SUPPORTED`` unless it declares
   ``volume_support``;
@@ -46,6 +48,7 @@ from .run_inputs_request import (
     ResolvedRequest,
     check_request,
     coverage,
+    mask_conversion,
     mask_representation_refusal,
     plane_selections,
     rgb_refusal,
@@ -162,7 +165,9 @@ class ResolvingInputs:
                 description.masks[m.mask_id].representation,
                 m.role,
                 CHECKED,
-                m.binary_mask_policy,
+                mask_conversion(
+                    m, description.masks[m.mask_id].representation, request.capabilities
+                ),
             )
             for m in request.masks
         )

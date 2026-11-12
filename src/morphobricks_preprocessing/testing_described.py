@@ -145,11 +145,19 @@ def _write_image(path: Path, unit: Unit, seed: int) -> None:
 
 
 def _write_mask(path: Path, representation: str) -> None:
-    """Write a 2-D mask: two labelled squares (``instances``), else one region of 1."""
+    """Write a 2-D mask for its declared representation.
+
+    ``instances``: two labelled squares; ``parent_labels``: two groups (values 1 and 2) of two
+    separate squares each; ``binary``: one region of 1.
+    """
     labels = np.zeros((IMAGE_SIZE, IMAGE_SIZE), np.uint8)
     labels[1:3, 1:3] = 1
     if representation == "instances":
         labels[-3:-1, -3:-1] = 2
+    elif representation == "parent_labels":
+        labels[1:3, -3:-1] = 1
+        labels[-3:-1, -3:-1] = 2
+        labels[-3:-1, 1:3] = 2
     path.parent.mkdir(parents=True, exist_ok=True)
     tifffile.imwrite(path, labels, photometric="minisblack", metadata={"axes": "YX"})
 
@@ -277,7 +285,8 @@ def make_described_run(
         The description: its bytes or text (published unchanged) or a ``Description``.
     masks
         IDs of the description's masks to write, one file per image and ID (instances: two
-        labelled squares; binary: one region of 1s). None by default.
+        labelled squares; parent_labels: two groups of two separate squares; binary: one
+        region of 1s). None by default.
     mask_images
         The images that get the masks, as relative paths (:func:`described_images`), for a
         run whose masks cover a declared subset (experiment-v1 §4.5: progressive

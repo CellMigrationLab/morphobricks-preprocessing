@@ -102,7 +102,11 @@ FIELDS = {
         ("device", "str"),
     ],
     MaskRequest: [("mask_id", "str"), ("role", "str"), ("binary_mask_policy", "str | None")],
-    Capabilities: [("rgb_support", "bool"), ("volume_support", "bool")],
+    Capabilities: [
+        ("rgb_support", "bool"),
+        ("volume_support", "bool"),
+        ("parent_labels_support", "bool"),
+    ],
     ResolvedRequest: [
         ("selections", "tuple[FovSelection, ...]"),
         ("refusals", "tuple[Refusal, ...]"),
@@ -206,7 +210,8 @@ def test_test_run_helper_signatures_are_pinned(helper):
 
 
 def test_the_resolver_names_are_exported_and_versioned():
-    assert package.RESOLVER_VERSION == 1
+    assert package.RESOLVER_VERSION == 2  # 2: parent-label masks (Spec ADR 0002)
+    assert package.PARENT_LABELS_AS_AREA == "parent_labels_as_area"
     assert COVERAGE == ("full", "partial", "unavailable")
     for cls in [*FIELDS, Fov]:
         if cls is not CleanRun:
