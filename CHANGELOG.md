@@ -110,6 +110,8 @@ experiment-v1 §4.5, §4.5a-§4.5c, §7, §8; ADR 0002 resolver contract version
   of `convert --project`) into `<output>/projected_<method>[_z<start>-<stop>]` and opens them
   as the experiment (scanned and checked again; nothing is confirmed for the user). The
   viewer has the **z** and **t** sliders on every step; a time-lapse needs nothing new.
+  The method and the slices are asked again after every folder check: a choice made for one
+  folder is never carried to another (review of #286).
 - **3-D kept compatible.** The original stacks are only read and stay recorded: the
   conversion record names their folder and, per image, the path, fingerprint, content SHA-256,
   depth axis and slices used, and a run on the copies records that record
