@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import traceback
 from collections.abc import Callable
 
 import ipywidgets as widgets
@@ -52,7 +53,8 @@ class _AxisPreview:
         (:meth:`_confirm_step`). The widgets' state is sent to the page as it is set, so the
         line is seen while the work runs. Afterwards the line is cleared and the button given
         back the state the answers give it (:meth:`_after_working`). A disabled button does
-        nothing.
+        nothing. An unexpected failure part-way gives the button back too, and says what
+        failed where it is seen (:meth:`_failure_line`), the full report in Technical details.
         """
         if button.disabled:
             return None
@@ -61,14 +63,36 @@ class _AxisPreview:
         self._working_on = button  # it stays disabled, saying Working…, until the end
         wait = self._confirm_wait = Wait(progress)
         wait.start(WORKING, len(CONFIRM_STEPS))
+        failed: str = ""
         try:
             return action()
+        except Exception as exc:  # unexpected failures still get a readable message
+            self.log.lines.append(traceback.format_exc())
+            failed = ui.status(
+                "error",
+                "The confirmation stopped because of an unexpected problem.",
+                [
+                    f"{type(exc).__name__}: {exc}",
+                    "Open Technical details for the full report. Click the button again; "
+                    "once the roles are confirmed, Change axis roles takes them back.",
+                ],
+            )
+            return None
         finally:
             self._confirm_wait = self._working_on = None
             progress.value = ""
             button.description, button.icon = saved
             button.disabled = False
-            self._after_working(button)
+            try:
+                self._after_working(button)
+            finally:
+                if failed:
+                    self._failure_line(progress).value = failed
+                    self._show_log()
+
+    def _failure_line(self, progress: widgets.HTML) -> widgets.HTML:
+        """Return the line that says a failure: the click's own, where it is seen."""
+        return progress
 
     def _after_working(self, button: widgets.Button) -> None:
         """Give the confirmation buttons back the state the step's answers give them."""

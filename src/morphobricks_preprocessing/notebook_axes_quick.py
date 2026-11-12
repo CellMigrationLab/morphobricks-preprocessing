@@ -190,6 +190,12 @@ class _QuickAxes:
         if button is getattr(self, "quick_confirm", None):
             self._refresh_quick_axes(drawn=True)  # its state, from the roles and the example
 
+    def _failure_line(self, progress: widgets.HTML) -> widgets.HTML:
+        """Say a failure of *Confirm these axes* under *Confirm axis roles* once its card hides."""
+        if progress is getattr(self, "quick_progress", None) and not ui.is_visible(self.quick_card):
+            return self.confirm_progress
+        return super()._failure_line(progress)
+
     def _confirm_quick_axes(self) -> bool:
         """Confirm the offered roles: the preview checked, then the roles, as the role boxes do.
 

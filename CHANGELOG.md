@@ -15,6 +15,9 @@ v0.5.1: no run before v0.5.1 is read.)
   says *Working…*, and the progress line of the folder check appears under it before any of
   the work: *Working…*, then the 5 parts of the confirmation with a bar (n of 5, what it does
   now). Both clear when it is done.
+  If something fails part-way, the button is given back and the error is said in red where
+  it is seen (under **Confirm axis roles** once the one-click card has gone), with the full
+  report in *Technical details*; nothing stays on *Working…*.
 - **Axes: the confirmation is faster.** It read every channel of every folder's first image for
   the per-folder image-type rows, which are folded under *Set per folder…* (28 folders of
   3 × 2048² images: 93 plane reads, 84 of them for those rows), and rebuilt the pairing editor

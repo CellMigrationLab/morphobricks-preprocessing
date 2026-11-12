@@ -107,6 +107,32 @@ def test_taking_the_confirmation_back_shows_working_too(exp, monkeypatch):  # no
     assert WORKING in _text(lines[0]) and lines[-1] == ""
 
 
+@pytest.mark.parametrize("path", ["quick", "roles"])
+def test_a_failure_part_way_gives_the_button_back_and_shows_the_error(exp, path):  # noqa: F811
+    nb = stepper(*exp)
+
+    def boom():
+        raise RuntimeError("the disk went away")
+
+    nb._refresh_run_step = boom  # part 4 of 5: after the roles are confirmed
+    if path == "quick":
+        button = nb.quick_confirm
+    else:
+        nb.preview_checked.set(True)
+        button = nb.confirm_button
+    button.click()
+    assert not button.disabled and WORKING not in button.description  # never stuck
+    assert WORKING not in nb.quick_confirm.description + nb.confirm_button.description
+    shown = [p for p in (nb.quick_progress, nb.confirm_progress) if p.value]
+    assert len(shown) == 1
+    (said,) = shown
+    assert "mb-error" in said.value
+    assert "RuntimeError: the disk went away" in _text(said.value)
+    card = nb.quick_card if said is nb.quick_progress else nb.axis_box
+    assert ui.is_visible(card)  # said where it is seen, not under a hidden card
+    assert "the disk went away" in nb.details.value  # the full report in Technical details
+
+
 def test_a_disabled_confirmation_does_nothing_and_shows_no_progress(exp):  # noqa: F811
     nb = stepper(*exp)
     assert nb.confirm_button.disabled  # the example is not ticked
