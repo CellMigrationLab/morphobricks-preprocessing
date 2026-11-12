@@ -1,4 +1,4 @@
-"""What the conversion record says about one projected copy (issue #176, record version 3).
+"""What the conversion record says about one projected copy (issue #176, record version 4).
 
 A projected copy is a 2-D image made from a Z-stack by :mod:`.projection`. Its record entry
 carries a :class:`ProjectionEntry`: the source, the Z axis it had, the slices used, the
