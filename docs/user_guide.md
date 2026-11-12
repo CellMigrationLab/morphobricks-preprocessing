@@ -926,9 +926,9 @@ Run the notebook or `run` again after adding, changing or removing images:
 - changing only the image type reads nothing again: the histograms are the same for both
   types, and only the manifest records the new type.
 
-**After upgrading from a version before v0.5.1:** its run manifest is not read (only version 4
-is), so the first run recomputes every row and reuses no recorded input: give the axis roles,
-masks and exclusions again. Later bricks refuse such older runs until they are run again.
+**After upgrading from an earlier version (v0.5.1 or before):** its run manifest is not read
+(only version 5 is, since v0.5.2), so the first run recomputes every row and reuses no recorded
+input: give the axis roles, masks and exclusions again. Later bricks refuse such older runs until they are run again.
 
 Run the brick again after adding images or masks before using a later brick: later bricks
 read the images and masks this brick's run recorded, and refuse an experiment holding images

@@ -6,10 +6,127 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
-## Unreleased
+## v0.5.2 (12 November 2026)
 
-**Parent-label (grouped) masks** (MorphoBricks-Spec PR #28, merge `69a58b3`: ADR 0001 PL1,
-experiment-v1 §4.5, §4.5a-§4.5c, §7, §8; ADR 0002 resolver contract version 2)
+Acquisitions may now have different channels (Stage 3 S3.3, owner decision of 11 November
+2026): every table and check names a channel by its canonical ID, never by its position.
+Parent-label (grouped) masks are described and handed to the bricks (resolver contract
+version 2). The notebook has one image viewer, proposes the axes at the quick scan, saves
+Z-stacks as recorded projections and can save an OME-Zarr copy. Normalization is pinned at
+v0.5.0. As in v0.5.1 there is no backward compatibility before the first pipeline release
+(MorphoBricks-Spec ADR 0002 AR10): a v0.5.1 run is refused, never converted.
+
+### Breaking
+
+- **Run manifest version 5; version 4 (every v0.5.1 run) is refused.** `read_manifest` and
+  `RunInputs.open` raise `ManifestFormatError` ("Manifest version '4' is not supported … Run
+  preprocessing again …"); the fix is to run preprocessing again into the same output folder,
+  which replaces the refused manifest and reads every image again (nothing is reused). Each
+  file entry records its `channel_ids` (part of the row key), a narrow-range entry names its
+  channel by ID, and `experiment_description` records each unit's `channels` and the
+  `channel_coverage` of every biological repeat (`full`, `partial`, `unavailable`).
+- **`plane_histograms.csv` schema version 5** (normalization v0.5.0, Spec ADR 0003): one row
+  per plane, the presence column `channels`, the per-channel columns named by channel ID
+  (`Histogram_Count_DNA_00042`) for every declared channel, an absent channel blank (never
+  zero), centred tail moments. A version 4 table is refused (`RunInputsError`) and recomputed by
+  the next run. The histogram numbers of present channels are unchanged.
+- **Resolver contract version 2** (`RESOLVER_VERSION = 2`, Spec ADR 0002):
+  `Capabilities.parent_labels_support` (False by default; a value that is not a bool is a
+  `ValueError`). A `parent_labels` mask requested as a region comes back to a consumer without
+  the capability with `MaskSelection.conversion = "parent_labels_as_area"`
+  (`PARENT_LABELS_AS_AREA`); as objects it is `A_MASK_NOT_INSTANCES` with or without the
+  capability, and a `binary_mask_policy` on it is a `ValueError`. `instances` and `binary`
+  selections are unchanged.
+- **Mask step: pieces counted 8-connected; `mask_relationships.json` report version 4.** A
+  label whose pieces touch only at a corner now counts one piece, so `median_pieces_per_label`
+  and the suggested kind can change for such masks. Nothing reads the report back.
+- **Channels by ID in the Python API:** `IntensityReport.channel_ids` (was `channel_count`),
+  `flagged_images`, `shifted_repeats`, `repeat_boxes` and the group statistics take a channel
+  ID (`"DNA"`), not an index; `group_summaries` refuses a channel only some planes of a group
+  have (`ChannelScopeIncompleteError`, `A_SCOPE_INCOMPLETE`) unless
+  `partial_channels="planes_with_channel"`; `RunLabels.channel` takes an ID and
+  `RunLabels.channels` is removed.
+- **Spec re-pinned to `69a58b3`:** notebook answer drafts saved under the v0.5.1 pin
+  (`cc9820f`) are not carried over (`spec_commit_mismatch`); a published `morphobricks.toml`
+  is unaffected.
+
+### Added
+
+- **Different channel lists per acquisition.** `different_channel_counts` compares the images
+  of one folder only; the run checks each image against its own unit (`R_CHANNEL_COUNT_MISMATCH`,
+  `R_UNIT_NOT_HOMOGENEOUS`); new warning `partial_channel_coverage`. Units of different image
+  types (RGB beside channel units, Spec `v29`) stay refused
+  (`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`).
+- **`representation = "parent_labels"`** (Spec ADR 0001 PL1): the notebook's *Your masks*
+  offers *grouped labels (one value per parent, e.g. mitochondria by cell)*, never pre-selected.
+- **Z-stacks saved as recorded projections from the Axes step** (#176): maximum, mean or sum
+  (no default) and the slices, written with `convert_experiment(projection=...)`. The original
+  stacks are only read and stay recorded for 3-D tools (`RunInputs.projection`).
+- **OME-Zarr copy:** `convert_experiment(store="ome-zarr")` (OME-NGFF 0.4, uncompressed, the
+  same bytes for the same source) and the notebook option **Also save a copy as OME-Zarr (in
+  the output folder)**. The conversion record's entry of such a copy gains
+  `source_relative_path` (record version 3 kept; other records byte for byte as before). New
+  refusal `copy_names_collide`.
+- **Compare groups** asks before pooling a partly present stain (*Summarise only the planes
+  that have it?*; No by default).
+
+### Changed
+
+- **Normalization pinned at v0.5.0** (`@v0.5.0`, tag on `1291b09`).
+- **Notebook (owner's test of v0.5.1):** one image viewer for every step (dropdowns that narrow
+  each other, **t** and **z** sliders, every channel side by side); the axes are proposed at
+  the quick scan (**Axes of this image**) and confirmed for the whole experiment on Axes;
+  differing pixel sizes in one line with two explicit choices; pixel size as **X** and **Y**
+  inputs with **same for X and Y**; the check's and the run's report formatted; run messages as
+  short cards; on Colab, cell 3 calls `google.colab.output.no_vertical_scroll()`.
+- `plan_conversion` takes `projection`, `masks_folder` and `store` as keywords only.
+
+### Fixed
+
+- A channel whose saved header name was lost is confirmed with one click on Channels
+  (**Yes, this header name changed**) instead of a refusal with no way forward (#281, #282).
+- A removal or rename answer confirms only the change it answers (#279, #280).
+- A unit re-tagged in another channel order is confirmed with **Yes, these are the new
+  positions** (#258, #278); CLI `describe` no longer asks to confirm a repeat again for a
+  header-only change.
+- The axes step's "Another image, or other planes" could not be used in Google Colab (#284).
+- Notebook cleanups (#252): the strict reader's warnings are listed on *Check and save*, and
+  more.
+
+### Migration from v0.5.1
+
+**Users.** Open the v0.5.2 notebook and run again into the same output folder: the saved
+experiment description is reused, every image is read again and the v0.5.1 output (manifest
+version 4, table version 4) is replaced. Answers not yet saved under v0.5.1 are not carried
+over: answer the steps again. On the command line, `run` with the same folders does the same.
+
+**Bricks** (each is unaffected until its pin moves to v0.5.2):
+
+| v0.5.1 | v0.5.2 |
+|---|---|
+| `manifest_version` `"4"` | `"5"`: refuse `"4"` (and any other) with the fix "run preprocessing again"; never convert. `RunInputs.open` already refuses it |
+| `plane_histograms.csv` schema 4, columns by C index | Schema 5 through normalization v0.5.0 (`read_plane_histogram_table`): columns by channel ID, the presence column `channels`, an absent channel blank; a version 4 table is refused |
+| A run's channels were one list for the experiment | Read each file entry's `channel_ids` (and the unit's `channels`, the repeat's `channel_coverage`); never map a channel by its position; a channel absent from a plane is absent, never zero |
+| `RESOLVER_VERSION == 1`, `Capabilities(rgb_support, volume_support)` | `2`, with `parent_labels_support`: declare it only when the consumer measures grouped labels itself |
+| A region mask was `instances` or `binary` | Also `parent_labels`: on `MaskSelection.conversion == "parent_labels_as_area"` (`PARENT_LABELS_AS_AREA`) measure every non-zero pixel as inside, record the marker with the mask ID in the run's provenance and show it; never split or relabel. As objects it is `A_MASK_NOT_INSTANCES` |
+| `IntensityReport.channel_count`; `flagged_images(0)`, `shifted_repeats(0)`, `repeat_boxes(report, 0)` | `IntensityReport.channel_ids`; the same calls with `"DNA"` |
+| `group_summaries(...)` pooled whatever planes had a channel | Refuses a partly present channel (`ChannelScopeIncompleteError`) unless `partial_channels="planes_with_channel"` |
+| `RunLabels.channels`, `RunLabels.channel(index)` | Removed; `RunLabels.channel("DNA")` (the table names the channels) |
+| `plan_conversion(root, ..., projection, masks_folder)` positional | Keywords: `projection=`, `masks_folder=`, `store=` |
+| `mask_relationships.json` report version 3, 4-connected pieces | Report version 4, 8-connected (CellPatcher's `BINARY_MASK_CONNECTIVITY = 2`) |
+
+### Release v0.5.2: the shipped notebook
+
+- `RELEASE_TAG` `v0.5.2`, `current_version` `0.5.2`, and `RELEASE_REF` the v0.5.2 preparation
+  commit (commit A of the release PR); cell 3 still calls `PreprocessingNotebook()`
+  (`test_notebook_file.RELEASE_CALLS` records the pair).
+- `docs/colab-release-check.md` walks the redesigned seven steps, the viewer, the projection and
+  the OME-Zarr copy.
+
+### Parent-label (grouped) masks (#289)
+
+MorphoBricks-Spec PR #28, merge `69a58b3`: ADR 0001 PL1, experiment-v1 §4.5, §4.5a-§4.5c, §7,
+§8; ADR 0002 resolver contract version 2.
 
 - **Spec re-pinned to `69a58b3`** with the Spec's `tools/vendor.py` (`--check` identical):
   `v38`, `v39` (`parent_labels`) accepted; `i136`, `i137` (`E_ENUM`), `i138`, `i139`
@@ -34,8 +151,9 @@ experiment-v1 §4.5, §4.5a-§4.5c, §7, §8; ADR 0002 resolver contract version
   suggested kind, can change for such masks. Nothing reads the report back.
 - `R_MASK_CONTRADICTS_REPRESENTATION`'s action names `parent_labels` beside `instances`.
 
-**Stage 3 S3.3: different channels per acquisition; `plane_histograms.csv` schema version 5**
-(owner decision of 11 November 2026; Spec roadmap S3.3, ADR 0003)
+### Stage 3 S3.3: different channels per acquisition; `plane_histograms.csv` schema version 5 (#288)
+
+Owner decision of 11 November 2026; Spec roadmap S3.3, ADR 0003.
 
 - **Breaking: normalization v0.5.0** (`@v0.5.0`). The histogram table is schema version 5: one
   row per plane, the presence column `channels`, the per-channel columns of every declared
@@ -61,7 +179,7 @@ experiment-v1 §4.5, §4.5a-§4.5c, §7, §8; ADR 0002 resolver contract version
 - Histogram numbers of present channels are unchanged (counts, extrema, binning limits, pixel
   counts and tail moments identical on `v13`, `v01` and simulated uint8/uint16/float32 trees).
 
-**Changed (notebook, owner's test of v0.5.1; no result or published file changes)**
+### Notebook redesign iteration 3 (#284-#287; owner's test of v0.5.1; no result or published file changes)
 
 - **One image viewer for every step.** *Images*, *Axes*, *Channels* and *Check and save* show
   images through one component (`notebook_viewer.ImageViewer`) and one reader
@@ -134,7 +252,7 @@ experiment-v1 §4.5, §4.5a-§4.5c, §7, §8; ADR 0002 resolver contract version
   `google.colab.output.no_vertical_scroll()`, so the app is not shown in an output frame that
   scrolls on its own. Nothing changes elsewhere.
 
-**Fixed**
+### Fixed: channel re-confirmations and small cleanups (#278, #280, #282)
 
 - **Notebook: a lost header name is confirmed with one click on Channels (#281).** A saved
   channel that loses a header name (the images now give another name or none, or the folder
