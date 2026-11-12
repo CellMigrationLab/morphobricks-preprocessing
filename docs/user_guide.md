@@ -365,6 +365,23 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    image, for the table this run wrote; it writes nothing) and the report (formatted, with the
    plain text of `discovery_report.txt` folded last).
 
+**Time-lapses and Z-stacks.** A time-lapse goes through the steps as it is: each time point
+is a plane of its own, and the viewer's **t** slider shows any of them. A Z-stack is refused
+(`z_stack_not_supported`: MorphoBricks analyses 2-D planes), and the Axes step then shows
+**Z-stacks: save the dataset as projections**. Look at the stack with the viewer's **z**
+slider, choose the **Projection** (maximum, mean or sum; there is no default) and, if not all,
+the slices used; **Show this projection of the image above** draws it for looking. After
+**Yes, the example looks right**, **Write the projected copies and continue with them** writes
+a 2-D copy of every image, with the conversion record, into the output folder
+(`<output>/projected_max`, or for example `projected_mean_z1-4`), exactly as `convert
+--project` does (§5), and opens the copies as the experiment: they are scanned and checked
+again, a line says what they are copies of, and you confirm their axes and go on. Masks are
+never projected. The original stacks are only read, never changed or deleted, and the record
+lists each one (folder, path, fingerprint, SHA-256, slices used). **Keep the 3-D stacks for
+3-D-capable tools (fiberfeatures)** is shown greyed out: 3-D analysis is not enabled yet.
+When you open the stacks again with the same output folder, the copies written earlier are
+offered (**Continue with the copies written earlier**).
+
 Folders may have different numbers of channels (for example three stains everywhere and a
 fourth only in `Biological_repeat_2`): on **Channels** you give each label once and tag each
 folder's channels; the same label means the same stain in every folder. A stain a folder does

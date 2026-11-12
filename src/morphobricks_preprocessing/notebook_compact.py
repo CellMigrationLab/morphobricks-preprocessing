@@ -77,6 +77,7 @@ class _CompactPages:
             self.check_button,
             self.check_blocker,
             self.folder_status,  # the check's progress, right under the button clicked
+            self.copy_note_images,
             self.scan_axes_line,
             self.folder_lock.card,
             self.folder_tiles,
