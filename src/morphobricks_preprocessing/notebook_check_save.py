@@ -18,7 +18,6 @@ again here only.
 
 from __future__ import annotations
 
-import html
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -31,7 +30,7 @@ from .axis_review import review_axes
 from .description import DescriptionError
 from .description_candidate import CandidateCheck, check_candidate
 from .description_removal import Removal, reconfirmations
-from .description_review import comparisons, replicates, short_names
+from .description_review import comparisons, short_names
 from .draft import DraftError
 from .draft_answers import (
     RepeatAnswer,
@@ -43,28 +42,20 @@ from .draft_format import DraftFileError
 from .fingerprint import changed_since_check
 from .mask_answers import masks_unanswered
 from .name_issues import NAME_CODES
-from .notebook_channel_thumbs import Thumb
 from .notebook_check_view import (
-    SAME_WAY,
-    SAME_WAY_HELP,
     blocked_html,
     changes_html,
     checks_html,
     comparisons_html,
-    member_html,
-    missing_html,
     names_html,
     removal_text,
-    replicate_title,
     run_stop_html,
     saved_html,
     todo_html,
 )
 from .notebook_description import _with_ids
 from .notebook_render import blocked_line
-from .notebook_row_fold import RowFold, row_status
-from .notebook_thumb_tile import ThumbTile, show_detail
-from .preview_crop import TilePictures
+from .notebook_replicates import _ReplicateBoxes
 from .published_answers import kept_date
 from .run import OutputLockedError
 from .run.description_file import PublicationRefused
@@ -79,15 +70,7 @@ INTRO = (
 FOLDED = ("design_card", "names_card", "references_card", "channels_box", "masks_box")
 
 
-def _enlarge(detail: widgets.VBox, title: str, found: TilePictures | Thumb) -> None:
-    """Show a folder's enlarged picture in ``detail``, or why there is none."""
-    if isinstance(found, Thumb):
-        show_detail(detail, title, None, found.note)
-    else:
-        show_detail(detail, title, found, "")
-
-
-class _CheckSaveScreen:
+class _CheckSaveScreen(_ReplicateBoxes):
     """The *Check and save* screen, its save click and the folded reopening."""
 
     def _build_check_save(self) -> None:
@@ -318,92 +301,6 @@ class _CheckSaveScreen:
         published = state.description if state is not None else None
         _, confirmations = self._publication_terms(state, candidate)
         return check_candidate(candidate, self.preflight, roles, published, confirmations)
-
-    def _show_replicates(self, applied: object, answers: object, labels: list[str]) -> None:
-        """One box per replicate: folders, pictures, channels, and its own question."""
-        boxes, toggles = [], {}
-        units, counts = self._reopen_units(), self._channel_counts()
-        state = self._published()
-        saved_dates = (
-            {}
-            if state is None
-            else {key: r.confirmed_on for key, r in state.description.repeats.items()}
-        )
-        views = replicates(applied, answers)
-        for view in views:
-            toggle = ui.ConfirmToggle(
-                SAME_WAY,
-                SAME_WAY_HELP,
-                "Yes, the same way",
-                f"Confirmed on {view.confirmed_on}: one replicate." if view.confirmed_on else "",
-                "Undo",
-            )
-            toggle.set(view.confirmed_on is not None, notify=False)
-            toggle.observe(lambda value, label=view.label: self._same_way(label, value))
-            toggles[view.label] = toggle
-            members = [
-                widgets.HBox(
-                    [
-                        self._member_picture(
-                            (m.condition, m.source_repeat), self.replicates_detail
-                        ),
-                        widgets.HTML(member_html(m, labels, counts)),
-                    ]
-                )
-                for m in view.members
-            ]
-            body = [widgets.HTML(replicate_title(view)), *members, widgets.HTML(missing_html(view))]
-            box = widgets.VBox(
-                [*body, toggle.widget],
-                layout=widgets.Layout(
-                    border="1px solid #E2E8F0", padding="8px 12px", margin="0 0 10px 0"
-                ),
-            )
-            keys = [u.key for m in view.members for u in m.units]
-            # A box with a warning (an acquisition lacking a label) never folds, nor one whose
-            # date is not the published one (publication's R_CONFIRMED_ON_CHANGED names it).
-            settled = (
-                view.confirmed_on is not None
-                and not view.missing
-                and view.confirmed_on == saved_dates.get(view.label, view.confirmed_on)
-            )
-            boxes.append((box, row_status(units, keys, settled)))
-        self.same_way = toggles
-        shown = (
-            self._channel_thumbs,
-            [[(m.condition, m.source_repeat) for m in v.members] for v in views],
-        )
-        if shown != getattr(self, "_replicates_shown", None):  # other folders or pictures (#252)
-            self.replicates_detail.children = []  # an Enlarge of the boxes before is closed
-        self._replicates_shown = shown
-        if not hasattr(self, "_replicate_fold"):
-            self._replicate_fold = RowFold("replicate")
-        self.replicates_box.children = self._replicate_fold.arrange(boxes)
-
-    def _member_picture(self, key: tuple[str, str], detail: widgets.VBox) -> widgets.Widget:
-        """Return the picture of a folder's first image (channel 1, or in colour when RGB).
-
-        A large image gets its crop at native pixels beside it; **Enlarge** shows both in
-        ``detail``.
-        """
-        thumbs, layouts = self._channel_thumbs, self._channel_layouts
-        layout = next((u for u in layouts if u.key[:2] == key), None)
-        if thumbs is None or layout is None:
-            return widgets.HTML(
-                "<div class='mb-help' style='width:120px'>picture once the axis roles are "
-                "confirmed</div>"
-            )
-        colour = self.channel_types.shown(layout) == "rgb"
-        found = thumbs.tile(layout, colour)
-        if isinstance(found, Thumb):
-            return ThumbTile(None, problem=found.note, width="120px").widget
-        title = f"<b>{html.escape('/'.join(key))}</b> · {html.escape(layout.image or '')}"
-        return ThumbTile(
-            found,
-            colour=colour,
-            enlarge=lambda: _enlarge(detail, title, thumbs.enlarged(layout, colour)),
-            width="120px",
-        ).widget
 
     def _folder_cell(self, key: tuple[str, str], text: str) -> widgets.Widget:
         """Return a folder of the pairing card, with its picture."""

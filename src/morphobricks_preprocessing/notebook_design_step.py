@@ -24,17 +24,19 @@ a choice never replaces the control the user is using.
 from __future__ import annotations
 
 import html
+import traceback
 
 import ipywidgets as widgets
 
 from . import notebook_style as ui
-from .notebook_description import _updated
+from .notebook_description import _updated, _with_ids
 from .notebook_description_view import pill
 from .notebook_render import blocked_line
 from .notebook_values import natural_key
 from .validation import plural
 
 CONFIRM_LABEL = " Looks right: confirm the design"
+CONFIRMING = "Confirming the design…"
 HELP = (
     "Rows are conditions, columns are biological repeats, and a cell is the folder of that "
     "repeat. The names are the folder names and nothing is compared, until you say otherwise."
@@ -81,7 +83,7 @@ class _DesignStep:
             ],
             visible=False,
         )
-        self.design_confirm.on_click(lambda _: self._confirm_design())
+        self.design_confirm.on_click(lambda _: self._design_clicked())
         self.design_change.on_click(lambda _: self._change_design())
 
     # State -------------------------------------------------------------------------------
@@ -110,8 +112,45 @@ class _DesignStep:
 
     # The click ---------------------------------------------------------------------------
 
+    def _design_clicked(self) -> None:
+        """Run the confirmation behind a busy button, then say what came of it.
+
+        Owner (12 November 2026): the click must never look as if nothing happened. The button
+        is disabled and says *Confirming…* and a working line shows before any of the work
+        (the widgets' state is sent to the page as it is set); the result line then says that
+        the design is confirmed, or why not. An unexpected failure is said there too, the full
+        report in Technical details, and the button is given back.
+        """
+        button = self.design_confirm
+        if button.disabled:
+            return
+        saved = (button.description, button.icon)
+        self._busy(button, CONFIRMING)
+        self.design_result.value = ui.working(CONFIRMING)
+        try:
+            self._confirm_design()
+        except Exception as exc:  # unexpected failures still get a readable message
+            self.log.lines.append(traceback.format_exc())
+            self._show_log()
+            self._design_problem = ui.status(
+                "error",
+                "The design was not confirmed: an unexpected problem stopped it.",
+                [
+                    f"{type(exc).__name__}: {exc}",
+                    "Open Technical details for the full report, then click the button again.",
+                ],
+            )
+        finally:
+            button.description, button.icon = saved
+            button.disabled = False
+            self._refresh_design_step()
+
     def _confirm_design(self) -> bool:
         """Adopt the design as shown: every ID, and "no comparison" where nothing was chosen.
+
+        One answer, saved once: the IDs and the comparisons together, so the pages that follow
+        the answers are refreshed once (they were refreshed three times, which made the click
+        slow on large experiments).
 
         Returns
         -------
@@ -122,23 +161,27 @@ class _DesignStep:
         if self.draft is None or not self._in_steps():
             return False
         self._names_refusal = self._draft_note = self._design_problem = ""
-        if not self._confirm_ids():
-            self._design_problem = self._names_refusal
-            self.design_edit.selected_index = 0
-            self._refresh_design_step()
-            return False
-        answers = self.draft_answers
+        wanted = self._wanted_ids()
+        answers = _with_ids(self.draft_answers, wanted)
         if len(self.draft.conditions) > 1:
             for condition in sorted(self.draft.conditions):
                 if self._chosen_reference(condition) is None:
                     answers = _updated(answers, "conditions", condition, reference="")
-        if answers != self.draft_answers and not self._answer(answers):
-            self._design_problem = ui.status("error", "Not taken.", [str(self._refusal)])
+        if not self._adopt_ids(wanted, answers):
+            self._design_problem = self._names_refusal
+            self.design_edit.selected_index = 0
             self._refresh_design_step()
             return False
-        self._refresh_description()
         self._refresh_design_status()
-        return self._design_confirmed()
+        if not self._design_confirmed():
+            self._design_problem = ui.status(
+                "warn",
+                "The design is not confirmed yet.",
+                ["Read the names and comparisons under Edit names or pairing, then click again."],
+            )
+            self._refresh_design_step()
+            return False
+        return True
 
     def _change_design(self) -> None:
         """Take the IDs back so the names can be edited (as *Change the IDs* does)."""

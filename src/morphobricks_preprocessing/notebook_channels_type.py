@@ -189,10 +189,21 @@ class ImageTypeRows:
         return sum(1 for u in self.types.layouts if u.usable and self.types.saved(u.key))
 
     def refresh(self) -> None:
-        """Rebuild the rows from the saved answers (without pictures while they are folded)."""
-        self.types.open(self.types.layouts)  # a fresh set of cells, built from the answers
-        self.pictured = not self.folded()
-        self._build_rows()
+        """Rebuild the rows from the saved answers (without pictures while they are folded).
+
+        The rows are rebuilt only when something they show changed: the folders, a saved
+        type, the pictures or the saved experiment's statuses. Every answer elsewhere (a
+        name, a pairing, the design's confirmation) refreshes this page too, and rebuilding
+        one row per folder each time made those clicks slow on large experiments (owner,
+        12 November 2026: *Looks right: confirm the design* seemed to do nothing).
+        """
+        pictured = not self.folded()
+        shown = self._shown(pictured)
+        if not self._same_rows(shown):
+            self.types.open(self.types.layouts)  # a fresh set of cells, built from the answers
+            self.pictured = pictured
+            self._build_rows()
+            self._built = (self.types.radios, shown)
         self.problem.value = self.types.message
         usable = sum(1 for u in self.types.layouts if u.usable)
         done = self.answered
@@ -200,6 +211,35 @@ class ImageTypeRows:
             ui.status("ok", f"The image type of every one of the {usable} folders is answered.")
             if done == usable
             else ui.status("warn", f"Not finished: {usable - done} image type(s) to choose.")
+        )
+
+    def _shown(self, pictured: bool) -> tuple:
+        """Return what the rows show, to tell whether they must be rebuilt."""
+        layouts = self.types.layouts
+        units = self.reopen()
+        return (
+            layouts,
+            pictured,
+            self._thumbs() if pictured else None,
+            tuple((self.types.saved(u.key), self.types.note(u)) for u in layouts),
+            None if units is None else tuple(sorted(units.items())),
+        )
+
+    def _same_rows(self, shown: tuple) -> bool:
+        """Return True when the rows on the page were built for exactly ``shown``.
+
+        Objects (the layouts, the pictures) are compared by identity, the answers by value;
+        cells replaced since (:meth:`ImageTypeColumn.open`) are never kept.
+        """
+        built = getattr(self, "_built", None)
+        if built is None or built[0] is not self.types.radios:
+            return False
+        before = built[1]
+        return (
+            before[0] is shown[0]
+            and before[1] == shown[1]
+            and before[2] is shown[2]
+            and before[3:] == shown[3:]
         )
 
     def unfolded(self) -> None:

@@ -6,6 +6,21 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+### Fixed
+
+- **Looks right: confirm the design** seemed to do nothing, or was very slow (owner, v0.5.2
+  Colab test). The click saved the answers twice and refreshed every page three times, each
+  time rebuilding one image-type row per folder and every replicate box of *Check and save*,
+  so it grew with the number of folders (headless: 1.0 s for 36 images, 5.3 s for 384, 7.7 s
+  for 900; about 2,400 to 14,500 widgets sent to the page). It now saves one answer, refreshes
+  once, and rebuilds the image-type rows and the replicate boxes only when what they show
+  changed (0.14 s, 0.29 s and 0.46 s; about 250 to 450 widgets). The button is disabled and
+  says *Confirming the design…* with a working line before any work, and the click ends with
+  the result, or with the reason it was not confirmed; an unexpected failure is said there,
+  the full report in Technical details. Nothing recorded changed.
+
 ## v0.5.2 (12 November 2026)
 
 Acquisitions may now have different channels (Stage 3 S3.3, owner decision of 11 November
