@@ -1,11 +1,12 @@
 """The notebook's *Your masks* screen (screen 4 of the natural design; Stage 1, PR 16).
 
 Shown only when the folder check paired masks (or the draft already declares some). One question
-per mask type (:class:`.notebook_mask_question.MaskQuestion`): separate objects or regions, no
-default (experiment-v1 section 4.5), the mask ID being the folder name when it is a valid ID, and
-optional *made from* channels, beside the evidence (:mod:`.mask_evidence`). :class:`MasksCard` is
-self-contained: it reads and saves through an :class:`.notebook_channels_view.AnswerStore` and
-tells its owner when an answer changed, so a later layout can move it without rewriting logic.
+per mask type (:class:`.notebook_mask_question.MaskQuestion`): objects, regions or grouped
+labels, no default (experiment-v1 section 4.5), the mask ID being the folder name when it is a
+valid ID, and optional *made from* channels, beside the evidence (:mod:`.mask_evidence`).
+:class:`MasksCard` is self-contained: it reads and saves through an
+:class:`.notebook_channels_view.AnswerStore` and tells its owner when an answer changed, so a
+later layout can move it without rewriting logic.
 The pictures are read only through the axis roles the user confirmed, as on *Your channels*.
 """
 
@@ -42,10 +43,11 @@ from .validation import plural
 
 INTRO = (
     "<b>What happens here:</b> say what each mask type is: <b>separate objects</b> (each object "
-    "has its own number, as nuclei or cells from a segmentation) or <b>regions</b> (inside or "
-    "outside, as a tissue area). Nothing is chosen for you: the pixel type and the number of "
-    "values are shown only to help you answer. The mask ID is the folder name when it can be "
-    "one; it is used everywhere after, also by <i>Describe the masks</i>."
+    "has its own number, as nuclei or cells from a segmentation), <b>regions</b> (inside or "
+    "outside, as a tissue area) or <b>grouped labels</b> (one value per parent, its pixels in "
+    "several pieces, e.g. mitochondria by cell). Nothing is chosen for you: the pixel type and "
+    "the number of values are shown only to help you answer. The mask ID is the folder name "
+    "when it can be one; it is used everywhere after, also by <i>Describe the masks</i>."
 )
 
 
@@ -171,7 +173,7 @@ class _MasksScreen:
         """Return the masks screen: one question per mask type, beside its pictures."""
         return ui.page(
             "Your masks" if title is None else title,
-            "Say what each mask type is: separate objects or regions."
+            "Say what each mask type is: separate objects, regions or grouped labels."
             if purpose is None
             else purpose,
             [ui.intro(INTRO), self.masks_box],
@@ -280,7 +282,7 @@ class _MasksScreen:
         return None if answers is None else mask_ids(answers)
 
     def _mask_kinds(self) -> dict[str, str] | None:
-        """Return what the user declared each mask type to be (objects or regions), or None."""
+        """Return what the user declared each mask type to be (objects, regions, grouped labels)."""
         answers = getattr(self, "draft_answers", None)
         return None if answers is None else mask_kinds(answers)
 

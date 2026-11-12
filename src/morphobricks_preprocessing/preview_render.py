@@ -34,8 +34,8 @@ MAGENTA = (255, 0, 255)
 FLAT_GREY = 128
 GAP = 4
 """Pixels of white between the panels of a strip."""
-INSTANCES, BINARY = "instances", "binary"
-REPRESENTATIONS = (INSTANCES, BINARY)
+INSTANCES, BINARY, PARENT_LABELS = "instances", "binary", "parent_labels"
+REPRESENTATIONS = (INSTANCES, BINARY, PARENT_LABELS)
 _OUTLINES = ((255, 200, 0), (0, 220, 255), (255, 80, 80), (120, 255, 120), (255, 140, 255))
 _TINT = (255, 60, 60)
 _TINT_SHARE = 0.4
@@ -231,13 +231,14 @@ def mask_overlay_png(panel: Panel, labels: np.ndarray, representation: str | Non
     """Draw a mask on a panel for the representation the user declared, as a PNG.
 
     ``instances`` draws each object as an outline coloured from its label value (the labels are
-    never interpolated or renumbered); ``binary`` tints every non-zero pixel. The mask must be an
-    integer or boolean array of the panel's shape: it is never resampled to fit.
+    never interpolated or renumbered); ``parent_labels`` the same, so every piece of one group has
+    its group's colour (never split into objects); ``binary`` tints every non-zero pixel. The mask
+    must be an integer or boolean array of the panel's shape: it is never resampled to fit.
 
     Raises
     ------
     OverlayRefused
-        When the representation is None or not one of ``instances``/``binary`` (never inferred
+        When the representation is None or not one of :data:`REPRESENTATIONS` (never inferred
         from the values), the mask is not an integer array, or its shape is not the panel's.
     """
     if representation not in REPRESENTATIONS:

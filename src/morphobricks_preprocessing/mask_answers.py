@@ -1,7 +1,9 @@
 """The answers about the masks of a draft description (experiment-v1 section 4.5), pure.
 
-One answer per mask type found: **separate objects** (``instances``) or **regions, inside or
-outside** (``binary``), never defaulted and never inferred from the dtype, the values or the name
+One answer per mask type found: **separate objects** (``instances``), **regions, inside or
+outside** (``binary``) or **grouped labels** (``parent_labels``: each non-zero value one group,
+for example the mitochondria of one cell, in any number of pieces; section 4.5b), never defaulted
+and never inferred from the dtype, the values, the name or the mask step's ``grouped`` kind
 (section 4.5). The mask ID is the mask type's folder name when it is a valid mask ID as it stands
 (Token rule, reserved list with the object-set part ``in``); otherwise there is no proposal and the
 user types one (nothing is repaired). The optional *made from* channels are provenance only and
@@ -22,8 +24,9 @@ from .description_rules import REPRESENTATIONS
 from .draft_answers import DraftAnswers, MaskAnswer, UnitKey
 from .draft_ids import id_problems, propose_id
 
-INSTANCES, BINARY = REPRESENTATIONS
-"""``instances``: separate objects, each with its own number; ``binary``: inside or outside."""
+INSTANCES, BINARY, PARENT_LABELS = REPRESENTATIONS
+"""``instances``: separate objects, each with its own number; ``binary``: inside or outside;
+``parent_labels``: each non-zero value one group, in any number of pieces (section 4.5b)."""
 
 
 class MaskAnswerRefused(ValueError):
@@ -51,12 +54,12 @@ def mask_of_type(answers: DraftAnswers, source_type: str) -> tuple[str, MaskAnsw
     return None
 
 
-KIND_WORDS = {INSTANCES: "objects", BINARY: "regions"}
-"""The words the notebook uses for the two answers: separate objects, or regions."""
+KIND_WORDS = {INSTANCES: "objects", BINARY: "regions", PARENT_LABELS: "grouped labels"}
+"""The words the notebook uses for the answers: separate objects, regions, or grouped labels."""
 
 
 def mask_kinds(answers: DraftAnswers) -> dict[str, str]:
-    """Return what the user declared each answered mask type to be: objects or regions."""
+    """Return what the user declared each mask type to be: objects, regions or grouped labels."""
     return {mask.source_type: KIND_WORDS[mask.representation] for mask in answers.masks.values()}
 
 
@@ -114,7 +117,7 @@ def with_mask(
     mask_id
         The ID the user accepted or typed; refused with the reader's codes, never repaired.
     representation
-        ``instances`` or ``binary``, the user's answer (there is no default).
+        ``instances``, ``binary`` or ``parent_labels``, the user's answer (there is no default).
     source_channels
         The *made from* channels, declared labels only (empty: not said).
 
@@ -196,6 +199,7 @@ __all__ = [
     "BINARY",
     "INSTANCES",
     "KIND_WORDS",
+    "PARENT_LABELS",
     "MaskAnswerRefused",
     "drawn_on",
     "dropped_channels",

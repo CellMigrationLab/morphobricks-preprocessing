@@ -36,8 +36,8 @@ The numbers above are the default thresholds (:data:`DEFAULT_THRESHOLDS`); each 
 are written in the report.
 
 Nothing is decided for the user: the report is a suggestion with its evidence; the user names
-the masks and confirms or corrects the relationships. Pieces are counted with 4-connectivity
-(``scipy.ndimage.label``).
+the masks and confirms or corrects the relationships. Pieces are counted 8-connected
+(:data:`PIECE_STRUCTURE`, as CellPatcher's ``BINARY_MASK_CONNECTIVITY = 2``; not imported).
 
 Masks with depth slices or time points (``Z``/``T`` in :attr:`.masks.MaskFile.axes`) are
 scanned one plane at a time, each plane counted like an image of its own: objects are never
@@ -61,7 +61,7 @@ from ._io import write_text_atomic
 from .manifest import package_versions
 from .mask_binding import MaskChangedError as MaskChangedError  # raised by the scan
 from .mask_binding import check_scanned, scan_fingerprints
-from .mask_pairs import best_parents, match_counts
+from .mask_pairs import PIECE_STRUCTURE, best_parents, match_counts
 from .mask_pairs import one_to_one_matches as one_to_one_matches  # moved there
 from .masks import MaskInventory, check_labels, read_mask
 
@@ -70,9 +70,9 @@ logger = logging.getLogger(__name__)
 MASK_REPORT_FILENAME = "mask_relationships.json"
 """Name of the report written to the output folder."""
 
-MASK_REPORT_VERSION = "3"
+MASK_REPORT_VERSION = "4"
 """Version of the report's format: 2 since the one-to-one matches are a matching (issue #67),
-3 since a tie between parents gives no parent and is counted as ``ambiguous_parent``."""
+3 since ties give no parent (``ambiguous_parent``), 4 since pieces are 8-connected."""
 
 DEFAULT_THRESHOLDS = MappingProxyType(
     {
@@ -129,7 +129,7 @@ class MaskTypeSummary:
         Distinct labels, summed over the images (and over the planes of masks with depth
         slices or time points: a label present in 5 time points counts 5 times).
     median_pieces_per_label
-        Median number of 4-connected pieces per label over all objects; 0 when empty.
+        Median number of 8-connected pieces per label over all objects; 0 when empty.
     """
 
     name: str
@@ -297,10 +297,10 @@ def mask_thresholds(changes: Mapping[str, float] | None = None) -> Mapping[str, 
 
 
 def piece_counts(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Return the labels of a 2D mask and the number of 4-connected pieces of each.
+    """Return the labels of a 2D mask and the number of 8-connected pieces of each.
 
-    Two pixels are in one piece when they carry the same label and touch along an edge.
-    Label 0 is the background.
+    Two pixels are in one piece when they carry the same label and touch along an edge or at
+    a corner (:data:`PIECE_STRUCTURE`). Label 0 is the background.
 
     Returns
     -------
@@ -323,7 +323,7 @@ def piece_counts(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     counts = np.zeros(values.size, dtype=np.int64)
     for index, box in enumerate(ndimage.find_objects(dense)):
         if box is not None:
-            counts[index] = ndimage.label(dense[box] == index + 1)[1]
+            counts[index] = ndimage.label(dense[box] == index + 1, PIECE_STRUCTURE)[1]
     return values, counts
 
 
