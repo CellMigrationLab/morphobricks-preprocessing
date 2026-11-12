@@ -239,3 +239,26 @@ def test_the_projection_can_be_looked_at_before_anything_is_written(tmp_path):
         read_projection_view(
             root / rel, AxisMapping("ZCYX", tuple("TCYX")), (5, 3, 16, 16), Projection("max")
         )
+
+
+def test_a_projection_chosen_for_one_folder_is_not_chosen_for_another(tmp_path):
+    # Review of #286: the method and the slices are answers without a default. A new folder
+    # check (another folder, or the same one checked again) asks them again.
+    nb, _root, out, _ = started(tmp_path, "ZCYX", (5, 3, 16, 16))
+    nb.projection_method.value = "max"
+    nb.projection_first.value, nb.projection_last.value = 1, 3
+    nb.pixel_x.value = "0.2"
+    nb.pixel_apply.click()  # a pixel size on the same check keeps the choice
+    assert nb.projection_method.value == "max"
+    assert (nb.projection_first.value, nb.projection_last.value) == (1, 3)
+    other = tmp_path / "other"
+    write_stacks(other, "ZCYX", (5, 3, 16, 16))
+    nb.folder.value = str(other)
+    nb.scan_button.click()
+    nb.check_button.click()
+    assert ui.is_visible(nb.projection_card)
+    assert nb.projection_method.value == ""  # no method carried over
+    assert (nb.projection_first.value, nb.projection_last.value) == (0, 4)
+    assert nb.projection_button.disabled
+    assert "no projection method is chosen" in _text(nb.projection_blocker.value)
+    assert not list(out.glob("projected_*"))

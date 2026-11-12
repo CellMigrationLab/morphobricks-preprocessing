@@ -107,6 +107,7 @@ class _ProjectionCard:
     def _build_projection_card(self) -> None:
         """Build the card, hidden until the roles give a depth dimension with several slices."""
         self._z_slices = 0
+        self._projection_check: object | None = None  # the folder check the choice is for
         self.projection_method = widgets.Dropdown(
             options=METHOD_OPTIONS, value="", layout=widgets.Layout(width="440px")
         )
@@ -194,6 +195,7 @@ class _ProjectionCard:
         """Offer the card while the roles shown give Z-stacks; forget an earlier choice's view."""
         if getattr(self, "projection_card", None) is None:
             return
+        self._forget_projection_of_another_check()
         stacks = [i for i in getattr(review, "issues", ()) if i.code == Z_STACK_CODE]
         offered = bool(stacks) and self.preflight is not None and self.confirmed_mapping is None
         ui.set_visible(self.projection_card, offered)
@@ -209,6 +211,20 @@ class _ProjectionCard:
                 box.value = value
         self._list_earlier()
         self._projection_changed()
+
+    def _forget_projection_of_another_check(self) -> None:
+        """Choose no method and every slice again after a new folder check.
+
+        A method or slices chosen for one folder are never offered for another folder, or for
+        the same folder checked again (its files may differ): the choice has no default. A
+        pixel size or masks stated on the same check keep it (the same discovery).
+        """
+        check = None if self.preflight is None else self.preflight.discovery
+        if check is self._projection_check:
+            return
+        self._projection_check = check
+        self.projection_method.value = ""
+        self._z_slices = 0  # the slices are set again to the whole stack below
 
     def _stack_slices(self) -> int:
         """Return the smallest number of depth slices among the images, under the roles shown."""
