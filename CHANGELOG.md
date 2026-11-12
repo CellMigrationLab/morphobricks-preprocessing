@@ -75,6 +75,13 @@ experiment-v1 §4.5, §4.5a-§4.5c, §7, §8; ADR 0002 resolver contract version
   than the copy's path; any other entry with the key is refused. It stays absent from OME-TIFF
   and byte-for-byte entries, which keep their source's path, so those entries are written as
   before; such records differ from v0.5.1's only in `record_version`.
+- **A projected entry names one source.** Its projection's `source_relative_path` must be the
+  entry's source (its `source_relative_path` on an OME-Zarr copy, else `relative_path`), so a
+  run never checks one source and records another as projected; a record that differs is
+  refused (`conversion_record_unreadable`).
+- **Notebook:** projected copies written earlier whose record cannot be used (version 3) are
+  not offered, and the Axes step says so in one line naming the folder, the reason and the fix
+  (another output folder), instead of skipping them silently.
 
 **Changed (notebook, owner's test of v0.5.1; no result or published file changes)**
 

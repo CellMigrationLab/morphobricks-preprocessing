@@ -380,7 +380,9 @@ never projected. The original stacks are only read, never changed or deleted, an
 lists each one (folder, path, fingerprint, SHA-256, slices used). **Keep the 3-D stacks for
 3-D-capable tools (fiberfeatures)** is shown greyed out: 3-D analysis is not enabled yet.
 When you open the stacks again with the same output folder, the copies written earlier are
-offered (**Continue with the copies written earlier**).
+offered (**Continue with the copies written earlier**). Copies whose conversion record cannot
+be used (one written before v0.5.2, of version 3) are not offered, and a line says so and why:
+writing them again needs another output folder.
 
 **A copy as OME-Zarr.** The Folders card of step 1 has **Also save a copy as OME-Zarr (in the
 output folder)**. Ticking it writes nothing. Once the axis roles are confirmed, the Axes step

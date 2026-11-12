@@ -35,7 +35,12 @@ import ipywidgets as widgets
 
 from . import notebook_style as ui
 from .conversion import ConversionResult, convert_experiment
-from .conversion_record import RECORD_FILENAME, ConversionRecordError, read_record
+from .conversion_record import (
+    RECORD_FILENAME,
+    ConversionRecord,
+    ConversionRecordError,
+    read_record,
+)
 from .image_view import ViewRequest, read_projection_view
 from .notebook_progress import Wait
 from .notebook_render import blocked_line, issues_brief_html
@@ -87,19 +92,42 @@ def projection_words(method: str, z_range: tuple[int, int] | None) -> str:
 
 def earlier_projections(root: Path, output: Path) -> list[tuple[Path, Projection]]:
     """Return the projected copy trees of ``root`` already in the output folder, by name."""
-    found = []
+    return [
+        (folder, read.projection)
+        for folder, read in _projected_trees(output)
+        if isinstance(read, ConversionRecord)
+        and read.projection is not None
+        and Path(read.source_root) == root
+    ]
+
+
+def unusable_projections(output: Path) -> list[tuple[Path, str]]:
+    """Return the projected copy trees in the output folder whose record cannot be used, why.
+
+    They are never offered; the user is told (no hidden refusal), since writing the same
+    projection into such a folder again is refused (``conversion_record_unreadable``).
+    """
+    return [
+        (folder, str(read))
+        for folder, read in _projected_trees(output)
+        if isinstance(read, Exception)
+    ]
+
+
+def _projected_trees(output: Path) -> list[tuple[Path, ConversionRecord | Exception]]:
+    """Return every ``projected_*`` folder with a record in the output folder: read, or why not."""
+    trees: list[tuple[Path, ConversionRecord | Exception]] = []
     if not output.is_dir():
-        return found
+        return trees
     for record_file in sorted(output.glob(f"{FOLDER_PREFIX}*/{RECORD_FILENAME}")):
         try:
             read = read_record(record_file.parent)
-        except (ConversionRecordError, OSError):
+        except (ConversionRecordError, OSError) as exc:
+            trees.append((record_file.parent, exc))
             continue
-        if read is None or read[0].projection is None:
-            continue
-        if Path(read[0].source_root) == root:
-            found.append((record_file.parent, read[0].projection))
-    return found
+        if read is not None:
+            trees.append((record_file.parent, read[0]))
+    return trees
 
 
 class _ProjectionCard:
@@ -374,7 +402,18 @@ class _ProjectionCard:
             )
             button.on_click(lambda _, f=folder, o=output: self._use_copies(f, o))
             buttons.append(button)
-        self.projection_earlier.children = buttons
+        notes = [
+            widgets.HTML(
+                ui.status(
+                    "warn",
+                    f"Not offered: the copies written earlier in {folder}. Their conversion "
+                    f"record cannot be used ({why}); to write them again, choose another "
+                    "output folder.",
+                )
+            )
+            for folder, why in unusable_projections(output)
+        ]
+        self.projection_earlier.children = [*buttons, *notes]
 
     def _use_copies(self, copies: Path, output: Path) -> None:
         """Open the copy tree as the experiment (scan and check again), the output folder kept."""
@@ -420,4 +459,5 @@ __all__ = [
     "copies_folder",
     "earlier_projections",
     "projection_words",
+    "unusable_projections",
 ]
