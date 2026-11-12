@@ -9,11 +9,10 @@ records the record's SHA-256 in its manifest (``conversion_record_sha256``) and
 :func:`review_conversion` warns when a source changed after the conversion, or a copy
 since it was written (its fingerprint or its SHA-256).
 
-Only record version 4 is written and read (owner, 12 November 2026): version 3 (issue #176,
-the projection) with an OME-Zarr copy's ``source_relative_path``, which a version 3 reader
-would ignore. A record of any other version (1 to 3 were written by v0.5.1 or earlier) is
-refused with :class:`ConversionRecordError`, naming the fix: convert the originals again into
-a new folder. Nothing is converted (Spec ADR 0002 AR10; SWEEP-PP).
+Only record version 4 is written and read (owner, 12 November 2026): version 3 (issue #176)
+with an OME-Zarr copy's ``source_relative_path``, which a version 3 reader ignores. Any other
+version (1 to 3: v0.5.1 or earlier) is refused with :class:`ConversionRecordError` naming the
+fix, convert the originals again into a new folder; nothing is converted (Spec ADR 0002 AR10).
 """
 
 from __future__ import annotations
@@ -103,10 +102,9 @@ class CopyEntry:
     projection
         How a projected image was made (:data:`PROJECTED` only), else None.
     source_relative_path
-        The source's path relative to the experiment when the copy has another name (an
-        OME-Zarr copy of a TIFF image, :mod:`.ome_zarr_copy`); None when it is
-        ``relative_path``, as for every OME-TIFF and byte-for-byte copy. Required on an
-        OME-Zarr copy's entry and refused on any other (:func:`_check_source_path`).
+        The source's path relative to the experiment when the copy has another name: required
+        on an OME-Zarr copy (:mod:`.ome_zarr_copy`), else its source is looked for at the copy's
+        path; refused on any other entry, whose source is ``relative_path`` (None).
     """
 
     relative_path: str
@@ -131,11 +129,14 @@ class CopyEntry:
         return self.source_relative_path or self.relative_path
 
     def __post_init__(self) -> None:
-        """Refuse a projection on an entry that is not projected, and the reverse."""
+        """Refuse a projection on an entry that is not projected, the reverse, two sources."""
         if (self.action == PROJECTED) != (self.projection is not None):
             raise ValueError(
                 f"{self.relative_path!r}: a projected copy needs its projection, and no other does"
             )
+        named = None if self.projection is None else self.projection.source_relative_path
+        if named is not None and named != self.source_path:  # one checked, the other recorded
+            raise ValueError(f"{self.relative_path!r}: its projection names the source {named!r}")
 
     def same_plan(self, other: CopyEntry) -> bool:
         """Return True if ``other`` copies the same source the same way (copies aside).
@@ -560,10 +561,7 @@ def _check_projection(projection: Projection | None, entry: CopyEntry) -> None:
 
 
 def _check_source_path(data: Mapping) -> None:
-    """Refuse ``source_relative_path`` where ``as_zarr_copy`` does not write it, or its absence.
-
-    Without it a source would be looked for at the copy's path (``conversion_source_changed``).
-    """
+    """Refuse ``source_relative_path`` where ``as_zarr_copy`` does not write it, or its absence."""
     rel, named = str(data.get("relative_path")), data.get("source_relative_path")
     zarr_copy = data.get("action") in (CONVERTED, PROJECTED) and rel.endswith(_ZARR_COPY_SUFFIX)
     if zarr_copy and not (isinstance(named, str) and named and named != rel):

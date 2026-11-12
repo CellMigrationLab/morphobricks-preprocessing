@@ -148,3 +148,21 @@ def test_the_notebook_does_not_offer_version_3_projections(tmp_path):
     assert [folder for folder, _ in earlier_projections(root, output)] == [dest]
     rewrite(dest, lambda d: d.update(record_version="3"))
     assert earlier_projections(root, output) == []
+
+
+@pytest.mark.parametrize("store", ["ome-tiff", "ome-zarr"])
+def test_a_projected_entry_names_one_source(tmp_path, store):
+    # The source path is written twice on a projected copy (the entry's and its projection's);
+    # two different paths would let the run check one source and record another as projected.
+    if store == "ome-zarr":
+        pytest.importorskip("zarr")
+    root, dest = stacks(tmp_path / "exp", "ZCYX", (3, 2, 8, 8)), tmp_path / "copies"
+    written = convert_experiment(
+        root, prefill_mapping("ZCYX"), dest, projection=Projection("max"), store=store
+    )
+    assert written.written and not written.issues, written.issues
+    assert read_record(dest) is not None
+    rewrite(dest, lambda d: d["files"][0]["projection"].update(source_relative_path="drug/x.tif"))
+    with pytest.raises(ConversionRecordError, match="projection names the source 'drug/x.tif'"):
+        read_record(dest)
+    assert conversion_codes(dest, tmp_path) == ["conversion_record_unreadable"]
