@@ -9,13 +9,16 @@ records the record's SHA-256 in its manifest (``conversion_record_sha256``) and
 :func:`review_conversion` warns when a source changed after the conversion, or a copy
 since it was written (its fingerprint or its SHA-256).
 
-Only record version 3 is written and read (issue #176): the copies' SHA-256, channel names
-and significant bits (PP-11c), the record-level ``projection`` (the method and slice range of a
-tree of Z-projected copies, or null) and the entry action ``"projected"`` with its
-:class:`.projection_record.ProjectionEntry`. A record of any other version (1 and 2 were
-written before v0.5.1) is refused with :class:`ConversionRecordError`, naming the fix: convert
-the originals again into a new folder. Nothing is converted (no backward compatibility before
-the first pipeline release, Spec ADR 0002 AR10; SWEEP-PP).
+Only record version 4 is written and read: the copies' SHA-256, channel names and significant
+bits (PP-11c), the record-level ``projection`` (the method and slice range of a tree of
+Z-projected copies, or null), the entry action ``"projected"`` with its
+:class:`.projection_record.ProjectionEntry` (issue #176), and the entry key
+``source_relative_path`` of an OME-Zarr copy (version 4, owner decision of 12 November 2026:
+a version 3 reader would ignore it and warn that the source went missing). A record of any
+other version (1 and 2 were written before v0.5.1, 3 by v0.5.1) is refused with
+:class:`ConversionRecordError`, naming the fix: convert the originals again into a new folder.
+Nothing is converted (no backward compatibility before the first pipeline release, Spec ADR
+0002 AR10; SWEEP-PP).
 """
 
 from __future__ import annotations
@@ -41,9 +44,10 @@ from .validation import ValidationIssue, error, plural, warning
 RECORD_FILENAME = ".morphobricks-conversion.json"
 """The conversion record, in the root of the copy tree."""
 
-RECORD_VERSION = "3"
-"""The one version written and read (issue #176): the record-level projection and projected
-entries, with each copy's SHA-256, channel names and significant bits (PP-11c)."""
+RECORD_VERSION = "4"
+"""The one version written and read: the record-level projection and projected entries
+(issue #176), each copy's SHA-256, channel names and significant bits (PP-11c), and an
+OME-Zarr copy's ``source_relative_path`` (version 4)."""
 
 _CONVERT_AGAIN = "convert the originals again into a new folder"
 """The fix a refused record names."""
@@ -56,6 +60,10 @@ EXCLUDED = "excluded"
 
 PROJECTED = "projected"
 """An image written as a 2-D copy: its Z-stack projected with the record's method."""
+
+_ZARR_COPY_SUFFIX = ".ome.zarr"
+"""The name ending of an OME-Zarr copy (:data:`.ome_zarr_copy.ZARR_COPY_SUFFIX`, which
+imports this module)."""
 
 COPIED = "copied"
 """An image copied byte for byte: its header already names its axes as confirmed, it is
@@ -108,7 +116,9 @@ class CopyEntry:
         The source's path relative to the experiment when the copy has another name (an
         OME-Zarr copy of a TIFF image, :mod:`.ome_zarr_copy`); None when it is
         ``relative_path``, as for every OME-TIFF and byte-for-byte copy. Written to the
-        record only when it is given, so records without OME-Zarr copies are unchanged.
+        record exactly for an image converted or projected into an OME-Zarr copy, and read
+        back only there (a version 4 record that leaves it out of such an entry, or gives it
+        to another, is refused: the source would be looked for at the copy's path).
     """
 
     relative_path: str
@@ -199,6 +209,7 @@ class CopyEntry:
         copy = data.get("copy")
         if copy is None or not isinstance(data.get("copy_sha256"), str):
             raise ValueError(f"{data.get('relative_path')!r} has no copy fingerprint or SHA-256")
+        _check_source_path(data)
         return cls(
             relative_path=str(data["relative_path"]),
             action=_choice(data["action"], (CONVERTED, PROJECTED, COPIED), "action"),
@@ -311,7 +322,7 @@ class ConversionRecord:
                     None if data["projection"] is None else projection_from_data(data["projection"])
                 ),
             )
-        except KeyError as exc:  # a key every version 3 record writes: never defaulted (PP-06)
+        except KeyError as exc:  # a key every version 4 record writes: never defaulted (PP-06)
             raise ConversionRecordError(
                 f"the record has no {exc.args[0]!r}, which every version {RECORD_VERSION} record "
                 f"holds; {_CONVERT_AGAIN}"
@@ -558,6 +569,23 @@ def _check_projection(projection: Projection | None, entry: CopyEntry) -> None:
             f"{entry.relative_path!r} was projected with {done.method} {done.z_range}, not the "
             f"record's {projection.method} {projection.z_range or 'all slices'}"
         )
+
+
+def _check_source_path(data: Mapping) -> None:
+    """Refuse ``source_relative_path`` where the writer would not write it, or its absence.
+
+    :func:`.ome_zarr_copy.as_zarr_copy` writes it, and only it, for an image converted or
+    projected into an OME-Zarr copy (its ``relative_path`` ends with ``.ome.zarr``); a
+    byte-for-byte copy (``copied``, an OME-Zarr image among them) and an OME-TIFF copy keep
+    their source's path. Without the key, a source would be looked for at the copy's path
+    and reported missing (``conversion_source_changed``); it is never guessed.
+    """
+    rel, named = str(data.get("relative_path")), data.get("source_relative_path")
+    zarr_copy = data.get("action") in (CONVERTED, PROJECTED) and rel.endswith(_ZARR_COPY_SUFFIX)
+    if zarr_copy and not (isinstance(named, str) and named and named != rel):
+        raise ValueError(f"{rel!r} is an OME-Zarr copy without its source_relative_path")
+    if not zarr_copy and "source_relative_path" in data:
+        raise ValueError(f"{rel!r} has a source_relative_path but is not an OME-Zarr copy")
 
 
 def _fingerprint_data(fingerprint: Fingerprint) -> dict:

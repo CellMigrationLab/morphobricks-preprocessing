@@ -180,7 +180,7 @@ def convert_experiment(
         a method, no default, and an optional slice range for the whole experiment) instead
         of a plain copy: the copy's axes are the confirmed roles without Z, its type is
         decided by the dtype table (:func:`.projection.projection_dtype`), and the record
-        says how every copy was made (record version 3). Masks are never projected.
+        says how every copy was made (record version 4). Masks are never projected.
         Excluded images are still copied byte for byte. None converts as before.
     store
         ``"ome-zarr"`` writes every image that is read as an OME-Zarr copy (OME-NGFF 0.4,

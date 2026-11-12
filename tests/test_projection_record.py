@@ -1,4 +1,4 @@
-"""Conversion record version 3: the projection (issue #176, contract §17).
+"""Conversion record (version 4): the projection (issue #176, contract §17).
 
 Reading is strict: a projected entry that contradicts itself, the record or the dtype
 table is refused, and the reuse key holds the projection.
@@ -89,7 +89,7 @@ def edited(change, rec=None) -> dict:
 
 def test_a_projected_record_round_trips():
     rec = record()
-    assert RECORD_VERSION == "3"
+    assert RECORD_VERSION == "4"
     again = reread(rec)
     assert again == rec
     data = rec.to_dict()
@@ -100,11 +100,11 @@ def test_a_projected_record_round_trips():
     assert done["nan_policy"] == "propagate" and done["significant_bits_dropped"] is None
 
 
-def test_a_record_without_a_projection_is_version_3_with_null(tmp_path):
+def test_a_record_without_a_projection_is_version_4_with_null(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
     data = json.loads((copies / RECORD_FILENAME).read_text())
-    assert data["record_version"] == "3" and data["projection"] is None
+    assert data["record_version"] == "4" and data["projection"] is None
     assert all(entry["projection"] is None for entry in data["files"])
     assert read_conversion_record(copies)[0].projection is None
 
@@ -123,9 +123,9 @@ def test_a_version_2_record_is_refused_naming_the_fix(tmp_path):
         read_conversion_record(copies)
 
 
-@pytest.mark.parametrize("version", ["1", "2", "4", None])
+@pytest.mark.parametrize("version", ["1", "2", "3", "5", None])
 def test_other_versions_are_refused(version):
-    with pytest.raises(ConversionRecordError, match="reads version .?3.? only"):
+    with pytest.raises(ConversionRecordError, match="reads version .?4.? only"):
         ConversionRecord.from_dict(edited(lambda d: d.update(record_version=version)))
 
 
@@ -243,10 +243,10 @@ def test_an_excluded_image_stays_a_plain_copy_in_a_projected_tree():
         )
 
 
-@pytest.mark.parametrize("version", [3, None])
+@pytest.mark.parametrize("version", [4, None])
 def test_a_version_that_is_not_text_is_shown_exactly_with_the_fix(version):
-    # PP-06: the number 3 is not the text "3"; the message must not read "version 3 ... reads
-    # version 3 only".
+    # PP-06: the number 4 is not the text "4"; the message must not read "version 4 ... reads
+    # version 4 only".
     with pytest.raises(ConversionRecordError) as refused:
         ConversionRecord.from_dict(edited(lambda d: d.update(record_version=version)))
     message = str(refused.value)

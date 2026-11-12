@@ -6,7 +6,7 @@ dimension with several slices, the app offers the path the refusal names, right 
 user looks at the stack in the viewer (its z slider), **chooses the projection** (a method,
 with no default, and the slices), and one click writes a projected 2-D copy of every image
 with :func:`.conversion.convert_experiment` (issue #176: the copies, their conversion record
-version 3, every refusal before anything is written). The later steps then use the copies:
+version 4, every refusal before anything is written). The later steps then use the copies:
 the app opens the copy tree as the experiment (scanned and checked again, nothing confirmed for
 the user), with the same output folder.
 

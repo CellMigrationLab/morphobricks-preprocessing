@@ -732,8 +732,8 @@ so `check` and `run` on a folder of copies, and opening their run, take about on
 the copies longer. An original that changes while `convert` reads its metadata is refused
 (`source_changed_during_check`); convert again once nothing writes into the experiment.
 
-A folder of copies made before v0.5.1 may have a conversion record of version 1 or 2: `convert`,
-`run` and the bricks read version 3 only and refuse it (`conversion_record_unreadable`, naming
+A folder of copies made before v0.5.2 has a conversion record of version 1, 2 or 3: `convert`,
+`run` and the bricks read version 4 only and refuse it (`conversion_record_unreadable`, naming
 its version); nothing is converted. Convert the originals again into a new folder.
 
 Running `convert` again with the same images and roles reuses the copies and only adds new
@@ -761,7 +761,7 @@ exact (`int32` for signed ones; 32-bit images give 64-bit floats holding the exa
 a mean is a 64-bit float; a sum or mean that could not be exact is refused
 (`projection_cannot_be_exact`), never wrapped or clipped. A NaN stays NaN; a sum that overflows
 to infinity is refused (`projection_overflow`). The copy's OME-XML says how it was made, and
-the conversion record (version 3) holds the method, the slices used, the source's SHA-256,
+the conversion record (version 4) holds the method, the slices used, the source's SHA-256,
 the types, the rounding and the dropped Z size for every image. Masks are never projected:
 masks with depth slices stop the projection (`projection_masks_3d`); 2-D masks stay where
 they are. OME-Zarr images are not projected yet (`projection_zarr_not_supported`; exclude
@@ -1010,7 +1010,7 @@ continues.
 | `source_changed_during_check` | Error | `convert`: an original changed while its metadata was read, so the metadata may not describe the file that would be copied. Nothing was written; convert again when nothing writes into the experiment. |
 | `conversion_failed` | Error | `convert`: an image could not be copied (unreadable, changed while copied, or the folder cannot be written). The copies written by this conversion were removed; fix the cause and convert again, or exclude the image. |
 | `not_enough_space` | Error | `convert`: the copies would not fit on the drive. Free space or choose another drive. |
-| `conversion_record_unreadable` | Error | The conversion record of a folder of named-axis copies (**.morphobricks-conversion.json**) cannot be read, or is not of version 3 (versions 1 and 2 were made before v0.5.1), so `run` stops and `convert` refuses the folder. Convert again into a new folder. |
+| `conversion_record_unreadable` | Error | The conversion record of a folder of named-axis copies (**.morphobricks-conversion.json**) cannot be read, or is not of version 4 (versions 1 to 3 were made before v0.5.2), so `run` stops and `convert` refuses the folder. Convert again into a new folder. |
 | `conversion_source_changed` | Warning | An original changed or went missing after its named-axis copy was made; the copies hold the images as converted. If the originals were corrected, convert again into a new folder. |
 | `copy_changed_after_conversion` | Error | An image of the folder of named-axis copies changed (its size, time or SHA-256), went missing or was added after the conversion, so the conversion record does not describe it, and the bricks (`RunInputs`) would refuse a run on it. The run stops before it writes anything but the report: convert the originals again into a new folder, and run preprocessing on that one (same output folder). |
 | `source_changed_during_run` | Error | An image changed or went missing while the run was checking or reading it, so its rows would not describe it. No scientific outputs are published and sources are untouched; the discovery report is written. Wait until nothing writes to the experiment (an acquisition or a copy still running), then run again: the images already read resume from their staged rows. |
