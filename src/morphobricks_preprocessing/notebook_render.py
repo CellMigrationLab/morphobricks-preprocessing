@@ -41,6 +41,10 @@ def issues_html(issues: Iterable[ValidationIssue]) -> str:
     return "".join(parts)
 
 
+BRIEF_CHARS = 200
+"""Characters of an issue's first sentence shown before the rest is folded."""
+
+
 def issues_brief_html(issues: Iterable[ValidationIssue]) -> str:
     """Render issues as short cards: what is wrong in one sentence, the rest on demand.
 
@@ -50,6 +54,8 @@ def issues_brief_html(issues: Iterable[ValidationIssue]) -> str:
     parts = []
     for issue in sorted(issues, key=lambda issue: not issue.is_error):
         first, stop, rest = issue.message.partition(". ")
+        if len(first) > BRIEF_CHARS:  # a sentence that lists every file: its start, the rest folded
+            first, stop, rest = first[:BRIEF_CHARS] + "…", "", issue.message
         more = [html.escape(rest)] if rest else []
         if issue.paths:
             more.append(ui.path_list(issue.paths, limit=5))

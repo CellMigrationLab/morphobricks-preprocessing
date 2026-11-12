@@ -20,6 +20,7 @@ import html
 import ipywidgets as widgets
 
 from . import notebook_style as ui
+from .notebook_render import issues_brief_html
 from .notebook_stepper import about, field_rows
 
 FOLDER_INTRO = (
@@ -76,6 +77,7 @@ class _CompactPages:
             self.check_button,
             self.check_blocker,
             self.folder_status,  # the check's progress, right under the button clicked
+            self.scan_axes_line,
             self.folder_lock.card,
             self.folder_tiles,
             self.issues_card,
@@ -151,6 +153,9 @@ class _CompactPages:
 
     def _finish_run(self, result: object) -> None:
         super()._finish_run(result)
+        issues = getattr(result, "issues", ())
+        # Short cards: a message that lists every image is one line, the rest one click away.
+        self.run_issues.value = issues_brief_html(issues) if issues else ""
         self._refresh_folds()  # the checks, Compare groups and the report now have content
 
     def _refresh_folds(self) -> None:

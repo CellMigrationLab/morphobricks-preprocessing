@@ -84,6 +84,24 @@ experiment-v1 §4.5, §4.5a-§4.5c, §7, §8; ADR 0002 resolver contract version
 - **Pixel size: two labelled inputs, X and Y**, with **same for X and Y** (ticked: Y follows
   X), instead of "One pixel is …". What is stated is unchanged (`calibration.csv`, X and Y for
   `.`).
+- **New axes flow.** The quick scan proposes the axes of the image it shows from that image's
+  header (**Axes of this image**: one list per dimension); a role changed there redraws the
+  pictures at once, and a header that names no axes gets its picture once the user says what
+  its dimensions are. The roles left there are the proposal the Axes step starts from: the
+  folder check reads every header, the proposal is checked against every image
+  (`review_axes`, unchanged) and one line on Images says whether it fits them all; the Axes
+  step confirms for the whole experiment, as before (one click when every header agrees, else
+  the tick and **Confirm axis roles**), and says that the axes can be changed. Nothing is
+  confirmed at the scan; a new scan forgets the roles of the one before.
+- **Pixel sizes that differ are one line.** With three or more different sizes in one unit:
+  *Pixel sizes differ slightly: 0.10047–0.10054 µm (spread 0.07 %) across 138 images, 25
+  combinations* (`pixel_size_summary.spread_line`), the sizes in a folded table (size, images,
+  folders, source) and the two explicit choices: one size for all images (shown before it
+  replaces anything, recorded as stated) or sizes per imaging unit. The per-unit tables no
+  longer open by themselves. Nothing is chosen silently: until a choice, each image is
+  recorded with its own header's size, as before.
+- **Run messages are short cards**: a message whose first sentence lists every image shows
+  its first 200 characters, with the whole message, the files and what to do one click away.
 - **Notebook file, cell 3:** on Google Colab it calls
   `google.colab.output.no_vertical_scroll()`, so the app is not shown in an output frame that
   scrolls on its own. Nothing changes elsewhere.

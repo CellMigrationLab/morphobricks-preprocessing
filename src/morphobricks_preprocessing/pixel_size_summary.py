@@ -127,6 +127,9 @@ def summary_line(groups: Sequence[SizeGroup]) -> tuple[str, str]:
                 f"Pixel size: {size_words(group)} ({source_words(group)}, same in all {count})."
             )
         return "info", f"Pixel size: {size_words(group)} ({source_words(group)}; {count})."
+    spread = spread_line(groups)
+    if spread is not None:
+        return "warn", spread
     parts = [f"{size_words(groups[0])} in {plural(len(groups[0].images), 'image')}"]
     parts += [
         f"{size_words(group)} in {len(group.images):,} ({where_words(group)})"
@@ -135,6 +138,49 @@ def summary_line(groups: Sequence[SizeGroup]) -> tuple[str, str]:
     headers = all(group.sources <= {HEADER, None} for group in groups)
     title = "Headers disagree" if headers else "Pixel sizes differ"
     return "warn", f"{title}: {', '.join(parts)}."
+
+
+MANY_GROUPS = 3
+"""From this many different sizes on, the line gives their range instead of naming each."""
+SLIGHT_SPREAD = 0.01
+"""A spread under 1 % of the mean size reads "differ slightly"."""
+
+
+def spread_line(groups: Sequence[SizeGroup]) -> str | None:
+    """Return the one line for many sizes in one unit: their range, spread and counts.
+
+    ``Pixel sizes differ slightly: 0.10047–0.10054 µm (spread 0.07 %) across 138 images, 25
+    combinations``: the smallest and largest recorded value over X and Y, the spread as
+    (largest - smallest) / mean of the two, the images, and the different (X, Y) pairs. None
+    when there are fewer than :data:`MANY_GROUPS` sizes, an image without a size, or more than
+    one unit: those are named one by one (:func:`summary_line`). Nothing is rounded away: the
+    values are the recorded ones, written with ``:g``.
+    """
+    if len(groups) < MANY_GROUPS or not all(group.calibrated for group in groups):
+        return None
+    units = {size.unit for group in groups for size in (group.x, group.y)}
+    if len(units) != 1:
+        return None
+    values = [size.value for group in groups for size in (group.x, group.y)]
+    low, high = min(values), max(values)
+    spread = (high - low) / ((high + low) / 2)
+    unit = next(iter(units))
+    symbol = UNIT_SYMBOLS.get(unit or "", unit or "no unit")
+    how = "differ slightly" if spread < SLIGHT_SPREAD else "differ"
+    percent = f"{spread * 100:.0f}" if spread >= 0.1 else f"{spread * 100:.2g}"
+    total = sum(len(group.images) for group in groups)
+    return (
+        f"Pixel sizes {how}: {low:g}–{high:g} {symbol} (spread {percent} %) across "
+        f"{plural(total, 'image')}, {len(groups)} combinations."
+    )
+
+
+def combination_rows(groups: Sequence[SizeGroup]) -> list[tuple[str, str, str, str]]:
+    """Return ``(size, images, folders, source)`` per different (X, Y) size, largest first."""
+    return [
+        (size_words(group), f"{len(group.images):,}", where_words(group), source_words(group))
+        for group in groups
+    ]
 
 
 def unit_rows(sizes: Mapping[str, Sequence[RecordedSize]]) -> list[tuple[str, str, str]]:
@@ -157,9 +203,11 @@ def unit_rows(sizes: Mapping[str, Sequence[RecordedSize]]) -> list[tuple[str, st
 
 __all__ = [
     "SizeGroup",
+    "combination_rows",
     "folders_of",
     "size_words",
     "source_words",
+    "spread_line",
     "summary_line",
     "unit_rows",
     "where_words",

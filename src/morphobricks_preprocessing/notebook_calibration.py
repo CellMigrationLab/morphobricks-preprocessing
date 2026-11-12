@@ -36,7 +36,7 @@ from .calibration_io import CalibrationFormatError, read_calibration
 from .notebook_options import _WIDE
 from .notebook_render import issues_html
 from .notebook_values import size_rows
-from .pixel_size_summary import summary_line, unit_rows, xy_groups
+from .pixel_size_summary import combination_rows, summary_line, unit_rows, xy_groups
 from .recorded_sizes import PIXELS, SIZE_ROLES
 from .run import OutputLockedError, Preflight
 from .run.calibrate import update_calibration
@@ -124,6 +124,7 @@ class _CalibrationCard:
             "Pixel size",
             [
                 self.pixel_line,
+                self.pixel_differs,
                 self.pixel_change,
                 self.pixel_form,
                 self.pixel_replace_box,
@@ -163,6 +164,7 @@ class _CalibrationCard:
     def _build_pixel_line(self) -> None:
         """Build the one line about the pixel size and the one input for the whole experiment."""
         self.pixel_line = widgets.HTML()
+        self.pixel_differs = widgets.HTML()
         self.unit_table = widgets.HTML()
         narrow = widgets.Layout(width="110px")
         self.pixel_x = widgets.Text(placeholder="e.g. 0.325", layout=narrow)
@@ -369,11 +371,12 @@ class _CalibrationCard:
         groups = xy_groups(sizes)
         kind, line = summary_line(groups)
         self.pixel_line.value = ui.status(kind, line)
+        self.pixel_differs.value = self._differing_sizes(groups)
         one_size = len(groups) == 1 and groups[0].calibrated
         # One input when nothing gives a size; behind "Change…" when the images have one.
         ui.set_visible(self.pixel_change, one_size)
         ui.set_visible(self.pixel_form, not one_size)
-        if len(groups) > 1:
+        if len(groups) > 1 and not self._one_line_sizes:
             self.pixel_units.selected_index = 0  # they differ: the units are shown, not hidden
         rows = [("Imaging unit (folder)", "Pixel size (X × Y)", "From")]
         self.unit_table.value = ui.table([*rows, *unit_rows(sizes)])
@@ -390,6 +393,28 @@ class _CalibrationCard:
         self.calibration_table.value = ui.help_text(note).value + ui.table(rows)
         issues = [i for i in shown.metadata.issues if i.code in CALIBRATION_ISSUE_CODES]
         self.calibration_issues.value = issues_html(issues) if issues else ""
+
+    _one_line_sizes = False
+    """True in the shipped notebook: sizes that differ are one line, a folded table and the
+    two explicit choices, and the per-unit part stays folded until it is opened."""
+
+    def _differing_sizes(self, groups: list) -> str:
+        """Return, for sizes that differ, the folded table and the choices (HTML), else ""."""
+        if len(groups) < 2 or not self._one_line_sizes:
+            return ""
+        rows = [("Pixel size (X × Y)", "Images", "Folders", "From"), *combination_rows(groups)]
+        table = (
+            f"<details class='mb-about'><summary>The {len(groups)} different sizes</summary>"
+            f"{ui.table(rows)}</details>"
+        )
+        choices = (
+            "<div style='color:#475569;font-size:12.5px;margin:2px 0 6px 0'>Nothing is chosen "
+            "for you. Until you choose, each image is "
+            "recorded with the size of its own header. Either state <b>one size for all "
+            "images</b> below (recorded as stated by you; the headers stay as they are), or "
+            "state sizes per folder under <b>Set per imaging unit…</b>.</div>"
+        )
+        return table + choices
 
     def _calibration_targets(self) -> list[str]:
         """Return the targets offered: the whole experiment, every folder and every image."""

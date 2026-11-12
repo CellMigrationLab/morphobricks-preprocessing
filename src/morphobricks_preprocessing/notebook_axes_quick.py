@@ -146,9 +146,12 @@ class _QuickAxes:
             for axis, role in zip(offer.axes, offer.roles, strict=True)
             if role is not None
         )
+        chosen = getattr(self, "_scan_roles", {})
         source = (
             "the roles the earlier run of this experiment recorded"
             if self._saved_axes() is not None
+            else "the roles you chose on the example image (Images), which every header agrees with"
+            if offer.axes in chosen and chosen[offer.axes].roles == offer.roles
             else "the roles every image header names"
         )
         return ui.status(
@@ -157,7 +160,7 @@ class _QuickAxes:
             [
                 *self._headers_changed_line(),
                 f"These are {source}. If the example shows your sample as you expect, confirm. "
-                "Nothing is confirmed until you click.",
+                "Nothing is confirmed until you click. They can be changed above.",
             ],
             raw=True,
         )

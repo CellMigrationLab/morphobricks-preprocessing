@@ -332,7 +332,12 @@ def test_headers_that_disagree_open_the_units_and_nothing_is_chosen(tmp_path):
         line == "Headers disagree: 0.108 × 0.108 µm in 1 image, 0.216 × 0.216 µm in 1 (drug/rep1)."
     )
     assert "mb-warn" in nb.pixel_line.value
-    assert nb.pixel_units.selected_index == 0  # the per-unit part is shown, not hidden
+    # One line, the sizes in a folded table, the two explicit choices; nothing opens by itself.
+    assert nb.pixel_units.selected_index is None and ui.is_visible(nb.pixel_form)
+    differs = _text(nb.pixel_differs.value)
+    assert "The 2 different sizes" in differs and "<details" in nb.pixel_differs.value
+    assert "0.216 × 0.216 µm 1 drug/rep1 from the headers" in differs
+    assert "Nothing is chosen for you" in differs and "one size for all images" in differs
     table = _text(nb.unit_table.value)
     assert "ctrl/rep1 0.108 × 0.108 µm from the headers" in table
     assert "drug/rep1 0.216 × 0.216 µm from the headers" in table
