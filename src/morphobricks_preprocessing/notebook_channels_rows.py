@@ -40,10 +40,10 @@ def picture(thumb: Thumb | None, colour: bool = False) -> widgets.Widget:
     return image
 
 
-def folder_info(layout: UnitLayout, thumbs: Thumbnails | None) -> str:
+def folder_info(layout: UnitLayout, thumbs: Thumbnails | None, pictures: bool = True) -> str:
     """Return the first cell of a folder row: its name, first image and plane (HTML)."""
     info = f"<b>{html.escape(unit_name(layout.key))}</b>"
-    if layout.usable and thumbs is not None:
+    if layout.usable and thumbs is not None and pictures:
         info += (
             f"<div class='mb-help'>first image by path: {html.escape(layout.image or '')}"
             f"<br>1 of {layout.images} image(s); {html.escape(thumbs.plane(layout))}</div>"
@@ -59,6 +59,8 @@ class FolderRows:
     def __init__(self, detail: widgets.VBox) -> None:
         self.detail = detail
         self.thumbs: Thumbnails | None = None
+        self.pictures = True
+        """False where the page has the image viewer: a row names its channels, undrawn."""
 
     def row(
         self,
@@ -69,7 +71,7 @@ class FolderRows:
         last: widgets.Widget,
     ) -> widgets.Widget:
         """Build one folder's row: its name (and ``extra`` under it), its pictures, ``last``."""
-        info = widgets.HTML(folder_info(layout, self.thumbs))
+        info = widgets.HTML(folder_info(layout, self.thumbs, self.pictures))
         cells: list[widgets.Widget] = [widgets.VBox([info, *extra])]
         for index in range(width):
             if not layout.usable or (colour and index > 0):
@@ -89,8 +91,10 @@ class FolderRows:
 
     def _cell(self, layout: UnitLayout, index: int) -> widgets.Widget:
         """Build one channel's picture, its C index and header name, and Enlarge."""
-        thumb = self.thumbs.get(layout, index) if self.thumbs is not None else None
         header = f"<b>C{index}</b> {quoted(layout.name(index))}"
+        if not self.pictures:
+            return widgets.HTML(header)
+        thumb = self.thumbs.get(layout, index) if self.thumbs is not None else None
         if thumb is not None and thumb.note:
             header += f"<div class='mb-help'>{html.escape(thumb.note)}</div>"
         return widgets.VBox(
@@ -99,8 +103,10 @@ class FolderRows:
 
     def _colour_cell(self, layout: UnitLayout) -> widgets.Widget:
         """Build a colour folder's one picture and its fixed channels R, G, B."""
-        thumb = self.thumbs.colour(layout) if self.thumbs is not None else None
         chips = " ".join(rgb_chip(t) for t in RGB_IDS)
+        if not self.pictures:
+            return widgets.HTML(chips)
+        thumb = self.thumbs.colour(layout) if self.thumbs is not None else None
         extra = "" if thumb is None else thumb.note.removeprefix(COLOUR_TEXT).lstrip("; ")
         note = f"<div class='mb-help'>{html.escape(extra)}</div>" if extra else ""
         return widgets.VBox(

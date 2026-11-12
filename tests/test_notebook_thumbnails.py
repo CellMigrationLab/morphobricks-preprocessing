@@ -142,7 +142,7 @@ from test_notebook_row_fold import _text  # noqa: E402
 def _checked(root, out):
     nb = PreprocessingNotebook(str(root), output_folder=str(out))
     nb.welcome()
-    nb.steps()
+    nb.folder_step()  # the stacked page other bricks embed; the stepper has its viewer instead
     nb.check_button.click()
     return nb
 

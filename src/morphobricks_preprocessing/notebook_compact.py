@@ -63,7 +63,9 @@ class _CompactPages:
         self.folders_card = ui.card(
             "Folders", [rows, self.output_hint, self.masks_recorded, self.masks_drop]
         )
-        self.found_fold = ui.accordion("Folders found, with a picture of each", [self.labels_card])
+        self.found_fold = ui.accordion("Folders found", [self.labels_card])
+        self.check_report.flat()
+        self.run_report.flat()
         self.report_fold = ui.accordion("Check report", [self.check_report.widget])
         return [
             about(FOLDER_INTRO + FOLDERS_HELP),

@@ -281,14 +281,18 @@ class _FolderStep:
         ui.set_visible(self.design_card, False)
         self._hide_description()
         self.labels_table.value = labels_html(pre)
+        pictures = getattr(self, "_folder_pictures", True)  # the stepper has its viewer
         wait = getattr(self, "_folder_wait", None)
-        if wait is not None:
+        if wait is not None and pictures:
             wait.phase(
                 "Drawing a picture per folder", min(len(pre.discovery.leaves), DRAWN_AT_ONCE)
             )
-        self.label_previews.show(pre, None if wait is None else wait.step)
-        ui.set_visible(self.labels_table, False)
-        ui.set_visible(self.label_previews.widget, True)
+        if pictures:
+            self.label_previews.show(pre, None if wait is None else wait.step)
+        else:
+            self.label_previews.clear()
+        ui.set_visible(self.labels_table, not pictures)
+        ui.set_visible(self.label_previews.widget, pictures)
         self.labels_confirmed.set(False, notify=False)
         self.labels_confirmed.disabled = not pre.discovery.leaves
         ui.set_visible(self.labels_card, bool(pre.discovery.leaves))

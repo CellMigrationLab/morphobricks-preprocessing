@@ -333,7 +333,8 @@ def colab(monkeypatch):
         calls.append(path)
         (Path(path) / "MyDrive").mkdir(parents=True, exist_ok=True)
 
-    fake = SimpleNamespace(drive=SimpleNamespace(mount=mount))
+    output = SimpleNamespace(no_vertical_scroll=list)  # cell 3's call on Colab: nothing here
+    fake = SimpleNamespace(drive=SimpleNamespace(mount=mount), output=output)
     monkeypatch.setitem(sys.modules, "google.colab", fake)
     return calls
 

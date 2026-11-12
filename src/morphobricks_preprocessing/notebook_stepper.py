@@ -83,7 +83,10 @@ STEPPER_CSS = """
 .mb-compact .mb-scan img.mb-crop { width: 180px !important; }
 .mb-channel-row { gap: 8px; }
 .mb-compact .mb-mask-pictures img { width: 170px !important; height: auto; }
-.mb-compact .mb-channel-row .mb-channel img.mb-grey { width: 99% !important; }
+.mb-compact .mb-channel-row .mb-channel img.mb-grey,
+.mb-compact .mb-channel-row .mb-channel img.mb-colour { width: 99% !important; }
+.mb-viewer { margin: 0 0 4px 0; }
+.mb-viewer .widget-dropdown, .mb-viewer .widget-slider { margin-right: 14px; }
 .mb-about { margin: 0 0 6px 0; font-size: 12.5px; color: #475569; }
 .mb-about summary { cursor: pointer; color: #2563EB; }
 .mb-about .mb-intro { margin: 4px 0 0 0; }

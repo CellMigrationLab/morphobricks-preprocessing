@@ -31,7 +31,7 @@ def stepper(root, masks, out):
 def test_complete_header_roles_are_offered_with_a_preview_and_one_button(exp):  # noqa: F811
     nb = stepper(*exp)
     assert ui.is_visible(nb.quick_card) and ui.is_visible(nb.axis_box)  # roles and example
-    assert ui.is_visible(nb.preview_image) and nb.preview_image.value[:4] == b"\x89PNG"
+    assert nb.axes_viewer.view is not None and nb.axes_viewer.tiles.children
     assert "Nothing is confirmed until you click" in nb.quick_text.value
     assert nb.confirmed_mapping is None and not nb.preview_checked.value  # never automatic
     assert not ui.is_visible(nb.confirm_button)  # one button while the roles are offered
@@ -109,33 +109,35 @@ def test_a_role_edited_on_a_reopen_is_kept_not_put_back_to_the_run_s_roles(exp):
 def test_a_preview_that_cannot_be_read_is_not_confirmed_by_one_click(exp, monkeypatch):  # noqa: F811
     # Regression (batch 34b BLOCKER 3): the headers are readable but the pixels are not; the
     # card still offered the click, and the click set "the preview looks right" on no preview.
-    from morphobricks_preprocessing import notebook_axis_preview
+    from morphobricks_preprocessing import image_view
     from morphobricks_preprocessing.planes import PlaneReadError
 
     def broken(*_args, **_kwargs):
         raise PlaneReadError("the pixels cannot be decoded")
 
-    monkeypatch.setattr(notebook_axis_preview, "read_plane", broken)
+    monkeypatch.setattr(image_view, "read_plane", broken)
     nb = stepper(*exp)
     assert nb._quick_offer is not None and ui.is_visible(nb.quick_card)
-    assert nb.preview_image.value == b"" and not ui.is_visible(nb.preview_image)
-    assert "the pixels cannot be decoded" in nb.preview_caption.value  # the failure stays visible
-    assert "This plane cannot be shown with these roles." in nb.preview_caption.value
+    assert nb.axes_viewer.view is None and not nb.axes_viewer.tiles.children
+    assert (
+        "the pixels cannot be decoded" in nb.axes_viewer.caption.value
+    )  # the failure stays visible
+    assert "No picture of" in nb.axes_viewer.caption.value
     assert "no example of these roles is drawn" in nb.quick_caption.value
     assert nb.quick_confirm.disabled
     assert not nb._confirm_quick_axes()  # even a click that reaches it is refused
     assert nb.confirmed_mapping is None and not nb.preview_checked.value
-    assert "the pixels cannot be decoded" in nb.preview_caption.value
+    assert "the pixels cannot be decoded" in nb.axes_viewer.caption.value
 
 
 def test_a_preview_that_fails_later_withdraws_the_click(exp, monkeypatch):  # noqa: F811
-    from morphobricks_preprocessing import notebook_axis_preview
+    from morphobricks_preprocessing import image_view
     from morphobricks_preprocessing.planes import PlaneReadError
 
     nb = stepper(*exp)
     assert not nb.quick_confirm.disabled  # a preview of these roles is shown
     monkeypatch.setattr(
-        notebook_axis_preview,
+        image_view,
         "read_plane",
         lambda *_a, **_k: (_ for _ in ()).throw(PlaneReadError("gone")),
     )
@@ -173,7 +175,7 @@ def test_an_image_changed_since_the_folder_check_is_not_previewed_or_confirmed(e
     from test_notebook_check_save import KINDS
 
     nb = stepper(*exp)
-    rel = nb.preview_file.value
+    rel = nb.axes_viewer.image
     assert nb.preflight.header_fingerprints.get(rel) is not None  # the check bound the header
     assert not nb.quick_confirm.disabled
     root, _, _ = exp
@@ -182,8 +184,8 @@ def test_an_image_changed_since_the_folder_check_is_not_previewed_or_confirmed(e
     stat = path.stat()
     os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**10))
     nb._refresh_quick_axes()
-    assert nb.preview_image.value == b"" and not ui.is_visible(nb.preview_image)
-    assert "changed since the folder check read it" in nb.preview_caption.value
+    assert nb.axes_viewer.view is None and not nb.axes_viewer.tiles.children
+    assert "changed since the folder check read it" in nb.axes_viewer.caption.value
     assert nb.quick_confirm.disabled
     assert not nb._confirm_quick_axes()
     assert nb.confirmed_mapping is None and not nb.preview_checked.value
@@ -195,13 +197,13 @@ def test_an_image_changed_during_the_preview_read_is_not_shown(exp, monkeypatch)
     import os
 
     from channel_images import write_channels
-    from morphobricks_preprocessing import notebook_axis_preview
+    from morphobricks_preprocessing import image_view
     from test_notebook_check_save import KINDS
 
     nb = stepper(*exp)
-    rel = nb.preview_file.value
+    rel = nb.axes_viewer.image
     path = exp[0] / rel
-    real = notebook_axis_preview.read_plane
+    real = image_view.read_plane
 
     def read_then_rewrite(*args, **kwargs):
         plane = real(*args, **kwargs)
@@ -210,9 +212,9 @@ def test_an_image_changed_during_the_preview_read_is_not_shown(exp, monkeypatch)
         os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**10))
         return plane
 
-    monkeypatch.setattr(notebook_axis_preview, "read_plane", read_then_rewrite)
+    monkeypatch.setattr(image_view, "read_plane", read_then_rewrite)
     nb._refresh_quick_axes()
-    assert nb.preview_image.value == b"" and nb._preview_drawn is None
-    assert "changed since the folder check read it" in nb.preview_caption.value
+    assert nb.axes_viewer.view is None and nb._preview_drawn is None
+    assert "changed since the folder check read it" in nb.axes_viewer.caption.value
     assert nb.quick_confirm.disabled and not nb._confirm_quick_axes()
     assert nb.confirmed_mapping is None and not nb.preview_checked.value

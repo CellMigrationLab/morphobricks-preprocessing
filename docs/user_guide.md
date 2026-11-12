@@ -278,20 +278,32 @@ shows a bar with what is done of the total, the file being read and the time. Ev
 button has a line beside it saying what it waits for. Nothing is decided for you: what the app
 proposes is recorded only when you click.
 
+**Looking at images.** Every step that shows images has the same viewer: four lists that
+narrow each other (condition, biological repeat, technical repeat, image; a level with one
+value is not shown), a **t (time point)** slider and a **z (depth slice)** slider when the
+image has those axes (it opens on the first time point and the middle slice), and every
+channel of that plane side by side (`c=0`, `c=1`, …, each with its own contrast; at most six,
+and then it says *6 of N channels shown*; a colour image is one colour picture). **Larger
+pictures** draws them larger. The line under the pictures names the image, the plane, its size
+and which axis roles it was read with: the file header's (not confirmed yet), the ones you are
+editing, or the confirmed ones. An image that cannot be drawn gets a sentence saying why.
+
 1. **Images.** Give the folders (images; masks and output are optional) and click **Scan the
    folders**. The scan lists the conditions and folders without reading any image header and
-   shows one image chosen at random, for looking only: every channel side by side (`c=0`,
-   `c=1`, …, each with its own contrast; at most six, and then it says *6 of N channels
-   shown*). If this is your experiment, click **Looks right: read all image headers**. The
-   pictures of each folder, the check's report and **Exclude images** are collapsed below.
+   shows one image chosen at random in the viewer, for looking only; any other image can be
+   chosen there. If this is your experiment, click **Looks right: read all image headers**.
+   The viewer then shows the images as the check read them; the folders found, the check's
+   report (formatted: a summary, then tables with the details folded) and **Exclude images**
+   are collapsed below.
 2. **Axes.** What the files hold, in three parts.
-   - **Axis roles:** one row per image dimension with its role, and under them an example of
-     one image as these roles read it, redrawn whenever you change a role (a wrong role looks
-     wrong: a strip, stripes). Click **Confirm these axes** (offered when the headers name
+   - **Axis roles:** one row per image dimension with its role, and under them the viewer
+     with one image as these roles read it, redrawn whenever you change a role (a wrong role
+     looks wrong: a strip, stripes); choose any other image, time point or slice there. Click **Confirm these axes** (offered when the headers name
      every axis), or **Yes, the example looks right** and then **Confirm axis roles**.
    - **Pixel size:** one line, for example *Pixel size: 0.108 × 0.108 µm (from the headers,
-     same in all 270 images)*. When the headers give none, type it once and click **Use for
-     all images**, or leave the images uncalibrated; nothing is guessed. When the headers
+     same in all 270 images)*. When the headers give none, type it once under **Pixel size X**
+     (**Y** follows while **same for X and Y** is ticked; untick it to type another Y) and
+     click **Use for all images**, or leave the images uncalibrated; nothing is guessed. When the headers
      disagree, the line says how many images have which size, and **Set per imaging unit…**
      opens.
    - **Image type:** what the channel dimension holds, *separate stains or markers* or
@@ -300,7 +312,9 @@ proposes is recorded only when you click.
      headers differ. An experiment that mixes colour and separate-channel folders is refused
      in this version.
 3. **Channels.** Name what you stained and confirm the list; then tag each folder's channels
-   with those names, looking at their pictures. On a saved experiment whose images were
+   with those names, looking at any image in the viewer (each channel shows its header name
+   and the tag chosen for it). Folders with identical headers are tagged together; the list of
+   those folders, where one can be tagged on its own, is one click away. On a saved experiment whose images were
    re-exported with their channels in another order, tag that folder again in the new order:
    each saved channel that moved is listed (*DNA: ctrl/rep1 channel 1 → channel 2*) with
    **Yes, these are the new positions**. Only that click records the change (experiment-v1
@@ -327,7 +341,7 @@ proposes is recorded only when you click.
    the folder names, folders with the same name are the same repeat, and nothing is compared.
    If that is right, click **Looks right: confirm the design**; otherwise change a comparison
    in the grid, or a name or the pairing under **Edit names or pairing…**, first.
-6. **Check and save.** Your experiment in sentences and one question per replicate (*Were
+6. **Check and save.** The viewer, your experiment in sentences and one question per replicate (*Were
    these prepared and imaged the same way?*), then **Yes, save the experiment description**.
    The line beside the button says what is still missing. Warnings of the description (for
    example a label declared that no folder uses, `W_UNUSED_CHANNEL`) are listed above the
@@ -335,7 +349,8 @@ proposes is recorded only when you click.
 7. **Run.** **Compute histograms**; what is still to do is listed only while something is.
    After the run: its result, and collapsed panels for the **intensity checks and plots**,
    **Compare groups** (pooled statistics and a distribution plot per condition, repeat or
-   image, for the table this run wrote; it writes nothing) and the report.
+   image, for the table this run wrote; it writes nothing) and the report (formatted, with the
+   plain text of `discovery_report.txt` folded last).
 
 Folders may have different numbers of channels (for example three stains everywhere and a
 fourth only in `Biological_repeat_2`): on **Channels** you give each label once and tag each
@@ -352,7 +367,11 @@ did not change, it opens on the first step still to do (usually **Run**).
 
 Other MorphoBricks notebooks embed the first cards of this app as stacked pages
 (`folder_step`, `axis_step`, `run_step`): the cards and their messages are the same, laid out
-one page under the other.
+one page under the other, with a picture per folder and the example of the axes step instead
+of the viewer.
+
+On Google Colab, cell 3 asks Colab not to put its output in a frame that scrolls on its own
+(`google.colab.output.no_vertical_scroll()`), so the page scrolls as a whole there too.
 
 ## 5. Command line
 

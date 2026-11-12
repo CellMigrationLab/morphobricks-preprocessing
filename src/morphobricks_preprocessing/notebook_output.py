@@ -12,6 +12,7 @@ wrote (``discovery_report.txt``), with where it is.
 from __future__ import annotations
 
 import html
+import json
 import logging
 from pathlib import Path
 
@@ -20,6 +21,7 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .discovery import default_output_folder
 from .discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
+from .report_view import report_html
 from .run import (
     LockHolder,
     OutputLockedError,
@@ -184,9 +186,18 @@ class _ReportView:
             ],
             raw=True,
         )
-        self.text.value = f"<pre style='white-space:pre-wrap'>{html.escape(text)}</pre>"
+        try:
+            data = json.loads((output / REPORT_FILENAME).read_text(encoding="utf-8"))
+            self.text.value = report_html(data, text)
+        except (OSError, ValueError, AttributeError, TypeError):
+            # The data file cannot be read as written: the plain text, as before.
+            self.text.value = f"<pre style='white-space:pre-wrap'>{html.escape(text)}</pre>"
         self.box.selected_index = None
         ui.set_visible(self.box, True)
+
+    def flat(self) -> None:
+        """Show the report in the page itself (the stepper folds the whole view already)."""
+        self.widget.children = [self.where, self.text]
 
     def clear(self) -> None:
         """Show no report."""

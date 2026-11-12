@@ -234,7 +234,8 @@ def _kernel_notebook(nbformat, *, roles=(INSTALL, DRIVE, RUN), colab_drive=None,
             "drive = types.SimpleNamespace(\n"
             "    mount=lambda path: (Path(path) / 'MyDrive').mkdir(parents=True, exist_ok=True)\n"
             ")\n"
-            "sys.modules['google.colab'] = types.SimpleNamespace(drive=drive)\n"
+            "output = types.SimpleNamespace(no_vertical_scroll=lambda: None)\n"
+            "sys.modules['google.colab'] = types.SimpleNamespace(drive=drive, output=output)\n"
         )
         cells = [fake, *cells]
     notebook.cells = cells
@@ -242,15 +243,47 @@ def _kernel_notebook(nbformat, *, roles=(INSTALL, DRIVE, RUN), colab_drive=None,
 
 
 def _execute(notebook, **options):
+    """Run the notebook in a fresh kernel; run it again when the kernel's output was lost.
+
+    The app sends a message per widget: more than two thousand at once. ZeroMQ keeps 1,000
+    messages for a subscriber on each side and drops the rest, so a client that reads slowly
+    (macOS CI) lost the end of the stream ("Timeout waiting for IOPub output"), and with it
+    the cell's display. That is the transport, not the notebook: this client's queue is made
+    unlimited (:func:`_unlimited_queue`), and a run that still loses its output is repeated,
+    twice at most; a notebook that really shows nothing still fails every time.
+    """
     nbclient = pytest.importorskip("nbclient", reason="the dev extra installs nbclient")
-    client = nbclient.NotebookClient(
-        notebook,
-        timeout=300,
-        kernel_name="python3",
-        resources={"metadata": {"path": str(NOTEBOOK.parent)}},
-        **options,
-    )
-    client.execute()
+    zmq = pytest.importorskip("zmq", reason="the kernel's transport")
+    for attempt in range(3):
+        client = nbclient.NotebookClient(
+            notebook,
+            timeout=300,
+            iopub_timeout=120,
+            raise_on_iopub_timeout=True,
+            kernel_name="python3",
+            resources={"metadata": {"path": str(NOTEBOOK.parent)}},
+            **options,
+        )
+        _unlimited_queue(client.create_kernel_manager(), zmq)
+        try:
+            client.execute()
+        except (RuntimeError, TimeoutError) as exc:  # nbclient's CellTimeoutError is the latter
+            if "IOPub" not in str(exc) or attempt == 2:
+                raise
+        else:
+            return
+
+
+def _unlimited_queue(manager, zmq):
+    """Make the kernel client the manager creates read its sockets without a queue limit."""
+    make = manager.client
+
+    def client(**options):
+        made = make(**options)
+        made.context.setsockopt(zmq.RCVHWM, 0)  # before its channels connect
+        return made
+
+    manager.client = client
 
 
 def _text(cell):
