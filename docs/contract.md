@@ -733,7 +733,7 @@ The report is UTF-8 JSON (two-space indent, LF), written atomically to the outpu
 
 | Key | Meaning |
 |---|---|
-| `report_version` | `3` (since v0.4.0rc5: a tie between parents gives no parent, and `ambiguous_parent` was added; plan §12 question 74). `2` since issue #67: the one-to-one matches are a matching, and the four counts of unmatched and several-partner objects were added. |
+| `report_version` | `4` (pieces are counted 8-connected, owner decision "8-connected everywhere", 11 November 2026: a label whose pieces touch only at a corner is one piece). `3` since v0.4.0rc5 (a tie between parents gives no parent, and `ambiguous_parent` was added; plan §12 question 74). `2` since issue #67: the one-to-one matches are a matching, and the four counts of unmatched and several-partner objects were added. |
 | `thresholds` | The thresholds used, all seven. |
 | `images` | Images scanned (every image with at least one mask). |
 | `masks` | Per mask type: `kind`, `images`, `objects` (labels over all images) and `median_pieces_per_label`. |

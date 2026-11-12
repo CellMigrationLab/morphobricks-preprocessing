@@ -1,7 +1,9 @@
 """The mask step: kinds of masks, relationships with their evidence, hierarchy (contract §15)."""
 
 import json
+import re
 from collections import deque
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -15,6 +17,7 @@ from morphobricks_preprocessing import (
     scan_masks,
     write_mask_report,
 )
+from morphobricks_preprocessing.mask_scan import MASK_REPORT_VERSION
 from tiff_tree import write_data
 
 SHAPE = (64, 64)
@@ -392,3 +395,13 @@ def test_negative_labels_in_a_later_time_point_are_refused(tmp_path):
     assert inventory.ok, inventory.issues
     with pytest.raises(ValueError, match="Cells/ctrl/a.tif holds negative labels"):
         scan_masks(inventory, root)
+
+
+def test_the_contract_states_the_current_report_version():
+    # Review of PR #289: the version was bumped to 4 in the heading of contract section 15.1
+    # but its key table still said `report_version` is 3.
+    contract = (Path(__file__).parents[1] / "docs" / "contract.md").read_text(encoding="utf-8")
+    heading = re.search(r"^### 15\.1 .*report version (\d+)\)$", contract, re.MULTILINE)
+    row = re.search(r"^\| `report_version` \| `(\d+)`", contract, re.MULTILINE)
+    assert heading and row
+    assert heading.group(1) == row.group(1) == MASK_REPORT_VERSION
