@@ -290,9 +290,13 @@ class _Viewers:
             and viewer.view is not None
         )
 
+    def _cards_show_pictures(self) -> bool:
+        """Return False where the step's viewer shows the images instead of the folder cards."""
+        return getattr(self, "check_viewer", None) is None
+
     def _member_picture(self, key: tuple[str, str], detail: widgets.VBox) -> widgets.Widget:
         """Return no picture of a folder where the step's viewer shows any of its images."""
-        if getattr(self, "check_viewer", None) is None:
+        if self._cards_show_pictures():
             return super()._member_picture(key, detail)
         return widgets.HTML("")
 

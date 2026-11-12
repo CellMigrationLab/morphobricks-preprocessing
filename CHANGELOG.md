@@ -8,6 +8,32 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+**Owner feedback on the v0.5.2 Colab test (12 November 2026)**
+
+- **Axes: the confirmation is seen at once.** The instant **Confirm these axes** or
+  **Confirm axis roles** (or **Change axis roles**) is clicked, the button is greyed out and
+  says *Working…*, and the progress line of the folder check appears under it before any of
+  the work: *Working…*, then the 5 parts of the confirmation with a bar (n of 5, what it does
+  now). Both clear when it is done.
+  If something fails part-way, the button is given back and the error is said in red where
+  it is seen (under **Confirm axis roles** once the one-click card has gone), with the full
+  report in *Technical details*; nothing stays on *Working…*.
+- **Axes: the confirmation is faster.** It read every channel of every folder's first image for
+  the per-folder image-type rows, which are folded under *Set per folder…* (28 folders of
+  3 × 2048² images: 93 plane reads, 84 of them for those rows), and rebuilt the pairing editor
+  of Design for pictures the stepper never shows. The rows now read their pictures only once
+  opened, and the editor is not rebuilt there: 9 plane reads instead of 93 (about 72 MiB read
+  instead of 744 MiB) and 1,037 widgets built instead of 1,439 on the same data. Nothing
+  validated changed.
+- **The image type moved from Axes to Channels.** It is proposed at the quick scan, display
+  only, from the headers (the shown image's before the folder check, every header after it;
+  nothing is recorded there), and confirmed on Channels, first on the page, since it decides
+  whether the channels are R, G and B or the stains. The rules are unchanged: recorded only by
+  a click, pre-filled only when every header agrees, per folder when they differ, **Use for all
+  folders**, and folders of different types refused (`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`). The
+  Axes step is done once the roles are confirmed; the Channels step needs the image type. The
+  published files are unchanged for the same answers.
+
 **Parent-label (grouped) masks** (MorphoBricks-Spec PR #28, merge `69a58b3`: ADR 0001 PL1,
 experiment-v1 §4.5, §4.5a-§4.5c, §7, §8; ADR 0002 resolver contract version 2)
 

@@ -177,9 +177,19 @@ class _DescribedRun:
         """Refresh *Your channels*; the pairing card gets its pictures once they can be read."""
         super()._refresh_channels()
         thumbs = self._channel_thumbs
-        if self.pairing is not None and thumbs is not self._pictures_for:
+        # Rebuilt only where the editor shows the pictures (not in the stepper, whose viewer
+        # shows them): rebuilding it on every confirmation of the axes was most of the wait.
+        if (
+            self.pairing is not None
+            and thumbs is not self._pictures_for
+            and self._cards_show_pictures()
+        ):
             self._pictures_for = thumbs
             self._build_design_editor()
+
+    def _cards_show_pictures(self) -> bool:
+        """Return True when the folder cards show each folder's picture (``_member_picture``)."""
+        return True
 
     # Step 2 ------------------------------------------------------------------------------
 

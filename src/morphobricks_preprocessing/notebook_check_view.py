@@ -32,7 +32,7 @@ QUESTION_WORDS = {
     "unit_channels_missing": "the channels of {subject} are not tagged (Channels)",
     "unit_channel_untagged": "{subject} is not tagged (Channels)",
     "channel_undeclared": "the label {subject} is used but not declared (Channels)",
-    "unit_image_type_unanswered": "the image type of {subject} is not answered (Axes)",
+    "unit_image_type_unanswered": "the image type of {subject} is not answered (Channels)",
     "unit_channels_stale": (
         "the tags of {subject} were saved for another image: tag its channels again (Channels)"
     ),

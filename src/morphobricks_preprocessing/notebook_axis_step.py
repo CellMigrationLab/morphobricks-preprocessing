@@ -50,6 +50,7 @@ class _AxisStep:
             tooltip="Use these roles for every image of the experiment",
             main=True,
         )
+        self.confirm_progress = widgets.HTML()  # Working…, then the parts done (owner, 12 Nov)
         self.confirm_blocker = widgets.HTML()
         self.confirmed_status = widgets.HTML()
         self.axis_next = widgets.HTML()
@@ -59,7 +60,7 @@ class _AxisStep:
         for slider in self.preview_sliders.values():
             slider.observe(lambda _: self._render_preview_if_shown(), names="value")
         self.preview_checked.observe(lambda _: self._update_confirm_button())
-        self.confirm_button.on_click(lambda _: self._toggle_confirmation())
+        self.confirm_button.on_click(lambda _: self._confirm_clicked())
         self._build_image_type_card()
 
     def _build_missing_card(self) -> None:
@@ -204,9 +205,10 @@ class _AxisStep:
             self.convert_card,
             self.axis_sizes_slot,
             self.confirm_button,
+            self.confirm_progress,
             self.confirm_blocker,
             self.confirmed_status,
-            self.image_type_card,
+            # No image type here (owner, 12 November 2026): it is confirmed on Channels.
             self.axis_next,
         ]
         self._fill_preview_files()
@@ -393,6 +395,8 @@ class _AxisStep:
 
     def _update_confirm_button(self) -> None:
         """Enable *Confirm axis roles* when nothing blocks it; say beside it what does."""
+        if getattr(self, "_working_on", None) is self.confirm_button:
+            return  # disabled, saying Working…, until the work is done
         if self.confirmed_mapping is not None:
             self.confirm_button.disabled = False
             self.confirm_blocker.value = ""

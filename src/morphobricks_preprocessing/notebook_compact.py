@@ -80,6 +80,7 @@ class _CompactPages:
             self.folder_status,  # the check's progress, right under the button clicked
             self.copy_note_images,
             self.scan_axes_line,
+            self.scan_type_line,
             self.folder_lock.card,
             self.folder_tiles,
             self.issues_card,

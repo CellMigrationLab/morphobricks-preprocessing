@@ -40,11 +40,18 @@ release PR moves both together and records the pair in `RELEASE_CALLS` of
 7. - [ ] **Images:** paste the Drive paths (experiment, masks, output); **Browse…** says it
    cannot open here and offers **Copy path**. **Scan the folders** shows the folders and an
    example picture with a progress line; **Looks right: read all image headers** shows its
-   progress (done of total, time left) and the result.
+   progress (done of total, time left) and the result. The image type (separate channels or
+   colour RGB) is shown from the headers, display only: "nothing is recorded here".
 8. - [ ] **Axes:** one row per dimension with its role, the example redrawn when a role changes,
-   the pixel size in one line, the image type in one line (**Use for all folders**). The roles
-   are confirmed only by the click.
-9. - [ ] **Channels:** name the stains, then tag each folder's channels.
+   the pixel size in one line; no image type. The roles are confirmed only by the click. The
+   instant **Confirm these axes** (or **Confirm axis roles**) is clicked, the button is greyed
+   out and says **Working…**, and a progress bar under it counts the parts done (n of 5, what
+   it does now); both clear when the roles are confirmed.
+9. - [ ] **Channels:** first the image type in one line, pre-filled only when every header
+   agrees and recorded only by **Use for all folders** (or each folder under **Set per
+   folder…**; folders of different types are refused, `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`);
+   then name the stains (none for colour RGB: its channels are R, G and B) and tag each
+   folder's channels.
 10. - [ ] **Masks:** **Check the masks** runs with progress; each mask type can be described.
     **Describe the masks** is greyed out, with its reason, until a run exists.
 11. - [ ] **Design:** the grid of conditions by biological repeats; **Looks right: confirm the

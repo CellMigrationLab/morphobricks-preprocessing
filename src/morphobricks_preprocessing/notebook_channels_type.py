@@ -148,6 +148,11 @@ class ImageTypeRows:
         self.types, self._thumbs = types, thumbs
         # The status of each unit against a saved experiment (None without one): rows fold.
         self.reopen: Callable[[], Mapping[UnitKey, str] | None] = lambda: None
+        # True while the rows are folded away: their pictures are then read only once shown
+        # (owner, 12 November 2026: confirming the axes read every channel of every folder's
+        # image for rows nobody had opened).
+        self.folded: Callable[[], bool] = lambda: False
+        self.pictured = False
         self.fold = RowFold("folder")
         self.rows = widgets.VBox()
         self.status = widgets.HTML()
@@ -184,8 +189,26 @@ class ImageTypeRows:
         return sum(1 for u in self.types.layouts if u.usable and self.types.saved(u.key))
 
     def refresh(self) -> None:
-        """Rebuild the rows from the saved answers."""
+        """Rebuild the rows from the saved answers (without pictures while they are folded)."""
         self.types.open(self.types.layouts)  # a fresh set of cells, built from the answers
+        self.pictured = not self.folded()
+        self._build_rows()
+        self.problem.value = self.types.message
+        usable = sum(1 for u in self.types.layouts if u.usable)
+        done = self.answered
+        self.status.value = (
+            ui.status("ok", f"The image type of every one of the {usable} folders is answered.")
+            if done == usable
+            else ui.status("warn", f"Not finished: {usable - done} image type(s) to choose.")
+        )
+
+    def unfolded(self) -> None:
+        """Rebuild the rows with their pictures now that they are shown, unless they have them."""
+        if not self.pictured and not self.folded() and ui.is_visible(self.widget):
+            self.refresh()
+
+    def _build_rows(self) -> None:
+        """Build one row per folder (its picture once shown) and the header's confirmation."""
         ordered = sorted(self.types.layouts, key=lambda u: tuple(map(natural_key, u.key)))
         units = self.reopen()
         rows = self.fold.arrange(
@@ -201,14 +224,6 @@ class ImageTypeRows:
             button.on_click(lambda _, keys=tuple(proposed): self._confirm(keys))
             rows.append(button)
         self.rows.children = rows
-        self.problem.value = self.types.message
-        usable = sum(1 for u in self.types.layouts if u.usable)
-        done = self.answered
-        self.status.value = (
-            ui.status("ok", f"The image type of every one of the {usable} folders is answered.")
-            if done == usable
-            else ui.status("warn", f"Not finished: {usable - done} image type(s) to choose.")
-        )
 
     def _settled(self, layout: UnitLayout) -> bool:
         """Return True when a row may fold: answered, with no warning under its choice."""
@@ -233,7 +248,7 @@ class ImageTypeRows:
             + " · ".join(quoted(layout.name(i)) for i in range(layout.channels))
         )
         info += f"<div class='mb-help'>{said}</div>"
-        thumbs = self._thumbs()
+        thumbs = self._thumbs() if self.pictured else None
         colour = self.types.shown(layout) == "rgb"
         thumb = None if thumbs is None else thumbs.picture(layout, colour)
         if thumb is not None:
