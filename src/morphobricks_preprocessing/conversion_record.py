@@ -9,16 +9,11 @@ records the record's SHA-256 in its manifest (``conversion_record_sha256``) and
 :func:`review_conversion` warns when a source changed after the conversion, or a copy
 since it was written (its fingerprint or its SHA-256).
 
-Only record version 4 is written and read: the copies' SHA-256, channel names and significant
-bits (PP-11c), the record-level ``projection`` (the method and slice range of a tree of
-Z-projected copies, or null), the entry action ``"projected"`` with its
-:class:`.projection_record.ProjectionEntry` (issue #176), and the entry key
-``source_relative_path`` of an OME-Zarr copy (version 4, owner decision of 12 November 2026:
-a version 3 reader would ignore it and warn that the source went missing). A record of any
-other version (1 and 2 were written before v0.5.1, 3 by v0.5.1) is refused with
-:class:`ConversionRecordError`, naming the fix: convert the originals again into a new folder.
-Nothing is converted (no backward compatibility before the first pipeline release, Spec ADR
-0002 AR10; SWEEP-PP).
+Only record version 4 is written and read (owner, 12 November 2026): version 3 (issue #176,
+the projection) with an OME-Zarr copy's ``source_relative_path``, which a version 3 reader
+would ignore. A record of any other version (1 to 3 were written by v0.5.1 or earlier) is
+refused with :class:`ConversionRecordError`, naming the fix: convert the originals again into
+a new folder. Nothing is converted (Spec ADR 0002 AR10; SWEEP-PP).
 """
 
 from __future__ import annotations
@@ -45,9 +40,7 @@ RECORD_FILENAME = ".morphobricks-conversion.json"
 """The conversion record, in the root of the copy tree."""
 
 RECORD_VERSION = "4"
-"""The one version written and read: the record-level projection and projected entries
-(issue #176), each copy's SHA-256, channel names and significant bits (PP-11c), and an
-OME-Zarr copy's ``source_relative_path`` (version 4)."""
+"""The one version written and read (an OME-Zarr copy's ``source_relative_path`` is new)."""
 
 _CONVERT_AGAIN = "convert the originals again into a new folder"
 """The fix a refused record names."""
@@ -61,10 +54,7 @@ EXCLUDED = "excluded"
 PROJECTED = "projected"
 """An image written as a 2-D copy: its Z-stack projected with the record's method."""
 
-_ZARR_COPY_SUFFIX = ".ome.zarr"
-"""The name ending of an OME-Zarr copy (:data:`.ome_zarr_copy.ZARR_COPY_SUFFIX`, which
-imports this module)."""
-
+_ZARR_COPY_SUFFIX = ".ome.zarr"  # .ome_zarr_copy.ZARR_COPY_SUFFIX (that module imports this)
 COPIED = "copied"
 """An image copied byte for byte: its header already names its axes as confirmed, it is
 an OME-Zarr image, or it is excluded (never read)."""
@@ -115,10 +105,8 @@ class CopyEntry:
     source_relative_path
         The source's path relative to the experiment when the copy has another name (an
         OME-Zarr copy of a TIFF image, :mod:`.ome_zarr_copy`); None when it is
-        ``relative_path``, as for every OME-TIFF and byte-for-byte copy. Written to the
-        record exactly for an image converted or projected into an OME-Zarr copy, and read
-        back only there (a version 4 record that leaves it out of such an entry, or gives it
-        to another, is refused: the source would be looked for at the copy's path).
+        ``relative_path``, as for every OME-TIFF and byte-for-byte copy. Required on an
+        OME-Zarr copy's entry and refused on any other (:func:`_check_source_path`).
     """
 
     relative_path: str
@@ -572,13 +560,9 @@ def _check_projection(projection: Projection | None, entry: CopyEntry) -> None:
 
 
 def _check_source_path(data: Mapping) -> None:
-    """Refuse ``source_relative_path`` where the writer would not write it, or its absence.
+    """Refuse ``source_relative_path`` where ``as_zarr_copy`` does not write it, or its absence.
 
-    :func:`.ome_zarr_copy.as_zarr_copy` writes it, and only it, for an image converted or
-    projected into an OME-Zarr copy (its ``relative_path`` ends with ``.ome.zarr``); a
-    byte-for-byte copy (``copied``, an OME-Zarr image among them) and an OME-TIFF copy keep
-    their source's path. Without the key, a source would be looked for at the copy's path
-    and reported missing (``conversion_source_changed``); it is never guessed.
+    Without it a source would be looked for at the copy's path (``conversion_source_changed``).
     """
     rel, named = str(data.get("relative_path")), data.get("source_relative_path")
     zarr_copy = data.get("action") in (CONVERTED, PROJECTED) and rel.endswith(_ZARR_COPY_SUFFIX)
