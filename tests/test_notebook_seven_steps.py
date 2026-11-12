@@ -1,7 +1,8 @@
 """The 7-step flow of the shipped notebook (owner, 10 November 2026, items (o), (p) and (q)).
 
-- the image type is asked with the axes, in one line pre-filled from the image headers and
-  recorded only by a click; each folder on demand; folders that differ are said at once;
+- the image type is asked in one line pre-filled from the image headers and recorded only by
+  a click; each folder on demand; folders that differ are said at once (on Channels since the
+  owner's decision of 12 November 2026);
 - the conditions, the replicates and "compared against" are one grid with one confirmation;
 - the mask step (*Describe the masks*) is on the Masks step and waits, visibly, for a run.
 
@@ -89,13 +90,14 @@ def test_the_header_s_type_is_a_proposal_saved_only_by_the_click(exp):  # noqa: 
     assert "Proposed from the image headers: separate channels in all 4 folders" in said
     assert "Not saved until you click Use for all folders" in said
     assert set(_types(nb).values()) <= {None} and not line.complete  # nothing was applied
-    assert not nb._stepper.states()[1].done
+    assert nb._stepper.states()[1].done  # Axes is done: the type is on Channels (12 Nov)
+    assert not nb._stepper.states()[2].done and "image type" in nb._stepper.states()[2].text
     assert ui.is_visible(line.apply) and not line.apply.disabled
     line.apply.click()
     assert set(_types(nb).values()) == {"channels"} and len(_types(nb)) == 4 and line.complete
     assert "Image type: separate channels in all 4 folders." in _text(line.line.value)
     assert not ui.is_visible(line.apply)  # nothing left to record
-    assert nb._stepper.states()[1].done
+    assert "separate channels (4 folders)" in nb._stepper.states()[2].text
 
 
 def test_one_click_for_all_folders_records_what_each_folder_s_choice_records(exp, tmp_path):  # noqa: F811
@@ -234,7 +236,7 @@ def test_the_channels_step_waits_for_the_image_type_and_says_where(exp):  # noqa
     nb.quick_confirm.click()
     nb._stepper.go(2)
     assert "Waiting for the image type" in nb._stepper.waits[2].value
-    assert "Axes (step 2)" in nb._stepper.waits[2].value
+    assert "under Image type below" in nb._stepper.waits[2].value  # on this page (12 Nov)
     nb.type_line.apply.click()
     nb._stepper.go(2)
     assert nb._stepper.waits[2].value == ""

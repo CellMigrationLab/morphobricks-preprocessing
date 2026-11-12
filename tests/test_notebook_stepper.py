@@ -138,14 +138,16 @@ def test_the_pages_hold_the_existing_cards_in_the_new_places(exp):  # noqa: F811
     nb = stepped(*exp)
     contains = lambda i, w: _holds(nb._stepper.pages[i], w)  # noqa: E731
     assert contains(0, nb.check_button) and contains(0, nb.scan_button)
-    # Axes: the roles, the pixel size and the image type (what the channel dimension holds).
+    # Axes: the roles and the pixel size; no image type there (owner, 12 November 2026).
     assert contains(AXES, nb.axis_box) and contains(AXES, nb.calibration_card)
     assert _holds(nb.axis_box, nb.calibration_card) and contains(AXES, nb.quick_card)
-    assert contains(AXES, nb.type_line.widget) and contains(AXES, nb.type_rows.widget)
-    # Channels: the stains, the tags, then the saved channels that moved (#258) or lost a
-    # header name (#281).
+    assert not contains(AXES, nb.type_line.widget) and not contains(AXES, nb.type_rows.widget)
+    # Channels: the image type first (it decides R, G, B or the stains), the stains, the tags,
+    # then the saved channels that moved (#258) or lost a header name (#281).
+    assert contains(CHANNELS, nb.type_line.widget) and contains(CHANNELS, nb.type_rows.widget)
     page = nb._stepper.pages[CHANNELS].children[1].children[1].children
-    assert list(page[-5:]) == [
+    assert list(page[-6:]) == [
+        nb.type_line.widget,
         nb.channel_labels.widget,
         nb.channels_look,  # the one viewer, between the stains and the tags
         nb.channel_grid.widget,
@@ -176,7 +178,7 @@ def _holds(widget, target):
     return any(_holds(child, target) for child in getattr(widget, "children", ()))
 
 
-def test_the_image_type_is_asked_with_the_axes_and_the_grid_has_no_type_column(exp):  # noqa: F811
+def test_the_image_type_is_asked_on_channels_and_the_grid_has_no_type_column(exp):  # noqa: F811
     nb = stepped(*exp)
     for row, text in zip(nb.channel_labels.rows, TAGS, strict=True):
         row.id_box.value = text
@@ -241,7 +243,8 @@ def test_a_changed_reopen_turns_the_affected_steps_orange(tmp_path):
     states = nb._stepper.states()
     assert "since saved: 1 new, 0 gone" in states[0].text
     assert states[CHANNELS].changed and states[SAVE].changed  # the new folder's tags; save again
-    assert states[AXES].changed and "image type: 1 to choose" in states[AXES].text
+    assert "image type: 1 to choose" in states[CHANNELS].text  # the type is on Channels
+    assert "image type" not in states[AXES].text
     assert not states[DESIGN].changed and states[DESIGN].done  # the names did not change
     assert kinds(nb)[CHANNELS] == "changed" and kinds(nb)[SAVE] == "changed"
     assert nb._stepper.current == AXES  # landed on the axes: each session confirms them again
@@ -286,12 +289,13 @@ def test_the_axes_page_has_no_stale_image_type_sentence_and_no_broken_picture(ex
 def test_pixel_sizes_without_a_physical_size_say_uncalibrated(exp):  # noqa: F811
     nb = stepped(*exp)
     state = nb._stepper.states()[AXES]  # the pixel size is part of the axes step
-    assert not state.done and "image type: 4 to choose" in state.text  # and the image type
+    assert state.done and "image type" not in state.text  # the type is on Channels (12 Nov)
+    assert "image type: 4 to choose" in nb._stepper.states()[CHANNELS].text
     nb.type_line.apply.click()
     state = nb._stepper.states()[AXES]
     assert state.done and state.note == "uncalibrated"
-    assert "confirmed · uncalibrated (pixels)" in state.text
-    assert state.text.endswith("separate channels (4 folders)")
+    assert state.text.endswith("uncalibrated (pixels): no pixel size in the headers or stated")
+    assert "separate channels (4 folders)" in nb._stepper.states()[CHANNELS].text
     nb._stepper.go(0)
     assert nb._stepper.chips[1].description == "✓ 2 Axes · uncalibrated"
     assert kinds(nb)[1] == "noted"
@@ -310,7 +314,8 @@ def test_pixel_sizes_from_the_headers_are_a_plain_done(tmp_path):
     nb.check_button.click()
     assert not nb._stepper.states()[1].done  # the axes are not confirmed yet
     nb.quick_confirm.click()
-    assert not nb._stepper.states()[1].done  # the image type is still a proposal
+    assert nb._stepper.states()[1].done  # the image type is asked on Channels now
+    assert not nb._stepper.states()[2].done  # where it is still a proposal
     nb.type_line.apply.click()
     nb._stepper.go(0)
     state = nb._stepper.states()[1]

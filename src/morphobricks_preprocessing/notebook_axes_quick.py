@@ -50,8 +50,11 @@ class _QuickAxes:
             tooltip="The example looks right: use these roles for every image",
             main=True,
         )
-        self.quick_confirm.on_click(lambda _: self._confirm_quick_axes())
-        self.quick_card = widgets.VBox([self.quick_text, self.quick_confirm, self.quick_caption])
+        self.quick_confirm.on_click(lambda _: self._quick_clicked())
+        self.quick_progress = widgets.HTML()  # Working…, then the parts done (owner, 12 Nov)
+        self.quick_card = widgets.VBox(
+            [self.quick_text, self.quick_confirm, self.quick_progress, self.quick_caption]
+        )
         ui.set_visible(self.quick_card, False)
 
     # What can be offered -------------------------------------------------------------------
@@ -177,6 +180,21 @@ class _QuickAxes:
         ]
 
     # The click ---------------------------------------------------------------------------
+
+    def _quick_clicked(self) -> None:
+        """*Confirm these axes*: working at once, then the parts of the confirmation."""
+        self._working(self.quick_confirm, self.quick_progress, self._confirm_quick_axes)
+
+    def _after_working(self, button: widgets.Button) -> None:
+        super()._after_working(button)
+        if button is getattr(self, "quick_confirm", None):
+            self._refresh_quick_axes(drawn=True)  # its state, from the roles and the example
+
+    def _failure_line(self, progress: widgets.HTML) -> widgets.HTML:
+        """Say a failure of *Confirm these axes* under *Confirm axis roles* once its card hides."""
+        if progress is getattr(self, "quick_progress", None) and not ui.is_visible(self.quick_card):
+            return self.confirm_progress
+        return super()._failure_line(progress)
 
     def _confirm_quick_axes(self) -> bool:
         """Confirm the offered roles: the preview checked, then the roles, as the role boxes do.

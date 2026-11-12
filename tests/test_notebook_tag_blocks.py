@@ -136,12 +136,12 @@ def test_colour_is_confirmed_on_image_type_only_and_the_tag_page_restates_it(tmp
     grid = nb.channel_grid
     assert not grid.confirm_buttons  # no second confirmation of the colour pre-tick
     text = repr(grid.blocks.children)
-    assert "confirm it on Axes (Image type)" in text
+    assert "confirm it under Image type, above" in text
     buttons = [w for w in nb.type_rows.rows.children if isinstance(w, widgets.Button)]
     (button,) = [w for w in buttons if "colour (RGB) is right" in w.description]
     button.click()
     assert all(nb.draft_answers.units[k].image_type == "rgb" for k in KEYS)
-    assert "Answered colour (RGB) (Axes)" in repr(grid.blocks.children)
+    assert "Answered colour (RGB) (Image type, above)" in repr(grid.blocks.children)
     assert not grid.cells and grid.complete
 
 
