@@ -11,7 +11,8 @@ v0.5.1: no run before v0.5.1 is read.)
 Acquisitions may now have different channels (Stage 3 S3.3, owner decision of 11 November
 2026): every table and check names a channel by its canonical ID, never by its position.
 Parent-label (grouped) masks are described and handed to the bricks (resolver contract
-version 2). The notebook has one image viewer, proposes the axes at the quick scan, saves
+version 2). The notebook has one image viewer, proposes the axes at the quick scan, confirms
+them with a visible *Working…* and progress bar, asks the image type on Channels, saves
 Z-stacks as recorded projections and can save an OME-Zarr copy. Normalization is pinned at
 v0.5.0. As in v0.5.1 there is no backward compatibility before the first pipeline release
 (MorphoBricks-Spec ADR 0002 AR10): a v0.5.1 run and a v0.5.1 folder of copies (conversion
@@ -91,6 +92,13 @@ record version 3) are refused, never converted.
   differing pixel sizes in one line with two explicit choices; pixel size as **X** and **Y**
   inputs with **same for X and Y**; the check's and the run's report formatted; run messages as
   short cards; on Colab, cell 3 calls `google.colab.output.no_vertical_scroll()`.
+- **Notebook (owner's test of the v0.5.2 candidate, #292):** **Confirm these axes**, **Confirm
+  axis roles** and **Change axis roles** show *Working…* at once and a progress bar of the
+  5 parts of the confirmation, and say an unexpected failure in red instead of nothing; the
+  confirmation no longer reads the pictures of the folded per-folder image-type rows (28
+  folders of 3 × 2048²: 93 plane reads to 9). The image type is proposed at the quick scan
+  (display only) and confirmed first on Channels, no longer on Axes; its rules and the
+  published files are unchanged.
 - `plan_conversion` takes `projection`, `masks_folder` and `store` as keywords only.
 
 ### Fixed

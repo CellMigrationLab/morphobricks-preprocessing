@@ -297,13 +297,17 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    names no axes gets its picture once you say what its dimensions are. What you leave there
    is the proposal for every image; nothing is confirmed yet. If this is your experiment,
    click **Looks right: read all image headers**: every header is read and the proposal is
-   checked against every image (one line says whether it fits them all). The viewer then
+   checked against every image (one line says whether it fits them all). The image type
+   (separate channels or colour RGB) is shown too, from the headers, for information only:
+   nothing is recorded there, it is confirmed on Channels. The viewer then
    shows the images as the check read them; the folders found, the check's
    report (formatted: a summary, then tables with the details folded) and **Exclude images**
    are collapsed below.
-2. **Axes.** What the files hold, in three parts. The roles start from the proposal of step
+2. **Axes.** What the files hold, in two parts. The roles start from the proposal of step
    1 (the header's, or what you chose on the example) and can be changed here at any time;
-   once confirmed, **Change axis roles** takes the confirmation back.
+   once confirmed, **Change axis roles** takes the confirmation back. The instant one of these
+   buttons is clicked it is greyed out and says *Working…*, with a progress bar of the parts
+   of the confirmation under it; if something fails part-way, the error is said there in red.
    - **Axis roles:** one row per image dimension with its role, and under them the viewer
      with one image as these roles read it, redrawn whenever you change a role (a wrong role
      looks wrong: a strip, stripes); choose any other image, time point or slice there. Click **Confirm these axes** (offered when the headers name
@@ -319,12 +323,12 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
      header. Either state one size for all images (it is shown what it replaces before it is
      written, and it is recorded as stated by you), or state sizes per folder under **Set per
      imaging unit…**.
-   - **Image type:** what the channel dimension holds, *separate stains or markers* or
-     *colour (RGB)*. It is proposed from the image headers and recorded when you click **Use
-     for all folders**. **Set per folder…** holds one row per folder; it opens when the
-     headers differ. An experiment that mixes colour and separate-channel folders is refused
-     in this version.
-3. **Channels.** Name what you stained and confirm the list; then tag each folder's channels
+3. **Channels.** First the **image type**: what the channel dimension holds, *separate
+   stains or markers* or *colour (RGB)*. It is proposed from the image headers (only when
+   they all agree) and recorded when you click **Use for all folders**. **Set per folder…**
+   holds one row per folder, with its picture; it opens when the headers differ. An
+   experiment that mixes colour and separate-channel folders is refused in this version.
+   Colour folders have the channels R, G and B. Otherwise name what you stained and confirm the list; then tag each folder's channels
    with those names, looking at any image in the viewer (each channel shows its header name
    and the tag chosen for it). Folders with identical headers are tagged together; the list of
    those folders, where one can be tagged on its own, is one click away. On a saved experiment whose images were
@@ -457,7 +461,7 @@ its metadata, and the roles agree with them** when all is well (and name the pla
 whose roles are recorded as confirmed), or the errors naming the images, the likely cause
 and the two fixes, and `run` stops (exit status 1).
 
-`--image-type fluorescence` or `--image-type rgb` gives the image type (§4, step 2).
+`--image-type fluorescence` or `--image-type rgb` gives the image type (§4, step 3).
 Without it, `run` uses the type suggested from the image headers and prints it, with why it
 was suggested and how to choose the other one; `check` prints the suggestion too. `rgb`
 for images that are not three channels of a whole-number pixel type stops the run

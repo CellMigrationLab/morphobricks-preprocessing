@@ -64,19 +64,28 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
    - [ ] **Looks right: read all image headers** shows its progress (done of total, time
      left), then the result and one line saying whether the proposed axes fit all images.
      Nothing is confirmed yet.
+   - [ ] The image type (separate channels or colour RGB) is shown from the headers, display
+     only: "nothing is recorded here". It is confirmed on Channels.
 9. **Axes** (step 2).
    - [ ] It starts from the roles left at the scan and says that they can be changed; one click
      confirms them when every header agrees, else the tick and **Confirm axis roles**. The
      roles are confirmed only by the click.
+   - [ ] The instant **Confirm these axes** (or **Confirm axis roles**, or **Change axis
+     roles**) is clicked, the button is greyed out and says **Working…**, and a progress bar
+     under it counts the parts done (n of 5, what it does now); both clear when it is done.
    - [ ] Pixel size: two inputs **X** and **Y** with **same for X and Y** (ticked: Y follows X).
      With three or more different header sizes, one line ("Pixel sizes differ slightly: …
      (spread … %) across … images, … combinations"), the sizes in a folded table and the two
      choices (one size for all images, or sizes per imaging unit); nothing is chosen for you.
-   - [ ] The image type in one line. The folder with the extra stain is accepted (no
+   - [ ] No image type on this step. The folder with the extra stain is accepted (no
      `different_channel_counts` across folders).
 10. **Channels** (step 3).
-    - [ ] Name the stains, then tag each folder's channels; the extra-stain folder gets its own
-      list. The viewer shows each channel with its header name and its folder's tag.
+    - [ ] First the image type in one line, pre-filled only when every header agrees and
+      recorded only by **Use for all folders** (or each folder under **Set per folder…**, whose
+      pictures appear once it is opened; folders of different types are refused,
+      `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`).
+    - [ ] Then name the stains, then tag each folder's channels; the extra-stain folder gets
+      its own list. The viewer shows each channel with its header name and its folder's tag.
 11. **Masks** (step 4).
     - [ ] **Check the masks** runs with progress. *Your masks* offers separate objects,
       regions and *grouped labels (one value per parent, e.g. mitochondria by cell)*, none
