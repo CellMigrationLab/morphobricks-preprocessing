@@ -211,6 +211,7 @@ from .run_inputs_error import (
     RgbNotSupportedError,
 )
 from .run_inputs_request import (
+    PARENT_LABELS_AS_AREA,
     RESOLVER_VERSION,
     Capabilities,
     FovSelection,
@@ -268,6 +269,7 @@ __all__ = [
     "OPEN_AXIS",
     "PIXEL_SIZE_TOLERANCE",
     "PLACEHOLDER_AXES",
+    "PARENT_LABELS_AS_AREA",
     "RESOLVER_VERSION",
     "RGB",
     "SPACE_UNITS",

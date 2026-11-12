@@ -1614,3 +1614,17 @@ Raised during review; to be decided before the milestones that need them:
     unless the user explicitly chooses the planes that have the channel. *Kept refused, pending
     an owner decision:* RGB units beside channel units (`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`,
     Spec `v29`), although the Spec lists that refusal as lifted at Stage 3.
+80. Parent-label (grouped) masks (MorphoBricks-Spec PR #28, merge `69a58b3`, ADR 0001 PL1,
+    experiment-v1 §4.5b; ADR 0002 resolver contract version 2). *Decided (owner, 11 November
+    2026):* `representation = "parent_labels"` is a v1 value: each non-zero value is one group,
+    its pixels in any number of pieces, 0 is background; a group is the FOV key, the mask ID and
+    the value, never a number alone; the file names no parent. The notebook offers it as
+    *grouped labels (one value per parent, e.g. mitochondria by cell)* and never pre-fills it
+    from the mask step's `grouped` kind. The mask step records such a file `checked` once read
+    (§4.5a, no other condition). The resolver (contract version 2) refuses it as objects
+    (`A_MASK_NOT_INSTANCES`) with or without `parent_labels_support`, refuses a
+    `binary_mask_policy` on it as a malformed request, and selects it as a region with the
+    groups for a consumer that declares `parent_labels_support`, else with
+    `conversion = "parent_labels_as_area"`. *Decided (owner, "8-connected everywhere"):* the mask
+    step counts pieces 8-connected, as CellPatcher's `BINARY_MASK_CONNECTIVITY = 2`
+    (`mask_relationships.json` report version 4).

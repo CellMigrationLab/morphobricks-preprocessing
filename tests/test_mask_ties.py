@@ -188,7 +188,7 @@ def test_the_report_and_its_texts_show_the_tie(tmp_path):
     assert pair.evidence["ambiguous_parent"] == 2  # one per image, two images
     assert pair.relation == "none"  # 2 of 4 inside is below 90%
     data = report.to_dict()
-    assert MASK_REPORT_VERSION == data["report_version"] == "3"
+    assert MASK_REPORT_VERSION == data["report_version"] == "4"
     (written,) = [p for p in data["pairs"] if (p["child"], p["parent"]) == ("Nuclei", "Cells")]
     assert written["evidence"]["ambiguous_parent"] == 2
     assert mask_ambiguous_lines(report) == [

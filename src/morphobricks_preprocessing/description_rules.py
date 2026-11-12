@@ -104,7 +104,8 @@ OBJECT_SET_PART = "in"
 RGB_TOKENS = ("R", "G", "B")
 """The fixed channel IDs of an RGB unit, in order (section 4.4b)."""
 
-REPRESENTATIONS = ("instances", "binary")
+REPRESENTATIONS = ("instances", "binary", "parent_labels")
+"""The mask representations (section 4.5); ``parent_labels`` is the PL1 amendment of v1 (4.5b)."""
 IMAGE_TYPES = ("rgb",)
 
 TOP = TableSpec(

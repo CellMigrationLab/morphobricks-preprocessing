@@ -118,5 +118,5 @@ def test_a_split_segmentation_is_not_the_same_objects(tmp_path):
     assert (e["children_not_matched"], e["parents_not_matched"]) == (8, 0)
     assert e["parents_over_iou_with_several_children"] == 8
     data = write_mask_report(report, tmp_path / "out.json").read_text(encoding="utf-8")
-    assert '"report_version": "3"' in data
+    assert '"report_version": "4"' in data
     assert '"children_over_iou_with_several_parents": 0' in data

@@ -342,8 +342,10 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    remove** cannot show that a name went with its folder. A change after the click is asked
    again.
 4. **Masks.** The masks the check paired with the images (and, for masks whose files do not
-   name their axes, the axes to state), then for each mask type: *separate objects* or
-   *regions*. **Describe the masks** reads every mask and reports how the types relate. It
+   name their axes, the axes to state), then for each mask type: *separate objects*,
+   *regions* or *grouped labels (one value per parent, e.g. mitochondria by cell)*. Nothing is
+   chosen for you, not even when **Describe the masks** finds a mask `grouped`: that is
+   evidence beside your answer. **Describe the masks** reads every mask and reports how the types relate. It
    reads the masks a run recorded, so it is greyed out before the run and says so; come back
    to it after **Run**. The histogram table does not need it, but bricks that use masks accept
    only masks it has read. Without masks, the step says so.
@@ -491,7 +493,8 @@ morphobricks-preprocessing masks /data/exp1 --masks /data/exp1_masks
 
 It reads every image's masks, one image at a time, and prints for each kind of mask
 whether its labels are separate objects (`instances`), labels spread over many pieces
-(`grouped`, such as mitochondria labelled with their cell's number), a single value per
+(`grouped`, such as mitochondria labelled with their cell's number; pieces are counted
+8-connected, so two pixels touching only at a corner are one piece), a single value per
 image (a true/false mask or one object) or empty; then which kinds lie inside which, with
 the counts behind it, for example how many cells hold 0, 1, 2 or 3 or more nuclei; and the
 hierarchy of direct parents, for example:
@@ -823,6 +826,8 @@ The default output folder is next to the experiment folder:
   with the fingerprint it had when read. A new or changed mask file is `not yet checked` until
   the step reads it again. A `binary` mask holding more than two values is reported as
   `R_MASK_CONTRADICTS_REPRESENTATION` (the command exits 1) and is not recorded as checked.
+  An `instances` or `parent_labels` (grouped labels) file is recorded as checked once the step
+  has read it: pixels cannot prove either.
 
 - **`mask_relationships.json`** (only from the `masks` command or the notebook's
   **Describe the masks**): each kind of mask, the
@@ -916,7 +921,7 @@ continues.
 | `experiment_not_found` | Error | The folder does not exist. Select an existing folder. |
 | `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` | Error | The published experiment description declares colour (RGB) acquisitions next to acquisitions of separate channels. This version processes one image type per experiment and nothing was processed: the message names the layouts and units. Process them as separate experiments. Different channel lists or orders of one image type are accepted. |
 | `partial_channel_coverage` | Warning | A biological repeat has a stain in only some of its acquisitions (for example one technical repeat imaged an extra stain). The images are measured as acquired (the stain is blank where it was not acquired) and the coverage is in the manifest. Later analyses that pool the stain over the whole repeat refuse it (`A_SCOPE_INCOMPLETE`) unless you choose the acquisitions that have it. |
-| `R_MASK_CONTRADICTS_REPRESENTATION` | Error | The masks step found a mask file declared `binary` with more than two values. Declare the mask as `instances` in the description if every value is an object. |
+| `R_MASK_CONTRADICTS_REPRESENTATION` | Error | The masks step found a mask file declared `binary` with more than two values. Declare the mask as `instances` in the description if every value is an object, or as `parent_labels` (grouped labels) if every value is one group, such as the mitochondria of one cell. |
 | `R_UNIT_NOT_FOUND`, `R_UNIT_NOT_DECLARED`, `R_UNIT_NOT_HOMOGENEOUS`, `R_CHANNEL_COUNT_MISMATCH`, `R_HEADER_CONTRADICTION`, `R_IMAGE_TYPE_CONTRADICTS_HEADER`, `R_MASK_TYPE_NOT_DECLARED` | Error | The published description and the folder or the image headers disagree (the message says where). Correct the description, publish it again and run again. |
 | `description_unreadable` | Error | `morphobricks.toml` or `morphobricks.records.jsonl` cannot be read. A description the reader refuses is reported with its own code (`E_*`, `R_FILE_SYMLINK`) and table path. |
 | `unreadable_folder` | Error | A folder could not be opened. Check permissions. |
