@@ -305,8 +305,10 @@ src/morphobricks_preprocessing/
                     comparable questions and CSV writes, the IDs toggle and the Image type card,
                     and reopen from the published file
   notebook_check_save.py the Check and save screen (sentences, one "same way?" per replicate,
-                    Yes, remove, the save click, the folded reopen); notebook_check_view.py its
-                    HTML; description_review.py (pure) the sentences and the CSV row diff;
+                    Yes, remove, the save click, the folded reopen); notebook_replicates.py its
+                    replicate boxes (rebuilt only when what they show changed);
+                    notebook_check_view.py its HTML; description_review.py (pure) the
+                    sentences and the CSV row diff;
                     description_candidate.py the checks on the exact bytes; description_reopen.py
                     the published file against the folders; published_answers.py (pure) the
                     published file as draft answers, retired IDs, reopened replicates
@@ -1099,7 +1101,8 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   [docs/archive/plan-milestones-v0.1-v0.4.md](docs/archive/plan-milestones-v0.1-v0.4.md); the older
   status log of this file is in
   [docs/archive/agents-status-history-v0.1-v0.3.md](docs/archive/agents-status-history-v0.1-v0.3.md).
-- **Unreleased:** none yet; later changes go in a new "Unreleased" section of the changelog.
+- **Unreleased:** the faster *Looks right: confirm the design* click (see the changelog's
+  "Unreleased" section).
 - **Scope:** 2-D per plane (a Z-stack is refused as `z_stack_not_supported`; since v0.5.2 the
   notebook saves Z-stacks as recorded projections); acquisitions may have different channel
   lists (v0.5.2, Stage 3 S3.3: manifest version 5, histogram table schema version 5; units of

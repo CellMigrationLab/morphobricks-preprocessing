@@ -313,6 +313,14 @@ class _DescriptionCard(_NameRows, _SavedDraft):
     def _confirm_ids(self) -> bool:
         """Adopt every ID as shown, or none: each refusal is listed with the reader's reason."""
         wanted = self._wanted_ids()
+        return self._adopt_ids(wanted, _with_ids(self.draft_answers, wanted))
+
+    def _adopt_ids(self, wanted: dict[tuple[str, str], str], answers: DraftAnswers) -> bool:
+        """Save ``answers`` (which adopt ``wanted``) in one answer, unless an ID is refused.
+
+        Each ID is first tried on its own, so every refusal is listed with the reader's
+        reason; then ``answers`` are saved once. Nothing is adopted when anything is refused.
+        """
         problems = []
         for (kind, key), text in wanted.items():
             try:
@@ -320,7 +328,7 @@ class _DescriptionCard(_NameRows, _SavedDraft):
             except DraftError as exc:
                 problems.append((f"{KIND_NAMES[kind].capitalize()} {key}", exc))
         if not problems:
-            if self._answer(_with_ids(self.draft_answers, wanted)):
+            if self._answer(answers):
                 return True
             problems.append(("These IDs together", self._refusal))
         self._names_refusal = refusal_card(

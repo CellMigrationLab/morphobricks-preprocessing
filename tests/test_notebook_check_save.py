@@ -341,3 +341,19 @@ def test_replicates_are_listed_in_natural_order_rep2_before_rep10(tmp_path):
     assert "Replicates:</b> rep2, rep10" in nb.short_names.value
     rows = [key for key in nb.id_inputs if key[0] == "repeats"]
     assert rows == [("repeats", "rep2"), ("repeats", "rep10")]
+
+
+def test_a_refused_same_way_answer_is_not_left_shown_as_confirmed(exp, monkeypatch):
+    nb = opened(*exp)
+    tag(nb)
+    nb.mask_card.questions["Nuclei"].choice.value = "instances"
+    nb.reference_boxes["drug"].value = "ctrl"
+    nb.reference_boxes["ctrl"].value = ""
+    monkeypatch.setattr(type(nb), "_save_description", lambda self: False)
+    nb._save_problem = "disk full"
+    nb.same_way["rep1"].button.click()  # the answer cannot be saved
+    assert (
+        "rep1" not in nb.draft_answers.repeats or not nb.draft_answers.repeats["rep1"].confirmed_on
+    )
+    assert not nb.same_way["rep1"].value  # the boxes are rebuilt from the answers, not kept
+    assert "Not taken" in nb.save_status.value

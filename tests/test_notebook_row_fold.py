@@ -160,15 +160,15 @@ def test_a_row_with_a_warning_never_folds(reopened, monkeypatch):
     assert nb.type_rows.fold.count == 2  # ctrl/rep1 stays open, with its warning
     assert "The header says colour (RGB)" not in _text(nb.type_rows.fold.folded)
 
-    from morphobricks_preprocessing import notebook_check_save
+    from morphobricks_preprocessing import notebook_replicates
 
-    real = notebook_check_save.replicates
+    real = notebook_replicates.replicates
 
     def lacking(applied, answers):
         views = real(applied, answers)
         return [replace(v, missing=((key, "DNA"),)) if v.repeat_id == "rep1" else v for v in views]
 
-    monkeypatch.setattr(notebook_check_save, "replicates", lacking)
+    monkeypatch.setattr(notebook_replicates, "replicates", lacking)
     nb._refresh_check_save()
     assert nb._replicate_fold.count == 0
     assert "A_SCOPE_INCOMPLETE" in _text(nb.replicates_box)
