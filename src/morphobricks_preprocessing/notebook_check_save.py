@@ -361,6 +361,7 @@ class _CheckSaveScreen(_ReplicateBoxes):
         repeats = {**answers.repeats, label: replace(entry, confirmed_on=day)}
         if not self._answer(replace(answers, repeats=repeats)):
             self.save_status.value = ui.status("error", "Not taken.", [str(self._refusal)])
+            self._replicates_built = None  # the clicked box shows an answer that was not taken
         self._refresh_check_save()
 
     def _remove(self, condition_id: str) -> None:
