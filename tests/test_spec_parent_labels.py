@@ -37,6 +37,7 @@ from morphobricks_preprocessing.mask_answers import (
 from morphobricks_preprocessing.mask_representation import read_checked
 from morphobricks_preprocessing.run_inputs_request import (
     Refusal,
+    check_request,
     mask_representation_refusal,
 )
 from morphobricks_preprocessing.testing import make_described_run
@@ -198,3 +199,12 @@ def test_the_capability_must_be_a_bool(tmp_path):
     request = Request((), (), capabilities=Capabilities(parent_labels_support=1))
     with pytest.raises(ValueError, match="capabilities must be Capabilities of bool"):
         inputs.resolve_request(request)
+
+
+@pytest.mark.parametrize("capabilities", [None, {"parent_labels_support": True}, True])
+def test_capabilities_that_are_not_capabilities_are_a_value_error(capabilities):
+    # Review of PR #289: the three flags were read before the type check, so a request whose
+    # capabilities were not a Capabilities raised AttributeError, not the contract's ValueError.
+    request = Request((), (), capabilities=capabilities)
+    with pytest.raises(ValueError, match="capabilities must be Capabilities of bool"):
+        check_request(request, {})

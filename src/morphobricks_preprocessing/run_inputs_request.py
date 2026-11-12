@@ -378,12 +378,14 @@ def _check_shape(request: Request) -> None:
     ):
         raise ValueError(f"masks must be a tuple of MaskRequest (str IDs), not {request.masks!r}")
     capabilities = request.capabilities
-    flags = (
-        capabilities.rgb_support,
-        capabilities.volume_support,
-        capabilities.parent_labels_support,
-    )
-    if not isinstance(capabilities, Capabilities) or not all(isinstance(v, bool) for v in flags):
+    if not isinstance(capabilities, Capabilities) or not all(
+        isinstance(v, bool)
+        for v in (
+            capabilities.rgb_support,
+            capabilities.volume_support,
+            capabilities.parent_labels_support,
+        )
+    ):
         raise ValueError(f"capabilities must be Capabilities of bool, not {capabilities!r}")
 
 
