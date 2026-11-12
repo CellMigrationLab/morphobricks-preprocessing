@@ -320,7 +320,7 @@ def test_masks_command_writes_the_report(experiment, masks, tmp_path, capsys):
     assert "[3/3] drug/rep1/a.tif" in printed
     assert "Hierarchy (direct parents only):" in printed
     report = json.loads((out / "mask_relationships.json").read_text(encoding="utf-8"))
-    assert report["report_version"] == "3"
+    assert report["report_version"] == "4"
     assert sorted(report["masks"]) == ["Cells", "Nuclei"]
     assert report["same_objects"] == [["Cells", "Nuclei"]]
 

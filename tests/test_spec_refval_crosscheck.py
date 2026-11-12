@@ -22,7 +22,7 @@ from spec_pin import all_fixtures, fixtures
 ALL = all_fixtures()
 MUTATED = (
     "v01", "v02", "v03", "v06", "v07", "v10", "v11", "v13",
-    "v17", "v28", "v29", "v31", "v33", "v34", "v35", "v36",
+    "v17", "v28", "v29", "v31", "v33", "v34", "v35", "v36", "v38", "v39",
 )  # fmt: skip
 DOCUMENT_PHASES = tuple(number for number, _ in PHASES)
 PHASE_4_AND_5 = {

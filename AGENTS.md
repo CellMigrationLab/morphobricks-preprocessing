@@ -245,13 +245,14 @@ src/morphobricks_preprocessing/
   mask_review.py    what the notebook shows about the masks: mask_type_rows, and
                     mask_axes_questions (the types whose axes must be stated, with the
                     statements mask_roles accepts)
-  mask_scan.py      the optional mask step (Q32): piece_counts (scipy.ndimage), pair_counts,
+  mask_scan.py      the optional mask step (Q32): piece_counts (scipy.ndimage, 8-connected), pair_counts,
                     scan_masks -> MaskReport (kinds, relations, direct-parent hierarchy, evidence;
                     each image's masks fingerprinted before and after they are read, #165),
                     write_mask_report (mask_relationships.json); DEFAULT_THRESHOLDS,
                     mask_thresholds (checked changes)
   mask_pairs.py     pair_counts' pure helpers: best_parents (a tie between parents gives no
-                    parent, ambiguous_parent; Q74), one_to_one_matches and match_counts
+                    parent, ambiguous_parent; Q74), one_to_one_matches, match_counts and
+                    PIECE_STRUCTURE (8-connected, as CellPatcher's BINARY_MASK_CONNECTIVITY = 2)
   copy_axes.py      convert (PP-11, contract §17): the axes, shape, pixel sizes (by role; a
                     relabelled axis gets an unknown scale; equal X and Y kept through a Y/X
                     swap, question 59) and OME metadata of a named-axis copy

@@ -5,7 +5,9 @@ folder check paired masks and the axis roles are confirmed; each answer is saved
 ``morphobricks.draft.json``; the mask ID is the folder name when it is a valid mask ID.
 """
 
+import numpy as np
 import pytest
+import tifffile
 
 from channel_images import write_channels, write_masks
 from morphobricks_preprocessing.description_file import DRAFT_FILENAME
@@ -174,3 +176,38 @@ def test_a_declared_mask_whose_files_are_gone_can_be_removed(tmp_path, out):
     assert len(gone) == 1 and "tissue" in gone[0].children[0].value
     gone[0].children[1].click()
     assert saved(out).masks == {}
+
+
+def write_grouped(masks, root):
+    """Write a ``mito`` mask per image: two values, each in three separate pieces."""
+    for image in sorted(root.rglob("*.tif")):
+        labels = np.zeros((64, 64), np.uint16)
+        for value, row in ((1, 4), (2, 40)):
+            for column in (4, 24, 44):
+                labels[row : row + 6, column : column + 6] = value
+        path = masks / "mito" / image.relative_to(root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tifffile.imwrite(path, labels, metadata={"axes": "YX"}, photometric="minisblack")
+
+
+def test_grouped_labels_are_offered_in_plain_words_and_never_preselected(tmp_path, out):
+    # Spec experiment-v1 4.5b (PL1): the scan's `grouped` kind is evidence; the user picks.
+    from morphobricks_preprocessing import preflight, scan_masks
+    from morphobricks_preprocessing.notebook_mask_question import OPTIONS
+
+    root, masks = experiment(tmp_path)
+    write_grouped(masks, root)
+    report = scan_masks(preflight(root, masks_folder=masks).masks, root)
+    assert report.types["mito"].kind == "grouped"
+    nb = open_masks(root, masks, out)
+    mito = nb.mask_card.questions["mito"]
+    assert mito.choice.value is None  # never pre-filled from the scan
+    words = "grouped labels (one value per parent, e.g. mitochondria by cell)"
+    assert (words, "parent_labels") in OPTIONS and words in mito.choice.options[2]
+    assert mito.widget.layout.overflow is None  # one column, no inner scroll box
+    reason = mito.made_box.children[-1].value  # a disabled action says why
+    assert "answer the question first" in reason or "declare them on Channels" in reason
+    mito.choice.value = "parent_labels"
+    assert saved(out).masks["mito"].representation == "parent_labels"
+    assert "each group outlined in its own colour" in mito.facts.value
+    assert nb._mask_kinds()["mito"] == "grouped labels"

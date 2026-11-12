@@ -6,6 +6,19 @@ real run; a skip is never counted as a pass. Owner rulings of 8 November 2026 (i
 "no skips" applies to the Spec conformance modules (`tests/test_spec_*.py`); a skip elsewhere
 in the suite is listed as **not run**, with its reason.
 
+## Re-pin to Spec `69a58b3` (11 November 2026, parent-label masks, PL1)
+
+Not a release record. Measured on branch `claude/parent-label-masks` (from `main` at `a775ebf`),
+Linux, Python 3.13.18, fresh venv with `.[dev,notebook,zarr]`.
+
+| | |
+|---|---|
+| Spec pin | MorphoBricks-Spec `69a58b3e2f89b318364c4c1252c54caf676fb6bb` (PR #28), vendored with the Spec's `tools/vendor.py`; `vendor.py --check` reports the folder identical |
+| `tools/check.py` | Ruff clean, Ruff format 443 files, pytest **5396 passed, 4 skipped** (the four environment skips below: case-sensitive file system three times, running as root once), 0 failed, code rules passed |
+| Spec modules (`tests/test_spec_*.py`) | **1796 passed, 0 skipped**, 25 modules (new: `test_spec_parent_labels`) |
+| Mask fields (section 2) | `v38`, `v39` accepted and cross-checked against the oracle (and mutated, `test_spec_refval_crosscheck`); `i136`, `i137` `E_ENUM`; `i138`, `i139` `E_UNKNOWN_FIELD`; `i112` `E_FORBIDDEN_FIELD`; `i111` retired (absent, its number not reused) |
+| Parent labels (section 4) | Preprocessing's parts on a described `v38` run (`test_spec_parent_labels`): `Mito` as a region is selected with `representation = "parent_labels"` and `conversion = "parent_labels_as_area"` without the capability, no conversion with it; as objects `A_MASK_NOT_INSTANCES` with and without it; a `binary_mask_policy` on it is a `ValueError`; a non-bool capability is a `ValueError`; the mask step records its files `checked`; the notebook offers *grouped labels* and pre-fills nothing from the `grouped` kind. The consumers' parts (manifest key, area measurement, recorded marker) are the bricks' |
+
 ## Release record: v0.5.1 (10 November 2026)
 
 A G1-style record of the v0.5.1 release candidate (as for v0.5.0 below). It does not decide a

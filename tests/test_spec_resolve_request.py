@@ -384,7 +384,7 @@ def test_provenance_is_the_manifests_record_and_the_request_with_its_device(tmp_
     request = Request(("DNA",), device="cuda")
     resolved = inputs.resolve_request(request)
     recorded = read_manifest(run.output / "run_manifest.json").experiment_description
-    assert resolved.provenance.resolver_version == RESOLVER_VERSION == 1
+    assert resolved.provenance.resolver_version == RESOLVER_VERSION == 2
     assert resolved.provenance.description_sha256 == recorded["sha256"]
     assert dict(resolved.provenance.section_digests) == recorded["section_digests"]
     assert resolved.provenance.request == request and resolved.provenance.request.device == "cuda"

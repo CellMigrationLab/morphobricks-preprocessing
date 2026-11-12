@@ -8,6 +8,32 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+**Parent-label (grouped) masks** (MorphoBricks-Spec PR #28, merge `69a58b3`: ADR 0001 PL1,
+experiment-v1 §4.5, §4.5a-§4.5c, §7, §8; ADR 0002 resolver contract version 2)
+
+- **Spec re-pinned to `69a58b3`** with the Spec's `tools/vendor.py` (`--check` identical):
+  `v38`, `v39` (`parent_labels`) accepted; `i136`, `i137` (`E_ENUM`), `i138`, `i139`
+  (`E_UNKNOWN_FIELD`) refused; `i111` retired (it became `v38`). `SPEC_COMMIT` follows, so a
+  draft written under `cc9820f` is not carried over (`spec_commit_mismatch`, as at every pin).
+- **`representation = "parent_labels"`**: each non-zero value is one group, its pixels in any
+  number of pieces; 0 is background. The notebook's *Your masks* offers *grouped labels (one
+  value per parent, e.g. mitochondria by cell)*, never pre-selected (the mask step's `grouped`
+  kind stays evidence), and draws each group in its own colour. The mask step records such a file
+  `checked` once read.
+- **Breaking (API): resolver contract version 2** (`RESOLVER_VERSION = 2`).
+  `Capabilities.parent_labels_support` (False by default). A `parent_labels` mask as objects is
+  `A_MASK_NOT_INSTANCES` with or without it, and its message no longer suggests a
+  `binary_mask_policy`; a policy on it is a `ValueError` saying it is never converted. As a
+  region it comes back with the groups for a consumer that declares the capability, else with
+  `MaskSelection.conversion = "parent_labels_as_area"` (`PARENT_LABELS_AS_AREA`), which the
+  consumer records and shows. `instances` and `binary` selections are unchanged.
+- **Mask step: pieces counted 8-connected** (owner decision "8-connected everywhere"), the
+  connectivity of CellPatcher's `BINARY_MASK_CONNECTIVITY = 2` (same `scipy.ndimage` structure;
+  CellPatcher is not imported). `mask_relationships.json` is **report version 4**: a label whose
+  pieces touch only at a corner now counts one piece, so `median_pieces_per_label`, and so the
+  suggested kind, can change for such masks. Nothing reads the report back.
+- `R_MASK_CONTRADICTS_REPRESENTATION`'s action names `parent_labels` beside `instances`.
+
 **Stage 3 S3.3: different channels per acquisition; `plane_histograms.csv` schema version 5**
 (owner decision of 11 November 2026; Spec roadmap S3.3, ADR 0003)
 

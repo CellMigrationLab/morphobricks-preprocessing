@@ -57,7 +57,8 @@ class MaskNotInstancesError(RunInputsError):
     """A mask whose representation is not ``instances`` was used as an object set.
 
     For the bricks to raise: a mask that is not ``instances`` (for example ``binary``) has no
-    object identity, so it is refused unless the request asks for a recorded conversion.
+    object identity, so it is refused unless the request asks for a recorded conversion. A
+    ``parent_labels`` mask is refused always: it has no conversion (experiment-v1 section 4.5b).
     """
 
     code = "A_MASK_NOT_INSTANCES"
