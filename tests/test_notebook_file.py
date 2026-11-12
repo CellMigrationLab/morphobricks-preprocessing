@@ -245,11 +245,12 @@ def _kernel_notebook(nbformat, *, roles=(INSTALL, DRIVE, RUN), colab_drive=None,
 def _execute(notebook, **options):
     """Run the notebook in a fresh kernel; run it again when the kernel's output was lost.
 
-    The app sends a message per widget, about two thousand at once. On a slow runner (macOS
-    CI) the client lost the end of that stream ("Timeout waiting for IOPub output"), and with
-    it the cell's display. That is the transport, not the notebook: the client's queue is made
-    unlimited, and a run that still loses its output is repeated, twice at most; a notebook
-    that really shows nothing still fails every time.
+    The app sends a message per widget: more than two thousand at once. ZeroMQ keeps 1,000
+    messages for a subscriber on each side and drops the rest, so a client that reads slowly
+    (macOS CI) lost the end of the stream ("Timeout waiting for IOPub output"), and with it
+    the cell's display. That is the transport, not the notebook: this client's queue is made
+    unlimited (:func:`_unlimited_queue`), and a run that still loses its output is repeated,
+    twice at most; a notebook that really shows nothing still fails every time.
     """
     nbclient = pytest.importorskip("nbclient", reason="the dev extra installs nbclient")
     zmq = pytest.importorskip("zmq", reason="the kernel's transport")
@@ -263,9 +264,7 @@ def _execute(notebook, **options):
             resources={"metadata": {"path": str(NOTEBOOK.parent)}},
             **options,
         )
-        # ZeroMQ drops messages for a subscriber whose queue is full (1,000 by default); the
-        # app's burst of widget messages is larger, so this client's queue has no limit.
-        client.create_kernel_manager().context.setsockopt(zmq.RCVHWM, 0)
+        _unlimited_queue(client.create_kernel_manager(), zmq)
         try:
             client.execute()
         except (RuntimeError, TimeoutError) as exc:  # nbclient's CellTimeoutError is the latter
@@ -273,6 +272,18 @@ def _execute(notebook, **options):
                 raise
         else:
             return
+
+
+def _unlimited_queue(manager, zmq):
+    """Make the kernel client the manager creates read its sockets without a queue limit."""
+    make = manager.client
+
+    def client(**options):
+        made = make(**options)
+        made.context.setsockopt(zmq.RCVHWM, 0)  # before its channels connect
+        return made
+
+    manager.client = client
 
 
 def _text(cell):
