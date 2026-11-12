@@ -104,6 +104,11 @@ class CopyEntry:
         The significant bits the copy holds, or None.
     projection
         How a projected image was made (:data:`PROJECTED` only), else None.
+    source_relative_path
+        The source's path relative to the experiment when the copy has another name (an
+        OME-Zarr copy of a TIFF image, :mod:`.ome_zarr_copy`); None when it is
+        ``relative_path``, as for every OME-TIFF and byte-for-byte copy. Written to the
+        record only when it is given, so records without OME-Zarr copies are unchanged.
     """
 
     relative_path: str
@@ -120,6 +125,12 @@ class CopyEntry:
     channel_names: tuple[str | None, ...] = ()
     significant_bits: int | None = None
     projection: ProjectionEntry | None = None
+    source_relative_path: str | None = None
+
+    @property
+    def source_path(self) -> str:
+        """The source image, relative to the experiment folder."""
+        return self.source_relative_path or self.relative_path
 
     def __post_init__(self) -> None:
         """Refuse a projection on an entry that is not projected, and the reverse."""
@@ -153,11 +164,18 @@ class CopyEntry:
             tuple(self.channel_names),
             self.significant_bits,
             None if self.projection is None else self.projection.plan_key(),
+            self.source_relative_path,
         )
 
     def to_dict(self) -> dict:
         """Return the entry as JSON-compatible data."""
+        named = (
+            {}
+            if self.source_relative_path is None
+            else {"source_relative_path": self.source_relative_path}
+        )
         return {
+            **named,
             "relative_path": self.relative_path,
             "action": self.action,
             "reason": self.reason,
@@ -199,6 +217,11 @@ class CopyEntry:
                 None
                 if data["projection"] is None
                 else ProjectionEntry.from_dict(data["projection"])
+            ),
+            source_relative_path=(
+                None
+                if data.get("source_relative_path") is None
+                else str(data["source_relative_path"])
             ),
         )
 
@@ -413,9 +436,9 @@ def review_conversion(
     record, sha256 = found
     sources = Path(record.source_root)
     changed = [
-        e.relative_path
+        e.source_path
         for e in record.files
-        if current_fingerprint(sources / e.relative_path) != e.source
+        if current_fingerprint(sources / e.source_path) != e.source
     ]
     listed = {e.relative_path for e in record.files}
     copies = sorted(set(changed_copies(root, record)) | (set(images) - listed))

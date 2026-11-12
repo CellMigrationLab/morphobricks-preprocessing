@@ -42,6 +42,7 @@ from .notebook_scan_axes import _ScanAxes
 from .notebook_step_states import _StepStates
 from .notebook_stepper import Step, Stepper, about
 from .notebook_viewers import VIEW_HELP, _Viewers
+from .notebook_zarr_copy import _ZarrCopyCard
 from .run import Preflight
 
 AXES_INTRO = (
@@ -92,6 +93,7 @@ class _StepsFlow(
     _QuickAxes,
     _ScanAxes,
     _ProjectionCard,
+    _ZarrCopyCard,
     _Viewers,
     _StepStates,
 ):
@@ -129,6 +131,7 @@ class _StepsFlow(
         self._use_viewers()
         self._build_scan_axes()
         self._build_projection_card()
+        self._build_zarr_copy()
         self._build_quick_scan()
         self.consistency_slot = widgets.VBox([self.consistency_card])
         self._build_design_step()
@@ -149,7 +152,8 @@ class _StepsFlow(
              self._images_page()),
             ("Axes", "What each image dimension is, the pixel size and the image type.",
              [about(AXES_INTRO), self.copy_note, self.axes_change_note, self.axis_box,
-              self.projection_card, self.quick_card, self.type_line.widget]),
+              self.projection_card, self.quick_card, self.zarr_card,
+              self.type_line.widget]),
             ("Channels", "Name what you stained, then tag each folder's channels.",
              [about(CHANNELS_INTRO), self.channel_labels.widget, self.channels_look,
               self.channel_grid.widget, self.moves_box, self.names_box]),
@@ -249,6 +253,7 @@ class _StepsFlow(
             self._show_checked_viewer()
             self._show_scan_axes()
             self._show_copy_note()
+            self._refresh_zarr_card()
             self.scan_status.value = ""
             self._refresh_folds()
             self._go_first_open()
@@ -285,10 +290,12 @@ class _StepsFlow(
     def _toggle_confirmation(self) -> None:
         super()._toggle_confirmation()
         self._refresh_quick_axes()
+        self._refresh_zarr_card()
 
     def _refresh_convert_card(self, review: object) -> None:
         super()._refresh_convert_card(review)
         self._refresh_projection_card(review)
+        self._refresh_zarr_card()
 
     def _confirm_blockers(self) -> list[str]:
         """Name the projection card when Z-stacks are all that stops the confirmation."""

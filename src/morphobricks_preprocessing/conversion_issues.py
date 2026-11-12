@@ -51,6 +51,17 @@ def not_a_folder_issue(dest: Path) -> ValidationIssue:
     )
 
 
+def names_collide_issue(paths: list[str]) -> ValidationIssue:
+    """Refuse OME-Zarr copies of images that differ only by their extension."""
+    return error(
+        "copy_names_collide",
+        "Images of one folder differ only by their extension, so their OME-Zarr copies would "
+        "have the same name. Nothing was written.",
+        paths,
+        "Rename one of them (its position ID changes), or exclude it.",
+    )
+
+
 def space_issue(dest: Path, needed: int, free: int) -> ValidationIssue:
     """Refuse a conversion that would not fit on the drive of the copy tree."""
     return error(

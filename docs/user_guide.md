@@ -382,6 +382,17 @@ lists each one (folder, path, fingerprint, SHA-256, slices used). **Keep the 3-D
 When you open the stacks again with the same output folder, the copies written earlier are
 offered (**Continue with the copies written earlier**).
 
+**A copy as OME-Zarr.** The Folders card of step 1 has **Also save a copy as OME-Zarr (in the
+output folder)**. Ticking it writes nothing. Once the axis roles are confirmed, the Axes step
+shows **OME-Zarr copy** with **Write the OME-Zarr copy and continue with it**: every image is
+written plane for plane, with the confirmed roles, to `<output>/ome_zarr` (one
+`<image name>.ome.zarr` per image, OME-NGFF 0.4, uncompressed), with a conversion record, and
+the copies are opened as the experiment (scanned and checked again; you confirm their axes and
+go on). Your images are only read. With Z-stacks the projected copies are written as OME-Zarr
+instead (`<output>/projected_max_zarr`). Pixel sizes you stated for the whole experiment or a
+folder keep applying; a size stated for a single image names the image file, so state it again
+for the copy if needed (the check says so: `calibration_target_not_found`).
+
 Folders may have different numbers of channels (for example three stains everywhere and a
 fourth only in `Biological_repeat_2`): on **Channels** you give each label once and tag each
 folder's channels; the same label means the same stain in every folder. A stain a folder does
@@ -983,6 +994,7 @@ continues.
 | `copy_folder_overlaps_experiment` | Error | `convert`: the folder for the copies is the experiment folder, inside it, or holds it. Choose a new folder outside the experiment. |
 | `copy_folder_overlaps_masks` | Error | `convert`: the folder for the copies is the masks folder, inside it, or holds it; copies there would be read as masks. Choose a folder outside the masks folder. |
 | `copy_folder_not_a_folder` | Error | `convert`: the path given with `--to` is a file. Choose a folder. |
+| `copy_names_collide` | Error | An OME-Zarr copy: two images of one folder differ only by their extension, so their copies would have the same name. Nothing is written. Rename or exclude one of them. |
 | `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. |
 | `copy_differs` | Error | `convert`: images in the folder of copies differ from the copies this conversion would write (an original changed, other roles, a copy changed, an image no longer in the experiment), or the folder holds copies of another experiment. Nothing is overwritten; convert into a new folder, or remove those copies first. |
 | `cannot_convert_pixel_type` | Error | `convert`: images of 64-bit integers cannot be saved as OME-TIFF, and pixel values are never changed to fit. Save them again with named axes in a 32-bit type if their values fit, or correct the roles. |

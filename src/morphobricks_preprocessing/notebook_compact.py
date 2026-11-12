@@ -62,7 +62,8 @@ class _CompactPages:
             ]
         )
         self.folders_card = ui.card(
-            "Folders", [rows, self.output_hint, self.masks_recorded, self.masks_drop]
+            "Folders",
+            [rows, self.output_hint, self.masks_recorded, self.masks_drop, self.zarr_option_row],
         )
         self.found_fold = ui.accordion("Folders found", [self.labels_card])
         self.check_report.flat()

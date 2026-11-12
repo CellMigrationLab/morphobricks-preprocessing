@@ -40,6 +40,7 @@ from .image_view import ViewRequest, read_projection_view
 from .notebook_progress import Wait
 from .notebook_render import blocked_line, issues_brief_html
 from .notebook_viewer import READ_ERRORS
+from .ome_zarr_copy import OME_TIFF, OME_ZARR, ZARR_COPY_SUFFIX
 from .projection import METHODS, Projection
 from .size_checks import Z_STACK_CODE
 from .validation import plural
@@ -70,12 +71,12 @@ KEPT = (
 )
 
 
-def copies_folder(output: Path, projection: Projection) -> Path:
+def copies_folder(output: Path, projection: Projection, store: str = OME_TIFF) -> Path:
     """Return the folder of the projected copies inside the output folder."""
     name = FOLDER_PREFIX + projection.method
     if projection.z_range is not None:
         name += f"_z{projection.z_range[0]}-{projection.z_range[1]}"
-    return output / name
+    return output / (name + ("_zarr" if store == OME_ZARR else ""))
 
 
 def projection_words(method: str, z_range: tuple[int, int] | None) -> str:
@@ -257,10 +258,12 @@ class _ProjectionCard:
         if chosen is None:
             self.projection_where.value = ""
             return
-        dest = copies_folder(self._output_path(self.preflight.discovery.root), chosen)
+        store = self._copy_store()
+        dest = copies_folder(self._output_path(self.preflight.discovery.root), chosen, store)
+        kind = " as OME-Zarr (asked on Images)" if store == OME_ZARR else ""
         self.projection_where.value = (
             f"<div>The {html.escape(projection_words(chosen.method, chosen.z_range))} of every "
-            f"image is written to <b>{html.escape(str(dest))}</b>.</div>"
+            f"image is written{kind} to <b>{html.escape(str(dest))}</b>.</div>"
         )
 
     # Looking -------------------------------------------------------------------------------
@@ -327,13 +330,14 @@ class _ProjectionCard:
                 result = convert_experiment(
                     root,
                     self.mapping,
-                    copies_folder(output, chosen),
+                    copies_folder(output, chosen, self._copy_store()),
                     exclude=self.preflight.excluded,
                     missing_as_singleton=self.missing_as_singleton.value,
                     memory_limit=self._memory_limit(),
                     progress=progressed,
                     masks_folder=self._runs_masks_folder(),
                     projection=chosen,
+                    store=self._copy_store(),
                 )
         except Exception as exc:  # unexpected failures still get a readable message
             self.log.lines.append(traceback.format_exc())
@@ -361,6 +365,8 @@ class _ProjectionCard:
         buttons = []
         for folder, projection in earlier_projections(root, output):
             words = projection_words(projection.method, projection.z_range)
+            if folder.name.endswith("_zarr"):
+                words += f", as OME-Zarr ({ZARR_COPY_SUFFIX})"
             button = ui.button(
                 f" Continue with the copies written earlier: {words}",
                 icon="folder-open",

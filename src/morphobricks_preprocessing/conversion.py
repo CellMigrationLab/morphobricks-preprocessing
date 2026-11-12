@@ -60,6 +60,7 @@ from .conversion_record import (
 from .conversion_reuse import compare
 from .conversion_write import ConversionFailed, write_all
 from .manifest import package_versions
+from .ome_zarr_copy import OME_TIFF, STORES
 from .planes import DEFAULT_MEMORY_LIMIT
 from .planned_copy import PlannedCopy
 from .projection import Projection
@@ -132,6 +133,7 @@ class ConversionOptions(TypedDict, total=False):
     progress: Callable[[int, int, str], None] | None
     masks_folder: str | os.PathLike | None
     projection: Projection | None
+    store: str
 
 
 def convert_experiment(
@@ -180,6 +182,10 @@ def convert_experiment(
         decided by the dtype table (:func:`.projection.projection_dtype`), and the record
         says how every copy was made (record version 3). Masks are never projected.
         Excluded images are still copied byte for byte. None converts as before.
+    store
+        ``"ome-zarr"`` writes every image that is read as an OME-Zarr copy (OME-NGFF 0.4,
+        :mod:`.ome_zarr_copy`) named ``<position>.ome.zarr``, with or without a projection;
+        the record keeps each source's own path. Default ``"ome-tiff"``: as before.
 
     Returns
     -------
@@ -188,8 +194,9 @@ def convert_experiment(
     Raises
     ------
     ValueError
-        If ``missing_as_singleton`` is not True or False, or ``memory_limit`` is not a
-        whole number of bytes above 0 (nothing is read or written then).
+        If ``missing_as_singleton`` is not True or False, ``memory_limit`` is not a
+        whole number of bytes above 0, or ``store`` is unknown (nothing is read or written
+        then).
     """
     unknown = sorted(set(options) - set(ConversionOptions.__annotations__))
     if unknown:
@@ -197,14 +204,24 @@ def convert_experiment(
     missing_as_singleton = options.get("missing_as_singleton", False)
     memory_limit = options.get("memory_limit", DEFAULT_MEMORY_LIMIT)
     masks_folder, projection = options.get("masks_folder"), options.get("projection")
-    progress = options.get("progress")
+    progress, store = options.get("progress"), options.get("store", OME_TIFF)
     _check_arguments(missing_as_singleton, memory_limit, projection)
+    if store not in STORES:
+        raise ValueError(f"store must be one of {STORES}, found {store!r}")
     root, dest = Path(experiment_root).resolve(), Path(destination).resolve()
     refused = copy_folder_issues(root, dest, masks_folder)
     if refused:
         return ConversionResult(dest, False, tuple(refused))
     planned, issues = plan_conversion(
-        root, mapping, dest, exclude, missing_as_singleton, memory_limit, projection, masks_folder
+        root,
+        mapping,
+        dest,
+        exclude,
+        missing_as_singleton,
+        memory_limit,
+        projection=projection,
+        masks_folder=masks_folder,
+        store=store,
     )
     if has_errors(issues):
         return ConversionResult(dest, False, _sorted(issues))
