@@ -224,7 +224,7 @@ whether processing is blocked. The consistency issues of §11 are shown in their
 **Dataset consistency** panel, next to the balance table, and not repeated under the
 other messages.
 
-## 9. Run manifest (`run_manifest.json`, manifest version 4)
+## 9. Run manifest (`run_manifest.json`, manifest version 5)
 
 UTF-8 JSON next to `plane_histograms.csv`, written only when the run succeeded. Its
 replacement is the commit of the run's outputs: they are one **generation**, published
@@ -246,7 +246,7 @@ interpretation.
 
 | Key | Meaning |
 |---|---|
-| `manifest_version`, `schema_version` | Manifest format (`"4"`) and CSV format (`"4"`), written as JSON **strings**, not numbers. Version 4 is the only manifest version written and read (v0.5.1, owner ruling 16, ADR 0002 AR11): every manifest carries `experiment_description`, and holds a `content_sha256` in every file entry exactly when `settings.verify_content` is true (a content-verification run, which every run is unless it opts out, #159). The reader and the writer refuse a manifest without `experiment_description` or with content hashes that do not match `verify_content`. Any other version (`"1"` before v0.4.0; `"2"` and `"3"`, the undescribed runs of v0.4.0 and v0.5.0; a later one) is refused with `ManifestFormatError: Manifest version '…' is not supported … Run preprocessing again …`: by `read_manifest`, `RunInputs.open` and `check_sources`; the next run in that output folder reads every image again and replaces it. Nothing is converted. Switching between a strict and a default run recomputes every row. A manifest whose `schema_version` is not the current one makes the next run recompute every row. |
+| `manifest_version`, `schema_version` | Manifest format (`"5"`) and CSV format (`"5"`), written as JSON **strings**, not numbers. Version 5 is the only manifest version written and read (v0.5.2, Stage 3 S3.3; version 4 was the only one in v0.5.1, owner ruling 16, ADR 0002 AR11): every manifest carries `experiment_description`, and holds a `content_sha256` in every file entry exactly when `settings.verify_content` is true (a content-verification run, which every run is unless it opts out, #159). The reader and the writer refuse a manifest without `experiment_description` or with content hashes that do not match `verify_content`. Any other version (`"1"` before v0.4.0; `"2"` and `"3"`, the undescribed runs of v0.4.0 and v0.5.0; `"4"`, the runs of v0.5.1 with their schema version 4 table; a later one) is refused with `ManifestFormatError: Manifest version '…' is not supported … Run preprocessing again …`: by `read_manifest`, `RunInputs.open` and `check_sources`; the next run in that output folder reads every image again and replaces it. Nothing is converted. Switching between a strict and a default run recomputes every row. A manifest whose `schema_version` is not the current one makes the next run recompute every row. |
 | `written_at` | UTC time of writing, ISO 8601. A rerun whose manifest would differ from the earlier one only in `written_at` keeps the earlier time, so the manifest's bytes and SHA-256, which later bricks pin, stay the same (cross-brick test F10, 3 November 2026); the report still records the rerun. |
 | `experiment_root` | Absolute path of the experiment folder, for information. |
 | `dtype` | Pixel type of the experiment. |

@@ -105,8 +105,8 @@ def setup_environment(tmp_path, monkeypatch):
         drive=tmp_path / "content/drive",
         namespace={},
         versions={
-            "morphobricks-preprocessing": "0.5.1",
-            "morphobricks-normalization": "0.4.0",
+            "morphobricks-preprocessing": "0.5.2",
+            "morphobricks-normalization": "0.5.0",
             "ipywidgets": "7.7.1",
         },
     )
@@ -131,7 +131,7 @@ def setup_environment(tmp_path, monkeypatch):
         assert check is True
         state.installs.append(command)
         state.available.update({*REQUIRED, ZARR})
-        state.versions["morphobricks-preprocessing"] = "0.5.1"
+        state.versions["morphobricks-preprocessing"] = "0.5.2"
 
     monkeypatch.setattr(subprocess, "run", install)
 
@@ -163,7 +163,7 @@ def checkout_at(path):
     package.mkdir(parents=True)
     (package / "__init__.py").write_text("", encoding="utf-8")
     (path / "pyproject.toml").write_text(
-        '[project]\nname = "morphobricks-preprocessing"\nversion = "0.5.1"\n',
+        '[project]\nname = "morphobricks-preprocessing"\nversion = "0.5.2"\n',
         encoding="utf-8",
     )
     return path
@@ -179,7 +179,7 @@ def test_setup_reuses_the_matching_installed_release(setup_environment, capsys):
         "morphobricks_preprocessing.notebook_ui",  # cell 3 shows it
     ]
     out = capsys.readouterr().out
-    assert "Ready: preprocessing 0.5.1" in out
+    assert "Ready: preprocessing 0.5.2" in out
     assert "ipywidgets 7.7.1" in out
 
 
@@ -193,8 +193,8 @@ def test_setup_installs_missing_package_from_the_exact_commit(setup_environment,
     target = command[5]
     assert target.startswith("morphobricks-preprocessing[notebook] @ git+")
     assert target.endswith("@" + namespace["RELEASE_REF"])
-    assert namespace["RELEASE_REF"] == "d023ff91289a2d2204e1ae56f7dee114d1a665e4"
-    assert "pinned v0.5.1 candidate" in capsys.readouterr().out
+    assert namespace["RELEASE_REF"] == "cadbed4bb049995b2385e3b8499c8d247d3754bd"
+    assert "pinned v0.5.2 candidate" in capsys.readouterr().out
 
 
 def test_setup_replaces_a_mismatched_installed_release(setup_environment):
@@ -285,7 +285,7 @@ def test_an_explicit_development_override_uses_the_checkout_and_says_so(
     assert sys.path[0] == str(checkout / "src")
     assert f"commit {OTHER_COMMIT}, uncommitted changes" in out
     assert "DEVELOPMENT OVERRIDE is on" in out
-    assert "DEVELOPMENT OVERRIDE on" in out.split("Notebook 0.5.1")[1]
+    assert "DEVELOPMENT OVERRIDE on" in out.split("Notebook 0.5.2")[1]
     record = namespace["SETUP_RECORD"]
     assert record["checkout_commit"] == OTHER_COMMIT
     assert record["checkout_has_uncommitted_changes"] is True
@@ -428,7 +428,7 @@ def test_cell_1_installs_without_mounting_drive_or_showing_the_app(
     assert state.apps == []
     assert namespace["SETUP_RECORD"]["release_ref"] == RELEASE_REF
     out = capsys.readouterr().out
-    assert "Ready: preprocessing 0.5.1; normalization 0.4.0; ipywidgets 7.7.1." in out
+    assert "Ready: preprocessing 0.5.2; normalization 0.5.0; ipywidgets 7.7.1." in out
     assert "Next: run cell 2 (Mount Google Drive), then cell 3 (Run preprocessing)." in out
 
 
@@ -444,8 +444,8 @@ def test_running_cell_1_again_installs_nothing_more(setup_environment, capsys):
     assert len(state.installs) == 1
     assert "Installing notebook requirements" in first
     assert "Installing notebook requirements" not in again
-    assert "Ready: preprocessing 0.5.1" in again
-    assert state.namespace["SETUP_RECORD"]["preprocessing_version"] == "0.5.1"
+    assert "Ready: preprocessing 0.5.2" in again
+    assert state.namespace["SETUP_RECORD"]["preprocessing_version"] == "0.5.2"
     assert record["release_ref"] == state.namespace["SETUP_RECORD"]["release_ref"]
 
 
