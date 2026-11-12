@@ -13,11 +13,11 @@ gate: G2 and G3 also need the bricks' items, and deciding a gate is the owner's.
 
 | | |
 |---|---|
-| Release candidate | Measured on the tree of the v0.5.2 preparation commit (commit A of branch `claude/release-0.5.2`, from `main` at `682e14e`: #278, #280, #282, #288, #289, #284-#287) before this record was added; the record changes only this file. Commit B then points the notebook's `RELEASE_REF` at A and records the pair in `RELEASE_CALLS` (the notebook and two test files only), so `git diff A B -- src pyproject.toml` is empty: the installed package is the one `RELEASE_REF` names. The measurement on B is in the release PR |
+| Release candidate | Measured on the tree of the v0.5.2 preparation commit (commit A' of branch `claude/release-0.5.2`: the first preparation `1244527` and its pointer `c4173dc`, then `main` at `ac2dc27` merged in, which adds #291, conversion record version 4; before it `main` at `682e14e`: #278, #280, #282, #288, #289, #284-#287) before this record was added; the record changes only this file. A' sets `RELEASE_REF` back to v0.5.1's `d023ff9`, as commit A did. Commit B' then points the notebook's `RELEASE_REF` at A' and records the pair in `RELEASE_CALLS` (the notebook and two test files only), so `git diff A' B' -- src pyproject.toml` is empty: the installed package is the one `RELEASE_REF` names. The measurement on B' is in the release PR |
 | Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `69a58b3e2f89b318364c4c1252c54caf676fb6bb` (fixtures tree `3705f2b`), checked by `test_spec_pin` (16 passed) |
 | Environment | Linux, Python 3.13.18, `pip install -e '.[dev,notebook,zarr]'` in a fresh venv (normalization 0.5.0 from its tag `v0.5.0` = `1291b09`, numpy 2.5.4, tifffile 2026.11.8, ipywidgets 8.1.9, zarr 3.4.2, pytest 9.2.0); run as root on a case-sensitive file system |
 | Commands | `python tools/check.py` (Ruff, Ruff format, pytest over `tests/`, code rules); `python -m pytest -q -p no:cacheprovider -rsxX --junitxml=… tests/test_spec_*.py` |
-| `tools/check.py` | Ruff clean, Ruff format 457 files already formatted, pytest **5460 passed, 4 skipped** (not run, below), 0 failed, code rules passed (exit status 0) |
+| `tools/check.py` | Ruff clean, Ruff format 458 files already formatted, pytest **5476 passed, 4 skipped** (not run, below), 0 failed, code rules passed (exit status 0). The first preparation `1244527`, before #291: 5460 passed, 4 skipped |
 | Spec modules (`tests/test_spec_*.py`) | **1799 passed, 0 skipped, 0 xfailed, 0 failed**, from all 25 modules of `tests/spec_gate.py` `EXPECTED_MODULES` (JUnit: no `skipped`, `failure` or `error` element in any case) |
 | Stage 3 (G3), preprocessing's parts | The conformance plan §4 "Histogram table v5" row on `v13`, `v04`, `v05`, `v06`, `v17` and an ID with `_` (`PAX_488`), the `v17` channel case (a PHASE request: `R002` partial, `R001` unavailable; `ChannelScopeIncompleteError` for its statistics), the owner's extra-stain case, and `v29` still refused: `test_stage3_channels` (17 passed), `test_channel_counts_per_folder` (1), `test_notebook_extra_stain` (3); `v04`, `v05`, `v06`, `v17` processed (`test_spec_run_description`). Not shown here: the `v05` per-repeat classification of a PHASE request (`rep1` partial; `v05` is processed and its table checked, but no test asserts its coverage); HV3's per-channel measurement failure (a plane that cannot be read stops the run, `unreadable_planes`; left for S3.4), parallel shards (preprocessing has none), and the readers of CellPatcher and MorphoFeature |
 | Parent labels (§4), preprocessing's parts | `test_spec_parent_labels` (25 passed), as in the re-pin record below. The consumers' parts (manifest key, area measurement, recorded marker) are the bricks' |
@@ -41,8 +41,9 @@ description 9, RunInputs semantic 8, transitions 75, vendored missing 3. New sin
 These four behaviours are **not verified by this run**.
 
 **Still the owner's:** the Colab and JupyterLab browser check (`docs/colab-release-check.md`),
-before tagging; the decision on mixed RGB and channel units (still refused, #288); whether the
-conversion record's new optional `source_relative_path` needs record version 4 (#287).
+before tagging; the decision on mixed RGB and channel units (still refused, #288). Decided:
+the conversion record is version 4 before v0.5.2 (owner, 12 November 2026; #291), so a v0.5.1
+folder of copies is refused, never misread.
 
 ## Re-pin to Spec `69a58b3` (11 November 2026, parent-label masks, PL1)
 

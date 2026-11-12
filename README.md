@@ -54,8 +54,9 @@ Optional (the `zarr` extra): OME-Zarr images as input (`zarr_input`). **New user
 **Upgrading:** there is no backward compatibility before the first pipeline release (Spec
 ADR 0002 AR10). Every run needs a published experiment description, and a run written before
 v0.5.1 is refused until it is run again; since v0.5.2 so is a run of v0.5.1 (run manifest
-version 4, before the histogram table's schema version 5). Nothing is converted. See the
-[CHANGELOG](CHANGELOG.md).
+version 4, before the histogram table's schema version 5), and a folder of copies made by
+v0.5.1 (conversion record version 3): convert the originals again into a new folder. Nothing is
+converted. See the [CHANGELOG](CHANGELOG.md).
 
 ## Installation
 

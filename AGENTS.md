@@ -1107,7 +1107,8 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   input read directly (the v0.3 TIFF to OME-Zarr export and the `_moved.py` re-exports were
   removed; since v0.5.2 `convert_experiment(store="ome-zarr")` writes recorded OME-Zarr copies);
   optional masks, the mask step and the notebook's **Describe the masks**; named-axis copies
-  (`convert`, notebook card); calibration; resumable, crash-consistent runs.
+  (`convert`, notebook card; conversion record version 4, v0.5.2); calibration; resumable,
+  crash-consistent runs.
 - **Command line:** `check`, `run`, `masks`, `calibrate`, `describe`, `convert` (`check`,
   `run` and `masks` need a published description, v0.5.1).
 - **Next:** [docs/roadmap.md](docs/roadmap.md).

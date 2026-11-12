@@ -119,6 +119,9 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
     - [ ] Go on to save and run on the copies. Open the stacks again with the same output
       folder: **Continue with the copies written earlier: …** is offered (nothing is rewritten);
       check another folder of stacks: the method and the slices are asked again.
+    - [ ] Optional: with an output folder holding projected copies written by v0.5.1
+      (conversion record version 3), they are not offered, and one warning line names the
+      folder, "record of version 3" and "choose another output folder".
 18. **Time-lapse** (optional).
     - [ ] The viewer has a **t** slider on every step; the steps go through to the run as for
       the main experiment.
@@ -136,7 +139,9 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
 20. - [ ] Disconnect and delete the runtime, open a new one, run cells 1-3 on the same Drive
     folders: the steps open answered, and **Compute histograms** reuses every row.
 21. - [ ] Optional: an output folder written by v0.5.1. The run reads every image again and
-    replaces the v0.5.1 output (manifest version 4 is not reused).
+    replaces the v0.5.1 output (manifest version 4 is not reused). A folder of copies written
+    by v0.5.1 opened as the experiment stops with `conversion_record_unreadable` naming version
+    3 and the fix (convert the originals again into a new folder).
 22. - [ ] Optional: stop a run part-way. The next check names the lock; **Remove the lock of a
     stopped run** clears it, and the next run resumes.
 

@@ -14,7 +14,8 @@ Parent-label (grouped) masks are described and handed to the bricks (resolver co
 version 2). The notebook has one image viewer, proposes the axes at the quick scan, saves
 Z-stacks as recorded projections and can save an OME-Zarr copy. Normalization is pinned at
 v0.5.0. As in v0.5.1 there is no backward compatibility before the first pipeline release
-(MorphoBricks-Spec ADR 0002 AR10): a v0.5.1 run is refused, never converted.
+(MorphoBricks-Spec ADR 0002 AR10): a v0.5.1 run and a v0.5.1 folder of copies (conversion
+record version 3) are refused, never converted.
 
 ### Breaking
 
@@ -37,6 +38,16 @@ v0.5.0. As in v0.5.1 there is no backward compatibility before the first pipelin
   (`PARENT_LABELS_AS_AREA`); as objects it is `A_MASK_NOT_INSTANCES` with or without the
   capability, and a `binary_mask_policy` on it is a `ValueError`. `instances` and `binary`
   selections are unchanged.
+- **Conversion record version 4; version 3 (every folder of copies written by v0.5.1) is
+  refused** (#291, owner decision of 12 November 2026). `convert`, the run's
+  `review_conversion`, `RunInputs` and the notebook refuse a version 3 record with
+  `conversion_record_unreadable` ("it is a record of version 3, and this version of
+  preprocessing reads version 4 only …; convert the originals again into a new folder").
+  Nothing is converted: convert the originals again into a new folder (in the notebook,
+  another output folder), then run on the new copies. The notebook no longer offers projected
+  copies written by v0.5.1 and says so in one line. Why: the OME-Zarr copy's entry key
+  `source_relative_path` is new, and v0.5.1, which ignores it, would look for each source at
+  the copy's path (a false `conversion_source_changed`); it now refuses a version 4 record.
 - **Mask step: pieces counted 8-connected; `mask_relationships.json` report version 4.** A
   label whose pieces touch only at a corner now counts one piece, so `median_pieces_per_label`
   and the suggested kind can change for such masks. Nothing reads the report back.
@@ -65,8 +76,9 @@ v0.5.0. As in v0.5.1 there is no backward compatibility before the first pipelin
 - **OME-Zarr copy:** `convert_experiment(store="ome-zarr")` (OME-NGFF 0.4, uncompressed, the
   same bytes for the same source) and the notebook option **Also save a copy as OME-Zarr (in
   the output folder)**. The conversion record's entry of such a copy gains
-  `source_relative_path` (record version 3 kept; other records byte for byte as before). New
-  refusal `copy_names_collide`.
+  `source_relative_path`, required there and refused on any other entry (record version 4;
+  records without OME-Zarr copies differ from v0.5.1's only in `record_version`). New refusal
+  `copy_names_collide`.
 - **Compare groups** asks before pooling a partly present stain (*Summarise only the planes
   that have it?*; No by default).
 
@@ -99,6 +111,9 @@ v0.5.0. As in v0.5.1 there is no backward compatibility before the first pipelin
 experiment description is reused, every image is read again and the v0.5.1 output (manifest
 version 4, table version 4) is replaced. Answers not yet saved under v0.5.1 are not carried
 over: answer the steps again. On the command line, `run` with the same folders does the same.
+A folder of copies written by v0.5.1 (named-axis, projected or OME-Zarr; conversion record
+version 3) is refused: convert the originals again into a new folder (in the notebook, choose
+another output folder) and run on the new copies.
 
 **Bricks** (each is unaffected until its pin moves to v0.5.2):
 
@@ -113,6 +128,7 @@ over: answer the steps again. On the command line, `run` with the same folders d
 | `group_summaries(...)` pooled whatever planes had a channel | Refuses a partly present channel (`ChannelScopeIncompleteError`) unless `partial_channels="planes_with_channel"` |
 | `RunLabels.channels`, `RunLabels.channel(index)` | Removed; `RunLabels.channel("DNA")` (the table names the channels) |
 | `plan_conversion(root, ..., projection, masks_folder)` positional | Keywords: `projection=`, `masks_folder=`, `store=` |
+| Conversion record (`.morphobricks-conversion.json`) `record_version` `"3"` | `"4"`: refuse `"3"` (and any other) with the fix "convert the originals again into a new folder"; never convert. `RunInputs.open` already refuses it. An OME-Zarr copy's entry names its source in `source_relative_path` (required there, refused elsewhere); a projected entry's `projection.source_relative_path` is that same source |
 | `mask_relationships.json` report version 3, 4-connected pieces | Report version 4, 8-connected (CellPatcher's `BINARY_MASK_CONNECTIVITY = 2`) |
 
 ### Release v0.5.2: the shipped notebook
@@ -267,7 +283,7 @@ Owner decision of 11 November 2026; Spec roadmap S3.3, ADR 0003.
   `window` OME-NGFF 0.4 requires, white and the pixel type's whole range) into `<output>/ome_zarr`, with the conversion
   record, and the copies are opened as the experiment. With Z-stacks the projected copies are
   written as OME-Zarr. The record's entry of such a copy has the copy's path as
-  `relative_path` and the new key `source_relative_path` (record version 4, below). New refusal:
+  `relative_path` and the new key `source_relative_path` (record version 4, above). New refusal:
   `copy_names_collide`.
   `plan_conversion` takes `projection`, `masks_folder` and `store` as keywords.
 - **Notebook file, cell 3:** on Google Colab it calls
