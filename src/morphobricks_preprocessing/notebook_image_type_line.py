@@ -1,14 +1,18 @@
-"""The image type in one line of the axes step: what the channel dimension holds.
+"""The image type in one line of the Channels step: what the channel dimension holds.
 
 Owner decision (10 November 2026, item (p)): the image type says what the C dimension means
-(one stain or marker per channel, or the red, green and blue of a colour picture), so it is
-asked with the axes, in the pattern of the pixel size:
+(one stain or marker per channel, or the red, green and blue of a colour picture). Owner
+decision (12 November 2026): it is **proposed** at the quick scan (display only, from the
+headers: :meth:`.notebook_scan_axes._ScanAxes._show_scan_type`, nothing recorded there) and
+**confirmed** here, on the Channels step, since it decides whether the channels are R, G and B
+or the user's stains; it is no longer on the Axes step. Asked in the pattern of the pixel size:
 
 - **one line for all folders**, its choice pre-filled from what the image headers say (colour
   only when every folder's header says colour, separate channels only when none does). The
   pre-fill is a proposal: nothing is saved until the user clicks **Use for all folders**;
 - **Set per folder…**, collapsed, holds the row of each folder
-  (:class:`.notebook_channels_type.ImageTypeRows`: the same cells, answers and refusals);
+  (:class:`.notebook_channels_type.ImageTypeRows`: the same cells, answers and refusals); the
+  rows, and the picture of each folder, are built only once it is opened;
 - when the headers **differ**, nothing is pre-filled, one line says how many folders say what,
   and the per-folder part opens.
 
@@ -85,6 +89,9 @@ class ImageTypeLine:
         ui.set_visible(self.replace_box, False)
         self.message = widgets.HTML()
         self.per_folder = ui.accordion("Set per folder…", [rows.widget])
+        # The rows of each folder are built, and their pictures read, only once opened.
+        rows.folded = lambda: self.per_folder.selected_index is None
+        self.per_folder.observe(lambda _: rows.unfolded(), names="selected_index")
         self.widget = ui.card(
             "Image type",
             [self.line, self.form, self.blocker, self.replace_box, self.message, self.per_folder],

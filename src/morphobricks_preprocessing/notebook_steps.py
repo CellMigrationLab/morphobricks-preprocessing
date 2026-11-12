@@ -4,9 +4,11 @@ Pure composition of the cards the notebook already has. The order is the owner's
 10 November 2026, what the files hold first and what it means after:
 
 1. **Images**: the folders, the quick scan, then every header read on an explicit click;
-2. **Axes**: the role of each dimension with the example, the pixel size, and the image type
-   (what the channel dimension holds: :mod:`.notebook_image_type_line`);
-3. **Channels**: name the stains, then tag each folder's channels;
+2. **Axes**: the role of each dimension with the example, and the pixel size;
+3. **Channels**: confirm the image type (what the channel dimension holds:
+   :mod:`.notebook_image_type_line`; owner, 12 November 2026: proposed at the quick scan,
+   confirmed here, since it decides whether the channels are R, G and B or the stains), then
+   name the stains and tag each folder's channels;
 4. **Masks**: the masks paired with the images (and their axes), what each mask type is and,
    once a run recorded them, the mask step that reads every mask and describes how the types
    relate (it reads the masks the run recorded, so it cannot come earlier; bricks that use
@@ -52,15 +54,15 @@ AXES_INTRO = (
     "later steps are read only through the roles you confirm.<br>"
     + ROLES_HELP
     + " The pixel size is the size of one pixel along X and Y, from the image headers or stated "
-    "by you; nothing is guessed, and an image without one is uncalibrated.<br>The image type "
-    "says what the channel dimension holds: one stain or marker per channel, or the red, green "
-    "and blue of a colour picture. It is proposed from the image headers and recorded only "
-    "when you click."
+    "by you; nothing is guessed, and an image without one is uncalibrated."
 )
 CHANNELS_INTRO = (
-    "<b>What happens here:</b> first name what you stained, then say, for every folder, which "
-    "stain each channel is, looking at its picture. Nothing is chosen for you: names found in "
-    "the image headers are offered only as suggestions, and each one needs your click."
+    "<b>What happens here:</b> first confirm the image type: what the channel dimension holds, "
+    "one stain or marker per channel, or the red, green and blue of a colour picture. It is "
+    "proposed from the image headers and recorded only when you click. Colour pictures have "
+    "the channels R, G and B; otherwise name what you stained, then say, for every folder, "
+    "which stain each channel is, looking at its picture. Nothing is chosen for you: names "
+    "found in the image headers are offered only as suggestions, and each one needs your click."
 )
 DESIGN_INTRO = (
     "<b>What happens here:</b> you say which folders are which condition and biological "
@@ -113,7 +115,7 @@ class _StepsFlow(
         """
         if getattr(self, "_stepper", None) is not None:
             return self._stepper.widget
-        self.channel_grid.place_types = False  # the image type is asked with the axes
+        self.channel_grid.place_types = False  # the image type has its own card on Channels
         if ui.is_visible(self.channel_grid.widget):
             self.channel_grid.refresh()
         for box in (self.folder_next, self.axis_next):
@@ -150,12 +152,12 @@ class _StepsFlow(
         pages = [
             ("Images", "Choose the folders, look at one image, then read every header.",
              self._images_page()),
-            ("Axes", "What each image dimension is, the pixel size and the image type.",
+            ("Axes", "What each image dimension is, and the pixel size.",
              [about(AXES_INTRO), self.copy_note, self.axes_change_note, self.axis_box,
-              self.projection_card, self.quick_card, self.zarr_card,
-              self.type_line.widget]),
-            ("Channels", "Name what you stained, then tag each folder's channels.",
-             [about(CHANNELS_INTRO), self.channel_labels.widget, self.channels_look,
+              self.projection_card, self.quick_card, self.zarr_card]),
+            ("Channels", "Confirm the image type, name what you stained, then tag the channels.",
+             [about(CHANNELS_INTRO), self.type_line.widget, self.channel_labels.widget,
+              self.channels_look,
               self.channel_grid.widget, self.moves_box, self.names_box]),
             ("Masks", "What each mask type is; after a run, how the types relate.",
              [about(MASKS_INTRO), self.masks_card, self.masks_box, self.mask_step_card]),
@@ -215,7 +217,7 @@ class _StepsFlow(
             return ui.status(
                 "info",
                 "Waiting for the image type.",
-                ["Say on Axes (step 2) what the channels hold: a folder is tagged after that."],
+                ["Confirm it under Image type below: a folder is tagged after that."],
             )
         return ""
 

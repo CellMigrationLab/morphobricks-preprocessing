@@ -101,6 +101,8 @@ def test_every_colour_folder_is_one_colour_picture_in_the_viewer_and_on_image_ty
     assert len(shown) == 1 and viewer.view.colour  # one picture, not three grey planes
     assert "mb-colour" in shown[0]._dom_classes and _colour(shown[0].value)
     assert "one colour picture of the 3 channels" in viewer.caption.value
+    assert not list(_images(rgb_nb.type_rows.widget))  # folded: no picture read (12 Nov)
+    rgb_nb.type_line.per_folder.selected_index = 0  # Set per folder… opened
     types = [w for w in _images(rgb_nb.type_rows.widget)]
     assert len(types) == len(FOLDERS) and all(_colour(w.value) for w in types)
     assert "channel 1 red, 2 green, 3 blue" in repr(rgb_nb.type_rows.rows.children)

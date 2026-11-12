@@ -18,7 +18,7 @@ from .validation import plural
 UNCALIBRATED = ("uncalibrated", "pixels (stated)")
 """The X/Y size texts (:func:`.notebook_values.size_text`) that give no physical size."""
 ANSWER_STEPS = range(1, 6)
-"""The steps (0-based) whose answers the published file holds: axes (the image type) to save."""
+"""The steps (0-based) whose answers the published file holds: channels (the image type) to save."""
 TYPE_WORDS = (("separate channels", "channels"), ("colour", "rgb"))
 
 
@@ -72,19 +72,18 @@ class _StepStates:
         return StepState(pre.ok, text)
 
     def _axes_state(self) -> StepState:
-        """Return step 2: the confirmed roles, the pixel size and the image type.
+        """Return step 2: the confirmed roles and the pixel size.
 
-        Done once the roles are confirmed and every folder's image type is answered; the chip
-        notes an uncalibrated experiment.
+        Done once the roles are confirmed (the image type is on Channels since 12 November
+        2026); the chip notes an uncalibrated experiment.
         """
         mapping = self.confirmed_mapping
         sizes, note = self._sizes_words()
         if mapping is None:
             return StepState(False, "not confirmed")
         roles = ", ".join(role for role in mapping.roles if role) + " confirmed"
-        types, typed = self._image_type_words()
-        text = " · ".join(part for part in (roles, sizes, types) if part)
-        return StepState(typed, text, self._changed(1, typed), note=note)
+        text = " · ".join(part for part in (roles, sizes) if part)
+        return StepState(True, text, note=note)
 
     def _image_type_words(self) -> tuple[str, bool]:
         """Return the image types answered, by kind, and whether none is left to answer."""
@@ -158,16 +157,19 @@ class _StepStates:
         return StepState(done, text, self._changed(4, done))
 
     def _channels_state(self) -> StepState:
-        """Return step 3: the stains named and every channel of every folder tagged."""
+        """Return step 3: the image type, the stains named and every channel tagged."""
         if self._channels_key is None:
             return StepState(False, "after the axes")
+        types, typed = self._image_type_words()
+        if not typed:
+            return StepState(False, types, self._changed(2, False))
         layouts = self._channel_layouts
         if self._stains_not_applicable:
             stains = "no stains to name: every folder is colour (RGB)"
         elif self.channel_labels.confirmed:
             stains = ", ".join(self.channel_labels.labels)
         else:
-            return StepState(False, "stains not confirmed", self._changed(2, False))
+            return StepState(False, f"{types} · stains not confirmed", self._changed(2, False))
         left = remaining(layouts, self.draft_answers.units, self.channel_labels.labels)
         done = not left.cells and not left.blocked
         tags = (
@@ -175,7 +177,7 @@ class _StepStates:
             if done
             else f"{left.cells} channel(s) still to tag"
         )
-        return StepState(done, f"{stains} · {tags}", self._changed(2, done))
+        return StepState(done, f"{types} · {stains} · {tags}", self._changed(2, done))
 
     def _masks_state(self) -> StepState:
         """Return step 4: what each mask type is, and whether the relationships are described."""

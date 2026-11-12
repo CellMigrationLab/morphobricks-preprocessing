@@ -70,7 +70,7 @@ def test_an_all_rgb_experiment_completes_stains_and_check_and_save_without_a_lab
     _answer(nb)
     stains = _state(nb, STAINS)
     assert stains.done
-    assert stains.text.startswith("no stains to name: every folder is colour (RGB) · every channel")
+    assert stains.text.startswith("colour (4 folders) · no stains to name: every folder is colour")
     assert "mb-chip-done" in nb._stepper.chips[STAINS]._dom_classes
     assert _state(nb, TAGS).done and not nb.channel_labels.confirmed
     assert "Not applicable" in nb.channel_labels.na_note.value
@@ -103,7 +103,7 @@ def test_the_header_pre_tick_alone_does_not_make__stains_not_applicable(tmp_path
     nb = _open(tmp_path)  # the headers say colour; nothing is answered
     assert not nb._stains_not_applicable
     stains = _state(nb, STAINS)
-    assert not stains.done and stains.text == "stains not confirmed"
+    assert not stains.done and stains.text == "image type: 4 to choose"  # asked first here
     assert ui.is_visible(nb.channel_labels.body[0])
     assert "Not applicable" not in nb.channel_labels.na_note.value
 

@@ -7,6 +7,11 @@ the folder check (the "deep scan") reads every header, the roles are checked aga
 image (:func:`.axis_review.review_axes`, as always), and the Axes step confirms them for the
 whole dataset, where they can still be changed.
 
+The image type (separate channels or colour RGB) is **proposed** here too, display only
+(owner, 12 November 2026): from the header of the image shown before the folder check, and from
+every header after it. Nothing of it is recorded here; it is confirmed on the Channels step
+(:mod:`.notebook_image_type_line`), where the same headers pre-fill it.
+
 Nothing is confirmed here. The roles of this module are a proposal, held per arrangement of
 axes (a header's letters) and only for an arrangement the user changed; an arrangement left
 alone keeps the header's roles, and a header that does not name its axes gets no picture until
@@ -24,6 +29,7 @@ from . import notebook_style as ui
 from .axes import AxisMapping, axis_name, file_mapping_for, prefill_mapping
 from .axis_review import check_mapping, review_axes
 from .metadata import TiffMetadata
+from .notebook_image_type_line import MIXED
 from .notebook_options import ROLE_OPTIONS
 from .notebook_viewers import CONFIRMED_NOTE, header_roles
 from .validation import plural
@@ -40,6 +46,46 @@ CHANGE_NOTE = (
     "The axes can be changed: choose another role in a dimension's list (the pictures are "
     "redrawn). Once confirmed, <b>Change axis roles</b> takes the confirmation back."
 )
+
+
+TYPE_CONFIRMED_ON = "Display only: nothing is recorded here. It is confirmed on Channels (step 3)."
+
+
+def header_type(meta: TiffMetadata) -> str:
+    """Return what a header says the channels are: ``colour (RGB)`` or ``separate channels``."""
+    return "colour (RGB)" if meta.rgb_samples else "separate channels"
+
+
+def scan_type_html(metas: list[TiffMetadata], *, one: bool = False) -> str:
+    """Return the image type the readable headers propose, display only (HTML).
+
+    ``one`` says it of the single image shown before the folder check.
+    """
+    said = [header_type(meta) for meta in metas if meta.readable]
+    if not said:
+        return ""
+    if one:
+        return (
+            f"<div class='mb-help'><b>Image type</b>, from this image's header: "
+            f"{html.escape(said[0])}. {TYPE_CONFIRMED_ON}</div>"
+        )
+    kinds = sorted(set(said))
+    if len(kinds) == 1:
+        return ui.status(
+            "info",
+            f"Image type proposed from the headers: {kinds[0]} in all "
+            f"{plural(len(said), 'image')}.",
+            [TYPE_CONFIRMED_ON],
+        )
+    counts = ", ".join(f"{kind} in {plural(said.count(kind), 'image')}" for kind in kinds)
+    return ui.status(
+        "warn",
+        f"The image headers differ: {counts}.",
+        [
+            "Nothing is proposed: the type of each folder is confirmed on Channels (step 3). "
+            + MIXED
+        ],
+    )
 
 
 def roles_words(mapping: AxisMapping) -> str:
@@ -60,18 +106,21 @@ class _ScanAxes:
         self.scan_roles_row = widgets.HBox(
             layout=widgets.Layout(flex_flow="row wrap", align_items="flex-end", width="99%")
         )
+        self.scan_type_note = widgets.HTML()  # the shown image's type, display only
         self.scan_roles_card = widgets.VBox(
-            [ui.help_text(ROLES_HELP), self.scan_roles_row], layout=widgets.Layout(width="99%")
+            [ui.help_text(ROLES_HELP), self.scan_roles_row, self.scan_type_note],
+            layout=widgets.Layout(width="99%"),
         )
         ui.set_visible(self.scan_roles_card, False)
         self.scan_axes_line = widgets.HTML()
+        self.scan_type_line = widgets.HTML()  # every header's type, display only
         self.axes_change_note = ui.help_text(CHANGE_NOTE)
         self.scan_viewer.on_draw(self._scan_roles_follow)
 
     def _reset_scan_axes(self) -> None:
         """Forget the roles chosen at an earlier scan: a new scan proposes afresh."""
         self._scan_roles, self._scan_row_axes = {}, None
-        self.scan_axes_line.value = ""
+        self.scan_axes_line.value = self.scan_type_line.value = ""
 
     # The row -------------------------------------------------------------------------------
 
@@ -87,6 +136,7 @@ class _ScanAxes:
             return
         if meta.axes != self._scan_row_axes:
             self._build_scan_row(meta)
+        self.scan_type_note.value = scan_type_html([meta], one=True)
         ui.set_visible(self.scan_roles_card, True)
 
     def _build_scan_row(self, meta: TiffMetadata) -> None:
@@ -162,8 +212,15 @@ class _ScanAxes:
                 self._quick_seeded = self.preflight  # the user's roles, not an earlier run's
         super()._refresh_axis_step()
 
+    def _show_scan_type(self) -> None:
+        """Say, on Images, the image type every header the check read proposes (display only)."""
+        pre = self.preflight
+        files = list(pre.metadata.files) if pre is not None else []
+        self.scan_type_line.value = scan_type_html(files)
+
     def _show_scan_axes(self) -> None:
         """Say, on Images, whether the proposed roles fit every image the check read."""
+        self._show_scan_type()
         pre, mapping = self.preflight, self.mapping
         if pre is None or not pre.metadata.files:
             self.scan_axes_line.value = ""
@@ -203,4 +260,14 @@ class _ScanAxes:
         )
 
 
-__all__ = ["AXES_NOTE", "CHANGE_NOTE", "CHOSEN_NOTE", "ROLES_HELP", "_ScanAxes", "roles_words"]
+__all__ = [
+    "AXES_NOTE",
+    "CHANGE_NOTE",
+    "CHOSEN_NOTE",
+    "ROLES_HELP",
+    "TYPE_CONFIRMED_ON",
+    "_ScanAxes",
+    "header_type",
+    "roles_words",
+    "scan_type_html",
+]

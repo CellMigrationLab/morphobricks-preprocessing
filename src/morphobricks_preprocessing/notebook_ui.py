@@ -331,12 +331,12 @@ class PreprocessingNotebook(
         intro: str | None = None,
         show_next: bool = True,
     ) -> widgets.Widget:
-        """Step 2: axis roles, preview and confirmation, then the image type.
+        """Step 2: axis roles, preview and confirmation.
 
         The defaults give this notebook's step; another brick embedding it can give
         its own words, since this notebook's explain the roles by the planes its
-        histograms are computed on. The image type question follows the confirmed
-        axis roles either way.
+        histograms are computed on. The image type is not asked here: it is confirmed
+        with the channels (owner, 12 November 2026).
 
         Parameters
         ----------

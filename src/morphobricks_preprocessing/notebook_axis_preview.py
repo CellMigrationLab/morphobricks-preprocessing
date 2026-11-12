@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import html
+from collections.abc import Callable
+
+import ipywidgets as widgets
 
 from . import notebook_style as ui
 from .axes import AxisMapping, axis_name, file_mapping_for
@@ -17,9 +20,66 @@ from .planes import Plane, PlaneReadError, read_plane
 from .preview import PreviewRefused, check_unchanged, checked_fingerprint
 from .validation import plural
 
+WORKING = "Working…"
+"""What a confirmation button says, and its progress line first, the instant it is clicked."""
+CONFIRM_STEPS = (
+    "Checking the roles against every image",
+    "Redrawing the example with these roles",
+    "Reading the pixel sizes",
+    "Preparing the run",
+    "Preparing Channels, Masks and Check and save",
+)
+"""The parts of *Confirm axis roles* (or of taking it back), in order, for its progress bar."""
+
 
 class _AxisPreview:
     """Step 2's preview, the confirmation of the axis roles and the image type."""
+
+    # The click, shown at once ------------------------------------------------------------
+
+    def _confirm_clicked(self) -> None:
+        """*Confirm axis roles* (or *Change axis roles*): working at once, then the parts."""
+        self._working(self.confirm_button, self.confirm_progress, self._toggle_confirmation)
+
+    def _working(
+        self, button: widgets.Button, progress: widgets.HTML, action: Callable[[], object]
+    ) -> object:
+        """Run ``action`` behind a disabled button and a progress line drawn before it starts.
+
+        Owner (12 November 2026): the click must show at once that something happens. The
+        button is disabled and says *Working…*, and the line under it shows *Working…* before
+        any of the work; the parts of the work then advance its bar
+        (:meth:`_confirm_step`). The widgets' state is sent to the page as it is set, so the
+        line is seen while the work runs. Afterwards the line is cleared and the button given
+        back the state the answers give it (:meth:`_after_working`). A disabled button does
+        nothing.
+        """
+        if button.disabled:
+            return None
+        saved = (button.description, button.icon)
+        self._busy(button, WORKING)
+        self._working_on = button  # it stays disabled, saying Working…, until the end
+        wait = self._confirm_wait = Wait(progress)
+        wait.start(WORKING, len(CONFIRM_STEPS))
+        try:
+            return action()
+        finally:
+            self._confirm_wait = self._working_on = None
+            progress.value = ""
+            button.description, button.icon = saved
+            button.disabled = False
+            self._after_working(button)
+
+    def _after_working(self, button: widgets.Button) -> None:
+        """Give the confirmation buttons back the state the step's answers give them."""
+        self._confirm_words(self.confirmed_mapping is not None)
+        self._update_confirm_button()
+
+    def _confirm_step(self, index: int) -> None:
+        """Advance the progress of a confirmation to part ``index`` (0-based), when one shows."""
+        wait = getattr(self, "_confirm_wait", None)
+        if wait is not None:
+            wait.phase(CONFIRM_STEPS[index], len(CONFIRM_STEPS), index)
 
     def _fill_preview_files(self) -> None:
         """List the images that fit the roles in the preview dropdown."""
@@ -211,13 +271,14 @@ class _AxisPreview:
     def _toggle_confirmation(self) -> None:
         """Confirm the roles shown (or take the confirmation back) and update what follows."""
         if self.confirmed_mapping is None:
-            if self.confirm_button.disabled:
+            if self._confirm_blockers():  # what disables the button (it shows Working… now)
                 return
             self.confirmed_mapping = self._current_mapping()
         else:
             self.confirmed_mapping = None
         locked = self.confirmed_mapping is not None
         self._set_locked(locked)
+        self._confirm_step(0)
         if locked:
             roles = [
                 f"{axis_name(a)} → {r}"
@@ -256,11 +317,17 @@ class _AxisPreview:
             self.confirmed_status.value = ""
             # The image type depends on the channels the roles give.
             self._close_image_type()
+            self._confirm_step(1)
             self._mapping_changed()
         self._update_confirm_button()
+        if locked:
+            self._confirm_step(1)
         self._render_preview_if_shown()
+        self._confirm_step(2)
         self._show_calibration()
+        self._confirm_step(3)
         self._refresh_run_step()
+        self._confirm_step(4)
         self._refresh_channels()
 
     def _open_image_type(self) -> None:
@@ -350,6 +417,12 @@ class _AxisPreview:
             dropdown.disabled = locked
         self.missing_as_singleton.disabled = locked
         self._gate_preview_tick()
+        self._confirm_words(locked)
+
+    def _confirm_words(self, locked: bool) -> None:
+        """Say *Confirm axis roles*, or *Change axis roles* once they are confirmed."""
+        if getattr(self, "_working_on", None) is self.confirm_button:
+            return  # it says Working… until the work is done (:meth:`_working`)
         self.confirm_button.description = " Change axis roles" if locked else " Confirm axis roles"
         self.confirm_button.icon = "pencil" if locked else "check"
         self.confirm_button.button_style = "warning" if locked else "success"

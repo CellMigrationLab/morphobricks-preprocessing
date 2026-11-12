@@ -416,11 +416,11 @@ class TagGrid:
     def _type_text(self, layout: UnitLayout) -> str:
         """Say the image-type answer of a colour block, as the image-type page gave it."""
         if self.types.saved(layout.key) == "rgb":
-            where = "" if self.place_types else " (Axes)"
+            where = "" if self.place_types else " (Image type, above)"
             return f"Answered colour (RGB){where}: its channels are R, G and B, nothing to tag."
         if self.place_types:
             return "Colour is pre-ticked from the header: confirm it with the button below."
-        return "Colour is pre-ticked from the header: confirm it on Axes (Image type)."
+        return "Colour is pre-ticked from the header: confirm it under Image type, above."
 
     def _pending(self, layout: UnitLayout) -> bool:
         """Return True when the unit shows a proposal not saved yet.
