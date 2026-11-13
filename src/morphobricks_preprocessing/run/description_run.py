@@ -277,13 +277,14 @@ def mask_records(
 
 
 def unit_entries(found: RunDescription) -> list[dict[str, object]]:
-    """Return the manifest's unit records: image type verification and unnamed header images."""
+    """Return the manifest's unit records: image type verification and override, unnamed images."""
     report = found.physical
     if report is None:
         return unit_records(found.description, {})
     verified = {astuple(k): v for k, v in report.image_type_verified.items()}
     unnamed = {astuple(k): v for k, v in report.unnamed.items()}
-    return unit_records(found.description, verified, unnamed)
+    overridden = {astuple(k): v for k, v in report.image_type_overridden.items()}
+    return unit_records(found.description, verified, unnamed, overridden)
 
 
 def manifest_entry(

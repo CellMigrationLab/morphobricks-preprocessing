@@ -49,6 +49,7 @@ class Code(StrEnum):
     E_RGB_UNIT_CHANNELS = "E_RGB_UNIT_CHANNELS"
     E_RGB_TOKEN_MISUSE = "E_RGB_TOKEN_MISUSE"
     E_RGB_ALIAS = "E_RGB_ALIAS"
+    E_RGB_OVERRIDE_WITHOUT_RGB = "E_RGB_OVERRIDE_WITHOUT_RGB"
     E_DISPLAY_NAME_COLLISION = "E_DISPLAY_NAME_COLLISION"
     E_USED_ID_MISSING = "E_USED_ID_MISSING"
     E_SOURCE_FOLDER_REUSED = "E_SOURCE_FOLDER_REUSED"
@@ -107,6 +108,8 @@ RGB_TOKENS = ("R", "G", "B")
 REPRESENTATIONS = ("instances", "binary", "parent_labels")
 """The mask representations (section 4.5); ``parent_labels`` is the PL1 amendment of v1 (4.5b)."""
 IMAGE_TYPES = ("rgb",)
+RGB_HEADER_OVERRIDE = "rgb_header_override"
+"""The optional boolean unit key of amendment RH1 (section 4.4b): only on an ``rgb`` unit."""
 
 TOP = TableSpec(
     ("schema", "schema_version", "conditions", "channels", "repeats", "masks", "used_ids"),
@@ -126,7 +129,7 @@ MEMBER = TableSpec(
     frozenset({"source_repeat", "image_count", "technical_repeats"}),
 )
 UNIT = TableSpec(
-    ("source_folder", "display_name", "channels", "image_type"),
+    ("source_folder", "display_name", "channels", "image_type", "rgb_header_override"),
     frozenset({"source_folder", "channels"}),
 )
 MASK = TableSpec(

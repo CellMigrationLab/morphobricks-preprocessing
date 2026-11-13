@@ -48,7 +48,7 @@ def no_pixel_reads(monkeypatch):
 def test_inspect_2d(tmp_path, no_pixel_reads):
     path = write_tiff(tmp_path / "a.tif", shape=(6, 7), dtype=np.uint16)
     info = inspect_tiff(path, "cond/a.tif")
-    assert info == TiffMetadata(
+    assert replace(info, photometric=None) == TiffMetadata(  # photometric: test_rgb_header_override
         relative_path="cond/a.tif",
         readable=True,
         shape=(6, 7),

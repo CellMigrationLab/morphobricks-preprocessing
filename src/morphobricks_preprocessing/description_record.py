@@ -20,6 +20,9 @@ from .description_write import section_digests
 KEY = "experiment_description"
 """The manifest key of the entry."""
 SHA256 = re.compile(r"[0-9a-f]{64}")
+OVERRIDDEN = "image_type_header_overridden"
+PHOTOMETRIC = "header_photometric"
+"""The unit record's keys of an accepted RGB header override (experiment-v1 4.4b, RH1)."""
 _FIELDS = (
     "sha256",
     "schema_version",
@@ -35,6 +38,7 @@ def unit_records(
     description: Description,
     verified: Mapping[tuple[str, str, str], bool],
     unnamed: Mapping[tuple[str, str, str], Mapping[str, tuple[int, ...]]] | None = None,
+    overridden: Mapping[tuple[str, str, str], str] | None = None,
 ) -> list[dict[str, object]]:
     """Return every declared unit with whether its image type was checked against a header.
 
@@ -46,6 +50,13 @@ def unit_records(
     ``unnamed`` maps the same keys to the images whose header names not every channel and the
     positions without a name (:mod:`.description_unnamed`); a unit with such images gets the
     list under ``images_without_header_channel_names``, any other unit has no such key.
+
+    ``overridden`` maps the same keys to the colour interpretation of a unit declared ``rgb``
+    whose contradicting header was accepted by ``rgb_header_override`` (experiment-v1 4.4b,
+    RH1; :attr:`.physical_check.PhysicalReport.image_type_overridden`): such a unit is recorded
+    as declared RGB with the header overridden, ``image_type_header_overridden`` true and
+    ``header_photometric`` naming the header's interpretation (for example ``minisblack``); it
+    is not header-verified. Any other unit has neither key.
     """
     out = []
     for repeat_id, repeat in sorted(description.repeats.items()):
@@ -63,6 +74,9 @@ def unit_records(
                     "channels": list(unit.channels),
                     "image_type_header_verified": verified.get(key, False),
                 }
+                if key in (overridden or {}):
+                    record[OVERRIDDEN] = True
+                    record[PHOTOMETRIC] = overridden[key]
                 if (unnamed or {}).get(key):
                     record[FIELD] = unnamed_items(unnamed[key], len(unit.channels))
                 out.append(record)

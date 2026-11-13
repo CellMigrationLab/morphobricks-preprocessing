@@ -6,6 +6,26 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+### Added
+
+- **RGB header override** (MorphoBricks-Spec amendment RH1, Spec PR #37, commit 2cbebf8;
+  ahead of the vendored pin). Scanner files that store colour as three interleaved samples
+  under a header that does not say RGB (TIFF photometric `minisblack`, `SamplesPerPixel` 3,
+  contiguous) were refused for a unit declared `rgb` (`R_IMAGE_TYPE_CONTRADICTS_HEADER`).
+  A unit may now declare `rgb_header_override = true` beside `image_type = "rgb"`: the
+  contradiction is accepted only when every image has exactly three interleaved samples
+  (samples 0, 1, 2 are `R`, `G`, `B`), else `R_RGB_OVERRIDE_NOT_THREE_SAMPLES`; the key
+  without `image_type = "rgb"` is `E_RGB_OVERRIDE_WITHOUT_RGB`, a value that is not a boolean
+  `E_TYPE`. The manifest's unit record of an overridden unit adds
+  `image_type_header_overridden: true` and `header_photometric` (it is not header-verified);
+  other units' records are unchanged. Without the key the refusal stays and its message now
+  names `rgb_header_override` when the images have three interleaved samples. The image
+  headers record the photometric interpretation and the interleaved samples
+  (`TiffMetadata.photometric`, `interleaved_samples`). Pixels are never examined. The notebook
+  has no control for the key yet; its draft keeps the key of a published file when it saves.
+
 ## v0.5.3 (13 November 2026)
 
 A pin release: normalization is pinned at v0.6.0, so that every core package (and CellPatcher,

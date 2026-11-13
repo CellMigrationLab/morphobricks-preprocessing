@@ -128,6 +128,7 @@ def test_the_codes_are_the_ones_of_section_8_and_only_those(v01):
         "R_UNIT_NOT_HOMOGENEOUS",
         "R_HEADER_CONTRADICTION",
         "R_IMAGE_TYPE_CONTRADICTS_HEADER",
+        "R_RGB_OVERRIDE_NOT_THREE_SAMPLES",  # amendment RH1 (tests/test_rgb_header_override.py)
         "R_MASK_TYPE_NOT_DECLARED",
     }
 

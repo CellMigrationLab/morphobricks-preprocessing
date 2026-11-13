@@ -63,6 +63,7 @@ def retired_ids(published: Description) -> dict[str, tuple[str, ...]]:
 
 
 def _units(published: Description) -> dict[UnitKey, UnitAnswer]:
+    """Return each published unit's answer by its folders, ``rgb_header_override`` kept."""
     out = {}
     for repeat in published.repeats.values():
         for cid, member in repeat.members.items():
@@ -70,7 +71,9 @@ def _units(published: Description) -> dict[UnitKey, UnitAnswer]:
             for unit in member.technical_repeats.values():
                 kind = "rgb" if unit.image_type == "rgb" else CHANNELS_TYPE
                 key = (folder, member.source_repeat, unit.source_folder)
-                out[key] = UnitAnswer(tuple(unit.channels), kind, unit.display_name)
+                out[key] = UnitAnswer(
+                    tuple(unit.channels), kind, unit.display_name, unit.rgb_header_override
+                )
     return out
 
 

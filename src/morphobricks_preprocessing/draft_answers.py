@@ -67,12 +67,15 @@ class UnitAnswer:
     An entry of ``channels`` is a declared channel ID or None while that position is not
     tagged (every position needs a label the user declared, for example ``unused``).
     ``image_type`` is ``"rgb"``, ``"channels"`` (an ordinary channel image,
-    the description's absent type) or None while not answered.
+    the description's absent type) or None while not answered. ``rgb_header_override`` is the
+    description's unit key of that name as published (experiment-v1 4.4b, RH1), None when
+    absent: the notebook has no control for it and keeps it unchanged.
     """
 
     channels: tuple[str | None, ...]
     image_type: str | None = None
     display_name: str | None = None
+    rgb_header_override: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -410,7 +413,11 @@ def _repeat(draft: Draft, label: str, answers: DraftAnswers) -> Repeat:
             given = answers.units[(member.condition, member.source_repeat, u.source_folder)]
             kind = None if given.image_type == CHANNELS else given.image_type
             units[draft.technical_repeats[u.source_folder].confirmed] = Unit(
-                u.source_folder, tuple(given.channels), given.display_name, kind
+                u.source_folder,
+                tuple(given.channels),
+                given.display_name,
+                kind,
+                given.rgb_header_override,
             )
         members[cid] = Member(member.source_repeat, member.image_count, units)
     shown = answers.repeats.get(label, RepeatAnswer()).display_name

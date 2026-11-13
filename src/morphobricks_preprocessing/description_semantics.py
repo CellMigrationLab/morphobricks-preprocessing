@@ -12,7 +12,7 @@ from collections.abc import Mapping
 
 from .description_identity import USED_KINDS, nfc
 from .description_report import Issues, key_path
-from .description_rules import RGB_TOKENS, Code
+from .description_rules import RGB_HEADER_OVERRIDE, RGB_TOKENS, Code
 from .description_walk import Table, member_path, members, unit_path, units
 
 
@@ -29,6 +29,13 @@ def _unit_channels(doc: Table, out: Issues) -> None:
             if channel in seen:
                 out.add(Code.E_DUPLICATE_CHANNEL_IN_UNIT, f"{path}.channels[{index}]", channel)
             seen.add(channel)
+        if RGB_HEADER_OVERRIDE in table and table.get("image_type") != "rgb":
+            # RH1: present with any value, true or false, only beside image_type = "rgb"
+            out.add(
+                Code.E_RGB_OVERRIDE_WITHOUT_RGB,
+                f"{path}.{RGB_HEADER_OVERRIDE}",
+                table[RGB_HEADER_OVERRIDE],
+            )
         if table.get("image_type") == "rgb":
             if listed != list(RGB_TOKENS):
                 out.add(Code.E_RGB_UNIT_CHANNELS, f"{path}.channels", listed)

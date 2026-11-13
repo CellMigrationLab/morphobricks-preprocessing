@@ -56,7 +56,7 @@ TOP = (
 )
 CONDITION_KEYS = ("id", "display_name", "reference", "target", "treatment_key")
 REPEAT_KEYS = ("id", "confirmed_on", "display_name")
-UNIT_KEYS = ("channels", "image_type", "display_name")
+UNIT_KEYS = ("channels", "image_type", "display_name", "rgb_header_override")
 CHANNEL_KEYS = ("display_name", "header_names")
 MASK_KEYS = ("source_type", "representation", "source_channels", "display_name")
 
@@ -101,6 +101,15 @@ def _text(value: object, where: str) -> str:
 
 def _optional(table: dict, key: str, where: str) -> str | None:
     return _text(table[key], f"{where}.{key}") if key in table else None
+
+
+def _optional_flag(table: dict, key: str, where: str) -> bool | None:
+    """Return a boolean entry as written (never converted from text), None when absent."""
+    if key not in table:
+        return None
+    if not isinstance(table[key], bool):
+        raise _bad(f"{where}.{key}", "true or false is expected")
+    return table[key]
 
 
 def _texts(value: object, where: str) -> tuple[str, ...]:
@@ -154,6 +163,7 @@ def _units(value: object) -> dict[tuple[str, str, str], UnitAnswer]:
                     _tags(item["channels"], f"{where}.channels"),
                     kind,
                     _optional(item, "display_name", where),
+                    _optional_flag(item, "rgb_header_override", where),
                 )
     return out
 
@@ -291,6 +301,7 @@ def answers_to_bytes(answers: DraftAnswers) -> bytes:
                 "channels": unit.channels,
                 "image_type": unit.image_type,
                 "display_name": unit.display_name,
+                "rgb_header_override": unit.rgb_header_override,
             }
         )
     pairing: dict[str, dict[str, str]] = {}

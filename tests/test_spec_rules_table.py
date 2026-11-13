@@ -24,6 +24,16 @@ from spec_text import (
     table_rows,
 )
 
+AHEAD_OF_PIN_COMMIT = "2cbebf87296844d568541957be5d30c0b95645c3"
+"""The Spec commit of amendment RH1 (``rgb_header_override``), not yet the vendored pin.
+
+The reader implements RH1 ahead of the pin (the pin moves only to a merged Spec commit, in a
+reviewed change). These are exactly the additions of that commit to the tables compared here;
+each test below also asserts that the vendored text does not hold them yet, so the update of
+the pin fails until this block is removed and the text alone is the source again."""
+AHEAD_OF_PIN_FIELDS = {"4.4 units": ("rgb_header_override",)}
+AHEAD_OF_PIN_CODES = frozenset({"E_RGB_OVERRIDE_WITHOUT_RGB"})
+
 
 def _fields(heading: str, nth: int = 0) -> tuple[tuple[str, ...], frozenset[str]]:
     """Return the keys in order, and the required ones, of the nth ``Key`` table of a section."""
@@ -50,12 +60,15 @@ def test_a_field_table_equals_the_text(name):
     nth, table = TABLES[name]
     assert isinstance(table, TableSpec)
     keys, required = _fields(name.split()[0], nth)
-    assert table.fields == keys
-    assert table.required == required
+    ahead = AHEAD_OF_PIN_FIELDS.get(name, ())
+    assert not set(ahead) & set(keys), f"the pin now holds {ahead}: remove AHEAD_OF_PIN_FIELDS"
+    assert table.fields == keys + ahead
+    assert table.required == required  # the fields ahead of the pin are optional
 
 
 def test_the_codes_are_the_catalogue_of_section_6():
-    assert {code.value for code in Code} == spec_codes()
+    assert not AHEAD_OF_PIN_CODES & spec_codes(), "the pin now holds them: remove the set"
+    assert {code.value for code in Code} == spec_codes() | AHEAD_OF_PIN_CODES
     assert all(code.name == code.value for code in Code)
 
 
