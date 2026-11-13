@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "morphobricks-preprocessing"
-version = "0.5.2"
+version = "0.5.3"
 description = "MorphoBricks preprocessing brick: per-plane intensity histograms and normalization methods for microscopy TIFFs."
 readme = "README.md"
 license = "MIT"
@@ -26,7 +26,7 @@ dependencies = [
     "scipy>=1.10",
     # Per-plane histograms, the CSV table, pooling and normalization, pinned to a release tag;
     # what each pin brought is in CHANGELOG.md.
-    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.5.0",
+    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.6.0",
 ]
 
 [project.optional-dependencies]

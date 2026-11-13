@@ -33,7 +33,7 @@ brick**.
 - **Statistics code (from the normalization brick):** the per-plane histogram, the CSV
   reader and writer, pooling (`PooledHistogram`) and normalization parameters (`min_max`,
   `percentile_range`, `z_score`, `robust_z_score`) live in the required dependency
-  `morphobricks_normalization` (pinned to its release v0.5.0; first pinned at v0.2.0, plan §12 questions 27 and
+  `morphobricks_normalization` (pinned to its release v0.6.0; first pinned at v0.2.0, plan §12 questions 27 and
   28). This brick runs them over
   the experiment. Later bricks such as patch extraction use them to normalise any group of
   planes without rereading pixels. Import them from `morphobricks_normalization`; the
@@ -770,7 +770,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Topic | Decision |
 |---|---|
 | Binning | Per-plane min–max, same bin count per experiment, pooled counts for groups (binning study) |
-| Core dependencies | `numpy`, `tifffile`, `scipy` (the mask step's piece counts, Q32) and `morphobricks-normalization` (git dependency pinned to its release tag v0.5.0, whose reader takes the schema version 5 table (channels by canonical ID, ADR 0003; since v0.5.0), and whose CSV reader checks each row's stored `plane_id`, `image_file` and `bit_depth` (since v0.3.2), refuses a blank `position_id` and tables of schema versions 1 to 3 (v0.4.0), and whose `PlaneRecord` requires a keyword-only `position_id` and which refuses corrupt or ambiguous statistics and parameters (v0.3.3); `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
+| Core dependencies | `numpy`, `tifffile`, `scipy` (the mask step's piece counts, Q32) and `morphobricks-normalization` (git dependency pinned to its release tag v0.6.0, which only adds the `stain` module and the optional `histology` extra (neither used here), whose reader takes the schema version 5 table (channels by canonical ID, ADR 0003; since v0.5.0), and whose CSV reader checks each row's stored `plane_id`, `image_file` and `bit_depth` (since v0.3.2), refuses a blank `position_id` and tables of schema versions 1 to 3 (v0.4.0), and whose `PlaneRecord` requires a keyword-only `position_id` and which refuses corrupt or ambiguous statistics and parameters (v0.3.3); `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
 | OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. *Removed in v0.4.0 (plan Q46): TIFF images are always read directly; the following describes v0.3.* TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
@@ -1094,15 +1094,15 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 
 ---
 
-## 11. Status (current state, v0.5.2)
+## 11. Status (current state, v0.5.3)
 
-- **Released:** v0.5.2 (12 November 2026), with the normalization brick pinned at v0.5.0. The
+- **Released:** v0.5.3 (13 November 2026), with the normalization brick pinned at v0.6.0 (v0.5.2,
+  12 November 2026, pinned it at v0.5.0). The
   per-release history is in [CHANGELOG.md](CHANGELOG.md); the milestones PP-0 to PP-13 are in
   [docs/archive/plan-milestones-v0.1-v0.4.md](docs/archive/plan-milestones-v0.1-v0.4.md); the older
   status log of this file is in
   [docs/archive/agents-status-history-v0.1-v0.3.md](docs/archive/agents-status-history-v0.1-v0.3.md).
-- **Unreleased:** the faster *Looks right: confirm the design* click (see the changelog's
-  "Unreleased" section).
+- **Unreleased:** none yet; later changes go in a new "Unreleased" section of the changelog.
 - **Scope:** 2-D per plane (a Z-stack is refused as `z_stack_not_supported`; since v0.5.2 the
   notebook saves Z-stacks as recorded projections); acquisitions may have different channel
   lists (v0.5.2, Stage 3 S3.3: manifest version 5, histogram table schema version 5; units of

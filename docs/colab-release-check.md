@@ -19,7 +19,7 @@ Write the date, the commit and any failure (as an issue number) next to each ite
 - **Time-lapse:** a small experiment of time-lapse images (optional; the tests cover it).
 
 **Before opening it.** `RELEASE_REF` in cell 1 is the release preparation commit, and cell 3's
-`PreprocessingNotebook(...)` call is that commit's API (v0.5.2: `PreprocessingNotebook()`). The
+`PreprocessingNotebook(...)` call is that commit's API (v0.5.3: `PreprocessingNotebook()`). The
 release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
 `tests/test_notebook_file.py`, which fails for a `RELEASE_REF` without one.
 
@@ -30,7 +30,7 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
    - [ ] One line: "… run cell 1 (Install MorphoBricks preprocessing) first …", no traceback;
      nothing is installed.
 3. Run **cell 1**.
-   - [ ] It prints **Ready** with the preprocessing (0.5.2), normalization (0.5.0) and
+   - [ ] It prints **Ready** with the preprocessing (0.5.3), normalization (0.6.0) and
      ipywidgets versions and the pinned source, then names cells 2 and 3. No restart or
      ipywidgets upgrade is asked for; Drive is not mounted.
    - [ ] Run it again: nothing is installed again, the same versions.

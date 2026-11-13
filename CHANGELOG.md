@@ -6,7 +6,23 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
-## Unreleased
+## v0.5.3 (13 November 2026)
+
+A pin release: normalization is pinned at v0.6.0, so that every core package (and CellPatcher,
+fiberfeatures and MorphoFeature downstream) pins the same normalization URL. Nothing in
+preprocessing changes because of it, and no format changes: run manifest version 5,
+`plane_histograms.csv` schema version 5, resolver contract version 2 and conversion record
+version 4 are those of v0.5.2, and a v0.5.2 run is read as it is. The release also carries the
+faster *Looks right: confirm the design* click of #293, merged after v0.5.2 (Fixed, below).
+
+### Changed
+
+- **Normalization pinned at v0.6.0** (`@v0.6.0`, tag on `95e1d6d`; was `@v0.5.0`, `1291b09`).
+  Normalization v0.6.0 only adds: a new module `morphobricks_normalization.stain` (RGB-to-scalar
+  presets: `to_scalar`, `rgb_to_scalar`, `PRESETS`) and an optional extra `histology`
+  (scikit-image), which preprocessing neither uses nor installs. Its legacy API,
+  `NormalizationParameters`, `rgb.py`, the `plane_histograms.csv` schema version 5 and every
+  output of v0.5.0 are unchanged, and it still imports with NumPy only.
 
 ### Fixed
 
