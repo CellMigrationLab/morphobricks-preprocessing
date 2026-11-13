@@ -19,7 +19,7 @@ from there.
 
 ## Status
 
-Pre-alpha; the current release is v0.5.2 (what is planned next is in
+Pre-alpha; the current release is v0.5.3 (what is planned next is in
 [docs/roadmap.md](docs/roadmap.md)). Implemented and tested:
 
 - Folder discovery and validation, TIFF and OME-Zarr header inspection without reading pixels
@@ -41,7 +41,7 @@ Pre-alpha; the current release is v0.5.2 (what is planned next is in
 Every feature, message code and output file is described in the [user guide](docs/user_guide.md).
 
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
-to its release v0.5.0): per-plane histograms with the robust range and the range check
+to its release v0.6.0): per-plane histograms with the robust range and the range check
 (`histogram`, `ranges`), the histogram table (`csv_io`, schema version 5: channels by canonical
 ID, so acquisitions may have different channels), pooled group statistics
 (`pooling`) and normalization parameters (`normalization`); import them from
@@ -61,7 +61,7 @@ converted. See the [CHANGELOG](CHANGELOG.md).
 ## Installation
 
 ```bash
-pip install "git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.5.2"
+pip install "git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.5.3"
 ```
 
 For development, from a clone:
@@ -71,7 +71,7 @@ pip install -e ".[dev]"
 ```
 
 The optional `notebook` extra installs the widget dependencies for the notebook
-(`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.5.2"`).
+(`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.5.3"`).
 The notebook's first code cell (**1. Install**) can set this up automatically: it uses a compatible nearby
 checkout or installed package, and installs missing requirements into the active kernel. A standalone
 download installs from GitHub if needed (internet access and Git required).
@@ -228,7 +228,7 @@ ruff format .
 pytest
 ```
 
-Coding conventions are described in [docs/development.md](docs/development.md). Planned work after v0.5.2 is in [docs/roadmap.md](docs/roadmap.md).
+Coding conventions are described in [docs/development.md](docs/development.md). Planned work after v0.5.3 is in [docs/roadmap.md](docs/roadmap.md).
 
 ## License
 
