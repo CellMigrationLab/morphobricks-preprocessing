@@ -207,6 +207,12 @@ src/morphobricks_preprocessing/
                     check_planes (preflight memory / layout errors); planes over the limit read in
                     blocks of TIFF strips/tiles or zarr chunks (Plane.blocks, BlockReader), reduced
                     previews
+  windows.py        read_window (issue #179): an exact window (y0, y1, x0, x1) of one plane, channels
+                    chosen before decoding, only the TIFF strips/tiles or zarr chunks it touches
+                    (planes.py's block reader), level 0 only; window_plan (memory estimate, pieces);
+                    WindowBoundsError, WindowLevelError, WindowChannelError, WindowLayoutError,
+                    WindowMemoryError; run_inputs_window.py RunInputs.read_window by channel IDs
+                    (and the z/t checks shared with read_plane and read_mask)
   _io.py            write_text_atomic (every file the brick writes) and free_space
   manifest.py       RunManifest / RunSettings / FileEntry, JSON read/write, SHA-256 of the CSV,
                     check_sources (images against a run, for other bricks, contract §16)
