@@ -193,7 +193,7 @@ def test_setup_installs_missing_package_from_the_exact_commit(setup_environment,
     target = command[5]
     assert target.startswith("morphobricks-preprocessing[notebook] @ git+")
     assert target.endswith("@" + namespace["RELEASE_REF"])
-    assert namespace["RELEASE_REF"] == "05d763a1a0af2436957b860579a2c0636d3929de"
+    assert namespace["RELEASE_REF"] == "406982646ef8a3173d0cd84eb6fc13e99afc8739"
     assert "pinned v0.5.5 candidate" in capsys.readouterr().out
 
 
