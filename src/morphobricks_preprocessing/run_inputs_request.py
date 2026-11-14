@@ -514,7 +514,12 @@ def unchecked_refusal(mask_id: str, unchecked: Iterable[str], total: int) -> Ref
 
 
 def rgb_refusal(capabilities: Capabilities, rgb_images: Iterable[str]) -> Refusal | None:
-    """Return ``A_RGB_NOT_SUPPORTED`` when ``rgb`` units are requested without the capability."""
+    """Return ``A_RGB_NOT_SUPPORTED`` when ``rgb`` units are requested without the capability.
+
+    ``rgb_images`` are the images of ``rgb`` units whose channels the request names (experiment-v1
+    §8: the refusal applies to a request that includes an RGB unit's channels); a mask-only request
+    names none, so it is never refused for RGB.
+    """
     images = tuple(sorted(rgb_images))
     if not images or capabilities.rgb_support:
         return None
