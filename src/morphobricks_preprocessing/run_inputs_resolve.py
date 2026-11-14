@@ -113,7 +113,9 @@ class ResolvingInputs:
             found, more = self._mask(mask, description, fovs, repeats, masks_table)
             refusals.extend(found)
             covered.extend(more)
-        rgb = [f.relative_path for f in fovs if f.image_type == RGB]
+        # A mask-only request names no channel: never refused for RGB (§8 A_RGB_NOT_SUPPORTED).
+        asked = set(request.channel_ids)
+        rgb = [f.relative_path for f in fovs if f.image_type == RGB and asked & set(f.channel_ids)]
         refusals.extend(_some(rgb_refusal(request.capabilities, rgb)))
         refusals.extend(_some(volume_refusal(request)))
         selections = () if refusals else self._selections(request, description, fovs)
