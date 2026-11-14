@@ -10,9 +10,9 @@ Spec experiment-v1 4.4b, 8 and 10 as amended at Spec commit 179dc5c, conformance
 - the key is part of the confirmed layout: adding, removing or changing it reopens the N35
   confirmation (h, Spec transitions ``t14`` and ``t15``).
 
-The Spec transitions ``t14`` and ``t15`` are not vendored yet (the pin moves only to a merged Spec
-commit): the candidates here are built locally from the vendored ``v28`` the way the Spec files
-describe them. Codes are asserted as the literal strings of the Spec text.
+The Spec transitions ``t14`` and ``t15`` are read as the vendored bytes (Spec merge ``b635b7d``)
+and checked against the outcome each file records. Codes are asserted as the literal strings of
+the Spec text.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ from morphobricks_preprocessing.physical_check import (
 from morphobricks_preprocessing.published_answers import published_answers, reopened
 from morphobricks_preprocessing.reconcile_observe import observe_folders
 from morphobricks_preprocessing.testing_described import publish_and_run, write_described_tree
-from spec_pin import fixtures
+from spec_pin import catalogue, fixtures
 from test_rgb_header_override import (
     CTRL,
     DRUG,
@@ -65,8 +65,9 @@ from test_rgb_header_override import (
 
 V28_BYTES = V28.encode("utf-8")
 DAY, NEXT_DAY = 'confirmed_on = "2026-11-06"', 'confirmed_on = "2026-11-07"'
-T14 = V40.decode("utf-8").replace(DAY, NEXT_DAY).encode("utf-8")
-T15 = _with_override({"rep1": "true"}).replace(DAY, NEXT_DAY).encode("utf-8")
+TRANSITION = {f.name.split("_")[0]: f for f in fixtures("transitions")}
+T14 = TRANSITION["t14"].data
+T15 = TRANSITION["t15"].data
 MIXED = "CTRL/rep1/FOV001.tif"
 
 
@@ -309,8 +310,17 @@ def _codes(old: bytes, new: bytes) -> set[tuple[str, str]]:
     return {(issue.code.value, issue.old_id) for issue in found}
 
 
+def test_t14_and_t15_record_v28_as_predecessor_and_their_outcomes():
+    for name in ("t14", "t15"):
+        assert catalogue()[TRANSITION[name].name][0] == "`valid/v28`"
+        assert "against predecessor valid/v28" in TRANSITION[name].header["Expected"]
+    assert TRANSITION["t14"].expected_codes == frozenset()
+    assert "N35 reopened" in TRANSITION["t14"].header["Expected"]
+    assert TRANSITION["t15"].expected_codes == {"R_CONFIRMED_ON_CHANGED"}
+
+
 def test_t14_the_key_added_to_both_repeats_reopens_both():
-    assert _codes(V28_BYTES, T14) == set()
+    assert _codes(V28_BYTES, T14) == set() == TRANSITION["t14"].expected_codes
     assert layout_changed(description_from_bytes(V28_BYTES), description_from_bytes(T14)) == (
         "rep1",
         "rep2",
@@ -319,6 +329,10 @@ def test_t14_the_key_added_to_both_repeats_reopens_both():
 
 def test_t15_only_rep1_changed_so_rep2s_new_date_is_refused():
     assert _codes(V28_BYTES, T15) == {("R_CONFIRMED_ON_CHANGED", "rep2")}
+    assert {code for code, _ in _codes(V28_BYTES, T15)} == TRANSITION["t15"].expected_codes
+    assert layout_changed(description_from_bytes(V28_BYTES), description_from_bytes(T15)) == (
+        "rep1",
+    )
 
 
 @pytest.mark.parametrize(

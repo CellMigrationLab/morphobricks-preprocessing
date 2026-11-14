@@ -27,7 +27,7 @@ def _name(item):
 
 
 def test_the_first_three_phases_have_their_fixtures():
-    assert len(EARLY) == 69
+    assert len(EARLY) == 70
     assert {item.phase for item in EARLY} == {1, 2, 3}
 
 

@@ -1,4 +1,4 @@
-"""Parent-label (grouped) masks: Spec PL1 at 69a58b3 (experiment-v1 4.5, 4.5a-4.5c, 7, 8).
+"""Parent-label (grouped) masks: Spec PL1, merged at 69a58b3 (experiment-v1 4.5, 4.5a-4.5c, 7, 8).
 
 - The reader accepts ``representation = "parent_labels"`` (``v38``, ``v39``) and refuses
   ``grouped`` and a re-cased value (``i136``, ``i137``, ``E_ENUM``), a grouping field and the
@@ -45,7 +45,7 @@ from spec_pin import all_fixtures, fixtures, read_pin
 
 VALID = {item.name.split("_")[0]: item for item in fixtures("valid")}
 INVALID = {item.name.split("_")[0]: item for item in fixtures("invalid")}
-PINNED = "69a58b3e2f89b318364c4c1252c54caf676fb6bb"
+PINNED = "b635b7d5bc950529bce9dcc5681cec34b75139b8"  # the RH1 merge, a descendant of PL1's
 EMPTY = DraftAnswers(ABSENT, SPEC_COMMIT)
 GROUPS = Capabilities(parent_labels_support=True)
 
@@ -53,7 +53,7 @@ GROUPS = Capabilities(parent_labels_support=True)
 # --- The pin and the fixtures (conformance plan sections 1 and 2) ---------------------------
 
 
-def test_the_spec_is_pinned_at_the_pl1_merge():
+def test_the_spec_is_pinned_at_or_after_the_pl1_merge():
     assert read_pin()["commit"] == SPEC_COMMIT == PINNED
 
 

@@ -40,6 +40,11 @@ v0.5.1: no run before v0.5.1 is read.)
   `no_colour_interpretation` for OME-Zarr). The keys are additive and checked when read; the
   manifest version stays 5. Non-RGB units and every other refusal are unchanged.
 
+### Changed
+
+- **Spec re-pinned to `b635b7d`** (Spec PR #37, RH1 merged; `v40`, `i140`, `i141`, `t14`,
+  `t15` now vendored): notebook drafts saved under `69a58b3` are not carried over.
+
 ## v0.5.3 (13 November 2026)
 
 A pin release: normalization is pinned at v0.6.0, so that every core package (and CellPatcher,

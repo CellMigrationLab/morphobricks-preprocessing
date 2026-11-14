@@ -6,12 +6,10 @@ Scanner files store interleaved RGB under a header that does not say RGB (TIFF p
 interleaved samples per pixel, and the manifest records the unit as declared RGB with the header
 overridden.
 
-The Spec fixtures of RH1 (``v40``, ``i140``, ``i141``, Spec commits 2cbebf8 and 179dc5c) are not
-vendored yet: the pin moves only to a merged Spec commit. The descriptions here are built
-locally: ``v40`` and ``i141`` from the vendored ``v28`` with the lines the Spec adds, ``i140``
-as the Spec file's text without its comment lines. They were compared by hand with those Spec
-files; no test here compares them with a Spec fixture, which becomes possible (and replaces
-these local copies) when the Spec is vendored again at its merged commit.
+The Spec fixtures of RH1 (``v40``, ``i140``, ``i141``) are read as the vendored bytes (Spec
+merge ``b635b7d``, ``tests/spec_fixtures``) and checked against the outcome each file records in
+its ``# Expected`` line. The variants the Spec has no file for (``rgb_header_override = false``
+on an ``rgb`` unit) are built from the vendored ``v28`` with the line the Spec adds.
 
 The codes are asserted as the literal strings of the Spec text, not through this package's
 constants, so a changed constant fails here.
@@ -20,6 +18,7 @@ constants, so a changed constant fails here.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -74,74 +73,11 @@ def _with_override(values: dict[str, str]) -> str:
     return body
 
 
-V40 = _with_override({"rep1": "true", "rep2": "true"}).encode("utf-8")
-I141 = _with_override({"rep1": '"true"'}).encode("utf-8")
-I140 = b"""schema = "morphobricks-experiment"
-schema_version = 1
-
-[conditions.CTRL]
-source_folder = "CTRL"
-display_name = "Control"
-
-[conditions.DrugA]
-source_folder = "DrugA"
-display_name = "Drug A"
-reference = "CTRL"
-
-[channels.DAPI]
-display_name = "DAPI"
-
-[repeats.rep1]
-confirmed = true
-confirmed_on = "2026-11-06"
-
-[repeats.rep1.members.CTRL]
-source_repeat = "rep1"
-image_count = 8
-
-[repeats.rep1.members.CTRL.technical_repeats.single]
-source_folder = "single"
-channels = ["DAPI"]
-rgb_header_override = true
-
-[repeats.rep1.members.DrugA]
-source_repeat = "rep1"
-image_count = 8
-
-[repeats.rep1.members.DrugA.technical_repeats.single]
-source_folder = "single"
-channels = ["DAPI"]
-
-[repeats.rep2]
-confirmed = true
-confirmed_on = "2026-11-06"
-
-[repeats.rep2.members.CTRL]
-source_repeat = "rep2"
-image_count = 8
-
-[repeats.rep2.members.CTRL.technical_repeats.single]
-source_folder = "single"
-channels = ["DAPI"]
-
-[repeats.rep2.members.DrugA]
-source_repeat = "rep2"
-image_count = 8
-
-[repeats.rep2.members.DrugA.technical_repeats.single]
-source_folder = "single"
-channels = ["DAPI"]
-
-[masks.Nuclei]
-source_type = "nuclei"
-representation = "instances"
-
-[used_ids]
-conditions = ["CTRL", "DrugA"]
-channels = ["DAPI"]
-repeats = ["rep1", "rep2"]
-technical_repeats = ["single"]
-"""
+SPEC = {f.name.split("_")[0]: f for kind in ("valid", "invalid") for f in fixtures(kind)}
+V40 = SPEC["v40"].data
+I140 = SPEC["i140"].data
+I141 = SPEC["i141"].data
+OVERRIDE_TRUE = b"\nrgb_header_override = true\n"
 
 
 def scanner_tiff(path, data=None, **kwargs):
@@ -192,19 +128,29 @@ def no_pixel_reads(monkeypatch):
 # The descriptions -----------------------------------------------------------------------------
 
 
-def test_the_local_v40_differs_from_the_vendored_v28_only_in_the_ctrl_units_key():
+def test_the_vendored_rh1_fixtures_record_their_outcomes():
+    assert SPEC["v40"].header["Expected"] == "PASS"
+    assert SPEC["i140"].expected_codes == {RGB_OVERRIDE_WITHOUT_RGB}
+    assert SPEC["i141"].expected_codes == {"E_TYPE"}
+
+
+def test_v40_differs_from_the_vendored_v28_only_in_the_ctrl_units_key():
     v28 = description_from_bytes(V28.encode("utf-8"))
     v40 = description_from_bytes(V40)
-    assert V40.decode("utf-8").count("rgb_header_override = true") == 2
+    assert V40.count(OVERRIDE_TRUE) == 2
     for rep, repeat in v40.repeats.items():
         assert repeat.members["CTRL"].technical_repeats["single"].rgb_header_override is True
         assert repeat.members["DrugA"].technical_repeats["single"].rgb_header_override is None
         assert repeat.members["DrugA"] == v28.repeats[rep].members["DrugA"]
+        ctrl = repeat.members["CTRL"].technical_repeats["single"]
+        before = v28.repeats[rep].members["CTRL"].technical_repeats["single"]
+        assert replace(ctrl, rgb_header_override=None) == before
 
 
 def test_v40_is_valid_and_the_key_survives_the_canonical_writer():
     report = read_description_bytes(V40)
     assert report.ok and not report.warnings
+    assert not SPEC["v40"].expected_codes  # PASS, no warning expected
     description = description_from_bytes(V40)
     written = canonical_bytes(description)
     assert written.count(b"rgb_header_override = true\n") == 2
@@ -214,7 +160,7 @@ def test_v40_is_valid_and_the_key_survives_the_canonical_writer():
 def test_i141_a_string_is_never_read_as_a_boolean():
     report = read_description_bytes(I141)
     assert report.phase == 3
-    assert {code.value for code in report.codes} == {"E_TYPE"}
+    assert {code.value for code in report.codes} == SPEC["i141"].expected_codes == {"E_TYPE"}
     (issue,) = report.errors
     assert issue.path.endswith("CTRL.technical_repeats.single.rgb_header_override")
     assert issue.value == "true"
@@ -222,9 +168,11 @@ def test_i141_a_string_is_never_read_as_a_boolean():
 
 @pytest.mark.parametrize("value", ["true", "false"])
 def test_i140_the_key_without_image_type_rgb(value):
-    data = I140.replace(b"rgb_header_override = true", f"rgb_header_override = {value}".encode())
+    assert I140.count(OVERRIDE_TRUE) == 1
+    data = I140.replace(OVERRIDE_TRUE, f"\nrgb_header_override = {value}\n".encode())
     report = read_description_bytes(data)
     assert report.phase == 5
+    assert {code.value for code in report.codes} == SPEC["i140"].expected_codes
     assert {code.value for code in report.codes} == {RGB_OVERRIDE_WITHOUT_RGB}
     (issue,) = report.errors
     assert issue.code.value == "E_RGB_OVERRIDE_WITHOUT_RGB"
