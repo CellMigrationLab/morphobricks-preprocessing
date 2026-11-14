@@ -141,6 +141,8 @@ def _checked_override_items(value: object, where: str) -> None:
             or reason not in (None, HEADER_RGB, NO_INTERPRETATION)
             or (photometric is None) != (reason == NO_INTERPRETATION)
             or not isinstance(photometric, str | None)
+            or (item["override"] == USED and photometric == RGB)
+            or (reason == HEADER_RGB and photometric != RGB)
         ):
             raise ValueError(f"{where}.{OVERRIDE_IMAGES} holds a malformed item")
     paths = [item["image"] for item in value]
@@ -206,4 +208,47 @@ def recorded_description(value: object) -> dict | None:
             raise ValueError(f"{KEY}.units[{index}].{DECLARED} is not true or false")
         if isinstance(unit, dict) and OVERRIDE_IMAGES in unit:
             _checked_override_items(unit[OVERRIDE_IMAGES], f"{KEY}.units[{index}]")
+        if isinstance(unit, dict):
+            _checked_override_agreement(unit, f"{KEY}.units[{index}]")
     return value
+
+
+def _checked_override_agreement(unit: dict, where: str) -> None:
+    """Refuse override fields of one unit record that contradict each other (review K, N1).
+
+    Per-image records and the effective ``image_type_header_overridden`` need the declared key
+    ``true``; the effective flag is present exactly when an image used the override, and its
+    ``header_photometric`` names the used images' interpretations as the writer joins them.
+    """
+    images = unit.get(OVERRIDE_IMAGES)
+    if (images is not None or OVERRIDDEN in unit) and unit.get(DECLARED) is not True:
+        raise ValueError(f"{where} records an override use but does not declare {DECLARED} = true")
+    if OVERRIDDEN in unit and (
+        unit[OVERRIDDEN] is not True or not isinstance(unit.get(PHOTOMETRIC), str)
+    ):
+        raise ValueError(f"{where}.{OVERRIDDEN} must be true with the header's {PHOTOMETRIC}")
+    if images is None:
+        return
+    used = sorted({item["header_photometric"] for item in images if item["override"] == USED})
+    if (OVERRIDDEN in unit) != bool(used) or (used and unit.get(PHOTOMETRIC) != ", ".join(used)):
+        raise ValueError(
+            f"{where}: {OVERRIDDEN} and {PHOTOMETRIC} disagree with the images' override use"
+        )
+
+
+def check_declared_overrides(recorded: dict, description: Description) -> None:
+    """Refuse a recorded unit whose declared override differs from the published description.
+
+    ``recorded`` is :func:`recorded_description`'s entry and ``description`` the published file
+    the run read (its SHA-256 already checked): the manifest's ``rgb_header_override`` of an RGB
+    unit must equal the description's.
+    """
+    for index, unit in enumerate(recorded["units"]):
+        if not isinstance(unit, dict) or DECLARED not in unit:
+            continue
+        member = description.repeats[unit["repeat"]].members[unit["condition"]]
+        declared = member.technical_repeats[unit["technical_repeat"]].rgb_header_override is True
+        if unit[DECLARED] != declared:
+            raise ValueError(
+                f"{KEY}.units[{index}].{DECLARED} differs from the published description"
+            )

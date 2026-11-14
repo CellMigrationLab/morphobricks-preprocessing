@@ -227,7 +227,8 @@ def test_p36g_four_samples_beside_three_is_the_override_refusal_not_homogeneity(
 def _record(tmp_path):
     report = check(_mixed(tmp_path / "exp"), V40)
     key = {tuple(vars(k).values()): v for k, v in report.override_images.items()}
-    units = unit_records(description_from_bytes(V40), {}, None, {}, key)
+    overridden = {tuple(vars(k).values()): v for k, v in report.image_type_overridden.items()}
+    units = unit_records(description_from_bytes(V40), {}, None, overridden, key)
     return description_record(description_from_bytes(V40), "0" * 64, units, {}, ())
 
 
@@ -353,3 +354,33 @@ def test_the_notebook_reopens_a_repeat_whose_key_changed(tmp_path):
     _, changed = reopened(draft, replace(answers, units=units), published)
     assert changed == ("rep1",)
     assert reopened(draft, answers, published)[1] == ()
+
+
+# Review K N1: the override fields of one unit record must agree ----------------------------------
+
+
+def _ctrl_rep1(record):
+    (unit,) = [u for u in record["units"] if (u["condition"], u["repeat"]) == ("CTRL", "rep1")]
+    return unit
+
+
+@pytest.mark.parametrize(
+    "corrupt",
+    [
+        lambda unit: unit.update(rgb_header_override=False),  # uses recorded, nothing declared
+        lambda unit: unit.pop("image_type_header_overridden"),  # an image used it: the flag is due
+        lambda unit: unit.update(header_photometric="rgb"),  # not the used images' interpretation
+        lambda unit: unit["rgb_header_override_images"][0].update(
+            header_photometric="rgb"
+        ),  # used on RGB
+        lambda unit: unit["rgb_header_override_images"][1].update(header_photometric="minisblack"),
+    ],
+)
+def test_contradictory_override_fields_are_refused(tmp_path, corrupt):
+    record = _record(tmp_path)
+    assert recorded_description(record) is record
+    corrupt(_ctrl_rep1(record))
+    with pytest.raises(
+        ValueError, match="rgb_header_override|image_type_header_overridden|malformed"
+    ):
+        recorded_description(record)

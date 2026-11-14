@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 from .description import Description
 from .description_consume import read_published_description
 from .description_file import DESCRIPTION_FILENAME
+from .description_record import check_declared_overrides
 from .description_unnamed import FIELD as UNNAMED_FIELD
 from .fov_identity import FovIdentity, fov_identity
 from .manifest import FileEntry, RunManifest
@@ -75,6 +76,12 @@ def check_description(output: Path, manifest: RunManifest) -> Description:
             f"The experiment description {DESCRIPTION_FILENAME} is not the one the run read "
             "(changed or republished since). Run preprocessing again."
         )
+    try:
+        check_declared_overrides(recorded, description)
+    except ValueError as error:
+        raise RunInputsError(
+            f"The run manifest contradicts its experiment description: {error}."
+        ) from error
     return description
 
 

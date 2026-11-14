@@ -451,3 +451,28 @@ def test_changing_the_unit_to_separate_channels_drops_the_key():
     changed = with_type(answers, layout, "channels")
     assert changed.units[key].rgb_header_override is None
     assert with_type(answers, layout, "rgb").units[key].rgb_header_override is True
+
+
+@pytest.mark.parametrize(
+    ("condition", "declared"),
+    [("CTRL", False), ("DrugA", True)],  # flipped against the published description (v40)
+)
+def test_run_inputs_refuse_a_manifest_that_contradicts_the_description(
+    overridden_run, condition, declared
+):
+    """Review K N1: the recorded declaration must agree with the published file the run read."""
+    path = overridden_run.output / "run_manifest.json"
+    manifest = json.loads(path.read_text("utf-8"))
+    for unit in manifest["experiment_description"]["units"]:
+        if unit["condition"] == condition:
+            unit["rgb_header_override"] = declared
+            if not declared:  # keep the record self-consistent so the description check decides
+                for field in (
+                    "rgb_header_override_images",
+                    "image_type_header_overridden",
+                    "header_photometric",
+                ):
+                    unit.pop(field, None)
+    path.write_text(json.dumps(manifest), "utf-8")
+    with pytest.raises(Exception, match="rgb_header_override"):
+        RunInputs.open(overridden_run.output)
