@@ -6,6 +6,20 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## v0.5.5 (14 November 2026)
+
+A pin release: normalization is pinned at v0.6.1, so that every core package (and CellPatcher,
+fiberfeatures and MorphoFeature downstream) pins the same normalization URL. Nothing in
+preprocessing changes because of it, and no format changes: those of v0.5.4, whose runs are read
+as they are.
+
+### Changed
+
+- **Normalization pinned at v0.6.1** (`@v0.6.1`, tag on `b8aa65b`; was `@v0.6.0`, `95e1d6d`).
+  Normalization v0.6.1 only adds `stain.check_options` (a pixel-free check of a stain conversion
+  request) and records a provenance's `axes` as a plain `str`; preprocessing uses neither. Every
+  output of v0.6.0 is unchanged, and it still imports with NumPy only.
+
 ## v0.5.4 (14 November 2026)
 
 RGB scanner input: the RGB header override of Spec amendment RH1, and mask-only requests on RGB
