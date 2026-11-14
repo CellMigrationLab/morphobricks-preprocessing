@@ -295,6 +295,20 @@ def test_v28_rgb_units_are_refused_unless_the_consumer_declares_rgb_support(tmp_
     assert accepted.selections[0].channel_indices == (0, 1, 2)
 
 
+@pytest.mark.parametrize("channels", [(), ("G",)])
+def test_v28_only_a_request_naming_rgb_channels_needs_rgb_support(tmp_path, channels):
+    """experiment-v1 §8: A_RGB_NOT_SUPPORTED is for a request naming an RGB unit's channels.
+
+    A mask-only request (no channel) is accepted for any consumer; naming one of R, G, B is not.
+    """
+    inputs, _ = _open(tmp_path, "v28")
+    resolved = inputs.resolve_request(Request(channels))
+    if channels:
+        assert _codes(resolved) == [("A_RGB_NOT_SUPPORTED", "rgb")]
+    else:
+        assert not resolved.refused and len(resolved.selections) == 32
+
+
 def test_v01_channel_units_are_channels_and_need_no_capability(tmp_path):
     inputs, _ = _open(tmp_path, "v01")
     resolved = inputs.resolve_request(Request(("DNA",)))
