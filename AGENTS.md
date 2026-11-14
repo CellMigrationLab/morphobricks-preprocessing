@@ -1099,10 +1099,11 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 
 ---
 
-## 11. Status (current state, v0.5.3)
+## 11. Status (current state, v0.5.4)
 
-- **Released:** v0.5.3 (13 November 2026), with the normalization brick pinned at v0.6.0 (v0.5.2,
-  12 November 2026, pinned it at v0.5.0). The
+- **Released:** v0.5.4 (14 November 2026): the RGB header override (Spec RH1) and mask-only
+  requests on RGB units; the normalization brick stays pinned at v0.6.0 (since v0.5.3,
+  13 November 2026; v0.5.2, 12 November 2026, pinned it at v0.5.0). The
   per-release history is in [CHANGELOG.md](CHANGELOG.md); the milestones PP-0 to PP-13 are in
   [docs/archive/plan-milestones-v0.1-v0.4.md](docs/archive/plan-milestones-v0.1-v0.4.md); the older
   status log of this file is in
