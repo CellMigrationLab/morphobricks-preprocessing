@@ -55,11 +55,9 @@ def _unit(answers: DraftAnswers, layout: UnitLayout) -> UnitAnswer:
     saved = answers.units.get(layout.key)
     if saved is not None and len(saved.channels) == layout.channels:
         return saved
-    return UnitAnswer(
-        (None,) * layout.channels,
-        None if saved is None else saved.image_type,
-        None if saved is None else saved.display_name,
-    )
+    if saved is not None:  # the type, display name and RGB header override stay
+        return replace(saved, channels=(None,) * layout.channels)
+    return UnitAnswer((None,) * layout.channels)
 
 
 def _store(answers: DraftAnswers, key: UnitKey, unit: UnitAnswer) -> DraftAnswers:
@@ -84,7 +82,8 @@ def with_type(answers: DraftAnswers, layout: UnitLayout, image_type: str | None)
     """Return the answers with one unit's image type set.
 
     A colour unit's channels are ``R``, ``G``, ``B``; going back to ordinary channels (or to no
-    answer) clears them, since nothing says which label each position then is.
+    answer) clears them, since nothing says which label each position then is, and clears the
+    unit's ``rgb_header_override``, which exists only on a colour unit (experiment-v1 4.4b).
     """
     unit = _unit(answers, layout)
     if image_type == "rgb":
@@ -95,7 +94,9 @@ def with_type(answers: DraftAnswers, layout: UnitLayout, image_type: str | None)
         tags = (None,) * layout.channels
     else:
         tags = tuple(unit.channels)
-    return _store(answers, layout.key, replace(unit, channels=tags, image_type=image_type))
+    override = unit.rgb_header_override if image_type == "rgb" else None
+    changed = replace(unit, channels=tags, image_type=image_type, rgb_header_override=override)
+    return _store(answers, layout.key, changed)
 
 
 def with_labels(answers: DraftAnswers, labels: Mapping[str, str | None]) -> DraftAnswers:

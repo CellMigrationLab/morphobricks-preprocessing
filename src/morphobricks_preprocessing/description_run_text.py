@@ -24,6 +24,7 @@ from .physical_check import (
     IMAGE_TYPE_CONTRADICTS_HEADER,
     MASK_CONTRADICTS_REPRESENTATION,
     MASK_TYPE_NOT_DECLARED,
+    RGB_OVERRIDE_NOT_THREE_SAMPLES,
     UNIT_NOT_DECLARED,
     UNIT_NOT_FOUND,
     UNIT_NOT_HOMOGENEOUS,
@@ -66,6 +67,10 @@ def _what(issue: PhysicalIssue) -> str:
         CHANNEL_COUNT_MISMATCH: "An image has another number of channels than described",
         HEADER_CONTRADICTION: "An image header names a channel the description does not",
         IMAGE_TYPE_CONTRADICTS_HEADER: "The image type contradicts the image header",
+        RGB_OVERRIDE_NOT_THREE_SAMPLES: (
+            "An image of an acquisition with rgb_header_override is not three interleaved "
+            "colour samples per pixel"
+        ),
     }
     return f"{reasons[issue.code]} in {where}: {issue.detail}."
 

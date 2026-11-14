@@ -10,8 +10,11 @@ Order within one unit (§8): ``R_UNIT_NOT_HOMOGENEOUS`` is reported first and re
 ``R_CHANNEL_COUNT_MISMATCH`` and ``R_HEADER_CONTRADICTION`` for that unit. An image type that
 contradicts the header also replaces them for its unit: the layout cannot be read until the
 declaration is right. Homogeneity compares the interpreted axes with ``T`` left out (a
-time-lapse may have any number of time points, owner decision Q7), the channel count, the image
-type and the raw header name at each C index (equal after NFC, never trimmed).
+time-lapse may have any number of time points, owner decision Q7), the channel count, the
+**effective** image type (after a valid RGB header override every image of the unit is ``rgb``,
+experiment-v1 4.4b) and the raw header name at each C index (equal after NFC, never trimmed).
+In a unit that declares ``rgb_header_override = true``, ``R_RGB_OVERRIDE_NOT_THREE_SAMPLES`` is
+reported before ``R_UNIT_NOT_HOMOGENEOUS`` (owner answer of 14 November 2026).
 """
 
 from __future__ import annotations
@@ -27,6 +30,15 @@ from .description import Description, Unit
 from .discovery import DiscoveryResult
 from .image_names import position_id
 from .metadata import OME_ZARR, TiffMetadata, header_channel_count, named_axes
+from .rgb_override import (
+    OVERRIDE_SAMPLES,
+    RGB,
+    OverrideUse,
+    declares_override,
+    effectively_rgb,
+    header_overridden,
+    override_uses,
+)
 
 UNIT_NOT_FOUND = "R_UNIT_NOT_FOUND"
 UNIT_NOT_DECLARED = "R_UNIT_NOT_DECLARED"
@@ -34,6 +46,7 @@ CHANNEL_COUNT_MISMATCH = "R_CHANNEL_COUNT_MISMATCH"
 UNIT_NOT_HOMOGENEOUS = "R_UNIT_NOT_HOMOGENEOUS"
 HEADER_CONTRADICTION = "R_HEADER_CONTRADICTION"
 IMAGE_TYPE_CONTRADICTS_HEADER = "R_IMAGE_TYPE_CONTRADICTS_HEADER"
+RGB_OVERRIDE_NOT_THREE_SAMPLES = "R_RGB_OVERRIDE_NOT_THREE_SAMPLES"
 MASK_TYPE_NOT_DECLARED = "R_MASK_TYPE_NOT_DECLARED"
 HETEROGENEOUS_LAYOUT = "R_HETEROGENEOUS_LAYOUT_NOT_ENABLED"
 MASK_CONTRADICTS_REPRESENTATION = "R_MASK_CONTRADICTS_REPRESENTATION"
@@ -45,6 +58,7 @@ PHYSICAL_CODES = frozenset(
         UNIT_NOT_HOMOGENEOUS,
         HEADER_CONTRADICTION,
         IMAGE_TYPE_CONTRADICTS_HEADER,
+        RGB_OVERRIDE_NOT_THREE_SAMPLES,
         MASK_TYPE_NOT_DECLARED,
     }
 )
@@ -54,8 +68,6 @@ PHYSICAL_CODES = frozenset(
 lists are accepted from Stage 3, S3.3; decided from the
 description alone) and ``MASK_CONTRADICTS_REPRESENTATION`` (the mask step's) are named here so
 the reader's modules hold no code literal; they are not folder checks and are not in the set."""
-
-RGB = "rgb"
 
 
 @dataclass(frozen=True)
@@ -130,7 +142,11 @@ class PhysicalReport:
     homogeneous and whose image type agrees with its declaration. ``image_type_verified``
     says per unit whether the declared image type was checked against a header that states a
     colour interpretation (TIFF), False for a format that states none (OME-Zarr: it stands on
-    the user's confirmation). ``unchecked`` lists images whose header could not be read or
+    the user's confirmation), and False for a unit whose contradicting header was overridden.
+    ``image_type_overridden`` names each such unit (declared ``rgb`` with
+    ``rgb_header_override = true``, every image with three interleaved samples, the header's
+    colour interpretation not RGB) with the photometric interpretation its headers state
+    (experiment-v1 4.4b, RH1). ``unchecked`` lists images whose header could not be read or
     whose channel count is not stated by the header: they were not checked, which is not a pass.
     ``unnamed`` lists the images that pass without header channel names (:attr:`unnamed`).
     """
@@ -148,6 +164,17 @@ class PhysicalReport:
     """Per unit that passed, the images whose header names not every channel, each with the C
     positions without a name (all of them when the header names none). Such an image passes
     (§4.3: it needs no evidence, the user's confirmed layout is used) and is listed, not warned."""
+    image_type_overridden: Mapping[UnitKey, str] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    """The units accepted by ``rgb_header_override`` (see the class docstring; RH1)."""
+    override_images: Mapping[UnitKey, Mapping[str, OverrideUse]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    """Per unit that declares ``rgb_header_override = true`` and passed, what the override did
+    for each image (:class:`.rgb_override.OverrideUse`: used, with the header's colour
+    interpretation, or unused because the header already says RGB or states no colour
+    interpretation). Declared and effective are recorded separately (4.4b, 14 November 2026)."""
 
     @property
     def codes(self) -> frozenset[str]:
@@ -169,15 +196,20 @@ def _name(name: str | None) -> str | None:
     return nfc(name) if name else None
 
 
-def layout_of(meta: TiffMetadata, roles: Sequence[str | None] | None = None) -> Layout:
+def layout_of(
+    meta: TiffMetadata, roles: Sequence[str | None] | None = None, *, rgb: bool = False
+) -> Layout:
     """Return the layout one readable image's header states.
 
     The channel count is the length of the confirmed ``C`` role when ``roles`` are given, else
     what the header names (the ``C`` axis, or the samples of an RGB image); None when the header
-    leaves an axis open and no roles say which dimension is the channel.
+    leaves an axis open and no roles say which dimension is the channel. ``rgb`` reads the image
+    as RGB whatever its header's colour interpretation: its effective type after a valid RGB
+    header override (:func:`.rgb_override.effectively_rgb`), so that images differing only in
+    colour interpretation are homogeneous (experiment-v1 4.4b).
     """
     axes = named_axes(meta).replace("T", "")
-    if meta.rgb_samples:
+    if meta.rgb_samples or rgb:
         count: int | None = header_channel_count(meta)
     elif roles is not None:
         count = dict(zip(roles, meta.shape, strict=True)).get("C", 1)
@@ -185,7 +217,7 @@ def layout_of(meta: TiffMetadata, roles: Sequence[str | None] | None = None) -> 
         count = None
     else:
         count = header_channel_count(meta)
-    return Layout(count, tuple(meta.raw_channel_names), meta.rgb_samples, axes)
+    return Layout(count, tuple(meta.raw_channel_names), meta.rgb_samples or rgb, axes)
 
 
 def declared_units(description: Description) -> dict[UnitKey, tuple[str, Unit]]:
@@ -247,22 +279,47 @@ def _homogeneity(key: UnitKey, layouts: Mapping[str, Layout]) -> tuple[Layout, l
     return reference, issues
 
 
+def _type_issue(declared: Unit, layout: Layout, meta: TiffMetadata) -> tuple[str, str] | None:
+    """Return the code and text of one image whose header contradicts its unit, else None.
+
+    A header that does not say RGB under a unit declared ``rgb`` with the override is accepted
+    when the image has exactly three interleaved samples (RH1), else it is
+    ``R_RGB_OVERRIDE_NOT_THREE_SAMPLES``. Only the header is read.
+    """
+    if meta.kind == OME_ZARR or layout.rgb == (declared.image_type == RGB):
+        return None
+    three = meta.interleaved_samples == OVERRIDE_SAMPLES
+    if declares_override(declared):
+        if three:
+            return None
+        samples = meta.interleaved_samples or "no"
+        return RGB_OVERRIDE_NOT_THREE_SAMPLES, (
+            f"rgb_header_override needs exactly {OVERRIDE_SAMPLES} interleaved samples per "
+            f"pixel; the header states {samples} interleaved samples "
+            f"(photometric {meta.photometric or 'not stated'})"
+        )
+    what = (
+        f"declared {declared.image_type or 'not rgb'}, the header says "
+        f"{'rgb' if layout.rgb else 'not rgb'}"
+    )
+    if declared.image_type == RGB and three:
+        what += (
+            f" (photometric {meta.photometric or 'not stated'}) but stores "
+            f"{OVERRIDE_SAMPLES} interleaved samples per pixel: if they are R, G and B in this "
+            "order, declare rgb_header_override = true on this unit (experiment-v1 4.4b)"
+        )
+    return IMAGE_TYPE_CONTRADICTS_HEADER, what
+
+
 def _type_issues(
     key: UnitKey, declared: Unit, layouts: Mapping[str, Layout], metas: Mapping[str, TiffMetadata]
 ) -> list[PhysicalIssue]:
     """Compare the declared image type with each header that states a colour interpretation."""
+    found = ((path, _type_issue(declared, layout, metas[path])) for path, layout in layouts.items())
     return [
-        PhysicalIssue(
-            IMAGE_TYPE_CONTRADICTS_HEADER,
-            key,
-            path,
-            position_id(path),
-            None,
-            f"declared {declared.image_type or 'not rgb'}, the header says "
-            f"{'rgb' if layout.rgb else 'not rgb'}",
-        )
-        for path, layout in layouts.items()
-        if metas[path].kind != OME_ZARR and layout.rgb != (declared.image_type == RGB)
+        PhysicalIssue(issue[0], key, path, position_id(path), None, issue[1])
+        for path, issue in found
+        if issue is not None
     ]
 
 
@@ -324,7 +381,11 @@ def _check_unit(
     """Check one declared unit that has images.
 
     Returns the issues, the common layout, verified, the unchecked images and, for a unit
-    without issues, the images whose header names not every channel (:func:`_unnamed`).
+    without issues, the images whose header names not every channel (:func:`_unnamed`). For a
+    unit with ``rgb_header_override = true`` an image without three interleaved samples is
+    reported first (``R_RGB_OVERRIDE_NOT_THREE_SAMPLES``, replacing the unit's other checks: it
+    cannot be one of the unit's colour images whatever the others are). Homogeneity then compares
+    the effective layouts: every image the override lifts is read as RGB.
     """
     _, unit = repeat_unit
     readable = [p for p in paths if p in metas and metas[p].readable]
@@ -333,12 +394,24 @@ def _check_unit(
     verified = bool(readable) and all(metas[p].kind != OME_ZARR for p in readable)
     if not layouts:
         return [], None, verified, unchecked, {}
+    samples = [
+        issue
+        for issue in _type_issues(key, unit, layouts, metas)
+        if issue.code == RGB_OVERRIDE_NOT_THREE_SAMPLES
+    ]
+    if samples:
+        return samples, None, verified, unchecked, {}
+    layouts = {  # the effective type: an image the override lifts is rgb (4.4b)
+        p: layout_of(metas[p], roles.get(p), rgb=True) if effectively_rgb(unit, metas[p]) else lay
+        for p, lay in layouts.items()
+    }
     reference, issues = _homogeneity(key, layouts)
     if issues:
         return issues, None, verified, unchecked, {}
     issues = _type_issues(key, unit, layouts, metas)
     if issues:
         return issues, None, verified, unchecked, {}
+    verified = verified and header_overridden(unit, layouts, metas) is None  # RH1
     issues = _evidence_issues(key, unit, description, layouts)
     if reference.channels is None:  # the header does not say; never a guessed count
         unchecked += [p for p in layouts if p not in unchecked]
@@ -391,12 +464,20 @@ def check_physical(
     verified: dict[UnitKey, bool] = {}
     unchecked: list[str] = []
     unnamed: dict[UnitKey, Mapping[str, tuple[int, ...]]] = {}
+    overridden: dict[UnitKey, str] = {}
+    override_images: dict[UnitKey, Mapping[str, OverrideUse]] = {}
     for key, paths in found.items():
         if key not in declared:
             continue
         found_issues, layout, ok, missing, nameless = _check_unit(
             key, declared[key], description, sorted(paths), metas, roles or {}
         )
+        named = header_overridden(declared[key][1], paths, metas)
+        if named is not None and not found_issues:
+            overridden[key] = named
+        uses = override_uses(declared[key][1], paths, metas)
+        if uses and not found_issues:
+            override_images[key] = MappingProxyType(uses)
         issues += found_issues
         unchecked += missing
         verified[key] = ok
@@ -416,6 +497,8 @@ def check_physical(
         MappingProxyType(verified),
         tuple(dict.fromkeys(unchecked)),
         MappingProxyType(unnamed),
+        MappingProxyType(overridden),
+        MappingProxyType(override_images),
     )
 
 

@@ -7,9 +7,10 @@ ID), so the same cards show them and the folders found now decide what still app
 (:func:`.draft_answers.carry_over`). Nothing is confirmed by this module: every value is copied
 from the published file, and a comparability date is dropped (the repeat asked again) only when
 the candidate's layout of that repeat differs from the published one: its folders, or a unit's
-declared ordered channel list or image type (:func:`reopened`, :func:`reasked`, experiment-v1
-section 10). Headers that no longer fit the declared channels are the run's refusal, not a
-reopening: the user fixes the description (for example a header name) and the date stays.
+declared ordered channel list, image type or ``rgb_header_override`` (:func:`reopened`,
+:func:`reasked`, experiment-v1 section 10 and 4.4b). Headers that no longer fit the declared
+channels are the run's refusal, not a reopening: the user fixes the description (for example a
+header name) and the date stays.
 
 The draft of the folders is derived with the IDs the lineage **retired** (:func:`retired_ids`):
 the IDs still in use are the published answers themselves, so they are not "used" twice.
@@ -63,6 +64,7 @@ def retired_ids(published: Description) -> dict[str, tuple[str, ...]]:
 
 
 def _units(published: Description) -> dict[UnitKey, UnitAnswer]:
+    """Return each published unit's answer by its folders, ``rgb_header_override`` kept."""
     out = {}
     for repeat in published.repeats.values():
         for cid, member in repeat.members.items():
@@ -70,7 +72,9 @@ def _units(published: Description) -> dict[UnitKey, UnitAnswer]:
             for unit in member.technical_repeats.values():
                 kind = "rgb" if unit.image_type == "rgb" else CHANNELS_TYPE
                 key = (folder, member.source_repeat, unit.source_folder)
-                out[key] = UnitAnswer(tuple(unit.channels), kind, unit.display_name)
+                out[key] = UnitAnswer(
+                    tuple(unit.channels), kind, unit.display_name, unit.rgb_header_override
+                )
     return out
 
 
@@ -124,16 +128,17 @@ def published_answers(published: Description, base_sha256: str) -> DraftAnswers:
     )
 
 
-Layout = frozenset[tuple[UnitKey, tuple[str | None, ...] | None, str | None]]
-"""A repeat's layout as section 10 reads it: each unit's folders, ordered channels and type."""
+Layout = frozenset[tuple[UnitKey, tuple[str | None, ...] | None, str | None, bool | None]]
+"""A repeat's layout as section 10 reads it: each unit's folders, ordered channels, type and
+``rgb_header_override`` as written (part of the confirmed layout, experiment-v1 4.4b)."""
 
 
 def _layout(answers: DraftAnswers, keys: frozenset[UnitKey]) -> Layout:
     units = answers.units
     return frozenset(
-        (key, tuple(units[key].channels), units[key].image_type)
+        (key, tuple(units[key].channels), units[key].image_type, units[key].rgb_header_override)
         if key in units
-        else (key, None, None)
+        else (key, None, None, None)
         for key in keys
     )
 
@@ -142,8 +147,8 @@ def layouts(draft: Draft, answers: DraftAnswers) -> dict[str, Layout]:
     """Return, per repeat label of the paired draft, its units and their declared channels.
 
     A unit is its folders ``(condition, source repeat, technical)`` with the ordered channel
-    labels and the image type the answers declare for it: the candidate's own layout, never the
-    image headers.
+    labels, the image type and the ``rgb_header_override`` the answers declare for it: the
+    candidate's own layout, never the image headers.
     """
     paired = draft.paired(answers.pairing)
     return {
@@ -186,8 +191,9 @@ def reopened(
 
     ``draft`` is the draft of the folders now (without answers). The candidate these answers
     make is compared with ``published``: a repeat is asked again when its layout differs
-    (:func:`layouts`: a folder joined or left it, or a unit's declared ordered channel list or
-    image type differs). Its ``confirmed_on`` is dropped, its ID and shown-as name are kept.
+    (:func:`layouts`: a folder joined or left it, or a unit's declared ordered channel list,
+    image type or ``rgb_header_override`` differs). Its ``confirmed_on`` is dropped, its ID and
+    shown-as name are kept.
     Every other repeat keeps its date byte for byte (section 4.4a), even if image counts
     changed, and even if the image headers no longer fit its channels: that is the run's
     refusal (``R_HEADER_CONTRADICTION``), shown at once, and the declared list did not change.
@@ -210,7 +216,7 @@ def _declared(layout: Layout | None) -> bool:
     """Return whether every unit of a layout has its whole ordered channel list and its type."""
     return layout is not None and all(
         channels is not None and None not in channels and kind is not None
-        for _, channels, kind in layout
+        for _, channels, kind, _override in layout
     )
 
 

@@ -21,6 +21,7 @@ from .description_rules import (
     MEMBER,
     REPEAT,
     REPRESENTATIONS,
+    RGB_HEADER_OVERRIDE,
     TOP,
     UNIT,
     USED_IDS,
@@ -150,6 +151,7 @@ def _real_date(value: str) -> bool:
 
 
 def _unit(table: Mapping[str, object], path: str, out: Issues) -> None:
+    """Check one imaging unit's fields: types, ``image_type`` and ``rgb_header_override``."""
     _fields(table, UNIT, path, out)
     _text(table, "source_folder", path, out, filled=False)
     _text(table, "display_name", path, out, filled=True)
@@ -160,6 +162,8 @@ def _unit(table: Mapping[str, object], path: str, out: Issues) -> None:
             out.add(Code.E_TYPE, f"{path}.image_type", value)
         elif value not in IMAGE_TYPES:
             out.add(Code.E_ENUM, f"{path}.image_type", value)
+    if RGB_HEADER_OVERRIDE in table and type(table[RGB_HEADER_OVERRIDE]) is not bool:
+        out.add(Code.E_TYPE, f"{path}.{RGB_HEADER_OVERRIDE}", table[RGB_HEADER_OVERRIDE])
 
 
 def _member(table: Mapping[str, object], path: str, out: Issues) -> None:

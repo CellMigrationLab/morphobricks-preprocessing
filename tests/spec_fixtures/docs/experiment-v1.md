@@ -11,6 +11,9 @@
   audit; it is not a conformance claim for any brick.
 - **Amended** on 11 November 2026 (owner decision PL1, ADR 0001): `representation` gains the value
   `parent_labels` (§4.5b, §7, §8).
+- **Amended** on 13 November 2026 (owner decision RH1, ADR 0001): an RGB unit may declare
+  `rgb_header_override = true` for files whose header contradicts `rgb` but that hold exactly three
+  interleaved samples per pixel (§4.4b, §6, §7, §8).
 - **Decisions:** [ADR 0001](adr/0001-experiment-description-v1.md).
 - **Fixtures:** [fixtures/README.md](../fixtures/README.md). **Conformance:**
   [conformance-plan.md](conformance-plan.md).
@@ -266,6 +269,7 @@ condition; at most one per condition per repeat, guaranteed by TOML key uniquene
 | `display_name` | non-empty text | no | Display only (§4.8); MAY be the folder label |
 | `channels` | array of channel IDs | yes | ≥ 1 entry; ordered: entry *i* is source channel C*i*; every entry declared (`E_UNKNOWN_CHANNEL`); no repeats (`E_DUPLICATE_CHANNEL_IN_UNIT`) |
 | `image_type` | text | no | Only the value `rgb` (`E_ENUM`: exact, lower case); absent = an ordinary channel image. User-declared, never inferred (§4.4b) |
+| `rgb_header_override` | boolean | no (default `false`) | Only on a unit with `image_type = "rgb"` (`E_RGB_OVERRIDE_WITHOUT_RGB`); `true` accepts a header whose colour interpretation contradicts `rgb` when every image of the unit has exactly three interleaved samples per pixel (§4.4b, amendment RH1) |
 
 **§4.4b RGB imaging units (AQ6; supersedes the D8 refusal).** RGB (interleaved colour) is an
 accepted, **declared** image type, per imaging unit:
@@ -285,6 +289,30 @@ accepted, **declared** image type, per imaging unit:
   `R_IMAGE_TYPE_CONTRADICTS_HEADER`. A format whose header states no colour interpretation cannot
   contradict the declaration, which then stands on user confirmation and is recorded in the
   manifest as not header-verified.
+- **Header override (owner decision RH1, 13 November 2026).** Some scanners write interleaved RGB
+  with a colour interpretation that is not RGB (for example TIFF photometric `MINISBLACK` with
+  three samples per pixel). A unit declared `rgb` MAY also declare `rgb_header_override = true`:
+  preprocessing then accepts a header that says the unit is not RGB **only** when every image of
+  the unit has exactly three samples per pixel on an interleaved samples axis (TIFF
+  `SamplesPerPixel = 3`, contiguous planar configuration; the samples become `R`, `G`, `B` in
+  stored order) and records the unit in the manifest as **declared RGB, header overridden**, with
+  the header's colour interpretation. Any other contradiction stays
+  `R_IMAGE_TYPE_CONTRADICTS_HEADER`; an image of an overridden unit without three interleaved samples
+  is `R_RGB_OVERRIDE_NOT_THREE_SAMPLES`. The key is never inferred, never written by a reader on its
+  own, and changes no channel ID; without it the contradiction is refused and the message names the
+  key. Owner answers of 14 November 2026:
+  - **Declared and effective are recorded separately.** The manifest records, per unit, the declared
+    key (`rgb_header_override`, `true` or `false`) and, per image, whether the override was **used**
+    (it lifted a contradicting header, with that header's colour interpretation) or **unused** (the
+    header already says RGB: accepted as header-verified; or the format states no colour
+    interpretation, for example OME-Zarr: accepted as not header-verified, as without the key).
+    The three-sample requirement applies to every image whose header the override lifts.
+  - **Homogeneity uses the effective type.** After a valid override every image of the unit is
+    effectively `rgb`; images whose headers differ only in colour interpretation (for example some
+    `MINISBLACK` with three interleaved samples, some photometric RGB) are homogeneous, and each
+    image's own header interpretation is kept as evidence.
+  - **The key is part of the confirmed layout.** Adding, removing or changing it reopens the N35
+    confirmation of the repeat, like a change of `image_type` or of the channel list (§10).
 - The spec gives RGB **no scientific meaning**: no grey conversion, luminance, stain separation
   or joint-channel rule. Each brick owns the meaning and MUST declare whether it supports RGB;
   undeclared means unsupported. An analysis request that includes an RGB unit's channels for a
@@ -700,6 +728,7 @@ for NFC only (phase 4) before it is resolved (phase 5).
 | 5 | `E_RGB_UNIT_CHANNELS` | A unit with `image_type = "rgb"` whose `channels` is not exactly `["R", "G", "B"]` (§4.4b) |
 | 5 | `E_RGB_TOKEN_MISUSE` | A unit without `image_type = "rgb"` lists a channel whose case-folded ID is `r`, `g` or `b` (§4.4b) |
 | 5 | `E_RGB_ALIAS` | A channel whose case-folded ID is `r`, `g` or `b` has non-empty `header_names` (§4.4b) |
+| 5 | `E_RGB_OVERRIDE_WITHOUT_RGB` | A unit declares `rgb_header_override` without `image_type = "rgb"` (§4.4b, RH1) |
 | 5 | `E_DISPLAY_NAME_COLLISION` | Two display names of one kind equal after NFC and case folding (§4.8) |
 | 5 | `E_USED_ID_MISSING` | A declared condition, channel, repeat or technical repeat ID is not in `used_ids` (§4.9) |
 | 5 | `E_SOURCE_FOLDER_REUSED` | One `source_folder` on two condition IDs, or on two technical repeat IDs (§4.6a) |
@@ -731,6 +760,10 @@ validation: a reader MUST NOT try to interpret fields of a version it does not s
   before it stays valid with the same meaning, and a reader pinned to an earlier Spec commit
   refuses the new value as `E_ENUM`, never misreads it. A reader states which rules it implements
   by the Spec commit it pins (conformance plan §1).
+- **Amendment of v1 (owner decision RH1, 13 November 2026).** Adding the optional unit key
+  `rgb_header_override` (§4.4b) is an amendment of version 1, not a new version: every file valid
+  before it stays valid with the same meaning (the key is absent there, which means `false`), and a
+  reader pinned to an earlier Spec commit refuses the key as unknown, never misreads it.
 - A migration between versions MUST be an explicit, recorded operation that writes a new file and
   never changes canonical identities silently.
 - **Repeat, condition, technical repeat and channel IDs are immutable** (§4.6) and never reused
@@ -774,9 +807,10 @@ Required preprocessing refusals (`R_*`):
 | `R_UNIT_NOT_FOUND` | A declared imaging unit has no included image |
 | `R_UNIT_NOT_DECLARED` | A discovered imaging unit is not in the file (reconciliation draft required) |
 | `R_CHANNEL_COUNT_MISMATCH` | An image's channel count differs from its unit's list length |
-| `R_UNIT_NOT_HOMOGENEOUS` | FOVs of one unit differ in channel count, image type, interpreted axes or header names at one C index; the message names FOV, path and C index |
+| `R_UNIT_NOT_HOMOGENEOUS` | FOVs of one unit differ in channel count, image type (the effective type after a valid header override, §4.4b), interpreted axes or header names at one C index; the message names FOV, path and C index |
 | `R_HEADER_CONTRADICTION` | A header name at C*i* is not, after NFC of both sides and with no trimming (§4.3), in the confirmed `header_names` of the unit's channel at *i* |
-| `R_IMAGE_TYPE_CONTRADICTS_HEADER` | A unit's declared image type (`rgb` or absent, §4.4b) contradicts the image header metadata, in either direction; pixels are never examined |
+| `R_IMAGE_TYPE_CONTRADICTS_HEADER` | A unit's declared image type (`rgb` or absent, §4.4b) contradicts the image header metadata, in either direction, and is not an accepted `rgb_header_override` (RH1); pixels are never examined; for a unit declared `rgb` the message names `rgb_header_override` when its images have three interleaved samples |
+| `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` | A unit declares `rgb_header_override = true` and one of its images does not have exactly three interleaved samples per pixel (§4.4b, RH1); pixels are never examined |
 | `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` | Stage 1–2 only: the units do not all have the same ordered list; names the units; lifted at Stage 3 |
 | `R_MASK_TYPE_NOT_DECLARED` | A discovered mask type has no `masks` entry |
 | `R_MASK_TYPE_NAME_INVALID` | A discovered mask type name breaks the Label rules (for example `NA`, ` cells`), so it cannot be a `source_type`; refused at discovery (AQ11) |
@@ -784,7 +818,9 @@ Required preprocessing refusals (`R_*`):
 
 Within one unit, `R_UNIT_NOT_HOMOGENEOUS` is reported first and replaces
 `R_CHANNEL_COUNT_MISMATCH` and `R_HEADER_CONTRADICTION` for that unit: intra-unit discrepancies
-are detected before channel identity is checked.
+are detected before channel identity is checked. In a unit that declares `rgb_header_override = true`,
+`R_RGB_OVERRIDE_NOT_THREE_SAMPLES` is reported before `R_UNIT_NOT_HOMOGENEOUS`: it names the image
+that breaks the override's condition (owner answer of 14 November 2026).
 
 Undetectable by any layer: identical-shape, unnamed images with physically swapped fluorophores.
 Representative previews and explicit confirmation are the guard; image-based checks are advisory.
@@ -862,7 +898,8 @@ silently; edits go to a separate draft and are published atomically after valida
 
 - **N35 reopening.** The confirmation of a repeat is reopened (draft `confirmed = false`) only when
   channels, layout or grouping change: a new or removed unit or member, a unit's ordered channel
-  list, or the pairing of folders into repeats. New FOVs (or removed ones) inside an existing unit
+  list, its `image_type` or its `rgb_header_override` (added, removed or changed; §4.4b), or the
+  pairing of folders into repeats. New FOVs (or removed ones) inside an existing unit
   whose confirmed layout still holds do **not** reopen it; they are reported and recorded. A
   changed `image_count` of a confirmed member is recorded as an
   `image_count_changed` record (§4.6) whether or not anything else changes in the same

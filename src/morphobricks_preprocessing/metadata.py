@@ -42,6 +42,7 @@ from .size_checks import (
     role_size,
     z_stack_issues,
 )
+from .tiff_colour import colour_header
 from .validation import ValidationIssue, error, has_errors, plural
 from .zarr_input import (
     NgffError,
@@ -112,6 +113,10 @@ class TiffMetadata:
         RGB with three samples per pixel, which ``tifffile`` labels ``S``. It is
         the metadata the image type suggestion uses (:mod:`.image_type`). False
         for other TIFF files (also RGB with an alpha sample) and OME-Zarr images.
+    photometric, interleaved_samples
+        The TIFF photometric interpretation in lower case (``"minisblack"``, ``"rgb"``; None
+        for OME-Zarr) and the samples per pixel stored interleaved (contiguous ``S`` axis; 0
+        when there is none), for the RGB header override (:mod:`.tiff_colour`).
     axes_from_metadata
         True when the axes come from metadata that names them: OME, ImageJ or other
         microscope metadata ``tifffile`` reads, ``tifffile`` "shaped" metadata with axes
@@ -134,6 +139,8 @@ class TiffMetadata:
     kind: str = TIFF
     physical_sizes: PhysicalSizes = PhysicalSizes()
     rgb_samples: bool = False
+    photometric: str | None = None
+    interleaved_samples: int = 0
     channel_names_trimmed: bool = False
     axes_from_metadata: bool = True
     raw_channel_names: tuple[str | None, ...] = ()
@@ -288,7 +295,7 @@ def inspect_tiff(path: str | os.PathLike, relative_path: str | None = None) -> T
                 page_count=len(tif.pages),
                 **ome_details(tif),
                 physical_sizes=_tiff_sizes(tif),
-                rgb_samples=_rgb_samples(first),
+                **colour_header(first),
                 axes_from_metadata=series_axes_from_metadata(first),
             )
     except Exception as exc:  # any failure to parse means the file cannot be used
@@ -502,16 +509,6 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     issues.extend(dimension_issues(readable))
     issues.extend(pixel_size_issues(readable))
     return issues
-
-
-def _rgb_samples(series: tifffile.TiffPageSeries) -> bool:
-    """Return True if the series stores RGB colour: photometric RGB, three samples per pixel."""
-    keyframe = series.keyframe
-    return (
-        "S" in series.axes
-        and keyframe.photometric == tifffile.PHOTOMETRIC.RGB
-        and keyframe.samplesperpixel == 3
-    )
 
 
 def series_axes_from_metadata(series: tifffile.TiffPageSeries) -> bool:

@@ -133,12 +133,19 @@ def _mapping(description: Description) -> AxisMapping:
 
 
 def _write_image(path: Path, unit: Unit, seed: int) -> None:
-    """Write a tiny image of the unit's channels (RGB colour for an ``rgb`` unit)."""
+    """Write a tiny image of the unit's channels (RGB colour for an ``rgb`` unit).
+
+    A unit with ``rgb_header_override = true`` gets the scanner layout the override is for:
+    three interleaved samples under the photometric interpretation ``minisblack`` (RH1).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(seed)
     if unit.image_type == RGB:
         pixels = rng.integers(0, 200, (IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8)
-        tifffile.imwrite(path, pixels, photometric="rgb", metadata={"axes": "YXS"})
+        colour = "minisblack" if unit.rgb_header_override else "rgb"
+        tifffile.imwrite(
+            path, pixels, photometric=colour, planarconfig="contig", metadata={"axes": "YXS"}
+        )
         return
     pixels = rng.integers(0, 200, (len(unit.channels), IMAGE_SIZE, IMAGE_SIZE), dtype=np.uint8)
     tifffile.imwrite(path, pixels, photometric="minisblack", metadata={"axes": "CYX"})

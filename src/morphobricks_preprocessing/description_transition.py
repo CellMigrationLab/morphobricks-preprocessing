@@ -199,8 +199,10 @@ def repeat_layout(description: Description, key: str) -> frozenset:
     """Return what reopens a repeat's confirmation (section 10): members, units, channels, type.
 
     A member is its condition's source folder and ID, its source repeat folder, and each unit's
-    technical-repeat ID and folder, ordered channels and image type. The image count is not part
-    of it: new FOVs in an existing unit do not reopen it.
+    technical-repeat ID and folder, ordered channels, image type and ``rgb_header_override`` as
+    written (added, removed or changed reopens it: the key is part of the confirmed layout,
+    4.4b, owner answer of 14 November 2026). The image count is not part of it: new FOVs in an
+    existing unit do not reopen it.
     """
     repeat = description.repeats[key]
     return frozenset(
@@ -212,6 +214,7 @@ def repeat_layout(description: Description, key: str) -> frozenset:
             unit.source_folder,
             unit.channels,
             unit.image_type,
+            unit.rgb_header_override,
         )
         for cond, member in repeat.members.items()
         for tid, unit in member.technical_repeats.items()

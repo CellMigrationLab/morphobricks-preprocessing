@@ -60,6 +60,7 @@ class Unit:
     channels: tuple[str, ...]
     display_name: str | None = None
     image_type: str | None = None
+    rgb_header_override: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -114,6 +115,7 @@ def _unit(table: Table) -> Unit:
         tuple(table["channels"]),
         table.get("display_name"),
         table.get("image_type"),
+        table.get("rgb_header_override"),
     )
 
 

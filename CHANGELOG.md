@@ -6,6 +6,45 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+### Added
+
+- **RGB header override** (MorphoBricks-Spec amendment RH1, Spec PR #37, merged as
+  b635b7d, vendored). Scanner files that store colour as three interleaved samples
+  under a header that does not say RGB (TIFF photometric `minisblack`, `SamplesPerPixel` 3,
+  contiguous) were refused for a unit declared `rgb` (`R_IMAGE_TYPE_CONTRADICTS_HEADER`).
+  A unit may now declare `rgb_header_override = true` beside `image_type = "rgb"`: the
+  contradiction is accepted only when every image has exactly three interleaved samples
+  (samples 0, 1, 2 are `R`, `G`, `B`), else `R_RGB_OVERRIDE_NOT_THREE_SAMPLES`; the key
+  without `image_type = "rgb"` is `E_RGB_OVERRIDE_WITHOUT_RGB`, a value that is not a boolean
+  `E_TYPE`. The manifest's unit record of an overridden unit adds
+  `image_type_header_overridden: true` and `header_photometric` (it is not header-verified);
+  other units' records are unchanged. Without the key the refusal stays and its message now
+  names `rgb_header_override` when the images have three interleaved samples. The image
+  headers record the photometric interpretation and the interleaved samples
+  (`TiffMetadata.photometric`, `interleaved_samples`). Pixels are never examined. The notebook
+  has no control for the key yet; its draft keeps the key of a published file when it saves.
+- **RGB header override, owner answers of 14 November 2026** (Spec PR #37, merged as b635b7d;
+  P36 (d)-(h), transitions t14 and t15, vendored). Homogeneity compares the effective
+  image type: after a valid override every image of the unit is `rgb`, so images that differ
+  only in colour interpretation (some `minisblack` with three interleaved samples, some
+  photometric RGB) are one layout (they were `R_UNIT_NOT_HOMOGENEOUS`); the reconciliation
+  agrees. The three-sample requirement applies to the images whose header the override lifts,
+  and `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` stays reported before `R_UNIT_NOT_HOMOGENEOUS`. The
+  key is part of the confirmed layout: adding, removing or changing it (or `image_type`) reopens
+  the N35 confirmation, at publication and in the notebook's draft. Declared and effective are
+  recorded separately: every unit declared `rgb` records `rgb_header_override` (`true` or
+  `false`), and a unit declaring it `true` records `rgb_header_override_images`, each image
+  `used` (with its header's colour interpretation) or `unused` (`header_already_rgb`, or
+  `no_colour_interpretation` for OME-Zarr). The keys are additive and checked when read; the
+  manifest version stays 5. Non-RGB units and every other refusal are unchanged.
+
+### Changed
+
+- **Spec re-pinned to `b635b7d`** (Spec PR #37, RH1 merged; `v40`, `i140`, `i141`, `t14`,
+  `t15` now vendored): notebook drafts saved under `69a58b3` are not carried over.
+
 ## v0.5.3 (13 November 2026)
 
 A pin release: normalization is pinned at v0.6.0, so that every core package (and CellPatcher,
