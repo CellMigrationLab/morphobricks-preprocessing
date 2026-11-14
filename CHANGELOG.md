@@ -10,8 +10,8 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Added
 
-- **RGB header override** (MorphoBricks-Spec amendment RH1, Spec PR #37, commit 2cbebf8;
-  ahead of the vendored pin). Scanner files that store colour as three interleaved samples
+- **RGB header override** (MorphoBricks-Spec amendment RH1, Spec PR #37, merged as
+  b635b7d, vendored). Scanner files that store colour as three interleaved samples
   under a header that does not say RGB (TIFF photometric `minisblack`, `SamplesPerPixel` 3,
   contiguous) were refused for a unit declared `rgb` (`R_IMAGE_TYPE_CONTRADICTS_HEADER`).
   A unit may now declare `rgb_header_override = true` beside `image_type = "rgb"`: the
@@ -25,8 +25,8 @@ v0.5.1: no run before v0.5.1 is read.)
   headers record the photometric interpretation and the interleaved samples
   (`TiffMetadata.photometric`, `interleaved_samples`). Pixels are never examined. The notebook
   has no control for the key yet; its draft keeps the key of a published file when it saves.
-- **RGB header override, owner answers of 14 November 2026** (Spec PR #37 at commit 179dc5c;
-  P36 (d)-(h), transitions t14 and t15, not vendored). Homogeneity compares the effective
+- **RGB header override, owner answers of 14 November 2026** (Spec PR #37, merged as b635b7d;
+  P36 (d)-(h), transitions t14 and t15, vendored). Homogeneity compares the effective
   image type: after a valid override every image of the unit is `rgb`, so images that differ
   only in colour interpretation (some `minisblack` with three interleaved samples, some
   photometric RGB) are one layout (they were `R_UNIT_NOT_HOMOGENEOUS`); the reconciliation
