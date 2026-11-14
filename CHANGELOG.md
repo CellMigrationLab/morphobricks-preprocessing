@@ -6,7 +6,13 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
-## Unreleased
+## v0.5.4 (14 November 2026)
+
+RGB scanner input: the RGB header override of Spec amendment RH1, and mask-only requests on RGB
+units (Fixed, below). The normalization pin stays at v0.6.0. Run manifest version 5,
+`plane_histograms.csv` schema version 5, resolver contract version 2 and conversion record
+version 4 are those of v0.5.3; the manifest's new unit keys are additive (only units declared
+`rgb` carry them), and a v0.5.3 run is read as it is. The Spec pin moves to `b635b7d` (Changed).
 
 ### Added
 
@@ -44,6 +50,15 @@ v0.5.1: no run before v0.5.1 is read.)
 
 - **Spec re-pinned to `b635b7d`** (Spec PR #37, RH1 merged; `v40`, `i140`, `i141`, `t14`,
   `t15` now vendored): notebook drafts saved under `69a58b3` are not carried over.
+
+### Fixed
+
+- **A mask-only request on an RGB unit was refused** (`A_RGB_NOT_SUPPORTED`) unless the consumer
+  declared `rgb_support`, so a brick's mask-only features (MorphoObjects shapes, MorphoRelate
+  relations and skeletons) could not run on an RGB slide (#298). Spec `experiment-v1.md` section 8
+  refuses only a request that includes the channels of an RGB unit; the resolver now counts only
+  the RGB images whose channels the request names. Naming one of `R`, `G`, `B` without
+  `rgb_support` is still refused. Owner decision of 14 November 2026: no new capability value.
 
 ## v0.5.3 (13 November 2026)
 
