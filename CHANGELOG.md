@@ -6,6 +6,20 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+### Added
+
+- **Window reads** (issue #179, owner decisions of 14 November 2026):
+  `RunInputs.read_window(fov, *, t, z, bounds, channels, level=0)` and
+  `windows.read_window`/`window_plan` read an exact `(y0, y1, x0, x1)` window of one plane,
+  for the channels asked by ID, decoding only the TIFF strips or tiles and OME-Zarr chunks it
+  intersects; bitwise the slice of `read_plane`. Only level 0 is read; bounds outside the
+  plane, empty or not whole numbers, other levels and pages that cannot be split are refused
+  with named errors. `read_plane` and its callers are unchanged, and so is every output,
+  format and version. (`run_inputs_window` also takes over the coordinate checks of
+  `run_inputs`, unchanged.)
+
 ## v0.5.5 (14 November 2026)
 
 A pin release: normalization is pinned at v0.6.1, so that every core package (and CellPatcher,

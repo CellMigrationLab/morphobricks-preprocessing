@@ -49,7 +49,6 @@ from morphobricks_normalization.csv_io import (
 )
 from morphobricks_normalization.records import PlaneRecord
 
-from .axes import AxisMapping
 from .calibration import CALIBRATION_FILENAME
 from .conversion_check import conversion_problem
 from .description import Description
@@ -84,9 +83,9 @@ from .run_inputs_text import (
     _unrecorded_text,
     _without_axes_text,
 )
+from .run_inputs_window import WindowInputs, _check_planes, _coordinate, _mapping
 from .source_content import content_changed
 from .unrecorded import UnrecordedFiles, unrecorded_files
-from .validation import plural
 from .zarr_input import NgffError, ZarrUnavailableError
 
 
@@ -170,7 +169,7 @@ class Fov:
 
 
 @dataclass(frozen=True)
-class RunInputs(SemanticInputs, ProjectionInputs, ResolvingInputs):
+class RunInputs(SemanticInputs, ProjectionInputs, ResolvingInputs, WindowInputs):
     """The inputs of a clean preprocessing run, read as the run recorded them.
 
     Use :meth:`open`; the attributes are the snapshot taken then.
@@ -463,27 +462,6 @@ class RunInputs(SemanticInputs, ProjectionInputs, ResolvingInputs):
             return False
 
 
-def _check_planes(relative_path: str, fov: Fov, z: int | None, t: int | None) -> None:
-    """Refuse a ``z`` or ``t`` outside the image (audit I5)."""
-    for name, index, count in (("z", z, fov.z_count), ("t", t, fov.t_count)):
-        if index is not None and not 0 <= index < count:
-            raise IndexError(
-                f"{relative_path} has {plural(count, 'plane')} along "
-                f"{name.upper()} ({name} 0 to {count - 1}); {name}={index} is outside it"
-            )
-
-
-def _coordinate(value: object, name: str, call: str) -> int:
-    """Return a plane coordinate as an int, refusing anything but a whole number."""
-    if isinstance(value, bool) or not isinstance(value, int | np.integer):
-        raise TypeError(
-            f"{call} takes the plane's zero-based coordinates z and t as whole numbers; "
-            f"{name} is {value!r} ({type(value).__name__}). A row's plane_id is not a "
-            "coordinate: give the row's z and t (PlaneRecord.z, PlaneRecord.t)."
-        )
-    return int(value)
-
-
 def _manifest(output: Path) -> RunManifest:
     """Read an output folder's manifest; an older version is refused (re-run preprocessing).
 
@@ -559,11 +537,6 @@ def _records(table: Path, manifest: RunManifest) -> tuple[PlaneRecord, ...]:
                 "image. Run preprocessing again."
             )
     return tuple(records)
-
-
-def _mapping(entry: FileEntry) -> AxisMapping:
-    """Return an image's own mapping as the run recorded it."""
-    return AxisMapping(entry.axes, tuple(entry.roles or ()), entry.singleton_roles)
 
 
 def _fov(

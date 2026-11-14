@@ -49,6 +49,11 @@ RUN_INPUTS_METHODS = {
         "memory_limit: 'int' = 1073741824) -> 'np.ndarray'"
     ),
     "read_image": "(self, fov: 'Fov | str') -> 'LazyImage'",
+    "read_window": (
+        "(self, fov: 'Fov | str', *, t: 'int', z: 'int', "
+        "bounds: 'tuple[int, int, int, int]', channels: 'Sequence[str]', level: 'int' = 0, "
+        "memory_limit: 'int' = 1073741824) -> 'np.ndarray'"
+    ),
     "mask_types": "(self) -> 'tuple[str, ...]'",
     "read_mask": (
         "(self, fov: 'Fov | str', mask_type: 'str', z: 'int | None' = None, "

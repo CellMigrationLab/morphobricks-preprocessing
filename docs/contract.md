@@ -335,6 +335,26 @@ It gives:
   names X before Y (for example `ZXY`) is returned Y before X, as the run read it; nothing
   else is reordered. The memory limit of `read_plane` (default 1 GiB) counts only reading
   the plane, not the histogram arrays a run needs (audit I2);
+- `read_window(fov, *, t, z, bounds, channels, level=0, memory_limit=...)` (issue #179, owner
+  decisions of 14 November 2026): an exact window of one plane as a `(C, h, w)` array of the
+  stored values, in the stored pixel type, bitwise the same as that slice of `read_plane`.
+  `bounds = (y0, y1, x0, x1)` are half-open `pixel_edge` bounds in the plane frame (Spec ADR
+  0004), Y before X whatever the stored order; `channels` are canonical channel IDs, read in the
+  order given, chosen before anything is decoded. Reading is aligned on the stored pieces (TIFF
+  strips or tiles, OME-Zarr chunks) and touches only those the window intersects; only the
+  window is returned. Refused, never padded, filled or clipped: bounds that are not four whole
+  numbers, empty, or outside the plane (`WindowBoundsError`); a level other than the
+  full-resolution level 0, the declared policy (`WindowLevelError`); no channel or a channel
+  twice (`WindowChannelError`; an ID the image lacks is `ChannelNotFoundError`); TIFF pages the
+  block reader cannot split (subsampled colour, an NDPI JPEG header, a plane whose axes are not
+  the page's rows and columns: `WindowLayoutError`, never read whole instead); a window whose
+  working memory, estimated from the header (`windows.window_plan`), is over the limit
+  (`WindowMemoryError`). A TIFF stored compressed in one strip or tile is decoded whole, and the
+  estimate counts it. The image's fingerprint is checked as for `read_plane`; no content digest
+  is computed (a run with `verify_content` checks content once, at `open`). A caller records,
+  with what it computes from a window, the image's recorded fingerprint (`size`, `mtime_ns`,
+  and `inventory_sha256` for OME-Zarr), `level`, `bounds`, `channels`, `t` and `z`. It does not
+  replace `read_plane` (yet);
 - `mask_types()` and `read_mask(fov, type, z=None, t=None)`: the recorded pairing only, read
   as stored through the recorded `axes` and `roles` by preprocessing's reader with
   `check_labels`; a mask changed since the run is refused; a mask recorded `shared: true`
@@ -449,7 +469,8 @@ raise `ValueError`. Tested for the Spec fixtures `v03 v08 v09 v13 v28 v30 v33 v3
 
 **The pinned surface (v0.5.1, PP-1).** `tests/test_brick_api_surface.py` pins, by name and type,
 what the consuming bricks use: `RunInputs`'s public methods and their signatures (`open`, `fovs`,
-`files`, `projection`, `pixel_sizes`, `read_plane`, `read_image`, `mask_types`, `read_mask`,
+`files`, `projection`, `pixel_sizes`, `read_plane`, `read_image`, `read_window`, `mask_types`,
+`read_mask`,
 `histograms`, `design`, `description`, `section_digests`, `images_without_header_channel_names`,
 `channel_index`, `references`, `mask_semantics`, `mask_check_status`, `require_checked`,
 `resolve_request`), the fields and types of `Fov`, `RunInputs`, the resolver's records (`Request`,
