@@ -6,6 +6,27 @@ real run; a skip is never counted as a pass. Owner rulings of 8 November 2026 (i
 "no skips" applies to the Spec conformance modules (`tests/test_spec_*.py`); a skip elsewhere
 in the suite is listed as **not run**, with its reason.
 
+## Release record: v0.5.5 (14 November 2026)
+
+A G1-style record of the v0.5.5 release candidate, a pin release: normalization moves from v0.6.0
+to v0.6.1, which only adds `stain.check_options` and records a provenance's `axes` as a plain
+`str`. It does not decide a gate; deciding a gate is the owner's.
+
+| | |
+|---|---|
+| Release candidate | Measured on the tree of the v0.5.5 preparation commit A (`4069826`, branch `claude/release-0.5.5`, from `main` at `c41cc40`, v0.5.4). This record is a separate commit that changes only this file. A keeps `RELEASE_REF` at v0.5.4's `05d763a`. Commit B then points the notebook's `RELEASE_REF` at A and records the pair in `RELEASE_CALLS` (the notebook and two test files only), so `git diff A B -- src pyproject.toml` is empty |
+| Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `b635b7d5bc950529bce9dcc5681cec34b75139b8` (unchanged) |
+| Environment | Linux, Python 3.13.18, `uv pip install -e '.[dev,notebook,zarr]'` in a fresh venv (normalization 0.6.1 from its tag `v0.6.1` = `b8aa65b`, as `direct_url.json` records; scikit-image not installed; numpy 2.5.4, tifffile 2026.11.12, ipywidgets 8.1.9, zarr 3.4.2, pytest 9.2.0); run as root on a case-sensitive file system |
+| Commands | `python tools/check.py`; `python -m pytest -q -p no:cacheprovider -rsxX tests/test_spec_*.py` |
+| `tools/check.py` | Ruff clean, Ruff format 465 files already formatted, pytest **5600 passed, 4 skipped** (not run, below), 0 failed, code rules passed (exit status 0) |
+| Spec modules (`tests/test_spec_*.py`) | **1839 passed, 0 skipped, 0 xfailed, 0 failed**, from all 25 modules of `tests/spec_gate.py` `EXPECTED_MODULES` (as v0.5.4) |
+
+**Not run (4 environment skips, outside the Spec modules):** the four of v0.5.4 below. These four
+behaviours are **not verified by this run**.
+
+**Still the owner's:** the Colab and JupyterLab browser check (`docs/colab-release-check.md`),
+before tagging.
+
 ## Release record: v0.5.4 (14 November 2026)
 
 A G1-style record of the v0.5.4 release candidate (as for v0.5.3 below): the RGB header override
