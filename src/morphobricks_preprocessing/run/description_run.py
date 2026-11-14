@@ -284,7 +284,8 @@ def unit_entries(found: RunDescription) -> list[dict[str, object]]:
     verified = {astuple(k): v for k, v in report.image_type_verified.items()}
     unnamed = {astuple(k): v for k, v in report.unnamed.items()}
     overridden = {astuple(k): v for k, v in report.image_type_overridden.items()}
-    return unit_records(found.description, verified, unnamed, overridden)
+    uses = {astuple(k): v for k, v in report.override_images.items()}
+    return unit_records(found.description, verified, unnamed, overridden, uses)
 
 
 def manifest_entry(

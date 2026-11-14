@@ -10,8 +10,11 @@ Order within one unit (§8): ``R_UNIT_NOT_HOMOGENEOUS`` is reported first and re
 ``R_CHANNEL_COUNT_MISMATCH`` and ``R_HEADER_CONTRADICTION`` for that unit. An image type that
 contradicts the header also replaces them for its unit: the layout cannot be read until the
 declaration is right. Homogeneity compares the interpreted axes with ``T`` left out (a
-time-lapse may have any number of time points, owner decision Q7), the channel count, the image
-type and the raw header name at each C index (equal after NFC, never trimmed).
+time-lapse may have any number of time points, owner decision Q7), the channel count, the
+**effective** image type (after a valid RGB header override every image of the unit is ``rgb``,
+experiment-v1 4.4b) and the raw header name at each C index (equal after NFC, never trimmed).
+In a unit that declares ``rgb_header_override = true``, ``R_RGB_OVERRIDE_NOT_THREE_SAMPLES`` is
+reported before ``R_UNIT_NOT_HOMOGENEOUS`` (owner answer of 14 November 2026).
 """
 
 from __future__ import annotations
@@ -27,6 +30,15 @@ from .description import Description, Unit
 from .discovery import DiscoveryResult
 from .image_names import position_id
 from .metadata import OME_ZARR, TiffMetadata, header_channel_count, named_axes
+from .rgb_override import (
+    OVERRIDE_SAMPLES,
+    RGB,
+    OverrideUse,
+    declares_override,
+    effectively_rgb,
+    header_overridden,
+    override_uses,
+)
 
 UNIT_NOT_FOUND = "R_UNIT_NOT_FOUND"
 UNIT_NOT_DECLARED = "R_UNIT_NOT_DECLARED"
@@ -56,10 +68,6 @@ PHYSICAL_CODES = frozenset(
 lists are accepted from Stage 3, S3.3; decided from the
 description alone) and ``MASK_CONTRADICTS_REPRESENTATION`` (the mask step's) are named here so
 the reader's modules hold no code literal; they are not folder checks and are not in the set."""
-
-RGB = "rgb"
-OVERRIDE_SAMPLES = 3
-"""The interleaved samples per pixel an RGB header override requires (experiment-v1 4.4b, RH1)."""
 
 
 @dataclass(frozen=True)
@@ -160,6 +168,13 @@ class PhysicalReport:
         default_factory=lambda: MappingProxyType({})
     )
     """The units accepted by ``rgb_header_override`` (see the class docstring; RH1)."""
+    override_images: Mapping[UnitKey, Mapping[str, OverrideUse]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    """Per unit that declares ``rgb_header_override = true`` and passed, what the override did
+    for each image (:class:`.rgb_override.OverrideUse`: used, with the header's colour
+    interpretation, or unused because the header already says RGB or states no colour
+    interpretation). Declared and effective are recorded separately (4.4b, 14 November 2026)."""
 
     @property
     def codes(self) -> frozenset[str]:
@@ -181,15 +196,20 @@ def _name(name: str | None) -> str | None:
     return nfc(name) if name else None
 
 
-def layout_of(meta: TiffMetadata, roles: Sequence[str | None] | None = None) -> Layout:
+def layout_of(
+    meta: TiffMetadata, roles: Sequence[str | None] | None = None, *, rgb: bool = False
+) -> Layout:
     """Return the layout one readable image's header states.
 
     The channel count is the length of the confirmed ``C`` role when ``roles`` are given, else
     what the header names (the ``C`` axis, or the samples of an RGB image); None when the header
-    leaves an axis open and no roles say which dimension is the channel.
+    leaves an axis open and no roles say which dimension is the channel. ``rgb`` reads the image
+    as RGB whatever its header's colour interpretation: its effective type after a valid RGB
+    header override (:func:`.rgb_override.effectively_rgb`), so that images differing only in
+    colour interpretation are homogeneous (experiment-v1 4.4b).
     """
     axes = named_axes(meta).replace("T", "")
-    if meta.rgb_samples:
+    if meta.rgb_samples or rgb:
         count: int | None = header_channel_count(meta)
     elif roles is not None:
         count = dict(zip(roles, meta.shape, strict=True)).get("C", 1)
@@ -197,7 +217,7 @@ def layout_of(meta: TiffMetadata, roles: Sequence[str | None] | None = None) -> 
         count = None
     else:
         count = header_channel_count(meta)
-    return Layout(count, tuple(meta.raw_channel_names), meta.rgb_samples, axes)
+    return Layout(count, tuple(meta.raw_channel_names), meta.rgb_samples or rgb, axes)
 
 
 def declared_units(description: Description) -> dict[UnitKey, tuple[str, Unit]]:
@@ -259,11 +279,6 @@ def _homogeneity(key: UnitKey, layouts: Mapping[str, Layout]) -> tuple[Layout, l
     return reference, issues
 
 
-def _overridden(declared: Unit) -> bool:
-    """Return whether the unit declares ``rgb`` with ``rgb_header_override = true`` (RH1)."""
-    return declared.image_type == RGB and declared.rgb_header_override is True
-
-
 def _type_issue(declared: Unit, layout: Layout, meta: TiffMetadata) -> tuple[str, str] | None:
     """Return the code and text of one image whose header contradicts its unit, else None.
 
@@ -274,7 +289,7 @@ def _type_issue(declared: Unit, layout: Layout, meta: TiffMetadata) -> tuple[str
     if meta.kind == OME_ZARR or layout.rgb == (declared.image_type == RGB):
         return None
     three = meta.interleaved_samples == OVERRIDE_SAMPLES
-    if _overridden(declared):
+    if declares_override(declared):
         if three:
             return None
         samples = meta.interleaved_samples or "no"
@@ -306,29 +321,6 @@ def _type_issues(
         for path, issue in found
         if issue is not None
     ]
-
-
-def header_overridden(
-    declared: Unit, paths: Iterable[str], metas: Mapping[str, TiffMetadata]
-) -> str | None:
-    """Return the photometric interpretation a unit's accepted header override names, or None.
-
-    None unless the unit declares the override and one of its TIFF images has a header that
-    does not say RGB (a header that says RGB has nothing to override: such a unit is
-    header-verified; an OME-Zarr header states no colour interpretation). The caller has checked
-    the images (:func:`_type_issues`); unreadable images are left out. Distinct interpretations
-    are joined in sorted order with ``", "``; ``"not stated"`` stands for a value ``tifffile``
-    does not name.
-    """
-    if not _overridden(declared):
-        return None
-    found = (metas[path] for path in paths if path in metas and metas[path].readable)
-    names = {
-        meta.photometric or "not stated"
-        for meta in found
-        if meta.kind != OME_ZARR and not meta.rgb_samples
-    }
-    return ", ".join(sorted(names)) or None
 
 
 def _quoted(names: Iterable[str | None]) -> str:
@@ -392,7 +384,8 @@ def _check_unit(
     without issues, the images whose header names not every channel (:func:`_unnamed`). For a
     unit with ``rgb_header_override = true`` an image without three interleaved samples is
     reported first (``R_RGB_OVERRIDE_NOT_THREE_SAMPLES``, replacing the unit's other checks: it
-    cannot be one of the unit's colour images whatever the others are).
+    cannot be one of the unit's colour images whatever the others are). Homogeneity then compares
+    the effective layouts: every image the override lifts is read as RGB.
     """
     _, unit = repeat_unit
     readable = [p for p in paths if p in metas and metas[p].readable]
@@ -408,6 +401,10 @@ def _check_unit(
     ]
     if samples:
         return samples, None, verified, unchecked, {}
+    layouts = {  # the effective type: an image the override lifts is rgb (4.4b)
+        p: layout_of(metas[p], roles.get(p), rgb=True) if effectively_rgb(unit, metas[p]) else lay
+        for p, lay in layouts.items()
+    }
     reference, issues = _homogeneity(key, layouts)
     if issues:
         return issues, None, verified, unchecked, {}
@@ -468,6 +465,7 @@ def check_physical(
     unchecked: list[str] = []
     unnamed: dict[UnitKey, Mapping[str, tuple[int, ...]]] = {}
     overridden: dict[UnitKey, str] = {}
+    override_images: dict[UnitKey, Mapping[str, OverrideUse]] = {}
     for key, paths in found.items():
         if key not in declared:
             continue
@@ -477,6 +475,9 @@ def check_physical(
         named = header_overridden(declared[key][1], paths, metas)
         if named is not None and not found_issues:
             overridden[key] = named
+        uses = override_uses(declared[key][1], paths, metas)
+        if uses and not found_issues:
+            override_images[key] = MappingProxyType(uses)
         issues += found_issues
         unchecked += missing
         verified[key] = ok
@@ -497,6 +498,7 @@ def check_physical(
         tuple(dict.fromkeys(unchecked)),
         MappingProxyType(unnamed),
         MappingProxyType(overridden),
+        MappingProxyType(override_images),
     )
 
 

@@ -16,6 +16,7 @@ from .channel_plan import channel_coverage
 from .description import Description
 from .description_unnamed import FIELD, checked_items, unnamed_items
 from .description_write import section_digests
+from .rgb_override import HEADER_RGB, NO_INTERPRETATION, RGB, UNUSED, USED, OverrideUse
 
 KEY = "experiment_description"
 """The manifest key of the entry."""
@@ -23,6 +24,11 @@ SHA256 = re.compile(r"[0-9a-f]{64}")
 OVERRIDDEN = "image_type_header_overridden"
 PHOTOMETRIC = "header_photometric"
 """The unit record's keys of an accepted RGB header override (experiment-v1 4.4b, RH1)."""
+DECLARED = "rgb_header_override"
+"""The unit record's key of a unit declared ``rgb``: its declared ``rgb_header_override``."""
+OVERRIDE_IMAGES = "rgb_header_override_images"
+"""The unit record's key of a unit declaring the override: what it did for each image."""
+_USE_KEYS = frozenset({"image", "override", "header_photometric"})
 _FIELDS = (
     "sha256",
     "schema_version",
@@ -39,6 +45,7 @@ def unit_records(
     verified: Mapping[tuple[str, str, str], bool],
     unnamed: Mapping[tuple[str, str, str], Mapping[str, tuple[int, ...]]] | None = None,
     overridden: Mapping[tuple[str, str, str], str] | None = None,
+    override_images: Mapping[tuple[str, str, str], Mapping[str, OverrideUse]] | None = None,
 ) -> list[dict[str, object]]:
     """Return every declared unit with whether its image type was checked against a header.
 
@@ -57,6 +64,13 @@ def unit_records(
     as declared RGB with the header overridden, ``image_type_header_overridden`` true and
     ``header_photometric`` naming the header's interpretation (for example ``minisblack``); it
     is not header-verified. Any other unit has neither key.
+
+    Declared and effective are recorded separately (4.4b, owner answers of 14 November 2026).
+    Every unit declared ``rgb`` records its declared key, ``rgb_header_override`` (``true`` or
+    ``false``; absent in the file is ``false``); other units' records do not have it.
+    ``override_images`` maps a unit declaring the override to what it did for each image
+    (:attr:`.physical_check.PhysicalReport.override_images`), recorded under
+    ``rgb_header_override_images`` (:func:`override_items`).
     """
     out = []
     for repeat_id, repeat in sorted(description.repeats.items()):
@@ -74,13 +88,64 @@ def unit_records(
                     "channels": list(unit.channels),
                     "image_type_header_verified": verified.get(key, False),
                 }
+                if unit.image_type == RGB:
+                    record[DECLARED] = unit.rgb_header_override is True
                 if key in (overridden or {}):
                     record[OVERRIDDEN] = True
                     record[PHOTOMETRIC] = overridden[key]
+                if (override_images or {}).get(key):
+                    record[OVERRIDE_IMAGES] = override_items(override_images[key])
                 if (unnamed or {}).get(key):
                     record[FIELD] = unnamed_items(unnamed[key], len(unit.channels))
                 out.append(record)
     return out
+
+
+def override_items(uses: Mapping[str, OverrideUse]) -> list[dict[str, object]]:
+    """Return a unit's per-image override record, sorted by image (relative path).
+
+    Each item has ``image``, ``override`` (``used``: the override lifted a header that does not
+    say RGB; ``unused``: it did not) and ``header_photometric``, the image's own header colour
+    interpretation kept as evidence (null for a format that states none). An unused item adds
+    ``unused_reason``: ``header_already_rgb`` (header-verified) or ``no_colour_interpretation``
+    (for example OME-Zarr; not header-verified).
+    """
+    out = []
+    for image, use in sorted(uses.items()):
+        item: dict[str, object] = {
+            "image": image,
+            "override": use.use,
+            "header_photometric": use.photometric,
+        }
+        if use.reason is not None:
+            item["unused_reason"] = use.reason
+        out.append(item)
+    return out
+
+
+def _checked_override_items(value: object, where: str) -> None:
+    """Refuse a malformed ``rgb_header_override_images`` list of one unit record."""
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{where}.{OVERRIDE_IMAGES} must be a non-empty list")
+    for item in value:
+        unused = isinstance(item, dict) and item.get("override") == UNUSED
+        keys = _USE_KEYS | {"unused_reason"} if unused else _USE_KEYS
+        if not isinstance(item, dict) or set(item) != keys:
+            raise ValueError(f"{where}.{OVERRIDE_IMAGES} items must hold {', '.join(sorted(keys))}")
+        photometric = item["header_photometric"]
+        reason = item.get("unused_reason")
+        if (
+            not isinstance(item["image"], str)
+            or not item["image"]
+            or item["override"] not in (USED, UNUSED)
+            or reason not in (None, HEADER_RGB, NO_INTERPRETATION)
+            or (photometric is None) != (reason == NO_INTERPRETATION)
+            or not isinstance(photometric, str | None)
+        ):
+            raise ValueError(f"{where}.{OVERRIDE_IMAGES} holds a malformed item")
+    paths = [item["image"] for item in value]
+    if paths != sorted(set(paths)):
+        raise ValueError(f"{where}.{OVERRIDE_IMAGES} images must be sorted and distinct")
 
 
 def description_record(
@@ -137,4 +202,8 @@ def recorded_description(value: object) -> dict | None:
     for index, unit in enumerate(value["units"]):
         if isinstance(unit, dict) and FIELD in unit:
             checked_items(unit[FIELD], f"{KEY}.units[{index}]")
+        if isinstance(unit, dict) and DECLARED in unit and not isinstance(unit[DECLARED], bool):
+            raise ValueError(f"{KEY}.units[{index}].{DECLARED} is not true or false")
+        if isinstance(unit, dict) and OVERRIDE_IMAGES in unit:
+            _checked_override_items(unit[OVERRIDE_IMAGES], f"{KEY}.units[{index}]")
     return value

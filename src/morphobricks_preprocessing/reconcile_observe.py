@@ -4,8 +4,10 @@ How many images each unit has now and, when the caller gives the image headers a
 (the preflight's), the channel evidence those headers state: the channel count and the raw
 header names by C index (:func:`.physical_check.layout_of`, without axis roles: a count the
 header leaves open stays unknown), whether they state a colour (RGB) image and whether every
-image stores three interleaved samples per pixel (the RGB header override's condition, RH1).
-A unit whose readable headers disagree with each other is marked not uniform. Nothing is read
+image whose header does not say RGB stores three interleaved samples per pixel (the RGB header
+override's condition, RH1). A unit whose readable headers disagree with each other is marked
+not uniform; when they differ only in colour interpretation it is also marked uniform as RGB
+(one layout under a declared override, experiment-v1 4.4b). Nothing is read
 from an image here, and no unit is renamed or matched by similarity.
 """
 
@@ -16,7 +18,8 @@ from collections.abc import Collection, Iterable
 from .description_reconcile import ObservedUnit, UnitFolders
 from .discovery import DiscoveryResult
 from .metadata import OME_ZARR, TiffMetadata
-from .physical_check import OVERRIDE_SAMPLES, layout_of
+from .physical_check import layout_of
+from .rgb_override import OVERRIDE_SAMPLES, lifted
 
 
 def _evidence(paths: Iterable[str], metas: dict[str, TiffMetadata], count: int) -> ObservedUnit:
@@ -25,11 +28,18 @@ def _evidence(paths: Iterable[str], metas: dict[str, TiffMetadata], count: int) 
     layouts = {layout_of(meta) for meta in readable}
     if not layouts:
         return ObservedUnit(count)  # no header read: no evidence, never assumed unchanged
+    three = all(m.interleaved_samples == OVERRIDE_SAMPLES for m in readable if lifted(m))
     if len(layouts) > 1:
-        return ObservedUnit(count, uniform=False)
+        as_rgb = {layout_of(meta, rgb=lifted(meta)) for meta in readable}
+        if not three or len(as_rgb) > 1:
+            return ObservedUnit(count, uniform=False)
+        (layout,) = as_rgb  # differs only in colour interpretation: one layout if overridden
+        names = layout.names or None
+        return ObservedUnit(
+            count, layout.channels, names, False, rgb=False, three_samples=True, uniform_as_rgb=True
+        )
     (layout,) = layouts
     rgb = None if any(meta.kind == OME_ZARR for meta in readable) else layout.rgb
-    three = all(meta.interleaved_samples == OVERRIDE_SAMPLES for meta in readable)
     return ObservedUnit(count, layout.channels, layout.names or None, rgb=rgb, three_samples=three)
 
 

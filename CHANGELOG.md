@@ -25,6 +25,20 @@ v0.5.1: no run before v0.5.1 is read.)
   headers record the photometric interpretation and the interleaved samples
   (`TiffMetadata.photometric`, `interleaved_samples`). Pixels are never examined. The notebook
   has no control for the key yet; its draft keeps the key of a published file when it saves.
+- **RGB header override, owner answers of 14 November 2026** (Spec PR #37 at commit 179dc5c;
+  P36 (d)-(h), transitions t14 and t15, not vendored). Homogeneity compares the effective
+  image type: after a valid override every image of the unit is `rgb`, so images that differ
+  only in colour interpretation (some `minisblack` with three interleaved samples, some
+  photometric RGB) are one layout (they were `R_UNIT_NOT_HOMOGENEOUS`); the reconciliation
+  agrees. The three-sample requirement applies to the images whose header the override lifts,
+  and `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` stays reported before `R_UNIT_NOT_HOMOGENEOUS`. The
+  key is part of the confirmed layout: adding, removing or changing it (or `image_type`) reopens
+  the N35 confirmation, at publication and in the notebook's draft. Declared and effective are
+  recorded separately: every unit declared `rgb` records `rgb_header_override` (`true` or
+  `false`), and a unit declaring it `true` records `rgb_header_override_images`, each image
+  `used` (with its header's colour interpretation) or `unused` (`header_already_rgb`, or
+  `no_colour_interpretation` for OME-Zarr). The keys are additive and checked when read; the
+  manifest version stays 5. Non-RGB units and every other refusal are unchanged.
 
 ## v0.5.3 (13 November 2026)
 

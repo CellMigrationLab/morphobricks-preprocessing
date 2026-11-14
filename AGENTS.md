@@ -78,6 +78,9 @@ src/morphobricks_preprocessing/
                     header_axes and named_axes (the axes the metadata names, contract §16)
   tiff_colour.py    colour_header: a TIFF series' rgb_samples, photometric interpretation and
                     interleaved samples per pixel (the RGB header override, Spec RH1)
+  rgb_override.py   the RGB header override declared and effective (pure): declares_override,
+                    lifted/effectively_rgb (the effective type homogeneity compares),
+                    override_uses (used / unused per image), header_overridden
   physical_sizes.py PhysicalSizes (pixel sizes, z-step, time step, a unit per axis, micrometers()
                     for comparing), re-exports length_units' space_unit/to_micrometers,
                     read_physical_sizes (OME / ImageJ TIFF metadata; also importable

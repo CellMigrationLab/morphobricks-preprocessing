@@ -71,6 +71,10 @@ class ObservedUnit:
     (OME-Zarr): a declared image type the headers now contradict is a channel change, unless
     the unit declares ``rgb_header_override = true`` and ``three_samples`` (every image stores
     three interleaved samples per pixel), which the run accepts (experiment-v1 4.4b, RH1).
+    ``three_samples`` covers the images whose header does not say RGB (those an override lifts).
+    ``uniform_as_rgb`` is True for a unit that is not uniform only because its headers differ in
+    colour interpretation (some RGB, some not, all three interleaved samples): under a declared
+    override every image is effectively RGB and the unit is one layout, as the run reads it.
     """
 
     image_count: int
@@ -79,6 +83,7 @@ class ObservedUnit:
     uniform: bool = True
     rgb: bool | None = None
     three_samples: bool = False
+    uniform_as_rgb: bool = False
 
     def __post_init__(self) -> None:
         if self.image_count < 1:
@@ -233,9 +238,9 @@ def _channels_differ(
 ) -> bool:
     """Return whether the observed channel evidence no longer fits the declared channel list."""
     unit = published.unit
-    if not seen.uniform:
-        return True
     overridden = unit.rgb_header_override is True and seen.three_samples  # RH1, as the run
+    if not seen.uniform and not (overridden and seen.uniform_as_rgb):
+        return True
     if seen.rgb is not None and seen.rgb != (unit.image_type == "rgb") and not overridden:
         return True  # as the run's checks compare it (IMAGE_TYPE_CONTRADICTS_HEADER)
     if seen.channel_count is not None and seen.channel_count != len(unit.channels):
@@ -388,9 +393,10 @@ def _reopened(
 def layout_changed(old: Description, new: Description) -> tuple[str, ...]:
     """Return the repeat IDs in both files whose layout differs (section 10), sorted.
 
-    A candidate that adds, removes or reassigns a member, unit, folder, channel list or image
-    type under an existing repeat reopens it, whether the change came from the folder or from
-    the user's assignment of a pending unit. The image count is not part of the layout.
+    A candidate that adds, removes or reassigns a member, unit, folder, channel list, image
+    type or ``rgb_header_override`` under an existing repeat reopens it, whether the change came
+    from the folder or from the user's assignment of a pending unit. The image count is not part
+    of the layout.
     """
     return tuple(
         sorted(

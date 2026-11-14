@@ -6,10 +6,15 @@ Scanner files store interleaved RGB under a header that does not say RGB (TIFF p
 interleaved samples per pixel, and the manifest records the unit as declared RGB with the header
 overridden.
 
-The Spec fixtures of RH1 (``v40``, ``i140``, ``i141``, Spec commit 2cbebf8) are not vendored yet:
-the pin moves only to a merged Spec commit. The descriptions here are equivalent to them:
-``v40`` and ``i141`` are built from the vendored ``v28`` with exactly the lines the Spec adds
-(checked below against the vendored ``v28``), ``i140`` is copied without its comment lines.
+The Spec fixtures of RH1 (``v40``, ``i140``, ``i141``, Spec commits 2cbebf8 and 179dc5c) are not
+vendored yet: the pin moves only to a merged Spec commit. The descriptions here are built
+locally: ``v40`` and ``i141`` from the vendored ``v28`` with the lines the Spec adds, ``i140``
+as the Spec file's text without its comment lines. They were compared by hand with those Spec
+files; no test here compares them with a Spec fixture, which becomes possible (and replaces
+these local copies) when the Spec is vendored again at its merged commit.
+
+The codes are asserted as the literal strings of the Spec text, not through this package's
+constants, so a changed constant fails here.
 """
 
 from __future__ import annotations
@@ -27,7 +32,6 @@ from morphobricks_preprocessing.channel_labels import UnitLayout
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_read import read_description_bytes
 from morphobricks_preprocessing.description_reconcile import UnitFolders, reconcile
-from morphobricks_preprocessing.description_rules import Code
 from morphobricks_preprocessing.description_run_text import physical_issue
 from morphobricks_preprocessing.description_write import canonical_bytes
 from morphobricks_preprocessing.discovery import discover_experiment
@@ -35,12 +39,7 @@ from morphobricks_preprocessing.draft import draft_from_discovery
 from morphobricks_preprocessing.draft_answers import description_from_draft
 from morphobricks_preprocessing.draft_format import answers_from_bytes, answers_to_bytes
 from morphobricks_preprocessing.metadata import inspect_images, inspect_tiff
-from morphobricks_preprocessing.physical_check import (
-    IMAGE_TYPE_CONTRADICTS_HEADER,
-    RGB_OVERRIDE_NOT_THREE_SAMPLES,
-    UnitKey,
-    check_physical,
-)
+from morphobricks_preprocessing.physical_check import UnitKey, check_physical
 from morphobricks_preprocessing.published_answers import published_answers
 from morphobricks_preprocessing.reconcile_observe import observe_folders
 from morphobricks_preprocessing.run import run_experiment
@@ -58,6 +57,10 @@ RGB_LINE = 'image_type = "rgb"\n'
 CTRL = [UnitKey("CTRL", "rep1", "single"), UnitKey("CTRL", "rep2", "single")]
 DRUG = [UnitKey("DrugA", "rep1", "single"), UnitKey("DrugA", "rep2", "single")]
 SHAPE = (6, 7, 3)
+# The codes as the Spec text spells them (experiment-v1 sections 6 and 8), never imported.
+IMAGE_TYPE_CONTRADICTS_HEADER = "R_IMAGE_TYPE_CONTRADICTS_HEADER"
+RGB_OVERRIDE_NOT_THREE_SAMPLES = "R_RGB_OVERRIDE_NOT_THREE_SAMPLES"
+RGB_OVERRIDE_WITHOUT_RGB = "E_RGB_OVERRIDE_WITHOUT_RGB"
 
 
 def _with_override(values: dict[str, str]) -> str:
@@ -109,10 +112,34 @@ image_count = 8
 source_folder = "single"
 channels = ["DAPI"]
 
+[repeats.rep2]
+confirmed = true
+confirmed_on = "2026-11-06"
+
+[repeats.rep2.members.CTRL]
+source_repeat = "rep2"
+image_count = 8
+
+[repeats.rep2.members.CTRL.technical_repeats.single]
+source_folder = "single"
+channels = ["DAPI"]
+
+[repeats.rep2.members.DrugA]
+source_repeat = "rep2"
+image_count = 8
+
+[repeats.rep2.members.DrugA.technical_repeats.single]
+source_folder = "single"
+channels = ["DAPI"]
+
+[masks.Nuclei]
+source_type = "nuclei"
+representation = "instances"
+
 [used_ids]
 conditions = ["CTRL", "DrugA"]
 channels = ["DAPI"]
-repeats = ["rep1"]
+repeats = ["rep1", "rep2"]
 technical_repeats = ["single"]
 """
 
@@ -165,7 +192,7 @@ def no_pixel_reads(monkeypatch):
 # The descriptions -----------------------------------------------------------------------------
 
 
-def test_the_inline_descriptions_are_the_spec_fixtures_of_rh1():
+def test_the_local_v40_differs_from_the_vendored_v28_only_in_the_ctrl_units_key():
     v28 = description_from_bytes(V28.encode("utf-8"))
     v40 = description_from_bytes(V40)
     assert V40.decode("utf-8").count("rgb_header_override = true") == 2
@@ -186,7 +213,8 @@ def test_v40_is_valid_and_the_key_survives_the_canonical_writer():
 
 def test_i141_a_string_is_never_read_as_a_boolean():
     report = read_description_bytes(I141)
-    assert (report.phase, report.codes) == (3, {Code.E_TYPE})
+    assert report.phase == 3
+    assert {code.value for code in report.codes} == {"E_TYPE"}
     (issue,) = report.errors
     assert issue.path.endswith("CTRL.technical_repeats.single.rgb_header_override")
     assert issue.value == "true"
@@ -196,8 +224,11 @@ def test_i141_a_string_is_never_read_as_a_boolean():
 def test_i140_the_key_without_image_type_rgb(value):
     data = I140.replace(b"rgb_header_override = true", f"rgb_header_override = {value}".encode())
     report = read_description_bytes(data)
-    assert (report.phase, report.codes) == (5, {Code.E_RGB_OVERRIDE_WITHOUT_RGB})
-    assert report.errors[0].path.endswith(".rgb_header_override")
+    assert report.phase == 5
+    assert {code.value for code in report.codes} == {RGB_OVERRIDE_WITHOUT_RGB}
+    (issue,) = report.errors
+    assert issue.code.value == "E_RGB_OVERRIDE_WITHOUT_RGB"
+    assert issue.path.endswith("CTRL.technical_repeats.single.rgb_header_override")
 
 
 def test_false_on_an_rgb_unit_is_valid_and_kept_as_written():
@@ -325,15 +356,23 @@ def test_the_run_records_the_override_and_keeps_the_other_records(overridden_run
         assert unit["image_type_header_verified"] is False
         assert unit["image_type_header_overridden"] is True
         assert unit["header_photometric"] == "minisblack"
-    for unit in drug:
+        assert unit["rgb_header_override"] is True  # declared
+        uses = unit["rgb_header_override_images"]  # effective, per image
+        assert len(uses) == 8
+        assert [u["image"] for u in uses] == sorted(u["image"] for u in uses)
+        assert {(u["override"], u["header_photometric"]) for u in uses} == {("used", "minisblack")}
+        assert all(set(u) == {"image", "override", "header_photometric"} for u in uses)
+    for unit in drug:  # declared rgb without the key: recorded as declared false, nothing else
         assert set(unit) == {
             "repeat",
             "condition",
             "technical_repeat",
             "channels",
             "image_type_header_verified",
+            "rgb_header_override",
         }
         assert unit["image_type_header_verified"] is True
+        assert unit["rgb_header_override"] is False
 
 
 def test_run_inputs_give_samples_0_1_2_as_r_g_b_in_stored_order(overridden_run):
