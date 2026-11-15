@@ -392,6 +392,7 @@ class PreprocessingNotebook(
                 self.run_issues,
                 self.run_checks.card,
                 self.mask_step_card,
+                self.mask_conversion.card,
                 self.details_box,
                 self.run_next,
             ],

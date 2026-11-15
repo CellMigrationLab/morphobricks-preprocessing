@@ -352,7 +352,11 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    evidence beside your answer. **Describe the masks** reads every mask and reports how the types relate. It
    reads the masks a run recorded, so it is greyed out before the run and says so; come back
    to it after **Run**. The histogram table does not need it, but bricks that use masks accept
-   only masks it has read. Without masks, the step says so.
+   only masks it has read. Without masks, the step says so. Under it, **Convert a mask
+   (optional)** writes new mask files from a declared, checked mask: a binary mask's objects as
+   an objects mask, or one binary mask per class of a class image (see `convert-mask`, §5).
+   Choose what to write, the mask and the new mask ID (or prefix), then **Convert the mask**;
+   the card lists the files written and says what to declare next.
 5. **Design.** One grid: conditions down, biological repeats across, each cell the folder of
    that repeat, and what each condition is compared against in the last column. The names are
    the folder names, folders with the same name are the same repeat, and nothing is compared.

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import argparse
 
-from .mask_conversion import MaskConversionResult, images_with_mask
+from .mask_conversion import MaskConversionResult, conversion_next_steps, images_with_mask
 from .run_inputs import RunInputs
 from .validation import plural
 
@@ -94,7 +94,7 @@ def convert_mask_command(args: argparse.Namespace) -> int:
         results.append(result)
         print(_result_line(result))
     print()
-    print(next_steps(results, run.masks_root))
+    print(conversion_next_steps(results, run.masks_root))
     return 0
 
 
@@ -107,20 +107,3 @@ def _result_line(result: MaskConversionResult) -> str:
         for output in result.outputs
     ]
     return f"{result.image}: " + ", ".join(parts)
-
-
-def next_steps(results: list[MaskConversionResult], masks_root: object) -> str:
-    """Return what to do with the outputs: declare them, then run and check them again."""
-    declared = {}
-    for result in results:
-        for output in result.outputs:
-            declared.setdefault(output.mask_id, result.representation)
-    if not declared:
-        return "No mask was written."
-    lines = [f"Written to the masks folder {masks_root}. Next:"]
-    lines += [
-        f"- declare the mask {mask_id} (source type {mask_id}) as {representation}"
-        for mask_id, representation in sorted(declared.items())
-    ]
-    lines.append("- then run preprocessing and the masks step again to check them.")
-    return "\n".join(lines)

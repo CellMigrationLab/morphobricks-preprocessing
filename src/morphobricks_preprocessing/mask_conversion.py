@@ -31,7 +31,7 @@ description, runs preprocessing and the mask step again, and reads it like any m
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -188,6 +188,23 @@ def images_with_mask(run: ConversionInputs, mask_id: str) -> tuple[str, ...]:
         return ()
     recorded = (run.manifest.masks or {}).get("files", ())
     return tuple(sorted({m["image"] for m in recorded if m["type"] == declared.source_type}))
+
+
+def conversion_next_steps(results: Iterable[MaskConversionResult], masks_root: object) -> str:
+    """Return what to do with the outputs: declare them, then run and check them again."""
+    declared: dict[str, str] = {}
+    for result in results:
+        for output in result.outputs:
+            declared.setdefault(output.mask_id, result.representation)
+    if not declared:
+        return "No mask was written."
+    lines = [f"Written to the masks folder {masks_root}. Next:"]
+    lines += [
+        f"- declare the mask {mask_id} (source type {mask_id}) as {representation}"
+        for mask_id, representation in sorted(declared.items())
+    ]
+    lines.append("- then run preprocessing and the masks step again to check them.")
+    return "\n".join(lines)
 
 
 def _check_class_shape(shape: tuple[int, ...], *, mask_id: str, path: str) -> None:

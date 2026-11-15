@@ -327,6 +327,8 @@ src/morphobricks_preprocessing/
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
   notebook_axes.py  the notebook's axis-check card and the marks under the role dropdowns
   notebook_masks.py step 1's masks folder, Masks card and mask-axis statements (PP-10c)
+  notebook_mask_conversion.py the optional Convert a mask card under Describe the masks (Spec
+                    ADR 0005 BM12: the conversion helpers, one click per mask)
   notebook_mask_step.py step 3's Describe the masks card: the masks step after a run that
                     recorded masks (PP-10d); it names the masks by their IDs from Your masks
   notebook_masks_screen.py the Your masks screen (MasksCard, self-contained) and

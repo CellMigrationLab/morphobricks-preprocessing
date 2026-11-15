@@ -44,6 +44,9 @@ call them.
 - Command line: `convert-mask --output FOLDER --mask ID (--to-instances NEW_ID | --to-classes
   PREFIX) [--image PATH]` converts every image with a file of the mask and prints the outputs
   and the next steps (declare them, run preprocessing and the masks step again).
+- Notebook: the optional card **Convert a mask** under **Describe the masks** (Masks and Run
+  steps) offers the declared masks each helper converts, takes the new mask ID or prefix, and
+  converts every image with one click, showing the files and the next steps.
 
 ### Breaking: one policy for binary masks (Spec ADR 0005, step 2)
 

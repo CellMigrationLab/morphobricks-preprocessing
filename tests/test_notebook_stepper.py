@@ -156,8 +156,14 @@ def test_the_pages_hold_the_existing_cards_in_the_new_places(exp):  # noqa: F811
     ]
     # Masks: the masks paired, what each is, then the mask step (it needs the run's record).
     page = nb._stepper.pages[MASKS].children[1].children[1].children
-    assert list(page[-3:]) == [nb.masks_card, nb.masks_box, nb.mask_step_card]
+    assert list(page[-4:]) == [
+        nb.masks_card,
+        nb.masks_box,
+        nb.mask_step_card,
+        nb.mask_conversion.card,
+    ]
     assert not contains(0, nb.masks_card) and not contains(RUN, nb.mask_step_card)
+    assert not contains(RUN, nb.mask_conversion.card)
     # Design: one grid, then the names and the pairing to edit, and the consistency warnings.
     assert contains(DESIGN, nb.design_table) and contains(DESIGN, nb.design_confirm)
     for card in (nb.condition_rows, nb.replicate_rows, nb.design_card):
