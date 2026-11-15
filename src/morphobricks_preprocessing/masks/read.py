@@ -21,8 +21,8 @@ from ..zarr_input import (
 )
 from .header import _axes_problem, _known_axes, _mask_header
 from .labels import check_labels
-from .layout import _plane_index, _tiff_axes, _yx
-from .model import _YX, FOLDER, OME_ZARR, MaskFile
+from .layout import _plane_index, _stated_axes, _tiff_axes, _yx
+from .model import FOLDER, OME_ZARR, MaskFile
 
 
 def read_mask(
@@ -54,19 +54,9 @@ def read_mask(
         or ``t`` is missing or outside the mask, or the plane holds a label outside 0 to
         :data:`LARGEST_LABEL` (:func:`check_labels`).
     """
-    wanted = {"Z": z, "T": t}
-    for axis, index in wanted.items():
-        length = mask.planes[axis] if mask.axes else 1
-        if index is None and length > 1:
-            raise ValueError(
-                f"the mask {mask.path} has {length} planes along {axis}; say which one to read"
-            )
-        if index is not None and not 0 <= index < length:
-            raise ValueError(f"the mask {mask.path} has no plane {axis}={index}")
+    wanted = _wanted_plane(mask, z, t)
     if mask.source == FOLDER:
-        # A mask whose axes were stated (a plain stack) is read by those roles, as stored.
-        roles = mask.axes if mask.header_axes and mask.header_axes != mask.axes else None
-        pixels, axes = _read_tiff_plane(Path(masks_folder) / mask.path, wanted, roles)
+        pixels, axes = _read_tiff_plane(Path(masks_folder) / mask.path, wanted, _stated(mask))
     else:
         name = mask.path.rsplit("/labels/", 1)[1]
         image = experiment_root / mask.path.rsplit("/labels/", 1)[0]
@@ -78,6 +68,37 @@ def read_mask(
         raise ValueError(f"the mask {mask.path} is not the 2D plane its header gave ({axes})")
     check_labels(pixels, f"the mask {mask.path}")
     return pixels
+
+
+def _wanted_plane(mask: MaskFile, z: int | None, t: int | None) -> dict[str, int | None]:
+    """Return the plane's ``{"Z": z, "T": t}`` after checking it is one of the mask's.
+
+    Each index is required when the mask has that axis (``mask.axes``), and may only be None
+    or 0 otherwise: a mask's planes are never guessed (issue #36).
+
+    Raises
+    ------
+    ValueError
+        If ``z`` or ``t`` is missing or outside the mask.
+    """
+    wanted = {"Z": z, "T": t}
+    for axis, index in wanted.items():
+        length = mask.planes[axis] if mask.axes else 1
+        if index is None and length > 1:
+            raise ValueError(
+                f"the mask {mask.path} has {length} planes along {axis}; say which one to read"
+            )
+        if index is not None and not 0 <= index < length:
+            raise ValueError(f"the mask {mask.path} has no plane {axis}={index}")
+    return wanted
+
+
+def _stated(mask: MaskFile) -> str | None:
+    """Return the stated roles of a plain-stack TIFF mask's axes, or None for its header's own.
+
+    A mask whose axes were stated (a plain stack) is read by those roles, as stored.
+    """
+    return mask.axes if mask.header_axes and mask.header_axes != mask.axes else None
 
 
 def read_mask_file(
@@ -152,10 +173,7 @@ def _read_tiff_plane(
         series = tif.series[0]
         axes, shape = _tiff_axes(series)
         if roles is not None:
-            given = iter(roles)
-            axes = "".join(
-                next(given) if n != 1 or a in _YX else "-" for a, n in zip(axes, shape, strict=True)
-            )
+            axes = _stated_axes(axes, shape, roles)
         index = _plane_index(axes, shape, wanted)
         kept = "".join(a for a, i in zip(axes, index, strict=True) if i == slice(None))
         pages = len(series.pages)

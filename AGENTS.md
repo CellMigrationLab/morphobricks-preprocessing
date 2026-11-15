@@ -212,7 +212,9 @@ src/morphobricks_preprocessing/
                     (planes.py's block reader), level 0 only; window_plan (memory estimate, pieces);
                     WindowBoundsError, WindowLevelError, WindowChannelError, WindowLayoutError,
                     WindowMemoryError; run_inputs_window.py RunInputs.read_window by channel IDs
-                    (and the z/t checks shared with read_plane and read_mask)
+                    and RunInputs.plane_shape (header only), and the z/t checks shared with
+                    read_plane and read_mask; run_inputs_mask.py RunInputs.mask_types, read_mask,
+                    read_mask_window and mask_window_plan (one recorded-mask check for all)
   _io.py            write_text_atomic (every file the brick writes) and free_space
   manifest.py       RunManifest / RunSettings / FileEntry, JSON read/write, SHA-256 of the CSV,
                     check_sources (images against a run, for other bricks, contract §16)
@@ -246,11 +248,13 @@ src/morphobricks_preprocessing/
                     by write_target.py's write_target_refusal (the shared rule other bricks
                     call for files their users name; contract §8)
   masks/           masks (Q32; a package since PP-5: model, files, header, layout, read,
-                    checks, labels): find_masks pairs every image with its masks (masks folder with one
+                    checks, labels, window): find_masks pairs every image with its masks (masks folder with one
                     folder per type mirroring the experiment, or <image>_<type>.tif in the
                     experiment's folders, mixed; OME-Zarr label images), header-only
                     checks (2D, image YX, integer/bool), MaskInventory (to_manifest), read_mask,
-                    read_mask_file (a mask by its path), check_labels (int32 labels, contract §16)
+                    read_mask_file (a mask by its path), check_labels (int32 labels, contract §16),
+                    window.py read_mask_window/mask_window_plan (an exact window of one mask
+                    plane in its stored integer type, through windows.py's block reading)
   mask_checks.py    mask checks with the confirmed roles: mask_size_issues (Y/X by role),
                     mask_issues (a run's mask issues; images with axis errors skipped)
   mask_review.py    what the notebook shows about the masks: mask_type_rows, and

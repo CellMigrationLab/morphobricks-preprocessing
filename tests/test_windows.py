@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 import tifffile
 
-from morphobricks_preprocessing import planes as planes_module
 from morphobricks_preprocessing import prefill_mapping, read_plane
 from morphobricks_preprocessing import windows as windows_module
 from morphobricks_preprocessing.planes import PlaneMemoryError, PlaneReadError
@@ -279,20 +278,6 @@ LIMIT = 8 * 2**20  # far below one 32 MiB plane
 @pytest.fixture(scope="module")
 def large():
     return stored((SIDE, SIDE), seed=3)
-
-
-@pytest.fixture
-def segment_reads(monkeypatch):
-    """Record the index of every TIFF strip or tile read."""
-    reads = []
-    original = planes_module._read_segment
-
-    def counting(page, index, *args):
-        reads.append(index)
-        return original(page, index, *args)
-
-    monkeypatch.setattr(planes_module, "_read_segment", counting)
-    return reads
 
 
 def intersecting(bounds, rows=SIDE, chunk=TILE):

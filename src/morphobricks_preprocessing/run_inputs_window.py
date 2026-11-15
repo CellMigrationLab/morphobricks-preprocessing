@@ -1,5 +1,6 @@
 """Windows of a run's images for :class:`.run_inputs.RunInputs` (issue #179).
 
+:meth:`WindowInputs.plane_shape` gives a position's ``(height, width)`` from the header, and
 :meth:`WindowInputs.read_window` reads an exact rectangle of one plane of a position, for the
 channels asked by their canonical IDs, through :func:`.windows.read_window`. It does not
 replace :meth:`.run_inputs.RunInputs.read_plane`, which still reads whole planes.
@@ -18,7 +19,7 @@ import numpy as np
 
 from .axes import AxisMapping
 from .manifest import FileEntry
-from .planes import DEFAULT_MEMORY_LIMIT
+from .planes import DEFAULT_MEMORY_LIMIT, plane_layout
 from .validation import plural
 from .windows import LEVEL, WindowChannelError, check_level
 from .windows import read_window as read_source_window
@@ -28,13 +29,32 @@ if TYPE_CHECKING:
 
 
 class WindowInputs:
-    """The ``read_window`` method of ``RunInputs``.
+    """The ``plane_shape`` and ``read_window`` methods of ``RunInputs``.
 
     It uses ``RunInputs``'s ``experiment_root``, ``_checked``, ``_fov`` and
     ``channel_index``.
     """
 
     experiment_root: Path
+
+    def plane_shape(self, fov: Fov | str) -> tuple[int, int]:
+        """Return the ``(height, width)`` of one plane of a position, from its header only.
+
+        The sizes along Y and X of the image as the run recorded its axes (Y before X
+        whatever the stored order), the frame of :meth:`read_window`'s bounds and the last
+        two sizes of :meth:`read_plane`. No pixel is read and no digest of the file's content
+        is computed; the image's fingerprint is checked as for every read.
+
+        Raises
+        ------
+        RunInputsError
+            If the image changed since the run, or is not one of the run's.
+        PlaneReadError
+            If the header no longer fits the recorded axes.
+        """
+        entry = self._checked(fov)
+        layout = plane_layout(self.experiment_root / entry.relative_path, _mapping(entry))
+        return layout.plane_shape
 
     def read_window(
         self,

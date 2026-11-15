@@ -49,6 +49,7 @@ RUN_INPUTS_METHODS = {
         "memory_limit: 'int' = 1073741824) -> 'np.ndarray'"
     ),
     "read_image": "(self, fov: 'Fov | str') -> 'LazyImage'",
+    "plane_shape": "(self, fov: 'Fov | str') -> 'tuple[int, int]'",
     "read_window": (
         "(self, fov: 'Fov | str', *, t: 'int', z: 'int', "
         "bounds: 'tuple[int, int, int, int]', channels: 'Sequence[str]', level: 'int' = 0, "
@@ -58,6 +59,16 @@ RUN_INPUTS_METHODS = {
     "read_mask": (
         "(self, fov: 'Fov | str', mask_type: 'str', z: 'int | None' = None, "
         "t: 'int | None' = None) -> 'np.ndarray'"
+    ),
+    "read_mask_window": (
+        "(self, fov: 'Fov | str', mask_type: 'str', *, t: 'int', z: 'int', "
+        "bounds: 'tuple[int, int, int, int]', level: 'int' = 0, "
+        "memory_limit: 'int' = 1073741824) -> 'np.ndarray'"
+    ),
+    "mask_window_plan": (
+        "(self, fov: 'Fov | str', mask_type: 'str', *, "
+        "bounds: 'tuple[int, int, int, int]', level: 'int' = 0, "
+        "memory_limit: 'int' = 1073741824) -> 'WindowPlan'"
     ),
     "histograms": "(self) -> 'tuple[PlaneRecord, ...]'",
     "description": "(self) -> 'Description'",
