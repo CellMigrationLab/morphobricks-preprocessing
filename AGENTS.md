@@ -1109,10 +1109,12 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 
 ---
 
-## 11. Status (current state, v0.5.5)
+## 11. Status (current state, v0.5.6)
 
-- **Released:** v0.5.5 (14 November 2026), a pin release: the normalization brick pinned at
-  v0.6.1 (v0.5.4, the same day, brought the RGB header override (Spec RH1) and mask-only requests
+- **Released:** v0.5.6 (15 November 2026), a patch release for lazy loading: exact window reads
+  of an image (`read_window`) and of a mask (`read_mask_window`, `mask_window_plan`) and a
+  pixel-free `plane_shape` (contract section 9.1); no format change. v0.5.5 (14 November 2026)
+  was a pin release: the normalization brick pinned at v0.6.1 (v0.5.4, the same day, brought the RGB header override (Spec RH1) and mask-only requests
   on RGB units; v0.5.3, 13 November 2026, pinned normalization at v0.6.0). The
   per-release history is in [CHANGELOG.md](CHANGELOG.md); the milestones PP-0 to PP-13 are in
   [docs/archive/plan-milestones-v0.1-v0.4.md](docs/archive/plan-milestones-v0.1-v0.4.md); the older
