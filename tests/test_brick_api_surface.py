@@ -18,6 +18,7 @@ from morphobricks_preprocessing import (
     Capabilities,
     Fov,
     FovSelection,
+    MaskConversion,
     MaskRequest,
     MaskSelection,
     PlaneSelection,
@@ -84,6 +85,9 @@ RUN_INPUTS_METHODS = {
     "mask_check_status": "(self, mask_id: 'str', fov: 'object') -> 'str'",
     "require_checked": "(self, recorded: 'Mapping', mask_type: 'str') -> 'None'",
     "resolve_request": "(self, request: 'Request') -> 'ResolvedRequest'",
+    "read_objects": (
+        "(self, selection: 'FovSelection', mask_id: 'str', t: 'int', z: 'int') -> 'np.ndarray'"
+    ),
 }
 RUN_INPUTS_PROPERTIES = {"files", "projection"}
 
@@ -159,6 +163,13 @@ FIELDS = {
         ("description_sha256", "str"),
         ("section_digests", "tuple[tuple[str, str], ...]"),
         ("request", "Request"),
+        ("mask_conversions", "tuple[MaskConversion, ...]"),
+    ],
+    MaskConversion: [
+        ("mask_id", "str"),
+        ("conversion", "str"),
+        ("connectivity", "int | None"),
+        ("labeller", "str | None"),
     ],
     Refusal: [
         ("code", "str"),
@@ -230,7 +241,7 @@ def test_test_run_helper_signatures_are_pinned(helper):
 
 
 def test_the_resolver_names_are_exported_and_versioned():
-    assert package.RESOLVER_VERSION == 2  # 2: parent-label masks (Spec ADR 0002)
+    assert package.RESOLVER_VERSION == 3  # 3: the conversion record (Spec ADR 0005)
     assert package.PARENT_LABELS_AS_AREA == "parent_labels_as_area"
     assert COVERAGE == ("full", "partial", "unavailable")
     for cls in [*FIELDS, Fov]:
@@ -240,9 +251,57 @@ def test_the_resolver_names_are_exported_and_versioned():
         "ChannelNotFoundError",
         "DescriptionRequiredError",
         "MaskNotInstancesError",
+        "MaskContradictsRepresentationError",
         "MaskUncheckedError",
         "RgbNotSupportedError",
         "VolumeNotSupportedError",
         "RunInputsError",
     ):
         assert name in package.__all__, name
+
+
+ADR_0005_SIGNATURES = {
+    "morphobricks_preprocessing.masks.binary.label_binary": (
+        "(mask: 'np.ndarray', *, name: 'str' = 'the mask') -> 'np.ndarray'"
+    ),
+    "morphobricks_preprocessing.masks.check_object_set": (
+        "(value: 'object', *, name: 'str') -> 'None'"
+    ),
+    "morphobricks_preprocessing.mask_rules.refuse_not_instances": (
+        "(subject: 'str', *, declared: 'str | None' = None, value: 'object' = None) "
+        "-> 'MaskNotInstancesError'"
+    ),
+    "morphobricks_preprocessing.mask_rules.refuse_binary_values": (
+        "(path: 'str', *, values: 'Iterable[int] | None' = None, dtype: 'object' = None) "
+        "-> 'MaskContradictsRepresentationError'"
+    ),
+    "morphobricks_preprocessing.mask_rules.check_binary_values": (
+        "(values: 'Iterable[int]', *, dtype: 'object', path: 'str') -> 'None'"
+    ),
+    "morphobricks_preprocessing.run_inputs_request.volume_refusals": (
+        "(request: 'Request', z_counts: 'Mapping[str, int]') -> 'tuple[Refusal, ...]'"
+    ),
+}
+
+
+@pytest.mark.parametrize("dotted", sorted(ADR_0005_SIGNATURES))
+def test_the_adr_0005_helpers_are_pinned(dotted):
+    # Spec ADR 0005 step 2: the names other bricks import, with their signatures.
+    import importlib
+
+    module, name = dotted.rsplit(".", 1)
+    function = getattr(importlib.import_module(module), name)
+    assert str(inspect.signature(function)) == ADR_0005_SIGNATURES[dotted]
+
+
+def test_the_adr_0005_names_are_exported():
+    from morphobricks_preprocessing import masks
+    from morphobricks_preprocessing.masks import binary
+
+    assert package.label_binary is binary.label_binary and "label_binary" in package.__all__
+    assert package.check_object_set is masks.check_object_set
+    assert "check_object_set" in masks.__all__
+    assert binary.CONNECTIVITY == 8
+    assert binary.STRUCTURE.shape == (3, 3) and binary.STRUCTURE.all()
+    assert issubclass(package.MaskContradictsRepresentationError, ValueError)
+    assert package.MaskContradictsRepresentationError.code == "R_MASK_CONTRADICTS_REPRESENTATION"

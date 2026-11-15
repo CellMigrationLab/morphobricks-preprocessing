@@ -3,10 +3,12 @@
 :meth:`MaskInputs.read_mask` reads one mask plane by the recorded pairing (moved from
 ``run_inputs``, unchanged); :meth:`MaskInputs.read_mask_window` reads an exact window of it,
 decoding only the stored pieces the window intersects (:mod:`.masks.window`), and
-:meth:`MaskInputs.mask_window_plan` says, from the header only, what that read costs. All three
-refuse a mask as the whole read refuses it: no recorded mask of that type, a mask the mask step
-has not checked (``A_MASK_UNCHECKED``), a mask changed since the run or stored otherwise than
-recorded.
+:meth:`MaskInputs.mask_window_plan` says, from the header only, what that read costs.
+:meth:`MaskInputs.read_objects` reads the objects of a resolved selection's ``objects`` use,
+applying its recorded conversion with the one labeller (:func:`.masks.binary.label_binary`,
+Spec ADR 0005 BM6). All four refuse a mask as the whole read refuses it: no recorded mask of
+that type, a mask the mask step has not checked (``A_MASK_UNCHECKED``), a mask changed since the
+run or stored otherwise than recorded.
 """
 
 from __future__ import annotations
@@ -17,11 +19,21 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from .manifest import RunManifest
-from .masks import FOLDER, MaskFile, read_mask
+from .masks import FOLDER, MaskFile, check_labels, read_mask
+from .masks.binary import label_binary
 from .masks.header import _mask_header
+from .masks.read import read_mask_plane
 from .masks.window import mask_window_plan, read_mask_window
 from .planes import DEFAULT_MEMORY_LIMIT
 from .run_inputs_error import RunInputsError
+from .run_inputs_request import (
+    BINARY,
+    CONNECTED_COMPONENTS,
+    INSTANCES,
+    OBJECTS,
+    FovSelection,
+    MaskSelection,
+)
 from .run_inputs_text import _changed_text
 from .run_inputs_window import _check_planes, _coordinate
 from .windows import LEVEL, WindowPlan, check_level
@@ -65,6 +77,59 @@ class MaskInputs:
         z, t = (None if v is None else _coordinate(v, k, call) for k, v in (("z", z), ("t", t)))
         mask, folder = self._recorded_mask(fov, mask_type, z, t)
         return read_mask(mask, folder, self.experiment_root, z=z, t=t)
+
+    def read_objects(self, selection: FovSelection, mask_id: str, t: int, z: int) -> np.ndarray:
+        """Read one plane of a selection's ``objects`` use as int32 object labels.
+
+        The one helper that applies a recorded conversion (Spec ADR 0005 BM2, BM6), whole
+        planes only (there is no window argument):
+
+        - an ``instances`` mask without a conversion: its stored labels, checked by
+          :func:`.masks.check_labels`, never relabelled (an ``instances`` mask holding 0 and 1
+          is one object);
+        - ``conversion = "connected_components"`` (a ``binary`` mask): the stored plane labelled
+          by :func:`.masks.binary.label_binary`, 8-connected, numbered 1 to n in row-major
+          order of each component's first pixel. ``label_binary`` checks the plane first (the
+          read guard, a per-plane repeat of the mask step's file-wide check): boolean or
+          integers in {0, v} for one v > 0, else ``R_MASK_CONTRADICTS_REPRESENTATION``. A
+          plane with no foreground gives zero objects, an all-foreground plane one object.
+
+        Parameters
+        ----------
+        selection
+            A :class:`.run_inputs_request.FovSelection` of :meth:`resolve_request` on this run.
+        mask_id
+            The mask ID of its ``objects`` use.
+        t, z
+            The plane's zero-based coordinates (0 for an axis the image lacks).
+
+        Returns
+        -------
+        numpy.ndarray
+            A new ``int32`` array of the plane's shape.
+
+        Raises
+        ------
+        ValueError
+            A mask ID with no ``objects`` selection in ``selection`` (a mask used only as a
+            region is read with :meth:`read_mask` or :meth:`read_mask_window`), a
+            ``parent_labels`` mask, or a selection whose conversion does not fit its declared
+            representation (a programming error: the resolver never gives one); a label
+            outside 0 to the int32 limit (``check_labels``).
+        MaskContradictsRepresentationError
+            ``R_MASK_CONTRADICTS_REPRESENTATION`` from ``label_binary``.
+        TypeError, IndexError, RunInputsError, MaskUncheckedError
+            As :meth:`read_mask`.
+        """
+        call = "read_objects(selection, mask_id, t, z)"
+        z, t = (_coordinate(v, k, call) for k, v in (("z", z), ("t", t)))
+        use = _objects_use(selection, mask_id)
+        mask, folder = self._recorded_mask(selection.relative_path, use.source_type, z, t)
+        pixels = read_mask_plane(mask, folder, self.experiment_root, z=z, t=t)
+        if use.conversion == CONNECTED_COMPONENTS:
+            return label_binary(pixels, name=mask.path)
+        check_labels(pixels, f"the mask {mask.path}")
+        return pixels.astype(np.int32)
 
     def read_mask_window(
         self,
@@ -199,3 +264,35 @@ class MaskInputs:
             str(recorded["axes_from"]),
         )
         return mask, folder
+
+
+def _objects_use(selection: FovSelection, mask_id: str) -> MaskSelection:
+    """Return the selection's ``(mask_id, "objects")`` mask selection, as the resolver gave it.
+
+    Raises
+    ------
+    ValueError
+        When there is none, or its conversion does not fit its declared representation.
+    """
+    if not isinstance(selection, FovSelection):
+        raise ValueError(
+            f"read_objects takes a FovSelection of resolve_request, not {type(selection).__name__}"
+        )
+    for mask in selection.masks:
+        if mask.mask_id == mask_id and mask.role == OBJECTS:
+            break
+    else:
+        raise ValueError(
+            f"{mask_id!r} has no objects use in this selection of {selection.relative_path}; "
+            "a mask used only as a region is read with read_mask or read_mask_window"
+        )
+    fits = (mask.conversion is None and mask.representation == INSTANCES) or (
+        mask.conversion == CONNECTED_COMPONENTS and mask.representation == BINARY
+    )
+    if not fits:
+        raise ValueError(
+            f"{mask_id!r} is declared {mask.representation} with the conversion "
+            f"{mask.conversion!r}; read_objects reads an instances mask, or a binary mask "
+            f"converted by {CONNECTED_COMPONENTS!r}, as resolve_request selects them"
+        )
+    return mask

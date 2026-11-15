@@ -401,6 +401,27 @@ It gives:
   memory_limit=...)` is the same check and the `windows.WindowPlan` from the header only: `shape`
   `(h, w)`, `dtype` the mask's stored type, `pieces` and `memory_estimate` (from the mask's own
   bytes per pixel), `channels` empty;
+- `read_objects(selection, mask_id, t, z)` (Spec ADR 0005 BM2, BM6; contract version 3 below):
+  the one helper that reads a resolved selection's `(mask_id, "objects")` use as a new `int32`
+  array of the plane's shape, applying the recorded conversion, whole planes only (no window
+  argument). An `instances` mask without a conversion gives its stored labels, checked by
+  `check_labels`, never relabelled (an `instances` mask holding 0 and 1 is one object).
+  `conversion = "connected_components"` gives `masks.binary.label_binary` of the stored plane
+  (also `morphobricks_preprocessing.label_binary`): 8-connected (`CONNECTIVITY = 8`, the 3 × 3
+  `STRUCTURE` of ones that the mask step's piece counter imports), numbered 1 to n with no gap
+  in row-major order of each component's first pixel; a plane with no foreground gives zero
+  objects, an all-foreground plane one object. `label_binary(mask, *, name="the mask")` takes a
+  plain 2-D `numpy.ndarray` only (anything else, a `(1, Y, X)` stack included, is a
+  `ValueError`; nothing is cast, thresholded or squeezed, the input is not changed) and first
+  calls `mask_rules.check_binary_values` on it, the per-plane **read guard** of the mask step's
+  file-wide rule: a float, complex or other non-integer dtype, a negative value or two distinct
+  positive values is `MaskContradictsRepresentationError` (`R_MASK_CONTRADICTS_REPRESENTATION`,
+  the mask step's message). More components than `LARGEST_LABEL` is a `ValueError` naming the
+  count and the limit (counted before the `int32` output is filled; never wrapped, widened or
+  truncated). A mask ID with no `objects` use in the selection (a mask used only as a region
+  is read with `read_mask` or `read_mask_window` and never labelled), a `parent_labels` mask or
+  a conversion that does not fit the declared representation is a `ValueError`; the mask is
+  otherwise refused exactly as `read_mask` refuses it;
 - `mask_types()` and `read_mask(fov, type, z=None, t=None)`: the recorded pairing only, read
   as stored through the recorded `axes` and `roles` by preprocessing's reader with
   `check_labels`; a mask changed since the run is refused; a mask recorded `shared: true`
@@ -444,9 +465,11 @@ It gives:
   of a mask file the mask step has not checked (§15; `mask_representation.json`) is refused with
   `MaskUncheckedError` (`A_MASK_UNCHECKED`); the error classes carry the Spec code as `code`. `ChannelNotFoundError` is `A_SCOPE_INCOMPLETE` (Stage 2, owner answer 2): one rule and one code for a channel that no image has and for one that some images lack, and its message names the image. `section_digests()` returns a copy of the manifest's `experiment_description.section_digests` (SHA-256 of the `conditions`, `channels`, `repeats` and `masks` sections; the published file is not read again).
 
-- **The request resolver (resolver contract version 2, `RESOLVER_VERSION`; MorphoBricks
+- **The request resolver (resolver contract version 3, `RESOLVER_VERSION`; MorphoBricks
   architecture decision of 10 November 2026; version 2 since parent-label masks, Spec ADR 0002
-  "Resolver contract version 2" and experiment-v1 §4.5b at MorphoBricks-Spec `69a58b3`).** `resolve_request(request)` is the one
+  "Resolver contract version 2" and experiment-v1 §4.5b at MorphoBricks-Spec `69a58b3`; version
+  3 since the conversion record, Spec ADR 0002 "Resolver contract version 3" and ADR 0005 at
+  `bf68d30`).** `resolve_request(request)` is the one
   interpreter of a described run for an analysis, on every route (a brick's direct run and a run
   through MorphoFeature alike; `run_inputs_request`, `run_inputs_resolve`). A `Request` names
   canonical channel IDs, masks by ID with a role (`objects` or `region`) and, for a `binary`
@@ -462,23 +485,48 @@ It gives:
   the `PlaneSelection`s to read), the `refusals`, the `coverage` of every biological repeat per
   channel and mask (`full`, `partial`, `unavailable`; experiment-v1 §8) and the `Provenance`
   (the resolver version, the description's SHA-256 and section digests as the manifest recorded
-  them, and the request). A refused request has no selections: no subset is taken. Every
+  them, the request, and `mask_conversions`). A refused request has no selections: no subset is
+  taken. **Version 3 (Spec ADR 0005):** a `MaskRequest` is identified by `(mask_id, role)`, and
+  a consumer sends one entry per use (each object set, each region or fraction use, a fraction
+  being a `region`) without merging them; a mask ID may appear in any number of entries.
+  Entries of one `(mask_id, role)` with the same conversion collapse into one `MaskSelection`,
+  so `FovSelection.masks` holds one per `(mask_id, role)` in the order of its first entry (the
+  `objects` one carries the conversion, the `region` one none); `A_SCOPE_INCOMPLETE`,
+  `A_MASK_UNCHECKED` and the coverage are computed once per mask ID. The same mask ID requested
+  as `objects` with two different conversions (a policy and none count as two) is the one
+  `ValueError` `{mask_id!r} is requested as objects with two different conversions ({a!r} and
+  {b!r}); one run converts a mask at most one way`, `a` and `b` in request order (version 2's
+  "a mask ID is requested twice" is gone). `Provenance.mask_conversions` holds one
+  `MaskConversion(mask_id, conversion, connectivity, labeller)` per mask ID whose selection has
+  a conversion, in request order (none for a refused request): `connected_components` with
+  `connectivity` 8 and `labeller` `morphobricks_preprocessing.RunInputs.read_objects`, or
+  `parent_labels_as_area` with both None. `MaskConversion.as_record()` is the record
+  `{"mask_id", "conversion", "connectivity", "labeller"}` in that key order, which every consumer
+  copies as is under `mask_conversions` in its run record. A `binary_mask_policy` on a position
+  with more than one Z plane is `A_VOLUME_NOT_SUPPORTED` (one refusal per such position, naming
+  it), for a `plane` or a `volume` request, with or without `volume_support`; the labeller
+  labels 2-D planes only. Consumers accept exactly the resolver versions they support (`{3}`),
+  checked with normalization's `contracts.refuse_resolver_version` (Spec ADR 0005 BM10). Every
   applicable refusal is reported, each a `Refusal(code, subject, message, files)`:
   `A_SCOPE_INCOMPLETE` for a channel or mask some or all images lack ("present in k of n
   acquisitions", k may be 0; an undeclared mask ID is 0 of n), `A_MASK_UNCHECKED` ("k of n
   files"), `A_MASK_NOT_INSTANCES` (a `binary` mask as objects without the policy, and a
   `parent_labels` mask as objects always, with or without `parent_labels_support`: it is never
-  split, relabelled or converted, and the message offers no policy),
-  `A_RGB_NOT_SUPPORTED` (`rgb` units without `rgb_support`) and `A_VOLUME_NOT_SUPPORTED`
-  (`VolumeNotSupportedError`, the resolver contract's own code: a volume without
-  `volume_support`). `ResolvedRequest.require()` returns the selections or raises the first
+  split, relabelled or converted, and the message offers no policy; built by
+  `mask_rules.refuse_not_instances`, the one constructor of the code, which
+  `masks.check_object_set` also raises for an in-memory object set that is not a plain integer
+  `numpy.ndarray`), `A_RGB_NOT_SUPPORTED` (`rgb` units without `rgb_support`) and
+  `A_VOLUME_NOT_SUPPORTED` (`VolumeNotSupportedError`, the resolver contract's own code: a
+  volume without `volume_support`, and a conversion of a Z-stack; built only by
+  `run_inputs_request.volume_refusals`). `ResolvedRequest.require()` returns the selections or raises the first
   refusal's error class with every refusal in its text. The resolver reads the manifest, the
   published description and `mask_representation.json` only (both read on every call; the
   parse of the same bytes is reused, by content, so a file rewritten since is parsed again:
   PP-1): no pixel, no kernel, no brick,
   CellPatcher or provider import (a test scans its modules), and it writes nothing. It converts
-  nothing: a recorded policy comes back as `MaskSelection.conversion` and each route applies it
-  with the one shared labeller (CellPatcher's), so both routes give the same objects. A
+  nothing: a recorded policy comes back as `MaskSelection.conversion` and in the record, and
+  `read_objects` (a reading module, not the resolver) applies it on every route, so all routes
+  give the same objects. A
   `parent_labels` mask in the role `region` comes back with `representation = "parent_labels"`
   and, for a consumer without `parent_labels_support`, `conversion = "parent_labels_as_area"`
   (`PARENT_LABELS_AS_AREA`): that consumer reads every non-zero pixel as inside and 0 as outside,
@@ -486,7 +534,8 @@ It gives:
   ("`Mito`: parent_labels used as an area; grouping not kept"); with the capability it comes back
   with no conversion and the consumer reads the groups. The
   `device` is checked for its spelling only and recorded in the provenance; the consumer refuses
-  `cuda` without a GPU and never switches. A malformed request (an ID twice, an unknown role,
+  `cuda` without a GPU and never switches. A malformed request (a channel ID twice, one mask ID
+  as objects with two conversions, an unknown role,
   policy, plane kind or device, a policy on a mask that is not `binary` or in a `region` role
   (on a `parent_labels` mask the message says it is never converted),
   channels or masks not a tuple of `str` IDs or of `MaskRequest`, a capability that is not a
@@ -517,12 +566,16 @@ raise `ValueError`. Tested for the Spec fixtures `v03 v08 v09 v13 v28 v30 v33 v3
 what the consuming bricks use: `RunInputs`'s public methods and their signatures (`open`, `fovs`,
 `files`, `projection`, `pixel_sizes`, `read_plane`, `read_image`, `plane_shape`, `read_window`,
 `window_reader`, `mask_types`, `read_mask`, `read_mask_window`, `mask_window_plan`,
+`read_objects`,
 `histograms`, `design`, `description`, `section_digests`, `images_without_header_channel_names`,
 `channel_index`, `references`, `mask_semantics`, `mask_check_status`, `require_checked`,
 `resolve_request`), the fields and types of `Fov`, `RunInputs`, the resolver's records (`Request`,
 `MaskRequest`, `Capabilities`, `ResolvedRequest`, `FovSelection`, `MaskSelection`,
-`PlaneSelection`, `Provenance`, `Refusal`, `RepeatCoverage`) and `CleanRun`, `RESOLVER_VERSION`,
-and the signatures of `make_described_run`, `make_clean_run` and `described_images`. A change to
+`PlaneSelection`, `Provenance`, `MaskConversion`, `Refusal`, `RepeatCoverage`) and `CleanRun`,
+`RESOLVER_VERSION`, the signatures of `make_described_run`, `make_clean_run` and
+`described_images`, and those of the Spec ADR 0005 helpers (`masks.binary.label_binary`,
+`masks.check_object_set`, `mask_rules.refuse_not_instances`, `refuse_binary_values`,
+`check_binary_values`, `run_inputs_request.volume_refusals`). A change to
 any of them changes that test, this section and the CHANGELOG together.
 
 ### 9.2 Modes, recorded inputs, lock and report (v0.4.0, design v0.4 §1, §4)
@@ -708,9 +761,9 @@ masks/                         masks folder, outside the experiment folder
 
 The optional mask step reads every image's masks, one image at a time, and describes each
 mask type and every ordered pair of types over the whole experiment. Pieces are counted
-8-connected (a pixel joined to its 8 edge and corner neighbours, `scipy.ndimage` structure
-`generate_binary_structure(2, 2)`, the connectivity of CellPatcher's `BINARY_MASK_CONNECTIVITY =
-2`; CellPatcher is not imported; owner decision "8-connected everywhere", 11 November 2026; report
+8-connected (a pixel joined to its 8 edge and corner neighbours: the 3 × 3 structure of ones
+`masks.binary.STRUCTURE`, imported from the one labeller's module, not restated, Spec ADR 0005
+BM1; owner decision "8-connected everywhere", 11 November 2026; report
 version 4: before, 4-connected, so two pieces of one label touching only at a corner counted as
 two and a mask's `median_pieces_per_label`, and so its kind, could differ); label 0 is background and every object has a positive label: a mask holding
 a negative value (possible in a signed integer type, which the header check accepts) raises
@@ -719,6 +772,26 @@ value is never counted as an object. Every conclusion is a suggestion with its e
 the user names the masks and confirms or corrects the relationships. The step holds the
 output folder's lock (§9.2) from before the first mask is read to the write of the report;
 another run holding it refuses the step (`output_locked`) before any mask is read.
+
+**Strict binary (Spec ADR 0005 BM11, experiment-v1 §4.5 at `bf68d30`).** With a published
+description, the files of every mask declared `binary` are checked first, **file-wide**
+(`mask_representation.binary_refusals`): each file is read between two fingerprints, its planes
+as stored (no label check), and the distinct values of all its planes are united (reading stops
+once the union holds a negative value or two positive ones; a float file is refused from its
+pixel type without a pixel read); `mask_rules.check_binary_values` then checks the stored dtype
+first (signed or unsigned integers or booleans; never float, complex or object, even with whole
+values) and then the values: {0, v} for one v > 0. An all-zero file (zero objects) and an
+all-foreground file {v} are accepted. A refused file is `R_MASK_CONTRADICTS_REPRESENTATION`,
+recorded as a `ValidationIssue` with the error's code and message verbatim and no action
+(`{path} is declared binary but holds the values [3, 7]; ...`, the non-zero values found,
+ascending, at most ten, or `... has pixel type float32; ...`), never recorded as `checked` in
+`mask_representation.json` (so a request naming the mask is `A_MASK_UNCHECKED` without a read),
+and left out of the scan and of `mask_relationships.json`; the other masks are scanned as
+before and the report is written. A file whose planes hold {0, 3} and {0, 7} is refused with
+`[3, 7]`, though each plane alone would pass. At the mask step the header's `mask_pixel_type`
+error is not raised for a file of a mask declared `binary` (the binary rule refuses it with its
+own code); `check` and `run` still refuse every float mask with `mask_pixel_type`.
+`instances` and `parent_labels` files are recorded as checked once read (pixels prove neither).
 
 The masks are bound to their fingerprints (issue #165, as a run's sources, §9.4): the step
 fingerprints each mask before and after its header is read (`prepare_mask_step`;
@@ -836,6 +909,7 @@ instead of keeping copies.
 | Masks named as images (D-i) | `mask_name_issues(leaves, mask_names=())`, `images_named_as_masks(leaves, suffixes=MASK_NAME_SUFFIXES)`, `mask_folder_part(path)`, `MASK_NAME_SUFFIXES`, `MASK_FOLDER_WORDS` (`discovery`) | The screen MorphoRelate's `init` ran (`project_image_names`), now discovery's warnings `image_named_as_mask` and `mask_folder_in_experiment` (§1) for every brick. Names are compared in lower case across the whole experiment; the longest `position_id` owns a file, an image of the same folder first. `mask_names` adds the caller's expected mask names (`cells` for `f1_cells.tif`) to `MASK_NAME_SUFFIXES`; `discover_experiment` gives none. A folder counts as a masks folder when a word of its name (`CellLabels` is `Cell` and `Labels`) is in `MASK_FOLDER_WORDS`. `images_named_as_masks` returns the `(image, owner)` pairs of that detection for the caller's own name endings (`["_cells"]`), for a brick that acts on the files itself (MorphoRelate leaves out the images named with a declared mask name). |
 | Pixel sizes (D-a) | `same_pixel_size(a, b, roles=("X", "Y"))`, `pixel_size_groups(sizes, roles=)`, `PIXEL_SIZE_TOLERANCE` (`physical_sizes`) | Two pixel sizes are the same when `|a - b| <= 1e-3 * max(a, b)` on every compared axis, in micrometres; one rule for a declared size against a header and for two headers. `same_pixel_size` takes `PhysicalSizes` (converted with `micrometers`) or sizes already in micrometres, one per role, and returns None when either is unknown (no size, or a unit that cannot be converted), never True. The rule is not transitive (1.0 ≈ 1.0009 ≈ 1.0018, but 1.0 ≠ 1.0018), so there is no per-image grouping key: `pixel_size_groups` links images by single linkage, so images of two groups always differ while the extremes of one group may drift; unknown sizes are left out; the largest group first. A size that cannot be converted to a positive finite length in micrometres (`1e308 m`) is unknown, never infinite, and an infinite or NaN value is never the same as any other (issue #93; before, `inf` matched every size). The folder check's `different_pixel_sizes` uses both (§11). |
 | Experiment design | *(removed in v0.5.1, SWEEP-PP)* `read_confirmed_design`, `ConfirmedDesign`, `DesignCheckError`, `load_design` | `experiment_design.csv` is an output only (Spec ADR 0002 AR11 (3)); no brick reads it for its repeat groups. A brick takes `repeat_group` from the published description through `RunInputs` (`Fov.repeat_group`, `resolve_request`). The codes `missing_experiment_design`, `unreadable_experiment_design` and `changed_experiment_design` are no longer raised by this package (`RunInputs.open` still refuses a design file whose SHA-256 is not the manifest's). |
+| Binary masks (Spec ADR 0005) | `masks.binary.label_binary(mask, *, name)` (also `label_binary`), `CONNECTIVITY`, `STRUCTURE`; `masks.check_object_set(value, *, name)` (also `check_object_set`); `mask_rules.refuse_not_instances`, `refuse_binary_values`, `check_binary_values`, `MaskContradictsRepresentationError` | The one labeller of a `binary` mask (8-connected, 1 to n in row-major order of first pixels, `int32`, §9.1 `read_objects`) and the one constructor of each shared refusal. `check_object_set` refuses an in-memory object set that is not a plain `numpy.ndarray` of a signed or unsigned integer dtype with `A_MASK_NOT_INSTANCES`: the array message (`'cells' is a bool array, not an object set. ...`) or the non-array one (`'cells' is a list (not a plain NumPy array), not an object set. ...`); a boolean array is a region only. `check_binary_values(values, *, dtype, path)` is the binary value rule (§15.1). No other code builds these messages (a test scans the source). |
 | Analysis refusals (Stage 2) | `ChannelNotFoundError` (`A_SCOPE_INCOMPLETE`), `MaskNotInstancesError` (`A_MASK_NOT_INSTANCES`), `RgbNotSupportedError` (`A_RGB_NOT_SUPPORTED`), `DraftRefusedError` (`A_DRAFT_REFUSED`), `MaskUncheckedError` (`A_MASK_UNCHECKED`), `RunInputsError.code` (`run_inputs_error`, exported at the package top level) | The Spec's analysis-layer codes (experiment-v1 §8) as one class each, all `RunInputsError` subclasses (a `ValueError`) with the code as the class attribute `code` (`None` on `RunInputsError` itself), so a brick matches the class or the code and keeps no copy. Preprocessing raises `A_DRAFT_REFUSED`, `A_MASK_UNCHECKED` and `A_SCOPE_INCOMPLETE` itself (§9.1); `A_MASK_NOT_INSTANCES` (a mask that is not `instances` used as an object set) and `A_RGB_NOT_SUPPORTED` (`rgb` units given to a brick that does not declare RGB support) are found by `resolve_request` (§9.1) against the consumer's declared capability, and a brick raises them through `ResolvedRequest.require()` (or reports its `refusals`). A brick writes the code in its message text, as preprocessing does. The classes pickle, so a worker process can raise them. `RunInputs.section_digests()` (§9.1) gives the description's section digests for cache keys. `Fov.image_type` (§9.1) is each position's declared `rgb` or `channels`; there is no run-wide image type. `RunInputs.resolve_request()` (§9.1) is the one interpreter of a described run for every route: a brick builds a `Request` and reads through the `FovSelection`s it returns, so channel-by-ID, scope, mask-representation and RGB rules have one implementation; `VolumeNotSupportedError` (`A_VOLUME_NOT_SUPPORTED`) and `DescriptionRequiredError` (`A_DESCRIPTION_REQUIRED`, raised by `RunInputs.open`) are the resolver contract's own codes (MorphoBricks-Spec ADR 0002), not experiment-v1 §8's. |
 | Experiment description (Stage 1) | `read_description(path)`, `description_consume.read_published_description(path)` (the published `morphobricks.toml` only), `run.description_file.publish_description` (the only writer), `draft.draft_from_discovery`, `description_reconcile.reconcile` | A brick reads the **published** `morphobricks.toml` through `RunInputs` (§9.1) and never a draft: a draft is internal to preprocessing, is never named `morphobricks.toml` and is refused with `A_DRAFT_REFUSED` (experiment-v1 §12). The command line shows the draft (`describe`, §12) and confirms nothing: the user's answers are the only way an ID, a repeat or a removal becomes confirmed. The owner's answers Q1 to Q8 of the Stage 1 design are in plan §12, question 78. |
 

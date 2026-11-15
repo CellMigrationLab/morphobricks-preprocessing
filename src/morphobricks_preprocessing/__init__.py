@@ -124,6 +124,7 @@ from .mask_names import (
     images_named_as_masks,
     mask_name_issues,
 )
+from .mask_rules import MaskContradictsRepresentationError
 from .mask_scan import (
     DEFAULT_THRESHOLDS,
     MASK_REPORT_FILENAME,
@@ -141,12 +142,14 @@ from .masks import (
     MaskFile,
     MaskInventory,
     check_labels,
+    check_object_set,
     find_masks,
     mask_axes_option,
     mask_plane_issues,
     read_mask,
     read_mask_file,
 )
+from .masks.binary import label_binary
 from .metadata import (
     ImageMetadata,
     MetadataReport,
@@ -215,6 +218,7 @@ from .run_inputs_request import (
     RESOLVER_VERSION,
     Capabilities,
     FovSelection,
+    MaskConversion,
     MaskRequest,
     MaskSelection,
     PlaneSelection,
@@ -330,11 +334,13 @@ __all__ = [
     "DescriptionRequiredError",
     "DraftRefusedError",
     "MaskNotInstancesError",
+    "MaskContradictsRepresentationError",
     "MaskUncheckedError",
     "RgbNotSupportedError",
     "VolumeNotSupportedError",
     "Capabilities",
     "FovSelection",
+    "MaskConversion",
     "MaskRequest",
     "MaskSelection",
     "PlaneSelection",
@@ -368,6 +374,7 @@ __all__ = [
     "check_intensities",
     "check_labels",
     "check_mapping",
+    "check_object_set",
     "check_metadata",
     "check_output_folder",
     "check_plane_index",
@@ -399,6 +406,7 @@ __all__ = [
     "is_zarr_store",
     "iter_planes",
     "iter_xyc_planes",
+    "label_binary",
     "likely_axis_cause",
     "images_named_as_masks",
     "mask_issues",

@@ -1628,3 +1628,21 @@ Raised during review; to be decided before the milestones that need them:
     `conversion = "parent_labels_as_area"`. *Decided (owner, "8-connected everywhere"):* the mask
     step counts pieces 8-connected, as CellPatcher's `BINARY_MASK_CONNECTIVITY = 2`
     (`mask_relationships.json` report version 4).
+81. One policy for binary masks (MorphoBricks-Spec ADR 0005, merge `bf68d30`; ADR 0002
+    resolver contract version 3; experiment-v1 §4.5, §4.5b, §8 amended). *Decided (owner, 15
+    November 2026, BM1-BM5, BM11; this brick implements step 2, not 2b):* connectivity is 8,
+    fixed, never a parameter; the resolver records each conversion once
+    (`Provenance.mask_conversions`, `{mask_id, conversion, connectivity: 8, labeller}`, and the
+    `parent_labels_as_area` marker with null connectivity and labeller) and
+    `RunInputs.read_objects` is the one helper that applies it, through
+    `masks.binary.label_binary`; requests are identified by `(mask_id, role)` and two
+    conversions of one mask's objects use are refused; a conversion on a Z-stack is
+    `A_VOLUME_NOT_SUPPORTED`; a `binary` file is integers or booleans holding {0, v} over all
+    its planes (all-zero and all-foreground accepted), checked by the mask step
+    (`R_MASK_CONTRADICTS_REPRESENTATION`); one constructor per refusal (`mask_rules`).
+    *Encoding choices of this brick:* the record is a frozen `MaskConversion` whose
+    `as_record()` is the record; a refused request records none; one `A_VOLUME_NOT_SUPPORTED`
+    refusal per Z-stack position; at the mask step a float file declared `binary` is the
+    binary rule's refusal, not `mask_pixel_type` (which `check` and `run` keep), and a refused
+    file is left out of the scan. Normalization is pinned at v0.7.0 (no new API used here; one
+    normalization for every consumer).

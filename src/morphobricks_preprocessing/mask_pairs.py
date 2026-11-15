@@ -10,17 +10,17 @@ label numbering. No files are read or written.
 from __future__ import annotations
 
 import numpy as np
-from scipy import ndimage
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import maximum_bipartite_matching
 
+from .masks.binary import STRUCTURE
+
 __all__ = ["PIECE_STRUCTURE", "best_parents", "match_counts", "one_to_one_matches"]
 
-PIECE_STRUCTURE = ndimage.generate_binary_structure(2, 2)
+PIECE_STRUCTURE = STRUCTURE
 """The connectivity of the mask step's pieces (:func:`.mask_scan.piece_counts`): 8-connected,
-``generate_binary_structure(2, 2)``, the structure of CellPatcher's ``BINARY_MASK_CONNECTIVITY =
-2`` built here, CellPatcher not imported (owner decision "8-connected everywhere", 11 November
-2026). Two pixels of one label touching only at a corner are one piece."""
+the labeller's own structure imported from :mod:`.masks.binary` (Spec ADR 0005 BM1, BM6), not
+restated. Two pixels of one label touching only at a corner are one piece."""
 
 
 def best_parents(

@@ -1,4 +1,4 @@
-"""The request resolver's types and pure rules (resolver contract version 2).
+"""The request resolver's types and pure rules (resolver contract version 3).
 
 ``RunInputs.resolve_request`` (:mod:`.run_inputs_resolve`) is the one interpreter of an
 experiment description for an analysis run, on every route (a direct brick run and a run
@@ -7,14 +7,20 @@ module holds what it takes and gives, and the rules that need no file:
 
 - a :class:`Request` names canonical channel IDs, masks with their role and, for a ``binary``
   mask used as objects, the explicit ``binary_mask_policy`` (experiment-v1 section 4.5c), the
-  plane selection (one plane, or a Z-volume) and the consumer's :class:`Capabilities`;
+  plane selection (one plane, or a Z-volume) and the consumer's :class:`Capabilities`. A mask
+  request is identified by ``(mask_id, role)``: a consumer sends one entry per use, a mask ID
+  may appear in several, entries of one ``(mask_id, role)`` with the same conversion collapse
+  into one selection, and the ``objects`` use of one mask ID with two different conversions is
+  a ``ValueError`` (contract version 3, Spec ADR 0005);
 - a :class:`ResolvedRequest` is immutable and picklable: one :class:`FovSelection` per position
   with the C index of every requested channel in **that** image, the masks as the description
   declares them and the planes to read, plus the :class:`Refusal` list, the coverage of every
   biological repeat (full, partial or unavailable) and the :class:`Provenance`;
 - the resolver classifies and refuses; it never labels, converts, reads a pixel or chooses a
-  device. A recorded ``binary_mask_policy`` comes back as ``MaskSelection.conversion`` for the
-  consumer to apply with the one shared labeller (CellPatcher's), on every route.
+  device. A recorded ``binary_mask_policy`` comes back as ``MaskSelection.conversion`` and as
+  one :class:`MaskConversion` record in ``Provenance.mask_conversions``; the one helper
+  ``RunInputs.read_objects`` applies it (8-connected, :mod:`.masks.binary`), on every route. A
+  conversion on a position with more than one Z plane is ``A_VOLUME_NOT_SUPPORTED``.
 - a ``parent_labels`` mask (experiment-v1 section 4.5b, resolver contract version 2, Spec ADR
   0002) is never an object set (``A_MASK_NOT_INSTANCES`` with or without the capability). In the
   role ``region`` it is selected as the groups for a consumer that declares
@@ -23,11 +29,13 @@ module holds what it takes and gives, and the rules that need no file:
 
 Codes (experiment-v1 section 8, as the classes of :mod:`.run_inputs_error`): ``A_SCOPE_INCOMPLETE``
 ("present in k of n acquisitions", k may be 0, one rule for channels and masks, owner decision
-SI1), ``A_MASK_NOT_INSTANCES``, ``A_MASK_UNCHECKED``, ``A_RGB_NOT_SUPPORTED`` and, from the
-resolver contract, ``A_VOLUME_NOT_SUPPORTED`` (a volume asked of a consumer without
-``volume_support``). A refused request selects nothing: no subset is taken for the user. The
-contract's other code, ``A_DESCRIPTION_REQUIRED``, is raised before a ``RunInputs`` exists
-(``RunInputs.open``): every run the resolver sees is described.
+SI1), ``A_MASK_NOT_INSTANCES`` (built by :func:`.mask_rules.refuse_not_instances`),
+``A_MASK_UNCHECKED``, ``A_RGB_NOT_SUPPORTED`` and, from the resolver contract,
+``A_VOLUME_NOT_SUPPORTED`` (a volume asked of a consumer without ``volume_support``, and a
+conversion of a Z-stack; built only by :func:`volume_refusals`). A refused request selects
+nothing: no subset is taken for the user. The contract's other code,
+``A_DESCRIPTION_REQUIRED``, is raised before a ``RunInputs`` exists (``RunInputs.open``): every
+run the resolver sees is described.
 """
 
 from __future__ import annotations
@@ -35,22 +43,32 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
+from .mask_requests import (
+    CONNECTED_COMPONENTS,
+    OBJECTS,
+    MaskConversion,
+    mask_uses,
+    objects_conflict,
+)
+from .mask_requests import LABELLER as LABELLER  # re-exported: the record's names
+from .mask_requests import LABELLER_CONNECTIVITY as LABELLER_CONNECTIVITY
+from .mask_requests import conversion_record as conversion_record
+from .mask_requests import mask_ids as mask_ids
+from .mask_rules import refuse_not_instances
 from .run_inputs_error import RunInputsError
 
-RESOLVER_VERSION = 2
-"""The resolver contract version a :class:`Provenance` records: 2 since parent-label masks (the
-input ``parent_labels_support`` and the output ``conversion = "parent_labels_as_area"``, Spec ADR
-0002 "Resolver contract version 2")."""
+RESOLVER_VERSION = 3
+"""The resolver contract version a :class:`Provenance` records: 3 since Spec ADR 0005 (the
+conversion record ``Provenance.mask_conversions``, the refusal of a conversion on a Z-stack, and
+mask requests identified by ``(mask_id, role)``; Spec ADR 0002 "Resolver contract version 3").
+Version 2 added parent-label masks."""
 
-OBJECTS = "objects"
 REGION = "region"
 MASK_ROLES = (OBJECTS, REGION)
 """How a request uses a mask: as an object set (instances) or as a region (any pixel set)."""
 
-CONNECTED_COMPONENTS = "connected_components"
 BINARY_MASK_POLICIES = (CONNECTED_COMPONENTS,)
 """The recorded conversions of a ``binary`` mask to objects (experiment-v1 section 4.5c)."""
-
 PARENT_LABELS_AS_AREA = "parent_labels_as_area"
 """The recorded marker of a ``parent_labels`` mask used as a region by a consumer without
 ``parent_labels_support`` (experiment-v1 section 4.5b): every non-zero pixel is inside, 0 is
@@ -86,10 +104,12 @@ CHECKED = "checked"
 
 
 class VolumeNotSupportedError(RunInputsError):
-    """A Z-volume was requested from a consumer that does not declare ``volume_support``.
+    """A Z-volume was requested without ``volume_support``, or a Z-stack would be converted.
 
     The resolver contract's own code: 3-D is enabled later, by its own decision, for the
-    consumers that declare the capability; nothing enables it by default.
+    consumers that declare the capability; nothing enables it by default. A
+    ``binary_mask_policy`` on a position with more than one Z plane is refused with it too,
+    with or without the capability (Spec ADR 0005 BM5): the labeller labels 2-D planes only.
     """
 
     code = "A_VOLUME_NOT_SUPPORTED"
@@ -121,7 +141,11 @@ class Capabilities:
 
 @dataclass(frozen=True)
 class MaskRequest:
-    """One mask of the request, by its declared ID.
+    """One use of a mask in the request, by its declared ID.
+
+    Identified by ``(mask_id, role)`` (contract version 3): a consumer sends one entry per use
+    (each object set, each region or fraction use, a fraction being a ``region``) and does not
+    merge them first; the resolver validates them together.
 
     Attributes
     ----------
@@ -199,10 +223,12 @@ class PlaneSelection:
 
 @dataclass(frozen=True)
 class MaskSelection:
-    """One mask as the consumer reads it: ``read_mask(fov, source_type, ...)``.
+    """One ``(mask_id, role)`` of the request as the consumer reads it.
 
-    ``conversion`` is the recorded ``binary_mask_policy`` the consumer applies with the shared
-    labeller, or ``parent_labels_as_area`` for a ``parent_labels`` region read as an area by a
+    The ``objects`` one is read by ``RunInputs.read_objects(selection, mask_id, t, z)``, which
+    applies its ``conversion``; a ``region`` one by ``read_mask(fov, source_type, ...)`` or
+    ``read_mask_window``. ``conversion`` is the recorded ``binary_mask_policy`` (``objects``
+    only), or ``parent_labels_as_area`` for a ``parent_labels`` region read as an area by a
     consumer without ``parent_labels_support`` (it records the marker and shows it); None when
     the mask is used as declared. ``representation`` is always the declared one.
     ``check_status`` is ``checked``.
@@ -255,13 +281,18 @@ class Provenance:
     """What the selection was resolved from, for the consumer's own records.
 
     ``section_digests`` are the manifest's (``(section, hex)`` pairs); ``description_sha256``
-    is provenance, never a cache key (experiment-v1 section 9.3).
+    is provenance, never a cache key (experiment-v1 section 9.3). ``mask_conversions`` holds one
+    :class:`MaskConversion` per mask ID whose selection has a conversion, in request order of
+    that selection (empty for a refused request, which selects nothing); a consumer copies
+    ``[c.as_record() for c in mask_conversions]`` under ``mask_conversions`` in its run record,
+    with no key added, renamed, dropped or converted.
     """
 
     resolver_version: int
     description_sha256: str
     section_digests: tuple[tuple[str, str], ...]
     request: Request
+    mask_conversions: tuple[MaskConversion, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -323,18 +354,17 @@ def check_request(request: Request, declared_masks: Mapping[str, str]) -> None:
     ------
     ValueError
         Channels or masks not given as a tuple (of ``str`` IDs, of :class:`MaskRequest`), a
-        capability that is not a ``bool``, a channel ID named twice, a mask ID named twice, a
-        role or policy outside the contract, a policy on a mask that is not ``binary`` (nothing
-        to convert; for a ``parent_labels`` mask the message says it is never converted) or on
-        a ``region`` role, an unknown plane kind, or a device that is neither ``cpu`` nor
-        ``cuda``.
+        capability that is not a ``bool``, a channel ID named twice, a role or policy outside
+        the contract, a policy on a mask that is not ``binary`` (nothing to convert; for a
+        ``parent_labels`` mask the message says it is never converted) or on a ``region``
+        role, one mask ID requested as ``objects`` with two different conversions (a policy
+        and none count as two; contract version 3, :func:`objects_conflict`), an unknown plane
+        kind, or a device that is neither ``cpu`` nor ``cuda``. A mask ID may appear in several
+        entries (one per use).
     """
     _check_shape(request)
     if len(set(request.channel_ids)) != len(request.channel_ids):
         raise ValueError("a channel ID is requested twice")
-    ids = [m.mask_id for m in request.masks]
-    if len(set(ids)) != len(ids):
-        raise ValueError("a mask ID is requested twice")
     if request.planes not in PLANE_KINDS:
         raise ValueError(f"planes must be one of {PLANE_KINDS}, not {request.planes!r}")
     if request.device not in DEVICES:
@@ -361,6 +391,7 @@ def check_request(request: Request, declared_masks: Mapping[str, str]) -> None:
                 f"binary_mask_policy applies to a binary mask used as objects; {mask.mask_id!r} "
                 f"is {declared_masks.get(mask.mask_id, 'undeclared')} in the role {mask.role!r}"
             )
+    objects_conflict(request.masks)
 
 
 def _check_shape(request: Request) -> None:
@@ -454,28 +485,14 @@ def mask_representation_refusal(mask: MaskRequest, representation: str) -> Refus
     """Return ``A_MASK_NOT_INSTANCES`` for a non-instances mask used as objects without a policy.
 
     A ``parent_labels`` mask as objects is refused with or without ``parent_labels_support``,
-    and its message offers no conversion: there is none (experiment-v1 section 4.5b).
+    and its message offers no conversion: there is none (experiment-v1 section 4.5b). This
+    decides only; the error and its message come from the one constructor,
+    :func:`.mask_rules.refuse_not_instances`.
     """
     if mask.role != OBJECTS or representation == INSTANCES or mask.binary_mask_policy:
         return None
-    if representation == PARENT_LABELS:
-        return Refusal(
-            "A_MASK_NOT_INSTANCES",
-            mask.mask_id,
-            f"The mask {mask.mask_id!r} is declared parent_labels: each non-zero value is one "
-            "group (for example the mitochondria of one cell) in any number of pieces, not one "
-            "object, so it cannot be an object set. It is never split, relabelled or converted. "
-            "Use it in the role 'region', or name an instances mask as the objects "
-            "(A_MASK_NOT_INSTANCES).",
-        )
-    return Refusal(
-        "A_MASK_NOT_INSTANCES",
-        mask.mask_id,
-        f"The mask {mask.mask_id!r} is declared {representation}, so it has no object identity "
-        "and cannot be an object set. Ask for the recorded conversion "
-        f"binary_mask_policy={CONNECTED_COMPONENTS!r} in this request, or declare the mask "
-        "instances (A_MASK_NOT_INSTANCES).",
-    )
+    error = refuse_not_instances(mask.mask_id, declared=representation)
+    return Refusal(str(error.code), mask.mask_id, str(error))
 
 
 def mask_conversion(
@@ -532,13 +549,47 @@ def rgb_refusal(capabilities: Capabilities, rgb_images: Iterable[str]) -> Refusa
     )
 
 
-def volume_refusal(request: Request) -> Refusal | None:
-    """Return ``A_VOLUME_NOT_SUPPORTED`` for a volume asked without ``volume_support``."""
-    if request.planes != VOLUME or request.capabilities.volume_support:
-        return None
-    return Refusal(
-        "A_VOLUME_NOT_SUPPORTED",
-        VOLUME,
-        "A Z-volume selection was requested and this consumer does not declare volume_support; "
-        "ask for planes (A_VOLUME_NOT_SUPPORTED).",
-    )
+def volume_refusals(request: Request, z_counts: Mapping[str, int]) -> tuple[Refusal, ...]:
+    """Return every ``A_VOLUME_NOT_SUPPORTED`` refusal of a request: the one place that builds it.
+
+    Parameters
+    ----------
+    request
+        The request.
+    z_counts
+        Each position's image path to its number of Z planes (``Fov.z_count``).
+
+    Returns
+    -------
+    tuple of Refusal
+        First a ``volume`` request without ``volume_support``; then, for each mask ID with a
+        ``binary_mask_policy`` (in request order), one refusal per position with more than one
+        Z plane (sorted by path), as a ``plane`` or a ``volume`` request, with or without
+        ``volume_support`` (Spec ADR 0005 BM5: the labeller labels 2-D planes only).
+    """
+    found = []
+    if request.planes == VOLUME and not request.capabilities.volume_support:
+        found.append(
+            Refusal(
+                VolumeNotSupportedError.code,
+                VOLUME,
+                "A Z-volume selection was requested and this consumer does not declare "
+                "volume_support; ask for planes (A_VOLUME_NOT_SUPPORTED).",
+            )
+        )
+    stacks = sorted((path, count) for path, count in z_counts.items() if count > 1)
+    for mask in mask_uses(request.masks):
+        if mask.binary_mask_policy is None:
+            continue
+        found.extend(
+            Refusal(
+                VolumeNotSupportedError.code,
+                mask.mask_id,
+                f"{mask.mask_id!r} would be converted by {mask.binary_mask_policy}, which labels "
+                f"2-D planes only; the images of {path} have {count} Z planes. Converting a "
+                "Z-stack is not supported (A_VOLUME_NOT_SUPPORTED).",
+                (path,),
+            )
+            for path, count in stacks
+        )
+    return tuple(found)
