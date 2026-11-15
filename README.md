@@ -158,6 +158,7 @@ morphobricks-preprocessing run --output /data/exp1_MorphoBricks_Preprocessing   
 morphobricks-preprocessing masks --output /data/exp1_MorphoBricks_Preprocessing # mask step
 morphobricks-preprocessing calibrate --output /data/exp1_MorphoBricks_Preprocessing
 morphobricks-preprocessing convert /data/exp1 --to /data/exp1_named_axes --axes ZXY  # axis errors
+morphobricks-preprocessing convert-mask --output /data/exp1_MorphoBricks_Preprocessing --mask TumorRegion --to-instances TumorObjects  # new mask files
 ```
 
 `check`, `run` and `masks` need the experiment description published in the output folder

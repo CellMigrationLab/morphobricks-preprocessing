@@ -11,7 +11,10 @@ discovers them itself, so an image added after the run would be left out without
 - masks: the masks folder's files paired with a recorded image as
   :func:`.masks.find_masks` pairs them (masks of excluded images and files that pair with
   no image are left out, as the run leaves them out), and the label images of the recorded
-  OME-Zarr images, less the masks the run recorded. Label images are never skipped: without
+  OME-Zarr images, less the masks the run recorded and the outputs of the mask conversion
+  helpers of a mask type the run did not record (each with its published line of
+  ``mask_lineage.jsonl``, Spec ADR 0005 BM12: a new mask no description of this run declares,
+  read only after the run is made again). Label images are never skipped: without
   the ``zarr`` extra, or with a ``labels`` group that cannot be read, the check raises
   instead of passing (owner, 2 November 2026);
 - links: a link that leaves the experiment or masks folder, leads back to a folder holding
@@ -28,6 +31,7 @@ from pathlib import Path
 from .discovery import DiscoveryResult, discover_experiment
 from .links import refuse_links
 from .manifest import RunManifest
+from .mask_lineage import conversion_outputs
 from .masks import FOLDER
 from .masks.files import _folder_masks
 from .zarr_input import NgffError, is_zarr_name, ngff_label_names
@@ -100,6 +104,8 @@ def unrecorded_files(
     masks = _folder_mask_paths(masks_root, discovery, recorded) | _label_paths(
         experiment_root, recorded
     )
+    types = {str(t).casefold() for t in (manifest.masks or {}).get("types", ())}
+    masks -= conversion_outputs(masks_root, masks, types)
     return UnrecordedFiles(tuple(sorted(images)), tuple(sorted(masks - recorded_masks)))
 
 

@@ -29,11 +29,13 @@ MODULE_PREFIX = "test_spec_"
 EXPECTED_MODULES = (
     "test_spec_binary_masks.py",
     "test_spec_catalogue.py",
+    "test_spec_class_conversion.py",
     "test_spec_derived_design.py",
     "test_spec_discovery.py",
     "test_spec_encoding.py",
     "test_spec_fov_image_type.py",
     "test_spec_lab_links.py",
+    "test_spec_mask_conversion.py",
     "test_spec_gate.py",
     "test_spec_no_fallback.py",
     "test_spec_parent_labels.py",

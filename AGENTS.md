@@ -223,6 +223,11 @@ src/morphobricks_preprocessing/
                     read_mask_window, mask_window_plan (one recorded-mask check for all) and
                     read_objects (a resolved objects use, its recorded conversion applied by
                     masks.binary.label_binary; Spec ADR 0005)
+  mask_conversion.py RunInputs.binary_to_instances / classes_to_binary (Spec ADR 0005 BM12, step
+                    2b): new mask files from a checked mask, refused before any read or write
+                    (check_class_image, collisions, idempotent retry); mask_lineage.py their
+                    mask_lineage.jsonl lines, content_sha256 and the paired publication;
+                    cli_convert_mask.py the command convert-mask
   mask_rules.py     Spec ADR 0005's one constructor per shared refusal: refuse_not_instances
                     (A_MASK_NOT_INSTANCES), refuse_binary_values (R_MASK_CONTRADICTS_REPRESENTATION)
                     called only by check_binary_values (binary = int/bool, {0, v}); pure.
@@ -1119,6 +1124,7 @@ morphobricks-preprocessing check /data/exp1
 morphobricks-preprocessing run /data/exp1 --axes ZCYX
 morphobricks-preprocessing masks /data/exp1 --masks /data/exp1_masks
 morphobricks-preprocessing convert /data/exp1 --to /data/exp1_named_axes --axes ZXY
+morphobricks-preprocessing convert-mask --output /data/exp1_MorphoBricks_Preprocessing --mask TumorRegion --to-instances TumorObjects
 jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 ```
 

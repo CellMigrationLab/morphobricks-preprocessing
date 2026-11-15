@@ -809,6 +809,41 @@ copies (optional)** card appears under it, calling the same functions as the com
 The card is not shown when another brick embeds step 1 without the output folder
 (`folder_step(show_output=False)`).
 
+### Converting a mask (`convert-mask`)
+
+Some bricks need objects where your segmentation gave a binary mask, or one mask per tissue class
+where it gave a class image. `convert-mask` writes such masks as **new files** in your masks
+folder; your mask is only read, and nothing is overwritten. The mask must be declared and
+checked by the masks step first.
+
+```bash
+# the connected objects (8-connected) of the binary mask TumorRegion, as the objects mask TumorObjects
+morphobricks-preprocessing convert-mask --output /data/exp1_MorphoBricks_Preprocessing \
+    --mask TumorRegion --to-instances TumorObjects
+# one binary mask per class value of the class image Tissue: Tissue_class1, Tissue_class2, ...
+morphobricks-preprocessing convert-mask --output /data/exp1_MorphoBricks_Preprocessing \
+    --mask Tissue --to-classes Tissue
+```
+
+- `--to-instances NEW_ID` takes a mask declared **binary**, with one depth slice (each time point
+  is labelled on its own). `--to-classes PREFIX` takes a class image (one 2-D plane of whole
+  numbers, 0 the background) declared **parent_labels** or **instances**; each class value v
+  present gives `PREFIX_classv`, and an image holding only 0 gives none ("no class present").
+- `--image PATH` (repeatable) converts only those images; by default every image with a file of
+  the mask.
+- The new files go to `<NEW_ID>/<the image's folders>/<image name>.tif` in the masks folder, next
+  to a `mask_lineage.jsonl` that records, for each file, the mask it was made from, how, and a
+  digest of both. Running the same command again changes nothing.
+- It stops at the first refusal and says why: a mask that is not declared, not checked yet or
+  changed since the masks step (`A_MASK_UNCHECKED`: run `masks` again), a mask of the wrong kind,
+  a label image inside an OME-Zarr image (only masks in the masks folder are converted), or a new
+  mask ID that is declared already or whose files exist and were not made by this conversion.
+
+Then, as the command prints: declare each new mask (its source type is its ID; `instances` for
+`--to-instances`, `binary` for `--to-classes`), run preprocessing and the masks step again, and
+use it like any mask. In the notebook, the card **Convert a mask (optional)** under **Describe the
+masks** does the same.
+
 ## 6. Output files
 
 The default output folder is next to the experiment folder:
