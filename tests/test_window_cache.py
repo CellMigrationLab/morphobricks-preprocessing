@@ -181,7 +181,13 @@ def test_a_zarr_grid_decodes_each_chunk_once(tmp_path, monkeypatch):
     mapping = prefill_mapping("CYX")
     reads = []
     original = windows_module._zarr_read
-    monkeypatch.setattr(windows_module, "_zarr_read", lambda *a: reads.append(a[1]) or original(*a))
+
+    def spy(*a):
+        # Slices are hashable only from Python 3.12: record each selection as plain tuples.
+        reads.append(tuple((s.start, s.stop, s.step) if isinstance(s, slice) else s for s in a[1]))
+        return original(*a)
+
+    monkeypatch.setattr(windows_module, "_zarr_read", spy)
     reader = WindowReader(path, mapping, cache_bytes=8 * MIB)
     for y0, y1, x0, x1 in grid(256, 32, 5):
         window = reader.read_window(bounds=(y0, y1, x0, x1), channels=[3, 0, 1])
