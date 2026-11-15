@@ -69,7 +69,7 @@ from .planes import (
     _zarr_read,
     format_bytes,
 )
-from .zarr_input import is_zarr_store
+from .zarr_input import NgffImage, is_zarr_store
 
 LEVEL = 0
 """The only resolution level read: full resolution (the declared level policy)."""
@@ -277,64 +277,101 @@ def read_window(
     """
     check_level(level)
     with _source(path, mapping, memory_limit) as source:
-        plan = _plan(source.layout, bounds, channels, memory_limit)
-        if plan.memory_estimate > memory_limit:
-            raise WindowMemoryError(_memory_text(plan, path))
-        c_dim = mapping.index_of("C")
-        rows_are_y = source.layout.blocking.rows_are_y
-        y0, y1, x0, x1 = plan.bounds
-        box = (y0, y1, x0, x1) if rows_are_y else (x0, x1, y0, y1)
-        out = np.empty(plan.shape, dtype=plan.dtype)
-        for i, c in enumerate(plan.channels):
-            wanted = {"Z": z, "C": None if c_dim is None else c, "T": t}
-            pixels = source.read(_position(source.layout, mapping, wanted), box)
-            out[i] = pixels if rows_are_y else pixels.T
-        return out
+        return _read_source(source, mapping, path, bounds, channels, z, t, memory_limit)
+
+
+def _read_source(
+    source: _Source,
+    mapping: AxisMapping,
+    path: str | os.PathLike,
+    bounds: object,
+    channels: Sequence[int],
+    z: int | None,
+    t: int | None,
+    memory_limit: int,
+) -> np.ndarray:
+    """Read a window of an open source as :func:`read_window` reads it (level already checked).
+
+    For the readers of other arrays stored like images (the mask windows of
+    :mod:`.masks.window`): the bounds, channels and memory are checked here, before any pixel
+    is read.
+    """
+    plan = _plan(source.layout, bounds, channels, memory_limit)
+    if plan.memory_estimate > memory_limit:
+        raise WindowMemoryError(_memory_text(plan, path))
+    c_dim = mapping.index_of("C")
+    rows_are_y = source.layout.blocking.rows_are_y
+    y0, y1, x0, x1 = plan.bounds
+    box = (y0, y1, x0, x1) if rows_are_y else (x0, x1, y0, y1)
+    out = np.empty(plan.shape, dtype=plan.dtype)
+    for i, c in enumerate(plan.channels):
+        wanted = {"Z": z, "C": None if c_dim is None else c, "T": t}
+        pixels = source.read(_position(source.layout, mapping, wanted), box)
+        out[i] = pixels if rows_are_y else pixels.T
+    return out
 
 
 @contextmanager
 def _source(path: str | os.PathLike, mapping: AxisMapping, memory_limit: int) -> Iterator[_Source]:
     """Open an image and yield its layout and a reader of stored boxes of one plane."""
     if is_zarr_store(path):
-        image = _open_zarr(path)
-        layout = _zarr_layout(image, mapping, path, _Binning(histogram=False), memory_limit)
-        y, x = mapping.index_of("Y"), mapping.index_of("X")
-        rows, cols = sorted((y, x))
-        blocking = _Blocking(
-            kind="zarr",
-            rows=rows,
-            cols=cols,
-            rows_are_y=rows == y,
-            unit=(image.chunks[rows], image.chunks[cols]),
-            partial_rows=True,
-            piece_nbytes=math.prod(image.chunks) * layout.dtype.itemsize,
-        )
-        layout = replace(layout, blocking=blocking)
-
-        def read(position: dict[int, int], box: Bounds) -> np.ndarray:
-            where = {**position, rows: slice(box[0], box[1]), cols: slice(box[2], box[3])}
-            selection = tuple(where[d] for d in range(len(layout.shape)))
-            return _zarr_read(image, selection, path)
-
-        yield _Source(layout, read)
+        yield _zarr_source(_open_zarr(path), mapping, path, memory_limit)
         return
     with _open(path) as tif:
-        series = tif.series[0]
-        layout = _tiff_layout(series, mapping, path, memory_limit)
+        yield _tiff_source(tif.series[0], mapping, path, memory_limit)
 
-        def read_tiff(position: dict[int, int], box: Bounds) -> np.ndarray:
-            index = _page_index(layout, position)
-            page = series.pages[index]
-            if page is None:
-                raise PlaneReadError(f"Page {index} of {path} is missing from the file.")
-            # The plane's index along the separate-sample, depth and contiguous-sample axes.
-            where = [0] * 5
-            for dim, stored in layout.blocking.stored:
-                if stored not in (2, 3):
-                    where[stored] = position[dim]
-            return _read_tiff_block(page, layout, where, box, path)
 
-        yield _Source(layout, read_tiff)
+def _zarr_source(
+    image: NgffImage, mapping: AxisMapping, path: str | os.PathLike, memory_limit: int
+) -> _Source:
+    """Return the source of an open OME-Zarr array: zarr decodes only the chunks read."""
+    layout = _zarr_layout(image, mapping, path, _Binning(histogram=False), memory_limit)
+    y, x = mapping.index_of("Y"), mapping.index_of("X")
+    rows, cols = sorted((y, x))
+    blocking = _Blocking(
+        kind="zarr",
+        rows=rows,
+        cols=cols,
+        rows_are_y=rows == y,
+        unit=(image.chunks[rows], image.chunks[cols]),
+        partial_rows=True,
+        piece_nbytes=math.prod(image.chunks) * layout.dtype.itemsize,
+    )
+    layout = replace(layout, blocking=blocking)
+
+    def read(position: dict[int, int], box: Bounds) -> np.ndarray:
+        where = {**position, rows: slice(box[0], box[1]), cols: slice(box[2], box[3])}
+        selection = tuple(where[d] for d in range(len(layout.shape)))
+        return _zarr_read(image, selection, path)
+
+    return _Source(layout, read)
+
+
+def _tiff_source(
+    series: tifffile.TiffPageSeries,
+    mapping: AxisMapping,
+    path: str | os.PathLike,
+    memory_limit: int,
+) -> _Source:
+    """Return the source of an open TIFF series: only the strips or tiles read are decoded.
+
+    The file must stay open while the source is used.
+    """
+    layout = _tiff_layout(series, mapping, path, memory_limit)
+
+    def read(position: dict[int, int], box: Bounds) -> np.ndarray:
+        index = _page_index(layout, position)
+        page = series.pages[index]
+        if page is None:
+            raise PlaneReadError(f"Page {index} of {path} is missing from the file.")
+        # The plane's index along the separate-sample, depth and contiguous-sample axes.
+        where = [0] * 5
+        for dim, stored in layout.blocking.stored:
+            if stored not in (2, 3):
+                where[stored] = position[dim]
+        return _read_tiff_block(page, layout, where, box, path)
+
+    return _Source(layout, read)
 
 
 def _tiff_layout(

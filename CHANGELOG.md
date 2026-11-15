@@ -19,6 +19,24 @@ v0.5.1: no run before v0.5.1 is read.)
   with named errors. `read_plane` and its callers are unchanged, and so is every output,
   format and version. (`run_inputs_window` also takes over the coordinate checks of
   `run_inputs`, unchanged.)
+- **Mask window reads** (one-route design §5): `RunInputs.read_mask_window(fov, mask_type, *,
+  t, z, bounds, level=0, memory_limit=...)` and `masks.window.read_mask_window` read an exact
+  `(h, w)` window of one mask plane in its stored integer (or boolean) type, labels unchanged,
+  bitwise the slice of `read_mask`, decoding only the TIFF strips or tiles and OME-Zarr chunks it
+  intersects. Bounds, levels and memory are refused as `read_window` refuses them; a mask is
+  refused as `read_mask` refuses it (`A_MASK_UNCHECKED`, changed, stored otherwise than
+  recorded). `RunInputs.mask_window_plan` and `masks.window.mask_window_plan` give the window's
+  shape, stored dtype, pieces and memory estimate from the header only. The streamed mask scan is
+  not part of this.
+- **`RunInputs.plane_shape(fov)`**: a position's `(height, width)` from the header and the
+  recorded axes, without reading pixels or computing a digest.
+
+### Changed
+
+- `RunInputs.mask_types` and `read_mask` moved to `run_inputs_mask` (`MaskInputs`, mixed into
+  `RunInputs`), unchanged. Reading without a histogram (`read_plane`, windows) no longer asks the
+  histogram code for a memory estimate, so a boolean mask's layout can be worked out; every
+  estimate of a run with histograms is unchanged.
 
 ## v0.5.5 (14 November 2026)
 

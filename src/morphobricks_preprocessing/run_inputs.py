@@ -64,8 +64,7 @@ from .manifest import (
     read_manifest,
 )
 from .mask_record import shared_mask_text
-from .masks import FOLDER, MaskFile, read_mask
-from .masks.header import _mask_header
+from .masks import FOLDER
 from .planes import DEFAULT_MEMORY_LIMIT, read_plane
 from .recorded_sizes import RecordedSize
 from .required_description import FIX, is_published, required_message
@@ -73,6 +72,7 @@ from .run.generation import published_path, read_stable
 from .run_inputs_error import DescriptionRequiredError
 from .run_inputs_error import RunInputsError as RunInputsError  # re-exported (moved)
 from .run_inputs_image import LazyImage as LazyImage  # re-exported (moved)
+from .run_inputs_mask import MaskInputs
 from .run_inputs_projection import ProjectionInputs
 from .run_inputs_resolve import ResolvingInputs
 from .run_inputs_semantic import SemanticInputs, check_description, with_identity
@@ -169,7 +169,7 @@ class Fov:
 
 
 @dataclass(frozen=True)
-class RunInputs(SemanticInputs, ProjectionInputs, ResolvingInputs, WindowInputs):
+class RunInputs(SemanticInputs, ProjectionInputs, ResolvingInputs, WindowInputs, MaskInputs):
     """The inputs of a clean preprocessing run, read as the run recorded them.
 
     Use :meth:`open`; the attributes are the snapshot taken then.
@@ -338,53 +338,6 @@ class RunInputs(SemanticInputs, ProjectionInputs, ResolvingInputs, WindowInputs)
         found = self._fov(entry)
         shape = (found.t_count, found.z_count, *first.shape)
         return LazyImage(self, entry.relative_path, shape, first.dtype)
-
-    def mask_types(self) -> tuple[str, ...]:
-        """Return the mask types the run recorded, sorted."""
-        return tuple((self.manifest.masks or {}).get("types", ()))
-
-    def read_mask(
-        self, fov: Fov | str, mask_type: str, z: int | None = None, t: int | None = None
-    ) -> np.ndarray:
-        """Read one mask plane by the recorded pairing, checking its labels.
-
-        Raises
-        ------
-        TypeError
-            If ``z`` or ``t`` is neither None nor a whole number.
-        IndexError
-            If ``z`` or ``t`` is outside the image (``Fov.z_count``, ``Fov.t_count``).
-        RunInputsError
-            If the image has no recorded mask of that type, or the mask changed since the run.
-        ValueError
-            For a label outside 0 to the int32 limit (:func:`.masks.check_labels`).
-        """
-        call = "read_mask(fov, mask_type, z, t)"
-        z, t = (None if v is None else _coordinate(v, k, call) for k, v in (("z", z), ("t", t)))
-        entry = self._checked(fov)
-        _check_planes(entry.relative_path, self._fov(entry), z, t)
-        recorded = self._mask_entry(entry.relative_path, mask_type)
-        self.require_checked(recorded, mask_type)  # A_MASK_UNCHECKED (a described run)
-        if not self._mask_unchanged(recorded):
-            raise RunInputsError(_changed_text([recorded["path"]], "mask"))
-        mask = MaskFile(recorded["image"], recorded["type"], recorded["path"], recorded["source"])
-        folder = self.masks_root if mask.source == FOLDER else None
-        stored, shape, dtype = _mask_header(mask, folder, self.experiment_root)
-        # The mask is read through the axes it is stored with, as the run recorded them.
-        if stored != recorded["axes"] or list(shape) != list(recorded["shape"]):
-            raise RunInputsError(_changed_text([mask.path], "mask"))
-        mask = MaskFile(
-            mask.image,
-            mask.mask_type,
-            mask.path,
-            mask.source,
-            tuple(shape),
-            dtype,
-            str(recorded["roles"]),
-            str(recorded["axes"]),
-            str(recorded["axes_from"]),
-        )
-        return read_mask(mask, folder, self.experiment_root, z=z, t=t)
 
     def histograms(self) -> tuple[PlaneRecord, ...]:
         """Return the table's rows, as read when the run was opened."""

@@ -824,14 +824,14 @@ class _Binning:
     histogram: bool = True
 
     def memory(self, pixels: int, dtype: np.dtype) -> int:
-        """Temporary memory of binning ``pixels`` pixels, with the range check every run does."""
-        return self.histogram * estimate_histogram_memory(
+        """Temporary memory of binning ``pixels`` pixels (none when only read: bool masks)."""
+        return self.histogram and estimate_histogram_memory(
             pixels, dtype, self.bin_count, settings=self.settings, range_check=True
         )
 
     def finished(self, dtype: np.dtype, channels: int) -> int:
         """Memory of the finished histograms of an XYC plane's channels."""
-        return self.histogram * _finished_histograms_nbytes(dtype, self.bin_count, channels)
+        return self.histogram and _finished_histograms_nbytes(dtype, self.bin_count, channels)
 
 
 def _finished_histograms_nbytes(dtype: np.dtype, bin_count: int | None, channels: int) -> int:

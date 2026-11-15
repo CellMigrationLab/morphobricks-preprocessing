@@ -51,5 +51,17 @@ def _plane_index(
     return tuple(index)
 
 
+def _stated_axes(axes: str, shape: tuple[int, ...], roles: str) -> str:
+    """Return a TIFF series' axes with the stated ``roles`` in place of the header's letters.
+
+    ``roles`` gives one role per axis kept by the header (length-1 axes other than Y and X
+    left out, as :func:`.header._mask_header` keeps them); every other axis becomes ``-``.
+    """
+    given = iter(roles)
+    return "".join(
+        next(given) if n != 1 or a in _YX else "-" for a, n in zip(axes, shape, strict=True)
+    )
+
+
 def _yx(axes: str, shape: tuple[int, ...]) -> tuple[int, int]:
     return shape[axes.index("Y")], shape[axes.index("X")]

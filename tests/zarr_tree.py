@@ -75,17 +75,18 @@ def write_ngff(  # noqa: PLR0913
     return path
 
 
-def write_labels(path, labels, axes="zyx", *, version="0.4"):
+def write_labels(path, labels, axes="zyx", *, version="0.4", chunks=None):
     """Add label images to the OME-Zarr image at ``path``: ``labels`` maps names to arrays.
 
     Each label image is written like an image (one level, ``image-label``
-    metadata) under ``<path>/labels/<name>``, and listed in ``<path>/labels``.
+    metadata) under ``<path>/labels/<name>``, and listed in ``<path>/labels``; ``chunks`` as
+    for :func:`write_ngff`.
     """
     zarr = pytest.importorskip("zarr")
     path = Path(path)
     zarr_format = 3 if version == "0.5" else 2
     for name, data in labels.items():
-        write_ngff(path / "labels" / name, data, axes, version=version)
+        write_ngff(path / "labels" / name, data, axes, version=version, chunks=chunks)
         label_group = zarr.open_group(str(path / "labels" / name), mode="a")
         image_label = {"image-label": {"version": version}}
         if version == "0.5":

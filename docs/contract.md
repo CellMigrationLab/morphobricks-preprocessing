@@ -355,6 +355,27 @@ It gives:
   with what it computes from a window, the image's recorded fingerprint (`size`, `mtime_ns`,
   and `inventory_sha256` for OME-Zarr), `level`, `bounds`, `channels`, `t` and `z`. It does not
   replace `read_plane` (yet);
+- `plane_shape(fov)`: the `(height, width)` of the position's planes, Y before X whatever the
+  stored order (the frame of `read_window`'s bounds, the last two sizes of `read_plane`), from the
+  header and the recorded axes only: no pixel is read and no content digest computed; the
+  fingerprint is checked as for every read;
+- `read_mask_window(fov, mask_type, *, t, z, bounds, level=0, memory_limit=...)`: an exact window
+  of one mask plane as a `(h, w)` array, bitwise the same as that slice of `read_mask`, in the
+  mask's stored integer (or boolean) pixel type: labels are unchanged, never relabelled, cast or
+  made binary, whatever the declared representation (`instances`, `binary`, `parent_labels`).
+  Bounds, level and memory are refused exactly as `read_window` refuses them (`WindowBoundsError`,
+  `WindowLevelError`, `WindowLayoutError`, `WindowMemoryError`), and only the TIFF strips or tiles
+  and OME-Zarr chunks the window intersects are read. `z` and `t` are whole numbers (0 for an axis
+  the image lacks), as for `read_window`. The mask is refused exactly as `read_mask` refuses it:
+  no recorded mask of that type, `MaskUncheckedError` (`A_MASK_UNCHECKED`) for a mask the mask
+  step has not checked, a mask changed since the run or stored with other axes or another shape
+  than recorded; a mask whose header names X before Y is refused as `read_mask` refuses it, and a
+  1-D array stored as one page (which `read_mask` reads as a row) is refused with
+  `WindowLayoutError`, never read whole. `check_labels` is applied to the window's pixels. No
+  content digest is computed. `mask_window_plan(fov, mask_type, *, bounds, level=0,
+  memory_limit=...)` is the same check and the `windows.WindowPlan` from the header only: `shape`
+  `(h, w)`, `dtype` the mask's stored type, `pieces` and `memory_estimate` (from the mask's own
+  bytes per pixel), `channels` empty;
 - `mask_types()` and `read_mask(fov, type, z=None, t=None)`: the recorded pairing only, read
   as stored through the recorded `axes` and `roles` by preprocessing's reader with
   `check_labels`; a mask changed since the run is refused; a mask recorded `shared: true`
@@ -469,8 +490,8 @@ raise `ValueError`. Tested for the Spec fixtures `v03 v08 v09 v13 v28 v30 v33 v3
 
 **The pinned surface (v0.5.1, PP-1).** `tests/test_brick_api_surface.py` pins, by name and type,
 what the consuming bricks use: `RunInputs`'s public methods and their signatures (`open`, `fovs`,
-`files`, `projection`, `pixel_sizes`, `read_plane`, `read_image`, `read_window`, `mask_types`,
-`read_mask`,
+`files`, `projection`, `pixel_sizes`, `read_plane`, `read_image`, `plane_shape`, `read_window`,
+`mask_types`, `read_mask`, `read_mask_window`, `mask_window_plan`,
 `histograms`, `design`, `description`, `section_digests`, `images_without_header_channel_names`,
 `channel_index`, `references`, `mask_semantics`, `mask_check_status`, `require_checked`,
 `resolve_request`), the fields and types of `Fov`, `RunInputs`, the resolver's records (`Request`,
