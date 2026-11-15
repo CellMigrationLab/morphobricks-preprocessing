@@ -361,6 +361,25 @@ It gives:
   with what it computes from a window, the image's recorded fingerprint (`size`, `mtime_ns`,
   and `inventory_sha256` for OME-Zarr), `level`, `bounds`, `channels`, `t` and `z`. It does not
   replace `read_plane` (yet);
+- `window_reader(fov, *, cache_bytes, memory_limit=...)` (issue #304, opt-in): a
+  `run_inputs_window.RunWindowReader` on one position whose `read_window(*, t, z, bounds,
+  channels, level=0)` takes `read_window`'s arguments, checks and refusals and gives bitwise the
+  same windows, but keeps the decoded compressed TIFF strips or tiles and OME-Zarr chunks in a
+  bounded least-recently-used cache (`block_cache.BlockCache`) shared by every window it reads,
+  so that a grid with margins decodes each piece about once per plane; `stats()` gives the
+  decodes, hits, evictions and bytes held. The cache holds at most `cache_bytes` (a whole number
+  above 0, below `memory_limit`; a piece larger is used once and not kept), counts in each
+  window's memory estimate (a window whose own working memory and `cache_bytes` together are
+  over `memory_limit` is `WindowMemoryError`), and is safe to share between threads (a piece
+  asked by several at once is decoded once). Pieces are kept under the image's path, the
+  fingerprint the run recorded for it, the level and the page and piece (TIFF) or chunk
+  (OME-Zarr). The fingerprint is checked before each window (`RunInputsError`, as for
+  `read_window`) and again after it: an image changed during a read is refused
+  (`windows.WindowSourceChangedError`) and the cache emptied, never served. Uncompressed TIFF
+  pieces are read from the file as without a cache, never cached. There is no hidden or global
+  cache: `read_window` keeps none. The same reader for a file outside a run is
+  `window_reader.WindowReader(path, mapping, *, cache_bytes, memory_limit=..., fingerprint=None)`
+  (its `read_window(*, bounds, channels, z=None, t=None, level=0)` and `window_plan`);
 - `plane_shape(fov)`: the `(height, width)` of the position's planes, Y before X whatever the
   stored order (the frame of `read_window`'s bounds, the last two sizes of `read_plane`), from the
   header and the recorded axes only: no pixel is read and no content digest computed; the
@@ -497,7 +516,7 @@ raise `ValueError`. Tested for the Spec fixtures `v03 v08 v09 v13 v28 v30 v33 v3
 **The pinned surface (v0.5.1, PP-1).** `tests/test_brick_api_surface.py` pins, by name and type,
 what the consuming bricks use: `RunInputs`'s public methods and their signatures (`open`, `fovs`,
 `files`, `projection`, `pixel_sizes`, `read_plane`, `read_image`, `plane_shape`, `read_window`,
-`mask_types`, `read_mask`, `read_mask_window`, `mask_window_plan`,
+`window_reader`, `mask_types`, `read_mask`, `read_mask_window`, `mask_window_plan`,
 `histograms`, `design`, `description`, `section_digests`, `images_without_header_channel_names`,
 `channel_index`, `references`, `mask_semantics`, `mask_check_status`, `require_checked`,
 `resolve_request`), the fields and types of `Fov`, `RunInputs`, the resolver's records (`Request`,

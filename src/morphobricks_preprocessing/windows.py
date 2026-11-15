@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import math
 import os
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Hashable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -81,6 +81,12 @@ LEVEL = 0
 Bounds = tuple[int, int, int, int]
 """``(y0, y1, x0, x1)``: half-open ``pixel_edge`` bounds in the plane frame."""
 
+Cached = Callable[[Hashable, Callable[[], "np.ndarray | None"]], "np.ndarray | None"]
+"""``cached(key, decode)``: a decoded piece from a reader's cache, decoded only when missing.
+
+Keys are ``("tiff", page, piece)`` or ``("zarr", chunk grid position)``; the reader adds the
+image's identity, fingerprint and level (:class:`.window_reader.WindowReader`)."""
+
 
 class WindowError(PlaneReadError):
     """Raised when a window cannot be read as asked."""
@@ -104,6 +110,10 @@ class WindowLayoutError(WindowError):
 
 class WindowMemoryError(WindowError, PlaneMemoryError):
     """Reading the window would need more memory than the limit allows."""
+
+
+class WindowSourceChangedError(WindowError):
+    """The image changed (or went missing) since a window reader was opened on it."""
 
 
 @dataclass(frozen=True)
@@ -332,19 +342,31 @@ def _read_source(
 
 
 @contextmanager
-def _source(path: str | os.PathLike, mapping: AxisMapping, memory_limit: int) -> Iterator[_Source]:
-    """Open an image and yield its layout and a reader of stored boxes of one plane."""
+def _source(
+    path: str | os.PathLike, mapping: AxisMapping, memory_limit: int, cached: Cached | None = None
+) -> Iterator[_Source]:
+    """Open an image and yield its layout and a reader of stored boxes of one plane.
+
+    With ``cached``, compressed TIFF pieces and OME-Zarr chunks are taken from a reader's cache.
+    """
     if is_zarr_store(path):
-        yield _zarr_source(_open_zarr(path), mapping, path, memory_limit)
+        yield _zarr_source(_open_zarr(path), mapping, path, memory_limit, cached)
         return
     with _open(path) as tif:
-        yield _tiff_source(tif.series[0], mapping, path, memory_limit)
+        yield _tiff_source(tif.series[0], mapping, path, memory_limit, cached)
 
 
 def _zarr_source(
-    image: NgffImage, mapping: AxisMapping, path: str | os.PathLike, memory_limit: int
+    image: NgffImage,
+    mapping: AxisMapping,
+    path: str | os.PathLike,
+    memory_limit: int,
+    cached: Cached | None = None,
 ) -> _Source:
-    """Return the source of an open OME-Zarr array: zarr decodes only the chunks read."""
+    """Return the source of an open OME-Zarr array: zarr decodes only the chunks read.
+
+    With ``cached``, the window is read chunk by chunk, each chunk from the cache.
+    """
     layout = _zarr_layout(image, mapping, path, _Binning(histogram=False), memory_limit)
     y, x = mapping.index_of("Y"), mapping.index_of("X")
     rows, cols = sorted((y, x))
@@ -372,6 +394,10 @@ def _zarr_source(
     def read(
         position: dict[int, int], box: Bounds, channels: Sequence[int], targets: Sequence
     ) -> None:
+        if cached is not None:
+            points = [position if c_dim is None else {**position, c_dim: c} for c in channels]
+            _read_zarr_chunks(image, layout, points, box, targets, cached, path)
+            return
         where = {**position, rows: slice(box[0], box[1]), cols: slice(box[2], box[3])}
         if c_dim is None:
             targets[0][...] = _zarr_read(image, tuple(where[d] for d in sorted(where)), path)
@@ -386,15 +412,55 @@ def _zarr_source(
     return _Source(layout, groups, read)
 
 
+def _read_zarr_chunks(
+    image: NgffImage,
+    layout: PlaneLayout,
+    points: Sequence[dict[int, int]],
+    box: Bounds,
+    targets: Sequence[np.ndarray],
+    cached: Cached,
+    path: str | os.PathLike,
+) -> None:
+    """Fill ``targets`` with the stored box at each of ``points``, chunk by chunk from a cache.
+
+    The points (one per channel) lie in the same chunks: they differ only along C, within one
+    chunk. Each chunk the box intersects is read whole once (zarr decodes only it), through
+    ``cached``, and every point's part of it is copied into its target.
+    """
+    rows, cols = layout.blocking.rows, layout.blocking.cols
+    chunks, shape = image.chunks, layout.shape
+    r0, r1, c0, c1 = box
+    for row in range(r0 // chunks[rows], math.ceil(r1 / chunks[rows])):
+        for col in range(c0 // chunks[cols], math.ceil(c1 / chunks[cols])):
+            grid = [points[0].get(d, 0) // n for d, n in enumerate(chunks)]
+            grid[rows], grid[cols] = row, col
+            start = [g * n for g, n in zip(grid, chunks, strict=True)]
+            selection = tuple(
+                slice(a, min(a + n, size)) for a, n, size in zip(start, chunks, shape, strict=True)
+            )
+            chunk = cached(("zarr", tuple(grid)), lambda s=selection: _zarr_read(image, s, path))
+            a, b = max(r0, start[rows]), min(r1, start[rows] + chunks[rows])
+            ca, cb = max(c0, start[cols]), min(c1, start[cols] + chunks[cols])
+            for target, point in zip(targets, points, strict=True):
+                where = {d: point[d] - start[d] for d in point}
+                where[rows] = slice(a - start[rows], b - start[rows])
+                where[cols] = slice(ca - start[cols], cb - start[cols])
+                target[a - r0 : b - r0, ca - c0 : cb - c0] = chunk[
+                    tuple(where[d] for d in sorted(where))
+                ]
+
+
 def _tiff_source(
     series: tifffile.TiffPageSeries,
     mapping: AxisMapping,
     path: str | os.PathLike,
     memory_limit: int,
+    cached: Cached | None = None,
 ) -> _Source:
     """Return the source of an open TIFF series: only the strips or tiles read are decoded.
 
-    The file must stay open while the source is used.
+    The file must stay open while the source is used. With ``cached``, compressed pieces are
+    taken from a reader's cache (keyed by page and piece) and decoded only when missing.
     """
     layout = _tiff_layout(series, mapping, path, memory_limit)
     c_dim = mapping.index_of("C")
@@ -421,7 +487,15 @@ def _tiff_source(
             if stored not in (2, 3):
                 where[stored] = position[dim]
         samples = channels if interleaved else (where[4],)
-        _read_tiff_box(page, layout.blocking, (where[0], where[1]), samples, box, targets, path)
+        fetch = None
+        if cached is not None:
+
+            def fetch(piece: int, decode: Callable[[], np.ndarray | None]) -> np.ndarray | None:
+                return cached(("tiff", index, piece), decode)
+
+        _read_tiff_box(
+            page, layout.blocking, (where[0], where[1]), samples, box, targets, path, fetch
+        )
 
     return _Source(layout, groups, read)
 
