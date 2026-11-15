@@ -6,6 +6,27 @@ real run; a skip is never counted as a pass. Owner rulings of 8 November 2026 (i
 "no skips" applies to the Spec conformance modules (`tests/test_spec_*.py`); a skip elsewhere
 in the suite is listed as **not run**, with its reason.
 
+## Release record: v0.5.6 (15 November 2026)
+
+A G1-style record of the v0.5.6 release candidate, a patch release for lazy loading: `read_window`,
+`read_mask_window`, `mask_window_plan` and `plane_shape` (contract section 9.1), additive only.
+It does not decide a gate; deciding a gate is the owner's.
+
+| | |
+|---|---|
+| Release candidate | Measured on the tree of the v0.5.6 preparation commit A (`a2af3d0`, branch `claude/release-0.5.6`, from `main` at `d7e9a9b`: v0.5.5, #301 and #302). This record is a separate commit that changes only this file. A keeps `RELEASE_REF` at v0.5.5's `4069826`. Commit B then points the notebook's `RELEASE_REF` at A and records the pair in `RELEASE_CALLS`, so `git diff A B -- src pyproject.toml` is empty |
+| Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `b635b7d5bc950529bce9dcc5681cec34b75139b8` (unchanged) |
+| Environment | Linux, Python 3.13, `uv pip install -e '.[dev,notebook,zarr]'` in a fresh venv (normalization 0.6.1 from its tag `v0.6.1` = `b8aa65b`); run as root on a case-sensitive file system |
+| Commands | `python tools/check.py`; `python -m pytest -q -p no:cacheprovider -rsxX tests/test_spec_*.py` |
+| `tools/check.py` | Ruff clean, Ruff format 473 files already formatted, pytest **5762 passed, 4 skipped** (not run, below), 0 failed, code rules passed (exit status 0) |
+| Spec modules (`tests/test_spec_*.py`) | **1839 passed, 0 skipped, 0 xfailed, 0 failed**, from all 25 modules of `tests/spec_gate.py` `EXPECTED_MODULES` (as v0.5.5) |
+
+**Not run (4 environment skips, outside the Spec modules):** the four of v0.5.5 below. These four
+behaviours are **not verified by this run**.
+
+**Still the owner's:** the Colab and JupyterLab browser check (`docs/colab-release-check.md`),
+before tagging.
+
 ## Release record: v0.5.5 (14 November 2026)
 
 A G1-style record of the v0.5.5 release candidate, a pin release: normalization moves from v0.6.0
