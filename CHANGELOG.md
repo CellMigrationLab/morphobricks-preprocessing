@@ -6,7 +6,13 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
-## Unreleased
+## v0.5.6 (15 November 2026)
+
+A patch release for lazy loading, additive only (owner decision of 15 November 2026: patch
+releases so that MorphoFeature can pin the window reads). No format changes: run manifest
+version 5, `plane_histograms.csv` schema version 5, resolver contract version 2 and conversion
+record version 4 are those of v0.5.5, whose runs are read as they are. Normalization stays at
+v0.6.1. Nothing that existed changes behaviour.
 
 ### Added
 
