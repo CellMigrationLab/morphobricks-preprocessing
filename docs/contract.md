@@ -342,14 +342,20 @@ It gives:
   0004), Y before X whatever the stored order; `channels` are canonical channel IDs, read in the
   order given, chosen before anything is decoded. Reading is aligned on the stored pieces (TIFF
   strips or tiles, OME-Zarr chunks) and touches only those the window intersects; only the
-  window is returned. Refused, never padded, filled or clipped: bounds that are not four whole
+  window is returned. Channels that share stored pieces (TIFF samples stored interleaved, such
+  as contiguous RGB strips or tiles, and OME-Zarr chunks longer than 1 along C) are read
+  together: each piece the window intersects is decoded once for all of them (#294); channels
+  stored apart (a page per channel, planar samples) are read each from its own pieces.
+  `window_plan` gives `pieces` (intersected in one plane) and `reads` (pieces read in all). Refused, never padded, filled or clipped: bounds that are not four whole
   numbers, empty, or outside the plane (`WindowBoundsError`); a level other than the
   full-resolution level 0, the declared policy (`WindowLevelError`); no channel or a channel
   twice (`WindowChannelError`; an ID the image lacks is `ChannelNotFoundError`); TIFF pages the
   block reader cannot split (subsampled colour, an NDPI JPEG header, a plane whose axes are not
   the page's rows and columns: `WindowLayoutError`, never read whole instead); a window whose
   working memory, estimated from the header (`windows.window_plan`), is over the limit
-  (`WindowMemoryError`). A TIFF stored compressed in one strip or tile is decoded whole, and the
+  (`WindowMemoryError`): the result, then for TIFF one strip or tile at a time, written straight
+  into it, and for OME-Zarr every chunk the window intersects and zarr's copy of the channels
+  read together. A TIFF stored compressed in one strip or tile is decoded whole, and the
   estimate counts it. The image's fingerprint is checked as for `read_plane`; no content digest
   is computed (a run with `verify_content` checks content once, at `open`). A caller records,
   with what it computes from a window, the image's recorded fingerprint (`size`, `mtime_ns`,
