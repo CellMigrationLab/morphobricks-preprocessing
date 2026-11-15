@@ -83,6 +83,29 @@ every resolver selection of a request that names each mask once.
 
 ### Added
 
+- **Images read in parallel, one per worker thread** (#107, opt-in): `run_experiment(...,
+  mode=RunMode(workers=4))`, or `RunMode(workers="auto", max_ram=8 * 2**30)`; CLI
+  `run --workers N|auto` and `--max-ram SIZE` (with `auto` only). Each worker reads one whole
+  image (every plane and channel) through the existing reader and checks its fingerprint (and,
+  with content verification, its SHA-256) after the read; the calling thread alone resumes,
+  stages each image's rows as soon as its worker returns, aggregates in the sorted order of the
+  images, checks, publishes and calls `progress`. `workers=1` (the default) is the serial run
+  as before. `"auto"` reads at most as many images at once as the CPUs this process may use
+  and, with `max_ram`, as `(max_ram - 256 MiB) // largest` allows, `largest` being the largest
+  image's working-memory estimate from its header (`plane_layout`: one plane, or one block when
+  the memory limit has it read in blocks, plus its rows; never its size on disk); an image over
+  that budget stops the run before any image is read (`image_over_max_ram`). The outputs are
+  byte for byte those of the serial run with any value (tested with 1, 2, 8 and `auto`, TIFF
+  and OME-Zarr, whole and in blocks, workers finishing out of order); the failure rules are the
+  serial ones (an unreadable image is `unreadable_planes`, an image changed while it is read is
+  never staged, an unexpected exception in a worker is raised by `run_experiment` after the
+  images not yet started are cancelled, and the images already staged are resumed by the next
+  run). The number of workers is in no row key, staging key, manifest or table; it is
+  `RunResult.workers`, and the CLI summary says "Read with N workers". It is a `RunMode`
+  field, not a `run_experiment` parameter, as `lab_links` (the code rules allow no new
+  parameter there). `tools/benchmark_run_workers.py` times a whole run serially and with
+  workers on a fixed synthetic dataset and refuses to report unless every output digest is
+  the serial one (#106).
 - **A decoded-block cache for window grids** (#304, opt-in): `RunInputs.window_reader(fov, *,
   cache_bytes, memory_limit=...)` opens a `RunWindowReader` whose `read_window(*, t, z, bounds,
   channels, level=0)` gives bitwise the windows of `RunInputs.read_window` while keeping the

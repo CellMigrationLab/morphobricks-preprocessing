@@ -69,6 +69,10 @@ class RunResult:
         True when the run wrote its report (every run that holds the lock does, also when
         it stops); False when it was refused before (the lock, an output folder inside
         the experiment).
+    workers
+        The number of worker threads that read images (issue #107): 1 when they were read
+        one after another in the calling thread, or when none was read. Operational only: it
+        is in no output file.
     """
 
     output_folder: Path
@@ -90,6 +94,7 @@ class RunResult:
     replaced: tuple[str, ...] = ()
     input_changes: tuple[InputChange, ...] = ()
     report_written: bool = False
+    workers: int = 1
 
     @property
     def ok(self) -> bool:

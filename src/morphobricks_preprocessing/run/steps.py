@@ -33,6 +33,7 @@ from .recorded import ResolvedInputs
 from .resume import FileJob, changed_during_check, new_rows
 from .reuse import _load_previous
 from .rows import _bin_count
+from .workers import Workers
 
 GLOBAL_CHANNEL_CODES = frozenset({"channel_names_differ", "different_channel_counts"})
 """The folder check's channel comparisons across the whole experiment.
@@ -189,6 +190,10 @@ class Rows:
         The files that changed while the run checked or read them (issue #90).
     discarded
         ``{file: why}`` for the staged rows not reused.
+    workers
+        The number of worker threads the files were read with (issue #107; operational only).
+    refused
+        ``image_over_max_ram`` when nothing was read for ``max_ram``, else None.
     """
 
     records: list[PlaneRecord]
@@ -201,6 +206,8 @@ class Rows:
     resumed: tuple[str, ...] = ()
     changed: tuple[str, ...] = ()
     discarded: Mapping[str, str] = field(default_factory=dict)
+    workers: int = 1
+    refused: ValidationIssue | None = None
 
 
 def compute_rows(
@@ -211,6 +218,7 @@ def compute_rows(
     previous: tuple[RunManifest | None, str | None],
     mode: str,
     progress: Callable[[int, int, str], None] | None,
+    workers: Workers | None = None,
 ) -> Rows:
     """Reuse the earlier rows that can be reused, resume staged rows, and read the rest.
 
@@ -230,6 +238,8 @@ def compute_rows(
         ``"restart"`` or ``"full"``.
     progress
         As :func:`.pipeline.run_experiment`.
+    workers
+        How many files may be read at once (:class:`.workers.Workers`); None: one.
 
     Returns
     -------
@@ -257,7 +267,7 @@ def compute_rows(
         if rel not in changed and rel not in unhashed
     ]
     kept = set(found.unchanged) if not reason else set()
-    new = new_rows(job, to_read, kept, progress)
+    new = new_rows(job, to_read, kept, progress, workers)
     return Rows(
         [*records, *new.records],
         [*narrow, *new.narrow],
@@ -269,6 +279,8 @@ def compute_rows(
         resumed=tuple(new.resumed),
         changed=tuple(sorted({*changed, *new.changed})),
         discarded=dict(sorted(new.discarded.items())),
+        workers=new.workers,
+        refused=new.refused,
     )
 
 
@@ -323,4 +335,5 @@ def counts(rows: Rows | None) -> dict:
         "rebuild_reason": rows.reason,
         "read": rows.read,
         "resumed": rows.resumed,
+        "workers": rows.workers,
     }
