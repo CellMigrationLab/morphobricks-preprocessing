@@ -29,6 +29,7 @@ from .axis_names import OPEN_AXIS
 from .description import Description, Unit
 from .discovery import DiscoveryResult
 from .image_names import position_id
+from .mask_rules import MASK_CONTRADICTS_REPRESENTATION as MASK_CONTRADICTS_REPRESENTATION
 from .metadata import OME_ZARR, TiffMetadata, header_channel_count, named_axes
 from .rgb_override import (
     OVERRIDE_SAMPLES,
@@ -49,7 +50,6 @@ IMAGE_TYPE_CONTRADICTS_HEADER = "R_IMAGE_TYPE_CONTRADICTS_HEADER"
 RGB_OVERRIDE_NOT_THREE_SAMPLES = "R_RGB_OVERRIDE_NOT_THREE_SAMPLES"
 MASK_TYPE_NOT_DECLARED = "R_MASK_TYPE_NOT_DECLARED"
 HETEROGENEOUS_LAYOUT = "R_HETEROGENEOUS_LAYOUT_NOT_ENABLED"
-MASK_CONTRADICTS_REPRESENTATION = "R_MASK_CONTRADICTS_REPRESENTATION"
 PHYSICAL_CODES = frozenset(
     {
         UNIT_NOT_FOUND,

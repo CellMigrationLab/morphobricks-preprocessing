@@ -1,4 +1,4 @@
-"""``RunInputs.resolve_request``: the shared request resolver on the Spec fixtures (contract v1).
+"""``RunInputs.resolve_request``: the shared request resolver on the Spec fixtures (contract v3).
 
 The architecture decision of 10 November 2026: one experiment interpreter in preprocessing for
 every route. Shown here on the vendored fixtures through ``make_described_run``:
@@ -32,6 +32,7 @@ from pathlib import Path
 
 import pytest
 
+import morphobricks_preprocessing.mask_requests as uses_module
 import morphobricks_preprocessing.run_inputs_request as request_module
 import morphobricks_preprocessing.run_inputs_resolve as resolve_module
 from morphobricks_preprocessing import (
@@ -358,7 +359,19 @@ def test_plane_selections_enumerate_planes_or_one_volume_per_time_point():
     ("request_", "match"),
     [
         (Request(("DNA", "DNA")), "channel ID is requested twice"),
-        (Request((), (MaskRequest("Nuclei"), MaskRequest("Nuclei"))), "mask ID is requested twice"),
+        (
+            # Contract version 3 (Spec ADR 0005): a mask ID may repeat; only two conversions of
+            # its objects use are refused ("a mask ID is requested twice" is gone).
+            Request(
+                (),
+                (
+                    MaskRequest("TumorRegion", binary_mask_policy=POLICY),
+                    MaskRequest("TumorRegion"),
+                ),
+            ),
+            "^'TumorRegion' is requested as objects with two different conversions "
+            r"\('connected_components' and None\); one run converts a mask at most one way$",
+        ),
         (Request(("DNA",), planes="stack"), "planes must be one of"),
         (Request(("DNA",), device="gpu"), "device must be one of"),
         (Request(("DNA",), device="CUDA"), "device must be one of"),
@@ -398,7 +411,7 @@ def test_provenance_is_the_manifests_record_and_the_request_with_its_device(tmp_
     request = Request(("DNA",), device="cuda")
     resolved = inputs.resolve_request(request)
     recorded = read_manifest(run.output / "run_manifest.json").experiment_description
-    assert resolved.provenance.resolver_version == RESOLVER_VERSION == 2
+    assert resolved.provenance.resolver_version == RESOLVER_VERSION == 3
     assert resolved.provenance.description_sha256 == recorded["sha256"]
     assert dict(resolved.provenance.section_digests) == recorded["section_digests"]
     assert resolved.provenance.request == request and resolved.provenance.request.device == "cuda"
@@ -453,7 +466,7 @@ def test_a_run_without_a_published_description_never_reaches_the_resolver(tmp_pa
 # --- the resolver imports no brick, CellPatcher or provider module -------------------------
 
 
-@pytest.mark.parametrize("module", [request_module, resolve_module])
+@pytest.mark.parametrize("module", [request_module, resolve_module, uses_module])
 def test_the_resolver_modules_import_no_brick_cellpatcher_or_provider_module(module):
     source = Path(module.__file__).read_text(encoding="utf-8")
     imported = set()

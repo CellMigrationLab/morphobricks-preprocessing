@@ -35,6 +35,7 @@ from .checks import mask_plane_issues
 from .files import find_masks
 from .labels import LARGEST_LABEL, check_labels
 from .model import FOLDER, OME_ZARR, PLANE_AXES, MaskFile, MaskInventory
+from .objects import check_object_set
 from .read import read_mask, read_mask_file
 from .stated import mask_axes_option
 
@@ -46,6 +47,7 @@ __all__ = [
     "MaskFile",
     "MaskInventory",
     "check_labels",
+    "check_object_set",
     "find_masks",
     "mask_axes_option",
     "mask_plane_issues",

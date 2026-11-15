@@ -6,7 +6,8 @@
 - The mask answer is the user's (never a default, never the scan's ``grouped`` kind).
 - The mask step records a ``parent_labels`` file as checked once it has read it (4.5a): no
   other condition, so a file with any number of values passes.
-- Resolver contract version 2 (Spec ADR 0002): as objects ``A_MASK_NOT_INSTANCES`` with or
+- Resolver contract version 2 (Spec ADR 0002; version 3 records the marker in
+  ``Provenance.mask_conversions``, Spec ADR 0005): as objects ``A_MASK_NOT_INSTANCES`` with or
   without ``parent_labels_support``, never a ``binary_mask_policy``; as a region, the groups
   for a consumer with the capability, else ``conversion = "parent_labels_as_area"``.
 """
@@ -45,7 +46,7 @@ from spec_pin import all_fixtures, fixtures, read_pin
 
 VALID = {item.name.split("_")[0]: item for item in fixtures("valid")}
 INVALID = {item.name.split("_")[0]: item for item in fixtures("invalid")}
-PINNED = "b635b7d5bc950529bce9dcc5681cec34b75139b8"  # the RH1 merge, a descendant of PL1's
+PINNED = "bf68d3032a4548cd908e1d530296fdf22a1a9b7f"  # the ADR 0005 merge, a descendant of PL1's
 EMPTY = DraftAnswers(ABSENT, SPEC_COMMIT)
 GROUPS = Capabilities(parent_labels_support=True)
 
@@ -135,8 +136,10 @@ def test_a_parent_labels_file_the_mask_step_has_not_read_is_unchecked(tmp_path):
 # --- Resolver contract version 2 (ADR 0002) -------------------------------------------------
 
 
-def test_the_resolver_contract_is_version_2():
-    assert RESOLVER_VERSION == 2
+def test_the_resolver_contract_is_version_3():
+    # 2 added parent-label masks; 3 (Spec ADR 0005) the conversion record, which records the
+    # marker of a parent_labels region too.
+    assert RESOLVER_VERSION == 3
     assert PARENT_LABELS_AS_AREA == "parent_labels_as_area"
     assert Capabilities().parent_labels_support is False
 
@@ -181,7 +184,17 @@ def test_as_a_region_without_the_capability_it_is_an_area_with_the_marker(tmp_pa
         assert (mito.mask_id, mito.source_type, mito.role) == ("Mito", "mito", "region")
         assert mito.representation == "parent_labels"  # the declaration is kept
         assert mito.conversion == PARENT_LABELS_AS_AREA
-    assert resolved.provenance.resolver_version == 2
+    assert resolved.provenance.resolver_version == 3
+    # Spec ADR 0005: the marker is recorded once for the run, with null connectivity and
+    # labeller; the instances object set has no record.
+    assert [c.as_record() for c in resolved.provenance.mask_conversions] == [
+        {
+            "mask_id": "Mito",
+            "conversion": "parent_labels_as_area",
+            "connectivity": None,
+            "labeller": None,
+        }
+    ]
 
 
 def test_as_a_region_with_the_capability_it_is_the_groups(tmp_path):
@@ -192,6 +205,7 @@ def test_as_a_region_with_the_capability_it_is_the_groups(tmp_path):
     for selection in resolved.selections:
         (mito,) = selection.masks
         assert (mito.representation, mito.conversion) == ("parent_labels", None)
+    assert resolved.provenance.mask_conversions == ()  # the groups: nothing converted
 
 
 def test_the_capability_must_be_a_bool(tmp_path):

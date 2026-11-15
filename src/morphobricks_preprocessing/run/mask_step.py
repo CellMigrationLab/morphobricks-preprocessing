@@ -15,6 +15,12 @@ run the same two functions (contract §15):
   may be replacing or removing the same file. A locked folder is refused before any mask
   is read.
 
+The files of a mask the published description declares ``binary`` are checked first, file-wide
+(:func:`..mask_representation.binary_refusals`, Spec ADR 0005 BM11): a refused file
+(``R_MASK_CONTRADICTS_REPRESENTATION``, a float file included, which the step reports with that
+code instead of the header's ``mask_pixel_type``) is left out of the scan and never recorded as
+``checked``; the other masks are scanned as before.
+
 Every mask is bound to its fingerprint from its header read to the end of its scan (issue
 #165, :mod:`..mask_binding`): :func:`prepare_mask_step` fingerprints each mask before and
 after its header is read, and the scan refuses a mask that no longer has that fingerprint
@@ -30,12 +36,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..discovery import default_output_folder
-from ..mask_representation import check_representation
+from ..mask_representation import BINARY, binary_refusals, check_representation
 from ..mask_scan import MASK_REPORT_FILENAME, MaskReport, scan_masks, write_mask_report
 from ..masks import MaskInventory
 from ..required_description import description_required_issue, is_published
 from ..validation import ValidationIssue, has_errors
-from .description_run import load_description
+from .description_run import RunDescription, load_description
 from .lock import OutputLockedError, lock_issue, output_lock
 from .preflight import Preflight, preflight
 from .recorded import GivenInputs, InputChange, resolve_inputs, usable
@@ -102,11 +108,12 @@ class MaskStepResult:
     refusal
         ``output_locked`` when another run holds the output folder's lock, else None.
     issues
-        With a published description: ``R_MASK_CONTRADICTS_REPRESENTATION`` for each mask file
-        that holds more than two values though declared ``binary`` (such a file stays ``not yet
-        checked``; the report is written all the same), or the error that the description
-        cannot be read, or ``A_DESCRIPTION_REQUIRED`` when it was removed since the step was
-        prepared.
+        With a published description: ``R_MASK_CONTRADICTS_REPRESENTATION`` for each file of a
+        mask declared ``binary`` that is stored as floats or holds, over all its planes, a
+        negative value or two or more distinct positive values (such a file stays ``not yet
+        checked`` and is left out of the report, which is written all the same), or the error
+        that the description cannot be read, or ``A_DESCRIPTION_REQUIRED`` when it was removed
+        since the step was prepared.
     """
 
     report: MaskReport | None
@@ -213,13 +220,43 @@ def prepare_mask_step(
         bind_headers=True,
     )
     pre = replace(pre, masks=pre.masks or MaskInventory(folder=None))  # none found
+    mask_issues = _binary_pixel_types(pre.masks, load_description(output.resolve())[0])
     return MaskStep(
         preflight=pre,
         output_folder=output,
         changes=changes,
-        issues=(*pre.discovery.issues, *pre.exclusion_issues, *pre.masks.issues),
+        issues=(*pre.discovery.issues, *pre.exclusion_issues, *mask_issues),
         verify_content=resolved.verify_content,
     )
+
+
+_PIXEL_TYPE = "mask_pixel_type"
+
+
+def _binary_pixel_types(
+    masks: MaskInventory, described: RunDescription | None
+) -> tuple[ValidationIssue, ...]:
+    """Return the masks' issues without the ``mask_pixel_type`` of files declared ``binary``.
+
+    Such a file (floats) is the binary rule's to refuse, with its own code and message
+    (``R_MASK_CONTRADICTS_REPRESENTATION``, :func:`describe_masks`), so it does not stop the
+    step; every other file keeps the header's error.
+    """
+    if described is None:
+        return masks.issues
+    types = {
+        m.source_type for m in described.description.masks.values() if m.representation == BINARY
+    }
+    binary = {f.path for f in masks.files if f.mask_type in types}
+    kept = []
+    for issue in masks.issues:
+        if issue.code == _PIXEL_TYPE:
+            paths = tuple(p for p in issue.paths if p not in binary)
+            if not paths:
+                continue
+            issue = replace(issue, paths=paths)
+        kept.append(issue)
+    return tuple(kept)
 
 
 def describe_masks(
@@ -263,33 +300,49 @@ def describe_masks(
         # Held from the first mask read to the write: a run may be replacing the masks'
         # recorded inputs or removing the report; a locked folder is refused before any read.
         with output_lock(output):
+            described, problems = _published(output)
+            root = step.preflight.discovery.root
+            refused = (
+                {}
+                if described is None
+                else binary_refusals(described.description, step.masks, root)
+            )
             report = scan_masks(
-                step.masks,
-                step.preflight.discovery.root,
+                _without(step.masks, refused),
+                root,
                 progress=progress,
                 thresholds=thresholds,
                 verify_content=step.verify_content,
             )
-            issues = _representation_issues(step, output)
+            issues = tuple(problems)
+            if described is not None:
+                checked = check_representation(
+                    described.description, step.masks, root, output, refused=refused
+                )
+                issues = checked.issues
             path = write_mask_report(report, output / MASK_REPORT_FILENAME)
     except OutputLockedError as exc:
         return MaskStepResult(report=None, path=None, refusal=lock_issue(exc))
     return MaskStepResult(report=report, path=path, issues=issues)
 
 
-def _representation_issues(step: MaskStep, output: Path) -> tuple[ValidationIssue, ...]:
-    """Check the declared masks' representations against the published description.
+def _published(output: Path) -> tuple[RunDescription | None, list[ValidationIssue]]:
+    """Return the published description, or the issues why there is none to check against.
 
-    The caller holds the output folder's lock and has read the masks. A description removed
-    since the step was prepared is ``A_DESCRIPTION_REQUIRED``.
+    The caller holds the output folder's lock. A description removed since the step was
+    prepared is ``A_DESCRIPTION_REQUIRED``.
     """
     described, problems = load_description(output)
     if described is None and not problems:
         problems = [description_required_issue(output)]
-    if described is None or step.preflight is None:
-        return tuple(problems)
-    root = step.preflight.discovery.root
-    return check_representation(described.description, step.masks, root, output).issues
+    return described, problems
+
+
+def _without(masks: MaskInventory, refused: Mapping[str, ValidationIssue]) -> MaskInventory:
+    """Return the inventory without the files the binary rule refused (none: the same one)."""
+    if not refused:
+        return masks
+    return replace(masks, files=tuple(f for f in masks.files if f.path not in refused))
 
 
 def recorded_masks(output_folder: str | os.PathLike) -> RecordedMasks | None:

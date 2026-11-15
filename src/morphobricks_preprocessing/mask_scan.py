@@ -37,7 +37,7 @@ are written in the report.
 
 Nothing is decided for the user: the report is a suggestion with its evidence; the user names
 the masks and confirms or corrects the relationships. Pieces are counted 8-connected
-(:data:`PIECE_STRUCTURE`, as CellPatcher's ``BINARY_MASK_CONNECTIVITY = 2``; not imported).
+(:data:`.masks.binary.STRUCTURE`, the labeller's own structure, imported: Spec ADR 0005 BM1).
 
 Masks with depth slices or time points (``Z``/``T`` in :attr:`.masks.MaskFile.axes`) are
 scanned one plane at a time, each plane counted like an image of its own: objects are never
@@ -61,9 +61,10 @@ from ._io import write_text_atomic
 from .manifest import package_versions
 from .mask_binding import MaskChangedError as MaskChangedError  # raised by the scan
 from .mask_binding import check_scanned, scan_fingerprints
-from .mask_pairs import PIECE_STRUCTURE, best_parents, match_counts
+from .mask_pairs import best_parents, match_counts
 from .mask_pairs import one_to_one_matches as one_to_one_matches  # moved there
 from .masks import MaskInventory, check_labels, read_mask
+from .masks.binary import STRUCTURE
 
 logger = logging.getLogger(__name__)
 
@@ -300,7 +301,7 @@ def piece_counts(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Return the labels of a 2D mask and the number of 8-connected pieces of each.
 
     Two pixels are in one piece when they carry the same label and touch along an edge or at
-    a corner (:data:`PIECE_STRUCTURE`). Label 0 is the background.
+    a corner (:data:`.masks.binary.STRUCTURE`). Label 0 is the background.
 
     Returns
     -------
@@ -323,7 +324,7 @@ def piece_counts(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     counts = np.zeros(values.size, dtype=np.int64)
     for index, box in enumerate(ndimage.find_objects(dense)):
         if box is not None:
-            counts[index] = ndimage.label(dense[box] == index + 1, PIECE_STRUCTURE)[1]
+            counts[index] = ndimage.label(dense[box] == index + 1, STRUCTURE)[1]
     return values, counts
 
 

@@ -7,18 +7,22 @@ asks for and gives back an immutable :class:`.run_inputs_request.ResolvedRequest
 - every requested channel resolved to its C index **per image** (by canonical ID, never by a
   shared index), refused as ``A_SCOPE_INCOMPLETE`` when any image lacks it (k of n, k may be 0);
 - every requested mask by its declared ID, refused as ``A_SCOPE_INCOMPLETE`` when some images
-  have no file of it, ``A_MASK_UNCHECKED`` when the mask step has not read every file, and
+  have no file of it and ``A_MASK_UNCHECKED`` when the mask step has not read every file (once
+  per mask ID, whatever its number of entries and roles), and per ``(mask_id, role)`` as
   ``A_MASK_NOT_INSTANCES`` for a non-instances mask used as objects without the recorded
   ``binary_mask_policy`` and for a ``parent_labels`` mask used as objects, always
   (experiment-v1 sections 4.5a, 4.5b, 4.5c, 8); a ``parent_labels`` region for a consumer
   without ``parent_labels_support`` is selected with ``conversion = "parent_labels_as_area"``;
+  one selection per ``(mask_id, role)``, entries of one use collapsed (contract version 3);
 - ``rgb`` units refused as ``A_RGB_NOT_SUPPORTED`` unless the consumer declares ``rgb_support``
-  (section 4.4b), and a Z-volume refused as ``A_VOLUME_NOT_SUPPORTED`` unless it declares
-  ``volume_support``;
+  (section 4.4b), a Z-volume refused as ``A_VOLUME_NOT_SUPPORTED`` unless it declares
+  ``volume_support``, and a ``binary_mask_policy`` on a position with more than one Z plane
+  refused as ``A_VOLUME_NOT_SUPPORTED`` always (Spec ADR 0005 BM5);
 - the coverage of every biological repeat (``repeat_group``) per channel and mask: full,
   partial or unavailable, reported whether or not the request is refused;
 - the provenance: the resolver contract version, the description's SHA-256 and section
-  digests as the manifest recorded them, and the request itself (its device included).
+  digests as the manifest recorded them, the request itself (its device included), and the
+  conversion records (``mask_conversions``, one per converted mask ID).
 
 It reads only the manifest, the published description (checked against the run's SHA-256) and
 the mask step's status file: no pixel, no brick, no CellPatcher module. Every run is described:
@@ -39,6 +43,7 @@ from .run_inputs_request import (
     RESOLVER_VERSION,
     RGB,
     FovSelection,
+    MaskConversion,
     MaskRequest,
     MaskSelection,
     Provenance,
@@ -47,14 +52,17 @@ from .run_inputs_request import (
     Request,
     ResolvedRequest,
     check_request,
+    conversion_record,
     coverage,
     mask_conversion,
+    mask_ids,
     mask_representation_refusal,
+    mask_uses,
     plane_selections,
     rgb_refusal,
     scope_refusal,
     unchecked_refusal,
-    volume_refusal,
+    volume_refusals,
 )
 
 if TYPE_CHECKING:
@@ -62,7 +70,7 @@ if TYPE_CHECKING:
 
 
 class ResolvingInputs:
-    """The ``resolve_request`` method of ``RunInputs`` (resolver contract version 1)."""
+    """The ``resolve_request`` method of ``RunInputs`` (resolver contract version 3)."""
 
     output_folder: Path
     manifest: RunManifest
@@ -109,58 +117,66 @@ class ResolvingInputs:
             refusals.extend(_some(scope_refusal(channel_id, "channel", missing, len(fovs))))
             covered.extend(coverage(channel_id, repeats, present))
         masks_table = read_checked(self.output_folder) if request.masks else None
-        for mask in request.masks:
-            found, more = self._mask(mask, description, fovs, repeats, masks_table)
+        uses = mask_uses(request.masks)
+        for mask_id in mask_ids(request.masks):  # once per mask ID: the files are the same
+            found, more = self._mask(mask_id, description, fovs, repeats, masks_table)
             refusals.extend(found)
             covered.extend(more)
+            declared = description.masks.get(mask_id)
+            for use in (u for u in uses if u.mask_id == mask_id and declared is not None):
+                refusals.extend(_some(mask_representation_refusal(use, declared.representation)))
         # A mask-only request names no channel: never refused for RGB (§8 A_RGB_NOT_SUPPORTED).
         asked = set(request.channel_ids)
         rgb = [f.relative_path for f in fovs if f.image_type == RGB and asked & set(f.channel_ids)]
         refusals.extend(_some(rgb_refusal(request.capabilities, rgb)))
-        refusals.extend(_some(volume_refusal(request)))
-        selections = () if refusals else self._selections(request, description, fovs)
+        refusals.extend(volume_refusals(request, {f.relative_path: f.z_count for f in fovs}))
+        if refusals:
+            return ResolvedRequest(
+                (), tuple(refusals), tuple(covered), self._provenance(request, ())
+            )
+        masks = self._mask_selections(uses, description, request)
         return ResolvedRequest(
-            selections, tuple(refusals), tuple(covered), self._provenance(request)
+            self._selections(request, masks, fovs),
+            (),
+            tuple(covered),
+            self._provenance(request, _records(masks)),
         )
 
     def _mask(
         self,
-        mask: MaskRequest,
+        mask_id: str,
         description: Description,
         fovs: tuple[Fov, ...],
         repeats: Mapping[str, tuple[str, ...]],
         table: object,
     ) -> tuple[list[Refusal], tuple[RepeatCoverage, ...]]:
-        """Classify one requested mask: presence per image, check status, representation."""
-        declared = description.masks.get(mask.mask_id)
+        """Classify one requested mask ID: presence per image and check status."""
+        declared = description.masks.get(mask_id)
         if declared is None:
             missing = [f.relative_path for f in fovs]
-            refusal = scope_refusal(mask.mask_id, "mask", missing, len(fovs))
-            return _some(refusal), coverage(mask.mask_id, repeats, ())
+            refusal = scope_refusal(mask_id, "mask", missing, len(fovs))
+            return _some(refusal), coverage(mask_id, repeats, ())
         recorded = _mask_entries(self.manifest, declared.source_type)
         present = [f.relative_path for f in fovs if f.relative_path in recorded]
         missing = [f.relative_path for f in fovs if f.relative_path not in recorded]
-        refusals = _some(scope_refusal(mask.mask_id, "mask", missing, len(fovs)))
+        refusals = _some(scope_refusal(mask_id, "mask", missing, len(fovs)))
         unchecked = [
             recorded[path]["path"]
             for path in present
             if file_status(
-                table, mask.mask_id, declared.source_type, declared.representation, recorded[path]
+                table, mask_id, declared.source_type, declared.representation, recorded[path]
             )
             != CHECKED
         ]
-        refusals.extend(_some(unchecked_refusal(mask.mask_id, unchecked, len(present))))
-        refusals.extend(_some(mask_representation_refusal(mask, declared.representation)))
-        return refusals, coverage(mask.mask_id, repeats, present)
+        refusals.extend(_some(unchecked_refusal(mask_id, unchecked, len(present))))
+        return refusals, coverage(mask_id, repeats, present)
 
-    def _selections(
-        self,
-        request: Request,
-        description: Description,
-        fovs: tuple[Fov, ...],
-    ) -> tuple[FovSelection, ...]:
-        """Build one selection per position; nothing here can refuse any more."""
-        masks = tuple(
+    @staticmethod
+    def _mask_selections(
+        uses: tuple[MaskRequest, ...], description: Description, request: Request
+    ) -> tuple[MaskSelection, ...]:
+        """Return one selection per ``(mask_id, role)``, in the order of its first entry."""
+        return tuple(
             MaskSelection(
                 m.mask_id,
                 description.masks[m.mask_id].source_type,
@@ -171,8 +187,16 @@ class ResolvingInputs:
                     m, description.masks[m.mask_id].representation, request.capabilities
                 ),
             )
-            for m in request.masks
+            for m in uses
         )
+
+    @staticmethod
+    def _selections(
+        request: Request,
+        masks: tuple[MaskSelection, ...],
+        fovs: tuple[Fov, ...],
+    ) -> tuple[FovSelection, ...]:
+        """Build one selection per position; nothing here can refuse any more."""
         return tuple(
             FovSelection(
                 key=fov.key,
@@ -189,11 +213,25 @@ class ResolvingInputs:
             for fov in fovs
         )
 
-    def _provenance(self, request: Request) -> Provenance:
+    def _provenance(self, request: Request, conversions: tuple[MaskConversion, ...]) -> Provenance:
         """Return the provenance from the manifest's description record (always present)."""
         recorded = self.manifest.experiment_description
         digests = tuple(sorted(recorded["section_digests"].items()))
-        return Provenance(RESOLVER_VERSION, recorded["sha256"], digests, request)
+        return Provenance(RESOLVER_VERSION, recorded["sha256"], digests, request, conversions)
+
+
+def _records(masks: tuple[MaskSelection, ...]) -> tuple[MaskConversion, ...]:
+    """Return one conversion record per mask ID whose selection has a conversion, in order.
+
+    A mask ID has at most one: only its ``objects`` use carries ``connected_components``, only a
+    ``parent_labels`` region ``parent_labels_as_area``, and a ``parent_labels`` mask is never
+    objects (Spec ADR 0005, "The conversion record").
+    """
+    found: dict[str, MaskConversion] = {}
+    for mask in masks:
+        if mask.conversion is not None:
+            found.setdefault(mask.mask_id, conversion_record(mask.mask_id, mask.conversion))
+    return tuple(found.values())
 
 
 def _some(refusal: Refusal | None) -> list[Refusal]:

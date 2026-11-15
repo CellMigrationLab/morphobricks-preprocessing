@@ -1,7 +1,12 @@
 """The mask step's representation check and its recorded status (experiment-v1 section 4.5a).
 
-A mask declared ``binary`` in the description must not hold more than two distinct values
-(``R_MASK_CONTRADICTS_REPRESENTATION``); pixels cannot prove ``instances``. Publishing a
+Every file of a mask declared ``binary`` in the description must be stored as integers
+(signed or unsigned) or booleans, never floats, and hold, over **all its planes together**,
+values in {0, v} for one v > 0 (Spec ADR 0005 BM11, experiment-v1 section 4.5): an all-zero and
+an all-foreground file are accepted; a float file, a negative value, or two or more distinct
+positive values (also when each plane alone holds one) is ``R_MASK_CONTRADICTS_REPRESENTATION``,
+built by the shared validator :func:`.mask_rules.check_binary_values` and recorded with its code
+and message as they are. Pixels cannot prove ``instances``. Publishing a
 description reads no mask pixels, so a mask file is ``not yet checked`` until the mask step
 has read it, and a file added later is ``not yet checked`` again. The mask step records what
 it checked in ``mask_representation.json`` in the output folder: for each declared mask, the
@@ -30,11 +35,17 @@ import numpy as np
 
 from ._io import write_text_atomic
 from .description import Description
-from .description_run_text import representation_issue
 from .fingerprint import Fingerprint
 from .mask_binding import check_scanned, mask_fingerprint, scan_fingerprints
-from .masks import MaskFile, MaskInventory, read_mask
-from .validation import ValidationIssue
+from .mask_rules import (
+    MaskContradictsRepresentationError,
+    binary_dtype,
+    binary_values_broken,
+    check_binary_values,
+)
+from .masks import MaskFile, MaskInventory
+from .masks.read import read_mask_plane
+from .validation import ValidationIssue, error
 
 REPRESENTATION_FILENAME = "mask_representation.json"
 """The status file the mask step writes next to ``mask_relationships.json``."""
@@ -42,8 +53,6 @@ REPRESENTATION_VERSION = "1"
 CHECKED = "checked"
 NOT_CHECKED = "not yet checked"
 BINARY = "binary"
-MAX_BINARY_VALUES = 2
-"""A binary mask holds at most this many distinct values."""
 
 
 @dataclass(frozen=True)
@@ -55,22 +64,72 @@ class RepresentationResult:
     """Mask ID -> the mask files recorded as checked, sorted."""
 
 
-def _distinct(mask: MaskFile, folder: Path | None, root: Path) -> int:
-    """Return the number of distinct values over every plane of a mask (stops past two)."""
+def _distinct(mask: MaskFile, folder: Path | None, root: Path) -> tuple[set[int], np.dtype]:
+    """Return the distinct values over every plane of a mask file, and its stored dtype.
+
+    The planes are read as stored (no label check: a negative value is the binary rule's to
+    refuse) and their values united; reading stops once the union can no longer pass (a
+    negative value or two positive ones), and no pixel of a float file is read.
+    """
     values: set[int] = set()
+    dtype = None if mask.dtype is None else np.dtype(mask.dtype)
     for z in range(mask.planes["Z"]):
         for t in range(mask.planes["T"]):
-            pixels = read_mask(
+            if dtype is not None and not binary_dtype(dtype):
+                return values, dtype
+            pixels = read_mask_plane(
                 mask,
                 folder,
                 root,
                 z=z if "Z" in mask.axes else None,
                 t=t if "T" in mask.axes else None,
             )
+            dtype = pixels.dtype
+            if not binary_dtype(dtype):
+                return values, dtype
             values.update(int(v) for v in np.unique(pixels))
-            if len(values) > MAX_BINARY_VALUES:
-                return len(values)
-    return len(values)
+            if binary_values_broken(values):
+                return values, dtype
+    return values, np.dtype(np.uint8) if dtype is None else dtype
+
+
+def binary_refusals(
+    description: Description, inventory: MaskInventory, experiment_root: str | os.PathLike
+) -> dict[str, ValidationIssue]:
+    """Return the ``R_MASK_CONTRADICTS_REPRESENTATION`` error of every refused ``binary`` file.
+
+    Each file of a mask declared ``binary`` is read between two fingerprints
+    (:mod:`.mask_binding`) and checked **file-wide** by :func:`.mask_rules.check_binary_values`
+    on the union of its planes' values. The error's code and message are recorded as they are,
+    with no action added.
+
+    Returns
+    -------
+    dict
+        Each refused file's path (as in the inventory) to its error; files that pass are not in
+        it.
+
+    Raises
+    ------
+    MaskChangedError
+        A mask changed before or while it was read.
+    ValueError
+        For a mask whose pixels cannot be read as the 2-D planes its header gave.
+    """
+    root = Path(experiment_root).resolve()
+    refused: dict[str, ValidationIssue] = {}
+    for mask in description.masks.values():
+        if mask.representation != BINARY:
+            continue
+        for found in (f for f in inventory.files if f.mask_type == mask.source_type):
+            before = scan_fingerprints([found], inventory.folder, root, False)
+            values, dtype = _distinct(found, inventory.folder, root)
+            check_scanned([found], inventory.folder, root, before, False)
+            try:
+                check_binary_values(values, dtype=dtype, path=found.path)
+            except MaskContradictsRepresentationError as exc:
+                refused[found.path] = error(exc.code, str(exc), (found.path,))
+    return refused
 
 
 def check_representation(
@@ -78,6 +137,8 @@ def check_representation(
     inventory: MaskInventory,
     experiment_root: str | os.PathLike,
     output_folder: str | os.PathLike,
+    *,
+    refused: Mapping[str, ValidationIssue] | None = None,
 ) -> RepresentationResult:
     """Check every file of every declared mask and write ``mask_representation.json``.
 
@@ -89,11 +150,15 @@ def check_representation(
         The masks found, with their headers bound to fingerprints (``find_masks(bind=True)``).
     experiment_root, output_folder
         The experiment folder and the output folder (the caller holds its lock).
+    refused
+        The ``binary`` files already refused by :func:`binary_refusals` on the same inventory
+        (the mask step checks them before its scan); None checks them here.
 
     Returns
     -------
     RepresentationResult
-        One ``R_MASK_CONTRADICTS_REPRESENTATION`` error per contradicting file.
+        One ``R_MASK_CONTRADICTS_REPRESENTATION`` error per refused file (its code and message
+        those of :func:`.mask_rules.check_binary_values`, no action added).
 
     Raises
     ------
@@ -101,24 +166,21 @@ def check_representation(
         A mask changed before or while it was read: nothing is written, an earlier status
         file is left as it was.
     ValueError
-        For a mask whose pixels cannot be read (as :func:`.masks.read_mask`).
+        For a mask whose pixels cannot be read as the 2-D planes its header gave.
     """
     root = Path(experiment_root).resolve()
+    if refused is None:
+        refused = binary_refusals(description, inventory, root)
     issues: list[ValidationIssue] = []
     record: dict[str, dict] = {}
     for mask_id, mask in sorted(description.masks.items()):
         files = []
         for found in (f for f in inventory.files if f.mask_type == mask.source_type):
-            before = scan_fingerprints([found], inventory.folder, root, False)
-            values = (
-                _distinct(found, inventory.folder, root) if mask.representation == BINARY else 0
-            )
-            check_scanned([found], inventory.folder, root, before, False)
-            if values > MAX_BINARY_VALUES:
-                issues.append(
-                    representation_issue(mask_id, mask.representation, found.path, values)
-                )
+            if mask.representation == BINARY and found.path in refused:
+                issues.append(refused[found.path])
                 continue
+            # Still the file whose header (and, for binary, values) was checked.
+            scan_fingerprints([found], inventory.folder, root, False)
             data = mask_fingerprint(found, inventory.folder, root).to_data()
             files.append({"path": found.path, **data})
         record[mask_id] = {

@@ -54,6 +54,32 @@ def read_mask(
         or ``t`` is missing or outside the mask, or the plane holds a label outside 0 to
         :data:`LARGEST_LABEL` (:func:`check_labels`).
     """
+    pixels = read_mask_plane(mask, masks_folder, experiment_root, z=z, t=t)
+    check_labels(pixels, f"the mask {mask.path}")
+    return pixels
+
+
+def read_mask_plane(
+    mask: MaskFile,
+    masks_folder: Path | None,
+    experiment_root: Path,
+    *,
+    z: int | None = None,
+    t: int | None = None,
+) -> np.ndarray:
+    """Read one plane of a mask as stored, without the label check of :func:`read_mask`.
+
+    For the readers that apply a stricter rule of their own to the stored values: the mask
+    step's binary rule and ``RunInputs.read_objects`` (Spec ADR 0005 BM11, which refuse a
+    negative or float ``binary`` plane with ``R_MASK_CONTRADICTS_REPRESENTATION``, not as a
+    label). Arguments as :func:`read_mask`.
+
+    Raises
+    ------
+    ValueError
+        If the mask's dimensions are not the ones its header gave (``mask.axes``), or ``z``
+        or ``t`` is missing or outside the mask.
+    """
     wanted = _wanted_plane(mask, z, t)
     if mask.source == FOLDER:
         pixels, axes = _read_tiff_plane(Path(masks_folder) / mask.path, wanted, _stated(mask))
@@ -66,7 +92,6 @@ def read_mask(
         axes = "".join(a for a, s in zip(labels.axes, selection, strict=True) if s == slice(None))
     if axes != "YX" or (mask.axes and pixels.shape != tuple(_yx(mask.axes, mask.shape))):
         raise ValueError(f"the mask {mask.path} is not the 2D plane its header gave ({axes})")
-    check_labels(pixels, f"the mask {mask.path}")
     return pixels
 
 

@@ -22,7 +22,6 @@ from .physical_check import (
     HEADER_CONTRADICTION,
     HETEROGENEOUS_LAYOUT,
     IMAGE_TYPE_CONTRADICTS_HEADER,
-    MASK_CONTRADICTS_REPRESENTATION,
     MASK_TYPE_NOT_DECLARED,
     RGB_OVERRIDE_NOT_THREE_SAMPLES,
     UNIT_NOT_DECLARED,
@@ -147,19 +146,3 @@ def coverage_issues(description: Description) -> list[ValidationIssue]:
             "acquisitions that have it; that choice is recorded.",
         )
     ]
-
-
-def representation_issue(
-    mask_id: str, representation: str, path: str, values: int
-) -> ValidationIssue:
-    """Return the mask step's refusal of a mask whose pixels contradict its representation."""
-    message = (
-        f"Mask {mask_id!r} is declared {representation!r}, but its file holds {values} "
-        "different values. A binary mask has at most two."
-    )
-    action = (
-        "Declare the mask as instances in the description if each value is an object, or as "
-        "parent_labels (grouped labels) if each value is one group, such as the mitochondria "
-        "of one cell."
-    )
-    return error(MASK_CONTRADICTS_REPRESENTATION, message, (path,), action)
