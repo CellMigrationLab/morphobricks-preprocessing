@@ -4,6 +4,9 @@
 :meth:`WindowInputs.read_window` reads an exact rectangle of one plane of a position, for the
 channels asked by their canonical IDs, through :func:`.windows.read_window`. It does not
 replace :meth:`.run_inputs.RunInputs.read_plane`, which still reads whole planes.
+:meth:`WindowInputs.window_reader` opens a :class:`RunWindowReader` on one position, which
+reads its windows the same way through a bounded cache of decoded pieces shared between them
+(:mod:`.window_reader`, issue #304).
 
 The plane-coordinate checks shared with ``read_plane`` and ``read_mask`` (moved from
 ``run_inputs``) live here too.
@@ -18,9 +21,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from .axes import AxisMapping
+from .block_cache import CacheStats
+from .fingerprint import Fingerprint
 from .manifest import FileEntry
 from .planes import DEFAULT_MEMORY_LIMIT, plane_layout
 from .validation import plural
+from .window_reader import WindowReader
 from .windows import LEVEL, WindowChannelError, check_level
 from .windows import read_window as read_source_window
 
@@ -113,6 +119,61 @@ class WindowInputs:
         WindowBoundsError, WindowLevelError, WindowLayoutError, WindowMemoryError
             See :func:`.windows.read_window`.
         """
+        entry, indices, plane = self._window_request(fov, t, z, channels, level)
+        return read_source_window(
+            self.experiment_root / entry.relative_path,
+            _mapping(entry),
+            bounds=bounds,
+            channels=indices,
+            level=level,
+            memory_limit=memory_limit,
+            **plane,
+        )
+
+    def window_reader(
+        self, fov: Fov | str, *, cache_bytes: int, memory_limit: int = DEFAULT_MEMORY_LIMIT
+    ) -> RunWindowReader:
+        """Open a reader of a position's windows that shares decoded pieces between them.
+
+        Its :meth:`RunWindowReader.read_window` takes the arguments of :meth:`read_window` and
+        gives bitwise the same windows, but keeps the decoded compressed TIFF strips or tiles
+        and OME-Zarr chunks in a cache of at most ``cache_bytes``, shared by every window it
+        reads and safe under threads (:mod:`.window_reader`). Nothing is cached otherwise:
+        :meth:`read_window` is unchanged.
+
+        Parameters
+        ----------
+        fov
+            The position, as a :class:`.run_inputs.Fov` or its image path.
+        cache_bytes
+            Largest number of bytes of decoded pieces kept; a whole number above 0, below
+            ``memory_limit``.
+        memory_limit
+            Largest working memory of one window read, the cache included, in bytes.
+
+        Raises
+        ------
+        RunInputsError
+            If the image changed since the run, or is not one of the run's.
+        ValueError
+            If ``cache_bytes`` is not a whole number above 0.
+        WindowMemoryError
+            If ``cache_bytes`` leaves no room under ``memory_limit``.
+        """
+        entry = self._checked(fov)
+        reader = WindowReader(
+            self.experiment_root / entry.relative_path,
+            _mapping(entry),
+            cache_bytes=cache_bytes,
+            memory_limit=memory_limit,
+            fingerprint=Fingerprint.recorded(entry),
+        )
+        return RunWindowReader(self, fov, reader)
+
+    def _window_request(
+        self, fov: Fov | str, t: int, z: int, channels: Sequence[str], level: int
+    ) -> tuple[FileEntry, list[int], dict[str, int]]:
+        """Check a window's plane, level and channel IDs: its entry, C indices and plane."""
         call = "read_window(fov, t=, z=, ...)"
         z, t = (_coordinate(v, k, call) for k, v in (("z", z), ("t", t)))
         check_level(level)
@@ -125,15 +186,43 @@ class WindowInputs:
         mapping = _mapping(entry)
         indices = [self.channel_index(entry.relative_path, c) for c in channels]
         plane = {r.lower(): i for r, i in (("Z", z), ("T", t)) if mapping.index_of(r) is not None}
-        return read_source_window(
-            self.experiment_root / entry.relative_path,
-            mapping,
-            bounds=bounds,
-            channels=indices,
-            level=level,
-            memory_limit=memory_limit,
-            **plane,
-        )
+        return entry, indices, plane
+
+
+class RunWindowReader:
+    """Windows of one position of a run, through a shared cache (``RunInputs.window_reader``).
+
+    Safe to share between threads. Each window is checked as
+    :meth:`WindowInputs.read_window` checks it (the image unchanged since the run, the plane,
+    level and channel IDs); the image's fingerprint is also taken again after each window, and
+    an image changed meanwhile is refused (:class:`.windows.WindowSourceChangedError`), its
+    cache emptied.
+    """
+
+    def __init__(self, inputs: WindowInputs, fov: Fov | str, reader: WindowReader) -> None:
+        self._inputs, self._fov, self._reader = inputs, fov, reader
+
+    def read_window(
+        self,
+        *,
+        t: int,
+        z: int,
+        bounds: tuple[int, int, int, int],
+        channels: Sequence[str],
+        level: int = LEVEL,
+    ) -> np.ndarray:
+        """Read an exact window of one plane, as :meth:`WindowInputs.read_window` reads it.
+
+        The arguments, result and refusals are those of :meth:`WindowInputs.read_window`
+        (the memory limit is the reader's, the cache included), and
+        :class:`.windows.WindowSourceChangedError` for an image changed during the read.
+        """
+        _, indices, plane = self._inputs._window_request(self._fov, t, z, channels, level)
+        return self._reader.read_window(bounds=bounds, channels=indices, level=level, **plane)
+
+    def stats(self) -> CacheStats:
+        """Return the cache's decodes, hits and evictions so far, and what it holds."""
+        return self._reader.stats()
 
 
 def _check_planes(relative_path: str, fov: Fov, z: int | None, t: int | None) -> None:

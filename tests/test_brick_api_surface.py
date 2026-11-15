@@ -55,6 +55,10 @@ RUN_INPUTS_METHODS = {
         "bounds: 'tuple[int, int, int, int]', channels: 'Sequence[str]', level: 'int' = 0, "
         "memory_limit: 'int' = 1073741824) -> 'np.ndarray'"
     ),
+    "window_reader": (
+        "(self, fov: 'Fov | str', *, cache_bytes: 'int', "
+        "memory_limit: 'int' = 1073741824) -> 'RunWindowReader'"
+    ),
     "mask_types": "(self) -> 'tuple[str, ...]'",
     "read_mask": (
         "(self, fov: 'Fov | str', mask_type: 'str', z: 'int | None' = None, "

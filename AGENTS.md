@@ -213,6 +213,9 @@ src/morphobricks_preprocessing/
                     chosen before decoding, only the TIFF strips/tiles or zarr chunks it touches
                     (tiff_pieces.py), each decoded once for the channels that share it (#294),
                     level 0 only; window_plan (memory estimate, pieces, reads);
+                    window_reader.py WindowReader (#304): many windows of one image through a
+                    bounded, thread-safe block_cache.BlockCache of decoded pieces (opt-in),
+                    RunInputs.window_reader -> RunWindowReader by channel IDs;
                     WindowBoundsError, WindowLevelError, WindowChannelError, WindowLayoutError,
                     WindowMemoryError; run_inputs_window.py RunInputs.read_window by channel IDs
                     and RunInputs.plane_shape (header only), and the z/t checks shared with

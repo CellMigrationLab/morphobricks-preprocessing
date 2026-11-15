@@ -8,6 +8,22 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+### Added
+
+- **A decoded-block cache for window grids** (#304, opt-in): `RunInputs.window_reader(fov, *,
+  cache_bytes, memory_limit=...)` opens a `RunWindowReader` whose `read_window(*, t, z, bounds,
+  channels, level=0)` gives bitwise the windows of `RunInputs.read_window` while keeping the
+  decoded compressed TIFF strips or tiles and OME-Zarr chunks in a bounded least-recently-used
+  cache (`block_cache.BlockCache`) shared by every window it reads, safe under threads, so that
+  neighbouring windows no longer decode the tiles under their margins again
+  (`window_reader.WindowReader` for a file outside a run). The cache holds at most
+  `cache_bytes`, counts in each window's memory estimate, is keyed by the image's path, its
+  recorded fingerprint, the level and the page and piece or chunk, and an image changed since the
+  reader was opened, or during a read, is refused (`WindowSourceChangedError`) and the cache
+  emptied. `read_window` and every other read are unchanged and keep no cache.
+  `tools/benchmark_window_reads.py` measures decodes and wall time of a grid of windows on a
+  synthetic tiled RGB TIFF.
+
 ### Changed
 
 - **One decode per stored piece for all the channels of a window** (#294, item "one decode per
