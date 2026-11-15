@@ -17,14 +17,14 @@ def pytest_configure(config):
 @pytest.fixture
 def segment_reads(monkeypatch):
     """Record the index of every TIFF strip or tile the block reader reads (window tests)."""
-    from morphobricks_preprocessing import planes
+    from morphobricks_preprocessing import tiff_pieces
 
     reads = []
-    original = planes._read_segment
+    original = tiff_pieces._read_segment
 
     def counting(page, index, *args):
         reads.append(index)
         return original(page, index, *args)
 
-    monkeypatch.setattr(planes, "_read_segment", counting)
+    monkeypatch.setattr(tiff_pieces, "_read_segment", counting)
     return reads

@@ -16,7 +16,7 @@ import pytest
 import tifffile
 
 import morphobricks_preprocessing.ome_tiff_copy as copy_module
-import morphobricks_preprocessing.planes as planes_module
+import morphobricks_preprocessing.tiff_pieces as tiff_pieces
 from morphobricks_preprocessing import (
     AxisMapping,
     convert_experiment,
@@ -282,10 +282,8 @@ def test_planes_over_the_memory_limit_are_read_and_written_in_blocks(tmp_path, m
     limit = plane_layout(source, TYX_SWAPPED, memory_limit=1).block_memory_estimate
     assert limit < plane_layout(source, TYX_SWAPPED).memory_estimate
     reads = []
-    original = planes_module._read_segment
-    monkeypatch.setattr(
-        planes_module, "_read_segment", lambda *a: reads.append(a[1]) or original(*a)
-    )
+    original = tiff_pieces._read_segment
+    monkeypatch.setattr(tiff_pieces, "_read_segment", lambda *a: reads.append(a[1]) or original(*a))
     for cls in (tifffile.TiffFile, tifffile.TiffPage, tifffile.TiffFrame, tifffile.TiffPageSeries):
         monkeypatch.setattr(cls, "asarray", lambda *a, **k: pytest.fail("decoded whole"))
     result = convert(tmp_path, TYX_SWAPPED, memory_limit=limit)

@@ -15,10 +15,12 @@ bitwise the same as that slice of the whole plane read by :func:`.planes.read_pl
   one-route design 4.2). ``level`` is an argument so that it is always stated; any other
   level is refused (:class:`WindowLevelError`) until levels and their calibration are
   recorded.
-- **Channels** are C indices, chosen before anything is decoded. Each channel is read on its
-  own, so a channel not asked is never decoded unless it shares a stored piece with one that
-  is (TIFF samples stored interleaved, OME-Zarr chunks longer than 1 along C); such a piece
-  is decoded once per channel asked.
+- **Channels** are C indices, chosen before anything is decoded. Channels that share stored
+  pieces (TIFF samples stored interleaved, as in contiguous RGB strips or tiles, and OME-Zarr
+  chunks longer than 1 along C) are read together: each piece the window intersects is
+  decoded once and every channel asked is taken from it. Channels stored apart (a page per
+  channel, planar samples) are read one after another, each from its own pieces. A channel
+  not asked is never decoded unless it shares a stored piece with one that is.
 - **Layouts.** TIFF pages stored in tiles or in strips (samples contiguous or planar, a page
   per channel or several channels in one page, with or without compression) are read through
   the block reader of :mod:`.planes`: only the strips or tiles the window intersects are
@@ -27,8 +29,10 @@ bitwise the same as that slice of the whole plane read by :func:`.planes.read_pl
   and columns) are refused (:class:`WindowLayoutError`), never read whole in their place.
   OME-Zarr images are read through zarr, which decodes only the chunks the window intersects.
 - **Memory.** Before any pixel is read, the window's working memory is estimated from the
-  header (:func:`window_plan`): the result, one channel's copy and the stored pieces it
-  needs. A window over the limit is refused (:class:`WindowMemoryError`).
+  header (:func:`window_plan`): the result and the stored pieces read into it (for TIFF, one
+  piece at a time, written straight into the result; for OME-Zarr, every chunk the window
+  intersects and zarr's copy of the channels read together). A window over the limit is
+  refused (:class:`WindowMemoryError`).
 
 What a caller records with a window (it is never worked out again later): the source
 fingerprint the run recorded for the image (size, modification time and, for OME-Zarr, the
@@ -56,19 +60,19 @@ from .planes import (
     PlaneMemoryError,
     PlaneReadError,
     _Binning,
-    _block_memory,
     _Blocking,
     _layout,
     _open,
     _open_zarr,
     _page_index,
     _position,
-    _read_tiff_block,
     _tiff_blocking,
+    _tiff_piece_memory,
     _zarr_layout,
     _zarr_read,
     format_bytes,
 )
+from .tiff_pieces import _read_tiff_box
 from .zarr_input import NgffImage, is_zarr_store
 
 LEVEL = 0
@@ -121,11 +125,15 @@ class WindowPlan:
     plane_shape
         ``(Y, X)`` of the whole plane.
     pieces
-        Stored pieces (TIFF strips or tiles, OME-Zarr chunks) read for each channel.
+        Stored pieces (TIFF strips or tiles, OME-Zarr chunks) the window intersects in one
+        plane.
     memory_estimate
         Estimated working memory of the read, in bytes.
     memory_limit
         The limit it is checked against, in bytes.
+    reads
+        Stored pieces read in all: ``pieces`` once for each group of channels that share
+        them (one group for samples stored interleaved), once per channel otherwise.
     """
 
     bounds: Bounds
@@ -137,14 +145,23 @@ class WindowPlan:
     pieces: int
     memory_estimate: int
     memory_limit: int
+    reads: int
 
 
 @dataclass(frozen=True)
 class _Source:
-    """An open image: its layout (with how planes are stored) and a reader of stored boxes."""
+    """An open image: its layout (with how planes are stored) and a reader of stored boxes.
+
+    ``groups(channels)`` splits the channels asked into the groups read together, as tuples
+    of their places in ``channels``: channels that share stored pieces are one group.
+    ``read(position, box, group, targets)`` fills ``targets``, one ``(rows, cols)`` array per
+    channel of ``group`` in stored order, with the stored box of the plane at ``position``,
+    reading each piece the box intersects once for the whole group.
+    """
 
     layout: PlaneLayout
-    read: Callable[[dict[int, int], Bounds], np.ndarray]
+    groups: Callable[[Sequence[int]], tuple[tuple[int, ...], ...]]
+    read: Callable[[dict[int, int], Bounds, Sequence[int], Sequence[np.ndarray]], None]
 
 
 def check_bounds(bounds: object, plane_shape: tuple[int, int]) -> Bounds:
@@ -218,7 +235,7 @@ def window_plan(
     """
     check_level(level)
     with _source(path, mapping, memory_limit) as source:
-        return _plan(source.layout, bounds, channels, memory_limit)
+        return _plan(source, bounds, channels, memory_limit)
 
 
 def read_window(
@@ -296,7 +313,7 @@ def _read_source(
     :mod:`.masks.window`): the bounds, channels and memory are checked here, before any pixel
     is read.
     """
-    plan = _plan(source.layout, bounds, channels, memory_limit)
+    plan = _plan(source, bounds, channels, memory_limit)
     if plan.memory_estimate > memory_limit:
         raise WindowMemoryError(_memory_text(plan, path))
     c_dim = mapping.index_of("C")
@@ -304,10 +321,13 @@ def _read_source(
     y0, y1, x0, x1 = plan.bounds
     box = (y0, y1, x0, x1) if rows_are_y else (x0, x1, y0, y1)
     out = np.empty(plan.shape, dtype=plan.dtype)
-    for i, c in enumerate(plan.channels):
-        wanted = {"Z": z, "C": None if c_dim is None else c, "T": t}
-        pixels = source.read(_position(source.layout, mapping, wanted), box)
-        out[i] = pixels if rows_are_y else pixels.T
+    # The pieces are written straight into the result, transposed for a plane stored X first.
+    targets = out if rows_are_y else out.transpose(0, 2, 1)
+    wanted = {"Z": z, "C": None if c_dim is None else plan.channels[0], "T": t}
+    position = _position(source.layout, mapping, wanted)
+    for group in source.groups(plan.channels):
+        channels_read = [plan.channels[i] for i in group]
+        source.read(position, box, channels_read, [targets[i] for i in group])
     return out
 
 
@@ -338,13 +358,32 @@ def _zarr_source(
         piece_nbytes=math.prod(image.chunks) * layout.dtype.itemsize,
     )
     layout = replace(layout, blocking=blocking)
+    c_dim = mapping.index_of("C")
 
-    def read(position: dict[int, int], box: Bounds) -> np.ndarray:
+    def groups(channels: Sequence[int]) -> tuple[tuple[int, ...], ...]:
+        # Channels in one chunk along C are read together: zarr decodes each chunk once.
+        if c_dim is None:
+            return (tuple(range(len(channels))),)
+        found: dict[int, list[int]] = {}
+        for i, c in enumerate(channels):
+            found.setdefault(c // image.chunks[c_dim], []).append(i)
+        return tuple(tuple(places) for places in found.values())
+
+    def read(
+        position: dict[int, int], box: Bounds, channels: Sequence[int], targets: Sequence
+    ) -> None:
         where = {**position, rows: slice(box[0], box[1]), cols: slice(box[2], box[3])}
-        selection = tuple(where[d] for d in range(len(layout.shape)))
-        return _zarr_read(image, selection, path)
+        if c_dim is None:
+            targets[0][...] = _zarr_read(image, tuple(where[d] for d in sorted(where)), path)
+            return
+        low = min(channels)
+        where[c_dim] = slice(low, max(channels) + 1)
+        pixels = _zarr_read(image, tuple(where[d] for d in sorted(where)), path)
+        pixels = np.moveaxis(pixels, sorted((rows, cols, c_dim)).index(c_dim), 0)
+        for target, c in zip(targets, channels, strict=True):
+            target[...] = pixels[c - low]
 
-    return _Source(layout, read)
+    return _Source(layout, groups, read)
 
 
 def _tiff_source(
@@ -358,8 +397,20 @@ def _tiff_source(
     The file must stay open while the source is used.
     """
     layout = _tiff_layout(series, mapping, path, memory_limit)
+    c_dim = mapping.index_of("C")
+    # Channels stored as contiguous samples (interleaved RGB) share every strip or tile.
+    interleaved = c_dim is not None and dict(layout.blocking.stored).get(c_dim) == 4
 
-    def read(position: dict[int, int], box: Bounds) -> np.ndarray:
+    def groups(channels: Sequence[int]) -> tuple[tuple[int, ...], ...]:
+        if interleaved:
+            return (tuple(range(len(channels))),)
+        return tuple((i,) for i in range(len(channels)))
+
+    def read(
+        position: dict[int, int], box: Bounds, channels: Sequence[int], targets: Sequence
+    ) -> None:
+        if c_dim is not None:
+            position = {**position, c_dim: channels[0]}
         index = _page_index(layout, position)
         page = series.pages[index]
         if page is None:
@@ -369,9 +420,10 @@ def _tiff_source(
         for dim, stored in layout.blocking.stored:
             if stored not in (2, 3):
                 where[stored] = position[dim]
-        return _read_tiff_block(page, layout, where, box, path)
+        samples = channels if interleaved else (where[4],)
+        _read_tiff_box(page, layout.blocking, (where[0], where[1]), samples, box, targets, path)
 
-    return _Source(layout, read)
+    return _Source(layout, groups, read)
 
 
 def _tiff_layout(
@@ -395,11 +447,13 @@ def _tiff_layout(
 
 
 def _plan(
-    layout: PlaneLayout, bounds: object, channels: Sequence[int], memory_limit: int
+    source: _Source, bounds: object, channels: Sequence[int], memory_limit: int
 ) -> WindowPlan:
     """Check a window against an image's layout and estimate what reading it costs."""
+    layout = source.layout
     checked = check_bounds(bounds, layout.plane_shape)
     wanted = _check_channels(channels, layout.channel_count)
+    groups = source.groups(wanted)
     y0, y1, x0, x1 = checked
     blocking = layout.blocking
     rows, cols = ((y0, y1), (x0, x1)) if blocking.rows_are_y else ((x0, x1), (y0, y1))
@@ -407,11 +461,13 @@ def _plan(
     pixels = (y1 - y0) * (x1 - x0)
     itemsize = layout.dtype.itemsize
     if blocking.kind == "zarr":
-        # zarr decodes every chunk the window touches and returns a copy of the window.
-        channel = pieces * blocking.piece_nbytes + 2 * pixels * itemsize
+        # zarr decodes every chunk the window touches and returns a copy of the window for
+        # every channel from the first to the last of a group read together.
+        span = max(max(wanted[i] for i in g) - min(wanted[i] for i in g) + 1 for g in groups)
+        work = pieces * blocking.piece_nbytes + 2 * span * pixels * itemsize
     else:
-        size = (rows[1] - rows[0], cols[1] - cols[0])
-        channel = _block_memory(layout, blocking, *size, _Binning(histogram=False))
+        # One strip or tile at a time, written straight into the result.
+        work = _tiff_piece_memory(blocking, rows[1] - rows[0])
     return WindowPlan(
         bounds=checked,
         level=LEVEL,
@@ -420,8 +476,9 @@ def _plan(
         dtype=layout.dtype,
         plane_shape=layout.plane_shape,
         pieces=pieces,
-        memory_estimate=len(wanted) * pixels * itemsize + channel,
+        memory_estimate=len(wanted) * pixels * itemsize + work,
         memory_limit=memory_limit,
+        reads=pieces * len(groups),
     )
 
 

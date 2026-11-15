@@ -206,10 +206,13 @@ src/morphobricks_preprocessing/
                     memory estimate,
                     check_planes (preflight memory / layout errors); planes over the limit read in
                     blocks of TIFF strips/tiles or zarr chunks (Plane.blocks, BlockReader), reduced
-                    previews
+                    previews; plane_errors.py PlaneReadError, PlaneMemoryError
+  tiff_pieces.py    the TIFF block reader: a rectangle of one plane from the strips/tiles it
+                    intersects, each read once for all the contiguous samples asked
   windows.py        read_window (issue #179): an exact window (y0, y1, x0, x1) of one plane, channels
                     chosen before decoding, only the TIFF strips/tiles or zarr chunks it touches
-                    (planes.py's block reader), level 0 only; window_plan (memory estimate, pieces);
+                    (tiff_pieces.py), each decoded once for the channels that share it (#294),
+                    level 0 only; window_plan (memory estimate, pieces, reads);
                     WindowBoundsError, WindowLevelError, WindowChannelError, WindowLayoutError,
                     WindowMemoryError; run_inputs_window.py RunInputs.read_window by channel IDs
                     and RunInputs.plane_shape (header only), and the z/t checks shared with
@@ -870,7 +873,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
   files are read", spy on `run.rows.iter_xyc_planes` (patch the submodule that uses a
   name: `run.pipeline.file_sha256`, `run.publish` for `os`/`shutil`). For planes in blocks,
   spy on
-  `planes._read_segment` and make `asarray` of every tifffile class fail.
+  `tiff_pieces._read_segment` and make `asarray` of every tifffile class fail.
 - **Planes in blocks with small test images:** the memory limit
   `plane_layout(path, mapping, memory_limit=1).block_memory_estimate` gives the smallest
   blocks a file can be read in. Consume each lazy plane (and each `XycPlane`'s channels)

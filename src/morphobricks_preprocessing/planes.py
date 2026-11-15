@@ -63,6 +63,8 @@ from morphobricks_normalization.histogram import (
 from morphobricks_normalization.ranges import HistogramSettings, RangeCheck
 
 from .axes import PLANE_ROLES, AxisMapping, AxisReview
+from .plane_errors import PlaneMemoryError, PlaneReadError
+from .tiff_pieces import _read_tiff_box
 from .validation import ValidationIssue, error, plural, warning
 from .zarr_input import (
     NgffError,
@@ -80,17 +82,6 @@ DEFAULT_MEMORY_LIMIT = 2**30
 
 PREVIEW_SIDE = 4096
 """A reduced preview of a plane read in blocks has at most this many pixels per side."""
-
-# TIFF compression codes that need the JPEG tables of the file to decode a piece.
-_JPEG_COMPRESSIONS = {6, 7, 33007, 34892}
-
-
-class PlaneReadError(Exception):
-    """Raised when a file's planes cannot be read under the given axis mapping."""
-
-
-class PlaneMemoryError(PlaneReadError):
-    """Raised when reading a plane would need more memory than the limit allows."""
 
 
 @dataclass(frozen=True)
@@ -1077,11 +1068,16 @@ def _block_memory(
         bands = math.ceil(rows / unit_rows) if rows >= unit_rows else 1
         chunks = bands * math.ceil(cols / unit_cols)
         return memory + chunks * blocking.piece_nbytes + pixels * layout.dtype.itemsize
+    return memory + _tiff_piece_memory(blocking, rows)
+
+
+def _tiff_piece_memory(blocking: _Blocking, rows: int) -> int:
+    """Return the working memory of reading TIFF pieces for ``rows`` rows, one at a time."""
     if blocking.partial_rows:
         # Uncompressed rows are read straight from the file, then copied into the block.
-        return memory + 2 * min(rows, unit_rows) * blocking.row_nbytes
+        return 2 * min(rows, blocking.unit[0]) * blocking.row_nbytes
     # One compressed piece at a time is read and decoded, then copied into the block.
-    return memory + blocking.piece_nbytes + blocking.encoded_nbytes
+    return blocking.piece_nbytes + blocking.encoded_nbytes
 
 
 def _ranges(length: int, unit: int, size: int) -> list[tuple[int, int]]:
@@ -1254,82 +1250,14 @@ def _tiff_block_plane(
     for dim, stored in layout.blocking.stored:
         if stored not in (2, 3):
             where[stored] = position[dim]
-    return _block_plane(
-        layout,
-        mapping,
-        position,
-        lambda r0, r1, c0, c1: _read_tiff_block(page, layout, where, (r0, r1, c0, c1), path),
-    )
 
+    def read(r0: int, r1: int, c0: int, c1: int) -> np.ndarray:
+        out = np.empty((r1 - r0, c1 - c0), dtype=layout.dtype)
+        box = (r0, r1, c0, c1)
+        _read_tiff_box(page, layout.blocking, (where[0], where[1]), (where[4],), box, [out], path)
+        return out
 
-def _read_tiff_block(page, layout: PlaneLayout, where: list[int], box, path) -> np.ndarray:  # noqa: ANN001
-    """Read rows ``r0 .. r1`` and columns ``c0 .. c1`` of one plane of a page, piece by piece."""
-    r0, r1, c0, c1 = box
-    keyframe = page.keyframe
-    blocking = layout.blocking
-    _, depth, length, width, samples = (int(n) for n in keyframe.shaped)
-    unit_rows, unit_cols = blocking.unit
-    sample, z, _, _, contiguous = where
-    out = np.empty((r1 - r0, c1 - c0), dtype=layout.dtype)
-    if keyframe.is_tiled:
-        tile_depth = keyframe.tiledepth
-        across, down = math.ceil(width / unit_cols), math.ceil(length / unit_rows)
-        first = (sample * math.ceil(depth / tile_depth) + z // tile_depth) * down * across
-        z_in_piece = z % tile_depth
-    else:
-        across, down = 1, math.ceil(length / unit_rows)
-        first = (sample * depth + z) * down
-        z_in_piece = 0
-    for row in range(r0 // unit_rows, math.ceil(r1 / unit_rows)):
-        top = row * unit_rows
-        a, b = max(r0, top) - top, min(r1, top + unit_rows, length) - top
-        for col in range(c0 // unit_cols, math.ceil(c1 / unit_cols)):
-            left = col * unit_cols
-            ca, cb = max(c0, left) - left, min(c1, left + unit_cols, width) - left
-            index = first + row * across + col
-            piece = _read_segment(page, index, z_in_piece, (a, b), blocking, path)
-            target = out[top + a - r0 : top + b - r0, left + ca - c0 : left + cb - c0]
-            if piece is None:
-                target[...] = keyframe.nodata
-            else:
-                target[...] = piece[:, ca:cb, contiguous]
-    return out
-
-
-def _read_segment(page, index: int, z: int, rows: tuple[int, int], blocking: _Blocking, path):  # noqa: ANN001, ANN202
-    """Read rows of one strip or tile as (rows, columns, contiguous samples), or None if empty.
-
-    Uncompressed pieces are read straight from the file, only the rows wanted;
-    compressed pieces are decoded whole.
-    """
-    keyframe = page.keyframe
-    offset, count = int(page.dataoffsets[index]), int(page.databytecounts[index])
-    if offset == 0 or count == 0:
-        return None
-    fh = page.parent.filehandle
-    a, b = rows
-    try:
-        if blocking.partial_rows:
-            unit_rows, unit_cols = blocking.unit
-            per_row = blocking.row_nbytes // np.dtype(keyframe.dtype).itemsize
-            stored = np.dtype(page.parent.byteorder + np.dtype(keyframe.dtype).char)
-            with fh.lock:
-                fh.seek(offset + (z * unit_rows + a) * blocking.row_nbytes)
-                data = fh.read_array(stored, (b - a) * per_row)
-            return data.reshape(b - a, unit_cols, per_row // unit_cols)
-        with fh.lock:
-            fh.seek(offset)
-            data = fh.read(count)
-            decode = keyframe.decode
-        kwargs = {}
-        if keyframe.compression in _JPEG_COMPRESSIONS:
-            kwargs = {"jpegtables": page.jpegtables, "jpegheader": keyframe.jpegheader}
-        segment, _, _ = decode(data, index, **kwargs)
-    except Exception as exc:  # decoding errors come from many codecs
-        raise PlaneReadError(f"Part {index} of a page of {path} cannot be read: {exc}") from exc
-    if segment is None:
-        return None
-    return segment[z, a:b]
+    return _block_plane(layout, mapping, position, read)
 
 
 # OME-Zarr ------------------------------------------------------------------------------

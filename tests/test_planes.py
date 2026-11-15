@@ -22,6 +22,7 @@ from morphobricks_preprocessing import (
     read_plane,
     read_sample_plane,
     review_axes,
+    tiff_pieces,
 )
 from morphobricks_preprocessing import planes as planes_module
 from tiff_tree import write_data, write_file
@@ -431,7 +432,7 @@ def test_check_planes_reports_planes_read_in_blocks(tmp_path, monkeypatch):
 
     for cls in (tifffile.TiffFile, tifffile.TiffPage, tifffile.TiffFrame, tifffile.TiffPageSeries):
         monkeypatch.setattr(cls, "asarray", fail)
-    monkeypatch.setattr(planes_module, "_read_segment", fail)
+    monkeypatch.setattr(tiff_pieces, "_read_segment", fail)
     (found,) = check_planes(tmp_path, review, memory_limit=small)
     assert found.code == "planes_read_in_blocks"
     assert found.severity is Severity.WARNING
@@ -447,16 +448,15 @@ def test_check_planes_reports_planes_read_in_blocks(tmp_path, monkeypatch):
 def segment_reads(monkeypatch):
     """Count strips and tiles read, and fail if a whole page or series is decoded."""
     reads = []
-    original = planes_module._read_segment
+    original = tiff_pieces._read_segment
 
     def counting(page, index, *args):
-        reads.append(index)
-        return original(page, index, *args)
+        return reads.append(index) or original(page, index, *args)
 
     def fail(*args, **kwargs):
         raise AssertionError("a whole page or series was decoded")
 
-    monkeypatch.setattr(planes_module, "_read_segment", counting)
+    monkeypatch.setattr(tiff_pieces, "_read_segment", counting)
     for cls in (tifffile.TiffFile, tifffile.TiffPage, tifffile.TiffFrame, tifffile.TiffPageSeries):
         monkeypatch.setattr(cls, "asarray", fail)
     return reads

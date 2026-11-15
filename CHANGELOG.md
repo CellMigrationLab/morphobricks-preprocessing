@@ -6,6 +6,22 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+### Changed
+
+- **One decode per stored piece for all the channels of a window** (#294, item "one decode per
+  segment for all samples"; seen on CMU-1 in #304): `read_window` (and so
+  `RunInputs.read_window`) reads channels that share stored pieces together. A TIFF strip or
+  tile with interleaved samples (contiguous RGB) is decoded once per window, not once per
+  sample, and an OME-Zarr chunk longer than 1 along C once for every channel in it. Channels
+  stored apart (a page per channel, planar samples) are still read each from its own pieces.
+  Every window is bitwise unchanged. The pieces are written straight into the result, so the
+  TIFF memory estimate no longer counts a separate copy of one channel; the OME-Zarr estimate
+  counts zarr's copy of every channel read together. `WindowPlan.reads` gives the pieces read
+  in all. The TIFF block reader moved from `planes` to `tiff_pieces`, and `PlaneReadError`
+  and `PlaneMemoryError` to `plane_errors` (still exported by `planes` and the package).
+
 ## v0.5.6 (15 November 2026)
 
 A patch release for lazy loading, additive only (owner decision of 15 November 2026: patch

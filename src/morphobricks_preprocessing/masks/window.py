@@ -139,7 +139,7 @@ def mask_window_plan(
     """
     check_level(level)
     with _mask_source(mask, masks_folder, experiment_root, memory_limit) as (source, _, _):
-        plan = _plan(source.layout, bounds, (0,), memory_limit)
+        plan = _plan(source, bounds, (0,), memory_limit)
     return replace(plan, channels=(), shape=plan.shape[1:])
 
 
