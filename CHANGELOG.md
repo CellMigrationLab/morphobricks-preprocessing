@@ -6,6 +6,24 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+### Added
+
+- **`RunInputs.objects_read_plan(selection, mask_id)`** (#316): the memory of one
+  `read_objects` plane, from the mask's header only, as an `ObjectsReadPlan` (also
+  `morphobricks_preprocessing.ObjectsReadPlan`). `read_objects` returns `int32` whatever the
+  stored type, while `mask_window_plan` and a header-based size count the stored type, so a
+  `uint8` object set was estimated at a quarter of its result. `memory_estimate` is the `int32`
+  result (4 bytes per pixel: 4 times the stored size of a `uint8` mask) plus, for a `binary`
+  mask converted by `connected_components`, `masks.binary.labelling_bytes`: an upper bound, for
+  every plane of that shape and type, of what `label_binary` allocates beside its input and
+  result (the larger of its value check and its labelling: the foreground, SciPy's label table
+  for at most one provisional label per 2 × 2 block, its line buffers). The stored plane is
+  given as `stored_bytes`, outside the estimate. The selection and the mask are refused as
+  `read_objects` refuses them. The region-read estimate (`mask_window_plan`) is unchanged, and
+  no output changes.
+
 ## v0.6.1 (16 November 2026)
 
 A patch release: the fixes of an external audit of v0.6.0 (#314) and the notebook's RGB header

@@ -151,6 +151,7 @@ from .masks import (
     read_mask_file,
 )
 from .masks.binary import label_binary
+from .masks.objects import ObjectsReadPlan
 from .metadata import (
     ImageMetadata,
     MetadataReport,
@@ -315,6 +316,7 @@ __all__ = [
     "MetadataReport",
     "NgffError",
     "NgffImage",
+    "ObjectsReadPlan",
     "PairRelation",
     "PhysicalSizes",
     "Plane",

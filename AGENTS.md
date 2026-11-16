@@ -222,7 +222,8 @@ src/morphobricks_preprocessing/
                     read_plane and read_mask; run_inputs_mask.py RunInputs.mask_types, read_mask,
                     read_mask_window, mask_window_plan (one recorded-mask check for all) and
                     read_objects (a resolved objects use, its recorded conversion applied by
-                    masks.binary.label_binary; Spec ADR 0005)
+                    masks.binary.label_binary; Spec ADR 0005) and objects_read_plan (its
+                    memory from the header: int32 result plus labelling_bytes; #316)
   mask_conversion.py RunInputs.binary_to_instances / classes_to_binary (Spec ADR 0005 BM12, step
                     2b): new mask files from a checked mask, refused before any read or write
                     (check_class_image, collisions, idempotent retry); mask_lineage.py their
@@ -278,7 +279,8 @@ src/morphobricks_preprocessing/
                     window.py read_mask_window/mask_window_plan (an exact window of one mask
                     plane in its stored integer type, through windows.py's block reading);
                     binary.py label_binary (the one labeller: 8-connected, CONNECTIVITY,
-                    STRUCTURE), objects.py check_object_set (in-memory object sets)
+                    STRUCTURE) and labelling_bytes (its working-memory bound), objects.py
+                    check_object_set (in-memory object sets) and ObjectsReadPlan
   mask_checks.py    mask checks with the confirmed roles: mask_size_issues (Y/X by role),
                     mask_issues (a run's mask issues; images with axis errors skipped)
   mask_review.py    what the notebook shows about the masks: mask_type_rows, and

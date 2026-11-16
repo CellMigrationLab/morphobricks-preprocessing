@@ -1,17 +1,93 @@
-"""An in-memory object set (Python API): an integer instance array, nothing else (ADR 0005 BM4).
+"""Object sets: the in-memory check (ADR 0005 BM4) and the memory of an objects read (#316).
 
-A boolean array is accepted only as a region (normalization's ``check_region``); no in-memory
-API converts, labels or carries ``binary_mask_policy``. The refusal is built by the one
-constructor, :func:`.mask_rules.refuse_not_instances`, and raised here unchanged.
+An in-memory object set is an integer instance array, nothing else. A boolean array is
+accepted only as a region (normalization's ``check_region``); no in-memory API converts, labels
+or carries ``binary_mask_policy``. The refusal is built by the one constructor,
+:func:`.mask_rules.refuse_not_instances`, and raised here unchanged.
+
+:func:`objects_read_plan` says, from a mask's header, what ``RunInputs.read_objects`` costs:
+its result is ``int32`` whatever the stored pixel type.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
+from ..mask_requests import CONNECTED_COMPONENTS
 from ..mask_rules import refuse_not_instances
+from .binary import labelling_bytes
 
-__all__ = ["check_object_set"]
+__all__ = ["ObjectsReadPlan", "check_object_set", "objects_read_plan"]
+
+OBJECT_LABELS = np.dtype(np.int32)
+"""The pixel type of every object set ``read_objects`` returns."""
+
+
+@dataclass(frozen=True)
+class ObjectsReadPlan:
+    """What one ``RunInputs.read_objects`` plane costs, from the mask's header (issue #316).
+
+    Attributes
+    ----------
+    shape
+        ``(height, width)`` of the plane and of the result.
+    stored_dtype
+        The mask's stored pixel type (what ``mask_window_plan`` and a region read count).
+    dtype
+        The result's pixel type: always ``int32``.
+    conversion
+        The selection's recorded conversion: None, or ``"connected_components"``.
+    stored_bytes
+        The stored plane, ``shape`` times the stored bytes per pixel. Not part of
+        ``memory_estimate``; given for a caller that also counts the plane being read.
+    result_bytes
+        The ``int32`` result, 4 bytes per pixel (4 times ``stored_bytes`` for a ``uint8`` mask).
+    conversion_bytes
+        For ``connected_components``: :func:`.binary.labelling_bytes`, an upper bound of what
+        the labeller allocates beside its result; 0 without a conversion.
+    memory_estimate
+        ``result_bytes + conversion_bytes``: the estimate of an objects read.
+    """
+
+    shape: tuple[int, int]
+    stored_dtype: np.dtype
+    dtype: np.dtype
+    conversion: str | None
+    stored_bytes: int
+    result_bytes: int
+    conversion_bytes: int
+    memory_estimate: int
+
+
+def objects_read_plan(
+    shape: tuple[int, int], stored_dtype: np.dtype, conversion: str | None
+) -> ObjectsReadPlan:
+    """Return the :class:`ObjectsReadPlan` of a ``(height, width)`` plane of ``stored_dtype``.
+
+    Raises
+    ------
+    ValueError
+        For a conversion other than None or ``"connected_components"``.
+    """
+    if conversion not in (None, CONNECTED_COMPONENTS):
+        raise ValueError(f"an objects read has no conversion {conversion!r}")
+    shape = (int(shape[0]), int(shape[1]))
+    stored_dtype = np.dtype(stored_dtype)
+    pixels = shape[0] * shape[1]
+    result = pixels * OBJECT_LABELS.itemsize
+    work = labelling_bytes(shape, stored_dtype) if conversion else 0
+    return ObjectsReadPlan(
+        shape=shape,
+        stored_dtype=stored_dtype,
+        dtype=OBJECT_LABELS,
+        conversion=conversion,
+        stored_bytes=pixels * stored_dtype.itemsize,
+        result_bytes=result,
+        conversion_bytes=work,
+        memory_estimate=result + work,
+    )
 
 
 def check_object_set(value: object, *, name: str) -> None:

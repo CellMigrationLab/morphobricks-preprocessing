@@ -6,9 +6,10 @@ decoding only the stored pieces the window intersects (:mod:`.masks.window`), an
 :meth:`MaskInputs.mask_window_plan` says, from the header only, what that read costs.
 :meth:`MaskInputs.read_objects` reads the objects of a resolved selection's ``objects`` use,
 applying its recorded conversion with the one labeller (:func:`.masks.binary.label_binary`,
-Spec ADR 0005 BM6). All four refuse a mask as the whole read refuses it: no recorded mask of
-that type, a mask the mask step has not checked (``A_MASK_UNCHECKED``), a mask changed since the
-run or stored otherwise than recorded.
+Spec ADR 0005 BM6), and :meth:`MaskInputs.objects_read_plan` says, from the header only, what
+that read costs (``int32`` labels, issue #316). All five refuse a mask as the whole read refuses
+it: no recorded mask of that type, a mask the mask step has not checked (``A_MASK_UNCHECKED``),
+a mask changed since the run or stored otherwise than recorded.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ from .manifest import RunManifest
 from .masks import FOLDER, MaskFile, check_labels, read_mask
 from .masks.binary import label_binary
 from .masks.header import _mask_header
+from .masks.layout import _yx
+from .masks.objects import ObjectsReadPlan, objects_read_plan
 from .masks.read import read_mask_plane
 from .masks.window import mask_window_plan, read_mask_window
 from .planes import DEFAULT_MEMORY_LIMIT
@@ -130,6 +133,25 @@ class MaskInputs:
             return label_binary(pixels, name=mask.path)
         check_labels(pixels, f"the mask {mask.path}")
         return pixels.astype(np.int32)
+
+    def objects_read_plan(self, selection: FovSelection, mask_id: str) -> ObjectsReadPlan:
+        """Return what one :meth:`read_objects` plane costs, from the mask's header only.
+
+        The estimate counts the ``int32`` result, 4 bytes per pixel whatever the stored type (a
+        ``uint8`` mask: 4 times its stored size), plus, for ``connected_components``, an upper
+        bound of the labeller's own working memory (:func:`.masks.binary.labelling_bytes`);
+        see :class:`.masks.objects.ObjectsReadPlan`. The region-read estimate,
+        :meth:`mask_window_plan`, is the stored type's. No pixel is read and no digest
+        computed; the selection and the mask are refused as :meth:`read_objects` refuses them.
+
+        Raises
+        ------
+        ValueError, RunInputsError, MaskUncheckedError
+            As :meth:`read_objects`, before any pixel is read.
+        """
+        use = _objects_use(selection, mask_id)
+        mask, _ = self._recorded_mask(selection.relative_path, use.source_type, None, None)
+        return objects_read_plan(tuple(_yx(mask.axes, mask.shape)), mask.dtype, use.conversion)
 
     def read_mask_window(
         self,

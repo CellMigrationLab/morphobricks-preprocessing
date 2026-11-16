@@ -17,7 +17,7 @@ from scipy import ndimage
 from ..mask_rules import check_binary_values
 from . import labels
 
-__all__ = ["CONNECTIVITY", "STRUCTURE", "label_binary"]
+__all__ = ["CONNECTIVITY", "STRUCTURE", "label_binary", "labelling_bytes"]
 
 CONNECTIVITY = 8
 """The number of neighbours of a pixel that join it to an object: edges and corners."""
@@ -74,7 +74,7 @@ def label_binary(mask: np.ndarray, *, name: str = "the mask") -> np.ndarray:
     limit = labels.LARGEST_LABEL
     # At most one component per 2 x 2 block (8-connectivity): below that bound int32 cannot
     # overflow; above it the count is taken in int64 first and refused when too large.
-    bound = math.ceil(mask.shape[0] / 2) * math.ceil(mask.shape[1] / 2)
+    bound = _most_components(mask.shape)
     if bound <= limit:
         found = np.empty(mask.shape, dtype=np.int32)
         ndimage.label(foreground, STRUCTURE, output=found)
@@ -87,3 +87,36 @@ def label_binary(mask: np.ndarray, *, name: str = "the mask") -> np.ndarray:
             "it is not labelled (never wrapped, widened or truncated)"
         )
     return wide.astype(np.int32)
+
+
+def labelling_bytes(shape: tuple[int, int], dtype: np.dtype) -> int:
+    """Return an upper bound of the memory :func:`label_binary` allocates beside its result.
+
+    For a ``(height, width)`` plane of ``dtype``, in bytes, from the shape and type only (no
+    pixel is read). The input plane and the ``int32`` result (4 bytes per pixel) are not
+    counted. The two steps run one after the other, so the larger of the two is returned:
+
+    - the value check: ``numpy.unique``'s sorted copy of the plane (its own bytes per pixel)
+      and its flags, counted at 2 bytes per pixel;
+    - the labelling: the boolean foreground (1 byte per pixel); SciPy's label table, 8-byte
+      entries, one per provisional label and per pixel of a line, at most one provisional label
+      per 2 x 2 block (8-connectivity), counted three times for its doublings while it grows
+      (SciPy 1.18 ``_ni_label``); SciPy's two line buffers; and, for a plane that could hold more
+      components than the ``int32`` limit, the ``int64`` labels (8 bytes per pixel).
+
+    It is an upper bound for every plane of that shape and type, however its foreground lies:
+    a plane of isolated pixels needs the most.
+    """
+    height, width = (int(n) for n in shape)
+    pixels, line, most = height * width, max(height, width) + 2, _most_components(shape)
+    check = pixels * (np.dtype(dtype).itemsize + 2)
+    # The table doubles until it holds ``most + line`` entries, so it ends below twice that;
+    # while it is reallocated the old and the new table are both held: three times in all.
+    table = 3 * 8 * (most + line)
+    wide = 8 * pixels if most > labels.LARGEST_LABEL else 0
+    return max(check, pixels + table + 2 * 8 * line + wide)
+
+
+def _most_components(shape: tuple[int, ...]) -> int:
+    """Return the most 8-connected components a plane of ``shape`` holds: one per 2 x 2 block."""
+    return math.ceil(shape[0] / 2) * math.ceil(shape[1] / 2)
