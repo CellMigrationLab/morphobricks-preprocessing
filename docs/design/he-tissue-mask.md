@@ -209,7 +209,7 @@ position and the reason:
 | A pixel type other than `uint8`, or a C count other than 3 (the run's `dtype`, `c_count`) | `to_scalar` accepts 8-bit sRGB only (`scalar_inputs.py:52-56`). The refusal comes first, with the helper's own message. |
 | A run without a masks folder (`masks_root` is None) | Outputs only go to the masks folder (ADR 0005 §"Outputs") |
 | An unknown rule ID | Lists the known rule IDs |
-| scikit-image is missing | `ImportError` naming the extra `pip install "morphobricks-preprocessing[he-mask]"`. That extra pulls in `morphobricks-normalization[histology]`. Core import stays inert. |
+| scikit-image is missing | `ImportError` naming the extra `pip install "morphobricks-preprocessing[he-mask]"`. That extra pulls in `morphobricks-normalization[histology]`. Core import stays inert: scikit-image, `stain` and the helper's module are imported inside the call, never at package or CLI import. |
 | An output mask ID that breaks experiment-v1 §3.2, is already declared, differs only in case from a declared mask ID or source type, names a type folder that holds files this helper did not write, or names an existing file that is not this same computation | Reuses `_check_output_id`, `_check_case_collision` and the foreign-file and existing-file checks (`mask_conversion.py:389-409`, `:532-566`, `:493-513`); the case-collision refusal is #308's fix `03fa90e` |
 
 The helper reads the plane with `RunInputs.read_plane(fov)`. That returns `(3, Y, X)` R, G, B and
@@ -232,6 +232,12 @@ the image fingerprint again after the read, as `_read_source` does (`mask_conver
   re-reads the digest, writes the line, then renames. A crash leaves a pending line, which is
   rolled back on retry (`mask_lineage.py:12-20`, `:199-215`, `:232-282`). Mask discovery already
   skips the lineage file and the temporary files (`mask_lineage.py:69-71`, `masks/files.py:197`).
+  `ConversionInputs._publish` is **not** reused: it builds a BM12 `ConvertedMask` from
+  `record["class_value"]` (`mask_conversion.py:473-491`, `:489`), a key a BM15 line does not
+  have, and decides reuse with BM12's `_published_before` / `_same_conversion`. The helper calls
+  `roll_back_pending`, `publish_output` and `published_lines` directly, with its own result
+  builder (`TissueMaskResult`: output ID, path, the line's text, `published`, `reusable`,
+  `fractions`) and BM15's own comparator below.
 - **Idempotent retry, with BM15's own comparator** (Spec BM15 "Retry comparator"; it is not
   BM12's `_same_conversion`, `mask_conversion.py:579-589`). An existing output is the same
   computation, and the call is a no-op that returns it, only when both lines have `reusable`
@@ -366,20 +372,57 @@ replaced the draft that stood here, so the two cannot drift). In short:
   `log10`, `log(`, `separate_stains` or `rgb2hed`; the HED matrix is looked up only by the name
   the preset gives (`PRESETS["he_eosin"].matrix`, `stain_presets.py:153`) and only to hash it for
   the rule record.
-- **Refusals:** each row of §2 (channels unit, Z = 2, T = 2, `uint16`, no masks folder, unknown
-  rule, missing scikit-image via a blocked import, each output-ID case incl. case collision with
-  a declared ID and with a source type, foreign file, existing file), each checked to write
-  nothing.
+- **Morphology boundaries (review w F5):** two nucleus pieces touching only diagonally are one
+  8-connected piece (kept or removed together); a piece touching the image border is measured and
+  dilated as clipped by the border, never padded or wrapped; pieces of exactly 14, 15 and 16 px
+  (nuclei, red cells) and 999, 1000 and 1001 px (background, after the opening) check "fewer than
+  N is removed, exactly N is kept"; the dilation disks of radius 1 and 2 and the opening disk of
+  radius 2 match `x*x + y*y <= r*r` pixel by pixel; the clean-up order is checked by a case whose
+  result differs if two steps are swapped.
+- **Red-cell boundaries (B4):** every pixel of the §1 boundary table gives its expected component,
+  including the floored cases and the background edge `(213, 213, 213)` / `(212, 213, 213)`.
+- **Refusals:** each row of §2 (channels unit, Z = 2, T = 2, `uint16`, C = 4, no masks folder,
+  unknown rule, missing scikit-image via a blocked import, each output-ID case incl. case
+  collision with a declared ID and with a source type, foreign file, existing file, an image path
+  not in the run), each checked to write nothing and to read no pixel.
+- **The FOV from the run (B5):** a hand-built `Fov` with the right path but `image_type =
+  "channels"`, wrong axes, counts or dtype gives exactly the result of the run's own `Fov` (the
+  attributes are ignored); a hand-built `rgb` `Fov` for a position the run declares `channels` is
+  refused; the lineage `rgb_header_override` equals the run's per-image record for a used, an
+  unused (`header_already_rgb`) and an undeclared override.
+- **Code identity (B1):** a verified install records `vcs_commit` or `record_sha256` and
+  `reusable` `true`; an editable install, a missing `RECORD` and a file whose hash differs each
+  record `unverified` with its reason and `reusable` `false`, the file is still written, and a
+  retry is refused (never a no-op). The rule record's `rule_sha256` is recomputed from the line;
+  a changed HED matrix hash, rule `status`, NumPy, scikit-image or SciPy version is refused on
+  retry.
 - **Lineage round trip:** write, re-read the line with the extended reader, check every key and
-  the digests; a retry is a no-op (`published` False); a changed threshold table, image or
-  scikit-image version is refused; a pending line (crash between line and rename) is rolled
-  back; BM12 lines in other folders still read; `RunInputs.open` still succeeds before the
-  output is declared (`unrecorded.py:108`).
+  the digests; a retry is a no-op (`published` False); a changed rule record, image or library
+  version is refused; a pending line (crash between line and rename) is rolled back; BM12 lines
+  in other folders still read; `RunInputs.open` still succeeds before the output is declared
+  (`unrecorded.py:108`).
+- **BM12 reader after the dispatch (review w F1):** with the reader now selecting the schema by
+  `operation`, BM12 lines are still refused for: a missing key, an extra key (a BM15 key such as
+  `rule` included), keys out of order, a duplicate key in one line, a `root` other than
+  `"masks"` (`"experiment"` included) in `source` or `output`, an unknown `operation`, and a
+  BM15 line carrying BM12's `connectivity` or `class_value`. All but one are the same refusal
+  as on `main`, and the existing BM12 tests pass unchanged. The exception is duplicates: today
+  `json.loads` keeps the last of two equal keys, so a line whose last key (`helper_version`) is
+  repeated is read silently with its second value (`mask_lineage.py:148-151`). The extended
+  reader parses with an `object_pairs_hook` that refuses a duplicate key at any depth, in BM12
+  and BM15 lines alike (ADR 0005: "keys exactly these"); this is a new refusal, tested on its
+  own.
 - **Declared and used:** declare the output `binary`, run the mask step (it passes BM11), read it
   with `check_region`, and refuse it as objects with `A_MASK_NOT_INSTANCES`.
-- **Untouched runs:** `import morphobricks_preprocessing` imports neither scikit-image nor the
-  helper's module. The existing run and golden tests pass byte for byte unchanged. A run that
-  never calls the helper writes the same files as `main`.
+- **Untouched runs and a core-only install (review w F4):** in a subprocess with a core-only
+  install (no `he-mask` extra, scikit-image absent, enforced by an import blocker),
+  `import morphobricks_preprocessing`, `RunInputs.open` and the CLI's `--help` and every other
+  command succeed and leave `skimage`, `morphobricks_normalization.stain` and the helper's module
+  out of `sys.modules`; the helper, the preview and `tissue-mask` each fail with the `ImportError`
+  naming `pip install "morphobricks-preprocessing[he-mask]"` and write nothing. The `tissue-mask`
+  CLI path is tested end to end (arguments, exit codes, the files and line written, a no-op
+  retry, a refusal's message and exit code). The existing run and golden tests pass byte for
+  byte unchanged. A run that never calls the helper writes the same files as `main`.
 - **Notebook:** the card's disabled reasons, the preview writing nothing, and the write happening
   only on click.
 
@@ -407,10 +450,10 @@ replaced the draft that stood here, so the two cannot drift). In short:
   concept is claimed. Written acceptance criteria come first (§1: the four presentation images,
   hard RGB boundary cases, at least two scanners including CMU-1 and Zenodo 4550300). The
   numbers stay provisional, and are named so, until a report meets them.
-- **Q5. normalization functions outside its contract.** `optical_density.optical_density`,
-  `check_white` and `scalar_inputs.rgb_yxc` exist but are not listed as API in normalization's
-  `contract.md` §3.4. *Recommend a small, documentation-only normalization PR* that names them as
-  stable before I1. The alternative is a public `stain.optical_density_map` wrapper.
+- **Q5 (decided 16 November 2026).** `optical_density.optical_density`, `check_white` and
+  `scalar_inputs.rgb_yxc` are documented as stable normalization APIs, in a documentation-only
+  normalization PR, as a prerequisite for I1 (P2, §9), not for the Spec merge. This design
+  changes nothing in normalization.
 - **Q7 (decided 16 November 2026, after review w).** A null commit is not accepted. The lineage
   records a verified code identity (commit, or the installed distribution's `RECORD` hash) for
   normalization and preprocessing, the NumPy and scikit-image versions, and the complete rule
@@ -422,6 +465,12 @@ replaced the draft that stood here, so the two cannot drift). In short:
 I1 (the helper) starts only when each of these holds:
 
 - **P1. Spec:** MorphoBricks-Spec #45 (ADR 0005 BM15) is merged.
+- **P2. Stable normalization APIs (owner decision on Q5; review w F3).** A documentation-only
+  normalization PR names `optical_density.optical_density(rgb, white) -> tuple[np.ndarray,
+  float]`, `optical_density.check_white(white) -> np.ndarray` and `scalar_inputs.rgb_yxc(pixels,
+  axes) -> np.ndarray` as stable API in its `contract.md` (signatures, return values including
+  the `(od, floored_fraction)` pair, units, floor, refusals), and I1 pins the release that
+  contains it. It is a prerequisite for I1, not for the Spec merge. Not done in this PR.
 - **P3. Downstream consumer gate (review w B3).** The consumers the card and §3 name must, at the
   commits the I1 PR pins and cites, (a) give `empty_region` for an all-zero region: the image is
   `valid_empty` with reason `empty_region`, no patch is made in it, its values are undefined
@@ -462,3 +511,6 @@ I1 (the helper) starts only when each of these holds:
       the guarantee only for described runs.
   - **(a) in CellPatcher:** CellPatcher does not measure; its random mode inside an all-zero
     region is outside this gate (fiberfeatures makes no patch there, `batch.py:216-219`).
+- **P4. Tests:** the §7 tests, including F1 (BM12 reader), F4 (core-only install, CLI) and F5
+  (morphology boundaries), are in the I1 PR. The acceptance report of §1 is **not** an I1
+  prerequisite: I1 ships the rule as provisional, and freezing is a later, separate step.
