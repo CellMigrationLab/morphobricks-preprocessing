@@ -32,7 +32,9 @@ v0.5.1: no run before v0.5.1 is read.)
   **Memory cap (GiB)** shown and passed (`max_ram`) with Auto only (0: no cap). `"auto"`
   alone bounds the workers by the CPUs only, so the cap starts at half of the memory available
   when the notebook starts (`run.workers.available_memory`, standard library only: Linux
-  `MemAvailable` lowered to the control group's remaining limit, Windows
+  `MemAvailable` lowered to the remaining limit of the process's control group, read from
+  `/proc/self/cgroup`, and of every group above it (a batch job's or a systemd slice's limit
+  counts without a cgroup namespace), Windows
   `GlobalMemoryStatusEx`, elsewhere the physical memory), rounded down to 0.1 GiB, and a line
   says the figure. When it cannot be read, or half of it is below 0.5 GiB, the notebook starts
   with 1. The command line's `--workers` stays 1. A help line says the outputs are

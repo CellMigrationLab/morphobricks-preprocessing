@@ -67,22 +67,33 @@ def available_cpus() -> int:
 
 
 def available_memory(
-    meminfo: Path = Path("/proc/meminfo"), cgroup: Path = Path("/sys/fs/cgroup")
+    meminfo: Path = Path("/proc/meminfo"),
+    cgroup: Path = Path("/sys/fs/cgroup"),
+    membership: Path = Path("/proc/self/cgroup"),
 ) -> int | None:
     """Return the bytes of memory this process could still use now, or None when unknown.
 
     Standard library only. Linux: ``MemAvailable`` of ``meminfo``, lowered to what the
-    process's control group still allows (cgroup v2 ``memory.max - memory.current``, or v1
-    ``memory/memory.limit_in_bytes - memory/memory.usage_in_bytes``) when it sets a limit.
-    Windows: ``GlobalMemoryStatusEx``'s available physical memory. Elsewhere (macOS) the
-    physical memory (``SC_PHYS_PAGES``), as no available figure is offered. It reads, never
-    allocates, and is a snapshot: other programs change it.
+    process's control groups still allow (cgroup v2 ``memory.max - memory.current``, or v1
+    ``memory/memory.limit_in_bytes - memory/memory.usage_in_bytes``) where they set a limit:
+    the group ``membership`` names and each group above it, under the ``cgroup`` mount, and
+    the mount itself (a container's own group). A job or session limit set on the process's
+    group (a batch scheduler, a systemd slice) therefore counts even without a cgroup
+    namespace. Windows: ``GlobalMemoryStatusEx``'s available physical memory. Elsewhere
+    (macOS) the physical memory (``SC_PHYS_PAGES``), as no available figure is offered. It
+    reads, never allocates, and is a snapshot: other programs change it.
     """
     found = _meminfo_available(meminfo)
     if found is not None:
-        limits = [found, _cgroup_room(cgroup / "memory.max", cgroup / "memory.current")]
-        v1 = cgroup / "memory"
-        limits.append(_cgroup_room(v1 / "memory.limit_in_bytes", v1 / "memory.usage_in_bytes"))
+        limits = [found]
+        for kind, folder in (("v2", cgroup), ("v1", cgroup / "memory")):
+            names = (
+                ("memory.max", "memory.current")
+                if kind == "v2"
+                else ("memory.limit_in_bytes", "memory.usage_in_bytes")
+            )
+            for group in _cgroup_folders(folder, _cgroup_path(membership, kind)):
+                limits.append(_cgroup_room(group / names[0], group / names[1]))
         return min(n for n in limits if n is not None)
     if os.name == "nt":
         return _windows_available()
@@ -104,6 +115,28 @@ def _meminfo_available(meminfo: Path) -> int | None:
         if name == "MemAvailable" and fields and fields[0].isdigit():
             return int(fields[0]) * 1024  # kB
     return None
+
+
+def _cgroup_path(membership: Path, kind: str) -> str:
+    """Return the process's v2 (``0::``) or v1 ``memory`` group path of ``membership``, or ""."""
+    try:
+        lines = membership.read_text(encoding="ascii").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return ""
+    for line in lines:
+        number, _, rest = line.partition(":")
+        controllers, _, path = rest.partition(":")
+        if (kind == "v2" and number == "0" and controllers == "") or (
+            kind == "v1" and "memory" in controllers.split(",")
+        ):
+            return path
+    return ""
+
+
+def _cgroup_folders(mount: Path, path: str) -> list[Path]:
+    """Return the mount and the folders of ``path`` under it, from the group up to the mount."""
+    parts = [p for p in path.split("/") if p and p not in (".", "..")]
+    return [mount.joinpath(*parts[:n]) for n in range(len(parts), -1, -1)]
 
 
 def _cgroup_room(limit: Path, usage: Path) -> int | None:
