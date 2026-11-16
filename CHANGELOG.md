@@ -6,55 +6,26 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
-## Unreleased
+## v0.6.0 (16 November 2026)
 
-### Added: the mask conversion helpers (Spec ADR 0005, step 2b)
+MorphoBricks-Spec ADR 0005 steps 2 and 2b ("one policy for binary masks"), the owner's "one
+release per ADR 0005 step": resolver contract version 3 and `RunInputs.read_objects` (#307), the
+mask conversion helpers (#308), and the window-read speed-ups merged since v0.5.6 (#305, #306).
+It is **breaking**, so the minor version moves (0.5.6 to 0.6.0, semantic versioning before 1.0,
+`docs/development.md`): a `binary` mask is strict at the mask step, the resolver contract is
+version 3 (consumers that accept exactly version 2 refuse it), and the bricks read an `objects`
+use with `read_objects` instead of labelling it themselves. Run manifest version 5,
+`plane_histograms.csv` schema version 5, `mask_relationships.json` report version 4 and
+conversion record version 4 are those of v0.5.6: the table and the manifest of a valid run are
+unchanged, and a v0.5.6 run is read as it is. Normalization is pinned at v0.7.0 and the Spec at
+`bf68d30`. The worker threads of #309 are not in this release.
 
-Step 2b of MorphoBricks-Spec [ADR 0005](https://github.com/CellMigrationLab/MorphoBricks-Spec/blob/main/docs/adr/0005-binary-masks.md)
-(BM12, Spec `bf68d30`): masks are converted only on purpose, into **new** mask files the user
-then declares, checks and reads like any mask. Nothing else changes for a run that does not
-call them.
-
-- `RunInputs.binary_to_instances(fov, mask_id, *, output_mask_id)` writes one `int32`
-  `instances` mask: each plane of a `binary` mask labelled by `label_binary` (8-connected, equal
-  to `read_objects` plane for plane). `RunInputs.classes_to_binary(fov, mask_id, *,
-  output_prefix)` writes one `uint8` `binary` mask `<prefix>_class<value>` per class value of a
-  2-D class image declared `parent_labels` or `instances` (class 0 none; "no class present" for
-  an all-zero image). Module `mask_conversion` (with `check_class_image(pixels, *, mask_id,
-  path)`, `MaskConversionResult`, `ConvertedMask`, both re-exported) and `mask_lineage`.
-- Refused before any pixel is read and anything written, with fixed messages: an undeclared
-  mask ID (naming the declared ones), a label image inside an OME-Zarr, a representation the
-  helper does not convert, a file `not yet checked` or changed since its check
-  (`A_MASK_UNCHECKED`, the resolver's message), a binary file with several Z planes, a class
-  image that is not one 2-D integer plane of classes 0 to 2,147,483,647; an output mask ID that
-  breaks the mask ID rules, is declared, differs only in case from a declared mask ID or source
-  type (`E_ID_CASE_COLLISION`: it could never be declared), or names a mask type holding files the
-  conversion did not write, and an existing output file, unless it is the same conversion already published
-  (same source in every key, output, operation and helper version, file unchanged): a no-op.
-- Outputs go to `<output mask ID>/<image folders>/<position ID>.tif` in the run's masks folder,
-  whatever the source's layout. Each has one line of `mask_lineage.jsonl` in its type folder
-  (keys `source`, `output`, `operation`, `connectivity`, `class_value`, `helper`,
-  `helper_version`; `root: "masks"`, paths relative to the masks folder; `content_sha256` of a
-  canonical header and the pixel bytes), published with the file as a pair: temporary file,
-  lineage replaced, rename, rollback on failure; a line whose file is missing is pending and
-  ignored. Mask discovery skips `mask_lineage.jsonl` and the temporary files.
-  `_io.write_text_atomic` gains `sync=`.
-- `RunInputs.open` does not count an output of these helpers as an unrecorded mask while the run
-  has not recorded its mask type (its published lineage line names it; no description of the
-  run can declare it), so a retry opens the run again; every other new mask still refuses it.
-- Command line: `convert-mask --output FOLDER --mask ID (--to-instances NEW_ID | --to-classes
-  PREFIX) [--image PATH]` converts every image with a file of the mask and prints the outputs
-  and the next steps (declare them, run preprocessing and the masks step again).
-- Notebook: the optional card **Convert a mask** under **Describe the masks** (Masks and Run
-  steps) offers the declared masks each helper converts, takes the new mask ID or prefix, and
-  converts every image with one click, showing the files and the next steps.
-
-### Breaking: one policy for binary masks (Spec ADR 0005, step 2)
+### Breaking: one policy for binary masks (Spec ADR 0005, step 2; #307)
 
 Step 2 of MorphoBricks-Spec [ADR 0005](https://github.com/CellMigrationLab/MorphoBricks-Spec/blob/main/docs/adr/0005-binary-masks.md)
 ("one policy for binary masks", accepted 15 November 2026, Spec merge `bf68d30`; ADR 0002
 "Resolver contract version 3"; experiment-v1 §4.5, §4.5b and §8 as amended there). The
-conversion helpers of step 2b (`binary_to_instances`, `classes_to_binary`) are not part of it.
+conversion helpers of step 2b (`binary_to_instances`, `classes_to_binary`) are under Added.
 Every output of a valid input is unchanged: the run's table and manifest, a checked mask's
 status, `mask_relationships.json` (the piece counter's structure is the same 3 × 3 ones) and
 every resolver selection of a request that names each mask once.
@@ -100,29 +71,51 @@ every resolver selection of a request that names each mask once.
 - `mask_pairs.PIECE_STRUCTURE` is `masks.binary.STRUCTURE`, imported, not restated; the piece
   counter uses it. `masks.read.read_mask_plane` reads a mask plane as stored, without the label
   check (`read_mask` is that read plus `check_labels`).
-- Spec re-pinned to `bf68d30` (ADR 0005 merged; only `docs/experiment-v1.md` changed among the
-  vendored files): notebook drafts saved under `b635b7d` are not carried over.
-- **Normalization pinned at v0.7.0** (`@v0.7.0`, tag on `c6a9f9d`; was `@v0.6.1`, `b8aa65b`):
-  the release of ADR 0005 step 1 (`regions.check_region`, `RegionEstimate`,
-  `contracts.refuse_resolver_version`). Preprocessing calls none of it; the pin moves so that the
-  consumers, which pin both preprocessing and normalization v0.7.0, resolve one normalization.
-  The histogram, table, pooling and normalization code preprocessing uses is unchanged in
-  v0.7.0, so every output is unchanged.
-
-**Migration notes** (the ADR's preprocessing row; no version bump yet):
-
-| Before | Now |
-|---|---|
-| `RESOLVER_VERSION == 2`; `Provenance` without a record | `3`; consumers accept exactly `{3}` (`SUPPORTED_RESOLVER_VERSIONS`, never `>= 3`), checked with normalization's `contracts.refuse_resolver_version`, and copy `[c.as_record() for c in provenance.mask_conversions]` under `mask_conversions` in their run record, unchanged |
-| A mask ID twice in a request: `ValueError("a mask ID is requested twice")` | Accepted: send one `MaskRequest` per use and do not merge them; read `FovSelection.masks` by `(mask_id, role)`. Only two conversions of one mask's `objects` use are a `ValueError` |
-| Each route labelled a converted mask with CellPatcher's labeller | Read it with `RunInputs.read_objects(selection, mask_id, t, z)`; connectivity 8, fixed |
-| A conversion on a Z-stack was selected per plane | `A_VOLUME_NOT_SUPPORTED`; there is no Z-stack conversion |
-| `volume_refusal(request)` | `volume_refusals(request, z_counts)` |
-| A `binary` file with {3, 7}, or planes {0, 3} and {0, 7}, passed the mask step | Refused (`R_MASK_CONTRADICTS_REPRESENTATION`, new message): redeclare the mask `instances` or `parent_labels`, or fix the file, and run the mask step again |
-| A float `binary` file was `mask_pixel_type` at the mask step; a negative one stopped the step | `R_MASK_CONTRADICTS_REPRESENTATION` for that file only (save it as integers); `check` and `run` still refuse float masks with `mask_pixel_type` |
-| `description_run_text.representation_issue`, `mask_representation.MAX_BINARY_VALUES` | Removed (`mask_rules.check_binary_values`; `mask_representation.binary_refusals`) |
 
 ### Added
+
+#### The mask conversion helpers (Spec ADR 0005, step 2b; #308)
+
+Step 2b of MorphoBricks-Spec [ADR 0005](https://github.com/CellMigrationLab/MorphoBricks-Spec/blob/main/docs/adr/0005-binary-masks.md)
+(BM12, Spec `bf68d30`): masks are converted only on purpose, into **new** mask files the user
+then declares, checks and reads like any mask. Nothing else changes for a run that does not
+call them.
+
+- `RunInputs.binary_to_instances(fov, mask_id, *, output_mask_id)` writes one `int32`
+  `instances` mask: each plane of a `binary` mask labelled by `label_binary` (8-connected, equal
+  to `read_objects` plane for plane). `RunInputs.classes_to_binary(fov, mask_id, *,
+  output_prefix)` writes one `uint8` `binary` mask `<prefix>_class<value>` per class value of a
+  2-D class image declared `parent_labels` or `instances` (class 0 none; "no class present" for
+  an all-zero image). Module `mask_conversion` (with `check_class_image(pixels, *, mask_id,
+  path)`, `MaskConversionResult`, `ConvertedMask`, both re-exported) and `mask_lineage`.
+- Refused before any pixel is read and anything written, with fixed messages: an undeclared
+  mask ID (naming the declared ones), a label image inside an OME-Zarr, a representation the
+  helper does not convert, a file `not yet checked` or changed since its check
+  (`A_MASK_UNCHECKED`, the resolver's message), a binary file with several Z planes, a class
+  image that is not one 2-D integer plane of classes 0 to 2,147,483,647; an output mask ID that
+  breaks the mask ID rules, is declared, differs only in case from a declared mask ID or source
+  type (`E_ID_CASE_COLLISION`: it could never be declared), or names a mask type holding files the
+  conversion did not write, and an existing output file, unless it is the same conversion already published
+  (same source in every key, output, operation and helper version, file unchanged): a no-op.
+- Outputs go to `<output mask ID>/<image folders>/<position ID>.tif` in the run's masks folder,
+  whatever the source's layout. Each has one line of `mask_lineage.jsonl` in its type folder
+  (keys `source`, `output`, `operation`, `connectivity`, `class_value`, `helper`,
+  `helper_version`; `root: "masks"`, paths relative to the masks folder; `content_sha256` of a
+  canonical header and the pixel bytes), published with the file as a pair: temporary file,
+  lineage replaced, rename, rollback on failure; a line whose file is missing is pending and
+  ignored. Mask discovery skips `mask_lineage.jsonl` and the temporary files.
+  `_io.write_text_atomic` gains `sync=`.
+- `RunInputs.open` does not count an output of these helpers as an unrecorded mask while the run
+  has not recorded its mask type (its published lineage line names it; no description of the
+  run can declare it), so a retry opens the run again; every other new mask still refuses it.
+- Command line: `convert-mask --output FOLDER --mask ID (--to-instances NEW_ID | --to-classes
+  PREFIX) [--image PATH]` converts every image with a file of the mask and prints the outputs
+  and the next steps (declare them, run preprocessing and the masks step again).
+- Notebook: the optional card **Convert a mask** under **Describe the masks** (Masks and Run
+  steps) offers the declared masks each helper converts, takes the new mask ID or prefix, and
+  converts every image with one click, showing the files and the next steps.
+
+#### A decoded-block cache for window grids (#306)
 
 - **A decoded-block cache for window grids** (#304, opt-in): `RunInputs.window_reader(fov, *,
   cache_bytes, memory_limit=...)` opens a `RunWindowReader` whose `read_window(*, t, z, bounds,
@@ -151,6 +144,73 @@ every resolver selection of a request that names each mask once.
   counts zarr's copy of every channel read together. `WindowPlan.reads` gives the pieces read
   in all. The TIFF block reader moved from `planes` to `tiff_pieces`, and `PlaneReadError`
   and `PlaneMemoryError` to `plane_errors` (still exported by `planes` and the package).
+- Spec re-pinned to `bf68d30` (ADR 0005 merged; only `docs/experiment-v1.md` changed among the
+  vendored files): notebook drafts saved under `b635b7d` are not carried over.
+- **Normalization pinned at v0.7.0** (`@v0.7.0`, tag on `c6a9f9d`; was `@v0.6.1`, `b8aa65b`):
+  the release of ADR 0005 step 1 (`regions.check_region`, `RegionEstimate`,
+  `contracts.refuse_resolver_version`). Preprocessing calls none of it; the pin moves so that the
+  consumers, which pin both preprocessing and normalization v0.7.0, resolve one normalization.
+  The histogram, table, pooling and normalization code preprocessing uses is unchanged in
+  v0.7.0, so every output is unchanged.
+
+### Fixed
+
+- **A negative value in one `binary` mask file no longer stops the whole mask step** (part of
+  #307, BM11). It was the label check's error, which stopped the step for every mask; it is now
+  `R_MASK_CONTRADICTS_REPRESENTATION` for that file only, which stays `not yet checked`, and the
+  step goes on with the other masks. A float `binary` file is refused the same way, instead of
+  the mask step's header error `mask_pixel_type`.
+
+### Migration from v0.5.6
+
+**Users.** Open the v0.6.0 notebook (or install `@v0.6.0`) and use the same output folder: the
+run, its experiment description and its histograms are reused (manifest version 5). Notebook
+answers not yet saved under the earlier Spec pin (`b635b7d`) are not carried over: answer those
+steps again. **Run the mask step again** (*Describe the masks*, or `masks` on the command line)
+on every run with a mask declared `binary`: the stricter rule is applied only by the mask step,
+so a file checked by v0.5.6 keeps its status until then. A `binary` file that holds two
+positive values (`{3, 7}`, or planes `{0, 3}` and `{0, 7}`) or floats is then refused with
+`R_MASK_CONTRADICTS_REPRESENTATION`: redeclare the mask `instances` (objects) or `parent_labels`
+(grouped labels), or save the file as integers with only 0 and one other value, and run the
+mask step again. To turn a binary mask into an objects mask, or a class image into one binary
+mask per class, use **Convert a mask** (`convert-mask`), then declare the new mask, run and
+describe the masks again. A Z-stack whose binary mask was used as objects is refused
+(`A_VOLUME_NOT_SUPPORTED`): there is no Z-stack conversion.
+
+**Python callers of preprocessing** (every brick that calls `RunInputs.resolve_request`):
+
+| Before | Now |
+|---|---|
+| `RESOLVER_VERSION == 2`; `Provenance` without a record | `3`; consumers accept exactly `{3}` (`SUPPORTED_RESOLVER_VERSIONS`, never `>= 3`), checked with normalization's `contracts.refuse_resolver_version`, and copy `[c.as_record() for c in provenance.mask_conversions]` under `mask_conversions` in their run record, unchanged |
+| A mask ID twice in a request: `ValueError("a mask ID is requested twice")` | Accepted: send one `MaskRequest` per use and do not merge them; read `FovSelection.masks` by `(mask_id, role)`. Only two conversions of one mask's `objects` use are a `ValueError` |
+| Each route labelled a converted mask with CellPatcher's labeller | Read it with `RunInputs.read_objects(selection, mask_id, t, z)`; connectivity 8, fixed |
+| A conversion on a Z-stack was selected per plane | `A_VOLUME_NOT_SUPPORTED`; there is no Z-stack conversion |
+| `volume_refusal(request)` | `volume_refusals(request, z_counts)` |
+| A `binary` file with {3, 7}, or planes {0, 3} and {0, 7}, passed the mask step | Refused (`R_MASK_CONTRADICTS_REPRESENTATION`, new message): redeclare the mask `instances` or `parent_labels`, or fix the file, and run the mask step again |
+| A float `binary` file was `mask_pixel_type` at the mask step; a negative one stopped the step | `R_MASK_CONTRADICTS_REPRESENTATION` for that file only (save it as integers); `check` and `run` still refuse float masks with `mask_pixel_type` |
+| `description_run_text.representation_issue`, `mask_representation.MAX_BINARY_VALUES` | Removed (`mask_rules.check_binary_values`; `mask_representation.binary_refusals`) |
+
+**Bricks** (Spec ADR 0005, "Breaking changes and migration notes" and "Implementation order",
+steps 3 to 8; each brick is unaffected until its preprocessing pin moves to v0.6.0, and each
+then pins `morphobricks-preprocessing @ v0.6.0` and `morphobricks-normalization @ v0.7.0`). Every
+brick that calls `resolve_request` holds `SUPPORTED_RESOLVER_VERSIONS = frozenset({3})`, checks
+`resolved.provenance.resolver_version` right after `resolve_request` returns and before any
+pixel read, output, record or cache lookup, refuses any other version with normalization's
+`contracts.refuse_resolver_version(found, supported)` (code and message verbatim; never
+`>= 3`), and copies `[c.as_record() for c in provenance.mask_conversions]` unchanged under
+`mask_conversions` in its run record. Every brick that takes a region calls normalization's
+`regions.check_region`, and every brick that refuses a boolean object set uses the shared
+`A_MASK_NOT_INSTANCES` message (`mask_rules.refuse_not_instances`, through
+`masks.check_object_set`).
+
+| Brick (ADR step) | What it must change |
+|---|---|
+| CellPatcher (3) | Remove `label_objects`, `BINARY_MASK_POLICIES`, `CONNECTIVITIES`, `BINARY_MASK_CONNECTIVITY`, `cell.binary_mask_connectivity`, the notebook checkbox "The mask is binary: label its connected components", the in-memory use of `cell.binary_mask_policy`, `_RESOLVED`/`resolved_masks()` and `check_region_mask` (now normalization's `check_region`). File runs read objects with `RunInputs.read_objects` and regions with `check_region`; `cell.binary_mask_policy` stays only as the file-run request field passed to the resolver. In memory a boolean cell mask is `A_MASK_NOT_INSTANCES`; float fraction, random and windowed masks are `MASK_REGION_INVALID` (threshold probability maps first); a Z-stack conversion is refused. `run_config.json`: `mask_conversions` replaces `cell.binary_mask_connectivity` and `preprocessing.mask_conversions`; a config with `binary_mask_connectivity` is refused (delete the key). The resolver-version check; declare and pin normalization. The notebook shows a file run's recorded conversion read-only (BM13) |
+| fiberfeatures (7) | Read objects with `read_objects`; copy the record. A `region` mask is no longer handed to CellPatcher cell mode as cells (cell mode needs an `objects` mask, with the policy for a binary one); an empty analysis region gives undefined rows with `empty_region` instead of stopping; regions use `!= 0`, not `> 0`; the run record keys `binary_mask_policy`/`binary_mask_connectivity` become `mask_conversions`; `labeller_connectivity()` removed; the notebooks' `BINARY_MASK_POLICY` parameter stays the request field. The resolver-version check; declare and pin normalization |
+| MorphoFeature (8, last) | Send one `MaskRequest` per use and aggregate `mask_uses` by `(mask_id, use)` only after resolution; manifest `masks` entries one per `(mask_id, role)`; `mask_conversions` replaces `masks[].conversion/labeller/connectivity` (`connectivity` 2 becomes 8). Read objects with `read_objects`; remove its own policy-conflict and region-policy refusals and pass the resolver's messages on verbatim (no "the run file's masks cannot be resolved" or "the preprocessing run refuses ..." prefix; match codes, not prefixes). `FovInput` accepts boolean regions (`check_region`) and refuses boolean object sets with the shared message; `sampling_mask_empty` becomes the non-refusing ledger reason `empty_region`; `MASK_WINDOW_CONVERTED` only for objects uses, from one preflight. The resolver-version check; cached results whose identity carries the old record or another resolver version are not reused. Declare and pin normalization |
+| MorphoObjects (4) | The boolean object-set message becomes the shared `A_MASK_NOT_INSTANCES` (from `check_object_set`); `restrict_to` uses normalization's `check_region`, so MorphoObjects declares and pins `morphobricks-normalization` itself. Nothing changes for valid inputs |
+| MorphoEmbed (5) | The boolean object-mask refusal becomes `A_MASK_NOT_INSTANCES` (was a dtype-kind message); `BINARY_MASK_POLICY = None` and its explicit argument removed; the stale `ROADMAP.md` lines fixed; declare and pin normalization for `check_region`. Nothing changes for valid inputs |
+| MorphoRelate (6) | A `binary` structure without `binary_mask_policy` gives no `structures.csv` rows (it is a region; its region columns and component-count features stay); rows need the recorded conversion and are then of kind `instance` (add `:connected_components` to the structure's `--mask`, or `binary_mask_policy` in the config, to keep per-component rows; readers of `structure_label_kind = component` read `instance`). Remove its own `BINARY_MASK_POLICIES` copy, labelling call site and structure splitting of binary masks; read objects with `read_objects`; `run_config.json` `masks[].conversion/labeller/connectivity` replaced by `mask_conversions` (`connectivity` 2 becomes 8); in memory a boolean object set is `A_MASK_NOT_INSTANCES`; `restrict_to` and the region columns use `check_region`. Grouping inside `parent_labels` is unchanged (BM14). The resolver-version check; declare and pin normalization |
 
 ## v0.5.6 (15 November 2026)
 

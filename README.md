@@ -19,7 +19,7 @@ from there.
 
 ## Status
 
-Pre-alpha; the current release is v0.5.6 (what is planned next is in
+Pre-alpha; the current release is v0.6.0 (what is planned next is in
 [docs/roadmap.md](docs/roadmap.md)). Implemented and tested:
 
 - Folder discovery and validation, TIFF and OME-Zarr header inspection without reading pixels
@@ -56,12 +56,17 @@ ADR 0002 AR10). Every run needs a published experiment description, and a run wr
 v0.5.1 is refused until it is run again; since v0.5.2 so is a run of v0.5.1 (run manifest
 version 4, before the histogram table's schema version 5), and a folder of copies made by
 v0.5.1 (conversion record version 3): convert the originals again into a new folder. Nothing is
-converted. See the [CHANGELOG](CHANGELOG.md).
+converted. Since v0.6.0 (Spec ADR 0005) a mask declared `binary` must hold, in each file, only
+0 and one other value, as integers or booleans: a file that passed before with two positive
+values, or as floats, is refused at the mask step; redeclare the mask `instances` or
+`parent_labels`, or fix the file, and run the mask step again. The other bricks read resolver
+contract version 3 and an objects use with `RunInputs.read_objects`. See the
+[CHANGELOG](CHANGELOG.md).
 
 ## Installation
 
 ```bash
-pip install "git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.5.6"
+pip install "git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.6.0"
 ```
 
 For development, from a clone:
@@ -71,7 +76,7 @@ pip install -e ".[dev]"
 ```
 
 The optional `notebook` extra installs the widget dependencies for the notebook
-(`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.5.6"`).
+(`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.6.0"`).
 The notebook's first code cell (**1. Install**) can set this up automatically: it uses a compatible nearby
 checkout or installed package, and installs missing requirements into the active kernel. A standalone
 download installs from GitHub if needed (internet access and Git required).
@@ -229,7 +234,7 @@ ruff format .
 pytest
 ```
 
-Coding conventions are described in [docs/development.md](docs/development.md). Planned work after v0.5.6 is in [docs/roadmap.md](docs/roadmap.md).
+Coding conventions are described in [docs/development.md](docs/development.md). Planned work after v0.6.0 is in [docs/roadmap.md](docs/roadmap.md).
 
 ## License
 

@@ -1132,9 +1132,17 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 
 ---
 
-## 11. Status (current state, v0.5.6)
+## 11. Status (current state, v0.6.0)
 
-- **Released:** v0.5.6 (15 November 2026), a patch release for lazy loading: exact window reads
+- **Released:** v0.6.0 (16 November 2026), Spec ADR 0005 steps 2 and 2b (one policy for binary
+  masks), a breaking minor release: resolver contract version 3 (`Provenance.mask_conversions`,
+  `(mask_id, role)` requests, no Z-stack conversion), `RunInputs.read_objects`,
+  `masks.binary.label_binary`, `mask_rules`, `masks.check_object_set`, strict binary at the mask
+  step (BM11), the conversion helpers `RunInputs.binary_to_instances` and
+  `RunInputs.classes_to_binary` with `mask_lineage.jsonl` (BM12; CLI `convert-mask`, notebook
+  card **Convert a mask**); also one decode per stored piece for a window's channels (#294) and
+  the opt-in decoded-block cache `RunInputs.window_reader` (#304); normalization pinned at
+  v0.7.0, Spec at `bf68d30`. v0.5.6 (15 November 2026) was a patch release for lazy loading: exact window reads
   of an image (`read_window`) and of a mask (`read_mask_window`, `mask_window_plan`) and a
   pixel-free `plane_shape` (contract section 9.1); no format change. v0.5.5 (14 November 2026)
   was a pin release: the normalization brick pinned at v0.6.1 (v0.5.4, the same day, brought the RGB header override (Spec RH1) and mask-only requests
@@ -1143,11 +1151,7 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   [docs/archive/plan-milestones-v0.1-v0.4.md](docs/archive/plan-milestones-v0.1-v0.4.md); the older
   status log of this file is in
   [docs/archive/agents-status-history-v0.1-v0.3.md](docs/archive/agents-status-history-v0.1-v0.3.md).
-- **Unreleased** (CHANGELOG "Unreleased"): one decode per stored piece for a window's channels
-  (#294); the opt-in decoded-block cache `RunInputs.window_reader` (#304); Spec ADR 0005 step 2 (one policy for binary masks): resolver contract version 3
-  (`Provenance.mask_conversions`, `(mask_id, role)` requests, no Z-stack conversion),
-  `RunInputs.read_objects`, `masks.binary.label_binary`, `mask_rules`,
-  `masks.check_object_set`, strict binary at the mask step (BM11).
+- **Unreleased:** nothing yet.
 - **Scope:** 2-D per plane (a Z-stack is refused as `z_stack_not_supported`; since v0.5.2 the
   notebook saves Z-stacks as recorded projections); acquisitions may have different channel
   lists (v0.5.2, Stage 3 S3.3: manifest version 5, histogram table schema version 5; units of
