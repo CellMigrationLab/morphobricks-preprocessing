@@ -90,6 +90,18 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
       `rgb_header_override = true` for those folders, and it is never pre-ticked.
     - [ ] Then name the stains, then tag each folder's channels; the extra-stain folder gets
       its own list. The viewer shows each channel with its header name and its folder's tag.
+    - [ ] Unreleased (fast mode, owner decisions of 16 November 2026): **Every imaging unit
+      has the same channels in the same order** is ticked. On a tree whose headers name every
+      channel with the labels exactly, every folder is tagged on opening with no click. On the
+      2 x 2 x 2 tree without header names, tagging the row *Tags of every imaging unit* once
+      fills every unit (rows grouped by condition / biological repeat, then technical repeat;
+      one column per C index), each *same as the first tagged unit*; changing one cell of one
+      unit marks only that unit *edited*. The extra-stain folder (another channel count) and a
+      folder whose header names are swapped are not filled: *Stopped* lists both with the fix,
+      and **Tag this unit on its own** gives the swapped one its own dropdowns. Unticking the
+      statement gives the blocks of identical headers exactly as before: the folders tagged
+      from their headers with no click are untagged again and their header is a proposal to
+      confirm.
 11. **Masks** (step 4).
     - [ ] **Check the masks** runs with progress. *Your masks* offers separate objects,
       regions and *grouped labels (one value per parent, e.g. mitochondria by cell)*, none

@@ -338,8 +338,26 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    stays unticked and the card names the folders that have it.
    Colour folders have the channels R, G and B. Otherwise name what you stained and confirm the list; then tag each folder's channels
    with those names, looking at any image in the viewer (each channel shows its header name
-   and the tag chosen for it). Folders with identical headers are tagged together; the list of
-   those folders, where one can be tagged on its own, is one click away. On a saved experiment whose images were
+   and the tag chosen for it). **Fast mode** is the default: **Every imaging unit has the same
+   channels in the same order** is ticked, your declared assumption (never a guess). A folder
+   whose image header names every channel with one of your labels, exactly as written (or with
+   a header name already saved for that label), is tagged from its header with no click. Tag the
+   row *Tags of every imaging unit* once, looking at the first imaging unit (the first tagged
+   unit): the tags fill every unit without header names, one row per unit (grouped by condition
+   / biological repeat, then technical repeat) and one column per C index. Then go on, or change
+   any cell of any unit: that unit is marked *edited*, the others *same as the first tagged
+   unit*. What is saved is exactly what tagging each unit by hand saves. A contradiction is
+   refused, never filled: a unit with another number of channels, or whose header names are in
+   another order or are other names, stops the step, which lists every such unit with the fix,
+   **Tag this unit on its own** (or all refused units at once); nothing is reordered or guessed.
+   **Add another layout** tags several units with one other number of channels with a row of
+   their own. Colour (RGB) folders keep their own path. On a reopen, a new unit without header
+   names is shown filled and saved only by **Tag the new units like the first tagged unit**.
+   Untick the statement for the strict per-unit page, exactly as before (the units fast mode
+   tagged from their headers with no click are untagged again: their header is a proposal to
+   confirm, as before; your own tags stay): folders with identical
+   headers are tagged together; the list of those folders, where one can be tagged on its own,
+   is one click away. On a saved experiment whose images were
    re-exported with their channels in another order, tag that folder again in the new order:
    each saved channel that moved is listed (*DNA: ctrl/rep1 channel 1 → channel 2*) with
    **Yes, these are the new positions**. Only that click records the change (experiment-v1

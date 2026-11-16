@@ -182,6 +182,7 @@ def test_each_dropdown_offers_the_labels_only(plain, out):
     assert all(drop.value is None for drop in grid.cells.values())  # nothing chosen for you
 
 
+@pytest.mark.usefixtures("statement_off")  # a block test: the statement unticked
 def test_each_unit_has_a_thumbnail_a_c_index_and_its_quoted_header_name(plain, out):
     nb = open_screen(plain, out)
     set_labels(nb, [DNA, ACTIN, PHASE])
@@ -287,6 +288,7 @@ def test_a_label_in_another_column_in_one_unit_is_pointed_out(plain, out):
     assert "DNA is not always in the same column" in grid.usage_html.value
 
 
+@pytest.mark.usefixtures("statement_off")  # a block test: the statement unticked
 def test_a_pre_tag_from_the_header_is_only_a_suggestion_until_confirmed(tmp_path, out):
     root = tree(tmp_path, lambda f: ["DNA", "ACTIN", "PHASE"])
     nb = open_screen(root, out)
@@ -310,6 +312,7 @@ def test_a_pre_tag_from_the_header_is_only_a_suggestion_until_confirmed(tmp_path
     assert not grid.complete  # the image type is still to answer
 
 
+@pytest.mark.usefixtures("statement_off")  # a block test: the statement unticked
 def test_units_with_different_header_names_are_different_layouts(tmp_path, out):
     root = tree(
         tmp_path, lambda f: ["DNA", "ACTIN", "PHASE"] if "ctrl" in f else ["DNA", "ACTIN", "x"]

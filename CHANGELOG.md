@@ -10,6 +10,26 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Added
 
+- **Notebook: fast mode for *Tag channels*** (owner decisions of 16 November 2026). **Every
+  imaging unit has the same channels in the same order** is ticked by default, the user's
+  declared assumption. Headers are trusted: an untagged unit whose header names every channel
+  with a confirmed label, exactly (NFC, the `proposal_for` rule) or as a saved alias, is tagged
+  from it when the page opens, with no click. The row *Tags of every imaging unit* (the first
+  unit in folder order is the first tagged unit) is tagged once and fills every unit without
+  header names, rows grouped by condition / biological repeat / technical repeat; any cell of
+  any unit can then be tuned (that unit is *edited*, the others *same as the first tagged
+  unit*). A contradiction is refused, never prefilled: a unit with another channel count, or
+  whose header names are in another order or other names, is not filled, the step stops and
+  lists every such unit with the fix (**Tag this unit on its own**, or all at once); nothing is
+  reordered or guessed. **Add another layout** tags several units of one other count with a row
+  of their own; colour (RGB) units keep their own path; on a reopen, a new unit without header
+  names is saved only by **Tag the new units like the first tagged unit**. Each unit is saved
+  exactly as tagging it by hand saves it (same draft bytes; tested). The draft and the
+  description record no field for the statement yet (the Spec amendment will add one).
+  Unticked, the page is the strict per-unit path of PR 17b, unchanged: the units tagged from
+  their headers with no click in this session are untagged again (a header is then a proposal
+  to confirm, as before), and ticking again trusts only the aliases saved when the page opened
+  (`channel_matrix`, `notebook_channels_matrix`).
 - **`RunInputs.objects_read_plan(selection, mask_id)`** (#316): the memory of one
   `read_objects` plane, from the mask's header only, as an `ObjectsReadPlan` (also
   `morphobricks_preprocessing.ObjectsReadPlan`). `read_objects` returns `int32` whatever the

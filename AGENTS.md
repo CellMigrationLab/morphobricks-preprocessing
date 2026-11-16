@@ -397,6 +397,12 @@ src/morphobricks_preprocessing/
   notebook_axes_quick.py    the stepper's one-click Confirm these axes (Q3, PR 17b)
   notebook_row_fold.py      reopen: unchanged, answered rows fold; new or changed rows orange
   notebook_channels_rows.py the tag grid's folder rows: pictures (colour for RGB), Enlarge
+  notebook_channels_matrix.py fast mode of Tag channels (default on, owner 16 Nov 2026): "Every
+                            imaging unit has the same channels in the same order"; headers naming
+                            every channel trusted, one row of tags fills the other units, cells
+                            tuned per unit (edited), contradictions refused and tagged on their
+                            own; channel_matrix.py (pure) its rules (trusted, layout_groups,
+                            matrix_rows, set_template, fill)
   notebook_rgb_override.py  the Image type card's RGB header override offer (Spec RH1): shown
                             only for three interleaved samples under a header not saying colour,
                             never pre-ticked; channel_answers.with_override records it

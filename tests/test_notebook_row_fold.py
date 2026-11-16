@@ -89,6 +89,7 @@ def _text(widget):
     return out + "".join(_text(c) for c in getattr(widget, "children", ()))
 
 
+@pytest.mark.usefixtures("statement_off")  # a block test: the statement unticked
 def test_a_changed_reopen_folds_the_unchanged_rows_and_marks_the_new_ones(reopened):
     nb = reopened
     grid, types = nb.channel_grid, nb.type_rows

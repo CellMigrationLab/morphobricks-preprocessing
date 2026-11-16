@@ -28,3 +28,15 @@ def segment_reads(monkeypatch):
 
     monkeypatch.setattr(tiff_pieces, "_read_segment", counting)
     return reads
+
+
+@pytest.fixture
+def statement_off(monkeypatch):
+    """Open *Tag channels* with "same channels in the same order" unticked: the PR 17b blocks.
+
+    The tests of the blocks, "Tag like the saved group" and their reopen folds check the page
+    the user gets by unticking the statement, which must stay exactly as it was.
+    """
+    from morphobricks_preprocessing.notebook_channels_grid import TagGrid
+
+    monkeypatch.setattr(TagGrid, "SAME_CHANNELS", False)

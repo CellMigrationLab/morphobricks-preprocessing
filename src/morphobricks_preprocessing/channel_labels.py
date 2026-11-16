@@ -267,9 +267,20 @@ def proposal_for(layout: UnitLayout, labels: Collection[str]) -> tuple[str, ...]
     names = [n for n in layout.names if n]
     if len(names) != layout.channels or len(set(names)) != len(names):
         return None
-    known = {nfc(label): label for label in labels}
-    found = [known.get(nfc(name)) for name in names]
+    found = [header_label(name, labels) for name in names]
     return None if None in found else tuple(f for f in found if f)
+
+
+def header_label(name: str | None, labels: Collection[str]) -> str | None:
+    """Return the label a raw header name equals exactly (NFC, no trimming, no case folding).
+
+    The rule of :func:`proposal_for`, for one name: None when the name is empty or equals no
+    label.
+    """
+    if not name:
+        return None
+    known = {nfc(label): label for label in labels}
+    return known.get(nfc(name))
 
 
 def usage(
@@ -376,6 +387,7 @@ __all__ = [
     "case_only",
     "fits",
     "generic_reason",
+    "header_label",
     "is_generic",
     "label_problems",
     "look_alike",
