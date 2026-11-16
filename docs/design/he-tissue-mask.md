@@ -246,16 +246,30 @@ the image fingerprint again after the read, as `_read_source` does (`mask_conver
   includes equal pixels from another source, another code identity, another NumPy, scikit-image
   or SciPy version, another rule record (provisional against frozen included), and any line with
   `reusable` `false`.
-- **Code identity (Spec BM15, owner decision on Q7).** For `morphobricks-preprocessing` and
-  `morphobricks-normalization` the helper records `{"distribution", "version", "kind", "value"}`.
-  It is verified only for a non-editable install whose `RECORD` hashes all still match the files
-  on disk (`importlib.metadata.distribution(name).files`, each `PackagePath.hash` checked; once
-  per process). Then `kind` is `"vcs_commit"` with PEP 610 `direct_url.json`
-  `vcs_info.commit_id` when present, else `"record_sha256"` with the SHA-256 of `RECORD`.
-  Otherwise `kind` is `"unverified"`, `value` `null`, plus `reason` (for example `"editable
-  install"`, `"RECORD missing"`, `"hash differs: <file>"`). Then the mask is still written,
-  `reusable` is `false`, the result and the card say "this mask will not be reused on retry",
-  and a retry is refused as a collision.
+- **Code identity (Spec BM15, owner decision on Q7; review w2 B1).** For
+  `morphobricks-preprocessing` and `morphobricks-normalization` the helper records
+  `{"distribution", "version", "verified", "record_sha256", "vcs_commit", "reason"}` (keys exactly
+  these, in this order, all always present). `record_sha256`, the installed-artifact digest, is
+  **always** recorded for a verified identity: the lower-case hex SHA-256 of the exact bytes of
+  the installed `<name>-<version>.dist-info/RECORD` (read as bytes, not parsed first;
+  `importlib.metadata.distribution(name).read_text` is not used because it decodes). `vcs_commit`
+  is PEP 610 `direct_url.json` `vcs_info.commit_id` when present, else `null`, and is extra
+  provenance only. Once per process, after the helper has imported every module it uses from
+  both distributions, the identity is verified only when: the install is not editable (PEP 610
+  `dir_info.editable`); `RECORD` is present and readable; every file `RECORD` lists with a hash
+  still has it (`distribution(name).files`, each `PackagePath.hash` checked); every `.py` and
+  extension-module file (`.so`, `.pyd`) on disk under the distribution's import packages, outside
+  `__pycache__`, is in `RECORD` with a hash; and every `sys.modules` entry of those packages has a
+  `__file__` whose `os.path.realpath` is that of a hashed `RECORD` entry
+  (`distribution(name).locate_file(path)`), so a source tree or another installation earlier on
+  `sys.path` is never taken for this one. Otherwise `verified` is `false` and `reason` names the
+  first failed check (for example `"editable install"`, `"RECORD missing"`, `"hash differs:
+  <file>"`, `"not in RECORD: <file>"`, `"no hash in RECORD: <file>"`, `"module not from this
+  installation: <module>"`). Then the mask is still written, `reusable` is `false`, the result and
+  the card say "this mask will not be reused on retry", and a retry is refused as a collision.
+  The retry comparator compares `code` in every key, so an equal `vcs_commit` with another
+  `record_sha256` is another identity and is refused. Reinstalling the same wheel can change
+  `RECORD` (installer files, `direct_url.json`); that refuses reuse, which is the safe side.
 - **Declaring it** (experiment-v1 §4.5; no new key):
 
   ```toml
@@ -392,10 +406,17 @@ replaced the draft that stood here, so the two cannot drift). In short:
   attributes are ignored); a hand-built `rgb` `Fov` for a position the run declares `channels` is
   refused; the lineage `rgb_header_override` equals the run's per-image record for a used, an
   unused (`header_already_rgb`) and an undeclared override.
-- **Code identity (B1):** a verified install records `vcs_commit` or `record_sha256` and
-  `reusable` `true`; an editable install, a missing `RECORD` and a file whose hash differs each
-  record `unverified` with its reason and `reusable` `false`, the file is still written, and a
-  retry is refused (never a no-op). The rule record's `rule_sha256` is recomputed from the line;
+- **Code identity (B1, review w2 B1/Q7):** a verified install records `verified` `true`, its
+  `record_sha256` (checked against `hashlib.sha256` of the `RECORD` bytes) and `vcs_commit` when
+  `direct_url.json` has one, and `reusable` `true`. Each of these records `verified` `false` with
+  its reason and `reusable` `false`, the file is still written, and a retry is refused (never a
+  no-op): an editable install; a missing `RECORD`; a file whose hash differs; a `.py` file added
+  to the installed package but absent from `RECORD`; a `.py` file listed in `RECORD` without a
+  hash; and a source tree placed earlier on `sys.path`, so an imported module's `__file__` is not
+  in the installation. **Same commit, different build:** two non-editable installs, each
+  matching its own `RECORD` and recording the same `vcs_commit`, whose `RECORD` bytes differ (for
+  example a wheel rebuilt with one more module); the mask written under the first install is
+  refused, never reused, by a retry under the second, and the refusal names `code`. The rule record's `rule_sha256` is recomputed from the line;
   a changed HED matrix hash, rule `status`, NumPy, scikit-image or SciPy version is refused on
   retry.
 - **Lineage round trip:** write, re-read the line with the extended reader, check every key and
@@ -457,8 +478,9 @@ replaced the draft that stood here, so the two cannot drift). In short:
   normalization PR, as a prerequisite for I1 (P2, §9), not for the Spec merge. This design
   changes nothing in normalization.
 - **Q7 (decided 16 November 2026, after review w).** A null commit is not accepted. The lineage
-  records a verified code identity (commit, or the installed distribution's `RECORD` hash) for
-  normalization and preprocessing, the NumPy and scikit-image versions, and the complete rule
+  records a verified code identity for normalization and preprocessing: always the installed
+  distribution's `RECORD` digest, with the commit as extra provenance when recorded (review w2
+  B1), the NumPy and scikit-image versions, and the complete rule
   record with its hash. An unverified identity still writes the mask, marked never to be reused
   on retry. BM15 has its own retry comparator (§3).
 
