@@ -118,10 +118,23 @@ One report, reviewed by the owner, shows all of:
    `(141, 50, 113)`), the floored cases above (`(0, 0, 0)`, `(3, 0, 0)`, `(2, 0, 0)`, `(255, 0,
    0)`), the background edge (`(213, 213, 213)` vs `(212, 213, 213)`), pure white and saturated
    eosin pink; and for each, what the proof of concept decides, where it differs.
-3. **At least two scanners.** Besides the presentation images: the CMU-1 slide (OpenSlide test
-   data, Aperio) and the H&E cores of Zenodo record 4550300 (tissue microarray), with fixed tiles
-   chosen before the rule is run, overlays and per-component shares per tile, and every failure
-   mode named (for example faint eosin, pen marks, folds).
+3. **At least two scanner vendors (owner decision, 16 November 2026: "another public
+   vendor").** Besides the presentation images, three public scanner sets, two of them from
+   Aperio and one from a different vendor, Hamamatsu, with fixed tiles chosen and listed (slide,
+   level, x, y, width, height) before the rule is run, overlays and per-component shares per
+   tile, and every failure mode named (for example faint eosin, pen marks, folds). Acquisition
+   provenance, as the sources state it (review w2 N1; Spec BM15 "Acceptance before freezing"):
+
+   | Set | Vendor, model | Stain | Source | Licence |
+   | --- | --- | --- | --- | --- |
+   | A. `CMU-1.svs` | Aperio (model not stated by the source) | not stated in OpenSlide's index | OpenSlide test data, `https://openslide.cs.cmu.edu/download/openslide-testdata/Aperio/CMU-1.svs`, SHA-256 `00a3d54482cd707abf254fe69dccc8d06b8ff757a1663f1290c23418c480eb30` | CC0-1.0 (OpenSlide `index.json`) |
+   | B. Zenodo 4550300 bright-field TMA cores | Aperio CS2 Digital Pathology Scanner (Leica Biosystems), 40x, per the source paper (Keikhosravi et al. 2020, *Commun. Biol.* 3:414, doi 10.1038/s42003-020-01151-5, "Imaging systems"); not in the record's metadata | H&E (source paper) | `https://zenodo.org/records/4550300` | CC-BY-4.0 (Zenodo record) |
+   | C. `Hamamatsu-2.ndpi` | Hamamatsu NanoZoomer S20MD (file header `Product=C16300-21MDEU`), 2026 | H&E (OpenSlide `index.json`) | OpenSlide test data, `https://openslide.cs.cmu.edu/download/openslide-testdata/Hamamatsu/Hamamatsu-2.ndpi`, SHA-256 `76ae0bc685c177bf008ad9d8a5aa7af85df4f257bb328c654825b5d9a7868396`, credit Hamamatsu | CC0-1.0 (OpenSlide `index.json`) |
+
+   A and B count as one vendor (Aperio); C is the second vendor. The report checks each file's
+   SHA-256 against this table before use. If set C becomes unavailable, its replacement is
+   another public H&E slide from a vendor other than Aperio, with the same provenance columns,
+   chosen before the rule is run.
 
 Until that report is accepted the numbers above are named provisional everywhere: in the rule
 record, the lineage, the card and the documentation.
@@ -471,7 +484,8 @@ replaced the draft that stood here, so the two cannot drift). In short:
 - **Q4 (decided 16 November 2026, after review w).** The red-cell rule is defined natively in OD
   terms, with explicit strictness and OD flooring (§1), and no equivalence with the proof of
   concept is claimed. Written acceptance criteria come first (§1: the four presentation images,
-  hard RGB boundary cases, at least two scanners including CMU-1 and Zenodo 4550300). The
+  hard RGB boundary cases, at least two scanner vendors: CMU-1 and Zenodo 4550300, both
+  Aperio, and OpenSlide `Hamamatsu-2.ndpi`, Hamamatsu; review w2 N1). The
   numbers stay provisional, and are named so, until a report meets them.
 - **Q5 (decided 16 November 2026).** `optical_density.optical_density`, `check_white` and
   `scalar_inputs.rgb_yxc` are documented as stable normalization APIs, in a documentation-only
