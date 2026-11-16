@@ -31,6 +31,29 @@ def test_the_card_offers_the_declared_masks_each_helper_converts(tmp_path):
     assert not card.button.disabled
 
 
+def test_every_disabled_button_shows_what_blocks_it(tmp_path):
+    # AGENTS.md "Disabled actions": a visible blocked line beside every disabled button.
+    card = cards.MaskConversionCard()
+    children = list(card.card.children)
+    assert children.index(card.blocker) == children.index(card.button) + 1  # beside it
+    assert card.button.disabled
+    assert "no run in the output folder declares masks" in card.blocker.value
+    run, _, _ = run_with(tmp_path)  # v08: TumorRegion binary, Nuclei instances
+    card.refresh(run.output_folder)
+    assert card.button.disabled and "type the new mask ID" in card.blocker.value
+    card.name.value = "TumorObjects"
+    assert not card.button.disabled and card.blocker.value == ""
+    card.operation.value = "classes_to_binary"
+    card.name.value = ""
+    assert card.button.disabled and "type the prefix of the new masks" in card.blocker.value
+    card.name.value = "Tissue"
+    assert not card.button.disabled and card.blocker.value == ""
+    card._declared = {"TumorRegion": "binary"}  # no mask this helper converts
+    card._operation_changed()
+    assert card.button.disabled
+    assert "declares no parent_labels or instances mask" in card.blocker.value
+
+
 def test_a_click_converts_every_image_and_names_the_next_steps(tmp_path):
     run, image, masks = run_with(tmp_path)
     card = cards.MaskConversionCard()

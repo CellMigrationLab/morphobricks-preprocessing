@@ -356,7 +356,8 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    (optional)** writes new mask files from a declared, checked mask: a binary mask's objects as
    an objects mask, or one binary mask per class of a class image (see `convert-mask`, §5).
    Choose what to write, the mask and the new mask ID (or prefix), then **Convert the mask**;
-   the card lists the files written and says what to declare next.
+   the card lists the files written and says what to declare next. While the button is
+   disabled, the line beside it says what is missing.
 5. **Design.** One grid: conditions down, biological repeats across, each cell the folder of
    that repeat, and what each condition is compared against in the last column. The names are
    the folder names, folders with the same name are the same repeat, and nothing is compared.

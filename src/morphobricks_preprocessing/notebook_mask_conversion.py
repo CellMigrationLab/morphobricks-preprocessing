@@ -31,6 +31,7 @@ from .mask_conversion import (
     conversion_next_steps,
     images_with_mask,
 )
+from .notebook_render import blocked_line
 from .run_inputs import RunInputs
 
 _LABEL = " Convert the mask"
@@ -50,6 +51,10 @@ _NAME_HELP = {
         "e.g. <b>Tissue_class1</b>, <b>Tissue_class2</b>. Class 0 is the background."
     ),
 }
+_NAME_MISSING = {
+    BINARY_TO_INSTANCES: "type the new mask ID",
+    CLASSES_TO_BINARY: "type the prefix of the new masks",
+}
 
 
 class MaskConversionCard:
@@ -59,8 +64,9 @@ class MaskConversionCard:
     ----------
     card
         The card widget.
-    operation, source, name, button, status, result
-        Its controls and outputs.
+    operation, source, name, button, blocker, status, result
+        Its controls, the line saying what blocks the button while it is disabled, and its
+        outputs.
     """
 
     def __init__(self) -> None:
@@ -80,6 +86,7 @@ class MaskConversionCard:
             tooltip="Write the new mask files into the masks folder (the source is only read)",
             main=True,
         )
+        self.blocker = widgets.HTML()
         self.hint = widgets.HTML()
         self.status = widgets.HTML()
         self.result = widgets.HTML()
@@ -100,6 +107,7 @@ class MaskConversionCard:
                 self.name,
                 self.name_help,
                 self.button,
+                self.blocker,
                 self.status,
                 self.result,
             ],
@@ -142,8 +150,17 @@ class MaskConversionCard:
         self._update_button()
 
     def _update_button(self) -> None:
-        """Enable the button once a source is chosen and a name typed."""
-        self.button.disabled = not (self.source.value and self.name.value.strip())
+        """Enable the button once a source is chosen and a name typed; else say what blocks it."""
+        reasons = []
+        if not self._declared:
+            reasons.append("no run in the output folder declares masks")
+        elif not self.source.value:
+            wanted = " or ".join(_SOURCES[self.operation.value])
+            reasons.append(f"the description declares no {wanted} mask for this conversion")
+        if not self.name.value.strip():
+            reasons.append(_NAME_MISSING[self.operation.value])
+        self.button.disabled = bool(reasons)
+        self.blocker.value = blocked_line(reasons)
 
     def convert(self) -> list[MaskConversionResult] | None:
         """Convert the chosen mask of every image that has one; show what was written.
