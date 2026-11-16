@@ -487,3 +487,41 @@ def test_ticking_again_trusts_no_alias_removed_since_the_page_opened(tmp_path):
     nb.channel_grid.same_channels.value = True
     unit = nb.draft_answers.units.get(named)
     assert unit is None or not any(unit.channels)
+
+
+# --- independent review of #320 -------------------------------------------------------------
+
+
+def test_unticking_keeps_the_aliases_saved_at_opening_that_only_trusted_units_hold(
+    tmp_path, monkeypatch
+):
+    """Unticking takes back the no-click tags, never an alias the draft held before them.
+
+    The saved units' headers lost their names, so DAPI, Actin and Ch3 are saved aliases that
+    only the new unit, trusted from them with no click, holds. Unticked, the draft keeps them,
+    as opening unticked does; ticked again, the new unit is trusted again as on opening.
+    """
+    from morphobricks_preprocessing.notebook_channels_grid import TagGrid
+
+    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    for i, folder in enumerate(SAVED):
+        _add(root, masks, folder, i + 1)
+    first = stepper(root, masks, out)
+    answer_all(first)
+    assert first.save_experiment()
+    for i, folder in enumerate(SAVED):  # the same pixels, no header names any more
+        write_channels(root / folder / "a.tif", None, KINDS, seed=i + 1)
+    _add(root, masks, "drug/rep3", 10)  # header names DAPI, Actin, Ch3: the saved aliases
+    shutil.copytree(out, tmp_path / "copy")
+
+    nb = stepper(root, masks, out)
+    named = ("drug", "rep3", "single")
+    assert nb.draft_answers.units[named].channels == TAGS  # trusted on opening
+    opened = nb.draft_answers
+    nb.channel_grid.same_channels.value = False
+    monkeypatch.setattr(TagGrid, "SAME_CHANNELS", False)
+    strict = stepper(root, masks, tmp_path / "copy")
+    assert nb.draft_answers.channels["DNA"].header_names == ("DAPI",)
+    assert nb.draft_answers == strict.draft_answers
+    nb.channel_grid.same_channels.value = True  # ticked again: as on opening
+    assert nb.draft_answers == opened

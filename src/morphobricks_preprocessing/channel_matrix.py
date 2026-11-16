@@ -25,10 +25,10 @@ Every unit's tags are saved in the draft exactly as tagging that unit by hand wr
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .channel_answers import with_tags
-from .channel_labels import UnitLayout, aliases, header_label, tags_of
+from .channel_labels import RGB_IDS, UnitLayout, aliases, header_label, tags_of
 from .draft_answers import ChannelAnswer, DraftAnswers, UnitKey
 
 SAME = "same"
@@ -217,6 +217,24 @@ def untrusted(
     return answers
 
 
+def with_aliases(
+    answers: DraftAnswers, names: Mapping[str, tuple[str, ...] | None]
+) -> DraftAnswers:
+    """Return the answers with ``names`` added back to the aliases of the labels still listed.
+
+    Unticking restores the aliases the draft held before the no-click tags (the ones only those
+    units held, which :func:`.channel_answers.synced` drops with them): opening the page
+    unticked keeps them until the user's first click. A label no longer listed gets none.
+    """
+    channels = dict(answers.channels)
+    for label, channel in answers.channels.items():
+        if label in RGB_IDS or not names.get(label):
+            continue
+        merged = set(channel.header_names or ()) | set(names[label] or ())
+        channels[label] = replace(channel, header_names=tuple(sorted(merged)))
+    return replace(answers, channels=channels)
+
+
 def differences(
     layout: UnitLayout,
     tags: Sequence[str | None],
@@ -350,4 +368,5 @@ __all__ = [
     "set_template",
     "trusted",
     "untrusted",
+    "with_aliases",
 ]

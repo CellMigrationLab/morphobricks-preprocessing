@@ -174,6 +174,7 @@ class TagGrid:
             self.alone = set()
             self.matrix.reset()
             self.matrix.opening()
+        self.matrix.labels_changed(labels)
         self.layouts, self.labels, self.rows.thumbs = layouts, labels, thumbs
         if self.place_types:
             self.types.open(layouts)
