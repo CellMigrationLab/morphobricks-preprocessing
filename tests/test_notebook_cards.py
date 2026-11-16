@@ -3,9 +3,9 @@
 The notebook catches up with the command line and API of PP-7, PP-8, PP-8b and PP-8c, with
 the same functions: the check writes its report; pixel sizes are shown with their source and
 stated through ``update_calibration``; the pairing is a draft answer (SWEEP-PP); the run step
-shows the mode
-and the input changes; a run that stops says what it wrote; a stale lock is removed only on
-an explicit click, never one of a process still running here.
+shows the mode, the images read at once (worker threads) and the input changes; a run that
+stops says what it wrote; a stale lock is removed only on an explicit click, never one of a
+process still running here.
 """
 
 import json
@@ -22,6 +22,7 @@ pytest.importorskip("matplotlib")
 from described_tree import describe_tree
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.calibration import Calibration, calibration_entry  # noqa: E402
+from morphobricks_preprocessing.notebook_options import default_max_ram_gib  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 from morphobricks_preprocessing.run import LOCK_FILENAME, write_calibration  # noqa: E402
 from run_files import check_outputs, finished_pid  # noqa: E402
@@ -259,6 +260,105 @@ def test_the_content_verification_box_is_on_by_default_and_an_opt_out_is_recorde
     nb.verify_content.value = True
     assert "<b>verify_content</b>: False → True" in nb.plan.value
     assert not checked(experiment).verify_content.value  # filled from the earlier run
+
+
+def _texts(widget):
+    """Return the text value of every widget under ``widget``."""
+    own = [widget.value] if isinstance(getattr(widget, "value", None), str) else []
+    return own + [t for child in getattr(widget, "children", ()) for t in _texts(child)]
+
+
+def _spy_run(monkeypatch):
+    """Record the ``RunMode`` every notebook run passes to ``run_experiment``."""
+    import morphobricks_preprocessing.notebook_run as module
+
+    modes, real = [], module.run_experiment
+
+    def spy(*args, **kwargs):
+        modes.append(kwargs["mode"])
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(module, "run_experiment", spy)
+    return modes
+
+
+def _memory(monkeypatch, available):
+    """Make the notebook read ``available`` bytes as this computer's available memory."""
+    import morphobricks_preprocessing.notebook_run as module
+
+    monkeypatch.setattr(module, "available_memory", lambda: available)
+
+
+def test_auto_with_half_the_available_memory_is_the_default_and_1_is_serial(
+    experiment, monkeypatch
+):
+    # Issue #107 in the notebook (owner, 16 November 2026): Auto by default, under a cap of
+    # half the memory available at start (Auto alone bounds only by the CPUs); the CLI stays 1.
+    _memory(monkeypatch, 9 * 2**30)
+    modes = _spy_run(monkeypatch)
+    nb = ready(experiment)
+    assert nb.workers.value == "auto" and [v for _, v in nb.workers.options] == [1, 2, 4, 8, "auto"]
+    assert ui.is_visible(nb.max_ram_box) and nb.max_ram_gib.value == 4.5
+    shown = _texts(nb.settings_card)
+    assert any("outputs are byte-identical" in t and "GIL" in t for t in shown)
+    assert any("Default: 4.5 GiB, half of the 9.0 GiB" in t for t in shown)
+    auto = nb.run()
+    assert (modes[-1].workers, modes[-1].max_ram) == ("auto", round(4.5 * 2**30))
+    assert auto.written and 1 <= auto.workers <= 4
+    assert f"Images read at once (worker threads): <b>{auto.workers}</b>" in nb.run_status.value
+    table = auto.csv_path.read_bytes()
+    nb.mode.value = "full"  # every image read again, one after another
+    nb.workers.value = 1
+    assert not ui.is_visible(nb.max_ram_box)
+    serial = nb.run()
+    assert (modes[-1].name, modes[-1].workers, modes[-1].max_ram) == ("full", 1, None)
+    assert serial.workers == 1
+    assert "Images read at once (worker threads): <b>1</b>" in nb.run_status.value
+    assert serial.csv_path.read_bytes() == table  # the same bytes as the Auto run
+    nb.workers.value = 4
+    four = nb.run()
+    assert (modes[-1].workers, modes[-1].max_ram, four.workers) == (4, None, 4)
+    assert four.csv_path.read_bytes() == table
+
+
+@pytest.mark.parametrize("available", [None, 2**29])
+def test_without_a_usable_memory_reading_the_notebook_starts_serial(
+    experiment, monkeypatch, available
+):
+    _memory(monkeypatch, available)  # unknown, or a half below 0.5 GiB
+    modes = _spy_run(monkeypatch)
+    nb = ready(experiment)
+    assert nb.workers.value == 1 and not ui.is_visible(nb.max_ram_box)
+    assert nb.max_ram_gib.value == 0
+    assert any("starts with one image at a time" in t for t in _texts(nb.settings_card))
+    nb.run()
+    assert (modes[-1].workers, modes[-1].max_ram) == (1, None)
+
+
+def test_the_cap_is_passed_only_with_auto_and_0_is_no_cap(experiment, monkeypatch):
+    _memory(monkeypatch, 16 * 2**30)
+    modes = _spy_run(monkeypatch)
+    nb = ready(experiment)
+    nb.max_ram_gib.value = 8
+    nb.workers.value = 2
+    nb.run()
+    assert (modes[-1].workers, modes[-1].max_ram) == (2, None)  # the cap is Auto's only
+    nb.workers.value = "auto"
+    assert ui.is_visible(nb.max_ram_box)
+    nb.mode.value = "full"
+    nb.run()
+    assert (modes[-1].workers, modes[-1].max_ram) == ("auto", 8 * 2**30)
+    nb.max_ram_gib.value = 0  # no cap: Auto bounded by the CPUs only
+    nb.run()
+    assert (modes[-1].workers, modes[-1].max_ram) == ("auto", None)
+
+
+@pytest.mark.parametrize(
+    ("available", "expected"),
+    [(None, None), (2**30 - 1, None), (2**30, 0.5), (9 * 2**30, 4.5), (int(15.99 * 2**30), 7.9)],
+)
+def test_the_default_cap_is_half_the_available_memory_rounded_down(available, expected):
+    assert default_max_ram_gib(available) == expected
 
 
 def test_the_plan_reads_the_calibration_the_run_reads(experiment):

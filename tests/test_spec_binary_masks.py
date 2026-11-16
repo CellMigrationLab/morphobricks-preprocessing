@@ -83,7 +83,7 @@ def _write(path, pixels, axes):
     tifffile.imwrite(path, pixels, photometric="minisblack", metadata={"axes": axes})
 
 
-def _v08(tmp_path, tumor, *, images=1, t=1, mask_step=True):
+def _v08(tmp_path, tumor, *, images=1, t=1, mask_step=True, nuclei=NUCLEI):
     """A described ``v08`` run whose ``TumorRegion`` files hold ``tumor`` (one per image)."""
     data = VALID["v08"].data
     root, out, masks = tmp_path / "exp", tmp_path / "out", tmp_path / "masks"
@@ -96,7 +96,7 @@ def _v08(tmp_path, tumor, *, images=1, t=1, mask_step=True):
         for image in found:
             pixels = np.random.default_rng(1).integers(0, 200, (t, 2, 8, 8), dtype=np.uint8)
             _write(root / image, pixels, "TCYX")
-    nuclei = np.stack([NUCLEI] * t) if t > 1 else NUCLEI
+    nuclei = np.stack([nuclei] * t) if t > 1 else nuclei
     for image in found:
         _write(masks / "nuclei" / image, nuclei, "TYX" if t > 1 else "YX")
         _write(masks / "tumor_region" / image, tumor, "TYX" if t > 1 else "YX")

@@ -21,6 +21,7 @@ from morphobricks_preprocessing import (
     MaskConversion,
     MaskRequest,
     MaskSelection,
+    ObjectsReadPlan,
     PlaneSelection,
     Provenance,
     Refusal,
@@ -88,6 +89,7 @@ RUN_INPUTS_METHODS = {
     "read_objects": (
         "(self, selection: 'FovSelection', mask_id: 'str', t: 'int', z: 'int') -> 'np.ndarray'"
     ),
+    "objects_read_plan": "(self, selection: 'FovSelection', mask_id: 'str') -> 'ObjectsReadPlan'",
     "binary_to_instances": (
         "(self, fov: 'Fov | str', mask_id: 'str', *, output_mask_id: 'str') "
         "-> 'MaskConversionResult'"
@@ -166,6 +168,16 @@ FIELDS = {
         ("conversion", "str | None"),
     ],
     PlaneSelection: [("t", "int"), ("z", "tuple[int, ...]")],
+    ObjectsReadPlan: [
+        ("shape", "tuple[int, int]"),
+        ("stored_dtype", "np.dtype"),
+        ("dtype", "np.dtype"),
+        ("conversion", "str | None"),
+        ("stored_bytes", "int"),
+        ("result_bytes", "int"),
+        ("conversion_bytes", "int"),
+        ("memory_estimate", "int"),
+    ],
     Provenance: [
         ("resolver_version", "int"),
         ("description_sha256", "str"),
