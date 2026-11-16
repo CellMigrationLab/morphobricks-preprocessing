@@ -498,7 +498,9 @@ masks folder and mask axes, the exclusions, the image type, the bins and the his
 intensity settings. An option given that differs from the recorded value is used, and the
 report names the change and its effect. A rerun that changes nothing leaves
 `run_manifest.json` exactly as it was, its `written_at` included, so bricks that recorded its
-SHA-256 still accept it; the report records the rerun. Other options:
+SHA-256 still accept it; the report records the rerun. `written_at` is the only field excluded
+from byte identity: two runs of the same inputs and settings, with any number of workers, write
+the same bytes in every file except that time (and the manifest SHA-256 the report names). Other options:
 
 | Option | Meaning |
 |---|---|

@@ -4,6 +4,12 @@ A run given ``RunMode(workers=N)`` or ``workers="auto"`` reads each image in a w
 that only reads it and checks it after the read; the calling thread alone resumes, stages,
 aggregates, checks and publishes. The outputs are byte for byte those of the serial run, and
 the failure rules are the serial ones.
+
+Byte identity is compared on the raw bytes of every file a run leaves, the manifest included.
+``written_at`` is the only field of any output excluded from byte identity (owner decision of
+16 November 2026, contract §9): the run's clock is fixed (:func:`worker_bytes.fixed_clock`),
+so the manifest's bytes are compared as they are, never parsed with the field deleted. The Spec
+fixtures ``v05`` and ``v09`` are compared in ``test_run_workers_bytes.py``.
 """
 
 import json
@@ -30,8 +36,11 @@ from morphobricks_preprocessing.run.workers import (
     image_memory,
     plan_workers,
 )
-from run_files import outputs, without_report
+from run_files import outputs
 from tiff_tree import write_data
+from worker_bytes import WRITTEN_AT, expected_workers, fixed_clock, fresh_run
+
+__all__ = ["fixed_clock"]  # the autouse fixture, imported to apply to this module
 
 TYX = prefill_mapping("TYX")
 IMAGES = [f"{c}/r{r}/{n}.tif" for c in ("ctrl", "drug") for r in (1, 2) for n in ("a", "b")]
@@ -54,11 +63,12 @@ def mode(workers, max_ram=None):
 
 
 def published(out):
-    """The table and design bytes, and the manifest without its time (every run's own)."""
-    files = without_report(outputs(out))
-    manifest = json.loads(files.pop("run_manifest.json"))
-    manifest.pop("written_at")
-    return files, manifest
+    """The raw bytes of every published file (the manifest as written, its time included).
+
+    The report files are left out: they name the output folder, which differs between the
+    folders compared here; :func:`worker_bytes.fresh_run` compares them in one folder.
+    """
+    return outputs(out)
 
 
 def run_with(root, out, workers, **kwargs):
@@ -71,15 +81,15 @@ def run_with(root, out, workers, **kwargs):
 
 
 def test_any_number_of_workers_publishes_the_serial_outputs(tmp_path, experiment):
-    serial = run_with(experiment, tmp_path / "w1", 1)
-    expected = published(tmp_path / "w1")
-    assert expected[0]["plane_histograms.csv"] and serial.workers == 1
-    for workers in (2, 8, "auto"):
-        result = run_with(experiment, tmp_path / f"w{workers}", workers)
-        assert published(tmp_path / f"w{workers}") == expected  # CSV bytes, manifest contents
+    out = tmp_path / "out"
+    serial, expected = fresh_run(experiment, out, 1, TYX, keep=())
+    assert expected["plane_histograms.csv"] and serial.workers == 1
+    assert json.loads(expected["run_manifest.json"])["written_at"] == WRITTEN_AT
+    for workers in (2, 4, 8, "auto"):
+        result, found = fresh_run(experiment, out, workers, TYX, keep=())
+        assert found == expected  # the raw bytes of every file, the manifest's included
         assert result.read == serial.read == tuple(IMAGES)
-        cpus = min(len(IMAGES), workers_module.available_cpus())
-        assert result.workers == (cpus if workers == "auto" else workers)
+        assert result.workers == expected_workers(workers, len(IMAGES))
 
 
 def reverse_order_reads(read, slower_later=0.0):
