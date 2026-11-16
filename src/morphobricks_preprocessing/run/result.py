@@ -70,9 +70,12 @@ class RunResult:
         it stops); False when it was refused before (the lock, an output folder inside
         the experiment).
     workers
-        The number of worker threads that read images (issue #107): 1 when they were read
-        one after another in the calling thread, or when none was read. Operational only: it
-        is in no output file.
+        The size of the thread pool the images were read with (issue #107):
+        ``min(workers planned, images to read)``, the most images read at once and the most
+        distinct threads that read them. It is the pool's capacity, not a count of the threads
+        used: a pool starts a thread only when no idle one is waiting, so fewer threads may
+        have read when reads finish quickly. 1 when the images were read one after another in
+        the calling thread, or when none was read. Operational only: it is in no output file.
     """
 
     output_folder: Path

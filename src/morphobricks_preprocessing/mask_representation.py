@@ -44,7 +44,7 @@ import numpy as np
 from ._io import write_text_atomic
 from .description import Description
 from .fingerprint import Fingerprint
-from .mask_binding import check_scanned, mask_fingerprint, scan_fingerprints
+from .mask_binding import check_scanned, scan_fingerprints
 from .mask_rules import (
     MaskContradictsRepresentationError,
     binary_dtype,
@@ -178,7 +178,15 @@ def check_representation(
         A mask changed before or while it was read: nothing is written, an earlier status
         file is left as it was.
     ValueError
-        For a mask whose pixels cannot be read as the 2-D planes its header gave.
+        For a mask whose pixels cannot be read as the 2-D planes its header gave, or found
+        without its header bound to a fingerprint.
+
+    Notes
+    -----
+    Each file is recorded with exactly the fingerprint verified against the one bound to its
+    checked header (:func:`_verified`), the snapshot :func:`binary_refusals` read a ``binary``
+    file's values between: a file replaced after that verification is recorded with the
+    fingerprint it had when checked, so the replacement is ``not yet checked``.
     """
     root = Path(experiment_root).resolve()
     if refused is None:
@@ -191,10 +199,7 @@ def check_representation(
             if mask.representation == BINARY and found.path in refused:
                 issues.append(refused[found.path])
                 continue
-            # Still the file whose header (and, for binary, values) was checked.
-            scan_fingerprints([found], inventory.folder, root, False)
-            data = mask_fingerprint(found, inventory.folder, root).to_data()
-            files.append({"path": found.path, **data})
+            files.append({"path": found.path, **_verified(found, inventory.folder, root)})
         entry: dict[str, object] = {
             "source_type": mask.source_type,
             "representation": mask.representation,
@@ -208,6 +213,24 @@ def check_representation(
     write_text_atomic(Path(output_folder) / REPRESENTATION_FILENAME, text)
     checked = {k: tuple(f["path"] for f in v["files"]) for k, v in record.items()}
     return RepresentationResult(tuple(issues), checked)
+
+
+def _verified(found: MaskFile, folder: Path | None, root: Path) -> dict:
+    """Return the fingerprint to record for a checked file: the one just verified (audit P1).
+
+    It is :func:`.mask_binding.scan_fingerprints`' own answer, which equals the fingerprint
+    bound to the checked header and so the one :func:`binary_refusals` read the values
+    between; never a second fingerprint taken after the verification, which a file replaced
+    meanwhile would give. A file without a bound header (found without ``bind=True``) has no
+    checked header to record against and is refused.
+    """
+    if found.bound is None:
+        raise ValueError(
+            f"the mask {found.path} was found without its header bound to a fingerprint "
+            "(find_masks(bind=True)); its check cannot be recorded"
+        )
+    fingerprint = scan_fingerprints([found], folder, root, False)[found.path][0]
+    return fingerprint.to_data()
 
 
 def read_checked(output_folder: str | os.PathLike) -> Mapping[str, Mapping]:

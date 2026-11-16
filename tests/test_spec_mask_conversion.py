@@ -379,3 +379,30 @@ def test_the_run_still_opens_after_a_conversion_but_not_with_other_new_masks(tmp
     assert conversion_outputs(masks, [relative], set()) == {relative}
     # Once the run records the type, a new file of it is unrecorded like any other.
     assert conversion_outputs(masks, [relative], {"tumorobjects"}) == set()
+
+
+def test_the_lineage_publication_is_described_as_reader_consistent_never_atomic():
+    """Audit F1 of v0.6.0: (1)-(3) are three steps, not one atomic step.
+
+    A process that dies between (2) and (3) leaves a pending line (the crash and pending-line
+    tests above), which readers ignore and the next publication removes: the publication is
+    reader-consistent with rollback, and every text that describes it says so.
+    """
+    import inspect
+
+    from morphobricks_preprocessing import mask_lineage
+
+    root = Path(__file__).resolve().parents[1]
+    texts = {
+        "mask_lineage": inspect.getdoc(mask_lineage),
+        "publish_output": inspect.getdoc(mask_lineage.publish_output),
+        "contract": (root / "docs" / "contract.md").read_text(encoding="utf-8"),
+    }
+    for name, text in texts.items():
+        flat = " ".join(text.split())
+        assert "reader-consistent with rollback" in flat, name
+        assert "not atomic" in flat, name
+        assert "as a pair" not in flat, name
+    agents = " ".join((root / "AGENTS.md").read_text(encoding="utf-8").split())
+    assert "the paired publication" not in agents
+    assert "reader-consistent publication with rollback" in agents

@@ -61,7 +61,8 @@ class NewRows:
     discarded
         ``{file: why}`` for the staged rows not reused.
     workers
-        The number of worker threads the files were read with (1: in the calling thread).
+        The size of the thread pool the files were read with, ``min(planned, files to read)``
+        (its capacity, not a count of the threads used; 1: in the calling thread).
     refused
         ``image_over_max_ram`` when no file was read because one cannot be read within
         ``max_ram`` (:func:`.workers.plan_workers`), else None.
@@ -232,7 +233,8 @@ def _read_in_workers(
     found.refused = plan.refused
     if plan.refused is not None or not pending:
         return  # no image read: found.workers stays 1
-    # No more threads than images to read: the number reported is the number that read.
+    # No larger pool than images to read: the number reported is the pool's capacity (the
+    # most images read at once), not a count of the distinct threads the pool started.
     found.workers = min(plan.count, len(pending))
     logger.info("Reading %d images with %d workers", len(pending), found.workers)
     results: dict[str, FileRead] = {}
