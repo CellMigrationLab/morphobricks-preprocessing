@@ -13,6 +13,10 @@ v0.5.1: no run before v0.5.1 is read.)
 - **Tests (G2):** the `v05` channel case of gate G3 (Spec ADR 0001 GS2): a PHASE request finds `rep1` partial and no repeat unavailable, recorded in `channel_coverage`, refused as `A_SCOPE_INCOMPLETE`, fitted only with `partial_channels = "planes_with_channel"`.
 - **Notebook (H1):** the Channels step's Image type card offers the RGB header override (Spec RH1) for folders whose images have three interleaved samples under a header that does not say colour: one checkbox, never pre-ticked, enabled once those folders are answered colour (RGB), recording `rgb_header_override = true` exactly as a hand-written file does (`channel_answers.with_override`, `UnitLayout.three_samples`). When only some of those colour folders have the key, the box stays unticked and the card names them (review of #313).
 
+### Audit of v0.6.0
+
+- **Fixed (P1):** the mask step recorded each checked file in `mask_representation.json` with a second fingerprint taken after it had verified the file against the one bound to its checked header, so a file replaced in between was recorded as checked (by BM11, for a `binary` mask) with the replacement's fingerprint, and once a run recorded the replacement the resolver read it as `checked`. The record is now exactly the fingerprint verified (`mask_representation._verified`), which is the one `binary_refusals` read the values between; a replacement is `not yet checked` (`A_MASK_UNCHECKED`) until the mask step reads it. A mask inventory found without bound headers is refused (`ValueError`) rather than recorded.
+
 ## v0.6.0 (16 November 2026)
 
 MorphoBricks-Spec ADR 0005 steps 2 and 2b ("one policy for binary masks"), the owner's "one
