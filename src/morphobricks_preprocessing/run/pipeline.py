@@ -35,7 +35,6 @@ from ..discovery_report import (
     RunOutcome,
     build_report,
 )
-from ..image_type import check_image_type
 from ..intensity import IntensityReport, check_intensities
 from ..lab_links import LabLinks, repeat_code_issues
 from ..manifest import (
@@ -59,6 +58,8 @@ from ..planes import DEFAULT_MEMORY_LIMIT
 from ..required_description import is_published, undescribed_issues
 from ..source_content import content_changed
 from ..validation import ValidationIssue, has_errors, warning
+from .arguments import check_arguments as _check_arguments
+from .arguments import masks_argument as _masks_argument
 from .description_run import (
     RunDescription,
     described_checks,
@@ -85,6 +86,7 @@ from .reuse import read_previous, recorded_experiment_root
 from .rows import _pixel_issues, _range_issues, _row_order
 from .staging import clear_staging
 from .steps import Checked, Rows, compute_rows, counts, header_checks, outcome_of, unreadable_issue
+from .workers import Workers
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +151,9 @@ def run_experiment(  # noqa: PLR0913
         :class:`.modes.RunMode` with ``verify_content=True`` also records each source's
         content SHA-256 and reuses rows only for the same content (``None``: as recorded;
         turning it on or off recomputes every row). Its ``lab_links``: manifest only (PP-2).
+        Its ``workers`` and ``max_ram``: how many images are read at once, each whole in a
+        worker thread (issue #107, :mod:`.workers`); the outputs are the same with any value.
+        With more than one worker, ``progress`` is called in this thread as each image is done.
     progress
         Called as ``progress(done, total, relative_path)`` before each file is
         read, and as ``progress(total, total, "")`` when reading is finished.
@@ -214,7 +219,8 @@ def run_experiment(  # noqa: PLR0913
     output.mkdir(parents=True, exist_ok=True)
     try:
         with output_lock(output):
-            options = _Options(mode, memory_limit, progress, chosen.lab_links)
+            reading = Workers(chosen.workers, chosen.max_ram)
+            options = _Options(mode, memory_limit, progress, chosen.lab_links, reading)
             return _locked_run(given, output, options)
     except OutputLockedError as exc:
         return RunResult(output, False, (lock_issue(exc),), mode=mode)
@@ -228,6 +234,7 @@ class _Options:
     memory_limit: int
     progress: Callable[[int, int, str], None] | None
     lab_links: LabLinks | None = None
+    workers: Workers = field(default_factory=Workers)
 
 
 @dataclass(frozen=True)
@@ -299,13 +306,11 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
         histogram=inputs.histogram_settings,
         verify_content=inputs.verify_content,
     )
-    rows = compute_rows(pre, checked, settings, output, previous, options.mode, options.progress)
-    if rows.changed:
-        compared = "fingerprint or content" if settings.verify_content else "fingerprint"
-        checked.issues.append(changed_issue(list(rows.changed), compared))
-    if rows.failed:
-        checked.issues.append(unreadable_issue(rows.failed))
-    if rows.changed or rows.failed:
+    rows = compute_rows(
+        pre, checked, settings, output, previous, options.mode, options.progress, options.workers
+    )
+    checked.issues.extend(_read_issues(rows, settings))
+    if rows.refused or rows.changed or rows.failed:
         return _stop(run, base, rows)
     checked.issues.extend(_pixel_issues(rows.records))
     rows.narrow.sort(key=lambda entry: (entry.plane_id, entry.channel))
@@ -313,6 +318,17 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
     if has_errors(checked.issues):
         return _stop(run, base, rows)
     return _publish(run, base, rows, settings)
+
+
+def _read_issues(rows: Rows, settings: RunSettings) -> list[ValidationIssue]:
+    """Return the errors of reading the images: refused for ``max_ram``, changed, unreadable."""
+    issues = [] if rows.refused is None else [rows.refused]
+    if rows.changed:
+        compared = "fingerprint or content" if settings.verify_content else "fingerprint"
+        issues.append(changed_issue(list(rows.changed), compared))
+    if rows.failed:
+        issues.append(unreadable_issue(rows.failed))
+    return issues
 
 
 def _with_mask_content(run: _Run) -> _Run:
@@ -559,18 +575,6 @@ def _replaced(run: _Run, masks: dict | None) -> dict[str, str]:
     return replaced
 
 
-def _check_arguments(mode: object, image_type: str | None, missing_as_singleton: object) -> None:
-    """Refuse arguments that are not allowed, before anything is read or written."""
-    run_mode(mode)
-    if image_type is not None:
-        check_image_type(image_type)
-    # The manifest records it as a JSON boolean (contract §9).
-    if missing_as_singleton is not None and not isinstance(missing_as_singleton, bool):
-        raise ValueError(
-            f"missing_as_singleton must be True or False, found {missing_as_singleton!r}"
-        )
-
-
 def _folders(
     experiment_root: str | os.PathLike | None, output_folder: str | os.PathLike | None
 ) -> tuple[Path, Path]:
@@ -584,15 +588,6 @@ def _folders(
     if missing is not None:
         raise ValueError(f"{missing.message} {missing.action}")
     return output, root
-
-
-def _masks_argument(
-    masks_folder: str | os.PathLike | Literal[False] | None,
-) -> Path | Literal[False] | None:
-    """Return the masks folder resolved; False and None stay as they are."""
-    if masks_folder is None or masks_folder is False:
-        return masks_folder
-    return Path(masks_folder).resolve()
 
 
 def _sorted(issues: list[ValidationIssue]) -> tuple[ValidationIssue, ...]:

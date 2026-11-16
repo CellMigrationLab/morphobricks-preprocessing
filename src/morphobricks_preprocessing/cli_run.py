@@ -90,6 +90,21 @@ def parse_size(text: str) -> int:
     return int(size)
 
 
+def parse_workers(text: str) -> int | str:
+    """Parse ``--workers``: a whole number of at least 1, or ``auto`` (issue #107).
+
+    Raises
+    ------
+    argparse.ArgumentTypeError
+        For any other text.
+    """
+    if text == "auto":
+        return text
+    if not re.fullmatch(r"[0-9]+", text, flags=re.ASCII) or int(text) < 1:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a whole number of at least 1 or auto.")
+    return int(text)
+
+
 def command_preflight(args: argparse.Namespace) -> Preflight:
     """Run :func:`preflight` with the options every command shares."""
     return preflight(
@@ -309,6 +324,22 @@ def _run_settings(run: argparse.ArgumentParser) -> None:
         metavar="SIZE",
         help="working-memory limit per plane, e.g. 2GiB (default: 1GiB)",
     )
+    run.add_argument(
+        "--workers",
+        type=parse_workers,
+        default=1,
+        metavar="N|auto",
+        help="images read at once, each in its own thread (default 1: one after another); "
+        "auto: at most the CPUs and, with --max-ram, what the largest image's estimate fits. "
+        "The outputs are the same with any value",
+    )
+    run.add_argument(
+        "--max-ram",
+        type=parse_size,
+        metavar="SIZE",
+        help="with --workers auto: memory the run may use, e.g. 8GiB (an image that does not "
+        "fit stops the run before any image is read)",
+    )
     checks = run.add_argument_group(
         "intensity checks", "limits of the warnings printed after the run; the defaults suit most"
     )
@@ -335,6 +366,9 @@ _INTENSITY_HELP = {
 
 def run_command(args: argparse.Namespace) -> int:
     """Run pass 2 with the command's options, print what it did and return the status."""
+    if args.max_ram is not None and args.workers != "auto":
+        print("--max-ram is used only with --workers auto.")
+        return 1
     if not use_recorded_experiment(args):
         return 1
     refusal = description_refusal(args)
@@ -364,7 +398,7 @@ def run_command(args: argparse.Namespace) -> int:
         memory_limit=args.memory_limit,
         missing_as_singleton=args.missing_as_singleton,
         exclude=[] if args.no_exclude else args.exclude or None,
-        mode=RunMode(args.mode, args.verify_content, links),
+        mode=RunMode(args.mode, args.verify_content, links, args.workers, args.max_ram),
         progress=print_progress,
         masks_folder=False if args.no_masks else args.masks,
         mask_axes=args.mask_axes or None,

@@ -6,6 +6,62 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+### Breaking: a `binary` check recorded before BM11 is refused until the mask step runs again
+
+Owner decision of 16 November 2026 (Spec ADR 0005 BM11 is applied by the mask step only; Spec
+ADR 0002 AR10: an old form is refused with its fix named, never read leniently). A `binary` mask
+file checked by the mask step of v0.5.6 or earlier, whose rule was "at most two distinct values
+over the file", kept its `checked` status, so a file holding {3} at one time point and {7} at
+another (which `label_binary`, one plane at a time, also passes) was read as checked.
+
+- The mask step writes `"value_rule": "BM11"` in the record of every mask declared `binary` in
+  `mask_representation.json` (between `representation` and `files`;
+  `mask_representation.VALUE_RULE`, `BINARY_VALUE_RULE`). This is the only change to any
+  output: the status file keeps `version` `"1"`; `instances` and `parent_labels` records, the
+  status file of a run without `binary` masks, `plane_histograms.csv`, `experiment_design.csv`,
+  `run_manifest.json`, `mask_relationships.json` and the discovery report are byte-identical.
+- A `binary` record without that rule (or naming another) counts as checked for none of its
+  files (`mask_representation.predates_value_rule`, applied in `file_status`): the resolver,
+  `read_mask`, `read_mask_window`, `read_objects` and the conversion helpers refuse it with the
+  existing code `A_MASK_UNCHECKED`, before any read, with a message that names the cause and the
+  fix (`... its check for k of n files was recorded by a masks step older than the binary value
+  rule (Spec ADR 0005 BM11: one positive value over all the planes of a file), so it is not
+  checked. Run the masks step again on this output folder (A_MASK_UNCHECKED).`, built only by
+  `mask_rules.stale_check_message`); `mask_check_status` and the manifest's mask status
+  say `not yet checked`. Running the mask step again applies BM11 (refusing such a file with
+  `R_MASK_CONTRADICTS_REPRESENTATION`) and writes the rule. A status file written by an
+  unreleased build of this branch before this change is refused the same way.
+
+### Added
+
+- **Images read in parallel, one per worker thread** (#107, opt-in): `run_experiment(...,
+  mode=RunMode(workers=4))`, or `RunMode(workers="auto", max_ram=8 * 2**30)`; CLI
+  `run --workers N|auto` and `--max-ram SIZE` (with `auto` only). Each worker reads one whole
+  image (every plane and channel) through the existing reader and checks its fingerprint (and,
+  with content verification, its SHA-256) after the read; the calling thread alone resumes,
+  stages each image's rows as soon as its worker returns, aggregates in the sorted order of the
+  images, checks, publishes and calls `progress`. `workers=1` (the default) is the serial run
+  as before. `"auto"` reads at most as many images at once as the CPUs this process may use
+  and, with `max_ram`, as `(max_ram - 256 MiB) // largest` allows, `largest` being the largest
+  image's working-memory estimate from its header (`plane_layout`: one plane, or one block when
+  the memory limit has it read in blocks, plus its rows; never its size on disk); an image over
+  that budget stops the run before any image is read (`image_over_max_ram`). The outputs are
+  byte for byte those of the serial run with any value (tested with 1, 2, 8 and `auto`, TIFF
+  and OME-Zarr, whole and in blocks, workers finishing out of order); the failure rules are the
+  serial ones (an unreadable image is `unreadable_planes`, an image changed while it is read is
+  never staged, an unexpected exception in a worker is raised by `run_experiment` after the
+  images not yet started are cancelled, with a note naming the image (also without workers),
+  and the images already staged are resumed by the next run). The number of workers is in no row key, staging key, manifest or table; it is
+  `RunResult.workers` (the threads that read images: at most the images read, 1 when none
+  was read or the run was refused for `max_ram`), and the CLI summary says "Read with N
+  workers". It is a `RunMode`
+  field, not a `run_experiment` parameter, as `lab_links` (the code rules allow no new
+  parameter there). `tools/benchmark_run_workers.py` times a whole run serially and with
+  workers on a fixed synthetic dataset and refuses to report unless every output digest is
+  the serial one (#106).
+
 ## v0.6.0 (16 November 2026)
 
 MorphoBricks-Spec ADR 0005 steps 2 and 2b ("one policy for binary masks"), the owner's "one

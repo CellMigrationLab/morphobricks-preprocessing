@@ -54,7 +54,7 @@ from .mask_lineage import (
     read_written,
     roll_back_pending,
 )
-from .mask_representation import CHECKED, file_status, read_checked
+from .mask_representation import CHECKED, file_status, predates_value_rule, read_checked
 from .masks import FOLDER, MaskFile
 from .masks.binary import CONNECTIVITY, label_binary
 from .masks.files import _folder_masks
@@ -373,15 +373,15 @@ class ConversionInputs:
             raise ValueError(f"{mask_id!r} for {image}: the run has no masks folder")
         _check_representation(operation, mask_id, recorded["path"], declared)
         table = read_checked(self.output_folder)
-        status = file_status(
-            table, mask_id, declared.source_type, declared.representation, recorded
-        )
+        key = (table, mask_id, declared.source_type, declared.representation)
+        status = file_status(*key, recorded)
         try:
             now = Fingerprint.of(self.masks_root / recorded["path"])
         except FileNotFoundError:
             now = None
         if status != CHECKED or now != Fingerprint.recorded(recorded):
-            refusal = unchecked_refusal(mask_id, [recorded["path"]], 1)
+            stale = predates_value_rule(*key)
+            refusal = unchecked_refusal(mask_id, [recorded["path"]], 1, stale=stale)
             raise MaskUncheckedError(refusal.message)
         mask, folder = self._recorded_mask(image, declared.source_type, None, None)
         return _Source(mask_id, image, mask, folder, now)

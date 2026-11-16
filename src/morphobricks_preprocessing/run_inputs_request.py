@@ -54,7 +54,7 @@ from .mask_requests import LABELLER as LABELLER  # re-exported: the record's nam
 from .mask_requests import LABELLER_CONNECTIVITY as LABELLER_CONNECTIVITY
 from .mask_requests import conversion_record as conversion_record
 from .mask_requests import mask_ids as mask_ids
-from .mask_rules import refuse_not_instances
+from .mask_rules import refuse_not_instances, stale_check_message
 from .run_inputs_error import RunInputsError
 
 RESOLVER_VERSION = 3
@@ -515,17 +515,21 @@ def mask_conversion(
     return None
 
 
-def unchecked_refusal(mask_id: str, unchecked: Iterable[str], total: int) -> Refusal | None:
-    """Return ``A_MASK_UNCHECKED`` naming the files the mask step has not read, or None."""
+def unchecked_refusal(
+    mask_id: str, unchecked: Iterable[str], total: int, *, stale: bool = False
+) -> Refusal | None:
+    """Return ``A_MASK_UNCHECKED`` naming the files not read (``stale``: before BM11), or None."""
     files = tuple(sorted(unchecked))
     if not files:
         return None
+    scope = f"for {len(files)} of {total} files"
     return Refusal(
         "A_MASK_UNCHECKED",
         mask_id,
-        f"The mask {mask_id!r} is not yet checked against its declared representation for "
-        f"{len(files)} of {total} files. Run the masks step on this output folder first "
-        "(A_MASK_UNCHECKED).",
+        stale_check_message(mask_id, scope)
+        if stale
+        else f"The mask {mask_id!r} is not yet checked against its declared representation "
+        f"{scope}. Run the masks step on this output folder first (A_MASK_UNCHECKED).",
         files,
     )
 

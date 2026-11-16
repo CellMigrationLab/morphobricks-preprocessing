@@ -321,6 +321,26 @@ def test_the_adr_0005_names_are_exported():
     assert package.MaskContradictsRepresentationError.code == "R_MASK_CONTRADICTS_REPRESENTATION"
 
 
+def test_the_run_workers_are_a_run_mode_option():
+    # Issue #107: how many images a run reads at once is a RunMode option, not a parameter
+    # of run_experiment (its parameters are unchanged), and RunResult reports it.
+    from morphobricks_preprocessing.run import RunMode, RunResult, run_experiment
+
+    assert [(f.name, f.type, f.default) for f in dataclasses.fields(RunMode)] == [
+        ("name", "str", "restart"),
+        ("verify_content", "bool | None", None),
+        ("lab_links", "LabLinks | None", None),
+        ("workers", "int | Literal['auto']", 1),
+        ("max_ram", "int | None", None),
+    ]
+    assert package.RunMode is RunMode
+    parameters = inspect.signature(run_experiment).parameters
+    assert "workers" not in parameters and "max_ram" not in parameters
+    assert len(parameters) == 14
+    result = {f.name: (f.type, f.default) for f in dataclasses.fields(RunResult)}
+    assert result["workers"] == ("int", 1)
+
+
 def test_the_conversion_results_are_pinned():
     # Spec ADR 0005 step 2b (BM12): what the conversion helpers return.
     assert package.MaskConversionResult.__module__ == "morphobricks_preprocessing.mask_conversion"

@@ -17,6 +17,14 @@ representation and the source type are still the ones recorded; a missing, unrea
 foreign status file means nothing was checked. A file that contradicts its representation is
 never recorded as checked.
 
+The record of a ``binary`` mask carries the value rule its files were checked by,
+``"value_rule": "BM11"`` (:data:`BINARY_VALUE_RULE`). A ``binary`` record without it was
+written by a mask step that predates BM11 (v0.5.6 and earlier, whose rule was "at most two
+distinct values": {3, 7} split over two planes passed): its files are ``not yet checked`` until
+the mask step runs again (:func:`predates_value_rule`, Spec ADR 0002 AR10: an old form is
+refused with its fix named, never read leniently). ``instances`` and ``parent_labels`` records
+carry no rule and are unchanged.
+
 ``instances`` files are recorded as checked once the mask step has read them: the step reads
 every mask of the experiment and refuses a label outside the integer range, and nothing more
 can be proved about instances from pixels.
@@ -53,6 +61,10 @@ REPRESENTATION_VERSION = "1"
 CHECKED = "checked"
 NOT_CHECKED = "not yet checked"
 BINARY = "binary"
+VALUE_RULE = "value_rule"
+"""The key of a ``binary`` mask's record naming the value rule its files were checked by."""
+BINARY_VALUE_RULE = "BM11"
+"""The value rule this mask step checks ``binary`` files by (Spec ADR 0005 BM11, file-wide)."""
 
 
 @dataclass(frozen=True)
@@ -183,11 +195,14 @@ def check_representation(
             scan_fingerprints([found], inventory.folder, root, False)
             data = mask_fingerprint(found, inventory.folder, root).to_data()
             files.append({"path": found.path, **data})
-        record[mask_id] = {
+        entry: dict[str, object] = {
             "source_type": mask.source_type,
             "representation": mask.representation,
-            "files": sorted(files, key=lambda item: item["path"]),
         }
+        if mask.representation == BINARY:
+            entry[VALUE_RULE] = BINARY_VALUE_RULE
+        entry["files"] = sorted(files, key=lambda item: item["path"])
+        record[mask_id] = entry
     document = {"version": REPRESENTATION_VERSION, "masks": record}
     text = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
     write_text_atomic(Path(output_folder) / REPRESENTATION_FILENAME, text)
@@ -236,13 +251,15 @@ def file_status(
 
     ``entry`` is the file's record (manifest ``masks.files`` entry or the like) with its
     ``path`` and fingerprint; it is checked only if the status file holds that path with the
-    same fingerprint, for the same representation and source type.
+    same fingerprint, for the same representation and source type, and, for a ``binary``
+    mask, by the current value rule (:func:`predates_value_rule`).
     """
     found = table.get(mask_id)
     if (
         not isinstance(found, Mapping)
         or found.get("source_type") != source_type
         or found.get("representation") != representation
+        or predates_value_rule(table, mask_id, source_type, representation)
     ):
         return NOT_CHECKED
     try:
@@ -253,3 +270,23 @@ def file_status(
     except (KeyError, TypeError, ValueError):
         return NOT_CHECKED
     return NOT_CHECKED
+
+
+def predates_value_rule(
+    table: Mapping[str, Mapping], mask_id: str, source_type: str, representation: str
+) -> bool:
+    """Return True when a ``binary`` mask's record was written before the value rule BM11.
+
+    The record is for the representation and source type declared now, and is ``binary``, but
+    does not name :data:`BINARY_VALUE_RULE`: a mask step older than BM11 wrote it, so none of
+    its files counts as checked (the refusal names the fix: run the mask step again).
+    ``instances`` and ``parent_labels`` records are never stale.
+    """
+    found = table.get(mask_id)
+    return (
+        representation == BINARY
+        and isinstance(found, Mapping)
+        and found.get("source_type") == source_type
+        and found.get("representation") == BINARY
+        and found.get(VALUE_RULE) != BINARY_VALUE_RULE
+    )

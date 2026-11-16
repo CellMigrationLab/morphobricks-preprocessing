@@ -223,6 +223,8 @@ def run_summary(result: RunResult) -> str:
     ):
         if files:
             lines.append(f"{label}: {plural(len(files), 'image')}")
+    if result.workers > 1:  # operational only (issue #107): in no output file
+        lines.append(f"Read with {result.workers} workers (one image each)")
     lines.extend(
         f"Changed {c.name}: {c.recorded} -> {c.given} ({c.effect})" for c in result.input_changes
     )
