@@ -515,18 +515,40 @@ def mask_conversion(
     return None
 
 
-def unchecked_refusal(mask_id: str, unchecked: Iterable[str], total: int) -> Refusal | None:
-    """Return ``A_MASK_UNCHECKED`` naming the files the mask step has not read, or None."""
+def unchecked_refusal(
+    mask_id: str, unchecked: Iterable[str], total: int, *, stale: bool = False
+) -> Refusal | None:
+    """Return ``A_MASK_UNCHECKED`` naming the files the mask step has not read, or None.
+
+    ``stale`` is True for a ``binary`` mask whose check was recorded by a mask step that
+    predates the value rule BM11 (:func:`.mask_representation.predates_value_rule`): the message
+    says so and names the fix, running the mask step again.
+    """
     files = tuple(sorted(unchecked))
     if not files:
         return None
-    return Refusal(
-        "A_MASK_UNCHECKED",
-        mask_id,
-        f"The mask {mask_id!r} is not yet checked against its declared representation for "
-        f"{len(files)} of {total} files. Run the masks step on this output folder first "
-        "(A_MASK_UNCHECKED).",
-        files,
+    if stale:
+        message = stale_check_message(mask_id, f"for {len(files)} of {total} files")
+    else:
+        message = (
+            f"The mask {mask_id!r} is not yet checked against its declared representation for "
+            f"{len(files)} of {total} files. Run the masks step on this output folder first "
+            "(A_MASK_UNCHECKED)."
+        )
+    return Refusal("A_MASK_UNCHECKED", mask_id, message, files)
+
+
+def stale_check_message(mask_id: str, scope: str) -> str:
+    """Return the ``A_MASK_UNCHECKED`` message of a ``binary`` check older than BM11.
+
+    ``scope`` says which files: ``"for k of n files"`` (the resolver) or ``"(path)"`` (one
+    file read).
+    """
+    return (
+        f"The mask {mask_id!r} is declared binary and its check {scope} was recorded by a "
+        "masks step older than the binary value rule (Spec ADR 0005 BM11: one positive value "
+        "over all the planes of a file), so it is not checked. Run the masks step again on "
+        "this output folder (A_MASK_UNCHECKED)."
     )
 
 

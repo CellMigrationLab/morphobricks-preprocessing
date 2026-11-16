@@ -1646,3 +1646,14 @@ Raised during review; to be decided before the milestones that need them:
     binary rule's refusal, not `mask_pixel_type` (which `check` and `run` keep), and a refused
     file is left out of the scan. Normalization is pinned at v0.7.0 (no new API used here; one
     normalization for every consumer).
+82. A `binary` check recorded by a mask step older than BM11 (v0.5.6 and earlier: "at most two
+    distinct values over the file", so {3} at one time point and {7} at another passed, and the
+    per-plane read guard `label_binary` passes it too). *Decided (owner, 16 November 2026):*
+    refuse it until re-checked (Spec ADR 0002 AR10: an old form is refused with its fix named,
+    never read leniently). *Encoding choices of this brick:* the mask step writes
+    `"value_rule": "BM11"` in each `binary` record of `mask_representation.json` (status file
+    `version` unchanged, so `instances` and `parent_labels` records and every other output stay
+    byte-identical); a `binary` record without that rule counts as checked for none of its files;
+    the refusal is the existing `A_MASK_UNCHECKED` (ADR 0005 adds no `A_*` code, and names
+    `A_MASK_UNCHECKED` as the refusal of a file the mask step has not checked), with its own
+    message naming the cause and the fix: run the masks step again.

@@ -793,6 +793,23 @@ error is not raised for a file of a mask declared `binary` (the binary rule refu
 own code); `check` and `run` still refuse every float mask with `mask_pixel_type`.
 `instances` and `parent_labels` files are recorded as checked once read (pixels prove neither).
 
+**The value rule in the record (owner, 16 November 2026; Spec ADR 0002 AR10).** The record of
+every mask declared `binary` in `mask_representation.json` names the rule its files were checked
+by: `"value_rule": "BM11"` (`mask_representation.BINARY_VALUE_RULE`), between `representation`
+and `files`; the status file's `version` stays `"1"`. A `binary` record without it (written by a
+mask step older than BM11, v0.5.6 and earlier, whose rule "at most two distinct values" passed
+a file holding {3} at one time point and {7} at another, which the per-plane read guard
+`label_binary` also passes) or naming another rule counts as checked for none of its files
+(`mask_representation.predates_value_rule`): a request naming the mask is `A_MASK_UNCHECKED`
+before any read, with the message `The mask '{id}' is declared binary and its check for k of n
+files was recorded by a masks step older than the binary value rule (Spec ADR 0005 BM11: one
+positive value over all the planes of a file), so it is not checked. Run the masks step again on
+this output folder (A_MASK_UNCHECKED).` (`run_inputs_request.stale_check_message`, the only
+place of that text; `read_mask`, `read_mask_window` and the conversion helpers give the same
+sentence for one file, `({path})` in place of `for k of n files`), and `mask_check_status` and
+the manifest's mask status say `not yet checked`. Running the mask step again applies BM11 and
+writes the rule. `instances` and `parent_labels` records carry no rule and are unchanged.
+
 The masks are bound to their fingerprints (issue #165, as a run's sources, §9.4): the step
 fingerprints each mask before and after its header is read (`prepare_mask_step`;
 `mask_changed_during_check` when they differ), and the scan fingerprints each image's masks
