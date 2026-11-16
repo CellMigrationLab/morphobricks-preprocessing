@@ -2,15 +2,18 @@
 
 - **Status:** design for review (roadmap item I0). No code changes. The helper itself is I1.
 - **Owner answers (16 November 2026):** questions 1, 2, 3, 6, 8 and 9 accepted as recommended
-  ([§8](#8-owner-decisions-and-open-questions)); questions 4, 5 and 7 stay open. The Spec
-  amendment of §6 is MorphoBricks-Spec #45; I1 waits for it to merge.
+  ([§8](#8-owner-decisions-and-open-questions)); questions 4, 5 and 7 decided after review w
+  (§8). The Spec amendment of §6 is MorphoBricks-Spec #45; I1 waits for it to merge and for the
+  other prerequisites of [§9](#9-prerequisites-for-i1).
 - **Owner decision (16 November 2026):** an opt-in preprocessing helper, "make an H&E tissue mask",
   that leaves out nuclei, red blood cells and empty space. It works like the ADR 0005 conversion
   helpers, writes a region mask with its lineage, is declared by the user as a mask, is offered in
   the notebook, and reuses normalization's colour maths without copying it.
 - **Read at:** preprocessing `69dc006` (main, after `ea0d7c7` = #308); MorphoBricks-Spec `bf68d30`;
   morphobricks-normalization `v0.7.0` = `c6a9f9d`; fiberfeatures `v0.6.2` = `752b1dd`. Line
-  numbers below are from these commits.
+  numbers below are from these commits unless another commit is named. Re-read for review w
+  (16 November 2026): preprocessing main `37c583e` (v0.6.1: the per-image RH1 record),
+  fiberfeatures main `36819a3`, CellPatcher main `0a08987`.
 
 ## Why
 
@@ -74,6 +77,45 @@ changes v1. The rule ID, version and every threshold are written to the lineage.
 tuned per image, and nothing is tuned silently. The preview and the "% kept" figure are how the
 user judges whether the rule suits their slides.
 
+### The canonical rule record
+
+The rule is defined once, as an immutable record in the helper's module, and written whole into
+every lineage line with its SHA-256 (Spec BM15 "The rule record"; owner decision on Q7). Nothing
+in it is read from the image, the run or the caller. The one value taken at import is the HED
+matrix's hash: the helper hashes the matrix normalization passes to `separate_stains`
+(`skimage.color.hed_from_rgb`, `stain.py:168-170`) as float64, little-endian, C order, and a
+scikit-image whose matrix differs gives another record and so never matches on retry.
+
+```json
+{
+  "id": "he_tissue", "version": 1, "status": "provisional",
+  "input": {"image_type": "rgb", "dtype": "uint8", "white": [255, 255, 255]},
+  "colour": {
+    "stain_preset": "he_eosin", "stain_preset_version": 1,
+    "hed_matrix": {"source": "skimage.color.hed_from_rgb", "sha256": "<64 hex>"},
+    "E": "to_scalar(...).image (separate_stains component 1)",
+    "H": "to_scalar(...).exclusion (separate_stains component 0)",
+    "optical_density": {"function": "morphobricks_normalization.optical_density.optical_density", "floor": 1, "white": [255, 255, 255]}
+  },
+  "connectivity": 8,
+  "disk": "x*x + y*y <= r*r",
+  "components": [
+    {"name": "nuclei", "pixel": [["H", ">=", 0.05]],
+     "cleanup": [["remove_pieces_smaller_than_px", 15], ["dilate_disk_radius_px", 2]]},
+    {"name": "red_cells", "pixel": [["E", ">=", 0.06], ["H", "<", 0.03], ["OD_G-OD_R", ">=", 0.40], ["OD_B-OD_R", ">=", 0.10]],
+     "cleanup": [["remove_pieces_smaller_than_px", 15], ["dilate_disk_radius_px", 1]]},
+    {"name": "background", "pixel": [["max(OD_R,OD_G,OD_B)", "<", 0.08]],
+     "cleanup": [["open_disk_radius_px", 2], ["remove_pieces_smaller_than_px", 1000]]}
+  ],
+  "combine": "keep = not (nuclei or red_cells or background)"
+}
+```
+
+The order of `components`, of each `pixel` list (all comparisons joined by "and") and of each
+`cleanup` list is the order of computation. `status` is `"provisional"` until the acceptance
+report of [Q4](#8-owner-decisions-and-open-questions) is accepted; freezing changes it to
+`"frozen"`, which is a different record, so no provisional mask is ever reused as a frozen one.
+
 ## 2. Inputs and refusals
 
 API, a mixin on `RunInputs` like `ConversionInputs` (`mask_conversion.py:238-251`):
@@ -83,15 +125,32 @@ RunInputs.he_tissue_mask(fov, *, output_mask_id, rule="he_tissue_v1") -> TissueM
 RunInputs.preview_he_tissue_mask(fov, *, rule="he_tissue_v1") -> TissueMaskPreview  # writes nothing
 ```
 
-The input is a typed context, not a path: an opened clean run plus one position. Before any
-pixel is read, the helper refuses each of the following with a `ValueError` naming the position
-and the reason:
+The input is a typed context, not a path: an opened clean run plus one position, given as a
+`Fov` or its image path.
+
+**The FOV is resolved from the opened run before any read (Spec BM15).** The helper takes only
+the image path from its argument (`fov.relative_path`, or the string) and looks the position up
+in the run's own authoritative description: the `Fov` of `RunInputs.fovs()` with that path,
+which carries the published description's `image_type` (`run_inputs.py:276-284` at `37c583e`).
+It never uses `RunInputs._fov(entry)` for this: that one is built without the description, so its
+`image_type` is `None` (`run_inputs.py:379-382` at `37c583e`). Every check below and every
+lineage value use the resolved record only. An `image_type`, `axes`, `z_count`, `t_count`,
+`c_count` or `dtype` on a caller's `Fov` (a `Fov` "built by hand" may carry anything,
+`run_inputs.py:146-150`) is ignored: never trusted, never compared, never used to fill a gap.
+RH1 is copied per image from the run's description record: the unit's declared
+`rgb_header_override` and, when declared, that image's item of `rgb_header_override_images`
+(`override`, `unused_reason`, `header_photometric`; `description_record.py:27-30`, `:104-123` at
+`37c583e`).
+
+Before any pixel is read, the helper refuses each of the following with a `ValueError` naming the
+position and the reason:
 
 | Refused | Why |
 | --- | --- |
-| A position whose unit is not declared `image_type = "rgb"` (`Fov.image_type`, `run_inputs.py:146-150`): "`{image}` is declared channels; the H&E tissue mask takes a unit declared image_type = "rgb"" | RGB is declared, never inferred (experiment-v1 §4.4b). RH1 is honoured as recorded: a unit declared `rgb` with `rgb_header_override = true` that the run accepted is valid input. The helper never reads the header itself. The override's effective use (`rgb_override.py:67`) is copied into the lineage. |
-| More than one Z plane; more than one time point | One 2-D plane only, as ADR 0005 BM5 does for conversions |
-| A pixel type other than `uint8`, or a C count other than 3 | `to_scalar` accepts 8-bit sRGB only (`scalar_inputs.py:52-56`). The refusal comes first, with the helper's own message. |
+| An image path that is not an image of the run | The FOV is resolved from the run only (`RunInputs._entry`, `run_inputs.py:384-390` at `37c583e`) |
+| A position whose unit is not declared `image_type = "rgb"` (`Fov.image_type`, `run_inputs.py:146-150`): "`{image}` is declared channels; the H&E tissue mask takes a unit declared image_type = "rgb"" | RGB is declared, never inferred (experiment-v1 §4.4b). RH1 is honoured as recorded: a unit declared `rgb` with `rgb_header_override = true` that the run accepted is valid input. The helper never reads the header itself and never decides the override again. The unit's declared key and that image's recorded override item are copied into the lineage unchanged. |
+| More than one Z plane; more than one time point (the run's `z_count`, `t_count`) | One 2-D plane only, as ADR 0005 BM5 does for conversions |
+| A pixel type other than `uint8`, or a C count other than 3 (the run's `dtype`, `c_count`) | `to_scalar` accepts 8-bit sRGB only (`scalar_inputs.py:52-56`). The refusal comes first, with the helper's own message. |
 | A run without a masks folder (`masks_root` is None) | Outputs only go to the masks folder (ADR 0005 §"Outputs") |
 | An unknown rule ID | Lists the known rule IDs |
 | scikit-image is missing | `ImportError` naming the extra `pip install "morphobricks-preprocessing[he-mask]"`. That extra pulls in `morphobricks-normalization[histology]`. Core import stays inert. |
@@ -116,12 +175,24 @@ the image fingerprint again after the read, as `_read_source` does (`mask_conver
   re-reads the digest, writes the line, then renames. A crash leaves a pending line, which is
   rolled back on retry (`mask_lineage.py:12-20`, `:199-215`, `:232-282`). Mask discovery already
   skips the lineage file and the temporary files (`mask_lineage.py:69-71`, `masks/files.py:197`).
-- **Idempotent retry:** a call whose lineage line matches in every key except the output digest
-  (source, output root/ID/path, operation, rule ID and version, thresholds, white, normalization
-  version and commit, scikit-image and SciPy versions, helper and version), and whose existing
-  file still has the recorded digest, is a no-op that returns the existing result (as
-  `_same_conversion`, `mask_conversion.py:579-589`). Any difference is refused, never
-  overwritten. That includes equal pixels from another source and a new scikit-image version.
+- **Idempotent retry, with BM15's own comparator** (Spec BM15 "Retry comparator"; it is not
+  BM12's `_same_conversion`, `mask_conversion.py:579-589`). An existing output is the same
+  computation, and the call is a no-op that returns it, only when both lines have `reusable`
+  `true`, they are equal in every key except `output.content_sha256` and `fractions`, and the
+  existing file still has the recorded digest. Any difference is refused, never overwritten. That
+  includes equal pixels from another source, another code identity, another NumPy, scikit-image
+  or SciPy version, another rule record (provisional against frozen included), and any line with
+  `reusable` `false`.
+- **Code identity (Spec BM15, owner decision on Q7).** For `morphobricks-preprocessing` and
+  `morphobricks-normalization` the helper records `{"distribution", "version", "kind", "value"}`.
+  It is verified only for a non-editable install whose `RECORD` hashes all still match the files
+  on disk (`importlib.metadata.distribution(name).files`, each `PackagePath.hash` checked; once
+  per process). Then `kind` is `"vcs_commit"` with PEP 610 `direct_url.json`
+  `vcs_info.commit_id` when present, else `"record_sha256"` with the SHA-256 of `RECORD`.
+  Otherwise `kind` is `"unverified"`, `value` `null`, plus `reason` (for example `"editable
+  install"`, `"RECORD missing"`, `"hash differs: <file>"`). Then the mask is still written,
+  `reusable` is `false`, the result and the card say "this mask will not be reused on retry",
+  and a retry is refused as a collision.
 - **Declaring it** (experiment-v1 §4.5; no new key):
 
   ```toml
@@ -135,21 +206,22 @@ the image fingerprint again after the read, as `_read_source` does (`mask_conver
   Then run preprocessing and the mask step again. Every brick can now request it as a region,
   for example fiberfeatures `MaskRequest("HETissue", "region")` (`run_request.py:165`), which also
   stops the `he_eosin` warning. A mask with files for only some positions is valid (§4.5).
-- **Lineage line** (one per output, keys in this order):
+- **Lineage line** (one per output, keys in this order, exactly as Spec BM15):
 
   | Key | Value |
   | --- | --- |
   | `source` | `{"root": "experiment", "image": <image path relative to the experiment folder>, "axes": "CYX", "shape": [3, Y, X], "dtype": "\|u1", "content_sha256": <the ADR 0005 canonical digest of the pixels read, mask_lineage.content_sha256>}` |
   | `output` | the ADR 0005 `FILE_KEYS` object (`root` `"masks"`, `mask_id`, `path`, `axes` `"YX"`, `shape`, `dtype` `"\|u1"`, `content_sha256`) |
   | `operation` | `"he_tissue_mask"` |
-  | `rule_id`, `rule_version` | `"he_tissue"`, `1` (shown to users as `he_tissue_v1`) |
-  | `thresholds` | every number in the rule table, named with its unit (`nuclei_hematoxylin_min`, `nuclei_min_piece_px`, `nuclei_dilation_radius_px`, ...) |
-  | `white` | `[255, 255, 255]` |
-  | `normalization` | `{"version": "0.7.0", "commit": <PEP 610 vcs_info.commit_id, or null>, "stain_preset": "he_eosin", "stain_preset_version": 1}` |
-  | `scikit_image_version`, `scipy_version` | as imported |
-  | `image_type`, `rgb_header_override` | `"rgb"`; `"used"`, `"unused"` or `"not_declared"` from the run's record |
+  | `rule` | the canonical rule record ([§1](#the-canonical-rule-record)) |
+  | `rule_sha256` | SHA-256 of `json.dumps(rule, sort_keys=True, separators=(",", ":")).encode("utf-8")` |
+  | `code` | `{"preprocessing": <code identity>, "normalization": <code identity>}` |
+  | `reusable` | `true` when both code identities are verified |
+  | `numpy_version`, `scikit_image_version`, `scipy_version` | as imported |
+  | `image_type` | `"rgb"`, from the resolved FOV |
+  | `rgb_header_override` | `{"declared": true or false, "image": <that image's recorded item, or null>}` |
   | `pixel_size` | the recorded X/Y size and unit, or `null` (information only) |
-  | `fractions` | `kept`, `nuclei`, `red_cells`, `background`, of all pixels (the components can overlap) |
+  | `fractions` | `kept`, `nuclei`, `red_cells`, `background` of all pixels (the components can overlap), and `od_floored` (normalization's `floored_fraction`) |
   | `helper`, `helper_version` | `morphobricks_preprocessing.RunInputs.he_tissue_mask`, `__version__` |
 
   The current reader accepts only the BM12 keys. It refuses any other key order, and any `root`
@@ -202,39 +274,19 @@ choice 15, lines 692-693). A tissue mask's source is an image under the experime
 carries a rule and thresholds. experiment-v1 needs no change: the output is declared with existing
 §4.5 keys.
 
-The text below goes into ADR 0005 in its own Spec PR, MorphoBricks-Spec #45, reviewed by the owner:
+The normative text is ADR 0005 "Derived region masks (BM15)" in MorphoBricks-Spec #45 (it
+replaced the draft that stood here, so the two cannot drift). In short:
 
-> **BM15 (decision table row).** | BM15 | **Derived region masks from an image** (owner,
-> 16 November 2026): preprocessing may offer an opt-in helper that computes a `binary` **region**
-> mask from one declared image with a **named, versioned, fixed rule** whose colour maths is
-> called from normalization's `stain` module (never reimplemented). The first is
-> `RunInputs.he_tissue_mask` (rule `he_tissue_v1`: nuclei, red blood cells and near-white
-> background excluded) on a unit declared `image_type = "rgb"`. Like BM12, it writes a **new mask
-> file** with a lineage line, never runs by default, and nothing reads the output until the user
-> declares it (`representation = "binary"`) and the mask step has checked it. The output is a
-> region (BM3), never an object set (§4.5c). | A mask built inside each consuming brick
-> (fiberfeatures builds none); a mask made automatically for every RGB run; per-image tuned
-> thresholds. |
->
-> **Section "Derived region masks (BM15)", after "The conversion helpers (BM12)".** A BM15 helper
-> takes the opened run and one FOV whose unit is declared `rgb` (RH1 honoured as recorded). It
-> refuses, before any pixel is read, a FOV with more than one Z plane or time point, a pixel type
-> other than 8-bit, a run without a masks folder and an unknown rule. Its output file, its mask ID
-> rules, its collision refusals, its idempotent retry and its paired publication are those of
-> BM12. Its lineage line goes in the same `mask_lineage.jsonl` and has these keys, in this order:
-> `source`, `output`, `operation`, `rule_id`, `rule_version`, `thresholds`, `white`,
-> `normalization`, `scikit_image_version`, `scipy_version`, `image_type`, `rgb_header_override`,
-> `pixel_size`, `fractions`, `helper`, `helper_version`. Its `source` is `{"root": "experiment",
-> "image", "axes", "shape", "dtype", "content_sha256"}`. Here `image` is the FOV image's path
-> relative to the experiment folder, and the digest is BM12's canonical digest of the pixels read.
-> Its `output` is BM12's file object with `root` `"masks"`. A reader selects the schema by
-> `operation` and refuses a line that matches neither schema. A `root` of `"experiment"` is valid
-> only in a BM15 `source`. A rule is identified by `rule_id` and `rule_version`; a change of any
-> number is a new version; thresholds are never chosen per image.
->
-> **Choice 15, amended:** "...in this wave; a BM15 `source` has the `root` `"experiment"`."
->
-> **Amendments:** none to experiment-v1, the fixtures, the goldens or `tools/audit/refval.py`.
+- **Decision row BM15:** an opt-in preprocessing helper computes a `binary` region from one
+  declared image with a named, versioned, fixed rule whose colour maths is normalization's.
+- **The FOV is the run's:** resolved by image path from the opened run before any read; a
+  caller's `image_type`, axes, counts and dtype are ignored; RH1 is copied per image.
+- **Lineage:** its own schema in the same `mask_lineage.jsonl`, chosen by `operation`; the rule's
+  complete canonical record and its SHA-256; verified code identities of preprocessing and
+  normalization; NumPy, scikit-image and SciPy versions; `reusable`.
+- **Retry:** BM15's own comparator; an unverified code identity is never reused.
+- **Choice 15, amended:** a BM15 `source` has the `root` `"experiment"`.
+- **Amendments:** none to experiment-v1, the fixtures, the goldens or `tools/audit/refval.py`.
 
 ## 7. Tests (I1)
 
@@ -290,5 +342,14 @@ The text below goes into ADR 0005 in its own Spec PR, MorphoBricks-Spec #45, rev
   `check_white` and `scalar_inputs.rgb_yxc` exist but are not listed as API in normalization's
   `contract.md` §3.4. *Recommend a small, documentation-only normalization PR* that names them as
   stable before I1. The alternative is a public `stain.optical_density_map` wrapper.
-- **Q7. normalization commit when not installed from git.** *Recommend recording `null`*, never
-  refusing. The version stays recorded, and the pin is a tag.
+- **Q7 (decided 16 November 2026, after review w).** A null commit is not accepted. The lineage
+  records a verified code identity (commit, or the installed distribution's `RECORD` hash) for
+  normalization and preprocessing, the NumPy and scikit-image versions, and the complete rule
+  record with its hash. An unverified identity still writes the mask, marked never to be reused
+  on retry. BM15 has its own retry comparator (§3).
+
+## 9. Prerequisites for I1
+
+I1 (the helper) starts only when each of these holds:
+
+- **P1. Spec:** MorphoBricks-Spec #45 (ADR 0005 BM15) is merged.
