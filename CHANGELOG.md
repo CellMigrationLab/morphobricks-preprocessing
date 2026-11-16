@@ -8,6 +8,8 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+### Added
+
 - **Notebook: fast mode for *Tag channels*** (owner decisions of 16 November 2026). **Every
   imaging unit has the same channels in the same order** is ticked by default, the user's
   declared assumption. Headers are trusted: an untagged unit whose header names every channel
@@ -26,6 +28,54 @@ v0.5.1: no run before v0.5.1 is read.)
   description record no field for the statement yet (the Spec amendment will add one).
   Unticked, the page is the strict per-unit path of PR 17b, unchanged (`channel_matrix`,
   `notebook_channels_matrix`).
+- **`RunInputs.objects_read_plan(selection, mask_id)`** (#316): the memory of one
+  `read_objects` plane, from the mask's header only, as an `ObjectsReadPlan` (also
+  `morphobricks_preprocessing.ObjectsReadPlan`). `read_objects` returns `int32` whatever the
+  stored type, while `mask_window_plan` and a header-based size count the stored type, so a
+  `uint8` object set was estimated at a quarter of its result. `memory_estimate` is the read's
+  peak: the stored plane it holds (`stored_bytes`), the `int32` result (`result_bytes`, 4 bytes
+  per pixel: 4 times the stored size of a `uint8` mask) and, for a `binary` mask converted by
+  `connected_components`, `masks.binary.labelling_bytes` (`conversion_bytes`): an upper bound, for
+  every plane of that shape and type, of what `label_binary` allocates beside its input and
+  result (the larger of its value check and its labelling: the foreground, SciPy's label table
+  for at most one provisional label per 2 × 2 block, its line buffers). A `uint8` `instances`
+  mask is therefore estimated at 5 times its stored size, an `int32` one at 8 bytes per pixel
+  (owner decision on #317: the estimate is the real peak, beyond the issue's "4 times"). It
+  counts the decoded plane: a compressed file's encoded pieces, held while they are decoded (up
+  to the plane's compressed size: small for a label mask, up to `stored_bytes` for one that does
+  not compress), are not counted. The
+  selection and the mask are refused as
+  `read_objects` refuses them. The region-read estimate (`mask_window_plan`) is unchanged, and
+  no output changes.
+- **Notebook: images read at once.** Step 3's Settings card offers the worker threads of
+  `RunMode` (#107), which the notebook did not expose (its runs were serial): **Images read at
+  once**, **Auto by default** (owner decision of 16 November 2026), or 1, 2, 4 or 8, with a
+  **Memory cap (GiB)** shown and passed (`max_ram`) with Auto only (0: no cap). `"auto"`
+  alone bounds the workers by the CPUs only, so the cap starts at half of the memory available
+  when the notebook starts (`run.workers.available_memory`, standard library only: Linux
+  `MemAvailable` lowered to the remaining limit of the process's control group, read from
+  `/proc/self/cgroup`, and of every group above it (a batch job's or a systemd slice's limit
+  counts without a cgroup namespace), Windows
+  `GlobalMemoryStatusEx`, elsewhere the physical memory), rounded down to 0.1 GiB, and a line
+  says the figure. When it cannot be read, or half of it is below 0.5 GiB, the notebook starts
+  with 1. The command line's `--workers` stays 1. A help line says the outputs are
+  byte-identical whatever the number and the speed-up is modest (the histogram work holds the
+  GIL). The run's result shows `RunResult.workers` (the thread pool the images were read
+  with). The notebook file and its call are unchanged.
+
+### Corrections to the v0.6.1 notes
+
+- **The volatile-field rule is about run outputs.** The v0.6.1 notes say `written_at` is "the
+  only field of any output excluded from byte identity". It is the only such field of a
+  **run's** outputs (contract §9, which already says two runs): the conversion record
+  `.morphobricks-conversion.json` that `convert` writes has its own `written_at` and records
+  the copies' fingerprints with their `mtime_ns`, so two conversions of the same originals
+  differ there. Nothing changed in the code; AGENTS.md and the user guide now say "a run's
+  outputs".
+- **H1: when the RGB header override box is enabled.** The v0.6.1 notes say the box is
+  "enabled once those folders are answered colour (RGB)". It is enabled once **at least one of
+  them** is (`RgbOverrideOffer.refresh`: disabled only while none is), and a tick records the key
+  for each of them answered colour. The user guide said the same and is corrected.
 
 ## v0.6.1 (16 November 2026)
 

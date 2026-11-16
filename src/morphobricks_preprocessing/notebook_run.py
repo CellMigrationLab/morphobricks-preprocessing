@@ -21,9 +21,14 @@ from .axis_review import review_axes
 from .notebook_options import (
     _WIDE,
     HISTOGRAM_RANGE_OPTIONS,
+    MAX_RAM_HELP,
     MODE_HELP,
     MODE_OPTIONS,
     VERIFY_CONTENT_HELP,
+    WORKER_OPTIONS,
+    WORKERS_HELP,
+    cap_help,
+    default_max_ram_gib,
 )
 from .notebook_plots import IntensityPanel
 from .notebook_progress import Wait
@@ -31,6 +36,8 @@ from .notebook_render import _bins_help, _label, blocked_line, change_lines, iss
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import issue_counts, rebuild_line
 from .run import RESTART, Preflight, RunMode, RunResult, run_experiment
+from .run.modes import AUTO
+from .run.workers import available_memory
 from .run_labels import recorded_labels
 from .validation import has_errors, plural
 
@@ -146,8 +153,50 @@ class _RunStep:
                 ui.help_text(MODE_HELP),
                 self.verify_content,
                 ui.help_text(VERIFY_CONTENT_HELP),
+                *self._build_workers(),
             ],
         )
+
+    def _build_workers(self) -> list[widgets.Widget]:
+        """Build the worker threads choice (issue #107) and its memory cap; return the widgets.
+
+        Auto by default, under a cap of half the memory available now (owner, 16 November
+        2026; the command line's ``--workers`` stays 1): Auto alone bounds only by the CPUs.
+        One image at a time when the available memory cannot be read. The cap is shown with
+        Auto only.
+        """
+        available = available_memory()
+        cap = default_max_ram_gib(available)
+        self.workers = widgets.Dropdown(
+            options=WORKER_OPTIONS, value=1 if cap is None else AUTO, layout=widgets.Layout(**_WIDE)
+        )
+        self.max_ram_gib = widgets.BoundedFloatText(
+            value=cap or 0,
+            min=0,
+            max=65_536,
+            step=0.5,
+            description="Memory cap (GiB)",
+            style=_label(),
+        )
+        self.max_ram_box = widgets.VBox(
+            [self.max_ram_gib, ui.help_text(MAX_RAM_HELP), ui.help_text(cap_help(available, cap))]
+        )
+        ui.set_visible(self.max_ram_box, self.workers.value == AUTO)
+        self.workers.observe(
+            lambda change: ui.set_visible(self.max_ram_box, change["new"] == AUTO), names="value"
+        )
+        return [
+            widgets.HTML("<b>Images read at once</b>"),
+            self.workers,
+            ui.help_text(WORKERS_HELP),
+            self.max_ram_box,
+        ]
+
+    def _run_mode(self, verify_content: bool | None) -> RunMode:
+        """Return the run's mode with the workers chosen; the memory cap only with Auto."""
+        workers = self.workers.value
+        cap = round(self.max_ram_gib.value * 2**30) if workers == AUTO else 0
+        return RunMode(self.mode.value, verify_content, workers=workers, max_ram=cap or None)
 
     def _build_histogram_range(self) -> list[widgets.Widget]:
         """Build the histogram range choice and its robust quantiles; return the widgets."""
@@ -335,7 +384,7 @@ class _RunStep:
             exclude=given.exclude,
             masks_folder=given.masks_folder,
             mask_axes=given.mask_axes,
-            mode=RunMode(self.mode.value, given.verify_content),
+            mode=self._run_mode(given.verify_content),
             progress=self._progress,
             image_type=given.image_type,
             intensity_settings=given.intensity_settings,
@@ -387,6 +436,7 @@ class _RunStep:
         if result.design_path is not None:
             lines.append(html.escape(f"Experiment design: {result.design_path}"))
         lines.append(f"Mode: <b>{result.mode}</b>")
+        lines.append(f"Images read at once (worker threads): <b>{result.workers}</b>")
         if result.rebuild_reason:
             lines.append(html.escape(rebuild_line(result)))
         if result.replaced:

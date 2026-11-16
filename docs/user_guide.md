@@ -331,8 +331,9 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    When a folder's images store three values per pixel side by side but their header does
    not say colour (some scanners save colour this way), the card explains it and offers
    **Read these folders as colour (RGB) although their header does not say colour**. It is
-   never ticked for you and can be ticked only once those folders are answered colour (RGB);
-   ticking it records `rgb_header_override = true` for them, exactly as writing it by hand.
+   never ticked for you and can be ticked once at least one of those folders is answered colour
+   (RGB); ticking it records `rgb_header_override = true` for each of them answered colour,
+   exactly as writing it by hand.
    If only some of them have it (for example a folder answered colour after the tick), the box
    stays unticked and the card names the folders that have it.
    Colour folders have the channels R, G and B. Otherwise name what you stained and confirm the list; then tag each folder's channels
@@ -392,6 +393,18 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    example a label declared that no folder uses, `W_UNUSED_CHANNEL`) are listed above the
    button; they do not stop the save.
 7. **Run.** **Compute histograms**; what is still to do is listed only while something is.
+   **Images read at once** (in Settings) is **Auto** by default: as many images at once as
+   the CPUs allow and the **Memory cap (GiB)** fits (the command line's `--max-ram`), each in
+   its own thread. The cap starts at half of the memory the computer had available when the
+   notebook started (on Linux, also within the limit of its container), rounded down to
+   0.1 GiB, and the line under it says the figure; change it if other programs need more or
+   less, or set 0 for no cap. Choose 1 to read one image after another (the command line's
+   default, `--workers 1`), or 2, 4 or 8. When the available memory cannot be read, or half of
+   it is below 0.5 GiB, the notebook starts with 1. The outputs are byte-identical whatever the
+   number; the speed-up is modest, because most of the histogram work holds Python's global
+   interpreter lock (GIL). An image that alone needs more than the cap stops the run before
+   any image is read (`image_over_max_ram`): raise the cap or choose 1. The result says how
+   many images were read at once.
    After the run: its result, and collapsed panels for the **intensity checks and plots**,
    **Compare groups** (pooled statistics and a distribution plot per condition, repeat or
    image, for the table this run wrote; it writes nothing) and the report (formatted, with the
@@ -514,8 +527,8 @@ masks folder and mask axes, the exclusions, the image type, the bins and the his
 intensity settings. An option given that differs from the recorded value is used, and the
 report names the change and its effect. A rerun that changes nothing leaves
 `run_manifest.json` exactly as it was, its `written_at` included, so bricks that recorded its
-SHA-256 still accept it; the report records the rerun. `written_at` is the only field excluded
-from byte identity: two runs of the same inputs and settings, with any number of workers, write
+SHA-256 still accept it; the report records the rerun. `written_at` is the only field of a
+run's outputs excluded from byte identity: two runs of the same inputs and settings, with any number of workers, write
 the same bytes in every file except that time (and the manifest SHA-256 the report names). Other options:
 
 | Option | Meaning |

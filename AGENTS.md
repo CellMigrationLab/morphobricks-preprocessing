@@ -222,7 +222,9 @@ src/morphobricks_preprocessing/
                     read_plane and read_mask; run_inputs_mask.py RunInputs.mask_types, read_mask,
                     read_mask_window, mask_window_plan (one recorded-mask check for all) and
                     read_objects (a resolved objects use, its recorded conversion applied by
-                    masks.binary.label_binary; Spec ADR 0005)
+                    masks.binary.label_binary; Spec ADR 0005) and objects_read_plan (its
+                    peak memory from the header: stored plane, int32 result and
+                    labelling_bytes; #316)
   mask_conversion.py RunInputs.binary_to_instances / classes_to_binary (Spec ADR 0005 BM12, step
                     2b): new mask files from a checked mask, refused before any read or write
                     (check_class_image, collisions, idempotent retry); mask_lineage.py their
@@ -278,7 +280,8 @@ src/morphobricks_preprocessing/
                     window.py read_mask_window/mask_window_plan (an exact window of one mask
                     plane in its stored integer type, through windows.py's block reading);
                     binary.py label_binary (the one labeller: 8-connected, CONNECTIVITY,
-                    STRUCTURE), objects.py check_object_set (in-memory object sets)
+                    STRUCTURE) and labelling_bytes (its working-memory bound), objects.py
+                    check_object_set (in-memory object sets) and ObjectsReadPlan
   mask_checks.py    mask checks with the confirmed roles: mask_size_issues (Y/X by role),
                     mask_issues (a run's mask issues; images with axis errors skipped)
   mask_review.py    what the notebook shows about the masks: mask_type_rows, and
@@ -414,7 +417,9 @@ src/morphobricks_preprocessing/
   notebook_design.py        step 1: the experiment design card (_DesignCard)
   notebook_axis_step.py     step 2: role dropdowns, axis check, missing-axes card (_AxisStep)
   notebook_axis_preview.py  step 2: preview, confirmation, image type (_AxisPreview)
-  notebook_run.py           step 3: settings, what will happen, the run (_RunStep)
+  notebook_run.py           step 3: settings (with the workers, RunMode: Auto under half the
+                            available memory, run.workers.available_memory), what will happen,
+                            the run (_RunStep)
   notebook_results.py       step 4: pooled statistics per group and channel (_ResultsStep)
   notebook_plots.py         the PNG plots and IntensityPanel (the intensity checks card)
   run_labels.py             RunLabels: channel and replicate IDs of a described run's plots, from the
@@ -1149,8 +1154,9 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 
 - **Released:** v0.6.1 (16 November 2026), a patch release: the fixes of an external audit of
   v0.6.0 (#314: the mask step records exactly the fingerprint it verified; worker parity
-  compared on raw bytes, `written_at` the only field excluded from byte identity; the lineage
-  publication described as reader-consistent with rollback; `RunResult.workers` the thread
+  compared on raw bytes, `written_at` the only field of a run's outputs excluded from byte
+  identity (the conversion record `.morphobricks-conversion.json` of `convert` has its own
+  `written_at` and the copies' `mtime_ns`); the lineage publication described as reader-consistent with rollback; `RunResult.workers` the thread
   pool's capacity) and the notebook's RGB header override checkbox (#313); no format change.
   v0.6.0 (16 November 2026), Spec ADR 0005 steps 2 and 2b (one policy for binary
   masks), a breaking minor release: resolver contract version 3 (`Provenance.mask_conversions`,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import ipywidgets as widgets
 
 from .image_type import FLUORESCENCE, RGB
-from .run.modes import FULL, RESTART
+from .run.modes import AUTO, FULL, RESTART
 
 ROLE_OPTIONS = [
     ("Z - depth (focal planes)", "Z"),
@@ -62,6 +62,56 @@ VERIFY_CONTENT_HELP = (
     "not be seen. Verifying the content also compares each image's SHA-256 before its earlier "
     "rows are reused: every image is read once more. Turning it on or off reads every image "
     "again."
+)
+
+# Step 3's worker threads (issue #107). The notebook defaults to Auto under a memory cap of half
+# the memory available when it starts (owner, 16 November 2026); the CLI's --workers stays 1.
+WORKER_OPTIONS = [
+    ("1: one image after another", 1),
+    ("2 images at once", 2),
+    ("4 images at once", 4),
+    ("8 images at once", 8),
+    ("Auto: as many as this computer's CPUs and the memory cap allow", AUTO),
+]
+MIN_DEFAULT_CAP_GIB = 0.5
+"""Below this default cap the notebook starts serial: too little memory to share."""
+
+
+def default_max_ram_gib(available: int | None) -> float | None:
+    """Return the default memory cap, in GiB: half of ``available`` bytes, or None.
+
+    Rounded down to 0.1 GiB. None when the available memory is unknown or the half is below
+    :data:`MIN_DEFAULT_CAP_GIB`: the notebook then starts with one image at a time.
+    """
+    if available is None:
+        return None
+    cap = int(available / 2 / 2**30 * 10) / 10
+    return cap if cap >= MIN_DEFAULT_CAP_GIB else None
+
+
+def cap_help(available: int | None, cap: float | None) -> str:
+    """Return the line saying where the default memory cap comes from."""
+    if cap is None:
+        return (
+            "The memory this computer has available could not be read (or is too small to "
+            "share), so the notebook starts with one image at a time."
+        )
+    return (
+        f"Default: {cap:g} GiB, half of the {available / 2**30:.1f} GiB this computer had "
+        "available when the notebook started. Change it if other programs need more or less."
+    )
+
+
+WORKERS_HELP = (
+    "Each image is read whole in its own thread. The outputs are byte-identical whatever the "
+    "number. The speed-up is modest: most of the histogram work holds Python's global "
+    "interpreter lock (GIL), so the threads mostly take turns. More images at once also needs "
+    "more memory: each holds its own plane (or block) in memory."
+)
+MAX_RAM_HELP = (
+    "With Auto only: the memory the run may use, in GiB (0: no cap). Auto then reads only as "
+    "many images at once as the largest one's estimated working memory fits; an image that "
+    "alone needs more stops the run before any image is read."
 )
 
 _MAX_PLOTTED_GROUPS = 12
