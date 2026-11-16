@@ -40,6 +40,7 @@ def _rewrite(path: Path, names: list[str], seed: int) -> None:
 # --- B1 -----------------------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("statement_off")  # a block test: the statement unticked
 def test_confirm_saves_only_the_tags_the_block_shows(tmp_path):
     root = tree(tmp_path, lambda f: ["DNA", "ACTIN", "PHASE"])
     nb = open_screen(root, tmp_path / "out")
@@ -57,6 +58,7 @@ def test_confirm_saves_only_the_tags_the_block_shows(tmp_path):
     assert "4 channel(s) still to tag" in grid.status.value
 
 
+@pytest.mark.usefixtures("statement_off")  # a block test: the statement unticked
 def test_a_folder_whose_later_image_differs_is_never_grouped_on_its_first_image(tmp_path):
     root = tree(tmp_path, lambda f: ["DAPI", "Actin", "Ch3"])
     for i, folder in enumerate(FOLDERS):  # a second image per folder; one header disagrees

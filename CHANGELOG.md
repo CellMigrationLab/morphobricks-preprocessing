@@ -6,6 +6,27 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+- **Notebook: fast mode for *Tag channels*** (owner decisions of 16 November 2026). **Every
+  imaging unit has the same channels in the same order** is ticked by default, the user's
+  declared assumption. Headers are trusted: an untagged unit whose header names every channel
+  with a confirmed label, exactly (NFC, the `proposal_for` rule) or as a saved alias, is tagged
+  from it when the page opens, with no click. The row *Tags of every imaging unit* (the first
+  unit in folder order is the first tagged unit) is tagged once and fills every unit without
+  header names, rows grouped by condition / biological repeat / technical repeat; any cell of
+  any unit can then be tuned (that unit is *edited*, the others *same as the first tagged
+  unit*). A contradiction is refused, never prefilled: a unit with another channel count, or
+  whose header names are in another order or other names, is not filled, the step stops and
+  lists every such unit with the fix (**Tag this unit on its own**, or all at once); nothing is
+  reordered or guessed. **Add another layout** tags several units of one other count with a row
+  of their own; colour (RGB) units keep their own path; on a reopen, a new unit without header
+  names is saved only by **Tag the new units like the first tagged unit**. Each unit is saved
+  exactly as tagging it by hand saves it (same draft bytes; tested). The draft and the
+  description record no field for the statement yet (the Spec amendment will add one).
+  Unticked, the page is the strict per-unit path of PR 17b, unchanged (`channel_matrix`,
+  `notebook_channels_matrix`).
+
 ## v0.6.1 (16 November 2026)
 
 A patch release: the fixes of an external audit of v0.6.0 (#314) and the notebook's RGB header

@@ -1,5 +1,11 @@
 """*Tag channels*: which label each channel is, one answer per block of identical headers.
 
+**Fast mode** (owner decisions, 16 November 2026): *Every imaging unit has the same channels in
+the same order* is stated by default, a checkbox the user can switch off. While it is ticked,
+headers naming every channel are trusted and the other units are one matrix filled from the
+first tagged unit (:mod:`.notebook_channels_matrix`); only colour (RGB) and untaggable units keep
+the blocks below. Switched off, the page is exactly the blocks (the strict per-unit path).
+
 The folders (imaging units: condition / biological repeat / technical repeat) are shown in
 **blocks**. Folders whose image headers are identical, exactly (the same channel count, the same
 raw header names at every C index, all present, and the same colour flag), form one block, and
@@ -43,8 +49,9 @@ from .channel_labels import (
     tags_of,
     usage,
 )
-from .draft_answers import UnitKey
+from .draft_answers import DraftAnswers, UnitKey
 from .notebook_channel_thumbs import COLOUR_TEXT, CONTRAST_TEXT, Thumbnails
+from .notebook_channels_matrix import STATEMENT, TagMatrix
 from .notebook_channels_rows import FolderRows
 from .notebook_channels_type import ImageTypeColumn
 from .notebook_channels_view import (
@@ -87,6 +94,9 @@ def named(layout: UnitLayout) -> bool:
 class TagGrid:
     """The tag grid: blocks of folders with identical headers, one answer per block."""
 
+    SAME_CHANNELS = True
+    """The statement's default: ticked (owner, 16 November 2026)."""
+
     def __init__(
         self,
         store: AnswerStore,
@@ -108,7 +118,15 @@ class TagGrid:
         self.reopen: Callable[[], Mapping[UnitKey, str] | None] = lambda: None
         self.fold = RowFold("folder block")
         self.message = ""
-        self._building = False
+        self.building = False
+        self.same_channels = widgets.Checkbox(
+            value=self.SAME_CHANNELS,
+            description=STATEMENT,
+            indent=False,
+            layout=widgets.Layout(width="auto"),
+        )
+        self.same_channels.observe(lambda _: self._statement_changed(), "value")
+        self.matrix = TagMatrix(self)
         self.blocks = widgets.VBox()
         self.usage_html = widgets.HTML()
         self.status = widgets.HTML()
@@ -120,17 +138,22 @@ class TagGrid:
         self.widget = ui.card(
             "Tag each channel",
             [
+                self.same_channels,
                 ui.help_text(
-                    "Folders whose image headers are identical are one block: say once which "
-                    "label each channel is, looking at the pictures. The same label should be in "
-                    "the same column in every block; a label "
-                    "used in only some folders is shown in orange. Every channel and every "
+                    "Ticked (fast mode): a unit whose header names every channel with one of "
+                    "your labels is tagged from it; tag the row of tags once and it fills every "
+                    "unit without header names, then tune any cell; a unit that contradicts it "
+                    "is refused and tagged on its own. Unticked: folders whose image headers are "
+                    "identical are one block: say once which label each channel is, looking at "
+                    "the pictures. The same label should be in the same column in every block; a "
+                    "label used in only some folders is shown in orange. Every channel and every "
                     "image type must be answered."
                 ),
                 self.contrast,
                 self.plane,
                 self.blocks,
                 self.detail,
+                self.matrix.stopped,
                 self.problem,
                 self.usage_html,
                 self.status,
@@ -149,11 +172,15 @@ class TagGrid:
         """Show the grid for these units and labels (the confirmed label list of step A)."""
         if layouts is not self.layouts:
             self.alone = set()
+            self.matrix.reset()
         self.layouts, self.labels, self.rows.thumbs = layouts, labels, thumbs
         if self.place_types:
             self.types.open(layouts)
         self.detail.children = []
+        trusted = self.matrix.trust_headers()  # fast mode: headers naming every channel
         self.refresh()
+        if trusted:
+            self._on_change()
         ui.set_visible(self.widget, True)
 
     def close(self) -> None:
@@ -165,6 +192,21 @@ class TagGrid:
         """True when every position of every unit is tagged and every type answered."""
         return remaining(self.layouts, self.store.answers().units, self.labels).done
 
+    def _statement_changed(self) -> None:
+        """Show the matrix or the blocks after the statement is ticked or unticked."""
+        self.matrix.reset()
+        self.matrix.trust_headers()
+        self.refresh()
+        self._on_change()
+
+    def commit(self, answers: DraftAnswers, cells: Sequence[tuple[UnitKey, int]]) -> bool:
+        """Save answers whose cells were tagged by the user's click, redraw; False if refused."""
+        ok = self.store.update(synced(answers, self.layouts, cells))
+        self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
+        self.refresh()
+        self._on_change()
+        return ok
+
     def split(self, key: UnitKey) -> None:
         """Take one folder out of its block, to tag it on its own (nothing is saved)."""
         self.alone.add(key)
@@ -172,12 +214,13 @@ class TagGrid:
 
     # Blocks ------------------------------------------------------------------------------
 
-    def _colour(self, layout: UnitLayout) -> bool:
+    def colour(self, layout: UnitLayout) -> bool:
+        """Return True when a unit is shown as colour (RGB): answered so, or its header says so."""
         return layout.usable and self.types.shown(layout) == "rgb"
 
     def _block_key(self, layout: UnitLayout) -> tuple:
         """Return what the folders of one block share exactly; a folder alone has its own key."""
-        colour = self._colour(layout)
+        colour = self.colour(layout)
         tags = tags_of(layout, self.store.answers().units.get(layout.key))
         grouped = (colour and layout.uniform) or named(layout)
         together = grouped and layout.key not in self.alone
@@ -213,26 +256,21 @@ class TagGrid:
 
     def _tagged(self, units: Sequence[UnitLayout], index: int, value: str | None) -> None:
         """Save one channel's tag for every folder of a block; a label used twice is refused."""
-        if self._building:
+        if self.building:
             return
         answers = self.store.answers()
         first = units[0]
         tags = list(tags_of(first, answers.units.get(first.key)))
         if value and value in [t for i, t in enumerate(tags) if i != index]:
-            self._refuse_twice(value, tags.index(value) + 1)
+            self.refuse_twice(value, tags.index(value) + 1)
             return
         tags[index] = value
         for layout in units:  # every folder of the block holds these tags
             answers = with_tags(answers, layout, tags)
-        cells = [(layout.key, index) for layout in units]  # the cells this answer tags
-        if self.store.update(synced(answers, self.layouts, cells)):
-            self.message = ""
-        else:
-            self.message = ui.status("error", "Not saved.", [self.store.refusal()])
-        self.refresh()
-        self._on_change()
+        self.commit(answers, [(layout.key, index) for layout in units])
 
-    def _refuse_twice(self, value: str, other: int) -> None:
+    def refuse_twice(self, value: str, other: int) -> None:
+        """Say that ``value`` was not tagged: it already stands at channel ``other``."""
         self.message = ui.status(
             "error",
             f"{value} was not tagged here.",
@@ -273,7 +311,7 @@ class TagGrid:
         saved block is one whose folders are unchanged since the save and fully tagged.
         """
         first, reopen = units[0], self.reopen()
-        if reopen is None or not named(first) or self._colour(first):
+        if reopen is None or not named(first) or self.colour(first):
             return []
         saved = self.store.answers().units
         if any(u.key in self.alone or reopen.get(u.key) == UNCHANGED for u in units):
@@ -283,7 +321,7 @@ class TagGrid:
         found: dict[tuple[str, ...], int] = {}
         for layout in self.layouts:
             tags = tags_of(layout, saved.get(layout.key))
-            same = layout.signature == first.signature and not self._colour(layout)
+            same = layout.signature == first.signature and not self.colour(layout)
             if same and reopen.get(layout.key) == UNCHANGED and None not in tags:
                 found[tags] = found.get(tags, 0) + 1
         return sorted(found.items())
@@ -309,17 +347,13 @@ class TagGrid:
         answers = self.store.answers()
         for layout in units:
             answers = with_tags(answers, layout, tags)
-        cells = [(layout.key, index) for layout in units for index in range(layout.channels)]
-        ok = self.store.update(synced(answers, self.layouts, cells))
-        self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
-        self.refresh()
-        self._on_change()
+        self.commit(answers, [(u.key, index) for u in units for index in range(u.channels)])
 
     # Building ----------------------------------------------------------------------------
 
     def refresh(self) -> None:
         """Rebuild the blocks from the saved answers (pictures are kept, not read again)."""
-        self._building = True
+        self.building = True
         try:
             self.cells, self.confirm_buttons, self.split_buttons = {}, [], {}
             self.like_buttons = []
@@ -333,9 +367,11 @@ class TagGrid:
                 + [widgets.HTML("<b>image type</b>" if self.place_types else "")],
                 layout=columns(width),
             )
-            blocks = self.block_list()
+            matrix = self.matrix.build(width)  # empty while the statement is unticked
+            shown = {u.key for _, units in matrix for u in units}
+            blocks = [b for b in self.block_list() if b[0].key not in shown]
             shared = [b[0].signature for b in blocks if named(b[0])]
-            built = [
+            built = [(box, self._status(units)) for box, units in matrix] + [
                 (
                     self._block(units, width, shared.count(units[0].signature) > 1),
                     self._status(units),
@@ -344,7 +380,7 @@ class TagGrid:
             ]
             self.blocks.children = [header, *self.fold.arrange(built)]
         finally:
-            self._building = False
+            self.building = False
         self._summary()
 
     def _status(self, units: Sequence[UnitLayout]) -> str:
@@ -355,7 +391,7 @@ class TagGrid:
     def _block(self, units: Sequence[UnitLayout], width: int, apart: bool) -> widgets.Widget:
         """Build one block: what its header says, its answer, and the rows of its folders."""
         first = units[0]
-        colour = self._colour(first)
+        colour = self.colour(first)
         out: list[widgets.Widget] = [widgets.HTML(self._block_text(units, colour, apart))]
         if first.usable and not colour:
             out.append(self._answer_row(units, width))
@@ -440,7 +476,7 @@ class TagGrid:
             if index >= first.channels:
                 cells.append(widgets.HTML(""))
                 continue
-            cells.append(self._dropdown(units, index, tags[index], index in proposed))
+            cells.append(self.dropdown(units, index, tags[index], index in proposed))
         cells.append(widgets.HTML(""))
         return widgets.GridBox(cells, layout=columns(width))
 
@@ -458,23 +494,33 @@ class TagGrid:
         last = self.types.cell(layout) if typed else widgets.HTML("")
         return self.rows.row(layout, width, colour, extra, last)
 
-    def _dropdown(
-        self, units: Sequence[UnitLayout], index: int, tag: str | None, proposed: bool
+    def dropdown(
+        self,
+        units: Sequence[UnitLayout],
+        index: int,
+        tag: str | None,
+        proposed: bool,
+        mark: str | None = None,
     ) -> widgets.Widget:
-        """Build the dropdown of one C index: the labels and what is shown now."""
+        """Build the dropdown of one C index: the labels and what is shown now (or ``mark``)."""
         options = [(CHOOSE, None), *((label, label) for label in self.labels)]
         value = tag if tag in {o[1] for o in options} else None
         drop = widgets.Dropdown(options=options, value=value, layout=widgets.Layout(width="99%"))
         drop.observe(lambda change, u=units, i=index: self._tagged(u, i, change["new"]), "value")
         for layout in units:
             self.cells[(layout.key, index)] = drop
-        if tag is None:
-            mark = blank_chip("not tagged")
-        else:
-            mark = chip(tag, self.labels, self._shown_as(tag))
-            if proposed:
-                mark += " <span class='mb-help'>proposed, not confirmed</span>"
+        if mark is None:
+            mark = self._cell_mark(tag, proposed)
         return widgets.VBox([drop, widgets.HTML(mark)])
+
+    def _cell_mark(self, tag: str | None, proposed: bool) -> str:
+        """Return what is said under a dropdown: its tag's chip, or that it is not tagged."""
+        if tag is None:
+            return blank_chip("not tagged")
+        mark = chip(tag, self.labels, self.shown_as(tag))
+        if proposed:
+            mark += " <span class='mb-help'>proposed, not confirmed</span>"
+        return mark
 
     # Summary -----------------------------------------------------------------------------
 
@@ -499,14 +545,14 @@ class TagGrid:
         self.problem.value = self.message
         self.status.value = self._progress(total)
 
-    def _shown_as(self, label: str) -> str | None:
+    def shown_as(self, label: str) -> str | None:
         """Return the shown-as name of a saved label (the chip's tooltip), if it has one."""
         saved = self.store.answers().channels.get(label)
         return None if saved is None else saved.display_name
 
     def _usage_line(self, label: str, used: int, total: int) -> str:
         """Return the usage line of a label; one used in only some units is orange."""
-        mark = chip(label, self.labels, self._shown_as(label))
+        mark = chip(label, self.labels, self.shown_as(label))
         if used == total:
             return f"<div>{mark} used in all {total} folders</div>"
         if used == 0:

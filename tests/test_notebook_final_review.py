@@ -175,6 +175,7 @@ def test_a_draft_resumed_on_unchanged_folders_keeps_every_same_way(exp):  # noqa
     assert not nb.save_button.disabled and nb.save_experiment()
 
 
+@pytest.mark.usefixtures("statement_off")  # a block test: the statement unticked
 def test_a_tag_changed_after_same_way_asks_it_again_in_a_draft(exp):  # noqa: F811
     root, masks, out = exp
     nb = opened(*exp)
