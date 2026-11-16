@@ -414,3 +414,114 @@ def test_aliases_made_in_this_session_are_not_trusted_on_ticking_again(tmp_path)
     unit = nb.draft_answers.units.get(odd)
     assert unit is None or not any(unit.channels)  # not tagged from this session's aliases
     assert grid.matrix.rows[odd].state == REFUSED
+
+
+# --- independent review of c82a227 (#319) ------------------------------------------------
+
+
+def test_unticking_keeps_a_unit_the_user_tagged_again_by_hand_as_its_header_says(tmp_path):
+    """A click on a trusted unit makes its tags the user's, even when they end as trusted.
+
+    Cleared and tagged again with the same label, the unit's tags equal the no-click ones, but
+    the user set them: unticking keeps them (only the untouched trusted units are taken back).
+    """
+    tuned = ("drug", "rep1", "t1")
+    nb = _screen(tmp_path, _design(tmp_path, names_of=lambda key: LABELLED))
+    grid = nb.channel_grid
+    grid.cells[(tuned, 0)].value = None
+    grid.cells[(tuned, 0)].value = "DNA"  # the user's own click, the label its header says
+    grid.same_channels.value = False
+    assert set(nb.draft_answers.units) == {tuned}
+    assert nb.draft_answers.units[tuned].channels == TAGS
+
+
+def test_unticking_after_a_label_is_removed_takes_back_the_rest_of_the_no_click_tags(
+    tmp_path, monkeypatch
+):
+    """Removing a label untags it everywhere; what the headers alone tagged is still theirs.
+
+    The trusted units keep ACTIN and PHASE with no click once DNA is removed from the list;
+    unticking takes those back too, so the draft is byte-equal to opening the page unticked.
+    """
+    from morphobricks_preprocessing.notebook_channels_grid import TagGrid
+    from test_notebook_channels import set_labels
+
+    root = _design(tmp_path, names_of=lambda key: LABELLED)
+    nb = _screen(tmp_path, root, "fast")
+    nb.channel_labels.confirm.button.click()  # change the labels
+    set_labels(nb, ["ACTIN", "PHASE"])
+    assert {u.channels for u in nb.draft_answers.units.values()} == {(None, "ACTIN", "PHASE")}
+    nb.channel_grid.same_channels.value = False
+    assert not nb.draft_answers.units
+    monkeypatch.setattr(TagGrid, "SAME_CHANNELS", False)
+    strict = _screen(tmp_path, root, "strict", labels=("ACTIN", "PHASE"))
+    assert nb.draft_answers == strict.draft_answers
+    one = (tmp_path / "fast" / DRAFT_FILENAME).read_bytes()
+    assert one == (tmp_path / "strict" / DRAFT_FILENAME).read_bytes()
+
+
+def test_ticking_again_trusts_no_alias_removed_since_the_page_opened(tmp_path):
+    """An alias saved at opening but removed since (its label removed) trusts nothing.
+
+    DAPI is DNA's saved alias when the page opens; removing DNA from the list removes it from
+    the draft, and DNA added again has no alias. Ticking again must not tag the unit from DAPI.
+    """
+    from test_notebook_channels import set_labels
+
+    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    for i, folder in enumerate(SAVED):
+        _add(root, masks, folder, i + 1)
+    first = stepper(root, masks, out)
+    answer_all(first)
+    assert first.save_experiment()
+    _add(root, masks, "drug/rep3", 10)  # the saved aliases DAPI, Actin, Ch3
+    nb = stepper(root, masks, out)
+    named = ("drug", "rep3", "single")
+    assert nb.draft_answers.units[named].channels == TAGS  # trusted on opening
+    nb.channel_grid.same_channels.value = False
+    nb.channel_labels.confirm.button.click()  # change the labels: DNA out, then in again
+    set_labels(nb, ["ACTIN", "PHASE"])
+    nb.channel_labels.confirm.button.click()
+    set_labels(nb, list(TAGS))
+    assert not nb.draft_answers.channels["DNA"].header_names  # DAPI is no longer saved
+    nb.channel_grid.same_channels.value = True
+    unit = nb.draft_answers.units.get(named)
+    assert unit is None or not any(unit.channels)
+
+
+# --- independent review of #320 -------------------------------------------------------------
+
+
+def test_unticking_keeps_the_aliases_saved_at_opening_that_only_trusted_units_hold(
+    tmp_path, monkeypatch
+):
+    """Unticking takes back the no-click tags, never an alias the draft held before them.
+
+    The saved units' headers lost their names, so DAPI, Actin and Ch3 are saved aliases that
+    only the new unit, trusted from them with no click, holds. Unticked, the draft keeps them,
+    as opening unticked does; ticked again, the new unit is trusted again as on opening.
+    """
+    from morphobricks_preprocessing.notebook_channels_grid import TagGrid
+
+    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    for i, folder in enumerate(SAVED):
+        _add(root, masks, folder, i + 1)
+    first = stepper(root, masks, out)
+    answer_all(first)
+    assert first.save_experiment()
+    for i, folder in enumerate(SAVED):  # the same pixels, no header names any more
+        write_channels(root / folder / "a.tif", None, KINDS, seed=i + 1)
+    _add(root, masks, "drug/rep3", 10)  # header names DAPI, Actin, Ch3: the saved aliases
+    shutil.copytree(out, tmp_path / "copy")
+
+    nb = stepper(root, masks, out)
+    named = ("drug", "rep3", "single")
+    assert nb.draft_answers.units[named].channels == TAGS  # trusted on opening
+    opened = nb.draft_answers
+    nb.channel_grid.same_channels.value = False
+    monkeypatch.setattr(TagGrid, "SAME_CHANNELS", False)
+    strict = stepper(root, masks, tmp_path / "copy")
+    assert nb.draft_answers.channels["DNA"].header_names == ("DAPI",)
+    assert nb.draft_answers == strict.draft_answers
+    nb.channel_grid.same_channels.value = True  # ticked again: as on opening
+    assert nb.draft_answers == opened

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import ipywidgets as widgets
 
 from .image_type import FLUORESCENCE, RGB
@@ -89,16 +91,40 @@ def default_max_ram_gib(available: int | None) -> float | None:
     return cap if cap >= MIN_DEFAULT_CAP_GIB else None
 
 
-def cap_help(available: int | None, cap: float | None) -> str:
-    """Return the line saying where the default memory cap comes from."""
+def cap_help(available: int | None, cap: float | None, physical: bool = False) -> str:
+    """Return the line saying where the default memory cap comes from.
+
+    ``physical``: the figure is the computer's physical memory, not what was available
+    (:func:`.run.workers.memory_is_physical`, macOS), and the line says so.
+    """
     if cap is None:
+        what = "physical memory" if physical else "memory this computer has available"
         return (
-            "The memory this computer has available could not be read (or is too small to "
-            "share), so the notebook starts with one image at a time."
+            f"The {what} could not be read (or is too small to share), so the notebook starts "
+            "with one image at a time."
+        )
+    if physical:
+        return (
+            f"Default: {cap:g} GiB, half of the {available / 2**30:.1f} GiB of physical memory "
+            "this computer has (other programs' use is not counted here). Change it if other "
+            "programs need more or less."
         )
     return (
         f"Default: {cap:g} GiB, half of the {available / 2**30:.1f} GiB this computer had "
         "available when the notebook started. Change it if other programs need more or less."
+    )
+
+
+def serial_note(cap: float, need: int) -> str:
+    """Return the note saying why the notebook starts this dataset with one image at a time.
+
+    ``cap`` is the default memory cap in GiB; ``need`` the bytes the largest image needs
+    (:func:`.run.workers.max_ram_needed`), rounded up to 0.1 GiB so that it reads as larger.
+    """
+    largest = math.ceil(need / 2**30 * 10) / 10
+    return (
+        f"Images read at once: 1, because the default memory cap ({cap:g} GiB) is smaller than "
+        f"the largest image ({largest:.1f} GiB); outputs are identical for any number."
     )
 
 

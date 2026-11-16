@@ -23,14 +23,14 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from ..axes import AxisMapping
 from ..manifest import RunSettings
-from ..planes import PlaneReadError, format_bytes, plane_layout
+from ..planes import PlaneLayout, PlaneReadError, format_bytes, plane_layout
 from ..validation import ValidationIssue, error, plural
 from .modes import AUTO
 
@@ -193,8 +193,37 @@ def image_memory(path: Path, mapping: AxisMapping, settings: RunSettings) -> int
         memory_limit=settings.memory_limit,
         histogram_settings=settings.histogram,
     )
+    return layout_memory(layout, settings.bin_count)
+
+
+def layout_memory(layout: PlaneLayout, bin_count: int) -> int:
+    """Return the working memory of reading one image with this layout (:func:`image_memory`).
+
+    One plane as the run reads it (whole, or one block when its planes are read in blocks)
+    plus ``8 × bin_count`` per 2-D plane for the image's rows, kept until the run has them.
+    """
     plane = layout.block_memory_estimate if layout.in_blocks else layout.memory_estimate
-    return plane + layout.plane_count * 8 * settings.bin_count
+    return plane + layout.plane_count * 8 * bin_count
+
+
+def max_ram_needed(layouts: Iterable[PlaneLayout], bin_count: Callable[[PlaneLayout], int]) -> int:
+    """Return the smallest ``max_ram`` with which ``"auto"`` reads every one of these images.
+
+    The largest image's working memory (:func:`layout_memory`, with each layout's bin count)
+    plus :data:`PARENT_RESERVE`: below it, :func:`plan_workers` refuses with
+    ``image_over_max_ram``. 0 without a layout.
+    """
+    found = [layout_memory(layout, bin_count(layout)) for layout in layouts]
+    return max(found) + PARENT_RESERVE if found else 0
+
+
+def memory_is_physical(meminfo: Path = Path("/proc/meminfo")) -> bool:
+    """Return True when :func:`available_memory` gives the physical memory, not the available.
+
+    That is its figure where neither ``meminfo`` nor Windows' ``GlobalMemoryStatusEx`` is
+    there to read (macOS): other programs' use is not taken off.
+    """
+    return os.name != "nt" and _meminfo_available(meminfo) is None
 
 
 @dataclass(frozen=True)

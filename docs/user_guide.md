@@ -404,9 +404,15 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    default, `--workers 1`), or 2, 4 or 8. When the available memory cannot be read, or half of
    it is below 0.5 GiB, the notebook starts with 1. The outputs are byte-identical whatever the
    number; the speed-up is modest, because most of the histogram work holds Python's global
-   interpreter lock (GIL). An image that alone needs more than the cap stops the run before
-   any image is read (`image_over_max_ram`): raise the cap or choose 1. The result says how
-   many images were read at once.
+   interpreter lock (GIL). On macOS the figure is the computer's physical memory (no
+   available figure is offered there), and the line says so. Once the axis roles are
+   confirmed, if you have changed neither the number nor the cap and the default cap cannot
+   hold this dataset's largest image (its estimated working memory and the 256 MiB the run
+   keeps), the notebook starts at 1 and says so beside the choice: "Images read at once: 1,
+   because the default memory cap (X GiB) is smaller than the largest image (Y GiB); outputs
+   are identical for any number." Values you set yourself are kept: an image that alone needs
+   more than your cap stops the run before any image is read (`image_over_max_ram`): raise
+   the cap or choose 1. The result says how many images were read at once.
    After the run: its result, and collapsed panels for the **intensity checks and plots**,
    **Compare groups** (pooled statistics and a distribution plot per condition, repeat or
    image, for the table this run wrote; it writes nothing) and the report (formatted, with the

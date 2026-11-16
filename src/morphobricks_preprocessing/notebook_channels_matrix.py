@@ -28,7 +28,7 @@ draft and description formats have no field for it yet (a Spec amendment will ad
 from __future__ import annotations
 
 import html
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
 
 import ipywidgets as widgets
@@ -51,6 +51,7 @@ from .channel_matrix import (
     set_template,
     trusted,
     untrusted,
+    with_aliases,
 )
 from .draft_answers import ChannelAnswer, UnitKey
 from .notebook_channels_view import CHOOSE, blank_chip, chip, columns, quoted, unit_name
@@ -92,7 +93,14 @@ class TagMatrix:
         self.saved: dict[str, ChannelAnswer] = {}
         """The labels and their aliases saved when the page opened: the only aliases trusted."""
         self.given: dict[UnitKey, tuple[str | None, ...]] = {}
-        """The tags saved from the headers with no click (this session), taken back unticked."""
+        """The tags saved from the headers with no click (this session), taken back unticked.
+
+        A unit leaves it at the user's first click on its tags (:meth:`clicked`): its tags are
+        the user's from then on, even when they end equal to the header's."""
+        self.before: dict[str, tuple[str, ...] | None] | None = None
+        """The aliases the draft held before the first no-click tags since the last click (or
+        untick), restored unticked: a click drops the aliases no tagged cell holds, as on the
+        strict page, so it forgets them (:meth:`clicked`)."""
 
     def reset(self) -> None:
         """Forget the session's layouts, rows of tags and switches (new units, or a toggle)."""
@@ -101,26 +109,45 @@ class TagMatrix:
     def opening(self) -> None:
         """Note the aliases saved when the page opens for new units (the ones trusted)."""
         self.saved, self.given = dict(self.grid.store.answers().channels), {}
+        self.before = None
+
+    def labels_changed(self, labels: Sequence[str]) -> None:
+        """Forget the aliases to restore of a label taken out of the list (added again: none)."""
+        if self.before is not None:
+            self.before = {k: v for k, v in self.before.items() if k in labels}
 
     def trust_headers(self) -> bool:
         """Tag every untagged unit whose header names its channels (no click); True if saved."""
         if not self.grid.same_channels.value or not self.grid.labels:
             return False
         units = [u for u in self.grid.layouts if not self.grid.colour(u)]
-        answers, cells = trusted(self.grid.store.answers(), units, self.grid.labels, self.saved)
+        now = self.grid.store.answers()
+        answers, cells = trusted(now, units, self.grid.labels, self.saved)
         if not cells or not self.grid.store.update(synced(answers, self.grid.layouts, cells)):
             return False
+        if self.before is None:
+            self.before = {k: c.header_names for k, c in now.channels.items()}
         for key in dict.fromkeys(k for k, _ in cells):
             self.given[key] = tuple(answers.units[key].channels)
         return True
 
+    def clicked(self, keys: Iterable[UnitKey]) -> None:
+        """Note the units whose tags the user's click saved: never taken back unticked."""
+        for key in keys:
+            self.given.pop(key, None)
+        self.before = None  # the click's save dropped the aliases no tagged cell holds
+
     def take_back(self) -> None:
         """Untag the units tagged from their headers with no click (the statement unticked)."""
-        answers, given = self.grid.store.answers(), self.given
-        self.given = {}
+        answers, given, before = self.grid.store.answers(), self.given, self.before
+        self.given, self.before = {}, None
         out = untrusted(answers, self.grid.layouts, given)
         if out != answers:
-            self.grid.store.update(synced(out, self.grid.layouts))
+            out = synced(out, self.grid.layouts)
+        if before is not None:  # no click since: the aliases held before, as opening unticked
+            out = with_aliases(out, before)
+        if out != answers:
+            self.grid.store.update(out)
 
     # What is in the matrix -----------------------------------------------------------------
 

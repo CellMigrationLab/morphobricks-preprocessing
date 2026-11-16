@@ -25,10 +25,10 @@ Every unit's tags are saved in the draft exactly as tagging that unit by hand wr
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .channel_answers import with_tags
-from .channel_labels import UnitLayout, aliases, header_label, tags_of
+from .channel_labels import RGB_IDS, UnitLayout, aliases, header_label, tags_of
 from .draft_answers import ChannelAnswer, DraftAnswers, UnitKey
 
 SAME = "same"
@@ -167,8 +167,10 @@ def trusted(
     unit again (nothing saved is replaced without a click). ``saved`` are the labels whose
     header names (aliases) are trusted: those saved when the page opened, so that an alias the
     row's own filling saved in this session trusts nothing on the spot (default: the answers').
+    Of those, only the ones the answers still hold are trusted: an alias removed since (its
+    label removed from the list) is no longer saved.
     """
-    known = answers.channels if saved is None else saved
+    known = answers.channels if saved is None else _still_saved(saved, answers.channels)
     cells: Cells = []
     for layout in layouts:
         tags = header_tags(layout, labels, known)
@@ -180,6 +182,18 @@ def trusted(
     return answers, cells
 
 
+def _still_saved(
+    saved: Mapping[str, ChannelAnswer], now: Mapping[str, ChannelAnswer]
+) -> dict[str, ChannelAnswer]:
+    """Return the labels of ``saved`` with only the aliases ``now`` still holds."""
+    out = {}
+    for label, channel in saved.items():
+        kept = set((now.get(label) or ChannelAnswer()).header_names or ())
+        names = tuple(n for n in channel.header_names or () if n in kept)
+        out[label] = ChannelAnswer(header_names=names or None)
+    return out
+
+
 def untrusted(
     answers: DraftAnswers,
     layouts: Sequence[UnitLayout],
@@ -188,14 +202,37 @@ def untrusted(
     """Return the answers with the units :func:`trusted` tagged (``given``) untagged again.
 
     The statement unticked: those tags rested on it alone, with no click, so the strict page
-    shows the header as a proposal to confirm, as before. A unit whose tags the user changed
-    since keeps them (they are the user's).
+    shows the header as a proposal to confirm, as before. ``given`` holds only units the user
+    has not clicked on since (the caller forgets a unit at its first click). A unit whose saved
+    tags are some of the given ones, the others untagged since without a click on it (their
+    label removed from the list), is untagged too; one with any other tag keeps it.
     """
     for layout in layouts:
         tags = given.get(layout.key)
-        if tags is not None and tags_of(layout, answers.units.get(layout.key)) == tags:
+        saved = tags_of(layout, answers.units.get(layout.key))
+        if tags is None or len(tags) != len(saved):
+            continue
+        if any(saved) and all(s is None or s == t for s, t in zip(saved, tags, strict=True)):
             answers = with_tags(answers, layout, (None,) * layout.channels)
     return answers
+
+
+def with_aliases(
+    answers: DraftAnswers, names: Mapping[str, tuple[str, ...] | None]
+) -> DraftAnswers:
+    """Return the answers with ``names`` added back to the aliases of the labels still listed.
+
+    Unticking restores the aliases the draft held before the no-click tags (the ones only those
+    units held, which :func:`.channel_answers.synced` drops with them): opening the page
+    unticked keeps them until the user's first click. A label no longer listed gets none.
+    """
+    channels = dict(answers.channels)
+    for label, channel in answers.channels.items():
+        if label in RGB_IDS or not names.get(label):
+            continue
+        merged = set(channel.header_names or ()) | set(names[label] or ())
+        channels[label] = replace(channel, header_names=tuple(sorted(merged)))
+    return replace(answers, channels=channels)
 
 
 def differences(
@@ -331,4 +368,5 @@ __all__ = [
     "set_template",
     "trusted",
     "untrusted",
+    "with_aliases",
 ]
