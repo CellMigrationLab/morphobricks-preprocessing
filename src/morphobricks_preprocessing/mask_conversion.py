@@ -373,17 +373,14 @@ class ConversionInputs:
             raise ValueError(f"{mask_id!r} for {image}: the run has no masks folder")
         _check_representation(operation, mask_id, recorded["path"], declared)
         table = read_checked(self.output_folder)
-        status = file_status(
-            table, mask_id, declared.source_type, declared.representation, recorded
-        )
+        key = (table, mask_id, declared.source_type, declared.representation)
+        status = file_status(*key, recorded)
         try:
             now = Fingerprint.of(self.masks_root / recorded["path"])
         except FileNotFoundError:
             now = None
         if status != CHECKED or now != Fingerprint.recorded(recorded):
-            stale = status != CHECKED and predates_value_rule(
-                table, mask_id, declared.source_type, declared.representation
-            )
+            stale = predates_value_rule(*key)
             refusal = unchecked_refusal(mask_id, [recorded["path"]], 1, stale=stale)
             raise MaskUncheckedError(refusal.message)
         mask, folder = self._recorded_mask(image, declared.source_type, None, None)

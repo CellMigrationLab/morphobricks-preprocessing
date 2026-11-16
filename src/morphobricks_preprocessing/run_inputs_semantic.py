@@ -32,13 +32,13 @@ from .description_unnamed import FIELD as UNNAMED_FIELD
 from .fov_identity import FovIdentity, fov_identity
 from .manifest import FileEntry, RunManifest
 from .mask_representation import CHECKED, file_status, predates_value_rule, read_checked
+from .mask_rules import stale_check_message
 from .run_inputs_error import (
     ChannelNotFoundError,
     DescriptionRequiredError,
     MaskUncheckedError,
     RunInputsError,
 )
-from .run_inputs_request import stale_check_message
 
 if TYPE_CHECKING:
     from .run_inputs import Fov

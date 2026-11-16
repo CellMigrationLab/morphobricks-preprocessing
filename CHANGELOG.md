@@ -29,7 +29,7 @@ another (which `label_binary`, one plane at a time, also passes) was read as che
   fix (`... its check for k of n files was recorded by a masks step older than the binary value
   rule (Spec ADR 0005 BM11: one positive value over all the planes of a file), so it is not
   checked. Run the masks step again on this output folder (A_MASK_UNCHECKED).`, built only by
-  `run_inputs_request.stale_check_message`); `mask_check_status` and the manifest's mask status
+  `mask_rules.stale_check_message`); `mask_check_status` and the manifest's mask status
   say `not yet checked`. Running the mask step again applies BM11 (refusing such a file with
   `R_MASK_CONTRADICTS_REPRESENTATION`) and writes the rule. A status file written by an
   unreleased build of this branch before this change is refused the same way.

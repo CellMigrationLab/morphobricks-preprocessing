@@ -804,7 +804,7 @@ a file holding {3} at one time point and {7} at another, which the per-plane rea
 before any read, with the message `The mask '{id}' is declared binary and its check for k of n
 files was recorded by a masks step older than the binary value rule (Spec ADR 0005 BM11: one
 positive value over all the planes of a file), so it is not checked. Run the masks step again on
-this output folder (A_MASK_UNCHECKED).` (`run_inputs_request.stale_check_message`, the only
+this output folder (A_MASK_UNCHECKED).` (`mask_rules.stale_check_message`, the only
 place of that text; `read_mask`, `read_mask_window` and the conversion helpers give the same
 sentence for one file, `({path})` in place of `for k of n files`), and `mask_check_status` and
 the manifest's mask status say `not yet checked`. Running the mask step again applies BM11 and
