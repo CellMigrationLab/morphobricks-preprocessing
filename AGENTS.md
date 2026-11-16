@@ -226,7 +226,8 @@ src/morphobricks_preprocessing/
   mask_conversion.py RunInputs.binary_to_instances / classes_to_binary (Spec ADR 0005 BM12, step
                     2b): new mask files from a checked mask, refused before any read or write
                     (check_class_image, collisions, idempotent retry); mask_lineage.py their
-                    mask_lineage.jsonl lines, content_sha256 and the paired publication;
+                    mask_lineage.jsonl lines, content_sha256 and the reader-consistent
+                    publication with rollback (not atomic: a pending line is ignored);
                     cli_convert_mask.py the command convert-mask
   mask_rules.py     Spec ADR 0005's one constructor per shared refusal: refuse_not_instances
                     (A_MASK_NOT_INSTANCES), refuse_binary_values (R_MASK_CONTRADICTS_REPRESENTATION)

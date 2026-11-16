@@ -968,7 +968,7 @@ byte, then every plane's pixels in stored axis order, C order, little-endian
 reader (`mask_lineage.read_lineage`) refuses a line that is not such a record, or whose `root`
 is not `"masks"`, naming it.
 
-**Publication** is consistent for readers, per output: (1) the pixels go to a temporary file in
+**Publication** is reader-consistent with rollback, not atomic, per output: (1) the pixels go to a temporary file in
 the target folder (named `.<file name>.<random>.conversion.tmp`), synced, and re-read to check
 the digest; (2) `mask_lineage.jsonl` is replaced by a synced temporary file holding its previous
 lines and the new one; (3) the temporary file is renamed to the output. A failure in (1) or (2)

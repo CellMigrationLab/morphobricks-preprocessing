@@ -9,15 +9,16 @@ compact JSON of ``axes``, ``dtype`` and ``shape``, then one newline byte) follow
 bytes in stored axis order, C order and little-endian dtype: never the file's bytes and never
 the run's fingerprint.
 
-:func:`publish_output` publishes an output file and its line as a pair, consistent for readers:
-(1) the pixels go to a temporary file in the target folder, synced and re-read to check their
-digest; (2) ``mask_lineage.jsonl`` is replaced by a synced temporary file holding its previous
-lines plus the new one; (3) the temporary output is renamed to its final name. A failure in (1)
-or (2) leaves no output, no line and no temporary file; a failure in (3) removes the line again.
-A line whose output file does not exist (the process died between (2) and (3)) is **pending**:
-:func:`published_lines` leaves it out, and :func:`roll_back_pending` removes it before the next
-publication of that output. Mask discovery skips the lineage file and the temporary files
-(:func:`is_conversion_file`).
+:func:`publish_output` publishes an output file and its line in three steps; the publication is
+reader-consistent with rollback, not atomic: (1) the pixels go to a temporary file in the target
+folder, synced and re-read to check their digest; (2) ``mask_lineage.jsonl`` is replaced by a
+synced temporary file holding its previous lines plus the new one; (3) the temporary output is
+renamed to its final name. A failure in (1) or (2) leaves no output, no line and no temporary
+file; a failure raised in (3) restores the previous lines (the rollback). A process that dies
+between (2) and (3) leaves a line whose output file does not exist: it is **pending**, and
+readers stay consistent because :func:`published_lines` leaves it out and
+:func:`roll_back_pending` removes it before the next publication of that output. Mask discovery
+skips the lineage file and the temporary files (:func:`is_conversion_file`).
 """
 
 from __future__ import annotations
@@ -232,7 +233,11 @@ def read_written(path: Path, axes: str) -> np.ndarray:
 def publish_output(
     masks_root: Path, relative: str, pixels: np.ndarray, record: Mapping[str, object]
 ) -> None:
-    """Publish one output file and its lineage line as a pair (steps (1)-(3) above).
+    """Publish one output file and its lineage line (steps (1)-(3) above).
+
+    The publication is reader-consistent with rollback, not atomic: a failure raised in any
+    step leaves nothing published, and a line left by a process that died between (2) and (3)
+    is pending (ignored by readers, removed by the next publication of that output).
 
     Parameters
     ----------
