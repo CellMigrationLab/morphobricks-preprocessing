@@ -495,8 +495,10 @@ def test_an_unexpected_exception_names_the_image_without_workers_too(
 
 
 @pytest.mark.parametrize("workers", [4, 8, 32])
-def test_the_workers_reported_are_the_threads_that_read_images(tmp_path, experiment, workers):
-    # RunResult.workers: the threads that read images, 1 when none was read.
+def test_the_workers_reported_are_the_pool_capacity_one_when_none_was_read(
+    tmp_path, experiment, workers
+):
+    # RunResult.workers: the pool's size, min(workers, images to read); 1 when none was read.
     out = tmp_path / "out"
     first = run_with(experiment, out, workers)
     assert first.workers == min(workers, len(IMAGES))
@@ -510,3 +512,65 @@ def test_a_run_refused_for_max_ram_reports_one_worker(tmp_path, experiment):
         experiment, TYX, output_folder=tmp_path / "out", mode=mode("auto", PARENT_RESERVE + 1)
     )
     assert not result.written and result.read == () and result.workers == 1
+
+
+class _RecordingPool(run_module.resume.ThreadPoolExecutor):
+    """The run's thread pool, recording the size it was made with."""
+
+    sizes: list = []
+
+    def __init__(self, max_workers, **kwargs):
+        type(self).sizes.append(max_workers)
+        super().__init__(max_workers, **kwargs)
+
+
+@pytest.mark.parametrize(("workers", "together"), [(2, 2), (4, 4), (8, 8), (32, 8)])
+def test_run_result_workers_is_the_pool_capacity_and_bounds_the_reading_threads(
+    tmp_path, experiment, monkeypatch, workers, together
+):
+    """Audit F2 of v0.6.0: ``RunResult.workers`` is the thread pool's capacity.
+
+    It is the size of the pool the images were read with, ``min(workers, images to read)``: the
+    most images read at once, and the most distinct threads that read. A thread pool starts a
+    thread only when no idle one is waiting, so fewer distinct threads may read when reads
+    finish quickly; here the reads wait for each other in groups of ``together`` (a barrier), so
+    the pool is used to its capacity and exactly that many threads read.
+    """
+    read, readers, active, most = run_module.resume._read_file, set(), [0], [0]
+    lock, group = threading.Lock(), threading.Barrier(together, timeout=30)
+
+    def counting(path, rel, *args):
+        with lock:
+            readers.add(threading.current_thread())
+            active[0] += 1
+            most[0] = max(most[0], active[0])
+        group.wait()
+        try:
+            return read(path, rel, *args)
+        finally:
+            with lock:
+                active[0] -= 1
+
+    monkeypatch.setattr(run_module.resume, "_read_file", counting)
+    monkeypatch.setattr(run_module.resume, "ThreadPoolExecutor", _RecordingPool)
+    monkeypatch.setattr(_RecordingPool, "sizes", [])
+    result = run_with(experiment, tmp_path / "out", workers)
+    assert _RecordingPool.sizes == [result.workers] == [min(workers, len(IMAGES))]
+    assert len(readers) == most[0] == result.workers == together
+    assert threading.main_thread() not in readers
+
+
+def test_the_run_result_says_workers_is_the_pool_capacity():
+    """The promise is written where ``RunResult.workers`` and the contract describe it."""
+    import inspect
+    from pathlib import Path
+
+    from morphobricks_preprocessing.run.result import RunResult
+
+    docstring = " ".join(inspect.getdoc(RunResult).split())
+    assert "The size of the thread pool the images were read with" in docstring
+    assert "The number of worker threads that read images" not in docstring
+    contract = Path(__file__).resolve().parents[1] / "docs" / "contract.md"
+    text = " ".join(contract.read_text(encoding="utf-8").split())
+    assert "`RunResult.workers` only: the size of the thread pool" in text
+    assert "`RunResult.workers` only: the threads that read images" not in text

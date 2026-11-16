@@ -191,7 +191,8 @@ class Rows:
     discarded
         ``{file: why}`` for the staged rows not reused.
     workers
-        The number of worker threads the files were read with (issue #107; operational only).
+        The size of the thread pool the files were read with (issue #107; its capacity, not a
+        count of the threads used; operational only).
     refused
         ``image_over_max_ram`` when nothing was read for ``max_ram``, else None.
     """
