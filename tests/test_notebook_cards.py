@@ -22,6 +22,7 @@ pytest.importorskip("matplotlib")
 from described_tree import describe_tree
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.calibration import Calibration, calibration_entry  # noqa: E402
+from morphobricks_preprocessing.notebook_options import default_max_ram_gib  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 from morphobricks_preprocessing.run import LOCK_FILENAME, write_calibration  # noqa: E402
 from run_files import check_outputs, finished_pid  # noqa: E402
@@ -281,31 +282,61 @@ def _spy_run(monkeypatch):
     return modes
 
 
-def test_the_workers_choice_reaches_run_mode_and_the_summary_shows_the_pool(
+def _memory(monkeypatch, available):
+    """Make the notebook read ``available`` bytes as this computer's available memory."""
+    import morphobricks_preprocessing.notebook_run as module
+
+    monkeypatch.setattr(module, "available_memory", lambda: available)
+
+
+def test_auto_with_half_the_available_memory_is_the_default_and_1_is_serial(
     experiment, monkeypatch
 ):
-    # Issue #107 in the notebook: serial by default, as the command line's --workers 1.
+    # Issue #107 in the notebook (owner, 16 November 2026): Auto by default, under a cap of
+    # half the memory available at start (Auto alone bounds only by the CPUs); the CLI stays 1.
+    _memory(monkeypatch, 9 * 2**30)
     modes = _spy_run(monkeypatch)
     nb = ready(experiment)
-    assert nb.workers.value == 1 and [v for _, v in nb.workers.options] == [1, 2, 4, 8, "auto"]
-    assert not ui.is_visible(nb.max_ram_box)
+    assert nb.workers.value == "auto" and [v for _, v in nb.workers.options] == [1, 2, 4, 8, "auto"]
+    assert ui.is_visible(nb.max_ram_box) and nb.max_ram_gib.value == 4.5
     shown = _texts(nb.settings_card)
     assert any("outputs are byte-identical" in t and "GIL" in t for t in shown)
+    assert any("Default: 4.5 GiB, half of the 9.0 GiB" in t for t in shown)
+    auto = nb.run()
+    assert (modes[-1].workers, modes[-1].max_ram) == ("auto", round(4.5 * 2**30))
+    assert auto.written and 1 <= auto.workers <= 4
+    assert f"Images read at once (worker threads): <b>{auto.workers}</b>" in nb.run_status.value
+    table = auto.csv_path.read_bytes()
+    nb.mode.value = "full"  # every image read again, one after another
+    nb.workers.value = 1
+    assert not ui.is_visible(nb.max_ram_box)
     serial = nb.run()
-    assert serial.written and serial.workers == 1
-    assert (modes[-1].workers, modes[-1].max_ram) == (1, None)
+    assert (modes[-1].name, modes[-1].workers, modes[-1].max_ram) == ("full", 1, None)
+    assert serial.workers == 1
     assert "Images read at once (worker threads): <b>1</b>" in nb.run_status.value
-    table = serial.csv_path.read_bytes()
-    nb.mode.value = "full"  # every image read again, now four at once
+    assert serial.csv_path.read_bytes() == table  # the same bytes as the Auto run
     nb.workers.value = 4
     four = nb.run()
-    assert (modes[-1].name, modes[-1].workers, modes[-1].max_ram) == ("full", 4, None)
-    assert four.workers == 4  # four images to read: a pool of four
-    assert "Images read at once (worker threads): <b>4</b>" in nb.run_status.value
-    assert four.csv_path.read_bytes() == table  # the same bytes as the serial run
+    assert (modes[-1].workers, modes[-1].max_ram, four.workers) == (4, None, 4)
+    assert four.csv_path.read_bytes() == table
 
 
-def test_auto_shows_the_memory_cap_and_passes_it_only_with_auto(experiment, monkeypatch):
+@pytest.mark.parametrize("available", [None, 2**29])
+def test_without_a_usable_memory_reading_the_notebook_starts_serial(
+    experiment, monkeypatch, available
+):
+    _memory(monkeypatch, available)  # unknown, or a half below 0.5 GiB
+    modes = _spy_run(monkeypatch)
+    nb = ready(experiment)
+    assert nb.workers.value == 1 and not ui.is_visible(nb.max_ram_box)
+    assert nb.max_ram_gib.value == 0
+    assert any("starts with one image at a time" in t for t in _texts(nb.settings_card))
+    nb.run()
+    assert (modes[-1].workers, modes[-1].max_ram) == (1, None)
+
+
+def test_the_cap_is_passed_only_with_auto_and_0_is_no_cap(experiment, monkeypatch):
+    _memory(monkeypatch, 16 * 2**30)
     modes = _spy_run(monkeypatch)
     nb = ready(experiment)
     nb.max_ram_gib.value = 8
@@ -315,14 +346,19 @@ def test_auto_shows_the_memory_cap_and_passes_it_only_with_auto(experiment, monk
     nb.workers.value = "auto"
     assert ui.is_visible(nb.max_ram_box)
     nb.mode.value = "full"
-    result = nb.run()
+    nb.run()
     assert (modes[-1].workers, modes[-1].max_ram) == ("auto", 8 * 2**30)
-    assert result.written and 1 <= result.workers <= 4
-    nb.max_ram_gib.value = 0  # no cap
+    nb.max_ram_gib.value = 0  # no cap: Auto bounded by the CPUs only
     nb.run()
     assert (modes[-1].workers, modes[-1].max_ram) == ("auto", None)
-    nb.workers.value = 1
-    assert not ui.is_visible(nb.max_ram_box)
+
+
+@pytest.mark.parametrize(
+    ("available", "expected"),
+    [(None, None), (2**30 - 1, None), (2**30, 0.5), (9 * 2**30, 4.5), (int(15.99 * 2**30), 7.9)],
+)
+def test_the_default_cap_is_half_the_available_memory_rounded_down(available, expected):
+    assert default_max_ram_gib(available) == expected
 
 
 def test_the_plan_reads_the_calibration_the_run_reads(experiment):

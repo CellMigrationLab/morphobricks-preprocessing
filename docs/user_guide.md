@@ -377,12 +377,18 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    example a label declared that no folder uses, `W_UNUSED_CHANNEL`) are listed above the
    button; they do not stop the save.
 7. **Run.** **Compute histograms**; what is still to do is listed only while something is.
-   **Images read at once** (in Settings) is 1 by default, as the command line's `--workers`;
-   2, 4, 8 or **Auto** (as many as the CPUs allow, with an optional **Memory cap (GiB)**, the
-   command line's `--max-ram`) read several images at once, each in its own thread. The outputs
-   are byte-identical whatever the number; the speed-up is modest, because most of the
-   histogram work holds Python's global interpreter lock (GIL). The result says how many
-   images were read at once.
+   **Images read at once** (in Settings) is **Auto** by default: as many images at once as
+   the CPUs allow and the **Memory cap (GiB)** fits (the command line's `--max-ram`), each in
+   its own thread. The cap starts at half of the memory the computer had available when the
+   notebook started (on Linux, also within the limit of its container), rounded down to
+   0.1 GiB, and the line under it says the figure; change it if other programs need more or
+   less, or set 0 for no cap. Choose 1 to read one image after another (the command line's
+   default, `--workers 1`), or 2, 4 or 8. When the available memory cannot be read, or half of
+   it is below 0.5 GiB, the notebook starts with 1. The outputs are byte-identical whatever the
+   number; the speed-up is modest, because most of the histogram work holds Python's global
+   interpreter lock (GIL). An image that alone needs more than the cap stops the run before
+   any image is read (`image_over_max_ram`): raise the cap or choose 1. The result says how
+   many images were read at once.
    After the run: its result, and collapsed panels for the **intensity checks and plots**,
    **Compare groups** (pooled statistics and a distribution plot per condition, repeat or
    image, for the table this run wrote; it writes nothing) and the report (formatted, with the

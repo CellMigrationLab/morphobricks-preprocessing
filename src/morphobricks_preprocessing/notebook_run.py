@@ -27,6 +27,8 @@ from .notebook_options import (
     VERIFY_CONTENT_HELP,
     WORKER_OPTIONS,
     WORKERS_HELP,
+    cap_help,
+    default_max_ram_gib,
 )
 from .notebook_plots import IntensityPanel
 from .notebook_progress import Wait
@@ -35,6 +37,7 @@ from .planes import DEFAULT_MEMORY_LIMIT
 from .report import issue_counts, rebuild_line
 from .run import RESTART, Preflight, RunMode, RunResult, run_experiment
 from .run.modes import AUTO
+from .run.workers import available_memory
 from .run_labels import recorded_labels
 from .validation import has_errors, plural
 
@@ -157,16 +160,28 @@ class _RunStep:
     def _build_workers(self) -> list[widgets.Widget]:
         """Build the worker threads choice (issue #107) and its memory cap; return the widgets.
 
-        Serial by default, as the command line's ``--workers``; the cap is shown with Auto only.
+        Auto by default, under a cap of half the memory available now (owner, 16 November
+        2026; the command line's ``--workers`` stays 1): Auto alone bounds only by the CPUs.
+        One image at a time when the available memory cannot be read. The cap is shown with
+        Auto only.
         """
+        available = available_memory()
+        cap = default_max_ram_gib(available)
         self.workers = widgets.Dropdown(
-            options=WORKER_OPTIONS, value=1, layout=widgets.Layout(**_WIDE)
+            options=WORKER_OPTIONS, value=1 if cap is None else AUTO, layout=widgets.Layout(**_WIDE)
         )
         self.max_ram_gib = widgets.BoundedFloatText(
-            value=0, min=0, max=65_536, step=1, description="Memory cap (GiB)", style=_label()
+            value=cap or 0,
+            min=0,
+            max=65_536,
+            step=0.5,
+            description="Memory cap (GiB)",
+            style=_label(),
         )
-        self.max_ram_box = widgets.VBox([self.max_ram_gib, ui.help_text(MAX_RAM_HELP)])
-        ui.set_visible(self.max_ram_box, False)
+        self.max_ram_box = widgets.VBox(
+            [self.max_ram_gib, ui.help_text(MAX_RAM_HELP), ui.help_text(cap_help(available, cap))]
+        )
+        ui.set_visible(self.max_ram_box, self.workers.value == AUTO)
         self.workers.observe(
             lambda change: ui.set_visible(self.max_ram_box, change["new"] == AUTO), names="value"
         )

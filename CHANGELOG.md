@@ -28,11 +28,17 @@ v0.5.1: no run before v0.5.1 is read.)
   no output changes.
 - **Notebook: images read at once.** Step 3's Settings card offers the worker threads of
   `RunMode` (#107), which the notebook did not expose (its runs were serial): **Images read at
-  once**, 1 by default as the command line's `--workers`, or 2, 4, 8 or Auto, with a
-  **Memory cap (GiB)** shown and passed (`max_ram`) with Auto only (0: no cap). A help line
-  says the outputs are byte-identical whatever the number and the speed-up is modest (the
-  histogram work holds the GIL). The run's result shows `RunResult.workers` (the thread pool
-  the images were read with). The notebook file and its call are unchanged.
+  once**, **Auto by default** (owner decision of 16 November 2026), or 1, 2, 4 or 8, with a
+  **Memory cap (GiB)** shown and passed (`max_ram`) with Auto only (0: no cap). `"auto"`
+  alone bounds the workers by the CPUs only, so the cap starts at half of the memory available
+  when the notebook starts (`run.workers.available_memory`, standard library only: Linux
+  `MemAvailable` lowered to the control group's remaining limit, Windows
+  `GlobalMemoryStatusEx`, elsewhere the physical memory), rounded down to 0.1 GiB, and a line
+  says the figure. When it cannot be read, or half of it is below 0.5 GiB, the notebook starts
+  with 1. The command line's `--workers` stays 1. A help line says the outputs are
+  byte-identical whatever the number and the speed-up is modest (the histogram work holds the
+  GIL). The run's result shows `RunResult.workers` (the thread pool the images were read
+  with). The notebook file and its call are unchanged.
 
 ### Corrections to the v0.6.1 notes
 
