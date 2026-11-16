@@ -34,8 +34,17 @@ image:
 
 | What | normalization call (v0.7.0) | Units |
 | --- | --- | --- |
-| Eosin `E` and hematoxylin `H` | `stain.to_scalar(rgb, axes="CYX", preset="he_eosin")`: `.image` is eosin, `.exclusion` is hematoxylin (`stain.py:335-412`, components 1 and 0 of `separate_stains(rgb, hed_from_rgb)`, `stain.py:168-173`) | `separate_stains` units: divided by `-log(1e-6)` and clipped at 0 (normalization `contract.md` §3.4) |
-| Per-channel optical density `OD_R, OD_G, OD_B` | `optical_density.optical_density(scalar_inputs.rgb_yxc(rgb, "CYX"), optical_density.check_white((255, 255, 255)))` (`optical_density.py:251-260`, `:127-157`; `scalar_inputs.py:31-57`) | `-log10(max(I, 1) / 255)` |
+| Eosin `E` and hematoxylin `H` | `result = stain.to_scalar(rgb, axes="CYX", preset="he_eosin")`; `E = result.image`, `H = result.exclusion` (`stain.py:335-412`; components 1 and 0 of `separate_stains(rgb, hed_from_rgb)`, `stain.py:168-173`) | `separate_stains` units, float32: `(ln(max(I/255, 1e-6)) / ln(1e-6)) @ hed_from_rgb`, clipped at 0, which is the log10 OD with a `1e-6` floor, divided by 6, then deconvolved (normalization `contract.md` §3.4). **Not** raw log10 OD, and not derived from the `OD` array below. |
+| Per-channel optical density `OD_R, OD_G, OD_B` | `od, od_floored = optical_density.optical_density(scalar_inputs.rgb_yxc(rgb, "CYX"), optical_density.check_white((255, 255, 255)))` (`optical_density.py:251-260`, `:127-157`; `scalar_inputs.py:31-57`) | `od`: float64 `(Y, X, 3)`, `-log10(max(I, 1) / 255)`. `od_floored`: a Python `float`, the share of pixels with at least one channel at 0 (raised to 1) |
+
+**`optical_density()` returns a pair.** In normalization v0.7.0 its signature is
+`optical_density(rgb, white) -> tuple[np.ndarray, float]` (`optical_density.py:251`). The helper
+unpacks it explicitly into `od` and `od_floored`, never indexes the tuple, and refuses (an
+internal `TypeError`, a bug, never a silent fallback) a result that is not a 2-tuple of a float64
+`(Y, X, 3)` array and a float. `OD_R, OD_G, OD_B` are `od[..., 0]`, `od[..., 1]`, `od[..., 2]`.
+`od_floored` is recorded in the lineage `fractions` (§3) and shown on the preview. The E/H units
+and the OD units differ (base, floor, scale and clipping), so no threshold is ever moved from one
+to the other.
 
 These are the same eosin and hematoxylin maps that fiberfeatures measures with `he_eosin`, so
 the mask and the measured map agree. The white is fixed at 255 for every image, as
@@ -82,8 +91,9 @@ user judges whether the rule suits their slides.
 The rule is defined once, as an immutable record in the helper's module, and written whole into
 every lineage line with its SHA-256 (Spec BM15 "The rule record"; owner decision on Q7). Nothing
 in it is read from the image, the run or the caller. The one value taken at import is the HED
-matrix's hash: the helper hashes the matrix normalization passes to `separate_stains`
-(`skimage.color.hed_from_rgb`, `stain.py:168-170`) as float64, little-endian, C order, and a
+matrix's hash: the helper hashes the matrix normalization passes to `separate_stains`, looked up
+by the preset's own name for it (`PRESETS["he_eosin"].matrix` = `"hed_from_rgb"`,
+`stain_presets.py:153`; `stain.py:168-170`) as float64, little-endian, C order, and a
 scikit-image whose matrix differs gives another record and so never matches on retry.
 
 ```json
@@ -296,9 +306,15 @@ replaced the draft that stood here, so the two cannot drift). In short:
   limit), plus a 3×3 hematoxylin speck (under 15 px: kept). The expected components, the
   dilation radii and the opening are checked pixel by pixel, as is the written file.
 - **Exact reuse:** the helper's `E`, `H` and `OD` (exposed on `TissueMaskPreview`) are
-  `np.array_equal` to calling `stain.to_scalar(..., preset="he_eosin")` and
-  `optical_density.optical_density(...)` directly. A source check shows the module contains no
-  `log10`, `separate_stains` or `hed_from_rgb`.
+  `np.array_equal` to calling `stain.to_scalar(..., preset="he_eosin")` (`.image`, `.exclusion`)
+  and `optical_density.optical_density(...)` directly. For the OD the test unpacks
+  `od, floored = optical_density(...)` and compares **only the array** `od` with
+  `np.array_equal`; `floored` is compared on its own with the recorded `fractions.od_floored`
+  (`==`, a float from the same call). A test image with a channel at 0 checks `od_floored > 0`
+  and that the floored pixels have OD `log10(255)`. A source check shows the module contains no
+  `log10`, `log(`, `separate_stains` or `rgb2hed`; the HED matrix is looked up only by the name
+  the preset gives (`PRESETS["he_eosin"].matrix`, `stain_presets.py:153`) and only to hash it for
+  the rule record.
 - **Refusals:** each row of §2 (channels unit, Z = 2, T = 2, `uint16`, no masks folder, unknown
   rule, missing scikit-image via a blocked import, each output-ID case incl. case collision with
   a declared ID and with a source type, foreign file, existing file), each checked to write
