@@ -128,3 +128,22 @@ def test_the_masks_step_names_the_value_rule_in_binary_records_only(tmp_path):
     assert tumor[VALUE_RULE] == BINARY_VALUE_RULE == "BM11"
     assert list(nuclei) == ["source_type", "representation", "files"]  # unchanged
     assert _status(out, f"tumor_region/{image}") == "checked"
+
+
+def test_the_contract_names_the_stale_message_each_reader_gives():
+    """Contract §15 quotes the scope each reader puts in the stale message, as the code does.
+
+    The conversion helpers give the resolver's refusal for their one file (Spec ADR 0005 BM12:
+    ``A_MASK_UNCHECKED``, the resolver's refusal for that file), ``for 1 of 1 files``; only
+    ``read_mask``, ``read_mask_window`` and ``read_objects`` give ``({path})``.
+    """
+    from pathlib import Path
+
+    text = " ".join(
+        (Path(__file__).parents[1] / "docs" / "contract.md").read_text(encoding="utf-8").split()
+    )
+    helper = unchecked_refusal("TumorRegion", ["tumor_region/a.tif"], 1, stale=True).message
+    assert helper == stale_check_message("TumorRegion", "for 1 of 1 files")
+    assert "the conversion helpers give the same sentence for one file, `({path})`" not in text
+    assert "the conversion helpers give the resolver's sentence for their one file" in text
+    assert "`read_mask`, `read_mask_window` and `read_objects` give the same sentence" in text

@@ -806,9 +806,10 @@ before any read, with the message `The mask '{id}' is declared binary and its ch
 files was recorded by a masks step older than the binary value rule (Spec ADR 0005 BM11: one
 positive value over all the planes of a file), so it is not checked. Run the masks step again on
 this output folder (A_MASK_UNCHECKED).` (`mask_rules.stale_check_message`, the only
-place of that text; `read_mask`, `read_mask_window` and the conversion helpers give the same
-sentence for one file, `({path})` in place of `for k of n files`), and `mask_check_status` and
-the manifest's mask status say `not yet checked`. Running the mask step again applies BM11 and
+place of that text; `read_mask`, `read_mask_window` and `read_objects` give the same sentence
+for one file, `({path})` in place of `for k of n files`, and the conversion helpers give the
+resolver's sentence for their one file, `for 1 of 1 files`, as §15.2 says), and
+`mask_check_status` and the manifest's mask status say `not yet checked`. Running the mask step again applies BM11 and
 writes the rule. `instances` and `parent_labels` records carry no rule and are unchanged.
 
 The masks are bound to their fingerprints (issue #165, as a run's sources, §9.4): the step
