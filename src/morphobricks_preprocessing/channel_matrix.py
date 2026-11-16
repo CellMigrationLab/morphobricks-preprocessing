@@ -155,23 +155,47 @@ def header_tags(
 
 
 def trusted(
-    answers: DraftAnswers, layouts: Sequence[UnitLayout], labels: Collection[str]
+    answers: DraftAnswers,
+    layouts: Sequence[UnitLayout],
+    labels: Collection[str],
+    saved: Mapping[str, ChannelAnswer] | None = None,
 ) -> tuple[DraftAnswers, Cells]:
     """Return the answers with every untagged unit whose header names its channels tagged so.
 
     Fast mode's trust in the headers: no confirmation click (owner, 16 November 2026). A unit
     with any saved tag keeps it, even one saved for another channel count: the user tags that
-    unit again (nothing saved is replaced without a click).
+    unit again (nothing saved is replaced without a click). ``saved`` are the labels whose
+    header names (aliases) are trusted: those saved when the page opened, so that an alias the
+    row's own filling saved in this session trusts nothing on the spot (default: the answers').
     """
+    known = answers.channels if saved is None else saved
     cells: Cells = []
     for layout in layouts:
-        tags = header_tags(layout, labels, answers.channels)
+        tags = header_tags(layout, labels, known)
         saved = answers.units.get(layout.key)
         if tags is None or (saved is not None and any(saved.channels)):
             continue
         answers = with_tags(answers, layout, tags)
         cells += [(layout.key, i) for i in range(layout.channels)]
     return answers, cells
+
+
+def untrusted(
+    answers: DraftAnswers,
+    layouts: Sequence[UnitLayout],
+    given: Mapping[UnitKey, tuple[str | None, ...]],
+) -> DraftAnswers:
+    """Return the answers with the units :func:`trusted` tagged (``given``) untagged again.
+
+    The statement unticked: those tags rested on it alone, with no click, so the strict page
+    shows the header as a proposal to confirm, as before. A unit whose tags the user changed
+    since keeps them (they are the user's).
+    """
+    for layout in layouts:
+        tags = given.get(layout.key)
+        if tags is not None and tags_of(layout, answers.units.get(layout.key)) == tags:
+            answers = with_tags(answers, layout, (None,) * layout.channels)
+    return answers
 
 
 def differences(
@@ -306,4 +330,5 @@ __all__ = [
     "name_label",
     "set_template",
     "trusted",
+    "untrusted",
 ]

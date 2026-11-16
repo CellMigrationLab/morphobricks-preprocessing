@@ -353,7 +353,9 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    **Add another layout** tags several units with one other number of channels with a row of
    their own. Colour (RGB) folders keep their own path. On a reopen, a new unit without header
    names is shown filled and saved only by **Tag the new units like the first tagged unit**.
-   Untick the statement for the strict per-unit page, exactly as before: folders with identical
+   Untick the statement for the strict per-unit page, exactly as before (the units fast mode
+   tagged from their headers with no click are untagged again: their header is a proposal to
+   confirm, as before; your own tags stay): folders with identical
    headers are tagged together; the list of those folders, where one can be tagged on its own,
    is one click away. On a saved experiment whose images were
    re-exported with their channels in another order, tag that folder again in the new order:

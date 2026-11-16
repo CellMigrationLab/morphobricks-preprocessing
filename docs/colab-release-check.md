@@ -99,7 +99,9 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
       unit marks only that unit *edited*. The extra-stain folder (another channel count) and a
       folder whose header names are swapped are not filled: *Stopped* lists both with the fix,
       and **Tag this unit on its own** gives the swapped one its own dropdowns. Unticking the
-      statement gives the blocks of identical headers exactly as before.
+      statement gives the blocks of identical headers exactly as before: the folders tagged
+      from their headers with no click are untagged again and their header is a proposal to
+      confirm.
 11. **Masks** (step 4).
     - [ ] **Check the masks** runs with progress. *Your masks* offers separate objects,
       regions and *grouped labels (one value per parent, e.g. mitochondria by cell)*, none

@@ -230,12 +230,16 @@ def test_headers_naming_every_channel_are_trusted_with_no_click(tmp_path):
     assert nb.channel_grid.complete
 
 
-def test_trusted_headers_write_the_draft_bytes_of_tagging_by_hand(tmp_path):
+def test_trusted_headers_write_the_draft_bytes_of_tagging_by_hand(tmp_path, monkeypatch):
+    from morphobricks_preprocessing.notebook_channels_grid import TagGrid
+
     root = _design(tmp_path, names_of=lambda key: LABELLED)
     fast = _screen(tmp_path, root, "fast")
     _types(fast)
+    monkeypatch.setattr(TagGrid, "SAME_CHANNELS", False)  # by hand: nothing trusted first
     hand = _screen(tmp_path, root, "hand")
-    _by_hand(hand)
+    assert not hand.draft_answers.units
+    hand.channel_grid.confirm_buttons[0].click()  # the strict path's confirmation
     _types(hand)
     assert fast.draft_answers == hand.draft_answers
     one = (tmp_path / "fast" / DRAFT_FILENAME).read_bytes()
@@ -359,3 +363,54 @@ def test_a_reopen_trusts_saved_aliases_and_fills_a_nameless_unit_only_on_the_cli
         for index, tag in enumerate(TAGS):
             by_hand.channel_grid.cells[(key, index)].value = tag
     assert (out / DRAFT_FILENAME).read_bytes() == (tmp_path / "copy" / DRAFT_FILENAME).read_bytes()
+
+
+# --- review of #319: unticking, and aliases made in this session --------------------------
+
+
+def test_unticking_takes_back_the_headers_trusted_with_no_click(tmp_path, monkeypatch):
+    """Unticked, the page is the strict path as before: a header pre-tag needs its click.
+
+    The tags fast mode saved from the headers with no click are taken back (they rested only on
+    the statement); the draft is then byte-equal to opening the page unticked.
+    """
+    from morphobricks_preprocessing.notebook_channels_grid import TagGrid
+
+    root = _design(tmp_path, names_of=lambda key: LABELLED)
+    fast = _screen(tmp_path, root, "fast")
+    assert {u.channels for u in fast.draft_answers.units.values()} == {TAGS}  # trusted
+    fast.channel_grid.same_channels.value = False
+    assert not fast.draft_answers.units
+    assert len(fast.channel_grid.confirm_buttons) == 1  # the proposal, to confirm
+    monkeypatch.setattr(TagGrid, "SAME_CHANNELS", False)
+    strict = _screen(tmp_path, root, "strict")
+    assert fast.draft_answers == strict.draft_answers
+    one = (tmp_path / "fast" / DRAFT_FILENAME).read_bytes()
+    assert one == (tmp_path / "strict" / DRAFT_FILENAME).read_bytes()
+    fast.channel_grid.same_channels.value = True  # ticked again: trusted again
+    assert {u.channels for u in fast.draft_answers.units.values()} == {TAGS}
+
+
+def test_unticking_keeps_what_the_user_tagged(tmp_path):
+    other = ("drug", "rep1", "t1")
+    nb = _screen(tmp_path, _design(tmp_path, names_of=lambda key: LABELLED), labels=(*TAGS, "X"))
+    grid = nb.channel_grid
+    grid.cells[(other, 2)].value = "X"  # the user's click on a trusted unit
+    grid.same_channels.value = False
+    assert set(nb.draft_answers.units) == {other}
+    assert nb.draft_answers.units[other].channels == ("DNA", "ACTIN", "X")
+
+
+def test_aliases_made_in_this_session_are_not_trusted_on_ticking_again(tmp_path):
+    """A unit the row refused stays refused: ticking again trusts only the aliases of opening."""
+    odd = ("ctrl", "rep2", "t1")
+    swapped = ["Actin", "Hoechst", "Ch3"]
+    nb = _screen(tmp_path, _design(tmp_path, names_of=lambda k: swapped if k == odd else NAMES))
+    grid = nb.channel_grid
+    _tag_once(nb)  # saves the aliases Hoechst, Actin, Ch3
+    assert grid.matrix.rows[odd].state == REFUSED
+    grid.same_channels.value = False
+    grid.same_channels.value = True
+    unit = nb.draft_answers.units.get(odd)
+    assert unit is None or not any(unit.channels)  # not tagged from this session's aliases
+    assert grid.matrix.rows[odd].state == REFUSED

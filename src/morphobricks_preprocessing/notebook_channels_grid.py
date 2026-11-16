@@ -173,6 +173,7 @@ class TagGrid:
         if layouts is not self.layouts:
             self.alone = set()
             self.matrix.reset()
+            self.matrix.opening()
         self.layouts, self.labels, self.rows.thumbs = layouts, labels, thumbs
         if self.place_types:
             self.types.open(layouts)
@@ -195,7 +196,10 @@ class TagGrid:
     def _statement_changed(self) -> None:
         """Show the matrix or the blocks after the statement is ticked or unticked."""
         self.matrix.reset()
-        self.matrix.trust_headers()
+        if self.same_channels.value:
+            self.matrix.trust_headers()
+        else:
+            self.matrix.take_back()  # the strict path as before: a header pre-tag needs its click
         self.refresh()
         self._on_change()
 

@@ -50,8 +50,9 @@ from .channel_matrix import (
     matrix_rows,
     set_template,
     trusted,
+    untrusted,
 )
-from .draft_answers import UnitKey
+from .draft_answers import ChannelAnswer, UnitKey
 from .notebook_channels_view import CHOOSE, blank_chip, chip, columns, quoted, unit_name
 from .notebook_values import natural_key
 
@@ -88,18 +89,38 @@ class TagMatrix:
         self.all_own: list[widgets.Button] = []
         self.layout_buttons: dict[int, widgets.Button] = {}
         self.stopped = widgets.HTML()
+        self.saved: dict[str, ChannelAnswer] = {}
+        """The labels and their aliases saved when the page opened: the only aliases trusted."""
+        self.given: dict[UnitKey, tuple[str | None, ...]] = {}
+        """The tags saved from the headers with no click (this session), taken back unticked."""
 
     def reset(self) -> None:
         """Forget the session's layouts, rows of tags and switches (new units, or a toggle)."""
         self.extra, self.templates, self.own = [], {}, set()
+
+    def opening(self) -> None:
+        """Note the aliases saved when the page opens for new units (the ones trusted)."""
+        self.saved, self.given = dict(self.grid.store.answers().channels), {}
 
     def trust_headers(self) -> bool:
         """Tag every untagged unit whose header names its channels (no click); True if saved."""
         if not self.grid.same_channels.value or not self.grid.labels:
             return False
         units = [u for u in self.grid.layouts if not self.grid.colour(u)]
-        answers, cells = trusted(self.grid.store.answers(), units, self.grid.labels)
-        return bool(cells) and self.grid.store.update(synced(answers, self.grid.layouts, cells))
+        answers, cells = trusted(self.grid.store.answers(), units, self.grid.labels, self.saved)
+        if not cells or not self.grid.store.update(synced(answers, self.grid.layouts, cells)):
+            return False
+        for key in dict.fromkeys(k for k, _ in cells):
+            self.given[key] = tuple(answers.units[key].channels)
+        return True
+
+    def take_back(self) -> None:
+        """Untag the units tagged from their headers with no click (the statement unticked)."""
+        answers, given = self.grid.store.answers(), self.given
+        self.given = {}
+        out = untrusted(answers, self.grid.layouts, given)
+        if out != answers:
+            self.grid.store.update(synced(out, self.grid.layouts))
 
     # What is in the matrix -----------------------------------------------------------------
 

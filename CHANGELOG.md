@@ -26,8 +26,10 @@ v0.5.1: no run before v0.5.1 is read.)
   names is saved only by **Tag the new units like the first tagged unit**. Each unit is saved
   exactly as tagging it by hand saves it (same draft bytes; tested). The draft and the
   description record no field for the statement yet (the Spec amendment will add one).
-  Unticked, the page is the strict per-unit path of PR 17b, unchanged (`channel_matrix`,
-  `notebook_channels_matrix`).
+  Unticked, the page is the strict per-unit path of PR 17b, unchanged: the units tagged from
+  their headers with no click in this session are untagged again (a header is then a proposal
+  to confirm, as before), and ticking again trusts only the aliases saved when the page opened
+  (`channel_matrix`, `notebook_channels_matrix`).
 - **`RunInputs.objects_read_plan(selection, mask_id)`** (#316): the memory of one
   `read_objects` plane, from the mask's header only, as an `ObjectsReadPlan` (also
   `morphobricks_preprocessing.ObjectsReadPlan`). `read_objects` returns `int32` whatever the
