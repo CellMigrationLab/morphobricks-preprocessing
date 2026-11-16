@@ -16,11 +16,15 @@ asking keeps the earlier run's choice, and turning it on or off recomputes every
 A :class:`RunMode` also carries the lab-tool links of the run (:mod:`..lab_links`, PP-2):
 provenance recorded only in the run manifest, which changes no row, check or other output and
 is not taken over by the next run.
+
+And it says how many images the run reads at once (``workers``, ``max_ram``; issue #107,
+:mod:`.workers`): operational only, in no row key, output file or recorded input.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from ..lab_links import LabLinks
 
@@ -31,6 +35,9 @@ FULL = "full"
 """Recompute every row and every check; reuse no earlier row."""
 
 MODES = (RESTART, FULL)
+
+AUTO = "auto"
+"""``RunMode(workers="auto")``: as many workers as the CPUs and ``max_ram`` allow."""
 
 
 def check_mode(mode: object) -> str:
@@ -58,7 +65,7 @@ def check_mode(mode: object) -> str:
 
 @dataclass(frozen=True)
 class RunMode:
-    """A run mode, its reuse rule and the run's lab-tool links, for ``run_experiment(mode=)``.
+    """A run mode, its reuse rule, lab-tool links and workers, for ``run_experiment(mode=)``.
 
     Attributes
     ----------
@@ -72,11 +79,21 @@ class RunMode:
     lab_links
         The lab-tool links the user gave this run (:class:`..lab_links.LabLinks`), recorded
         verbatim in the run manifest only; None: none (an earlier run's are not taken over).
+    workers
+        How many images are read at once, each whole in its own worker thread (issue #107,
+        :mod:`.workers`): 1 (the default) one after another in the calling thread; a whole
+        number; or ``"auto"``: at most the CPUs this process may use and, with ``max_ram``,
+        as many as the largest image's working-memory estimate fits. The outputs are byte
+        for byte the same with any value; it is not recorded.
+    max_ram
+        With ``workers="auto"``, the bytes of memory the run may use; None: no RAM cap.
     """
 
     name: str = RESTART
     verify_content: bool | None = None
     lab_links: LabLinks | None = None
+    workers: int | Literal["auto"] = 1
+    max_ram: int | None = None
 
 
 def run_mode(mode: object) -> RunMode:
@@ -95,8 +112,9 @@ def run_mode(mode: object) -> RunMode:
     Raises
     ------
     ValueError
-        For an unknown mode, a ``verify_content`` that is not True, False or None, or
-        ``lab_links`` that are not :class:`..lab_links.LabLinks` or None.
+        For an unknown mode, a ``verify_content`` that is not True, False or None,
+        ``lab_links`` that are not :class:`..lab_links.LabLinks` or None, or ``workers`` and
+        ``max_ram`` that :func:`check_workers` refuses.
     """
     if not isinstance(mode, RunMode):
         return RunMode(check_mode(mode))
@@ -106,4 +124,32 @@ def run_mode(mode: object) -> RunMode:
     links = mode.lab_links
     if links is not None and not isinstance(links, LabLinks):
         raise ValueError(f"lab_links must be LabLinks or None; found {type(links).__name__}")
-    return RunMode(check_mode(mode.name), mode.verify_content, links)
+    check_workers(mode.workers, mode.max_ram)
+    return RunMode(check_mode(mode.name), mode.verify_content, links, mode.workers, mode.max_ram)
+
+
+def check_workers(workers: object, max_ram: object) -> None:
+    """Refuse ``workers`` and ``max_ram`` that are not allowed (issue #107).
+
+    Parameters
+    ----------
+    workers
+        A whole number of at least 1 (not a bool), or ``"auto"``.
+    max_ram
+        None, or with ``workers="auto"`` a whole number of bytes above 0.
+
+    Raises
+    ------
+    ValueError
+        For any other ``workers``, a ``max_ram`` that is not a positive whole number, or a
+        ``max_ram`` without ``workers="auto"``.
+    """
+    if workers != AUTO and (
+        isinstance(workers, bool) or not isinstance(workers, int) or workers < 1
+    ):
+        raise ValueError(f"workers must be a whole number of at least 1 or 'auto', not {workers!r}")
+    if max_ram is not None:
+        if isinstance(max_ram, bool) or not isinstance(max_ram, int) or max_ram < 1:
+            raise ValueError(f"max_ram must be a whole number of bytes above 0, not {max_ram!r}")
+        if workers != AUTO:
+            raise ValueError("max_ram is used only with workers='auto'")
