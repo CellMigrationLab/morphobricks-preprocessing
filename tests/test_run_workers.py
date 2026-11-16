@@ -484,7 +484,6 @@ def test_an_unexpected_exception_names_the_image_without_workers_too(
     assert raised.value.__notes__ == [f"While reading the image {IMAGES[0]}"]
 
 
-
 @pytest.mark.parametrize("workers", [4, 8, 32])
 def test_the_workers_reported_are_the_threads_that_read_images(tmp_path, experiment, workers):
     # RunResult.workers: the threads that read images, 1 when none was read.
