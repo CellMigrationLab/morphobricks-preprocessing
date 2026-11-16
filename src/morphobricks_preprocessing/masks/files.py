@@ -20,6 +20,7 @@ from ..discovery import (
 from ..folder_rules import masks_folder_issues
 from ..image_names import position_id
 from ..links import LinkGuard
+from ..mask_lineage import is_conversion_file
 from ..metadata import TiffMetadata
 from ..name_issues import (
     invalid_mask_types_issue,
@@ -145,7 +146,9 @@ def _folder_masks(
     A mask matching no image is the warning ``mask_without_image``, and a mask of an excluded
     image the warning ``mask_of_excluded_image``: neither is used (design v0.4 §3 keeps the
     severity of every existing check). ``images`` are the analysed images' paths (excluded
-    images left out). Links are followed only inside the masks folder (:mod:`..links`).
+    images left out). Links are followed only inside the masks folder (:mod:`..links`). The
+    conversion helpers' ``mask_lineage.jsonl`` and temporary files are skipped silently, like
+    system files (:func:`..mask_lineage.is_conversion_file`, Spec ADR 0005 BM12).
     """
     by_key, by_leaf = {}, {}
     for leaf in discovery.leaves:
@@ -157,7 +160,7 @@ def _folder_masks(
             by_leaf.setdefault(prefix.casefold(), []).append((stem, image))
     files, unpaired, loose, ambiguous, excluded = [], [], [], [], []
     links = LinkGuard(folder, "masks folder")
-    for path, real in links.files(folder, is_system_name):
+    for path, real in links.files(folder, _skipped):
         relative = path.relative_to(folder)  # a broken link is kept: its reader names it
         if not is_tiff_name(path.name):
             (loose if len(relative.parts) == 1 else unpaired).append(relative.as_posix())
@@ -187,6 +190,11 @@ def _folder_masks(
             )
         )
     return files, issues
+
+
+def _skipped(name: str) -> bool:
+    """Return True for system files and the conversion helpers' lineage and temporary files."""
+    return is_system_name(name) or is_conversion_file(name)
 
 
 def _suffix_matches(relative: Path, by_leaf: Mapping[str, list]) -> list[tuple[str, str]]:

@@ -88,6 +88,14 @@ RUN_INPUTS_METHODS = {
     "read_objects": (
         "(self, selection: 'FovSelection', mask_id: 'str', t: 'int', z: 'int') -> 'np.ndarray'"
     ),
+    "binary_to_instances": (
+        "(self, fov: 'Fov | str', mask_id: 'str', *, output_mask_id: 'str') "
+        "-> 'MaskConversionResult'"
+    ),
+    "classes_to_binary": (
+        "(self, fov: 'Fov | str', mask_id: 'str', *, output_prefix: 'str') "
+        "-> 'MaskConversionResult'"
+    ),
 }
 RUN_INPUTS_PROPERTIES = {"files", "projection"}
 
@@ -278,6 +286,12 @@ ADR_0005_SIGNATURES = {
     "morphobricks_preprocessing.mask_rules.check_binary_values": (
         "(values: 'Iterable[int]', *, dtype: 'object', path: 'str') -> 'None'"
     ),
+    "morphobricks_preprocessing.mask_conversion.check_class_image": (
+        "(pixels: 'np.ndarray', *, mask_id: 'str', path: 'str') -> 'None'"
+    ),
+    "morphobricks_preprocessing.mask_lineage.content_sha256": (
+        "(pixels: 'np.ndarray', *, axes: 'str') -> 'str'"
+    ),
     "morphobricks_preprocessing.run_inputs_request.volume_refusals": (
         "(request: 'Request', z_counts: 'Mapping[str, int]') -> 'tuple[Refusal, ...]'"
     ),
@@ -305,3 +319,27 @@ def test_the_adr_0005_names_are_exported():
     assert binary.STRUCTURE.shape == (3, 3) and binary.STRUCTURE.all()
     assert issubclass(package.MaskContradictsRepresentationError, ValueError)
     assert package.MaskContradictsRepresentationError.code == "R_MASK_CONTRADICTS_REPRESENTATION"
+
+
+def test_the_conversion_results_are_pinned():
+    # Spec ADR 0005 step 2b (BM12): what the conversion helpers return.
+    assert package.MaskConversionResult.__module__ == "morphobricks_preprocessing.mask_conversion"
+    fields = [(f.name, f.type) for f in dataclasses.fields(package.MaskConversionResult)]
+    assert fields == [
+        ("operation", "str"),
+        ("image", "str"),
+        ("mask_id", "str"),
+        ("source_path", "str"),
+        ("representation", "str"),
+        ("outputs", "tuple[ConvertedMask, ...]"),
+        ("note", "str"),
+    ]
+    fields = [(f.name, f.type) for f in dataclasses.fields(package.ConvertedMask)]
+    assert fields == [
+        ("mask_id", "str"),
+        ("path", "str"),
+        ("class_value", "int | None"),
+        ("line", "str"),
+        ("published", "bool"),
+    ]
+    assert "MaskConversionResult" in package.__all__ and "ConvertedMask" in package.__all__

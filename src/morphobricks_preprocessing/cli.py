@@ -1,4 +1,4 @@
-"""Command-line interface: ``check``, ``run``, ``masks``, ``calibrate``, ``describe``, ``convert``.
+"""Command-line interface: ``check``, ``run``, ``masks``, ``calibrate``, ``describe``, conversions.
 
 Every run needs a published experiment description (``morphobricks.toml``) in its output
 folder: ``check``, ``run`` and ``masks`` refuse a folder without one (``A_DESCRIPTION_REQUIRED``,
@@ -21,6 +21,8 @@ mask type and the relationships between them (contract §15).
 ``calibrate`` (:mod:`.cli_calibrate`) shows or states the pixel sizes in the output folder's
 ``calibration.csv`` (design v0.4 §3). ``convert`` (:mod:`.cli_convert`) saves the images whose
 axes are wrong or not named as named-axis OME-TIFF copies in a new folder (design v0.4 §5).
+``convert-mask`` (:mod:`.cli_convert_mask`) writes new mask files from a checked mask of a run:
+a binary mask's objects, or one binary mask per class of a class image (Spec ADR 0005 BM12).
 All exit with status 1 when they report an error (an error blocks processing) and 0
 otherwise; argparse exits with 2 on options it cannot read.
 """
@@ -35,6 +37,7 @@ from pathlib import Path
 
 from .cli_calibrate import add_calibrate_parser, calibrate_command, calibration_summary
 from .cli_convert import add_convert_parser, convert_command
+from .cli_convert_mask import add_convert_mask_parser, convert_mask_command
 from .cli_describe import add_describe_parser, describe_command
 from .cli_masks import add_masks_arguments, masks_command
 from .cli_run import (
@@ -100,6 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     _remove_stale_lock_option(add_calibrate_parser(commands))
     add_describe_parser(commands)
     add_convert_parser(commands)
+    add_convert_mask_parser(commands)
     return parser
 
 
@@ -110,6 +114,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "describe":
         return describe_command(args)
+    if args.command == "convert-mask":
+        return convert_mask_command(args)
     if args.command == "calibrate":
         if args.remove_stale_lock and not _remove_stale_lock(args):
             return 1

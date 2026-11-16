@@ -118,6 +118,7 @@ from .manifest import (
     write_manifest,
 )
 from .mask_checks import mask_issues, mask_size_issues
+from .mask_conversion import ConvertedMask, MaskConversionResult
 from .mask_names import (
     MASK_FOLDER_WORDS,
     MASK_NAME_SUFFIXES,
@@ -341,6 +342,8 @@ __all__ = [
     "Capabilities",
     "FovSelection",
     "MaskConversion",
+    "MaskConversionResult",
+    "ConvertedMask",
     "MaskRequest",
     "MaskSelection",
     "PlaneSelection",

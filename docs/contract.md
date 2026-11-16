@@ -890,6 +890,80 @@ is shared by several planes (owner decision of 5 November 2026). A mask that can
 as the planes its header gave, or holds a label outside 0 to 2,147,483,647 (§16), when its pixels
 are read raises an error.
 
+### 15.2 Mask conversion helpers (Spec ADR 0005 BM12, step 2b)
+
+A mask is converted only on purpose, into **new** mask files; the source is never changed.
+`RunInputs.binary_to_instances(fov, mask_id, *, output_mask_id)` and
+`RunInputs.classes_to_binary(fov, mask_id, *, output_prefix)` (module `mask_conversion`; the
+command `convert-mask` and the notebook card **Convert a mask** call them) take the opened run,
+a position and a declared mask ID, never paths, and return a `MaskConversionResult`
+(`operation`, `image`, `mask_id`, `source_path`, `representation` to declare each output with,
+`outputs`: `ConvertedMask(mask_id, path, class_value, line, published)`, and `note`).
+
+| Helper | Converts | Writes |
+| --- | --- | --- |
+| `binary_to_instances` | a mask declared `binary` (its file passed the file-wide binary rule), one Z plane, any number of time points | one `int32` mask `output_mask_id`: each plane `label_binary` of the source plane (8-connected, 1 to n), equal to `read_objects` plane for plane; declare it `instances` |
+| `classes_to_binary` | a 2-D `(Y, X)` class image of signed or unsigned integers declared `parent_labels` or `instances`, classes 0 (background) to 2,147,483,647 | one `uint8` mask `<output_prefix>_class<value>` per class value present, ascending: 1 where the image holds it, 0 elsewhere; none, with the note `no class present`, for an all-zero image; declare each `binary` |
+
+**Refused before any pixel is read and anything written** (a `ValueError` naming the mask ID
+and file unless a code is named): an undeclared mask ID (`'{id}' is not a mask of this run's
+description; it declares 'A', 'B'`); a label image inside an OME-Zarr (`'{id}' for {image} is a
+label image inside an OME-Zarr; the conversion helpers convert masks in the masks folder only`);
+a representation the helper does not convert; a file the mask step has not checked or whose
+fingerprint is not the one recorded when it was checked (`MaskUncheckedError`,
+`A_MASK_UNCHECKED`, the resolver's message for that file); `binary_to_instances` on a file with
+more than one Z plane; for `classes_to_binary`, from the header, a file that is not one 2-D plane
+or not of an integer type. Then the pixels: `binary_to_instances` refuses a plane `label_binary`
+refuses (`R_MASK_CONTRADICTS_REPRESENTATION`, verbatim); `classes_to_binary` applies
+`mask_conversion.check_class_image(pixels, *, mask_id, path)` (no `check_labels`), whose
+messages follow `'{id}' ({path}) `: `has {ndim} dimensions (shape {shape}); a class image is one
+2-D plane of class values; a one-hot or multi-channel stack is not converted`, `has pixel type
+{dtype}; a class image holds non-negative integer class values` (bool included), `holds
+negative values (smallest {v}); class 0 is the background and classes are positive`, `holds
+class values above 2147483647 (largest {v}); a class value must fit an int32 label`. A source
+that changes while it is read is `MaskChangedError`.
+
+**Outputs and collisions.** An output goes to `<output mask ID>/<the image's folders>/<the
+image's position ID>.tif` in the run's masks folder (the type-folder layout discovery pairs with
+that image), whatever the source's layout, never in the experiment folder. An output mask ID (and
+a prefix) must pass the mask ID rules of experiment-v1 §3.2 (Label, Token, NFC, `single`, the
+reserved list and the `in` part). Refused, never overwritten, before anything is written: an
+output mask ID the description declares; one differing only in case from a declared mask ID or
+mask source type (§3.2 `E_ID_CASE_COLLISION`: it could never be declared next to it); a mask type of that name (any case; in either layout,
+or recorded by the run) holding a file without a published lineage line of the same operation;
+an existing output file, unless it is the **same conversion already published**: a lineage line
+whose `source` equals the current source in every key, whose `output` `root`, `mask_id` and
+`path`, `operation`, `connectivity`, `class_value`, `helper` and `helper_version` equal this
+call's, and whose `output.content_sha256` is the file's digest now. That call is a no-op
+(`published` False). Another source with identical pixels is a collision.
+
+**Lineage** (`mask_lineage.jsonl`, one line per output in its mask-type folder, UTF-8, LF). Keys
+in this order: `source` and `output` (each `root` = `"masks"`, `mask_id`, `path` relative to the
+masks folder with `/`, `axes` as recorded, `shape`, `dtype` in little-endian NumPy form,
+`content_sha256`), `operation`, `connectivity` (`8` / null), `class_value` (null / the class),
+`helper` (`morphobricks_preprocessing.RunInputs.<operation>`), `helper_version` (the package
+version). `content_sha256` is the lower-case hex SHA-256 of the UTF-8 bytes of
+`json.dumps({"axes", "dtype", "shape"}, sort_keys=True, separators=(",", ":"))`, one `0x0A`
+byte, then every plane's pixels in stored axis order, C order, little-endian
+(`mask_lineage.content_sha256(pixels, *, axes)`); never the file's bytes or its fingerprint. The
+reader (`mask_lineage.read_lineage`) refuses a line that is not such a record, or whose `root`
+is not `"masks"`, naming it.
+
+**Publication** is consistent for readers, per output: (1) the pixels go to a temporary file in
+the target folder (named `.<file name>.<random>.conversion.tmp`), synced, and re-read to check
+the digest; (2) `mask_lineage.jsonl` is replaced by a synced temporary file holding its previous
+lines and the new one; (3) the temporary file is renamed to the output. A failure in (1) or (2)
+leaves no output, no line, no temporary file and no folder created by the call; a failure in (3)
+restores the previous lines. A line whose output does not exist is pending: readers ignore it,
+and the next publication of that output removes it and leftover temporary files first.
+`classes_to_binary` publishes class by class; a retry reuses the classes already published and
+continues. Mask discovery skips `mask_lineage.jsonl` and the temporary files; `RunInputs.open`
+does not count a published output of a mask type the run did not record as an unrecorded mask
+(no description of the run can declare it), so a retry can open the run again. The user then
+declares each output (source type = the output mask ID), runs preprocessing and the mask step
+again, and reads it like any mask. There is no lock: run one conversion of a masks folder at a
+time.
+
 ## 16. Shared rules for other bricks (MorphoBricks D86)
 
 Rules every MorphoBricks brick applies in one way, so they live here as public functions
@@ -910,6 +984,7 @@ instead of keeping copies.
 | Pixel sizes (D-a) | `same_pixel_size(a, b, roles=("X", "Y"))`, `pixel_size_groups(sizes, roles=)`, `PIXEL_SIZE_TOLERANCE` (`physical_sizes`) | Two pixel sizes are the same when `|a - b| <= 1e-3 * max(a, b)` on every compared axis, in micrometres; one rule for a declared size against a header and for two headers. `same_pixel_size` takes `PhysicalSizes` (converted with `micrometers`) or sizes already in micrometres, one per role, and returns None when either is unknown (no size, or a unit that cannot be converted), never True. The rule is not transitive (1.0 ≈ 1.0009 ≈ 1.0018, but 1.0 ≠ 1.0018), so there is no per-image grouping key: `pixel_size_groups` links images by single linkage, so images of two groups always differ while the extremes of one group may drift; unknown sizes are left out; the largest group first. A size that cannot be converted to a positive finite length in micrometres (`1e308 m`) is unknown, never infinite, and an infinite or NaN value is never the same as any other (issue #93; before, `inf` matched every size). The folder check's `different_pixel_sizes` uses both (§11). |
 | Experiment design | *(removed in v0.5.1, SWEEP-PP)* `read_confirmed_design`, `ConfirmedDesign`, `DesignCheckError`, `load_design` | `experiment_design.csv` is an output only (Spec ADR 0002 AR11 (3)); no brick reads it for its repeat groups. A brick takes `repeat_group` from the published description through `RunInputs` (`Fov.repeat_group`, `resolve_request`). The codes `missing_experiment_design`, `unreadable_experiment_design` and `changed_experiment_design` are no longer raised by this package (`RunInputs.open` still refuses a design file whose SHA-256 is not the manifest's). |
 | Binary masks (Spec ADR 0005) | `masks.binary.label_binary(mask, *, name)` (also `label_binary`), `CONNECTIVITY`, `STRUCTURE`; `masks.check_object_set(value, *, name)` (also `check_object_set`); `mask_rules.refuse_not_instances`, `refuse_binary_values`, `check_binary_values`, `MaskContradictsRepresentationError` | The one labeller of a `binary` mask (8-connected, 1 to n in row-major order of first pixels, `int32`, §9.1 `read_objects`) and the one constructor of each shared refusal. `check_object_set` refuses an in-memory object set that is not a plain `numpy.ndarray` of a signed or unsigned integer dtype with `A_MASK_NOT_INSTANCES`: the array message (`'cells' is a bool array, not an object set. ...`) or the non-array one (`'cells' is a list (not a plain NumPy array), not an object set. ...`); a boolean array is a region only. `check_binary_values(values, *, dtype, path)` is the binary value rule (§15.1). No other code builds these messages (a test scans the source). |
+| Mask conversion helpers (Spec ADR 0005 BM12) | `RunInputs.binary_to_instances(fov, mask_id, *, output_mask_id)`, `RunInputs.classes_to_binary(fov, mask_id, *, output_prefix)`, `MaskConversionResult`, `ConvertedMask`; `mask_conversion.check_class_image(pixels, *, mask_id, path)`; `mask_lineage.content_sha256(pixels, *, axes)`, `read_lineage`, `LINEAGE_FILENAME` | New mask files written on purpose from a checked mask, with their `mask_lineage.jsonl` lines (§15.2); the source is never changed and nothing is overwritten |
 | Analysis refusals (Stage 2) | `ChannelNotFoundError` (`A_SCOPE_INCOMPLETE`), `MaskNotInstancesError` (`A_MASK_NOT_INSTANCES`), `RgbNotSupportedError` (`A_RGB_NOT_SUPPORTED`), `DraftRefusedError` (`A_DRAFT_REFUSED`), `MaskUncheckedError` (`A_MASK_UNCHECKED`), `RunInputsError.code` (`run_inputs_error`, exported at the package top level) | The Spec's analysis-layer codes (experiment-v1 §8) as one class each, all `RunInputsError` subclasses (a `ValueError`) with the code as the class attribute `code` (`None` on `RunInputsError` itself), so a brick matches the class or the code and keeps no copy. Preprocessing raises `A_DRAFT_REFUSED`, `A_MASK_UNCHECKED` and `A_SCOPE_INCOMPLETE` itself (§9.1); `A_MASK_NOT_INSTANCES` (a mask that is not `instances` used as an object set) and `A_RGB_NOT_SUPPORTED` (`rgb` units given to a brick that does not declare RGB support) are found by `resolve_request` (§9.1) against the consumer's declared capability, and a brick raises them through `ResolvedRequest.require()` (or reports its `refusals`). A brick writes the code in its message text, as preprocessing does. The classes pickle, so a worker process can raise them. `RunInputs.section_digests()` (§9.1) gives the description's section digests for cache keys. `Fov.image_type` (§9.1) is each position's declared `rgb` or `channels`; there is no run-wide image type. `RunInputs.resolve_request()` (§9.1) is the one interpreter of a described run for every route: a brick builds a `Request` and reads through the `FovSelection`s it returns, so channel-by-ID, scope, mask-representation and RGB rules have one implementation; `VolumeNotSupportedError` (`A_VOLUME_NOT_SUPPORTED`) and `DescriptionRequiredError` (`A_DESCRIPTION_REQUIRED`, raised by `RunInputs.open`) are the resolver contract's own codes (MorphoBricks-Spec ADR 0002), not experiment-v1 §8's. |
 | Experiment description (Stage 1) | `read_description(path)`, `description_consume.read_published_description(path)` (the published `morphobricks.toml` only), `run.description_file.publish_description` (the only writer), `draft.draft_from_discovery`, `description_reconcile.reconcile` | A brick reads the **published** `morphobricks.toml` through `RunInputs` (§9.1) and never a draft: a draft is internal to preprocessing, is never named `morphobricks.toml` and is refused with `A_DRAFT_REFUSED` (experiment-v1 §12). The command line shows the draft (`describe`, §12) and confirms nothing: the user's answers are the only way an ID, a repeat or a removal becomes confirmed. The owner's answers Q1 to Q8 of the Stage 1 design are in plan §12, question 78. |
 
