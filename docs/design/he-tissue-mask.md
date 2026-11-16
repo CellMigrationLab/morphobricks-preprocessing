@@ -50,11 +50,12 @@ These are the same eosin and hematoxylin maps that fiberfeatures measures with `
 the mask and the measured map agree. The white is fixed at 255 for every image, as
 `separate_stains` already assumes. The helper does not estimate a white per image.
 
-**Components** (`True` = excluded). The starting point is the proof of concept's
-`scripts/tissue_mask.py` and its recorded thresholds (presentation `results/run_record.json`).
-The proof of concept used raw 8-bit RGB differences for red cells and its own `log10` for
-background. Here both are moved into optical-density terms, so that every number comes from
-normalization:
+**Components** (`True` = excluded). The proof of concept's `scripts/tissue_mask.py` and its
+recorded thresholds (presentation `results/run_record.json`) were the starting point only.
+`he_tissue_v1` is defined **natively** on normalization's quantities (`E`, `H` and `OD` above). It
+is a different rule: **no equivalence with the proof of concept is claimed**, for any component
+(owner decision on Q4, 16 November 2026). The proof of concept's raw 8-bit RGB differences and
+saturation are not reproduced.
 
 | Component | Pixel rule (`he_tissue_v1`) | Clean-up (pixels) |
 | --- | --- | --- |
@@ -64,12 +65,57 @@ normalization:
 
 `keep = not (nuclei or red_cells or background)`.
 
-- `OD_G - OD_R >= 0.40` is the proof of concept's saturation rule `(max - min) / max > 0.6` in OD
-  terms when red is the brightest channel and green the darkest (`log10(1 / 0.4) = 0.398`). The
-  value `OD_B - OD_R >= 0.10` approximates its `R - B > 40` near `R = 200`. **Both red-cell colour
-  numbers are provisional.** I1 must run the proof-of-concept rule and `he_tissue_v1` on the same
-  four presentation images and report the per-component fractions next to each other. The
-  numbers are frozen only after that report has been reviewed.
+- **Exact comparisons.** Each comparison is applied as written (`>=` or `<`) to the values as
+  normalization returns them (`E`, `H` float32; `OD` float64; the differences
+  `od[..., 1] - od[..., 0]` and `od[..., 2] - od[..., 0]` computed in float64), with no rounding
+  and no tolerance. A value exactly at a threshold is in the component for `>=` and out of it for
+  `<`.
+- **The red-cell colour terms in 8-bit values.** With `I' = max(I, 1)`, `OD_G - OD_R >= 0.40` is
+  `log10(R' / G') >= 0.40` (`R' >= 2.5119 G'`) and `OD_B - OD_R >= 0.10` is
+  `log10(R' / B') >= 0.10` (`R' >= 1.2589 B'`): ratios, not differences. No 8-bit pair lies on
+  either boundary: the closest are `(R, G) = (211, 84)`, `3.2e-6` above 0.40, and
+  `(R, B) = (141, 112)`, `1.1e-6` above 0.10, far above float64 rounding, so strictness and
+  rounding cannot flip an 8-bit pixel. Examples: at `R = 253` the green limit is `G <= 100`
+  (`G = 101` gives `0.3988`, not red-cell); at `R = 200` the blue limit is `B <= 158`; at
+  `R = 100` it is `B <= 79`.
+- **OD flooring.** `optical_density()` raises a channel at 0 to 1 before the log
+  (`OD = log10(255) = 2.4065`) and returns the share of such pixels (`od_floored`, recorded,
+  §3). The rule uses the floored values as they are and adds no special case: a pixel with
+  `R = 0` has the largest `OD_R`, so both red-cell colour differences are `<= 0` and it is never
+  red-cell; a pixel with `G = 0` or `B = 0` is treated as 1 there, so `(3, 0, 0)` meets both
+  colour terms (`log10 3 = 0.477`) and `(2, 0, 0)` does not (`0.301`); the `E` and `H` terms
+  then decide, on `separate_stains`' own floor (`1e-6`, not 1). Background is
+  `max(OD) < 0.08`, which is every channel `>= 213` (`OD(213) = 0.0782`, `OD(212) = 0.0802`); a
+  floored channel is never background.
+- **Clean-up sizes.** "Remove pieces under N px" removes each 8-connected piece of **fewer than
+  N** pixels; a piece of exactly N pixels is kept.
+- **The numbers are provisional** (rule record `status` `"provisional"`, the card says
+  "provisional rule") until a report meets the written acceptance criteria below and the owner
+  accepts it. Freezing sets `status` to `"frozen"`; changing any number instead gives
+  `he_tissue_v2`.
+
+**Acceptance criteria before freezing `he_tissue_v1`** (owner decision on Q4, 16 November 2026).
+One report, reviewed by the owner, shows all of:
+
+1. **Agreement with the proof-of-concept masks on the four presentation images.** For each image:
+   the proof-of-concept and `he_tissue_v1` masks side by side and as a difference overlay; per
+   component and for `keep`, both shares and the pixel agreement (Dice of the kept pixels, and
+   the shares of pixels kept by one rule only). The report states the agreement the owner set
+   for acceptance and whether each image meets it. Disagreements are explained, never tuned
+   away per image.
+2. **Hard RGB boundary cases.** A synthetic table, each pixel with its expected component and
+   checked by a test: both sides of each colour boundary (`(253, 101, 101)` vs `(253, 100, 100)`;
+   `(211, 84, 84)` vs `(211, 85, 85)`; `(200, 79, 158)` vs `(200, 79, 159)`; `(141, 50, 112)` vs
+   `(141, 50, 113)`), the floored cases above (`(0, 0, 0)`, `(3, 0, 0)`, `(2, 0, 0)`, `(255, 0,
+   0)`), the background edge (`(213, 213, 213)` vs `(212, 213, 213)`), pure white and saturated
+   eosin pink; and for each, what the proof of concept decides, where it differs.
+3. **At least two scanners.** Besides the presentation images: the CMU-1 slide (OpenSlide test
+   data, Aperio) and the H&E cores of Zenodo record 4550300 (tissue microarray), with fixed tiles
+   chosen before the rule is run, overlays and per-component shares per tile, and every failure
+   mode named (for example faint eosin, pen marks, folds).
+
+Until that report is accepted the numbers above are named provisional everywhere: in the rule
+record, the lineage, the card and the documentation.
 - Clean-up is done with SciPy (`scipy.ndimage`), which is already a core dependency
   (`pyproject.toml`). Pieces are 8-connected, as everywhere else (ADR 0005 BM1). A disk of
   radius `r` is `x² + y² <= r²`. The clean-up is part of the rule, not colour maths. It belongs
@@ -356,9 +402,11 @@ replaced the draft that stood here, so the two cannot drift). In short:
 
 **Still open:**
 
-- **Q4. The provisional red-cell numbers** (`OD_G - OD_R >= 0.40`, `OD_B - OD_R >= 0.10`). *Recommend
-  freezing them in I1* after a side-by-side report against the proof-of-concept rule on its
-  four images.
+- **Q4 (decided 16 November 2026, after review w).** The red-cell rule is defined natively in OD
+  terms, with explicit strictness and OD flooring (§1), and no equivalence with the proof of
+  concept is claimed. Written acceptance criteria come first (§1: the four presentation images,
+  hard RGB boundary cases, at least two scanners including CMU-1 and Zenodo 4550300). The
+  numbers stay provisional, and are named so, until a report meets them.
 - **Q5. normalization functions outside its contract.** `optical_density.optical_density`,
   `check_white` and `scalar_inputs.rgb_yxc` exist but are not listed as API in normalization's
   `contract.md` §3.4. *Recommend a small, documentation-only normalization PR* that names them as
