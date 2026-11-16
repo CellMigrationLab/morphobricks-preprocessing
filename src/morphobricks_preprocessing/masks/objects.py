@@ -50,7 +50,11 @@ class ObjectsReadPlan:
     memory_estimate
         ``stored_bytes + result_bytes + conversion_bytes``: the peak working memory of an
         objects read (a ``uint8`` instances mask: 5 times its stored size; an ``int32`` one 8
-        bytes per pixel, its stored plane and the copy ``read_objects`` returns).
+        bytes per pixel, its stored plane and the copy ``read_objects`` returns). It counts
+        the decoded plane: a compressed file's encoded pieces, which the reader holds while it
+        decodes them (up to the plane's compressed size: small for a label mask, up to
+        ``stored_bytes`` for one that does not compress), an OME-Zarr chunk that also holds
+        other planes, and a few kilobytes of header are not counted.
     """
 
     shape: tuple[int, int]

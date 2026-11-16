@@ -22,7 +22,10 @@ v0.5.1: no run before v0.5.1 is read.)
   result (the larger of its value check and its labelling: the foreground, SciPy's label table
   for at most one provisional label per 2 × 2 block, its line buffers). A `uint8` `instances`
   mask is therefore estimated at 5 times its stored size, an `int32` one at 8 bytes per pixel
-  (owner decision on #317: the estimate is the real peak, beyond the issue's "4 times"). The
+  (owner decision on #317: the estimate is the real peak, beyond the issue's "4 times"). It
+  counts the decoded plane: a compressed file's encoded pieces, held while they are decoded (up
+  to the plane's compressed size: small for a label mask, up to `stored_bytes` for one that does
+  not compress), are not counted. The
   selection and the mask are refused as
   `read_objects` refuses them. The region-read estimate (`mask_window_plan`) is unchanged, and
   no output changes.

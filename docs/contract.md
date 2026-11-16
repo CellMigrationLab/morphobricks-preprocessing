@@ -430,7 +430,10 @@ It gives:
   4 bytes per pixel whatever the stored type: 4 times `stored_bytes` for a `uint8` mask),
   `conversion_bytes` and `memory_estimate` = `stored_bytes + result_bytes + conversion_bytes`,
   the peak working memory of the read (a `uint8` `instances` mask: 5 times `stored_bytes`; an
-  `int32` one 8 bytes per pixel, the stored plane and the copy returned). Without a
+  `int32` one 8 bytes per pixel, the stored plane and the copy returned), counting the decoded
+  plane only: a compressed file's encoded pieces held while they are decoded (up to the plane's
+  compressed size, up to `stored_bytes` for a mask that does not compress), an OME-Zarr chunk
+  that also holds other planes and a few kilobytes of header are not counted. Without a
   conversion `conversion_bytes` is 0. With `connected_components` it is
   `masks.binary.labelling_bytes(shape, stored_dtype)`, an upper bound for every plane of that
   shape and type of what `label_binary` allocates beside its input and its result: the larger of
