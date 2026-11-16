@@ -11,7 +11,10 @@ unit declared colour (RGB) with such headers is refused by the run
 - one checkbox, **never pre-ticked**: the key is recorded only by the user's click, for those
   folders answered colour (RGB), through :func:`.channel_answers.with_override`; unticking
   removes it;
-- while no such folder is answered colour (RGB) the checkbox is disabled and a line says why.
+- while no such folder is answered colour (RGB) the checkbox is disabled and a line says why;
+- the box is ticked only when every such colour folder has the key; when only some have it (a
+  folder answered colour after the tick, or a hand-written file), a line names them: the key is
+  never extended to the others without a click, and never shown as absent while recorded.
 
 The run records what the override did per image (``rgb_header_override_images``) as for a
 hand-written description; nothing here reads a pixel.
@@ -25,6 +28,7 @@ from . import notebook_style as ui
 from .channel_answers import synced, with_override
 from .channel_labels import UnitLayout
 from .notebook_channels_type import ImageTypeColumn
+from .notebook_channels_view import unit_name
 from .notebook_render import blocked_line
 from .validation import plural
 
@@ -51,8 +55,9 @@ class RgbOverrideOffer:
             value=False, description=LABEL, indent=False, layout=widgets.Layout(width="99%")
         )
         self.blocker = widgets.HTML()
+        self.partial = widgets.HTML()
         self.message = widgets.HTML()
-        self.widget = widgets.VBox([self.text, self.box, self.blocker, self.message])
+        self.widget = widgets.VBox([self.text, self.box, self.blocker, self.partial, self.message])
         self.box.observe(lambda change: self._clicked(change["new"]), names="value")
         ui.set_visible(self.widget, False)
 
@@ -64,11 +69,15 @@ class RgbOverrideOffer:
         """Return the offered folders the user answered colour (RGB): the box applies to them."""
         return [u for u in self.offered() if self.types.saved(u.key) == "rgb"]
 
+    def recorded(self) -> list[UnitLayout]:
+        """Return the folders the box applies to that have the override recorded."""
+        units = self.types.store.answers().units
+        return [u for u in self.colour() if units[u.key].rgb_header_override is True]
+
     def ticked(self) -> bool:
         """Return True when every folder the box applies to has the override recorded."""
-        units = self.types.store.answers().units
         colour = self.colour()
-        return bool(colour) and all(units[u.key].rgb_header_override is True for u in colour)
+        return bool(colour) and len(self.recorded()) == len(colour)
 
     def refresh(self, shown: bool) -> None:
         """Show the offer (when ``shown`` and some folder allows it) as the answers are now."""
@@ -88,6 +97,23 @@ class RgbOverrideOffer:
         self._building = False
         self.box.disabled = not colour
         self.blocker.value = blocked_line([] if colour else [CHOOSE_COLOUR])
+        self.partial.value = self._partial(colour)
+
+    def _partial(self, colour: list[UnitLayout]) -> str:
+        """Return the line naming the folders that have the key while others do not, or ""."""
+        recorded = self.recorded()
+        if not recorded or len(recorded) == len(colour):
+            return ""
+        names = ", ".join(unit_name(u.key) for u in recorded)
+        return ui.status(
+            "warn",
+            f"rgb_header_override = true is recorded for {len(recorded)} of {len(colour)} of "
+            f"these folders ({names}).",
+            [
+                "The box is unticked because the other folders do not have it. Tick it to "
+                "record it for all of them, or untick it then to take it back from all."
+            ],
+        )
 
     def _clicked(self, value: bool) -> None:
         """Record or take back the override of the colour folders; say a refusal."""

@@ -333,6 +333,8 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    **Read these folders as colour (RGB) although their header does not say colour**. It is
    never ticked for you and can be ticked only once those folders are answered colour (RGB);
    ticking it records `rgb_header_override = true` for them, exactly as writing it by hand.
+   If only some of them have it (for example a folder answered colour after the tick), the box
+   stays unticked and the card names the folders that have it.
    Colour folders have the channels R, G and B. Otherwise name what you stained and confirm the list; then tag each folder's channels
    with those names, looking at any image in the viewer (each channel shows its header name
    and the tag chosen for it). Folders with identical headers are tagged together; the list of

@@ -177,6 +177,32 @@ def test_the_click_records_the_override_and_unticking_takes_it_back(tmp_path):
     assert offer.box.disabled and offer.box.value is False
 
 
+def test_an_override_recorded_for_only_some_colour_folders_is_said_not_hidden(tmp_path):
+    # Review of #313: ticked while one folder was colour, the key stays on that folder when the
+    # others are answered colour later (never extended to them: no auto-tick), so the box is
+    # unticked while one folder has the key; the card must say so, not show it as absent.
+    nb = _notebook(tmp_path)
+    nb.type_line.per_folder.selected_index = 0
+    offer = nb.type_line.override
+    radios = offer.types.radios
+    first, *others = sorted(radios)
+    radios[first].value = "rgb"
+    offer.box.value = True
+    assert _overrides(nb) == {first: True}
+    assert offer.partial.value == ""  # every colour folder has it: the tick says it all
+    for key in others:
+        radios[key].value = "rgb"
+    assert _overrides(nb) == {first: True, **{key: None for key in others}}
+    assert offer.box.value is False  # not every colour folder has it: never ticked for them
+    said = _text(offer.partial.value)
+    assert "rgb_header_override = true is recorded for 1 of 4 of these folders" in said
+    assert "ctrl / rep1" in said and "drug" not in said
+    offer.box.value = True  # the user's click records it for all; the line goes
+    assert set(_overrides(nb).values()) == {True} and offer.partial.value == ""
+    offer.box.value = False
+    assert set(_overrides(nb).values()) == {None} and offer.partial.value == ""
+
+
 def test_one_column_on_the_image_type_card():
     layouts = tuple(
         UnitLayout((c, r, "single"), "a.tif", 3, (None,) * 3, three_samples=True)
