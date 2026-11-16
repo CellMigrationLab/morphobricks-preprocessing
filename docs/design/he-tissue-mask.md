@@ -103,26 +103,55 @@ saturation are not reproduced.
   whose magnification was not recorded. The card says that sizes are in pixels (owner decision,
   16 November 2026).
 
-**Acceptance criteria before freezing `he_tissue_v1`** (owner decision on Q4, 16 November 2026).
-One report, reviewed by the owner, shows all of:
+**Acceptance criteria before freezing `he_tissue_v1`** (owner decisions on Q4 and on the
+thresholds, 16 November 2026). The thresholds below are fixed now, before any evaluation is run,
+and are not changed after results are seen (Spec BM15 "Acceptance before freezing"; review w2
+N2). One report, reviewed by the owner, shows all of the following, and the rule is accepted only
+when every numbered criterion passes.
 
-1. **Agreement with the proof-of-concept masks on the four presentation images.** For each image:
-   the proof-of-concept and `he_tissue_v1` masks side by side and as a difference overlay; per
-   component and for `keep`, both shares and the pixel agreement (Dice of the kept pixels, and
-   the shares of pixels kept by one rule only). The report states the agreement the owner set
-   for acceptance and whether each image meets it. Disagreements are explained, never tuned
-   away per image.
+**The per-image bar.** For an image or tile, let `R` be the pixels the proof-of-concept rule keeps
+(its `scripts/tissue_mask.py` with the thresholds recorded in the presentation
+`results/run_record.json`, run unchanged on the same pixels) and `V` the pixels `he_tissue_v1`
+keeps. The image meets the bar when **both**:
+
+- **Dice ≥ 0.90:** `2 |R ∩ V| / (|R| + |V|) >= 0.90`;
+- **discordant ≤ 5 % of tissue pixels:** `|R xor V| / |R| <= 0.05`, where the tissue pixels are
+  `R`, the proof-of-concept kept pixels, and the discordant pixels are those kept by exactly one
+  of the two rules.
+
+Both are computed on the full plane, without rounding before the comparison; an image with
+`|R| = 0` fails. No other tolerance applies.
+
+1. **The four presentation images each meet the per-image bar.** For each image: the
+   proof-of-concept and `he_tissue_v1` masks side by side and as a difference overlay; per
+   component and for `keep`, both shares; Dice and the discordant fraction; pass or fail.
+   Disagreements are explained, never tuned away per image. The images are identified by file
+   name and the SHA-256 of the file's bytes; the owner holds them, and the report fills the
+   placeholders before the rule is run:
+
+   | ID | File name (presentation folder) | SHA-256 |
+   | --- | --- | --- |
+   | PI-1 | `<file name: filled by the I1 acceptance report>` | `<64 hex: filled by the I1 acceptance report>` |
+   | PI-2 | `<file name: filled by the I1 acceptance report>` | `<64 hex: filled by the I1 acceptance report>` |
+   | PI-3 | `<file name: filled by the I1 acceptance report>` | `<64 hex: filled by the I1 acceptance report>` |
+   | PI-4 | `<file name: filled by the I1 acceptance report>` | `<64 hex: filled by the I1 acceptance report>` |
+
+   The report recomputes each SHA-256 and refuses an image whose bytes differ.
 2. **Hard RGB boundary cases.** A synthetic table, each pixel with its expected component and
    checked by a test: both sides of each colour boundary (`(253, 101, 101)` vs `(253, 100, 100)`;
    `(211, 84, 84)` vs `(211, 85, 85)`; `(200, 79, 158)` vs `(200, 79, 159)`; `(141, 50, 112)` vs
    `(141, 50, 113)`), the floored cases above (`(0, 0, 0)`, `(3, 0, 0)`, `(2, 0, 0)`, `(255, 0,
    0)`), the background edge (`(213, 213, 213)` vs `(212, 213, 213)`), pure white and saturated
-   eosin pink; and for each, what the proof of concept decides, where it differs.
+   eosin pink; and for each, what the proof of concept decides, where it differs. **Pass:**
+   every listed case gives exactly the component that §1's comparisons specify for it; one
+   mismatch fails the criterion.
 3. **At least two scanner vendors (owner decision, 16 November 2026: "another public
    vendor").** Besides the presentation images, three public scanner sets, two of them from
    Aperio and one from a different vendor, Hamamatsu, with fixed tiles chosen and listed (slide,
    level, x, y, width, height) before the rule is run, overlays and per-component shares per
-   tile, and every failure mode named (for example faint eosin, pen marks, folds). Acquisition
+   tile, and every failure mode named (for example faint eosin, pen marks, folds). **Pass:** in
+   each set, every selected tile meets the per-image bar above, with the proof-of-concept rule
+   run on the same tile as `R`. Acquisition
    provenance, as the sources state it (review w2 N1; Spec BM15 "Acceptance before freezing"):
 
    | Set | Vendor, model | Stain | Source | Licence |
