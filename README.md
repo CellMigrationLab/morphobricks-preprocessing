@@ -81,6 +81,10 @@ The notebook's first code cell (**1. Install**) can set this up automatically: i
 checkout or installed package, and installs missing requirements into the active kernel. A standalone
 download installs from GitHub if needed (internet access and Git required).
 
+The optional `he-mask` extra installs scikit-image (through `morphobricks-normalization[histology]`)
+for the opt-in H&E tissue mask (`tissue-mask`, `RunInputs.he_tissue_mask`; rule `he_tissue_v1`,
+provisional); without it, nothing of that helper is imported.
+
 ### Notebook: Google Colab and JupyterLab
 
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CellMigrationLab/morphobricks-preprocessing/blob/main/notebooks/MorphoBricks_Preprocessing.ipynb)
@@ -164,6 +168,7 @@ morphobricks-preprocessing masks --output /data/exp1_MorphoBricks_Preprocessing 
 morphobricks-preprocessing calibrate --output /data/exp1_MorphoBricks_Preprocessing
 morphobricks-preprocessing convert /data/exp1 --to /data/exp1_named_axes --axes ZXY  # axis errors
 morphobricks-preprocessing convert-mask --output /data/exp1_MorphoBricks_Preprocessing --mask TumorRegion --to-instances TumorObjects  # new mask files
+morphobricks-preprocessing tissue-mask --output /data/exp1_MorphoBricks_Preprocessing --to HETissue  # H&E tissue region (he-mask extra; provisional rule)
 ```
 
 `check`, `run` and `masks` need the experiment description published in the output folder

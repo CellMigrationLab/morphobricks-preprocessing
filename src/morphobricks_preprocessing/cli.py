@@ -23,6 +23,8 @@ mask type and the relationships between them (contract §15).
 axes are wrong or not named as named-axis OME-TIFF copies in a new folder (design v0.4 §5).
 ``convert-mask`` (:mod:`.cli_convert_mask`) writes new mask files from a checked mask of a run:
 a binary mask's objects, or one binary mask per class of a class image (Spec ADR 0005 BM12).
+``tissue-mask`` (:mod:`.cli_tissue_mask`) writes the opt-in H&E tissue mask of each RGB image as
+a new binary region mask (Spec ADR 0005 BM15; the ``he-mask`` extra).
 All exit with status 1 when they report an error (an error blocks processing) and 0
 otherwise; argparse exits with 2 on options it cannot read.
 """
@@ -52,6 +54,7 @@ from .cli_run import (
     run_command,
     use_recorded_experiment,
 )
+from .cli_tissue_mask import add_tissue_mask_parser, tissue_mask_command
 from .discovery import default_output_folder
 from .image_type import review_image_type
 from .log_target import log_refusal, run_log_refusal
@@ -104,7 +107,16 @@ def build_parser() -> argparse.ArgumentParser:
     add_describe_parser(commands)
     add_convert_parser(commands)
     add_convert_mask_parser(commands)
+    add_tissue_mask_parser(commands)
     return parser
+
+
+_STANDALONE = {
+    "describe": describe_command,
+    "convert-mask": convert_mask_command,
+    "tissue-mask": tissue_mask_command,
+}
+"""The commands that open what they need themselves (no log, lock or recorded experiment)."""
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -112,10 +124,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     _safe_output()
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "describe":
-        return describe_command(args)
-    if args.command == "convert-mask":
-        return convert_mask_command(args)
+    standalone = _STANDALONE.get(args.command)
+    if standalone is not None:
+        return standalone(args)
     if args.command == "calibrate":
         if args.remove_stale_lock and not _remove_stale_lock(args):
             return 1

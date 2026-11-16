@@ -77,6 +77,14 @@ RUN_INPUTS_METHODS = {
         "memory_limit: 'int' = 1073741824) -> 'WindowPlan'"
     ),
     "histograms": "(self) -> 'tuple[PlaneRecord, ...]'",
+    # Spec ADR 0005 BM15: the opt-in H&E tissue mask helper (imported lazily, he-mask extra).
+    "he_tissue_mask": (
+        "(self, fov: 'Fov | str', *, output_mask_id: 'str', rule: 'str' = 'he_tissue_v1') "
+        "-> 'TissueMaskResult'"
+    ),
+    "preview_he_tissue_mask": (
+        "(self, fov: 'Fov | str', *, rule: 'str' = 'he_tissue_v1') -> 'TissueMaskPreview'"
+    ),
     "description": "(self) -> 'Description'",
     "section_digests": "(self) -> 'dict[str, str]'",
     "images_without_header_channel_names": "(self) -> 'dict[str, tuple[int, ...]]'",
