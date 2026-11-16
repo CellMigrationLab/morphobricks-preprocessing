@@ -529,6 +529,7 @@ FIXED_WORDS = {
     "so it has no object identity and cannot": "mask_rules.py",
     "2-D planes only; the images of": "run_inputs_request.py",
     "is requested as objects with two different conversions": "mask_requests.py",
+    "older than the binary value rule": "mask_rules.py",
 }
 
 

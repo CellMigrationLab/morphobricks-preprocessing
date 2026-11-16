@@ -908,6 +908,10 @@ The default output folder is next to the experiment folder:
   such a file is not recorded as checked and is left out of `mask_relationships.json`.
   An `instances` or `parent_labels` (grouped labels) file is recorded as checked once the step
   has read it: pixels cannot prove either.
+  A `binary` mask checked by the masks step of v0.5.6 or earlier (which allowed two different
+  values over the whole file) is `not yet checked` in this version: an analysis that reads it is
+  refused with `A_MASK_UNCHECKED`, whose message says the check predates the binary value rule;
+  run `masks` again on the output folder. `instances` and `parent_labels` masks keep their check.
 
 - **`mask_relationships.json`** (only from the `masks` command or the notebook's
   **Describe the masks**): each kind of mask, the

@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 
 from .description import Description
 from .manifest import RunManifest
-from .mask_representation import CHECKED, file_status, read_checked
+from .mask_representation import CHECKED, file_status, predates_value_rule, read_checked
 from .run_inputs_request import (
     RESOLVER_VERSION,
     RGB,
@@ -168,7 +168,8 @@ class ResolvingInputs:
             )
             != CHECKED
         ]
-        refusals.extend(_some(unchecked_refusal(mask_id, unchecked, len(present))))
+        stale = predates_value_rule(table, mask_id, declared.source_type, declared.representation)
+        refusals.extend(_some(unchecked_refusal(mask_id, unchecked, len(present), stale=stale)))
         return refusals, coverage(mask_id, repeats, present)
 
     @staticmethod

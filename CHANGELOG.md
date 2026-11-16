@@ -8,6 +8,32 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+### Breaking: a `binary` check recorded before BM11 is refused until the mask step runs again
+
+Owner decision of 16 November 2026 (Spec ADR 0005 BM11 is applied by the mask step only; Spec
+ADR 0002 AR10: an old form is refused with its fix named, never read leniently). A `binary` mask
+file checked by the mask step of v0.5.6 or earlier, whose rule was "at most two distinct values
+over the file", kept its `checked` status, so a file holding {3} at one time point and {7} at
+another (which `label_binary`, one plane at a time, also passes) was read as checked.
+
+- The mask step writes `"value_rule": "BM11"` in the record of every mask declared `binary` in
+  `mask_representation.json` (between `representation` and `files`;
+  `mask_representation.VALUE_RULE`, `BINARY_VALUE_RULE`). This is the only change to any
+  output: the status file keeps `version` `"1"`; `instances` and `parent_labels` records, the
+  status file of a run without `binary` masks, `plane_histograms.csv`, `experiment_design.csv`,
+  `run_manifest.json`, `mask_relationships.json` and the discovery report are byte-identical.
+- A `binary` record without that rule (or naming another) counts as checked for none of its
+  files (`mask_representation.predates_value_rule`, applied in `file_status`): the resolver,
+  `read_mask`, `read_mask_window`, `read_objects` and the conversion helpers refuse it with the
+  existing code `A_MASK_UNCHECKED`, before any read, with a message that names the cause and the
+  fix (`... its check for k of n files was recorded by a masks step older than the binary value
+  rule (Spec ADR 0005 BM11: one positive value over all the planes of a file), so it is not
+  checked. Run the masks step again on this output folder (A_MASK_UNCHECKED).`, built only by
+  `mask_rules.stale_check_message`); `mask_check_status` and the manifest's mask status
+  say `not yet checked`. Running the mask step again applies BM11 (refusing such a file with
+  `R_MASK_CONTRADICTS_REPRESENTATION`) and writes the rule. A status file written by an
+  unreleased build of this branch before this change is refused the same way.
+
 ### Added: the mask conversion helpers (Spec ADR 0005, step 2b)
 
 Step 2b of MorphoBricks-Spec [ADR 0005](https://github.com/CellMigrationLab/MorphoBricks-Spec/blob/main/docs/adr/0005-binary-masks.md)

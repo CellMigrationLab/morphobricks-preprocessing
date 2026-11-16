@@ -31,7 +31,8 @@ from .description_record import check_declared_overrides
 from .description_unnamed import FIELD as UNNAMED_FIELD
 from .fov_identity import FovIdentity, fov_identity
 from .manifest import FileEntry, RunManifest
-from .mask_representation import CHECKED, file_status, read_checked
+from .mask_representation import CHECKED, file_status, predates_value_rule, read_checked
+from .mask_rules import stale_check_message
 from .run_inputs_error import (
     ChannelNotFoundError,
     DescriptionRequiredError,
@@ -259,7 +260,8 @@ class SemanticInputs:
     def require_checked(self, recorded: Mapping, mask_type: str) -> None:
         """Refuse a mask file the mask step has not checked (``A_MASK_UNCHECKED``).
 
-        Only a mask type the description declares is refused.
+        Only a mask type the description declares is refused. A ``binary`` mask whose check
+        predates the value rule BM11 is refused with the message that says so.
         """
         description = self.description()
         table = read_checked(self.output_folder)
@@ -267,6 +269,10 @@ class SemanticInputs:
             if mask.source_type != mask_type:
                 continue
             state = file_status(table, mask_id, mask_type, mask.representation, recorded)
+            if state != CHECKED and predates_value_rule(
+                table, mask_id, mask_type, mask.representation
+            ):
+                raise MaskUncheckedError(stale_check_message(mask_id, f"({recorded['path']})"))
             if state != CHECKED:
                 raise MaskUncheckedError(
                     f"The mask {mask_id!r} ({recorded['path']}) is not yet checked against "

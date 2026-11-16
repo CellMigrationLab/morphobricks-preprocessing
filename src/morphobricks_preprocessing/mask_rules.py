@@ -12,6 +12,8 @@ Each refusal code has exactly **one** function that builds its code and message 
   validator :func:`check_binary_values` calls it: the mask step on the distinct values of a
   whole file, and :func:`.masks.binary.label_binary` on one plane (the read guard of
   ``RunInputs.read_objects``).
+- :func:`stale_check_message` is the ``A_MASK_UNCHECKED`` message of a ``binary`` mask whose
+  check was recorded by a mask step older than BM11 (owner, 16 November 2026).
 
 The value rule of a ``binary`` mask (BM11, experiment-v1 section 4.5): stored as signed or
 unsigned integers or booleans, never floats (also when every value is whole), holding values in
@@ -37,6 +39,7 @@ __all__ = [
     "check_binary_values",
     "refuse_binary_values",
     "refuse_not_instances",
+    "stale_check_message",
 ]
 
 MASK_NOT_INSTANCES = "A_MASK_NOT_INSTANCES"
@@ -201,3 +204,18 @@ def check_binary_values(values: Iterable[int], *, dtype: object, path: str) -> N
     found = {int(v) for v in values}
     if binary_values_broken(found):
         raise refuse_binary_values(path, values=sorted(v for v in found if v != 0))
+
+
+def stale_check_message(mask_id: str, scope: str) -> str:
+    """Return the ``A_MASK_UNCHECKED`` message of a ``binary`` check older than BM11.
+
+    ``scope`` says which files: ``"for k of n files"`` (the resolver) or ``"({path})"`` (one
+    file read). The record carries no ``value_rule``
+    (:func:`.mask_representation.predates_value_rule`); the fix is to run the mask step again.
+    """
+    return (
+        f"The mask {mask_id!r} is declared binary and its check {scope} was recorded by a "
+        "masks step older than the binary value rule (Spec ADR 0005 BM11: one positive value "
+        "over all the planes of a file), so it is not checked. Run the masks step again on "
+        "this output folder (A_MASK_UNCHECKED)."
+    )
