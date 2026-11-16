@@ -127,15 +127,16 @@ Both are computed on the full plane, without rounding before the comparison; an 
    proof-of-concept and `he_tissue_v1` masks side by side and as a difference overlay; per
    component and for `keep`, both shares; Dice and the discordant fraction; pass or fail.
    Disagreements are explained, never tuned away per image. The images are identified by file
-   name and the SHA-256 of the file's bytes; the owner holds them, and the report fills the
-   placeholders before the rule is run:
+   name and the SHA-256 of the file's bytes (owner decision, 16 November 2026: these are the four
+   WebP files the owner shared for the presentation; WebP is lossy, so the reference is the
+   decoded pixels of exactly these bytes). The owner holds the images; they are not published:
 
    | ID | File name (presentation folder) | SHA-256 |
    | --- | --- | --- |
-   | PI-1 | `<file name: filled by the I1 acceptance report>` | `<64 hex: filled by the I1 acceptance report>` |
-   | PI-2 | `<file name: filled by the I1 acceptance report>` | `<64 hex: filled by the I1 acceptance report>` |
-   | PI-3 | `<file name: filled by the I1 acceptance report>` | `<64 hex: filled by the I1 acceptance report>` |
-   | PI-4 | `<file name: filled by the I1 acceptance report>` | `<64 hex: filled by the I1 acceptance report>` |
+   | PI-1 | `1.webp` | `3a074fb849fa8901e1381d479f69427339ab4ac6e42217b0cc450c48f5fcd8e7` |
+   | PI-2 | `2.webp` | `5725d0584925126faa2c1e70d62e2450815df4a02a65cca7a9f7e219c0a45f69` |
+   | PI-3 | `3.webp` | `518640cae5220da0a4372ed34df6b13c5d47912a7a696d6969a45886a7adef59` |
+   | PI-4 | `4.webp` | `dda0260384b6d590d3403be6ed436af030faf27cae38c56fec56d68f45ef07d2` |
 
    The report recomputes each SHA-256 and refuses an image whose bytes differ.
 2. **Hard RGB boundary cases.** A synthetic table, each pixel with its expected component and
@@ -150,7 +151,11 @@ Both are computed on the full plane, without rounding before the comparison; an 
    vendor").** Besides the presentation images, three public scanner sets, two of them from
    Aperio and one from a different vendor, Hamamatsu, with fixed tiles chosen and listed (slide,
    level, x, y, width, height) before the rule is run, overlays and per-component shares per
-   tile, and every failure mode named (for example faint eosin, pen marks, folds). **Pass:** in
+   tile, and every failure mode named (for example faint eosin, pen marks, folds). **At least
+   four tiles per set** (owner decision, 16 November 2026), chosen before evaluation by a written
+   rule: tiles drawn uniformly at random, with a seed recorded in the report, from the tiles of a
+   fixed level whose proof-of-concept tissue fraction is at least 0.25, so no tile is picked by
+   looking at `V`. **Pass:** in
    each set, every selected tile meets the per-image bar above, with the proof-of-concept rule
    run on the same tile as `R`. Acquisition
    provenance, as the sources state it (review w2 N1; Spec BM15 "Acceptance before freezing"):
