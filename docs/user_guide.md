@@ -377,6 +377,12 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    example a label declared that no folder uses, `W_UNUSED_CHANNEL`) are listed above the
    button; they do not stop the save.
 7. **Run.** **Compute histograms**; what is still to do is listed only while something is.
+   **Images read at once** (in Settings) is 1 by default, as the command line's `--workers`;
+   2, 4, 8 or **Auto** (as many as the CPUs allow, with an optional **Memory cap (GiB)**, the
+   command line's `--max-ram`) read several images at once, each in its own thread. The outputs
+   are byte-identical whatever the number; the speed-up is modest, because most of the
+   histogram work holds Python's global interpreter lock (GIL). The result says how many
+   images were read at once.
    After the run: its result, and collapsed panels for the **intensity checks and plots**,
    **Compare groups** (pooled statistics and a distribution plot per condition, repeat or
    image, for the table this run wrote; it writes nothing) and the report (formatted, with the

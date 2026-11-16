@@ -410,7 +410,8 @@ src/morphobricks_preprocessing/
   notebook_design.py        step 1: the experiment design card (_DesignCard)
   notebook_axis_step.py     step 2: role dropdowns, axis check, missing-axes card (_AxisStep)
   notebook_axis_preview.py  step 2: preview, confirmation, image type (_AxisPreview)
-  notebook_run.py           step 3: settings, what will happen, the run (_RunStep)
+  notebook_run.py           step 3: settings (with the workers, RunMode), what will happen,
+                            the run (_RunStep)
   notebook_results.py       step 4: pooled statistics per group and channel (_ResultsStep)
   notebook_plots.py         the PNG plots and IntensityPanel (the intensity checks card)
   run_labels.py             RunLabels: channel and replicate IDs of a described run's plots, from the

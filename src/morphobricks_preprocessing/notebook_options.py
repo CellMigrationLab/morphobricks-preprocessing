@@ -5,7 +5,7 @@ from __future__ import annotations
 import ipywidgets as widgets
 
 from .image_type import FLUORESCENCE, RGB
-from .run.modes import FULL, RESTART
+from .run.modes import AUTO, FULL, RESTART
 
 ROLE_OPTIONS = [
     ("Z - depth (focal planes)", "Z"),
@@ -62,6 +62,26 @@ VERIFY_CONTENT_HELP = (
     "not be seen. Verifying the content also compares each image's SHA-256 before its earlier "
     "rows are reused: every image is read once more. Turning it on or off reads every image "
     "again."
+)
+
+# Step 3's worker threads (issue #107; the CLI's --workers, default 1).
+WORKER_OPTIONS = [
+    ("1: one image after another (default)", 1),
+    ("2 images at once", 2),
+    ("4 images at once", 4),
+    ("8 images at once", 8),
+    ("Auto: as many as this computer's CPUs (and the memory cap) allow", AUTO),
+]
+WORKERS_HELP = (
+    "Each image is read whole in its own thread. The outputs are byte-identical whatever the "
+    "number. The speed-up is modest: most of the histogram work holds Python's global "
+    "interpreter lock (GIL), so the threads mostly take turns. More images at once also needs "
+    "more memory: each holds its own plane (or block) in memory."
+)
+MAX_RAM_HELP = (
+    "With Auto only: the memory the run may use, in GiB (0: no cap). Auto then reads only as "
+    "many images at once as the largest one's estimated working memory fits; an image that "
+    "alone needs more stops the run before any image is read."
 )
 
 _MAX_PLOTTED_GROUPS = 12
