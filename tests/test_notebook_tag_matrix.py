@@ -458,3 +458,32 @@ def test_unticking_after_a_label_is_removed_takes_back_the_rest_of_the_no_click_
     assert nb.draft_answers == strict.draft_answers
     one = (tmp_path / "fast" / DRAFT_FILENAME).read_bytes()
     assert one == (tmp_path / "strict" / DRAFT_FILENAME).read_bytes()
+
+
+def test_ticking_again_trusts_no_alias_removed_since_the_page_opened(tmp_path):
+    """An alias saved at opening but removed since (its label removed) trusts nothing.
+
+    DAPI is DNA's saved alias when the page opens; removing DNA from the list removes it from
+    the draft, and DNA added again has no alias. Ticking again must not tag the unit from DAPI.
+    """
+    from test_notebook_channels import set_labels
+
+    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    for i, folder in enumerate(SAVED):
+        _add(root, masks, folder, i + 1)
+    first = stepper(root, masks, out)
+    answer_all(first)
+    assert first.save_experiment()
+    _add(root, masks, "drug/rep3", 10)  # the saved aliases DAPI, Actin, Ch3
+    nb = stepper(root, masks, out)
+    named = ("drug", "rep3", "single")
+    assert nb.draft_answers.units[named].channels == TAGS  # trusted on opening
+    nb.channel_grid.same_channels.value = False
+    nb.channel_labels.confirm.button.click()  # change the labels: DNA out, then in again
+    set_labels(nb, ["ACTIN", "PHASE"])
+    nb.channel_labels.confirm.button.click()
+    set_labels(nb, list(TAGS))
+    assert not nb.draft_answers.channels["DNA"].header_names  # DAPI is no longer saved
+    nb.channel_grid.same_channels.value = True
+    unit = nb.draft_answers.units.get(named)
+    assert unit is None or not any(unit.channels)

@@ -167,8 +167,10 @@ def trusted(
     unit again (nothing saved is replaced without a click). ``saved`` are the labels whose
     header names (aliases) are trusted: those saved when the page opened, so that an alias the
     row's own filling saved in this session trusts nothing on the spot (default: the answers').
+    Of those, only the ones the answers still hold are trusted: an alias removed since (its
+    label removed from the list) is no longer saved.
     """
-    known = answers.channels if saved is None else saved
+    known = answers.channels if saved is None else _still_saved(saved, answers.channels)
     cells: Cells = []
     for layout in layouts:
         tags = header_tags(layout, labels, known)
@@ -178,6 +180,18 @@ def trusted(
         answers = with_tags(answers, layout, tags)
         cells += [(layout.key, i) for i in range(layout.channels)]
     return answers, cells
+
+
+def _still_saved(
+    saved: Mapping[str, ChannelAnswer], now: Mapping[str, ChannelAnswer]
+) -> dict[str, ChannelAnswer]:
+    """Return the labels of ``saved`` with only the aliases ``now`` still holds."""
+    out = {}
+    for label, channel in saved.items():
+        kept = set((now.get(label) or ChannelAnswer()).header_names or ())
+        names = tuple(n for n in channel.header_names or () if n in kept)
+        out[label] = ChannelAnswer(header_names=names or None)
+    return out
 
 
 def untrusted(
