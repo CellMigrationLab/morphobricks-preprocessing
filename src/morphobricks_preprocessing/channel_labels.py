@@ -209,7 +209,10 @@ class UnitLayout:
     such a unit is never put in a block with others. ``counts_agree`` is False when some other
     image of the unit has another channel count or none known (unreadable, or the roles do not
     fit it): the unit's channel count is then not known
-    (:func:`.channel_units.unit_channel_counts`).
+    (:func:`.channel_units.unit_channel_counts`). ``three_samples`` is True when some readable
+    image of the unit has a TIFF header that does not say colour and every such image stores
+    exactly three interleaved samples per pixel: the condition under which the notebook offers
+    the RGB header override (Spec RH1, :mod:`.rgb_override`). It is header evidence only.
     """
 
     key: UnitKey
@@ -221,6 +224,7 @@ class UnitLayout:
     images: int = 0
     uniform: bool = True
     counts_agree: bool = True
+    three_samples: bool = False
 
     @property
     def usable(self) -> bool:

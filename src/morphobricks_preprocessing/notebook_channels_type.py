@@ -86,12 +86,28 @@ class ImageTypeColumn:
                 "<span class='mb-help' style='color:#92400E'>The header says colour (RGB): the "
                 "run refuses a folder declared otherwise.</span>"
             )
+        if saved == "rgb" and not layout.rgb and self.overridden(layout):
+            return (
+                "<span class='mb-help'>The header does not say colour; read as colour because "
+                "you ticked it under Image type (rgb_header_override).</span>"
+            )
+        if saved == "rgb" and not layout.rgb and layout.three_samples:
+            return (
+                "<span class='mb-help' style='color:#92400E'>The header does not say colour: the "
+                "run refuses this folder unless you tick <i>Read these folders as colour</i> "
+                "under Image type.</span>"
+            )
         if saved == "rgb" and not layout.rgb:
             return (
                 "<span class='mb-help' style='color:#92400E'>The header does not say colour: the "
                 "run refuses this folder unless its header does.</span>"
             )
         return ""
+
+    def overridden(self, layout: UnitLayout) -> bool:
+        """Return True when the user recorded the unit's RGB header override (Spec RH1)."""
+        unit = self.store.answers().units.get(layout.key)
+        return unit is not None and unit.rgb_header_override is True
 
     def _chosen(self, layout: UnitLayout, value: str | None) -> None:
         """Save the type the user ticked; a refusal is said and the tick is taken back."""
@@ -268,7 +284,8 @@ class ImageTypeRows:
     def _settled(self, layout: UnitLayout) -> bool:
         """Return True when a row may fold: answered, with no warning under its choice."""
         saved = self.types.saved(layout.key) is not None
-        return layout.usable and saved and not self.types.note(layout)
+        quiet = not self.types.note(layout) or self.types.overridden(layout)
+        return layout.usable and saved and quiet
 
     def _confirm(self, keys: Sequence[UnitKey]) -> None:
         self.types.confirm_header(keys)

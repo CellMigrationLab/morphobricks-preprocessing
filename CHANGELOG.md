@@ -6,6 +6,13 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+### Batch P1
+
+- **Tests (G2):** the `v05` channel case of gate G3 (Spec ADR 0001 GS2): a PHASE request finds `rep1` partial and no repeat unavailable, recorded in `channel_coverage`, refused as `A_SCOPE_INCOMPLETE`, fitted only with `partial_channels = "planes_with_channel"`.
+- **Notebook (H1):** the Channels step's Image type card offers the RGB header override (Spec RH1) for folders whose images have three interleaved samples under a header that does not say colour: one checkbox, never pre-ticked, enabled once those folders are answered colour (RGB), recording `rgb_header_override = true` exactly as a hand-written file does (`channel_answers.with_override`, `UnitLayout.three_samples`). When only some of those colour folders have the key, the box stays unticked and the card names them (review of #313).
+
 ## v0.6.0 (16 November 2026)
 
 MorphoBricks-Spec ADR 0005 steps 2 and 2b ("one policy for binary masks"), the owner's "one

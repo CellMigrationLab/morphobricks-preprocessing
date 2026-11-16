@@ -14,6 +14,8 @@ absent channel is blank, never zero.
   unswapped order (never mixed by C index);
 - the conformance plan section 4 row "Histogram table v5" on ``v13``, ``v04``, ``v05``, ``v06``
   and ``v17`` trees, and on a channel ID containing ``_``;
+- the ``v05`` channel case of gate G3 (ADR 0001 GS2): a PHASE request finds ``rep1`` partial,
+  no repeat unavailable, refused as ``A_SCOPE_INCOMPLETE``; its statistics need the opt-in;
 - one discrepant image inside a unit is still refused (``R_UNIT_NOT_HOMOGENEOUS``);
 - units of different image types (``v29``) stay refused (``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``).
 """
@@ -390,6 +392,51 @@ def test_v17_partial_repeat_is_recorded_and_its_statistics_need_a_choice(tmp_pat
         "R001": "unavailable",
         "R002": "partial",
     }
+
+
+def test_v05_phase_request_leaves_rep1_partial_and_no_repeat_unavailable(tmp_path):
+    # Conformance plan section 4, Stage 3 (ADR 0001 GS2): PHASE is in DrugA/rep1 only; rep1 is
+    # the only repeat, so a PHASE request finds rep1 partial (DrugA yes, CTRL no), none
+    # unavailable, and is refused as A_SCOPE_INCOMPLETE; DNA and ACTIN are full.
+    result, out, _ = described_run(tmp_path, VALID["v05"].data)
+    assert result.written, [(i.code, i.message) for i in result.issues]
+    (warned,) = [i for i in result.issues if i.code == "partial_channel_coverage"]
+    assert warned.paths == ("rep1: PHASE in 1 of 2 acquisitions",)
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    coverage = manifest["experiment_description"]["channel_coverage"]
+    assert coverage == {
+        "rep1": {
+            "ACTIN": {"status": "full", "units_with": 2, "units": 2, "lacking": []},
+            "DNA": {"status": "full", "units_with": 2, "units": 2, "lacking": []},
+            "PHASE": {"status": "partial", "units_with": 1, "units": 2, "lacking": ["CTRL/single"]},
+        }
+    }
+    inputs = RunInputs.open(out)
+    resolved = inputs.resolve_request(Request(("PHASE",)))
+    assert resolved.refused and not resolved.selections
+    assert [(r.code, r.subject) for r in resolved.refusals] == [("A_SCOPE_INCOMPLETE", "PHASE")]
+    assert "present in 2 of 4 acquisitions" in resolved.refusals[0].message
+    assert resolved.refusals[0].files == ("CTRL/rep1/img0.tif", "CTRL/rep1/img1.tif")
+    assert [(c.repeat_group, c.status, c.present, c.total) for c in resolved.coverage] == [
+        ("rep1", "partial", 2, 4)
+    ]
+    shared = inputs.resolve_request(Request(("DNA", "ACTIN")))
+    assert not shared.refused
+    assert {(c.subject, c.status) for c in shared.coverage} == {("DNA", "full"), ("ACTIN", "full")}
+    # A fit over rep1 (both conditions) needs the explicit opt-in for PHASE; without it, refused.
+    records = read_plane_histogram_table(result.csv_path).records
+    settings = NormalizationSettings(method="percentile", scope="biological_repeat")
+    with pytest.raises(ChannelScopeIncompleteError, match="PHASE") as refused:
+        fit(records, settings, group="rep1")
+    assert set(refused.value.channels) == {"PHASE"}
+    opted = NormalizationSettings(
+        method="percentile", scope="biological_repeat", partial_channels="planes_with_channel"
+    )
+    assert fit(records, opted, group="rep1").channels == ("ACTIN", "DNA", "PHASE")
+    assert fit(records, settings, group="rep1", channels=("ACTIN", "DNA")).channels == (
+        "ACTIN",
+        "DNA",
+    )
 
 
 def test_v29_units_of_different_image_types_stay_refused():

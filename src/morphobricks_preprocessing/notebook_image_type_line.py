@@ -22,6 +22,8 @@ The answers are the per-unit ``image_type`` of the draft, saved through
 contradicts a header is still allowed and said in words (the run refuses it,
 ``R_IMAGE_TYPE_CONTRADICTS_HEADER``); folders answered differently stay refused by the save and
 the run (``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``, Spec Stages 1-2), and the line says so at once.
+Folders whose headers have three interleaved samples but do not say colour get the RGB header
+override offer (:class:`.notebook_rgb_override.RgbOverrideOffer`, Spec RH1) on this card.
 Replacing answers already given asks first, as the pixel size does.
 """
 
@@ -37,6 +39,7 @@ from .channel_answers import synced, with_type
 from .channel_labels import UnitLayout
 from .notebook_channels_type import ImageTypeColumn, ImageTypeRows
 from .notebook_render import blocked_line
+from .notebook_rgb_override import RgbOverrideOffer
 from .validation import plural
 
 OPTIONS = [("separate stains or markers, one per channel", "channels"), ("colour (RGB)", "rgb")]
@@ -88,13 +91,22 @@ class ImageTypeLine:
         )
         ui.set_visible(self.replace_box, False)
         self.message = widgets.HTML()
+        self.override = RgbOverrideOffer(types)
         self.per_folder = ui.accordion("Set per folder…", [rows.widget])
         # The rows of each folder are built, and their pictures read, only once opened.
         rows.folded = lambda: self.per_folder.selected_index is None
         self.per_folder.observe(lambda _: rows.unfolded(), names="selected_index")
         self.widget = ui.card(
             "Image type",
-            [self.line, self.form, self.blocker, self.replace_box, self.message, self.per_folder],
+            [
+                self.line,
+                self.form,
+                self.blocker,
+                self.replace_box,
+                self.message,
+                self.override.widget,
+                self.per_folder,
+            ],
         )
         self.apply.on_click(lambda _: self._use_for_all())
         self.replace_yes.on_click(lambda _: self._replace())
@@ -136,6 +148,7 @@ class ImageTypeLine:
         shown = self.opened and bool(usable)
         for widget in (self.form, self.per_folder):
             ui.set_visible(widget, shown)
+        self.override.refresh(shown)
         if not shown:
             self.line.value = ui.status("info", WAITING) if not self.opened else ""
             self.blocker.value = self.message.value = ""
