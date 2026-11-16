@@ -353,6 +353,90 @@ def test_the_cap_is_passed_only_with_auto_and_0_is_no_cap(experiment, monkeypatc
     assert (modes[-1].workers, modes[-1].max_ram) == ("auto", None)
 
 
+def _large_images(monkeypatch, size=300 * 2**20):
+    """Make every image's working-memory estimate ``size`` bytes, in the run and the notebook."""
+    import morphobricks_preprocessing.run.workers as workers
+
+    monkeypatch.setattr(workers, "layout_memory", lambda layout, bin_count: size)
+
+
+SERIAL_NOTE = (
+    "Images read at once: 1, because the default memory cap (0.5 GiB) is smaller than the "
+    "largest image (0.6 GiB); outputs are identical for any number."
+)
+
+
+def test_the_default_starts_at_1_when_its_cap_cannot_hold_the_largest_image(
+    experiment, monkeypatch
+):
+    # D4b: a 1 GiB machine gives a 0.5 GiB default cap; an image needing 300 MiB (and the
+    # 256 MiB the run keeps) is over it, so Auto would stop with image_over_max_ram.
+    _memory(monkeypatch, 2**30)
+    _large_images(monkeypatch)
+    modes = _spy_run(monkeypatch)
+    nb = ready(experiment)
+    assert nb.workers.value == 1 and nb.max_ram_gib.value == 0.5
+    assert SERIAL_NOTE in nb.workers_note.value
+    serial = nb.run()
+    assert (modes[-1].workers, modes[-1].max_ram) == (1, None)
+    assert serial.written and serial.workers == 1
+    assert not any(i.code == "image_over_max_ram" for i in serial.issues)
+    table = serial.csv_path.read_bytes()
+    nb.mode.value = "full"
+    nb.workers.value = "auto"  # the user's own choice, with a cap that holds the images
+    nb.max_ram_gib.value = 4
+    assert nb.workers_note.value == ""
+    auto = nb.run()
+    assert (modes[-1].workers, modes[-1].max_ram) == ("auto", 4 * 2**30)
+    assert auto.written and auto.csv_path.read_bytes() == table  # identical for any number
+
+
+def test_the_default_stays_auto_when_its_cap_holds_the_largest_image(experiment, monkeypatch):
+    _memory(monkeypatch, 2 * 2**30)  # a 1 GiB cap holds 300 MiB and the run's 256 MiB
+    _large_images(monkeypatch)
+    nb = ready(experiment)
+    assert nb.workers.value == "auto" and nb.workers_note.value == ""
+    assert nb.run().written
+
+
+@pytest.mark.parametrize("chosen", ["cap", "workers"])
+def test_values_the_user_set_are_kept_with_their_refusal(experiment, monkeypatch, chosen):
+    _memory(monkeypatch, 2**30)
+    _large_images(monkeypatch)
+    modes = _spy_run(monkeypatch)
+    nb = checked(experiment)
+    if chosen == "cap":
+        nb.max_ram_gib.value = 0.4  # the user's cap, set before the scan is known
+    else:
+        nb.workers.value = 2
+        nb.workers.value = "auto"  # the user's Auto under the default cap
+    confirm_axes(nb)
+    assert nb.workers.value == "auto" and nb.workers_note.value == ""
+    result = nb.run()
+    assert modes[-1].workers == "auto" and not result.written
+    assert [i.code for i in result.issues if i.severity == "error"] == ["image_over_max_ram"]
+
+
+def test_the_cap_line_says_physical_memory_where_that_is_the_figure(experiment, monkeypatch):
+    import morphobricks_preprocessing.notebook_run as module
+
+    _memory(monkeypatch, 9 * 2**30)
+    monkeypatch.setattr(module, "memory_is_physical", lambda: True)  # macOS
+    shown = _texts(ready(experiment).settings_card)
+    line = next(t for t in shown if "Default: 4.5 GiB" in t)
+    assert "half of the 9.0 GiB of physical memory this computer has" in line
+    assert "available" not in line
+
+
+def test_memory_is_physical_only_without_an_available_figure(tmp_path):
+    from morphobricks_preprocessing.run.workers import memory_is_physical
+
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text("MemTotal: 100 kB\nMemAvailable: 50 kB\n", encoding="ascii")
+    assert not memory_is_physical(meminfo)
+    assert memory_is_physical(tmp_path / "none") is (os.name != "nt")
+
+
 @pytest.mark.parametrize(
     ("available", "expected"),
     [(None, None), (2**30 - 1, None), (2**30, 0.5), (9 * 2**30, 4.5), (int(15.99 * 2**30), 7.9)],

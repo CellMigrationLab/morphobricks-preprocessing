@@ -66,6 +66,17 @@ v0.5.1: no run before v0.5.1 is read.)
   byte-identical whatever the number and the speed-up is modest (the histogram work holds the
   GIL). The run's result shows `RunResult.workers` (the thread pool the images were read
   with). The notebook file and its call are unchanged.
+- **Notebook: one image at a time when the default cap cannot hold the largest image** (D4b).
+  On a low-memory computer the default cap can be below one image's estimate, and Auto then
+  stopped the run with `image_over_max_ram` where one image at a time completes. Once the axis
+  roles are confirmed, while the user has changed neither **Images read at once** nor the cap,
+  the notebook starts at 1 when the default cap is below what the largest analysed image needs
+  (`run.workers.max_ram_needed`: its header estimate plus the 256 MiB the run keeps, exactly
+  `plan_workers`' refusal) and says so beside the choice: "Images read at once: 1, because the
+  default memory cap (X GiB) is smaller than the largest image (Y GiB); outputs are identical
+  for any number." Values the user set are kept, and so is their refusal. Where the figure is
+  the physical memory (macOS, `run.workers.memory_is_physical`), the cap's line says "physical
+  memory" instead of "available". The outputs do not depend on the number of workers.
 
 ### Corrections to the v0.6.1 notes
 
