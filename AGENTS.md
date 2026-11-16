@@ -393,6 +393,9 @@ src/morphobricks_preprocessing/
   notebook_axes_quick.py    the stepper's one-click Confirm these axes (Q3, PR 17b)
   notebook_row_fold.py      reopen: unchanged, answered rows fold; new or changed rows orange
   notebook_channels_rows.py the tag grid's folder rows: pictures (colour for RGB), Enlarge
+  notebook_rgb_override.py  the Image type card's RGB header override offer (Spec RH1): shown
+                            only for three interleaved samples under a header not saying colour,
+                            never pre-ticked; channel_answers.with_override records it
   notebook_channel_moves.py the Channels step's questions about saved channels at new positions
                             (#258) and saved header names lost (#281); channel_moves.py (pure)
                             lists them (channel_moves, name_changes) and turns the user's click

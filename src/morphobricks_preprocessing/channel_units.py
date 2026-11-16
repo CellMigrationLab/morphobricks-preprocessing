@@ -15,6 +15,7 @@ from .channel_labels import UnitLayout
 from .discovery import DiscoveryResult
 from .draft_answers import UnitKey
 from .metadata import MetadataReport, TiffMetadata, header_channel_count
+from .rgb_override import OVERRIDE_SAMPLES, lifted
 
 
 def channel_count(meta: TiffMetadata, review: AxisReview) -> int | None:
@@ -97,8 +98,20 @@ def unit_layouts(
         others = [_signature(headers.get(i), review) for i in found[1:]]
         uniform = all(other == signature for other in others)
         agree = all(other is not None and other[0] == count for other in others)
-        out.append(UnitLayout(key, first, *signature, "", len(found), uniform, agree))
+        three = three_samples(headers.get(i) for i in found)
+        out.append(UnitLayout(key, first, *signature, "", len(found), uniform, agree, three))
     return tuple(out)
+
+
+def three_samples(metas: Iterable[TiffMetadata | None]) -> bool:
+    """Return whether the RGB header override would lift a unit's images (Spec RH1).
+
+    True when some readable image has a TIFF header that does not say colour and every such
+    image stores exactly three interleaved samples per pixel; unreadable images are left out
+    (the run refuses them on their own). Headers only, no pixel.
+    """
+    lifts = [m for m in metas if m is not None and m.readable and lifted(m)]
+    return bool(lifts) and all(m.interleaved_samples == OVERRIDE_SAMPLES for m in lifts)
 
 
 def unit_channel_counts(layouts: Iterable[UnitLayout]) -> dict[UnitKey, int]:
@@ -123,6 +136,7 @@ __all__ = [
     "channel_count",
     "header_names",
     "slot_count",
+    "three_samples",
     "unit_channel_counts",
     "unit_images",
     "unit_layouts",

@@ -7,6 +7,8 @@ draft (:mod:`.draft_answers`); these functions change one slice and keep the res
   colour units are kept) and takes back every tag of a label that is no longer in it;
 - :func:`with_tags` and :func:`with_type` change one unit; a colour unit is tagged ``R``, ``G``,
   ``B`` and nothing else, an ordinary one starts untagged;
+- :func:`with_override` records or takes back one colour unit's RGB header override (Spec
+  RH1), only on the user's click and only where the headers allow it;
 - :func:`synced` recomputes what is derived from the tags: the header names each label is
   evidence for (the tag is the user's confirmation of the alias) and the declared colour tokens.
 
@@ -99,6 +101,25 @@ def with_type(answers: DraftAnswers, layout: UnitLayout, image_type: str | None)
     return _store(answers, layout.key, changed)
 
 
+def with_override(answers: DraftAnswers, layout: UnitLayout, value: bool) -> DraftAnswers:
+    """Return the answers with one colour unit's ``rgb_header_override`` ticked or not.
+
+    Ticked records ``rgb_header_override = true`` (experiment-v1 4.4b, RH1); unticked removes
+    the key, as a unit that never had it (absent is false). Refused with ``ValueError`` unless
+    the unit's saved type is ``rgb`` and its headers do not say colour but store three
+    interleaved samples per pixel (:attr:`.channel_labels.UnitLayout.three_samples`).
+    """
+    unit = answers.units.get(layout.key)
+    if unit is None or unit.image_type != "rgb":
+        raise ValueError(f"{layout.key} is not answered colour (RGB): choose colour first")
+    if value and not layout.three_samples:
+        raise ValueError(
+            f"{layout.key}: the override is only for images with three interleaved samples "
+            "whose header does not say colour"
+        )
+    return _store(answers, layout.key, replace(unit, rgb_header_override=True if value else None))
+
+
 def with_labels(answers: DraftAnswers, labels: Mapping[str, str | None]) -> DraftAnswers:
     """Return the answers with exactly these labels (ID -> shown-as name or None).
 
@@ -166,6 +187,7 @@ __all__ = [
     "synced",
     "untagged_by",
     "with_labels",
+    "with_override",
     "with_tags",
     "with_type",
 ]
