@@ -188,12 +188,17 @@ def untrusted(
     """Return the answers with the units :func:`trusted` tagged (``given``) untagged again.
 
     The statement unticked: those tags rested on it alone, with no click, so the strict page
-    shows the header as a proposal to confirm, as before. A unit whose tags the user changed
-    since keeps them (they are the user's).
+    shows the header as a proposal to confirm, as before. ``given`` holds only units the user
+    has not clicked on since (the caller forgets a unit at its first click). A unit whose saved
+    tags are some of the given ones, the others untagged since without a click on it (their
+    label removed from the list), is untagged too; one with any other tag keeps it.
     """
     for layout in layouts:
         tags = given.get(layout.key)
-        if tags is not None and tags_of(layout, answers.units.get(layout.key)) == tags:
+        saved = tags_of(layout, answers.units.get(layout.key))
+        if tags is None or len(tags) != len(saved):
+            continue
+        if any(saved) and all(s is None or s == t for s, t in zip(saved, tags, strict=True)):
             answers = with_tags(answers, layout, (None,) * layout.channels)
     return answers
 

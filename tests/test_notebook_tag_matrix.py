@@ -433,3 +433,28 @@ def test_unticking_keeps_a_unit_the_user_tagged_again_by_hand_as_its_header_says
     grid.same_channels.value = False
     assert set(nb.draft_answers.units) == {tuned}
     assert nb.draft_answers.units[tuned].channels == TAGS
+
+
+def test_unticking_after_a_label_is_removed_takes_back_the_rest_of_the_no_click_tags(
+    tmp_path, monkeypatch
+):
+    """Removing a label untags it everywhere; what the headers alone tagged is still theirs.
+
+    The trusted units keep ACTIN and PHASE with no click once DNA is removed from the list;
+    unticking takes those back too, so the draft is byte-equal to opening the page unticked.
+    """
+    from morphobricks_preprocessing.notebook_channels_grid import TagGrid
+    from test_notebook_channels import set_labels
+
+    root = _design(tmp_path, names_of=lambda key: LABELLED)
+    nb = _screen(tmp_path, root, "fast")
+    nb.channel_labels.confirm.button.click()  # change the labels
+    set_labels(nb, ["ACTIN", "PHASE"])
+    assert {u.channels for u in nb.draft_answers.units.values()} == {(None, "ACTIN", "PHASE")}
+    nb.channel_grid.same_channels.value = False
+    assert not nb.draft_answers.units
+    monkeypatch.setattr(TagGrid, "SAME_CHANNELS", False)
+    strict = _screen(tmp_path, root, "strict", labels=("ACTIN", "PHASE"))
+    assert nb.draft_answers == strict.draft_answers
+    one = (tmp_path / "fast" / DRAFT_FILENAME).read_bytes()
+    assert one == (tmp_path / "strict" / DRAFT_FILENAME).read_bytes()

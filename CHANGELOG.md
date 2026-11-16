@@ -29,7 +29,8 @@ v0.5.1: no run before v0.5.1 is read.)
   Unticked, the page is the strict per-unit path of PR 17b, unchanged: the units tagged from
   their headers with no click in this session are untagged again (a header is then a proposal
   to confirm, as before; a unit whose tags the user clicked on since keeps them, even tagged
-  back to what its header says), and ticking again trusts only the aliases saved when the page opened
+  back to what its header says, and one whose header tags only lost a label removed from the
+  list is untagged too), and ticking again trusts only the aliases saved when the page opened
   (`channel_matrix`, `notebook_channels_matrix`).
 - **`RunInputs.objects_read_plan(selection, mask_id)`** (#316): the memory of one
   `read_objects` plane, from the mask's header only, as an `ObjectsReadPlan` (also
