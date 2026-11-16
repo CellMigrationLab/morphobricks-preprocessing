@@ -40,15 +40,17 @@ class ObjectsReadPlan:
     conversion
         The selection's recorded conversion: None, or ``"connected_components"``.
     stored_bytes
-        The stored plane, ``shape`` times the stored bytes per pixel. Not part of
-        ``memory_estimate``; given for a caller that also counts the plane being read.
+        The stored plane, ``shape`` times the stored bytes per pixel: the read holds it while
+        it makes the result.
     result_bytes
         The ``int32`` result, 4 bytes per pixel (4 times ``stored_bytes`` for a ``uint8`` mask).
     conversion_bytes
         For ``connected_components``: :func:`.binary.labelling_bytes`, an upper bound of what
-        the labeller allocates beside its result; 0 without a conversion.
+        the labeller allocates beside its input and its result; 0 without a conversion.
     memory_estimate
-        ``result_bytes + conversion_bytes``: the estimate of an objects read.
+        ``stored_bytes + result_bytes + conversion_bytes``: the peak working memory of an
+        objects read (a ``uint8`` instances mask: 5 times its stored size; an ``int32`` one 8
+        bytes per pixel, its stored plane and the copy ``read_objects`` returns).
     """
 
     shape: tuple[int, int]
@@ -76,17 +78,17 @@ def objects_read_plan(
     shape = (int(shape[0]), int(shape[1]))
     stored_dtype = np.dtype(stored_dtype)
     pixels = shape[0] * shape[1]
-    result = pixels * OBJECT_LABELS.itemsize
+    stored, result = pixels * stored_dtype.itemsize, pixels * OBJECT_LABELS.itemsize
     work = labelling_bytes(shape, stored_dtype) if conversion else 0
     return ObjectsReadPlan(
         shape=shape,
         stored_dtype=stored_dtype,
         dtype=OBJECT_LABELS,
         conversion=conversion,
-        stored_bytes=pixels * stored_dtype.itemsize,
+        stored_bytes=stored,
         result_bytes=result,
         conversion_bytes=work,
-        memory_estimate=result + work,
+        memory_estimate=stored + result + work,
     )
 
 

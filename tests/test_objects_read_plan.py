@@ -1,9 +1,10 @@
 """RunInputs.objects_read_plan: the memory of an ``objects`` read, from the header (issue #316).
 
-``read_objects`` returns ``int32`` labels whatever the stored pixel type, so the estimate of an
-objects read counts 4 bytes per pixel (a ``uint8`` mask: 4 times its stored size), plus the
-working memory of ``label_binary`` for a ``binary`` mask converted by ``connected_components``.
-The region-read estimate (``mask_window_plan``) is unchanged: the stored pixel type.
+``read_objects`` holds the stored plane and returns ``int32`` labels whatever the stored pixel
+type, so the estimate of an objects read is the read's peak: the stored plane, plus 4 bytes per
+pixel for the result (a ``uint8`` mask: 5 times its stored size), plus the working memory of
+``label_binary`` for a ``binary`` mask converted by ``connected_components``. The region-read
+estimate (``mask_window_plan``) is unchanged: the stored pixel type.
 """
 
 from __future__ import annotations
@@ -42,10 +43,11 @@ def test_an_instances_objects_read_counts_int32_bytes_whatever_the_stored_type(t
         stored_bytes=stored,
         result_bytes=4 * PIXELS,
         conversion_bytes=0,
-        memory_estimate=4 * PIXELS,
+        memory_estimate=stored + 4 * PIXELS,
     )
-    if dtype is np.uint8:
-        assert plan.memory_estimate == 4 * stored  # the acceptance of #316
+    per_pixel = {np.uint8: 5, np.uint16: 6, np.int32: 8}[dtype]
+    assert plan.memory_estimate == per_pixel * PIXELS  # uint8: 5 x stored; int32: 8 per pixel
+    assert plan.result_bytes == 4 * PIXELS  # the int32 part of #316, whatever the stored type
     objects = inputs.read_objects(selection, "Nuclei", 0, 0)
     assert (objects.dtype, objects.shape, objects.nbytes) == (plan.dtype, plan.shape, 4 * PIXELS)
     # The region read of the same mask still counts its stored bytes (pinned on main 37c583e).
@@ -65,7 +67,7 @@ def test_a_converted_binary_objects_read_adds_the_labelling_memory(tmp_path):
     )
     assert (plan.stored_bytes, plan.result_bytes) == (PIXELS, 4 * PIXELS)
     assert plan.conversion_bytes == work > 0
-    assert plan.memory_estimate == 4 * PIXELS + work
+    assert plan.memory_estimate == PIXELS + 4 * PIXELS + work  # stored, int32, labelling
     # The same mask as a region: its stored uint8 bytes, unchanged.
     region = inputs.mask_window_plan(image, "tumor_region", bounds=(0, 8, 0, 8))
     assert (region.dtype, region.memory_estimate) == (np.dtype(np.uint8), 192)

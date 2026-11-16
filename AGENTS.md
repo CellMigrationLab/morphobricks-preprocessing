@@ -223,7 +223,8 @@ src/morphobricks_preprocessing/
                     read_mask_window, mask_window_plan (one recorded-mask check for all) and
                     read_objects (a resolved objects use, its recorded conversion applied by
                     masks.binary.label_binary; Spec ADR 0005) and objects_read_plan (its
-                    memory from the header: int32 result plus labelling_bytes; #316)
+                    peak memory from the header: stored plane, int32 result and
+                    labelling_bytes; #316)
   mask_conversion.py RunInputs.binary_to_instances / classes_to_binary (Spec ADR 0005 BM12, step
                     2b): new mask files from a checked mask, refused before any read or write
                     (check_class_image, collisions, idempotent retry); mask_lineage.py their

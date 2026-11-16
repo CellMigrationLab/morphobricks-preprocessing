@@ -137,10 +137,11 @@ class MaskInputs:
     def objects_read_plan(self, selection: FovSelection, mask_id: str) -> ObjectsReadPlan:
         """Return what one :meth:`read_objects` plane costs, from the mask's header only.
 
-        The estimate counts the ``int32`` result, 4 bytes per pixel whatever the stored type (a
-        ``uint8`` mask: 4 times its stored size), plus, for ``connected_components``, an upper
-        bound of the labeller's own working memory (:func:`.masks.binary.labelling_bytes`);
-        see :class:`.masks.objects.ObjectsReadPlan`. The region-read estimate,
+        The estimate is the read's peak: the stored plane it holds, plus the ``int32`` result,
+        4 bytes per pixel whatever the stored type (a ``uint8`` mask: 5 times its stored size in
+        all), plus, for ``connected_components``, an upper bound of the labeller's own working
+        memory (:func:`.masks.binary.labelling_bytes`); see
+        :class:`.masks.objects.ObjectsReadPlan`. The region-read estimate,
         :meth:`mask_window_plan`, is the stored type's. No pixel is read and no digest
         computed; the selection and the mask are refused as :meth:`read_objects` refuses them.
 

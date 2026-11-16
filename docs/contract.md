@@ -428,7 +428,9 @@ It gives:
   `morphobricks_preprocessing.ObjectsReadPlan`): `shape` `(h, w)`, `stored_dtype`, `dtype`
   (`int32`), `conversion`, `stored_bytes` (the stored plane), `result_bytes` (the `int32` result,
   4 bytes per pixel whatever the stored type: 4 times `stored_bytes` for a `uint8` mask),
-  `conversion_bytes` and `memory_estimate` = `result_bytes + conversion_bytes`. Without a
+  `conversion_bytes` and `memory_estimate` = `stored_bytes + result_bytes + conversion_bytes`,
+  the peak working memory of the read (a `uint8` `instances` mask: 5 times `stored_bytes`; an
+  `int32` one 8 bytes per pixel, the stored plane and the copy returned). Without a
   conversion `conversion_bytes` is 0. With `connected_components` it is
   `masks.binary.labelling_bytes(shape, stored_dtype)`, an upper bound for every plane of that
   shape and type of what `label_binary` allocates beside its input and its result: the larger of
@@ -436,8 +438,7 @@ It gives:
   labelling (the boolean foreground, 1 byte per pixel; SciPy's label table, 8-byte entries for at
   most one provisional label per 2 × 2 block plus one line, counted three times for its
   doublings; its two line buffers; and the `int64` labels of a plane that could hold more
-  components than the `int32` limit). The stored plane the read holds is `stored_bytes`, not part
-  of `memory_estimate`. A region read's estimate stays `mask_window_plan`'s, from the stored type;
+  components than the `int32` limit). A region read's estimate stays `mask_window_plan`'s, from the stored type;
 - `mask_types()` and `read_mask(fov, type, z=None, t=None)`: the recorded pairing only, read
   as stored through the recorded `axes` and `roles` by preprocessing's reader with
   `check_labels`; a mask changed since the run is refused; a mask recorded `shared: true`
