@@ -63,6 +63,7 @@ from .manifest import (
     file_sha256,
     read_manifest,
 )
+from .mask_conversion import ConversionInputs
 from .mask_record import shared_mask_text
 from .masks import FOLDER
 from .planes import DEFAULT_MEMORY_LIMIT, read_plane
@@ -169,7 +170,9 @@ class Fov:
 
 
 @dataclass(frozen=True)
-class RunInputs(SemanticInputs, ProjectionInputs, ResolvingInputs, WindowInputs, MaskInputs):
+class RunInputs(
+    SemanticInputs, ProjectionInputs, ResolvingInputs, WindowInputs, MaskInputs, ConversionInputs
+):
     """The inputs of a clean preprocessing run, read as the run recorded them.
 
     Use :meth:`open`; the attributes are the snapshot taken then.

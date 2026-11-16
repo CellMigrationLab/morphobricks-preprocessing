@@ -352,7 +352,12 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    evidence beside your answer. **Describe the masks** reads every mask and reports how the types relate. It
    reads the masks a run recorded, so it is greyed out before the run and says so; come back
    to it after **Run**. The histogram table does not need it, but bricks that use masks accept
-   only masks it has read. Without masks, the step says so.
+   only masks it has read. Without masks, the step says so. Under it, **Convert a mask
+   (optional)** writes new mask files from a declared, checked mask: a binary mask's objects as
+   an objects mask, or one binary mask per class of a class image (see `convert-mask`, §5).
+   Choose what to write, the mask and the new mask ID (or prefix), then **Convert the mask**;
+   the card lists the files written and says what to declare next. While the button is
+   disabled, the line beside it says what is missing.
 5. **Design.** One grid: conditions down, biological repeats across, each cell the folder of
    that repeat, and what each condition is compared against in the last column. The names are
    the folder names, folders with the same name are the same repeat, and nothing is compared.
@@ -810,6 +815,41 @@ copies (optional)** card appears under it, calling the same functions as the com
 
 The card is not shown when another brick embeds step 1 without the output folder
 (`folder_step(show_output=False)`).
+
+### Converting a mask (`convert-mask`)
+
+Some bricks need objects where your segmentation gave a binary mask, or one mask per tissue class
+where it gave a class image. `convert-mask` writes such masks as **new files** in your masks
+folder; your mask is only read, and nothing is overwritten. The mask must be declared and
+checked by the masks step first.
+
+```bash
+# the connected objects (8-connected) of the binary mask TumorRegion, as the objects mask TumorObjects
+morphobricks-preprocessing convert-mask --output /data/exp1_MorphoBricks_Preprocessing \
+    --mask TumorRegion --to-instances TumorObjects
+# one binary mask per class value of the class image Tissue: Tissue_class1, Tissue_class2, ...
+morphobricks-preprocessing convert-mask --output /data/exp1_MorphoBricks_Preprocessing \
+    --mask Tissue --to-classes Tissue
+```
+
+- `--to-instances NEW_ID` takes a mask declared **binary**, with one depth slice (each time point
+  is labelled on its own). `--to-classes PREFIX` takes a class image (one 2-D plane of whole
+  numbers, 0 the background) declared **parent_labels** or **instances**; each class value v
+  present gives `PREFIX_classv`, and an image holding only 0 gives none ("no class present").
+- `--image PATH` (repeatable) converts only those images; by default every image with a file of
+  the mask.
+- The new files go to `<NEW_ID>/<the image's folders>/<image name>.tif` in the masks folder, next
+  to a `mask_lineage.jsonl` that records, for each file, the mask it was made from, how, and a
+  digest of both. Running the same command again changes nothing.
+- It stops at the first refusal and says why: a mask that is not declared, not checked yet or
+  changed since the masks step (`A_MASK_UNCHECKED`: run `masks` again), a mask of the wrong kind,
+  a label image inside an OME-Zarr image (only masks in the masks folder are converted), or a new
+  mask ID that is declared already or whose files exist and were not made by this conversion.
+
+Then, as the command prints: declare each new mask (its source type is its ID; `instances` for
+`--to-instances`, `binary` for `--to-classes`), run preprocessing and the masks step again, and
+use it like any mask. In the notebook, the card **Convert a mask (optional)** under **Describe the
+masks** does the same.
 
 ## 6. Output files
 

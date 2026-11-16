@@ -36,6 +36,7 @@ from .mask_text import (
     mask_thresholds_used,
     mask_type_rows,
 )
+from .notebook_mask_conversion import MaskConversionCard
 from .notebook_output import _LockCard
 from .notebook_progress import Wait
 from .notebook_render import issues_html
@@ -102,11 +103,14 @@ class _MaskStepCard:
             ],
         )
         self.mask_step_button.on_click(lambda _: self._on_describe_masks())
+        self.mask_conversion = MaskConversionCard()  # Spec ADR 0005 BM12, under this card
 
     def _refresh_mask_step(self) -> None:
         """Offer the step when the output folder's run recorded masks; clear it for another."""
         ui.set_visible(self.mask_step_card, self._show_output)
+        ui.set_visible(self.mask_conversion.card, self._show_output)
         output = self._mask_step_output()
+        self.mask_conversion.refresh(output)
         manifest = None if output is None else current_fingerprint(output / MANIFEST_FILENAME)
         if self._mask_step_seen == (output, manifest):
             return

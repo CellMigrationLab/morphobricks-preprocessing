@@ -8,6 +8,47 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+### Added: the mask conversion helpers (Spec ADR 0005, step 2b)
+
+Step 2b of MorphoBricks-Spec [ADR 0005](https://github.com/CellMigrationLab/MorphoBricks-Spec/blob/main/docs/adr/0005-binary-masks.md)
+(BM12, Spec `bf68d30`): masks are converted only on purpose, into **new** mask files the user
+then declares, checks and reads like any mask. Nothing else changes for a run that does not
+call them.
+
+- `RunInputs.binary_to_instances(fov, mask_id, *, output_mask_id)` writes one `int32`
+  `instances` mask: each plane of a `binary` mask labelled by `label_binary` (8-connected, equal
+  to `read_objects` plane for plane). `RunInputs.classes_to_binary(fov, mask_id, *,
+  output_prefix)` writes one `uint8` `binary` mask `<prefix>_class<value>` per class value of a
+  2-D class image declared `parent_labels` or `instances` (class 0 none; "no class present" for
+  an all-zero image). Module `mask_conversion` (with `check_class_image(pixels, *, mask_id,
+  path)`, `MaskConversionResult`, `ConvertedMask`, both re-exported) and `mask_lineage`.
+- Refused before any pixel is read and anything written, with fixed messages: an undeclared
+  mask ID (naming the declared ones), a label image inside an OME-Zarr, a representation the
+  helper does not convert, a file `not yet checked` or changed since its check
+  (`A_MASK_UNCHECKED`, the resolver's message), a binary file with several Z planes, a class
+  image that is not one 2-D integer plane of classes 0 to 2,147,483,647; an output mask ID that
+  breaks the mask ID rules, is declared, differs only in case from a declared mask ID or source
+  type (`E_ID_CASE_COLLISION`: it could never be declared), or names a mask type holding files the
+  conversion did not write, and an existing output file, unless it is the same conversion already published
+  (same source in every key, output, operation and helper version, file unchanged): a no-op.
+- Outputs go to `<output mask ID>/<image folders>/<position ID>.tif` in the run's masks folder,
+  whatever the source's layout. Each has one line of `mask_lineage.jsonl` in its type folder
+  (keys `source`, `output`, `operation`, `connectivity`, `class_value`, `helper`,
+  `helper_version`; `root: "masks"`, paths relative to the masks folder; `content_sha256` of a
+  canonical header and the pixel bytes), published with the file as a pair: temporary file,
+  lineage replaced, rename, rollback on failure; a line whose file is missing is pending and
+  ignored. Mask discovery skips `mask_lineage.jsonl` and the temporary files.
+  `_io.write_text_atomic` gains `sync=`.
+- `RunInputs.open` does not count an output of these helpers as an unrecorded mask while the run
+  has not recorded its mask type (its published lineage line names it; no description of the
+  run can declare it), so a retry opens the run again; every other new mask still refuses it.
+- Command line: `convert-mask --output FOLDER --mask ID (--to-instances NEW_ID | --to-classes
+  PREFIX) [--image PATH]` converts every image with a file of the mask and prints the outputs
+  and the next steps (declare them, run preprocessing and the masks step again).
+- Notebook: the optional card **Convert a mask** under **Describe the masks** (Masks and Run
+  steps) offers the declared masks each helper converts, takes the new mask ID or prefix, and
+  converts every image with one click, showing the files and the next steps.
+
 ### Breaking: one policy for binary masks (Spec ADR 0005, step 2)
 
 Step 2 of MorphoBricks-Spec [ADR 0005](https://github.com/CellMigrationLab/MorphoBricks-Spec/blob/main/docs/adr/0005-binary-masks.md)

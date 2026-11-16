@@ -26,7 +26,9 @@ _UMASK_LOCK = threading.Lock()
 """Serialises reading the umask by setting it, the only portable way to read it."""
 
 
-def write_text_atomic(path: str | os.PathLike, text: str, *, parents: bool = False) -> Path:
+def write_text_atomic(
+    path: str | os.PathLike, text: str, *, parents: bool = False, sync: bool = False
+) -> Path:
     """Write UTF-8 text to ``path`` atomically, with the line endings as given.
 
     Parameters
@@ -38,6 +40,8 @@ def write_text_atomic(path: str | os.PathLike, text: str, *, parents: bool = Fal
         with LF line endings gives LF on every platform.
     parents
         Create the missing parent folders first.
+    sync
+        Flush the temporary file to the disk (``os.fsync``) before it replaces ``path``.
 
     Returns
     -------
@@ -51,6 +55,9 @@ def write_text_atomic(path: str | os.PathLike, text: str, *, parents: bool = Fal
     try:
         with os.fdopen(handle, "w", newline="", encoding="utf-8") as stream:
             stream.write(text)
+            if sync:
+                stream.flush()
+                os.fsync(stream.fileno())
         give_output_mode(temporary, path)
         os.replace(temporary, path)
     except BaseException:
