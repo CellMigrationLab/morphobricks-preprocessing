@@ -91,8 +91,9 @@ saturation are not reproduced.
   N** pixels; a piece of exactly N pixels is kept.
 - **The numbers are provisional** (rule record `status` `"provisional"`, the card says
   "provisional rule") until a report meets the written acceptance criteria below and the owner
-  accepts it. Freezing sets `status` to `"frozen"`; changing any number instead gives
-  `he_tissue_v2`.
+  accepts it. Freezing sets `status` to `"frozen"` (a new rule record, and so a new mask under a
+  new output mask ID; see [the canonical rule record](#the-canonical-rule-record)); changing any
+  number instead gives `he_tissue_v2`.
 - Clean-up is done with SciPy (`scipy.ndimage`), which is already a core dependency
   (`pyproject.toml`). Pieces are 8-connected, as everywhere else (ADR 0005 BM1). A disk of
   radius `r` is `x² + y² <= r²`. The clean-up is part of the rule, not colour maths. It belongs
@@ -213,6 +214,16 @@ The order of `components`, of each `pixel` list (all comparisons joined by "and"
 `cleanup` list is the order of computation. `status` is `"provisional"` until the acceptance
 report of [Q4](#8-owner-decisions-and-open-questions) is accepted; freezing changes it to
 `"frozen"`, which is a different record, so no provisional mask is ever reused as a frozen one.
+
+**Freezing makes a new mask, never a relabelled one** (Spec BM15 "Freezing a rule makes a new
+mask"; review w2 N3). `status` is in the hashed rule record, so a user who wants the frozen rule
+on an image that already has a provisional mask: (1) runs the helper with the frozen rule under a
+**new output mask ID** (for example `HETissueFrozen`), (2) declares that new output
+`representation = "binary"`, and (3) runs the mask step again before any brick reads it. The
+provisional mask file and its lineage line stay as they are: never overwritten, renamed,
+re-declared as frozen or edited in place. A call with the frozen rule under the provisional
+mask's ID is a collision and is refused by the retry comparator (§3); the refusal message names
+the new-ID route. A test in the I1 PR covers this (§7).
 
 ## 2. Inputs and refusals
 
@@ -460,7 +471,10 @@ replaced the draft that stood here, so the two cannot drift). In short:
   example a wheel rebuilt with one more module); the mask written under the first install is
   refused, never reused, by a retry under the second, and the refusal names `code`. The rule record's `rule_sha256` is recomputed from the line;
   a changed HED matrix hash, rule `status`, NumPy, scikit-image or SciPy version is refused on
-  retry.
+  retry. **Freezing (review w2 N3):** with a provisional mask published, a call with the frozen
+  record under the same mask ID is refused and leaves the file, its digest and its lineage line
+  byte for byte unchanged; the same call under a new mask ID writes a second file and a second
+  line, and the provisional ones are unchanged.
 - **Lineage round trip:** write, re-read the line with the extended reader, check every key and
   the digests; a retry is a no-op (`published` False); a changed rule record, image or library
   version is refused; a pending line (crash between line and rename) is rolled back; BM12 lines
@@ -580,4 +594,5 @@ I1 (the helper) starts only when P1 and P2 hold, and its PR merges only when P3 
     region is outside this gate (fiberfeatures makes no patch there, `batch.py:216-219`).
 - **P4. Tests:** the §7 tests, including F1 (BM12 reader), F4 (core-only install, CLI) and F5
   (morphology boundaries), are in the I1 PR. The acceptance report of §1 is **not** an I1
-  prerequisite: I1 ships the rule as provisional, and freezing is a later, separate step.
+  prerequisite: I1 ships the rule as provisional, and freezing is a later, separate step that
+  gives a new mask under a new output mask ID (§1), never a relabelled one.
