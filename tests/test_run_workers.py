@@ -19,6 +19,7 @@ from morphobricks_preprocessing import run as run_module
 from morphobricks_preprocessing.cli import build_parser
 from morphobricks_preprocessing.manifest import RunSettings
 from morphobricks_preprocessing.planes import plane_layout
+from morphobricks_preprocessing.report import run_summary
 from morphobricks_preprocessing.run import RunMode
 from morphobricks_preprocessing.run import workers as workers_module
 from morphobricks_preprocessing.run.staging import STAGING_FOLDER
@@ -276,8 +277,10 @@ def test_a_worker_exception_publishes_nothing_and_the_next_run_resumes(
     out = tmp_path / "out"
     with monkeypatch.context() as patch:
         patch.setattr(run_module.resume, "_read_file", failing)
-        with pytest.raises(RuntimeError, match="an unexpected failure"):
+        with pytest.raises(RuntimeError, match="an unexpected failure") as raised:
             run_described(experiment, TYX, output_folder=out, mode=mode(4))
+    # The image is named: the exception reaches the calling thread from another one.
+    assert raised.value.__notes__ == [f"While reading the image {IMAGES[0]}"]
     assert "plane_histograms.csv" not in outputs(out)
     assert len(list((out / STAGING_FOLDER).glob("*.json"))) == len(IMAGES) - 1
     assert not (out / run_module.LOCK_FILENAME).exists()  # the lock is released
@@ -467,3 +470,16 @@ def test_the_command_line_refuses_a_workers_value_that_is_not_allowed(text, caps
     with pytest.raises(SystemExit):
         build_parser().parse_args(["run", "exp", "--workers", text])
     assert "--workers" in capsys.readouterr().err
+
+
+def test_an_unexpected_exception_names_the_image_without_workers_too(
+    tmp_path, experiment, monkeypatch
+):
+    def failing(path, rel, *args):
+        raise RuntimeError("an unexpected failure")
+
+    monkeypatch.setattr(run_module.resume, "_read_file", failing)
+    with pytest.raises(RuntimeError, match="an unexpected failure") as raised:
+        run_described(experiment, TYX, output_folder=tmp_path / "out", mode=mode(1))
+    assert raised.value.__notes__ == [f"While reading the image {IMAGES[0]}"]
+

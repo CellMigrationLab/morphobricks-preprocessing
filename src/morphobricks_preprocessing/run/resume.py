@@ -277,7 +277,20 @@ class FileRead:
 
 
 def _read_checked(job: FileJob, rel: str) -> FileRead:
-    """Read one file between two fingerprints; change no state of the run (a worker's job)."""
+    """Read one file between two fingerprints; change no state of the run (a worker's job).
+
+    An exception other than :class:`..planes.PlaneReadError` stops the run as it is, with a
+    note naming the image: from a worker thread, the traceback alone does not say which.
+    """
+    try:
+        return _read_between_fingerprints(job, rel)
+    except Exception as exc:
+        exc.add_note(f"While reading the image {rel}")
+        raise
+
+
+def _read_between_fingerprints(job: FileJob, rel: str) -> FileRead:
+    """Read one file and check that it did not change while it was read."""
     root = job.pre.discovery.root
     # The entry's fingerprint is the one taken with the header: a file changed since then
     # (before or during the read) has another one after the read.

@@ -140,8 +140,8 @@ every resolver selection of a request that names each mask once.
   and OME-Zarr, whole and in blocks, workers finishing out of order); the failure rules are the
   serial ones (an unreadable image is `unreadable_planes`, an image changed while it is read is
   never staged, an unexpected exception in a worker is raised by `run_experiment` after the
-  images not yet started are cancelled, and the images already staged are resumed by the next
-  run). The number of workers is in no row key, staging key, manifest or table; it is
+  images not yet started are cancelled, with a note naming the image (also without workers),
+  and the images already staged are resumed by the next run). The number of workers is in no row key, staging key, manifest or table; it is
   `RunResult.workers`, and the CLI summary says "Read with N workers". It is a `RunMode`
   field, not a `run_experiment` parameter, as `lab_links` (the code rules allow no new
   parameter there). `tools/benchmark_run_workers.py` times a whole run serially and with
