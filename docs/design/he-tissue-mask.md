@@ -175,8 +175,9 @@ the image fingerprint again after the read, as `_read_source` does (`mask_conver
 - **Representation:** one `uint8` `(Y, X)` file holding `1` = tissue kept and `0` = excluded. It
   is declared `binary` and used as a **region**: the region is `mask != 0` (ADR 0005 BM3,
   `regions.check_region`, `regions.py:86-130`). An all-zero result is written as computed. It is
-  a valid `binary` file (BM11), and downstream it gives `empty_region`, never 0. The card warns
-  when the kept share is 0 %.
+  a valid `binary` file (BM11). Downstream it must give `empty_region`, never 0: that is a
+  consumer guarantee this helper cannot give itself, so it is gate **P3** of
+  [§9](#9-prerequisites-for-i1). The card warns when the kept share is 0 %.
 - **Layout:** the same as the conversion helpers (`mask_conversion.py:20-24`, `:408-409`):
   `<masks folder>/<output mask ID>/<the image's folders>/<position ID>.tif`, plus one
   `mask_lineage.jsonl` per type folder. Example: image `CTRL/rep1/slide1.tif` gives
@@ -247,6 +248,10 @@ the image fingerprint again after the read, as `_read_source` does (`mask_conver
   nucleus component is a stain threshold, used only to leave pixels out.
 - It is never an object set. It is declared `binary`, so a request for it as objects is
   `A_MASK_NOT_INSTANCES` unless the user asks for an explicit conversion (experiment-v1 §4.5c).
+  No consumer may take cells from it when no objects mask is given (gate **P3**, §9). In memory
+  this cannot be enforced by the file: the output is `uint8` 0/1, and an in-memory object set is
+  any plain integer array (ADR 0005 BM4), so a caller who reads the file and passes the array as
+  labels gets one object, label 1 (§9, P3 finding).
 - It never runs by default. Nothing is computed unless the user calls the helper or clicks the
   card. A run, the mask step and every brick behave as before when the helper is not used.
 - It changes no normalization number and no image. It writes a new mask file, nothing else.
@@ -369,3 +374,43 @@ replaced the draft that stood here, so the two cannot drift). In short:
 I1 (the helper) starts only when each of these holds:
 
 - **P1. Spec:** MorphoBricks-Spec #45 (ADR 0005 BM15) is merged.
+- **P3. Downstream consumer gate (review w B3).** The consumers the card and §3 name must, at the
+  commits the I1 PR pins and cites, (a) give `empty_region` for an all-zero region: the image is
+  `valid_empty` with reason `empty_region`, no patch is made in it, its values are undefined
+  (never 0) and the run goes on; and (b) never take cells from a binary region when no objects
+  mask is given: cell mode without an `objects` mask is refused before any read, naming the
+  region. I1 adds one cross-repo test per guarantee, run with the consumer installed, and its
+  report lists every skip; a skipped gate test is not a pass. Findings of 16 November 2026:
+  - **fiberfeatures main `36819a3`** (#223; `pyproject.toml` still says `0.6.2` and there is no
+    `v0.7.0` tag yet, so I1 pins this commit or the first release that contains it; the pinned
+    `v0.6.2` raised on an empty region):
+    - (a) holds. `batch.py:214-219` makes no patch in an empty analysis region, whatever the
+      mode; `batch.py:292-293` gives `valid_empty` / `empty_region` whenever the mask has no
+      pixel; `run_rows.py:193-195` returns the empty mask unrefused; the MorphoFeature patch
+      route gives NaN with `empty_region` (`morphofeature_patches.py:25`, `:418`, `:535`). Tests:
+      `tests/test_binary_mask_policy.py:226-249` (F06), `:326-350`, `:354-386`.
+    - (b) holds in the described-run path, the only path fiberfeatures reads masks by:
+      `run_request.py:275-296` (`refuse_region_as_cells`, called at `run_rows.py:124` before the
+      request is resolved) refuses CellPatcher cell mode without an `objects` mask and names the
+      region; `batch.py:60-65` refuses again before `run_patching`; `run_rows.py:200-205` refuses
+      a `labels_file` or `mask_file` column. Tests: `tests/test_binary_mask_policy.py:170-187`
+      (F03 b), `tests/test_described_runs.py:209-222`.
+  - **CellPatcher main `0a08987`:**
+    - (b) holds in a described file run: cell mode asks the resolver for the mask as `objects`
+      (`file_runs.py:252-256`, `:272-295`), so a mask declared `binary` is
+      `A_MASK_NOT_INSTANCES` unless the user sets `cell.binary_mask_policy =
+      "connected_components"`, which is the explicit, recorded conversion of BM2/BM6, not a
+      default.
+    - (b) **does not hold in memory, and that path still exists.** `run_patching(...,
+      masks=<array>, config=CellPatcherConfig(mode="cell"))` checks each mask with
+      `check_object_set` only (`mask_policy.py:44-63`; `strategies/cell.py:86-98`), which accepts
+      any plain integer array (`morphobricks_preprocessing/masks/objects.py:18-37` at
+      `37c583e`). A `uint8` 0/1 tissue mask passed there is one object, label 1 (CellPatcher
+      decision D47, `mask_policy.py:3-6`; `tests/test_pipeline_strategies.py:498-499`). Nothing
+      in memory carries the declared representation, so no consumer can tell a region from an
+      instance mask there. This design does not fix it; it is recorded for the owner (report
+      open question). Until it is decided, the card's next steps and the helper's docstring say
+      "use this mask as a region; in memory, never pass it as cell-mode labels", and I1 claims
+      the guarantee only for described runs.
+  - **(a) in CellPatcher:** CellPatcher does not measure; its random mode inside an all-zero
+    region is outside this gate (fiberfeatures makes no patch there, `batch.py:216-219`).
