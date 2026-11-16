@@ -24,6 +24,20 @@ v0.5.1: no run before v0.5.1 is read.)
   `read_objects` refuses them. The region-read estimate (`mask_window_plan`) is unchanged, and
   no output changes.
 
+### Corrections to the v0.6.1 notes
+
+- **The volatile-field rule is about run outputs.** The v0.6.1 notes say `written_at` is "the
+  only field of any output excluded from byte identity". It is the only such field of a
+  **run's** outputs (contract §9, which already says two runs): the conversion record
+  `.morphobricks-conversion.json` that `convert` writes has its own `written_at` and records
+  the copies' fingerprints with their `mtime_ns`, so two conversions of the same originals
+  differ there. Nothing changed in the code; AGENTS.md and the user guide now say "a run's
+  outputs".
+- **H1: when the RGB header override box is enabled.** The v0.6.1 notes say the box is
+  "enabled once those folders are answered colour (RGB)". It is enabled once **at least one of
+  them** is (`RgbOverrideOffer.refresh`: disabled only while none is), and a tick records the key
+  for each of them answered colour. The user guide said the same and is corrected.
+
 ## v0.6.1 (16 November 2026)
 
 A patch release: the fixes of an external audit of v0.6.0 (#314) and the notebook's RGB header

@@ -1145,8 +1145,9 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 
 - **Released:** v0.6.1 (16 November 2026), a patch release: the fixes of an external audit of
   v0.6.0 (#314: the mask step records exactly the fingerprint it verified; worker parity
-  compared on raw bytes, `written_at` the only field excluded from byte identity; the lineage
-  publication described as reader-consistent with rollback; `RunResult.workers` the thread
+  compared on raw bytes, `written_at` the only field of a run's outputs excluded from byte
+  identity (the conversion record `.morphobricks-conversion.json` of `convert` has its own
+  `written_at` and the copies' `mtime_ns`); the lineage publication described as reader-consistent with rollback; `RunResult.workers` the thread
   pool's capacity) and the notebook's RGB header override checkbox (#313); no format change.
   v0.6.0 (16 November 2026), Spec ADR 0005 steps 2 and 2b (one policy for binary
   masks), a breaking minor release: resolver contract version 3 (`Provenance.mask_conversions`,

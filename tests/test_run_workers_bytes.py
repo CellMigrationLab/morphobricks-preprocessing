@@ -81,8 +81,19 @@ def test_written_at_is_the_only_field_outside_byte_identity(tmp_path, fixed_cloc
 
 
 def test_the_contract_declares_written_at_the_only_volatile_field():
-    """The owner's rule of 16 November 2026 is written where the manifest is described."""
-    docs = Path(__file__).resolve().parents[1] / "docs"
-    for name in ("contract.md", "user_guide.md"):
-        text = " ".join((docs / name).read_text(encoding="utf-8").split())
-        assert "`written_at` is the only field excluded from byte identity" in text, name
+    """The owner's rule of 16 November 2026 is written where the manifest is described.
+
+    It is about a run's outputs (contract §9): the conversion record of ``convert`` has its own
+    ``written_at`` and the copies' ``mtime_ns``, so no document says "any output".
+    """
+    root = Path(__file__).resolve().parents[1]
+    texts = {
+        name: " ".join((root / name).read_text(encoding="utf-8").split())
+        for name in ("docs/contract.md", "docs/user_guide.md", "AGENTS.md")
+    }
+    assert "`written_at` is the only field excluded from byte identity" in texts["docs/contract.md"]
+    guide = "`written_at` is the only field of a run's outputs excluded from byte identity"
+    assert guide in texts["docs/user_guide.md"]
+    assert "the only field of a run's outputs excluded from byte identity" in texts["AGENTS.md"]
+    for name, text in texts.items():
+        assert "only field of any output" not in text, name

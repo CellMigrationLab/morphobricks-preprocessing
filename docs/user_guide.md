@@ -331,8 +331,9 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    When a folder's images store three values per pixel side by side but their header does
    not say colour (some scanners save colour this way), the card explains it and offers
    **Read these folders as colour (RGB) although their header does not say colour**. It is
-   never ticked for you and can be ticked only once those folders are answered colour (RGB);
-   ticking it records `rgb_header_override = true` for them, exactly as writing it by hand.
+   never ticked for you and can be ticked once at least one of those folders is answered colour
+   (RGB); ticking it records `rgb_header_override = true` for each of them answered colour,
+   exactly as writing it by hand.
    If only some of them have it (for example a folder answered colour after the tick), the box
    stays unticked and the card names the folders that have it.
    Colour folders have the channels R, G and B. Otherwise name what you stained and confirm the list; then tag each folder's channels
@@ -498,8 +499,8 @@ masks folder and mask axes, the exclusions, the image type, the bins and the his
 intensity settings. An option given that differs from the recorded value is used, and the
 report names the change and its effect. A rerun that changes nothing leaves
 `run_manifest.json` exactly as it was, its `written_at` included, so bricks that recorded its
-SHA-256 still accept it; the report records the rerun. `written_at` is the only field excluded
-from byte identity: two runs of the same inputs and settings, with any number of workers, write
+SHA-256 still accept it; the report records the rerun. `written_at` is the only field of a
+run's outputs excluded from byte identity: two runs of the same inputs and settings, with any number of workers, write
 the same bytes in every file except that time (and the manifest SHA-256 the report names). Other options:
 
 | Option | Meaning |
