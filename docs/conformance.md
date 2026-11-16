@@ -6,6 +6,32 @@ real run; a skip is never counted as a pass. Owner rulings of 8 November 2026 (i
 "no skips" applies to the Spec conformance modules (`tests/test_spec_*.py`); a skip elsewhere
 in the suite is listed as **not run**, with its reason.
 
+## Release record: v0.6.1 (16 November 2026)
+
+A G1-style record of the v0.6.1 release candidate, a patch release: the audit fixes of v0.6.0
+(#314: the mask step records exactly the fingerprint it verified; worker parity on raw bytes with
+`written_at` the only field excluded from byte identity; the lineage publication described as
+reader-consistent with rollback; `RunResult.workers` the thread pool's capacity) and the
+notebook's RGB header override checkbox (#313). No format change. It does not decide a gate;
+deciding a gate is the owner's.
+
+| | |
+|---|---|
+| Release candidate | Measured on the tree of the v0.6.1 preparation commit A (branch `claude/release-0.6.1`, from `main` at `5021d13`: v0.6.0, #313 and #314) before this record was added; the record changes only this file. A keeps `RELEASE_REF` at v0.6.0's `835b801`. Commit B then points the notebook's `RELEASE_REF` at A and records the pair in `RELEASE_CALLS` (the notebook and two test files only), so `git diff A B -- src pyproject.toml` is empty |
+| Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `bf68d3032a4548cd908e1d530296fdf22a1a9b7f` (unchanged) |
+| Environment | Linux, Python 3.13.18, `pip install --no-cache-dir -e '.[dev,notebook,zarr]'` in a fresh venv (normalization 0.7.0 from its tag `v0.7.0` = `c6a9f9d`, as `direct_url.json` records; scikit-image not installed; numpy 2.5.5, tifffile 2026.11.12, ipywidgets 8.1.9, zarr 3.4.2, pytest 9.2.0, ruff 0.17.5); `PYTEST_ADDOPTS` unset; run as root on a case-sensitive file system |
+| Commands | `python tools/check.py`; `python -m pytest -q -p no:cacheprovider -rsxX tests/test_spec_*.py` |
+| `tools/check.py` | Ruff clean, Ruff format 505 files already formatted, pytest **6021 passed, 4 skipped** (not run, below), 0 failed, code rules passed (exit status 0) |
+| Spec modules (`tests/test_spec_*.py`) | **1933 passed, 0 skipped, 0 xfailed, 0 failed**, from all 28 modules of `tests/spec_gate.py` `EXPECTED_MODULES` (as v0.6.0) |
+
+**Not run (4 environment skips, outside the Spec modules):** the four of v0.6.0 below
+(`tests/test_cli_log.py:166`, `tests/test_folder_rules.py:199` and `:230`, which need a
+case-insensitive file system, and `tests/test_discovery.py:665`, which cannot run as root). These
+four behaviours are **not verified by this run**.
+
+**Still the owner's:** the Colab and JupyterLab browser check (`docs/colab-release-check.md`),
+before tagging.
+
 ## Release record: v0.6.0 (16 November 2026)
 
 A G1-style record of the v0.6.0 release candidate, the breaking minor release of Spec ADR 0005

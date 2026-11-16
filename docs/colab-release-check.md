@@ -19,7 +19,7 @@ Write the date, the commit and any failure (as an issue number) next to each ite
 - **Time-lapse:** a small experiment of time-lapse images (optional; the tests cover it).
 
 **Before opening it.** `RELEASE_REF` in cell 1 is the release preparation commit, and cell 3's
-`PreprocessingNotebook(...)` call is that commit's API (v0.6.0: `PreprocessingNotebook()`). The
+`PreprocessingNotebook(...)` call is that commit's API (v0.6.1: `PreprocessingNotebook()`). The
 release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
 `tests/test_notebook_file.py`, which fails for a `RELEASE_REF` without one.
 
@@ -30,7 +30,7 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
    - [ ] One line: "… run cell 1 (Install MorphoBricks preprocessing) first …", no traceback;
      nothing is installed.
 3. Run **cell 1**.
-   - [ ] It prints **Ready** with the preprocessing (0.6.0), normalization (0.7.0) and
+   - [ ] It prints **Ready** with the preprocessing (0.6.1), normalization (0.7.0) and
      ipywidgets versions and the pinned source, then names cells 2 and 3. No restart or
      ipywidgets upgrade is asked for; Drive is not mounted.
    - [ ] Run it again: nothing is installed again, the same versions.
@@ -84,6 +84,10 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
       recorded only by **Use for all folders** (or each folder under **Set per folder…**, whose
       pictures appear once it is opened; folders of different types are refused,
       `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`).
+    - [ ] v0.6.1 (#313, Spec RH1): with a folder whose images have three interleaved samples
+      under a header that does not say colour, answered colour (RGB), the Image type card shows
+      one unticked box for the RGB header override; ticking it records
+      `rgb_header_override = true` for those folders, and it is never pre-ticked.
     - [ ] Then name the stains, then tag each folder's channels; the extra-stain folder gets
       its own list. The viewer shows each channel with its header name and its folder's tag.
 11. **Masks** (step 4).

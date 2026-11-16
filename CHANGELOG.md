@@ -6,14 +6,30 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
-## Unreleased
+## v0.6.1 (16 November 2026)
 
-### Batch P1
+A patch release: the fixes of an external audit of v0.6.0 (#314) and the notebook's RGB header
+override checkbox (#313). No format change: run manifest version 5, `plane_histograms.csv`
+schema version 5, resolver contract version 3, `mask_relationships.json` report version 4,
+`mask_representation.json` version 1 (with `"value_rule": "BM11"`) and conversion record version
+4 are those of v0.6.0, whose runs are read as they are. Normalization stays at v0.7.0 and the
+Spec at `bf68d30`.
+
+**The volatile-field rule** (owner decision of 16 November 2026): `written_at` stays in
+`run_manifest.json` and is the only field of any output excluded from byte identity. Two runs of
+the same inputs and settings, with any number of workers, write the same bytes in every file
+except that time (and the manifest SHA-256 the report names, which follows from it); a rerun that
+changes nothing still keeps the earlier `written_at` (contract §9, user guide).
+
+**Run the mask step again** if a mask file may have been replaced while a v0.6.0 mask step ran
+(P1 below): a status recorded by v0.6.1 can no longer certify a file the step did not read.
+
+### Batch P1 (#313)
 
 - **Tests (G2):** the `v05` channel case of gate G3 (Spec ADR 0001 GS2): a PHASE request finds `rep1` partial and no repeat unavailable, recorded in `channel_coverage`, refused as `A_SCOPE_INCOMPLETE`, fitted only with `partial_channels = "planes_with_channel"`.
 - **Notebook (H1):** the Channels step's Image type card offers the RGB header override (Spec RH1) for folders whose images have three interleaved samples under a header that does not say colour: one checkbox, never pre-ticked, enabled once those folders are answered colour (RGB), recording `rgb_header_override = true` exactly as a hand-written file does (`channel_answers.with_override`, `UnitLayout.three_samples`). When only some of those colour folders have the key, the box stays unticked and the card names them (review of #313).
 
-### Audit of v0.6.0
+### Audit of v0.6.0 (#314)
 
 - **Fixed (P1):** the mask step recorded each checked file in `mask_representation.json` with a second fingerprint taken after it had verified the file against the one bound to its checked header, so a file replaced in between was recorded as checked (by BM11, for a `binary` mask) with the replacement's fingerprint, and once a run recorded the replacement the resolver read it as `checked`. The record is now exactly the fingerprint verified (`mask_representation._verified`), which is the one `binary_refusals` read the values between; a replacement is `not yet checked` (`A_MASK_UNCHECKED`) until the mask step reads it. A mask inventory found without bound headers is refused (`ValueError`) rather than recorded.
 - **Docs and tests (P2): `written_at` is the only field excluded from byte identity** (owner decision of 16 November 2026). It stays in `run_manifest.json`; two runs of the same inputs and settings write the same bytes in every file except that time (and the manifest SHA-256 the report names, which follows from it), whatever their number of workers (contract §9 `written_at` and "Workers", user guide). The worker parity tests compared the parsed manifest with `written_at` deleted; they now compare the raw bytes of every file the run leaves, the reports and the manifest included, under a fixed clock, for workers 1, 2, 4 and `auto` on the Spec fixtures `v05` (units with different channels) and `v09` (masks) as well as the TYX tree, and a moved clock changes the manifest in `written_at` only.
