@@ -8,6 +8,10 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+### Batch P1
+
+- **Tests (G2):** the `v05` channel case of gate G3 (Spec ADR 0001 GS2): a PHASE request finds `rep1` partial and no repeat unavailable, recorded in `channel_coverage`, refused as `A_SCOPE_INCOMPLETE`, fitted only with `partial_channels = "planes_with_channel"`.
+
 ### Breaking: a `binary` check recorded before BM11 is refused until the mask step runs again
 
 Owner decision of 16 November 2026 (Spec ADR 0005 BM11 is applied by the mask step only; Spec
