@@ -81,17 +81,38 @@ def test_any_number_of_workers_publishes_the_serial_outputs(tmp_path, experiment
         assert result.workers == (cpus if workers == "auto" else workers)
 
 
-def test_workers_finishing_out_of_order_change_no_output(tmp_path, experiment, monkeypatch):
-    serial = run_with(experiment, tmp_path / "serial", 1)
-    read, finished = run_module.resume._read_file, []
+def reverse_order_reads(read, slower_later=0.0):
+    """A ``_read_file`` whose reads finish last image first, however long each read takes.
 
-    def slow_first(path, rel, *args):
-        time.sleep(0.05 * (len(IMAGES) - IMAGES.index(rel)))  # the first image finishes last
+    Each image's read waits until the next image's read has finished, so the order does not
+    depend on sleeps or thread scheduling (sleeps alone failed on the macOS runners). It needs
+    every image's read running at once: a wait that times out fails the run.
+    ``slower_later`` adds that many seconds per position to each read, so the later images'
+    reads take longest, the case in which staggered sleeps did not give the reverse order.
+    """
+    finished, done = [], {rel: threading.Event() for rel in IMAGES}
+
+    def last_first(path, rel, *args):
+        index = IMAGES.index(rel)
+        if index + 1 < len(IMAGES):
+            after = IMAGES[index + 1]
+            assert done[after].wait(timeout=30), f"{rel} waited for {after}: not concurrent"
+        time.sleep(slower_later * index)
         rows = read(path, rel, *args)
         finished.append(rel)
+        done[rel].set()
         return rows
 
-    monkeypatch.setattr(run_module.resume, "_read_file", slow_first)
+    return last_first, finished
+
+
+@pytest.mark.parametrize("slower_later", [0.0, 0.05])
+def test_workers_finishing_out_of_order_change_no_output(
+    tmp_path, experiment, monkeypatch, slower_later
+):
+    serial = run_with(experiment, tmp_path / "serial", 1)
+    last_first, finished = reverse_order_reads(run_module.resume._read_file, slower_later)
+    monkeypatch.setattr(run_module.resume, "_read_file", last_first)
     result = run_with(experiment, tmp_path / "parallel", len(IMAGES))
     assert finished == IMAGES[::-1]  # the workers really finished in the reverse order
     assert result.read == serial.read == tuple(IMAGES)
@@ -327,11 +348,13 @@ def test_auto_reads_at_most_the_planned_images_at_once(tmp_path, experiment, mon
     read, active, most = run_module.resume._read_file, [0], [0]
     lock = threading.Lock()
 
+    pair = threading.Barrier(2, timeout=30)  # two reads at once, without a timing assumption
+
     def counting(path, rel, *args):
         with lock:
             active[0] += 1
             most[0] = max(most[0], active[0])
-        time.sleep(0.05)
+        pair.wait()  # a third read at once is counted above; one worker alone times out
         try:
             return read(path, rel, *args)
         finally:
