@@ -93,6 +93,15 @@ saturation are not reproduced.
   "provisional rule") until a report meets the written acceptance criteria below and the owner
   accepts it. Freezing sets `status` to `"frozen"`; changing any number instead gives
   `he_tissue_v2`.
+- Clean-up is done with SciPy (`scipy.ndimage`), which is already a core dependency
+  (`pyproject.toml`). Pieces are 8-connected, as everywhere else (ADR 0005 BM1). A disk of
+  radius `r` is `x² + y² <= r²`. The clean-up is part of the rule, not colour maths. It belongs
+  to preprocessing.
+- **All sizes are in pixels.** No pixel size is read, guessed or used. The image's recorded
+  pixel size, when the run has one (`RunInputs.pixel_sizes`, `run_inputs.py:291-299`), is copied
+  into the lineage for information only. The sizes were set on the proof-of-concept images,
+  whose magnification was not recorded. The card says that sizes are in pixels (owner decision,
+  16 November 2026).
 
 **Acceptance criteria before freezing `he_tissue_v1`** (owner decision on Q4, 16 November 2026).
 One report, reviewed by the owner, shows all of:
@@ -116,19 +125,10 @@ One report, reviewed by the owner, shows all of:
 
 Until that report is accepted the numbers above are named provisional everywhere: in the rule
 record, the lineage, the card and the documentation.
-- Clean-up is done with SciPy (`scipy.ndimage`), which is already a core dependency
-  (`pyproject.toml`). Pieces are 8-connected, as everywhere else (ADR 0005 BM1). A disk of
-  radius `r` is `x² + y² <= r²`. The clean-up is part of the rule, not colour maths. It belongs
-  to preprocessing.
-- **All sizes are in pixels.** No pixel size is read, guessed or used. The image's recorded
-  pixel size, when the run has one (`RunInputs.pixel_sizes`, `run_inputs.py:291-299`), is copied
-  into the lineage for information only. The sizes were set on the proof-of-concept images,
-  whose magnification was not recorded. The card says that sizes are in pixels (owner decision,
-  16 November 2026).
 
 **Fixed defaults, not user thresholds (owner decision, 16 November 2026).** v1 offers one preset, `he_tissue_v1`, and
 no per-call overrides. Changing any number gives a new preset ID (`he_tissue_v2`) and never
-changes v1. The rule ID, version and every threshold are written to the lineage. Nothing is
+changes v1. The complete rule record (below) and its SHA-256 are written to the lineage. Nothing is
 tuned per image, and nothing is tuned silently. The preview and the "% kept" figure are how the
 user judges whether the rule suits their slides.
 
@@ -320,7 +320,9 @@ at least one unit declared `rgb`.
    is shown with each excluded component tinted (nuclei blue, red cells orange, background grey,
    the proof of concept's colours). Below it are the kept share and each component's share
    ("kept 69 % · nuclei 25.7 % · red cells 0.4 % · empty 4.6 %"). A note says "Sizes are in
-   pixels. Fixed rule he_tissue_v1, not a trained segmentation". The display may be downsampled;
+   pixels. Fixed rule he_tissue_v1 (provisional), not a trained segmentation" while the rule
+   record's `status` is `"provisional"`, and "this mask will not be reused on retry" when a code
+   identity is unverified (§3). The display may be downsampled;
    the numbers come from the full-resolution mask.
 3. **New mask ID:** typed by the user, never proposed (as **Convert a mask** does).
 4. **Write:** writes every chosen position, and only on this click. It then shows the files
@@ -443,7 +445,7 @@ replaced the draft that stood here, so the two cannot drift). In short:
 - **One file only (former question 9).** The helper writes one tissue mask file. Nuclei, red
   cells and background are shown in the preview only.
 
-**Still open:**
+**Decided after review w (16 November 2026):**
 
 - **Q4 (decided 16 November 2026, after review w).** The red-cell rule is defined natively in OD
   terms, with explicit strictness and OD flooring (§1), and no equivalence with the proof of
@@ -462,7 +464,7 @@ replaced the draft that stood here, so the two cannot drift). In short:
 
 ## 9. Prerequisites for I1
 
-I1 (the helper) starts only when each of these holds:
+I1 (the helper) starts only when P1 and P2 hold, and its PR merges only when P3 and P4 hold too:
 
 - **P1. Spec:** MorphoBricks-Spec #45 (ADR 0005 BM15) is merged.
 - **P2. Stable normalization APIs (owner decision on Q5; review w F3).** A documentation-only
