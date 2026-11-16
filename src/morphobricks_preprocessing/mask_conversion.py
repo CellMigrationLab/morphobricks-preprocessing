@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .description_identity import Identities
+from .description_identity import Identities, nfc
 from .description_report import Issues
 from .discovery import discover_experiment
 from .fingerprint import Fingerprint
@@ -389,11 +389,13 @@ class ConversionInputs:
     def _output_target(self, source: _Source, output_id: str, operation: str) -> str:
         """Return an output's path after refusing an invalid or colliding output mask ID."""
         _check_output_id(output_id, "output mask ID")
-        if output_id in self.description().masks:
+        declared = self.description().masks
+        if output_id in declared:
             raise ValueError(
                 f"The output mask ID {output_id!r} is declared in the description already; "
                 "choose another ID: an output never replaces a declared mask"
             )
+        _check_case_collision(output_id, declared)
         lines = published_lines(self.masks_root, self.masks_root / output_id)
         written = {line.output_path for line in lines if line.record["operation"] == operation}
         foreign = [path for path in self._type_files(output_id) if path not in written]
@@ -543,6 +545,25 @@ def _check_output_id(value: object, what: str) -> None:
             f"The {what} {value!r} breaks the mask ID rules of experiment-v1 section 3.2 "
             f"({codes}); choose another one"
         )
+
+
+def _check_case_collision(output_id: str, declared: Mapping[str, Mask]) -> None:
+    """Refuse an output mask ID spelled like a declared mask ID or source type but for case.
+
+    experiment-v1 section 3.2 makes two mask IDs, or two mask source types, of one description
+    that differ only in case ``E_ID_CASE_COLLISION``; the output is both, so it could never be
+    declared next to them.
+    """
+    folded = nfc(output_id).casefold()
+    names = [("mask ID", mask_id) for mask_id in sorted(declared)]
+    names += [("source type", t) for t in sorted({m.source_type for m in declared.values()})]
+    for kind, name in names:
+        if nfc(name) != nfc(output_id) and nfc(name).casefold() == folded:
+            raise ValueError(
+                f"The output mask ID {output_id!r} differs only in case from the declared "
+                f"{kind} {name!r}; experiment-v1 section 3.2 refuses such a pair "
+                "(E_ID_CASE_COLLISION), so the output could never be declared: choose another ID"
+            )
 
 
 def _per_plane(pixels: np.ndarray, label: Callable[[np.ndarray], np.ndarray]) -> np.ndarray:

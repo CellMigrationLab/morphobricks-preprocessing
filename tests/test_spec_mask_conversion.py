@@ -186,6 +186,31 @@ def test_f11h_a_declared_output_id_and_a_foreign_output_file_are_refused(tmp_pat
     assert tree(masks) == before
 
 
+@pytest.mark.parametrize(
+    ("output", "kind", "declared"),
+    [
+        ("tumorregion", "mask ID", "TumorRegion"),  # another spelling of a declared mask ID
+        ("NUCLEI", "mask ID", "Nuclei"),
+        ("Tumor_Region", "source type", "tumor_region"),  # of a declared source type
+    ],
+)
+def test_f11h_an_output_id_differing_only_in_case_from_a_declared_one_is_refused(
+    tmp_path, output, kind, declared
+):
+    # experiment-v1 section 3.2: two mask IDs (or mask source types) of one description that
+    # differ only in case are E_ID_CASE_COLLISION, so such an output could never be declared.
+    run, image, masks = run_with(tmp_path)
+    before = tree(masks)
+    with pytest.raises(ValueError) as caught:
+        run.binary_to_instances(image, "TumorRegion", output_mask_id=output)
+    assert str(caught.value) == (
+        f"The output mask ID {output!r} differs only in case from the declared {kind} "
+        f"{declared!r}; experiment-v1 section 3.2 refuses such a pair (E_ID_CASE_COLLISION), "
+        "so the output could never be declared: choose another ID"
+    )
+    assert tree(masks) == before
+
+
 @pytest.mark.parametrize("bad", ["in_cells", "Cell", "2nd", "a__b", " Tumor", "nan"])
 def test_f11h_an_output_id_breaking_the_mask_id_rules_is_refused(tmp_path, bad):
     run, image, masks = run_with(tmp_path)

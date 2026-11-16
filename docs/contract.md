@@ -928,7 +928,8 @@ image's position ID>.tif` in the run's masks folder (the type-folder layout disc
 that image), whatever the source's layout, never in the experiment folder. An output mask ID (and
 a prefix) must pass the mask ID rules of experiment-v1 §3.2 (Label, Token, NFC, `single`, the
 reserved list and the `in` part). Refused, never overwritten, before anything is written: an
-output mask ID the description declares; a mask type of that name (any case; in either layout,
+output mask ID the description declares; one differing only in case from a declared mask ID or
+mask source type (§3.2 `E_ID_CASE_COLLISION`: it could never be declared next to it); a mask type of that name (any case; in either layout,
 or recorded by the run) holding a file without a published lineage line of the same operation;
 an existing output file, unless it is the **same conversion already published**: a lineage line
 whose `source` equals the current source in every key, whose `output` `root`, `mask_id` and

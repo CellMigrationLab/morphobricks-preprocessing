@@ -27,8 +27,9 @@ call them.
   helper does not convert, a file `not yet checked` or changed since its check
   (`A_MASK_UNCHECKED`, the resolver's message), a binary file with several Z planes, a class
   image that is not one 2-D integer plane of classes 0 to 2,147,483,647; an output mask ID that
-  breaks the mask ID rules, is declared, or names a mask type holding files the conversion did
-  not write, and an existing output file, unless it is the same conversion already published
+  breaks the mask ID rules, is declared, differs only in case from a declared mask ID or source
+  type (`E_ID_CASE_COLLISION`: it could never be declared), or names a mask type holding files the
+  conversion did not write, and an existing output file, unless it is the same conversion already published
   (same source in every key, output, operation and helper version, file unchanged): a no-op.
 - Outputs go to `<output mask ID>/<image folders>/<position ID>.tif` in the run's masks folder,
   whatever the source's layout. Each has one line of `mask_lineage.jsonl` in its type folder
