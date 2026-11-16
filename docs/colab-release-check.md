@@ -111,6 +111,10 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
       values (or is saved as floats), **Describe the masks** refuses that file with
       `R_MASK_CONTRADICTS_REPRESENTATION` and goes on with the other masks; the file stays
       *not yet checked* and is not in `mask_relationships.json`.
+    - [ ] v0.6.0 (#311): on an output folder whose `binary` mask was described by v0.5.6,
+      **Convert a mask** (*A binary mask's connected objects*) is refused with
+      `A_MASK_UNCHECKED`, saying the check predates the binary value rule and to run the masks
+      step again; after **Describe the masks** the same conversion works.
     - [ ] The optional card **Convert a mask** under **Describe the masks**: greyed out, with
       its reason, until a run declares masks and a new mask ID is typed. *A binary mask's
       connected objects* on a checked `binary` mask writes `<new ID>/…/<position>.tif` in the

@@ -10,18 +10,19 @@ in the suite is listed as **not run**, with its reason.
 
 A G1-style record of the v0.6.0 release candidate, the breaking minor release of Spec ADR 0005
 steps 2 and 2b (one policy for binary masks): resolver contract version 3, `read_objects`,
-`label_binary`, `mask_rules`, strict binary at the mask step (BM11) and the conversion helpers
-(BM12), with the window-read changes of #305 and #306. It does not decide a gate; deciding a
-gate is the owner's.
+`label_binary`, `mask_rules`, strict binary at the mask step (BM11), a `binary` check recorded
+before BM11 refused until the mask step runs again (#311) and the conversion helpers (BM12),
+with the window-read changes of #305 and #306 and the worker threads of #309. It does not decide
+a gate; deciding a gate is the owner's.
 
 | | |
 |---|---|
-| Release candidate | Measured on the tree of the v0.6.0 preparation commit A (branch `claude/release-0.6.0`, from `main` at `ea0d7c7`: v0.5.6, #305, #306, #307 and #308) before this record was added; the record changes only this file. A keeps `RELEASE_REF` at v0.5.6's `a2af3d0`. Commit B then points the notebook's `RELEASE_REF` at A and records the pair in `RELEASE_CALLS` (the notebook and two test files only), so `git diff A B -- src pyproject.toml` is empty |
+| Release candidate | Measured on the tree of the v0.6.0 preparation commit A (branch `claude/release-0.6.0`, with `main` at `3ceb6e4` merged: v0.5.6, #305, #306, #307, #308, #309 and #311) before this record was added; the record changes only this file. A keeps `RELEASE_REF` at v0.5.6's `a2af3d0`. Commit B then points the notebook's `RELEASE_REF` at A and records the pair in `RELEASE_CALLS` (the notebook and two test files only), so `git diff A B -- src pyproject.toml` is empty |
 | Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `bf68d3032a4548cd908e1d530296fdf22a1a9b7f` (ADR 0005 merged; was `b635b7d` in v0.5.6) |
 | Environment | Linux, Python 3.13.18, `pip install --no-cache-dir -e '.[dev,notebook,zarr]'` in a fresh venv (normalization 0.7.0 from its tag `v0.7.0` = `c6a9f9d`, as `direct_url.json` records; scikit-image not installed; numpy 2.5.5, tifffile 2026.11.12, ipywidgets 8.1.9, zarr 3.4.2, pytest 9.2.0, ruff 0.17.5); `PYTEST_ADDOPTS` unset; run as root on a case-sensitive file system |
 | Commands | `python tools/check.py`; `python -m pytest -q -p no:cacheprovider -rsxX tests/test_spec_*.py` |
-| `tools/check.py` | Ruff clean, Ruff format 495 files already formatted, pytest **5952 passed, 4 skipped** (not run, below), 0 failed, code rules passed (exit status 0) |
-| Spec modules (`tests/test_spec_*.py`) | **1931 passed, 0 skipped, 0 xfailed, 0 failed**, from all 28 modules of `tests/spec_gate.py` `EXPECTED_MODULES` (v0.5.6 had 25; ADR 0005 adds `test_spec_binary_masks.py`, `test_spec_class_conversion.py` and `test_spec_mask_conversion.py`) |
+| `tools/check.py` | Ruff clean, Ruff format 500 files already formatted, pytest **5999 passed, 4 skipped** (not run, below), 0 failed, code rules passed (exit status 0) |
+| Spec modules (`tests/test_spec_*.py`) | **1932 passed, 0 skipped, 0 xfailed, 0 failed**, from all 28 modules of `tests/spec_gate.py` `EXPECTED_MODULES` (v0.5.6 had 25; ADR 0005 adds `test_spec_binary_masks.py`, `test_spec_class_conversion.py` and `test_spec_mask_conversion.py`) |
 
 **Not run (4 environment skips, outside the Spec modules):** the four of v0.5.4 below (three
 tests that need a case-insensitive file system, `tests/test_cli_log.py:166` and

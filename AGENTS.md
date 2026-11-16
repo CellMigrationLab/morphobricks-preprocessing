@@ -1143,8 +1143,11 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   `masks.binary.label_binary`, `mask_rules`, `masks.check_object_set`, strict binary at the mask
   step (BM11), the conversion helpers `RunInputs.binary_to_instances` and
   `RunInputs.classes_to_binary` with `mask_lineage.jsonl` (BM12; CLI `convert-mask`, notebook
-  card **Convert a mask**); also one decode per stored piece for a window's channels (#294) and
-  the opt-in decoded-block cache `RunInputs.window_reader` (#304); normalization pinned at
+  card **Convert a mask**), a `binary` check recorded before BM11 refused until the mask step
+  runs again (#311); also images read in parallel by worker threads (`RunMode(workers=,
+  max_ram=)`, CLI `--workers N|auto --max-ram`; #309), one decode per stored piece for a
+  window's channels (#294) and the opt-in decoded-block cache `RunInputs.window_reader` (#304);
+  normalization pinned at
   v0.7.0, Spec at `bf68d30`. v0.5.6 (15 November 2026) was a patch release for lazy loading: exact window reads
   of an image (`read_window`) and of a mask (`read_mask_window`, `mask_window_plan`) and a
   pixel-free `plane_shape` (contract section 9.1); no format change. v0.5.5 (14 November 2026)
