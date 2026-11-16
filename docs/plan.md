@@ -1646,7 +1646,22 @@ Raised during review; to be decided before the milestones that need them:
     binary rule's refusal, not `mask_pixel_type` (which `check` and `run` keep), and a refused
     file is left out of the scan. Normalization is pinned at v0.7.0 (no new API used here; one
     normalization for every consumer).
-82. A `binary` check recorded by a mask step older than BM11 (v0.5.6 and earlier: "at most two
+82. Reading several images at once (preprocessing #107; benchmark #106). *Decided (owner, issue
+    #107):* one whole image (FOV) per worker thread (`ThreadPoolExecutor`), never planes or
+    channels; a worker only reads and checks its image after the read, the calling thread owns
+    staging, aggregation, checks, publication and progress; `workers=1` is the serial run;
+    `"auto"` is `min(images to read, CPUs)` and, with `max_ram`, at most
+    `(max_ram - reserve) // largest` from the header estimates (`plane_layout`), never file
+    sizes; an image over the budget is refused; outputs identical with any value; no
+    scheduler, backend choice, parallel CSV writes or tuning. *Encoding choices of this brick:*
+    the option is `RunMode(workers=, max_ram=)` rather than two new `run_experiment`
+    parameters (as `lab_links`: the code rules allow `run_experiment` no new parameter);
+    `max_ram` only with `"auto"` (`ValueError` otherwise); the reserve is 256 MiB; an image's
+    estimate is one plane (or one block) under the run's memory limit plus `8 × bins` per 2-D
+    plane for its rows, and the memory limit is never changed to fit `max_ram` (the refusal
+    `image_over_max_ram` says to lower it); with more than one worker `progress` is called as
+    each image is done (resumed ones first), not before it is read.
+83. A `binary` check recorded by a mask step older than BM11 (v0.5.6 and earlier: "at most two
     distinct values over the file", so {3} at one time point and {7} at another passed, and the
     per-plane read guard `label_binary` passes it too). *Decided (owner, 16 November 2026):*
     refuse it until re-checked (Spec ADR 0002 AR10: an old form is refused with its fix named,
