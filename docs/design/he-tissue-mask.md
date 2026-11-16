@@ -1,6 +1,9 @@
 # Design: an opt-in H&E tissue mask helper
 
 - **Status:** design for review (roadmap item I0). No code changes. The helper itself is I1.
+- **Owner answers (16 November 2026):** questions 1, 2, 3, 6, 8 and 9 accepted as recommended
+  ([§8](#8-owner-decisions-and-open-questions)); questions 4, 5 and 7 stay open. The Spec
+  amendment of §6 is MorphoBricks-Spec #45; I1 waits for it to merge.
 - **Owner decision (16 November 2026):** an opt-in preprocessing helper, "make an H&E tissue mask",
   that leaves out nuclei, red blood cells and empty space. It works like the ADR 0005 conversion
   helpers, writes a region mask with its lineage, is declared by the user as a mask, is offered in
@@ -62,9 +65,10 @@ normalization:
 - **All sizes are in pixels.** No pixel size is read, guessed or used. The image's recorded
   pixel size, when the run has one (`RunInputs.pixel_sizes`, `run_inputs.py:291-299`), is copied
   into the lineage for information only. The sizes were set on the proof-of-concept images,
-  whose magnification was not recorded. The card says that sizes are in pixels (open question 3).
+  whose magnification was not recorded. The card says that sizes are in pixels (owner decision,
+  16 November 2026).
 
-**Fixed defaults, not user thresholds (recommended).** v1 offers one preset, `he_tissue_v1`, and
+**Fixed defaults, not user thresholds (owner decision, 16 November 2026).** v1 offers one preset, `he_tissue_v1`, and
 no per-call overrides. Changing any number gives a new preset ID (`he_tissue_v2`) and never
 changes v1. The rule ID, version and every threshold are written to the lineage. Nothing is
 tuned per image, and nothing is tuned silently. The preview and the "% kept" figure are how the
@@ -198,7 +202,7 @@ choice 15, lines 692-693). A tissue mask's source is an image under the experime
 carries a rule and thresholds. experiment-v1 needs no change: the output is declared with existing
 §4.5 keys.
 
-The text below would go into ADR 0005 (a separate Spec PR, reviewed by the owner):
+The text below goes into ADR 0005 in its own Spec PR, MorphoBricks-Spec #45, reviewed by the owner:
 
 > **BM15 (decision table row).** | BM15 | **Derived region masks from an image** (owner,
 > 16 November 2026): preprocessing may offer an opt-in helper that computes a `binary` **region**
@@ -260,31 +264,31 @@ The text below would go into ADR 0005 (a separate Spec PR, reviewed by the owner
 - **Notebook:** the card's disabled reasons, the preview writing nothing, and the write happening
   only on click.
 
-## 8. Open questions for the owner
+## 8. Owner decisions and open questions
 
-1. **Fixed preset or user thresholds?** *Recommend a fixed `he_tissue_v1` with no overrides in
-   v1.* A user rule set would need its own ID and review. It can come later as `he_tissue_custom`,
-   with every value recorded.
-2. **White reference.** *Recommend a fixed 255 in v1*, the same as `he_eosin`. A slide with a
-   grey background (for example 200) then keeps that background as tissue: the preview shows it,
-   and nothing is dropped silently. A declared-white variant (`white_from_region`) would be a new
-   rule ID.
-3. **Pixel or physical sizes?** *Recommend pixels in v1*, recorded as pixels. A physical-size
-   rule would need a recorded pixel size and would refuse uncalibrated images, which most H&E
-   exports are. The card says "sizes in pixels".
-4. **The provisional red-cell numbers** (`OD_G - OD_R >= 0.40`, `OD_B - OD_R >= 0.10`). *Recommend
-   freezing them in I1* after a side-by-side report against the proof-of-concept rule on its
-   four images.
-5. **normalization functions outside its contract.** `optical_density.optical_density`,
-   `check_white` and `scalar_inputs.rgb_yxc` exist but are not listed as API in normalization's
-   `contract.md` §3.4. *Recommend a small, documentation-only normalization PR* that names them as
-   stable before I1. The alternative is a public `stain.optical_density_map` wrapper.
-6. **Optional dependency.** *Recommend a new extra `he-mask`*
-   (= `morphobricks-normalization[histology]`): core preprocessing stays without scikit-image, and the card names the extra when it is missing.
-7. **normalization commit when not installed from git.** *Recommend recording `null`*, never
-   refusing. The version stays recorded, and the pin is a tag.
-8. **Command line.** *Recommend a `tissue-mask` command* that calls the same functions, like
-   `convert-mask`, so that Colab and scripts match the notebook.
-9. **Writing the excluded components as their own masks** (nuclei, red cells, background).
-   *Recommend no in v1.* They appear only in the preview, which keeps "this is not a nucleus
-   segmentation" clear.
+**Decided by the owner on 16 November 2026 (accepted as recommended):**
+
+- **Fixed rule (former question 1).** `he_tissue_v1` is fixed and versioned, with no per-call
+  overrides. A user rule set, if ever added, gets its own recorded ID.
+- **White reference (former question 2).** The white is fixed at 255, the same as `he_eosin`. A
+  declared-white variant would be a new rule ID.
+- **Sizes (former question 3).** Clean-up sizes are in pixels in v1 and recorded as pixels.
+- **Optional dependency (former question 6).** A new extra `he-mask` pulls in
+  `morphobricks-normalization[histology]`. Core preprocessing stays without scikit-image, and the
+  card and the command line name the extra when it is missing.
+- **Command line (former question 8).** A `tissue-mask` command calls the same functions, like
+  `convert-mask`.
+- **One file only (former question 9).** The helper writes one tissue mask file. Nuclei, red
+  cells and background are shown in the preview only.
+
+**Still open:**
+
+- **Q4. The provisional red-cell numbers** (`OD_G - OD_R >= 0.40`, `OD_B - OD_R >= 0.10`). *Recommend
+  freezing them in I1* after a side-by-side report against the proof-of-concept rule on its
+  four images.
+- **Q5. normalization functions outside its contract.** `optical_density.optical_density`,
+  `check_white` and `scalar_inputs.rgb_yxc` exist but are not listed as API in normalization's
+  `contract.md` §3.4. *Recommend a small, documentation-only normalization PR* that names them as
+  stable before I1. The alternative is a public `stain.optical_density_map` wrapper.
+- **Q7. normalization commit when not installed from git.** *Recommend recording `null`*, never
+  refusing. The version stays recorded, and the pin is a tag.
