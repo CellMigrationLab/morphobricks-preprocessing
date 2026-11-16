@@ -414,3 +414,22 @@ def test_aliases_made_in_this_session_are_not_trusted_on_ticking_again(tmp_path)
     unit = nb.draft_answers.units.get(odd)
     assert unit is None or not any(unit.channels)  # not tagged from this session's aliases
     assert grid.matrix.rows[odd].state == REFUSED
+
+
+# --- independent review of c82a227 (#319) ------------------------------------------------
+
+
+def test_unticking_keeps_a_unit_the_user_tagged_again_by_hand_as_its_header_says(tmp_path):
+    """A click on a trusted unit makes its tags the user's, even when they end as trusted.
+
+    Cleared and tagged again with the same label, the unit's tags equal the no-click ones, but
+    the user set them: unticking keeps them (only the untouched trusted units are taken back).
+    """
+    tuned = ("drug", "rep1", "t1")
+    nb = _screen(tmp_path, _design(tmp_path, names_of=lambda key: LABELLED))
+    grid = nb.channel_grid
+    grid.cells[(tuned, 0)].value = None
+    grid.cells[(tuned, 0)].value = "DNA"  # the user's own click, the label its header says
+    grid.same_channels.value = False
+    assert set(nb.draft_answers.units) == {tuned}
+    assert nb.draft_answers.units[tuned].channels == TAGS

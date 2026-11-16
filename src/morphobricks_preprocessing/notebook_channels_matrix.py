@@ -28,7 +28,7 @@ draft and description formats have no field for it yet (a Spec amendment will ad
 from __future__ import annotations
 
 import html
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
 
 import ipywidgets as widgets
@@ -92,7 +92,10 @@ class TagMatrix:
         self.saved: dict[str, ChannelAnswer] = {}
         """The labels and their aliases saved when the page opened: the only aliases trusted."""
         self.given: dict[UnitKey, tuple[str | None, ...]] = {}
-        """The tags saved from the headers with no click (this session), taken back unticked."""
+        """The tags saved from the headers with no click (this session), taken back unticked.
+
+        A unit leaves it at the user's first click on its tags (:meth:`clicked`): its tags are
+        the user's from then on, even when they end equal to the header's."""
 
     def reset(self) -> None:
         """Forget the session's layouts, rows of tags and switches (new units, or a toggle)."""
@@ -113,6 +116,11 @@ class TagMatrix:
         for key in dict.fromkeys(k for k, _ in cells):
             self.given[key] = tuple(answers.units[key].channels)
         return True
+
+    def clicked(self, keys: Iterable[UnitKey]) -> None:
+        """Note the units whose tags the user's click saved: never taken back unticked."""
+        for key in keys:
+            self.given.pop(key, None)
 
     def take_back(self) -> None:
         """Untag the units tagged from their headers with no click (the statement unticked)."""
