@@ -142,7 +142,9 @@ every resolver selection of a request that names each mask once.
   never staged, an unexpected exception in a worker is raised by `run_experiment` after the
   images not yet started are cancelled, with a note naming the image (also without workers),
   and the images already staged are resumed by the next run). The number of workers is in no row key, staging key, manifest or table; it is
-  `RunResult.workers`, and the CLI summary says "Read with N workers". It is a `RunMode`
+  `RunResult.workers` (the threads that read images: at most the images read, 1 when none
+  was read or the run was refused for `max_ram`), and the CLI summary says "Read with N
+  workers". It is a `RunMode`
   field, not a `run_experiment` parameter, as `lab_links` (the code rules allow no new
   parameter there). `tools/benchmark_run_workers.py` times a whole run serially and with
   workers on a fixed synthetic dataset and refuses to report unless every output digest is

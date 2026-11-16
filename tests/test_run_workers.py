@@ -483,3 +483,21 @@ def test_an_unexpected_exception_names_the_image_without_workers_too(
         run_described(experiment, TYX, output_folder=tmp_path / "out", mode=mode(1))
     assert raised.value.__notes__ == [f"While reading the image {IMAGES[0]}"]
 
+
+
+@pytest.mark.parametrize("workers", [4, 8, 32])
+def test_the_workers_reported_are_the_threads_that_read_images(tmp_path, experiment, workers):
+    # RunResult.workers: the threads that read images, 1 when none was read.
+    out = tmp_path / "out"
+    first = run_with(experiment, out, workers)
+    assert first.workers == min(workers, len(IMAGES))
+    again = run_with(experiment, out, workers)
+    assert again.read == () and again.workers == 1
+    assert "Read with" not in run_summary(again)  # nothing was read: no workers to report
+
+
+def test_a_run_refused_for_max_ram_reports_one_worker(tmp_path, experiment):
+    result = run_described(
+        experiment, TYX, output_folder=tmp_path / "out", mode=mode("auto", PARENT_RESERVE + 1)
+    )
+    assert not result.written and result.read == () and result.workers == 1

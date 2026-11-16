@@ -229,12 +229,14 @@ def _read_in_workers(
             pending.append(rel)
     mappings = job.review.file_mappings
     plan = plan_workers(workers, job.pre.discovery.root, pending, mappings, job.settings)
-    found.workers, found.refused = plan.count, plan.refused
+    found.refused = plan.refused
     if plan.refused is not None or not pending:
-        return
-    logger.info("Reading %d images with %d workers", len(pending), plan.count)
+        return  # no image read: found.workers stays 1
+    # No more threads than images to read: the number reported is the number that read.
+    found.workers = min(plan.count, len(pending))
+    logger.info("Reading %d images with %d workers", len(pending), found.workers)
     results: dict[str, FileRead] = {}
-    pool = ThreadPoolExecutor(plan.count, thread_name_prefix="morphobricks-read")
+    pool = ThreadPoolExecutor(found.workers, thread_name_prefix="morphobricks-read")
     try:
         futures = {pool.submit(_read_checked, job, rel): rel for rel in pending}
         for future in as_completed(futures):
