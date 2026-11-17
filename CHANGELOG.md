@@ -100,11 +100,21 @@ v0.5.1: no run before v0.5.1 is read.)
   17 November 2026). A run whose
   published description declares units of different image types (Spec fixture `v29`) now stops
   on that refusal before any header check, as Spec PR #49 states for P04(b) ("before any image
-  is read"; its wording is unchanged). It no longer adds the header checks' errors after it (an
-  `inconsistent_mapping` of the axis review, `axes_not_confirmed`, or a unit's own
-  `mixed_dtypes`), nor the advice "listed first" that #245 gave them. The run still stops and
-  writes only its report; a description of one image type is checked as before. The notebook's
-  *Check and save* screen is unchanged.
+  is read"; its wording is unchanged). It is then the run's only issue, error or warning
+  (#334): nothing else the run finds once it holds the output folder is reported beside it. Not
+  the header checks' errors (an `inconsistent_mapping` of the axis review, `axes_not_confirmed`,
+  a unit's own `mixed_dtypes`), nor the advice "listed first" that #245 gave them, and also none
+  of what preflight finds: discovery (an unreadable image, `unreadable_tiff`), the masks (a masks
+  folder that does not exist, `masks_folder_not_found`, and every other mask issue), the
+  exclusions (an `--exclude` of a path that does not exist, the warning
+  `excluded_path_not_found`), the record of named-axis copies (conversion) and the lab-tool
+  links' repeat codes. They are reported once the description declares one image type. What
+  stops a run before it holds the output folder (no published description, an output folder
+  inside the experiment or the masks, a locked output folder) still stops it first. The run
+  still stops and writes only its report (`tests/test_heterogeneous_refusal_first.py` pins the
+  one issue with an unreadable `.tif`, a missing masks folder and a missing excluded path); a
+  description of one image type is checked as before. The notebook's *Check and save* screen is
+  unchanged.
 
 - **`unreadable_planes` names at most 20 failed planes per image** (owner decision of 17
   November 2026; Spec ADR 0003 HV3, #325). The message names each image's first 20 failed
