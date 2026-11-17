@@ -434,7 +434,9 @@ class _CheckSaveScreen(_ReplicateBoxes):
             self.save_status.value = ui.status("error", "Not saved.", [str(exc)])
             return False
         self._saved_on = date.today().isoformat()
-        self.draft_answers = replace(self.draft_answers, base_sha256=publication.sha256)
+        before = self.draft_answers
+        self.draft_answers = replace(before, base_sha256=publication.sha256)
+        self._strict.follow(before, self.draft_answers, None)  # fast mode's strict page too
         self._removals = {}
         self._forget_channel_clicks()
         self._draft_note = ""

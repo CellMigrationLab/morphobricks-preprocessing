@@ -44,6 +44,7 @@ from .notebook_description_view import (
     refusal_card,
 )
 from .notebook_names import _NameRows, _updated
+from .notebook_strict_draft import _StrictDraft
 from .run import OutputLockedError
 from .run.draft_file import save_draft
 from .run.output_guard import OutputInsideMasksError
@@ -65,7 +66,7 @@ class AnswerNotSaved(DraftError):
         super().__init__(f"Not saved: {reason}.", ("not_saved",))
 
 
-class _DescriptionCard(_NameRows, _SavedDraft):
+class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
     """Step 1's names and references cards: the user's answers to the draft description."""
 
     def _build_description_cards(self) -> None:
@@ -133,6 +134,7 @@ class _DescriptionCard(_NameRows, _SavedDraft):
     # Opening, resuming and closing -------------------------------------------------------
 
     def _hide_description(self) -> None:
+        self._put_strict_aside()
         self.draft = self.draft_answers = self._draft_base = None
         ui.set_visible(self.names_card, False)
         ui.set_visible(self.references_card, False)
@@ -148,9 +150,10 @@ class _DescriptionCard(_NameRows, _SavedDraft):
         self._draft_base = self._base_draft()
         self._keep_old_draft = False
         output = self._design_output
-        answers, note = None, ""
+        answers, note, read = None, "", None
         if output is not None:
-            answers, note = self._read_saved_draft(output)
+            answers, note, read = self._read_saved_draft(output)
+        self._carried_strict(read if answers is not None else None)
         self._draft_saved = answers is not None
         if answers is None:
             answers = self._new_answers(output)
@@ -166,8 +169,10 @@ class _DescriptionCard(_NameRows, _SavedDraft):
 
     # Answers -----------------------------------------------------------------------------
 
-    def _answer(self, answers: DraftAnswers, *, rebuild: bool = True) -> bool:
+    def _save_answers(self, answers: DraftAnswers, *, rebuild: bool = True) -> bool:
         """Apply new answers to the draft and save them; False when they are refused.
+
+        Every answer is saved through :meth:`._StrictDraft._answer`.
 
         A refused answer changes nothing and is shown by the card that asked for it. An answer
         that cannot be saved (the output folder's lock, the draft file, a write error) is

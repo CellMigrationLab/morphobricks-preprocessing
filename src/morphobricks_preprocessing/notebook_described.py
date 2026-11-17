@@ -123,30 +123,42 @@ class _DescribedRun:
         self._reopen_note = (dropped, asked)
         return kept
 
-    def _answer(self, answers: DraftAnswers, *, rebuild: bool = True) -> bool:
-        """Save new answers; a repeat whose layout this answer changed is asked again.
+    def _reask(
+        self, before: DraftAnswers | None, after: DraftAnswers, *, strict: bool
+    ) -> DraftAnswers:
+        """Return new answers with every repeat whose layout this answer changed asked again.
 
         Experiment-v1 section 10: a change of a unit's declared ordered channel list, its image
         type or the grouping reopens the repeat's N35 confirmation, so its ``confirmed_on`` is
         dropped (:func:`.published_answers.reasked`). A header name added to a channel changes
-        no layout and keeps the date (section 4.4a). Nothing is ticked for the user.
+        no layout and keeps the date (section 4.4a). Nothing is ticked for the user. With
+        ``strict`` it is the save of fast mode's strict page's draft, with its own layouts
+        answered "same way?" for.
         """
-        before = self.draft_answers
-        if before is not None and self._draft_base is not None:
-            state = self._published()
-            published = None if state is None else state.description
-            try:
-                # The layouts "same way?" was answered for: kept while a tag passes through
-                # no tag, forgotten at each new check of the folders (the base draft changes).
-                if getattr(self, "_same_way_base", None) is not self._draft_base:
-                    self._same_way_base, self._same_way_for = self._draft_base, {}
-                self._same_way_for.update(confirmed_layouts(self._draft_base, before))
-                answers, _ = reasked(
-                    self._draft_base, before, answers, published, self._same_way_for
-                )
-            except DraftError:
-                pass  # the answer itself is refused below, with its reason
-        return super()._answer(answers, rebuild=rebuild)
+        if before is None or self._draft_base is None:
+            return after
+        state = self._published()
+        published = None if state is None else state.description
+        try:
+            # The layouts "same way?" was answered for: kept while a tag passes through
+            # no tag, forgotten at each new check of the folders (the base draft changes).
+            if getattr(self, "_same_way_base", None) is not self._draft_base:
+                self._same_way_base, self._same_way_for = self._draft_base, {}
+                self._strict_same_way = {}
+            given = self._strict_same_way if strict else self._same_way_for
+            given.update(confirmed_layouts(self._draft_base, before))
+            after, _ = reasked(self._draft_base, before, after, published, given)
+        except DraftError:
+            pass  # the answer itself is refused, with its reason
+        return after
+
+    def _strict_held(self) -> None:
+        """Start the strict page's "same way?" layouts as the draft's."""
+        self._strict_same_way = dict(getattr(self, "_same_way_for", {}))
+
+    def _strict_restored(self) -> None:
+        """Take the strict page's "same way?" layouts as the draft's."""
+        self._same_way_for = dict(getattr(self, "_strict_same_way", {}))
 
     def _still_confirmed(
         self, saved: DraftAnswers, kept: DraftAnswers

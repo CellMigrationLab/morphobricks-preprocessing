@@ -14,6 +14,7 @@ from typing import Protocol
 import ipywidgets as widgets
 
 from .draft_answers import DraftAnswers
+from .strict_draft import Change
 
 PALETTE = (
     "#1D4ED8",
@@ -36,9 +37,15 @@ COLUMNS_PREFIX = "minmax(150px, 190px)"
 class AnswerStore(Protocol):
     """Where the cards read and save the draft answers (the notebook gives one).
 
-    Each card reads its own slice from :meth:`answers` and saves a changed copy with
-    :meth:`update`; they know nothing of each other, so a later layout can put them on separate
-    steps.
+    Each card reads its own slice from :meth:`answers` and saves a user's change with
+    :func:`save_change` (the change as a function of the answers); they know nothing of each
+    other, so a later layout can put them on separate steps.
+
+    The notebook's store also keeps the strict page's draft of fast mode
+    (:mod:`.strict_draft`): it has ``change(change)`` (a user's change, applied to the draft and
+    to the strict page's draft), ``unattended(new)`` (a save with no click, the draft only) and
+    ``restore_strict()`` (the statement unticked: the strict page's draft written back). A store
+    without them (an in-memory one) has no strict page apart: :meth:`update` saves.
     """
 
     def answers(self) -> DraftAnswers:
@@ -56,6 +63,30 @@ class AnswerStore(Protocol):
     def used_channels(self) -> tuple[str, ...]:
         """Return the channel IDs the experiment's lineage retired (never reusable)."""
         ...
+
+
+def save_change(store: AnswerStore, change: Change) -> bool:
+    """Save a user's change of the answers; False when it is refused.
+
+    The store's ``change`` applies it to the draft and to the strict page's draft; a store
+    without one saves ``change(answers)``. ``ValueError`` from the change is the caller's.
+    """
+    apply = getattr(store, "change", None)
+    if apply is not None:
+        return bool(apply(change))
+    return store.update(change(store.answers()))
+
+
+def save_unattended(store: AnswerStore, new: DraftAnswers) -> bool:
+    """Save answers made with no click (fast mode's trusted headers): the draft only."""
+    apply = getattr(store, "unattended", None)
+    return bool(apply(new)) if apply is not None else store.update(new)
+
+
+def restore_strict(store: AnswerStore) -> bool:
+    """Write the strict page's draft back (the statement unticked); False if refused."""
+    apply = getattr(store, "restore_strict", None)
+    return bool(apply()) if apply is not None else True
 
 
 def colour(label: str, labels: Sequence[str]) -> str:
@@ -129,6 +160,9 @@ __all__ = [
     "colour",
     "columns",
     "quoted",
+    "restore_strict",
     "rgb_chip",
+    "save_change",
+    "save_unattended",
     "unit_name",
 ]

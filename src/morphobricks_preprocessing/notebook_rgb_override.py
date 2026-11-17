@@ -27,8 +27,9 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .channel_answers import synced, with_override
 from .channel_labels import UnitLayout
+from .draft_answers import DraftAnswers
 from .notebook_channels_type import ImageTypeColumn
-from .notebook_channels_view import unit_name
+from .notebook_channels_view import save_change, unit_name
 from .notebook_render import blocked_line
 from .validation import plural
 
@@ -119,15 +120,19 @@ class RgbOverrideOffer:
         """Record or take back the override of the colour folders; say a refusal."""
         if self._building:
             return
-        store = self.types.store
-        answers = store.answers()
-        try:
-            for layout in self.colour():
+        store, colour, layouts = self.types.store, self.colour(), self.types.layouts
+
+        def change(answers: DraftAnswers) -> DraftAnswers:
+            for layout in colour:
                 answers = with_override(answers, layout, value)
+            return synced(answers, layouts)
+
+        try:
+            ok = save_change(store, change)
         except ValueError as exc:
             self.message.value = ui.status("error", "Nothing was changed.", [str(exc)])
         else:
-            if store.update(synced(answers, self.types.layouts)):
+            if ok:
                 self.message.value = ""
             else:
                 self.message.value = ui.status("error", "Not saved.", [store.refusal()])

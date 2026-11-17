@@ -195,3 +195,44 @@ def test_a_click_on_a_unit_tagged_with_no_click_keeps_its_aliases(tmp_path):
     assert nb.draft_answers.units[named].channels == TAGS  # the hand tag stays
     assert nb.draft_answers.channels["DNA"].header_names == ("DNA",)  # held by its tags
     assert nb.draft_answers.channels["ACTIN"].header_names == ("ACTIN",)
+
+
+# --- the strict page's draft (shadow model): a new check of the folders ----------------------
+
+
+def test_unticking_after_a_new_check_takes_back_the_no_click_tags_made_before_it(
+    tmp_path, monkeypatch
+):
+    """Known limitation of the delta model (review of #325), closed: tags made before a check.
+
+    The headers name every channel, so fast mode tags every unit with no click on opening. A
+    unit is added and the folder checked again: the saved draft is read again, and the strict
+    page's draft is carried over with it. Unticked, the draft is the strict page's after the
+    same check, byte for byte (the delta model forgot the no-click tags at the new check).
+    """
+    from morphobricks_preprocessing.draft_format import answers_to_bytes
+    from morphobricks_preprocessing.notebook_channels_grid import TagGrid
+    from test_notebook_tag_matrix import LABELLED, _design, _screen
+
+    def check_again(nb):
+        nb.check_button.click()
+        if nb.confirmed_mapping is None:
+            nb.preview_checked.set(True)
+            nb.show_preview()
+            nb.confirm_button.click()
+
+    root = _design(tmp_path, names_of=lambda key: LABELLED)
+    fast = _screen(tmp_path, root, "fast")
+    assert {u.channels for u in fast.draft_answers.units.values()} == {TAGS}  # no click
+    monkeypatch.setattr(TagGrid, "SAME_CHANNELS", False)
+    strict = _screen(tmp_path, root, "strict")
+    write_channels(root / "drug" / "rep2" / "t3" / "a.tif", None, KINDS, seed=50)
+    for nb in (fast, strict):
+        check_again(nb)
+    assert len(fast.channel_grid.layouts) == 9
+    fast.channel_grid.same_channels.value = False
+    assert not fast.draft_answers.units
+    assert fast.draft_answers == strict.draft_answers
+    assert (tmp_path / "fast" / DRAFT_FILENAME).read_bytes() == answers_to_bytes(
+        strict.draft_answers
+    )

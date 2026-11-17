@@ -41,19 +41,13 @@ v0.5.1: no run before v0.5.1 is read.)
   names is saved only by **Tag the new units like the first tagged unit**. Each unit is saved
   exactly as tagging it by hand saves it (same draft bytes; tested). The draft and the
   description record no field for the statement yet (the Spec amendment will add one).
-  Unticked, the page is the strict per-unit path of PR 17b, unchanged: the units tagged from
-  their headers with no click in this session are untagged again (a header is then a proposal
-  to confirm, as before; a unit whose tags the user clicked on since keeps them, even tagged
-  back to what its header says, and one whose header tags only lost a label removed from the
-  list is untagged too; with no click since, the aliases the draft held before those tags are
-  kept, even ones only the untagged units held, as opening unticked keeps them; none is kept
-  once a click, a save of the label list or an image type resynced the aliases since, as that
-  save drops them on the strict page: review of 223d055; and an exact header name only those
-  tags added as an alias is taken out, even when a unit tagged earlier, whose header now says
-  that name, holds it too, unless a click tagged a cell with it or a unit holding it since:
-  review of e623cad), and ticking
-  again trusts only the aliases saved when the page opened and still saved (`channel_matrix`,
-  `notebook_channels_matrix`).
+  Unticked, the page is the strict per-unit path of PR 17b, unchanged, and the draft is the one
+  the strict page holds after the same user actions, byte for byte: the units tagged from their
+  headers with no click are untagged again (a header is then a proposal to confirm, as before), a
+  unit the user clicked on since keeps the tags of that click (a hand tag is never taken back),
+  and the aliases are those the strict page's saves leave (see *Changed*: the strict page's
+  draft). Ticking again trusts only the aliases saved when the page opened and still saved
+  (`channel_matrix`, `notebook_channels_matrix`).
 - **`RunInputs.objects_read_plan(selection, mask_id)`** (#316): the memory of one
   `read_objects` plane, from the mask's header only, as an `ObjectsReadPlan` (also
   `morphobricks_preprocessing.ObjectsReadPlan`). `read_objects` returns `int32` whatever the
@@ -101,6 +95,30 @@ v0.5.1: no run before v0.5.1 is read.)
   memory" instead of "available". The outputs do not depend on the number of workers.
 
 ### Changed
+
+- **Notebook: *Tag channels* fast mode keeps the strict page's draft** (the shadow model the
+  review of #325 recommended). Unticking now restores the strict page by construction, no
+  longer by the tracked differences of five earlier fixes: `given`, `before`, `units` and
+  `added` are gone, with `channel_matrix.untrusted`, `with_aliases` and `without_aliases`. The
+  notebook keeps the strict page's draft (`strict_draft.StrictShadow`) while it differs from
+  the draft. A save with no click (the trusted headers) goes to the draft only. Every user save
+  applies the same change to both, settled as that save settles it (the "same way?" asked
+  again): a click or the row of tags (`channel_answers.tagged`, which sets the units' whole
+  tags, so a unit tagged with no click becomes the user's on the strict page's draft too), the
+  label list, an image type, *Use for all folders*, the RGB header override, and any other
+  answer as the same edit, field by field (`strict_draft.patched`). Unticking saves the strict
+  page's draft back; a new check of the folders carries it over with the saved draft. Two gaps
+  of the old model are closed (their regression tests fail on `b2bbd08`): *Use for all folders*
+  that changes no unit (every folder already has that type) still resyncs the strict page's
+  aliases, and units tagged with no click before a new check are untagged by an untick after
+  it. A click on the row of tags that tags no cell (every follower refused, untagged as
+  before) now saves nothing instead of resyncing the aliases, since the strict page has no such
+  click. The strict page's draft lives for the session: a reopened notebook starts from the
+  saved draft, as before. A property test (`tests/test_notebook_tag_shadow.py`) runs 250 seeded
+  random sequences of 14 actions (tick, untick, cell clicks, label list saves, a label added or
+  removed, image types, *Use for all folders*, re-checks, reopens with stale aliases, the row
+  of tags) and checks the draft byte-equal to the strict page's at every untick. The page and
+  the user guide are unchanged.
 
 - **`unreadable_planes` names the plane and the channel** (Spec ADR 0003 HV3). A channel that
   cannot be measured still fails the whole `plane_histograms.csv`, as before; the error, and so

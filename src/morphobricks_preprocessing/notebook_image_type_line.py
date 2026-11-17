@@ -37,7 +37,9 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .channel_answers import synced, with_type
 from .channel_labels import UnitLayout
+from .draft_answers import DraftAnswers
 from .notebook_channels_type import ImageTypeColumn, ImageTypeRows
+from .notebook_channels_view import save_change
 from .notebook_render import blocked_line
 from .notebook_rgb_override import RgbOverrideOffer
 from .validation import plural
@@ -239,15 +241,19 @@ class ImageTypeLine:
 
     def _write(self, value: str) -> bool:
         """Save ``value`` as the type of every usable folder, all or none; say a refusal."""
-        store = self.types.store
-        answers = store.answers()
-        try:
-            for layout in self._usable():
+        store, usable, layouts = self.types.store, self._usable(), self.types.layouts
+
+        def change(answers: DraftAnswers) -> DraftAnswers:
+            for layout in usable:
                 answers = with_type(answers, layout, value)
+            return synced(answers, layouts)
+
+        try:
+            ok = save_change(store, change)
         except ValueError as exc:
             self.message.value = ui.status("error", "Nothing was changed.", [str(exc)])
             return False
-        if not store.update(synced(answers, self.types.layouts)):
+        if not ok:
             self.message.value = ui.status("error", "Not saved.", [store.refusal()])
             return False
         self.message.value = ""
