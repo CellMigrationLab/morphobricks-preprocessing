@@ -182,6 +182,11 @@ src/morphobricks_preprocessing/
                     preprocessing's discovery and pairing; RunInputs.open raises
                     UnrecordedFilesError for them (PP-8b, contract §9.1)
   run_inputs_text.py the texts RunInputs refuses a run with (moved from run_inputs.py in PP-12)
+  run_inputs_stopped.py stopped_run_refusal: the one reader of discovery_report.json for the
+                    bricks; RunInputs.open raises RunStoppedError (RUN_FOLDER_STOPPED, the
+                    stopped run's error issues as the report records them) or
+                    RunReportUnreadableError (RUN_FOLDER_REPORT_UNREADABLE) for a folder
+                    without a manifest (issue #322, contract §9.1)
   required_description.py every run needs a published morphobricks.toml (v0.5.1, ADR 0002
                     AR10): is_published, the A_DESCRIPTION_REQUIRED issue and its fix, shared by
                     the run, the mask step, the CLI and RunInputs

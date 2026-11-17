@@ -3,7 +3,9 @@
 The report is written on every run, including runs that stop, to
 ``discovery_report.json`` and a readable text version, ``discovery_report.txt``, in the
 output folder. It has ``status`` (``"stopped"`` or ``"written"``) and the SHA-256 of the
-manifest it describes. It is for people: bricks never read it.
+manifest it describes. It is for people: bricks never read it. A brick gets a stopped run's
+error issues from :meth:`.run_inputs.RunInputs.open` (``RunStoppedError``, issue #322), whose
+:mod:`.run_inputs_stopped` is the one reader of the report for the bricks.
 
 It contains the experiment root (and whether it changed), the conditions, repeats and
 positions with image counts; the channels and their names; each image's axes with
