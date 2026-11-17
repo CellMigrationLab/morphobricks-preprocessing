@@ -206,7 +206,7 @@ def test_v01_a_channel_no_image_has_is_present_in_0_of_n_and_every_repeat_unavai
     fovs = inputs.fovs()
     resolved = inputs.resolve_request(Request(("DNA", "PHASE")))
     assert _codes(resolved) == [("A_SCOPE_INCOMPLETE", "PHASE")]
-    assert f"present in 0 of {len(fovs)} acquisitions" in resolved.refusals[0].message
+    assert f"present in 0 of {len(fovs)} images" in resolved.refusals[0].message
     assert set(resolved.refusals[0].files) == {f.relative_path for f in fovs}
     by_subject = {}
     for item in resolved.coverage:
@@ -229,7 +229,7 @@ def test_v09_partial_masks_are_present_in_k_of_n_and_the_repeat_is_partial(tmp_p
     resolved = inputs.resolve_request(Request(("DNA",), (MaskRequest("Nuclei"),)))
     assert _codes(resolved) == [("A_SCOPE_INCOMPLETE", "Nuclei")]
     refusal = resolved.refusals[0]
-    assert "present in 2 of 6 acquisitions" in refusal.message
+    assert "present in 2 of 6 images" in refusal.message
     assert refusal.files == tuple(images[2:])
     found = [(c.subject, c.repeat_group, c.status, c.present, c.total) for c in resolved.coverage]
     assert found == [("DNA", "rep1", "full", 6, 6), ("Nuclei", "rep1", "partial", 2, 6)]

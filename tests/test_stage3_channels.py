@@ -229,7 +229,7 @@ def test_the_resolver_classifies_the_extra_stain_per_repeat(extra_run):
     assert not shared.refused
     resolved = inputs.resolve_request(Request(("DNA", "EXTRA")))
     assert [(r.code, r.subject) for r in resolved.refusals] == [("A_SCOPE_INCOMPLETE", "EXTRA")]
-    assert "present in 4 of 12 acquisitions" in resolved.refusals[0].message
+    assert "present in 4 of 12 images" in resolved.refusals[0].message
     status = {c.repeat_group: c.status for c in resolved.coverage if c.subject == "EXTRA"}
     assert status == {
         "Biological_repeat_1": "unavailable",
@@ -374,7 +374,7 @@ def test_v17_partial_repeat_is_recorded_and_its_statistics_need_a_choice(tmp_pat
     result, out, _ = described_run(tmp_path, VALID["v17"].data)
     assert result.written
     (warned,) = [i for i in result.issues if i.code == "partial_channel_coverage"]
-    assert warned.paths == ("R002: PHASE in 1 of 2 acquisitions",)
+    assert warned.paths == ("R002: PHASE in 1 of 2 imaging units",)
     manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     coverage = manifest["experiment_description"]["channel_coverage"]
     assert coverage["R002"]["PHASE"] == {
@@ -394,6 +394,24 @@ def test_v17_partial_repeat_is_recorded_and_its_statistics_need_a_choice(tmp_pat
     }
 
 
+def test_the_coverage_warning_counts_imaging_units_and_the_scope_refusal_images(tmp_path):
+    # Issue #321 point 1: "acquisitions" meant imaging units in the run's warning and images in
+    # A_SCOPE_INCOMPLETE. Each message now names what it counts (v05: PHASE in 1 of 2 imaging
+    # units of rep1, which hold 2 of its 4 images); the codes are unchanged.
+    result, out, _ = described_run(tmp_path, VALID["v05"].data)
+    (warned,) = [i for i in result.issues if i.code == "partial_channel_coverage"]
+    assert warned.paths == ("rep1: PHASE in 1 of 2 imaging units",)
+    assert "only some of their imaging units" in warned.message
+    assert "imaging units that have it" in warned.action
+    (refusal,) = RunInputs.open(out).resolve_request(Request(("PHASE",))).refusals
+    assert refusal.code == "A_SCOPE_INCOMPLETE"
+    assert "The channel 'PHASE' is present in 2 of 4 images; the images without it:" in (
+        refusal.message
+    )
+    for text in (warned.message, warned.action, *warned.paths, refusal.message):
+        assert "acquisition" not in text
+
+
 def test_v05_phase_request_leaves_rep1_partial_and_no_repeat_unavailable(tmp_path):
     # Conformance plan section 4, Stage 3 (ADR 0001 GS2): PHASE is in DrugA/rep1 only; rep1 is
     # the only repeat, so a PHASE request finds rep1 partial (DrugA yes, CTRL no), none
@@ -401,7 +419,7 @@ def test_v05_phase_request_leaves_rep1_partial_and_no_repeat_unavailable(tmp_pat
     result, out, _ = described_run(tmp_path, VALID["v05"].data)
     assert result.written, [(i.code, i.message) for i in result.issues]
     (warned,) = [i for i in result.issues if i.code == "partial_channel_coverage"]
-    assert warned.paths == ("rep1: PHASE in 1 of 2 acquisitions",)
+    assert warned.paths == ("rep1: PHASE in 1 of 2 imaging units",)
     manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     coverage = manifest["experiment_description"]["channel_coverage"]
     assert coverage == {
@@ -415,7 +433,7 @@ def test_v05_phase_request_leaves_rep1_partial_and_no_repeat_unavailable(tmp_pat
     resolved = inputs.resolve_request(Request(("PHASE",)))
     assert resolved.refused and not resolved.selections
     assert [(r.code, r.subject) for r in resolved.refusals] == [("A_SCOPE_INCOMPLETE", "PHASE")]
-    assert "present in 2 of 4 acquisitions" in resolved.refusals[0].message
+    assert "present in 2 of 4 images" in resolved.refusals[0].message
     assert resolved.refusals[0].files == ("CTRL/rep1/img0.tif", "CTRL/rep1/img1.tif")
     assert [(c.repeat_group, c.status, c.present, c.total) for c in resolved.coverage] == [
         ("rep1", "partial", 2, 4)

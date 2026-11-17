@@ -101,9 +101,12 @@ def _coverage(channel: str, units: list[tuple[str, tuple[str, ...]]]) -> dict[st
 
 
 def partial_repeats(coverage: Mapping[str, Mapping[str, Mapping[str, object]]]) -> list[str]:
-    """Return ``"<repeat>: <channel> in k of n acquisitions"`` for every partial coverage."""
+    """Return ``"<repeat>: <channel> in k of n imaging units"`` for every partial coverage.
+
+    ``k`` and ``n`` count the repeat's imaging units, not its images (issue #321).
+    """
     return [
-        f"{repeat}: {channel} in {entry['units_with']} of {entry['units']} acquisitions"
+        f"{repeat}: {channel} in {entry['units_with']} of {entry['units']} imaging units"
         for repeat, channels in coverage.items()
         for channel, entry in channels.items()
         if entry["status"] == PARTIAL

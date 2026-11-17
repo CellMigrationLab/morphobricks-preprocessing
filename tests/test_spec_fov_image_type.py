@@ -114,7 +114,7 @@ def test_v09_masks_on_2_of_6_resolve_to_partial_coverage(tmp_path):
         Request(("DNA",), (MaskRequest("Nuclei"),))
     )
     assert [(r.code, r.subject) for r in resolved.refusals] == [("A_SCOPE_INCOMPLETE", "Nuclei")]
-    assert "present in 2 of 6 acquisitions" in resolved.refusals[0].message
+    assert "present in 2 of 6 images" in resolved.refusals[0].message
     assert resolved.refusals[0].files == images[2:]
     found = [(c.subject, c.repeat_group, c.status, c.present, c.total) for c in resolved.coverage]
     assert found == [("DNA", "rep1", "full", 6, 6), ("Nuclei", "rep1", "partial", 2, 6)]
@@ -159,7 +159,7 @@ def test_a_declared_mask_without_files_is_present_in_0_of_6(tmp_path):
     # Masks on none of the images: the run without masks (mask_images=() is refused below).
     inputs = _open(tmp_path, _small("v09"))
     resolved = inputs.resolve_request(Request(("DNA",), (MaskRequest("Nuclei"),)))
-    assert "present in 0 of 6 acquisitions" in resolved.refusals[0].message
+    assert "present in 0 of 6 images" in resolved.refusals[0].message
     assert {c.status for c in resolved.coverage if c.subject == "Nuclei"} == {"unavailable"}
 
 

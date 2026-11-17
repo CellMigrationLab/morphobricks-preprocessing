@@ -117,6 +117,16 @@ v0.5.1: no run before v0.5.1 is read.)
   missing masks folder and a missing excluded path); a description of one image type is checked
   as before. The notebook's *Check and save* screen is unchanged.
 
+- **The coverage warning and `A_SCOPE_INCOMPLETE` name what they count** (#321, point 1). Both
+  said "acquisitions", meaning imaging units in the run's warning `partial_channel_coverage`
+  ("PHASE in 1 of 2 acquisitions") and images in the bricks' refusal `A_SCOPE_INCOMPLETE`
+  ("present in 3 of 6 acquisitions"). The warning now says imaging units (`rep1: PHASE in 1 of
+  2 imaging units`, "only some of their imaging units", "the imaging units that have it") and
+  the refusal images (`The channel 'PHASE' is present in 2 of 4 images; the images without
+  it: ...`, also for a mask). Message text only: the codes, the counts, `paths`, the manifest's
+  `channel_coverage` and the refusal's `files` are unchanged. The Spec's experiment-v1 §8 still
+  words the refusal "present in k of n acquisitions".
+
 - **`unreadable_planes` names at most 20 failed planes per image** (owner decision of 17
   November 2026; Spec ADR 0003 HV3, #325). The message names each image's first 20 failed
   planes in the same order as before (images sorted, planes in reading order), then `and N more

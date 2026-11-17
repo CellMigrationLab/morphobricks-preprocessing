@@ -28,8 +28,9 @@ module holds what it takes and gives, and the rules that need no file:
   reads every non-zero pixel as inside, records the marker and shows it. Never split or relabelled.
 
 Codes (experiment-v1 section 8, as the classes of :mod:`.run_inputs_error`): ``A_SCOPE_INCOMPLETE``
-("present in k of n acquisitions", k may be 0, one rule for channels and masks, owner decision
-SI1), ``A_MASK_NOT_INSTANCES`` (built by :func:`.mask_rules.refuse_not_instances`),
+("present in k of n images", k may be 0, one rule for channels and masks, owner decision SI1;
+it counts the run's images, where experiment-v1 section 8 says "acquisitions", issue #321),
+``A_MASK_NOT_INSTANCES`` (built by :func:`.mask_rules.refuse_not_instances`),
 ``A_MASK_UNCHECKED``, ``A_RGB_NOT_SUPPORTED`` and, from the resolver contract,
 ``A_VOLUME_NOT_SUPPORTED`` (a volume asked of a consumer without ``volume_support``, and a
 conversion of a Z-stack; built only by :func:`volume_refusals`). A refused request selects
@@ -443,7 +444,7 @@ def scope_refusal(subject: str, kind: str, missing: Iterable[str], total: int) -
     return Refusal(
         "A_SCOPE_INCOMPLETE",
         subject,
-        f"The {kind} {subject!r} is present in {present} of {total} acquisitions; the images "
+        f"The {kind} {subject!r} is present in {present} of {total} images; the images "
         f"without it:\n{shown}{more}\nNo subset is taken: select and record an eligible "
         "subset, or complete the data (A_SCOPE_INCOMPLETE).",
         lacking,
