@@ -464,7 +464,7 @@ def _final_content_check(run: _Run, rows: Rows, settings: RunSettings) -> Callab
                 raise _SourcesChangedError(changed, masks=True)
         if not settings.verify_content:
             return
-        changed = content_changed(rows.entries.values(), root)
+        changed = content_changed(rows.entries.values(), root, rows.hash_threads)
         if changed:
             raise _SourcesChangedError(changed, "content")
         changed = [] if masks is None else content_changed_masks(masks, root, run.mask_content)

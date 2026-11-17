@@ -34,7 +34,7 @@ from .resume import FileJob, changed_during_check, new_rows
 from .reuse import _load_previous
 from .rows import _bin_count
 from .staging import StagedRows
-from .workers import Workers
+from .workers import Workers, hash_threads
 
 GLOBAL_CHANNEL_CODES = frozenset({"channel_names_differ", "different_channel_counts"})
 """The folder check's channel comparisons across the whole experiment.
@@ -198,6 +198,9 @@ class Rows:
     workers
         The size of the thread pool the files were read with (issue #107; its capacity, not a
         count of the threads used; operational only).
+    hash_threads
+        How many images the run hashes at once in its content SHA-256 passes (D7:
+        :func:`.workers.hash_threads`; operational only).
     refused
         ``image_over_max_ram`` when nothing was read for ``max_ram``, else None.
     """
@@ -216,6 +219,7 @@ class Rows:
     staged: Mapping[str, StagedRows] = field(default_factory=dict)
     workers: int = 1
     refused: ValidationIssue | None = None
+    hash_threads: int = 1
 
 
 def compute_rows(
@@ -259,7 +263,10 @@ def compute_rows(
     in_blocks = {p for i in checked.issues if i.code == "planes_read_in_blocks" for p in i.paths}
     entries = file_entries(pre, review, root, in_blocks, checked.channels)
     # Strict reuse: each image's content SHA-256 joins its row key; an unreadable one fails.
-    entries, unhashed = with_content(entries, root) if settings.verify_content else (entries, [])
+    threads = hash_threads(workers, len(entries))
+    entries, unhashed = (
+        with_content(entries, root, threads) if settings.verify_content else (entries, [])
+    )
     found = compare_with_previous(entries, previous[0], earlier, reason is not None, settings, root)
     records: list[PlaneRecord] = []
     narrow: list[NarrowRange] = []
@@ -294,6 +301,7 @@ def compute_rows(
         staged=new.staged,
         workers=new.workers,
         refused=new.refused,
+        hash_threads=threads,
     )
 
 

@@ -67,6 +67,19 @@ class Workers:
     max_ram: int | None = None
 
 
+def hash_threads(workers: Workers | None, images: int) -> int:
+    """Return how many images a run hashes at once (its content SHA-256 passes, D7).
+
+    As many as it may read at once: 1 with one worker (or None), a whole number as it is,
+    ``"auto"`` the CPU cap (:func:`available_cpus`); never more than ``images``, at least 1.
+    Hashing holds one 1 MiB block per thread, so ``max_ram`` does not lower it.
+    """
+    if workers is None:
+        return 1
+    count = available_cpus() if workers.count == AUTO else workers.count
+    return max(1, min(count, images))
+
+
 def available_cpus() -> int:
     """Return the number of CPUs this process may run on (at least 1)."""
     if hasattr(os, "process_cpu_count"):  # Python 3.13

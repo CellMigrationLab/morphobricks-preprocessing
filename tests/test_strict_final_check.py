@@ -37,13 +37,13 @@ def rewrite_before_final_check(monkeypatch, paths):
     """Rewrite ``paths`` (size and time kept) right before the last content check."""
     hashed, calls = run_module.pipeline.content_changed, []
 
-    def rewritten_first(entries, root):
+    def rewritten_first(entries, root, *args):
         calls.append(sorted(entry.relative_path for entry in entries))
         # The generation is staged and recorded; the manifest is not yet replaced.
         assert (root.parent / "out" / PUBLISH_FOLDER / "publication.json").exists()
         for path in paths:
             rewrite_keeping_metadata(path)
-        return hashed(entries, root)
+        return hashed(entries, root, *args)
 
     monkeypatch.setattr(run_module.pipeline, "content_changed", rewritten_first)
     return calls
@@ -108,12 +108,12 @@ def test_an_ome_zarr_chunk_rewritten_right_before_the_commit_is_refused(tmp_path
     chunk = sorted(p for p in store.rglob("*") if p.is_file() and p.stat().st_size > 32)[-1]
     hashed = run_module.pipeline.content_changed
 
-    def chunk_rewritten_first(entries, folder):
+    def chunk_rewritten_first(entries, folder, *args):
         data, before = bytearray(chunk.read_bytes()), chunk.stat()
         data[-1] ^= 0xFF
         chunk.write_bytes(bytes(data))
         os.utime(chunk, ns=(before.st_atime_ns, before.st_mtime_ns))
-        return hashed(entries, folder)
+        return hashed(entries, folder, *args)
 
     monkeypatch.setattr(run_module.pipeline, "content_changed", chunk_rewritten_first)
     result = run_described(root, output_folder=out)

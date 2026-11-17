@@ -139,9 +139,9 @@ def test_a_strict_run_refuses_a_mask_rewritten_with_its_size_and_time_kept(clean
     before = outputs(out)
     hashed = run_module.pipeline.content_changed
 
-    def rewritten_before_the_commit(entries, root):
+    def rewritten_before_the_commit(entries, root, *args):
         rewrite_mask(mask, keep_metadata=True)
-        return hashed(entries, root)
+        return hashed(entries, root, *args)
 
     monkeypatch.setattr(run_module.pipeline, "content_changed", rewritten_before_the_commit)
     result = run_described(clean.experiment, output_folder=out)
