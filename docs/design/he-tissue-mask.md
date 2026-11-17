@@ -632,10 +632,14 @@ Where the design left a choice, I1 chose as follows (each tested):
   wrote no PEP 610 `dir_info` lists only a `.pth` file in `RECORD`, so checks 4 and 5 would hold
   for no code at all while the imported modules run from the source tree.
 - **The preview** needs no masks folder and no output mask ID.
-- **The normalization pin stays v0.7.0** (`c6a9f9d`): the stable-API documentation of P2
-  (normalization #108, merged at `30992e9`) is in no release yet, and `optical_density.py`,
-  `scalar_inputs.py`, `stain.py` and `stain_presets.py` are byte-identical between v0.7.0 and
-  `30992e9`.
+- **The normalization pin is v0.7.1** (`fcfaeac`; owner, 17 November 2026; first written at
+  v0.7.0 = `c6a9f9d`). v0.7.1 releases the stable-API documentation of P2 (normalization #108),
+  the NumPy per-bin work and signed zero written as `0.0` (#105, #110). The modules the rule
+  uses, `optical_density.py` (with `regions.py`, which it imports), `scalar_inputs.py`,
+  `stain.py` and `stain_presets.py`, are byte-identical between v0.7.0 and v0.7.1, so
+  `he_tissue_v1`'s output and the PI-1..PI-4 evaluation (run at v0.7.0) are unchanged; the
+  recorded normalization code identity (`RECORD` digest) changes with the version, as it
+  should.
 - **P3** was run with fiberfeatures `a7f57c5` (v0.7.0, merged, not yet tagged) and CellPatcher
   v0.7.1 installed (`tests/test_he_tissue_consumer_gate.py`, which skips without fiberfeatures);
   P3 completes when the fiberfeatures v0.7.0 tag exists.

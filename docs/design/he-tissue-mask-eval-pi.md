@@ -10,7 +10,9 @@
 - **Run (16 November 2026):** the I1 helper, end to end, on a described run of the four images
   (`RunInputs.he_tissue_mask`, output `HETissue`), at the I1 branch; NumPy 2.5.5, SciPy 1.18.1,
   scikit-image 0.26.0, normalization v0.7.0 (`c6a9f9d`). `V` is each written file (`1` = kept),
-  and equals the in-memory preview.
+  and equals the in-memory preview. The pin later moved to v0.7.1 (`fcfaeac`), whose modules
+  used by the rule are byte-identical to v0.7.0's (design, implementation notes), so `V` is
+  unchanged.
 - **`R`:** the proof of concept's `scripts/tissue_mask.py`, run unchanged on the same decoded
   pixels, with `E` and `H` from normalization's `to_scalar(rgb, axes="YXC", preset="he_eosin")`,
   as its `run_all.py` passed them (through fiberfeatures `prepare_rgb_input`). Its thresholds are

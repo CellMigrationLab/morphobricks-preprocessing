@@ -23,7 +23,7 @@ v0.5.1: no run before v0.5.1 is read.)
   the NumPy, scikit-image and SciPy versions and the per-image RGB override record; BM15's own
   comparator makes a retry a no-op only for two reusable equal lines, and an unverified identity
   writes a mask that is never reused. New extra `he-mask` (`morphobricks-normalization[histology]`
-  at v0.7.0); a core install imports none of it. PI-1..PI-4 evaluation:
+  at v0.7.1); a core install imports none of it. PI-1..PI-4 evaluation:
   `docs/design/he-tissue-mask-eval-pi.md`.
 
 - **The lineage reader selects the schema by `operation`** (BM12's two operations, or
@@ -116,6 +116,15 @@ v0.5.1: no run before v0.5.1 is read.)
   memory" instead of "available". The outputs do not depend on the number of workers.
 
 ### Changed
+
+- **Normalization pinned at v0.7.1** (`fcfaeac`; core dependency and the `he-mask` extra).
+  v0.7.1 writes a signed zero as `0.0` in every written float (normalization #105, #110), does
+  the per-bin work of integer planes in NumPy int64 with the same bytes, and documents
+  `check_white`, `optical_density` and `rgb_yxc` as stable API. No preprocessing golden changes:
+  the histogram goldens (`tests/data/golden_*.csv`, compared as text) and the Spec record and
+  design goldens pass unchanged, and none of them holds a `-0.0`. The modules `he_tissue_v1`
+  uses are byte-identical to v0.7.0's, so the rule's output and the PI-1..PI-4 evaluation are
+  unchanged; the recorded normalization code identity changes with the version.
 
 - **Notebook: *Tag channels* fast mode keeps the strict page's draft** (the shadow model the
   review of #325 recommended). Unticking now restores the strict page by construction, no
