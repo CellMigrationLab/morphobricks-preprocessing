@@ -11,9 +11,10 @@ run the row key also holds the file's content SHA-256, so staged rows are resume
 same content, and a file read must still have that SHA-256 after its pixels are read.
 
 Files may be read in worker threads, one file per worker (issue #107, :mod:`.workers`): a
-worker only reads its file and checks it after the read (:func:`_read_checked`); the calling
-thread alone resumes, stages, aggregates (in the sorted order of the files, whatever order the
-workers finish in) and reports progress.
+worker reads its file, checks it after the read and stages its rows in table order
+(:func:`_read_and_stage`; D7: the staged rows are the table's rows, :mod:`.table`); the
+calling thread alone resumes, aggregates (in the sorted order of the files, whatever order
+the workers finish in) and reports progress.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from morphobricks_normalization.records import PlaneRecord
@@ -33,8 +34,15 @@ from ..planes import PlaneReadError
 from ..source_content import current_content
 from ..validation import ValidationIssue, error, plural
 from .preflight import Preflight
-from .rows import ChannelReadError, _read_file
-from .staging import StagedFile, discard_staged, load_staged, stage_file, staging_key
+from .rows import ChannelReadError, _read_file, _row_order
+from .staging import (
+    StagedFile,
+    StagedRows,
+    discard_staged,
+    load_staged,
+    stage_file,
+    staging_key,
+)
 from .workers import Workers, plan_workers
 
 logger = logging.getLogger(__name__)
@@ -63,6 +71,8 @@ class NewRows:
         The files that changed while the run checked or read them.
     discarded
         ``{file: why}`` for the staged rows not reused.
+    staged
+        ``{file: StagedRows}`` of every file read or resumed: the table copies their rows.
     workers
         The size of the thread pool the files were read with, ``min(planned, files to read)``
         (its capacity, not a count of the threads used; 1: in the calling thread).
@@ -79,6 +89,7 @@ class NewRows:
     failures: dict[str, tuple[str, ...]] = field(default_factory=dict)
     changed: list[str] = field(default_factory=list)
     discarded: dict[str, str] = field(default_factory=dict)
+    staged: dict[str, StagedRows] = field(default_factory=dict)
     workers: int = 1
     refused: ValidationIssue | None = None
 
@@ -99,6 +110,8 @@ class FileJob:
         The output folder (holding the staging folder).
     full
         A ``full`` run: no staged row is reused.
+    channel_ids
+        The table's channel IDs: each file's rows are staged with the table's header.
     """
 
     pre: Preflight
@@ -107,6 +120,7 @@ class FileJob:
     entries: Mapping[str, FileEntry]
     output: Path
     full: bool
+    channel_ids: tuple[str, ...] = ()
 
 
 def changed_during_check(job: FileJob) -> list[str]:
@@ -142,11 +156,11 @@ def new_rows(
 
     With one worker (the default) each file is resumed or read in turn in the calling
     thread. With more (issue #107), the staged rows are resumed first, then each file left
-    is read in a worker thread (:func:`_read_checked`: its read and its post-read checks
-    only), at most :func:`.workers.plan_workers` at once; this thread alone stages each
-    file's rows as soon as its worker returns, aggregates them in the order of ``to_read``
-    and calls ``progress``. A worker's exception stops the run: the files not yet read are
-    cancelled, and the rows already staged are resumed by the next run.
+    is read in a worker thread (:func:`_read_and_stage`: its read, its post-read checks and
+    the staging of its rows), at most :func:`.workers.plan_workers` at once; this thread
+    alone aggregates the results in the order of ``to_read`` and calls ``progress``. A
+    worker's exception stops the run: the files not yet read are cancelled, and the rows
+    already staged are resumed by the next run.
 
     Parameters
     ----------
@@ -179,7 +193,7 @@ def new_rows(
             if progress is not None:
                 progress(done, len(to_read), rel)
             if not _resumed(job, rel, keys[rel], staged.get(rel), found):
-                _take(job, keys[rel], _read_checked(job, rel), found)
+                _add(_read_and_stage(job, rel, keys[rel]), found)
     else:
         _read_in_workers(job, to_read, keys, staged, found, (workers, progress))
     if progress is not None:
@@ -203,6 +217,7 @@ def _resumed(job: FileJob, rel: str, key: dict, earlier: StagedFile | None, foun
         found.records.extend(earlier.records)
         found.narrow.extend(earlier.narrow)
         found.resumed.append(rel)
+        found.staged[rel] = earlier.rows
         return True
     found.discarded[rel] = _why_discarded(earlier.key, key, job.full, unchanged)
     discard_staged(job.output, rel)
@@ -244,11 +259,9 @@ def _read_in_workers(
     results: dict[str, FileRead] = {}
     pool = ThreadPoolExecutor(found.workers, thread_name_prefix="morphobricks-read")
     try:
-        futures = {pool.submit(_read_checked, job, rel): rel for rel in pending}
+        futures = {pool.submit(_read_and_stage, job, rel, keys[rel]): rel for rel in pending}
         for future in as_completed(futures):
             result = future.result()  # a worker's exception is raised here, in this thread
-            if result.status == READ:
-                stage_file(job.output, keys[result.relative_path], result.rows, result.ranges)
             results[result.relative_path] = result
             if progress is not None:
                 progress(done, total, result.relative_path)
@@ -279,6 +292,8 @@ class FileRead:
     failures
         When failed: each plane and channel that could not be measured, with the cause, or
         the file and the cause when it could not be read plane by plane.
+    staged
+        When read and staged: where its rows were staged.
     """
 
     relative_path: str
@@ -286,6 +301,21 @@ class FileRead:
     rows: tuple[PlaneRecord, ...] = ()
     ranges: tuple[NarrowRange, ...] = ()
     failures: tuple[str, ...] = ()
+    staged: StagedRows | None = None
+
+
+def _read_and_stage(job: FileJob, rel: str, key: dict) -> FileRead:
+    """Read one file, then stage its rows when it was read (a worker's job, D7).
+
+    The staging writes only the file's own two files in the staging folder (:func:`.staging.
+    stage_file`), so workers stage at once; an exception while staging stops the run as it
+    did in the calling thread.
+    """
+    result = _read_checked(job, rel)
+    if result.status != READ:
+        return result
+    rows = (list(result.rows), list(result.ranges))
+    return replace(result, staged=stage_file(job.output, key, rows, job.channel_ids))
 
 
 def _read_checked(job: FileJob, rel: str) -> FileRead:
@@ -329,14 +359,8 @@ def _read_between_fingerprints(job: FileJob, rel: str) -> FileRead:
         and current_content(root / rel) != job.entries[rel].content_sha256
     ):
         return FileRead(rel, CHANGED)
-    return FileRead(rel, READ, tuple(rows), tuple(ranges))
-
-
-def _take(job: FileJob, key: dict, result: FileRead, found: NewRows) -> None:
-    """Stage a file's rows when it was read, and add what happened to ``found``."""
-    if result.status == READ:
-        stage_file(job.output, key, list(result.rows), list(result.ranges))
-    _add(result, found)
+    # In table order, so that the staged rows are the table's rows (:mod:`.table`).
+    return FileRead(rel, READ, tuple(sorted(rows, key=_row_order)), tuple(ranges))
 
 
 def _add(result: FileRead, found: NewRows) -> None:
@@ -351,6 +375,8 @@ def _add(result: FileRead, found: NewRows) -> None:
         found.records.extend(result.rows)
         found.narrow.extend(result.ranges)
         found.read.append(rel)
+        if result.staged is not None:
+            found.staged[rel] = result.staged
 
 
 def changed_since(entries: Mapping[str, FileEntry], root: Path) -> list[str]:

@@ -1,15 +1,15 @@
 """Image-level workers: one image per worker thread, outputs as with one (issue #107).
 
 A run given ``RunMode(workers=N)`` or ``workers="auto"`` reads each image in a worker thread
-that only reads it and checks it after the read; the calling thread alone resumes, stages,
-aggregates, checks and publishes. The outputs are byte for byte those of the serial run, and
-the failure rules are the serial ones.
+that reads it, checks it after the read and stages its rows (D7); the calling thread alone
+resumes, aggregates, checks and publishes. The outputs are byte for byte those of the serial
+run, and the failure rules are the serial ones.
 
 Byte identity is compared on the raw bytes of every file a run leaves, the manifest included.
 ``written_at`` is the only field of any output excluded from byte identity (owner decision of
 16 November 2026, contract §9): the run's clock is fixed (:func:`worker_bytes.fixed_clock`),
 so the manifest's bytes are compared as they are, never parsed with the field deleted. The Spec
-fixtures ``v05`` and ``v09`` are compared in ``test_run_workers_bytes.py``.
+fixtures are compared in ``test_run_workers_bytes.py``.
 """
 
 import json
@@ -165,20 +165,21 @@ def test_tiff_and_ome_zarr_read_whole_and_in_blocks_give_the_serial_outputs(tmp_
 # The calling thread owns the run ---------------------------------------------------------------
 
 
-def test_workers_only_read_and_progress_is_reported_in_the_calling_thread(
+def test_workers_read_and_stage_and_progress_is_reported_in_the_calling_thread(
     tmp_path, experiment, monkeypatch
 ):
-    read, readers, calls = run_module.resume._read_file, set(), []
+    """Each image is staged by the worker that read it (D7); the calling thread reports."""
+    read, readers, calls = run_module.resume._read_file, {}, []
     stage = run_module.resume.stage_file
-    stagers = set()
+    stagers = {}
 
     def recording_read(path, rel, *args):
-        readers.add(threading.current_thread())
+        readers[rel] = threading.current_thread()
         return read(path, rel, *args)
 
-    def recording_stage(*args):
-        stagers.add(threading.current_thread())
-        return stage(*args)
+    def recording_stage(output, key, rows, *args):
+        stagers[rows[0][0].source_relative_path] = threading.current_thread()
+        return stage(output, key, rows, *args)
 
     def progress(done, total, rel):
         calls.append((threading.current_thread(), done, total, rel))
@@ -189,7 +190,7 @@ def test_workers_only_read_and_progress_is_reported_in_the_calling_thread(
     result = run_described(experiment, TYX, output_folder=out, mode=mode(4), progress=progress)
     assert result.written and result.workers == 4
     main = threading.main_thread()
-    assert main not in readers and stagers == {main}
+    assert main not in readers.values() and stagers == readers and sorted(readers) == IMAGES
     assert {thread for thread, *_ in calls} == {main}
     assert [done for _, done, _, _ in calls] == list(range(len(IMAGES) + 1))
     assert sorted(rel for *_, rel in calls[:-1]) == IMAGES and calls[-1][3] == ""
@@ -276,7 +277,7 @@ def test_a_worker_exception_publishes_nothing_and_the_next_run_resumes(
 
     def failing(path, rel, *args):
         if rel == IMAGES[0]:
-            # Fail once the calling thread has staged every other image.
+            # Fail once the other workers have staged every other image.
             deadline = time.monotonic() + 30
             while len(list((out / STAGING_FOLDER).glob("*.json"))) < len(IMAGES) - 1:
                 assert time.monotonic() < deadline

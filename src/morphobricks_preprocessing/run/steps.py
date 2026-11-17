@@ -33,6 +33,7 @@ from .recorded import ResolvedInputs
 from .resume import FileJob, changed_during_check, new_rows
 from .reuse import _load_previous
 from .rows import _bin_count
+from .staging import StagedRows
 from .workers import Workers
 
 GLOBAL_CHANNEL_CODES = frozenset({"channel_names_differ", "different_channel_counts"})
@@ -192,6 +193,8 @@ class Rows:
         The files that changed while the run checked or read them (issue #90).
     discarded
         ``{file: why}`` for the staged rows not reused.
+    staged
+        ``{file: StagedRows}`` of the files read or resumed (:attr:`.resume.NewRows.staged`).
     workers
         The size of the thread pool the files were read with (issue #107; its capacity, not a
         count of the threads used; operational only).
@@ -210,6 +213,7 @@ class Rows:
     resumed: tuple[str, ...] = ()
     changed: tuple[str, ...] = ()
     discarded: Mapping[str, str] = field(default_factory=dict)
+    staged: Mapping[str, StagedRows] = field(default_factory=dict)
     workers: int = 1
     refused: ValidationIssue | None = None
 
@@ -263,7 +267,7 @@ def compute_rows(
         records.extend(earlier[rel])
         # Kept rows keep the range checks they were written with.
         narrow.extend(entry for entry in previous[0].narrow_ranges if entry.relative_path == rel)
-    job = FileJob(pre, review, settings, entries, output, mode == FULL)
+    job = FileJob(pre, review, settings, entries, output, mode == FULL, checked.channel_ids)
     changed = changed_during_check(job)
     to_read = [
         rel
@@ -287,6 +291,7 @@ def compute_rows(
         resumed=tuple(new.resumed),
         changed=tuple(sorted({*changed, *new.changed})),
         discarded=dict(sorted(new.discarded.items())),
+        staged=new.staged,
         workers=new.workers,
         refused=new.refused,
     )

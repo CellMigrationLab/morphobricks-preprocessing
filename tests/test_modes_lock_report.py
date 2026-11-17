@@ -256,7 +256,7 @@ def test_the_lock_is_released_when_a_run_fails(experiment, monkeypatch):
     def broken(*args, **kwargs):
         raise OSError("simulated")
 
-    monkeypatch.setattr(run_module.pipeline, "write_plane_histograms", broken)
+    monkeypatch.setattr(run_module.pipeline, "write_table", broken)
     with pytest.raises(OSError, match="simulated"):
         run_described(experiment, TYX)
     assert read_lock(default_output_folder(experiment)) is None

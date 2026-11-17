@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Literal
 
 from morphobricks_normalization.checks import IntensityCheckSettings
-from morphobricks_normalization.csv_io import OUTPUT_FILENAME, write_plane_histograms
+from morphobricks_normalization.csv_io import OUTPUT_FILENAME
 from morphobricks_normalization.ranges import HistogramSettings
 
 from ..axes import AxisMapping
@@ -86,6 +86,7 @@ from .reuse import read_previous, recorded_experiment_root
 from .rows import _pixel_issues, _range_issues, _row_order
 from .staging import clear_staging
 from .steps import Checked, Rows, compute_rows, counts, header_checks, outcome_of, unreadable_issue
+from .table import write_table
 from .workers import Workers
 
 logger = logging.getLogger(__name__)
@@ -502,7 +503,8 @@ def _write_generation(
     masks, intensity = checks
     described = run.description
     per_file = Counter(record.source_relative_path for record in records)
-    csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME, channel_ids=ids)
+    # The staged rows copied file after file (D7): the bytes of write_plane_histograms.
+    _, csv_sha256 = write_table(records, staged / OUTPUT_FILENAME, ids, rows.staged)
     design_sha256 = None
     if design is not None:
         design_sha256 = file_sha256(write_experiment_design(design, staged / DESIGN_FILENAME))
@@ -514,7 +516,7 @@ def _write_generation(
         files=tuple(
             replace(entry, plane_count=per_file[rel]) for rel, entry in sorted(rows.entries.items())
         ),
-        csv_sha256=file_sha256(csv_path),
+        csv_sha256=csv_sha256,
         versions=package_versions(),
         written_at=datetime.now(UTC).isoformat(timespec="seconds"),
         experiment_design_sha256=design_sha256,

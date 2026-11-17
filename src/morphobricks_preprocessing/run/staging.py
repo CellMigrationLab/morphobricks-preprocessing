@@ -1,9 +1,11 @@
 """Per-file staging of a run's rows, so an interrupted run resumes (design v0.4 §1).
 
 As soon as a run has read one file, its rows are staged in the output folder's staging
-folder ``.staging``: the rows as a small ``plane_histograms.csv`` written with the
-normalization brick's writer (the same writer and reader as the table, so a resumed row is
-the row the run would compute), then a JSON record naming the file, its row key
+folder ``.staging`` (by the worker that read it, D7): the rows, in table order, as a small
+``plane_histograms.csv`` written with the normalization brick's writer and the table's
+channel IDs (the same writer, header and reader as the table, so a resumed row is the row the
+run would compute, and the table is these files' rows put one after the other:
+:mod:`.table`), then a JSON record naming the file, its row key
 (:class:`.fingerprint.RowKey`: fingerprint, labels, axes, roles, ``axes_from``, read path,
 bins and histogram settings, and in a ``verify_content`` run the content SHA-256), the
 pixel type, the table's schema version, the versions of the two packages that compute
@@ -49,6 +51,25 @@ _ROW_PACKAGES = ("morphobricks-preprocessing", "morphobricks-normalization")
 
 
 @dataclass(frozen=True)
+class StagedRows:
+    """Where one file's staged rows are, as they were staged (D7: the table copies them).
+
+    Attributes
+    ----------
+    path
+        The staged rows file (a ``plane_histograms.csv`` of the file's rows only).
+    sha256
+        Its SHA-256 when it was staged (or verified, when resumed).
+    plane_ids
+        Its rows' ``plane_id``, in the order of the file.
+    """
+
+    path: Path
+    sha256: str
+    plane_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class StagedFile:
     """One file's staged rows.
 
@@ -62,12 +83,15 @@ class StagedFile:
         Its rows, one per XYC plane.
     narrow
         Its channel planes whose range check found the central range too narrow.
+    rows
+        Its rows file, as checked when it was read back.
     """
 
     relative_path: str
     key: dict
     records: tuple[PlaneRecord, ...]
     narrow: tuple[NarrowRange, ...]
+    rows: StagedRows
 
 
 def staging_key(key: RowKey, dtype: str) -> dict:
@@ -102,10 +126,12 @@ def staging_key(key: RowKey, dtype: str) -> dict:
 def stage_file(
     output: Path,
     key: dict,
-    records: list[PlaneRecord],
-    narrow: list[NarrowRange],
-) -> None:
+    rows: tuple[list[PlaneRecord], list[NarrowRange]],
+    channel_ids: tuple[str, ...],
+) -> StagedRows:
     """Stage one file's rows: its rows file first, then the record naming them.
+
+    Safe in a worker thread: each file has its own two files in the staging folder.
 
     Parameters
     ----------
@@ -113,24 +139,33 @@ def stage_file(
         The output folder (its lock held).
     key
         :func:`staging_key` of the file as it was read.
-    records, narrow
-        Its rows and its narrow-range checks.
+    rows
+        Its rows, in the order to write (the table's), and its narrow-range checks.
+    channel_ids
+        The table's channel IDs (the run's): the rows file has the table's header, so its
+        rows are the table's rows byte for byte (:mod:`.table`).
+
+    Returns
+    -------
+    StagedRows
+        The rows file, its SHA-256 and its rows' plane IDs in order.
     """
+    records, narrow = rows
     folder = output / STAGING_FOLDER
     folder.mkdir(exist_ok=True)
     relative = records[0].source_relative_path
     stem = _stem(relative)
-    # The file's own channel IDs: a staged file is read back on its own, never merged as bytes.
-    ids = sorted({channel for record in records for channel in record.channels})
-    rows = write_plane_histograms(records, folder / f"{stem}.csv", channel_ids=ids)
+    path = write_plane_histograms(records, folder / f"{stem}.csv", channel_ids=channel_ids)
+    staged = StagedRows(path, file_sha256(path), tuple(record.plane_id for record in records))
     record = {
         "staging_version": STAGING_VERSION,
         "relative_path": relative,
         "key": key,
-        "rows_sha256": file_sha256(rows),
+        "rows_sha256": staged.sha256,
         "narrow_histogram_ranges": [entry.to_dict() for entry in narrow],
     }
     write_text_atomic(folder / f"{stem}.json", json.dumps(record, sort_keys=True) + "\n")
+    return staged
 
 
 def load_staged(output: Path) -> tuple[dict[str, StagedFile], dict[str, str]]:
@@ -224,7 +259,8 @@ def _read_staged(path: Path) -> StagedFile:
     if not records or any(r.source_relative_path != relative for r in records):
         raise ValueError("its rows are not the file's")
     narrow = tuple(NarrowRange.from_dict(e) for e in data["narrow_histogram_ranges"])
-    return StagedFile(relative, dict(data["key"]), records, narrow)
+    staged = StagedRows(rows, data["rows_sha256"], tuple(r.plane_id for r in records))
+    return StagedFile(relative, dict(data["key"]), records, narrow, staged)
 
 
 def _staged_name(record: Path) -> str:
