@@ -17,6 +17,7 @@ import tifffile
 
 from described_tree import run_described
 from description_tree import MAPPING, two_unnamed_units, unit_folder, write_fluorophores
+from morphobricks_preprocessing import run_experiment
 from morphobricks_preprocessing.description import description_from_bytes
 from spec_pin import fixtures
 
@@ -123,6 +124,31 @@ def test_p26_outer_whitespace_needs_its_own_confirmed_alias_v31(tmp_path):
 def test_p26_names_are_compared_after_nfc_of_both_sides(tmp_path, header):
     root, out = _setup(tmp_path, "v31", {"*": ["DAPI", f"{header} 488"]})
     assert _run(root, out).written  # the fixture's alias is decomposed, the header either form
+
+
+def test_p01_a_fov_with_another_channel_order_is_named_with_its_path_and_c_index(tmp_path):
+    """Issue #326: the run's R_UNIT_NOT_HOMOGENEOUS message names the image, path and C index."""
+    root, out = _setup(tmp_path, "v11", {"*": ["DAPI", "ACTIN"]}, images=3)
+    path = "CTRL/rep1/acquisition_1/img2.ome.tif"
+    _image(root / path, ["ACTIN", "DAPI"])
+    result = run_experiment(root, MAPPING, output_folder=out)
+    assert not result.written
+    assert _codes(result) == [HOMOGENEOUS, HOMOGENEOUS]  # one per C index, nothing else
+    assert {i.paths for i in result.issues} == {(path,)}
+    messages = sorted(i.message for i in result.issues)
+    for message, c_text in zip(
+        messages,
+        (
+            "at C0: header name 'ACTIN', the unit has 'DAPI'",
+            "at C1: header name 'DAPI', the unit has 'ACTIN'",
+        ),
+        strict=True,
+    ):
+        assert f"image '{path}'" in message
+        assert "img2" in message
+        assert "acquisition folder 'acquisition_1'" in message
+        assert c_text in message
+    assert not (out / "plane_histograms.csv").exists()
 
 
 def test_p26_the_check_is_by_c_index_a_name_of_another_channel_is_refused(tmp_path):

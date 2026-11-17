@@ -120,6 +120,13 @@ v0.5.1: no run before v0.5.1 is read.)
   of tags) and checks the draft byte-equal to the strict page's at every untick. The page and
   the user guide are unchanged.
 
+- **`R_UNIT_NOT_HOMOGENEOUS` names the C index and the image** (#326, Spec conformance P01). A
+  header name that differs inside one acquisition is reported "at C0: header name 'ACTIN', the
+  unit has 'DAPI'", not without its C index, and every physical `R_*` message about one image
+  (`R_UNIT_NOT_HOMOGENEOUS`, `R_CHANNEL_COUNT_MISMATCH`, `R_HEADER_CONTRADICTION`,
+  `R_IMAGE_TYPE_CONTRADICTS_HEADER`, `R_RGB_OVERRIDE_NOT_THREE_SAMPLES`) now also names that
+  image by its relative path after the acquisition. The codes, the `paths` and the order of the
+  issues do not change.
 - **`unreadable_planes` names the plane and the channel** (Spec ADR 0003 HV3). A channel that
   cannot be measured still fails the whole `plane_histograms.csv`, as before; the error, and so
   the run report, now names every failed plane, `<image>, plane t=1, c=1 (channel GFP):
