@@ -71,7 +71,8 @@ def _what(issue: PhysicalIssue) -> str:
             "colour samples per pixel"
         ),
     }
-    return f"{reasons[issue.code]} in {where}: {issue.detail}."
+    image = "" if issue.path is None else f", image {issue.path!r}"
+    return f"{reasons[issue.code]} in {where}{image}: {issue.detail}."
 
 
 def physical_issue(issue: PhysicalIssue) -> ValidationIssue:

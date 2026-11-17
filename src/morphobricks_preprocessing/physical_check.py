@@ -259,7 +259,7 @@ def _differences(reference: Layout, other: Layout) -> list[tuple[int | None, str
         ours = reference.names[index] if index < len(reference.names) else None
         theirs = other.names[index] if index < len(other.names) else None
         if _name(ours) != _name(theirs):
-            out.append((index, f"header name {theirs!r}, the unit has {ours!r}"))
+            out.append((index, f"at C{index}: header name {theirs!r}, the unit has {ours!r}"))
     return out
 
 
