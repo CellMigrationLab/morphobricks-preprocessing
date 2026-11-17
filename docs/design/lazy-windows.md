@@ -167,9 +167,11 @@ numcodecs 0.16).
   lock the copy held every other thread back). Neither the piece nor its storage can be made writable
   (`setflags(write=True)` raises), and the decoder's own array is not the cached one. Windows are
   new arrays, so changing a window changes no cached piece. Tests cover all three points. The
-  cost is one copy per kept piece, inside the cache's budget: the measured grid below went from
-  1.90/1.99 s to 2.09/2.11 s with 1 thread and from 1.52/1.66 s to 1.96/1.77 s with 4 threads, on
-  a shared machine, with identical window digests. A piece that is not kept (too large, or
+  cost is one copy per kept piece, inside the cache's budget. Made under the lock (first version
+  of this PR), it slowed the grid below from 1.90/1.99 s to 2.09/2.11 s with 1 thread and from
+  1.52/1.66 s to 1.96/1.77 s with 4 threads; made outside it, the grid takes 2.04/1.77 s with 1
+  thread, 1.36/1.41 s with 2 and 1.06/1.06 s with 4, on a shared machine, with identical window
+  digests. A piece that is not kept (too large, or
   dropped by a close) but handed to the threads that waited for it is frozen the same way.
 - **Per process** (F6). A cache belongs to the reader, and the reader belongs to the process that
   opened it (`WindowReader.cache`). Nothing is shared between processes or between bricks: a
