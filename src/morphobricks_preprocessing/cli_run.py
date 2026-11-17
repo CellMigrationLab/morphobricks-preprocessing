@@ -337,8 +337,10 @@ def _run_settings(run: argparse.ArgumentParser) -> None:
         "--max-ram",
         type=parse_size,
         metavar="SIZE",
-        help="with --workers auto: memory the run may use, e.g. 8GiB (an image that does not "
-        "fit stops the run before any pixel is read)",
+        help="memory the run may use, e.g. 8GiB, with any --workers: auto reads as many images "
+        "at once as fit; a number of workers that does not fit, or an image that does not, "
+        "stops the run before any pixel is read (never fewer workers for you). "
+        "Without it: no memory budget",
     )
     checks = run.add_argument_group(
         "intensity checks", "limits of the warnings printed after the run; the defaults suit most"
@@ -366,9 +368,6 @@ _INTENSITY_HELP = {
 
 def run_command(args: argparse.Namespace) -> int:
     """Run pass 2 with the command's options, print what it did and return the status."""
-    if args.max_ram is not None and args.workers != "auto":
-        print("--max-ram is used only with --workers auto.")
-        return 1
     if not use_recorded_experiment(args):
         return 1
     refusal = description_refusal(args)

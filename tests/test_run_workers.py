@@ -417,8 +417,6 @@ def test_the_estimate_is_the_header_working_memory_not_the_file_size(experiment)
         (1.5, None),
         ("4", None),
         ("all", None),
-        (2, 2**30),
-        (1, 2**30),
         ("auto", 0),
         ("auto", True),
         ("auto", 1.5),
@@ -468,11 +466,16 @@ def test_the_command_line_reads_with_workers(tmp_path, experiment, capsys):
     assert published(auto) == published(serial)
 
 
-def test_the_command_line_refuses_max_ram_without_auto(tmp_path, experiment, capsys):
+def test_the_command_line_takes_max_ram_without_auto(tmp_path, experiment, capsys):
+    # One worker within a budget (B1): planned from the headers, read in the calling thread.
     argv = ["run", experiment, "--axes", "TYX", "--output", tmp_path / "out", "--max-ram", "1GiB"]
-    assert main_described(argv) == 1
-    assert "--max-ram is used only with --workers auto" in capsys.readouterr().out
-    assert not (tmp_path / "out" / "plane_histograms.csv").exists()
+    assert main_described(argv) == 0
+    assert (tmp_path / "out" / "plane_histograms.csv").exists()
+    tight = ["run", experiment, "--axes", "TYX", "--output", tmp_path / "tight"]
+    assert main_described([*tight, "--max-ram", "256MiB"]) == 1  # the run's reserve alone
+    printed = capsys.readouterr().out
+    assert "need more working memory to read than max_ram allows" in printed
+    assert not (tmp_path / "tight" / "plane_histograms.csv").exists()
 
 
 @pytest.mark.parametrize("text", ["0", "-2", "1.5", "two", ""])

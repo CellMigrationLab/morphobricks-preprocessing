@@ -6,6 +6,28 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+### Fixed
+
+- **`max_ram` is a memory budget for every number of workers, refused before any pixel is
+  read** (B1, review of draft PR #340). At v0.7.0 `run.workers.plan_workers` returned a whole
+  number of workers as given even with `max_ram`: only `"auto"` was planned from the image
+  headers. `RunMode` and the CLI refused `max_ram` without `"auto"` (`ValueError`, "--max-ram
+  is used only with --workers auto"), so no over-budget run went through silently, but a
+  budget could not be given to an explicit count at all and the planner did not enforce one.
+  Now `RunMode(workers=N, max_ram=...)` and `run --workers N --max-ram SIZE` are allowed for
+  any `N` (1 included) and are planned from the headers: when `256 MiB + min(N, images to
+  read) × largest image's estimate` is over `max_ram`, the run stops before any pixel is read
+  with the new error `workers_over_max_ram`, naming the memory needed, the most workers that
+  fit and the `max_ram` that would do. The number given is never lowered for the user. An
+  image that alone does not fit is still `image_over_max_ram`, and `"auto"` still reads as
+  many images at once as fit. With `workers=1` and `max_ram`, the images are planned first
+  and then read one after another in the calling thread, as without it. `max_ram=None` (the
+  default; CLI without `--max-ram`) is no budget at all: nothing is estimated or refused for
+  memory. The notebook passes its **Memory cap** with Auto only, as before (with 1, 2, 4 or 8
+  it gives no budget). No output changes.
+
 ## v0.7.0 (17 November 2026)
 
 A minor release (semantic versioning before 1.0, `docs/development.md`): new public API and a
