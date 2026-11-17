@@ -28,6 +28,12 @@ v0.5.1: no run before v0.5.1 is read.)
   memory. The notebook passes its **Memory cap** with Auto only, as before (with 1, 2, 4 or 8
   it gives no budget). No output changes.
 
+### Changed
+
+- **Byte parity on every valid Spec fixture** (test infrastructure from #340): every valid
+  fixture's tree, with all its masks, run with 1, 2, 4 and `auto` workers under the fixed
+  clock gives the same bytes in every file, and the table is the normalization writer's bytes.
+
 ## v0.7.0 (17 November 2026)
 
 A minor release (semantic versioning before 1.0, `docs/development.md`): new public API and a
