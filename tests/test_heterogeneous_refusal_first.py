@@ -1,11 +1,13 @@
-"""With several layouts the layout refusal comes first and the axis advice follows (issue #245).
+"""With units of different image types the run reports the layout refusal alone (#245, #321).
 
 The Spec refuses an RGB unit next to a fluorescence unit (``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``,
-fixture v29). The axis review's ``inconsistent_mapping`` is a consequence of the layouts, so its
-advice to export the images the same way must not lead. Nothing refused before is accepted: the
-codes of the refusals are exactly those of before.
+fixture v29), decided from the description "before any image is read" (Spec PR #49, P04(b)).
+The run's checks end there (issue #321): no header check runs after it, so the axis review's
+``inconsistent_mapping`` (a consequence of the layouts, issue #245) no longer follows it. Nothing
+refused before is accepted: the run still stops and writes no table.
 """
 
+import json
 from itertools import combinations
 
 import pytest
@@ -16,9 +18,11 @@ from morphobricks_preprocessing import prefill_mapping, preflight
 from morphobricks_preprocessing.axis_review import review_axes
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_candidate import check_candidate
+from morphobricks_preprocessing.discovery_report import REPORT_FILENAME
 from morphobricks_preprocessing.image_consistency import arrangement_issues
 from morphobricks_preprocessing.notebook_check_view import checks_html
 from morphobricks_preprocessing.unit_consistency import unit_checked
+from run_files import only_the_report
 from test_described_unit_checks import (
     LAYOUT,
     VALID,
@@ -29,23 +33,24 @@ from test_described_unit_checks import (
 from test_metadata import meta
 
 
-def test_the_layout_refusal_comes_first_in_the_run(tmp_path):
+def test_v29_reports_exactly_the_layout_refusal(tmp_path):
+    # Issue #321: on old code an inconsistent_mapping error from the header checks followed it.
     root, out = mixed_experiment(tmp_path)
     publish(out)
     result = run_described(root, prefill_mapping("CYX"), output_folder=out)
     assert not result.written
-    assert [i.code for i in result.issues][0] == LAYOUT
-    assert {i.code for i in result.issues} == {LAYOUT, "inconsistent_mapping"}
+    assert [i.code for i in result.issues] == [LAYOUT]
+    report = json.loads((out / REPORT_FILENAME).read_text(encoding="utf-8"))
+    assert report["status"] == "stopped"
+    assert [i["code"] for i in report["issues"]] == [LAYOUT]
+    assert only_the_report(out)
 
 
-def test_the_axis_issue_stays_an_error_without_the_advice_to_export_again(tmp_path):
+def test_v29_reports_exactly_the_layout_refusal_without_axis_roles(tmp_path):
     root, out = mixed_experiment(tmp_path)
     publish(out)
-    result = run_described(root, prefill_mapping("CYX"), output_folder=out)
-    (axis,) = [i for i in result.issues if i.code == "inconsistent_mapping"]
-    assert axis.is_error
-    assert "Export the images again" not in axis.action
-    assert LAYOUT in axis.action and "one image type per experiment" in axis.action
+    result = run_described(root, None, output_folder=out)
+    assert [i.code for i in result.issues] == [LAYOUT]  # not axes_not_confirmed either
 
 
 def test_a_run_of_one_layout_keeps_the_advice_of_the_axis_review(tmp_path):

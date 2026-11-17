@@ -107,7 +107,9 @@ def test_a_unit_mixed_inside_itself_is_refused_in_a_described_run(tmp_path):
     _mix_inside_unit(root)
     result = run_described(root, MAPPING, output_folder=out)
     assert not result.written
-    assert {"mixed_dtypes", LAYOUT} <= codes(result.issues)
+    # The layouts are refused alone, before any header check (issue #321); the unit's own
+    # mixture is still found by the folder check once the layouts are one image type.
+    assert codes(result.issues) == {LAYOUT}
     pre = unit_checked(preflight(root, out))
     assert not pre.ok
     (issue,) = [i for i in pre.issues if i.code == "mixed_dtypes"]
