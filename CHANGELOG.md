@@ -30,6 +30,18 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Changed
 
+- **`tools/benchmark_run_workers.py` follows a stated protocol** (review items F1 to F3 of
+  draft PR #340; its docstring and `docs/development.md` *Benchmarks*). The configurations of
+  each round run in a counterbalanced, seeded order (`--order balanced`, the default: every
+  configuration once in every position per block of rounds; `shuffled`, `fixed`), recorded
+  per round with the seed. An acceptance run has at least 10 rounds (the default; fewer is
+  refused) and `--quick` is the smoke mode (3 rounds), named in the report. Every run's peak
+  RSS is kept and each configuration reports its distribution (min, median, max, every value)
+  and the report the largest of all. Each run's output digests are printed as it finishes
+  and kept in the report, and the speed-up is paired with the serial run of the same round.
+  `--cpus LIST` pins the runs with `taskset -c` where it exists, and the load average is
+  recorded before and after every run. `--phases` (from #340) times the calling thread's
+  steps of a run. `--max-ram-mib` now applies to any worker count.
 - **Byte parity on every valid Spec fixture** (test infrastructure from #340): every valid
   fixture's tree, with all its masks, run with 1, 2, 4 and `auto` workers under the fixed
   clock gives the same bytes in every file, and the table is the normalization writer's bytes.
