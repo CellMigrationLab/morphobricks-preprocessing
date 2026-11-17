@@ -40,6 +40,7 @@ from .notebook_mask_conversion import MaskConversionCard
 from .notebook_output import _LockCard
 from .notebook_progress import Wait
 from .notebook_render import issues_html
+from .notebook_tissue_mask import TissueMaskCard
 from .run import MaskStep, MaskStepResult, RecordedMasks, mask_step
 from .validation import has_errors, plural
 
@@ -104,6 +105,7 @@ class _MaskStepCard:
         )
         self.mask_step_button.on_click(lambda _: self._on_describe_masks())
         self.mask_conversion = MaskConversionCard()  # Spec ADR 0005 BM12, under this card
+        self.tissue_mask = TissueMaskCard()  # Spec ADR 0005 BM15, beside Convert a mask
 
     def _refresh_mask_step(self) -> None:
         """Offer the step when the output folder's run recorded masks; clear it for another."""
@@ -111,6 +113,8 @@ class _MaskStepCard:
         ui.set_visible(self.mask_conversion.card, self._show_output)
         output = self._mask_step_output()
         self.mask_conversion.refresh(output)
+        self.tissue_mask.refresh(output)
+        ui.set_visible(self.tissue_mask.card, self._show_output and self.tissue_mask.has_rgb)
         manifest = None if output is None else current_fingerprint(output / MANIFEST_FILENAME)
         if self._mask_step_seen == (output, manifest):
             return

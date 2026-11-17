@@ -1,13 +1,15 @@
-"""The mask conversion helpers' lineage: records, digests, publication (Spec ADR 0005 BM12).
+"""The mask helpers' lineage: records, digests, publication (Spec ADR 0005 BM12, BM15).
 
 Every mask file written by ``RunInputs.binary_to_instances`` or ``RunInputs.classes_to_binary``
 (:mod:`.mask_conversion`) has one line in ``mask_lineage.jsonl`` in its mask-type folder of the
 masks folder. A line holds exactly the keys of :data:`LINE_KEYS`, in that order; its ``source``
 and ``output`` hold :data:`FILE_KEYS`, with ``root`` always ``"masks"`` (paths relative to the
-masks folder, with ``/``). :func:`content_sha256` is the digest of a canonical header (sorted-key
-compact JSON of ``axes``, ``dtype`` and ``shape``, then one newline byte) followed by the pixel
-bytes in stored axis order, C order and little-endian dtype: never the file's bytes and never
-the run's fingerprint.
+masks folder, with ``/``). A derived region mask (``RunInputs.he_tissue_mask``, BM15) has a line
+of its own schema in the same file (:mod:`.lineage_schema`): the reader selects the schema by
+``operation`` and refuses a key repeated in one object. :func:`content_sha256` is the digest of
+a canonical header (sorted-key compact JSON of ``axes``, ``dtype`` and ``shape``, then one
+newline byte) followed by the pixel bytes in stored axis order, C order and little-endian dtype:
+never the file's bytes and never the run's fingerprint.
 
 :func:`publish_output` publishes an output file and its line in three steps; the publication is
 reader-consistent with rollback, not atomic: (1) the pixels go to a temporary file in the target
@@ -35,11 +37,18 @@ import numpy as np
 import tifffile
 
 from ._io import give_output_mode, write_text_atomic
+from .lineage_schema import (
+    BM12_OPERATIONS,
+    BM15_OPERATIONS,
+    FILE_KEYS,
+    LINEAGE_ROOT,
+    DuplicateKeyError,
+    check_bm15,
+    parse_line,
+)
 
 LINEAGE_FILENAME = "mask_lineage.jsonl"
 """The lineage file of one mask-type folder: one JSON line per output file."""
-LINEAGE_ROOT = "masks"
-"""The only ``root`` of this version: the run's standalone masks folder."""
 TEMP_SUFFIX = ".conversion.tmp"
 """The ending of the helpers' temporary files (their names also start with a dot)."""
 LINE_KEYS = (
@@ -51,7 +60,6 @@ LINE_KEYS = (
     "helper",
     "helper_version",
 )
-FILE_KEYS = ("root", "mask_id", "path", "axes", "shape", "dtype", "content_sha256")
 
 
 @dataclass(frozen=True)
@@ -132,12 +140,17 @@ def line_text(record: Mapping[str, object]) -> str:
 def read_lineage(folder: Path) -> tuple[LineageLine, ...]:
     """Return every line of a mask-type folder's lineage file, pending ones included.
 
+    The schema is selected by the line's ``operation`` (:mod:`.lineage_schema`): BM12's two
+    operations select :data:`LINE_KEYS`, a BM15 rule operation selects
+    :data:`.lineage_schema.BM15_LINE_KEYS` (:func:`.lineage_schema.check_bm15`).
+
     Raises
     ------
     ValueError
-        For a line that is not a lineage record (other keys, another key order), or whose
-        ``source`` or ``output`` has a ``root`` other than ``"masks"``: it is named, never
-        skipped.
+        For a line that is not a lineage record (other keys, another key order, an operation of
+        neither schema), that repeats a key in one object, or whose ``source`` or ``output`` has
+        a ``root`` the schema does not allow (``"masks"``; ``"experiment"`` for a BM15
+        ``source`` only): it is named, never skipped.
     """
     path = Path(folder) / LINEAGE_FILENAME
     if not path.is_file():
@@ -146,10 +159,21 @@ def read_lineage(folder: Path) -> tuple[LineageLine, ...]:
     texts = path.read_text(encoding="utf-8").splitlines(keepends=True)
     for number, text in enumerate(texts, start=1):
         try:
-            record = json.loads(text)
+            record = parse_line(text)
+        except DuplicateKeyError as exc:
+            raise ValueError(f"{path} line {number} is refused: {exc}") from None
         except ValueError:
             record = None
-        if not isinstance(record, dict) or tuple(record) != LINE_KEYS:
+        operation = record.get("operation") if isinstance(record, dict) else None
+        if isinstance(operation, str) and operation in BM15_OPERATIONS:
+            check_bm15(record, f"{path} line {number}")
+            lines.append(LineageLine(text, record))
+            continue
+        if (
+            not isinstance(record, dict)
+            or tuple(record) != LINE_KEYS
+            or operation not in BM12_OPERATIONS
+        ):
             raise ValueError(f"{path} line {number} is not a mask lineage record")
         for side in ("source", "output"):
             item = record[side]

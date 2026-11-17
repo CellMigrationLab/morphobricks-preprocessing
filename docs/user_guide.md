@@ -897,6 +897,52 @@ Then, as the command prints: declare each new mask (its source type is its ID; `
 use it like any mask. In the notebook, the card **Convert a mask (optional)** under **Describe the
 masks** does the same.
 
+### An H&E tissue mask (optional)
+
+For H&E images (a unit declared `image_type = "rgb"`), `tissue-mask` writes a **new** region mask
+that leaves out nuclei, red blood cells and empty space, so that a brick such as fiberfeatures
+measures the tissue between them. It needs the `he-mask` extra:
+
+```bash
+pip install "morphobricks-preprocessing[he-mask]"
+morphobricks-preprocessing tissue-mask --output /data/exp1_MorphoBricks_Preprocessing --to HETissue
+```
+
+- It is a **fixed rule**, `he_tissue_v1`, and it is **provisional**: its numbers are not frozen
+  until an acceptance report is accepted. It is not a trained segmentation. Its colour maths is
+  the normalization brick's (the eosin and hematoxylin maps of the `he_eosin` preset and the
+  optical density per channel), and all its sizes are **in pixels**: the same rule on images of
+  another magnification leaves out pieces of another physical size. Look at the preview (in the
+  notebook) or the printed "kept" share before you use it.
+- `--image PATH` (repeatable) writes only those images; by default every image of a unit
+  declared rgb. Images with depth slices or time points, not 8-bit or not three channels are
+  refused.
+- The files go to `<NEW_ID>/<the image's folders>/<image name>.tif` (1 = kept, 0 = left out) next
+  to `mask_lineage.jsonl`, which records the image, the complete rule and its digest, the exact
+  installed code that computed it and the library versions. An image where nothing is kept gives
+  an all-zero mask: a valid, empty region.
+- Running the same command again changes nothing. If the printed line says **this mask will not
+  be reused on retry**, the installed code could not be verified (for example a development
+  install, `pip install -e`): the mask is written, but a second run with the same ID is refused;
+  use a new ID.
+- Then declare it, run preprocessing and the masks step again, and use it **as a region**:
+
+  ```toml
+  [masks.HETissue]
+  source_type = "HETissue"
+  representation = "binary"
+  source_channels = ["R", "G", "B"]
+  display_name = "H&E tissue (he_tissue_v1)"
+  ```
+
+  For example fiberfeatures `MaskRequest("HETissue", "region")`. It is never a set of cells: do
+  not pass it as cell-mode labels.
+
+In the notebook, the card **Make an H&E tissue mask (optional)** beside **Convert a mask** does
+the same: choose the RGB positions (or **Choose all of this unit**), **Preview** one image (the
+nuclei tinted blue, red cells orange, empty space grey, with the kept share; nothing is written),
+type the new mask ID, then **Write the tissue mask**.
+
 ## 6. Output files
 
 The default output folder is next to the experiment folder:

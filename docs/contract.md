@@ -1054,6 +1054,84 @@ declares each output (source type = the output mask ID), runs preprocessing and 
 again, and reads it like any mask. There is no lock: run one conversion of a masks folder at a
 time.
 
+### 15.3 Derived region masks: the H&E tissue mask (Spec ADR 0005 BM15)
+
+An opt-in helper, never run by default, computes a `binary` **region** mask from one declared
+RGB image with a named, versioned, fixed rule whose colour maths is normalization's
+(`docs/design/he-tissue-mask.md`). `RunInputs.he_tissue_mask(fov, *, output_mask_id,
+rule="he_tissue_v1")` writes it and returns `TissueMaskResult` (`image`, `mask_id`, `path`,
+`line`, `published`, `reusable`, `fractions`); `RunInputs.preview_he_tissue_mask(fov, *,
+rule="he_tissue_v1")` computes it in memory and returns `TissueMaskPreview` (`E`, `H`, `od`,
+`od_floored` exactly as normalization returns them, the components, `fractions`, the rule record
+and the code identities); it writes nothing. The command `tissue-mask` and the notebook card
+**Make an H&E tissue mask** call them. scikit-image (the `he-mask` extra:
+`pip install "morphobricks-preprocessing[he-mask]"`, which installs
+`morphobricks-normalization[histology]`), normalization's `stain` module and the helper's module
+(`he_tissue_mask`) are imported only when a method is called, never by `import
+morphobricks_preprocessing`, `RunInputs.open` or another command.
+
+**The rule `he_tissue_v1` is provisional** (rule record `status` `"provisional"`) until the
+acceptance report of the design is accepted; freezing gives a new record and so a new mask under
+a new output mask ID, never a relabelled one. On one `uint8` RGB plane, with `E` and `H` from
+`stain.to_scalar(rgb, axes="CYX", preset="he_eosin")` (`image`, `exclusion`) and `od, od_floored
+= optical_density(rgb_yxc(rgb, "CYX"), check_white((255, 255, 255)))` (normalization contract
+§3.6), it excludes, each comparison made in float64 as written: nuclei `H >= 0.05` (pieces under
+15 px removed, then dilated by a disk of radius 2); red blood cells `E >= 0.06`, `H < 0.03`,
+`OD_G - OD_R >= 0.40`, `OD_B - OD_R >= 0.10` (pieces under 15 px removed, then dilated by a disk of
+radius 1); background `max(OD) < 0.08` (opened by a disk of radius 2, then pieces under 1000 px
+removed). `keep = not (nuclei or red_cells or background)`. Pieces are 8-connected, "under N"
+means fewer than N pixels, a disk is `x*x + y*y <= r*r`, the structuring element is clipped by
+the image border (never padded or wrapped; the opening's erosion counts only pixels inside the
+image), and every size is in pixels: no pixel size is read or used.
+
+**Inputs, refused before any pixel is read** (a `ValueError` naming the position): the position
+is resolved by its image path from `RunInputs.fovs()`, and a caller's `image_type`, axes, counts
+or dtype are ignored; an image that is not the run's (`RunInputsError`); a unit not declared
+`rgb`; more than one Z plane or time point; a pixel type other than `uint8` or a C count other
+than 3; a run without a masks folder (not for the preview); an unknown rule; scikit-image missing
+(`ImportError` naming the extra); an output mask ID refused as in §15.2 (experiment-v1 §3.2, a
+declared ID, a case collision with a declared mask ID or source type, a mask type holding files
+without a published `he_tissue_mask` line); an existing output whose line differs from this call
+in anything known before the read. The plane is read with `RunInputs.read_plane` and its
+fingerprint checked again after the read.
+
+**Output.** One `uint8` `(Y, X)` file, `1` kept and `0` excluded, at `<output mask ID>/<the
+image's folders>/<position ID>.tif` in the masks folder, published with its lineage line as in
+§15.2 (`publish_output`, the pending-line rollback). An all-zero mask is written as computed.
+Declare it `representation = "binary"`, run preprocessing and the mask step again, and request
+it as a region; it is never an object set (as objects it is `A_MASK_NOT_INSTANCES`). In memory,
+never pass it as cell-mode labels: a `uint8` 0/1 array is one object there.
+
+**Lineage line** (BM15 schema, same `mask_lineage.jsonl`), keys in this order: `source`
+(`root` `"experiment"`, `image`, `axes` `"CYX"`, `shape` `[3, Y, X]`, `dtype` `"|u1"`,
+`content_sha256` of the pixels read), `output` (§15.2's file object, `root` `"masks"`),
+`operation` `"he_tissue_mask"`, `rule` (the complete canonical rule record, with the SHA-256 of
+`skimage.color.hed_from_rgb` as imported, float64 little-endian C order), `rule_sha256` (SHA-256 of
+`json.dumps(rule, sort_keys=True, separators=(",", ":"))`), `code` (`preprocessing` and
+`normalization`, each `distribution`, `version`, `verified`, `record_sha256`, `vcs_commit`,
+`reason`), `reusable` (both identities verified), `numpy_version`, `scikit_image_version`,
+`scipy_version`, `image_type` `"rgb"`, `rgb_header_override` (`declared` and that image's
+recorded override item, or null), `pixel_size` (the recorded X and Y size, unit and source, or
+null; information only), `fractions` (`kept`, `nuclei`, `red_cells`, `background` of all pixels,
+and `od_floored`), `helper` `morphobricks_preprocessing.RunInputs.he_tissue_mask`,
+`helper_version`. A code identity is verified only for a non-editable install whose `RECORD` is
+readable (its exact bytes hashed), every hashed file unchanged, at least one import package
+placed by its `RECORD`, every `.py` or extension module of its import packages listed with a
+hash, and every imported module of them loaded from a hashed `RECORD` entry; otherwise `verified` is false and `reason` names the first failed check.
+
+**Retry (BM15's own comparator).** An existing output is the same computation, and the call is a
+no-op (`published` False), only when both lines are `reusable`, they are equal in every key
+except `output.content_sha256` and `fractions`, and the file still has its digest. Anything else
+is refused, never overwritten: another source (equal pixels included), code identity (the same
+commit with another `RECORD` included), library version or rule record (provisional and frozen
+included), and every line with `reusable` false. An unverified mask is written but never reused.
+
+**Reading.** `mask_lineage.read_lineage` selects the schema by `operation`: BM12's two operations
+select §15.2's keys, `he_tissue_mask` selects these; a line of neither operation is refused, as
+are BM12 keys under a BM15 operation and the reverse, a `root` of `"experiment"` anywhere but a
+BM15 `source`, and a `rule_sha256` that is not its rule's digest. A key repeated in one JSON
+object at any depth is refused in both schemas (it was kept silently before).
+
 ## 16. Shared rules for other bricks (MorphoBricks D86)
 
 Rules every MorphoBricks brick applies in one way, so they live here as public functions

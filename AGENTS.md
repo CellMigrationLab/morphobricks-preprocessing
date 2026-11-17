@@ -33,7 +33,7 @@ brick**.
 - **Statistics code (from the normalization brick):** the per-plane histogram, the CSV
   reader and writer, pooling (`PooledHistogram`) and normalization parameters (`min_max`,
   `percentile_range`, `z_score`, `robust_z_score`) live in the required dependency
-  `morphobricks_normalization` (pinned to its release v0.7.0; first pinned at v0.2.0, plan §12 questions 27 and
+  `morphobricks_normalization` (pinned to its release v0.7.1; first pinned at v0.2.0, plan §12 questions 27 and
   28). This brick runs them over
   the experiment. Later bricks such as patch extraction use them to normalise any group of
   planes without rereading pixels. Import them from `morphobricks_normalization`; the
@@ -236,6 +236,15 @@ src/morphobricks_preprocessing/
                     mask_lineage.jsonl lines, content_sha256 and the reader-consistent
                     publication with rollback (not atomic: a pending line is ignored);
                     cli_convert_mask.py the command convert-mask
+  he_tissue_mask.py the opt-in H&E tissue mask (Spec ADR 0005 BM15; RunInputs.he_tissue_mask and
+                    preview_he_tissue_mask through run_inputs_tissue.py's lazy mixin, the he-mask
+                    extra): the FOV resolved from the run, every refusal before any read, BM15's
+                    lineage line and own retry comparator; he_tissue_rule.py the fixed rule
+                    he_tissue_v1 (provisional) as one canonical record, computed from its record
+                    (SciPy clean-up, 8-connected, disks clipped by the border); code_identity.py
+                    the verified code identity (RECORD digest, PEP 610); lineage_schema.py the
+                    reader's dispatch by operation and the duplicate-key refusal;
+                    cli_tissue_mask.py the command tissue-mask
   mask_rules.py     Spec ADR 0005's one constructor per shared refusal: refuse_not_instances
                     (A_MASK_NOT_INSTANCES), refuse_binary_values (R_MASK_CONTRADICTS_REPRESENTATION)
                     called only by check_binary_values (binary = int/bool, {0, v}); pure.
@@ -341,6 +350,8 @@ src/morphobricks_preprocessing/
   notebook_masks.py step 1's masks folder, Masks card and mask-axis statements (PP-10c)
   notebook_mask_conversion.py the optional Convert a mask card under Describe the masks (Spec
                     ADR 0005 BM12: the conversion helpers, one click per mask)
+  notebook_tissue_mask.py the optional Make an H&E tissue mask card beside it (Spec ADR 0005
+                    BM15: choose, preview in memory, write on the click)
   notebook_mask_step.py step 3's Describe the masks card: the masks step after a run that
                     recorded masks (PP-10d); it names the masks by their IDs from Your masks
   notebook_masks_screen.py the Your masks screen (MasksCard, self-contained) and
@@ -835,7 +846,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Topic | Decision |
 |---|---|
 | Binning | Per-plane min–max, same bin count per experiment, pooled counts for groups (binning study) |
-| Core dependencies | `numpy`, `tifffile`, `scipy` (the mask step's piece counts, Q32) and `morphobricks-normalization` (git dependency pinned to its release tag v0.7.0, whose `regions` and `contracts` (Spec ADR 0005; v0.7.0) are not used here but pinned so that every consumer resolves one normalization, whose `stain` module (v0.6.0; `check_options` since v0.6.1) and optional `histology` extra are not used here, whose reader takes the schema version 5 table (channels by canonical ID, ADR 0003; since v0.5.0), and whose CSV reader checks each row's stored `plane_id`, `image_file` and `bit_depth` (since v0.3.2), refuses a blank `position_id` and tables of schema versions 1 to 3 (v0.4.0), and whose `PlaneRecord` requires a keyword-only `position_id` and which refuses corrupt or ambiguous statistics and parameters (v0.3.3); `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
+| Core dependencies | `numpy`, `tifffile`, `scipy` (the mask step's piece counts, Q32) and `morphobricks-normalization` (git dependency pinned to its release tag v0.7.1 (signed zero written as 0.0, NumPy per-bin work; v0.7.1), whose `regions` and `contracts` (Spec ADR 0005; v0.7.0) are not used here but pinned so that every consumer resolves one normalization, whose `stain` module (v0.6.0; `check_options` since v0.6.1), optical-density helpers and optional `histology` extra are used only by the opt-in H&E tissue mask helper (`he-mask` extra), whose reader takes the schema version 5 table (channels by canonical ID, ADR 0003; since v0.5.0), and whose CSV reader checks each row's stored `plane_id`, `image_file` and `bit_depth` (since v0.3.2), refuses a blank `position_id` and tables of schema versions 1 to 3 (v0.4.0), and whose `PlaneRecord` requires a keyword-only `position_id` and which refuses corrupt or ambiguous statistics and parameters (v0.3.3); `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
 | OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. *Removed in v0.4.0 (plan Q46): TIFF images are always read directly; the following describes v0.3.* TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
@@ -859,6 +870,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Histogram range (Q34, P6) | Step 3 **Settings**: the brick's `HistogramSettings` (`minmax` default, or `robust` with adjustable quantiles); recorded in the manifest's `settings.histogram`, any change recomputes every row. Every plane binned with `histogram_with_range_check` (memory estimate with `range_check=True`, through `planes._Binning`); `narrow_histogram_range` warnings from `range_check_issues`, one per channel, with the narrow planes recorded in the manifest's `narrow_histogram_ranges` so kept rows still report them. CSV schema 4 (underflow and overflow columns, zero with `minmax`); schema 3 tables recomputed. CLI `--histogram-range`, `--robust-quantiles`. Normalization brick pinned to v0.3.1 |
 | Position identity (Q20, D02) | `position_id` = image name without extension, in every CSV row and manifest file entry; FOV key = labels + `position_id`; duplicates in one leaf folder are the error `duplicate_position_id`. CSV columns and schema 2 unchanged; manifest version 1 with an optional key |
 | Masks (Q32) | Optional masks folder outside the experiment, one subfolder per mask type mirroring the experiment's folders, or the experiment's folders with `<image>_<type>.tif` (both may be mixed; `ambiguous_mask` when a name could fit two images or both layouts), paired by leaf folder + `position_id`; OME-Zarr label images are masks too. Header-only errors (`masks_folder_not_found`, `masks_inside_experiment`, `mask_names_differ_in_case`, `duplicate_mask`, `ambiguous_mask`, `unreadable_mask`, `mask_not_2d`, `mask_size_mismatch`, `mask_pixel_type`) and warnings (`mask_missing`, `mask_without_image`, `mask_outside_type_folder`) in `check`/`run`; manifest key `masks` (optional, version 1). Optional mask step (`masks` command, `scan_masks`): kinds, relations with evidence, direct-parent hierarchy, `mask_relationships.json` (report version 1); default thresholds the user may change (`thresholds=` keyword, one CLI option each, checked by `mask_thresholds`, written in the report); suggestions only, the user names and confirms. SciPy core dependency. Confirmed by the owner: 2D masks at the image's YX, integer/bool pixels, masks folder outside the experiment. Next: notebook step and a file of the user's answers; tag v0.2.0 proposed after merge. Plane identity (issue #36): masks may have Z and/or T named in their own metadata (never guessed: unnamed axes are `mask_not_2d`); the masks of an image share their planes (`mask_planes_differ`) and `run` checks them against the image's confirmed roles (`mask_planes_mismatch`, `mask_plane_issues`), so a 2D mask is refused for a Z-stack or time-lapse; manifest mask entries gain `axes` and `shape` (optional keys, version 1); `read_mask(z=, t=)` reads one plane; `scan_masks` scans plane by plane |
+| H&E tissue mask (I1, BM15) | Opt-in only (`he-mask` extra; scikit-image, normalization's `stain` and the helper imported only when called). Fixed rule `he_tissue_v1`, provisional until its acceptance report is accepted; no per-call thresholds; sizes in pixels; colour maths from normalization only. One `uint8` region per image through BM12's publication with BM15's own line and comparator; an unverified code identity writes a mask never reused; freezing needs a new mask ID (design `docs/design/he-tissue-mask.md`, owner decisions of 16 November 2026) |
 | Notebook style | Follow the lab's NucleiSky and LabChronicle notebooks (see §7) |
 | Widget widths | **99%**, never 100% |
 | Waits | Every wait over about a second shows `notebook_progress.Wait`: done of total, the item, elapsed time, time left once measurable. Readers take a `progress` callback; no bare spinner (owner, 10 November 2026) |
@@ -1188,7 +1200,10 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   [docs/archive/plan-milestones-v0.1-v0.4.md](docs/archive/plan-milestones-v0.1-v0.4.md); the older
   status log of this file is in
   [docs/archive/agents-status-history-v0.1-v0.3.md](docs/archive/agents-status-history-v0.1-v0.3.md).
-- **Unreleased:** nothing yet.
+- **Unreleased:** the opt-in H&E tissue mask (I1, Spec ADR 0005 BM15):
+  `RunInputs.he_tissue_mask` / `preview_he_tissue_mask`, CLI `tissue-mask`, the notebook card
+  **Make an H&E tissue mask**, the `he-mask` extra; rule `he_tissue_v1` **provisional** (not
+  frozen); the lineage reader selects its schema by `operation` and refuses repeated keys.
 - **Scope:** 2-D per plane (a Z-stack is refused as `z_stack_not_supported`; since v0.5.2 the
   notebook saves Z-stacks as recorded projections); acquisitions may have different channel
   lists (v0.5.2, Stage 3 S3.3: manifest version 5, histogram table schema version 5; units of
