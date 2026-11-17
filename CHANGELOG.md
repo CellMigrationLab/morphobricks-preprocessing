@@ -6,6 +6,45 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+### Fixed
+
+- **The worker planner refuses an explicit worker count with `max_ram`** (internal guard;
+  public behaviour unchanged). At v0.7.0 `run.workers.plan_workers` returned a whole number
+  of workers as given even with `max_ram`, so that budget would not have been kept.
+  `RunMode` and `run --max-ram` already refuse `max_ram` without `workers="auto"` (plan §12
+  item 82, kept), so no run reached it; the planner now raises the same `ValueError`
+  ("max_ram is used only with workers='auto'", `run.modes.MAX_RAM_ONLY_WITH_AUTO`). New
+  tests also count the pixel reads of `"auto"` with `max_ram` just below, at and above one
+  image's estimate: the run's per-image read and both of tifffile's routes to pixels (a
+  page's `TiffPage.asarray` and a contiguous series' `FileHandle.read_array`, which
+  `tifffile.imread` takes); none before a refusal, and a read with `tifffile.imread` before
+  the refusal is counted (the test images are TIFFs: no OME-Zarr read is possible).
+
+### Changed
+
+- **`tools/benchmark_run_workers.py` follows a stated protocol** (review items F1 to F3 of
+  draft PR #340; its docstring and `docs/development.md` *Benchmarks*). The configurations of
+  each round run in a counterbalanced, seeded order (`--order balanced`, the default: every
+  configuration once in every position per block of rounds; `shuffled`, `fixed`), recorded
+  per round with the seed. An acceptance run has at least 10 rounds (fewer is refused; by
+  default the smallest multiple of the configurations from 10, 12 for `1 2 4 auto`, so the
+  counterbalancing blocks are complete) and `--quick` is the smoke mode (3 rounds), named in the report. Every run's peak
+  RSS is the child process's own (Linux `VmHWM`, Windows `PeakWorkingSetSize`; elsewhere
+  `ru_maxrss` in the platform's unit, its source named in the report as possibly including the
+  parent's peak), and the dataset is written in a separate process: `ru_maxrss` on Linux had
+  every run report the driver's high-water mark (421.3 MiB for 1 and 2 workers alike; their
+  own peaks are about 306 and 335 MiB). Each configuration reports the distribution (min,
+  median, max, every value) and the report the largest of all. Each run's output digests are printed as it finishes
+  and kept in the report, and the speed-up is paired with the serial run of the same round.
+  `--cpus LIST` pins the runs with `taskset -c` where it exists, and the load average is
+  recorded before and after every run. `--phases` (from #340) times the calling thread's
+  steps of a run.
+- **Byte parity on every valid Spec fixture** (test infrastructure from #340): every valid
+  fixture's tree, with all its masks, run with 1, 2, 4 and `auto` workers under the fixed
+  clock gives the same bytes in every file, and the table is the normalization writer's bytes.
+
 ## v0.7.0 (17 November 2026)
 
 A minor release (semantic versioning before 1.0, `docs/development.md`): new public API and a
