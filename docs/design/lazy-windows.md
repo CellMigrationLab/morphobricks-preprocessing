@@ -21,13 +21,15 @@ Three concerns stay apart:
 | --- | --- | --- |
 | Reading (this note) | preprocessing | open an image once, read any window of any channels, a bounded cache of decoded pieces, memory plan, close |
 | Window geometry | CellPatcher (ADR 0004 EW5) | tiles of a plane (grid patch sets from the plane's shape), a tile grown by a margin and clipped at the plane edge (`context_bounds`, the window record EW4) |
-| What is computed on a window, and the results | each consumer | features, patches, partial results, their table in the file frame (ADR 0004 EW1 conversions) |
+| What is computed on a window, and the results | each consumer | features, patches, partial results, their table in the plane frame (ADR 0004 EW1 conversions) |
 
 ## 2. The access API
 
-All coordinates are in the **file frame**: the plane of the stored image at full resolution
-(level 0), `pixel_edge`, half-open `(y0, y1, x0, x1)`, Y before X whatever the stored order;
-ADR 0004 EW2's frame with `axes_offset = (0, 0)` and `downsample = 1`. A window is never padded
+All coordinates are in ADR 0004's **plane frame** (EW1, EW2): the plane of the stored image at
+full resolution (level 0), `pixel_edge`, half-open `(y0, y1, x0, x1)`, Y before X whatever the
+stored order, the frame `{plane_shape, axes_offset = (0, 0), downsample = 1}` of a whole source
+at full resolution (the first version of this note called it the "file frame"; it is the same
+frame, and the ADR's name is used here). A window is never padded
 or clipped: bounds outside the plane are refused.
 
 | Need | API (v0.7.0 unless marked) | Notes |
@@ -123,7 +125,7 @@ A helper here that grows bounds by a margin would be a second definition of EW5;
 | MorphoFeature windowed units (`window_reads`) | one `RunWindowReader` per plane, shared by the window thread pool; CellPatcher cuts the grid and gives `context_bounds`; results keep the patch's global `bounds` (EW4) | `read_window` per window (v0.5.0); one reader per plane in MorphoFeature's consumer PR | `close()` once MorphoFeature pins a preprocessing release with it (today it drops its last reference after the plane) |
 | CellPatcher patch extraction from a large image | open a reader per image, read each patch's window (or its `context_bounds`) instead of `read_plane`; `WindowedMask` already counts mask fractions by window | `read_window`, `read_mask_window`, `WindowedMask` | a windowed extraction route in CellPatcher (it reads whole planes today) and a cached mask reader here |
 | A brick run directly (fiberfeatures, MorphoRelate, MorphoObjects, MorphoEmbed) | the same loop as section 3 with the brick's own margin (its filter footprint, ADR 0004 EW6); objects that cross tiles are the brick's concern (ADR 0004: object tiling not decided) | everything in section 2 | per-brick entry points; object tiling (Spec) |
-| LabConstrictor tool behind QuPath | file path in (`WindowReader(path, mapping)` with the mapping the tool states, or a run), tiles out (section 3); each tile's results written as soon as it is done (partial results), coordinates converted to the file frame with ADR 0004 EW1's table (`pixel_edge` + origin; `full_res` for what QuPath draws) | the reader, geometry and conversion table | the bridge tool, its per-tile result table and resume (LabConstrictor-QuPath #50/#51; MorphoFeature roadmap F4); **imagecodecs** for JPEG whole-slide images (SVS, NDPI): without it tifffile cannot decode JPEG at all, and it is not a dependency (an optional extra to declare, review of this PR, finding 5) |
+| LabConstrictor tool behind QuPath | file path in (`WindowReader(path, mapping)` with the mapping the tool states, or a run), tiles out; the tool may take its tiles or ROIs from QuPath and then needs only CellPatcher's `context_bounds` to grow them by its margin (EW5), not CellPatcher's grid; each tile's results written as soon as it is done (partial results), with ADR 0004 EW1's conversions: window-local to plane `pixel_edge` by the window's `origin`, then to the **LabConstrictor result coordinate** `x = e − 0.5` (a `pixel_index` `i` is written as `i`), which today's bridge turns into QuPath's `full_res` (`x0 + (x + 0.5) × d`) | the reader, geometry and conversion table | the bridge tool, its per-tile result table and resume (LabConstrictor-QuPath #50/#51; MorphoFeature roadmap F4); **imagecodecs** for JPEG whole-slide images (SVS, NDPI): without it tifffile cannot decode JPEG at all, and it is not a dependency (an optional extra to declare, review of this PR, finding 5) |
 
 ## 5. Concurrency
 
@@ -201,7 +203,7 @@ These options are processing-agnostic. Each takes window bounds from CellPatcher
 | (a) ordered iterator with prefetch | `iter_windows(reader, bounds, *, t, z, channels, prefetch=k)` yields `(bounds, window)` in the given order while up to `k` later windows are read in background threads | a single-threaded consumer; decoding overlaps its compute | preprocessing (proposed) |
 | (b) `map_windows` | `map_windows(reader, bounds, fn, *, t, z, channels, workers=n)` calls `fn(bounds, window)` in `n` threads and yields the results **in window order**, whatever finishes first | a consumer whose compute releases the GIL (NumPy, SciPy, torch, numba `nogil`); MorphoFeature's window pool is this pattern | preprocessing (proposed); (a) is (b) with `fn` returning the window |
 | (c) process workers | each process opens its **own** reader on the image and is assigned windows by index (for example, contiguous rows of the grid, so its cache still sees neighbours); caches are not shared between processes, and results are merged by window index | GIL-bound consumers | the consumer (MorphoFeature's worker processes already open a run once per process, `fov_files.RunHandle`); preprocessing adds nothing but the reader |
-| (d) streaming partial results | (b) whose results the consumer writes per tile as they arrive in order, each row in the file frame (EW1's conversions from the window `origin`) with the tile's bounds, so a stopped run keeps the finished tiles | the LabConstrictor/QuPath bridge, MorphoFeature F4 | the bridge or consumer; its result-table contract needs Spec text first |
+| (d) streaming partial results | (b) whose results the consumer writes per tile as they arrive in order, each row in the plane frame (EW1's conversions from the window `origin`, then the LabConstrictor result coordinate) with the tile's bounds, so a stopped run keeps the finished tiles | the LabConstrictor/QuPath bridge, MorphoFeature F4 | the bridge or consumer; its result-table contract needs Spec text first |
 
 ### 5.3 Rules for every option
 
