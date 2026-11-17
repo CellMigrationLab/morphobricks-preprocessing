@@ -545,7 +545,7 @@ It gives:
   checked with normalization's `contracts.refuse_resolver_version` (Spec ADR 0005 BM10). Every
   applicable refusal is reported, each a `Refusal(code, subject, message, files)`:
   `A_SCOPE_INCOMPLETE` for a channel or mask some or all images lack ("present in k of n
-  acquisitions", k may be 0; an undeclared mask ID is 0 of n), `A_MASK_UNCHECKED` ("k of n
+  images", k may be 0; an undeclared mask ID is 0 of n), `A_MASK_UNCHECKED` ("k of n
   files"), `A_MASK_NOT_INSTANCES` (a `binary` mask as objects without the policy, and a
   `parent_labels` mask as objects always, with or without `parent_labels_support`: it is never
   split, relabelled or converted, and the message offers no policy; built by
