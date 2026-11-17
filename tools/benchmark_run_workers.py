@@ -3,7 +3,7 @@
 Usage::
 
     python tools/benchmark_run_workers.py [--folder DIR] [--workers 1 2 4 auto]
-        [--repeats 3] [--scale 1] [--memory-limit-mib 64] [--max-ram-mib 0]
+        [--repeats 3] [--scale 1] [--memory-limit-mib 64] [--max-ram-mib 0] [--phases]
 
 It writes (once, into ``--folder``, by default a new temporary folder) a fixed synthetic
 experiment of seeded ``uint16`` images in two conditions: tiled zlib OME-TIFFs and OME-Zarr
@@ -21,13 +21,21 @@ without its ``written_at`` time. Every run must give the same three digests as t
 else the script exits with status 1: no performance claim without identical outputs. On a
 version without ``RunMode(workers=...)`` only ``1`` can be run (the baseline). Timings are
 indicative: they depend on the computer, its disk cache and its load.
+
+With ``--phases`` each run also times, in the calling thread only, the steps of the run that
+are not the workers' (:data:`PHASES`: the header checks, the content SHA-256 passes, staging,
+the table, the intensity checks...) and the report gives each worker value's median per step:
+where the serial time of a run goes (D7). A step a version does not have is left out, and the
+wrappers time the calling thread only, so a step a worker does is not counted.
 """
 
 from __future__ import annotations
 
 import argparse
 import dataclasses
+import functools
 import hashlib
+import importlib
 import json
 import os
 import platform
@@ -36,7 +44,9 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -72,6 +82,23 @@ IMAGES = (
     ("L2.ome.zarr", LARGE),
 )
 """Every condition's images: OME-TIFF and OME-Zarr, read whole and in blocks."""
+PHASES = (
+    ("run.pipeline", "preflight", "preflight"),
+    ("run.pipeline", "run_checks", "header checks"),
+    ("run.steps", "with_content", "content SHA-256 before the reads"),
+    ("run.steps", "new_rows", "resume and read (all)"),
+    ("run.resume", "_read_checked", "reads in the calling thread"),
+    ("run.resume", "stage_file", "staging in the calling thread"),
+    ("run.pipeline", "_pixel_issues", "pixel checks"),
+    ("run.pipeline", "_range_issues", "range checks"),
+    ("run.pipeline", "check_intensities", "intensity checks"),
+    ("run.pipeline", "write_plane_histograms", "table"),
+    ("run.pipeline", "write_table", "table"),
+    ("run.pipeline", "_write_generation", "table, design and manifest"),
+    ("run.pipeline", "content_changed", "content SHA-256 before the commit"),
+    ("run.pipeline", "_publish", "publication (all)"),
+)
+"""``(module of the package, function, step)`` the calling thread's time is taken of."""
 
 
 def pixels(shape: tuple[int, ...], seed: int, scale: int) -> np.ndarray:
@@ -164,10 +191,50 @@ def write_dataset(folder: Path, scale: int) -> Path:
     return experiment
 
 
-def child(experiment: Path, output: Path, workers: str, memory_limit: int, max_ram: int) -> None:
-    """Run preprocessing once in this process and print its wall time and peak RSS as JSON."""
+def time_phases() -> dict[str, float]:
+    """Wrap every function of :data:`PHASES` this version has; return the seconds per step.
+
+    Only calls from the calling thread are timed (a worker's own calls are not). Each function
+    is replaced in the module that calls it, so the wrapper sees every call.
+    """
+    seconds: dict[str, float] = {}
+    for module_name, name, step in PHASES:
+        module = importlib.import_module(f"morphobricks_preprocessing.{module_name}")
+        function = getattr(module, name, None)
+        if function is not None:
+            seconds.setdefault(step, 0.0)
+            setattr(module, name, _timed(function, step, seconds))
+    return seconds
+
+
+def _timed(function: Callable, step: str, seconds: dict[str, float]) -> Callable:
+    """Return ``function`` adding the time of its calls from the calling thread to ``step``."""
+    caller = threading.main_thread()
+
+    @functools.wraps(function)
+    def timed(*args: object, **kwargs: object) -> object:
+        if threading.current_thread() is not caller:
+            return function(*args, **kwargs)
+        start = time.perf_counter()
+        try:
+            return function(*args, **kwargs)
+        finally:
+            seconds[step] += time.perf_counter() - start
+
+    return timed
+
+
+def child(
+    experiment: Path, output: Path, workers: str, limits: tuple[int, int], phases: bool
+) -> None:
+    """Run preprocessing once in this process and print its wall time and peak RSS as JSON.
+
+    ``limits`` are the memory limit and ``max_ram`` (0: none); ``phases`` times the steps.
+    """
     import resource
 
+    seconds = time_phases() if phases else {}
+    memory_limit, max_ram = limits
     options: dict = {"memory_limit": memory_limit}
     if workers != "1":
         count = workers if workers == "auto" else int(workers)
@@ -183,6 +250,7 @@ def child(experiment: Path, output: Path, workers: str, memory_limit: int, max_r
         "workers": getattr(result, "workers", 1),
         "wall_seconds": wall,
         "peak_rss_bytes": peak,
+        "phases": {step: round(value, 3) for step, value in seconds.items()},
     }
     print(json.dumps(found))
 
@@ -219,6 +287,7 @@ def one_run(folder: Path, experiment: Path, workers: str, args: argparse.Namespa
         workers,
         str(args.memory_limit_mib * MIB),
         str(args.max_ram_mib * MIB),
+        "1" if args.phases else "0",
     ]
     done = subprocess.run(command, capture_output=True, text=True, check=False)
     if done.returncode != 0:
@@ -265,17 +334,28 @@ def summary(runs: dict[str, list[dict]]) -> tuple[dict, bool]:
             "peak_rss_mib": round(max(r["peak_rss_bytes"] for r in found) / MIB, 1),
             "digests": found[0]["digests"],
             "digests_equal_to_serial": all(r["digests"] == reference for r in found),
+            **_phase_medians(found),
         }
         for workers, found in runs.items()
     }
     return table, same
 
 
+def _phase_medians(found: list[dict]) -> dict:
+    """Return ``{"phases_median_seconds": {step: median}}`` of runs timed by step, else {}."""
+    steps = [step for step in found[0].get("phases", {})]
+    if not steps:
+        return {}
+    medians = {s: round(statistics.median(r["phases"][s] for r in found), 3) for s in steps}
+    return {"phases_median_seconds": medians}
+
+
 def main() -> None:
     """Parse the arguments, write the dataset if needed, run every configuration and report."""
     if len(sys.argv) > 1 and sys.argv[1] == "--child":
-        experiment, output, workers, limit, max_ram = sys.argv[2:7]
-        child(Path(experiment), Path(output), workers, int(limit), int(max_ram))
+        experiment, output, workers, limit, max_ram, phases = sys.argv[2:8]
+        limits = (int(limit), int(max_ram))
+        child(Path(experiment), Path(output), workers, limits, phases == "1")
         return
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--folder", type=Path, default=None)
@@ -284,6 +364,7 @@ def main() -> None:
     parser.add_argument("--scale", type=int, default=1, help="multiply each side by this")
     parser.add_argument("--memory-limit-mib", type=int, default=64)
     parser.add_argument("--max-ram-mib", type=int, default=0, help="with auto; 0: none")
+    parser.add_argument("--phases", action="store_true", help="time the calling thread's steps")
     args = parser.parse_args()
     if "1" not in args.workers:
         args.workers.insert(0, "1")
