@@ -28,7 +28,7 @@ draft and description formats have no field for it yet (a Spec amendment will ad
 from __future__ import annotations
 
 import html
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import ipywidgets as widgets
@@ -53,7 +53,7 @@ from .channel_matrix import (
     untrusted,
     with_aliases,
 )
-from .draft_answers import ChannelAnswer, UnitKey
+from .draft_answers import ChannelAnswer, DraftAnswers, UnitAnswer, UnitKey
 from .notebook_channels_view import CHOOSE, blank_chip, chip, columns, quoted, unit_name
 from .notebook_values import natural_key
 
@@ -98,9 +98,12 @@ class TagMatrix:
         A unit leaves it at the user's first click on its tags (:meth:`clicked`): its tags are
         the user's from then on, even when they end equal to the header's."""
         self.before: dict[str, tuple[str, ...] | None] | None = None
-        """The aliases the draft held before the first no-click tags since the last click (or
-        untick), restored unticked: a click drops the aliases no tagged cell holds, as on the
-        strict page, so it forgets them (:meth:`clicked`)."""
+        """The aliases the draft held before the first no-click tags (None: none since the page
+        opened or the last untick), restored unticked. Empty once a save resynced the aliases
+        since (:meth:`resynced`): on the strict page it dropped the aliases no tagged cell holds,
+        so none is restored, and later no-click tags take no new snapshot."""
+        self.units: Mapping[UnitKey, UnitAnswer] | None = None
+        """The units as the no-click tags saved them: units saved otherwise since were resynced."""
 
     def reset(self) -> None:
         """Forget the session's layouts, rows of tags and switches (new units, or a toggle)."""
@@ -109,12 +112,21 @@ class TagMatrix:
     def opening(self) -> None:
         """Note the aliases saved when the page opens for new units (the ones trusted)."""
         self.saved, self.given = dict(self.grid.store.answers().channels), {}
-        self.before = None
+        self.before, self.units = None, None
 
-    def labels_changed(self, labels: Sequence[str]) -> None:
-        """Forget the aliases to restore of a label taken out of the list (added again: none)."""
+    def resynced(self) -> None:
+        """Note a save that resynced the aliases (a click, the label list, an image type).
+
+        The strict page's same save dropped the aliases no tagged cell holds: unticking then
+        restores none of the ones the draft held before the no-click tags.
+        """
         if self.before is not None:
-            self.before = {k: v for k, v in self.before.items() if k in labels}
+            self.before = {}
+
+    def _saved_since(self, answers: DraftAnswers) -> None:
+        """Note a save of the units other than the no-click tags' (an image type) as resynced."""
+        if self.units is not None and answers.units != self.units:
+            self.resynced()
 
     def trust_headers(self) -> bool:
         """Tag every untagged unit whose header names its channels (no click); True if saved."""
@@ -122,11 +134,13 @@ class TagMatrix:
             return False
         units = [u for u in self.grid.layouts if not self.grid.colour(u)]
         now = self.grid.store.answers()
+        self._saved_since(now)
         answers, cells = trusted(now, units, self.grid.labels, self.saved)
         if not cells or not self.grid.store.update(synced(answers, self.grid.layouts, cells)):
             return False
         if self.before is None:
             self.before = {k: c.header_names for k, c in now.channels.items()}
+        self.units = self.grid.store.answers().units
         for key in dict.fromkeys(k for k, _ in cells):
             self.given[key] = tuple(answers.units[key].channels)
         return True
@@ -135,12 +149,14 @@ class TagMatrix:
         """Note the units whose tags the user's click saved: never taken back unticked."""
         for key in keys:
             self.given.pop(key, None)
-        self.before = None  # the click's save dropped the aliases no tagged cell holds
+        self.resynced()  # the click's save dropped the aliases no tagged cell holds
 
     def take_back(self) -> None:
         """Untag the units tagged from their headers with no click (the statement unticked)."""
-        answers, given, before = self.grid.store.answers(), self.given, self.before
-        self.given, self.before = {}, None
+        answers = self.grid.store.answers()
+        self._saved_since(answers)
+        given, before = self.given, self.before
+        self.given, self.before, self.units = {}, None, None
         out = untrusted(answers, self.grid.layouts, given)
         if out != answers:
             out = synced(out, self.grid.layouts)

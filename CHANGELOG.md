@@ -31,7 +31,9 @@ v0.5.1: no run before v0.5.1 is read.)
   to confirm, as before; a unit whose tags the user clicked on since keeps them, even tagged
   back to what its header says, and one whose header tags only lost a label removed from the
   list is untagged too; with no click since, the aliases the draft held before those tags are
-  kept, even ones only the untagged units held, as opening unticked keeps them), and ticking
+  kept, even ones only the untagged units held, as opening unticked keeps them; none is kept
+  once a click, a save of the label list or an image type resynced the aliases since, as that
+  save drops them on the strict page: review of 223d055), and ticking
   again trusts only the aliases saved when the page opened and still saved (`channel_matrix`,
   `notebook_channels_matrix`).
 - **`RunInputs.objects_read_plan(selection, mask_id)`** (#316): the memory of one

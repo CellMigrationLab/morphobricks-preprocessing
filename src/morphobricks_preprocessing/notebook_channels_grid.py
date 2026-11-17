@@ -174,7 +174,8 @@ class TagGrid:
             self.alone = set()
             self.matrix.reset()
             self.matrix.opening()
-        self.matrix.labels_changed(labels)
+        else:  # the label list (or an image type) was saved: the aliases were resynced
+            self.matrix.resynced()
         self.layouts, self.labels, self.rows.thumbs = layouts, labels, thumbs
         if self.place_types:
             self.types.open(layouts)
