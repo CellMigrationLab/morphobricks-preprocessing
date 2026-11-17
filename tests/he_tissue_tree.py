@@ -180,6 +180,14 @@ def identities(**changes) -> dict:
     }
 
 
+def unverified() -> dict:
+    """Return the identities of an editable checkout (never verified), set explicitly so a test
+    gives the same result in an editable and a non-editable install."""
+    return identities(
+        verified=False, record_sha256=None, vcs_commit=None, reason="editable install"
+    )
+
+
 def tree(folder: Path) -> dict:
     """Every file under ``folder`` with its bytes, for "nothing was written" checks."""
     return {

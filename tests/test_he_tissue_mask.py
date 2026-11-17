@@ -38,6 +38,7 @@ from he_tissue_tree import (  # noqa: E402
     rgb_run,
     synthetic_he,
     tree,
+    unverified,
     write_rgb,
 )
 from morphobricks_preprocessing import (  # noqa: E402
@@ -312,6 +313,7 @@ def test_a_foreign_file_and_an_existing_file_are_refused_before_any_read(run, mo
     foreign = run.masks_root / "Other" / IMAGE
     foreign.parent.mkdir(parents=True)
     tifffile.imwrite(foreign, np.ones((96, 96), np.uint8), photometric="minisblack")
+    monkeypatch.setattr(IDENTITY_PATCH, unverified)  # as in an editable checkout
     run.he_tissue_mask(IMAGE, output_mask_id="HETissue")  # unverified: never reused
     before = tree(run.masks_root)
     no_reads(monkeypatch)

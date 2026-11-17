@@ -12,7 +12,15 @@ import importlib
 
 import pytest
 
-from he_tissue_tree import IDENTITY_PATCH, UNIT, channels_run, identities, rgb_run, tree
+from he_tissue_tree import (
+    IDENTITY_PATCH,
+    UNIT,
+    channels_run,
+    identities,
+    rgb_run,
+    tree,
+    unverified,
+)
 
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
@@ -67,8 +75,9 @@ def test_positions_that_cannot_be_used_are_listed_greyed_with_their_reason(tmp_p
     assert f"{UNIT}/z.tif: a Z or T stack (3 Z planes, 1 time points)" in card.unusable.value
 
 
-def test_the_preview_writes_nothing_and_shows_the_shares_and_notes(tmp_path):
+def test_the_preview_writes_nothing_and_shows_the_shares_and_notes(tmp_path, monkeypatch):
     pytest.importorskip("skimage")
+    monkeypatch.setattr(IDENTITY_PATCH, unverified)  # as in an editable checkout
     run = rgb_run(tmp_path)
     card = cards.TissueMaskCard()
     card.refresh(run.output_folder)
@@ -81,7 +90,7 @@ def test_the_preview_writes_nothing_and_shows_the_shares_and_notes(tmp_path):
     text = card.numbers.value
     assert "kept 80.4 % · nuclei 1.6 % · red cells 0.8 % · empty 17.2 %" in text
     assert "Sizes are in pixels. Fixed rule he_tissue_v1 (provisional)" in text
-    assert "this mask will not be reused on retry" in text  # an editable checkout
+    assert "this mask will not be reused on retry" in text  # an unverified identity
 
 
 def test_the_write_happens_only_on_the_click(tmp_path, monkeypatch):
@@ -105,6 +114,7 @@ def test_the_write_happens_only_on_the_click(tmp_path, monkeypatch):
 
 def test_a_refusal_during_the_write_is_a_red_card_naming_the_position(tmp_path, monkeypatch):
     pytest.importorskip("skimage")
+    monkeypatch.setattr(IDENTITY_PATCH, unverified)  # as in an editable checkout
     run = rgb_run(tmp_path)
     card = cards.TissueMaskCard()
     card.refresh(run.output_folder)
