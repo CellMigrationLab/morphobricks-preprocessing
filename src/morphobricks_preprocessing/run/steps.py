@@ -295,6 +295,18 @@ def compute_rows(
 UNHASHED = "its content could not be read to take its SHA-256"
 """Why an image whose content could not be hashed is ``unreadable_planes``."""
 
+FAILURES_SHOWN = 20
+"""The most failed planes of one image the ``unreadable_planes`` message names (owner decision
+of 17 November 2026); the run report lists every one (``unreadable_planes`` of the report)."""
+
+
+def _image_failures(rel: str, texts: tuple[str, ...]) -> list[str]:
+    """Return the first :data:`FAILURES_SHOWN` failures of one image, then how many more."""
+    shown = list(texts[:FAILURES_SHOWN])
+    if len(texts) > FAILURES_SHOWN:
+        shown.append(f"and {len(texts) - FAILURES_SHOWN} more in {rel}")
+    return shown
+
 
 def unreadable_issue(
     failed: tuple[str, ...], failures: Mapping[str, tuple[str, ...]] | None = None
@@ -307,15 +319,19 @@ def unreadable_issue(
         The files, sorted.
     failures
         ``{file: what failed}``: each failed plane (T, Z and C index, channel ID) and the
-        cause (Spec ADR 0003 HV3), named in the message in the order of ``failed``.
+        cause (Spec ADR 0003 HV3), named in the message in the order of ``failed``: at most
+        :data:`FAILURES_SHOWN` per image, followed by ``and N more in <image>``. The run
+        report lists every one (:attr:`..discovery_report.RunOutcome.unreadable`).
 
     Returns
     -------
     ValidationIssue
         ``unreadable_planes``: no table of the run is written.
     """
-    found = [text for rel in failed for text in (failures or {}).get(rel, ())]
-    detail = f" What failed: {'; '.join(found)}." if found else ""
+    found = [text for rel in failed for text in _image_failures(rel, (failures or {}).get(rel, ()))]
+    capped = any(len((failures or {}).get(rel, ())) > FAILURES_SHOWN for rel in failed)
+    listed = " The run report lists every failed plane." if capped else ""
+    detail = f" What failed: {'; '.join(found)}.{listed}" if found else ""
     return error(
         "unreadable_planes",
         f"The pixel data of {plural(len(failed), 'image')} could not be read, although "
@@ -355,6 +371,7 @@ def outcome_of(rows: Rows | None, base: RunOutcome) -> RunOutcome:
         removed=found.removed,
         resumed=rows.resumed,
         staged_discarded=rows.discarded,
+        unreadable={rel: tuple(rows.failures.get(rel, ())) for rel in rows.failed},
     )
 
 

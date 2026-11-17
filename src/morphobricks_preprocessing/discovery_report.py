@@ -74,6 +74,10 @@ class RunOutcome:
         Files whose rows an interrupted run had staged, reused (design v0.4 §1).
     staged_discarded
         ``{file: why}`` for the staged rows of an interrupted run that were not reused.
+    unreadable
+        ``{file: what failed}`` for each image whose pixels could not be read, in sorted order:
+        every failed plane, in the order the planes are read (Spec ADR 0003 HV3). The
+        ``unreadable_planes`` error names at most 20 per image; this is the whole list.
     """
 
     step: str = "run"
@@ -86,6 +90,7 @@ class RunOutcome:
     changes: tuple[InputChange, ...] = ()
     resumed: tuple[str, ...] = ()
     staged_discarded: Mapping[str, str] = field(default_factory=dict)
+    unreadable: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -134,6 +139,7 @@ class DiscoveryReport:
             "staged_discarded": dict(outcome.staged_discarded),
             "replaced": dict(outcome.replaced),
             "input_changes": [change.to_dict() for change in outcome.changes],
+            "unreadable_planes": {rel: list(texts) for rel, texts in outcome.unreadable.items()},
             "issues": [_issue_dict(issue) for issue in self.issues],
         }
 
@@ -504,6 +510,9 @@ def _outcome_lines(outcome: RunOutcome) -> list[str]:
         lines.append(
             f"  Changed {change.name}: {change.recorded} -> {change.given} ({change.effect})"
         )
+    for rel, texts in outcome.unreadable.items():
+        lines.append(f"  Unreadable: {plural(len(texts), 'failure')} in {rel}")
+        lines.extend(f"    {text}" for text in texts)
     return lines
 
 

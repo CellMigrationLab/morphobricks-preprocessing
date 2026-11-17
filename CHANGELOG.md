@@ -96,6 +96,15 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Changed
 
+- **`unreadable_planes` names at most 20 failed planes per image** (owner decision of 17
+  November 2026; Spec ADR 0003 HV3, #325). The message names each image's first 20 failed
+  planes in the same order as before (images sorted, planes in reading order), then `and N more
+  in <image>` for that image, and says that the run report lists every failed plane; each image
+  is capped on its own. The run report keeps the whole list: `discovery_report.json` gains
+  `unreadable_planes` (image: every failed plane), and `discovery_report.txt` lists them, the
+  same bytes for any number of workers. The whole table still fails; the code, `paths`, what is
+  staged and published are unchanged.
+
 - **Notebook: *Tag channels* fast mode keeps the strict page's draft** (the shadow model the
   review of #325 recommended). Unticking now restores the strict page by construction, no
   longer by the tracked differences of five earlier fixes: `given`, `before`, `units` and
