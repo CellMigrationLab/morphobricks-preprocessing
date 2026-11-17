@@ -146,6 +146,7 @@ def test_p01_an_image_with_another_channel_order_is_not_homogeneous(v01):
         ("FOV003", "CTRL/rep1/FOV003.ome.tif", 0),
         ("FOV003", "CTRL/rep1/FOV003.ome.tif", 1),
     }
+    assert {i.detail.split(":")[0] for i in found} == {"at C0", "at C1"}  # issue #326
     assert UnitKey("CTRL", "rep1", "single") not in report.layouts  # the unit is blocked
 
 
