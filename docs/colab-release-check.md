@@ -19,7 +19,7 @@ Write the date, the commit and any failure (as an issue number) next to each ite
 - **Time-lapse:** a small experiment of time-lapse images (optional; the tests cover it).
 
 **Before opening it.** `RELEASE_REF` in cell 1 is the release preparation commit, and cell 3's
-`PreprocessingNotebook(...)` call is that commit's API (v0.6.1: `PreprocessingNotebook()`). The
+`PreprocessingNotebook(...)` call is that commit's API (v0.7.0: `PreprocessingNotebook()`). The
 release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
 `tests/test_notebook_file.py`, which fails for a `RELEASE_REF` without one.
 
@@ -30,7 +30,7 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
    - [ ] One line: "… run cell 1 (Install MorphoBricks preprocessing) first …", no traceback;
      nothing is installed.
 3. Run **cell 1**.
-   - [ ] It prints **Ready** with the preprocessing (0.6.1), normalization (0.7.0) and
+   - [ ] It prints **Ready** with the preprocessing (0.7.0), normalization (0.7.1) and
      ipywidgets versions and the pinned source, then names cells 2 and 3. No restart or
      ipywidgets upgrade is asked for; Drive is not mounted.
    - [ ] Run it again: nothing is installed again, the same versions.
@@ -90,7 +90,7 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
       `rgb_header_override = true` for those folders, and it is never pre-ticked.
     - [ ] Then name the stains, then tag each folder's channels; the extra-stain folder gets
       its own list. The viewer shows each channel with its header name and its folder's tag.
-    - [ ] Unreleased (fast mode, owner decisions of 16 November 2026): **Every imaging unit
+    - [ ] v0.7.0 (fast mode, owner decisions of 16 November 2026): **Every imaging unit
       has the same channels in the same order** is ticked. On a tree whose headers name every
       channel with the labels exactly, every folder is tagged on opening with no click. On the
       2 x 2 x 2 tree without header names, tagging the row *Tags of every imaging unit* once
@@ -113,6 +113,10 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
       formatted (a summary table, then folded parts). **Yes, save the experiment description**
       writes `morphobricks.toml` in the output folder.
 14. **Run** (step 7).
+    - [ ] v0.7.0 (#317, #320): **Images read at once** (in Settings) is **Auto**, with a
+      **Memory cap (GiB)** at half of the available memory rounded down to 0.1 GiB and a line
+      naming the figure (on a runtime with little memory: 1, with the one-line reason). The
+      run's result says how many images were read at once.
     - [ ] **Compute histograms** finishes with progress; run messages are short cards with the
       whole message one click away. The intensity checks, **Compare groups** and the report are
       collapsed panels and open.
@@ -137,6 +141,19 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
       masks folder and a `mask_lineage.jsonl` line, shows the files and the next steps (declare
       the new mask, run, describe the masks); a second click writes nothing new ("already
       written before").
+    - [ ] v0.7.0 (BM15), optional, with an H&E experiment of RGB units at hand: the card **Make
+      an H&E tissue mask** beside **Convert a mask** is greyed out with its reasons (each one
+      in order: no unit declared rgb, choose a position, type the new mask ID, and
+      scikit-image missing with `pip install "morphobricks-preprocessing[he-mask]"` when it is
+      not installed). Unusable positions are listed greyed with their reason. **Preview**
+      writes nothing and shows the image with nuclei blue, red cells orange and background
+      grey, the kept share and "provisional"; **Write** writes the masks and a
+      `mask_lineage.jsonl` line and lists the next steps; a second click is listed as a retry
+      that changed nothing (unless the preview said the mask will not be reused on retry).
+    - [ ] v0.7.0 (#334), optional, with an image whose planes cannot be decoded: the run stops
+      with `unreadable_planes` (at most 20 planes per image in the message), and the report
+      panel has a part *Unreadable planes* before *Checks*: one closed fold per image listing
+      every failed plane in reading order.
 16. - [ ] Throughout: one column, the page scrolls as a whole (no box with its own scroll bar,
     no horizontal page scroll bar); every greyed-out button says beside it what it waits for;
     no flood of debug messages under the cell.
