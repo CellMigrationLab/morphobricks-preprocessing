@@ -25,10 +25,10 @@ Every unit's tags are saved in the draft exactly as tagging that unit by hand wr
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from .channel_answers import with_tags
-from .channel_labels import RGB_IDS, UnitLayout, aliases, header_label, tags_of
+from .channel_labels import UnitLayout, aliases, header_label, tags_of
 from .draft_answers import ChannelAnswer, DraftAnswers, UnitKey
 
 SAME = "same"
@@ -194,65 +194,6 @@ def _still_saved(
     return out
 
 
-def untrusted(
-    answers: DraftAnswers,
-    layouts: Sequence[UnitLayout],
-    given: Mapping[UnitKey, tuple[str | None, ...]],
-) -> DraftAnswers:
-    """Return the answers with the units :func:`trusted` tagged (``given``) untagged again.
-
-    The statement unticked: those tags rested on it alone, with no click, so the strict page
-    shows the header as a proposal to confirm, as before. ``given`` holds only units the user
-    has not clicked on since (the caller forgets a unit at its first click). A unit whose saved
-    tags are some of the given ones, the others untagged since without a click on it (their
-    label removed from the list), is untagged too; one with any other tag keeps it.
-    """
-    for layout in layouts:
-        tags = given.get(layout.key)
-        saved = tags_of(layout, answers.units.get(layout.key))
-        if tags is None or len(tags) != len(saved):
-            continue
-        if any(saved) and all(s is None or s == t for s, t in zip(saved, tags, strict=True)):
-            answers = with_tags(answers, layout, (None,) * layout.channels)
-    return answers
-
-
-def with_aliases(
-    answers: DraftAnswers, names: Mapping[str, tuple[str, ...] | None]
-) -> DraftAnswers:
-    """Return the answers with ``names`` added back to the aliases of the labels still listed.
-
-    Unticking restores the aliases the draft held before the no-click tags (the ones only those
-    units held, which :func:`.channel_answers.synced` drops with them): opening the page
-    unticked keeps them until the user's first click. A label no longer listed gets none.
-    """
-    channels = dict(answers.channels)
-    for label, channel in answers.channels.items():
-        if label in RGB_IDS or not names.get(label):
-            continue
-        merged = set(channel.header_names or ()) | set(names[label] or ())
-        channels[label] = replace(channel, header_names=tuple(sorted(merged)))
-    return replace(answers, channels=channels)
-
-
-def without_aliases(answers: DraftAnswers, names: Mapping[str, Collection[str]]) -> DraftAnswers:
-    """Return the answers with ``names`` taken out of the aliases of their labels.
-
-    Unticking takes back the aliases only the no-click tags added (an exact header name a unit
-    tagged with no click confirmed): a unit tagged by hand whose header now says the same name
-    would keep it, though the strict page never saved it (owner, 16 November 2026: unticked,
-    the draft is byte-equal to the strict page's).
-    """
-    channels = dict(answers.channels)
-    for label, channel in answers.channels.items():
-        drop = set(names.get(label, ()))
-        if label in RGB_IDS or not drop or not channel.header_names:
-            continue
-        kept = tuple(n for n in channel.header_names if n not in drop)
-        channels[label] = replace(channel, header_names=kept or None)
-    return replace(answers, channels=channels)
-
-
 def differences(
     layout: UnitLayout,
     tags: Sequence[str | None],
@@ -319,8 +260,8 @@ def set_template(
     before: Sequence[str | None],
     tags: Sequence[str | None],
     labels: Collection[str],
-) -> tuple[DraftAnswers, Cells]:
-    """Return the answers with the row's new tags saved for the units that follow it, and cells.
+) -> tuple[dict[UnitKey, tuple[str | None, ...]], Cells]:
+    """Return the tags to save for the units that follow the row's new tags, and the cells.
 
     A follower is a unit whose saved tags were the row's (``before``; untagged units too while
     the row was untagged), unless its header names its channels with labels exactly (it keeps
@@ -328,7 +269,8 @@ def set_template(
     header (:func:`differences`): on a contradiction its tags are taken back (it was only
     following) and it is refused, to be tagged on its own. The aliases checked are those of the
     other units of ``layouts`` (every unit): a follower's own header names were saved only
-    because it followed, and say nothing about the cells decided again.
+    because it followed, and say nothing about the cells decided again. The result is saved
+    with :func:`.channel_answers.tagged`.
     """
     before, tags = tuple(before), tuple(tags)
     changed = [i for i, (a, b) in enumerate(zip(before, tags, strict=True)) if a != b]
@@ -340,23 +282,22 @@ def set_template(
     keys = {u.key for u in follows}
     others = aliases([u for u in layouts if u.key not in keys], answers.units)
     known = {label: ChannelAnswer(header_names=others.get(label)) for label in labels}
-    out, cells = answers, []
+    out: dict[UnitKey, tuple[str | None, ...]] = {}
+    cells: Cells = []
     for layout in follows:
         if differences(layout, tags, group[0], labels, known, changed):
-            out = with_tags(out, layout, (None,) * layout.channels)
+            out[layout.key] = (None,) * layout.channels
             continue
-        out = with_tags(out, layout, tags)
+        out[layout.key] = tags
         cells += [(layout.key, i) for i in changed]
     return out, cells
 
 
-def fill(answers: DraftAnswers, rows: Sequence[MatrixRow]) -> tuple[DraftAnswers, Cells]:
-    """Return the answers with these rows' shown tags saved (the user's click), and the cells."""
-    cells: Cells = []
-    for row in rows:
-        answers = with_tags(answers, row.layout, row.shown)
-        cells += [(row.layout.key, i) for i, t in enumerate(row.shown) if t]
-    return answers, cells
+def fill(rows: Sequence[MatrixRow]) -> tuple[dict[UnitKey, tuple[str | None, ...]], Cells]:
+    """Return the tags shown for these rows, to save (the user's click), and the cells."""
+    out = {row.layout.key: row.shown for row in rows}
+    cells: Cells = [(row.layout.key, i) for row in rows for i, t in enumerate(row.shown) if t]
+    return out, cells
 
 
 def difference_text(found: Difference) -> str:
@@ -385,7 +326,4 @@ __all__ = [
     "name_label",
     "set_template",
     "trusted",
-    "untrusted",
-    "with_aliases",
-    "without_aliases",
 ]

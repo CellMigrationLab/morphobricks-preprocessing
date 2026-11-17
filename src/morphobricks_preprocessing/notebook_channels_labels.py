@@ -33,7 +33,7 @@ from .channel_labels import (
     propose_labels,
     usable_as_label,
 )
-from .notebook_channels_view import AnswerStore, chip
+from .notebook_channels_view import AnswerStore, chip, save_change
 from .notebook_description_view import plain
 from .notebook_render import blocked_line
 
@@ -360,10 +360,9 @@ class LabelsCard:
         for row in self.rows:
             if row.id_box.value:
                 labels[row.id_box.value] = row.name_box.value or None
-        answers = self.store.answers()
-        gone = untagged_by(answers, labels)
-        new = synced(with_labels(answers, labels), self.layouts)
-        if not self.store.update(new):
+        gone = untagged_by(self.store.answers(), labels)
+        layouts = self.layouts
+        if not save_change(self.store, lambda a: synced(with_labels(a, labels), layouts)):
             self.status.value = ui.status(
                 "error", "Not saved: the labels were refused.", [self.store.refusal()]
             )

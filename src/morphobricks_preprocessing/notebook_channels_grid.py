@@ -40,7 +40,7 @@ from collections.abc import Callable, Mapping, Sequence
 import ipywidgets as widgets
 
 from . import notebook_style as ui
-from .channel_answers import synced, with_tags
+from .channel_answers import tagged
 from .channel_labels import (
     UnitLayout,
     positions,
@@ -49,7 +49,7 @@ from .channel_labels import (
     tags_of,
     usage,
 )
-from .draft_answers import DraftAnswers, UnitKey
+from .draft_answers import UnitKey
 from .notebook_channel_thumbs import COLOUR_TEXT, CONTRAST_TEXT, Thumbnails
 from .notebook_channels_matrix import STATEMENT, TagMatrix
 from .notebook_channels_rows import FolderRows
@@ -61,6 +61,7 @@ from .notebook_channels_view import (
     chip,
     columns,
     quoted,
+    save_change,
 )
 from .notebook_row_fold import UNCHANGED, RowFold, row_status
 from .notebook_values import natural_key
@@ -174,8 +175,6 @@ class TagGrid:
             self.alone = set()
             self.matrix.reset()
             self.matrix.opening()
-        else:  # the label list (or an image type) was saved: the aliases were resynced
-            self.matrix.resynced()
         self.layouts, self.labels, self.rows.thumbs = layouts, labels, thumbs
         if self.place_types:
             self.types.open(layouts)
@@ -201,16 +200,20 @@ class TagGrid:
         if self.same_channels.value:
             self.matrix.trust_headers()
         else:
-            self.matrix.take_back()  # the strict path as before: a header pre-tag needs its click
+            self.matrix.take_back()  # the strict page's draft: a header pre-tag needs its click
         self.refresh()
         self._on_change()
 
-    def commit(self, answers: DraftAnswers, cells: Sequence[tuple[UnitKey, int]]) -> bool:
-        """Save answers whose cells were tagged by the user's click, redraw; False if refused."""
-        ok = self.store.update(synced(answers, self.layouts, cells))
+    def commit(
+        self, tags: Mapping[UnitKey, Sequence[str | None]], cells: Sequence[tuple[UnitKey, int]]
+    ) -> bool:
+        """Save the units' tags the user's click set (``cells`` clicked), redraw; False if refused.
+
+        The click is one change (:func:`.channel_answers.tagged`), applied to the strict page's
+        draft too: there, the click makes the unit's whole tags the user's.
+        """
+        ok = save_change(self.store, tagged(self.layouts, tags, cells))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
-        if ok:
-            self.matrix.clicked(cells)
         self.refresh()
         self._on_change()
         return ok
@@ -273,9 +276,9 @@ class TagGrid:
             self.refuse_twice(value, tags.index(value) + 1)
             return
         tags[index] = value
-        for layout in units:  # every folder of the block holds these tags
-            answers = with_tags(answers, layout, tags)
-        self.commit(answers, [(layout.key, index) for layout in units])
+        self.commit(  # every folder of the block holds these tags
+            {layout.key: tuple(tags) for layout in units}, [(u.key, index) for u in units]
+        )
 
     def refuse_twice(self, value: str, other: int) -> None:
         """Say that ``value`` was not tagged: it already stands at channel ``other``."""
@@ -297,18 +300,15 @@ class TagGrid:
         not shown (its label is already tagged elsewhere in the unit) stays untagged. The colour
         pre-tick is saved too only when the image type is answered here.
         """
-        answers = self.store.answers()
         rgb = [u.key for u in units if self.place_types and self.types.proposed(u)]
-        cells = []
+        tags, cells = {}, []
         for layout in units:
             shown, proposed = self.effective(layout)
             if proposed:
-                answers = with_tags(answers, layout, shown)
+                tags[layout.key] = shown
                 cells += [(layout.key, index) for index in proposed]
-        ok = self.store.update(synced(answers, self.layouts, cells))
+        ok = save_change(self.store, tagged(self.layouts, tags, cells))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
-        if ok:
-            self.matrix.clicked(cells)
         if ok and rgb:
             self.types.confirm_header(rgb)
         self.refresh()
@@ -354,10 +354,8 @@ class TagGrid:
 
     def tag_like(self, units: Sequence[UnitLayout], tags: tuple[str, ...]) -> None:
         """Save ``tags`` for every folder of a block: the user's click, as if chosen by hand."""
-        answers = self.store.answers()
-        for layout in units:
-            answers = with_tags(answers, layout, tags)
-        self.commit(answers, [(u.key, index) for u in units for index in range(u.channels)])
+        cells = [(u.key, index) for u in units for index in range(u.channels)]
+        self.commit({u.key: tags for u in units}, cells)
 
     # Building ----------------------------------------------------------------------------
 

@@ -19,6 +19,9 @@ declared assumption; unticked, the page is the strict per-unit blocks of
   of one other channel count with a row of their own.
 - On a reopen, a new unit without header names is shown filled and saved only by **Tag the new
   units like the first tagged unit**; colour (RGB) and untaggable units keep the blocks.
+- Unticked, the draft is the strict page's draft after the same user actions, by construction:
+  the tags saved with no click go to the draft only, every user save goes to both
+  (:mod:`.strict_draft`), and unticking writes the strict page's draft back.
 
 Each saved unit gets exactly the tags tagging it by hand gives (:func:`.channel_answers.
 with_tags`), so the draft has the same bytes. The statement itself is not in the draft: the
@@ -28,14 +31,14 @@ draft and description formats have no field for it yet (a Spec amendment will ad
 from __future__ import annotations
 
 import html
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import ipywidgets as widgets
 
 from . import notebook_style as ui
 from .channel_answers import synced
-from .channel_labels import UnitLayout, aliases, tags_of
+from .channel_labels import UnitLayout, tags_of
 from .channel_matrix import (
     EDITED,
     HEADER,
@@ -50,12 +53,18 @@ from .channel_matrix import (
     matrix_rows,
     set_template,
     trusted,
-    untrusted,
-    with_aliases,
-    without_aliases,
 )
-from .draft_answers import ChannelAnswer, DraftAnswers, UnitAnswer, UnitKey
-from .notebook_channels_view import CHOOSE, blank_chip, chip, columns, quoted, unit_name
+from .draft_answers import ChannelAnswer, UnitKey
+from .notebook_channels_view import (
+    CHOOSE,
+    blank_chip,
+    chip,
+    columns,
+    quoted,
+    restore_strict,
+    save_unattended,
+    unit_name,
+)
 from .notebook_values import natural_key
 
 if TYPE_CHECKING:
@@ -93,22 +102,6 @@ class TagMatrix:
         self.stopped = widgets.HTML()
         self.saved: dict[str, ChannelAnswer] = {}
         """The labels and their aliases saved when the page opened: the only aliases trusted."""
-        self.given: dict[UnitKey, tuple[str | None, ...]] = {}
-        """The tags saved from the headers with no click (this session), taken back unticked.
-
-        A unit leaves it at the user's first click on its tags (:meth:`clicked`): its tags are
-        the user's from then on, even when they end equal to the header's."""
-        self.before: dict[str, tuple[str, ...] | None] | None = None
-        """The aliases the draft held before the first no-click tags (None: none since the page
-        opened or the last untick), restored unticked. Empty once a save resynced the aliases
-        since (:meth:`resynced`): on the strict page it dropped the aliases no tagged cell holds,
-        so none is restored, and later no-click tags take no new snapshot."""
-        self.units: Mapping[UnitKey, UnitAnswer] | None = None
-        """The units as the no-click tags saved them: units saved otherwise since were resynced."""
-        self.added: dict[str, set[str]] = {}
-        """The aliases the no-click tags added (exact header names), by label, taken out
-        unticked: the strict page never saved them. A click that tags a cell with that name, or
-        on a unit holding it, saves it on the strict page too, so it is forgotten then."""
 
     def reset(self) -> None:
         """Forget the session's layouts, rows of tags and switches (new units, or a toggle)."""
@@ -116,83 +109,31 @@ class TagMatrix:
 
     def opening(self) -> None:
         """Note the aliases saved when the page opens for new units (the ones trusted)."""
-        self.saved, self.given = dict(self.grid.store.answers().channels), {}
-        self.before, self.units, self.added = None, None, {}
-
-    def resynced(self) -> None:
-        """Note a save that resynced the aliases (a click, the label list, an image type).
-
-        The strict page's same save dropped the aliases no tagged cell holds: unticking then
-        restores none of the ones the draft held before the no-click tags.
-        """
-        if self.before is not None:
-            self.before = {}
-
-    def _saved_since(self, answers: DraftAnswers) -> None:
-        """Note a save of the units other than the no-click tags' (an image type) as resynced."""
-        if self.units is not None and answers.units != self.units:
-            self.resynced()
+        self.saved = dict(self.grid.store.answers().channels)
 
     def trust_headers(self) -> bool:
-        """Tag every untagged unit whose header names its channels (no click); True if saved."""
+        """Tag every untagged unit whose header names its channels (no click); True if saved.
+
+        A save with no click: the strict page's draft does not take it
+        (:func:`.notebook_channels_view.save_unattended`).
+        """
         if not self.grid.same_channels.value or not self.grid.labels:
             return False
         units = [u for u in self.grid.layouts if not self.grid.colour(u)]
-        now = self.grid.store.answers()
-        self._saved_since(now)
-        answers, cells = trusted(now, units, self.grid.labels, self.saved)
-        if not cells or not self.grid.store.update(synced(answers, self.grid.layouts, cells)):
+        answers, cells = trusted(self.grid.store.answers(), units, self.grid.labels, self.saved)
+        if not cells:
             return False
-        if self.before is None:
-            self.before = {k: c.header_names for k, c in now.channels.items()}
-        after = self.grid.store.answers()
-        self.units = after.units
-        for label, channel in after.channels.items():
-            held = set((now.channels.get(label) or ChannelAnswer()).header_names or ())
-            new = set(channel.header_names or ()) - held
-            if new:
-                self.added.setdefault(label, set()).update(new)
-        for key in dict.fromkeys(k for k, _ in cells):
-            self.given[key] = tuple(answers.units[key].channels)
-        return True
-
-    def clicked(self, cells: Iterable[tuple[UnitKey, int]]) -> None:
-        """Note the cells the user's click tagged: their units are never taken back unticked.
-
-        The names of those cells, and of every cell of a unit tagged with no click until now,
-        are the user's aliases from then on: unticking no longer takes them out.
-        """
-        cells = set(cells)
-        keys = {key for key, _ in cells}
-        own = cells | {
-            (u.key, i)
-            for u in self.grid.layouts
-            if u.key in keys and u.key in self.given
-            for i in range(u.channels)
-        }
-        for label, names in aliases(
-            self.grid.layouts, self.grid.store.answers().units, own
-        ).items():
-            if label in self.added:
-                self.added[label] -= set(names)
-        for key in keys:
-            self.given.pop(key, None)
-        self.resynced()  # the click's save dropped the aliases no tagged cell holds
+        return save_unattended(self.grid.store, synced(answers, self.grid.layouts, cells))
 
     def take_back(self) -> None:
-        """Untag the units tagged from their headers with no click (the statement unticked)."""
-        answers = self.grid.store.answers()
-        self._saved_since(answers)
-        given, before, added = self.given, self.before, self.added
-        self.given, self.before, self.units, self.added = {}, None, None, {}
-        out = untrusted(answers, self.grid.layouts, given)
-        if out != answers:
-            out = synced(out, self.grid.layouts)
-        out = without_aliases(out, added)  # the strict page never saved them
-        if before is not None:  # no click since: the aliases held before, as opening unticked
-            out = with_aliases(out, before)
-        if out != answers:
-            self.grid.store.update(out)
+        """Write the strict page's draft back (the statement unticked).
+
+        Every user save since the first no-click tags was applied to it as to the draft
+        (:mod:`.strict_draft`): the units tagged with no click are untagged, a unit the user
+        clicked on keeps the tags of the click, and the aliases are those the strict page holds
+        after the same saves.
+        """
+        restore_strict(self.grid.store)
 
     # What is in the matrix -----------------------------------------------------------------
 
@@ -491,18 +432,17 @@ class TagMatrix:
     def _set(self, group: Sequence[UnitLayout], tags: Template) -> None:
         """Set the layout's row of tags and save it for the units that follow it."""
         before = self.template(group)
-        answers, cells = set_template(
+        units, cells = set_template(
             self.grid.store.answers(), self.grid.layouts, group, before, tags, self.grid.labels
         )
         self.templates[group[0].key] = tags
-        if not self.grid.commit(answers, cells):
+        if not self.grid.commit(units, cells):
             self.templates[group[0].key] = before  # refused: the row shows what is saved
             self.grid.refresh()
 
     def _fill(self, rows: Sequence[MatrixRow]) -> None:
         """Save the tags shown for these rows (the user's click)."""
-        answers, cells = fill(self.grid.store.answers(), rows)
-        self.grid.commit(answers, cells)
+        self.grid.commit(*fill(rows))
 
 
 __all__ = ["STATEMENT", "TagMatrix"]

@@ -26,6 +26,7 @@ from .notebook_channel_thumbs import Thumbnails
 from .notebook_channels_grid import TagGrid
 from .notebook_channels_labels import LabelsCard
 from .notebook_channels_type import ImageTypeColumn
+from .strict_draft import Change
 
 INTRO = (
     "<b>What happens here:</b> first name what you stained (the labels), then say, for every "
@@ -48,6 +49,18 @@ class _NotebookStore:
     def update(self, new: DraftAnswers) -> bool:
         """Save the answers as the description cards do; False when they are refused."""
         return self._nb._answer(new, rebuild=False)
+
+    def change(self, change: Change) -> bool:
+        """Save a user's change, to the draft and to fast mode's strict page's draft."""
+        return self._nb._answer(change(self._nb.draft_answers), rebuild=False, change=change)
+
+    def unattended(self, new: DraftAnswers) -> bool:
+        """Save answers made with no click: the strict page's draft does not take them."""
+        return self._nb._answer_unattended(new)
+
+    def restore_strict(self) -> bool:
+        """Save the strict page's draft back (fast mode unticked); False when refused."""
+        return self._nb._restore_strict()
 
     def refusal(self) -> str:
         """Return the reason the last answer was refused."""

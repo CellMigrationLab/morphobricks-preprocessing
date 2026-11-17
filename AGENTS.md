@@ -408,6 +408,10 @@ src/morphobricks_preprocessing/
                             tuned per unit (edited), contradictions refused and tagged on their
                             own; channel_matrix.py (pure) its rules (trusted, layout_groups,
                             matrix_rows, set_template, fill)
+  strict_draft.py           fast mode unticked (pure): StrictShadow, the strict page's draft kept
+                            beside the draft; every user save applies the same change to both
+                            (channel_answers.tagged, patched), no-click tags the draft only;
+                            notebook_strict_draft.py routes every save of the notebook through it
   notebook_rgb_override.py  the Image type card's RGB header override offer (Spec RH1): shown
                             only for three interleaved samples under a header not saying colour,
                             never pre-ticked; channel_answers.with_override records it

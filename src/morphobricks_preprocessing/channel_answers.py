@@ -10,17 +10,20 @@ draft (:mod:`.draft_answers`); these functions change one slice and keep the res
 - :func:`with_override` records or takes back one colour unit's RGB header override (Spec
   RH1), only on the user's click and only where the headers allow it;
 - :func:`synced` recomputes what is derived from the tags: the header names each label is
-  evidence for (the tag is the user's confirmation of the alias) and the declared colour tokens.
+  evidence for (the tag is the user's confirmation of the alias) and the declared colour tokens;
+- :func:`tagged` is a click on the tag grid as a change of any answers: the units' whole tags
+  set and synced, so the same click can be applied to the strict page's draft
+  (:mod:`.strict_draft`).
 
 Nothing is guessed: a position is tagged only by a tag the user gave.
 """
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import replace
 
-from .channel_labels import RGB_IDS, UnitLayout, aliases
+from .channel_labels import RGB_IDS, UnitLayout, aliases, tags_of
 from .draft_answers import ChannelAnswer, DraftAnswers, UnitAnswer, UnitKey
 
 
@@ -181,10 +184,43 @@ def synced(
     return replace(answers, channels=channels)
 
 
+def tagged(
+    layouts: Sequence[UnitLayout],
+    tags: Mapping[UnitKey, Sequence[str | None]],
+    cells: Collection[tuple[UnitKey, int]],
+) -> Callable[[DraftAnswers], DraftAnswers]:
+    """Return the user's click that saves ``tags`` (unit key -> whole tags) as a change.
+
+    The change sets each unit's tags (:func:`with_tags`) and syncs the answers (:func:`synced`)
+    with the cells the click confirmed: ``cells`` (the cells clicked) and every cell whose tag
+    the click changes in the answers it is applied to. On the draft these are the cells
+    clicked; on the strict page's draft, where a unit tagged with no click is not tagged, they
+    are also the cells the click made the user's: a click on a unit makes its whole tags the
+    user's (a hand tag is never taken back). A click that tags no cell (every unit of a row of
+    tags refused, untagged as it was) confirms nothing and resyncs nothing: on the strict page
+    there is no such click.
+    """
+    by_key = {layout.key: layout for layout in layouts}
+    clicked = set(cells)
+
+    def change(answers: DraftAnswers) -> DraftAnswers:
+        confirmed = set(clicked)
+        for key, new in tags.items():
+            layout = by_key[key]
+            old = tags_of(layout, answers.units.get(key))
+            pairs = enumerate(zip(old, new, strict=True))
+            confirmed.update((key, i) for i, (a, b) in pairs if a != b)
+            answers = with_tags(answers, layout, new)
+        return synced(answers, layouts, confirmed) if confirmed else answers
+
+    return change
+
+
 __all__ = [
     "all_colour",
     "label_ids",
     "synced",
+    "tagged",
     "untagged_by",
     "with_labels",
     "with_override",

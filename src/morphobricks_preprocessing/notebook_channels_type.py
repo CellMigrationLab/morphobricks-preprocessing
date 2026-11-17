@@ -19,10 +19,10 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .channel_answers import synced, with_type
 from .channel_labels import UnitLayout
-from .draft_answers import UnitKey
+from .draft_answers import DraftAnswers, UnitKey
 from .notebook_channel_thumbs import Thumbnails
 from .notebook_channels_rows import picture
-from .notebook_channels_view import AnswerStore, blank_chip, quoted, unit_name
+from .notebook_channels_view import AnswerStore, blank_chip, quoted, save_change, unit_name
 from .notebook_row_fold import RowFold, row_status
 from .notebook_values import natural_key
 
@@ -113,13 +113,14 @@ class ImageTypeColumn:
         """Save the type the user ticked; a refusal is said and the tick is taken back."""
         if self._building or value is None or value == self.saved(layout.key):
             return
+        layouts = self.layouts
         try:
-            new = with_type(self.store.answers(), layout, value)
+            ok = save_change(self.store, lambda a: synced(with_type(a, layout, value), layouts))
         except ValueError as exc:
             self.message = ui.status("error", "Not taken.", [str(exc)])
             self._revert(layout)
         else:
-            if self.store.update(synced(new, self.layouts)):
+            if ok:
                 self.message = ""
             else:
                 self.message = ui.status("error", "Not saved.", [self.store.refusal()])
@@ -135,13 +136,16 @@ class ImageTypeColumn:
 
     def confirm_header(self, keys: Sequence[UnitKey]) -> bool:
         """Save the header's colour pre-tick of these units as the answer; False if refused."""
-        answers = self.store.answers()
         by_key = {u.key: u for u in self.layouts}
-        for key in keys:
-            layout = by_key[key]
-            if self.proposed(layout):
+        colour = [by_key[key] for key in keys if self.proposed(by_key[key])]
+        layouts = self.layouts
+
+        def change(answers: DraftAnswers) -> DraftAnswers:
+            for layout in colour:
                 answers = with_type(answers, layout, "rgb")
-        ok = self.store.update(synced(answers, self.layouts))
+            return synced(answers, layouts)
+
+        ok = save_change(self.store, change)
         if not ok:
             self.message = ui.status("error", "Not saved.", [self.store.refusal()])
         self._on_change()
