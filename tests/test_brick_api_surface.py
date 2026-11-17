@@ -276,6 +276,8 @@ def test_the_resolver_names_are_exported_and_versioned():
         "RgbNotSupportedError",
         "VolumeNotSupportedError",
         "RunInputsError",
+        "RunStoppedError",
+        "RunReportUnreadableError",
     ):
         assert name in package.__all__, name
 

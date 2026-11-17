@@ -77,6 +77,7 @@ from .run_inputs_mask import MaskInputs
 from .run_inputs_projection import ProjectionInputs
 from .run_inputs_resolve import ResolvingInputs
 from .run_inputs_semantic import SemanticInputs, check_description, with_identity
+from .run_inputs_stopped import stopped_run_refusal
 from .run_inputs_text import (
     _ZARR_MISSING,
     _changed_text,
@@ -229,6 +230,13 @@ class RunInputs(
         UnrecordedFilesError
             For images or masks in the experiment that the run neither recorded nor
             excluded (added since the run): it names them.
+        RunStoppedError
+            ``RUN_FOLDER_STOPPED``: the folder holds no manifest because preprocessing stopped
+            the run; ``issues`` holds that run's error issues exactly as its report records
+            them (issue #322). Raised before any image or mask is read.
+        RunReportUnreadableError
+            ``RUN_FOLDER_REPORT_UNREADABLE``: the folder holds no manifest and its report
+            cannot be read, or is of another report version; it names the file.
         """
         output = Path(output_folder).resolve()
         # One generation of the outputs (contract §9): read again if a run published
@@ -425,13 +433,21 @@ def _manifest(output: Path) -> RunManifest:
     ------
     DescriptionRequiredError
         ``A_DESCRIPTION_REQUIRED``: the output folder holds no published description.
+    RunStoppedError
+        ``RUN_FOLDER_STOPPED``: there is no manifest because preprocessing stopped the run
+        (issue #322); it carries that run's error issues.
+    RunReportUnreadableError
+        ``RUN_FOLDER_REPORT_UNREADABLE``: there is no manifest, and the report cannot be read.
     RunInputsError
-        When there is no manifest.
+        When there is no manifest, and no report of a stopped run.
     ManifestFormatError
         When the manifest cannot be read, or is of an older version (run preprocessing again).
     """
     path = output / MANIFEST_FILENAME
     if not path.exists():
+        stopped = stopped_run_refusal(output)  # the one reader of the report (issue #322)
+        if stopped is not None:
+            raise stopped
         raise RunInputsError(f"{output} holds no {MANIFEST_FILENAME}: run preprocessing first.")
     if not is_published(output):
         raise DescriptionRequiredError(f"{required_message(output)} {FIX}")

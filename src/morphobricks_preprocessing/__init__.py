@@ -214,6 +214,8 @@ from .run_inputs_error import (
     MaskNotInstancesError,
     MaskUncheckedError,
     RgbNotSupportedError,
+    RunReportUnreadableError,
+    RunStoppedError,
 )
 from .run_inputs_request import (
     PARENT_LABELS_AS_AREA,
@@ -341,6 +343,8 @@ __all__ = [
     "MaskUncheckedError",
     "RgbNotSupportedError",
     "VolumeNotSupportedError",
+    "RunReportUnreadableError",
+    "RunStoppedError",
     "Capabilities",
     "FovSelection",
     "MaskConversion",

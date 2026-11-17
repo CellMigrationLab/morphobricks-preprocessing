@@ -10,6 +10,21 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Added
 
+- **A stopped run's refusal for the bricks** (#322). `RunInputs.open` on an output folder that
+  holds no `run_manifest.json` because preprocessing stopped the run (for example Spec fixture
+  `v29`, `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`) raises `RunStoppedError`, a `RunInputsError` with
+  `code = "RUN_FOLDER_STOPPED"` (named after the `RUN_FOLDER_*` family proposed in Spec ADR 0007),
+  before any image or mask is read. Its `issues` are the stopped run's error issues, in the
+  report's order, with code, message, paths and suggested action byte-equal to
+  `discovery_report.json`'s, so a brick passes them on unchanged and no longer reads the report
+  (`run_inputs_stopped`, the one reader of the report for the bricks). A report that cannot be
+  read, is not of the shape report version 1 writes, is of another version or records no error
+  for a stopped run is `RunReportUnreadableError` (`RUN_FOLDER_REPORT_UNREADABLE`, naming the
+  file): nothing is guessed. Every other refusal is unchanged: a folder with no report, a `check`
+  report, a provisional report (a killed run) or a `written` one is still "holds no
+  run_manifest.json", and a folder with a manifest is opened as before whatever its report says
+  (a stopped run keeps the last good generation). Both errors are exported at the top level
+  (contract §9.1).
 - **Notebook: fast mode for *Tag channels*** (owner decisions of 16 November 2026). **Every
   imaging unit has the same channels in the same order** is ticked by default, the user's
   declared assumption. Headers are trusted: an untagged unit whose header names every channel
