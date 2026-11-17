@@ -10,6 +10,26 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Added
 
+- **The opt-in H&E tissue mask** (I1; Spec ADR 0005 BM15; design
+  `docs/design/he-tissue-mask.md`). `RunInputs.he_tissue_mask(fov, *, output_mask_id)` writes one
+  `uint8` region mask of an image of a unit declared `rgb` (nuclei, red blood cells and empty
+  space left out) with its `mask_lineage.jsonl` line; `RunInputs.preview_he_tissue_mask(fov)`
+  computes it in memory. The command `tissue-mask` and the notebook card **Make an H&E tissue
+  mask** (beside **Convert a mask**) call them. The rule `he_tissue_v1` is **provisional**: fixed
+  numbers on normalization's `he_eosin` maps and optical density (stable API, normalization
+  contract §3.6), SciPy clean-up in pixels. The position is resolved from the run; every refusal
+  comes before any pixel is read. The line records the rule record and its SHA-256, the verified
+  code identities of preprocessing and normalization (`RECORD` digest; commit as provenance),
+  the NumPy, scikit-image and SciPy versions and the per-image RGB override record; BM15's own
+  comparator makes a retry a no-op only for two reusable equal lines, and an unverified identity
+  writes a mask that is never reused. New extra `he-mask` (`morphobricks-normalization[histology]`
+  at v0.7.0); a core install imports none of it. PI-1..PI-4 evaluation:
+  `docs/design/he-tissue-mask-eval-pi.md`.
+
+- **The lineage reader selects the schema by `operation`** (BM12's two operations, or
+  `he_tissue_mask`) and now refuses a key repeated in one JSON object and an operation of
+  neither schema; every other BM12 refusal is unchanged.
+
 - **A stopped run's refusal for the bricks** (#322). `RunInputs.open` on an output folder that
   holds no `run_manifest.json` because preprocessing stopped the run (for example Spec fixture
   `v29`, `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`) raises `RunStoppedError`, a `RunInputsError` with
@@ -25,6 +45,7 @@ v0.5.1: no run before v0.5.1 is read.)
   run_manifest.json", and a folder with a manifest is opened as before whatever its report says
   (a stopped run keeps the last good generation). Both errors are exported at the top level
   (contract §9.1).
+
 - **Notebook: fast mode for *Tag channels*** (owner decisions of 16 November 2026). **Every
   imaging unit has the same channels in the same order** is ticked by default, the user's
   declared assumption. Headers are trusted: an untagged unit whose header names every channel
