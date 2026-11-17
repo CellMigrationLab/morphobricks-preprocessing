@@ -136,6 +136,8 @@ RELEASE_CALLS = {
     "835b8015024e9e3e07051b3c641f72f2a6a979e0": "PreprocessingNotebook()",
     # v0.6.1: the same call.
     "9b24a29c30e3efdd8379d09f1208a6a8ba1e0820": "PreprocessingNotebook()",
+    # v0.7.0: the same call.
+    "a8ca7b3728808cc70a482e4349b7d5a5bf4a15b9": "PreprocessingNotebook()",
 }
 CHECKOUT_CALL = "PreprocessingNotebook()"
 """The call of this checkout's code (every run described, no ``describe`` argument)."""
