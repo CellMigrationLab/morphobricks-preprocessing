@@ -38,6 +38,8 @@ MODES = (RESTART, FULL)
 
 AUTO = "auto"
 """``RunMode(workers="auto")``: as many workers as the CPUs and ``max_ram`` allow."""
+MAX_RAM_ONLY_WITH_AUTO = "max_ram is used only with workers='auto'"
+"""The refusal of ``max_ram`` with a whole number of workers (plan §12 item 82)."""
 
 
 def check_mode(mode: object) -> str:
@@ -152,4 +154,4 @@ def check_workers(workers: object, max_ram: object) -> None:
         if isinstance(max_ram, bool) or not isinstance(max_ram, int) or max_ram < 1:
             raise ValueError(f"max_ram must be a whole number of bytes above 0, not {max_ram!r}")
         if workers != AUTO:
-            raise ValueError("max_ram is used only with workers='auto'")
+            raise ValueError(MAX_RAM_ONLY_WITH_AUTO)

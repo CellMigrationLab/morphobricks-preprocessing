@@ -32,7 +32,7 @@ from ..axes import AxisMapping
 from ..manifest import RunSettings
 from ..planes import PlaneLayout, PlaneReadError, format_bytes, plane_layout
 from ..validation import ValidationIssue, error, plural
-from .modes import AUTO
+from .modes import AUTO, MAX_RAM_ONLY_WITH_AUTO
 
 logger = logging.getLogger(__name__)
 
@@ -270,8 +270,17 @@ def plan_workers(
         A whole number given is used as it is. ``"auto"``: the smaller of the CPU and RAM caps
         (module docstring). An image whose header cannot be read plane by plane is left out of
         the estimate: its read opens the same header first and fails before reading a pixel.
+
+    Raises
+    ------
+    ValueError
+        For a whole number of workers with ``max_ram``: the budget would not be kept, so it
+        is refused as :func:`.modes.check_workers` refuses it (an internal guard: ``RunMode``
+        and the command line never pass it).
     """
     if workers.count != AUTO:
+        if workers.max_ram is not None:
+            raise ValueError(MAX_RAM_ONLY_WITH_AUTO)
         return WorkerPlan(workers.count)
     count = max(1, min(len(to_read), available_cpus()))
     if workers.max_ram is None or not to_read:

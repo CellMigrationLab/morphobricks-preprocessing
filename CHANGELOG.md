@@ -8,6 +8,17 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+### Fixed
+
+- **The worker planner refuses an explicit worker count with `max_ram`** (internal guard;
+  public behaviour unchanged). At v0.7.0 `run.workers.plan_workers` returned a whole number
+  of workers as given even with `max_ram`, so that budget would not have been kept.
+  `RunMode` and `run --max-ram` already refuse `max_ram` without `workers="auto"` (plan §12
+  item 82, kept), so no run reached it; the planner now raises the same `ValueError`
+  ("max_ram is used only with workers='auto'", `run.modes.MAX_RAM_ONLY_WITH_AUTO`). New
+  tests also count the pixel reads (the run's and tifffile's page reads) of `"auto"` with
+  `max_ram` just below, at and above one image's estimate: none before a refusal.
+
 ### Changed
 
 - **`tools/benchmark_run_workers.py` follows a stated protocol** (review items F1 to F3 of
