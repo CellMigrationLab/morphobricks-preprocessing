@@ -547,7 +547,7 @@ the same bytes in every file except that time (and the manifest SHA-256 the repo
 | `--histogram-range minmax\|robust`, `--robust-quantiles LOW HIGH` | Histogram range of histograms that are not exact (default minmax; robust quantiles 0.01 99.99) |
 | `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` or `1.5GiB`: a whole number of bytes above 0 (`1.5` or `0.5B` are refused before anything is read) |
 | `--workers N\|auto` | How many images are read at once, each in its own thread (default 1: one after another). `auto`: at most the number of CPUs, and with `--max-ram` as many as the largest image's estimated working memory fits. The results are exactly the same with any value; it is not recorded and changes nothing on the next run |
-| `--max-ram SIZE` | The memory the run may use, e.g. `8GiB` (256 MiB of it kept for the run itself), with any `--workers`. `auto` reads as many images at once as fit. With a number of workers, the run needs 256 MiB plus that many images (at most the images to read) at the largest image's estimate: when that is more, the run stops before any pixel is read (`workers_over_max_ram`) and says how many workers fit; it never uses fewer workers for you. An image that alone needs more stops the run the same way (`image_over_max_ram`). Without `--max-ram` there is no memory budget at all |
+| `--max-ram SIZE` | With `--workers auto`: the memory the run may use, e.g. `8GiB` (256 MiB of it kept for the run itself). An image that alone needs more stops the run before any pixel is read (`image_over_max_ram`) |
 | `--missing-as-singleton`, `--no-missing-as-singleton` | Confirm that images lacking some dimensions have one plane along them (`check` and `run`; default: the earlier run's answer, else no). `check` then reports what `run` will: an experiment of 2D images and Z-stacks passes `check` once confirmed, and the suggested option says `--axes ZCYX --missing-as-singleton` |
 | `--image-type fluorescence\|rgb` | The image type (default: the earlier run's, else the suggested one, printed) |
 | `--mode restart\|full` | `restart` (default) reuses the rows of unchanged images; `full` recomputes every row and check. Both keep your confirmations and replace the results only when the run succeeds |
@@ -1136,8 +1136,7 @@ continues.
 | `plane_over_memory_limit` | Error | A plane cannot be read within the memory limit, not even in blocks (for example, it is stored compressed in one piece). Raise the limit, or save the images again as tiled or uncompressed TIFF files or as OME-Zarr with smaller chunks. |
 | `unsupported_layout` | Error | The image cannot be read one plane at a time. Check the axis roles or export again. |
 | `unreadable_planes` | Error | Pixel data cannot be decoded. The message names each plane that failed (its T, Z and C index and the channel ID) and why, at most 20 per image followed by "and N more"; the run report lists every one (`unreadable_planes`; in the notebook's run report, under *Unreadable planes*, one folded list per image); no `plane_histograms.csv` is written, since one channel that cannot be measured fails the whole table. Export again, or exclude the image. |
-| `image_over_max_ram` | Error | `--max-ram`: an image needs more working memory to read than the budget leaves (estimated from its header). Nothing was read. Raise `--max-ram`, or lower `--memory-limit` so its planes are read in smaller blocks. |
-| `workers_over_max_ram` | Error | `--workers N --max-ram`: N images read at once (at most the images to read) need more memory than the budget (256 MiB for the run plus the largest image's header estimate for each). Nothing was read. Use fewer workers (the message says how many fit), raise `--max-ram` to the figure the message gives, or use `--workers auto`. The number of workers is never lowered for you. |
+| `image_over_max_ram` | Error | `--workers auto --max-ram`: an image needs more working memory to read than the budget leaves (estimated from its header). Nothing was read. Raise `--max-ram`, or lower `--memory-limit` so its planes are read in smaller blocks. |
 | `invalid_bin_count` | Error | Bin count outside the allowed range. Use the default or a value in range. |
 | `experiment_not_recorded` | Error | `run` was given no experiment folder, and the output folder holds no v0.4.0 run that records one (or no output folder was given). Give the experiment folder. |
 | `axes_not_confirmed` | Error | No axis roles were given and the output folder holds no earlier run that records them. Confirm the roles (`--axes`). |
@@ -1259,10 +1258,7 @@ is your confirmation of its repeat codes. They are recorded in the manifest's `l
 
 Several images can be read at once, each in its own thread (issue #107):
 `run_experiment(..., mode=RunMode(workers=4))`, or `RunMode(workers="auto", max_ram=8 * 2**30)`
-for at most the CPUs and what the largest image's estimated working memory allows in 8 GiB.
-`RunMode(workers=4, max_ram=8 * 2**30)` reads four at once only if four fit in 8 GiB, and
-otherwise stops before any pixel is read (`workers_over_max_ram`); without `max_ram` there is
-no memory budget. The
+for at most the CPUs and what the largest image's estimated working memory allows in 8 GiB. The
 outputs are byte for byte those of `workers=1` (the default); `result.workers` says how many
 threads read. With more than one worker, `progress` is still called in the calling thread, as
 each image is done.

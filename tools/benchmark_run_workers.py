@@ -270,9 +270,10 @@ def child(
     seconds = time_phases() if phases else {}
     memory_limit, max_ram = limits
     options: dict = {"memory_limit": memory_limit}
-    if workers != "1" or max_ram:  # workers 1 without a budget: the baseline's call
+    if workers != "1":
         count = workers if workers == "auto" else int(workers)
-        options["mode"] = RunMode("restart", workers=count, max_ram=max_ram or None)
+        budget = (max_ram or None) if workers == "auto" else None  # max_ram: with auto only
+        options["mode"] = RunMode("restart", workers=count, max_ram=budget)
     start = time.perf_counter()
     result = run_experiment(experiment, prefill_mapping("TCYX"), output_folder=output, **options)
     wall = time.perf_counter() - start
@@ -493,7 +494,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--cpus", default=None, help="pin the runs with taskset -c CPUS")
     parser.add_argument("--scale", type=int, default=1, help="multiply each side by this")
     parser.add_argument("--memory-limit-mib", type=int, default=64)
-    parser.add_argument("--max-ram-mib", type=int, default=0, help="0: no budget")
+    parser.add_argument("--max-ram-mib", type=int, default=0, help="with auto; 0: none")
     parser.add_argument("--phases", action="store_true", help="time the calling thread's steps")
     args = parser.parse_args()
     if args.repeats is None:

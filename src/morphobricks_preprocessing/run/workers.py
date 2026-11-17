@@ -15,13 +15,6 @@ and reads with the smaller. It is deliberately conservative: every image is coun
 largest one. An image whose estimate alone is over what ``max_ram`` leaves is refused with
 ``image_over_max_ram`` before any pixel is read: the limit is never exceeded silently.
 
-``max_ram`` is a budget for any number of workers, not only ``"auto"``. With a whole number
-``N`` and ``max_ram``, the run needs ``PARENT_RESERVE + min(N, images to read) × largest``;
-when that is over ``max_ram`` it is refused with ``workers_over_max_ram`` before any pixel is
-read, naming the memory needed, the most workers that fit and the ``max_ram`` that would do:
-the number given is never lowered for the user. ``max_ram=None`` is no budget at all: nothing
-is estimated or refused for memory (it is not a ceiling of any kind).
-
 The number of workers is operational: it is in no row key, staging key, manifest or table,
 so the same images give byte-identical outputs with any value.
 """
@@ -46,7 +39,6 @@ logger = logging.getLogger(__name__)
 PARENT_RESERVE = 256 * 2**20
 """Bytes of ``max_ram`` kept for the run itself (its rows, staging and checks), not workers."""
 OVER_MAX_RAM = "image_over_max_ram"
-WORKERS_OVER_MAX_RAM = "workers_over_max_ram"
 
 
 @dataclass(frozen=True)
@@ -58,7 +50,7 @@ class Workers:
     count
         A whole number of workers, at least 1, or ``"auto"``.
     max_ram
-        The bytes of memory the run may use, with any ``count``; None: no budget at all.
+        With ``"auto"``, the bytes of memory the run may use, or None for no RAM cap.
     """
 
     count: int | Literal["auto"] = 1
@@ -275,15 +267,13 @@ def plan_workers(
     Returns
     -------
     WorkerPlan
-        Without ``max_ram``, a whole number given is used as it is and ``"auto"`` is the CPU
-        cap. With ``max_ram``, every count is planned from the header estimates (module
-        docstring): ``"auto"`` takes the smaller of the CPU and RAM caps; a whole number is
-        used as it is when its images at once fit, else refused (``workers_over_max_ram``),
-        never lowered. An image whose header cannot be read plane by plane is left out of the
-        estimate: its read opens the same header first and fails before reading a pixel.
+        A whole number given is used as it is. ``"auto"``: the smaller of the CPU and RAM caps
+        (module docstring). An image whose header cannot be read plane by plane is left out of
+        the estimate: its read opens the same header first and fails before reading a pixel.
     """
-    given = workers.count != AUTO
-    count = workers.count if given else max(1, min(len(to_read), available_cpus()))
+    if workers.count != AUTO:
+        return WorkerPlan(workers.count)
+    count = max(1, min(len(to_read), available_cpus()))
     if workers.max_ram is None or not to_read:
         return WorkerPlan(count)
     estimates = {}
@@ -299,13 +289,7 @@ def plan_workers(
     if largest > budget:
         over = sorted(rel for rel, needed in estimates.items() if needed > budget)
         return WorkerPlan(0, over_max_ram(over, largest, workers.max_ram))
-    fits = budget // largest
-    if not given:
-        return WorkerPlan(min(count, fits))
-    at_once = min(count, len(to_read))
-    if at_once > fits:
-        return WorkerPlan(0, workers_over_max_ram(count, at_once, largest, workers.max_ram))
-    return WorkerPlan(count)
+    return WorkerPlan(min(count, budget // largest))
 
 
 def over_max_ram(paths: list[str], largest: int, max_ram: int) -> ValidationIssue:
@@ -320,26 +304,4 @@ def over_max_ram(paths: list[str], largest: int, max_ram: int) -> ValidationIssu
         paths,
         "Raise max_ram if this computer has enough memory, or lower the memory limit so that "
         "the planes are read in smaller blocks.",
-    )
-
-
-def workers_over_max_ram(count: int, at_once: int, largest: int, max_ram: int) -> ValidationIssue:
-    """Return the error refusing ``count`` workers whose images at once do not fit ``max_ram``.
-
-    ``at_once`` images (at most one per worker and one per image to read) of up to
-    ``largest`` bytes each, plus :data:`PARENT_RESERVE`, are over ``max_ram``. The number of
-    workers is never lowered for the user: they choose fewer workers or a larger budget.
-    """
-    need = PARENT_RESERVE + at_once * largest
-    fits = (max_ram - PARENT_RESERVE) // largest
-    return error(
-        WORKERS_OVER_MAX_RAM,
-        f"workers={count} reads up to {plural(at_once, 'image')} at once and needs "
-        f"{format_bytes(need)} of memory ({format_bytes(largest)} for each image at most, "
-        f"estimated from the headers, plus {format_bytes(PARENT_RESERVE)} kept for the run "
-        f"itself), more than max_ram ({format_bytes(max_ram)}). No image was read.",
-        (),
-        f"Use fewer workers (at most {fits} fit in this max_ram), or raise max_ram to at least "
-        f"{format_bytes(need)} if this computer has that memory free. The number of workers is "
-        "never lowered for you.",
     )

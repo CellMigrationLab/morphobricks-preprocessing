@@ -86,10 +86,7 @@ class RunMode:
         as many as the largest image's working-memory estimate fits. The outputs are byte
         for byte the same with any value; it is not recorded.
     max_ram
-        The bytes of memory the run may use, with any ``workers``: ``"auto"`` reads as many
-        images at once as fit; a whole number whose images at once do not fit is refused
-        before any pixel is read (``workers_over_max_ram``), never lowered. None: no budget
-        at all (nothing is estimated or refused for memory; not a ceiling).
+        With ``workers="auto"``, the bytes of memory the run may use; None: no RAM cap.
     """
 
     name: str = RESTART
@@ -139,12 +136,13 @@ def check_workers(workers: object, max_ram: object) -> None:
     workers
         A whole number of at least 1 (not a bool), or ``"auto"``.
     max_ram
-        None, or a whole number of bytes above 0 (with any ``workers``).
+        None, or with ``workers="auto"`` a whole number of bytes above 0.
 
     Raises
     ------
     ValueError
-        For any other ``workers``, or a ``max_ram`` that is not a positive whole number.
+        For any other ``workers``, a ``max_ram`` that is not a positive whole number, or a
+        ``max_ram`` without ``workers="auto"``.
     """
     if workers != AUTO and (
         isinstance(workers, bool) or not isinstance(workers, int) or workers < 1
@@ -153,3 +151,5 @@ def check_workers(workers: object, max_ram: object) -> None:
     if max_ram is not None:
         if isinstance(max_ram, bool) or not isinstance(max_ram, int) or max_ram < 1:
             raise ValueError(f"max_ram must be a whole number of bytes above 0, not {max_ram!r}")
+        if workers != AUTO:
+            raise ValueError("max_ram is used only with workers='auto'")

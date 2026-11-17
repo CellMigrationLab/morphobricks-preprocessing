@@ -68,8 +68,7 @@ class NewRows:
         (its capacity, not a count of the threads used; 1: in the calling thread).
     refused
         ``image_over_max_ram`` when no file was read because one cannot be read within
-        ``max_ram``, or ``workers_over_max_ram`` because the workers' images at once cannot
-        (:func:`.workers.plan_workers`), else None.
+        ``max_ram`` (:func:`.workers.plan_workers`), else None.
     """
 
     records: list[PlaneRecord] = field(default_factory=list)
@@ -141,12 +140,9 @@ def new_rows(
 ) -> NewRows:
     """Resume or read every file of ``to_read``, staging the rows of each file read.
 
-    With one worker (the default) and no ``max_ram``, each file is resumed or read in turn in
-    the calling thread. With ``max_ram`` (any number of workers), the staged rows are resumed
-    first and the files left are planned (:func:`.workers.plan_workers`) before any is read:
-    a refusal reads none; one worker then reads them in turn in the calling thread. With more
-    workers (issue #107), the staged rows are resumed first, then each file left is read in a
-    worker thread (:func:`_read_checked`: its read and its post-read checks
+    With one worker (the default) each file is resumed or read in turn in the calling
+    thread. With more (issue #107), the staged rows are resumed first, then each file left
+    is read in a worker thread (:func:`_read_checked`: its read and its post-read checks
     only), at most :func:`.workers.plan_workers` at once; this thread alone stages each
     file's rows as soon as its worker returns, aggregates them in the order of ``to_read``
     and calls ``progress``. A worker's exception stops the run: the files not yet read are
@@ -178,7 +174,7 @@ def new_rows(
         discard_staged(job.output, rel)
     workers = workers or Workers()
     keys = {rel: _staging_key(job, rel) for rel in to_read}
-    if workers.count == 1 and workers.max_ram is None:
+    if workers.count == 1:
         for done, rel in enumerate(to_read):
             if progress is not None:
                 progress(done, len(to_read), rel)
@@ -241,13 +237,6 @@ def _read_in_workers(
     found.refused = plan.refused
     if plan.refused is not None or not pending:
         return  # no image read: found.workers stays 1
-    if workers.count == 1:  # within max_ram: one after another in this thread, as without it
-        for rel in pending:
-            if progress is not None:
-                progress(done, total, rel)
-            _take(job, keys[rel], _read_checked(job, rel), found)
-            done += 1
-        return
     # No larger pool than images to read: the number reported is the pool's capacity (the
     # most images read at once), not a count of the distinct threads the pool started.
     found.workers = min(plan.count, len(pending))

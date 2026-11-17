@@ -1656,9 +1656,7 @@ Raised during review; to be decided before the milestones that need them:
     scheduler, backend choice, parallel CSV writes or tuning. *Encoding choices of this brick:*
     the option is `RunMode(workers=, max_ram=)` rather than two new `run_experiment`
     parameters (as `lab_links`: the code rules allow `run_experiment` no new parameter);
-    `max_ram` only with `"auto"` (`ValueError` otherwise; superseded after v0.7.0 by B1:
-    `max_ram` is a budget for any count, a whole number that does not fit is refused with
-    `workers_over_max_ram` before any pixel read, never lowered); the reserve is 256 MiB; an image's
+    `max_ram` only with `"auto"` (`ValueError` otherwise); the reserve is 256 MiB; an image's
     estimate is one plane (or one block) under the run's memory limit plus `8 × bins` per 2-D
     plane for its rows, and the memory limit is never changed to fit `max_ram` (the refusal
     `image_over_max_ram` says to lower it); with more than one worker `progress` is called as
