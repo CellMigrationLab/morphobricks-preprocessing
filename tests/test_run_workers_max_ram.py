@@ -44,10 +44,16 @@ def experiment(tmp_path):
 
 @pytest.fixture
 def pixel_reads(monkeypatch):
-    """Count every pixel read: the run's per-image read and tifffile's page reads."""
+    """Count every pixel read: the run's per-image read and tifffile's two routes to pixels.
+
+    A page's own read (``TiffPage.asarray``) and a contiguous series' read of the file
+    (``FileHandle.read_array``, as :mod:`..tiff_pieces` and ``tifffile.imread`` use it). The
+    images here are TIFFs only, so no OME-Zarr read can happen.
+    """
     reads = []
     read_file = run_module.resume._read_file
     page_read = tifffile.TiffPage.asarray
+    array_read = tifffile.FileHandle.read_array
 
     def counted_file(path, rel, *args):
         reads.append(rel)
@@ -57,8 +63,13 @@ def pixel_reads(monkeypatch):
         reads.append("page")
         return page_read(self, *args, **kwargs)
 
+    def counted_array(self, *args, **kwargs):
+        reads.append("array")
+        return array_read(self, *args, **kwargs)
+
     monkeypatch.setattr(run_module.resume, "_read_file", counted_file)
     monkeypatch.setattr(tifffile.TiffPage, "asarray", counted_page)
+    monkeypatch.setattr(tifffile.FileHandle, "read_array", counted_array)
     monkeypatch.setattr(workers_module, "available_cpus", lambda: 8)
     return reads
 
@@ -112,5 +123,20 @@ def test_auto_at_or_above_the_estimate_reads(tmp_path, experiment, pixel_reads):
         result = _auto(tmp_path, experiment, name, max_ram)
         assert result.written, result.issues
         assert result.read == tuple(IMAGES) and result.workers == together
-    assert sorted(r for r in pixel_reads if r != "page") == sorted(IMAGES * 3)
-    assert "page" in pixel_reads  # the instrument does see the pixel reads
+    assert sorted(r for r in pixel_reads if r not in ("page", "array")) == sorted(IMAGES * 3)
+    assert {"page", "array"} & set(pixel_reads)  # the instrument does see the pixel reads
+
+
+def test_a_pixel_read_before_the_refusal_is_counted(tmp_path, experiment, pixel_reads, monkeypatch):
+    """The counter's own check: a mutation reading an image with ``tifffile.imread`` before
+    the plan (as a run that read before refusing would) is seen, though the run is refused."""
+    plan = run_module.resume.plan_workers
+
+    def reading_first(workers, root, to_read, *args):
+        tifffile.imread(root / to_read[0])
+        return plan(workers, root, to_read, *args)
+
+    monkeypatch.setattr(run_module.resume, "plan_workers", reading_first)
+    result = _auto(tmp_path, experiment, "out", PARENT_RESERVE + largest(experiment) - 1)
+    assert not result.written and result.read == ()
+    assert pixel_reads and set(pixel_reads) <= {"page", "array"}

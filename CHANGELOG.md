@@ -16,8 +16,11 @@ v0.5.1: no run before v0.5.1 is read.)
   `RunMode` and `run --max-ram` already refuse `max_ram` without `workers="auto"` (plan §12
   item 82, kept), so no run reached it; the planner now raises the same `ValueError`
   ("max_ram is used only with workers='auto'", `run.modes.MAX_RAM_ONLY_WITH_AUTO`). New
-  tests also count the pixel reads (the run's and tifffile's page reads) of `"auto"` with
-  `max_ram` just below, at and above one image's estimate: none before a refusal.
+  tests also count the pixel reads of `"auto"` with `max_ram` just below, at and above one
+  image's estimate: the run's per-image read and both of tifffile's routes to pixels (a
+  page's `TiffPage.asarray` and a contiguous series' `FileHandle.read_array`, which
+  `tifffile.imread` takes); none before a refusal, and a read with `tifffile.imread` before
+  the refusal is counted (the test images are TIFFs: no OME-Zarr read is possible).
 
 ### Changed
 
