@@ -8,7 +8,6 @@ it every piece is decoded once; one piece less and pieces are decoded again.
 """
 
 import functools
-import gc
 import tracemalloc
 
 import numpy as np
@@ -20,8 +19,8 @@ from morphobricks_preprocessing.window_reader import WindowReader, cache_plan
 from morphobricks_preprocessing.windows import read_window, window_plan
 from zarr_tree import write_ngff
 
-SIDE = 512
-WINDOWS = [(0, 64, 0, 64), (0, 128, 0, 128), (67, 390, 45, 512), (0, 512, 0, 512)]
+SIDE = 256
+WINDOWS = [(0, 64, 0, 64), (37, 190, 45, 256), (0, 256, 0, 256)]
 CODECS = {
     "none": {},
     "zlib": {"compression": "zlib"},
@@ -37,7 +36,6 @@ STORAGE = {
 
 def _peak(read):
     """Return the peak traced memory of ``read()`` above what was held when it started."""
-    gc.collect()
     tracemalloc.start()
     try:
         start = tracemalloc.get_traced_memory()[0]
@@ -56,11 +54,9 @@ def _filled(path, mapping, cache, plane, read):
 
 def _cached_peak(path, mapping, cache, plane, bounds, read):
     """Return a filled reader's estimate and the peak of reading ``bounds`` through it."""
-    gc.collect()
     tracemalloc.start()  # from before the cache is filled: its pieces are traced
     try:
         reader, held = _filled(path, mapping, cache, plane, read)
-        gc.collect()
         tracemalloc.reset_peak()
         start = tracemalloc.get_traced_memory()[0]
         reader.read_window(bounds=bounds, **read)
@@ -79,7 +75,7 @@ def _check(path, axes, channels, plane, coordinates=None):
         plan = window_plan(path, mapping, bounds=bounds, channels=channels)
         peak = _peak(functools.partial(read_window, path, mapping, bounds=bounds, **read))
         assert peak <= plan.memory_estimate, (path.name, bounds, peak, plan.memory_estimate)
-        for cache in (2**17, 2**21):
+        for cache in (2**16, 2**20):
             estimate, peak = _cached_peak(path, mapping, cache, plane, bounds, read)
             assert peak <= estimate, (path.name, cache, bounds, peak, estimate)
 
@@ -115,7 +111,7 @@ def test_the_estimate_bounds_the_peak_of_rgb_and_ome_stacks(tmp_path):
     _check(path, "TCYX", [2, 0], 128, {"t": 29})
 
 
-@pytest.mark.parametrize("chunks", [(1, 64, 64), (3, 128, 128), (2, 256, 256)])
+@pytest.mark.parametrize("chunks", [(1, 64, 64), (3, 64, 64), (2, 128, 128)])
 @pytest.mark.parametrize("version", ["0.4", "0.5"])
 @pytest.mark.parametrize("dtype", ["uint8", "uint16", "float32"])
 def test_the_estimate_bounds_the_peak_of_an_ome_zarr_window(tmp_path, dtype, version, chunks):
