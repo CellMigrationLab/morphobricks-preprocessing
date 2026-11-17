@@ -3,7 +3,8 @@
 A run given ``RunMode(workers=N)`` or ``workers="auto"`` reads each image in a worker thread
 that reads it, checks it after the read and stages its rows (D7); the calling thread alone
 resumes, aggregates, checks and publishes. The outputs are byte for byte those of the serial
-run, and the failure rules are the serial ones.
+run, and the failure rules are the serial ones. The memory plan's staging term is tested in
+``test_run_workers_memory.py``.
 
 Byte identity is compared on the raw bytes of every file a run leaves, the manifest included.
 ``written_at`` is the only field of any output excluded from byte identity (owner decision of
@@ -35,6 +36,7 @@ from morphobricks_preprocessing.run.workers import (
     Workers,
     image_memory,
     plan_workers,
+    staging_memory,
 )
 from run_files import outputs
 from tiff_tree import write_data
@@ -332,7 +334,7 @@ def test_auto_never_exceeds_the_cpu_cap_or_the_ram_budget(tmp_path, experiment, 
     names = list(IMAGES)
     estimates = dict.fromkeys(names, 10 * 2**20)
     estimates[names[3]] = 40 * 2**20  # the largest image counts for every worker
-    monkeypatch.setattr(workers_module, "image_memory", lambda p, m, s: estimates[_rel(p)])
+    monkeypatch.setattr(workers_module, "image_memory", lambda p, *_: estimates[_rel(p)])
     mappings = dict.fromkeys(names, TYX)
     for cpus in (1, 3, 64):
         monkeypatch.setattr(workers_module, "available_cpus", lambda cpus=cpus: cpus)
@@ -404,7 +406,7 @@ def test_an_image_over_max_ram_stops_the_run_before_any_pixel_is_read(
 def test_the_estimate_is_the_header_working_memory_not_the_file_size(experiment):
     settings = RunSettings(256, 2**30)
     layout = plane_layout(experiment / IMAGES[0], TYX, bin_count=256)
-    expected = layout.memory_estimate + layout.plane_count * 8 * 256
+    expected = layout.memory_estimate + layout.plane_count * 8 * 256 + staging_memory(256, 1)
     assert image_memory(experiment / IMAGES[0], TYX, settings) == expected
     assert expected != (experiment / IMAGES[0]).stat().st_size
 

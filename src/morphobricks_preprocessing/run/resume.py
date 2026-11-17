@@ -248,7 +248,8 @@ def _read_in_workers(
         else:
             pending.append(rel)
     mappings = job.review.file_mappings
-    plan = plan_workers(workers, job.pre.discovery.root, pending, mappings, job.settings)
+    channels = len(job.channel_ids) or None
+    plan = plan_workers(workers, job.pre.discovery.root, pending, mappings, job.settings, channels)
     found.refused = plan.refused
     if plan.refused is not None or not pending:
         return  # no image read: found.workers stays 1

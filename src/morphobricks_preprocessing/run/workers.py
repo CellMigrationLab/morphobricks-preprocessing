@@ -1,15 +1,17 @@
 """How many images a run reads at once: ``workers`` and ``max_ram`` (issue #107).
 
-A run reads each image (one FOV: all its planes and channels) in one worker thread, and at
-most ``RunMode(workers=...)`` images at once; everything else stays in the calling thread
-(:func:`.resume.new_rows`). ``workers=1``, the default, reads one image after the other in
-the calling thread, as before. ``workers="auto"`` takes, for the images that are read:
+A run reads each image (one FOV: all its planes and channels) in one worker thread, which
+also stages its rows (D7), and at most ``RunMode(workers=...)`` images at once; everything
+else stays in the calling thread (:func:`.resume.new_rows`). ``workers=1``, the default,
+reads one image after the other in the calling thread, as before. ``workers="auto"`` takes,
+for the images that are read:
 
 - the CPU cap: the number of images to read, at most the CPUs this process may use
   (:func:`available_cpus`);
 - with ``max_ram``, the RAM cap: ``(max_ram - PARENT_RESERVE) // largest``, where ``largest``
   is the largest image's working-memory estimate (:func:`image_memory`, from the header's
-  :func:`..planes.plane_layout`, never the size on disk);
+  :func:`..planes.plane_layout`, never the size on disk, plus the staging of one of its rows
+  with the table's channels, :func:`staging_memory`);
 
 and reads with the smaller. It is deliberately conservative: every image is counted as the
 largest one. An image whose estimate alone is over what ``max_ram`` leaves is refused with
@@ -28,6 +30,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from morphobricks_normalization.csv_io import CHANNEL_FEATURES, METADATA_COLUMNS
+
 from ..axes import AxisMapping
 from ..manifest import RunSettings
 from ..planes import PlaneLayout, PlaneReadError, format_bytes, plane_layout
@@ -37,7 +41,13 @@ from .modes import AUTO
 logger = logging.getLogger(__name__)
 
 PARENT_RESERVE = 256 * 2**20
-"""Bytes of ``max_ram`` kept for the run itself (its rows, staging and checks), not workers."""
+"""Bytes of ``max_ram`` kept for the run itself (its rows, table and checks), not workers."""
+STAGING_BYTES_PER_COLUMN = 256
+"""Working memory of staging one row, per column of the table (D7).
+
+The writer holds the table's header and one row as Python strings while it writes a row:
+about 240 bytes per column were measured (CPython 3.13, 65,536 bins, 1 to 6 channels, the
+header's and the row's cells together), rounded up."""
 OVER_MAX_RAM = "image_over_max_ram"
 
 
@@ -174,12 +184,15 @@ def _windows_available() -> int | None:
     return int(status.avail_phys)
 
 
-def image_memory(path: Path, mapping: AxisMapping, settings: RunSettings) -> int:
+def image_memory(
+    path: Path, mapping: AxisMapping, settings: RunSettings, table_channels: int | None = None
+) -> int:
     """Return the working memory of reading one image, from its header (not its file size).
 
     The working memory of one plane as the run reads it (:func:`..planes.plane_layout` with
     the run's memory limit: the whole plane, or one block when its planes are read in
-    blocks), plus the bin counts of every row of the image, kept until the run has them.
+    blocks), plus the bin counts of every row of the image, kept until the run has them,
+    plus the staging of one row with ``table_channels`` channels (:func:`layout_memory`).
 
     Raises
     ------
@@ -193,27 +206,45 @@ def image_memory(path: Path, mapping: AxisMapping, settings: RunSettings) -> int
         memory_limit=settings.memory_limit,
         histogram_settings=settings.histogram,
     )
-    return layout_memory(layout, settings.bin_count)
+    return layout_memory(layout, settings.bin_count, table_channels)
 
 
-def layout_memory(layout: PlaneLayout, bin_count: int) -> int:
+def layout_memory(layout: PlaneLayout, bin_count: int, table_channels: int | None = None) -> int:
     """Return the working memory of reading one image with this layout (:func:`image_memory`).
 
     One plane as the run reads it (whole, or one block when its planes are read in blocks)
-    plus ``8 × bin_count`` per 2-D plane for the image's rows, kept until the run has them.
+    plus ``8 × bin_count`` per 2-D plane for the image's rows, kept until the run has them,
+    plus the staging of one row by the worker (:func:`staging_memory`) with the table's
+    ``table_channels`` channels (None: the image's own, the fewest a table of it has).
     """
     plane = layout.block_memory_estimate if layout.in_blocks else layout.memory_estimate
-    return plane + layout.plane_count * 8 * bin_count
+    channels = layout.channel_count if table_channels is None else table_channels
+    return plane + layout.plane_count * 8 * bin_count + staging_memory(bin_count, channels)
 
 
-def max_ram_needed(layouts: Iterable[PlaneLayout], bin_count: Callable[[PlaneLayout], int]) -> int:
+def staging_memory(bin_count: int, table_channels: int) -> int:
+    """Return the working memory of staging one row of a table of ``table_channels`` channels.
+
+    :data:`STAGING_BYTES_PER_COLUMN` per column of the table's header: its plane columns,
+    then each channel's features and bins. A worker stages its image's rows (D7), so each
+    worker counts it once.
+    """
+    columns = len(METADATA_COLUMNS) + 1 + table_channels * (len(CHANNEL_FEATURES) + bin_count)
+    return STAGING_BYTES_PER_COLUMN * columns
+
+
+def max_ram_needed(
+    layouts: Iterable[PlaneLayout],
+    bin_count: Callable[[PlaneLayout], int],
+    table_channels: int | None = None,
+) -> int:
     """Return the smallest ``max_ram`` with which ``"auto"`` reads every one of these images.
 
-    The largest image's working memory (:func:`layout_memory`, with each layout's bin count)
-    plus :data:`PARENT_RESERVE`: below it, :func:`plan_workers` refuses with
-    ``image_over_max_ram``. 0 without a layout.
+    The largest image's working memory (:func:`layout_memory`, with each layout's bin count
+    and ``table_channels``, None: each image's own) plus :data:`PARENT_RESERVE`: below it,
+    :func:`plan_workers` refuses with ``image_over_max_ram``. 0 without a layout.
     """
-    found = [layout_memory(layout, bin_count(layout)) for layout in layouts]
+    found = [layout_memory(layout, bin_count(layout), table_channels) for layout in layouts]
     return max(found) + PARENT_RESERVE if found else 0
 
 
@@ -248,6 +279,7 @@ def plan_workers(
     to_read: list[str],
     mappings: Mapping[str, AxisMapping],
     settings: RunSettings,
+    table_channels: int | None = None,
 ) -> WorkerPlan:
     """Return how many images to read at once, for the images ``to_read``.
 
@@ -263,6 +295,9 @@ def plan_workers(
         Each image's axis mapping.
     settings
         The run's settings (memory limit, bins, histogram range).
+    table_channels
+        The number of the table's channel IDs, which each worker stages its rows with
+        (:func:`staging_memory`); None: each image's own.
 
     Returns
     -------
@@ -279,7 +314,7 @@ def plan_workers(
     estimates = {}
     for rel in to_read:
         try:
-            estimates[rel] = image_memory(root / rel, mappings[rel], settings)
+            estimates[rel] = image_memory(root / rel, mappings[rel], settings, table_channels)
         except PlaneReadError:
             logger.debug("No memory estimate for %s", rel, exc_info=True)
     if not estimates:
@@ -300,7 +335,7 @@ def over_max_ram(paths: list[str], largest: int, max_ram: int) -> ValidationIssu
         f"up to {format_bytes(largest)}, with {format_bytes(PARENT_RESERVE)} of the "
         f"{format_bytes(max_ram)} kept for the run itself (the estimate is from the image "
         "header: one plane, or one block when the memory limit has its planes read in blocks, "
-        "and the image's rows). No image was read.",
+        "the image's rows and the staging of one row). No image was read.",
         paths,
         "Raise max_ram if this computer has enough memory, or lower the memory limit so that "
         "the planes are read in smaller blocks.",

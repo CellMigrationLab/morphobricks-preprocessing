@@ -357,7 +357,7 @@ def _large_images(monkeypatch, size=300 * 2**20):
     """Make every image's working-memory estimate ``size`` bytes, in the run and the notebook."""
     import morphobricks_preprocessing.run.workers as workers
 
-    monkeypatch.setattr(workers, "layout_memory", lambda layout, bin_count: size)
+    monkeypatch.setattr(workers, "layout_memory", lambda layout, bin_count, *_: size)
 
 
 SERIAL_NOTE = (
