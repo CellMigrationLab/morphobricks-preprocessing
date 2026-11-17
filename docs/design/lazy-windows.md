@@ -89,14 +89,98 @@ A helper here that grows bounds by a margin would be a second definition of EW5;
 | A brick run directly (fiberfeatures, MorphoRelate, MorphoObjects, MorphoEmbed) | the same loop as section 3 with the brick's own margin (its filter footprint, ADR 0004 EW6); objects that cross tiles are the brick's concern (ADR 0004: object tiling not decided) | everything in section 2 | per-brick entry points; object tiling (Spec) |
 | LabConstrictor tool behind QuPath | file path in (`WindowReader(path, mapping)` with the mapping the tool states, or a run), tiles out (section 3); each tile's results written as soon as it is done (partial results), coordinates converted to the file frame with ADR 0004 EW1's table (`pixel_edge` + origin; `full_res` for what QuPath draws) | the reader, geometry and conversion table | the bridge tool, its per-tile result table and resume (LabConstrictor-QuPath #50/#51; MorphoFeature roadmap F4) |
 
-## 5. Spec
+## 5. Concurrency
+
+The owner asked whether lazy windows can be read by several threads, and how a consumer is given
+that parallelism. The answers below come from the code at v0.7.0 (tifffile 2026.3.3, zarr 3.1,
+numcodecs 0.16).
+
+### 5.1 Decoding and the cache
+
+- **TIFF.** A compressed strip or tile is read under the file handle's lock
+  (`tiff_pieces._decode_segment`: seek and read only), and then decoded outside it by tifffile's
+  codec. Without imagecodecs (not a dependency), zlib/deflate falls back to the standard
+  library's `zlib.decompress`, which releases the GIL while it inflates. With imagecodecs, its
+  codecs, JPEG for whole-slide images among them, also decode without the GIL. Every window
+  opens its own file handle (`windows._source`), so concurrent windows never share one.
+- **OME-Zarr.** zarr 3 decodes chunks through its codec pipeline. numcodecs' compressors (Blosc,
+  Zstd, LZ4) release the GIL, and zlib/gzip use the standard library. zarr runs its own
+  event-loop thread and has an `async.concurrency` setting, which is zarr's own and is never
+  changed here. This was not measured for this note.
+- **Cache.** `block_cache.BlockCache` is already safe under threads and single-flight. One lock
+  guards the pieces. The first thread that asks for a missing piece decodes it, outside the lock,
+  and later threads asking for the same piece wait on an event and then read the cached piece, so
+  every piece is decoded once even when threads ask for it at the same time. Different pieces
+  decode in parallel. The cache is bounded in bytes, drops the least recently used piece first,
+  and does not keep a piece larger than the bound. Nothing has to be added for safety.
+- **Measured** (`tools/benchmark_window_reads.py`, the synthetic 8192² RGB image, 512-px zlib
+  tiles, 256 windows of 512 px with a 67-px margin; on a 4-core machine shared with other jobs,
+  so timings are indicative):
+
+  | threads | no cache: decodes / wall s | cache 128 MiB: decodes / wall s | windows SHA-256 |
+  | --- | --- | --- | --- |
+  | 1 | 2116 / 11.9, 11.4 | 256 / 1.90, 1.99 | `7e492fcd1034284e…` |
+  | 2 | 2116 / 8.20, 8.01 | 256 / 1.78, 1.97 | `7e492fcd1034284e…` |
+  | 4 | 2116 / 7.44, 7.15 | 256 / 1.52, 1.66 | `7e492fcd1034284e…` |
+
+  For decoding alone (a one-off measurement, not a tool), the 256 tiles (152 MiB compressed) passed through `zlib.decompress`
+  in a thread pool reach 154, 254 and 282 MiB/s with 1, 2 and 4 threads, with the same bytes
+  out. Decoding does run in parallel. With the cache, each tile is decoded only once, so the rest
+  of a window read (Python bookkeeping and copies into the result) takes a larger share of the
+  time, and threads gain less. The cache is the larger gain, and threads add to it.
+
+### 5.2 How a consumer is given parallelism
+
+These options are processing-agnostic. Each takes window bounds from CellPatcher's geometry
+(section 3) and an opaque consumer function. None of them knows what the function computes.
+
+| Option | What it is | Fits | Where |
+| --- | --- | --- | --- |
+| (a) ordered iterator with prefetch | `iter_windows(reader, bounds, *, t, z, channels, prefetch=k)` yields `(bounds, window)` in the given order while up to `k` later windows are read in background threads | a single-threaded consumer; decoding overlaps its compute | preprocessing (proposed) |
+| (b) `map_windows` | `map_windows(reader, bounds, fn, *, t, z, channels, workers=n)` calls `fn(bounds, window)` in `n` threads and yields the results **in window order**, whatever finishes first | a consumer whose compute releases the GIL (NumPy, SciPy, torch, numba `nogil`); MorphoFeature's window pool is this pattern | preprocessing (proposed); (a) is (b) with `fn` returning the window |
+| (c) process workers | each process opens its **own** reader on the image and is assigned windows by index (for example, contiguous rows of the grid, so its cache still sees neighbours); caches are not shared between processes, and results are merged by window index | GIL-bound consumers | the consumer (MorphoFeature's worker processes already open a run once per process, `fov_files.RunHandle`); preprocessing adds nothing but the reader |
+| (d) streaming partial results | (b) whose results the consumer writes per tile as they arrive in order, each row in the file frame (EW1's conversions from the window `origin`) with the tile's bounds, so a stopped run keeps the finished tiles | the LabConstrictor/QuPath bridge, MorphoFeature F4 | the bridge or consumer; its result-table contract needs Spec text first |
+
+### 5.3 Rules for every option
+
+- **Order.** Results are delivered in the order of the bounds given, never in completion order,
+  so outputs are identical for any number of workers. A test compares 1 and n workers bitwise.
+- **Memory.** At most `workers + prefetch` windows are in flight. The peak is about
+  `in_flight × (plan.memory_estimate - cache_bytes) + cache_bytes`, plus the consumer's own
+  results. `window_plan` gives each term before anything is read, and that figure goes into the
+  consumer's existing memory plan (MorphoFeature plans no RAM for windows yet; preprocessing's
+  `max_ram` estimate is the model). A window over the reader's limit is refused before any pixel
+  is read.
+- **Close.** Leaving the iteration early (a `break`, an error in `fn`, the consumer's
+  cancellation or `generator.close()`) cancels the windows not started, waits for the running
+  ones, re-raises the first error in window order, and leaves the reader as the caller owns it.
+  Closing the reader is the caller's job (`with reader:`). A window read after the reader is
+  closed is refused.
+- **Workers are recorded but are not part of identity.** The consumer records the worker count
+  and prefetch with its run (MorphoFeature's execution record already does, ADR 0004 EW9). They
+  never enter a cache key or a result's identity.
+- **No implicit fallback.** An invalid worker count is refused. Threads are never switched to
+  processes, a failed window is never re-read serially, and the number of threads is never
+  lowered on its own. A codec that needs the GIL is simply slower, never replaced.
+
+### 5.4 Recommendation
+
+Implement **(b) `map_windows` first**, in preprocessing, with (a) as its special case: one small
+pure-orchestration function over a `RunWindowReader` or `WindowReader`, with an ordered,
+bounded, cancel-safe thread pool and a test that 1, 2 and 4 workers give the same bytes. It
+serves MorphoFeature's window pool (which then needs no pool of its own for reading),
+CellPatcher's windowed extraction, a brick run directly, and the bridge's per-tile loop (d).
+(c) needs nothing from preprocessing beyond opening one reader per process. (d) waits for its
+Spec result contract.
+
+## 6. Spec
 
 Nothing new is needed for this step: EW1 (coordinate types and conversions), EW2 (the frame:
 level 0, offset 0, downsample 1), EW4 (window record) and EW5 (`context_bounds` is CellPatcher's)
 cover it. Later steps need Spec text first: pyramid levels and series (the announced EW2
 amendment), object tiling, and a result-table contract for partial results tile by tile.
 
-## 6. Steps
+## 7. Steps
 
 1. **This pull request (preprocessing):** this note; `close()`, `closed` and the context manager
    on `WindowReader` and `RunWindowReader` (`BlockCache.close`); `RunWindowReader.window_plan`.
@@ -104,5 +188,6 @@ amendment), object tiling, and a result-table contract for partial results tile 
 2. **MorphoFeature (separate pull request):** a thin consumer: one reader per plane shared by the
    window threads, released after the plane's units, also on error; no window or cache logic of
    its own. It moves to `close()` when it pins a release with it.
-3. Later, each in its owner: a cached mask reader (here); CellPatcher's windowed extraction; the
+3. Next here: `map_windows` / `iter_windows` (section 5.4).
+4. Later, each in its owner: a cached mask reader (here); CellPatcher's windowed extraction; the
    LabConstrictor/QuPath tool and its per-tile results; levels after the Spec amendment.
