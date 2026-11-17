@@ -7,6 +7,8 @@ keeps the pixel, ``0`` where it leaves out nuclei, red blood cells or empty spac
 are reached through :class:`.run_inputs_tissue.TissueMaskInputs`, which imports this module only
 when called: scikit-image, normalization's ``stain`` module and this module stay out of a core
 import.
+``he_tissue_mask_array(rgb)`` (:mod:`.he_tissue_array`) computes the same rule on an array with
+no run, through the same :func:`rule_on_plane`, and writes nothing.
 
 **The FOV is the run's.** Only the image path is taken from the argument; the position is the
 :class:`.run_inputs.Fov` of ``RunInputs.fovs()`` with that path, and every check and lineage
@@ -457,8 +459,9 @@ def rule_on_plane(
 ) -> TissueMaskPreview:
     """Compute a rule on one ``uint8`` ``(3, Y, X)`` R, G, B plane: the one computation.
 
-    Every route calls it (the run route through :func:`_compute`, after its read), so their
-    masks are one computation, never a copy. The caller has checked the plane and the rule
+    Every route calls it (the run route through :func:`_compute`, after its read, and
+    ``he_tissue_mask_array`` on its array moved to ``(3, Y, X)``), so their masks are one
+    computation, never a copy. The caller has checked the plane and the rule
     (:func:`current_rule`). ``image`` labels the plane in the result.
     """
     scalar = stain.to_scalar(pixels, axes=SOURCE_AXES, preset=PRESET)

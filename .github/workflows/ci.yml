@@ -21,7 +21,8 @@ jobs:
 
   # BM15's verified code identity on a real install: the package and the he-mask extra are
   # installed from a wheel (not editable), so the tissue-mask code-identity tests check the
-  # installed preprocessing and normalization for real instead of skipping. Any skip fails.
+  # installed preprocessing and normalization for real instead of skipping (the run route and
+  # he_tissue_mask_array). Any skip fails.
   wheel-identity:
     runs-on: ubuntu-latest
     steps:
@@ -43,7 +44,7 @@ jobs:
           PY
       - run: >-
           python -m pytest -ra -p no:cacheprovider --junitxml=identity.xml
-          tests/test_code_identity.py tests/test_he_tissue_mask.py
+          tests/test_code_identity.py tests/test_he_tissue_mask.py tests/test_he_tissue_array.py
           tests/test_lineage_reader_dispatch.py
       - name: No identity test was skipped
         run: |
