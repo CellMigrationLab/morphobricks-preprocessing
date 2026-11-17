@@ -68,3 +68,23 @@ def zarr_piece_work(pieces: int, piece_nbytes: int, cached: bool) -> int:
     if cached:  # chunk by chunk through the cache: one chunk in flight, and its frozen copy
         return (1 + ZARR_DECODE_COPIES + FROZEN_COPIES) * piece_nbytes
     return pieces * (1 + ZARR_DECODE_COPIES) * piece_nbytes
+
+
+def grid_cache_bytes(
+    unit: tuple[int, int],
+    stored_shape: tuple[int, int],
+    span: int,
+    piece_nbytes: int,
+    groups: int,
+) -> tuple[int, int, int]:
+    """Return the cache a grid of windows read row after row needs: bytes, piece rows, per row.
+
+    ``unit`` is a piece's ``(rows, columns)`` and ``stored_shape`` the plane's, both in stored
+    order; ``span`` is one window's extent along the stored rows, its margins included. A
+    window touches at most ``ceil(span / unit_rows) + 1`` rows of pieces (one more when it is
+    not aligned on them), and the next row of windows reuses them, so the cache must hold that
+    many rows of pieces across the whole plane, for every group of channels stored apart.
+    """
+    piece_rows = min(-(-span // unit[0]) + 1, -(-stored_shape[0] // unit[0]))
+    per_row = -(-stored_shape[1] // unit[1])
+    return piece_rows * per_row * piece_nbytes * groups, piece_rows, per_row

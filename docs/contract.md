@@ -407,7 +407,13 @@ It gives:
   managers: closing drops the cache at once (also when the `with` block fails), a later window or
   plan is `window_reader.WindowReaderClosedError`, a window being read meanwhile finishes bitwise
   and keeps nothing; a reader holds no open file between windows. One reader per image is meant
-  to be shared by every thread reading it (`docs/design/lazy-windows.md`);
+  to be shared by every thread reading it (`docs/design/lazy-windows.md`).
+  `window_cache_plan(fov, *, window, margin, channels)` (Unreleased; `window_reader.cache_plan`
+  for a file) returns a `window_reader.CachePlan` from the header: `cache_bytes`, the cache a
+  grid of `window` px windows with `margin` px margins read row by row needs to decode each
+  piece once (`piece_rows` = `ceil((window + 2 × margin) / piece) + 1` rows of `per_row` pieces
+  of `piece_nbytes`, for each of `groups` of channels stored apart; 0 for uncompressed TIFF
+  pieces), a figure for the caller to cap with its own budget;
 - `plane_shape(fov)`: the `(height, width)` of the position's planes, Y before X whatever the
   stored order (the frame of `read_window`'s bounds, the last two sizes of `read_plane`), from the
   header and the recorded axes only: no pixel is read and no content digest computed; the
@@ -648,7 +654,7 @@ errors are exported at the package's top level and are picklable with their attr
 **The pinned surface (v0.5.1, PP-1).** `tests/test_brick_api_surface.py` pins, by name and type,
 what the consuming bricks use: `RunInputs`'s public methods and their signatures (`open`, `fovs`,
 `files`, `projection`, `pixel_sizes`, `read_plane`, `read_image`, `plane_shape`, `read_window`,
-`window_reader`, `mask_types`, `read_mask`, `read_mask_window`, `mask_window_plan`,
+`window_reader`, `window_cache_plan`, `mask_types`, `read_mask`, `read_mask_window`, `mask_window_plan`,
 `read_objects`, `objects_read_plan`,
 `histograms`, `design`, `description`, `section_digests`, `images_without_header_channel_names`,
 `channel_index`, `references`, `mask_semantics`, `mask_check_status`, `require_checked`,

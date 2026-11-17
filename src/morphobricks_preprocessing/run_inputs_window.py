@@ -26,7 +26,7 @@ from .fingerprint import Fingerprint
 from .manifest import FileEntry
 from .planes import DEFAULT_MEMORY_LIMIT, plane_layout
 from .validation import plural
-from .window_reader import WindowReader
+from .window_reader import CachePlan, WindowReader, cache_plan
 from .windows import LEVEL, WindowChannelError, WindowPlan, check_level
 from .windows import read_window as read_source_window
 
@@ -169,6 +169,40 @@ class WindowInputs:
             fingerprint=Fingerprint.recorded(entry),
         )
         return RunWindowReader(self, fov, reader)
+
+    def window_cache_plan(
+        self,
+        fov: Fov | str,
+        *,
+        window: tuple[int, int],
+        margin: tuple[int, int],
+        channels: Sequence[str],
+    ) -> CachePlan:
+        """Return the cache a grid of windows of a position needs to decode each piece once.
+
+        :func:`.window_reader.cache_plan` for the position's image, its channels by canonical
+        ID: ``cache_bytes`` is the figure to open :meth:`window_reader` with, which the caller
+        caps with its own memory budget (below it, most pieces are decoded again for each row
+        of windows). From the header only; the image's fingerprint is checked.
+
+        Raises
+        ------
+        RunInputsError
+            If the image changed since the run, or is not one of the run's.
+        ChannelNotFoundError
+            ``A_SCOPE_INCOMPLETE``: a channel ID the image does not have.
+        ValueError
+            For a window or margin that is not whole numbers (window above 0, margin 0 or more).
+        """
+        entry = self._checked(fov)
+        indices = [self.channel_index(entry.relative_path, c) for c in channels]
+        return cache_plan(
+            self.experiment_root / entry.relative_path,
+            _mapping(entry),
+            window=window,
+            margin=margin,
+            channels=indices,
+        )
 
     def _window_request(
         self, fov: Fov | str, t: int, z: int, channels: Sequence[str], level: int

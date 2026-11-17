@@ -37,6 +37,7 @@ or clipped: bounds outside the plane are refused.
 | Plane size | `RunInputs.plane_shape(fov)`; a `WindowReader`'s `window_plan(...).plane_shape` | header only |
 | Read a window, any channel subset | `read_window(*, t, z, bounds, channels, level=0)` | channels by canonical ID (run) or C index (file), in the order asked; the stored dtype; bitwise the slice of `read_plane` |
 | Plan memory before reading | `WindowReader.window_plan(...)`; **new:** `RunWindowReader.window_plan(*, t, z, bounds, channels, level=0)` | `shape`, `dtype`, `pieces`, `memory_estimate` with the cache counted; header only |
+| Size the cache for a grid | **new:** `window_reader.cache_plan(path, mapping, *, window, margin, channels)`, `RunInputs.window_cache_plan(fov, *, window, margin, channels)` | the bytes a row-by-row grid with margins needs to decode each piece once (below), for the consumer to cap with its budget; header only |
 | Threads | one reader per image, shared by every thread | the cache has one lock, and a piece asked by several threads at once is decoded once (`block_cache`); a read opens its own file handle, so no handle is shared; no per-thread reader is needed |
 | Cache | `cache_bytes`, least recently used dropped first | decoded compressed TIFF strips or tiles and OME-Zarr chunks; a piece larger than the bound is used once, not kept; uncompressed pieces are read from the file, never cached; keyed by the image's path, recorded fingerprint, level and page and piece or chunk; `stats()` gives decodes, hits, evictions and bytes |
 | Identity | the run's recorded fingerprint, checked before and after each window | an image changed or gone is refused (`RunInputsError`, `WindowSourceChangedError`) and the cache emptied, never served |
@@ -69,9 +70,24 @@ reader's `memory_limit` is refused before any pixel is read. A consumer that wan
 refused exactly when `RunInputs.read_window` refuses it opens the reader with `memory_limit =
 DEFAULT_MEMORY_LIMIT + cache_bytes` (MorphoFeature does).
 
-**Cache size.** About two rows of the image's pieces decode each piece once for a grid read row
-by row with margins (#306: 24 MiB for an 8192-pixel-wide RGB `uint8` image in 512-pixel tiles).
-A smaller cache decodes some pieces again and never reads another value.
+**Cache size** (review of this PR, finding 2; the "about two rows" of the first version was
+wrong). A window and its margins span `ceil((window_h + 2 × margin) / tile_h) + 1` rows of pieces
+(one more when it is not aligned on them: a 512-px window with 67-px margins touches the rows
+r − 1, r and r + 1), and the next row of windows reuses them, so a grid read row by row decodes
+each piece once only when the cache holds that many rows of pieces **across the whole plane**,
+for every group of channels stored apart. Below it a least-recently-used cache does not degrade
+gently: it drops the pieces the next row needs and decodes most of them again (a cliff).
+`window_reader.cache_plan(path, mapping, *, window, margin, channels)` and
+`RunInputs.window_cache_plan(fov, *, window, margin, channels)` compute that figure from the
+header (`CachePlan`: `cache_bytes`, `piece_rows`, `per_row`, `piece_nbytes`, `groups`; 0 for
+uncompressed TIFF pieces, which are never cached). It is a stated figure, not a setting: the
+consumer caps it with its own explicit memory budget and records both, so a cap below it is a
+known, recorded re-decode rather than a silent one. On the synthetic 8192² RGB image in
+512-px zlib tiles (256 windows of 512 px, 67-px margins, one thread) the plan is 3 rows × 16
+tiles × 768 KiB = **36 MiB**, and the measured decodes are: 24 MiB 728, 30 MiB 700, 35 MiB 624,
+**36 MiB 256** (one per tile), 128 MiB 256; with 4 threads, 36, 37 and 38 MiB each gave 256 (one
+run each). The tests check the threshold on three grids: with the plan every piece is decoded
+once, with one row of pieces less many are decoded again.
 
 ## 3. Iteration: tiles and halos are CellPatcher's geometry
 
@@ -88,7 +104,9 @@ height, width = inputs.plane_shape(fov)
 tiles = GridStrategy(GridConfig(tile_size=tile, include_partial=True)).generate_regions(
     image_shape=(height, width), axes="YX"
 )
-with inputs.window_reader(fov, cache_bytes=128 * 2**20) as reader:
+needed = inputs.window_cache_plan(fov, window=(tile, tile), margin=(margin, margin), channels=ids)
+cache_bytes = max(1, min(needed.cache_bytes, budget))  # the consumer's own budget caps it
+with inputs.window_reader(fov, cache_bytes=cache_bytes) as reader:
     for tile_region in tiles:  # or from a thread pool sharing the reader
         bounds = (tile_region.y0, tile_region.y1, tile_region.x0, tile_region.x1)
         record = context_bounds(bounds, (margin, margin), (height, width))
@@ -225,8 +243,10 @@ amendment), object tiling, and a result-table contract for partial results tile 
 ## 7. Steps
 
 1. **This pull request (preprocessing):** this note; `close()`, `closed` and the context manager
-   on `WindowReader` and `RunWindowReader` (`BlockCache.close`); `RunWindowReader.window_plan`.
-   Additive: every window is unchanged.
+   on `WindowReader` and `RunWindowReader` (`BlockCache.close`); `RunWindowReader.window_plan`;
+   the review's fixes: single-flight for unkept pieces, immutable pieces frozen outside the lock,
+   window estimates that bound the measured peak, and `cache_plan` / `window_cache_plan`. Every
+   window is unchanged, bitwise.
 2. **MorphoFeature (separate pull request):** a thin consumer: one reader per plane shared by the
    window threads, released after the plane's units, also on error; no window or cache logic of
    its own. It moves to `close()` when it pins a release with it.

@@ -19,7 +19,11 @@ from morphobricks_preprocessing import prefill_mapping, run_inputs_window, tiff_
 from morphobricks_preprocessing.block_cache import BlockCache
 from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError
 from morphobricks_preprocessing.testing import make_clean_run
-from morphobricks_preprocessing.window_reader import WindowReader, WindowReaderClosedError
+from morphobricks_preprocessing.window_reader import (
+    WindowReader,
+    WindowReaderClosedError,
+    cache_plan,
+)
 from morphobricks_preprocessing.windows import (
     WindowMemoryError,
     WindowSourceChangedError,
@@ -528,3 +532,23 @@ def test_the_pieces_held_never_exceed_the_bound_even_while_one_is_added():
             p.nbytes for p in cache._pieces.values()
         )
     assert cache.stats().pieces == 3 and cache.stats().evictions == 17
+
+
+@pytest.mark.parametrize("kind", ["tiled tiff", "ome-zarr"])
+def test_a_run_gives_the_cache_plan_of_its_image(tmp_path, kind):
+    data = np.random.default_rng(3).integers(0, 4000, (2, 3, 40, 52), dtype=np.uint16)
+    if kind == "ome-zarr":
+        write_ngff(tmp_path / "exp/ctrl/a.zarr", data, "tcyx", chunks=(1, 2, 16, 16))
+    else:
+        write_data(tmp_path / "exp/ctrl/a.tif", data, "TCYX", tile=(16, 16), compression="zlib")
+    result = run_described(tmp_path / "exp", prefill_mapping("TCYX"))
+    inputs = RunInputs.open(result.output_folder)
+    (fov,) = inputs.fovs()
+    ids = fov.channel_ids
+    plan = inputs.window_cache_plan(fov, window=(16, 16), margin=(3, 3), channels=[ids[2], ids[0]])
+    path = inputs.experiment_root / fov.relative_path
+    mapping = run_inputs_window._mapping(inputs.manifest.file(fov.relative_path))
+    alone = cache_plan(path, mapping, window=(16, 16), margin=(3, 3), channels=[2, 0])
+    assert plan == alone and plan.piece_rows == 3 and plan.cache_bytes > 0
+    with pytest.raises(RunInputsError):
+        inputs.window_cache_plan(fov, window=(16, 16), margin=(3, 3), channels=["nope"])
