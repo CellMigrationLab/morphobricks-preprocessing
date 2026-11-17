@@ -80,6 +80,18 @@ v0.5.1: no run before v0.5.1 is read.)
   the physical memory (macOS, `run.workers.memory_is_physical`), the cap's line says "physical
   memory" instead of "available". The outputs do not depend on the number of workers.
 
+### Changed
+
+- **`unreadable_planes` names the plane and the channel** (Spec ADR 0003 HV3). A channel that
+  cannot be measured still fails the whole `plane_histograms.csv`, as before; the error, and so
+  the run report, now names every failed plane, `<image>, plane t=1, c=1 (channel GFP):
+  <cause>` (T, Z and C index, the channel ID from the description, the cause with the image's
+  relative path), not only the image. The image's other planes are measured still so that each
+  failed one is named. An image that cannot be read plane by plane, or hashed, is named with
+  its cause. The page cache of the TIFF reader keeps no page after a failed decode. Nothing
+  else changes: the codes, `paths`, what is staged and published, and the outputs of any
+  number of workers.
+
 ### Corrections to the v0.6.1 notes
 
 - **The volatile-field rule is about run outputs.** The v0.6.1 notes say `written_at` is "the

@@ -182,6 +182,8 @@ class Rows:
         Why every row was recomputed, or None.
     failed
         Files whose pixels could not be read.
+    failures
+        ``{file: what failed}`` for each failed file (:attr:`.resume.NewRows.failures`).
     entries
         The manifest entry of every analysed file, as it is now.
     resumed
@@ -203,6 +205,7 @@ class Rows:
     read: tuple[str, ...]
     reason: str | None
     failed: tuple[str, ...] = ()
+    failures: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     entries: dict[str, FileEntry] = field(default_factory=dict)
     resumed: tuple[str, ...] = ()
     changed: tuple[str, ...] = ()
@@ -276,6 +279,10 @@ def compute_rows(
         tuple(new.read),
         reason,
         tuple(sorted({*unhashed, *new.failed})),
+        {
+            **{rel: (f"{rel}: {UNHASHED}",) for rel in unhashed},
+            **new.failures,
+        },
         entries,
         resumed=tuple(new.resumed),
         changed=tuple(sorted({*changed, *new.changed})),
@@ -285,12 +292,36 @@ def compute_rows(
     )
 
 
-def unreadable_issue(failed: tuple[str, ...]) -> ValidationIssue:
-    """Return the error naming the files whose pixels could not be read."""
+UNHASHED = "its content could not be read to take its SHA-256"
+"""Why an image whose content could not be hashed is ``unreadable_planes``."""
+
+
+def unreadable_issue(
+    failed: tuple[str, ...], failures: Mapping[str, tuple[str, ...]] | None = None
+) -> ValidationIssue:
+    """Return the error naming the files whose pixels could not be read.
+
+    Parameters
+    ----------
+    failed
+        The files, sorted.
+    failures
+        ``{file: what failed}``: each failed plane (T, Z and C index, channel ID) and the
+        cause (Spec ADR 0003 HV3), named in the message in the order of ``failed``.
+
+    Returns
+    -------
+    ValidationIssue
+        ``unreadable_planes``: no table of the run is written.
+    """
+    found = [text for rel in failed for text in (failures or {}).get(rel, ())]
+    detail = f" What failed: {'; '.join(found)}." if found else ""
     return error(
         "unreadable_planes",
         f"The pixel data of {plural(len(failed), 'image')} could not be read, although "
-        "the file headers could. The files may be damaged or incomplete.",
+        "the file headers could. The files may be damaged or incomplete. A channel that "
+        "cannot be measured fails the whole table, so no plane_histograms.csv is written."
+        f"{detail}",
         failed,
         "Export the images again, or exclude them from the run to continue without them.",
     )

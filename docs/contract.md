@@ -134,7 +134,13 @@ unit is blank, never a zero histogram. The underflow and overflow are centred mo
 IDs). A version 4 table is refused by the reader: the next run recomputes every row (manifest
 version 5), `RunInputs` refuses it naming the fix. A failed channel measurement fails the whole
 table (HV3): in this brick a plane that cannot be read stops the run (`unreadable_planes`) and no
-table of this run is published. Histogram numbers of channels that are present are unchanged
+table of this run is published. Its message (and so the run report) names every failed plane:
+`<image>, plane t=<T>, z=<Z>, c=<C> (channel <ID>): <cause>`, an axis the image does not have
+left out, the channel ID from the description, `;`-separated, by image in sorted order and
+then in the order the planes are read; once a channel fails the image's remaining planes are
+still measured so that every failed one is named, and none of its rows is staged. An image that
+cannot be read plane by plane at all (or, with content verification, hashed) is named with its
+cause alone (`<image>: <cause>`). The issue's `paths` are the images. Histogram numbers of channels that are present are unchanged
 from version 4. The rest of this section describes the version 4 layout it replaces, by C index.
 
 Defined by the [normalization brick's contract][normalization contract] §6.2 (columns) and
