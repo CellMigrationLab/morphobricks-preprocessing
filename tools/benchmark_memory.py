@@ -36,8 +36,19 @@ def peak_rss(status: Path = Path("/proc/self/status")) -> tuple[int, str]:
     return peak * unit, "ru_maxrss (may include the parent process's peak)"
 
 
-def _windows_peak() -> int:
-    """Return this process's peak working set in bytes (Windows ``GetProcessMemoryInfo``)."""
+def _windows_peak(kernel32: object = None, psapi: object = None) -> int:
+    """Return this process's peak working set in bytes (Windows ``GetProcessMemoryInfo``).
+
+    ``K32GetProcessMemoryInfo`` of kernel32 (Windows 7 and later), else psapi's
+    ``GetProcessMemoryInfo``, both with their types declared: the pseudo-handle of
+    ``GetCurrentProcess`` is pointer-sized, and an undeclared call passes it truncated to 32
+    bits on 64-bit Windows and fails. ``kernel32`` and ``psapi`` are for tests.
+
+    Raises
+    ------
+    OSError
+        If the call fails, or gives no peak: never a silent 0.
+    """
     import ctypes
     from ctypes import wintypes
 
@@ -55,8 +66,19 @@ def _windows_peak() -> int:
             ("PeakPagefileUsage", ctypes.c_size_t),
         ]
 
+    kernel32 = kernel32 or ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.GetCurrentProcess.argtypes = []
+    query = getattr(kernel32, "K32GetProcessMemoryInfo", None)
+    if query is None:
+        query = (psapi or ctypes.WinDLL("psapi", use_last_error=True)).GetProcessMemoryInfo
+    query.argtypes = [wintypes.HANDLE, ctypes.POINTER(_Counters), wintypes.DWORD]
+    query.restype = wintypes.BOOL
     counters = _Counters()
     counters.cb = ctypes.sizeof(_Counters)
-    process = ctypes.windll.kernel32.GetCurrentProcess()
-    ctypes.windll.psapi.GetProcessMemoryInfo(process, ctypes.byref(counters), counters.cb)
+    if not query(kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+        code = ctypes.get_last_error() if hasattr(ctypes, "get_last_error") else 0
+        raise OSError(f"GetProcessMemoryInfo failed (error {code}): no peak working set")
+    if counters.PeakWorkingSetSize <= 0:
+        raise OSError("GetProcessMemoryInfo gave no peak working set")
     return int(counters.PeakWorkingSetSize)

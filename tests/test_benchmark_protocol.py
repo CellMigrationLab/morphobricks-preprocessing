@@ -140,3 +140,38 @@ def test_peak_rss_reads_vmhwm_and_the_platform_unit_of_ru_maxrss(tmp_path, monke
         monkeypatch.setattr(memory.sys, "platform", platform)
         peak, source = memory.peak_rss(tmp_path / "missing")
         assert peak == expected and source.startswith("ru_maxrss")
+
+
+class _Function:
+    """A stand-in for a ctypes foreign function: its types are set, its result is chosen."""
+
+    def __init__(self, result, peak=0):
+        self.result, self.peak = result, peak
+
+    def __call__(self, *args):
+        if len(args) == 3:  # the memory query: fill the counters it was given
+            args[1]._obj.PeakWorkingSetSize = self.peak
+        return self.result
+
+
+def _kernel32(query=None):
+    library = type("Kernel32", (), {})()
+    library.GetCurrentProcess = _Function(-1)
+    if query is not None:
+        library.K32GetProcessMemoryInfo = query
+    return library
+
+
+def test_windows_peak_declares_the_types_and_reads_the_peak():
+    kernel32 = _kernel32(_Function(1, peak=123_456))
+    assert memory._windows_peak(kernel32) == 123_456
+    assert kernel32.GetCurrentProcess.restype is not None  # the handle is pointer-sized
+    assert len(kernel32.K32GetProcessMemoryInfo.argtypes) == 3
+    psapi = type("Psapi", (), {"GetProcessMemoryInfo": _Function(1, peak=7)})()
+    assert memory._windows_peak(_kernel32(), psapi) == 7  # no K32 function: psapi's
+
+
+@pytest.mark.parametrize(("result", "peak"), [(0, 0), (0, 99), (1, 0)])
+def test_a_failed_windows_peak_query_raises_never_a_silent_zero(result, peak):
+    with pytest.raises(OSError, match="peak working set"):
+        memory._windows_peak(_kernel32(_Function(result, peak)))
