@@ -206,9 +206,10 @@ def test_the_cache_counts_in_the_memory_estimate(rgb_tiles):
     plain = window_plan(path, mapping, bounds=bounds, channels=[0, 1, 2])
     reader = WindowReader(path, mapping, cache_bytes=MIB, memory_limit=2 * MIB)
     plan = reader.window_plan(bounds=bounds, channels=[0, 1, 2])
-    assert plan.memory_estimate == plain.memory_estimate + MIB
+    frozen = TILE * TILE * 3  # the cache's immutable copy of the piece being decoded
+    assert plan.memory_estimate == plain.memory_estimate + MIB + frozen
     small = WindowReader(
-        path, mapping, cache_bytes=MIB, memory_limit=MIB + plain.memory_estimate - 1
+        path, mapping, cache_bytes=MIB, memory_limit=MIB + plain.memory_estimate + frozen - 1
     )
     with pytest.raises(WindowMemoryError, match="window cache"):
         small.read_window(bounds=bounds, channels=[0, 1, 2])
@@ -517,3 +518,13 @@ def test_a_piece_is_frozen_outside_the_lock_other_pieces_are_served_meanwhile(mo
         release.set()
         assert big.result(timeout=5).tobytes() == bytes(1000)
     assert cache.stats().pieces == 2 and cache.stats().nbytes <= cache.max_bytes
+
+
+def test_the_pieces_held_never_exceed_the_bound_even_while_one_is_added():
+    cache = BlockCache(100)
+    for key in range(20):
+        cache.get(key, lambda: np.zeros(30, np.uint8))
+        assert cache.stats().nbytes <= 100 and cache._nbytes == sum(
+            p.nbytes for p in cache._pieces.values()
+        )
+    assert cache.stats().pieces == 3 and cache.stats().evictions == 17

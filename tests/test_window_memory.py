@@ -1,0 +1,123 @@
+"""A window's memory estimate bounds its measured peak (review of #339, finding 1).
+
+``window_plan`` (and a reader's, with its cache) is meant as an upper bound of a window read's
+peak working memory (``window_memory``). Here the peak is measured with ``tracemalloc`` over
+layouts, pixel types, codecs, cached and uncached reads and window geometries, and must never
+be over the estimate.
+"""
+
+import functools
+import gc
+import tracemalloc
+
+import numpy as np
+import pytest
+import tifffile
+
+from morphobricks_preprocessing import prefill_mapping
+from morphobricks_preprocessing.window_reader import WindowReader
+from morphobricks_preprocessing.windows import read_window, window_plan
+from zarr_tree import write_ngff
+
+SIDE = 512
+WINDOWS = [(0, 64, 0, 64), (0, 128, 0, 128), (67, 390, 45, 512), (0, 512, 0, 512)]
+CODECS = {
+    "none": {},
+    "zlib": {"compression": "zlib"},
+    "zlib predictor": {"compression": "zlib", "predictor": True},
+    "lzma": {"compression": "lzma"},
+}
+STORAGE = {
+    "tiles 128": {"tile": (128, 128)},
+    "tiles 64": {"tile": (64, 64)},
+    "strips 32": {"rowsperstrip": 32},
+}
+
+
+def _peak(read):
+    """Return the peak traced memory of ``read()`` above what was held when it started."""
+    gc.collect()
+    tracemalloc.start()
+    try:
+        start = tracemalloc.get_traced_memory()[0]
+        read()
+        return tracemalloc.get_traced_memory()[1] - start
+    finally:
+        tracemalloc.stop()
+
+
+def _filled(path, mapping, cache, plane, read):
+    """Open a reader of ``cache`` bytes and fill it; return it and the bytes it holds."""
+    reader = WindowReader(path, mapping, cache_bytes=cache)
+    reader.read_window(bounds=(0, plane, 0, plane), **read)
+    return reader, reader.stats().nbytes
+
+
+def _cached_peak(path, mapping, cache, plane, bounds, read):
+    """Return a filled reader's estimate and the peak of reading ``bounds`` through it."""
+    gc.collect()
+    tracemalloc.start()  # from before the cache is filled: its pieces are traced
+    try:
+        reader, held = _filled(path, mapping, cache, plane, read)
+        gc.collect()
+        tracemalloc.reset_peak()
+        start = tracemalloc.get_traced_memory()[0]
+        reader.read_window(bounds=bounds, **read)
+        peak = tracemalloc.get_traced_memory()[1] - start + held
+    finally:
+        tracemalloc.stop()
+    return reader.window_plan(bounds=bounds, channels=read["channels"]).memory_estimate, peak
+
+
+def _check(path, axes, channels, plane, coordinates=None):
+    """Assert the estimate bounds the peak of every window, uncached and through a cache."""
+    mapping, read = prefill_mapping(axes), {"channels": channels, **(coordinates or {})}
+    read_window(path, mapping, bounds=(0, 1, 0, 1), **read)  # imports and first-use state
+    for y0, y1, x0, x1 in WINDOWS:
+        bounds = (min(y0, plane - 1), min(y1, plane), min(x0, plane - 1), min(x1, plane))
+        plan = window_plan(path, mapping, bounds=bounds, channels=channels)
+        peak = _peak(functools.partial(read_window, path, mapping, bounds=bounds, **read))
+        assert peak <= plan.memory_estimate, (path.name, bounds, peak, plan.memory_estimate)
+        for cache in (2**17, 2**21):
+            estimate, peak = _cached_peak(path, mapping, cache, plane, bounds, read)
+            assert peak <= estimate, (path.name, cache, bounds, peak, estimate)
+
+
+@pytest.mark.parametrize("storage", sorted(STORAGE))
+@pytest.mark.parametrize(
+    ("dtype", "codec"),
+    # a floating-point predictor needs imagecodecs (not a dependency): not in the matrix
+    [
+        (d, c)
+        for d in ("uint8", "uint16", "float32")
+        for c in sorted(CODECS)
+        if (d, c) != ("float32", "zlib predictor")
+    ],
+)
+def test_the_estimate_bounds_the_peak_of_a_tiff_window(tmp_path, dtype, codec, storage):
+    data = (np.random.default_rng(1).random((SIDE, SIDE)) * 200).astype(dtype)
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(path, data, metadata={"axes": "YX"}, **CODECS[codec], **STORAGE[storage])
+    _check(path, "YX", [0], SIDE)
+
+
+def test_the_estimate_bounds_the_peak_of_rgb_and_ome_stacks(tmp_path):
+    rgb = np.random.default_rng(2).integers(0, 200, (SIDE, SIDE, 3), dtype=np.uint8)
+    path = tmp_path / "rgb.tif"
+    tifffile.imwrite(path, rgb, photometric="rgb", tile=(128, 128), compression="zlib")
+    _check(path, "YXS", [0, 1, 2], SIDE)
+    stack = np.random.default_rng(3).integers(0, 4000, (30, 3, 128, 128), dtype=np.uint16)
+    path = tmp_path / "stack.ome.tif"
+    tifffile.imwrite(
+        path, stack, ome=True, metadata={"axes": "TCYX"}, tile=(64, 64), compression="zlib"
+    )
+    _check(path, "TCYX", [2, 0], 128, {"t": 29})
+
+
+@pytest.mark.parametrize("chunks", [(1, 64, 64), (3, 128, 128), (2, 256, 256)])
+@pytest.mark.parametrize("version", ["0.4", "0.5"])
+@pytest.mark.parametrize("dtype", ["uint8", "uint16", "float32"])
+def test_the_estimate_bounds_the_peak_of_an_ome_zarr_window(tmp_path, dtype, version, chunks):
+    data = (np.random.default_rng(4).random((3, SIDE, SIDE)) * 200).astype(dtype)
+    path = write_ngff(tmp_path / "a.zarr", data, "cyx", version=version, chunks=chunks)
+    _check(path, "CYX", [2, 0], SIDE)

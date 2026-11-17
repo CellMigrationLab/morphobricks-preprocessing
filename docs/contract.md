@@ -400,7 +400,10 @@ It gives:
   (its `read_window(*, bounds, channels, z=None, t=None, level=0)` and `window_plan`).
   `RunWindowReader.window_plan(*, t, z, bounds, channels, level=0)` (Unreleased) is the window's
   `windows.WindowPlan` from the header, with `read_window`'s checks, its `memory_estimate`
-  counting `cache_bytes`. Both readers (Unreleased) have `close()`, `closed` and are context
+  counting `cache_bytes`. A window's `memory_estimate` (Unreleased) is an upper bound of the
+  read's peak, checked by measurement for the codecs listed in `window_memory` (#342 for the
+  others): the result, the pieces, the decode's buffers, the codec's state, the parsed header and,
+  through a cache, the frozen copy of a kept piece. Both readers (Unreleased) have `close()`, `closed` and are context
   managers: closing drops the cache at once (also when the `with` block fails), a later window or
   plan is `window_reader.WindowReaderClosedError`, a window being read meanwhile finishes bitwise
   and keeps nothing; a reader holds no open file between windows. One reader per image is meant

@@ -44,10 +44,23 @@ or clipped: bounds outside the plane are refused.
 | Masks | `RunInputs.read_mask_window`, `mask_window_plan` | the stored labels of a window; **missing:** no cached mask reader yet |
 | Levels | level 0 only (`WindowLevelError` otherwise) | pyramid levels and series need ADR 0004's announced EW2 amendment first |
 
-**Memory for planning.** Every estimate this layer gives (`window_plan`, `mask_window_plan`,
-`objects_read_plan`) is a stated **upper bound** on the read's working memory, taken from the
-header before any pixel is read, and a read over its limit is refused before any pixel is read.
-A consumer feeds these bounds into its plan; none is a guess to be corrected later. (The run's
+**Memory for planning.** `window_plan` (and a reader's, which adds its `cache_bytes`) is an
+**upper bound** of a window read's peak working memory, taken from the header before any pixel
+is read, and a read over its limit is refused before any pixel is read
+(`window_memory`; review of this PR, finding 1). It counts the result, the pieces read, the
+decode's buffers (five piece-sized buffers for a compressed TIFF piece, three for an OME-Zarr
+chunk), the codec's state (deflate 64 KiB; LZMA 66 MiB, for presets up to 9), the parsed header
+(256 KiB, 2 KiB a page, 80 B a piece) and, through a cache, the frozen copy of the piece being
+kept; the cache never holds more than its bound, not even while a piece is added. The bound is
+**checked, not proven**: `tests/test_window_memory.py` measures the peak with `tracemalloc` and
+asserts it is never over the estimate, for TIFF `uint8`, `uint16` and `float32`, uncompressed,
+deflate, deflate with a predictor and LZMA, in 64- and 128-px tiles and 32-row strips, interleaved
+RGB and a multi-page OME stack, and for OME-Zarr 0.4 and 0.5 with chunks across 1 to 3
+channels, every one uncached and through a full cache of two sizes, for windows from 64 px to the
+whole plane (worst measured peak: 0.98 of the estimate). **Not covered** (#342): codecs only
+imagecodecs decodes (JPEG, LZW, Zstandard, WebP, JPEG 2000), estimated with deflate's state and
+not verified; memory a C library allocates outside Python's allocators; the plane block reader
+(`read_plane`, `planes._tiff_piece_memory`) and `objects_read_plan`, unchanged here. (The run's
 own worker plan, `plan_workers` and `max_ram`, is being fixed separately and is not part of this
 note.) A consumer that reads `n` windows at once from one reader holds at most
 `n` window working memories plus one cache: `sum(plan.memory_estimate - cache_bytes) +

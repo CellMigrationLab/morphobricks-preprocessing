@@ -135,15 +135,18 @@ class BlockCache:
         return piece
 
     def _keep(self, key: Hashable, piece: np.ndarray) -> None:
-        """Hold a frozen piece and drop the least recently used over the bound (lock held)."""
+        """Hold a frozen piece, first dropping the least recently used to make room (lock held).
+
+        The pieces held never exceed the bound, not even for a moment.
+        """
         if self._closed or piece.nbytes > self.max_bytes:
             return
-        self._pieces[key] = piece
-        self._nbytes += piece.nbytes
-        while self._nbytes > self.max_bytes:
+        while self._nbytes + piece.nbytes > self.max_bytes:
             _, dropped = self._pieces.popitem(last=False)
             self._nbytes -= dropped.nbytes
             self._evictions += 1
+        self._pieces[key] = piece
+        self._nbytes += piece.nbytes
 
     def clear(self) -> None:
         """Drop every piece held."""
