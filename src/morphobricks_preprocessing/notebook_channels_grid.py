@@ -210,7 +210,7 @@ class TagGrid:
         ok = self.store.update(synced(answers, self.layouts, cells))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
         if ok:
-            self.matrix.clicked(key for key, _ in cells)
+            self.matrix.clicked(cells)
         self.refresh()
         self._on_change()
         return ok
@@ -308,7 +308,7 @@ class TagGrid:
         ok = self.store.update(synced(answers, self.layouts, cells))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
         if ok:
-            self.matrix.clicked(key for key, _ in cells)
+            self.matrix.clicked(cells)
         if ok and rgb:
             self.types.confirm_header(rgb)
         self.refresh()

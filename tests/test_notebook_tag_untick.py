@@ -117,3 +117,81 @@ def test_untick_retick_and_a_hand_tag_on_a_reopen_with_stale_aliases(tmp_path):
     grid.same_channels.value = False
     assert nb.draft_answers.units[named].channels == TAGS  # the hand tag stays
     assert nb.draft_answers.channels["DNA"].header_names == ("DAPI",)  # held by it
+
+
+def _renamed_headers(tmp_path):
+    """Save DAPI, Actin, Ch3 as aliases, then rename every header to the labels themselves.
+
+    The saved units keep their tags; their headers now say DNA, ACTIN, PHASE, which no saved
+    alias holds. A new unit says them too: opened ticked, it is tagged with no click.
+    """
+    root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
+    for i, folder in enumerate(SAVED):
+        _add(root, masks, folder, i + 1)
+    first = stepper(root, masks, out)
+    answer_all(first)
+    assert first.save_experiment()
+    for i, folder in enumerate(SAVED):
+        write_channels(root / folder / "a.tif", list(TAGS), KINDS, seed=i + 1)
+    _add(root, masks, "drug/rep3", 10)
+    write_channels(root / "drug/rep3/a.tif", list(TAGS), KINDS, seed=10)
+    shutil.copytree(out, tmp_path / "copy")
+    return root, masks, out
+
+
+def _nothing(nb):
+    """No save between opening and unticking."""
+
+
+def _retagged_by_hand(nb):
+    """Tag a saved unit's first channel again by hand: the click saves its header name."""
+    cell = nb.channel_grid.cells[("ctrl", "rep1", "single"), 0]
+    cell.value = None
+    cell.value = "DNA"
+
+
+@pytest.mark.parametrize(
+    ("save", "dna"),
+    [(_nothing, ("DAPI",)), (_labels_saved, None), (_retagged_by_hand, ("DNA",))],
+    ids=["no-save", "labels", "hand-tag"],
+)
+def test_unticking_takes_out_an_alias_only_the_no_click_tags_added(
+    tmp_path, monkeypatch, save, dna
+):
+    """An exact header name the no-click tags added is no alias of the strict page's.
+
+    A saved unit whose header now says that name holds it too, so the untick's resync alone
+    kept it (review of e623cad): unticked, the draft must still be byte-equal to the strict
+    page's after the same actions. A click that tags a cell with that name saves it on both.
+    """
+    from morphobricks_preprocessing.notebook_channels_grid import TagGrid
+
+    root, masks, out = _renamed_headers(tmp_path)
+    nb = stepper(root, masks, out)
+    named = ("drug", "rep3", "single")
+    assert nb.draft_answers.units[named].channels == TAGS  # trusted on opening
+    assert nb.draft_answers.channels["DNA"].header_names == ("DNA",)
+    save(nb)
+    nb.channel_grid.same_channels.value = False
+    monkeypatch.setattr(TagGrid, "SAME_CHANNELS", False)
+    strict = stepper(root, masks, tmp_path / "copy")
+    save(strict)
+    assert strict.draft_answers.channels["DNA"].header_names == dna
+    assert nb.draft_answers == strict.draft_answers
+    if save is not _nothing:  # the strict page writes no draft until something is saved
+        draft = (tmp_path / "copy" / DRAFT_FILENAME).read_bytes()
+        assert (out / DRAFT_FILENAME).read_bytes() == draft
+
+
+def test_a_click_on_a_unit_tagged_with_no_click_keeps_its_aliases(tmp_path):
+    """Once clicked, the unit's tags are the user's, and so are the names its header says."""
+    root, masks, out = _renamed_headers(tmp_path)
+    nb = stepper(root, masks, out)
+    named = ("drug", "rep3", "single")
+    cell = nb.channel_grid.cells[named, 1]
+    cell.value = None
+    cell.value = "ACTIN"
+    nb.channel_grid.same_channels.value = False
+    assert nb.draft_answers.units[named].channels == TAGS  # the hand tag stays
+    assert nb.draft_answers.channels["DNA"].header_names == ("DNA",)  # held by its tags
+    assert nb.draft_answers.channels["ACTIN"].header_names == ("ACTIN",)

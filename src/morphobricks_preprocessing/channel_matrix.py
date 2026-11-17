@@ -235,6 +235,24 @@ def with_aliases(
     return replace(answers, channels=channels)
 
 
+def without_aliases(answers: DraftAnswers, names: Mapping[str, Collection[str]]) -> DraftAnswers:
+    """Return the answers with ``names`` taken out of the aliases of their labels.
+
+    Unticking takes back the aliases only the no-click tags added (an exact header name a unit
+    tagged with no click confirmed): a unit tagged by hand whose header now says the same name
+    would keep it, though the strict page never saved it (owner, 16 November 2026: unticked,
+    the draft is byte-equal to the strict page's).
+    """
+    channels = dict(answers.channels)
+    for label, channel in answers.channels.items():
+        drop = set(names.get(label, ()))
+        if label in RGB_IDS or not drop or not channel.header_names:
+            continue
+        kept = tuple(n for n in channel.header_names if n not in drop)
+        channels[label] = replace(channel, header_names=kept or None)
+    return replace(answers, channels=channels)
+
+
 def differences(
     layout: UnitLayout,
     tags: Sequence[str | None],
@@ -369,4 +387,5 @@ __all__ = [
     "trusted",
     "untrusted",
     "with_aliases",
+    "without_aliases",
 ]

@@ -33,7 +33,10 @@ v0.5.1: no run before v0.5.1 is read.)
   list is untagged too; with no click since, the aliases the draft held before those tags are
   kept, even ones only the untagged units held, as opening unticked keeps them; none is kept
   once a click, a save of the label list or an image type resynced the aliases since, as that
-  save drops them on the strict page: review of 223d055), and ticking
+  save drops them on the strict page: review of 223d055; and an exact header name only those
+  tags added as an alias is taken out, even when a unit tagged earlier, whose header now says
+  that name, holds it too, unless a click tagged a cell with it or a unit holding it since:
+  review of e623cad), and ticking
   again trusts only the aliases saved when the page opened and still saved (`channel_matrix`,
   `notebook_channels_matrix`).
 - **`RunInputs.objects_read_plan(selection, mask_id)`** (#316): the memory of one
