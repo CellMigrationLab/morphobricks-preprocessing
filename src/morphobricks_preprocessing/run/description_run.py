@@ -6,7 +6,8 @@ strict reader, on the exact bytes it hashes. Every run needs one: without it the
 
 - stops, with the Spec's own code and a plain message, when the file is not valid, its
   records file cannot be read, the units declare different image types
-  (``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``; different channel lists are accepted from Stage 3,
+  (``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``, the run's only refusal then: no header check
+  follows, issue #321; different channel lists are accepted from Stage 3,
   S3.3, and checked per unit) or the description contradicts the folder
   or the image headers (the physical ``R_*`` checks, :mod:`..physical_check`);
 - records in its manifest the file's SHA-256, the section digests, which units' image type was
@@ -19,7 +20,7 @@ It reads no mask pixels: a mask file is ``checked`` only when the mask step reco
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import astuple, dataclass, replace
 from pathlib import Path
 
@@ -34,8 +35,11 @@ from ..description_run_text import (
     physical_issue,
     reader_issue,
 )
+from ..design import DesignTable
+from ..design_derive import derive_design
+from ..lab_links import LabLinks, repeat_code_issues
 from ..mask_representation import NOT_CHECKED, file_status, read_checked
-from ..physical_check import HETEROGENEOUS_LAYOUT, PhysicalReport, check_physical
+from ..physical_check import PhysicalReport, check_physical
 from ..required_description import description_required_issue
 from ..unit_consistency import declared_type_issues
 from ..validation import ValidationIssue, error
@@ -81,6 +85,45 @@ def load_description(output: Path) -> tuple[RunDescription | None, list[Validati
         message = f"The experiment description or its records file cannot be read: {exc}."
         return None, [error("description_unreadable", message, (), "Fix or remove the file.")]
     return RunDescription(description, sha256_hex(data), records), []
+
+
+def layout_refusal(found: RunDescription | None) -> ValidationIssue | None:
+    """Return ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` when the units declare different image types.
+
+    Decided from the description alone (Spec PR #49: P04(b) is decided "before any image is
+    read"), so the run ends its checks with this one refusal (issue #321): no header check
+    follows, whose findings would only be consequences of the layouts. None without a
+    description or with one image type.
+    """
+    if found is None:
+        return None
+    layouts = declared_layouts(found.description)
+    return heterogeneous_issue(layouts) if is_heterogeneous(layouts) else None
+
+
+def run_checks(
+    output: Path,
+    pre: Preflight,
+    loaded: tuple[RunDescription | None, list[ValidationIssue]],
+    header: Callable[[DesignTable | None], Checked],
+    links: LabLinks | None,
+) -> tuple[Checked, RunDescription | None]:
+    """Return the run's checks before any pixel is read, and its published description.
+
+    The design is the description's (experiment-v1 section 11), never a file read back. With
+    units of different image types (:func:`layout_refusal`) the checks end there:
+    ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` is the only issue and ``header`` (the header
+    checks given the design, :func:`.steps.header_checks`) is never called (issue #321). Else
+    the header checks, :func:`described_checks` and the repeat codes of ``links`` against the
+    description (:func:`..lab_links.repeat_code_issues`).
+    """
+    design = None if loaded[0] is None else derive_design(loaded[0].description)
+    refused = layout_refusal(loaded[0])
+    if refused is not None:
+        return Checked(None, None, design, [refused]), loaded[0]
+    checked, described = described_checks(output, pre, header(design), loaded)
+    checked.issues.extend(repeat_code_issues(links, described and described.description))
+    return checked, described
 
 
 def check_description(
@@ -170,38 +213,7 @@ def checked_description(
     roles = None if checked.review is None else checked.review.file_mappings
     found, refused = check_description(found, pre, roles)
     checked.issues.extend(refused)
-    checked.issues[:] = heterogeneous_first(checked.issues)
     return found
-
-
-SECONDARY_CODES = frozenset({"inconsistent_mapping", "missing_axes", "ambiguous_missing_axes"})
-"""The axis review's arrangement codes, whose advice is to export the images again."""
-
-SECONDARY_ADVICE = (
-    "Do not export the images again for this: it follows from the different layouts "
-    f"({HETEROGENEOUS_LAYOUT}, listed first). This version runs one image type per experiment."
-)
-
-
-def heterogeneous_first(issues: Iterable[ValidationIssue]) -> list[ValidationIssue]:
-    """Put the layout refusal first and make the axis review's arrangement issues secondary.
-
-    With several layouts the arrangement of dimensions differs between units by design, so the
-    axis review's arrangement issues (:data:`SECONDARY_CODES`) are a consequence, and
-    exporting the images the same way would not help: their advice is replaced. Only the order
-    and the advice change: no issue is added, removed or turned into a warning, so the run
-    refuses exactly as before.
-    """
-    found = list(issues)
-    layout = [i for i in found if i.code == HETEROGENEOUS_LAYOUT]
-    if not layout:
-        return found
-    rest = [
-        replace(i, action=SECONDARY_ADVICE) if i.code in SECONDARY_CODES else i
-        for i in found
-        if i.code != HETEROGENEOUS_LAYOUT
-    ]
-    return [*layout, *rest]
 
 
 def described_checks(
@@ -212,16 +224,16 @@ def described_checks(
 ) -> tuple[Checked, RunDescription | None]:
     """Check the published description and give the run each image's channel IDs.
 
-    :func:`checked_description`, then (with a description) :func:`with_channels` and, unless the
-    image types are refused, the warning naming every partially represented repeat
-    (``partial_channel_coverage``, :func:`..description_run_text.coverage_issues`).
+    :func:`checked_description`, then (with a description) :func:`with_channels` and the
+    warning naming every partially represented repeat (``partial_channel_coverage``,
+    :func:`..description_run_text.coverage_issues`). A description whose units declare
+    different image types never gets here: the run stops on :func:`layout_refusal` first.
     """
     described = checked_description(output, pre, checked, loaded)
     if described is None:
         return checked, None
     checked = with_channels(checked, described.description, pre)
-    if HETEROGENEOUS_LAYOUT not in {issue.code for issue in checked.issues}:
-        checked.issues.extend(coverage_issues(described.description))
+    checked.issues.extend(coverage_issues(described.description))
     return checked, described
 
 

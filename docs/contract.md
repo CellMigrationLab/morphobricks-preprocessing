@@ -100,7 +100,8 @@ planes of an experiment use the same bin count. In a described run (a published
 `image_type`, and the notebook's folder check compares images inside each unit; units of
 different image types (RGB and fluorescence) are refused as `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`
 (kept at Stage 3: the owner enabled different channel lists, not mixed image types), not as
-`mixed_dtypes`. Every run is described (§0). The
+`mixed_dtypes`. It is decided from the description alone and is then the run's only refusal: no
+header check runs after it (issue #321). Every run is described (§0). The
 invariant is that a previously blocking input stays blocked; the diagnostic codes may change
 (the per-type checks and the Spec's `R_*` codes replace the global `mixed_dtypes` and
 `inconsistent_dimensions` of a described run).
