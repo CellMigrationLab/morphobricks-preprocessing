@@ -37,6 +37,12 @@ notebook = [
 zarr = [
     "zarr>=2.18",
 ]
+# The opt-in H&E tissue mask helper (RunInputs.he_tissue_mask, CLI tissue-mask; Spec ADR 0005
+# BM15): scikit-image through normalization's histology extra, spelled with exactly the core
+# requirement's URL (pip refuses two direct URLs for one package).
+he-mask = [
+    "morphobricks-normalization[histology] @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.7.0",
+]
 dev = [
     "pytest>=7.4",
     "ruff>=0.6",
@@ -327,6 +333,13 @@ baseline = "tools/code_rules_baseline.json"
 "morphobricks_preprocessing.mask_rules" = "pure"
 "morphobricks_preprocessing.mask_lineage" = "io"
 "morphobricks_preprocessing.mask_conversion" = "orchestration"
+"morphobricks_preprocessing.lineage_schema" = "pure"
+"morphobricks_preprocessing.code_identity" = "io"
+"morphobricks_preprocessing.he_tissue_rule" = "pure"
+"morphobricks_preprocessing.he_tissue_mask" = "orchestration"
+"morphobricks_preprocessing.run_inputs_tissue" = "orchestration"
+"morphobricks_preprocessing.cli_tissue_mask" = "ui"
+"morphobricks_preprocessing.notebook_tissue_mask" = "ui"
 "morphobricks_preprocessing.mask_requests" = "pure"
 "morphobricks_preprocessing.masks.layout" = "io"
 "morphobricks_preprocessing.masks.model" = "pure"

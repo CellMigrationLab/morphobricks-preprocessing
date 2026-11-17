@@ -85,6 +85,7 @@ from .run_inputs_text import (
     _unrecorded_text,
     _without_axes_text,
 )
+from .run_inputs_tissue import TissueMaskInputs
 from .run_inputs_window import WindowInputs, _check_planes, _coordinate, _mapping
 from .source_content import content_changed
 from .unrecorded import UnrecordedFiles, unrecorded_files
@@ -172,7 +173,13 @@ class Fov:
 
 @dataclass(frozen=True)
 class RunInputs(
-    SemanticInputs, ProjectionInputs, ResolvingInputs, WindowInputs, MaskInputs, ConversionInputs
+    SemanticInputs,
+    ProjectionInputs,
+    ResolvingInputs,
+    WindowInputs,
+    MaskInputs,
+    ConversionInputs,
+    TissueMaskInputs,
 ):
     """The inputs of a clean preprocessing run, read as the run recorded them.
 
