@@ -341,7 +341,8 @@ def test_a_cache_closed_during_a_decode_returns_the_piece_and_keeps_nothing():
         cache.close()  # the reader is closed while a thread decodes
         return piece
 
-    assert cache.get("k", decode) is piece
+    got = cache.get("k", decode)
+    assert got.tobytes() == piece.tobytes() and not got.flags.writeable
     assert cache.stats().pieces == 0 and cache.stats().decodes == 1
     assert cache.get("k", lambda: piece.copy()).tobytes() == piece.tobytes()
     assert cache.stats().pieces == 0
@@ -426,6 +427,8 @@ def test_waiters_share_a_decode_the_cache_does_not_keep(monkeypatch, size):
     pieces = [f.result() for f in futures]
     assert len(calls) == 1 and all(p is pieces[0] for p in pieces)
     assert not pieces[0].flags.writeable and cache.stats().pieces == 0
+    with pytest.raises(ValueError):  # shared but not kept: immutable too
+        pieces[0].setflags(write=True)
     assert cache.stats().decodes == 1 and cache.stats().hits == 2
     cache.get("big", decode)  # a later request: not held, so decoded again
     assert len(calls) == 2
@@ -441,6 +444,8 @@ def test_waiters_share_a_decode_dropped_by_a_close(monkeypatch):
 
     pieces = [f.result() for f in _overlapping(monkeypatch, cache, "k", decode)]
     assert len(calls) == 1 and all(p is pieces[0] for p in pieces)
+    with pytest.raises(ValueError):  # dropped by the close but shared: immutable too
+        pieces[0].setflags(write=True)
 
 
 def test_a_failed_decode_is_not_shared_a_waiter_decodes_again(monkeypatch):

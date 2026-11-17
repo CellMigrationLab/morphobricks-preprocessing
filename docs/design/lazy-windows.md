@@ -133,8 +133,8 @@ numcodecs 0.16).
   new arrays, so changing a window changes no cached piece. Tests cover all three points. The
   cost is one copy per kept piece, inside the cache's budget: the measured grid below went from
   1.90/1.99 s to 2.09/2.11 s with 1 thread and from 1.52/1.66 s to 1.96/1.77 s with 4 threads, on
-  a shared machine, with identical window digests. A piece that is not kept is handed to its
-  waiters marked read only.
+  a shared machine, with identical window digests. A piece that is not kept (too large, or
+  dropped by a close) but handed to the threads that waited for it is frozen the same way.
 - **Per process** (F6). A cache belongs to the reader, and the reader belongs to the process that
   opened it (`WindowReader.cache`). Nothing is shared between processes or between bricks: a
   worker process, or another brick in the same process, opens its own reader and pays its own

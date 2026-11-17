@@ -28,7 +28,8 @@ v0.5.1: no run before v0.5.1 is read.)
   not shared.
 - **Cached pieces are immutable** (F5): a kept piece is copied once into an immutable buffer,
   so neither it nor its storage can be made writable again (v0.7.0 only marked it read only,
-  which NumPy lets an owner undo). Every window is unchanged, bitwise.
+  which NumPy lets an owner undo). A piece shared with waiting threads but not kept (too large,
+  or dropped by a close) is frozen too. Every window is unchanged, bitwise.
 - **`RunWindowReader.window_plan(*, t, z, bounds, channels, level=0)`:** the plan of a window of
   a run's image by channel IDs (as `WindowReader.window_plan`), its memory estimate counting the
   reader's cache, for consumers that plan memory before reading.

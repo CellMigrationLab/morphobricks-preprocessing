@@ -16,9 +16,11 @@ global cache, and reading without one is unchanged.
   twice for requests that overlap in time. A request that starts after the decode finished
   decodes again when the piece is not held. A decode that fails is not shared: one waiting
   thread decodes again (and gets its own error).
-- **Read only.** A piece the cache keeps is frozen: its bytes are copied once into an
-  immutable buffer, so neither the piece nor its storage can be made writable again. The
-  windows built from the pieces are new arrays; changing one changes no cached piece.
+- **Read only.** Every decoded piece the cache hands out is frozen, kept or not (one too large
+  to keep, or dropped by a close, is still shared with the threads that waited for it): its
+  bytes are copied once into an immutable buffer, so neither the piece nor its storage can be
+  made writable again. The windows built from the pieces are new arrays; changing one changes
+  no cached piece.
 - **Per process.** A cache lives in the process that made it and is never shared with
   another process; its memory counts in that process's plan (``cache_bytes`` in every window
   estimate of its reader). Worker processes each open their own reader and cache.
@@ -133,12 +135,12 @@ class BlockCache:
     def _keep(self, key: Hashable, piece: np.ndarray) -> np.ndarray:
         """Hold a piece, frozen, and drop the least recently used over the bound (lock held).
 
-        Returns the piece as shared: frozen when kept, else the decode marked read only.
+        Returns the piece as shared, frozen whether or not it is kept: one too large to keep, or
+        dropped by a close, is still handed to the threads that waited for it.
         """
-        if self._closed or piece.nbytes > self.max_bytes:
-            piece.setflags(write=False)
-            return piece
         piece = _frozen(piece)
+        if self._closed or piece.nbytes > self.max_bytes:
+            return piece
         self._pieces[key] = piece
         self._nbytes += piece.nbytes
         while self._nbytes > self.max_bytes:
