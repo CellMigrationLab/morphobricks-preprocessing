@@ -133,3 +133,19 @@ def test_the_card_sits_beside_convert_a_mask_and_shows_only_for_an_rgb_run(tmp_p
     nb.output.value = str(run.output_folder)
     nb._refresh_mask_step()
     assert nb.tissue_mask.has_rgb and ui.is_visible(nb.tissue_mask.card)
+
+
+def test_a_mask_id_with_spaces_keeps_the_button_disabled_and_writes_nothing(tmp_path):
+    # The reasons checked the trimmed ID, the write used the typed one: the button was enabled
+    # for an ID the helper then refused (review of #323). The typed ID is never trimmed.
+    run = rgb_run(tmp_path)
+    before = tree(run.masks_root)
+    card = cards.TissueMaskCard()
+    card.refresh(run.output_folder)
+    card.add_unit.click()
+    card.name.value = " HETissue "
+    assert card.button.disabled and "breaks the mask ID rules" in card.blocker.value
+    assert card.write() is None
+    assert tree(run.masks_root) == before
+    card.name.value = "   "
+    assert card.button.disabled and "type the new mask ID" in card.blocker.value

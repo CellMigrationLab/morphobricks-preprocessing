@@ -232,14 +232,14 @@ class TissueMaskCard:
             found.append("the run has no masks folder (run preprocessing with one)")
         if not self.positions.value:
             found.append("choose at least one position")
-        found += self._name_reasons(self.name.value.strip())
+        found += self._name_reasons(self.name.value)  # as typed: the write uses it unchanged
         if importlib.util.find_spec("skimage") is None:
             found.append(f"scikit-image is not installed: {INSTALL_HINT}")
         return found
 
     def _name_reasons(self, name: str) -> list[str]:
-        """Return why the typed mask ID cannot be used (empty when it can)."""
-        if not name:
+        """Return why the typed mask ID cannot be used (empty when it can); never trimmed."""
+        if not name.strip():
             return ["type the new mask ID"]
         declared = self._run.description().masks
         if name in declared:
