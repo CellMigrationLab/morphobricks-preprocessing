@@ -174,6 +174,7 @@ class TagGrid:
             self.alone = set()
             self.matrix.reset()
             self.matrix.opening()
+        self.matrix.labels_changed(labels)
         self.layouts, self.labels, self.rows.thumbs = layouts, labels, thumbs
         if self.place_types:
             self.types.open(layouts)
@@ -207,6 +208,8 @@ class TagGrid:
         """Save answers whose cells were tagged by the user's click, redraw; False if refused."""
         ok = self.store.update(synced(answers, self.layouts, cells))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
+        if ok:
+            self.matrix.clicked(key for key, _ in cells)
         self.refresh()
         self._on_change()
         return ok
@@ -303,6 +306,8 @@ class TagGrid:
                 cells += [(layout.key, index) for index in proposed]
         ok = self.store.update(synced(answers, self.layouts, cells))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
+        if ok:
+            self.matrix.clicked(key for key, _ in cells)
         if ok and rgb:
             self.types.confirm_header(rgb)
         self.refresh()

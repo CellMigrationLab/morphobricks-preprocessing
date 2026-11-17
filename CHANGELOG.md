@@ -43,8 +43,12 @@ v0.5.1: no run before v0.5.1 is read.)
   description record no field for the statement yet (the Spec amendment will add one).
   Unticked, the page is the strict per-unit path of PR 17b, unchanged: the units tagged from
   their headers with no click in this session are untagged again (a header is then a proposal
-  to confirm, as before), and ticking again trusts only the aliases saved when the page opened
-  (`channel_matrix`, `notebook_channels_matrix`).
+  to confirm, as before; a unit whose tags the user clicked on since keeps them, even tagged
+  back to what its header says, and one whose header tags only lost a label removed from the
+  list is untagged too; with no click since, the aliases the draft held before those tags are
+  kept, even ones only the untagged units held, as opening unticked keeps them), and ticking
+  again trusts only the aliases saved when the page opened and still saved (`channel_matrix`,
+  `notebook_channels_matrix`).
 - **`RunInputs.objects_read_plan(selection, mask_id)`** (#316): the memory of one
   `read_objects` plane, from the mask's header only, as an `ObjectsReadPlan` (also
   `morphobricks_preprocessing.ObjectsReadPlan`). `read_objects` returns `int32` whatever the
@@ -79,6 +83,17 @@ v0.5.1: no run before v0.5.1 is read.)
   byte-identical whatever the number and the speed-up is modest (the histogram work holds the
   GIL). The run's result shows `RunResult.workers` (the thread pool the images were read
   with). The notebook file and its call are unchanged.
+- **Notebook: one image at a time when the default cap cannot hold the largest image** (D4b).
+  On a low-memory computer the default cap can be below one image's estimate, and Auto then
+  stopped the run with `image_over_max_ram` where one image at a time completes. Once the axis
+  roles are confirmed, while the user has changed neither **Images read at once** nor the cap,
+  the notebook starts at 1 when the default cap is below what the largest analysed image needs
+  (`run.workers.max_ram_needed`: its header estimate plus the 256 MiB the run keeps, exactly
+  `plan_workers`' refusal) and says so beside the choice: "Images read at once: 1, because the
+  default memory cap (X GiB) is smaller than the largest image (Y GiB); outputs are identical
+  for any number." Values the user set are kept, and so is their refusal. Where the figure is
+  the physical memory (macOS, `run.workers.memory_is_physical`), the cap's line says "physical
+  memory" instead of "available". The outputs do not depend on the number of workers.
 
 ### Corrections to the v0.6.1 notes
 

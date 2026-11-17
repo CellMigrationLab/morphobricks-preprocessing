@@ -17,6 +17,7 @@ from morphobricks_normalization.dtypes import (
 from morphobricks_normalization.ranges import DEFAULT_ROBUST_QUANTILES, HistogramSettings
 
 from . import notebook_style as ui
+from .axes import AxisReview
 from .axis_review import review_axes
 from .notebook_options import (
     _WIDE,
@@ -29,6 +30,7 @@ from .notebook_options import (
     WORKERS_HELP,
     cap_help,
     default_max_ram_gib,
+    serial_note,
 )
 from .notebook_plots import IntensityPanel
 from .notebook_progress import Wait
@@ -37,7 +39,7 @@ from .planes import DEFAULT_MEMORY_LIMIT
 from .report import issue_counts, rebuild_line
 from .run import RESTART, Preflight, RunMode, RunResult, run_experiment
 from .run.modes import AUTO
-from .run.workers import available_memory
+from .run.workers import available_memory, max_ram_needed, memory_is_physical
 from .run_labels import recorded_labels
 from .validation import has_errors, plural
 
@@ -163,10 +165,15 @@ class _RunStep:
         Auto by default, under a cap of half the memory available now (owner, 16 November
         2026; the command line's ``--workers`` stays 1): Auto alone bounds only by the CPUs.
         One image at a time when the available memory cannot be read. The cap is shown with
-        Auto only.
+        Auto only. Until the user changes either, the default follows the dataset
+        (:meth:`_fit_default_workers`).
         """
         available = available_memory()
         cap = default_max_ram_gib(available)
+        self._default_cap = cap
+        self._workers_chosen = False
+        """True once the user changed the workers or the cap: their values are kept then."""
+        self._setting_workers = False
         self.workers = widgets.Dropdown(
             options=WORKER_OPTIONS, value=1 if cap is None else AUTO, layout=widgets.Layout(**_WIDE)
         )
@@ -178,19 +185,60 @@ class _RunStep:
             description="Memory cap (GiB)",
             style=_label(),
         )
+        physical = memory_is_physical()
         self.max_ram_box = widgets.VBox(
-            [self.max_ram_gib, ui.help_text(MAX_RAM_HELP), ui.help_text(cap_help(available, cap))]
+            [
+                self.max_ram_gib,
+                ui.help_text(MAX_RAM_HELP),
+                ui.help_text(cap_help(available, cap, physical)),
+            ]
         )
+        self.workers_note = widgets.HTML()
         ui.set_visible(self.max_ram_box, self.workers.value == AUTO)
         self.workers.observe(
             lambda change: ui.set_visible(self.max_ram_box, change["new"] == AUTO), names="value"
         )
+        for control in (self.workers, self.max_ram_gib):
+            control.observe(lambda _: self._workers_edited(), names="value")
         return [
             widgets.HTML("<b>Images read at once</b>"),
             self.workers,
+            self.workers_note,
             ui.help_text(WORKERS_HELP),
             self.max_ram_box,
         ]
+
+    def _workers_edited(self) -> None:
+        """Note the user's own choice of workers or cap (never changed for them from then on)."""
+        if not self._setting_workers:
+            self._workers_chosen = True
+            self.workers_note.value = ""
+
+    def _fit_default_workers(self, review: AxisReview | None) -> None:
+        """Start at 1 worker when the default cap cannot hold this dataset's largest image.
+
+        Only while the user has changed neither the workers nor the cap, and once the axis
+        roles give each image's layout (``review``): Auto under the default cap would stop the
+        run with ``image_over_max_ram`` where one image at a time completes, and the outputs
+        are byte-identical for any number of workers. The largest image is of every image
+        analysed (the reused ones too), from the headers (:func:`.run.workers.max_ram_needed`).
+        A user's own values are kept, and so is the refusal they give.
+        """
+        if self._workers_chosen or self._default_cap is None or review is None:
+            return
+        layouts = self._plan_layouts(review).values()
+        bins = self.bins.value
+        need = max_ram_needed(layouts, lambda layout: bins or default_bin_count(layout.dtype))
+        cap = self._default_cap
+        fits = need <= round(cap * 2**30)
+        self._setting_workers = True
+        try:
+            self.workers.value = AUTO if fits else 1
+        finally:
+            self._setting_workers = False
+        self.workers_note.value = (
+            "" if fits else ui.status("warn", html.escape(serial_note(cap, need)))
+        )
 
     def _run_mode(self, verify_content: bool | None) -> RunMode:
         """Return the run's mode with the workers chosen; the memory cap only with Auto."""
@@ -323,6 +371,7 @@ class _RunStep:
             [f"still to do: {text[0].lower()}{text[1:]}" for text in missing[:1]]
             + ([f"and {len(missing) - 1} more (see Before you run)"] if len(missing) > 1 else [])
         )
+        self._fit_default_workers(review if folder_ok else None)
         self.plan.value = self._plan_html(review if folder_ok else None)
         self._refresh_plan_card()
         self._refresh_mask_step()
