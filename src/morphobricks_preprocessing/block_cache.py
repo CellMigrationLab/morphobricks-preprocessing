@@ -18,9 +18,9 @@ global cache, and reading without one is unchanged.
   thread decodes again (and gets its own error).
 - **Read only.** Every decoded piece the cache hands out is frozen, kept or not (one too large
   to keep, or dropped by a close, is still shared with the threads that waited for it): its
-  bytes are copied once into an immutable buffer, so neither the piece nor its storage can be
-  made writable again. The windows built from the pieces are new arrays; changing one changes
-  no cached piece.
+  bytes are copied once into an immutable buffer, outside the lock, so neither the piece nor
+  its storage can be made writable again. The windows built from the pieces are new arrays;
+  changing one changes no cached piece.
 - **Per process.** A cache lives in the process that made it and is never shared with
   another process; its memory counts in that process's plan (``cache_bytes`` in every window
   estimate of its reader). Worker processes each open their own reader and cache.
@@ -121,33 +121,29 @@ class BlockCache:
         decoded, piece = False, None
         try:
             piece = decode()
+            if piece is not None:  # outside the lock: other pieces are served meanwhile
+                piece = _frozen(piece)
             decoded = True
         finally:
             with self._lock:
                 self._decodes += 1
                 if decoded and piece is not None:
-                    piece = self._keep(key, piece)
+                    self._keep(key, piece)
                 flight.decoded, flight.piece = decoded, piece
                 self._pending.pop(key)
                 flight.done.set()
         return piece
 
-    def _keep(self, key: Hashable, piece: np.ndarray) -> np.ndarray:
-        """Hold a piece, frozen, and drop the least recently used over the bound (lock held).
-
-        Returns the piece as shared, frozen whether or not it is kept: one too large to keep, or
-        dropped by a close, is still handed to the threads that waited for it.
-        """
-        piece = _frozen(piece)
+    def _keep(self, key: Hashable, piece: np.ndarray) -> None:
+        """Hold a frozen piece and drop the least recently used over the bound (lock held)."""
         if self._closed or piece.nbytes > self.max_bytes:
-            return piece
+            return
         self._pieces[key] = piece
         self._nbytes += piece.nbytes
         while self._nbytes > self.max_bytes:
             _, dropped = self._pieces.popitem(last=False)
             self._nbytes -= dropped.nbytes
             self._evictions += 1
-        return piece
 
     def clear(self) -> None:
         """Drop every piece held."""

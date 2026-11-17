@@ -128,7 +128,8 @@ numcodecs 0.16).
   before it finishes.
 - **Read only, enforced** (F5). At v0.7.0 a kept piece was only marked `write=False`, and NumPy
   lets an array that owns its memory be made writable again. A kept piece is now copied once into
-  an immutable `bytes` buffer. Neither the piece nor its storage can be made writable
+  an immutable `bytes` buffer, outside the cache's lock (review of this PR, finding 4: under the
+  lock the copy held every other thread back). Neither the piece nor its storage can be made writable
   (`setflags(write=True)` raises), and the decoder's own array is not the cached one. Windows are
   new arrays, so changing a window changes no cached piece. Tests cover all three points. The
   cost is one copy per kept piece, inside the cache's budget: the measured grid below went from

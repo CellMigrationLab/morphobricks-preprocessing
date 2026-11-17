@@ -490,3 +490,30 @@ def test_a_window_is_a_new_array_changing_it_changes_no_cached_piece(rgb_tiles):
     again = reader.read_window(bounds=(0, 20, 0, 20), channels=[0, 1, 2])
     assert reader.stats().hits > 0
     assert again.tobytes() == np.moveaxis(data[:20, :20], -1, 0).tobytes()
+
+
+def test_a_piece_is_frozen_outside_the_lock_other_pieces_are_served_meanwhile(monkeypatch):
+    """Freezing a large piece never holds the cache's lock: other threads keep reading."""
+    from morphobricks_preprocessing import block_cache
+
+    cache = BlockCache(MIB)
+    held = cache.get("held", lambda: np.ones(10, np.uint8))
+    freezing, release = threading.Event(), threading.Event()
+    original = block_cache._frozen
+
+    def slow(piece):
+        if piece.size == 1000:
+            freezing.set()
+            assert release.wait(5)
+        return original(piece)
+
+    monkeypatch.setattr(block_cache, "_frozen", slow)
+    with ThreadPoolExecutor(2) as pool:
+        big = pool.submit(cache.get, "big", lambda: np.zeros(1000, np.uint8))
+        assert freezing.wait(5)
+        other = pool.submit(cache.get, "held", lambda: pytest.fail("held"))
+        assert other.result(timeout=5) is held  # served while "big" is being frozen
+        assert cache.stats().pieces == 1  # "big" is not kept before it is frozen
+        release.set()
+        assert big.result(timeout=5).tobytes() == bytes(1000)
+    assert cache.stats().pieces == 2 and cache.stats().nbytes <= cache.max_bytes
