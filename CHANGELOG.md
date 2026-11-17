@@ -27,8 +27,12 @@ v0.5.1: no run before v0.5.1 is read.)
   configuration once in every position per block of rounds; `shuffled`, `fixed`), recorded
   per round with the seed. An acceptance run has at least 10 rounds (the default; fewer is
   refused) and `--quick` is the smoke mode (3 rounds), named in the report. Every run's peak
-  RSS is kept and each configuration reports its distribution (min, median, max, every value)
-  and the report the largest of all. Each run's output digests are printed as it finishes
+  RSS is the child process's own (Linux `VmHWM`, Windows `PeakWorkingSetSize`; elsewhere
+  `ru_maxrss` in the platform's unit, its source named in the report as possibly including the
+  parent's peak), and the dataset is written in a separate process: `ru_maxrss` on Linux had
+  every run report the driver's high-water mark (421.3 MiB for 1 and 2 workers alike; their
+  own peaks are about 306 and 335 MiB). Each configuration reports the distribution (min,
+  median, max, every value) and the report the largest of all. Each run's output digests are printed as it finishes
   and kept in the report, and the speed-up is paired with the serial run of the same round.
   `--cpus LIST` pins the runs with `taskset -c` where it exists, and the load average is
   recorded before and after every run. `--phases` (from #340) times the calling thread's

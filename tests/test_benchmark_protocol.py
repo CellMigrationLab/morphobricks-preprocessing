@@ -14,9 +14,11 @@ from pathlib import Path
 import pytest
 
 TOOL = Path(__file__).resolve().parents[1] / "tools" / "benchmark_run_workers.py"
+sys.path.insert(0, str(TOOL.parent))  # as when it runs: its own folder first
 _spec = importlib.util.spec_from_file_location("benchmark_run_workers", TOOL)
 bench = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(bench)
+memory = sys.modules["benchmark_memory"]
 
 WORKERS = ["1", "2", "4", "auto"]
 
@@ -96,3 +98,42 @@ def test_a_run_with_other_digests_is_not_identical():
     rounds = [{"round": 1, "order": ["1", "2"], "runs": {"1": _run(1, 1), "2": _run(1, 1, "b")}}]
     table, same = bench.summary(rounds, ["1", "2"])
     assert not same and not table["2"]["digests_equal_to_serial"]
+
+
+def test_a_runs_peak_rss_is_its_own_not_the_drivers():
+    """``ru_maxrss`` on Linux carries the parent's peak into a child: every run reported the
+    driver's. The child's own peak (``VmHWM``, ``PeakWorkingSetSize``) is below a buffer the
+    parent holds; where only ``ru_maxrss`` is offered (macOS) the report says so."""
+    import json
+    import subprocess
+
+    size = 256 * 2**20
+    buffer = bytearray(size)
+    buffer[::4096] = b"\1" * len(range(0, size, 4096))  # every page touched: resident
+    done = subprocess.run(
+        [sys.executable, str(TOOL), "--peak"], capture_output=True, text=True, check=True
+    )
+    found = json.loads(done.stdout.strip().splitlines()[-1])
+    assert buffer[0] == 1
+    if found["peak_rss_source"] in ("VmHWM", "PeakWorkingSetSize"):
+        assert 0 < found["peak_rss_bytes"] < size, found
+    else:
+        assert "may include the parent" in found["peak_rss_source"]
+
+
+def test_peak_rss_reads_vmhwm_and_the_platform_unit_of_ru_maxrss(tmp_path, monkeypatch):
+    status = tmp_path / "status"
+    status.write_text("Name:\tpython\nVmHWM:\t  123456 kB\nVmRSS:\t 1 kB\n", encoding="ascii")
+    assert memory.peak_rss(status) == (123456 * 1024, "VmHWM")
+    if memory.os.name == "nt":
+        return
+    resource = pytest.importorskip("resource")
+
+    class _Usage:
+        ru_maxrss = 1000
+
+    monkeypatch.setattr(resource, "getrusage", lambda who: _Usage())
+    for platform, expected in (("darwin", 1000), ("linux", 1000 * 1024)):
+        monkeypatch.setattr(memory.sys, "platform", platform)
+        peak, source = memory.peak_rss(tmp_path / "missing")
+        assert peak == expected and source.startswith("ru_maxrss")

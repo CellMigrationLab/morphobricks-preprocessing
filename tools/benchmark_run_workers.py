@@ -39,7 +39,13 @@ Protocol (acceptance mode, the default)
 - **Load**: ``os.getloadavg()`` is recorded before and after every run (``null`` where the
   system has none) and summarised; a run on a loaded machine is not a result. Close other
   jobs, and quote the load with the numbers.
-- **Memory**: every run's peak RSS is kept; each configuration reports the distribution
+- **Memory**: every run's peak RSS is the child process's own (:func:`peak_rss`): Linux
+  ``VmHWM`` of ``/proc/self/status``, which starts again at ``exec``; Windows
+  ``PeakWorkingSetSize``; elsewhere (macOS) ``ru_maxrss`` in bytes, which a child can inherit
+  from the process that started it, so the report names the source (``peak_rss_source``) and
+  the dataset is written in a separate process, never in the driver. (``ru_maxrss`` on Linux
+  carries the parent's high-water mark across ``fork`` and ``exec``: every run then reported
+  the driver's peak.) Every run's peak is kept; each configuration reports the distribution
   (min, median, max, every value) and the largest of all.
 - **Identical outputs**: each run's digests (SHA-256 of ``plane_histograms.csv``, of
   ``experiment_design.csv`` and of the manifest without its ``written_at`` time) are printed
@@ -85,6 +91,7 @@ import numpy as np
 import tifffile
 
 import morphobricks_preprocessing
+from benchmark_memory import peak_rss  # tools/, next to this script
 from morphobricks_preprocessing import prefill_mapping, run_experiment
 from morphobricks_preprocessing.description import (
     Channel,
@@ -265,8 +272,6 @@ def child(
 
     ``limits`` are the memory limit and ``max_ram`` (0: none); ``phases`` times the steps.
     """
-    import resource
-
     seconds = time_phases() if phases else {}
     memory_limit, max_ram = limits
     options: dict = {"memory_limit": memory_limit}
@@ -277,7 +282,7 @@ def child(
     start = time.perf_counter()
     result = run_experiment(experiment, prefill_mapping("TCYX"), output_folder=output, **options)
     wall = time.perf_counter() - start
-    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024  # kilobytes on Linux
+    peak, source = peak_rss()
     found = {
         "written": result.written,
         "issues": [f"{issue.code}: {issue.message}" for issue in result.issues if issue.is_error],
@@ -285,6 +290,7 @@ def child(
         "workers": getattr(result, "workers", 1),
         "wall_seconds": wall,
         "peak_rss_bytes": peak,
+        "peak_rss_source": source,
         "phases": {step: round(value, 3) for step, value in seconds.items()},
     }
     print(json.dumps(found))
@@ -396,6 +402,7 @@ def summary(rounds: list[dict], workers: list[str]) -> tuple[dict, bool]:
             "wall_seconds": [round(r["wall_seconds"], 3) for r in runs],
             "paired_speedup": _paired(rounds, w),
             "peak_rss_mib": _distribution([r["peak_rss_bytes"] / MIB for r in runs]),
+            "peak_rss_source": sorted({r.get("peak_rss_source", "") for r in runs}),
             "load_1min_before": _distribution(
                 [r["load_before"][0] for r in runs if r["load_before"] is not None]
             ),
@@ -528,12 +535,21 @@ def main() -> None:
         limits = (int(limit), int(max_ram))
         child(Path(experiment), Path(output), workers, limits, phases == "1")
         return
+    if len(sys.argv) > 1 and sys.argv[1] == "--write-dataset":
+        write_dataset(Path(sys.argv[2]), int(sys.argv[3]))
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "--peak":  # this process's peak, as a run's
+        print(json.dumps(dict(zip(("peak_rss_bytes", "peak_rss_source"), peak_rss(), strict=True))))
+        return
     args = parse_arguments()
     has_workers = "workers" in {f.name for f in dataclasses.fields(RunMode)}
     if not has_workers and args.workers != ["1"]:
         raise SystemExit("This version has no workers option: run with --workers 1 only.")
     folder = args.folder or Path(tempfile.mkdtemp(prefix="run_workers_"))
-    experiment = write_dataset(folder, args.scale)
+    # In its own process: the driver's peak never reaches a run's (see *Memory*).
+    command = [sys.executable, str(Path(__file__).resolve()), "--write-dataset"]
+    subprocess.run([*command, str(folder), str(args.scale)], check=True)
+    experiment = folder / "experiment"
     setup = protocol(args)
     warm_up = one_run(folder, experiment, "1", args)  # the disk cache, not counted
     rounds = run_rounds(folder, experiment, args)
