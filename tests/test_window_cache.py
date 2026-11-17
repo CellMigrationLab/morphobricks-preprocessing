@@ -15,11 +15,11 @@ import pytest
 import test_window_decodes
 import test_windows
 from described_tree import run_described
-from morphobricks_preprocessing import prefill_mapping, tiff_pieces
+from morphobricks_preprocessing import prefill_mapping, run_inputs_window, tiff_pieces
 from morphobricks_preprocessing.block_cache import BlockCache
 from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError
 from morphobricks_preprocessing.testing import make_clean_run
-from morphobricks_preprocessing.window_reader import WindowReader
+from morphobricks_preprocessing.window_reader import WindowReader, WindowReaderClosedError
 from morphobricks_preprocessing.windows import (
     WindowMemoryError,
     WindowSourceChangedError,
@@ -301,3 +301,72 @@ def test_a_run_window_reader_of_chunked_images(tmp_path, kind):
             assert window.tobytes() == data[t, [2, 0, 1], y0:y1, x0:x1].tobytes()
     stats = reader.stats()
     assert stats.hits > 0 and stats.decodes <= stats.pieces + stats.evictions
+
+
+def test_a_closed_reader_drops_its_cache_and_refuses_every_later_window(tmp_path):
+    path = tmp_path / "a.tif"
+    write_data(
+        path,
+        np.arange(64 * 64, dtype=np.uint16).reshape(64, 64),
+        "YX",
+        tile=(16, 16),
+        compression="zlib",
+    )
+    with WindowReader(path, prefill_mapping("YX"), cache_bytes=MIB) as reader:
+        reader.read_window(bounds=(0, 32, 0, 32), channels=[0])
+        assert reader.stats().pieces == 4 and not reader.closed
+    assert reader.closed and reader.stats().pieces == reader.stats().nbytes == 0
+    for ask in (reader.read_window, reader.window_plan):
+        with pytest.raises(WindowReaderClosedError, match="closed"):
+            ask(bounds=(0, 4, 0, 4), channels=[0])
+    reader.close()  # closing twice does nothing more
+    assert reader.closed
+
+
+def test_a_reader_is_closed_when_its_with_block_fails(tmp_path):
+    path = tmp_path / "a.tif"
+    write_data(path, np.ones((32, 32), dtype=np.uint8), "YX", tile=(16, 16), compression="zlib")
+    with pytest.raises(RuntimeError, match="stop"):
+        with WindowReader(path, prefill_mapping("YX"), cache_bytes=MIB) as reader:
+            reader.read_window(bounds=(0, 32, 0, 32), channels=[0])
+            raise RuntimeError("stop")
+    assert reader.closed and reader.stats().pieces == 0
+
+
+def test_a_cache_closed_during_a_decode_returns_the_piece_and_keeps_nothing():
+    cache = BlockCache(MIB)
+    piece = np.arange(10)
+
+    def decode():
+        cache.close()  # the reader is closed while a thread decodes
+        return piece
+
+    assert cache.get("k", decode) is piece
+    assert cache.stats().pieces == 0 and cache.stats().decodes == 1
+    assert cache.get("k", lambda: piece.copy()).tobytes() == piece.tobytes()
+    assert cache.stats().pieces == 0
+
+
+def test_a_run_window_reader_plans_closes_and_refuses_after(clean):
+    inputs = RunInputs.open(clean.output)
+    fov = inputs.fovs()[0]
+    ids = list(fov.channel_ids)
+    with inputs.window_reader(fov, cache_bytes=MIB) as reader:
+        plan = reader.window_plan(t=0, z=0, bounds=(3, 11, 0, 17), channels=ids[::-1])
+        alone = window_plan(
+            clean.experiment / fov.relative_path,
+            run_inputs_window._mapping(inputs.manifest.file(fov.relative_path)),
+            bounds=(3, 11, 0, 17),
+            channels=[inputs.channel_index(fov, c) for c in ids[::-1]],
+        )
+        assert plan.shape == (len(ids), 8, 17) and plan.memory_estimate == (
+            alone.memory_estimate + MIB
+        )
+        with pytest.raises(RunInputsError):
+            reader.window_plan(t=0, z=0, bounds=(0, 4, 0, 4), channels=["nope"])
+        reader.read_window(t=0, z=0, bounds=(0, 4, 0, 4), channels=ids)
+    assert reader.closed and reader.stats().pieces == 0
+    with pytest.raises(WindowReaderClosedError):
+        reader.read_window(t=0, z=0, bounds=(0, 4, 0, 4), channels=ids)
+    with pytest.raises(WindowReaderClosedError):
+        reader.window_plan(t=0, z=0, bounds=(0, 4, 0, 4), channels=ids)

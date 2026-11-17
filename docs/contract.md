@@ -395,7 +395,14 @@ It gives:
   pieces are read from the file as without a cache, never cached. There is no hidden or global
   cache: `read_window` keeps none. The same reader for a file outside a run is
   `window_reader.WindowReader(path, mapping, *, cache_bytes, memory_limit=..., fingerprint=None)`
-  (its `read_window(*, bounds, channels, z=None, t=None, level=0)` and `window_plan`);
+  (its `read_window(*, bounds, channels, z=None, t=None, level=0)` and `window_plan`).
+  `RunWindowReader.window_plan(*, t, z, bounds, channels, level=0)` (Unreleased) is the window's
+  `windows.WindowPlan` from the header, with `read_window`'s checks, its `memory_estimate`
+  counting `cache_bytes`. Both readers (Unreleased) have `close()`, `closed` and are context
+  managers: closing drops the cache at once (also when the `with` block fails), a later window or
+  plan is `window_reader.WindowReaderClosedError`, a window being read meanwhile finishes bitwise
+  and keeps nothing; a reader holds no open file between windows. One reader per image is meant
+  to be shared by every thread reading it (`docs/design/lazy-windows.md`);
 - `plane_shape(fov)`: the `(height, width)` of the position's planes, Y before X whatever the
   stored order (the frame of `read_window`'s bounds, the last two sizes of `read_plane`), from the
   header and the recorded axes only: no pixel is read and no content digest computed; the

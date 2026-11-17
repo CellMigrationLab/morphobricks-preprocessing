@@ -6,6 +6,23 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+### Added
+
+- **Lazy windows, one layer for every consumer** (`docs/design/lazy-windows.md`): a design note
+  on where lazy, windowed reading of large images lives (here, processing-agnostic), its API,
+  how MorphoFeature, CellPatcher, a brick run directly and a LabConstrictor/QuPath tool use it
+  (window geometry stays CellPatcher's, Spec ADR 0004 EW5), what exists and what is missing.
+- **Deterministic close of a window reader:** `WindowReader` and `RunWindowReader` gain
+  `close()`, `closed` and the context manager; closing drops the cache of decoded pieces at once
+  (`BlockCache.close`), a later window is refused with the new
+  `window_reader.WindowReaderClosedError`, and a window being read meanwhile finishes, bitwise,
+  keeping nothing. Every window read is unchanged.
+- **`RunWindowReader.window_plan(*, t, z, bounds, channels, level=0)`:** the plan of a window of
+  a run's image by channel IDs (as `WindowReader.window_plan`), its memory estimate counting the
+  reader's cache, for consumers that plan memory before reading.
+
 ## v0.7.0 (17 November 2026)
 
 A minor release (semantic versioning before 1.0, `docs/development.md`): new public API and a

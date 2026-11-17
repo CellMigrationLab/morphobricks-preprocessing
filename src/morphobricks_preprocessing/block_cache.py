@@ -11,6 +11,8 @@ global cache, and reading without one is unchanged.
   are dropped first, and a piece larger than the bound is used once and not kept.
 - **Safe under threads.** One lock guards the pieces. A piece asked by several threads at
   once is decoded by one of them while the others wait for it, so it is decoded once.
+- **Closed** (:meth:`BlockCache.close`): every piece is dropped and none is kept after, so a
+  read still running when its reader is closed finishes, bitwise, but leaves nothing held.
 - **Keys** are given by the reader: the image's identity and fingerprint, the level and the
   page and piece (TIFF) or chunk (OME-Zarr). A cached piece is read only, never changed.
 """
@@ -78,6 +80,7 @@ class BlockCache:
         self._pending: dict[Hashable, threading.Event] = {}
         self._nbytes = 0
         self._decodes = self._hits = self._evictions = 0
+        self._closed = False
 
     def get(self, key: Hashable, decode: Callable[[], np.ndarray | None]) -> np.ndarray | None:
         """Return the decoded piece of ``key``, decoding it with ``decode`` if it is not held.
@@ -111,7 +114,7 @@ class BlockCache:
 
     def _keep(self, key: Hashable, piece: np.ndarray) -> None:
         """Hold a piece and drop the least recently used ones over the bound (lock held)."""
-        if piece.nbytes > self.max_bytes:
+        if self._closed or piece.nbytes > self.max_bytes:
             return
         self._pieces[key] = piece
         self._nbytes += piece.nbytes
@@ -123,6 +126,13 @@ class BlockCache:
     def clear(self) -> None:
         """Drop every piece held."""
         with self._lock:
+            self._pieces.clear()
+            self._nbytes = 0
+
+    def close(self) -> None:
+        """Drop every piece held and keep none from now on (decoding still works)."""
+        with self._lock:
+            self._closed = True
             self._pieces.clear()
             self._nbytes = 0
 

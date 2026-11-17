@@ -18,6 +18,11 @@ and safe under threads, so that each piece is decoded about once per plane. It i
   before and after each window: an image changed or gone since the reader was opened is
   refused (:class:`.windows.WindowSourceChangedError`) and the cache emptied, never served
   from it.
+- **Lifetime.** A reader holds no open file between windows (each window opens the image and
+  closes it); it holds only its cache. :meth:`WindowReader.close` (or leaving its ``with``
+  block) drops the cache at once; a window asked after is refused
+  (:class:`WindowReaderClosedError`), and a window still being read finishes, bitwise, but
+  leaves nothing in the cache.
 - Uncompressed TIFF pieces are read straight from the file, only the rows needed, as without
   a cache; they are never cached.
 """
@@ -38,6 +43,7 @@ from .planes import DEFAULT_MEMORY_LIMIT, format_bytes
 from .windows import (
     LEVEL,
     Bounds,
+    WindowError,
     WindowMemoryError,
     WindowPlan,
     WindowSourceChangedError,
@@ -48,6 +54,10 @@ from .windows import (
     _source,
     check_level,
 )
+
+
+class WindowReaderClosedError(WindowError):
+    """A window was asked of a window reader after it was closed."""
 
 
 class WindowReader:
@@ -88,6 +98,7 @@ class WindowReader:
         fingerprint: Fingerprint | None = None,
     ) -> None:
         self.cache = BlockCache(cache_bytes)
+        self._closed = False
         if cache_bytes >= memory_limit:
             raise WindowMemoryError(
                 f"A window cache of {format_bytes(cache_bytes)} leaves no room for the windows "
@@ -106,6 +117,7 @@ class WindowReader:
 
         As :func:`.windows.window_plan`, with ``memory_estimate`` counting ``cache_bytes``.
         """
+        self._check_open()
         check_level(level)
         self._check()
         with _source(self.path, self.mapping, self.memory_limit, self._cached) as source:
@@ -134,7 +146,10 @@ class WindowReader:
             If the window's working memory and the cache are together over the limit.
         WindowBoundsError, WindowLevelError, WindowChannelError, WindowLayoutError
             As :func:`.windows.read_window`.
+        WindowReaderClosedError
+            If the reader was closed.
         """
+        self._check_open()
         check_level(level)
         self._check()
         with _source(self.path, self.mapping, self.memory_limit, self._cached) as source:
@@ -147,6 +162,32 @@ class WindowReader:
     def stats(self) -> CacheStats:
         """Return the cache's decodes, hits and evictions so far, and what it holds."""
         return self.cache.stats()
+
+    @property
+    def closed(self) -> bool:
+        """Whether :meth:`close` was called."""
+        return self._closed
+
+    def close(self) -> None:
+        """Drop the cache now; refuse every later window. Closing twice does nothing more."""
+        self._closed = True
+        self.cache.close()
+
+    def __enter__(self) -> WindowReader:
+        """Return the reader, closed when the ``with`` block is left, also on an error."""
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        """Close the reader (:meth:`close`)."""
+        self.close()
+
+    def _check_open(self) -> None:
+        """Refuse a window asked after :meth:`close`."""
+        if self._closed:
+            raise WindowReaderClosedError(
+                f"The window reader of {self.path.name} was closed: no window of it is read. "
+                "Open a new reader."
+            )
 
     def _plan(self, source: _Source, bounds: object, channels: Sequence[int]) -> WindowPlan:
         """Return a window's plan with the cache in its estimate, refusing one over the limit."""

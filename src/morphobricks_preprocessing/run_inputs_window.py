@@ -27,7 +27,7 @@ from .manifest import FileEntry
 from .planes import DEFAULT_MEMORY_LIMIT, plane_layout
 from .validation import plural
 from .window_reader import WindowReader
-from .windows import LEVEL, WindowChannelError, check_level
+from .windows import LEVEL, WindowChannelError, WindowPlan, check_level
 from .windows import read_window as read_source_window
 
 if TYPE_CHECKING:
@@ -192,7 +192,10 @@ class WindowInputs:
 class RunWindowReader:
     """Windows of one position of a run, through a shared cache (``RunInputs.window_reader``).
 
-    Safe to share between threads. Each window is checked as
+    Safe to share between threads: open one per image and give it to every thread that reads
+    the image's windows. Close it (:meth:`close`, or a ``with`` block) when they are done: its
+    cache is dropped at once and later windows are refused
+    (:class:`.window_reader.WindowReaderClosedError`). Each window is checked as
     :meth:`WindowInputs.read_window` checks it (the image unchanged since the run, the plane,
     level and channel IDs); the image's fingerprint is also taken again after each window, and
     an image changed meanwhile is refused (:class:`.windows.WindowSourceChangedError`), its
@@ -214,15 +217,54 @@ class RunWindowReader:
         """Read an exact window of one plane, as :meth:`WindowInputs.read_window` reads it.
 
         The arguments, result and refusals are those of :meth:`WindowInputs.read_window`
-        (the memory limit is the reader's, the cache included), and
-        :class:`.windows.WindowSourceChangedError` for an image changed during the read.
+        (the memory limit is the reader's, the cache included),
+        :class:`.windows.WindowSourceChangedError` for an image changed during the read and
+        :class:`.window_reader.WindowReaderClosedError` after :meth:`close`.
         """
+        self._reader._check_open()  # a closed reader is refused before anything is read
         _, indices, plane = self._inputs._window_request(self._fov, t, z, channels, level)
         return self._reader.read_window(bounds=bounds, channels=indices, level=level, **plane)
+
+    def window_plan(
+        self,
+        *,
+        t: int,
+        z: int,
+        bounds: tuple[int, int, int, int],
+        channels: Sequence[str],
+        level: int = LEVEL,
+    ) -> WindowPlan:
+        """Work out from the header what reading a window costs, the cache included; no pixel.
+
+        The checks of :meth:`read_window` (the image unchanged since the run, the plane, level,
+        channel IDs, bounds) and its plan: ``shape``, ``dtype``, ``pieces`` and
+        ``memory_estimate``, which counts this reader's ``cache_bytes`` (a window whose estimate
+        is over the reader's memory limit is :class:`.windows.WindowMemoryError`).
+        """
+        self._reader._check_open()  # a closed reader is refused before anything is read
+        _, indices, _ = self._inputs._window_request(self._fov, t, z, channels, level)
+        return self._reader.window_plan(bounds=bounds, channels=indices, level=level)
 
     def stats(self) -> CacheStats:
         """Return the cache's decodes, hits and evictions so far, and what it holds."""
         return self._reader.stats()
+
+    @property
+    def closed(self) -> bool:
+        """Whether :meth:`close` was called."""
+        return self._reader.closed
+
+    def close(self) -> None:
+        """Drop the cache now; refuse every later window (``WindowReader.close``)."""
+        self._reader.close()
+
+    def __enter__(self) -> RunWindowReader:
+        """Return the reader, closed when the ``with`` block is left, also on an error."""
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        """Close the reader (:meth:`close`)."""
+        self.close()
 
 
 def _check_planes(relative_path: str, fov: Fov, z: int | None, t: int | None) -> None:
