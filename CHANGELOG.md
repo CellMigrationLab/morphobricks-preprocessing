@@ -127,6 +127,11 @@ v0.5.1: no run before v0.5.1 is read.)
   `R_IMAGE_TYPE_CONTRADICTS_HEADER`, `R_RGB_OVERRIDE_NOT_THREE_SAMPLES`) now also names that
   image by its relative path after the acquisition. The codes, the `paths` and the order of the
   issues do not change.
+- **One wording for C indexes in physical refusals** (#329). `R_HEADER_CONTRADICTION` names
+  the channel position as the Spec does, C*i* from 0, like `R_UNIT_NOT_HOMOGENEOUS` since #326:
+  "header name 'Hoechst' at C0 (the image's header names: ...)", not "at channel position 0".
+  Only the message text changes: the codes, the `paths`, the C index of the issue and the order
+  of the issues do not.
 - **`unreadable_planes` names the plane and the channel** (Spec ADR 0003 HV3). A channel that
   cannot be measured still fails the whole `plane_histograms.csv`, as before; the error, and so
   the run report, now names every failed plane, `<image>, plane t=1, c=1 (channel GFP):
