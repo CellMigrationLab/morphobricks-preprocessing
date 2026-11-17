@@ -41,7 +41,7 @@ Pre-alpha; the current release is v0.6.1 (what is planned next is in
 Every feature, message code and output file is described in the [user guide](docs/user_guide.md).
 
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
-to its release v0.7.0): per-plane histograms with the robust range and the range check
+to its release v0.7.1): per-plane histograms with the robust range and the range check
 (`histogram`, `ranges`), the histogram table (`csv_io`, schema version 5: channels by canonical
 ID, so acquisitions may have different channels), pooled group statistics
 (`pooling`) and normalization parameters (`normalization`); import them from
@@ -80,6 +80,10 @@ The optional `notebook` extra installs the widget dependencies for the notebook
 The notebook's first code cell (**1. Install**) can set this up automatically: it uses a compatible nearby
 checkout or installed package, and installs missing requirements into the active kernel. A standalone
 download installs from GitHub if needed (internet access and Git required).
+
+The optional `he-mask` extra installs scikit-image (through `morphobricks-normalization[histology]`)
+for the opt-in H&E tissue mask (`tissue-mask`, `RunInputs.he_tissue_mask`; rule `he_tissue_v1`,
+provisional); without it, nothing of that helper is imported.
 
 ### Notebook: Google Colab and JupyterLab
 
@@ -164,6 +168,7 @@ morphobricks-preprocessing masks --output /data/exp1_MorphoBricks_Preprocessing 
 morphobricks-preprocessing calibrate --output /data/exp1_MorphoBricks_Preprocessing
 morphobricks-preprocessing convert /data/exp1 --to /data/exp1_named_axes --axes ZXY  # axis errors
 morphobricks-preprocessing convert-mask --output /data/exp1_MorphoBricks_Preprocessing --mask TumorRegion --to-instances TumorObjects  # new mask files
+morphobricks-preprocessing tissue-mask --output /data/exp1_MorphoBricks_Preprocessing --to HETissue  # H&E tissue region (he-mask extra; provisional rule)
 ```
 
 `check`, `run` and `masks` need the experiment description published in the output folder

@@ -1,6 +1,8 @@
 # Design: an opt-in H&E tissue mask helper
 
-- **Status:** design for review (roadmap item I0). No code changes. The helper itself is I1.
+- **Status:** design (roadmap item I0, merged #312). **I1 implements it** with the rule
+  `he_tissue_v1` **provisional** (not frozen); see [Implementation notes (I1)](#implementation-notes-i1)
+  and the PI-1..PI-4 evaluation [he-tissue-mask-eval-pi.md](he-tissue-mask-eval-pi.md).
 - **Owner answers (16 November 2026):** questions 1, 2, 3, 6, 8 and 9 accepted as recommended
   ([§8](#8-owner-decisions-and-open-questions)); questions 4, 5 and 7 decided after review w
   (§8). The Spec amendment of §6 is MorphoBricks-Spec #45; I1 waits for it to merge and for the
@@ -126,7 +128,9 @@ Both are computed on the full plane, without rounding before the comparison; an 
 1. **The four presentation images each meet the per-image bar.** For each image: the
    proof-of-concept and `he_tissue_v1` masks side by side and as a difference overlay; per
    component and for `keep`, both shares; Dice and the discordant fraction; pass or fail.
-   Disagreements are explained, never tuned away per image. The images are identified by file
+   Disagreements are explained, never tuned away per image. No figure of these four images'
+   masks is committed to this repository (owner decision, 17 November 2026): the report keeps
+   the numbers and the images' SHA-256 only. The images are identified by file
    name and the SHA-256 of the file's bytes (owner decision, 16 November 2026: these are the four
    WebP files the owner shared for the presentation; WebP is lossy, so the reference is the
    decoded pixels of exactly these bytes). The owner holds the images; they are not published:
@@ -601,3 +605,42 @@ I1 (the helper) starts only when P1 and P2 hold, and its PR merges only when P3 
   (morphology boundaries), are in the I1 PR. The acceptance report of §1 is **not** an I1
   prerequisite: I1 ships the rule as provisional, and freezing is a later, separate step that
   gives a new mask under a new output mask ID (§1), never a relabelled one.
+
+## Implementation notes (I1)
+
+Where the design left a choice, I1 chose as follows (each tested):
+
+- **The opening at the image border** is clipped like the dilations: the erosion counts only
+  pixels inside the image (outside counts as background, which a minimum ignores), so an empty
+  region touching the border is not eaten from outside. SciPy's default (border value 0) would
+  erode it.
+- **Comparisons are made in float64**: `E` and `H` are widened exactly and compared with the
+  float64 threshold; the threshold is never rounded to float32.
+- **The source check** (§7 "Exact reuse") is made on the code (no `log10`, `log`,
+  `separate_stains`, `rgb2hed` or `hed_from_rgb` name used): the canonical rule record itself
+  names `separate_stains` in its `E` and `H` descriptions, as §1 writes it.
+- **The extended reader refuses an operation of neither schema** (as Spec BM15 "Reading"
+  requires); on `main` a BM12-shaped line with another operation was read. This is a second new
+  refusal besides the repeated keys.
+- **An existing output before the read**: every key that is known without pixels (all but the
+  source and output digests and shapes and the fractions) is compared before any read, so most
+  collisions are refused without reading; the digests are compared after it.
+- **`pixel_size`** is `{"X": {"value", "unit", "source"}, "Y": {...}}` from
+  `RunInputs.pixel_sizes`, or null when neither has a value.
+- **A `RECORD` that places no import package is never verified** (reason `"no import package
+  in RECORD"`; found in the independent review of #323): an editable install whose installer
+  wrote no PEP 610 `dir_info` lists only a `.pth` file in `RECORD`, so checks 4 and 5 would hold
+  for no code at all while the imported modules run from the source tree.
+- **The preview** needs no masks folder and no output mask ID.
+- **The normalization pin is v0.7.1** (`fcfaeac`; owner, 17 November 2026; first written at
+  v0.7.0 = `c6a9f9d`). v0.7.1 releases the stable-API documentation of P2 (normalization #108),
+  the NumPy per-bin work and signed zero written as `0.0` (#105, #110). The modules the rule
+  uses, `optical_density.py` (with `regions.py`, which it imports), `scalar_inputs.py`,
+  `stain.py` and `stain_presets.py`, are byte-identical between v0.7.0 and v0.7.1, so
+  `he_tissue_v1`'s output and the PI-1..PI-4 evaluation (run at v0.7.0) are unchanged; the
+  recorded normalization code identity (`RECORD` digest) changes with the version, as it
+  should.
+- **P3** was run with fiberfeatures `a7f57c5` (v0.7.0, merged, not yet tagged) and CellPatcher
+  v0.7.1 installed (`tests/test_he_tissue_consumer_gate.py`, which skips without fiberfeatures);
+  P3 completes when the fiberfeatures v0.7.0 tag exists.
+
