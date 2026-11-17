@@ -8,6 +8,25 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+### Added
+
+- **`he_tissue_mask_array(rgb, *, rule="he_tissue_v1")`: the H&E tissue mask of an array, with
+  no run** (roadmap K3; owner decision of 17 November 2026; contract §15.4). It computes the
+  **provisional** rule `he_tissue_v1` on one `uint8` `(Y, X, 3)` R, G, B array through the run
+  route's own computation (`he_tissue_mask.rule_on_plane`, now shared by
+  `RunInputs.he_tissue_mask` and the preview; no copy), so its boolean mask is bitwise equal to
+  the file the run route writes for the same pixels. It returns `TissueMaskArray` (`mask`,
+  `record`); the frozen `TissueMaskArrayRecord` carries the rule ID, version and status, the
+  canonical rule record and its `rule_sha256`, BM15's code identities as found
+  (`code_verified`), the library versions, the `fractions`, `helper` and `helper_version`, with
+  `to_dict()` for a caller's provenance. It writes nothing and makes no lineage line: it is not
+  a BM15 run artifact, and for MorphoBricks runs `tissue-mask` / `RunInputs.he_tissue_mask`
+  (with lineage) remains the route. Refused before any computation: an input that is not a
+  plain `numpy.ndarray` (`TypeError`), another pixel type or a shape other than `(Y, X, 3)`
+  (`ValueError`; nothing converted, no axis guessed), an unknown rule, and a missing
+  scikit-image (`ImportError` naming the `he-mask` extra). Importing the package stays inert.
+  CI's `wheel-identity` job also runs its tests from a wheel.
+
 ### Fixed
 
 - **The worker planner refuses an explicit worker count with `max_ram`** (internal guard;
