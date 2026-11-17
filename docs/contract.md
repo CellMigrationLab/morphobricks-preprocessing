@@ -387,7 +387,9 @@ It gives:
   above 0, below `memory_limit`; a piece larger is used once and not kept), counts in each
   window's memory estimate (a window whose own working memory and `cache_bytes` together are
   over `memory_limit` is `WindowMemoryError`), and is safe to share between threads (a piece
-  asked by several at once is decoded once). Pieces are kept under the image's path, the
+  asked by several at once is decoded once, and every thread that waited gets that decode, also
+  when the piece is not kept; a kept piece is immutable, its bytes in a read-only buffer; the
+  cache is per process, never shared). Pieces are kept under the image's path, the
   fingerprint the run recorded for it, the level and the page and piece (TIFF) or chunk
   (OME-Zarr). The fingerprint is checked before each window (`RunInputsError`, as for
   `read_window`) and again after it: an image changed during a read is refused

@@ -44,7 +44,12 @@ or clipped: bounds outside the plane are refused.
 | Masks | `RunInputs.read_mask_window`, `mask_window_plan` | the stored labels of a window; **missing:** no cached mask reader yet |
 | Levels | level 0 only (`WindowLevelError` otherwise) | pyramid levels and series need ADR 0004's announced EW2 amendment first |
 
-**Memory for planning.** A consumer that reads `n` windows at once from one reader holds at most
+**Memory for planning.** Every estimate this layer gives (`window_plan`, `mask_window_plan`,
+`objects_read_plan`) is a stated **upper bound** on the read's working memory, taken from the
+header before any pixel is read, and a read over its limit is refused before any pixel is read.
+A consumer feeds these bounds into its plan; none is a guess to be corrected later. (The run's
+own worker plan, `plan_workers` and `max_ram`, is being fixed separately and is not part of this
+note.) A consumer that reads `n` windows at once from one reader holds at most
 `n` window working memories plus one cache: `sum(plan.memory_estimate - cache_bytes) +
 cache_bytes`. Each `plan.memory_estimate` already counts the cache, and a window over the
 reader's `memory_limit` is refused before any pixel is read. A consumer that wants a window
@@ -107,12 +112,35 @@ numcodecs 0.16).
   Zstd, LZ4) release the GIL, and zlib/gzip use the standard library. zarr runs its own
   event-loop thread and has an `async.concurrency` setting, which is zarr's own and is never
   changed here. This was not measured for this note.
-- **Cache.** `block_cache.BlockCache` is already safe under threads and single-flight. One lock
-  guards the pieces. The first thread that asks for a missing piece decodes it, outside the lock,
-  and later threads asking for the same piece wait on an event and then read the cached piece, so
-  every piece is decoded once even when threads ask for it at the same time. Different pieces
-  decode in parallel. The cache is bounded in bytes, drops the least recently used piece first,
-  and does not keep a piece larger than the bound. Nothing has to be added for safety.
+- **Cache: safe under threads, single-flight.** One lock guards the pieces. The first thread to
+  ask for a missing piece decodes it outside the lock, and threads that ask for the same piece
+  meanwhile wait for that decode. Different pieces decode in parallel. The cache is bounded in
+  bytes and drops the least recently used piece first.
+- **Single-flight also covers pieces the cache does not keep** (review finding F4, fixed in this
+  PR). At v0.7.0 a waiting thread looked in the cache again after the decode. A piece larger
+  than the bound, or one dropped at once (by eviction or `close`), was not there, so the waiting
+  thread decoded it again. Now each in-flight decode hands its piece to every thread that waited
+  for it, whether or not the piece is kept. Requests that overlap in time therefore decode a
+  piece once. A request that starts after the decode has finished decodes again when the piece
+  is not held: that is the bound working, not a duplicate. A failed decode is not shared: one
+  waiting thread decodes again and gets its own result or error. Tests cover an oversized piece,
+  a piece dropped by `close`, and a failed decode, with every request waiting on the flight
+  before it finishes.
+- **Read only, enforced** (F5). At v0.7.0 a kept piece was only marked `write=False`, and NumPy
+  lets an array that owns its memory be made writable again. A kept piece is now copied once into
+  an immutable `bytes` buffer. Neither the piece nor its storage can be made writable
+  (`setflags(write=True)` raises), and the decoder's own array is not the cached one. Windows are
+  new arrays, so changing a window changes no cached piece. Tests cover all three points. The
+  cost is one copy per kept piece, inside the cache's budget: the measured grid below went from
+  1.90/1.99 s to 2.09/2.11 s with 1 thread and from 1.52/1.66 s to 1.96/1.77 s with 4 threads, on
+  a shared machine, with identical window digests. A piece that is not kept is handed to its
+  waiters marked read only.
+- **Per process** (F6). A cache belongs to the reader, and the reader belongs to the process that
+  opened it (`WindowReader.cache`). Nothing is shared between processes or between bricks: a
+  worker process, or another brick in the same process, opens its own reader and pays its own
+  `cache_bytes`. Every window estimate of a reader counts that reader's `cache_bytes`, so a
+  process holding `r` readers at once plans for `r` caches. Sharing a cache across processes or
+  bricks would need an owner, a lifetime and a memory account first, and none is proposed here.
 - **Measured** (`tools/benchmark_window_reads.py`, the synthetic 8192² RGB image, 512-px zlib
   tiles, 256 windows of 512 px with a 67-px margin; on a 4-core machine shared with other jobs,
   so timings are indicative):

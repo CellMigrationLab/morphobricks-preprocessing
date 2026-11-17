@@ -370,3 +370,118 @@ def test_a_run_window_reader_plans_closes_and_refuses_after(clean):
         reader.read_window(t=0, z=0, bounds=(0, 4, 0, 4), channels=ids)
     with pytest.raises(WindowReaderClosedError):
         reader.window_plan(t=0, z=0, bounds=(0, 4, 0, 4), channels=ids)
+
+
+class _CountingEvent(threading.Event):
+    """An event that counts the threads waiting on it."""
+
+    def __init__(self):
+        super().__init__()
+        self.waiting = 0
+
+    def wait(self, timeout=None):
+        self.waiting += 1
+        return super().wait(timeout)
+
+
+def _overlapping(monkeypatch, cache, key, decode, waiters=2):
+    """Ask ``key`` from 1 + ``waiters`` threads while the first decode is in flight."""
+    from morphobricks_preprocessing import block_cache
+
+    flights = []
+
+    class Flight(block_cache._Flight):
+        def __init__(self):
+            super().__init__(done=_CountingEvent())
+            flights.append(self)
+
+    monkeypatch.setattr(block_cache, "_Flight", Flight)
+    started, release = threading.Event(), threading.Event()
+
+    def slow():
+        started.set()
+        release.wait(5)
+        return decode()
+
+    with ThreadPoolExecutor(1 + waiters) as pool:
+        first = pool.submit(cache.get, key, slow)
+        started.wait(5)
+        others = [pool.submit(cache.get, key, slow) for _ in range(waiters)]
+        while flights[0].done.waiting < waiters:  # every other request waits on the decode
+            threading.Event().wait(0.01)
+        release.set()
+        return [first, *others]
+
+
+@pytest.mark.parametrize("size", [101, 1000])
+def test_waiters_share_a_decode_the_cache_does_not_keep(monkeypatch, size):
+    """Single-flight covers a piece over the bound: overlapping requests decode it once."""
+    cache, calls = BlockCache(100), []
+
+    def decode():
+        calls.append(1)
+        return np.arange(size, dtype=np.uint8)
+
+    futures = _overlapping(monkeypatch, cache, "big", decode)
+    pieces = [f.result() for f in futures]
+    assert len(calls) == 1 and all(p is pieces[0] for p in pieces)
+    assert not pieces[0].flags.writeable and cache.stats().pieces == 0
+    assert cache.stats().decodes == 1 and cache.stats().hits == 2
+    cache.get("big", decode)  # a later request: not held, so decoded again
+    assert len(calls) == 2
+
+
+def test_waiters_share_a_decode_dropped_by_a_close(monkeypatch):
+    cache, calls = BlockCache(MIB), []
+
+    def decode():
+        calls.append(1)
+        cache.close()  # dropped at once: nothing is kept
+        return np.ones(10, np.uint8)
+
+    pieces = [f.result() for f in _overlapping(monkeypatch, cache, "k", decode)]
+    assert len(calls) == 1 and all(p is pieces[0] for p in pieces)
+
+
+def test_a_failed_decode_is_not_shared_a_waiter_decodes_again(monkeypatch):
+    cache, calls = BlockCache(MIB), []
+
+    def decode():
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError("first decode fails")
+        return np.ones(10, np.uint8)
+
+    first, *others = _overlapping(monkeypatch, cache, "k", decode)
+    with pytest.raises(OSError, match="first"):
+        first.result()
+    assert all(f.result().tobytes() == b"\x01" * 10 for f in others)
+    assert len(calls) == 2  # one waiter decoded again, the other shared its decode
+
+
+def test_a_kept_piece_and_its_storage_can_never_be_written():
+    cache = BlockCache(MIB)
+    decoded = np.arange(12, dtype=np.uint16).reshape(3, 4)[:, ::2]  # not contiguous
+    piece = cache.get("k", lambda: decoded)
+    assert piece.tobytes() == decoded.tobytes() and piece.shape == decoded.shape
+    base = piece
+    while isinstance(base, np.ndarray):
+        base = base.base
+    assert isinstance(base, bytes)  # immutable storage
+    with pytest.raises(ValueError):
+        piece.setflags(write=True)
+    with pytest.raises(ValueError):
+        piece[0, 0] = 99
+    decoded[0, 0] = 99  # the decoder's own array is not the cached one
+    assert cache.get("k", lambda: pytest.fail("held"))[0, 0] == 0
+
+
+def test_a_window_is_a_new_array_changing_it_changes_no_cached_piece(rgb_tiles):
+    path, data = rgb_tiles
+    reader = WindowReader(path, prefill_mapping("YXS"), cache_bytes=4 * MIB)
+    window = reader.read_window(bounds=(0, 20, 0, 20), channels=[0, 1, 2])
+    assert window.flags.writeable
+    window[...] = 0
+    again = reader.read_window(bounds=(0, 20, 0, 20), channels=[0, 1, 2])
+    assert reader.stats().hits > 0
+    assert again.tobytes() == np.moveaxis(data[:20, :20], -1, 0).tobytes()

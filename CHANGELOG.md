@@ -21,6 +21,14 @@ v0.5.1: no run before v0.5.1 is read.)
   (`BlockCache.close`), a later window is refused with the new
   `window_reader.WindowReaderClosedError`, and a window being read meanwhile finishes, bitwise,
   keeping nothing. Every window read is unchanged.
+- **Single-flight covers pieces the cache does not keep** (performance review F4): threads that
+  wait for a piece being decoded now get that decode even when the piece is not kept (larger
+  than the bound, or dropped at once), so requests that overlap in time never decode a piece
+  twice; at v0.7.0 each waiting thread decoded such a piece again. A failed decode is still
+  not shared.
+- **Cached pieces are immutable** (F5): a kept piece is copied once into an immutable buffer,
+  so neither it nor its storage can be made writable again (v0.7.0 only marked it read only,
+  which NumPy lets an owner undo). Every window is unchanged, bitwise.
 - **`RunWindowReader.window_plan(*, t, z, bounds, channels, level=0)`:** the plan of a window of
   a run's image by channel IDs (as `WindowReader.window_plan`), its memory estimate counting the
   reader's cache, for consumers that plan memory before reading.

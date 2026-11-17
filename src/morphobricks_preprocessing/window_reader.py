@@ -10,7 +10,9 @@ and safe under threads, so that each piece is decoded about once per plane. It i
 
 - **Memory.** The cache counts in every window's estimate: a window is refused
   (:class:`.windows.WindowMemoryError`) when its own working memory and ``cache_bytes``
-  together are over ``memory_limit``, and ``cache_bytes`` must leave room under it.
+  together are over ``memory_limit``, and ``cache_bytes`` must leave room under it. The cache
+  belongs to this reader in this process: another process, or another brick, opens its own
+  reader and pays its own ``cache_bytes``; nothing is shared between them.
 - **Identity.** The reader holds the image's fingerprint (size and modification time, and for
   OME-Zarr the inventory digest), the one the run recorded when opened through
   ``RunInputs.window_reader``. Pieces are kept under the image's path, that fingerprint, the
