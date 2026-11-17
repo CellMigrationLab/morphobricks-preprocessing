@@ -411,7 +411,7 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    keeps), the notebook starts at 1 and says so beside the choice: "Images read at once: 1,
    because the default memory cap (X GiB) is smaller than the largest image (Y GiB); outputs
    are identical for any number." Values you set yourself are kept: an image that alone needs
-   more than your cap stops the run before any image is read (`image_over_max_ram`): raise
+   more than your cap stops the run before any pixel is read (`image_over_max_ram`): raise
    the cap or choose 1. The result says how many images were read at once.
    After the run: its result, and collapsed panels for the **intensity checks and plots**,
    **Compare groups** (pooled statistics and a distribution plot per condition, repeat or
@@ -547,7 +547,7 @@ the same bytes in every file except that time (and the manifest SHA-256 the repo
 | `--histogram-range minmax\|robust`, `--robust-quantiles LOW HIGH` | Histogram range of histograms that are not exact (default minmax; robust quantiles 0.01 99.99) |
 | `--memory-limit SIZE` | Working-memory limit per plane, e.g. `2GiB` or `1.5GiB`: a whole number of bytes above 0 (`1.5` or `0.5B` are refused before anything is read) |
 | `--workers N\|auto` | How many images are read at once, each in its own thread (default 1: one after another). `auto`: at most the number of CPUs, and with `--max-ram` as many as the largest image's estimated working memory fits. The results are exactly the same with any value; it is not recorded and changes nothing on the next run |
-| `--max-ram SIZE` | With `--workers auto`: the memory the run may use, e.g. `8GiB` (256 MiB of it kept for the run itself). An image that alone needs more stops the run before any image is read (`image_over_max_ram`) |
+| `--max-ram SIZE` | With `--workers auto`: the memory the run may use, e.g. `8GiB` (256 MiB of it kept for the run itself). An image that alone needs more stops the run before any pixel is read (`image_over_max_ram`) |
 | `--missing-as-singleton`, `--no-missing-as-singleton` | Confirm that images lacking some dimensions have one plane along them (`check` and `run`; default: the earlier run's answer, else no). `check` then reports what `run` will: an experiment of 2D images and Z-stacks passes `check` once confirmed, and the suggested option says `--axes ZCYX --missing-as-singleton` |
 | `--image-type fluorescence\|rgb` | The image type (default: the earlier run's, else the suggested one, printed) |
 | `--mode restart\|full` | `restart` (default) reuses the rows of unchanged images; `full` recomputes every row and check. Both keep your confirmations and replace the results only when the run succeeds |

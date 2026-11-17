@@ -137,7 +137,7 @@ WORKERS_HELP = (
 MAX_RAM_HELP = (
     "With Auto only: the memory the run may use, in GiB (0: no cap). Auto then reads only as "
     "many images at once as the largest one's estimated working memory fits; an image that "
-    "alone needs more stops the run before any image is read."
+    "alone needs more stops the run before any pixel is read."
 )
 
 _MAX_PLOTTED_GROUPS = 12

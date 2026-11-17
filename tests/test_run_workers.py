@@ -382,7 +382,7 @@ def test_auto_reads_at_most_the_planned_images_at_once(tmp_path, experiment, mon
     assert result.written and result.workers == 2 and most[0] == 2
 
 
-def test_an_image_over_max_ram_stops_the_run_before_any_image_is_read(
+def test_an_image_over_max_ram_stops_the_run_before_any_pixel_is_read(
     tmp_path, experiment, monkeypatch
 ):
     read_now = []

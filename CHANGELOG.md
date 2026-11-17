@@ -233,6 +233,14 @@ v0.5.1: no run before v0.5.1 is read.)
   them** is (`RgbOverrideOffer.refresh`: disabled only while none is), and a tick records the key
   for each of them answered colour. The user guide said the same and is corrected.
 
+### Corrections to the v0.6.0 notes
+
+- **`image_over_max_ram` stops the run before any pixel is read** (#336). The v0.6.0 notes say
+  an image over the `max_ram` budget "stops the run before any image is read". The headers are
+  read before the refusal (the estimate comes from them); no pixel is. Nothing changed in the
+  code; the `run.workers` docstring, the notebook's help, the `--max-ram` help, the user guide
+  and the contract's Workers row now say "before any pixel is read".
+
 ## v0.6.1 (16 November 2026)
 
 A patch release: the fixes of an external audit of v0.6.0 (#314) and the notebook's RGB header
