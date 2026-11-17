@@ -123,7 +123,7 @@ A helper here that grows bounds by a margin would be a second definition of EW5;
 | MorphoFeature windowed units (`window_reads`) | one `RunWindowReader` per plane, shared by the window thread pool; CellPatcher cuts the grid and gives `context_bounds`; results keep the patch's global `bounds` (EW4) | `read_window` per window (v0.5.0); one reader per plane in MorphoFeature's consumer PR | `close()` once MorphoFeature pins a preprocessing release with it (today it drops its last reference after the plane) |
 | CellPatcher patch extraction from a large image | open a reader per image, read each patch's window (or its `context_bounds`) instead of `read_plane`; `WindowedMask` already counts mask fractions by window | `read_window`, `read_mask_window`, `WindowedMask` | a windowed extraction route in CellPatcher (it reads whole planes today) and a cached mask reader here |
 | A brick run directly (fiberfeatures, MorphoRelate, MorphoObjects, MorphoEmbed) | the same loop as section 3 with the brick's own margin (its filter footprint, ADR 0004 EW6); objects that cross tiles are the brick's concern (ADR 0004: object tiling not decided) | everything in section 2 | per-brick entry points; object tiling (Spec) |
-| LabConstrictor tool behind QuPath | file path in (`WindowReader(path, mapping)` with the mapping the tool states, or a run), tiles out (section 3); each tile's results written as soon as it is done (partial results), coordinates converted to the file frame with ADR 0004 EW1's table (`pixel_edge` + origin; `full_res` for what QuPath draws) | the reader, geometry and conversion table | the bridge tool, its per-tile result table and resume (LabConstrictor-QuPath #50/#51; MorphoFeature roadmap F4) |
+| LabConstrictor tool behind QuPath | file path in (`WindowReader(path, mapping)` with the mapping the tool states, or a run), tiles out (section 3); each tile's results written as soon as it is done (partial results), coordinates converted to the file frame with ADR 0004 EW1's table (`pixel_edge` + origin; `full_res` for what QuPath draws) | the reader, geometry and conversion table | the bridge tool, its per-tile result table and resume (LabConstrictor-QuPath #50/#51; MorphoFeature roadmap F4); **imagecodecs** for JPEG whole-slide images (SVS, NDPI): without it tifffile cannot decode JPEG at all, and it is not a dependency (an optional extra to declare, review of this PR, finding 5) |
 
 ## 5. Concurrency
 
@@ -136,8 +136,10 @@ numcodecs 0.16).
 - **TIFF.** A compressed strip or tile is read under the file handle's lock
   (`tiff_pieces._decode_segment`: seek and read only), and then decoded outside it by tifffile's
   codec. Without imagecodecs (not a dependency), zlib/deflate falls back to the standard
-  library's `zlib.decompress`, which releases the GIL while it inflates. With imagecodecs, its
-  codecs, JPEG for whole-slide images among them, also decode without the GIL. Every window
+  library's `zlib.decompress`, which releases the GIL while it inflates. Without imagecodecs,
+  tifffile cannot decode JPEG at all, so a JPEG whole-slide image (SVS, NDPI) cannot be read
+  until imagecodecs is installed (see "Missing" in section 4); with it, its codecs, JPEG among
+  them, decode without the GIL. Every window
   opens its own file handle (`windows._source`), so concurrent windows never share one.
 - **OME-Zarr.** zarr 3 decodes chunks through its codec pipeline. numcodecs' compressors (Blosc,
   Zstd, LZ4) release the GIL, and zlib/gzip use the standard library. zarr runs its own

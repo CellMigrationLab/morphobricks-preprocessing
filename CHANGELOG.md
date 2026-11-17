@@ -13,9 +13,10 @@ v0.5.1: no run before v0.5.1 is read.)
 - **Lazy windows, one layer for every consumer** (`docs/design/lazy-windows.md`): a design note
   on where lazy, windowed reading of large images lives (here, processing-agnostic), its API,
   how MorphoFeature, CellPatcher, a brick run directly and a LabConstrictor/QuPath tool use it
-  (window geometry stays CellPatcher's, Spec ADR 0004 EW5), what exists and what is missing,
-  and its concurrency: decoding releases the GIL, the cache is single-flight, the ways to hand
-  parallelism to a consumer, and the rules (order, memory, close, no fallback).
+  (window geometry stays CellPatcher's, Spec ADR 0004 EW5), what exists and what is missing
+  (among it imagecodecs, not a dependency, without which JPEG whole-slide images cannot be
+  decoded), and its concurrency: decoding releases the GIL, the cache is single-flight, the ways
+  to hand parallelism to a consumer, and the rules (order, memory, close, no fallback).
 - **Deterministic close of a window reader:** `WindowReader` and `RunWindowReader` gain
   `close()`, `closed` and the context manager; closing drops the cache of decoded pieces at once
   (`BlockCache.close`), a later window is refused with the new
