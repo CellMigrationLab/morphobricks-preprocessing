@@ -126,6 +126,11 @@ v0.5.1: no run before v0.5.1 is read.)
   uses are byte-identical to v0.7.0's, so the rule's output and the PI-1..PI-4 evaluation are
   unchanged; the recorded normalization code identity changes with the version.
 
+- **CI job `wheel-identity`**: installs the package with the `he-mask` extra from a wheel (not
+  editable) and runs the code-identity, tissue-mask and lineage-reader tests there, so BM15's
+  verified code identity is checked for the installed preprocessing and normalization; any
+  skipped test fails the job. New test: the installed preprocessing is identified for real.
+
 - **Notebook: *Tag channels* fast mode keeps the strict page's draft** (the shadow model the
   review of #325 recommended). Unticking now restores the strict page by construction, no
   longer by the tracked differences of five earlier fixes: `given`, `before`, `units` and

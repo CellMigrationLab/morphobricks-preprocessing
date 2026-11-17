@@ -158,3 +158,18 @@ def test_the_installed_normalization_is_identified_for_real():
     assert found["record_sha256"] == hashlib.sha256(record).hexdigest()
     assert found["vcs_commit"] == direct.get("vcs_info", {}).get("commit_id")
     assert found["verified"], found["reason"]
+
+
+def test_the_installed_preprocessing_is_identified_for_real():
+    # Runs where the package is installed from a wheel (CI job wheel-identity); a development
+    # checkout (pip install -e) is never verified.
+    dist = metadata.distribution("morphobricks-preprocessing")
+    direct = json.loads(dist.read_text("direct_url.json") or "{}")
+    if direct.get("dir_info", {}).get("editable"):
+        pytest.skip("preprocessing is an editable install here: it is never verified")
+    import morphobricks_preprocessing.he_tissue_mask  # noqa: F401  (imported, as by the helper)
+
+    found = code_identity("morphobricks-preprocessing")
+    record = (dist._path / "RECORD").read_bytes()
+    assert found["record_sha256"] == hashlib.sha256(record).hexdigest()
+    assert found["verified"], found["reason"]
