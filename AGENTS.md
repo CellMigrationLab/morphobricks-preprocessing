@@ -270,9 +270,11 @@ src/morphobricks_preprocessing/
                     finish_publication, published_path/read_stable for readers; PP-12),
                     staging.py (each file's rows staged in .staging), resume.py (resume or
                     read each file between fingerprints, source_changed_during_run; files read
-                    in worker threads, one per worker, the calling thread staging), workers.py
-                    (RunMode(workers=, max_ram=): plan_workers, image_memory, image_over_max_ram;
-                    #107), arguments.py (run_experiment's argument checks)
+                    and staged in worker threads, one per worker; D7), table.py (the table: the
+                    staged rows copied file after file, the writer's bytes; D7), workers.py
+                    (RunMode(workers=, max_ram=): plan_workers, image_memory, staging_memory,
+                    hash_threads, image_over_max_ram; #107), arguments.py (run_experiment's
+                    argument checks)
   report.py         plain-language summaries shared by CLI and notebook, group statistics tables
   mask_text.py      the masks' texts (mask_summary, mask_report_summary) and the notebook's
                     tables of the mask step (mask_type_rows, mask_relationship_rows,

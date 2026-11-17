@@ -1660,7 +1660,8 @@ Raised during review; to be decided before the milestones that need them:
     estimate is one plane (or one block) under the run's memory limit plus `8 × bins` per 2-D
     plane for its rows, and the memory limit is never changed to fit `max_ram` (the refusal
     `image_over_max_ram` says to lower it); with more than one worker `progress` is called as
-    each image is done (resumed ones first), not before it is read.
+    each image is done (resumed ones first), not before it is read. (The staging moved to the
+    workers with D7, 84 below.)
 83. A `binary` check recorded by a mask step older than BM11 (v0.5.6 and earlier: "at most two
     distinct values over the file", so {3} at one time point and {7} at another passed, and the
     per-plane read guard `label_binary` passes it too). *Decided (owner, 16 November 2026):*
@@ -1672,3 +1673,19 @@ Raised during review; to be decided before the milestones that need them:
     the refusal is the existing `A_MASK_UNCHECKED` (ADR 0005 adds no `A_*` code, and names
     `A_MASK_UNCHECKED` as the refusal of a file the mask step has not checked), with its own
     message naming the cause and the fix: run the masks step again.
+84. Per-image work in the workers (MorphoBricks roadmap D7, 17 November 2026: runs did not
+    scale with cores; profiling with `tools/benchmark_run_workers.py --phases` found most of a
+    run's serial time after the reads in the calling thread's staging and in writing the table
+    again). *Asked by the coordinator:* the worker that reads an image also stages its rows,
+    the calling thread only concatenates, outputs byte-identical for any number of workers, the
+    memory plan counting what the workers hold, failures unchanged. *Encoding choices of this
+    brick:* a staged rows file has the table's header (the run's channel IDs) and the image's
+    rows in table order, so the table is the header followed by every image's staged rows
+    (`run/table.py`); rows with no staged file usable as it is (kept rows, another header, other
+    plane IDs or order, another SHA-256) are written by the normalization brick's writer, so the
+    bytes are always the writer's; each worker's estimate adds one row's staging (256 bytes per
+    column of the table, the writer's measured peak rounded up); the content SHA-256 passes
+    hash as many images at once as the run reads (hashing needs no GIL). The intensity checks
+    and the pixel and range checks stay in the calling thread (about 2 % of a run on the
+    benchmark set). Formatting rows holds Python's GIL, so staging in the workers overlaps the
+    reads but does not run in parallel with other staging: no process backend.

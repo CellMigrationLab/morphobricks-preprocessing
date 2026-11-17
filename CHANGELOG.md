@@ -6,6 +6,36 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+### Changed
+
+- **Per-image work moves into the image workers** (MorphoBricks roadmap D7; plan §12
+  question 84). Profiling a run with `tools/benchmark_run_workers.py --phases` (new: the
+  calling thread's time per step) showed most of the time after the reads spent in the
+  calling thread formatting each image's rows to stage them, then formatting every row again
+  for the table. Now the worker that reads an image also stages its rows, in table order and
+  with the table's header, and the table is the header followed by every image's staged rows
+  (`run/table.py`): the calling thread copies them and takes the table's SHA-256 as it writes.
+  The bytes are always the normalization brick's writer's on the same rows (rows kept from
+  the earlier table, or a staged file not as staged, are written by it), with its refusals
+  first. In a `verify_content` run the two content SHA-256 passes hash as many images at once
+  as the run reads (`run.workers.hash_threads`). With one worker everything stays in the
+  calling thread.
+- **The workers memory plan counts the staging**: each worker's estimate adds one row's
+  staging with the table's channels (`run.workers.staging_memory`, 256 bytes per column of
+  the table; the writer's measured peak is about 240), so `"auto"` with `max_ram` may read
+  fewer images at once, or refuse with `image_over_max_ram`, where it did not before. The
+  refusal's message names the staging.
+
+No output changes: every file of every valid Spec fixture run with 1, 2, 4 and `auto` workers
+is byte-identical to v0.7.0's (under a fixed clock; `written_at` is the only volatile field),
+and so are the benchmark set's table, design and manifest. On the benchmark set (14 images,
+4 CPUs shared with other jobs, load about 17), the calling thread's table step fell from about
+0.6 s to 0.2 s and its staging from about 2.3 to 2.8 s to none with 4 workers, but wall times
+moved by 1 to 7 % (medians of 6 runs, within the spread): formatting rows holds Python's GIL,
+so staging in the workers overlaps the reads but not other staging.
+
 ## v0.7.0 (17 November 2026)
 
 A minor release (semantic versioning before 1.0, `docs/development.md`): new public API and a

@@ -1260,8 +1260,9 @@ Several images can be read at once, each in its own thread (issue #107):
 `run_experiment(..., mode=RunMode(workers=4))`, or `RunMode(workers="auto", max_ram=8 * 2**30)`
 for at most the CPUs and what the largest image's estimated working memory allows in 8 GiB. The
 outputs are byte for byte those of `workers=1` (the default); `result.workers` says how many
-threads read. With more than one worker, `progress` is still called in the calling thread, as
-each image is done.
+threads read. Each worker also stages the rows of the image it read, and a run that verifies
+content hashes as many images at once. With more than one worker, `progress` is still called in
+the calling thread, as each image is done.
 
 Stated pixel sizes (§5) are built with `calibration_entry` and written with
 `write_calibration`; the next run records them, and later bricks read every image's sizes
