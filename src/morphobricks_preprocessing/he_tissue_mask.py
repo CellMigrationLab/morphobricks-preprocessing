@@ -449,12 +449,24 @@ def _compute(run: RunInputs, found: Fov, record: Mapping[str, Any]) -> _Computed
         raise RunInputsError(
             f"{found.relative_path} changed while it was read; nothing is written."
         )
+    return _Computed(found, pixels, rule_on_plane(pixels, record, image=found.relative_path))
+
+
+def rule_on_plane(
+    pixels: np.ndarray, record: Mapping[str, Any], *, image: str
+) -> TissueMaskPreview:
+    """Compute a rule on one ``uint8`` ``(3, Y, X)`` R, G, B plane: the one computation.
+
+    Every route calls it (the run route through :func:`_compute`, after its read), so their
+    masks are one computation, never a copy. The caller has checked the plane and the rule
+    (:func:`current_rule`). ``image`` labels the plane in the result.
+    """
     scalar = stain.to_scalar(pixels, axes=SOURCE_AXES, preset=PRESET)
     od, od_floored = _optical_density(pixels)
     components = tissue_components(scalar.image, scalar.exclusion, od, record)
     fractions = {**components.fractions(), "od_floored": od_floored}
-    result = TissueMaskPreview(
-        image=found.relative_path,
+    return TissueMaskPreview(
+        image=image,
         rgb=pixels,
         E=scalar.image,
         H=scalar.exclusion,
@@ -465,7 +477,6 @@ def _compute(run: RunInputs, found: Fov, record: Mapping[str, Any]) -> _Computed
         rule=MappingProxyType(record),
         code=code_identities(),
     )
-    return _Computed(found, pixels, result)
 
 
 def _optical_density(pixels: np.ndarray) -> tuple[np.ndarray, float]:
