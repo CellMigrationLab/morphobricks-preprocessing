@@ -1172,9 +1172,19 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 
 ---
 
-## 11. Status (current state, v0.6.1)
+## 11. Status (current state, v0.7.0)
 
-- **Released:** v0.6.1 (16 November 2026), a patch release: the fixes of an external audit of
+- **Released:** v0.7.0 (17 November 2026), a minor release (new public API and a new report
+  field; no format change): the opt-in H&E tissue mask (I1, Spec ADR 0005 BM15):
+  `RunInputs.he_tissue_mask` / `preview_he_tissue_mask`, CLI `tissue-mask`, the notebook card
+  **Make an H&E tissue mask**, the `he-mask` extra; rule `he_tissue_v1` **provisional** (not
+  frozen); the lineage reader selects its schema by `operation` and refuses repeated keys;
+  `RunStoppedError` for a stopped run (#322); `RunInputs.objects_read_plan` (#316); the
+  notebook's *Tag channels* fast mode and **Images read at once**; `unreadable_planes` naming
+  every failed plane (capped at 20 per image in the message, all in the run report's new
+  `unreadable_planes` field and the notebook's report view); Spec `v29` reported by its one
+  refusal; normalization pinned at v0.7.1, Spec at `bf68d30`.
+  v0.6.1 (16 November 2026), a patch release: the fixes of an external audit of
   v0.6.0 (#314: the mask step records exactly the fingerprint it verified; worker parity
   compared on raw bytes, `written_at` the only field of a run's outputs excluded from byte
   identity (the conversion record `.morphobricks-conversion.json` of `convert` has its own
@@ -1200,10 +1210,6 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
   [docs/archive/plan-milestones-v0.1-v0.4.md](docs/archive/plan-milestones-v0.1-v0.4.md); the older
   status log of this file is in
   [docs/archive/agents-status-history-v0.1-v0.3.md](docs/archive/agents-status-history-v0.1-v0.3.md).
-- **Unreleased:** the opt-in H&E tissue mask (I1, Spec ADR 0005 BM15):
-  `RunInputs.he_tissue_mask` / `preview_he_tissue_mask`, CLI `tissue-mask`, the notebook card
-  **Make an H&E tissue mask**, the `he-mask` extra; rule `he_tissue_v1` **provisional** (not
-  frozen); the lineage reader selects its schema by `operation` and refuses repeated keys.
 - **Scope:** 2-D per plane (a Z-stack is refused as `z_stack_not_supported`; since v0.5.2 the
   notebook saves Z-stacks as recorded projections); acquisitions may have different channel
   lists (v0.5.2, Stage 3 S3.3: manifest version 5, histogram table schema version 5; units of

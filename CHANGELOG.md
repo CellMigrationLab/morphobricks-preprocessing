@@ -6,7 +6,26 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
-## Unreleased
+## v0.7.0 (17 November 2026)
+
+A minor release (semantic versioning before 1.0, `docs/development.md`): new public API and a
+new report field, so the minor version moves (0.6.1 to 0.7.0). It brings the opt-in H&E tissue
+mask (Spec ADR 0005 BM15, rule `he_tissue_v1` **provisional**; extra `he-mask`), the bricks'
+refusal of a stopped run (`RunStoppedError`, #322), `RunInputs.objects_read_plan` (#316), the
+notebook's fast mode for *Tag channels* (#319, #320, #325, #328) and its **Images read at once**
+(#317, #320), `unreadable_planes` naming every failed plane and channel with the full list in
+the run report (`discovery_report.json` gains `unreadable_planes`, #325, #332, #335), the run's
+single refusal for units of different image types (Spec `v29`, #332, #335) and clearer refusal
+wording (#326, #329, #321, #336). Three behaviours are stricter: the lineage reader refuses a
+key repeated in one JSON object and an operation of neither schema; a run of Spec `v29` reports
+`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` alone; `unreadable_planes` messages are capped at 20 planes
+per image (the report keeps them all).
+
+No format change: run manifest version 5, `plane_histograms.csv` schema version 5, resolver
+contract version 3, `mask_relationships.json` report version 4, `mask_representation.json`
+version 1, conversion record version 4 and discovery report version 1 (the new
+`unreadable_planes` field is additive) are those of v0.6.1, whose runs are read as they are.
+Normalization moves to v0.7.1 (below); the Spec pin stays at `bf68d30`.
 
 ### Added
 

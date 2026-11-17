@@ -6,6 +6,41 @@ real run; a skip is never counted as a pass. Owner rulings of 8 November 2026 (i
 "no skips" applies to the Spec conformance modules (`tests/test_spec_*.py`); a skip elsewhere
 in the suite is listed as **not run**, with its reason.
 
+## Release record: v0.7.0 (17 November 2026)
+
+A G1-style record of the v0.7.0 release candidate, a minor release: the opt-in H&E tissue mask
+(Spec ADR 0005 BM15, rule `he_tissue_v1` provisional), `RunStoppedError` (#322),
+`RunInputs.objects_read_plan` (#316), the notebook's *Tag channels* fast mode and **Images read
+at once**, `unreadable_planes` naming every failed plane (the run report's new field), Spec `v29`
+reported by its one refusal, and normalization pinned at v0.7.1. No format change. It does not
+decide a gate; deciding a gate is the owner's.
+
+| | |
+|---|---|
+| Release candidate | Measured on the tree of the v0.7.0 preparation commit A (branch `claude/release-0.7.0`, from `main` at `83a7492`: v0.6.1, #316 to #337, and one contract wording fix) before this record was added; the record changes only this file. A keeps `RELEASE_REF` at v0.6.1's `9b24a29`. Commit B then points the notebook's `RELEASE_REF` at A and records the pair in `RELEASE_CALLS` (the notebook and two test files only), so `git diff A B -- src pyproject.toml` is empty |
+| Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `bf68d3032a4548cd908e1d530296fdf22a1a9b7f` (unchanged) |
+| Environment | Linux, Python 3.13.18, `pip install --no-cache-dir -e '.[dev,notebook,zarr]'` in a fresh venv (normalization 0.7.1 from its tag `v0.7.1` = `fcfaeac`, as `direct_url.json` records; scikit-image not installed; numpy 2.5.5, scipy 1.18.1, tifffile 2026.11.16, ipywidgets 8.1.9, zarr 3.4.2, pytest 9.2.0, ruff 0.17.5); a second fresh venv with `.[dev,notebook,zarr,he-mask]` (scikit-image 0.26.0) for the he-mask subset; `PYTEST_ADDOPTS` unset; run as root on a case-sensitive file system |
+| Commands | `ruff check .`; `ruff format --check .`; `python tools/check.py --rules`; the suite in two halves (the 224 `tests/test_*.py` files sorted, 112 each, to stay within the machine's memory), `python -m pytest -q -p no:cacheprovider -rsxX <half>`; `python -m pytest -q -p no:cacheprovider -rsxX tests/test_spec_*.py`; in the he-mask venv, the tissue-mask, code-identity, lineage-reader, brick API surface and unreadable-cap modules |
+| Ruff, code rules | Ruff clean, Ruff format 537 files already formatted, code rules passed |
+| pytest, two halves | **2606 passed, 11 skipped** and **3587 passed, 4 skipped**: **6193 passed, 15 skipped** (not run, below), 0 failed |
+| Spec modules (`tests/test_spec_*.py`) | **1934 passed, 0 skipped, 0 xfailed, 0 failed**, from all 28 modules of `tests/spec_gate.py` `EXPECTED_MODULES` |
+| he-mask subset | **181 passed, 3 skipped**, 0 failed: the 11 scikit-image skips of the core venv run here |
+
+**Not run (15 skips in the core venv, none in the Spec modules):** the four environment skips of
+v0.6.1 (`tests/test_cli_log.py:166`, `tests/test_folder_rules.py:199` and `:230`, which need a
+case-insensitive file system, and `tests/test_discovery.py:665`, which cannot run as root);
+`tests/test_code_identity.py:169` (an editable install is never verified); and 10 tests that
+need scikit-image (`test_he_tissue_consumer_gate`, `test_he_tissue_mask`, `test_he_tissue_rule`,
+three of `test_cli_tissue_mask`, four of `test_notebook_tissue_mask`), which pass in the he-mask
+venv. There, 3 are not run: `tests/test_he_tissue_consumer_gate.py:25` (gate P3 needs
+fiberfeatures v0.7.0, not installed) and the two editable-install identity tests
+(`test_code_identity.py:169`, `test_he_tissue_mask.py:495`), which CI's `wheel-identity` job runs
+on a wheel install with no skip allowed. The behaviours of the remaining skips are **not
+verified by this run**.
+
+**Still the owner's:** the Colab and JupyterLab browser check (`docs/colab-release-check.md`),
+before tagging.
+
 ## Release record: v0.6.1 (16 November 2026)
 
 A G1-style record of the v0.6.1 release candidate, a patch release: the audit fixes of v0.6.0
