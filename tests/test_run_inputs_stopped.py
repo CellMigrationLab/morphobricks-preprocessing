@@ -115,6 +115,33 @@ def test_several_errors_with_paths_are_carried_in_the_reports_order(tmp_path):
     _assert_carries_the_report(raised.value, out)
 
 
+def test_warnings_are_not_carried_and_errors_keep_the_reports_order(tmp_path):
+    # Review of PR #324: no test had a warning in a stopped run's report, so carrying
+    # warnings went unnoticed. Warnings before and between two errors (one with non-ASCII
+    # text, written as the report writes it) leave exactly the errors, in the report's order.
+    _, out = _stopped_v29(tmp_path)
+    report = _report(out)
+    (stopped,) = report["issues"]
+    warning = {
+        "code": "w_note",
+        "severity": "warning",
+        "message": "a warning",
+        "paths": ["b.tif", "a.tif"],
+        "action": "",
+    }
+    second = stopped | {"code": "z_second", "message": "Pixel size 0.5 µm ≠ 0,5 µm.", "paths": []}
+    report["issues"] = [warning, second, warning | {"code": "w_other"}, stopped]
+    text = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
+    (out / REPORT).write_text(text, encoding="utf-8")
+    with pytest.raises(RunStoppedError) as raised:
+        RunInputs.open(out)
+    refusal = raised.value
+    assert [issue.code for issue in refusal.issues] == ["z_second", stopped["code"]]
+    assert all(issue.is_error for issue in refusal.issues)
+    assert "w_note" not in str(refusal) and "w_other" not in str(refusal)
+    _assert_carries_the_report(refusal, out)
+
+
 def test_v29_open_reads_no_pixel_and_no_experiment_file(tmp_path, monkeypatch):
     root, out = _stopped_v29(tmp_path)
     opened = []
