@@ -117,11 +117,15 @@ def test_every_spec_fixture_writes_the_same_bytes_with_workers_1_2_4_and_auto(tm
     data = re.sub(rb"image_count = (\d{3,})", b"image_count = 3", item.data)  # v09: 1000
     root, out, masks, mapping, description = _whole_tree(tmp_path, data)
     serial, expected = _run(root, out, 1, mapping, masks)
+    assert serial.workers == 1
     for workers in (2, 4, "auto"):
         result, files = _run(root, out, workers, mapping, masks)
         assert files == expected, sorted(k for k in expected if files.get(k) != expected[k])
         assert result.written == serial.written and result.read == serial.read
         assert result.issues == serial.issues
+        # The pool's size, min(workers, images read); 1 when none was read (v29).
+        read = len(result.read)
+        assert result.workers == (expected_workers(workers, read) if read else 1)
     if not serial.written:  # v29: units of different image types, refused alike
         assert item.name.startswith("v29_") and "plane_histograms.csv" not in expected
         codes = {issue.code for issue in serial.issues if issue.is_error}
