@@ -95,7 +95,7 @@ def test_p26_a_name_that_matches_no_declared_name_is_refused_naming_unit_image_a
         "repeat folder 'rep1'",
         "condition folder 'CTRL'",
         "'Hoechst-33342'",
-        "channel position 0",
+        "'Hoechst-33342' at C0",
         "['Hoechst-33342', 'ACTIN']",  # the image's header names
         "'DNA'",
         "['DAPI', 'Hoechst 33342']",  # the declared names
@@ -155,7 +155,8 @@ def test_p26_the_check_is_by_c_index_a_name_of_another_channel_is_refused(tmp_pa
     root, out = _setup(tmp_path, "v11", {"*": ["ACTIN", "DAPI"]})
     result = _run(root, out)
     assert set(_codes(result)) == {CONTRADICTION}
-    assert "channel position 0" in result.issues[0].message
+    assert "header name 'ACTIN' at C0 (" in result.issues[0].message
+    assert "channel position" not in result.issues[0].message
 
 
 def test_p26_images_without_header_names_need_no_evidence_v12(tmp_path):

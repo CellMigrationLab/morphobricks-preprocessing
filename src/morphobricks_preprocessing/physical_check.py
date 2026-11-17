@@ -349,7 +349,7 @@ def _evidence_issues(
             known = description.channels[channel].header_names or ()
             if name and nfc(name) not in {nfc(entry) for entry in known}:
                 what = (
-                    f"header name {name!r} at channel position {index} (the image's header "
+                    f"header name {name!r} at C{index} (the image's header "
                     f"names: {_quoted(layout.names)}) is not a confirmed name of channel "
                     f"{channel!r}, whose confirmed header names are {_quoted(known)}"
                 )
