@@ -17,7 +17,9 @@ folder, and records the wall time of ``run_experiment``, the process's peak resi
 
 Protocol (acceptance mode, the default)
 ---------------------------------------
-- **Repeats**: at least 10 rounds (``--repeats``, default 10; fewer is refused). ``--quick``
+- **Repeats**: at least 10 rounds (``--repeats``; fewer is refused). The default is the
+  smallest multiple of the number of configurations that is at least 10 (12 for the default
+  ``1 2 4 auto``), so the counterbalancing blocks (*Order*) are complete. ``--quick``
   is the smoke mode: 3 rounds by default, any number allowed, and the report says
   ``"mode": "quick"``: never quote a quick run as a result.
 - **Order**: counterbalanced and seeded (``--order balanced``, the default): the rounds go in
@@ -490,11 +492,19 @@ def _phase_medians(found: list[dict]) -> dict:
 
 
 def parse_arguments() -> argparse.Namespace:
-    """Parse the command line; refuse an acceptance run of fewer than 10 rounds."""
+    """Parse the command line; refuse an acceptance run of fewer than 10 rounds.
+
+    Without ``--repeats``: 3 with ``--quick``, else :func:`acceptance_repeats`.
+    """
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--folder", type=Path, default=None)
     parser.add_argument("--workers", nargs="+", default=["1", "2", "4", "auto"])
-    parser.add_argument("--repeats", type=int, default=None, help="rounds (default 10; 3 quick)")
+    parser.add_argument(
+        "--repeats",
+        type=int,
+        default=None,
+        help="rounds (default 12 for 4 configurations; 3 quick)",
+    )
     parser.add_argument("--quick", action="store_true", help="smoke mode: not a result")
     parser.add_argument("--seed", type=int, default=0, help="seed of the run order")
     parser.add_argument("--order", choices=("balanced", "shuffled", "fixed"), default="balanced")
@@ -504,12 +514,17 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--max-ram-mib", type=int, default=0, help="with auto; 0: none")
     parser.add_argument("--phases", action="store_true", help="time the calling thread's steps")
     args = parser.parse_args()
+    args.workers = list(dict.fromkeys(["1", *args.workers]))  # the serial run, once, first
     if args.repeats is None:
-        args.repeats = QUICK_REPEATS if args.quick else ACCEPTANCE_REPEATS
+        args.repeats = QUICK_REPEATS if args.quick else acceptance_repeats(len(args.workers))
     if args.repeats < 1 or (not args.quick and args.repeats < ACCEPTANCE_REPEATS):
         parser.error(f"an acceptance run needs --repeats {ACCEPTANCE_REPEATS} or more (--quick)")
-    args.workers = list(dict.fromkeys(["1", *args.workers]))  # the serial run, once, first
     return args
+
+
+def acceptance_repeats(configurations: int) -> int:
+    """Return the smallest multiple of ``configurations`` that is at least 10 (whole blocks)."""
+    return -(-ACCEPTANCE_REPEATS // configurations) * configurations
 
 
 def protocol(args: argparse.Namespace) -> dict:

@@ -47,7 +47,10 @@ def _parse(monkeypatch, *argv):
 
 
 def test_acceptance_needs_ten_rounds_and_quick_is_the_smoke_mode(monkeypatch, capsys):
-    assert _parse(monkeypatch).repeats == 10
+    assert _parse(monkeypatch).repeats == 12  # 1 2 4 auto: three whole blocks of four
+    assert _parse(monkeypatch, "--workers", "2", "auto").repeats == 12  # three: four blocks
+    assert _parse(monkeypatch, "--workers", "auto").repeats == 10  # two: five blocks
+    assert _parse(monkeypatch, "--repeats", "10").repeats == 10
     assert _parse(monkeypatch, "--quick").repeats == 3
     assert _parse(monkeypatch, "--quick", "--repeats", "1").repeats == 1
     with pytest.raises(SystemExit):

@@ -28,8 +28,9 @@ v0.5.1: no run before v0.5.1 is read.)
   draft PR #340; its docstring and `docs/development.md` *Benchmarks*). The configurations of
   each round run in a counterbalanced, seeded order (`--order balanced`, the default: every
   configuration once in every position per block of rounds; `shuffled`, `fixed`), recorded
-  per round with the seed. An acceptance run has at least 10 rounds (the default; fewer is
-  refused) and `--quick` is the smoke mode (3 rounds), named in the report. Every run's peak
+  per round with the seed. An acceptance run has at least 10 rounds (fewer is refused; by
+  default the smallest multiple of the configurations from 10, 12 for `1 2 4 auto`, so the
+  counterbalancing blocks are complete) and `--quick` is the smoke mode (3 rounds), named in the report. Every run's peak
   RSS is the child process's own (Linux `VmHWM`, Windows `PeakWorkingSetSize`; elsewhere
   `ru_maxrss` in the platform's unit, its source named in the report as possibly including the
   parent's peak), and the dataset is written in a separate process: `ru_maxrss` on Linux had
