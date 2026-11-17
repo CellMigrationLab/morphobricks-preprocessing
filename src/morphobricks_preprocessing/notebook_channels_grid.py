@@ -174,7 +174,8 @@ class TagGrid:
             self.alone = set()
             self.matrix.reset()
             self.matrix.opening()
-        self.matrix.labels_changed(labels)
+        else:  # the label list (or an image type) was saved: the aliases were resynced
+            self.matrix.resynced()
         self.layouts, self.labels, self.rows.thumbs = layouts, labels, thumbs
         if self.place_types:
             self.types.open(layouts)
@@ -209,7 +210,7 @@ class TagGrid:
         ok = self.store.update(synced(answers, self.layouts, cells))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
         if ok:
-            self.matrix.clicked(key for key, _ in cells)
+            self.matrix.clicked(cells)
         self.refresh()
         self._on_change()
         return ok
@@ -307,7 +308,7 @@ class TagGrid:
         ok = self.store.update(synced(answers, self.layouts, cells))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
         if ok:
-            self.matrix.clicked(key for key, _ in cells)
+            self.matrix.clicked(cells)
         if ok and rgb:
             self.types.confirm_header(rgb)
         self.refresh()

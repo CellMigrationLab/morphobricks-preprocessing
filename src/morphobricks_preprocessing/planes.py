@@ -888,7 +888,7 @@ def _tiff_reader(
     def read(position: dict[int, int]) -> Plane:
         index = _page_index(layout, position)
         if index != current["index"]:
-            current["page"] = None  # let the previous page go before decoding the next
+            current["page"], current["index"] = None, -1  # freed first; none kept if it fails
             current["page"] = _read_page(series, index, layout, path)
             current["index"] = index
         return _plane(current["page"], layout, mapping, position)

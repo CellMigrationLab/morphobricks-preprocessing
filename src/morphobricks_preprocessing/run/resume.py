@@ -33,7 +33,7 @@ from ..planes import PlaneReadError
 from ..source_content import current_content
 from ..validation import ValidationIssue, error, plural
 from .preflight import Preflight
-from .rows import _read_file
+from .rows import ChannelReadError, _read_file
 from .staging import StagedFile, discard_staged, load_staged, stage_file, staging_key
 from .workers import Workers, plan_workers
 
@@ -56,6 +56,9 @@ class NewRows:
         The files whose staged rows were reused.
     failed
         The files whose pixels could not be read.
+    failures
+        ``{file: what failed}`` for each failed file: every plane and channel that could not
+        be measured, with the cause (Spec ADR 0003 HV3), or the file and the cause.
     changed
         The files that changed while the run checked or read them.
     discarded
@@ -73,6 +76,7 @@ class NewRows:
     read: list[str] = field(default_factory=list)
     resumed: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
+    failures: dict[str, tuple[str, ...]] = field(default_factory=dict)
     changed: list[str] = field(default_factory=list)
     discarded: dict[str, str] = field(default_factory=dict)
     workers: int = 1
@@ -272,12 +276,16 @@ class FileRead:
         while it was read: never staged or published).
     rows, ranges
         Its rows and narrow-range checks; empty unless read.
+    failures
+        When failed: each plane and channel that could not be measured, with the cause, or
+        the file and the cause when it could not be read plane by plane.
     """
 
     relative_path: str
     status: str
     rows: tuple[PlaneRecord, ...] = ()
     ranges: tuple[NarrowRange, ...] = ()
+    failures: tuple[str, ...] = ()
 
 
 def _read_checked(job: FileJob, rel: str) -> FileRead:
@@ -310,9 +318,12 @@ def _read_between_fingerprints(job: FileJob, rel: str) -> FileRead:
             job.entries[rel].position_id,
             job.entries[rel].channel_ids,
         )
-    except PlaneReadError:
+    except ChannelReadError as exc:
         logger.warning("Cannot read the planes of %s", rel, exc_info=True)
-        return FileRead(rel, FAILED)
+        return FileRead(rel, FAILED, failures=tuple(f.text(rel) for f in exc.failures))
+    except PlaneReadError as exc:
+        logger.warning("Cannot read the planes of %s", rel, exc_info=True)
+        return FileRead(rel, FAILED, failures=(f"{rel}: {str(exc).replace(str(root / rel), rel)}",))
     if current_fingerprint(root / rel) != expected or (
         job.settings.verify_content
         and current_content(root / rel) != job.entries[rel].content_sha256
@@ -333,6 +344,7 @@ def _add(result: FileRead, found: NewRows) -> None:
     rel = result.relative_path
     if result.status == FAILED:
         found.failed.append(rel)
+        found.failures[rel] = result.failures
     elif result.status == CHANGED:
         found.changed.append(rel)
     else:

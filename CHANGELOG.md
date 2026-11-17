@@ -46,7 +46,12 @@ v0.5.1: no run before v0.5.1 is read.)
   to confirm, as before; a unit whose tags the user clicked on since keeps them, even tagged
   back to what its header says, and one whose header tags only lost a label removed from the
   list is untagged too; with no click since, the aliases the draft held before those tags are
-  kept, even ones only the untagged units held, as opening unticked keeps them), and ticking
+  kept, even ones only the untagged units held, as opening unticked keeps them; none is kept
+  once a click, a save of the label list or an image type resynced the aliases since, as that
+  save drops them on the strict page: review of 223d055; and an exact header name only those
+  tags added as an alias is taken out, even when a unit tagged earlier, whose header now says
+  that name, holds it too, unless a click tagged a cell with it or a unit holding it since:
+  review of e623cad), and ticking
   again trusts only the aliases saved when the page opened and still saved (`channel_matrix`,
   `notebook_channels_matrix`).
 - **`RunInputs.objects_read_plan(selection, mask_id)`** (#316): the memory of one
@@ -94,6 +99,18 @@ v0.5.1: no run before v0.5.1 is read.)
   for any number." Values the user set are kept, and so is their refusal. Where the figure is
   the physical memory (macOS, `run.workers.memory_is_physical`), the cap's line says "physical
   memory" instead of "available". The outputs do not depend on the number of workers.
+
+### Changed
+
+- **`unreadable_planes` names the plane and the channel** (Spec ADR 0003 HV3). A channel that
+  cannot be measured still fails the whole `plane_histograms.csv`, as before; the error, and so
+  the run report, now names every failed plane, `<image>, plane t=1, c=1 (channel GFP):
+  <cause>` (T, Z and C index, the channel ID from the description, the cause with the image's
+  relative path), not only the image. The image's other planes are measured still so that each
+  failed one is named. An image that cannot be read plane by plane, or hashed, is named with
+  its cause. The page cache of the TIFF reader keeps no page after a failed decode. Nothing
+  else changes: the codes, `paths`, what is staged and published, and the outputs of any
+  number of workers.
 
 ### Corrections to the v0.6.1 notes
 

@@ -327,7 +327,7 @@ def _read_issues(rows: Rows, settings: RunSettings) -> list[ValidationIssue]:
         compared = "fingerprint or content" if settings.verify_content else "fingerprint"
         issues.append(changed_issue(list(rows.changed), compared))
     if rows.failed:
-        issues.append(unreadable_issue(rows.failed))
+        issues.append(unreadable_issue(rows.failed, rows.failures))
     return issues
 
 

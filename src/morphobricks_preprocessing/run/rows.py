@@ -5,6 +5,7 @@ Moved from ``run.py`` (PP-3).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from morphobricks_normalization.dtypes import default_bin_count, validate_bin_count
@@ -18,10 +19,48 @@ from ..manifest import (
     NarrowRange,
     RunSettings,
 )
+from ..plane_errors import PlaneReadError
 from ..planes import (
     iter_xyc_planes,
 )
 from ..validation import ValidationIssue, error, plural, warning
+
+
+@dataclass(frozen=True)
+class ChannelFailure:
+    """One channel of one plane whose histogram could not be measured (Spec ADR 0003 HV3).
+
+    Attributes
+    ----------
+    t, z
+        The plane's T and Z index; None when the image has no such axis.
+    c
+        The channel's C index (source channel ``C<c>``).
+    channel
+        Its canonical channel ID, from the description.
+    cause
+        Why it could not be measured, with the image named by its relative path.
+    """
+
+    t: int | None
+    z: int | None
+    c: int
+    channel: str
+    cause: str
+
+    def text(self, rel: str) -> str:
+        """Return ``"<rel>, plane t=1, z=0, c=1 (channel GFP): <cause>"`` (absent axes left out)."""
+        found = [f"{axis}={index}" for axis, index in (("t", self.t), ("z", self.z), ("c", self.c))]
+        plane = ", ".join(entry for entry in found if not entry.endswith("=None"))
+        return f"{rel}, plane {plane} (channel {self.channel}): {self.cause}"
+
+
+class ChannelReadError(PlaneReadError):
+    """Raised when channels of an image's planes could not be measured; names every one."""
+
+    def __init__(self, failures: tuple[ChannelFailure, ...]) -> None:
+        super().__init__("; ".join(f"t={f.t}, z={f.z}, c={f.c}: {f.cause}" for f in failures))
+        self.failures = failures
 
 
 def _read_file(
@@ -39,8 +78,11 @@ def _read_file(
     ``channels``, the canonical IDs of its unit's confirmed list (entry ``i`` is source
     channel ``C<i>``), binned with the run's histogram range. Also returns the channel planes
     whose range check found the central range too narrow, by channel ID.
+
+    A channel that cannot be measured fails the image (Spec ADR 0003 HV3); the other planes
+    are measured still, so that :class:`ChannelReadError` names every failed one.
     """
-    records, narrow = [], []
+    records, narrow, failed = [], [], []
     for plane in iter_xyc_planes(
         path,
         mapping,
@@ -48,7 +90,19 @@ def _read_file(
         bin_count=settings.bin_count,
         histogram_settings=settings.histogram,
     ):
-        measured = plane.histograms_with_checks(settings.bin_count, settings.histogram)
+        measured = []
+        for c in range(plane.channel_count):
+            try:
+                measured.append(
+                    plane.channel(c).histogram_with_check(settings.bin_count, settings.histogram)
+                )
+            except PlaneReadError as exc:
+                # Measure on, so that the error names every failed plane (HV3); none of
+                # this image's rows is used.
+                cause = str(exc).replace(str(path), rel)
+                failed.append(ChannelFailure(plane.t, plane.z, c, channels[c], cause))
+        if failed:
+            continue
         record = PlaneRecord(
             rel,
             *labels,
@@ -64,6 +118,8 @@ def _read_file(
             for channel, (_, check) in zip(channels, measured, strict=True)
             if check is not None and check.narrow
         )
+    if failed:
+        raise ChannelReadError(tuple(failed))
     return records, narrow
 
 
