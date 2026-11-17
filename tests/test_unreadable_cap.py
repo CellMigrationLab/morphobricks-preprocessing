@@ -150,3 +150,47 @@ def test_the_notebook_report_view_lists_every_failed_plane_folded_per_image(tmp_
 def test_the_report_view_has_no_unreadable_planes_part_without_failures():
     assert "Unreadable planes" not in report_html({"unreadable_planes": {}})
     assert "Unreadable planes" not in report_html({})
+
+
+def test_the_report_view_lists_an_images_failed_planes_in_reading_order(tmp_path):
+    # Review of #335: within one image's fold the planes keep the report's reading order
+    # (t=0, 1, ..., 11), not an order sorted as text, where t=10 would come before t=2.
+    root = tmp_path / "exp"
+    write_frames(root / A, 12, 1)
+    _, report = run(root, tmp_path / "out")
+    listed = report["unreadable_planes"][A]
+    assert all(text.startswith(plane(A, t)) for t, text in enumerate(listed))
+    page = report_html(report)
+    where = [page.index(f"<div>{html.escape(entry)}</div>") for entry in listed]
+    assert where == sorted(where) and len(set(where)) == 12
+
+
+def test_the_report_view_escapes_a_file_name_with_html_special_characters(tmp_path):
+    # Review of #335: a file name is text, never markup, in the summary and in every plane.
+    # A real run with the special characters every file system allows (& and ').
+    rel = "ctrl/rep1/a&b'c.tif"
+    root = tmp_path / "exp"
+    write_frames(root / rel, 3, 1)
+    _, report = run(root, tmp_path / "out")
+    assert list(report["unreadable_planes"]) == [rel]
+    page = report_html(report)
+    assert rel not in page
+    escaped = "ctrl/rep1/a&amp;b&#x27;c.tif"
+    assert f"<summary>{escaped} (3 failed planes)</summary>" in page
+    for t, entry in enumerate(report["unreadable_planes"][rel]):
+        assert entry.startswith(plane(rel, t))
+        assert f"<div>{html.escape(entry)}</div>" in page
+    assert f"{rel} (3 failed planes)" in _words(page)
+
+
+def test_the_report_view_escapes_angle_brackets_and_quotes_in_a_file_name():
+    # The same for <, > and " (not allowed in Windows file names, so the report is given here).
+    rel = "ctrl/rep1/a<b>&\"c'.tif"
+    entry = f"{rel}, plane t=0, c=0 (channel DNA): Page 0 of {rel} cannot be decoded"
+    page = report_html({"unreadable_planes": {rel: [entry]}})
+    # The raw name is nowhere on the page (the view's own <b> markup is elsewhere).
+    assert "a<b>" not in page and '&"c' not in page and "c'.tif" not in page
+    escaped = "ctrl/rep1/a&lt;b&gt;&amp;&quot;c&#x27;.tif"
+    assert f"<summary>{escaped} (1 failed plane)</summary>" in page
+    assert f"<div>{escaped}, plane t=0, c=0 (channel DNA): Page 0 of {escaped} cannot be" in page
+    assert f"{rel} (1 failed plane)" in _words(page)
