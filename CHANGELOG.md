@@ -131,15 +131,36 @@ v0.5.1: no run before v0.5.1 is read.)
   verified code identity is checked for the installed preprocessing and normalization; any
   skipped test fails the job. New test: the installed preprocessing is identified for real.
 
-- **`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` is the run's only refusal** (#321; owner decision of
-  17 November 2026). A run whose
-  published description declares units of different image types (Spec fixture `v29`) now stops
-  on that refusal before any header check, as Spec PR #49 states for P04(b) ("before any image
-  is read"; its wording is unchanged). It no longer adds the header checks' errors after it (an
-  `inconsistent_mapping` of the axis review, `axes_not_confirmed`, or a unit's own
-  `mixed_dtypes`), nor the advice "listed first" that #245 gave them. The run still stops and
-  writes only its report; a description of one image type is checked as before. The notebook's
-  *Check and save* screen is unchanged.
+- **`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` is the run's only refusal** (#321; owner decision of 17
+  November 2026). A run whose published description declares units of different image types
+  (Spec fixture `v29`) now stops on that refusal before any header check. It is decided from the
+  description once preflight has read every header and bound it to its image's fingerprint
+  (`bind_headers=True`), so headers are read, but before any header check and before any pixel
+  is read (#334: Spec PR #49's "before any image is read" for P04(b) holds for pixels only). It
+  is then the run's only issue, error or warning (#334): nothing else the run finds once it
+  holds the output folder is reported beside it. Not the header checks' errors (an
+  `inconsistent_mapping` of the axis review, `axes_not_confirmed`, a unit's own `mixed_dtypes`),
+  nor the advice "listed first" that #245 gave them, and also none of what preflight finds:
+  discovery (an unreadable image, `unreadable_tiff`), the masks (a masks folder that does not
+  exist, `masks_folder_not_found`, and every other mask issue), the exclusions (an `--exclude`
+  of a path that does not exist, the warning `excluded_path_not_found`), the record of
+  named-axis copies (conversion) and the lab-tool links' repeat codes. They are reported once
+  the description declares one image type. What stops a run before it holds the output folder
+  (no published description, an output folder inside the experiment or the masks, a locked
+  output folder) still stops it first. The run still stops and writes only its report
+  (`tests/test_heterogeneous_refusal_first.py` pins the one issue with an unreadable `.tif`, a
+  missing masks folder and a missing excluded path); a description of one image type is checked
+  as before. The notebook's *Check and save* screen is unchanged.
+
+- **The coverage warning and `A_SCOPE_INCOMPLETE` name what they count** (#321, point 1). Both
+  said "acquisitions", meaning imaging units in the run's warning `partial_channel_coverage`
+  ("PHASE in 1 of 2 acquisitions") and images in the bricks' refusal `A_SCOPE_INCOMPLETE`
+  ("present in 3 of 6 acquisitions"). The warning now says imaging units (`rep1: PHASE in 1 of
+  2 imaging units`, "only some of their imaging units", "the imaging units that have it") and
+  the refusal images (`The channel 'PHASE' is present in 2 of 4 images; the images without
+  it: ...`, also for a mask). Message text only: the codes, the counts, `paths`, the manifest's
+  `channel_coverage` and the refusal's `files` are unchanged. The Spec's experiment-v1 §8 still
+  words the refusal "present in k of n acquisitions".
 
 - **`unreadable_planes` names at most 20 failed planes per image** (owner decision of 17
   November 2026; Spec ADR 0003 HV3, #325). The message names each image's first 20 failed
@@ -147,8 +168,10 @@ v0.5.1: no run before v0.5.1 is read.)
   in <image>` for that image, and says that the run report lists every failed plane; each image
   is capped on its own. The run report keeps the whole list: `discovery_report.json` gains
   `unreadable_planes` (image: every failed plane), and `discovery_report.txt` lists them, the
-  same bytes for any number of workers. The whole table still fails; the code, `paths`, what is
-  staged and published are unchanged.
+  same bytes for any number of workers. The notebook's report view shows that list too (#334):
+  a part *Unreadable planes* before *Checks* says how many failed planes in how many images,
+  then one closed fold per image, in the report's order, with every failed plane. The whole
+  table still fails; the code, `paths`, what is staged and published are unchanged.
 
 - **Notebook: *Tag channels* fast mode keeps the strict page's draft** (the shadow model the
   review of #325 recommended). Unticking now restores the strict page by construction, no

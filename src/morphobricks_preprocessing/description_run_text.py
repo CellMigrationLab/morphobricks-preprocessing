@@ -121,7 +121,7 @@ def heterogeneous_issue(layouts: tuple[DeclaredLayout, ...]) -> ValidationIssue:
 
 
 PARTIAL_COVERAGE = "partial_channel_coverage"
-"""The run's warning naming each biological repeat that has a channel in only some acquisitions."""
+"""The run's warning naming each biological repeat with a channel in only some imaging units."""
 
 
 def coverage_issues(description: Description) -> list[ValidationIssue]:
@@ -130,7 +130,8 @@ def coverage_issues(description: Description) -> list[ValidationIssue]:
     Never a refusal: the table holds what was acquired (an absent channel is blank, never zero)
     and the coverage is recorded in the manifest. A brick asked to compare or normalize such a
     channel across the repeat refuses (``A_SCOPE_INCOMPLETE``) unless the user selects and
-    records the acquisitions that have it.
+    records the imaging units that have it. The warning counts imaging units, the refusal
+    images (issue #321).
     """
     partial = partial_repeats(channel_coverage(description))
     if not partial:
@@ -138,12 +139,12 @@ def coverage_issues(description: Description) -> list[ValidationIssue]:
     return [
         warning(
             PARTIAL_COVERAGE,
-            "Some biological repeats have a channel in only some of their acquisitions (partial "
+            "Some biological repeats have a channel in only some of their imaging units (partial "
             "presence). Their images are measured as acquired: the missing channel is blank in "
             "the histogram table, never zero.",
             partial,
             "No action needed for this run. Later analyses that pool such a channel over a "
             "whole repeat refuse it (A_SCOPE_INCOMPLETE) unless you choose to use only the "
-            "acquisitions that have it; that choice is recorded.",
+            "imaging units that have it; that choice is recorded.",
         )
     ]

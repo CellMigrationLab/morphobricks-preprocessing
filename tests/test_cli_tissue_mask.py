@@ -70,6 +70,8 @@ def test_an_unverified_identity_is_said_and_its_retry_refused(tmp_path, capsys, 
 
 
 def test_a_refusal_is_printed_and_exits_1_writing_nothing(tmp_path, capsys):
+    # Without scikit-image the run is refused for the missing extra first (tested below).
+    pytest.importorskip("skimage")
     run = rgb_run(tmp_path)
     before = tree(run.masks_root)
     args = ["tissue-mask", "--output", str(run.output_folder), "--to", "Nuclei"]

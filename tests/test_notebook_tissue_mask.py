@@ -29,6 +29,8 @@ IMAGE = f"{UNIT}/a.tif"
 
 
 def test_the_card_names_every_reason_its_button_is_disabled(tmp_path, monkeypatch):
+    # Without scikit-image the button stays disabled for the missing extra (checked at the end).
+    pytest.importorskip("skimage")
     card = cards.TissueMaskCard()
     children = list(card.card.children)
     assert children.index(card.blocker) == children.index(card.button) + 1  # beside it

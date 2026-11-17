@@ -1,7 +1,8 @@
 """With units of different image types the run reports the layout refusal alone (#245, #321).
 
 The Spec refuses an RGB unit next to a fluorescence unit (``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``,
-fixture v29), decided from the description "before any image is read" (Spec PR #49, P04(b)).
+fixture v29), decided from the description after the headers are read and bound, before any
+header check and before any pixel read (Spec PR #49, P04(b); issue #334).
 The run's checks end there (issue #321): no header check runs after it, so the axis review's
 ``inconsistent_mapping`` (a consequence of the layouts, issue #245) no longer follows it. Nothing
 refused before is accepted: the run still stops and writes no table.
@@ -51,6 +52,37 @@ def test_v29_reports_exactly_the_layout_refusal_without_axis_roles(tmp_path):
     publish(out)
     result = run_described(root, None, output_folder=out)
     assert [i.code for i in result.issues] == [LAYOUT]  # not axes_not_confirmed either
+
+
+def test_v29_reports_nothing_else_of_preflight_discovery_masks_or_exclusions(tmp_path):
+    """Issue #334: with units of different image types the layout refusal is the only issue.
+
+    Preflight still reads every header (``bind_headers=True``), but what it finds is not
+    reported: an unreadable ``.tif`` (``unreadable_tiff``), a masks folder that does not exist
+    (``masks_folder_not_found``) and an excluded path that does not exist (the warning
+    ``excluded_path_not_found``) all go unreported beside ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``.
+    """
+    root, out = mixed_experiment(tmp_path)
+    (root / "CTRL/rep1/fluorescence/broken.tif").write_bytes(b"not a tiff")
+    absent_masks, gone = tmp_path / "no_masks", "CTRL/rep1/gone.tif"
+    # The same inputs give those three issues to the preflight the run starts with.
+    found = {i.code for i in preflight(root, out, exclude=[gone], masks_folder=absent_masks).issues}
+    assert {"unreadable_tiff", "masks_folder_not_found", "excluded_path_not_found"} <= found
+    publish(out)
+    result = run_described(
+        root,
+        prefill_mapping("CYX"),
+        output_folder=out,
+        masks_folder=absent_masks,
+        exclude=[gone],
+    )
+    assert not result.written
+    (only,) = result.issues
+    assert only.code == LAYOUT
+    report = json.loads((out / REPORT_FILENAME).read_text(encoding="utf-8"))
+    assert report["status"] == "stopped"
+    assert [i["code"] for i in report["issues"]] == [LAYOUT]
+    assert only_the_report(out)
 
 
 def test_a_run_of_one_layout_keeps_the_advice_of_the_axis_review(tmp_path):

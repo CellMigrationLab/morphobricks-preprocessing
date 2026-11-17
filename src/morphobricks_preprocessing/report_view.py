@@ -202,6 +202,29 @@ def _work(data: Mapping) -> str:
     return out
 
 
+def _unreadable(data: Mapping) -> str:
+    """Return every failed plane of each unreadable image, each image folded (issue #334).
+
+    The ``unreadable_planes`` error names at most 20 failed planes per image and says the run
+    report lists them all: this is that list (``unreadable_planes`` of the report's data),
+    images in the report's order, planes in reading order.
+    """
+    unreadable = data.get("unreadable_planes") or {}
+    if not unreadable:
+        return ""
+    failures = sum(len(planes) for planes in unreadable.values())
+    line = (
+        f"{plural(failures, 'failed plane')} in {plural(len(unreadable), 'image')}; "
+        "each image lists every failed plane."
+    )
+    out = _heading("Unreadable planes") + f"<div>{_e(line)}</div>"
+    for path, planes in unreadable.items():
+        listed = "".join(f"<div>{_e(plane)}</div>" for plane in planes)
+        summary = f"{_e(path)} ({_e(plural(len(planes), 'failed plane'))})"
+        out += _fold(summary, f"<div class='mb-paths'>{listed}</div>")
+    return out
+
+
 def _issue(issue: Mapping) -> str:
     """Return one message folded behind its code and first words."""
     message = str(issue.get("message", ""))
@@ -245,6 +268,7 @@ def report_html(data: Mapping, text: str = "") -> str:
         _design(data),
         _masks(data),
         _work(data),
+        _unreadable(data),
         _checks(data),
     ]
     if text:
