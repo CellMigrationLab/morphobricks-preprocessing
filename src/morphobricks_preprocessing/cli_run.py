@@ -338,7 +338,7 @@ def _run_settings(run: argparse.ArgumentParser) -> None:
         type=parse_size,
         metavar="SIZE",
         help="with --workers auto: memory the run may use, e.g. 8GiB (an image that does not "
-        "fit stops the run before any image is read)",
+        "fit stops the run before any pixel is read)",
     )
     checks = run.add_argument_group(
         "intensity checks", "limits of the warnings printed after the run; the defaults suit most"

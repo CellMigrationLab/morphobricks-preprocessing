@@ -13,7 +13,7 @@ the calling thread, as before. ``workers="auto"`` takes, for the images that are
 
 and reads with the smaller. It is deliberately conservative: every image is counted as the
 largest one. An image whose estimate alone is over what ``max_ram`` leaves is refused with
-``image_over_max_ram`` before any image is read: the limit is never exceeded silently.
+``image_over_max_ram`` before any pixel is read: the limit is never exceeded silently.
 
 The number of workers is operational: it is in no row key, staging key, manifest or table,
 so the same images give byte-identical outputs with any value.
