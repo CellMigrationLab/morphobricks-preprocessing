@@ -16,7 +16,13 @@ import pytest
 import tifffile
 
 import morphobricks_preprocessing.run_inputs_mask as mask_reads
-from morphobricks_preprocessing import MaskRequest, ObjectsReadPlan, Request, RunInputsError
+from morphobricks_preprocessing import (
+    MaskRequest,
+    ObjectsReadPlan,
+    Request,
+    RunInputsError,
+    window_memory,
+)
 from morphobricks_preprocessing.masks.binary import label_binary, labelling_bytes
 from test_spec_binary_masks import APART, NUCLEI, _objects, _resolve, _v08
 
@@ -28,6 +34,10 @@ def _plan(tmp_path, nuclei, mask_id, policy):
     inputs, resolved = _resolve(out, _objects(policy, mask_id))
     (selection,) = resolved.require()
     return inputs, selection, found[0], masks
+
+
+HEADER = window_memory.header_bytes(1, 1)
+"""A window read's parsed header (one page of one strip; uncompressed: no codec state, #339)."""
 
 
 @pytest.mark.parametrize("dtype", [np.uint8, np.uint16, np.int32])
@@ -52,7 +62,7 @@ def test_an_instances_objects_read_counts_int32_bytes_whatever_the_stored_type(t
     assert (objects.dtype, objects.shape, objects.nbytes) == (plan.dtype, plan.shape, 4 * PIXELS)
     # The region read of the same mask still counts its stored bytes (pinned on main 37c583e).
     region = inputs.mask_window_plan(image, "nuclei", bounds=(0, 8, 0, 8))
-    expected = {np.uint8: 192, np.uint16: 384, np.int32: 768}[dtype]
+    expected = {np.uint8: 192, np.uint16: 384, np.int32: 768}[dtype] + HEADER
     assert (region.dtype, region.memory_estimate) == (np.dtype(dtype), expected)
 
 
@@ -70,7 +80,7 @@ def test_a_converted_binary_objects_read_adds_the_labelling_memory(tmp_path):
     assert plan.memory_estimate == PIXELS + 4 * PIXELS + work  # stored, int32, labelling
     # The same mask as a region: its stored uint8 bytes, unchanged.
     region = inputs.mask_window_plan(image, "tumor_region", bounds=(0, 8, 0, 8))
-    assert (region.dtype, region.memory_estimate) == (np.dtype(np.uint8), 192)
+    assert (region.dtype, region.memory_estimate) == (np.dtype(np.uint8), 192 + HEADER)
 
 
 def test_the_plan_reads_no_pixel_and_refuses_as_read_objects(tmp_path, monkeypatch):
