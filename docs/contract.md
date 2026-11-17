@@ -100,9 +100,10 @@ planes of an experiment use the same bin count. In a described run (a published
 `image_type`, and the notebook's folder check compares images inside each unit; units of
 different image types (RGB and fluorescence) are refused as `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`
 (kept at Stage 3: the owner enabled different channel lists, not mixed image types), not as
-`mixed_dtypes`. It is decided from the description alone and is then the run's only issue,
-error or warning (issues #321, #334): no header check runs after it, and nothing preflight found
-is reported beside it (discovery such as `unreadable_tiff`, the masks such as
+`mixed_dtypes`. It is decided from the description alone, after preflight has read and bound
+every header but before any header check and before any pixel read, and is then the run's only
+issue, error or warning (issues #321, #334): no header check runs after it, and nothing preflight
+found is reported beside it (discovery such as `unreadable_tiff`, the masks such as
 `masks_folder_not_found`, the exclusions such as the warning `excluded_path_not_found`, the
 conversion record, the lab-tool links' repeat codes). Only what stops a run before it holds the
 output folder (no published description, an output folder inside the experiment or the masks, a

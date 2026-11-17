@@ -1,7 +1,8 @@
 """With units of different image types the run reports the layout refusal alone (#245, #321).
 
 The Spec refuses an RGB unit next to a fluorescence unit (``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED``,
-fixture v29), decided from the description "before any image is read" (Spec PR #49, P04(b)).
+fixture v29), decided from the description after the headers are read and bound, before any
+header check and before any pixel read (Spec PR #49, P04(b); issue #334).
 The run's checks end there (issue #321): no header check runs after it, so the axis review's
 ``inconsistent_mapping`` (a consequence of the layouts, issue #245) no longer follows it. Nothing
 refused before is accepted: the run still stops and writes no table.

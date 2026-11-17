@@ -90,10 +90,12 @@ def load_description(output: Path) -> tuple[RunDescription | None, list[Validati
 def layout_refusal(found: RunDescription | None) -> ValidationIssue | None:
     """Return ``R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`` when the units declare different image types.
 
-    Decided from the description alone (Spec PR #49: P04(b) is decided "before any image is
-    read"), so the run ends its checks with this one refusal (issue #321): no header check
-    follows, whose findings would only be consequences of the layouts. None without a
-    description or with one image type.
+    Decided from the description alone, after preflight has read and bound every header
+    (``bind_headers=True``) but before any header check and before any pixel is read (issue
+    #334; Spec PR #49's "before any image is read" for P04(b) holds for pixels only). The run
+    ends its checks with this one refusal (issue #321): no header check follows, whose findings
+    would only be consequences of the layouts. None without a description or with one image
+    type.
     """
     if found is None:
         return None
