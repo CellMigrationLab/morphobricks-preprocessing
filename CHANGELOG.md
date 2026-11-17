@@ -123,8 +123,10 @@ v0.5.1: no run before v0.5.1 is read.)
   in <image>` for that image, and says that the run report lists every failed plane; each image
   is capped on its own. The run report keeps the whole list: `discovery_report.json` gains
   `unreadable_planes` (image: every failed plane), and `discovery_report.txt` lists them, the
-  same bytes for any number of workers. The whole table still fails; the code, `paths`, what is
-  staged and published are unchanged.
+  same bytes for any number of workers. The notebook's report view shows that list too (#334):
+  a part *Unreadable planes* before *Checks* says how many failed planes in how many images,
+  then one closed fold per image, in the report's order, with every failed plane. The whole
+  table still fails; the code, `paths`, what is staged and published are unchanged.
 
 - **Notebook: *Tag channels* fast mode keeps the strict page's draft** (the shadow model the
   review of #325 recommended). Unticking now restores the strict page by construction, no
