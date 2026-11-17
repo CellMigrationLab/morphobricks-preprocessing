@@ -131,6 +131,25 @@ v0.5.1: no run before v0.5.1 is read.)
   verified code identity is checked for the installed preprocessing and normalization; any
   skipped test fails the job. New test: the installed preprocessing is identified for real.
 
+- **`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` is the run's only refusal** (#321; owner decision of
+  17 November 2026). A run whose
+  published description declares units of different image types (Spec fixture `v29`) now stops
+  on that refusal before any header check, as Spec PR #49 states for P04(b) ("before any image
+  is read"; its wording is unchanged). It no longer adds the header checks' errors after it (an
+  `inconsistent_mapping` of the axis review, `axes_not_confirmed`, or a unit's own
+  `mixed_dtypes`), nor the advice "listed first" that #245 gave them. The run still stops and
+  writes only its report; a description of one image type is checked as before. The notebook's
+  *Check and save* screen is unchanged.
+
+- **`unreadable_planes` names at most 20 failed planes per image** (owner decision of 17
+  November 2026; Spec ADR 0003 HV3, #325). The message names each image's first 20 failed
+  planes in the same order as before (images sorted, planes in reading order), then `and N more
+  in <image>` for that image, and says that the run report lists every failed plane; each image
+  is capped on its own. The run report keeps the whole list: `discovery_report.json` gains
+  `unreadable_planes` (image: every failed plane), and `discovery_report.txt` lists them, the
+  same bytes for any number of workers. The whole table still fails; the code, `paths`, what is
+  staged and published are unchanged.
+
 - **Notebook: *Tag channels* fast mode keeps the strict page's draft** (the shadow model the
   review of #325 recommended). Unticking now restores the strict page by construction, no
   longer by the tracked differences of five earlier fixes: `given`, `before`, `units` and

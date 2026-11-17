@@ -15,6 +15,7 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Literal
 
@@ -25,7 +26,6 @@ from morphobricks_normalization.ranges import HistogramSettings
 from ..axes import AxisMapping
 from ..axis_check import ConfirmedAxes
 from ..design import DESIGN_FILENAME, write_experiment_design
-from ..design_derive import derive_design
 from ..discovery import check_output_folder, default_output_folder
 from ..discovery_report import (
     REPORT_FILENAME,
@@ -36,7 +36,7 @@ from ..discovery_report import (
     build_report,
 )
 from ..intensity import IntensityReport, check_intensities
-from ..lab_links import LabLinks, repeat_code_issues
+from ..lab_links import LabLinks
 from ..manifest import (
     MANIFEST_FILENAME,
     RunManifest,
@@ -62,9 +62,9 @@ from .arguments import check_arguments as _check_arguments
 from .arguments import masks_argument as _masks_argument
 from .description_run import (
     RunDescription,
-    described_checks,
     load_description,
     manifest_entry,
+    run_checks,
     unit_entries,
 )
 from .generation import staged_generation
@@ -272,12 +272,9 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
         bind_headers=True,
     )
     loaded = load_description(output)
-    # The design is the description's (experiment-v1 section 11), never a file read back.
-    design = None if loaded[0] is None else derive_design(loaded[0].description)
-    checked = header_checks(pre, inputs, design, options.memory_limit)
-    checked, described = described_checks(output, pre, checked, loaded)
     links = options.lab_links  # provenance only (experiment-v1 9.3): checked, never a key
-    checked.issues.extend(repeat_code_issues(links, described and described.description))
+    header = partial(header_checks, pre, inputs, memory_limit=options.memory_limit)
+    checked, described = run_checks(output, pre, loaded, header, links)
     if checked.review is not None:
         pre, absent = fit_calibration(pre, checked.review)
         checked.issues.extend(absent)
