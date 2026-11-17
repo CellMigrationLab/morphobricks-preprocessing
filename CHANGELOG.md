@@ -241,6 +241,13 @@ v0.5.1: no run before v0.5.1 is read.)
   code; the `run.workers` docstring, the notebook's help, the `--max-ram` help, the user guide
   and the contract's Workers row now say "before any pixel is read".
 
+### Corrections to the contract
+
+- **`different_channel_counts` is found before any pixel is read.** The contract's Channel
+  counts row said "found before any image is read". It is found from the headers (the folder
+  check, and the axis review with the confirmed roles), which are read; no pixel is. Nothing
+  changed in the code; the row now says "found from the headers before any pixel is read".
+
 ## v0.6.1 (16 November 2026)
 
 A patch release: the fixes of an external audit of v0.6.0 (#314) and the notebook's RGB header
