@@ -12,8 +12,11 @@ with a hash still has it; (4) every ``.py`` file and extension module (``.so``, 
 under the distribution's import packages, ``__pycache__`` excepted, is in ``RECORD`` with a hash;
 (5) every imported module of those packages has a ``__file__`` whose real path is that of a
 hashed ``RECORD`` entry, so a source tree or another installation earlier on ``sys.path`` is
-never taken for this one. A version or a commit alone is never an identity: two builds of one
-commit with different ``RECORD`` bytes are two identities.
+never taken for this one. A ``RECORD`` that places no import package at all (an install whose
+code is reached through a ``.pth`` path, as an editable install whose installer wrote no PEP 610
+``dir_info``) is never verified, reason ``"no import package in RECORD"``: checks (4) and (5)
+would otherwise hold vacuously for code run from a source tree. A version or a commit alone is
+never an identity: two builds of one commit with different ``RECORD`` bytes are two identities.
 """
 
 from __future__ import annotations
@@ -120,6 +123,8 @@ def _first_failure(
         hashed[os.path.realpath(location)] = item.as_posix()
     listed = {os.path.realpath(dist.locate_file(item)) for item in files}
     packages = _import_packages(dist, files)
+    if not packages:  # checks (4) and (5) would hold for no code at all (a .pth install)
+        return "no import package in RECORD"
     for folder in packages:
         for path in sorted(folder.rglob("*")):
             if "__pycache__" in path.parts or path.suffix not in EXECUTABLE_SUFFIXES:

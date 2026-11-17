@@ -625,6 +625,10 @@ Where the design left a choice, I1 chose as follows (each tested):
   collisions are refused without reading; the digests are compared after it.
 - **`pixel_size`** is `{"X": {"value", "unit", "source"}, "Y": {...}}` from
   `RunInputs.pixel_sizes`, or null when neither has a value.
+- **A `RECORD` that places no import package is never verified** (reason `"no import package
+  in RECORD"`; found in the independent review of #323): an editable install whose installer
+  wrote no PEP 610 `dir_info` lists only a `.pth` file in `RECORD`, so checks 4 and 5 would hold
+  for no code at all while the imported modules run from the source tree.
 - **The preview** needs no masks folder and no output mask ID.
 - **The normalization pin stays v0.7.0** (`c6a9f9d`): the stable-API documentation of P2
   (normalization #108, merged at `30992e9`) is in no release yet, and `optical_density.py`,

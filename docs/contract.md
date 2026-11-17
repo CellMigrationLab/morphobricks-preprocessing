@@ -1064,9 +1064,9 @@ recorded override item, or null), `pixel_size` (the recorded X and Y size, unit 
 null; information only), `fractions` (`kept`, `nuclei`, `red_cells`, `background` of all pixels,
 and `od_floored`), `helper` `morphobricks_preprocessing.RunInputs.he_tissue_mask`,
 `helper_version`. A code identity is verified only for a non-editable install whose `RECORD` is
-readable (its exact bytes hashed), every hashed file unchanged, every `.py` or extension module
-of its import packages listed with a hash, and every imported module of them loaded from a
-hashed `RECORD` entry; otherwise `verified` is false and `reason` names the first failed check.
+readable (its exact bytes hashed), every hashed file unchanged, at least one import package
+placed by its `RECORD`, every `.py` or extension module of its import packages listed with a
+hash, and every imported module of them loaded from a hashed `RECORD` entry; otherwise `verified` is false and `reason` names the first failed check.
 
 **Retry (BM15's own comparator).** An existing output is the same computation, and the call is a
 no-op (`published` False), only when both lines are `reusable`, they are equal in every key

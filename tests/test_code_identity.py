@@ -15,6 +15,7 @@ import importlib
 import json
 import sys
 from importlib import metadata
+from types import SimpleNamespace
 
 import pytest
 
@@ -111,6 +112,28 @@ def test_a_module_from_a_source_tree_earlier_on_the_path_is_not_verified(tmp_pat
         )
     finally:
         sys.modules.pop("fakepkg", None)
+
+
+def test_an_install_reached_through_a_pth_path_without_pep610_is_not_verified(tmp_path):
+    # An editable install whose installer wrote no direct_url.json: RECORD lists only a .pth
+    # file pointing at a source tree, so no import package is checked (review of #323).
+    tree = tmp_path / "tree"
+    (tree / "fakepkg").mkdir(parents=True)
+    (tree / "fakepkg" / "__init__.py").write_bytes(b"X = 1\n")
+    site = tmp_path / "site"
+    dist = install(site, {"_fakepkg.pth": f"{tree}\n".encode()})
+    (site / "fakepkg-1.0.dist-info" / "direct_url.json").unlink()
+    record = site / "fakepkg-1.0.dist-info" / "RECORD"
+    rows = [r for r in record.read_text().splitlines() if "direct_url" not in r]
+    record.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    modules = {"fakepkg": SimpleNamespace(__file__=str(tree / "fakepkg" / "__init__.py"))}
+    found = code_identity(dist, modules)
+    assert (found["verified"], found["reason"], found["vcs_commit"]) == (
+        False,
+        "no import package in RECORD",
+        None,
+    )
+    assert found["record_sha256"] == hashlib.sha256(record.read_bytes()).hexdigest()
 
 
 def test_two_builds_of_one_commit_are_two_identities(tmp_path):
