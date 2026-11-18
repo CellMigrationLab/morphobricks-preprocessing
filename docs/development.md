@@ -101,6 +101,17 @@ is pinned to the release in `RELEASE_TAG` (plan §12 question 58);
 - Every acceptance check in the plan has a test.
 - A bug fix comes with a test that fails without it.
 
+## Benchmarks
+
+`tools/benchmark_run_workers.py` times whole runs with 1, 2, 4 and `auto` workers; its
+docstring is the protocol. A performance claim needs an acceptance run (at least 10 rounds; the
+default is the smallest multiple of the configurations from 10, 12 for `1 2 4 auto`, so every
+counterbalancing block is complete; `--quick` is a smoke test, never a result), the counterbalanced seeded order (the default,
+recorded with its seed), the speed-up paired by round with its spread, the peak RSS
+distribution, CPUs pinned with `--cpus` (`taskset`) where available, the load average
+recorded in the report quoted with the numbers, and identical output digests in every run
+(the tool exits 1 otherwise). `--phases` times the calling thread's steps of a run.
+
 ## Spec conformance tests
 
 The experiment-description reader is tested against the fixtures of
