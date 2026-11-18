@@ -29,8 +29,11 @@ or 3.x; OME-NGFF 0.5 (Zarr format 3) needs zarr 3, which needs Python 3.11 or ne
 
 from __future__ import annotations
 
+import asyncio
 import os
-from collections.abc import Iterable
+import threading
+from collections.abc import Coroutine, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -416,9 +419,74 @@ def _no_axes_problem(version: str) -> str:
 
 
 def read_selection(array: Any, selection: tuple) -> np.ndarray:  # noqa: ANN401
-    """Read part of a zarr array as a NumPy array in native byte order."""
-    data = np.asarray(array[selection])
+    """Read part of a zarr array as a NumPy array in native byte order.
+
+    A zarr 3 array is read with threads of its own that have all ended when this returns
+    (:func:`_read_with_own_threads`), so no buffer of the read outlives it (#354). The values
+    are zarr's: the same coroutine reads the same chunks through the same codecs. zarr 2 reads
+    in the calling thread.
+    """
+    if _zarr_major() >= 3:
+        raw = _read_with_own_threads(array.async_array.getitem(selection))
+    else:
+        raw = array[selection]
+    data = np.asarray(raw)
     return data.astype(canonical_dtype(data.dtype.newbyteorder("=")), copy=False)
+
+
+def _run_on_own_loop(coroutine: Coroutine[object, object, object]) -> object:
+    """Run ``coroutine`` on a new event loop of this thread with a pool of its own; end both.
+
+    The pool has as many workers as zarr's own (its ``threading.max_workers``, or Python's
+    default), and its threads are joined before this returns.
+    """
+    workers = _zarr().config.get("threading.max_workers", None)
+    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="morphobricks-zarr-read")
+    loop = asyncio.new_event_loop()
+    try:
+        loop.set_default_executor(pool)
+        return loop.run_until_complete(coroutine)
+    finally:
+        loop.close()
+        pool.shutdown(wait=True)
+
+
+def _read_with_own_threads(coroutine: Coroutine[object, object, object]) -> object:
+    """Run a zarr 3 read coroutine so that every thread it used has ended when it returns (#354).
+
+    ``Array.__getitem__`` runs the read on zarr's event-loop thread, and the store's reads and
+    the codecs' decodes in a pool of worker threads shared by every read
+    (``asyncio.to_thread``). A worker still refers to the call it ran (its arguments and its
+    result: a chunk's compressed bytes, its decoded bytes) after the awaiting coroutine has
+    gone on, until the worker takes its next call. When the CPU is busy a worker can be held
+    there while the reads go on, so buffers of a read that has returned are still alive while
+    the next one decodes; how many depends on the scheduler and the pool's size, so no
+    estimate made before a read bounds them. Here the read runs on a private event loop in
+    this thread with a private pool, and the pool's threads are joined before the result is
+    returned: while the read runs, every buffer alive belongs to its own chunks; once it
+    returns, none is. Chunks are still fetched and decoded concurrently, as zarr does (up to
+    its ``async.concurrency``). In a thread whose own event loop is running (a notebook), the
+    private loop runs in a new thread, joined before the result is returned.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return _run_on_own_loop(coroutine)
+    done: list[object] = []
+    failed: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            done.append(_run_on_own_loop(coroutine))
+        except BaseException as exc:  # noqa: BLE001  (re-raised in the calling thread)
+            failed.append(exc)
+
+    thread = threading.Thread(target=run, name="morphobricks-zarr-read")
+    thread.start()
+    thread.join()
+    if failed:
+        raise failed[0]
+    return done[0]
 
 
 # zarr 2 / 3 ---------------------------------------------------------------------------
