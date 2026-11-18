@@ -43,8 +43,13 @@ v0.5.1: no run before v0.5.1 is read.)
   exceed it over the matrix of `tests/test_window_memory.py` (TIFF uncompressed, deflate with and
   without a predictor and LZMA; OME-Zarr 0.4 and 0.5; uncached and cached). Codecs only
   imagecodecs decodes, the plane block reader and `objects_read_plan` are not covered (#342).
-  Estimates are larger, so a window close to the memory limit may now be refused before any
-  read; the windows read are unchanged, bitwise.
+  Estimates are larger: `window_plan`, a reader's `window_plan` and `RunInputs.mask_window_plan`
+  (a mask window goes through the same estimate: it now also counts the parsed header, 256 KiB
+  plus 2 KiB a page and 80 B a piece, and for a compressed mask the decode's buffers and the
+  codec's state), so a window or a mask window very close to its memory limit may now be refused
+  before any pixel is read, where v0.7.0 read it. `RunInputs.objects_read_plan` is unchanged (it
+  is computed from the mask's shape and stored type, not through the window estimate; its tests
+  pin the same figures). The windows and masks read are unchanged, bitwise.
 - **`window_reader.cache_plan` and `RunInputs.window_cache_plan`** (review of #339, finding 2):
   the cache a grid of windows read row by row with margins needs to decode each piece once,
   from the header: `ceil((window + 2 × margin) / piece) + 1` rows of pieces across the whole
