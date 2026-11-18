@@ -8,7 +8,10 @@ named. Each refused codec is written for real when its encoder is available (ima
 not a dependency: only that codec's test is skipped without it), and the compression tag of an
 uncompressed file is also rewritten to each refused code, so the refusals are tested on every
 machine. The allowed codecs read bitwise as before, and whole planes read within the memory
-limit are not refused.
+limit are not refused. LZW and JPEG (8-bit greyscale, RGB or YCbCr subsampled at most 2 × 2) are
+allowed since their memory is measured (``tests/test_codec_memory.py``): they read bitwise as
+tifffile reads them through windows, every channel of a plane and blocks; a JPEG page in any
+other form, and old-style JPEG, are still refused.
 """
 
 import numpy as np
@@ -19,6 +22,7 @@ from morphobricks_preprocessing import (
     check_planes,
     codec_bounds,
     iter_planes,
+    plane_layout,
     prefill_mapping,
     read_plane,
     tiff_pieces,
@@ -37,8 +41,6 @@ H, W, TILE = 64, 96, 32
 BLOCK_LIMIT = 2**10  # far below a plane: blocks are needed
 RGB = {"photometric": "rgb", "planarconfig": "contig"}
 REFUSED = {  # how each refused codec is written, and how its refusal names it
-    "lzw": ({"compression": "lzw"}, "LZW compression (TIFF code 5)"),
-    "jpeg": ({"compression": "jpeg"}, "JPEG compression (TIFF code 7)"),
     "zstd": ({"compression": "zstd"}, "ZSTD compression (TIFF code 50000)"),
     "webp": ({"compression": "webp"}, "WEBP compression (TIFF code 50001)"),
     "jpeg2000": ({"compression": "jpeg2000"}, "JPEG2000 compression (TIFF code 34712)"),
@@ -52,7 +54,7 @@ REFUSED = {  # how each refused codec is written, and how its refusal names it
     ),
 }
 FLOAT_PREDICTOR = "ADOBE_DEFLATE compression (TIFF code 8) with the FLOATINGPOINT predictor (3)"
-PATCHED = {5: "LZW", 6: "OJPEG", 7: "JPEG", 32773: "PACKBITS", 34712: "JPEG2000", 50000: "ZSTD"}
+PATCHED = {6: "OJPEG", 32773: "PACKBITS", 34712: "JPEG2000", 50000: "ZSTD"}
 PATCHED |= {50001: "WEBP", 34887: "LERC", 34933: "PNG", 50002: "JPEGXL", 12345: "an unknown"}
 
 
@@ -61,10 +63,11 @@ def expected(name, codec, reading, also=""):
     return (
         f"{name} cannot be read {reading}: it is stored with {codec}, whose decoding memory "
         "has not been measured, so the memory of the read cannot be planned before any pixel "
-        "is read. Only uncompressed, deflate (zlib, also with the horizontal predictor) and "
-        "LZMA TIFF images are read this way (code compression_not_bounded). Save the image "
-        "again as a TIFF that is uncompressed or compressed with deflate (zlib) or LZMA "
-        f"(tiled, for a large image), or as OME-Zarr.{also}"
+        "is read. Only uncompressed, deflate (zlib) and LZW (also with the horizontal "
+        "predictor), LZMA and 8-bit greyscale, RGB or YCbCr JPEG TIFF images are read this way "
+        "(code compression_not_bounded). Save the image again as a TIFF that is uncompressed "
+        "or compressed with deflate (zlib), LZW or LZMA (tiled, for a large image), or as "
+        f"OME-Zarr.{also}"
     )
 
 
@@ -128,6 +131,9 @@ def _assert_refused(path, axes, codec, channels):
 def test_the_allow_list_is_the_measured_matrix():
     assert set(codec_bounds.TIFF_BOUNDED) == {
         (1, 1),
+        (5, 1),
+        (5, 2),
+        (7, 1),
         (8, 1),
         (8, 2),
         (32946, 1),
@@ -243,12 +249,145 @@ def test_whole_planes_within_the_limit_are_not_refused(tmp_path):
     data = _rgb()[..., 0]
     path = tmp_path / "l.tif"
     try:
-        tifffile.imwrite(path, data, compression="lzw", metadata={"axes": "YX"})
+        tifffile.imwrite(path, data, compression="packbits", metadata={"axes": "YX"})
         tifffile.imread(path)
     except (ImportError, ValueError, KeyError, NotImplementedError, RuntimeError) as exc:
-        pytest.skip(f"no LZW codec in this environment: {exc}")
+        pytest.skip(f"no PackBits codec in this environment: {exc}")
     mapping = prefill_mapping("YX")
     np.testing.assert_array_equal(read_plane(path, mapping).pixels, data)
     [plane] = iter_planes(path, mapping)
     np.testing.assert_array_equal(plane.pixels, data)
     assert check_planes(tmp_path, {"l.tif": mapping}) == []
+
+
+# LZW and JPEG: measured, read bitwise as tifffile reads them (#356) -------------------------
+
+NEW = {
+    "lzw": {"compression": "lzw"},
+    "lzw predictor": {"compression": "lzw", "predictor": True},
+    "jpeg": {"compression": "jpeg"},
+}
+
+
+def _bitwise(path, axes, channels, plane_count=1):
+    """Windows, a cached reader, every channel of a plane and blocks equal tifffile's pixels."""
+    mapping = prefill_mapping(axes)
+    stored = tifffile.imread(path)
+    planes = stored if plane_count > 1 else stored[None]  # (C, Y, X) or (1, Y, X[, S])
+    if axes.endswith("S"):
+        planes = np.moveaxis(planes[0], -1, 0)
+    bounds = (5, 60, 7, 90)
+    window = read_window(path, mapping, bounds=bounds, channels=channels)
+    np.testing.assert_array_equal(window, planes[channels, 5:60, 7:90])
+    with WindowReader(path, mapping, cache_bytes=2**22) as reader:
+        np.testing.assert_array_equal(reader.read_window(bounds=bounds, channels=channels), window)
+    np.testing.assert_array_equal(read_xyc_plane(path, mapping), planes)
+    smallest = plane_layout(path, mapping, memory_limit=1).block_memory_estimate
+    for c, plane in enumerate(iter_planes(path, mapping, memory_limit=smallest)):
+        assert plane.in_blocks
+        whole = np.empty((H, W), dtype=planes.dtype)
+        for block in plane.blocks():
+            rows, cols = block.pixels.shape
+            whole[block.y : block.y + rows, block.x : block.x + cols] = block.pixels
+        np.testing.assert_array_equal(whole, planes[c])
+
+
+@pytest.mark.parametrize("name", sorted(NEW))
+def test_lzw_and_jpeg_planes_read_bitwise_through_every_bounded_reader(tmp_path, name):
+    pytest.importorskip("imagecodecs")
+    data = np.random.default_rng(5).integers(0, 2**8, (2, H, W), dtype=np.uint8)
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(
+        path,
+        data,
+        tile=(TILE, TILE),
+        photometric="minisblack",
+        metadata={"axes": "CYX"},
+        **NEW[name],
+    )
+    if name.startswith("lzw"):
+        np.testing.assert_array_equal(tifffile.imread(path), data)  # lossless
+    _bitwise(path, "CYX", [1, 0], plane_count=2)
+
+
+@pytest.mark.parametrize("kind", ["ycc420", "ycc422", "rgb"])
+@pytest.mark.parametrize("storage", [{"tile": (TILE, TILE)}, {"rows": 16}], ids=["tiles", "strips"])
+def test_jpeg_rgb_reads_bitwise_with_its_tables_in_the_header(tmp_path, kind, storage):
+    from codec_images import write_jpeg
+
+    path = write_jpeg(tmp_path / "rgb.tif", _rgb(), kind, **storage)
+    with tifffile.TiffFile(path) as tif:
+        assert tif.pages[0].jpegtables is not None and tif.pages[0].compression == 7
+    _bitwise(path, "YXS", [2, 0, 1])
+
+
+def test_a_jpeg_piece_declaring_more_pixels_is_refused_before_it_is_decoded(tmp_path, monkeypatch):
+    # libjpeg sizes its buffers from the stream, not from the TIFF header: a stream declaring
+    # a larger image than its tile is refused before libjpeg sees it (windows and blocks).
+    pytest.importorskip("imagecodecs")
+    import imagecodecs
+
+    from morphobricks_preprocessing.plane_errors import PlaneReadError
+
+    big = imagecodecs.jpeg8_encode(np.zeros((TILE * 4, TILE), np.uint8), level=90)
+    pieces = [bytes(big)] * ((H // TILE) * -(-W // TILE))
+    path = tmp_path / "big.tif"
+    tifffile.imwrite(
+        path,
+        iter(pieces),
+        shape=(H, W),
+        dtype=np.uint8,
+        tile=(TILE, TILE),
+        compression=7,
+        photometric="minisblack",
+    )
+    decoded = []
+    monkeypatch.setattr(tifffile.TiffPage, "decode", property(lambda self: decoded.append(1)))
+    with pytest.raises(PlaneReadError, match=r"declares 8-bit samples, 128 × 32 pixels"):
+        read_window(path, prefill_mapping("YX"), bounds=(0, 8, 0, 8), channels=[0])
+    assert decoded == [1]  # the decoder was fetched, never called
+
+
+JPEG_FORMS = {  # a JPEG page in a form whose memory is not measured, and its refusal
+    "separate planes": (
+        {"photometric": "rgb", "planarconfig": "separate", "compression": "jpeg"},
+        "SYX",
+        "with its colour samples stored in separate planes",
+    ),
+    "subsampling 4 x 1": (
+        {"photometric": "rgb", "compression": "jpeg", "subsampling": (4, 1)},
+        "YXS",
+        "with YCbCr subsampling (4, 1)",
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(JPEG_FORMS))
+def test_a_jpeg_page_in_an_unmeasured_form_is_refused(tmp_path, form, monkeypatch):
+    kwargs, axes, how = JPEG_FORMS[form]
+    data = _rgb() if axes == "YXS" else np.moveaxis(_rgb(), -1, 0).copy()
+    path = tmp_path / "a.tif"
+    try:
+        tifffile.imwrite(path, data, tile=(TILE, TILE), metadata=None, **kwargs)
+    except (ImportError, ValueError, KeyError, NotImplementedError, RuntimeError) as exc:
+        pytest.skip(f"no JPEG encoder for {kwargs} in this environment: {exc}")
+    codec = f"JPEG compression (TIFF code 7) {how}"
+    with tifffile.TiffFile(path) as tif:
+        assert codec_bounds.unbounded(tif.pages[0]) == codec
+    _refused_without_pixels(monkeypatch, path, axes, codec, [0, 1, 2])
+
+
+@pytest.mark.parametrize(
+    ("tag", "value", "how"),
+    [
+        ("BitsPerSample", 12, "of 12-bit samples"),
+        ("PhotometricInterpretation", 0, "of 1 sample(s) per pixel in MINISWHITE"),
+    ],
+)
+def test_a_jpeg_header_of_an_unmeasured_form_is_refused(tmp_path, tag, value, how, monkeypatch):
+    path = tmp_path / "p.tif"
+    tifffile.imwrite(path, _rgb()[..., 0], tile=(TILE, TILE), metadata={"axes": "YX"})
+    with tifffile.TiffFile(path, mode="r+b") as tif:
+        tif.pages[0].tags["Compression"].overwrite(7)
+        tif.pages[0].tags[tag].overwrite(value)
+    _refused_without_pixels(monkeypatch, path, "YX", f"JPEG compression (TIFF code 7) {how}", [0])

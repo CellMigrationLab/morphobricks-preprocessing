@@ -21,8 +21,19 @@ peak is measured in a fresh process against the estimate: ``tests/test_window_me
 uncached and cached) and ``tests/test_plane_channels.py`` (every channel of a plane, peak
 ``tracemalloc`` and RSS). TIFF code 32946 (``DEFLATE``) is decoded by the very function that
 decodes code 8 (``ADOBE_DEFLATE``, what tifffile writes for ``compression="zlib"``), which a
-test asserts. The predictor measured is the horizontal one (2), with deflate only; the
-floating-point predictor (3) needs imagecodecs to encode and is not in the matrix.
+test asserts. The horizontal predictor (2) is measured with deflate and LZW; the
+floating-point predictor (3) is not in the matrix.
+
+LZW and JPEG are decoded by imagecodecs, in C: ``tests/test_codec_memory.py`` measures their
+reads' peak resident memory (RSS) in a fresh process, and libjpeg's and LZW's own memory alone
+as the peak of the C heap during a decode (``tests/codec_peaks.py``), against the terms of
+:mod:`.window_memory`: windows (uncached and cached), every channel of a plane with one and with
+several decoding threads, and blocks; ``uint8`` and ``uint16`` LZW with and without the
+horizontal predictor; 8-bit JPEG in tiles of 256 and 512 and in strips, greyscale, RGB and
+YCbCr 4:2:0 and 4:2:2, with the JPEG tables in the TIFF header, baseline and progressive,
+compressible and noisy. A JPEG page is read only in that measured form
+(:func:`jpeg_unmeasured`): 8-bit samples, one (greyscale) or three (RGB or YCbCr) interleaved
+samples, subsampled at most 2 × 2, and no NDPI header. Old-style JPEG (code 6) is not measured.
 
 :data:`ZARR_MEASURED` lists the OME-Zarr codecs the same tests measure: the default
 compressors of the zarr versions the tests run under (``tests/zarr_tree.write_ngff``). It is
@@ -46,6 +57,9 @@ from .plane_errors import CompressionNotBoundedError
 
 TIFF_BOUNDED: dict[tuple[int, int], str] = {
     (1, 1): "uncompressed",
+    (5, 1): "LZW (imagecodecs)",
+    (5, 2): "LZW (imagecodecs) with the horizontal predictor",
+    (7, 1): "JPEG (libjpeg-turbo through imagecodecs), 8-bit, in the form jpeg_unmeasured names",
     (8, 1): "deflate (zlib, TIFF code 8)",
     (8, 2): "deflate (zlib, TIFF code 8) with the horizontal predictor",
     (32946, 1): "deflate (TIFF code 32946, the same decoder as code 8)",
@@ -67,9 +81,18 @@ ZARR_MEASURED: dict[str, str] = {
 """OME-Zarr codecs measured by the same tests (the record of the evidence; not enforced)."""
 
 FIX = (
-    "Save the image again as a TIFF that is uncompressed or compressed with deflate (zlib) or "
-    "LZMA (tiled, for a large image), or as OME-Zarr."
+    "Save the image again as a TIFF that is uncompressed or compressed with deflate (zlib), LZW "
+    "or LZMA (tiled, for a large image), or as OME-Zarr."
 )
+READ = (
+    "Only uncompressed, deflate (zlib) and LZW (also with the horizontal predictor), LZMA and "
+    "8-bit greyscale, RGB or YCbCr JPEG TIFF images are read this way"
+)
+"""Which TIFF images the bounded readers read, named in every refusal."""
+MINISBLACK, RGB, YCBCR = 1, 2, 6
+"""The photometric interpretations of the JPEG pages measured."""
+JPEG_SUBSAMPLING = {None, (1, 1), (2, 1), (2, 2)}
+"""The YCbCr subsamplings of the JPEG pages measured (None: not subsampled)."""
 """What to do with a refused image, named in every refusal."""
 
 
@@ -99,19 +122,47 @@ def describe(compression: int, predictor: int) -> str:
     return text
 
 
-def refusal_text(
-    path: str | os.PathLike, codec: tuple[int, int], reading: str, also: str = ""
-) -> str:
-    """Word the refusal of an image whose codec has no measured bound, read as ``reading``.
+def jpeg_unmeasured(page: tifffile.TiffPage | tifffile.TiffFrame) -> str | None:
+    """Return how a JPEG page differs from the JPEG pages measured, or None if it does not."""
+    key = page.keyframe
+    samples, photometric = int(key.samplesperpixel), int(key.photometric)
+    if key.jpegheader is not None:
+        return "with an NDPI JPEG header"
+    if int(key.bitspersample) != 8:
+        return f"of {int(key.bitspersample)}-bit samples"
+    if (samples, photometric) not in {(1, MINISBLACK), (3, RGB), (3, YCBCR)}:
+        try:
+            space = tifffile.PHOTOMETRIC(photometric).name
+        except ValueError:
+            space = f"photometric {photometric}"
+        return f"of {samples} sample(s) per pixel in {space}"
+    if samples > 1 and int(key.planarconfig) != 1:
+        return "with its colour samples stored in separate planes"
+    subsampling = key.subsampling if photometric == YCBCR else None
+    if subsampling not in JPEG_SUBSAMPLING:
+        return f"with YCbCr subsampling {subsampling}"
+    return None
+
+
+def unbounded(page: tifffile.TiffPage | tifffile.TiffFrame) -> str | None:
+    """Return the description of a page's codec when its memory is not measured, else None."""
+    codec = tiff_codec(page)
+    if not is_bounded(*codec):
+        return describe(*codec)
+    if codec[0] == 7 and (unmeasured := jpeg_unmeasured(page)) is not None:
+        return f"{describe(*codec)} {unmeasured}"
+    return None
+
+
+def refusal_text(path: str | os.PathLike, codec: str, reading: str, also: str = "") -> str:
+    """Word the refusal of an image stored with ``codec`` (:func:`unbounded`), read as ``reading``.
 
     ``also`` adds another way out after the fix (a sentence, or nothing).
     """
     return (
-        f"{Path(path).name} cannot be read {reading}: it is stored with "
-        f"{describe(*codec)}, whose decoding memory has not been measured, so the memory of "
-        "the read cannot be planned before any pixel is read. Only uncompressed, deflate "
-        "(zlib, also with the horizontal predictor) and LZMA TIFF images are read this way "
-        f"(code compression_not_bounded). {FIX}{also}"
+        f"{Path(path).name} cannot be read {reading}: it is stored with {codec}, whose decoding "
+        "memory has not been measured, so the memory of the read cannot be planned before any "
+        f"pixel is read. {READ} (code compression_not_bounded). {FIX}{also}"
     )
 
 
@@ -121,7 +172,7 @@ def check_tiff_codec(
     reading: str,
     error: type[CompressionNotBoundedError] = CompressionNotBoundedError,
 ) -> None:
-    """Refuse, from the headers only, pages stored with a codec not in :data:`TIFF_BOUNDED`.
+    """Refuse, from the headers only, pages stored with a codec whose memory is not measured.
 
     Raises
     ------
@@ -129,6 +180,6 @@ def check_tiff_codec(
         (or ``error``) naming the codec and the fix, before any pixel is read.
     """
     for page in pages:
-        codec = tiff_codec(page)
-        if not is_bounded(*codec):
+        codec = unbounded(page)
+        if codec is not None:
             raise error(refusal_text(path, codec, reading))

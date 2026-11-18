@@ -49,6 +49,9 @@ dev = [
     # Running the notebook file in a real kernel (tests/test_notebook_file.py).
     "nbclient>=0.7",
     "ipykernel>=6",
+    # The LZW and JPEG decoders whose memory tests/test_codec_memory.py measures (#356); not a
+    # runtime dependency: without it tifffile cannot decode those TIFFs at all.
+    "imagecodecs>=2024.12.30",
 ]
 
 [project.scripts]
