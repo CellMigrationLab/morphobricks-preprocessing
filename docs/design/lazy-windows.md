@@ -277,25 +277,33 @@ with inputs.window_reader(fov, cache_bytes=cache_bytes) as reader:
   note `(window i, bounds (...), in a window map)`, after the results before it; errors of later
   windows are dropped. An error, `close()`, leaving the `with` block or dropping the iterator
   cancels the windows not started and waits for the running ones (`ThreadPoolExecutor.shutdown`
-  with `cancel_futures`): no thread is left. The reader is never closed here.
+  with `cancel_futures`): no thread is left. Dropping is immediate, by reference count: the
+  results generator holds no reference to the map, so no cycle waits for the collector (review
+  of #346, finding 1), and a pool thread that closes the map does not wait for itself. The
+  reader is never closed here.
 - **Tests** (`tests/test_window_map.py`): results identical, bitwise those of `read_window`, for
   1, 2, 4 and 8 workers on zlib-tiled and zlib-striped TIFF, uncompressed strips and OME-Zarr,
-  over random windows that overlap and repeat; order when the earliest windows finish last; at
-  most `max_in_flight` windows read ahead of a slow consumer; a plan over the budget refused with
-  no window read and no tile decoded; the first error in window order; an early stop, an
-  abandoned map and a reader closed meanwhile leave no thread and a consistent reader.
+  over random windows that overlap and repeat; order when the earliest windows finish last
+  (synchronised by events, not sleeps); exactly `max_in_flight` windows read ahead of a slow
+  consumer, never more; window reads and arrays alive never over `max_in_flight + 1`
+  (`weakref.finalize`); a plan over the budget refused with no window read and no tile decoded;
+  a `t` or `z` outside the file refused when planned; the first error in window order; an early
+  stop, a map dropped or left by `break` with the collector disabled, a map closed from its own
+  thread and a reader closed meanwhile leave no thread and a consistent reader.
 - **Measured** (`tools/benchmark_window_map.py`: the same synthetic 8192² RGB image and grid as
   section 5.1, `fn` a NumPy reduction per channel (float64 copy, mean, standard deviation,
   squared gradients and a 256-bin histogram), the cache at `cache_plan`'s 36 MiB, two runs each,
-  on a 4-core machine shared with other jobs, load average 1.16 before and 1.60 after):
+  on a 4-core machine shared with other jobs, load average 4.02 before and 3.09 after; the
+  estimates count the delivered window, `held_bytes`, 1.2 MiB here):
 
   | workers | max in flight | memory estimate | tiles decoded | wall s | results SHA-256 |
   | --- | --- | --- | --- | --- | --- |
-  | 1 | 2 | 49.3 MiB | 256 | 7.38, 7.27 | `97e2e1a586873a3d…` |
-  | 2 | 4 | 62.7 MiB | 256 | 4.14, 3.99 | `97e2e1a586873a3d…` |
-  | 4 | 8 | 89.4 MiB | 256 | 3.26, 3.26 | `97e2e1a586873a3d…` |
+  | 1 | 2 | 50.5 MiB | 256 | 7.23, 7.28 | `97e2e1a586873a3d…` |
+  | 2 | 4 | 63.9 MiB | 256 | 4.05, 4.15 | `97e2e1a586873a3d…` |
+  | 4 | 8 | 90.6 MiB | 256 | 3.30, 3.42 | `97e2e1a586873a3d…` |
 
-  Timings are indicative; the results are identical for every worker count.
+  Timings are indicative (the first measurement, before `held_bytes`, at load 1.2 to 1.6, gave
+  7.38/7.27, 4.14/3.99 and 3.26/3.26 s); the results are identical for every worker count.
 
 ## 6. Spec
 

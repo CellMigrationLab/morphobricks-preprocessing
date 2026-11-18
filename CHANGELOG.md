@@ -24,7 +24,7 @@ v0.5.1: no run before v0.5.1 is read.)
   and the reader open (the caller's). `summary()` records the workers (`MapSummary`); they never
   change a result. Processing-agnostic: no features, patches or providers. On the synthetic
   8192² RGB grid (256 windows of 512 px, 67-px margins, a NumPy reduction per window, cache 36
-  MiB, 4-core shared machine) 1, 2 and 4 workers took 7.38/7.27, 4.14/3.99 and 3.26/3.26 s, with
+  MiB, 4-core shared machine) 1, 2 and 4 workers took 7.23/7.28, 4.05/4.15 and 3.30/3.42 s, with
   identical results (`tools/benchmark_window_map.py`).
 
 - **Lazy windows, one layer for every consumer** (`docs/design/lazy-windows.md`): a design note
