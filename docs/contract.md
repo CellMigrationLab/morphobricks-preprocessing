@@ -428,7 +428,28 @@ It gives:
   grid of `window` px windows with `margin` px margins read row by row needs to decode each
   piece once (`piece_rows` = `ceil((window + 2 × margin) / piece) + 1` rows of `per_row` pieces
   of `piece_nbytes`, for each of `groups` of channels stored apart; 0 for uncompressed TIFF
-  pieces), a figure for the caller to cap with its own budget;
+  pieces), a figure for the caller to cap with its own budget. Many windows of one reader in
+  threads (Unreleased, `window_map`, design note §5): `map_plan(reader, windows, *, channels,
+  workers, t=None, z=None, max_in_flight=None)` checks every window from the header (no pixel
+  read; `t` and `z` required for a `RunWindowReader`) and returns a `MapPlan`: the windows'
+  checked bounds, `workers`, `max_in_flight` (at least `workers`, default `2 × workers`),
+  `cache_bytes`, `window_bytes` (the largest window working memory, cache excluded),
+  `in_flight_bytes` (the `max_in_flight` largest added), `held_bytes` (the largest window as
+  delivered, the one the caller holds while the next is read) and `memory_estimate`
+  (`in_flight_bytes + held_bytes + cache_bytes`; `fn`'s own memory and the results the caller
+  keeps beyond the last one are not counted).
+  `map_windows(plan, fn, *, memory_budget)` refuses a plan whose `memory_estimate` is over
+  `memory_budget` (`WindowMemoryError`) before any pixel is read, then returns a `WindowMap`
+  iterator of `fn(bounds, window)` called in `workers` threads, in the plan's window order
+  whatever finishes first, with at most `max_in_flight` windows submitted and not yet
+  delivered, plus the one the caller holds; `iter_windows(plan, *, memory_budget)` yields `(bounds,
+  window)` the same way. The first error in window order is re-raised, its type unchanged, with a
+  note naming the window, after the results before it; an error, `close()`, leaving its `with`
+  block or dropping it cancels the windows not started and waits for the running ones, leaving
+  no thread; the reader is never closed by it. `summary()` gives a `MapSummary` (windows,
+  delivered, finished, workers, max_in_flight) for the caller's record; workers never change a
+  result and never enter an identity. Invalid `workers` or `max_in_flight` are refused, never
+  adjusted; nothing falls back to processes or retries;
 - `plane_shape(fov)`: the `(height, width)` of the position's planes, Y before X whatever the
   stored order (the frame of `read_window`'s bounds, the last two sizes of `read_plane`), from the
   header and the recorded axes only: no pixel is read and no content digest computed; the

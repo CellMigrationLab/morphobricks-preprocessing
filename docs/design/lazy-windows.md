@@ -3,7 +3,8 @@
 Status: **design note** (17 November 2026), with its first implementation step in the same pull
 request (deterministic close and a window plan on the reader). It records where lazy, windowed
 reading of a large tiled image lives, the API every consumer uses, what exists at v0.7.0 and what
-is still missing. Nothing here is a Spec decision; the window geometry and coordinate types are
+is still missing. Its step 3, `map_windows` and `iter_windows` (section 5.5), is implemented
+(owner decision of 17 November 2026). Nothing here is a Spec decision; the window geometry and coordinate types are
 MorphoBricks-Spec ADR 0004's (EW1, EW2, EW4, EW5) and are reused, not redefined.
 
 ## 1. Principle
@@ -40,6 +41,7 @@ or clipped: bounds outside the plane are refused.
 | Read a window, any channel subset | `read_window(*, t, z, bounds, channels, level=0)` | channels by canonical ID (run) or C index (file), in the order asked; the stored dtype; bitwise the slice of `read_plane` |
 | Plan memory before reading | `WindowReader.window_plan(...)`; **new:** `RunWindowReader.window_plan(*, t, z, bounds, channels, level=0)` | `shape`, `dtype`, `pieces`, `memory_estimate` with the cache counted; header only |
 | Size the cache for a grid | **new:** `window_reader.cache_plan(path, mapping, *, window, margin, channels)`, `RunInputs.window_cache_plan(fov, *, window, margin, channels)` | the bytes a row-by-row grid with margins needs to decode each piece once (below), for the consumer to cap with its budget; header only |
+| Many windows in threads | **new:** `window_map.map_plan(reader, windows, *, channels, workers, t, z, max_in_flight)`, `map_windows(plan, fn, *, memory_budget)`, `iter_windows(plan, *, memory_budget)` | results in window order for any number of workers; memory planned from the header and refused over the budget before any read (section 5.5) |
 | Threads | one reader per image, shared by every thread | the cache has one lock, and a piece asked by several threads at once is decoded once (`block_cache`); a read opens its own file handle, so no handle is shared; no per-thread reader is needed |
 | Cache | `cache_bytes`, least recently used dropped first | decoded compressed TIFF strips or tiles and OME-Zarr chunks; a piece larger than the bound is used once, not kept; uncompressed pieces are read from the file, never cached; keyed by the image's path, recorded fingerprint, level and page and piece or chunk; `stats()` gives decodes, hits, evictions and bytes |
 | Identity | the run's recorded fingerprint, checked before and after each window | an image changed or gone is refused (`RunInputsError`, `WindowSourceChangedError`) and the cache emptied, never served |
@@ -55,8 +57,9 @@ decode's buffers (five piece-sized buffers for a compressed TIFF piece, three fo
 chunk), the codec's state (deflate 64 KiB; LZMA 66 MiB, for presets up to 9), the parsed header
 (256 KiB, 2 KiB a page, 80 B a piece) and, through a cache, the frozen copy of the piece being
 kept; the cache never holds more than its bound, not even while a piece is added. The bound is
-**checked, not proven**: `tests/test_window_memory.py` measures the peak with `tracemalloc` and
-asserts it is never over the estimate, for TIFF `uint8`, `uint16` and `float32`, uncompressed,
+**checked, not proven**: `tests/test_window_memory.py` measures the peak with `tracemalloc`, in
+a fresh Python process (`tests/window_peaks.py`, so that what earlier tests left in the
+interpreter cannot land in the measured read, #348), and asserts it is never over the estimate, for TIFF `uint8`, `uint16` and `float32`, uncompressed,
 deflate, deflate with a predictor and LZMA, in 64- and 128-px tiles and 32-row strips, interleaved
 RGB and a multi-page OME stack, and for OME-Zarr 0.4 and 0.5 with chunks across 1 to 3
 channels, every one uncached and through a full cache of two sizes, for windows from 64 px to the
@@ -202,8 +205,8 @@ These options are processing-agnostic. Each takes window bounds from CellPatcher
 
 | Option | What it is | Fits | Where |
 | --- | --- | --- | --- |
-| (a) ordered iterator with prefetch | `iter_windows(reader, bounds, *, t, z, channels, prefetch=k)` yields `(bounds, window)` in the given order while up to `k` later windows are read in background threads | a single-threaded consumer; decoding overlaps its compute | preprocessing (proposed) |
-| (b) `map_windows` | `map_windows(reader, bounds, fn, *, t, z, channels, workers=n)` calls `fn(bounds, window)` in `n` threads and yields the results **in window order**, whatever finishes first | a consumer whose compute releases the GIL (NumPy, SciPy, torch, numba `nogil`); MorphoFeature's window pool is this pattern | preprocessing (proposed); (a) is (b) with `fn` returning the window |
+| (a) ordered iterator with prefetch | `iter_windows(plan, *, memory_budget)` yields `(bounds, window)` in the given order while up to `max_in_flight` later windows are read in background threads | a single-threaded consumer; decoding overlaps its compute | preprocessing, **implemented** (section 5.5) |
+| (b) `map_windows` | `map_windows(plan, fn, *, memory_budget)` calls `fn(bounds, window)` in `plan.workers` threads and yields the results **in window order**, whatever finishes first | a consumer whose compute releases the GIL (NumPy, SciPy, torch, numba `nogil`); MorphoFeature's window pool is this pattern | preprocessing, **implemented** (section 5.5); (a) is (b) with `fn` returning the window |
 | (c) process workers | each process opens its **own** reader on the image and is assigned windows by index (for example, contiguous rows of the grid, so its cache still sees neighbours); caches are not shared between processes, and results are merged by window index | GIL-bound consumers | the consumer (MorphoFeature's worker processes already open a run once per process, `fov_files.RunHandle`); preprocessing adds nothing but the reader |
 | (d) streaming partial results | (b) whose results the consumer writes per tile as they arrive in order, each row in the plane frame (EW1's conversions from the window `origin`, then the LabConstrictor result coordinate) with the tile's bounds, so a stopped run keeps the finished tiles | the LabConstrictor/QuPath bridge, MorphoFeature F4 | the bridge or consumer; its result-table contract needs Spec text first |
 
@@ -211,7 +214,9 @@ These options are processing-agnostic. Each takes window bounds from CellPatcher
 
 - **Order.** Results are delivered in the order of the bounds given, never in completion order,
   so outputs are identical for any number of workers. A test compares 1 and n workers bitwise.
-- **Memory.** At most `workers + prefetch` windows are in flight. The peak is about
+- **Memory.** At most `max_in_flight` windows are in flight (implemented: at least `workers`,
+  by default `2 × workers`, the `workers + prefetch` of the first version), plus the one the
+  consumer still holds while it asks for the next (section 5.5). The peak is about
   `in_flight × (plan.memory_estimate - cache_bytes) + cache_bytes`, plus the consumer's own
   results. `window_plan` gives each term before anything is read, and that figure goes into the
   consumer's existing memory plan (MorphoFeature plans no RAM for windows yet; preprocessing's
@@ -239,6 +244,68 @@ CellPatcher's windowed extraction, a brick run directly, and the bridge's per-ti
 (c) needs nothing from preprocessing beyond opening one reader per process. (d) waits for its
 Spec result contract.
 
+### 5.5 Implemented: `window_map`
+
+Step 3 below, in `window_map` (a pure-orchestration module; the reading stays the reader's):
+
+```python
+from morphobricks_preprocessing.window_map import map_plan, map_windows
+
+with inputs.window_reader(fov, cache_bytes=cache_bytes) as reader:
+    plan = map_plan(reader, windows, channels=ids, workers=4, t=0, z=0)  # header only
+    # plan.memory_estimate goes into the consumer's own memory plan
+    with map_windows(plan, fn, memory_budget=budget) as results:  # refused over the budget
+        for result in results:  # fn(bounds, window) for each window, in window order
+            ...
+    record(results.summary())  # windows, delivered, finished, workers, max_in_flight
+```
+
+- **Two steps, memory first.** `map_plan` checks every window with the reader's
+  `window_plan` (bounds, channels, the reader's memory limit, a changed image, a closed reader:
+  a refusal names the window) and returns a `MapPlan`. Its `memory_estimate` is the
+  `max_in_flight` largest window working memories (each `window_plan.memory_estimate -
+  cache_bytes`), plus the largest window as delivered (`held_bytes`, `shape × itemsize`: the one
+  the consumer still holds, a `for` loop's variable, while the next is read), plus the cache
+  once (review of #346, finding 2: without `held_bytes` the estimate was one window short). `map_windows` refuses a plan over `memory_budget`
+  (`WindowMemoryError`) before any pixel is read; nothing is lowered to fit. What `fn`
+  allocates and the results the consumer keeps are the consumer's to add.
+- **Bounded, ordered.** A window is submitted only when the next result is asked, so at most
+  `max_in_flight` windows are submitted and not yet delivered (read, being read or computed, or
+  done and waiting), and `max_in_flight + 1` are alive at once with the one in the consumer's
+  hands (measured: with 1, 2 and 3 in flight, at most 2, 3 and 4 window reads and arrays alive). Results are yielded in the
+  plan's order, so they are identical for any number of workers.
+- **Errors and stop.** The first error in window order is re-raised, its type unchanged, with a
+  note `(window i, bounds (...), in a window map)`, after the results before it; errors of later
+  windows are dropped. An error, `close()`, leaving the `with` block or dropping the iterator
+  cancels the windows not started and waits for the running ones (`ThreadPoolExecutor.shutdown`
+  with `cancel_futures`): no thread is left. Dropping is immediate, by reference count: the
+  results generator holds no reference to the map, so no cycle waits for the collector (review
+  of #346, finding 1), and a pool thread that closes the map does not wait for itself. The
+  reader is never closed here.
+- **Tests** (`tests/test_window_map.py`): results identical, bitwise those of `read_window`, for
+  1, 2, 4 and 8 workers on zlib-tiled and zlib-striped TIFF, uncompressed strips and OME-Zarr,
+  over random windows that overlap and repeat; order when the earliest windows finish last
+  (synchronised by events, not sleeps); exactly `max_in_flight` windows read ahead of a slow
+  consumer, never more; window reads and arrays alive never over `max_in_flight + 1`
+  (`weakref.finalize`); a plan over the budget refused with no window read and no tile decoded;
+  a `t` or `z` outside the file refused when planned; the first error in window order; an early
+  stop, a map dropped or left by `break` with the collector disabled, a map closed from its own
+  thread and a reader closed meanwhile leave no thread and a consistent reader.
+- **Measured** (`tools/benchmark_window_map.py`: the same synthetic 8192² RGB image and grid as
+  section 5.1, `fn` a NumPy reduction per channel (float64 copy, mean, standard deviation,
+  squared gradients and a 256-bin histogram), the cache at `cache_plan`'s 36 MiB, two runs each,
+  on a 4-core machine shared with other jobs, load average 4.02 before and 3.09 after; the
+  estimates count the delivered window, `held_bytes`, 1.2 MiB here):
+
+  | workers | max in flight | memory estimate | tiles decoded | wall s | results SHA-256 |
+  | --- | --- | --- | --- | --- | --- |
+  | 1 | 2 | 50.5 MiB | 256 | 7.23, 7.28 | `97e2e1a586873a3d…` |
+  | 2 | 4 | 63.9 MiB | 256 | 4.05, 4.15 | `97e2e1a586873a3d…` |
+  | 4 | 8 | 90.6 MiB | 256 | 3.30, 3.42 | `97e2e1a586873a3d…` |
+
+  Timings are indicative (the first measurement, before `held_bytes`, at load 1.2 to 1.6, gave
+  7.38/7.27, 4.14/3.99 and 3.26/3.26 s); the results are identical for every worker count.
+
 ## 6. Spec
 
 Nothing new is needed for this step: EW1 (coordinate types and conversions), EW2 (the frame:
@@ -256,6 +323,6 @@ amendment), object tiling, and a result-table contract for partial results tile 
 2. **MorphoFeature (separate pull request):** a thin consumer: one reader per plane shared by the
    window threads, released after the plane's units, also on error; no window or cache logic of
    its own. It moves to `close()` when it pins a release with it.
-3. Next here: `map_windows` / `iter_windows` (section 5.4).
+3. **Done here:** `map_windows` / `iter_windows` (section 5.5).
 4. Later, each in its owner: a cached mask reader (here); CellPatcher's windowed extraction; the
    LabConstrictor/QuPath tool and its per-tile results; levels after the Spec amendment.

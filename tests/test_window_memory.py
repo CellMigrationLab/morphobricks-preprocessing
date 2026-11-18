@@ -3,12 +3,17 @@
 ``window_plan`` (and a reader's, with its cache) is meant as an upper bound of a window read's
 peak working memory (``window_memory``). Here the peak is measured with ``tracemalloc`` over
 layouts, pixel types, codecs, cached and uncached reads and window geometries, and must never
-be over the estimate. ``cache_plan`` gives the cache a row-by-row grid with margins needs: with
-it every piece is decoded once; one piece less and pieces are decoded again.
+be over the estimate. It is measured in a fresh Python process (``window_peaks``): in the
+pytest process, the interpreter's own allocations, left by whichever tests ran before, can land
+in the measured read (#348). ``cache_plan`` gives the cache a row-by-row grid with margins
+needs: with it every piece is decoded once; one piece less and pieces are decoded again.
 """
 
-import functools
-import tracemalloc
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -16,11 +21,10 @@ import tifffile
 
 from morphobricks_preprocessing import prefill_mapping
 from morphobricks_preprocessing.window_reader import WindowReader, cache_plan
-from morphobricks_preprocessing.windows import read_window, window_plan
 from zarr_tree import write_ngff
 
 SIDE = 256
-WINDOWS = [(0, 64, 0, 64), (37, 190, 45, 256), (0, 256, 0, 256)]
+PEAKS = Path(__file__).resolve().parent / "window_peaks.py"
 CODECS = {
     "none": {},
     "zlib": {"compression": "zlib"},
@@ -34,50 +38,31 @@ STORAGE = {
 }
 
 
-def _peak(read):
-    """Return the peak traced memory of ``read()`` above what was held when it started."""
-    tracemalloc.start()
-    try:
-        start = tracemalloc.get_traced_memory()[0]
-        read()
-        return tracemalloc.get_traced_memory()[1] - start
-    finally:
-        tracemalloc.stop()
-
-
-def _filled(path, mapping, cache, plane, read):
-    """Open a reader of ``cache`` bytes and fill it; return it and the bytes it holds."""
-    reader = WindowReader(path, mapping, cache_bytes=cache)
-    reader.read_window(bounds=(0, plane, 0, plane), **read)
-    return reader, reader.stats().nbytes
-
-
-def _cached_peak(path, mapping, cache, plane, bounds, read):
-    """Return a filled reader's estimate and the peak of reading ``bounds`` through it."""
-    tracemalloc.start()  # from before the cache is filled: its pieces are traced
-    try:
-        reader, held = _filled(path, mapping, cache, plane, read)
-        tracemalloc.reset_peak()
-        start = tracemalloc.get_traced_memory()[0]
-        reader.read_window(bounds=bounds, **read)
-        peak = tracemalloc.get_traced_memory()[1] - start + held
-    finally:
-        tracemalloc.stop()
-    return reader.window_plan(bounds=bounds, channels=read["channels"]).memory_estimate, peak
+def _measured(path, axes, channels, plane, coordinates=None):
+    """Return the peaks and estimates of ``window_peaks``, measured in a fresh process."""
+    request = {"path": str(path), "axes": axes, "channels": channels, "plane": plane}
+    request["coordinates"] = coordinates
+    done = subprocess.run(
+        [sys.executable, str(PEAKS), json.dumps(request)], capture_output=True, text=True
+    )
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
 
 
 def _check(path, axes, channels, plane, coordinates=None):
     """Assert the estimate bounds the peak of every window, uncached and through a cache."""
-    mapping, read = prefill_mapping(axes), {"channels": channels, **(coordinates or {})}
-    read_window(path, mapping, bounds=(0, 1, 0, 1), **read)  # imports and first-use state
-    for y0, y1, x0, x1 in WINDOWS:
-        bounds = (min(y0, plane - 1), min(y1, plane), min(x0, plane - 1), min(x1, plane))
-        plan = window_plan(path, mapping, bounds=bounds, channels=channels)
-        peak = _peak(functools.partial(read_window, path, mapping, bounds=bounds, **read))
-        assert peak <= plan.memory_estimate, (path.name, bounds, peak, plan.memory_estimate)
-        for cache in (2**16, 2**20):
-            estimate, peak = _cached_peak(path, mapping, cache, plane, bounds, read)
-            assert peak <= estimate, (path.name, cache, bounds, peak, estimate)
+    results = _measured(path, axes, channels, plane, coordinates)["results"]
+    for what, bounds, cache, peak, estimate in results:
+        assert peak <= estimate, (path.name, what, cache, bounds, peak, estimate)
+
+
+def test_the_peaks_are_measured_in_a_fresh_process(tmp_path):
+    data = np.random.default_rng(1).integers(0, 200, (SIDE, SIDE), dtype=np.uint8)
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(path, data, metadata={"axes": "YX"}, tile=(128, 128))
+    measured = _measured(path, "YX", [0], SIDE)
+    assert measured["pid"] != os.getpid() and not measured["pytest"]
+    assert len(measured["results"]) == 9  # three windows, uncached and through two caches
 
 
 @pytest.mark.parametrize("storage", sorted(STORAGE))

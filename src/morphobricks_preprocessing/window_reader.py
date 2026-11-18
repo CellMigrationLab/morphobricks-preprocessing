@@ -41,7 +41,7 @@ import numpy as np
 from .axes import AxisMapping
 from .block_cache import BlockCache, CacheStats
 from .fingerprint import Fingerprint
-from .planes import DEFAULT_MEMORY_LIMIT, format_bytes
+from .planes import DEFAULT_MEMORY_LIMIT, _position, format_bytes
 from .window_memory import grid_cache_bytes
 from .windows import (
     LEVEL,
@@ -266,6 +266,12 @@ class WindowReader:
                 f"The window reader of {self.path.name} was closed: no window of it is read. "
                 "Open a new reader."
             )
+
+    def _check_plane(self, *, z: int | None, t: int | None) -> None:
+        """Refuse a ``z`` or ``t`` the image does not have, from the header (as a read would)."""
+        self._check_open()
+        with _source(self.path, self.mapping, self.memory_limit) as source:
+            _position(source.layout, self.mapping, {"Z": z, "T": t})
 
     def _plan(self, source: _Source, bounds: object, channels: Sequence[int]) -> WindowPlan:
         """Return a window's plan with the cache in its estimate, refusing one over the limit."""
