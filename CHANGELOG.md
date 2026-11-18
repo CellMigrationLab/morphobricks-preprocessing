@@ -14,17 +14,22 @@ v0.5.1: no run before v0.5.1 is read.)
   external audit of `6a3446b`; owner decision of 18 November 2026: refuse untested codecs). The
   readers that plan their working memory before any pixel is read decode only the TIFF codecs
   listed, with their measured evidence, in `codec_bounds.TIFF_BOUNDED`: uncompressed, deflate
-  (codes 8 and 32946, without a predictor or with the horizontal predictor) and LZMA (no
-  predictor). At v0.7.0 any other codec was estimated with deflate's state, a bound never
-  measured (and its native allocations unseen by `tracemalloc`). Now a TIFF stored with any other
-  compression or predictor is refused from its header, before any pixel is read, with the
-  compression and the fix named (save it again as an uncompressed, deflate or LZMA TIFF, tiled
-  for a large image, or as OME-Zarr): the new `CompressionNotBoundedError` (a `PlaneReadError`,
+  (codes 8 and 32946, without a predictor or with the horizontal predictor), LZMA (no
+  predictor), LZW (code 5, without a predictor or with the horizontal predictor) and JPEG (code
+  7) in the measured form: 8-bit greyscale, RGB or YCbCr (subsampled at most 2 × 2), interleaved,
+  without an NDPI header (owner decision of 18 November 2026: measure JPEG, the usual H&E and
+  brightfield whole-slide export, and LZW, then read them; see *Added*). At v0.7.0 any other
+  codec was estimated with deflate's state, a bound never measured (and its native allocations
+  unseen by `tracemalloc`). Now a TIFF stored with any other compression or predictor, or a JPEG
+  page in another form, is refused from its header, before any pixel is read, with the
+  compression and the fix named (save it again as an uncompressed, deflate, LZW or LZMA TIFF,
+  tiled for a large image, or as OME-Zarr): the new `CompressionNotBoundedError` (a `PlaneReadError`,
   `code = "compression_not_bounded"`, exported by the package) and, for windows,
   `windows.WindowCompressionError` (also a `WindowLayoutError`). No bound is invented. **Newly
-  refused**, for TIFFs stored with LZW, JPEG, old-style JPEG, PackBits, Zstandard, WebP, JPEG
-  2000, JPEG XL, PNG, LERC or the floating-point predictor (or the horizontal predictor with LZMA
-  or with no compression), whatever their size:
+  refused**, for TIFFs stored with old-style JPEG, PackBits, Zstandard, WebP, JPEG 2000, JPEG XL,
+  PNG, LERC or the floating-point predictor (or the horizontal predictor with LZMA or with no
+  compression), or with JPEG of 12-bit samples, separate colour planes, other colour spaces or
+  samples, YCbCr subsampled more than 2 × 2 or an NDPI header, whatever their size:
   - every window read and plan: `read_window`, `window_plan`, `WindowReader` and
     `RunInputs.window_reader` (`read_window`, `window_plan`), `cache_plan` /
     `RunInputs.window_cache_plan`, `window_map.map_plan` (and so `map_windows` /
@@ -32,7 +37,7 @@ v0.5.1: no run before v0.5.1 is read.)
   - `RunInputs.read_plane` (every channel of a plane, `plane_channels.read_xyc_plane` and
     `xyc_plane_memory`), and with it `RunInputs.read_image` and its `LazyImage`, and the H&E
     tissue mask of a run's image (`RunInputs.he_tissue_mask`, `preview_he_tissue_mask`, which
-    read through `read_plane`): a JPEG-compressed RGB slide among them;
+    read through `read_plane`);
   - and, only for images whose planes are **over the memory limit** (read in blocks at v0.7.0,
     with the warning `planes_read_in_blocks`): `check` and `run` (`check_planes` now reports the
     error `compression_not_bounded`, so the run stops before any pixel is read), `convert`'s
@@ -52,6 +57,31 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Added
 
+- **LZW and JPEG TIFFs are read by the bounded readers, with measured memory bounds** (#356,
+  owner decision of 18 November 2026). JPEG-compressed TIFFs (the usual H&E and brightfield
+  whole-slide export: YCbCr 4:2:0 as tifffile and scanners write it, RGB-encoded as Aperio SVS,
+  greyscale; the JPEG tables in the TIFF header) and LZW (with or without the horizontal
+  predictor) are read in windows (`read_window`, `WindowReader`, `map_windows`, mask windows),
+  by `RunInputs.read_plane` (and `read_image`, the H&E tissue mask) and in blocks, bitwise as
+  tifffile reads them. They are decoded by imagecodecs in C, so their estimates
+  (`window_memory`) count what `tracemalloc` cannot see: LZW's code table (40 KiB) and libjpeg's
+  state (about 27 KiB), each counted at 64 KiB; two decoded JPEG pieces; libjpeg's rows (44 rows
+  of the piece's width, at libjpeg's largest vertical sampling factor) and a progressive piece's
+  coefficients (2 bytes per sample, padded to 32-pixel MCUs; counted for every JPEG piece, as
+  the header cannot tell). One definition (`window_memory.tiff_piece_work` with the piece's
+  `PieceDecode`) is used by windows, every channel of a plane and blocks; blocks of the other
+  codecs keep their estimate (#342). `tests/test_codec_memory.py` measures in a fresh process,
+  over JPEG tiles of 256 and 512 and strips, YCbCr 4:2:0 and 4:2:2, RGB-encoded and greyscale,
+  baseline and progressive, compressible and noisy, and LZW `uint8` and `uint16`, windows
+  (inside a piece, across pieces, the whole plane; uncached and cached), every channel of a
+  plane with 1 and 4 tifffile threads and blocks: peak RSS at most 0.93 of the estimate, traced
+  peak at most 0.97 of its Python part, and, for one piece, the C library's memory (C heap
+  sampled through glibc's `mallinfo2`) at most 0.98 of its terms; lowering any new term to zero
+  fails a test. A YCbCr-subsampled JPEG is now read in windows and blocks (the decoder upsamples
+  a piece whole; at v0.7.0 it was refused as "subsampled colour"), and a JPEG piece whose stream
+  declares more pixels than its piece is refused before it is decoded (`PlaneReadError`).
+  imagecodecs stays optional (without it tifffile cannot decode LZW or JPEG at all); it joins the
+  `dev` extra so CI runs the measurements.
 - **`window_map`: a function mapped over windows in threads, results in window order**
   (`docs/design/lazy-windows.md` §5.2 (b), with (a) as its special case; owner decision of 17
   November 2026). `map_plan(reader, windows, *, channels, workers, t, z, max_in_flight)` works

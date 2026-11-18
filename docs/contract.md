@@ -382,7 +382,7 @@ It gives:
   numbers, empty, or outside the plane (`WindowBoundsError`); a level other than the
   full-resolution level 0, the declared policy (`WindowLevelError`); no channel or a channel
   twice (`WindowChannelError`; an ID the image lacks is `ChannelNotFoundError`); TIFF pages the
-  block reader cannot split (subsampled colour, an NDPI JPEG header, a plane whose axes are not
+  block reader cannot split (subsampled colour other than JPEG's, an NDPI JPEG header, a plane whose axes are not
   the page's rows and columns: `WindowLayoutError`, never read whole instead); a TIFF stored with
   a compression whose decoding memory is not measured (`WindowCompressionError`, a
   `WindowLayoutError` and a `CompressionNotBoundedError`, *Codecs* below, #356); a window whose
@@ -470,13 +470,21 @@ It gives:
   `convert` and a reduced preview) decode only the TIFF codecs whose bound is measured, listed in
   one place, `codec_bounds.TIFF_BOUNDED` as `(compression, predictor)`: uncompressed (1, no
   predictor), deflate (8 `ADOBE_DEFLATE` and 32946 `DEFLATE`, the same decoder in tifffile;
-  without a predictor or with the horizontal predictor 2) and LZMA (34925, no predictor). A TIFF
-  stored with any other compression or predictor (LZW, JPEG, old-style JPEG, PackBits,
+  without a predictor or with the horizontal predictor 2), LZMA (34925, no predictor), and,
+  decoded by imagecodecs (not a dependency; owner decision of 18 November 2026: measured, then
+  read), LZW (5, without a predictor or with the horizontal predictor 2) and JPEG (7) in the
+  measured form only: 8-bit samples, greyscale or interleaved RGB or YCbCr, subsampled at most
+  2 × 2, no NDPI header (`codec_bounds.jpeg_unmeasured`; another form is refused naming it).
+  Their estimates count the C library's memory, which `tracemalloc` does not see (LZW's code
+  table; libjpeg's state, rows and a progressive piece's coefficients), checked against the peak
+  resident memory of the read (`tests/test_codec_memory.py`); a JPEG piece whose stream declares
+  more pixels than its piece is refused before it is decoded (window and block reads). A TIFF
+  stored with any other compression or predictor (old-style JPEG, PackBits,
   Zstandard, WebP, JPEG 2000, JPEG XL, PNG, LERC, the floating-point predictor, ...) is refused
   there from its header, before any pixel is read: `CompressionNotBoundedError` (code
   `compression_not_bounded`; for a window `WindowCompressionError`), naming the compression and
-  the fix (save the image again as a TIFF that is uncompressed or compressed with deflate or
-  LZMA, tiled for a large image, or as OME-Zarr; for planes over the limit, also raising the
+  the fix (save the image again as a TIFF that is uncompressed or compressed with deflate, LZW
+  or LZMA, tiled for a large image, or as OME-Zarr; for planes over the limit, also raising the
   limit so they are read whole); `check_planes` reports such images over the limit as the error
   `compression_not_bounded` (no longer `planes_read_in_blocks`). No bound is invented for an
   unmeasured codec. The OME-Zarr codecs the measurements cover are recorded in

@@ -57,7 +57,8 @@ def _child(request, env=None):
     if report:
         with open(report, "a", encoding="utf-8") as f:
             for row in found["results"]:
-                f.write(json.dumps({"file": Path(request["path"]).name, "row": row}) + "\n")
+                test = os.environ.get("PYTEST_CURRENT_TEST", "").rsplit(" (", 1)[0]
+                f.write(json.dumps({"test": test, "env": env, "row": row}) + "\n")
     return found
 
 
