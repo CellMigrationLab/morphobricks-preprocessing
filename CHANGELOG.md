@@ -66,10 +66,16 @@ v0.5.1: no run before v0.5.1 is read.)
   bitwise equality with the per-channel reads over eight layouts and OME-Zarr, the decode
   counts, a refusal with no pixel read at one byte under the bound, and a file whose blank
   first time point compresses to almost nothing while the next is noise (its bound, peak and
-  refusal at the first page's bound). Because the bound now
-  counts what was left out, the largest plane `read_plane` accepts at a given limit is
-  smaller than before (for an RGB `uint8` plane, about two thirds); `RunInputs.he_tissue_mask`
-  reads through it. The estimate of a single `planes.read_plane` call (histogram reads, block
+  refusal at the first page's bound). The largest plane
+  `read_plane` accepts at a given limit changes both ways. For **compressed** pages it is
+  smaller, because the bound now counts what was left out (the other channels, tifffile's
+  decode buffers): about two thirds for an RGB `uint8` plane of deflate tiles. For
+  **uncompressed pages stored in one run of bytes** it is larger, because such a page is read
+  straight into its array (the old estimate also counted its encoded bytes, a second copy):
+  per channel of `P` bytes the old check needed `7 P` for RGB and `3 P` for one channel, the
+  new bound `6 P` and `2 P` plus about 2 MiB of header, so at the default 1 GiB limit the
+  largest RGB `uint8` plane goes from about 146 to 170 MiB per channel and a one-channel plane
+  from about 341 to 511 MiB, and planes the old check refused are now read. `RunInputs.he_tissue_mask` reads through it. The estimate of a single `planes.read_plane` call (histogram reads, block
   plans) is unchanged; its decode-buffer gap is #342.
 - **The worker planner refuses an explicit worker count with `max_ram`** (internal guard;
   public behaviour unchanged). At v0.7.0 `run.workers.plan_workers` returned a whole number
