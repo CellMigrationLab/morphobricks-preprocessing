@@ -81,10 +81,14 @@ def _unique_pairs(pairs: list[tuple[str, object]]) -> dict:
     return found
 
 
+def canonical_rule_text(rule: Mapping[str, object]) -> str:
+    """Return a rule record's canonical JSON: keys sorted, no spaces (what is hashed)."""
+    return json.dumps(rule, sort_keys=True, separators=(",", ":"))
+
+
 def rule_sha256(rule: Mapping[str, object]) -> str:
-    """Return the lower-case hex SHA-256 of a rule record's canonical JSON."""
-    canonical = json.dumps(rule, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    """Return the lower-case hex SHA-256 of a rule record's canonical JSON (UTF-8)."""
+    return hashlib.sha256(canonical_rule_text(rule).encode("utf-8")).hexdigest()
 
 
 def check_bm15(record: Mapping[str, object], where: str) -> None:

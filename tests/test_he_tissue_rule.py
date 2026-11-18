@@ -211,6 +211,18 @@ def test_the_rule_record_is_the_designs_and_provisional():
     assert RULE["id"] == "he_tissue" and RULE["version"] == 1
     assert RULE["status"] == "provisional"
     assert [c["name"] for c in RULE["components"]] == ["nuclei", "red_cells", "background"]
+    # Every threshold and size is pinned here: a change no 8-bit image can show (the
+    # background's 0.08 to 0.0801, say; he_tissue_tree.ON_THRESHOLD) still fails (issue #345).
+    assert RULE["components"][0]["pixel"] == [["H", ">=", 0.05]]
+    assert RULE["components"][0]["cleanup"] == [
+        ["remove_pieces_smaller_than_px", 15],
+        ["dilate_disk_radius_px", 2],
+    ]
+    assert RULE["components"][1]["cleanup"] == [
+        ["remove_pieces_smaller_than_px", 15],
+        ["dilate_disk_radius_px", 1],
+    ]
+    assert RULE["components"][2]["pixel"] == [["max(OD_R,OD_G,OD_B)", "<", 0.08]]
     assert RULE["components"][1]["pixel"] == [
         ["E", ">=", 0.06],
         ["H", "<", 0.03],

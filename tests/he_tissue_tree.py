@@ -175,6 +175,97 @@ def boundary_image() -> np.ndarray:
     return rgb
 
 
+# The 8-bit colours nearest each pixel threshold of he_tissue_v1, on each side (found by an
+# exhaustive search of all 2**24 colours with normalization's E, H and OD; issue #345). Each is
+# in no other component, so moving that one threshold past the colour flips the mask.
+ON_THRESHOLD = {
+    # name: (in the component, out of it), with the value compared in float64
+    "nuclei H >= 0.05": ((176, 243, 254), (157, 51, 211)),  # H 0.0500000082 / 0.0499999970
+    "red E >= 0.06": ((243, 94, 150), (242, 67, 68)),  # E 0.0600000918 / 0.0599999353
+    "red H < 0.03": ((87, 11, 25), (136, 9, 103)),  # H 0.0299998578 / 0.0300001409
+    "red OD_G-OD_R >= 0.40": ((211, 84, 155), (216, 86, 156)),  # 0.4000031692 / 0.3999553
+    "red OD_B-OD_R >= 0.10": ((141, 0, 112), (248, 0, 197)),  # 0.1000010900 / 0.0999854547
+    "background max OD < 0.08": ((213, 213, 213), (212, 212, 212)),  # 0.0781605770 / 0.0802043
+}
+"""No 8-bit colour has a max OD in (0.07816, 0.08020): the background threshold can move
+anywhere in that gap without changing any mask (0.08 to 0.0801, say); the record's pinned values
+(``test_he_tissue_rule.py``) catch such a change."""
+
+
+def _disk(radius):
+    yy, xx = np.mgrid[-radius : radius + 1, -radius : radius + 1]
+    return xx * xx + yy * yy <= radius * radius
+
+
+def _grown(core, radius):
+    """Return ``core`` dilated by the disk of ``radius`` (plain loops: an opening keeps it)."""
+    out = np.zeros_like(core)
+    for y, x in zip(*np.nonzero(core), strict=True):
+        for dy, dx in zip(*np.nonzero(_disk(radius)), strict=True):
+            out[y + dy - radius, x + dx - radius] = True
+    return out
+
+
+def _region(shape, top, left, size):
+    """Return a region of exactly ``size`` px (980 to 1008) that an opening by disk(2) keeps."""
+    core = np.zeros(shape, bool)
+    core[top + 2 : top + 29, left + 2 : left + 30] = True
+    core[top + 1, left + 4 : left + 4 + size - int(_grown(core, 2).sum())] = True
+    return _grown(core, 2)
+
+
+def threshold_image():
+    """Return a 100 x 220 image whose parts sit on every threshold of ``he_tissue_v1``.
+
+    Not square, so a Y/X swap changes the mask's shape. On uniform pink stroma (kept):
+
+    - for each pixel threshold, a 6 x 6 block of the colour just inside and one just outside
+      (:data:`ON_THRESHOLD`; the background pair as regions of 1144 px that the opening by
+      disk(2) keeps, over the 1000 px minimum);
+    - one-pixel-wide nucleus and red-cell bars of 14 and 15 px (pieces under 15 px removed);
+    - white regions of exactly 999 and 1000 px that the opening by disk(2) keeps (background
+      pieces under 1000 px removed).
+
+    Returns the image and its parts (boolean masks before clean-up), named
+    ``"<threshold> in"``/``"<threshold> out"``, ``"nuclei 14"`` ... and ``"background 999"``.
+    """
+    shape = (100, 220)
+    rgb = np.empty((*shape, 3), np.uint8)
+    rgb[...] = PINK
+    parts = {}
+
+    def put(name, rows, cols):
+        part = np.zeros(shape, bool)
+        part[rows, cols] = True
+        parts[name] = part
+
+    for index, name in enumerate(ON_THRESHOLD):
+        if name.startswith("background"):
+            for side, left in (("in", 4), ("out", 46)):  # 1144 px each, kept by the opening
+                core = np.zeros(shape, bool)
+                core[36:66, left + 2 : left + 32] = True
+                parts[f"{name} {side}"] = _grown(core, 2)
+            continue
+        for side, offset in (("in", 0), ("out", 12)):
+            left = 4 + 24 * index + offset
+            put(f"{name} {side}", slice(4, 10), slice(left, left + 6))
+    for row, name in ((18, "nuclei"), (24, "red_cells")):
+        put(f"{name} 14", row, slice(4, 18))
+        put(f"{name} 15", row, slice(30, 45))
+    for size, left in ((999, 96), (1000, 150)):
+        parts[f"background {size}"] = _region(shape, 34, left, size)
+    colours = {
+        f"{n} {s}": c
+        for n, pair in ON_THRESHOLD.items()
+        for s, c in zip(("in", "out"), pair, strict=True)
+    }
+    colours.update({"nuclei 14": NUCLEUS, "nuclei 15": NUCLEUS, "red_cells 14": RED_CELL})
+    colours.update({"red_cells 15": RED_CELL, "background 999": WHITE, "background 1000": WHITE})
+    for name, part in parts.items():
+        rgb[part] = colours[name]
+    return rgb, parts
+
+
 def write_rgb(path: Path, rgb: np.ndarray, *, scanner: bool = False) -> None:
     """Write ``(Y, X, 3)`` RGB as a TIFF (``scanner``: three samples under MINISBLACK, RH1)."""
     path.parent.mkdir(parents=True, exist_ok=True)

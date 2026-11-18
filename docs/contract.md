@@ -1153,10 +1153,18 @@ rule is the same provisional `he_tissue_v1`**, and the computation is the run ro
 array is moved to `(3, Y, X)` and given to the one function `RunInputs.he_tissue_mask` and
 `preview_he_tissue_mask` call after their read (`he_tissue_mask.rule_on_plane`), never a copy,
 so the mask is bitwise equal to the file the run route writes for the same pixels (tested on the
-synthetic image of the design, four PI-style images and the §1 boundary colours).
+synthetic image of the design, four PI-style images, the §1 boundary colours, and a 100 x 220
+image whose parts sit on every threshold of the rule: for each pixel comparison the 8-bit colours
+nearest it on both sides, and pieces of 14/15 and 999/1000 px; its mask is also checked against
+the mask its parts specify, so moving any threshold past the nearest 8-bit colour, or a size or
+radius by one, fails a test (issue #345). No 8-bit colour has a maximum OD between 0.07816 and
+0.08020, so the background threshold can move within that gap with no mask changed; the rule
+record's values are pinned by the tests themselves).
 
 **Inputs, refused before any computation**, nothing converted and no axis guessed: an input that
-is not a plain `numpy.ndarray` (a subclass such as a masked array, a list, `None`: `TypeError`);
+is not a plain `numpy.ndarray` (a subclass such as a masked array, a list, `None`: `TypeError`;
+for a subclass the message suggests `np.asarray(rgb)`); a rule that is not one ID, a `str` (a
+list, `None`: `TypeError`, in the run route too);
 a pixel type other than `uint8`, or a shape other than `(Y, X, 3)` (R, G, B last) with `Y, X >= 1`
 (`ValueError` naming what was found); an unknown rule (`ValueError`); scikit-image missing
 (`ImportError` naming `pip install "morphobricks-preprocessing[he-mask]"`). The input checks
@@ -1167,7 +1175,8 @@ route it takes no pixel size (sizes are pixels), no white (fixed at 255) and no 
 **Result.** `TissueMaskArray` (frozen): `mask`, boolean `(Y, X)`, `True` kept (a region, BM3;
 being boolean, an in-memory consumer refuses it as an object set, BM4); and `record`, a frozen
 `TissueMaskArrayRecord`: `rule_id` (`"he_tissue_v1"`), `operation` (`"he_tissue_mask"`),
-`rule_text` (the complete canonical rule record as JSON; `rule` returns it as a new dict, with
+`rule_text` (the complete rule record in its canonical JSON, keys sorted and no spaces: exactly
+the text `rule_sha256` is the SHA-256 of, as UTF-8; `rule` returns it as a new dict, with
 `rule_version`, `status` `"provisional"` and `provisional`), `rule_sha256`, `code` (BM15's code
 identities of `preprocessing` and `normalization`, read-only, `verified` and `reason` as found),
 `code_verified` (both verified: the run route's `reusable`), `numpy_version`,
