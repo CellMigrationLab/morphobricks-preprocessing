@@ -24,6 +24,10 @@ dependencies = [
     "tifffile>=2023.7.10",
     # Counting the connected pieces of each mask label in the optional mask step.
     "scipy>=1.10",
+    # The measured decoders of every compressed TIFF the bounded readers read (#356; owner
+    # decision of 18 November 2026): deflate, LZMA, LZW and JPEG (libjpeg-turbo 3), checked at
+    # run time by codec_bounds.decoder_unmeasured.
+    "imagecodecs>=2024.12.30",
     # Per-plane histograms, the CSV table, pooling and normalization, pinned to a release tag;
     # what each pin brought is in CHANGELOG.md.
     "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.7.1",
@@ -49,9 +53,6 @@ dev = [
     # Running the notebook file in a real kernel (tests/test_notebook_file.py).
     "nbclient>=0.7",
     "ipykernel>=6",
-    # The LZW and JPEG decoders whose memory tests/test_codec_memory.py measures (#356); not a
-    # runtime dependency: without it tifffile cannot decode those TIFFs at all.
-    "imagecodecs>=2024.12.30",
 ]
 
 [project.scripts]

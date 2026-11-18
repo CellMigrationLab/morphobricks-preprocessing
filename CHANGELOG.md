@@ -10,6 +10,22 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Breaking
 
+- **imagecodecs is a required dependency, and the only decoder of compressed TIFFs in the
+  bounded readers** (#356, review B2; owner decision of 18 November 2026). `imagecodecs>=
+  2024.12.30` moves from the `dev` extra to the core dependencies. With it installed, tifffile
+  decodes deflate (codes 8 and 32946) with `imagecodecs.deflate_decode` and LZMA with
+  `imagecodecs.lzma_decode` instead of the standard library's `zlib` and `lzma`, and LZW and JPEG
+  (which tifffile cannot decode without it) with `lzw_decode` and `jpeg_decode`: one measured
+  decoder path. The bounded readers (windows, every channel of a plane, blocks) check it at run
+  time, from the header and before any pixel is read (`codec_bounds.decoder_unmeasured`):
+  imagecodecs missing, older than 2024.12.30, built on a libjpeg other than libjpeg-turbo 3 (for
+  JPEG), or a decoder other than imagecodecs' in tifffile's table, is refused with
+  `CompressionNotBoundedError` (`compression_not_bounded`) naming what was found and "install or
+  upgrade imagecodecs"; nothing falls back to another decoder. Values are unchanged (the same
+  deflate and LZMA streams decode to the same bytes). The deflate and LZMA bounds were measured
+  with `tracemalloc` (#339, #351); their RSS on the standard library's path went over the
+  estimate in 2 of 5 runs in the review of this PR (a deflate window, 1.06), and stays at 0.50
+  with imagecodecs; the block reader's deflate and LZMA estimate is still #342's (item 3).
 - **Only codecs with a measured memory bound are read by the bounded readers** (#356, P2,
   external audit of `6a3446b`; owner decision of 18 November 2026: refuse untested codecs). The
   readers that plan their working memory before any pixel is read decode only the TIFF codecs
@@ -86,9 +102,8 @@ v0.5.1: no run before v0.5.1 is read.)
   every read of a JPEG TIFF (windows, blocks, every channel of a plane, a whole plane): the new
   `jpeg_stream` walks a piece's markers as libjpeg walks them and refuses any stream libjpeg
   could read otherwise, and a JPEG page is decoded piece by piece, each checked first
-  (`tiff_pieces.read_jpeg_page`).
-  imagecodecs stays optional (without it tifffile cannot decode LZW or JPEG at all); it joins the
-  `dev` extra so CI runs the measurements.
+  (`tiff_pieces.read_jpeg_page`). imagecodecs is a required dependency (*Breaking*), so CI
+  runs these measurements on the decoders a default install uses.
 - **`window_map`: a function mapped over windows in threads, results in window order**
   (`docs/design/lazy-windows.md` §5.2 (b), with (a) as its special case; owner decision of 17
   November 2026). `map_plan(reader, windows, *, channels, workers, t, z, max_in_flight)` works
@@ -110,8 +125,8 @@ v0.5.1: no run before v0.5.1 is read.)
   on where lazy, windowed reading of large images lives (here, processing-agnostic), its API,
   how MorphoFeature, CellPatcher, a brick run directly and a LabConstrictor/QuPath tool use it
   (window geometry stays CellPatcher's, Spec ADR 0004 EW5), what exists and what is missing
-  (among it imagecodecs, not a dependency, without which JPEG whole-slide images cannot be
-  decoded), and its concurrency: TIFF deflate decoding releases the GIL (the standard library's
+  (among it imagecodecs, without which JPEG whole-slide images cannot be decoded; a required
+  dependency since #356), and its concurrency: TIFF deflate decoding releases the GIL (the standard library's
   `zlib`, measured: 154, 254 and 282 MiB/s with 1, 2 and 4 threads), imagecodecs' and
   numcodecs' codecs are documented to release it too but OME-Zarr decoding was not measured; the
   cache is single-flight; the ways to hand parallelism to a consumer, and the rules (order,

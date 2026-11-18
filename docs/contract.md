@@ -471,10 +471,14 @@ It gives:
   one place, `codec_bounds.TIFF_BOUNDED` as `(compression, predictor)`: uncompressed (1, no
   predictor), deflate (8 `ADOBE_DEFLATE` and 32946 `DEFLATE`, the same decoder in tifffile;
   without a predictor or with the horizontal predictor 2), LZMA (34925, no predictor), and,
-  decoded by imagecodecs (not a dependency; owner decision of 18 November 2026: measured, then
-  read), LZW (5, without a predictor or with the horizontal predictor 2) and JPEG (7) in the
+  decoded by imagecodecs (owner decision of 18 November 2026: measured, then read), LZW (5, without a predictor or with the horizontal predictor 2) and JPEG (7) in the
   measured form only: 8-bit samples, greyscale or interleaved RGB or YCbCr, subsampled at most
   2 × 2, no NDPI header (`codec_bounds.jpeg_unmeasured`; another form is refused naming it).
+  Every compressed codec is decoded by imagecodecs, a required dependency (2024.12.30 or later;
+  JPEG with libjpeg-turbo 3): `deflate_decode`, `lzma_decode`, `lzw_decode` and `jpeg_decode`
+  in tifffile's table, never the standard library's `zlib` or `lzma`; any other decoder, an
+  older imagecodecs or a missing one is refused before any pixel is read, naming it
+  (`codec_bounds.decoder_unmeasured`, review of #357, B2).
   Their estimates count the C library's memory, which `tracemalloc` does not see (LZW's code
   table; libjpeg's state, rows and a progressive piece's coefficients), checked against the peak
   resident memory of the read (`tests/test_codec_memory.py`); a JPEG piece whose stream declares

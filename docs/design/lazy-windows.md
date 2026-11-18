@@ -124,9 +124,17 @@ marker is expected, a second frame header, a frame type other than Huffman DCT, 
 more than tables); a JPEG page is decoded piece by piece, each checked first
 (`tiff_pieces.read_jpeg_page`), never by tifffile's `asarray` (review of this PR, B1: one fill
 byte before a 40000² frame had let a 16² frame after the EOI pass a looser check). A YCbCr-subsampled
-JPEG is read in windows and blocks (the decoder upsamples a piece whole). imagecodecs is not a
-dependency (it is in the `dev` extra, so CI measures): without it tifffile cannot decode LZW or
-JPEG at all, and the reads fail as before.
+JPEG is read in windows and blocks (the decoder upsamples a piece whole).
+
+**One measured decoder: imagecodecs** (review of #357, B2; owner decision of 18 November 2026).
+imagecodecs is a required dependency, and tifffile then decodes every compressed codec of the
+allow-list with it, deflate and LZMA included (`imagecodecs.deflate_decode`, `lzma_decode`; the
+standard library's `zlib` and `lzma` only without it). The bounded readers check, from the
+header, that the decoder tifffile would use is the measured one (`codec_bounds.DECODERS`,
+imagecodecs 2024.12.30 or later, JPEG on libjpeg-turbo 3), and refuse otherwise, naming what
+was found (`decoder_unmeasured`). The review measured deflate windows on the standard library's
+path at up to 1.06 of the estimate in RSS (a `tracemalloc` bound, #339), and 0.50 with
+imagecodecs.
 
 Any other TIFF compression or predictor (old-style JPEG, PackBits, Zstandard, WebP, JPEG 2000,
 JPEG XL, PNG, LERC, the floating-point predictor, ...) is refused when the read is planned, from
@@ -239,10 +247,8 @@ numcodecs 0.16).
 
 - **TIFF.** A compressed strip or tile is read under the file handle's lock
   (`tiff_pieces._decode_segment`: seek and read only), and then decoded outside it by tifffile's
-  codec. Without imagecodecs (not a dependency), zlib/deflate falls back to the standard
-  library's `zlib.decompress`, which releases the GIL while it inflates. LZW and JPEG are
-  decoded by imagecodecs (documented to release the GIL; not measured for this note), which
-  tifffile needs to decode them at all; NDPI JPEG and any TIFF codec outside the allow-list
+  codec: imagecodecs (a required dependency since #356, checked at run time), documented to
+  release the GIL (the standard library's `zlib.decompress`, measured above, is no longer used); NDPI JPEG and any TIFF codec outside the allow-list
   above are refused by the window reader (#356). Every window
   opens its own file handle (`windows._source`), so concurrent windows never share one.
 - **OME-Zarr.** zarr 3 decodes chunks through its codec pipeline. numcodecs' compressors (Blosc,

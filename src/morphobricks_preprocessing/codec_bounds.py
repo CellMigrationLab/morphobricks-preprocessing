@@ -85,6 +85,7 @@ FIX = (
     "Save the image again as a TIFF that is uncompressed or compressed with deflate (zlib), LZW "
     "or LZMA (tiled, for a large image), or as OME-Zarr."
 )
+"""What to do with a refused image, named in every refusal."""
 READ = (
     "Only uncompressed, deflate (zlib) and LZW (also with the horizontal predictor), LZMA and "
     "8-bit greyscale, RGB or YCbCr JPEG TIFF images are read this way"
@@ -94,7 +95,15 @@ MINISBLACK, RGB, YCBCR = 1, 2, 6
 """The photometric interpretations of the JPEG pages measured."""
 JPEG_SUBSAMPLING = {None, (1, 1), (2, 1), (2, 2)}
 """The YCbCr subsamplings of the JPEG pages measured (None: not subsampled)."""
-"""What to do with a refused image, named in every refusal."""
+IMAGECODECS_MEASURED = (2024, 12, 30)
+"""The oldest imagecodecs whose decoders are measured (``tests/test_codec_memory.py``)."""
+LIBJPEG_MEASURED = "libjpeg_turbo 3."
+"""The libjpeg imagecodecs must be built with (``imagecodecs.jpeg8_version()``)."""
+DECODERS = {5: ("lzw_decode",), 7: ("jpeg_decode",), 34925: ("lzma_decode",)}
+DECODERS |= dict.fromkeys((8, 32946), ("deflate_decode", "zlib_decode"))
+"""The imagecodecs functions tifffile must decode each compressed codec with: the measured
+decoders. imagecodecs is a required dependency; without it tifffile would decode deflate and
+LZMA with the standard library's ``zlib`` and ``lzma`` (and not LZW or JPEG at all)."""
 
 
 def tiff_codec(page: tifffile.TiffPage | tifffile.TiffFrame) -> tuple[int, int]:
@@ -152,6 +161,35 @@ def unbounded(page: tifffile.TiffPage | tifffile.TiffFrame) -> str | None:
         return describe(*codec)
     if codec[0] == 7 and (unmeasured := jpeg_unmeasured(page)) is not None:
         return f"{describe(*codec)} {unmeasured}"
+    if (decoder := decoder_unmeasured(codec[0])) is not None:
+        return f"{describe(*codec)} {decoder}"
+    return None
+
+
+def decoder_unmeasured(compression: int) -> str | None:
+    """Return how the decoder tifffile would use differs from the measured one, or None.
+
+    A compressed codec is measured as decoded by imagecodecs (:data:`IMAGECODECS_MEASURED` or
+    later; JPEG with libjpeg-turbo 3, :data:`LIBJPEG_MEASURED`), through the very functions of
+    :data:`DECODERS`. Anything else is refused, never decoded by another library instead.
+    """
+    if compression not in DECODERS:
+        return None  # uncompressed: nothing decodes it
+    need = "imagecodecs 2024.12.30 or later, a required dependency: install or upgrade it"
+    try:
+        import imagecodecs
+    except ImportError:
+        return f"without imagecodecs installed (decoded only by {need})"
+    found = tuple(int(n) for n in imagecodecs.__version__.split(".")[:3] if n.isdigit())
+    if found < IMAGECODECS_MEASURED:
+        return f"with imagecodecs {imagecodecs.__version__} (decoded only by {need})"
+    if compression == 7 and not imagecodecs.jpeg8_version().startswith(LIBJPEG_MEASURED):
+        built = imagecodecs.jpeg8_version()
+        return f"with imagecodecs built on {built} (decoded only with libjpeg-turbo 3)"
+    decoder = tifffile.TIFF.DECOMPRESSORS[compression]
+    if all(decoder is not getattr(imagecodecs, name, None) for name in DECODERS[compression]):
+        name = f"{getattr(decoder, '__module__', '?')}.{getattr(decoder, '__name__', '?')}"
+        return f"decoded by {name} (decoded only by {need})"
     return None
 
 

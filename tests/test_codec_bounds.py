@@ -14,6 +14,8 @@ tifffile reads them through windows, every channel of a plane and blocks; a JPEG
 other form, and old-style JPEG, are still refused.
 """
 
+import sys
+
 import numpy as np
 import pytest
 import tifffile
@@ -393,3 +395,65 @@ def test_a_jpeg_header_of_an_unmeasured_form_is_refused(tmp_path, tag, value, ho
         tif.pages[0].tags["Compression"].overwrite(7)
         tif.pages[0].tags[tag].overwrite(value)
     _refused_without_pixels(monkeypatch, path, "YX", f"JPEG compression (TIFF code 7) {how}", [0])
+
+
+# The measured decoders: imagecodecs, required and checked at run time (#356, review B2) -------
+
+
+def test_tifffile_decodes_every_compressed_codec_with_the_measured_imagecodecs():
+    import imagecodecs
+
+    for code, names in codec_bounds.DECODERS.items():
+        decoder = tifffile.TIFF.DECOMPRESSORS[code]
+        assert any(decoder is getattr(imagecodecs, name) for name in names), (code, decoder)
+        assert codec_bounds.decoder_unmeasured(code) is None
+    assert codec_bounds.decoder_unmeasured(1) is None  # nothing decodes an uncompressed TIFF
+    version = tuple(int(n) for n in imagecodecs.__version__.split(".")[:3])
+    assert version >= codec_bounds.IMAGECODECS_MEASURED
+    assert imagecodecs.jpeg8_version().startswith("libjpeg_turbo 3.")
+    # deflate and LZMA too: one measured decoder path, never the standard library's
+    assert {tifffile.TIFF.DECOMPRESSORS[c].__name__ for c in (8, 32946, 34925)} <= {
+        "deflate_decode",
+        "zlib_decode",
+        "lzma_decode",
+    }
+
+
+GATES = {  # how the run-time check is made to fail, and what the refusal says
+    "imagecodecs missing": (
+        lambda m: m.setitem(sys.modules, "imagecodecs", None),
+        "without imagecodecs installed (decoded only by imagecodecs 2024.12.30 or later",
+    ),
+    "imagecodecs too old": (
+        lambda m: m.setattr(codec_bounds, "IMAGECODECS_MEASURED", (9999, 1, 1)),
+        "(decoded only by imagecodecs 2024.12.30 or later, a required dependency: install or "
+        "upgrade it)",
+    ),
+    "another decoder": (
+        lambda m: m.setattr(codec_bounds, "DECODERS", {**codec_bounds.DECODERS, 8: ("nothing",)}),
+        "decoded by imagecodecs.deflate_decode (decoded only by imagecodecs",
+    ),
+    "another libjpeg": (
+        lambda m: m.setattr(codec_bounds, "LIBJPEG_MEASURED", "libjpeg 9"),
+        "(decoded only with libjpeg-turbo 3)",
+    ),
+}
+
+
+@pytest.mark.parametrize("gate", sorted(GATES))
+def test_a_decoder_other_than_the_measured_one_is_refused_before_any_pixel(
+    tmp_path, gate, monkeypatch
+):
+    pytest.importorskip("imagecodecs")
+    jpeg = gate == "another libjpeg"
+    path = tmp_path / "a.tif"
+    compression = {"compression": "jpeg"} if jpeg else {"compression": "zlib"}
+    tifffile.imwrite(
+        path, _rgb()[..., 0], tile=(TILE, TILE), metadata={"axes": "YX"}, **compression
+    )
+    patch, words = GATES[gate]
+    patch(monkeypatch)
+    with tifffile.TiffFile(path) as tif:
+        codec = codec_bounds.unbounded(tif.pages[0])
+    assert codec is not None and words in codec
+    _refused_without_pixels(monkeypatch, path, "YX", codec, [0])

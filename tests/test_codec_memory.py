@@ -227,3 +227,20 @@ def test_the_c_library_holds_at_most_its_terms(tmp_path, case):
     path = PARTS[case](tmp_path / "p.tif")
     [(_, _, _, traced, heap, native)] = _child({"what": "parts", "path": str(path)})["results"]
     assert 0 < heap - traced <= native, (case, heap, traced, native)
+
+
+DEFLATE_LZMA = {  # decoded by imagecodecs too since it is required (review of #357, B2)
+    "deflate tiles 512": {"compression": "zlib", "tile": (512, 512)},
+    "deflate predictor tiles 256": {"compression": "zlib", "predictor": True, "tile": (256, 256)},
+    "lzma tiles 256": {"compression": "lzma", "tile": (256, 256)},
+}
+
+
+@pytest.mark.parametrize("case", sorted(DEFLATE_LZMA))
+def test_deflate_and_lzma_windows_stay_within_the_estimate_in_rss(tmp_path, case):
+    import tifffile
+
+    data = content((SIDE, SIDE), True, "uint16")
+    path = tmp_path / "d.tif"
+    tifffile.imwrite(path, data, photometric="minisblack", **DEFLATE_LZMA[case])
+    _check(_windows(path, "YX", data.nbytes), case)

@@ -51,6 +51,9 @@ fresh process, and their native parts alone as the peak of the C heap during one
   more than the piece before libjpeg sees it, its markers walked as libjpeg walks them
   (:mod:`.jpeg_stream`, ``tiff_pieces.check_jpeg_piece``).
 
+Every compressed codec is decoded by imagecodecs (a required dependency): deflate and LZMA
+too, through ``imagecodecs.deflate_decode`` and ``lzma_decode`` rather than the standard
+library's, which ``codec_bounds.decoder_unmeasured`` checks before any read.
 A codec outside that matrix (Zstandard, WebP, JPEG 2000... through imagecodecs) is refused
 before any pixel is read (:mod:`.codec_bounds`, issue #356): no bound is invented for it.
 """
