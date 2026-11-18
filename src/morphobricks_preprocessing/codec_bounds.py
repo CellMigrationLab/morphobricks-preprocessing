@@ -31,7 +31,8 @@ as the peak of the C heap during a decode (``tests/codec_peaks.py``), against th
 several decoding threads, and blocks; ``uint8`` and ``uint16`` LZW with and without the
 horizontal predictor; 8-bit JPEG in tiles of 256 and 512 and in strips, greyscale, RGB and
 YCbCr 4:2:0 and 4:2:2, with the JPEG tables in the TIFF header, baseline and progressive,
-compressible and noisy. A JPEG page is read only in that measured form
+compressible and noisy; on Python 3.13 with imagecodecs 2026.11 and on Python 3.11 with
+2026.3 (whose LZW table is larger). A JPEG page is read only in that measured form
 (:func:`jpeg_unmeasured`): 8-bit samples, one (greyscale) or three (RGB or YCbCr) interleaved
 samples, subsampled at most 2 × 2, and no NDPI header. Old-style JPEG (code 6) is not measured.
 

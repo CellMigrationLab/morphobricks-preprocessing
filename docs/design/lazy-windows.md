@@ -95,16 +95,25 @@ measured as the peak resident memory (RSS, Linux: `/proc/self/clear_refs` resets
 `malloc_trim` first returns freed memory) against the whole estimate, as the traced peak against
 the estimate less the C library's terms, and, for one piece decoded alone, as the peak of the C
 heap (glibc's `mallinfo2`, sampled while the decoder runs without the GIL) less the traced peak
-against those terms alone (`window_memory`: LZW's code table, 40 KiB, and libjpeg's state, about
-27 KiB measured, both counted at 64 KiB; two decoded JPEG pieces, the current and the previous;
-libjpeg's rows, 44 rows of the piece's width at its largest vertical sampling factor; and a
-progressive piece's coefficients, 2 bytes per sample of the piece padded to 32-pixel MCUs, which
-cannot be told from the header and so are counted for every JPEG piece). Windows (inside one
-piece, across pieces, the whole plane; uncached and through a cache of the plane), every channel
-of a plane with 1 and 4 tifffile threads and blocks are measured; the worst ratios of peak RSS
-to estimate are 0.96 (LZW, `uint16` strips, the whole plane; 0.79 to 0.96 over repeated runs)
-and 0.92 (progressive JPEG), of traced peak to its part 0.97, and of the C library's memory to
-its terms 0.98 (a progressive 1024-px tile's coefficients) and 0.82 (LZW's table). Lowering any of these terms to zero fails a test. A JPEG page is read only in the
+against those terms alone (`window_memory`: LZW's code table, 40 KiB with imagecodecs 2026.11
+and about 150 KiB with 2026.3, the last for Python 3.11 (5120 entries and a 64 KiB string
+buffer), counted at 192 KiB; libjpeg's state, about 22–30 KiB measured, counted at 64 KiB; two
+decoded JPEG pieces, the current and the previous; libjpeg's rows, 44 rows of the piece's width
+at its largest vertical sampling factor; a progressive piece's coefficients, 2 bytes per sample
+of the piece padded to 32-pixel MCUs, which cannot be told from the header and so are counted
+for every JPEG piece; and libjpeg's buffers of the previous piece too, which glibc may keep in
+its heap where the next piece's buffers of other sizes need not fit: counting one piece's, a
+progressive JPEG read reached 1.005 of its estimate in one run of four on Python 3.11's stack).
+Windows (inside one piece, across pieces, the whole plane; uncached and through a cache of the
+plane, each in a process of its own: a cache's fill leaves glibc serving the next reads from
+where its pieces were, which put an uncached read measured after it at 1.017), every channel of
+a plane with 1 and 4 tifffile threads and blocks are measured, on Python 3.13 with imagecodecs
+2026.11.11 (libjpeg-turbo 3.2.1) and on Python 3.11 with 2026.3.6 (libjpeg-turbo 3.1.3,
+progressive pieces made by Pillow): the worst ratios of peak RSS to estimate are 0.90 (LZW
+`uint16`, the whole plane) and 0.87 (JPEG), of traced peak to its part 0.97, and of the C
+library's memory to its terms 0.98 (a progressive 1024-px tile's coefficients) and 0.76 (LZW's
+table on 2026.3). Lowering any of these terms to zero fails a test; lowering the previous
+piece's libjpeg buffers (2 to 1) fails none, as that allocator state is rare. A JPEG page is read only in the
 measured form (`codec_bounds.jpeg_unmeasured`: 8-bit samples, greyscale or interleaved RGB or
 YCbCr, subsampled at most 2 × 2, no NDPI header); a JPEG piece whose stream declares more pixels
 than its tile is refused before libjpeg sees it (window and block reads). A YCbCr-subsampled

@@ -135,18 +135,28 @@ def _keyframe(path):
         return tif.series[0].keyframe
 
 
-def _native(path, threads=1):
-    """Return the C library's part of a read's estimate: its state and its piece buffers."""
+def _native(path, threads=1, pieces=None):
+    """Return the C library's part of a read's estimate: its state and its pieces' buffers.
+
+    ``pieces`` is how many pieces' buffers are counted (``window_memory.JPEG_NATIVE_PIECES``
+    in a read; one when a single piece is decoded alone).
+    """
     from morphobricks_preprocessing import window_memory
     from morphobricks_preprocessing.tiff_pieces import piece_decode
 
+    pieces = window_memory.JPEG_NATIVE_PIECES if pieces is None else pieces
     decode = piece_decode(_keyframe(path))
-    one = window_memory.codec_state(decode.compression) + window_memory.native_piece_work(decode)
-    return threads * one
+    work = pieces * window_memory.native_piece_work(decode)
+    return threads * (window_memory.codec_state(decode.compression) + work)
 
 
-def windows(path, axes, channels, plane, windows, cache):
-    """Measure window reads, uncached and through a reader holding the whole plane."""
+def windows(path, axes, channels, plane, windows, cache, cached):
+    """Measure window reads: uncached, or through one reader filled with the whole plane.
+
+    Uncached and cached reads are measured in processes of their own: a cache's fill frees
+    many pieces, after which glibc serves the next reads from where they were (its mmap
+    threshold rises), a state of the process before the read, not of the read.
+    """
     from morphobricks_preprocessing import prefill_mapping
     from morphobricks_preprocessing.windows import read_window, window_plan
 
@@ -154,6 +164,13 @@ def windows(path, axes, channels, plane, windows, cache):
     read_window(path, mapping, bounds=(0, 1, 0, 1), **read)  # imports, first-use state
     force_intern_rebuild()
     native, results, kept = _native(path), [], []
+    whole = (0, plane[0], 0, plane[1])
+    if cached:
+        rss = _cached_rss(path, mapping, read, cache, whole, windows) if RSS else None
+        for i, bounds in enumerate(map(tuple, windows)):
+            traced, estimate = _cached_traced(path, mapping, read, cache, whole, bounds)
+            results.append(["cached", bounds, rss and rss[i], traced, estimate, native])
+        return results
     for bounds in map(tuple, windows):
         estimate = window_plan(path, mapping, bounds=bounds, **read).memory_estimate
 
@@ -165,23 +182,25 @@ def windows(path, axes, channels, plane, windows, cache):
         traced = traced_peak(once)
         kept.clear()
         results.append(["read", bounds, rss, traced, estimate, native])
-        whole = (0, plane[0], 0, plane[1])
-        rss = _cached_rss(path, mapping, read, cache, whole, bounds) if RSS else None
-        traced, estimate = _cached_traced(path, mapping, read, cache, whole, bounds)
-        results.append(["cached", bounds, rss, traced, estimate, native])
     return results
 
 
-def _cached_rss(path, mapping, read, cache, whole, bounds):
-    """Return the RSS peak of a window read through a reader filled with the whole plane."""
+def _cached_rss(path, mapping, read, cache, whole, windows):
+    """Return the RSS peaks of window reads through one reader filled with the whole plane."""
     from morphobricks_preprocessing.window_reader import WindowReader
 
     _settle()
     start = _status("VmRSS")  # before the reader: its cache counts
+    peaks = []
     with WindowReader(path, mapping, cache_bytes=cache) as reader:
         reader.read_window(bounds=whole, **read)
         kept = []
-        return rss_peak(lambda: kept.append(reader.read_window(bounds=bounds, **read)), start)
+        for bounds in map(tuple, windows):
+            peaks.append(
+                rss_peak(lambda b=bounds: kept.append(reader.read_window(bounds=b, **read)), start)
+            )
+            kept.clear()
+    return peaks
 
 
 def _cached_traced(path, mapping, read, cache, whole, bounds):
@@ -273,7 +292,7 @@ def parts(path, repeats=20, seconds=0.5):
         traced = traced_peak(once)
         heap = heap_peak(many) if _LIBC is not None and hasattr(_LIBC, "mallinfo2") else None
         rss = rss_peak(once)
-    return [["parts", None, rss, traced, heap, _native(path)]]
+    return [["parts", None, rss, traced, heap, _native(path, pieces=1)]]
 
 
 RSS = False

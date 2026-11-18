@@ -90,10 +90,11 @@ def _lzw(tmp_path, dtype, storage, predictor, noisy, rgb=False):
 
 
 def _windows(path, axes, nbytes):
+    """Measure the windows uncached, then through a cache, each in a fresh process."""
     channels = [0, 1, 2] if axes == "YXS" else [0]
     request = {"what": "windows", "path": str(path), "axes": axes, "channels": channels}
     request |= {"plane": [SIDE, SIDE], "windows": WINDOWS, "cache": nbytes}
-    return _child(request)["results"]
+    return [row for c in (False, True) for row in _child({**request, "cached": c})["results"]]
 
 
 JPEG_CASES = [

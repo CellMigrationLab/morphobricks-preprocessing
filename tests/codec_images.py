@@ -4,10 +4,13 @@ JPEG pieces are written the way whole-slide scanners and libtiff write them: eac
 an abbreviated JPEG stream, the quantisation and Huffman tables once in the TIFF header
 (``JPEGTables``). ``kind`` is ``"ycc420"`` and ``"ycc422"`` (YCbCr, subsampled 2 × 2 and 2 × 1,
 what tifffile writes for RGB), ``"rgb"`` (RGB-encoded, as Aperio SVS) or ``"grey"``. A
-progressive (multi-scan) piece is made losslessly from the baseline one (``jpeg_transcode``).
+progressive (multi-scan) piece is made losslessly from the baseline one (``jpeg_transcode``,
+imagecodecs 2026.11), or by Pillow with the same subsampling and colour space before it.
 """
 
 from __future__ import annotations
+
+import io
 
 import numpy as np
 import pytest
@@ -53,6 +56,21 @@ def split_tables(stream):
     return b"".join([*tables, b"\xff\xd9"]), b"".join([*rest, stream[i:]])
 
 
+def _progressive(stream, piece, kind):
+    """Return a progressive JPEG of ``piece``: transcoded from ``stream``, else by Pillow."""
+    if hasattr(imagecodecs, "jpeg_transcode"):  # imagecodecs 2026.11 and later
+        return bytes(imagecodecs.jpeg_transcode(stream, progressive=True))
+    image = pytest.importorskip("PIL.Image")
+    file = pytest.importorskip("PIL.ImageFile")
+    file.MAXBLOCK = max(file.MAXBLOCK, 2**26)  # a progressive noisy piece is buffered whole
+    options = {"subsampling": {"ycc420": 2, "ycc422": 1}.get(kind, 0)}
+    if kind == "rgb":
+        options["keep_rgb"] = True  # RGB-encoded, as the TIFF's photometric says
+    out = io.BytesIO()
+    image.fromarray(piece).save(out, "JPEG", quality=90, progressive=True, **options)
+    return out.getvalue()
+
+
 def write_jpeg(path, data, kind, *, tile=None, rows=None, progressive=False):
     """Write ``data`` as JPEG tiles (``tile``) or strips of ``rows`` rows, tables in the header."""
     encode, write = KINDS[kind]
@@ -68,7 +86,7 @@ def write_jpeg(path, data, kind, *, tile=None, rows=None, progressive=False):
                 piece = padded
             stream = bytes(imagecodecs.jpeg8_encode(piece, level=90, **encode))
             if progressive:
-                pieces.append(bytes(imagecodecs.jpeg_transcode(stream, progressive=True)))
+                pieces.append(_progressive(stream, piece, kind))
                 continue
             found, abbreviated = split_tables(stream)
             assert tables in (None, found)  # one set of tables for every piece

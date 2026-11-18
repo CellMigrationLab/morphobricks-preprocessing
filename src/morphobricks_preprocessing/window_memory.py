@@ -32,8 +32,11 @@ fresh process, and their native parts alone as the peak of the C heap during one
 (``tests/test_codec_memory.py``, ``tests/codec_peaks.py``):
 
 - LZW (``imagecodecs.lzw_decode``) decodes into a buffer of the piece's size given by tifffile,
-  as deflate does, so the same :data:`TIFF_DECODE_COPIES` hold; its own state is its code table
-  (4096 entries of a pointer and a length: 40 KiB), in :data:`CODEC_STATE`.
+  as deflate does, so the same :data:`TIFF_DECODE_COPIES` hold; its own state, in
+  :data:`CODEC_STATE`, is its code table: 4096 entries of a pointer and a length (40 KiB) from
+  imagecodecs 2026.11; up to 2026.3 (the last for Python 3.11) 5120 entries and a string buffer
+  of 64 KiB, which grows only when tifffile gives no output size (about 150 KiB measured, the
+  same for blank, smooth and noisy pieces).
 - JPEG (libjpeg-turbo through ``imagecodecs.jpeg_decode``) decodes a piece into one new array
   (:data:`JPEG_DECODE_COPIES`: it, and the previous piece still referenced). libjpeg's own
   memory is its state (pools, Huffman and quantisation tables: :data:`CODEC_STATE`) and, per
@@ -42,7 +45,8 @@ fresh process, and their native parts alone as the peak of the C heap during one
   colour rows, at libjpeg's largest vertical sampling factor, whatever the header says) and, for
   a multi-scan (progressive) JPEG, the coefficients of the whole piece, two bytes per 8-bit
   sample (:data:`JPEG_COEFFICIENT_BYTES`). Which a piece is cannot be told from the TIFF
-  header, so every JPEG piece is charged for both. libjpeg sizes
+  header, so every JPEG piece is charged for both, and for the previous piece's too
+  (:data:`JPEG_NATIVE_PIECES`), which the C allocator may still hold. libjpeg sizes
   all of it from the piece's own JPEG stream, which TIFF requires to declare the piece's size:
   a window or block read refuses a stream declaring more pixels before decoding it
   (``tiff_pieces._decode_segment``).
@@ -81,16 +85,21 @@ DEFLATE = (8, 32946)
 LZMA = 34925
 CODEC_STATE = {
     NO_COMPRESSION: 0,
-    LZW: 64 * KIB,
+    LZW: 192 * KIB,
     JPEG: 64 * KIB,
     **dict.fromkeys(DEFLATE, 64 * KIB),
     LZMA: 66 * MIB,
 }
-"""A decoder's own state by TIFF compression code: LZW's code table (40 KiB), libjpeg's
+"""A decoder's own state by TIFF compression code: LZW's code table and string buffer (40 KiB
+from imagecodecs 2026.11, about 150 KiB before: 5120 entries and a 64 KiB buffer), libjpeg's
 decompressor, memory pools and tables (about 27 KiB measured), deflate's window and tables,
 LZMA's dictionary (at most 64 MiB for the presets 0 to 9) and its tables."""
 JPEG_DECODE_COPIES = 2
 """Decoded JPEG pieces held at once: the one decoded and the previous one, still referenced."""
+JPEG_NATIVE_PIECES = 2
+"""libjpeg's buffers of pieces counted at once: the piece decoded and the previous one's, which
+the C allocator (glibc) may keep in its heap, where the next piece's buffers of other sizes need
+not fit (peak RSS up to 1.005 of an estimate counting one, on Python 3.11's imagecodecs)."""
 JPEG_COEFFICIENT_BYTES = 2
 """libjpeg's coefficients of a multi-scan (progressive) JPEG piece, per 8-bit sample."""
 JPEG_ROWS = 44
@@ -152,7 +161,7 @@ def tiff_piece_work(
     state is counted apart (:func:`codec_state`), once per decoding thread.
     """
     copies = decode_copies(decode.compression) + (FROZEN_COPIES if cached else 0)
-    return encoded_nbytes + copies * piece_nbytes + native_piece_work(decode)
+    return encoded_nbytes + copies * piece_nbytes + JPEG_NATIVE_PIECES * native_piece_work(decode)
 
 
 def block_piece_work(piece_nbytes: int, encoded_nbytes: int, decode: PieceDecode) -> int:

@@ -285,7 +285,7 @@ def _bitwise(path, axes, channels, plane_count=1):
     smallest = plane_layout(path, mapping, memory_limit=1).block_memory_estimate
     for c, plane in enumerate(iter_planes(path, mapping, memory_limit=smallest)):
         assert plane.in_blocks
-        whole = np.empty((H, W), dtype=planes.dtype)
+        whole = np.empty(planes.shape[1:], dtype=planes.dtype)
         for block in plane.blocks():
             rows, cols = block.pixels.shape
             whole[block.y : block.y + rows, block.x : block.x + cols] = block.pixels
@@ -295,7 +295,9 @@ def _bitwise(path, axes, channels, plane_count=1):
 @pytest.mark.parametrize("name", sorted(NEW))
 def test_lzw_and_jpeg_planes_read_bitwise_through_every_bounded_reader(tmp_path, name):
     pytest.importorskip("imagecodecs")
-    data = np.random.default_rng(5).integers(0, 2**8, (2, H, W), dtype=np.uint8)
+    # 4 × 6 tiles per plane: a block of one row of tiles, its codec's state included, is
+    # cheaper than the whole plane
+    data = np.random.default_rng(5).integers(0, 2**8, (2, 4 * H, 4 * W), dtype=np.uint8)
     path = tmp_path / "a.tif"
     tifffile.imwrite(
         path,

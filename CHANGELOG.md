@@ -64,17 +64,20 @@ v0.5.1: no run before v0.5.1 is read.)
   predictor) are read in windows (`read_window`, `WindowReader`, `map_windows`, mask windows),
   by `RunInputs.read_plane` (and `read_image`, the H&E tissue mask) and in blocks, bitwise as
   tifffile reads them. They are decoded by imagecodecs in C, so their estimates
-  (`window_memory`) count what `tracemalloc` cannot see: LZW's code table (40 KiB) and libjpeg's
-  state (about 27 KiB), each counted at 64 KiB; two decoded JPEG pieces; libjpeg's rows (44 rows
-  of the piece's width, at libjpeg's largest vertical sampling factor) and a progressive piece's
-  coefficients (2 bytes per sample, padded to 32-pixel MCUs; counted for every JPEG piece, as
-  the header cannot tell). One definition (`window_memory.tiff_piece_work` with the piece's
+  (`window_memory`) count what `tracemalloc` cannot see: LZW's code table (40 KiB with
+  imagecodecs 2026.11, about 150 KiB with 2026.3, the last for Python 3.11; counted at 192 KiB)
+  and libjpeg's state (about 22–30 KiB; counted at 64 KiB); two decoded JPEG pieces; libjpeg's
+  rows (44 rows of the piece's width, at libjpeg's largest vertical sampling factor) and a
+  progressive piece's coefficients (2 bytes per sample, padded to 32-pixel MCUs; counted for
+  every JPEG piece, as the header cannot tell), for the piece and the previous one, whose buffers
+  the C allocator may still hold. One definition (`window_memory.tiff_piece_work` with the piece's
   `PieceDecode`) is used by windows, every channel of a plane and blocks; blocks of the other
   codecs keep their estimate (#342). `tests/test_codec_memory.py` measures in a fresh process,
   over JPEG tiles of 256 and 512 and strips, YCbCr 4:2:0 and 4:2:2, RGB-encoded and greyscale,
   baseline and progressive, compressible and noisy, and LZW `uint8` and `uint16`, windows
   (inside a piece, across pieces, the whole plane; uncached and cached), every channel of a
-  plane with 1 and 4 tifffile threads and blocks: peak RSS at most 0.96 of the estimate, traced
+  plane with 1 and 4 tifffile threads and blocks, on Python 3.13 (imagecodecs 2026.11.11) and
+  3.11 (2026.3.6): peak RSS at most 0.90 of the estimate, traced
   peak at most 0.97 of its Python part, and, for one piece, the C library's memory (C heap
   sampled through glibc's `mallinfo2`) at most 0.98 of its terms; lowering any new term to zero
   fails a test. A YCbCr-subsampled JPEG is now read in windows and blocks (the decoder upsamples
