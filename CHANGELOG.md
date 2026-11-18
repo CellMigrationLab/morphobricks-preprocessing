@@ -97,6 +97,21 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Fixed
 
+- **An OME-Zarr window's memory estimate holds when the CPU is busy** (#354). zarr 3 reads and
+  decodes chunks in worker threads shared by every read, and a worker keeps the last call it ran
+  (a chunk's compressed and decoded bytes) until its next one. When the scheduler held a worker
+  there, a read that had returned still held a chunk while the next decoded: with 1 MiB chunks
+  (`float32` 3×1024², chunks (1, 512, 512)) the measured peak went over the estimate in 13 of 32
+  runs with 4 test processes on 4 cores, up to 1.10×. Every OME-Zarr read
+  (`zarr_input.read_selection`) now runs zarr's read coroutine on a private event loop in the
+  calling thread with a private pool the size of zarr's, whose threads are joined before it
+  returns, so no buffer of a read outlives it. Values are unchanged (same coroutine, chunks and
+  codecs); the estimate and zarr's `async.concurrency` are unchanged; zarr 2 is unchanged. New
+  `tests/test_zarr_window_threads.py` measures the #354 case in a fresh process, as it is and
+  with every worker thread held 20 ms after each call (`tests/window_peaks_late.py`): 0 of 64
+  runs over under the same load (worst 0.89×); with the old read the held case is over every
+  time.
+
 - **`he_tissue_mask_array` follow-ups from the #343 review** (#345). `record.rule_text` is now
   the rule record's canonical JSON (keys sorted, no spaces, `lineage_schema.canonical_rule_text`),
   the exact text `rule_sha256` is the digest of, so `sha256(rule_text) == rule_sha256`; it was
