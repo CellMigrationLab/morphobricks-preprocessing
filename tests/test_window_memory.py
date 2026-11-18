@@ -57,6 +57,7 @@ def _child(request):
         [sys.executable, str(PEAKS), json.dumps(request)],
         capture_output=True,
         text=True,
+        timeout=300,
     )
     assert done.returncode == 0, done.stderr
     return json.loads(done.stdout)
