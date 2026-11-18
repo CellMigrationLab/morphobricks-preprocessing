@@ -63,7 +63,8 @@ from morphobricks_normalization.histogram import (
 from morphobricks_normalization.ranges import HistogramSettings, RangeCheck
 
 from .axes import PLANE_ROLES, AxisMapping, AxisReview
-from .plane_errors import PlaneMemoryError, PlaneReadError
+from .codec_bounds import FIX, describe, is_bounded, refusal_text, tiff_codec
+from .plane_errors import CompressionNotBoundedError, PlaneMemoryError, PlaneReadError
 from .tiff_pieces import _Blocking, _largest_piece, _read_tiff_box, _tiff_blocking
 from .validation import ValidationIssue, error, plural, warning
 from .zarr_input import (
@@ -306,6 +307,10 @@ class PlaneLayout:
         Estimated working memory for one block when planes are read in blocks;
         for planes that cannot be read within the limit, for the smallest block
         possible. None when planes fit whole or cannot be split.
+    unbounded_codec
+        ``(compression, predictor)`` of a TIFF whose planes are over the memory limit and
+        stored with a codec whose read memory is not measured: they are never read in blocks
+        (:mod:`.codec_bounds`, issue #356). None otherwise.
     """
 
     shape: tuple[int, ...]
@@ -321,6 +326,7 @@ class PlaneLayout:
     block_shape: tuple[int, int] | None = None
     block_memory_estimate: int | None = None
     blocking: _Blocking | None = field(default=None, repr=False, compare=False)
+    unbounded_codec: tuple[int, int] | None = None
 
     @property
     def page_ndim(self) -> int:
@@ -606,7 +612,9 @@ def check_planes(
     -------
     list of ValidationIssue
         Errors for planes that cannot be read within the memory limit, not even
-        in blocks (``plane_over_memory_limit``), and for files whose planes
+        in blocks (``plane_over_memory_limit``), for planes over the limit stored with a
+        codec whose read memory is not measured, never read in blocks
+        (``compression_not_bounded``, issue #356), and for files whose planes
         cannot be read one at a time (``unsupported_layout``); a warning naming
         the files whose planes are read in blocks (``planes_read_in_blocks``).
     """
@@ -615,6 +623,7 @@ def check_planes(
     over: list[tuple[str, PlaneLayout]] = []
     blocked: list[tuple[str, PlaneLayout]] = []
     unsupported: list[str] = []
+    refused: list[tuple[str, PlaneLayout]] = []
     for rel in sorted(mappings):
         try:
             layout = plane_layout(
@@ -628,27 +637,16 @@ def check_planes(
             logger.debug("Cannot read %s plane by plane", rel, exc_info=True)
             unsupported.append(rel)
             continue
-        if not layout.fits:
+        if layout.unbounded_codec is not None:
+            refused.append((rel, layout))
+        elif not layout.fits:
             over.append((rel, layout))
         elif layout.in_blocks:
             blocked.append((rel, layout))
 
-    issues = []
-    if over:
-        largest = max(layout.min_memory_estimate for _, layout in over)
-        issues.append(
-            error(
-                "plane_over_memory_limit",
-                f"{plural(len(over), 'image')} cannot be read within the memory limit of "
-                f"{format_bytes(memory_limit)}, not even in blocks: the smallest part of a "
-                f"plane that can be read on its own needs up to {format_bytes(largest)}. A "
-                "plane stored compressed in one piece has to be decoded whole.",
-                [rel for rel, _ in over],
-                "Raise the memory limit if this computer has enough memory, or save the "
-                "images again as tiled or uncompressed TIFF files or as OME-Zarr with smaller "
-                "chunks.",
-            )
-        )
+    issues = [_over_issue(over, memory_limit)] if over else []
+    if refused:
+        issues.append(_codec_issue(refused, memory_limit))
     if blocked:
         largest = max(layout.memory_estimate for _, layout in blocked)
         issues.append(
@@ -676,6 +674,38 @@ def check_planes(
             )
         )
     return issues
+
+
+def _over_issue(over: list[tuple[str, PlaneLayout]], memory_limit: int) -> ValidationIssue:
+    """Return the error naming images whose planes cannot be read within the limit at all."""
+    largest = max(layout.min_memory_estimate for _, layout in over)
+    return error(
+        "plane_over_memory_limit",
+        f"{plural(len(over), 'image')} cannot be read within the memory limit of "
+        f"{format_bytes(memory_limit)}, not even in blocks: the smallest part of a "
+        f"plane that can be read on its own needs up to {format_bytes(largest)}. A "
+        "plane stored compressed in one piece has to be decoded whole.",
+        [rel for rel, _ in over],
+        "Raise the memory limit if this computer has enough memory, or save the "
+        "images again as tiled or uncompressed TIFF files or as OME-Zarr with smaller "
+        "chunks.",
+    )
+
+
+def _codec_issue(refused: list[tuple[str, PlaneLayout]], memory_limit: int) -> ValidationIssue:
+    """Return the error naming images over the limit whose codec has no measured bound."""
+    codecs = sorted({describe(*layout.unbounded_codec) for _, layout in refused})
+    return error(
+        "compression_not_bounded",
+        f"The planes of {plural(len(refused), 'image')} are too large to read whole within "
+        f"the memory limit of {format_bytes(memory_limit)}, and they are stored with "
+        f"{', '.join(codecs)}, whose decoding memory has not been measured, so they are not "
+        "read in blocks: only uncompressed, deflate (zlib, also with the horizontal "
+        "predictor) and LZMA TIFF images are.",
+        [rel for rel, _ in refused],
+        f"{FIX} Or raise the memory limit so that their planes are read whole, if this "
+        "computer has enough memory.",
+    )
 
 
 def format_bytes(n: int) -> str:
@@ -777,6 +807,8 @@ def _layout(
     )
     if memory <= memory_limit:
         return layout
+    if not is_bounded(*tiff_codec(keyframe)):  # blocks only of measured codecs (#356)
+        return replace(layout, unbounded_codec=tiff_codec(keyframe))
     # Blocks of any plane are read with this one layout: their pieces are sized from the
     # largest stored piece of the series, not the first page's (issue #356).
     blocking = _tiff_blocking(keyframe, shape, split, y, x, _largest_piece(series))
@@ -813,6 +845,7 @@ def _finished_histograms_nbytes(dtype: np.dtype, bin_count: int | None, channels
 
 
 def _check_limit(layout: PlaneLayout, path) -> None:  # noqa: ANN001
+    _refuse_codec(layout, path)
     if not layout.fits:
         raise PlaneMemoryError(
             f"Reading one plane of {Path(path).name} needs about "
@@ -821,6 +854,15 @@ def _check_limit(layout: PlaneLayout, path) -> None:  # noqa: ANN001
             "limit if this computer has enough memory, or save the image again as a tiled "
             "or uncompressed TIFF file or as OME-Zarr with smaller chunks."
         )
+
+
+def _refuse_codec(layout: PlaneLayout, path: str | os.PathLike) -> None:
+    """Refuse planes over the limit whose codec has no measured bound (blocks, #356)."""
+    if layout.unbounded_codec is not None:
+        limit = format_bytes(layout.memory_limit)
+        reading = f"in blocks (its planes are over the memory limit of {limit})"
+        also = " Or raise the memory limit so that its planes are read whole."
+        raise CompressionNotBoundedError(refusal_text(path, layout.unbounded_codec, reading, also))
 
 
 def _positions(
@@ -1110,6 +1152,7 @@ def _whole_or_preview(
     """
     if not layout.in_blocks and layout.fits:
         return layout
+    _refuse_codec(layout, path)
     if not preview:
         if layout.fits:
             raise PlaneMemoryError(

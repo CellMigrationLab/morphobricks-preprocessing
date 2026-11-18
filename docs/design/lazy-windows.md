@@ -74,10 +74,38 @@ and 1 MiB (deflate `float32` in 256-row strips and 512-px tiles, deflate with a 
 copy measured alone. Worst measured peak, in a fresh process: 0.91 of the estimate (the
 `uint16` 512-px tiles read whole; 0.64 over the 256-px matrix). The estimate excludes
 interpreter-wide memory such as a rebuild of the interned-string table, which the measuring
-process forces before it measures (#351). **Not covered** (#342): codecs only imagecodecs
-decodes (JPEG, LZW, Zstandard, WebP, JPEG 2000), estimated with deflate's state and
-not verified; memory a C library allocates outside Python's allocators; the plane block reader
-(`read_plane`, `planes._tiff_piece_memory`) and `objects_read_plan`, unchanged here. (The run's
+process forces before it measures (#351).
+
+**Allow-list: only measured codecs are read** (#356, owner decision of 18 November 2026). The
+window reader, `read_plane`'s read of every channel and the block reader of planes over the
+memory limit decode only the TIFF codecs whose bound is measured, listed in one place with their
+evidence, `codec_bounds.TIFF_BOUNDED`:
+
+| TIFF compression (code) | Predictor | Evidence |
+| --- | --- | --- |
+| none (1) | none | `tests/test_window_memory.py`, `tests/test_plane_channels.py` |
+| deflate, `ADOBE_DEFLATE` (8) | none, horizontal (2) | the same tests (the predictor with `uint8` and `uint16`) |
+| deflate, `DEFLATE` (32946) | none, horizontal (2) | the very decoder of code 8 in tifffile (asserted by `tests/test_codec_bounds.py`) |
+| LZMA (34925) | none | the same tests, presets up to 9 |
+
+Any other TIFF compression or predictor (LZW, JPEG, old-style JPEG, PackBits, Zstandard, WebP,
+JPEG 2000, JPEG XL, PNG, LERC, the floating-point predictor, ...) is refused when the read is
+planned, from the header and before any pixel is read (`CompressionNotBoundedError`, code
+`compression_not_bounded`; `WindowCompressionError` for a window), with the fix named: save the
+image again as an uncompressed, deflate or LZMA TIFF (tiled, for a large image) or as OME-Zarr.
+No bound is invented for an unmeasured codec. The OME-Zarr codecs the matrix measures are
+recorded in `codec_bounds.ZARR_MEASURED`: Blosc with LZ4 (clevel 5, byte shuffle), the default
+compressor of zarr format 2 arrays (OME-NGFF 0.4) under zarr 2.18 and zarr 3, and bytes then
+Zstandard (level 0), the default of zarr format 3 arrays (OME-NGFF 0.5) under zarr 3; OME-Zarr
+reads are not refused by codec (an uncompressed OME-Zarr, as `convert` writes it, is not in the
+matrix either).
+
+**Not covered:** memory a C library allocates outside Python's allocators (the matrix's codecs
+are tifffile's and the standard library's); the whole-plane reader (`planes.read_plane` of one
+plane within the memory limit, the run's histograms, the conversion), whose estimate is not
+stated as an upper bound for any codec, so it reads every codec tifffile decodes, as before; the
+block reader's own estimate (`planes._tiff_piece_memory`, now sized from the series' largest
+piece) and `objects_read_plan`, not measured here. (The run's
 own worker plan, `plan_workers` and `max_ram`, is being fixed separately and is not part of this
 note.) A consumer that reads `n` windows at once from one reader holds at most
 `n` window working memories plus one cache: `sum(plan.memory_estimate - cache_bytes) +
@@ -139,7 +167,7 @@ A helper here that grows bounds by a margin would be a second definition of EW5;
 | MorphoFeature windowed units (`window_reads`) | one `RunWindowReader` per plane, shared by the window thread pool; CellPatcher cuts the grid and gives `context_bounds`; results keep the patch's global `bounds` (EW4) | `read_window` per window (v0.5.0); one reader per plane in MorphoFeature's consumer PR | `close()` once MorphoFeature pins a preprocessing release with it (today it drops its last reference after the plane) |
 | CellPatcher patch extraction from a large image | open a reader per image, read each patch's window (or its `context_bounds`) instead of `read_plane`; `WindowedMask` already counts mask fractions by window | `read_window`, `read_mask_window`, `WindowedMask` | a windowed extraction route in CellPatcher (it reads whole planes today) and a cached mask reader here |
 | A brick run directly (fiberfeatures, MorphoRelate, MorphoObjects, MorphoEmbed) | the same loop as section 3 with the brick's own margin (its filter footprint, ADR 0004 EW6); objects that cross tiles are the brick's concern (ADR 0004: object tiling not decided) | everything in section 2 | per-brick entry points; object tiling (Spec) |
-| LabConstrictor tool behind QuPath | file path in (`WindowReader(path, mapping)` with the mapping the tool states, or a run), tiles out; the tool may take its tiles or ROIs from QuPath and then needs only CellPatcher's `context_bounds` to grow them by its margin (EW5), not CellPatcher's grid; each tile's results written as soon as it is done (partial results), with ADR 0004 EW1's conversions: window-local to plane `pixel_edge` by the window's `origin`, then to the **LabConstrictor result coordinate** `x = e − 0.5` (a `pixel_index` `i` is written as `i`), which today's bridge turns into QuPath's `full_res` (`x0 + (x + 0.5) × d`) | the reader, geometry and conversion table | the bridge tool, its per-tile result table and resume (LabConstrictor-QuPath #50/#51; MorphoFeature roadmap F4); **imagecodecs** for JPEG whole-slide images (SVS, NDPI): without it tifffile cannot decode JPEG at all, and it is not a dependency (an optional extra to declare, review of this PR, finding 5) |
+| LabConstrictor tool behind QuPath | file path in (`WindowReader(path, mapping)` with the mapping the tool states, or a run), tiles out; the tool may take its tiles or ROIs from QuPath and then needs only CellPatcher's `context_bounds` to grow them by its margin (EW5), not CellPatcher's grid; each tile's results written as soon as it is done (partial results), with ADR 0004 EW1's conversions: window-local to plane `pixel_edge` by the window's `origin`, then to the **LabConstrictor result coordinate** `x = e − 0.5` (a `pixel_index` `i` is written as `i`), which today's bridge turns into QuPath's `full_res` (`x0 + (x + 0.5) × d`) | the reader, geometry and conversion table | the bridge tool, its per-tile result table and resume (LabConstrictor-QuPath #50/#51; MorphoFeature roadmap F4); JPEG whole-slide images (SVS, NDPI): refused by the window reader until JPEG's decoding memory is measured (#356; it would also need **imagecodecs**, not a dependency, review of this PR, finding 5); today they are saved again as deflate TIFF or OME-Zarr first |
 
 ## 5. Concurrency
 
@@ -152,10 +180,10 @@ numcodecs 0.16).
 - **TIFF.** A compressed strip or tile is read under the file handle's lock
   (`tiff_pieces._decode_segment`: seek and read only), and then decoded outside it by tifffile's
   codec. Without imagecodecs (not a dependency), zlib/deflate falls back to the standard
-  library's `zlib.decompress`, which releases the GIL while it inflates. Without imagecodecs,
-  tifffile cannot decode JPEG at all, so a JPEG whole-slide image (SVS, NDPI) cannot be read
-  until imagecodecs is installed (see "Missing" in section 4); with it, its codecs, JPEG among
-  them, decode without the GIL. Every window
+  library's `zlib.decompress`, which releases the GIL while it inflates. A JPEG whole-slide
+  image (SVS, NDPI), or any TIFF codec outside the allow-list above, is refused by the window
+  reader (#356) until its decoding memory is measured; imagecodecs alone (without which
+  tifffile cannot decode JPEG at all) would not be enough. Every window
   opens its own file handle (`windows._source`), so concurrent windows never share one.
 - **OME-Zarr.** zarr 3 decodes chunks through its codec pipeline. numcodecs' compressors (Blosc,
   Zstd, LZ4) release the GIL, and zlib/gzip use the standard library. zarr runs its own

@@ -17,9 +17,10 @@ The constants are bounds checked by measuring peaks (``tracemalloc``) over a mat
 pixel types, codecs and window geometries (``tests/test_window_memory.py``): uncompressed,
 deflate with and without a predictor and LZMA (presets up to 9) TIFF, in tiles and strips, one
 channel and interleaved RGB; OME-Zarr 0.4 and 0.5 with the default compressors. A codec outside
-that matrix (JPEG, LZW, Zstandard, WebP... through imagecodecs) is estimated with deflate's state,
-which is **not verified** to bound it. Memory a codec allocates outside Python's allocators (a
-C library's own ``malloc``) is not seen by ``tracemalloc`` and not counted.
+that matrix (JPEG, LZW, Zstandard, WebP... through imagecodecs) is refused before any pixel is
+read (:mod:`.codec_bounds`, issue #356): no bound is invented for it. Memory a codec allocates
+outside Python's allocators (a C library's own ``malloc``) is not seen by ``tracemalloc`` and
+not counted.
 """
 
 from __future__ import annotations
@@ -53,8 +54,8 @@ def header_bytes(pages: int, pieces_per_page: int) -> int:
 
 
 def codec_state(compression: int) -> int:
-    """Return the bound of a TIFF decoder's state; deflate's for a codec not in the table."""
-    return CODEC_STATE.get(int(compression), CODEC_STATE[DEFLATE[0]])
+    """Return the bound of a TIFF decoder's state (a codec not in the table is refused, #356)."""
+    return CODEC_STATE[int(compression)]
 
 
 def tiff_piece_work(piece_nbytes: int, encoded_nbytes: int, cached: bool) -> int:

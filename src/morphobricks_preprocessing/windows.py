@@ -70,6 +70,7 @@ from .planes import (
     format_bytes,
 )
 from .window_source import Bounds, Cached, WindowError, _Source
+from .window_source import WindowCompressionError as WindowCompressionError
 from .window_source import WindowLayoutError as WindowLayoutError
 from .window_tiff import _tiff_source
 from .zarr_input import NgffImage, is_zarr_store

@@ -178,6 +178,7 @@ from .physical_sizes import (
     space_unit,
     to_micrometers,
 )
+from .plane_errors import CompressionNotBoundedError
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
     Block,
@@ -293,6 +294,7 @@ __all__ = [
     "CalibrationEntry",
     "CalibrationFormatError",
     "CalibrationReview",
+    "CompressionNotBoundedError",
     "ConversionRecord",
     "ConversionRecordError",
     "ConversionPreview",

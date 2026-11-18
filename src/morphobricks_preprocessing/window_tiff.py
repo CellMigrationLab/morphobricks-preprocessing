@@ -17,6 +17,7 @@ import tifffile
 
 from . import window_memory
 from .axes import AxisMapping
+from .codec_bounds import check_tiff_codec
 from .planes import (
     PlaneLayout,
     PlaneReadError,
@@ -27,7 +28,7 @@ from .planes import (
     _tiff_blocking,
 )
 from .tiff_pieces import _box_pieces, _read_tiff_box
-from .window_source import Bounds, Cached, WindowLayoutError, _Source
+from .window_source import Bounds, Cached, WindowCompressionError, WindowLayoutError, _Source
 
 
 def _tiff_source(
@@ -112,6 +113,8 @@ def _tiff_layout(
 ) -> PlaneLayout:
     """Return a TIFF series' layout with how its pages are stored, or refuse it."""
     layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
+    # Only codecs with a measured bound are read in windows, refused before any pixel (#356).
+    check_tiff_codec([series.keyframe], path, "in windows", WindowCompressionError)
     y, x = mapping.index_of("Y"), mapping.index_of("X")
     blocking = _tiff_blocking(series.keyframe, layout.shape, layout.page_ndim, y, x)
     if blocking is None:

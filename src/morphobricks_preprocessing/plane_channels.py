@@ -20,8 +20,9 @@ held at a time. The memory checked before any pixel is read bounds that whole re
   decompressed, decoded) and the plane zarr returns for each channel.
 
 This bound is measured for deflate, LZMA and uncompressed TIFF pages decoded by ``tifffile``
-itself; codecs decoded only through imagecodecs are counted like deflate and are not
-measured (issue #342). The estimate of a single :func:`.planes.read_plane` call is unchanged.
+itself; a page stored with any other codec (:data:`.codec_bounds.TIFF_BOUNDED`) is refused
+from its header before any pixel is read (:class:`.plane_errors.CompressionNotBoundedError`,
+issue #356). The estimate of a single :func:`.planes.read_plane` call is unchanged.
 
 The values are those of :func:`.planes.read_plane`, channel by channel: the same selection
 of the same decoded page, oriented Y before X and converted to native byte order.
@@ -37,6 +38,7 @@ import numpy as np
 import tifffile
 
 from .axes import AxisMapping
+from .codec_bounds import check_tiff_codec
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
     PlaneLayout,
@@ -69,7 +71,7 @@ ZARR_COPIES = 3
 CODEC_STATE = {1: 0, 8: 64 * KIB, 32946: 64 * KIB, 34925: 66 * MIB}
 """A decoder's own state per thread by TIFF compression code: none uncompressed, deflate's
 window and tables, LZMA's dictionary (at most 64 MiB for the presets 0 to 9) and its tables.
-Another codec is counted as deflate, unmeasured (issue #342)."""
+Another codec is refused before it is reached (:mod:`.codec_bounds`, issue #356)."""
 
 
 def xyc_plane_memory(
@@ -97,7 +99,7 @@ def xyc_plane_memory(
         layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
         count = _checked(layout, channel_count, path)
         pages = _page_indices(layout, mapping, {"Z": z, "T": t}, count)
-        return _tiff_memory(series, layout, pages, count)
+        return _tiff_memory(series, layout, pages, count, path)
 
 
 def read_xyc_plane(
@@ -137,7 +139,7 @@ def read_xyc_plane(
         layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
         count = _checked(layout, channel_count, path)
         pages = _page_indices(layout, mapping, wanted, count)
-        _refuse_over(_tiff_memory(series, layout, pages, count), layout, count, path)
+        _refuse_over(_tiff_memory(series, layout, pages, count, path), layout, count, path)
         return _read_tiff(series, layout, mapping, path, wanted, count)
 
 
@@ -158,13 +160,20 @@ def _page_indices(
 
 
 def _tiff_memory(
-    series: tifffile.TiffPageSeries, layout: PlaneLayout, pages: list[int], count: int
+    series: tifffile.TiffPageSeries,
+    layout: PlaneLayout,
+    pages: list[int],
+    count: int,
+    path: str | os.PathLike,
 ) -> int:
     """Bound the memory of reading ``count`` channels of a plane of a TIFF series whole.
 
-    The pages are decoded one at a time, so the largest decode of ``pages`` counts.
+    The pages are decoded one at a time, so the largest decode of ``pages`` counts. A page
+    stored with a codec whose memory is not measured is refused here, from its header,
+    before any pixel is read (:mod:`.codec_bounds`, issue #356).
     """
     found = [_page(series, index) for index in pages]
+    check_tiff_codec(found, path, "every channel at once (RunInputs.read_plane)")
     pieces = max(len(page.databytecounts) for page in found)
     header = OPEN_BYTES + PAGE_BYTES * len(series.pages) + PIECE_ENTRY_BYTES * pieces
     decode = max(_decode_memory(series.keyframe, page) for page in found)
@@ -200,7 +209,7 @@ def _decode_memory(
     buffers = min(2 * encoded, 4 * (tifffile.TIFF.BUFFERSIZE + largest))
     piece = math.prod(int(n) for n in keyframe.chunks) * np.dtype(keyframe.dtype).itemsize
     threads = max(1, int(keyframe.maxworkers))
-    state = CODEC_STATE.get(int(keyframe.compression), CODEC_STATE[8])
+    state = CODEC_STATE[int(keyframe.compression)]  # other codecs are refused (#356)
     return buffers + threads * (largest + DECODE_COPIES * piece + state)
 
 

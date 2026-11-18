@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .plane_errors import PlaneReadError
+from .plane_errors import CompressionNotBoundedError, PlaneReadError
 from .planes import PlaneLayout
 
 Bounds = tuple[int, int, int, int]
@@ -30,6 +30,10 @@ class WindowError(PlaneReadError):
 
 class WindowLayoutError(WindowError):
     """The image's pages are stored in a way that cannot be read in parts."""
+
+
+class WindowCompressionError(WindowLayoutError, CompressionNotBoundedError):
+    """The image is stored with a codec whose read memory is not measured (issue #356)."""
 
 
 @dataclass(frozen=True)

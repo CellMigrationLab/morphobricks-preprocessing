@@ -8,6 +8,48 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+### Breaking
+
+- **Only codecs with a measured memory bound are read by the bounded readers** (#356, P2,
+  external audit of `6a3446b`; owner decision of 18 November 2026: refuse untested codecs). The
+  readers that plan their working memory before any pixel is read decode only the TIFF codecs
+  listed, with their measured evidence, in `codec_bounds.TIFF_BOUNDED`: uncompressed, deflate
+  (codes 8 and 32946, without a predictor or with the horizontal predictor) and LZMA (no
+  predictor). At v0.7.0 any other codec was estimated with deflate's state, a bound never
+  measured (and its native allocations unseen by `tracemalloc`). Now a TIFF stored with any other
+  compression or predictor is refused from its header, before any pixel is read, with the
+  compression and the fix named (save it again as an uncompressed, deflate or LZMA TIFF, tiled
+  for a large image, or as OME-Zarr): the new `CompressionNotBoundedError` (a `PlaneReadError`,
+  `code = "compression_not_bounded"`, exported by the package) and, for windows,
+  `windows.WindowCompressionError` (also a `WindowLayoutError`). No bound is invented. **Newly
+  refused**, for TIFFs stored with LZW, JPEG, old-style JPEG, PackBits, Zstandard, WebP, JPEG
+  2000, JPEG XL, PNG, LERC or the floating-point predictor (or the horizontal predictor with LZMA
+  or with no compression), whatever their size:
+  - every window read and plan: `read_window`, `window_plan`, `WindowReader` and
+    `RunInputs.window_reader` (`read_window`, `window_plan`), `cache_plan` /
+    `RunInputs.window_cache_plan`, `window_map.map_plan` (and so `map_windows` /
+    `iter_windows`), and the mask windows `read_mask_window` / `mask_window_plan` of such a mask;
+  - `RunInputs.read_plane` (every channel of a plane, `plane_channels.read_xyc_plane` and
+    `xyc_plane_memory`), and with it `RunInputs.read_image` and its `LazyImage`, and the H&E
+    tissue mask of a run's image (`RunInputs.he_tissue_mask`, `preview_he_tissue_mask`, which
+    read through `read_plane`): a JPEG-compressed RGB slide among them;
+  - and, only for images whose planes are **over the memory limit** (read in blocks at v0.7.0,
+    with the warning `planes_read_in_blocks`): `check` and `run` (`check_planes` now reports the
+    error `compression_not_bounded`, so the run stops before any pixel is read), `convert`'s
+    checks, `iter_planes` / `iter_xyc_planes`, `planes.read_plane` and its reduced preview
+    (`preview=True`, `read_sample_plane`: the notebook's axis preview of such an image).
+  Unchanged: planes within the memory limit read whole (`planes.read_plane`, the run's
+  histograms, the conversion): their estimate is not stated as an upper bound for any codec, so
+  the rule does not reach them and they read every codec tifffile decodes, as before (contract
+  §9.1 *Codecs*, `docs/design/lazy-windows.md`). Raising the memory limit so that such planes
+  are read whole is the other way out for a run. OME-Zarr reads are not refused by codec; the
+  OME-Zarr codecs the measurements cover are recorded in `codec_bounds.ZARR_MEASURED` (Blosc
+  LZ4 for zarr format 2, Zstandard for zarr format 3). The allowed codecs read bitwise as
+  before. New tests write each refused codec when its encoder is available (only that codec's
+  test is skipped otherwise) and rewrite the compression tag of an uncompressed file to each
+  refused code (never skipped): every bounded reader refuses with the exact message and no pixel
+  read.
+
 ### Added
 
 - **`window_map`: a function mapped over windows in threads, results in window order**
