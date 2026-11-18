@@ -192,8 +192,12 @@ def test_the_threshold_image_gives_the_mask_its_parts_specify():
 
 def test_no_8_bit_colour_has_a_max_od_between_the_background_pair():
     # So the background threshold can move within (OD(213), OD(212)] with no mask changed;
-    # test_he_tissue_rule.py pins the record's 0.08 itself.
-    od = -np.log10(np.maximum(np.arange(256.0), 1) / 255)
+    # test_he_tissue_rule.py pins the record's 0.08 itself. Any colour's max OD is that of its
+    # darkest channel, so the grey levels give every value a colour can have.
+    from morphobricks_normalization.optical_density import check_white, optical_density
+
+    greys = np.repeat(np.arange(256, dtype=np.uint8)[None, :, None], 3, axis=2)  # (1, 256, 3)
+    od = optical_density(greys, check_white((255, 255, 255)))[0].max(axis=-1)[0]
     assert od[213] < 0.08 <= od[212]
     assert not ((od > od[213]) & (od < od[212])).any()
 
