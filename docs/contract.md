@@ -350,7 +350,19 @@ It gives:
   lazy `(T, Z, C, Y, X)` `LazyImage`. Both are in canonical order: an image whose own header
   names X before Y (for example `ZXY`) is returned Y before X, as the run read it; nothing
   else is reordered. The memory limit of `read_plane` (default 1 GiB) counts only reading
-  the plane, not the histogram arrays a run needs (audit I2);
+  the plane, not the histogram arrays a run needs (audit I2), and it counts reading **every
+  channel** (issue #344): the `(C, Y, X)` result is allocated once and filled straight from
+  the decoded pages, a page holding several channels (interleaved RGB, planar samples) is
+  decoded once for all of them, and only one page is held at a time. Before any pixel is
+  read, `read_plane` raises `PlaneMemoryError` when the bound of that whole read
+  (`plane_channels.xyc_plane_memory`) is over the limit: for TIFF the result, the decoded
+  page, the encoded bytes tifffile holds twice while it decodes the page, per decoding
+  thread one encoded and five decoded strips or tiles and the codec's state, and the parsed
+  header; for OME-Zarr the result, every chunk the plane touches three times and the plane
+  zarr returns. The bound is measured (tracemalloc, and peak RSS on Linux) for deflate,
+  deflate with a predictor, LZMA and uncompressed TIFF and for OME-Zarr; codecs decoded only
+  through imagecodecs are counted like deflate, unmeasured (issue #342). The values are
+  bitwise those of reading each channel alone;
 - `read_window(fov, *, t, z, bounds, channels, level=0, memory_limit=...)` (issue #179, owner
   decisions of 14 November 2026): an exact window of one plane as a `(C, h, w)` array of the
   stored values, in the stored pixel type, bitwise the same as that slice of `read_plane`.

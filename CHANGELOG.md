@@ -29,6 +29,28 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Fixed
 
+- **`RunInputs.read_plane` checks the memory of reading every channel, and decodes a page
+  holding several channels once** (#344). At v0.7.0 it called `planes.read_plane` once per
+  channel and stacked the results: each call checked only its own channel's estimate, while
+  the channels already read and their stacked copy were held next to it (about 1.45 times the
+  estimate measured for RGB; about 9.3 GiB against an estimate of 6.5 GiB extrapolated for a
+  CMU-1-sized RGB plane), and an interleaved RGB or planar page was decoded once per channel.
+  It now reads through `plane_channels.read_xyc_plane`: one `(C, Y, X)` array allocated once
+  and filled straight from each decoded page, one decode for a page holding several channels
+  (three to one for RGB), one page held at a time. Before any pixel is read it refuses
+  (`PlaneMemoryError`) when the bound of that whole read, `plane_channels.xyc_plane_memory`, is
+  over `memory_limit`: the result, the decoded page, tifffile's decode buffers (the encoded
+  bytes twice; per decoding thread one encoded and five decoded strips or tiles and the
+  codec's state) and the parsed header; for OME-Zarr the result, the chunks the plane touches
+  three times and zarr's returned plane. New tests check the bound against the tracemalloc
+  peak (interleaved RGB deflate tiles, poorly compressible tiles, planar strips with a
+  predictor, uncompressed, LZMA, OME-Zarr) and the peak RSS (interleaved and planar, Linux),
+  bitwise equality with the per-channel reads over eight layouts and OME-Zarr, the decode
+  counts, and a refusal with no pixel read at one byte under the bound. Because the bound now
+  counts what was left out, the largest plane `read_plane` accepts at a given limit is
+  smaller than before (for an RGB `uint8` plane, about two thirds); `RunInputs.he_tissue_mask`
+  reads through it. The estimate of a single `planes.read_plane` call (histogram reads, block
+  plans) is unchanged; its decode-buffer gap is #342.
 - **The worker planner refuses an explicit worker count with `max_ram`** (internal guard;
   public behaviour unchanged). At v0.7.0 `run.workers.plan_workers` returned a whole number
   of workers as given even with `max_ram`, so that budget would not have been kept.
