@@ -54,14 +54,36 @@ def _filled(path, mapping, cache, plane, read):
 
 def _cached_peak(path, mapping, cache, plane, bounds, read):
     """Return a filled reader's estimate and the peak of reading ``bounds`` through it."""
-    tracemalloc.start()  # from before the cache is filled: its pieces are traced
+    import gc
+    import sys
+    import warnings
+    tracemalloc.start(30)  # from before the cache is filled: its pieces are traced
+    events = []
+    def cb(phase, info):
+        events.append((phase, dict(info), tracemalloc.get_traced_memory()))
     try:
         reader, held = _filled(path, mapping, cache, plane, read)
         tracemalloc.reset_peak()
         start = tracemalloc.get_traced_memory()[0]
-        reader.read_window(bounds=bounds, **read)
+        before = tracemalloc.take_snapshot()
+        gc.callbacks.append(cb)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            reader.read_window(bounds=bounds, **read)
+        gc.callbacks.remove(cb)
         peak = tracemalloc.get_traced_memory()[1] - start + held
+        if peak > 2**21:
+            after = tracemalloc.take_snapshot()
+            print("DEBUG peak", peak, "start", start, "held", held, file=sys.stderr)
+            print("DEBUG gc events", events, file=sys.stderr)
+            print("DEBUG warnings", [(str(w.message)[:200], w.filename, w.lineno) for w in caught], file=sys.stderr)
+            for stat in after.compare_to(before, "traceback")[:5]:
+                print("DEBUG diff", stat, file=sys.stderr)
+                for line in stat.traceback.format()[-40:]:
+                    print("DEBUG   ", line, file=sys.stderr)
     finally:
+        if cb in gc.callbacks:
+            gc.callbacks.remove(cb)
         tracemalloc.stop()
     return reader.window_plan(bounds=bounds, channels=read["channels"]).memory_estimate, peak
 
