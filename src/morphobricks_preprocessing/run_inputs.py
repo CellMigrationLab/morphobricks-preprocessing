@@ -66,7 +66,8 @@ from .manifest import (
 from .mask_conversion import ConversionInputs
 from .mask_record import shared_mask_text
 from .masks import FOLDER
-from .planes import DEFAULT_MEMORY_LIMIT, read_plane
+from .plane_channels import read_xyc_plane
+from .planes import DEFAULT_MEMORY_LIMIT
 from .recorded_sizes import RecordedSize
 from .required_description import FIX, is_published, required_message
 from .run.generation import published_path, read_stable
@@ -326,6 +327,10 @@ class RunInputs(
             If the image changed since the run.
         IndexError
             If ``z`` or ``t`` is outside the image.
+        PlaneMemoryError
+            If reading the plane whole, every channel, needs more working memory than
+            ``memory_limit``: the decoded page, its encoded bytes and the ``(C, Y, X)``
+            result (for OME-Zarr, also the plane zarr returns). Nothing is decoded then.
         """
         z, t = (_coordinate(v, k, "read_plane(fov, z, t)") for k, v in (("z", z), ("t", t)))
         entry = self._checked(fov)
@@ -341,13 +346,11 @@ class RunInputs(
             coordinates[role.lower()] = index
         has_c = mapping.index_of("C") is not None
         channels = self._fov(entry).c_count if has_c else 1
-        planes = [
-            read_plane(
-                path, mapping, c=c if has_c else None, memory_limit=memory_limit, **coordinates
-            ).pixels
-            for c in range(channels)
-        ]
-        return np.stack(planes)
+        # One (C, Y, X) array filled from each page decoded once, its whole memory checked
+        # before any pixel is read (issue #344).
+        return read_xyc_plane(
+            path, mapping, channel_count=channels, memory_limit=memory_limit, **coordinates
+        )
 
     def read_image(self, fov: Fov | str) -> LazyImage:
         """Return the image as a lazy ``(T, Z, C, Y, X)`` array: planes are read when indexed."""

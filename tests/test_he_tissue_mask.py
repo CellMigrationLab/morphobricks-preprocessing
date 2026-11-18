@@ -293,6 +293,11 @@ def test_other_refusals_before_any_read(run, monkeypatch, tmp_path):
         run.he_tissue_mask(f"{UNIT}/z.tif", output_mask_id="HETissue")
     with pytest.raises(ValueError, match="known rules are he_tissue_v1"):
         run.he_tissue_mask(IMAGE, output_mask_id="HETissue", rule="he_tissue_v2")
+    # A list of rules is a clear TypeError, not an unhashable one (issue #345).
+    with pytest.raises(TypeError, match="The rule is one ID, a str such as he_tissue_v1; got list"):
+        run.he_tissue_mask(IMAGE, output_mask_id="HETissue", rule=["he_tissue_v1"])
+    with pytest.raises(TypeError, match="The rule is one ID, a str"):
+        run.preview_he_tissue_mask(IMAGE, rule=["he_tissue_v1"])
     monkeypatch.setitem(__import__("sys").modules, "skimage", None)  # a blocked import
     monkeypatch.setattr(helper, "hed_matrix", helper.hed_matrix.__wrapped__)
     with pytest.raises(ImportError, match=r'pip install "morphobricks-preprocessing\[he-mask\]"'):

@@ -241,12 +241,17 @@ def current_rule(rule: str) -> dict:
 
     Raises
     ------
+    TypeError
+        For a rule that is not one ID, a ``str`` (a list of IDs, say).
     ValueError
         For an unknown rule ID (listing the known ones), or a normalization whose ``he_eosin``
         preset is not the version the rule was defined on.
     ImportError
         When scikit-image is missing (:func:`skimage_module`).
     """
+    if not isinstance(rule, str):
+        known = ", ".join(sorted(RULES))
+        raise TypeError(f"The rule is one ID, a str such as {known}; got {type(rule).__name__}")
     if rule not in RULES:
         raise ValueError(
             f"The rule {rule!r} is not known; the known rules are {', '.join(sorted(RULES))}"

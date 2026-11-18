@@ -19,13 +19,14 @@ that describe a run's source and output (``source``, ``output``, ``image_type``,
 runs the run route (``RunInputs.he_tissue_mask``, with lineage) remains the route.
 
 **Refused before any computation**, with nothing converted and no axes guessed: an input that is
-not a plain ``numpy.ndarray`` (``TypeError``), a pixel type other than ``uint8``, a shape other
-than ``(Y, X, 3)`` with ``Y, X >= 1`` (``ValueError``), an unknown rule (``ValueError``), and a
-missing scikit-image (``ImportError`` naming the ``he-mask`` extra). The rule takes nothing else
-from the caller: it has no pixel size (sizes are pixels), its white is fixed at 255 and it has no
-per-call thresholds, exactly as the run route. This module imports no scikit-image,
-normalization ``stain`` module or helper module: they are imported only when the function is
-called past the input checks.
+not a plain ``numpy.ndarray`` (``TypeError``; for a subclass the message suggests
+``np.asarray``), a pixel type other than ``uint8``, a shape other than ``(Y, X, 3)`` with
+``Y, X >= 1`` (``ValueError``), a rule that is not a ``str`` (``TypeError``), an unknown rule
+(``ValueError``), and a missing scikit-image (``ImportError`` naming the ``he-mask`` extra). The
+rule takes nothing else from the caller: it has no pixel size (sizes are pixels), its white is
+fixed at 255 and it has no per-call thresholds, exactly as the run route. This module imports
+no scikit-image, normalization ``stain`` module or helper module: they are imported only when the
+function is called past the input checks.
 """
 
 from __future__ import annotations
@@ -71,10 +72,13 @@ class TissueMaskArrayRecord:
     operation
         The rule's operation (``"he_tissue_mask"``), as in the run route's lineage.
     rule_text
-        The complete canonical rule record as JSON, keys in the record's order: the record the
-        run route writes in its lineage line (read it with :attr:`rule`).
+        The complete rule record in its canonical JSON (keys sorted, no spaces; UTF-8 when
+        hashed): exactly the text :attr:`rule_sha256` is the digest of, so
+        ``sha256(rule_text.encode()) == rule_sha256``. It holds the record the run route writes
+        in its lineage line, whose keys keep the record's order there (read it with
+        :attr:`rule`).
     rule_sha256
-        The SHA-256 of the record's canonical JSON, as the run route records it.
+        The SHA-256 of :attr:`rule_text`, as the run route records it.
     code
         BM15's code identities of ``preprocessing`` and ``normalization`` (read-only), each with
         ``verified`` and ``reason`` as found; never assumed verified.
@@ -104,7 +108,7 @@ class TissueMaskArrayRecord:
 
     @property
     def rule(self) -> dict:
-        """The canonical rule record as a new dict (its keys in the record's order)."""
+        """The rule record as a new dict, from :attr:`rule_text` (its keys sorted)."""
         return json.loads(self.rule_text)
 
     @property
@@ -175,7 +179,8 @@ def he_tissue_mask_array(rgb: np.ndarray, *, rule: str = HE_TISSUE_V1) -> Tissue
     Raises
     ------
     TypeError
-        When ``rgb`` is not a plain ``numpy.ndarray`` (a subclass, a list, ``None``).
+        When ``rgb`` is not a plain ``numpy.ndarray`` (a subclass, a list, ``None``), or
+        ``rule`` is not a ``str``.
     ValueError
         A pixel type other than ``uint8``, a shape other than ``(Y, X, 3)`` with ``Y, X >= 1``,
         or an unknown rule; all before any computation.
@@ -197,9 +202,16 @@ def check_rgb_array(rgb: object) -> None:
         For another pixel type, or a shape other than ``(Y, X, 3)`` with ``Y, X >= 1``.
     """
     if type(rgb) is not np.ndarray:
+        found = type(rgb).__name__
+        if isinstance(rgb, np.ndarray):
+            raise TypeError(
+                f"The H&E tissue mask takes a plain numpy.ndarray; got {found}, a subclass of "
+                "it. Nothing is converted: if its values are the image's pixels, pass "
+                "np.asarray(rgb) (for a masked array, its data with the masked pixels as stored)"
+            )
         raise TypeError(
-            f"The H&E tissue mask takes a plain numpy.ndarray; got {type(rgb).__name__}. Pass "
-            "the image's pixels as a uint8 (Y, X, 3) R, G, B array"
+            f"The H&E tissue mask takes a plain numpy.ndarray; got {found}. Pass the image's "
+            "pixels as a uint8 (Y, X, 3) R, G, B array"
         )
     if rgb.dtype != np.uint8:
         raise ValueError(
@@ -229,7 +241,7 @@ def _computed(rgb: np.ndarray, rule: str) -> TissueMaskArray:
     from . import __version__
     from .he_tissue_mask import current_rule, rule_on_plane, skimage_module
     from .he_tissue_rule import OPERATION
-    from .lineage_schema import CODE_KEYS, rule_sha256
+    from .lineage_schema import CODE_KEYS, canonical_rule_text, rule_sha256
 
     record = current_rule(rule)
     pixels = np.ascontiguousarray(np.moveaxis(rgb, -1, 0))
@@ -238,7 +250,7 @@ def _computed(rgb: np.ndarray, rule: str) -> TissueMaskArray:
     found = TissueMaskArrayRecord(
         rule_id=rule,
         operation=OPERATION,
-        rule_text=json.dumps(record),
+        rule_text=canonical_rule_text(record),
         rule_sha256=rule_sha256(record),
         code=code,
         code_verified=all(code[key]["verified"] for key in CODE_KEYS),

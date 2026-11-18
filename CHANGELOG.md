@@ -97,6 +97,58 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Fixed
 
+- **`he_tissue_mask_array` follow-ups from the #343 review** (#345). `record.rule_text` is now
+  the rule record's canonical JSON (keys sorted, no spaces, `lineage_schema.canonical_rule_text`),
+  the exact text `rule_sha256` is the digest of, so `sha256(rule_text) == rule_sha256`; it was
+  the record in its own key order, called canonical, which did not hash to `rule_sha256`
+  (`record.rule` is the same dict, its keys now sorted). The equality tests gain a 100 x 220
+  (not square) image whose parts sit on every threshold of `he_tissue_v1`: for each pixel
+  comparison the 8-bit colours nearest it on both sides (an exhaustive search of all 2^24
+  colours), nucleus and red-cell pieces of 14 and 15 px, background pieces of 999 and 1000 px;
+  its mask is checked against the mask its parts specify. Moving any threshold past the nearest
+  8-bit colour (0.08 to 0.0803 or 0.0781, 0.05 to 0.0500001 ...) or any size or radius by one
+  (1000 to 999 or 1001, 15 to 14 or 16, the opening radius 2 to 3, a dilation radius) now fails
+  that test. No 8-bit colour has a maximum OD between 0.07816 and 0.08020, so 0.08 to 0.0801
+  changes no mask of any 8-bit image; the rule-record test now pins every threshold and size,
+  so it fails instead. An `ndarray` subclass is refused with a message suggesting
+  `np.asarray(rgb)`, and a rule that is not one `str` ID (`rule=["he_tissue_v1"]`) is a
+  `TypeError` naming it, in the array route and the run route (`RunInputs.he_tissue_mask`,
+  `preview_he_tissue_mask`), where it was a bare unhashable-type error.
+- **`RunInputs.read_plane` checks the memory of reading every channel, and decodes a page
+  holding several channels once** (#344). At v0.7.0 it called `planes.read_plane` once per
+  channel and stacked the results: each call checked only its own channel's estimate, while
+  the channels already read and their stacked copy were held next to it (about 1.45 times the
+  estimate measured for RGB; about 9.3 GiB against an estimate of 6.5 GiB extrapolated for a
+  CMU-1-sized RGB plane), and an interleaved RGB or planar page was decoded once per channel.
+  It now reads through `plane_channels.read_xyc_plane`: one `(C, Y, X)` array allocated once
+  and filled straight from each decoded page, one decode for a page holding several channels
+  (three to one for RGB), one page held at a time. Before any pixel is read it refuses
+  (`PlaneMemoryError`) when the bound of that whole read, `plane_channels.xyc_plane_memory`, is
+  over `memory_limit`: the result, the decoded page, tifffile's decode buffers (the encoded
+  bytes twice; per decoding thread one encoded and five decoded strips or tiles and the
+  codec's state), sized from the byte counts of the pages actually read (not the first
+  page's: pages of one file can compress very differently), and the parsed header; for OME-Zarr the result, the chunks the plane touches
+  three times and zarr's returned plane. New tests check the bound against the tracemalloc
+  peak (interleaved RGB deflate tiles, poorly compressible tiles, planar strips with a
+  predictor, uncompressed, LZMA, OME-Zarr) and the peak RSS (interleaved and planar, Linux),
+  bitwise equality with the per-channel reads over eight layouts and OME-Zarr, the decode
+  counts, a refusal with no pixel read at one byte under the bound, and a file whose blank
+  first time point compresses to almost nothing while the next is noise (its bound, peak and
+  refusal at the first page's bound). The largest plane
+  `read_plane` accepts at a given limit changes both ways. For **compressed** pages it is
+  smaller, because the bound now counts what was left out (the other channels, tifffile's
+  decode buffers): about two thirds for an RGB `uint8` plane of deflate tiles. For
+  **uncompressed pages stored in one run of bytes** it is larger, because such a page is read
+  straight into its array (the old estimate also counted its encoded bytes, a second copy):
+  per channel of `P` bytes the old check needed `7 P` for RGB and `3 P` for one channel, the
+  new bound `6 P` and `2 P` plus about 2 MiB of header, so at the default 1 GiB limit the
+  largest RGB `uint8` plane goes from about 146 to 170 MiB per channel and a one-channel plane
+  from about 341 to 511 MiB, and planes the old check refused are now read. Everything that reads through
+  `read_plane` gets the new check and the single decode at the default 1 GiB limit:
+  `RunInputs.read_image` (which reads the first plane to learn the shape), every plane a
+  `LazyImage` reads when indexed, and `RunInputs.he_tissue_mask` and
+  `preview_he_tissue_mask`. The estimate of a single `planes.read_plane` call (histogram reads, block
+  plans) is unchanged; its decode-buffer gap is #342.
 - **The worker planner refuses an explicit worker count with `max_ram`** (internal guard;
   public behaviour unchanged). At v0.7.0 `run.workers.plan_workers` returned a whole number
   of workers as given even with `max_ram`, so that budget would not have been kept.
