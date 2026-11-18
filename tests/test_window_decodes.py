@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 import tifffile
 
-from morphobricks_preprocessing import prefill_mapping, read_plane
+from morphobricks_preprocessing import prefill_mapping, read_plane, window_memory
 from morphobricks_preprocessing.windows import read_window, window_plan
 from test_windows import WINDOWS, H, W, rgb, stored
 from zarr_tree import write_ngff, zarr_major
@@ -156,9 +156,12 @@ def test_the_estimate_counts_the_result_and_one_tile_for_all_samples(tmp_path):
     path = rgb(tmp_path / "a.tif", data, tile=(TILE, TILE), compression="zlib")
     with tifffile.TiffFile(path) as tif:
         encoded = max(tif.pages[0].databytecounts)
+        pages, pieces = len(tif.series[0].pages), len(tif.pages[0].dataoffsets)
     plan = window_plan(path, prefill_mapping("YXS"), bounds=BOUNDS, channels=[0, 1, 2])
     pixels = (BOUNDS[1] - BOUNDS[0]) * (BOUNDS[3] - BOUNDS[2])
-    assert plan.memory_estimate == 3 * pixels + TILE * TILE * 3 + encoded
+    decode = window_memory.TIFF_DECODE_COPIES * TILE * TILE * 3 + encoded  # one tile at a time
+    header = window_memory.header_bytes(pages, pieces) + window_memory.CODEC_STATE[8]
+    assert plan.memory_estimate == 3 * pixels + decode + header
 
 
 def test_zarr_chunks_across_channels_are_read_once_per_window(tmp_path, monkeypatch):

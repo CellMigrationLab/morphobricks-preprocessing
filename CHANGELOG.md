@@ -10,6 +10,57 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Added
 
+- **Lazy windows, one layer for every consumer** (`docs/design/lazy-windows.md`): a design note
+  on where lazy, windowed reading of large images lives (here, processing-agnostic), its API,
+  how MorphoFeature, CellPatcher, a brick run directly and a LabConstrictor/QuPath tool use it
+  (window geometry stays CellPatcher's, Spec ADR 0004 EW5), what exists and what is missing
+  (among it imagecodecs, not a dependency, without which JPEG whole-slide images cannot be
+  decoded), and its concurrency: TIFF deflate decoding releases the GIL (the standard library's
+  `zlib`, measured: 154, 254 and 282 MiB/s with 1, 2 and 4 threads), imagecodecs' and
+  numcodecs' codecs are documented to release it too but OME-Zarr decoding was not measured; the
+  cache is single-flight; the ways to hand parallelism to a consumer, and the rules (order,
+  memory, close, no fallback).
+- **Deterministic close of a window reader:** `WindowReader` and `RunWindowReader` gain
+  `close()`, `closed` and the context manager; closing drops the cache of decoded pieces at once
+  (`BlockCache.close`), a later window is refused with the new
+  `window_reader.WindowReaderClosedError`, and a window being read meanwhile finishes, bitwise,
+  keeping nothing. Every window read is unchanged.
+- **Single-flight covers pieces the cache does not keep** (performance review F4): threads that
+  wait for a piece being decoded now get that decode even when the piece is not kept (larger
+  than the bound, or dropped at once), so requests that overlap in time never decode a piece
+  twice; at v0.7.0 each waiting thread decoded such a piece again. A failed decode is still
+  not shared.
+- **Cached pieces are immutable** (F5): a kept piece is copied once into an immutable buffer,
+  so neither it nor its storage can be made writable again (v0.7.0 only marked it read only,
+  which NumPy lets an owner undo). A piece shared with waiting threads but not kept (too large,
+  or dropped by a close) is frozen too. The copy is made outside the cache's lock, so other
+  threads keep reading held pieces meanwhile. Every window is unchanged, bitwise.
+- **A window's memory estimate is an upper bound of its peak** (review of #339, finding 1; the
+  estimate was below the peak: a one-tile zlib window estimated at 262 KB peaked at 625 KB).
+  `window_plan` (and a reader's) now also counts the decode's buffers, the codec's state, the
+  parsed header and, through a cache, the frozen copy of a kept piece (`window_memory`); the
+  cache never holds more than its bound, not even while a piece is added. Measured peaks never
+  exceed it over the matrix of `tests/test_window_memory.py` (TIFF uncompressed, deflate with and
+  without a predictor and LZMA; OME-Zarr 0.4 and 0.5; uncached and cached). Codecs only
+  imagecodecs decodes, the plane block reader and `objects_read_plan` are not covered (#342).
+  Estimates are larger: `window_plan`, a reader's `window_plan` and `RunInputs.mask_window_plan`
+  (a mask window goes through the same estimate: it now also counts the parsed header, 256 KiB
+  plus 2 KiB a page and 80 B a piece, and for a compressed mask the decode's buffers and the
+  codec's state), so a window or a mask window very close to its memory limit may now be refused
+  before any pixel is read, where v0.7.0 read it. `RunInputs.objects_read_plan` is unchanged (it
+  is computed from the mask's shape and stored type, not through the window estimate; its tests
+  pin the same figures). The windows and masks read are unchanged, bitwise.
+- **`window_reader.cache_plan` and `RunInputs.window_cache_plan`** (review of #339, finding 2):
+  the cache a grid of windows read row by row with margins needs to decode each piece once,
+  from the header: `ceil((window + 2 × margin) / piece) + 1` rows of pieces across the whole
+  plane, for each group of channels stored apart (`CachePlan`), for the consumer to cap with its
+  own budget. On the synthetic 8192² RGB grid (512-px windows, 67-px margins) it gives 36 MiB, the
+  measured threshold of one decode per tile (35 MiB: 624 decodes for 256 tiles). The design
+  note's "about two rows" is corrected: a window and its margins span three rows of tiles.
+  `RunInputs` gains the method (the API surface test and contract §9.1 list it).
+- **`RunWindowReader.window_plan(*, t, z, bounds, channels, level=0)`:** the plan of a window of
+  a run's image by channel IDs (as `WindowReader.window_plan`), its memory estimate counting the
+  reader's cache, for consumers that plan memory before reading.
 - **`he_tissue_mask_array(rgb, *, rule="he_tissue_v1")`: the H&E tissue mask of an array, with
   no run** (roadmap K3; owner decision of 17 November 2026; contract §15.4). It computes the
   **provisional** rule `he_tissue_v1` on one `uint8` `(Y, X, 3)` R, G, B array through the run

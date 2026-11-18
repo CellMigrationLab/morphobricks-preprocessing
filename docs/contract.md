@@ -402,7 +402,9 @@ It gives:
   above 0, below `memory_limit`; a piece larger is used once and not kept), counts in each
   window's memory estimate (a window whose own working memory and `cache_bytes` together are
   over `memory_limit` is `WindowMemoryError`), and is safe to share between threads (a piece
-  asked by several at once is decoded once). Pieces are kept under the image's path, the
+  asked by several at once is decoded once, and every thread that waited gets that decode, also
+  when the piece is not kept; a kept piece is immutable, its bytes in a read-only buffer; the
+  cache is per process, never shared). Pieces are kept under the image's path, the
   fingerprint the run recorded for it, the level and the page and piece (TIFF) or chunk
   (OME-Zarr). The fingerprint is checked before each window (`RunInputsError`, as for
   `read_window`) and again after it: an image changed during a read is refused
@@ -410,7 +412,23 @@ It gives:
   pieces are read from the file as without a cache, never cached. There is no hidden or global
   cache: `read_window` keeps none. The same reader for a file outside a run is
   `window_reader.WindowReader(path, mapping, *, cache_bytes, memory_limit=..., fingerprint=None)`
-  (its `read_window(*, bounds, channels, z=None, t=None, level=0)` and `window_plan`);
+  (its `read_window(*, bounds, channels, z=None, t=None, level=0)` and `window_plan`).
+  `RunWindowReader.window_plan(*, t, z, bounds, channels, level=0)` (Unreleased) is the window's
+  `windows.WindowPlan` from the header, with `read_window`'s checks, its `memory_estimate`
+  counting `cache_bytes`. A window's `memory_estimate` (Unreleased) is an upper bound of the
+  read's peak, checked by measurement for the codecs listed in `window_memory` (#342 for the
+  others): the result, the pieces, the decode's buffers, the codec's state, the parsed header and,
+  through a cache, the frozen copy of a kept piece. Both readers (Unreleased) have `close()`, `closed` and are context
+  managers: closing drops the cache at once (also when the `with` block fails), a later window or
+  plan is `window_reader.WindowReaderClosedError`, a window being read meanwhile finishes bitwise
+  and keeps nothing; a reader holds no open file between windows. One reader per image is meant
+  to be shared by every thread reading it (`docs/design/lazy-windows.md`).
+  `window_cache_plan(fov, *, window, margin, channels)` (Unreleased; `window_reader.cache_plan`
+  for a file) returns a `window_reader.CachePlan` from the header: `cache_bytes`, the cache a
+  grid of `window` px windows with `margin` px margins read row by row needs to decode each
+  piece once (`piece_rows` = `ceil((window + 2 × margin) / piece) + 1` rows of `per_row` pieces
+  of `piece_nbytes`, for each of `groups` of channels stored apart; 0 for uncompressed TIFF
+  pieces), a figure for the caller to cap with its own budget;
 - `plane_shape(fov)`: the `(height, width)` of the position's planes, Y before X whatever the
   stored order (the frame of `read_window`'s bounds, the last two sizes of `read_plane`), from the
   header and the recorded axes only: no pixel is read and no content digest computed; the
@@ -651,7 +669,7 @@ errors are exported at the package's top level and are picklable with their attr
 **The pinned surface (v0.5.1, PP-1).** `tests/test_brick_api_surface.py` pins, by name and type,
 what the consuming bricks use: `RunInputs`'s public methods and their signatures (`open`, `fovs`,
 `files`, `projection`, `pixel_sizes`, `read_plane`, `read_image`, `plane_shape`, `read_window`,
-`window_reader`, `mask_types`, `read_mask`, `read_mask_window`, `mask_window_plan`,
+`window_reader`, `window_cache_plan`, `mask_types`, `read_mask`, `read_mask_window`, `mask_window_plan`,
 `read_objects`, `objects_read_plan`,
 `histograms`, `design`, `description`, `section_digests`, `images_without_header_channel_names`,
 `channel_index`, `references`, `mask_semantics`, `mask_check_status`, `require_checked`,

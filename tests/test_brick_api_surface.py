@@ -61,6 +61,10 @@ RUN_INPUTS_METHODS = {
         "(self, fov: 'Fov | str', *, cache_bytes: 'int', "
         "memory_limit: 'int' = 1073741824) -> 'RunWindowReader'"
     ),
+    "window_cache_plan": (
+        "(self, fov: 'Fov | str', *, window: 'tuple[int, int]', margin: 'tuple[int, int]', "
+        "channels: 'Sequence[str]') -> 'CachePlan'"
+    ),
     "mask_types": "(self) -> 'tuple[str, ...]'",
     "read_mask": (
         "(self, fov: 'Fov | str', mask_type: 'str', z: 'int | None' = None, "

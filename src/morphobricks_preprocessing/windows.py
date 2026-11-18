@@ -29,10 +29,11 @@ bitwise the same as that slice of the whole plane read by :func:`.planes.read_pl
   and columns) are refused (:class:`WindowLayoutError`), never read whole in their place.
   OME-Zarr images are read through zarr, which decodes only the chunks the window intersects.
 - **Memory.** Before any pixel is read, the window's working memory is estimated from the
-  header (:func:`window_plan`): the result and the stored pieces read into it (for TIFF, one
+  header (:func:`window_plan`): the result, the stored pieces read into it (for TIFF, one
   piece at a time, written straight into the result; for OME-Zarr, every chunk the window
-  intersects and zarr's copy of the channels read together). A window over the limit is
-  refused (:class:`WindowMemoryError`).
+  intersects and zarr's copy of the channels read together), the decode's buffers, the
+  codec's state and the open header (:mod:`.window_memory`, which states for which codecs it
+  is a measured upper bound). A window over the limit is refused (:class:`WindowMemoryError`).
 
 What a caller records with a window (it is never worked out again later): the source
 fingerprint the run recorded for the image (size, modification time and, for OME-Zarr, the
@@ -53,6 +54,7 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
+from . import window_memory
 from .axes import AxisMapping
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
@@ -172,6 +174,8 @@ class _Source:
     layout: PlaneLayout
     groups: Callable[[Sequence[int]], tuple[tuple[int, ...], ...]]
     read: Callable[[dict[int, int], Bounds, Sequence[int], Sequence[np.ndarray]], None]
+    extra: int = 0  # the open header and the codec's state (window_memory)
+    cached: bool = False
 
 
 def check_bounds(bounds: object, plane_shape: tuple[int, int]) -> Bounds:
@@ -409,7 +413,7 @@ def _zarr_source(
         for target, c in zip(targets, channels, strict=True):
             target[...] = pixels[c - low]
 
-    return _Source(layout, groups, read)
+    return _Source(layout, groups, read, window_memory.OPEN_BYTES, cached is not None)
 
 
 def _read_zarr_chunks(
@@ -497,7 +501,10 @@ def _tiff_source(
             page, layout.blocking, (where[0], where[1]), samples, box, targets, path, fetch
         )
 
-    return _Source(layout, groups, read)
+    keyframe = series.keyframe
+    extra = window_memory.header_bytes(len(series.pages), len(keyframe.dataoffsets))
+    extra += window_memory.codec_state(keyframe.compression)
+    return _Source(layout, groups, read, extra, cached is not None)
 
 
 def _tiff_layout(
@@ -538,10 +545,13 @@ def _plan(
         # zarr decodes every chunk the window touches and returns a copy of the window for
         # every channel from the first to the last of a group read together.
         span = max(max(wanted[i] for i in g) - min(wanted[i] for i in g) + 1 for g in groups)
-        work = pieces * blocking.piece_nbytes + 2 * span * pixels * itemsize
-    else:
-        # One strip or tile at a time, written straight into the result.
+        work = window_memory.zarr_piece_work(pieces, blocking.piece_nbytes, source.cached)
+        work += 2 * span * pixels * itemsize
+    elif blocking.partial_rows:  # uncompressed rows read straight into the result
         work = _tiff_piece_memory(blocking, rows[1] - rows[0])
+    else:  # one compressed strip or tile at a time, written straight into the result
+        piece, encoded = blocking.piece_nbytes, blocking.encoded_nbytes
+        work = window_memory.tiff_piece_work(piece, encoded, source.cached)
     return WindowPlan(
         bounds=checked,
         level=LEVEL,
@@ -550,7 +560,7 @@ def _plan(
         dtype=layout.dtype,
         plane_shape=layout.plane_shape,
         pieces=pieces,
-        memory_estimate=len(wanted) * pixels * itemsize + work,
+        memory_estimate=len(wanted) * pixels * itemsize + work + source.extra,
         memory_limit=memory_limit,
         reads=pieces * len(groups),
     )
