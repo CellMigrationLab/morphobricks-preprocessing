@@ -75,7 +75,11 @@ v0.5.1: no run before v0.5.1 is read.)
   per channel of `P` bytes the old check needed `7 P` for RGB and `3 P` for one channel, the
   new bound `6 P` and `2 P` plus about 2 MiB of header, so at the default 1 GiB limit the
   largest RGB `uint8` plane goes from about 146 to 170 MiB per channel and a one-channel plane
-  from about 341 to 511 MiB, and planes the old check refused are now read. `RunInputs.he_tissue_mask` reads through it. The estimate of a single `planes.read_plane` call (histogram reads, block
+  from about 341 to 511 MiB, and planes the old check refused are now read. Everything that reads through
+  `read_plane` gets the new check and the single decode at the default 1 GiB limit:
+  `RunInputs.read_image` (which reads the first plane to learn the shape), every plane a
+  `LazyImage` reads when indexed, and `RunInputs.he_tissue_mask` and
+  `preview_he_tissue_mask`. The estimate of a single `planes.read_plane` call (histogram reads, block
   plans) is unchanged; its decode-buffer gap is #342.
 - **The worker planner refuses an explicit worker count with `max_ram`** (internal guard;
   public behaviour unchanged). At v0.7.0 `run.workers.plan_workers` returned a whole number
