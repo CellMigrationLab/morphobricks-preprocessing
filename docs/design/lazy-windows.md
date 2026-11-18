@@ -55,8 +55,9 @@ decode's buffers (five piece-sized buffers for a compressed TIFF piece, three fo
 chunk), the codec's state (deflate 64 KiB; LZMA 66 MiB, for presets up to 9), the parsed header
 (256 KiB, 2 KiB a page, 80 B a piece) and, through a cache, the frozen copy of the piece being
 kept; the cache never holds more than its bound, not even while a piece is added. The bound is
-**checked, not proven**: `tests/test_window_memory.py` measures the peak with `tracemalloc` and
-asserts it is never over the estimate, for TIFF `uint8`, `uint16` and `float32`, uncompressed,
+**checked, not proven**: `tests/test_window_memory.py` measures the peak with `tracemalloc`, in
+a fresh Python process (`tests/window_peaks.py`, so that what earlier tests left in the
+interpreter cannot land in the measured read, #348), and asserts it is never over the estimate, for TIFF `uint8`, `uint16` and `float32`, uncompressed,
 deflate, deflate with a predictor and LZMA, in 64- and 128-px tiles and 32-row strips, interleaved
 RGB and a multi-page OME stack, and for OME-Zarr 0.4 and 0.5 with chunks across 1 to 3
 channels, every one uncached and through a full cache of two sizes, for windows from 64 px to the
