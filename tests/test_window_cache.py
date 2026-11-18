@@ -15,11 +15,15 @@ import pytest
 import test_window_decodes
 import test_windows
 from described_tree import run_described
-from morphobricks_preprocessing import prefill_mapping, tiff_pieces
+from morphobricks_preprocessing import prefill_mapping, run_inputs_window, tiff_pieces
 from morphobricks_preprocessing.block_cache import BlockCache
 from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError
 from morphobricks_preprocessing.testing import make_clean_run
-from morphobricks_preprocessing.window_reader import WindowReader
+from morphobricks_preprocessing.window_reader import (
+    WindowReader,
+    WindowReaderClosedError,
+    cache_plan,
+)
 from morphobricks_preprocessing.windows import (
     WindowMemoryError,
     WindowSourceChangedError,
@@ -206,9 +210,10 @@ def test_the_cache_counts_in_the_memory_estimate(rgb_tiles):
     plain = window_plan(path, mapping, bounds=bounds, channels=[0, 1, 2])
     reader = WindowReader(path, mapping, cache_bytes=MIB, memory_limit=2 * MIB)
     plan = reader.window_plan(bounds=bounds, channels=[0, 1, 2])
-    assert plan.memory_estimate == plain.memory_estimate + MIB
+    frozen = TILE * TILE * 3  # the cache's immutable copy of the piece being decoded
+    assert plan.memory_estimate == plain.memory_estimate + MIB + frozen
     small = WindowReader(
-        path, mapping, cache_bytes=MIB, memory_limit=MIB + plain.memory_estimate - 1
+        path, mapping, cache_bytes=MIB, memory_limit=MIB + plain.memory_estimate + frozen - 1
     )
     with pytest.raises(WindowMemoryError, match="window cache"):
         small.read_window(bounds=bounds, channels=[0, 1, 2])
@@ -301,3 +306,271 @@ def test_a_run_window_reader_of_chunked_images(tmp_path, kind):
             assert window.tobytes() == data[t, [2, 0, 1], y0:y1, x0:x1].tobytes()
     stats = reader.stats()
     assert stats.hits > 0 and stats.decodes <= stats.pieces + stats.evictions
+
+
+def test_a_closed_reader_drops_its_cache_and_refuses_every_later_window(tmp_path):
+    path = tmp_path / "a.tif"
+    write_data(
+        path,
+        np.arange(64 * 64, dtype=np.uint16).reshape(64, 64),
+        "YX",
+        tile=(16, 16),
+        compression="zlib",
+    )
+    with WindowReader(path, prefill_mapping("YX"), cache_bytes=MIB) as reader:
+        reader.read_window(bounds=(0, 32, 0, 32), channels=[0])
+        assert reader.stats().pieces == 4 and not reader.closed
+    assert reader.closed and reader.stats().pieces == reader.stats().nbytes == 0
+    for ask in (reader.read_window, reader.window_plan):
+        with pytest.raises(WindowReaderClosedError, match="closed"):
+            ask(bounds=(0, 4, 0, 4), channels=[0])
+    reader.close()  # closing twice does nothing more
+    assert reader.closed
+
+
+def test_a_reader_is_closed_when_its_with_block_fails(tmp_path):
+    path = tmp_path / "a.tif"
+    write_data(path, np.ones((32, 32), dtype=np.uint8), "YX", tile=(16, 16), compression="zlib")
+    with pytest.raises(RuntimeError, match="stop"):
+        with WindowReader(path, prefill_mapping("YX"), cache_bytes=MIB) as reader:
+            reader.read_window(bounds=(0, 32, 0, 32), channels=[0])
+            raise RuntimeError("stop")
+    assert reader.closed and reader.stats().pieces == 0
+
+
+def test_a_cache_closed_during_a_decode_returns_the_piece_and_keeps_nothing():
+    cache = BlockCache(MIB)
+    piece = np.arange(10)
+
+    def decode():
+        cache.close()  # the reader is closed while a thread decodes
+        return piece
+
+    got = cache.get("k", decode)
+    assert got.tobytes() == piece.tobytes() and not got.flags.writeable
+    assert cache.stats().pieces == 0 and cache.stats().decodes == 1
+    assert cache.get("k", lambda: piece.copy()).tobytes() == piece.tobytes()
+    assert cache.stats().pieces == 0
+
+
+def test_a_run_window_reader_plans_closes_and_refuses_after(clean):
+    inputs = RunInputs.open(clean.output)
+    fov = inputs.fovs()[0]
+    ids = list(fov.channel_ids)
+    with inputs.window_reader(fov, cache_bytes=MIB) as reader:
+        plan = reader.window_plan(t=0, z=0, bounds=(3, 11, 0, 17), channels=ids[::-1])
+        alone = window_plan(
+            clean.experiment / fov.relative_path,
+            run_inputs_window._mapping(inputs.manifest.file(fov.relative_path)),
+            bounds=(3, 11, 0, 17),
+            channels=[inputs.channel_index(fov, c) for c in ids[::-1]],
+        )
+        assert plan.shape == (len(ids), 8, 17) and plan.memory_estimate == (
+            alone.memory_estimate + MIB
+        )
+        with pytest.raises(RunInputsError):
+            reader.window_plan(t=0, z=0, bounds=(0, 4, 0, 4), channels=["nope"])
+        reader.read_window(t=0, z=0, bounds=(0, 4, 0, 4), channels=ids)
+    assert reader.closed and reader.stats().pieces == 0
+    with pytest.raises(WindowReaderClosedError):
+        reader.read_window(t=0, z=0, bounds=(0, 4, 0, 4), channels=ids)
+    with pytest.raises(WindowReaderClosedError):
+        reader.window_plan(t=0, z=0, bounds=(0, 4, 0, 4), channels=ids)
+
+
+class _CountingEvent(threading.Event):
+    """An event that counts the threads waiting on it."""
+
+    def __init__(self):
+        super().__init__()
+        self.waiting = 0
+
+    def wait(self, timeout=None):
+        self.waiting += 1
+        return super().wait(timeout)
+
+
+def _overlapping(monkeypatch, cache, key, decode, waiters=2):
+    """Ask ``key`` from 1 + ``waiters`` threads while the first decode is in flight."""
+    from morphobricks_preprocessing import block_cache
+
+    flights = []
+
+    class Flight(block_cache._Flight):
+        def __init__(self):
+            super().__init__(done=_CountingEvent())
+            flights.append(self)
+
+    monkeypatch.setattr(block_cache, "_Flight", Flight)
+    started, release = threading.Event(), threading.Event()
+
+    def slow():
+        started.set()
+        release.wait(5)
+        return decode()
+
+    with ThreadPoolExecutor(1 + waiters) as pool:
+        first = pool.submit(cache.get, key, slow)
+        started.wait(5)
+        others = [pool.submit(cache.get, key, slow) for _ in range(waiters)]
+        while flights[0].done.waiting < waiters:  # every other request waits on the decode
+            threading.Event().wait(0.01)
+        release.set()
+        return [first, *others]
+
+
+@pytest.mark.parametrize("size", [101, 1000])
+def test_waiters_share_a_decode_the_cache_does_not_keep(monkeypatch, size):
+    """Single-flight covers a piece over the bound: overlapping requests decode it once."""
+    cache, calls = BlockCache(100), []
+
+    def decode():
+        calls.append(1)
+        return np.arange(size, dtype=np.uint8)
+
+    futures = _overlapping(monkeypatch, cache, "big", decode)
+    pieces = [f.result() for f in futures]
+    assert len(calls) == 1 and all(p is pieces[0] for p in pieces)
+    assert not pieces[0].flags.writeable and cache.stats().pieces == 0
+    with pytest.raises(ValueError):  # shared but not kept: immutable too
+        pieces[0].setflags(write=True)
+    assert cache.stats().decodes == 1 and cache.stats().hits == 2
+    cache.get("big", decode)  # a later request: not held, so decoded again
+    assert len(calls) == 2
+
+
+def test_waiters_share_a_decode_dropped_by_a_close(monkeypatch):
+    cache, calls = BlockCache(MIB), []
+
+    def decode():
+        calls.append(1)
+        cache.close()  # dropped at once: nothing is kept
+        return np.ones(10, np.uint8)
+
+    pieces = [f.result() for f in _overlapping(monkeypatch, cache, "k", decode)]
+    assert len(calls) == 1 and all(p is pieces[0] for p in pieces)
+    with pytest.raises(ValueError):  # dropped by the close but shared: immutable too
+        pieces[0].setflags(write=True)
+
+
+def test_a_failed_decode_is_not_shared_a_waiter_decodes_again(monkeypatch):
+    cache, calls = BlockCache(MIB), []
+
+    def decode():
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError("first decode fails")
+        return np.ones(10, np.uint8)
+
+    first, *others = _overlapping(monkeypatch, cache, "k", decode)
+    with pytest.raises(OSError, match="first"):
+        first.result()
+    assert all(f.result().tobytes() == b"\x01" * 10 for f in others)
+    assert len(calls) == 2  # one waiter decoded again, the other shared its decode
+
+
+def test_a_kept_piece_and_its_storage_can_never_be_written():
+    cache = BlockCache(MIB)
+    decoded = np.arange(12, dtype=np.uint16).reshape(3, 4)[:, ::2]  # not contiguous
+    piece = cache.get("k", lambda: decoded)
+    assert piece.tobytes() == decoded.tobytes() and piece.shape == decoded.shape
+    base = piece
+    while isinstance(base, np.ndarray):
+        base = base.base
+    assert isinstance(base, bytes)  # immutable storage
+    with pytest.raises(ValueError):
+        piece.setflags(write=True)
+    with pytest.raises(ValueError):
+        piece[0, 0] = 99
+    decoded[0, 0] = 99  # the decoder's own array is not the cached one
+    assert cache.get("k", lambda: pytest.fail("held"))[0, 0] == 0
+
+
+def test_a_window_is_a_new_array_changing_it_changes_no_cached_piece(rgb_tiles):
+    path, data = rgb_tiles
+    reader = WindowReader(path, prefill_mapping("YXS"), cache_bytes=4 * MIB)
+    window = reader.read_window(bounds=(0, 20, 0, 20), channels=[0, 1, 2])
+    assert window.flags.writeable
+    window[...] = 0
+    again = reader.read_window(bounds=(0, 20, 0, 20), channels=[0, 1, 2])
+    assert reader.stats().hits > 0
+    assert again.tobytes() == np.moveaxis(data[:20, :20], -1, 0).tobytes()
+
+
+def test_a_piece_is_frozen_outside_the_lock_other_pieces_are_served_meanwhile(monkeypatch):
+    """Freezing a large piece never holds the cache's lock: other threads keep reading."""
+    from morphobricks_preprocessing import block_cache
+
+    cache = BlockCache(MIB)
+    held = cache.get("held", lambda: np.ones(10, np.uint8))
+    freezing, release = threading.Event(), threading.Event()
+    original = block_cache._frozen
+
+    def slow(piece):
+        if piece.size == 1000:
+            freezing.set()
+            assert release.wait(5)
+        return original(piece)
+
+    monkeypatch.setattr(block_cache, "_frozen", slow)
+    with ThreadPoolExecutor(2) as pool:
+        big = pool.submit(cache.get, "big", lambda: np.zeros(1000, np.uint8))
+        assert freezing.wait(5)
+        other = pool.submit(cache.get, "held", lambda: pytest.fail("held"))
+        assert other.result(timeout=5) is held  # served while "big" is being frozen
+        assert cache.stats().pieces == 1  # "big" is not kept before it is frozen
+        release.set()
+        assert big.result(timeout=5).tobytes() == bytes(1000)
+    assert cache.stats().pieces == 2 and cache.stats().nbytes <= cache.max_bytes
+
+
+def test_the_pieces_held_never_exceed_the_bound_even_while_one_is_added():
+    cache = BlockCache(100)
+    for key in range(20):
+        cache.get(key, lambda: np.zeros(30, np.uint8))
+        assert cache.stats().nbytes <= 100 and cache._nbytes == sum(
+            p.nbytes for p in cache._pieces.values()
+        )
+    assert cache.stats().pieces == 3 and cache.stats().evictions == 17
+
+
+@pytest.mark.parametrize("kind", ["tiled tiff", "ome-zarr"])
+def test_a_run_gives_the_cache_plan_of_its_image(tmp_path, kind):
+    data = np.random.default_rng(3).integers(0, 4000, (2, 3, 40, 52), dtype=np.uint16)
+    if kind == "ome-zarr":
+        write_ngff(tmp_path / "exp/ctrl/a.zarr", data, "tcyx", chunks=(1, 2, 16, 16))
+    else:
+        write_data(tmp_path / "exp/ctrl/a.tif", data, "TCYX", tile=(16, 16), compression="zlib")
+    result = run_described(tmp_path / "exp", prefill_mapping("TCYX"))
+    inputs = RunInputs.open(result.output_folder)
+    (fov,) = inputs.fovs()
+    ids = fov.channel_ids
+    plan = inputs.window_cache_plan(fov, window=(16, 16), margin=(3, 3), channels=[ids[2], ids[0]])
+    path = inputs.experiment_root / fov.relative_path
+    mapping = run_inputs_window._mapping(inputs.manifest.file(fov.relative_path))
+    alone = cache_plan(path, mapping, window=(16, 16), margin=(3, 3), channels=[2, 0])
+    assert plan == alone and plan.piece_rows == 3 and plan.cache_bytes > 0
+    with pytest.raises(RunInputsError):
+        inputs.window_cache_plan(fov, window=(16, 16), margin=(3, 3), channels=["nope"])
+
+
+def test_the_cache_drops_pieces_before_it_adds_one_never_over_its_bound():
+    """At the moment a piece is added, what is held and the piece fit the bound (#339 review).
+
+    Adding first and dropping after would hold one piece over the bound for a moment, which
+    the memory estimate does not count; the pieces held are watched as each is added.
+    """
+    from collections import OrderedDict
+
+    cache, peaks = BlockCache(100), []
+
+    class Watched(OrderedDict):
+        def __setitem__(self, key, piece):
+            super().__setitem__(key, piece)
+            peaks.append(sum(p.nbytes for p in self.values()))
+
+    cache._pieces = Watched()
+    for key in range(10):
+        cache.get(key, lambda: np.zeros(30, np.uint8))
+    assert len(peaks) == 10 and max(peaks) <= 100
+    assert cache.stats().pieces == 3 and cache.stats().evictions == 7

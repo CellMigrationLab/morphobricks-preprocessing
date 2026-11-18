@@ -10,7 +10,9 @@ and safe under threads, so that each piece is decoded about once per plane. It i
 
 - **Memory.** The cache counts in every window's estimate: a window is refused
   (:class:`.windows.WindowMemoryError`) when its own working memory and ``cache_bytes``
-  together are over ``memory_limit``, and ``cache_bytes`` must leave room under it.
+  together are over ``memory_limit``, and ``cache_bytes`` must leave room under it. The cache
+  belongs to this reader in this process: another process, or another brick, opens its own
+  reader and pays its own ``cache_bytes``; nothing is shared between them.
 - **Identity.** The reader holds the image's fingerprint (size and modification time, and for
   OME-Zarr the inventory digest), the one the run recorded when opened through
   ``RunInputs.window_reader``. Pieces are kept under the image's path, that fingerprint, the
@@ -18,6 +20,11 @@ and safe under threads, so that each piece is decoded about once per plane. It i
   before and after each window: an image changed or gone since the reader was opened is
   refused (:class:`.windows.WindowSourceChangedError`) and the cache emptied, never served
   from it.
+- **Lifetime.** A reader holds no open file between windows (each window opens the image and
+  closes it); it holds only its cache. :meth:`WindowReader.close` (or leaving its ``with``
+  block) drops the cache at once; a window asked after is refused
+  (:class:`WindowReaderClosedError`), and a window still being read finishes, bitwise, but
+  leaves nothing in the cache.
 - Uncompressed TIFF pieces are read straight from the file, only the rows needed, as without
   a cache; they are never cached.
 """
@@ -26,7 +33,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Hashable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -35,12 +42,15 @@ from .axes import AxisMapping
 from .block_cache import BlockCache, CacheStats
 from .fingerprint import Fingerprint
 from .planes import DEFAULT_MEMORY_LIMIT, format_bytes
+from .window_memory import grid_cache_bytes
 from .windows import (
     LEVEL,
     Bounds,
+    WindowError,
     WindowMemoryError,
     WindowPlan,
     WindowSourceChangedError,
+    _check_channels,
     _memory_text,
     _plan,
     _read_source,
@@ -48,6 +58,84 @@ from .windows import (
     _source,
     check_level,
 )
+
+
+@dataclass(frozen=True)
+class CachePlan:
+    """The cache a grid of windows of one image needs to decode each piece once.
+
+    Attributes
+    ----------
+    cache_bytes
+        Bytes of decoded pieces to hold: ``piece_rows`` rows of ``per_row`` pieces of
+        ``piece_nbytes``, for each of ``groups``; 0 when nothing would be cached (uncompressed
+        TIFF pieces are read from the file).
+    piece_rows, per_row, piece_nbytes, groups
+        The rows of pieces a window and its margins touch, the pieces across the plane, one
+        decoded piece's bytes and the groups of channels stored apart.
+    """
+
+    cache_bytes: int
+    piece_rows: int
+    per_row: int
+    piece_nbytes: int
+    groups: int
+
+
+def cache_plan(
+    path: str | os.PathLike,
+    mapping: AxisMapping,
+    *,
+    window: tuple[int, int],
+    margin: tuple[int, int],
+    channels: Sequence[int],
+) -> CachePlan:
+    """Return the cache a grid of ``window`` px windows with ``margin`` px margins needs.
+
+    From the header only: the windows are read row after row of the plane (in its stored
+    order: a plane stored X before Y is read column after column), as CellPatcher's grid lists
+    them, each with its margin (Spec ADR 0004 EW5). With at least ``cache_bytes``, every piece
+    is decoded once for the whole grid; below it a least-recently-used cache drops pieces the
+    next row of windows needs and decodes most of them again. It is a figure for the
+    consumer to cap with its own memory budget, never a setting applied here.
+
+    Parameters
+    ----------
+    window
+        ``(height, width)`` of a window without its margins, whole numbers above 0.
+    margin
+        ``(my, mx)``: the margin on each side, whole numbers of at least 0.
+    channels
+        The C indices every window reads.
+
+    Raises
+    ------
+    ValueError
+        For a window or margin that is not as above.
+    WindowChannelError, PlaneReadError
+        For channels the image does not have, or a header that does not fit ``mapping``.
+    """
+    sizes = (*window, *margin)
+    if any(isinstance(v, bool) or not isinstance(v, int) for v in sizes) or (
+        min(window) < 1 or min(margin) < 0
+    ):
+        raise ValueError(
+            f"A window is (height, width) above 0 and a margin (my, mx) of at least 0, in whole "
+            f"pixels; got {window!r} and {margin!r}."
+        )
+    with _source(path, mapping, DEFAULT_MEMORY_LIMIT) as source:
+        blocking, shape = source.layout.blocking, source.layout.shape
+        groups = len(source.groups(_check_channels(channels, source.layout.channel_count)))
+    if blocking.kind == "tiff" and blocking.partial_rows:
+        return CachePlan(0, 0, 0, 0, groups)
+    span = window[0] + 2 * margin[0] if blocking.rows_are_y else window[1] + 2 * margin[1]
+    stored = (shape[blocking.rows], shape[blocking.cols])
+    found = grid_cache_bytes(blocking.unit, stored, span, blocking.piece_nbytes, groups)
+    return CachePlan(found[0], found[1], found[2], blocking.piece_nbytes, groups)
+
+
+class WindowReaderClosedError(WindowError):
+    """A window was asked of a window reader after it was closed."""
 
 
 class WindowReader:
@@ -88,6 +176,7 @@ class WindowReader:
         fingerprint: Fingerprint | None = None,
     ) -> None:
         self.cache = BlockCache(cache_bytes)
+        self._closed = False
         if cache_bytes >= memory_limit:
             raise WindowMemoryError(
                 f"A window cache of {format_bytes(cache_bytes)} leaves no room for the windows "
@@ -106,6 +195,7 @@ class WindowReader:
 
         As :func:`.windows.window_plan`, with ``memory_estimate`` counting ``cache_bytes``.
         """
+        self._check_open()
         check_level(level)
         self._check()
         with _source(self.path, self.mapping, self.memory_limit, self._cached) as source:
@@ -134,7 +224,10 @@ class WindowReader:
             If the window's working memory and the cache are together over the limit.
         WindowBoundsError, WindowLevelError, WindowChannelError, WindowLayoutError
             As :func:`.windows.read_window`.
+        WindowReaderClosedError
+            If the reader was closed.
         """
+        self._check_open()
         check_level(level)
         self._check()
         with _source(self.path, self.mapping, self.memory_limit, self._cached) as source:
@@ -147,6 +240,32 @@ class WindowReader:
     def stats(self) -> CacheStats:
         """Return the cache's decodes, hits and evictions so far, and what it holds."""
         return self.cache.stats()
+
+    @property
+    def closed(self) -> bool:
+        """Whether :meth:`close` was called."""
+        return self._closed
+
+    def close(self) -> None:
+        """Drop the cache now; refuse every later window. Closing twice does nothing more."""
+        self._closed = True
+        self.cache.close()
+
+    def __enter__(self) -> WindowReader:
+        """Return the reader, closed when the ``with`` block is left, also on an error."""
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        """Close the reader (:meth:`close`)."""
+        self.close()
+
+    def _check_open(self) -> None:
+        """Refuse a window asked after :meth:`close`."""
+        if self._closed:
+            raise WindowReaderClosedError(
+                f"The window reader of {self.path.name} was closed: no window of it is read. "
+                "Open a new reader."
+            )
 
     def _plan(self, source: _Source, bounds: object, channels: Sequence[int]) -> WindowPlan:
         """Return a window's plan with the cache in its estimate, refusing one over the limit."""

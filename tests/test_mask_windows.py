@@ -239,7 +239,7 @@ def test_a_file_that_is_not_an_image_is_refused(tmp_path):
 # Only the pieces a window intersects are read ------------------------------------------
 
 SIDE, TILE = 2048, 256
-LIMIT = 4 * 2**20  # far below one 16 MiB uint32 plane
+LIMIT = 8 * 2**20  # far below one 16 MiB uint32 plane (whose whole read needs more than twice it)
 
 
 @pytest.fixture(scope="module")
