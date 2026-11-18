@@ -221,6 +221,9 @@ src/morphobricks_preprocessing/
                     window_reader.py WindowReader (#304): many windows of one image through a
                     bounded, thread-safe block_cache.BlockCache of decoded pieces (opt-in),
                     RunInputs.window_reader -> RunWindowReader by channel IDs;
+                    window_map.py map_plan / map_windows / iter_windows: a function over
+                    windows in a bounded thread pool, results in window order, memory
+                    planned and checked against a budget before any read (lazy-windows §5);
                     WindowBoundsError, WindowLevelError, WindowChannelError, WindowLayoutError,
                     WindowMemoryError; run_inputs_window.py RunInputs.read_window by channel IDs
                     and RunInputs.plane_shape (header only), and the z/t checks shared with
