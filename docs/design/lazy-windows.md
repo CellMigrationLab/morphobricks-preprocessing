@@ -59,12 +59,19 @@ chunk), the codec's state (deflate 64 KiB; LZMA 66 MiB, for presets up to 9), th
 kept; the cache never holds more than its bound, not even while a piece is added. The bound is
 **checked, not proven**: `tests/test_window_memory.py` measures the peak with `tracemalloc`, in
 a fresh Python process (`tests/window_peaks.py`, so that what earlier tests left in the
-interpreter cannot land in the measured read, #348), and asserts it is never over the estimate, for TIFF `uint8`, `uint16` and `float32`, uncompressed,
-deflate, deflate with a predictor and LZMA, in 64- and 128-px tiles and 32-row strips, interleaved
-RGB and a multi-page OME stack, and for OME-Zarr 0.4 and 0.5 with chunks across 1 to 3
-channels, every one uncached and through a full cache of two sizes, for windows from 64 px to the
-whole plane (worst measured peak: 0.98 of the estimate). **Not covered** (#342): codecs only
-imagecodecs decodes (JPEG, LZW, Zstandard, WebP, JPEG 2000), estimated with deflate's state and
+interpreter cannot land in the measured read, #348), and asserts it is never over the estimate,
+for TIFF `uint8`, `uint16` and `float32`, uncompressed, deflate, deflate with a predictor and
+LZMA, in 64- and 128-px tiles and 32-row strips, interleaved RGB and a multi-page OME stack, and
+for OME-Zarr 0.4 and 0.5 with chunks across 1 to 3 channels, every one uncached and through a
+full cache of two sizes, for windows from 64 px to the whole plane; and, so that lowering any
+term of the estimate to zero fails a test (#351), for 1024² TIFF planes in pieces of 512 KiB
+and 1 MiB (deflate `float32` in 256-row strips and 512-px tiles, deflate with a predictor
+`uint16` in 512-px tiles), 1000 OME pages, 8192 strips, and the codec's state and the frozen
+copy measured alone. Worst measured peak, in a fresh process: 0.91 of the estimate (the
+`uint16` 512-px tiles read whole; 0.64 over the 256-px matrix). The estimate excludes
+interpreter-wide memory such as a rebuild of the interned-string table, which the measuring
+process forces before it measures (#351). **Not covered** (#342): codecs only imagecodecs
+decodes (JPEG, LZW, Zstandard, WebP, JPEG 2000), estimated with deflate's state and
 not verified; memory a C library allocates outside Python's allocators; the plane block reader
 (`read_plane`, `planes._tiff_piece_memory`) and `objects_read_plan`, unchanged here. (The run's
 own worker plan, `plan_workers` and `max_ram`, is being fixed separately and is not part of this
