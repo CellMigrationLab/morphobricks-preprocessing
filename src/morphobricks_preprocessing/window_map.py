@@ -39,6 +39,7 @@ Rules (design note §5.3):
 
 from __future__ import annotations
 
+import threading
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -246,7 +247,9 @@ class WindowMap(Generic[R]):
         self.plan = plan
         self._delivered = 0
         self._failed = False
-        self._run = self._results(fn)
+        # A module-level generator holding no reference to the map: dropping the map's last
+        # reference closes it at once (no cycle waiting for the collector), in that thread.
+        self._run = _ordered_results(plan, fn)
 
     def __iter__(self) -> WindowMap[R]:
         """Return the map itself."""
@@ -284,31 +287,42 @@ class WindowMap(Generic[R]):
         """Close the map (:meth:`close`)."""
         self.close()
 
-    def _results(self, fn: Callable[[Bounds, np.ndarray], R]) -> Iterator[R]:
-        """Run the windows in a bounded pool and yield their results in order.
 
-        A window is submitted only when one is delivered and the next asked, so at most
-        ``max_in_flight`` exist at once, the one in the consumer's hands included.
-        """
-        plan, windows = self.plan, self.plan.windows
-        _, read = _calls(plan.reader, plan.channels, plan.t, plan.z)
-        pool = ThreadPoolExecutor(plan.workers, thread_name_prefix=THREAD_PREFIX)
-        pending: deque[tuple[int, Future]] = deque()
-        submitted = 0
-        try:
-            while True:
-                while submitted < len(windows) and len(pending) < plan.max_in_flight:
-                    pending.append((submitted, pool.submit(_task, read, fn, windows[submitted])))
-                    submitted += 1
-                if not pending:
-                    return
-                index, future = pending.popleft()
-                yield _named(lambda bounds, f=future: f.result(), windows[index], index)
-                del future
-        finally:
-            for _, future in pending:
-                future.cancel()
-            pool.shutdown(wait=True, cancel_futures=True)
+def _ordered_results(plan: MapPlan, fn: Callable[[Bounds, np.ndarray], R]) -> Iterator[R]:
+    """Run the plan's windows in a bounded pool and yield their results in window order.
+
+    A window is submitted only when the next result is asked, so at most ``max_in_flight``
+    windows are submitted and not yet delivered. Closing (or dropping) the generator cancels
+    the windows not started and waits for the running ones, except in one of the pool's own
+    threads, which cannot wait for itself: there the pool is only told to stop.
+    """
+    windows = plan.windows
+    _, read = _calls(plan.reader, plan.channels, plan.t, plan.z)
+    own: set[int] = set()
+    pool = ThreadPoolExecutor(
+        plan.workers, thread_name_prefix=THREAD_PREFIX, initializer=_record_thread, initargs=(own,)
+    )
+    pending: deque[tuple[int, Future]] = deque()
+    submitted = 0
+    try:
+        while True:
+            while submitted < len(windows) and len(pending) < plan.max_in_flight:
+                pending.append((submitted, pool.submit(_task, read, fn, windows[submitted])))
+                submitted += 1
+            if not pending:
+                return
+            index, future = pending.popleft()
+            yield _named(lambda bounds, f=future: f.result(), windows[index], index)
+            del future
+    finally:
+        for _, future in pending:
+            future.cancel()
+        pool.shutdown(wait=threading.get_ident() not in own, cancel_futures=True)
+
+
+def _record_thread(own: set[int]) -> None:
+    """Record a pool thread's identity (the pool's initializer)."""
+    own.add(threading.get_ident())
 
 
 def _task(read: Callable[[Bounds], np.ndarray], fn: Callable, bounds: Bounds) -> object:

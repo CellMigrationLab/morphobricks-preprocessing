@@ -309,19 +309,83 @@ def test_an_early_stop_cancels_the_windows_not_started(image, reads):
         assert not reader.closed and reader.stats().nbytes <= MIB
 
 
-def test_an_abandoned_map_leaves_no_thread(image):
+@pytest.fixture
+def no_collector():
+    """Run with the cycle collector off: cleanup must come from reference counts alone."""
+    was = gc.isenabled()
+    gc.disable()
+    yield
+    if was:
+        gc.enable()
+
+
+def started_map(reader):
+    plan = map_plan(reader, [(i, i + 8, 0, 8) for i in range(50)], channels=[0], workers=4)
+    results = map_windows(plan, lambda b, w: time.sleep(0.005), memory_budget=BUDGET)
+    next(results)
+    assert len(leftover_threads()) == 4
+    return results
+
+
+def test_a_dropped_map_leaves_no_thread_without_the_collector(image, no_collector):
     path, mapping = image
     with WindowReader(path, mapping, cache_bytes=MIB) as reader:
-        plan = map_plan(reader, [(i, i + 8, 0, 8) for i in range(50)], channels=[0], workers=4)
-        results = map_windows(plan, lambda b, w: time.sleep(0.005), memory_budget=BUDGET)
-        next(results)
-        assert leftover_threads()
-        del results
-        gc.collect()
+        results = started_map(reader)
+        del results  # no close(), no gc.collect(): the last reference ends the threads
         assert not leftover_threads()
-        never = map_windows(plan, digest, memory_budget=BUDGET)
+        never = map_windows(
+            map_plan(reader, [], channels=[0], workers=1), digest, memory_budget=BUDGET
+        )
         never.close()  # never started: no thread was made
         assert not leftover_threads() and never.summary().delivered == 0
+
+
+def test_a_break_in_a_function_leaves_no_thread_without_the_collector(image, no_collector):
+    path, mapping = image
+
+    def first(reader):
+        plan = map_plan(reader, [(i, i + 8, 0, 8) for i in range(50)], channels=[0], workers=4)
+        for result in map_windows(plan, lambda b, w: b, memory_budget=BUDGET):
+            assert leftover_threads()
+            return result
+        return None
+
+    with WindowReader(path, mapping, cache_bytes=MIB) as reader:
+        assert first(reader) == (0, 8, 0, 8)
+        assert not leftover_threads()
+        for _, kept in iter_windows(
+            map_plan(reader, [(0, 8, 0, 8)] * 20, channels=[0], workers=3), memory_budget=BUDGET
+        ):
+            assert kept.shape == (1, 8, 8)
+            break
+        del kept
+        assert not leftover_threads()
+
+
+def test_a_map_closed_from_one_of_its_own_threads_does_not_wait_for_itself(image):
+    path, mapping = image
+    holder, errors, closed = [], [], threading.Event()
+
+    def closing(bounds, window):
+        if bounds[0] == 2:
+            try:
+                holder[0].close()  # in a pool thread: it cannot join itself
+            except BaseException as exc:
+                errors.append(exc)
+            closed.set()
+        return bounds
+
+    with WindowReader(path, mapping, cache_bytes=MIB) as reader:
+        plan = map_plan(reader, [(i, i + 8, 0, 8) for i in range(20)], channels=[0], workers=2)
+        holder.append(map_windows(plan, closing, memory_budget=BUDGET))
+        assert next(holder[0]) == (0, 8, 0, 8)
+        assert closed.wait(10)
+        assert errors == []
+        assert list(holder[0]) == []
+        deadline = time.monotonic() + 10
+        while leftover_threads() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert not leftover_threads()
 
 
 def test_a_reader_closed_meanwhile_stops_the_map_at_a_named_window(image):
