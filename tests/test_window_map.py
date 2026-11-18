@@ -9,6 +9,7 @@ import gc
 import hashlib
 import threading
 import time
+import weakref
 
 import numpy as np
 import pytest
@@ -193,10 +194,53 @@ def test_the_plan_counts_the_largest_windows_in_flight_and_the_cache_once(image)
         assert plan.max_in_flight == 2  # 2 × workers by default
         assert plan.window_bytes == max(alone)
         assert plan.in_flight_bytes == sum(sorted(alone)[-2:])
-        assert plan.memory_estimate == plan.in_flight_bytes + 3 * MIB
+        assert plan.held_bytes == 2 * H * W  # the whole plane, two uint8 channels
+        assert plan.memory_estimate == plan.in_flight_bytes + plan.held_bytes + 3 * MIB
         wide = map_plan(reader, windows, channels=[0, 1], workers=2, max_in_flight=9)
         assert wide.in_flight_bytes == sum(alone)  # never more windows than there are
         assert (wide.workers, wide.max_in_flight) == (2, 9)
+
+
+@pytest.mark.parametrize(("workers", "max_in_flight"), [(1, 1), (2, 2), (2, 3)])
+def test_the_plan_counts_every_window_alive_with_the_one_the_consumer_holds(
+    image, workers, max_in_flight
+):
+    """Reads in progress and window arrays alive never exceed max_in_flight + 1 (finding 2)."""
+    path, mapping = image
+    windows = [(0, 64, 0, 64)] * 12
+    lock = threading.Lock()
+    count = {"reading": 0, "alive": 0, "peak": 0}
+
+    def note(**steps):
+        with lock:
+            for key, step in steps.items():
+                count[key] += step
+            count["peak"] = max(count["peak"], count["reading"] + count["alive"])
+
+    with WindowReader(path, mapping, cache_bytes=MIB) as reader:
+        original = reader.read_window
+
+        def tracked(**kwargs):
+            note(reading=1)
+            time.sleep(0.01)  # slow reads: every slot is reading while the consumer holds one
+            window = original(**kwargs)
+            note(reading=-1, alive=1)  # the read's slot becomes its window's
+            weakref.finalize(window, note, alive=-1)
+            return window
+
+        reader.read_window = tracked
+        plan = map_plan(
+            reader, windows, channels=[0, 1, 2], workers=workers, max_in_flight=max_in_flight
+        )
+        for _, window in iter_windows(plan, memory_budget=BUDGET):
+            assert window.shape == (3, 64, 64)  # the consumer keeps only the current window
+        del window
+    assert count["alive"] == 0
+    assert count["peak"] <= max_in_flight + 1
+    alone = plan.window_bytes  # each alive window or read is within it
+    assert plan.held_bytes <= alone
+    assert plan.memory_estimate >= (max_in_flight + 1) * plan.held_bytes + plan.cache_bytes
+    assert plan.memory_estimate == max_in_flight * alone + plan.held_bytes + plan.cache_bytes
 
 
 def test_a_plan_over_the_budget_is_refused_before_any_pixel_is_read(image, reads, monkeypatch):

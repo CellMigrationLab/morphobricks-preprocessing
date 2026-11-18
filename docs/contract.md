@@ -419,13 +419,15 @@ It gives:
   read; `t` and `z` required for a `RunWindowReader`) and returns a `MapPlan`: the windows'
   checked bounds, `workers`, `max_in_flight` (at least `workers`, default `2 × workers`),
   `cache_bytes`, `window_bytes` (the largest window working memory, cache excluded),
-  `in_flight_bytes` (the `max_in_flight` largest added) and `memory_estimate` (`in_flight_bytes
-  + cache_bytes`; `fn`'s own memory and the results the caller keeps are not counted).
+  `in_flight_bytes` (the `max_in_flight` largest added), `held_bytes` (the largest window as
+  delivered, the one the caller holds while the next is read) and `memory_estimate`
+  (`in_flight_bytes + held_bytes + cache_bytes`; `fn`'s own memory and the results the caller
+  keeps beyond the last one are not counted).
   `map_windows(plan, fn, *, memory_budget)` refuses a plan whose `memory_estimate` is over
   `memory_budget` (`WindowMemoryError`) before any pixel is read, then returns a `WindowMap`
   iterator of `fn(bounds, window)` called in `workers` threads, in the plan's window order
-  whatever finishes first, with at most `max_in_flight` windows in flight (the one delivered
-  counts until the next is asked); `iter_windows(plan, *, memory_budget)` yields `(bounds,
+  whatever finishes first, with at most `max_in_flight` windows submitted and not yet
+  delivered, plus the one the caller holds; `iter_windows(plan, *, memory_budget)` yields `(bounds,
   window)` the same way. The first error in window order is re-raised, its type unchanged, with a
   note naming the window, after the results before it; an error, `close()`, leaving its `with`
   block or dropping it cancels the windows not started and waits for the running ones, leaving

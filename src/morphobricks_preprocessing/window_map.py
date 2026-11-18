@@ -11,8 +11,8 @@ Two steps, so that memory is checked before any pixel is read:
 
 1. :func:`map_plan` works out from the headers what each window read costs and what the run
    holds at most: ``max_in_flight`` windows at once (read, being read or computed, or done and
-   waiting for their turn) plus the reader's cache (:class:`MapPlan`). Nothing is read but the
-   headers.
+   waiting for their turn), the one the consumer last received, and the reader's cache
+   (:class:`MapPlan`). Nothing is read but the headers.
 2. :func:`map_windows` (or :func:`iter_windows`, which yields the windows themselves) runs the
    plan in ``workers`` threads after checking it against the consumer's ``memory_budget``; a plan
    over it is refused (:class:`.windows.WindowMemoryError`) before any pixel is read. The
@@ -22,10 +22,12 @@ Rules (design note §5.3):
 
 - **Order.** Results come in the order of the windows of the plan, so they are identical for any
   number of workers.
-- **Memory.** At most ``max_in_flight`` windows are in flight; the one last delivered counts
-  until the next is asked. The plan's ``memory_estimate`` is the upper bound of those windows'
-  read memory (``window_plan``) plus the cache. What ``fn`` allocates and the results the
-  consumer keeps are the consumer's to add.
+- **Memory.** At most ``max_in_flight`` windows are submitted and not yet delivered. While the
+  next is asked, the consumer still holds the one last delivered (a ``for`` loop's variable), so
+  ``max_in_flight + 1`` can be alive at once. The plan's ``memory_estimate`` is the upper bound
+  of the ``max_in_flight`` windows' read memory (``window_plan``), one more window as delivered
+  and the cache. What ``fn`` allocates and the results the consumer keeps beyond the last one
+  are the consumer's to add.
 - **Errors and early stop.** The first error in window order is re-raised, its type unchanged,
   with a note naming the window; results of the windows before it are delivered first. Then,
   as when the consumer stops early (``break``, :meth:`WindowMap.close`, leaving its ``with``
@@ -75,15 +77,20 @@ class MapPlan:
     workers
         Threads that read windows and call the function.
     max_in_flight
-        Windows in flight at most (read, being read or computed, or done and waiting).
+        Windows submitted and not yet delivered at most (read, being read or computed, or done
+        and waiting); the one last delivered is not among them.
     cache_bytes
         The reader's cache bound, held once whatever the workers.
     window_bytes
         The largest working memory of one window read, cache excluded (``window_plan``).
     in_flight_bytes
         The ``max_in_flight`` largest window working memories added together.
+    held_bytes
+        The largest window as delivered (``shape × itemsize``): the one the consumer holds
+        while the next is read (for :func:`map_windows`, a bound of a result that keeps its
+        window).
     memory_estimate
-        ``in_flight_bytes + cache_bytes``: an upper bound of the windows' memory, the
+        ``in_flight_bytes + held_bytes + cache_bytes``: an upper bound of the windows' memory, the
         function's own memory and the results kept by the consumer not included.
     reader
         The reader the plan is for (not part of the plan's comparison or text).
@@ -98,6 +105,7 @@ class MapPlan:
     cache_bytes: int
     window_bytes: int
     in_flight_bytes: int
+    held_bytes: int
     memory_estimate: int
     reader: WindowReader | RunWindowReader = field(repr=False, compare=False)
 
@@ -169,6 +177,7 @@ def map_plan(
     cache_bytes = reader.stats().max_bytes
     sizes = sorted((p.memory_estimate - cache_bytes for p in plans), reverse=True)
     in_flight_bytes = sum(sizes[:in_flight])
+    held_bytes = max((int(np.prod(p.shape)) * p.dtype.itemsize for p in plans), default=0)
     return MapPlan(
         windows=tuple(p.bounds for p in plans),
         channels=channels,
@@ -179,7 +188,8 @@ def map_plan(
         cache_bytes=cache_bytes,
         window_bytes=sizes[0] if sizes else 0,
         in_flight_bytes=in_flight_bytes,
-        memory_estimate=in_flight_bytes + cache_bytes,
+        held_bytes=held_bytes,
+        memory_estimate=in_flight_bytes + held_bytes + cache_bytes,
         reader=reader,
     )
 
@@ -217,7 +227,8 @@ def map_windows(
         raise WindowMemoryError(
             f"Mapping over {len(plan.windows)} windows with {plan.workers} workers holds up to "
             f"{format_bytes(plan.memory_estimate)} ({plan.max_in_flight} windows in flight of "
-            f"up to {format_bytes(plan.window_bytes)} each, and a cache of "
+            f"up to {format_bytes(plan.window_bytes)} each, one delivered window of up to "
+            f"{format_bytes(plan.held_bytes)} and a cache of "
             f"{format_bytes(plan.cache_bytes)}), over the budget of "
             f"{format_bytes(memory_budget)}; no window was read. Plan fewer windows in flight "
             "or workers, a smaller cache or smaller windows, or allow more memory."
@@ -228,8 +239,9 @@ def map_windows(
 def iter_windows(plan: MapPlan, *, memory_budget: int) -> WindowMap[tuple[Bounds, np.ndarray]]:
     """Yield ``(bounds, window)`` in the plan's order while later windows are read in threads.
 
-    :func:`map_windows` with a function that returns its arguments (design note §5.2 (a)): up
-    to ``max_in_flight - 1`` windows after the one delivered are read ahead.
+    :func:`map_windows` with a function that returns its arguments (design note §5.2 (a)): while
+    the consumer holds one window, up to ``max_in_flight`` later windows are read ahead, and the
+    plan counts them all.
     """
     return map_windows(plan, _pair, memory_budget=memory_budget)
 
@@ -292,9 +304,11 @@ def _ordered_results(plan: MapPlan, fn: Callable[[Bounds, np.ndarray], R]) -> It
     """Run the plan's windows in a bounded pool and yield their results in window order.
 
     A window is submitted only when the next result is asked, so at most ``max_in_flight``
-    windows are submitted and not yet delivered. Closing (or dropping) the generator cancels
-    the windows not started and waits for the running ones, except in one of the pool's own
-    threads, which cannot wait for itself: there the pool is only told to stop.
+    windows are submitted and not yet delivered; with the one the consumer still holds while
+    it asks, ``max_in_flight + 1`` (the plan counts it, ``held_bytes``). Closing (or
+    dropping) the generator cancels the windows not started and waits for the running ones,
+    except in one of the pool's own threads, which cannot wait for itself: there the pool is
+    only told to stop.
     """
     windows = plan.windows
     _, read = _calls(plan.reader, plan.channels, plan.t, plan.z)

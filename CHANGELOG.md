@@ -14,7 +14,8 @@ v0.5.1: no run before v0.5.1 is read.)
   (`docs/design/lazy-windows.md` §5.2 (b), with (a) as its special case; owner decision of 17
   November 2026). `map_plan(reader, windows, *, channels, workers, t, z, max_in_flight)` works
   out from the headers what the map holds at most (`MapPlan`: `max_in_flight` windows, default
-  `2 × workers`, plus the reader's cache, once); `map_windows(plan, fn, *, memory_budget)`
+  `2 × workers`, the one the consumer holds while the next is read, and the reader's cache,
+  once); `map_windows(plan, fn, *, memory_budget)`
   refuses a plan over the consumer's budget before any pixel is read, then calls `fn(bounds,
   window)` in `workers` threads and yields the results in window order, so they are identical
   for any number of workers; `iter_windows(plan, *, memory_budget)` yields `(bounds, window)`

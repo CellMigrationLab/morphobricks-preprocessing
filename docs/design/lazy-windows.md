@@ -204,7 +204,7 @@ These options are processing-agnostic. Each takes window bounds from CellPatcher
 
 | Option | What it is | Fits | Where |
 | --- | --- | --- | --- |
-| (a) ordered iterator with prefetch | `iter_windows(plan, *, memory_budget)` yields `(bounds, window)` in the given order while up to `max_in_flight - 1` later windows are read in background threads | a single-threaded consumer; decoding overlaps its compute | preprocessing, **implemented** (section 5.5) |
+| (a) ordered iterator with prefetch | `iter_windows(plan, *, memory_budget)` yields `(bounds, window)` in the given order while up to `max_in_flight` later windows are read in background threads | a single-threaded consumer; decoding overlaps its compute | preprocessing, **implemented** (section 5.5) |
 | (b) `map_windows` | `map_windows(plan, fn, *, memory_budget)` calls `fn(bounds, window)` in `plan.workers` threads and yields the results **in window order**, whatever finishes first | a consumer whose compute releases the GIL (NumPy, SciPy, torch, numba `nogil`); MorphoFeature's window pool is this pattern | preprocessing, **implemented** (section 5.5); (a) is (b) with `fn` returning the window |
 | (c) process workers | each process opens its **own** reader on the image and is assigned windows by index (for example, contiguous rows of the grid, so its cache still sees neighbours); caches are not shared between processes, and results are merged by window index | GIL-bound consumers | the consumer (MorphoFeature's worker processes already open a run once per process, `fov_files.RunHandle`); preprocessing adds nothing but the reader |
 | (d) streaming partial results | (b) whose results the consumer writes per tile as they arrive in order, each row in the plane frame (EW1's conversions from the window `origin`, then the LabConstrictor result coordinate) with the tile's bounds, so a stopped run keeps the finished tiles | the LabConstrictor/QuPath bridge, MorphoFeature F4 | the bridge or consumer; its result-table contract needs Spec text first |
@@ -214,7 +214,8 @@ These options are processing-agnostic. Each takes window bounds from CellPatcher
 - **Order.** Results are delivered in the order of the bounds given, never in completion order,
   so outputs are identical for any number of workers. A test compares 1 and n workers bitwise.
 - **Memory.** At most `max_in_flight` windows are in flight (implemented: at least `workers`,
-  by default `2 × workers`, the `workers + prefetch` of the first version). The peak is about
+  by default `2 × workers`, the `workers + prefetch` of the first version), plus the one the
+  consumer still holds while it asks for the next (section 5.5). The peak is about
   `in_flight × (plan.memory_estimate - cache_bytes) + cache_bytes`, plus the consumer's own
   results. `window_plan` gives each term before anything is read, and that figure goes into the
   consumer's existing memory plan (MorphoFeature plans no RAM for windows yet; preprocessing's
@@ -262,12 +263,15 @@ with inputs.window_reader(fov, cache_bytes=cache_bytes) as reader:
   `window_plan` (bounds, channels, the reader's memory limit, a changed image, a closed reader:
   a refusal names the window) and returns a `MapPlan`. Its `memory_estimate` is the
   `max_in_flight` largest window working memories (each `window_plan.memory_estimate -
-  cache_bytes`) plus the cache once. `map_windows` refuses a plan over `memory_budget`
+  cache_bytes`), plus the largest window as delivered (`held_bytes`, `shape × itemsize`: the one
+  the consumer still holds, a `for` loop's variable, while the next is read), plus the cache
+  once (review of #346, finding 2: without `held_bytes` the estimate was one window short). `map_windows` refuses a plan over `memory_budget`
   (`WindowMemoryError`) before any pixel is read; nothing is lowered to fit. What `fn`
   allocates and the results the consumer keeps are the consumer's to add.
-- **Bounded, ordered.** A window is submitted only when the result before it in the queue is
-  delivered and the next asked, so at most `max_in_flight` windows exist at once (read, being
-  read or computed, done and waiting, or in the consumer's hands). Results are yielded in the
+- **Bounded, ordered.** A window is submitted only when the next result is asked, so at most
+  `max_in_flight` windows are submitted and not yet delivered (read, being read or computed, or
+  done and waiting), and `max_in_flight + 1` are alive at once with the one in the consumer's
+  hands (measured: with 1, 2 and 3 in flight, at most 2, 3 and 4 window reads and arrays alive). Results are yielded in the
   plan's order, so they are identical for any number of workers.
 - **Errors and stop.** The first error in window order is re-raised, its type unchanged, with a
   note `(window i, bounds (...), in a window map)`, after the results before it; errors of later
