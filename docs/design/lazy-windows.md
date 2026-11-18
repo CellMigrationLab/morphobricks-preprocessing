@@ -102,9 +102,9 @@ progressive piece's coefficients, 2 bytes per sample of the piece padded to 32-p
 cannot be told from the header and so are counted for every JPEG piece). Windows (inside one
 piece, across pieces, the whole plane; uncached and through a cache of the plane), every channel
 of a plane with 1 and 4 tifffile threads and blocks are measured; the worst ratios of peak RSS
-to estimate are 0.93 (LZW) and 0.92 (progressive JPEG), of traced peak to its part 0.97, and of
-the C library's memory to its terms 0.98 (a progressive 1024-px tile's coefficients) and 0.82
-(LZW's table). Lowering any of these terms to zero fails a test. A JPEG page is read only in the
+to estimate are 0.96 (LZW, `uint16` strips, the whole plane; 0.79 to 0.96 over repeated runs)
+and 0.92 (progressive JPEG), of traced peak to its part 0.97, and of the C library's memory to
+its terms 0.98 (a progressive 1024-px tile's coefficients) and 0.82 (LZW's table). Lowering any of these terms to zero fails a test. A JPEG page is read only in the
 measured form (`codec_bounds.jpeg_unmeasured`: 8-bit samples, greyscale or interleaved RGB or
 YCbCr, subsampled at most 2 × 2, no NDPI header); a JPEG piece whose stream declares more pixels
 than its tile is refused before libjpeg sees it (window and block reads). A YCbCr-subsampled

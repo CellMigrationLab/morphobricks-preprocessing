@@ -74,7 +74,7 @@ v0.5.1: no run before v0.5.1 is read.)
   over JPEG tiles of 256 and 512 and strips, YCbCr 4:2:0 and 4:2:2, RGB-encoded and greyscale,
   baseline and progressive, compressible and noisy, and LZW `uint8` and `uint16`, windows
   (inside a piece, across pieces, the whole plane; uncached and cached), every channel of a
-  plane with 1 and 4 tifffile threads and blocks: peak RSS at most 0.93 of the estimate, traced
+  plane with 1 and 4 tifffile threads and blocks: peak RSS at most 0.96 of the estimate, traced
   peak at most 0.97 of its Python part, and, for one piece, the C library's memory (C heap
   sampled through glibc's `mallinfo2`) at most 0.98 of its terms; lowering any new term to zero
   fails a test. A YCbCr-subsampled JPEG is now read in windows and blocks (the decoder upsamples
