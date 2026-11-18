@@ -13,6 +13,11 @@ plan with it. Besides the result and the stored pieces, a read holds:
 - **the codec's own state** (:data:`CODEC_STATE`): deflate's window, LZMA's dictionary;
 - with a window cache, the immutable copy of a piece the cache keeps (:data:`FROZEN_COPIES`).
 
+A zarr 3 read runs with threads of its own, joined before it returns
+(``zarr_input.read_selection``, #354): zarr's shared worker threads could keep a chunk's
+buffers alive after its read had returned when the CPU was busy, which no estimate made before
+the read bounds. So the zarr buffers counted here are all a read holds, and none outlives it.
+
 The constants are bounds checked by measuring peaks (``tracemalloc``) over a matrix of layouts,
 pixel types, codecs and window geometries (``tests/test_window_memory.py``): uncompressed,
 deflate with and without a predictor and LZMA (presets up to 9) TIFF, in tiles and strips, one

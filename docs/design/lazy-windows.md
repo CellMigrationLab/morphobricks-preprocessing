@@ -114,6 +114,25 @@ reader's `memory_limit` is refused before any pixel is read. A consumer that wan
 refused exactly when `RunInputs.read_window` refuses it opens the reader with `memory_limit =
 DEFAULT_MEMORY_LIMIT + cache_bytes` (MorphoFeature does).
 
+**zarr 3's threads** (#354). zarr 3 reads a chunk's file and decodes it in a pool of worker
+threads shared by every read. A worker keeps the call it ran (a chunk's compressed bytes and its
+decoded bytes) until it takes its next call, and when the CPU is busy the scheduler can hold it
+there while the reads go on. Then buffers of a read that has returned are still alive while the
+next one decodes, and how many depends on the scheduler and the pool's size: no estimate made
+before a read bounds them. With 1 MiB chunks (`float32` 3×1024², chunks (1, 512, 512)) the peak
+went over the estimate in 13 of 32 runs with 4 test processes on 4 cores (worst 1.10×; alone
+0.88×). So every OME-Zarr read (`zarr_input.read_selection`, used by windows and planes) now runs
+zarr's own read coroutine on a private event loop in the calling thread, with a private pool the
+size of zarr's, whose threads are joined before the read returns. While a read runs, every
+buffer alive belongs to its own chunks, which the estimate counts; once it returns, none is
+alive. The estimate and its constants are unchanged, the values are zarr's (same coroutine,
+chunks and codecs), chunks are still fetched and decoded concurrently, and zarr's
+`async.concurrency` is still never changed here. zarr 2 decodes in the calling thread and is
+unchanged. `tests/test_zarr_window_threads.py` measures that case in a fresh process, as it is and
+with every worker thread held for 20 ms after each call (`tests/window_peaks_late.py`), which is
+what a busy CPU does by chance; without the private pool, or without joining its threads, the
+held case goes over the estimate every time.
+
 **Cache size** (review of this PR, finding 2; the "about two rows" of the first version was
 wrong). A window and its margins span `ceil((window_h + 2 × margin) / tile_h) + 1` rows of pieces
 (one more when it is not aligned on them: a 512-px window with 67-px margins touches the rows
@@ -188,7 +207,10 @@ numcodecs 0.16).
 - **OME-Zarr.** zarr 3 decodes chunks through its codec pipeline. numcodecs' compressors (Blosc,
   Zstd, LZ4) release the GIL, and zlib/gzip use the standard library. zarr runs its own
   event-loop thread and has an `async.concurrency` setting, which is zarr's own and is never
-  changed here. This was not measured for this note.
+  changed here. This was not measured for this note. Since #354 a read runs zarr's read
+  coroutine on a private event loop in the calling thread with a private pool, joined before the
+  read returns (section 2, "zarr 3's threads"), so concurrent windows each decode in their own
+  threads.
 - **Cache: safe under threads, single-flight.** One lock guards the pieces. The first thread to
   ask for a missing piece decodes it outside the lock, and threads that ask for the same piece
   meanwhile wait for that decode. Different pieces decode in parallel. The cache is bounded in
