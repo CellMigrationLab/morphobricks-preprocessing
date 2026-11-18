@@ -64,14 +64,7 @@ def count_decodes(monkeypatch):
         return original(self, *args, **kwargs)
 
     monkeypatch.setattr(tifffile.TiffPage, "asarray", asarray)
-    if hasattr(tifffile, "TiffFrame") and hasattr(tifffile.TiffFrame, "asarray"):
-        frame = tifffile.TiffFrame.asarray
-
-        def frame_asarray(self, *args, **kwargs):
-            calls["tiff"] += 1
-            return frame(self, *args, **kwargs)
-
-        monkeypatch.setattr(tifffile.TiffFrame, "asarray", frame_asarray)
+    # TiffFrame.asarray decodes through TiffPage.asarray: each decode is counted once.
     zarr_read = channels_module._zarr_read
 
     def counted_zarr(*args, **kwargs):
@@ -198,13 +191,13 @@ def test_a_page_holding_several_channels_is_decoded_once(
 # Memory: the estimate bounds the measured peak ----------------------------------------------
 
 
-def _measured(path, mapping):
+def _measured(path, mapping, **coordinates):
     """Return the tracemalloc peak of one read, opening the file included."""
     tracemalloc.start()
     try:
         tracemalloc.reset_peak()
         start = tracemalloc.get_traced_memory()[0]
-        read_xyc_plane(path, mapping, memory_limit=2**40)
+        read_xyc_plane(path, mapping, memory_limit=2**40, **coordinates)
         return tracemalloc.get_traced_memory()[1] - start
     finally:
         tracemalloc.stop()
@@ -325,6 +318,44 @@ def test_the_estimate_bounds_the_peak_rss(tmp_path, make):
     )
     measured = json.loads(done.stdout)
     assert 0 < measured["peak"] <= measured["estimate"], measured
+
+
+def _blank_then_noise(tmp_path):
+    """TCYX deflate tiles: t=0 blank (tiny pages), t=1 noise (pages as large as the pixels)."""
+    data = np.zeros((2, 3, 1536, 2048), np.uint8)
+    data[1] = RNG.integers(0, 256, data.shape[1:], dtype=np.uint8)
+    path = write_data(tmp_path / "tc.tif", data, "TCYX", tile=(256, 256), compression="zlib")
+    return path, prefill_mapping("TCYX"), data
+
+
+def test_the_bound_is_sized_from_the_pages_read_not_the_first(tmp_path, monkeypatch):
+    # Review of #347 (R1): the bound took the first page's compressed sizes, so a plane of
+    # pages compressing far worse than page 0 was accepted at a limit below its peak.
+    path, mapping, data = _blank_then_noise(tmp_path)
+    blank, noise = (xyc_plane_memory(path, mapping, t=t) for t in (0, 1))
+    assert noise > blank
+    assert _measured(path, mapping, t=1) <= noise
+    assert _measured(path, mapping, t=0) <= blank
+    calls = count_decodes(monkeypatch)
+    with pytest.raises(PlaneMemoryError, match="all 3 channels"):
+        read_xyc_plane(path, mapping, t=1, memory_limit=noise - 1)
+    with pytest.raises(PlaneMemoryError):
+        read_xyc_plane(path, mapping, t=1, memory_limit=blank)
+    assert calls["tiff"] == 0
+    np.testing.assert_array_equal(read_xyc_plane(path, mapping, t=1, memory_limit=noise), data[1])
+    np.testing.assert_array_equal(read_xyc_plane(path, mapping, t=0, memory_limit=blank), data[0])
+    assert calls["tiff"] == 6
+
+
+def test_run_inputs_refuses_a_noisy_plane_at_the_first_pages_bound(tmp_path):
+    path, mapping, data = _blank_then_noise(tmp_path / "exp/ctrl")
+    result = run_described(tmp_path / "exp", mapping)
+    inputs = RunInputs.open(result.output_folder)
+    blank, noise = (xyc_plane_memory(path, mapping, t=t) for t in (0, 1))
+    with pytest.raises(PlaneMemoryError):
+        inputs.read_plane("ctrl/tc.tif", t=1, memory_limit=blank)
+    got = inputs.read_plane("ctrl/tc.tif", t=1, memory_limit=noise)
+    assert got.tobytes() == data[1].tobytes()
 
 
 # Refusal before any pixel is read -----------------------------------------------------------

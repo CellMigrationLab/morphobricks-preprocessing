@@ -58,12 +58,15 @@ v0.5.1: no run before v0.5.1 is read.)
   (`PlaneMemoryError`) when the bound of that whole read, `plane_channels.xyc_plane_memory`, is
   over `memory_limit`: the result, the decoded page, tifffile's decode buffers (the encoded
   bytes twice; per decoding thread one encoded and five decoded strips or tiles and the
-  codec's state) and the parsed header; for OME-Zarr the result, the chunks the plane touches
+  codec's state), sized from the byte counts of the pages actually read (not the first
+  page's: pages of one file can compress very differently), and the parsed header; for OME-Zarr the result, the chunks the plane touches
   three times and zarr's returned plane. New tests check the bound against the tracemalloc
   peak (interleaved RGB deflate tiles, poorly compressible tiles, planar strips with a
   predictor, uncompressed, LZMA, OME-Zarr) and the peak RSS (interleaved and planar, Linux),
   bitwise equality with the per-channel reads over eight layouts and OME-Zarr, the decode
-  counts, and a refusal with no pixel read at one byte under the bound. Because the bound now
+  counts, a refusal with no pixel read at one byte under the bound, and a file whose blank
+  first time point compresses to almost nothing while the next is noise (its bound, peak and
+  refusal at the first page's bound). Because the bound now
   counts what was left out, the largest plane `read_plane` accepts at a given limit is
   smaller than before (for an RGB `uint8` plane, about two thirds); `RunInputs.he_tissue_mask`
   reads through it. The estimate of a single `planes.read_plane` call (histogram reads, block

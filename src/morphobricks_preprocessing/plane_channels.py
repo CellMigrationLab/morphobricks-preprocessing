@@ -77,11 +77,15 @@ def xyc_plane_memory(
     mapping: AxisMapping,
     channel_count: int | None = None,
     *,
+    z: int | None = None,
+    t: int | None = None,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> int:
     """Return the working memory :func:`read_xyc_plane` checks, from the header only.
 
-    ``channel_count`` defaults to the image's channel count (1 without a channel axis).
+    ``channel_count`` defaults to the image's channel count (1 without a channel axis). For
+    TIFF the bound is of the pages holding the plane at ``z`` and ``t``, sized from their own
+    strip or tile byte counts (pages can compress very differently).
     """
     if is_zarr_store(path):
         layout = _zarr_layout(
@@ -91,7 +95,9 @@ def xyc_plane_memory(
     with _open(path) as tif:
         series = tif.series[0]
         layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
-        return _tiff_memory(series, layout, _count(layout, channel_count))
+        count = _checked(layout, channel_count, path)
+        pages = _page_indices(layout, mapping, {"Z": z, "T": t}, count)
+        return _tiff_memory(series, layout, pages, count)
 
 
 def read_xyc_plane(
@@ -130,7 +136,8 @@ def read_xyc_plane(
         series = tif.series[0]
         layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
         count = _checked(layout, channel_count, path)
-        _refuse_over(_tiff_memory(series, layout, count), layout, count, path)
+        pages = _page_indices(layout, mapping, wanted, count)
+        _refuse_over(_tiff_memory(series, layout, pages, count), layout, count, path)
         return _read_tiff(series, layout, mapping, path, wanted, count)
 
 
@@ -142,27 +149,53 @@ def _plane_nbytes(layout: PlaneLayout) -> int:
     return layout.dtype.itemsize * layout.plane_shape[0] * layout.plane_shape[1]
 
 
-def _tiff_memory(series: tifffile.TiffPageSeries, layout: PlaneLayout, count: int) -> int:
-    """Bound the memory of reading ``count`` channels of a plane of a TIFF series whole."""
-    keyframe = series.keyframe
-    pieces = len(keyframe.databytecounts)
+def _page_indices(
+    layout: PlaneLayout, mapping: AxisMapping, wanted: dict[str, int | None], count: int
+) -> list[int]:
+    """Return the indices of the pages holding channels ``0 .. count - 1`` of a plane."""
+    positions = (_position(layout, mapping, _wanted(wanted, mapping, c)) for c in range(count))
+    return sorted({_page_index(layout, position) for position in positions})
+
+
+def _tiff_memory(
+    series: tifffile.TiffPageSeries, layout: PlaneLayout, pages: list[int], count: int
+) -> int:
+    """Bound the memory of reading ``count`` channels of a plane of a TIFF series whole.
+
+    The pages are decoded one at a time, so the largest decode of ``pages`` counts.
+    """
+    found = [_page(series, index) for index in pages]
+    pieces = max(len(page.databytecounts) for page in found)
     header = OPEN_BYTES + PAGE_BYTES * len(series.pages) + PIECE_ENTRY_BYTES * pieces
-    return count * _plane_nbytes(layout) + layout.page_nbytes + _decode_memory(series) + header
+    decode = max(_decode_memory(series.keyframe, page) for page in found)
+    return count * _plane_nbytes(layout) + layout.page_nbytes + decode + header
 
 
-def _decode_memory(series: tifffile.TiffPageSeries) -> int:
+def _page(series: tifffile.TiffPageSeries, index: int) -> tifffile.TiffPage | tifffile.TiffFrame:
+    """Return a page's header (page or frame; the keyframe for a page missing from the file).
+
+    A page's pieces can compress very differently from the first page's (a blank plane next
+    to a noisy one), and ``tifffile`` reads the page it decodes with its own byte counts.
+    """
+    page = series.pages[index]
+    return series.keyframe if page is None else page
+
+
+def _decode_memory(
+    keyframe: tifffile.TiffPage, page: tifffile.TiffPage | tifffile.TiffFrame
+) -> int:
     """Bound what ``tifffile`` holds beside the page array while it decodes one page.
 
-    It reads the strips or tiles in buffers of up to ``TIFF.BUFFERSIZE`` bytes and slices
-    them into one ``bytes`` per piece, keeping both; while the next buffer is read the
-    previous one and its slices can still be held. Each decoding thread holds one encoded
-    piece, :data:`DECODE_COPIES` decoded copies of it (decompressed, as an array, reshaped,
-    unpredicted) and the codec's own state (:data:`CODEC_STATE`).
+    It reads ``page``'s own strips or tiles (their own byte counts) in buffers of up to
+    ``TIFF.BUFFERSIZE`` bytes and slices them into one ``bytes`` per piece, keeping both;
+    while the next buffer is read the previous one and its slices can still be held. Each
+    decoding thread holds one encoded piece, :data:`DECODE_COPIES` decoded copies of it
+    (decompressed, as an array, reshaped, unpredicted) and the codec's own state
+    (:data:`CODEC_STATE`). The thread count is ``tifffile``'s for this machine.
     """
-    keyframe = series.keyframe
-    if keyframe.is_contiguous:
+    if page.is_contiguous:
         return 0  # read straight into the page array
-    counts = [int(n) for n in keyframe.databytecounts]
+    counts = [int(n) for n in page.databytecounts]
     encoded, largest = sum(counts), max(counts, default=0)
     buffers = min(2 * encoded, 4 * (tifffile.TIFF.BUFFERSIZE + largest))
     piece = math.prod(int(n) for n in keyframe.chunks) * np.dtype(keyframe.dtype).itemsize

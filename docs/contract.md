@@ -356,7 +356,8 @@ It gives:
   decoded once for all of them, and only one page is held at a time. Before any pixel is
   read, `read_plane` raises `PlaneMemoryError` when the bound of that whole read
   (`plane_channels.xyc_plane_memory`) is over the limit: for TIFF the result, the decoded
-  page, the encoded bytes tifffile holds twice while it decodes the page, per decoding
+  page, the encoded bytes tifffile holds twice while it decodes the page (each page read
+  sized from its own byte counts), per decoding
   thread one encoded and five decoded strips or tiles and the codec's state, and the parsed
   header; for OME-Zarr the result, every chunk the plane touches three times and the plane
   zarr returns. The bound is measured (tracemalloc, and peak RSS on Linux) for deflate,
