@@ -102,7 +102,8 @@ JPEG_DECODE_COPIES = 2
 JPEG_NATIVE_PIECES = 2
 """libjpeg's buffers of pieces counted at once: the piece decoded and the previous one's, which
 the C allocator (glibc) may keep in its heap, where the next piece's buffers of other sizes need
-not fit (peak RSS up to 1.005 of an estimate counting one, on Python 3.11's imagecodecs)."""
+not fit (peak RSS up to 1.005 of an estimate counting one, on Python 3.11's imagecodecs, about
+one run in four). Not mutation-covered: with 1, no test fails reliably (#356, review)."""
 JPEG_COEFFICIENT_BYTES = 2
 """libjpeg's coefficients of a multi-scan (progressive) JPEG piece, per 8-bit sample."""
 JPEG_ROWS = 44

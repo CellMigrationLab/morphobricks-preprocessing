@@ -95,8 +95,12 @@ v0.5.1: no run before v0.5.1 is read.)
   plane with 1 and 4 tifffile threads and blocks, on Python 3.13 (imagecodecs 2026.11.11) and
   3.11 (2026.3.6): peak RSS at most 0.90 of the estimate, traced
   peak at most 0.97 of its Python part, and, for one piece, the C library's memory (C heap
-  sampled through glibc's `mallinfo2`) at most 0.98 of its terms; lowering any new term to zero
-  fails a test. A YCbCr-subsampled JPEG is now read in windows and blocks (the decoder upsamples
+  sampled through glibc's `mallinfo2`) at most 0.98 of its terms. Lowering the codecs' states,
+  the JPEG decode copies, coefficients or rows to zero (and the copies to 1) fails a test;
+  `JPEG_NATIVE_PIECES` (the previous piece's libjpeg buffers, counted for what glibc may still
+  hold) is **not mutation-covered**: lowered from 2 to 1, no test fails reliably (the review of
+  this PR saw 1 failure in 4 runs on Python 3.11's stack, at 1.001; never on 3.13's). It stays
+  on that evidence, which is not deterministic. A YCbCr-subsampled JPEG is now read in windows and blocks (the decoder upsamples
   a piece whole; at v0.7.0 it was refused as "subsampled colour"), and a JPEG piece whose stream
   declares more pixels than its piece is refused before it is decoded (`PlaneReadError`), by
   every read of a JPEG TIFF (windows, blocks, every channel of a plane, a whole plane): the new

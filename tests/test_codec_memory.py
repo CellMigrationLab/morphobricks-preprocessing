@@ -17,7 +17,9 @@ progressive; LZW ``uint8`` and ``uint16``, without and with the horizontal predi
 tiles of 256 and 512 and in strips, and interleaved RGB; windows inside one piece, across
 pieces and the whole plane, uncached and through a cache holding the plane; every channel of a
 plane with one and with four decoding threads; blocks of a plane over the memory limit. The
-parts measured alone make each new term matter: lowering any one to zero fails a test.
+parts measured alone make each new term matter: lowering any one to zero fails a test, except
+``window_memory.JPEG_NATIVE_PIECES`` (2 to 1 is not reliably caught: an allocator state seen in
+about one run in four on Python 3.11's stack; see its docstring).
 Set ``CODEC_PEAKS_REPORT`` to a file to append every measurement to it (JSON lines).
 """
 
