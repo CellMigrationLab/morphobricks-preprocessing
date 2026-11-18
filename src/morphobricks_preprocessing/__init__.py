@@ -86,6 +86,7 @@ from .discovery import (
     default_output_folder,
     discover_experiment,
 )
+from .he_tissue_array import TissueMaskArray, TissueMaskArrayRecord, he_tissue_mask_array
 from .image_names import position_id
 from .image_type import (
     FLUORESCENCE,
@@ -367,6 +368,8 @@ __all__ = [
     "SamplePlane",
     "Severity",
     "TiffMetadata",
+    "TissueMaskArray",
+    "TissueMaskArrayRecord",
     "UnsupportedUnitError",
     "ValidationIssue",
     "XycPlane",
@@ -404,6 +407,7 @@ __all__ = [
     "mask_axes_option",
     "group_summaries",
     "has_errors",
+    "he_tissue_mask_array",
     "header_axes",
     "header_axis_issue",
     "image_type_issues",

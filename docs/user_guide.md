@@ -943,6 +943,23 @@ the same: choose the RGB positions (or **Choose all of this unit**), **Preview**
 nuclei tinted blue, red cells orange, empty space grey, with the kept share; nothing is written),
 type the new mask ID, then **Write the tissue mask**.
 
+**Without a run** (Python, for an image you have read yourself): `he_tissue_mask_array` computes
+the same provisional rule on one 8-bit `(Y, X, 3)` R, G, B array and writes nothing.
+
+```python
+from morphobricks_preprocessing import he_tissue_mask_array
+
+found = he_tissue_mask_array(rgb)  # rgb: numpy uint8, shape (Y, X, 3), colour last
+found.mask  # boolean (Y, X), True = kept; use it as a region, never as cell labels
+found.record.status  # "provisional"
+found.record.to_dict()  # rule, rule_sha256, code identities, versions, fractions: keep it
+```
+
+Any other pixel type or shape is refused; nothing is converted, and a `(3, Y, X)` array must be
+moved to `(Y, X, 3)` by you. The mask is the one the run route writes for the same pixels, but
+it has no lineage file and cannot be declared as a mask of a run: for a MorphoBricks run, use
+`tissue-mask` (or the notebook card) above.
+
 ## 6. Output files
 
 The default output folder is next to the experiment folder:

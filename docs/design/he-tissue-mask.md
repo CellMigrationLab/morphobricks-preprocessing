@@ -640,6 +640,11 @@ Where the design left a choice, I1 chose as follows (each tested):
   `he_tissue_v1`'s output and the PI-1..PI-4 evaluation (run at v0.7.0) are unchanged; the
   recorded normalization code identity (`RECORD` digest) changes with the version, as it
   should.
+- **The rule on an array, with no run** (roadmap K3; owner, 17 November 2026: in
+  preprocessing) is `he_tissue_mask_array(rgb)`: the same rule and the same computation
+  (`rule_on_plane`, which the run route calls after its read), on a `uint8` `(Y, X, 3)` array,
+  writing nothing and making no lineage line; its record carries the rule, `rule_sha256` and the
+  code identities. Contract §15.4.
 - **P3** was run with fiberfeatures `a7f57c5` (v0.7.0, merged, not yet tagged) and CellPatcher
   v0.7.1 installed (`tests/test_he_tissue_consumer_gate.py`, which skips without fiberfeatures);
   P3 completes when the fiberfeatures v0.7.0 tag exists.
