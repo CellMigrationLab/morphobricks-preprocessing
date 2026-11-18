@@ -360,7 +360,9 @@ It gives:
   sized from its own byte counts), per decoding
   thread one encoded and five decoded strips or tiles and the codec's state, and the parsed
   header; for OME-Zarr the result, every chunk the plane touches three times and the plane
-  zarr returns. The bound is measured (tracemalloc, and peak RSS on Linux) for deflate,
+  zarr returns. The bound depends on the machine: it counts tifffile's decoding threads,
+  which tifffile sets from the CPU count (or `TIFFFILE_NUM_THREADS`), so one plane can be
+  accepted on one computer and refused at the same limit on another. The bound is measured (tracemalloc, and peak RSS on Linux) for deflate,
   deflate with a predictor, LZMA and uncompressed TIFF and for OME-Zarr; codecs decoded only
   through imagecodecs are counted like deflate, unmeasured (issue #342). The values are
   bitwise those of reading each channel alone;
