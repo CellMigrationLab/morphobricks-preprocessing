@@ -10,6 +10,22 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Added
 
+- **`window_map`: a function mapped over windows in threads, results in window order**
+  (`docs/design/lazy-windows.md` §5.2 (b), with (a) as its special case; owner decision of 17
+  November 2026). `map_plan(reader, windows, *, channels, workers, t, z, max_in_flight)` works
+  out from the headers what the map holds at most (`MapPlan`: `max_in_flight` windows, default
+  `2 × workers`, plus the reader's cache, once); `map_windows(plan, fn, *, memory_budget)`
+  refuses a plan over the consumer's budget before any pixel is read, then calls `fn(bounds,
+  window)` in `workers` threads and yields the results in window order, so they are identical
+  for any number of workers; `iter_windows(plan, *, memory_budget)` yields `(bounds, window)`
+  with later windows read ahead. The first error in window order is re-raised with a note naming
+  the window; an error or an early stop cancels the windows not started and leaves no thread
+  and the reader open (the caller's). `summary()` records the workers (`MapSummary`); they never
+  change a result. Processing-agnostic: no features, patches or providers. On the synthetic
+  8192² RGB grid (256 windows of 512 px, 67-px margins, a NumPy reduction per window, cache 36
+  MiB, 4-core shared machine) 1, 2 and 4 workers took 7.38/7.27, 4.14/3.99 and 3.26/3.26 s, with
+  identical results (`tools/benchmark_window_map.py`).
+
 - **Lazy windows, one layer for every consumer** (`docs/design/lazy-windows.md`): a design note
   on where lazy, windowed reading of large images lives (here, processing-agnostic), its API,
   how MorphoFeature, CellPatcher, a brick run directly and a LabConstrictor/QuPath tool use it
