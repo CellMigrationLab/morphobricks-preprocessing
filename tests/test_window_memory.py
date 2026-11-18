@@ -23,6 +23,7 @@ import tifffile
 
 from morphobricks_preprocessing import prefill_mapping
 from morphobricks_preprocessing.window_reader import WindowReader, cache_plan
+from window_peaks import REBUILD_BYTES
 from zarr_tree import write_ngff
 
 SIDE = 256
@@ -38,6 +39,7 @@ STORAGE = {
     "tiles 64": {"tile": (64, 64)},
     "strips 32": {"rowsperstrip": 32},
 }
+PROBE = 10_000
 LARGE = 1024
 LARGE_WINDOWS = [(0, 64, 0, 64), (200, 300, 400, 600), (0, LARGE, 0, LARGE)]
 """Inside one piece, across pieces (the previous piece still held) and the whole plane."""
@@ -83,6 +85,17 @@ def test_the_peaks_are_measured_in_a_fresh_process(tmp_path):
     measured = _measured(path, "YX", [0], SIDE)
     assert measured["pid"] != os.getpid() and not measured["pytest"]
     assert len(measured["results"]) == 9  # three windows, uncached and through two caches
+    # the guard rebuilt the interned-string table once before measuring (#351)
+    [(interned, step)] = measured["rebuilds"]
+    assert interned > 0 and step > REBUILD_BYTES
+
+
+def test_after_the_guard_no_interned_string_rebuild_falls_in_a_measured_read():
+    # A measured child interns a few strings per read, some hundred in all: after the forced
+    # rebuild, many more than that are interned without another one (#351).
+    probed = _child({"probe": PROBE})
+    [(_, step)] = probed["rebuilds"]
+    assert step > REBUILD_BYTES and probed["results"] < REBUILD_BYTES
 
 
 @pytest.mark.parametrize("storage", sorted(STORAGE))

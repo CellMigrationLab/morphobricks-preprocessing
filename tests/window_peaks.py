@@ -17,6 +17,17 @@ estimate`` for each one. A request may also give ``windows`` and ``caches`` (the
 :data:`WINDOWS` and :data:`CACHES`) and ``plane`` as ``[rows, columns]``. With ``"parts":
 true`` the parts of a TIFF piece's estimate are measured alone instead (:func:`parts`).
 
+**Rebuild guard** (#351). A fresh process only moves where the next rebuild of the interned-
+string table falls: a dependency that interns a few more strings at import could put it inside
+a measured read again. So before measuring, :func:`force_intern_rebuild` interns throwaway
+strings until the table has been rebuilt once, seen as one traced step of over
+:data:`REBUILD_BYTES` while interning a short string. The rebuilt table has room for at least as
+many strings again as it holds (tens of thousands here), far more than the few a read interns,
+so no rebuild can fall inside the reads measured after it. Forcing it was chosen over
+re-measuring when a large block appears because it does not depend on where the rebuild is
+traced from (a ``pathlib`` line that differs between Python versions) nor on a size threshold
+inside the measured read. With ``"probe": n`` the child forces the rebuild, then interns ``n``
+more strings and returns the largest traced step among them, which the test checks.
 """
 
 from __future__ import annotations
@@ -30,9 +41,55 @@ from pathlib import Path
 
 WINDOWS = [(0, 64, 0, 64), (37, 190, 45, 256), (0, 256, 0, 256)]
 CACHES = (2**16, 2**20)
+REBUILD_BYTES = 2**16
+"""A traced step this large while interning one short string is the table's rebuild."""
+MOST_INTERNS = 2**20
+"""Throwaway strings interned at most before the guard gives up (and the child fails)."""
 BOOKKEEPING = 16 * 2**10
 """The Python objects a cache makes around a frozen piece (the reader's bookkeeping, counted in
 ``window_memory.OPEN_BYTES``), allowed over the frozen copy itself in :func:`parts`."""
+_KEPT = []
+"""The throwaway strings of the guard, kept alive so they stay in the table."""
+REBUILDS = []
+"""``[strings interned, traced step]`` of every rebuild the guard forced, returned as JSON."""
+
+
+def force_intern_rebuild():
+    """Intern throwaway strings until the interned-string table is rebuilt once.
+
+    Record how many strings it took and the traced step of the rebuild (:data:`REBUILDS`);
+    refuse to measure without it.
+    """
+    kept = [""] * MOST_INTERNS  # allocated before tracing: the list never grows meanwhile
+    tracemalloc.start()
+    try:
+        last = tracemalloc.get_traced_memory()[0]
+        for i in range(MOST_INTERNS):
+            kept[i] = sys.intern(f"window_peaks rebuild guard {i}")
+            now = tracemalloc.get_traced_memory()[0]
+            if now - last > REBUILD_BYTES:
+                _KEPT.append(kept[: i + 1])
+                REBUILDS.append([i + 1, now - last])
+                return
+            last = now
+    finally:
+        tracemalloc.stop()
+    raise RuntimeError(f"No interned-string table rebuild in {MOST_INTERNS} strings.")
+
+
+def probe(count):
+    """Return the largest traced step of interning ``count`` more strings after the guard."""
+    kept, largest = [""] * count, 0
+    tracemalloc.start()
+    try:
+        last = tracemalloc.get_traced_memory()[0]
+        for i in range(count):
+            kept[i] = sys.intern(f"window_peaks probe {i}")
+            now = tracemalloc.get_traced_memory()[0]
+            largest, last = max(largest, now - last), now
+    finally:
+        tracemalloc.stop()
+    return largest
 
 
 def _peak(read):
@@ -78,6 +135,7 @@ def measure(path, axes, channels, plane, coordinates=None, windows=WINDOWS, cach
     mapping, read = prefill_mapping(axes), {"channels": channels, **(coordinates or {})}
     rows, cols = (plane, plane) if isinstance(plane, int) else plane
     read_window(path, mapping, bounds=(0, 1, 0, 1), **read)  # imports and first-use state
+    force_intern_rebuild()
     results = []
     for y0, y1, x0, x1 in windows:
         bounds = (min(y0, rows - 1), min(y1, rows), min(x0, cols - 1), min(x1, cols))
@@ -106,6 +164,7 @@ def parts(path):
     with tifffile.TiffFile(path) as tif:
         page = tif.series[0].keyframe
         _decode_segment(page, 0, path)  # first-use state
+        force_intern_rebuild()
         held = []
         decode = _peak(lambda: held.append(_decode_segment(page, 0, path)))
         piece, encoded = held[0].nbytes, int(page.databytecounts[0])
@@ -119,9 +178,14 @@ def parts(path):
 
 if __name__ == "__main__":
     request = json.loads(sys.argv[1])
-    if request.pop("parts", False):
+    if "probe" in request:
+        import morphobricks_preprocessing.window_reader  # noqa: F401  (what a measure imports)
+
+        force_intern_rebuild()
+        found = probe(request["probe"])
+    elif request.pop("parts", False):
         found = parts(request["path"])
     else:
         found = measure(**request)
     answer = {"pid": os.getpid(), "pytest": "pytest" in sys.modules, "results": found}
-    print(json.dumps(answer))
+    print(json.dumps({**answer, "rebuilds": REBUILDS}))
