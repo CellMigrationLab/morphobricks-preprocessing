@@ -552,3 +552,25 @@ def test_a_run_gives_the_cache_plan_of_its_image(tmp_path, kind):
     assert plan == alone and plan.piece_rows == 3 and plan.cache_bytes > 0
     with pytest.raises(RunInputsError):
         inputs.window_cache_plan(fov, window=(16, 16), margin=(3, 3), channels=["nope"])
+
+
+def test_the_cache_drops_pieces_before_it_adds_one_never_over_its_bound():
+    """At the moment a piece is added, what is held and the piece fit the bound (#339 review).
+
+    Adding first and dropping after would hold one piece over the bound for a moment, which
+    the memory estimate does not count; the pieces held are watched as each is added.
+    """
+    from collections import OrderedDict
+
+    cache, peaks = BlockCache(100), []
+
+    class Watched(OrderedDict):
+        def __setitem__(self, key, piece):
+            super().__setitem__(key, piece)
+            peaks.append(sum(p.nbytes for p in self.values()))
+
+    cache._pieces = Watched()
+    for key in range(10):
+        cache.get(key, lambda: np.zeros(30, np.uint8))
+    assert len(peaks) == 10 and max(peaks) <= 100
+    assert cache.stats().pieces == 3 and cache.stats().evictions == 7
