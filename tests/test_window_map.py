@@ -152,19 +152,23 @@ def test_a_run_window_reader_maps_its_windows_by_channel_ids(tmp_path):
 def test_results_come_in_window_order_whatever_finishes_first(image):
     path, mapping = image
     windows = [(i, i + 8, 0, 8) for i in range(24)]
-    finished = []
+    finished, seventh_done, waited = [], threading.Event(), []
     lock = threading.Lock()
 
-    def slow_first(bounds, window):
-        time.sleep(0.004 * (len(windows) - bounds[0]))  # the earliest windows finish last
+    def first_last(bounds, window):
+        if bounds[0] == 0:  # windows 0 to 7 run together in 8 threads: 0 waits for 7
+            waited.append(seventh_done.wait(10))
         with lock:
             finished.append(bounds[0])
+        if bounds[0] == 7:
+            seventh_done.set()
         return bounds[0]
 
     with WindowReader(path, mapping, cache_bytes=MIB) as reader:
         plan = map_plan(reader, windows, channels=[0], workers=8, max_in_flight=16)
-        assert list(map_windows(plan, slow_first, memory_budget=BUDGET)) == list(range(24))
-    assert finished != sorted(finished)  # completion order was not window order
+        assert list(map_windows(plan, first_last, memory_budget=BUDGET)) == list(range(24))
+    assert waited == [True]
+    assert finished.index(7) < finished.index(0)  # completion order was not window order
 
 
 def test_no_more_than_max_in_flight_windows_are_read_ahead(image, reads):
@@ -172,11 +176,14 @@ def test_no_more_than_max_in_flight_windows_are_read_ahead(image, reads):
     windows = [(i, i + 8, 0, 8) for i in range(30)]
     with WindowReader(path, mapping, cache_bytes=MIB) as reader:
         plan = map_plan(reader, windows, channels=[0], workers=3, max_in_flight=5)
-        ahead = []
         for k, _ in enumerate(map_windows(plan, lambda b, w: b, memory_budget=BUDGET)):
-            time.sleep(0.02)  # a slow consumer: the workers fill every free slot meanwhile
-            ahead.append(len(reads) - k)
-    assert max(ahead) == 5  # the result in hand and four read ahead, never more
+            # A slow consumer: wait until the workers have started every window they may.
+            expected = min(k + 5, len(windows))  # the result in hand and four read ahead
+            deadline = time.monotonic() + 10
+            while len(reads) < expected and time.monotonic() < deadline:
+                time.sleep(0.002)
+            time.sleep(0.005)  # time to overshoot, were the bound not kept
+            assert len(reads) == expected, k
     assert len(reads) == len(windows)
 
 
@@ -408,10 +415,11 @@ def test_a_break_in_a_function_leaves_no_thread_without_the_collector(image, no_
 
 def test_a_map_closed_from_one_of_its_own_threads_does_not_wait_for_itself(image):
     path, mapping = image
-    holder, errors, closed = [], [], threading.Event()
+    holder, errors, closed, delivered = [], [], threading.Event(), threading.Event()
 
     def closing(bounds, window):
         if bounds[0] == 2:
+            assert delivered.wait(10)  # the consumer is between two results, not asking
             try:
                 holder[0].close()  # in a pool thread: it cannot join itself
             except BaseException as exc:
@@ -423,6 +431,7 @@ def test_a_map_closed_from_one_of_its_own_threads_does_not_wait_for_itself(image
         plan = map_plan(reader, [(i, i + 8, 0, 8) for i in range(20)], channels=[0], workers=2)
         holder.append(map_windows(plan, closing, memory_budget=BUDGET))
         assert next(holder[0]) == (0, 8, 0, 8)
+        delivered.set()
         assert closed.wait(10)
         assert errors == []
         assert list(holder[0]) == []
@@ -447,3 +456,21 @@ def test_a_reader_closed_meanwhile_stops_the_map_at_a_named_window(image):
         with pytest.raises(WindowReaderClosedError):
             map_plan(reader, windows, channels=[0], workers=1)
     assert not leftover_threads()
+
+
+def test_a_plane_outside_a_file_is_refused_when_planned(tmp_path, reads):
+    path = write_data(tmp_path / "a.tif", stored((2, 3, 32, 40), seed=5), "TCYX", tile=(16, 16))
+    mapping = prefill_mapping("TCYX")
+    with WindowReader(path, mapping, cache_bytes=MIB) as reader:
+        for plane in ({"t": 2}, {"z": 1}, {"t": -1}):
+            with pytest.raises(IndexError):
+                map_plan(reader, [(0, 8, 0, 8)], channels=[0], workers=1, **plane)
+        plan = map_plan(reader, [(0, 8, 0, 8)], channels=[2], workers=1, t=1)
+        (window,) = map_windows(plan, lambda b, w: w, memory_budget=np.int64(BUDGET))
+        assert (
+            window.tobytes()
+            == read_window(path, mapping, bounds=(0, 8, 0, 8), channels=[2], t=1).tobytes()
+        )
+        with pytest.raises(ValueError, match="memory budget"):
+            map_windows(plan, digest, memory_budget=np.float64(BUDGET))
+    assert len(reads) == 1

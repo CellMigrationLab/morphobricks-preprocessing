@@ -166,6 +166,8 @@ def map_plan(
         For ``workers`` or ``max_in_flight`` not as above.
     TypeError
         For a reader of another kind, or a ``RunWindowReader`` without ``t`` and ``z``.
+    IndexError
+        For a ``t`` or ``z`` outside the image, before any window is planned.
     WindowError, RunInputsError
         As the reader's ``window_plan`` refuses a window (bounds, channels, memory limit, a
         changed image, a closed reader), with a note naming the window.
@@ -173,6 +175,8 @@ def map_plan(
     in_flight = _check_counts(workers, max_in_flight)
     channels = tuple(channels)
     plan_one, _ = _calls(reader, channels, t, z)
+    if isinstance(reader, WindowReader):  # a RunWindowReader checks t and z in each plan
+        reader._check_plane(z=z, t=t)
     plans = [_named(plan_one, bounds, i) for i, bounds in enumerate(windows)]
     cache_bytes = reader.stats().max_bytes
     sizes = sorted((p.memory_estimate - cache_bytes for p in plans), reverse=True)
@@ -221,8 +225,9 @@ def map_windows(
     WindowMemoryError
         When the plan is over ``memory_budget``, before any pixel is read.
     """
-    if isinstance(memory_budget, bool) or not isinstance(memory_budget, int):
+    if isinstance(memory_budget, bool) or not isinstance(memory_budget, int | np.integer):
         raise ValueError(f"A memory budget is a whole number of bytes; got {memory_budget!r}.")
+    memory_budget = int(memory_budget)
     if plan.memory_estimate > memory_budget:
         raise WindowMemoryError(
             f"Mapping over {len(plan.windows)} windows with {plan.workers} workers holds up to "
@@ -280,7 +285,11 @@ class WindowMap(Generic[R]):
         return result
 
     def close(self) -> None:
-        """Cancel the windows not started, wait for the running ones; later results end."""
+        """Cancel the windows not started, wait for the running ones; later results end.
+
+        Called from another thread while the consumer is asking for a result, it is refused
+        (``ValueError``, as for any generator); the consumer's own thread may always close.
+        """
         self._run.close()
 
     def summary(self) -> MapSummary:
