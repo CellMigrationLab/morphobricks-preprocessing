@@ -82,7 +82,11 @@ v0.5.1: no run before v0.5.1 is read.)
   sampled through glibc's `mallinfo2`) at most 0.98 of its terms; lowering any new term to zero
   fails a test. A YCbCr-subsampled JPEG is now read in windows and blocks (the decoder upsamples
   a piece whole; at v0.7.0 it was refused as "subsampled colour"), and a JPEG piece whose stream
-  declares more pixels than its piece is refused before it is decoded (`PlaneReadError`).
+  declares more pixels than its piece is refused before it is decoded (`PlaneReadError`), by
+  every read of a JPEG TIFF (windows, blocks, every channel of a plane, a whole plane): the new
+  `jpeg_stream` walks a piece's markers as libjpeg walks them and refuses any stream libjpeg
+  could read otherwise, and a JPEG page is decoded piece by piece, each checked first
+  (`tiff_pieces.read_jpeg_page`).
   imagecodecs stays optional (without it tifffile cannot decode LZW or JPEG at all); it joins the
   `dev` extra so CI runs the measurements.
 - **`window_map`: a function mapped over windows in threads, results in window order**

@@ -478,7 +478,8 @@ It gives:
   Their estimates count the C library's memory, which `tracemalloc` does not see (LZW's code
   table; libjpeg's state, rows and a progressive piece's coefficients), checked against the peak
   resident memory of the read (`tests/test_codec_memory.py`); a JPEG piece whose stream declares
-  more pixels than its piece is refused before it is decoded (window and block reads). A TIFF
+  more pixels than its piece, or whose markers libjpeg could read otherwise, is refused before
+  it is decoded, by every read (`jpeg_stream`; a JPEG page is decoded piece by piece). A TIFF
   stored with any other compression or predictor (old-style JPEG, PackBits,
   Zstandard, WebP, JPEG 2000, JPEG XL, PNG, LERC, the floating-point predictor, ...) is refused
   there from its header, before any pixel is read: `CompressionNotBoundedError` (code

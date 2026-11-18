@@ -22,12 +22,16 @@ window's plan alike (issue #356).
 from __future__ import annotations
 
 import math
+import threading
 from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
 
+from . import jpeg_stream
 from .plane_errors import PlaneReadError
 from .window_memory import JPEG, PieceDecode
 
@@ -250,13 +254,19 @@ def _read_segment(
 
 
 def _decode_segment(
-    page: tifffile.TiffPage | tifffile.TiffFrame, index: int, path: str | os.PathLike
+    page: tifffile.TiffPage | tifffile.TiffFrame,
+    index: int,
+    path: str | os.PathLike,
+    lock: AbstractContextManager | None = None,
 ) -> np.ndarray | None:
-    """Decode one compressed strip or tile whole, as (depth, rows, columns, samples)."""
+    """Decode one compressed strip or tile whole, as (depth, rows, columns, samples).
+
+    The piece is read under ``lock`` (default: the file handle's own).
+    """
     keyframe = page.keyframe
     fh = page.parent.filehandle
     try:
-        with fh.lock:
+        with fh.lock if lock is None else lock:
             fh.seek(int(page.dataoffsets[index]))
             data = fh.read(int(page.databytecounts[index]))
             decode = keyframe.decode
@@ -266,7 +276,7 @@ def _decode_segment(
     except Exception as exc:  # a short or unreadable file
         raise PlaneReadError(f"Part {index} of a page of {path} cannot be read: {exc}") from exc
     if keyframe.compression == JPEG:
-        _check_jpeg_frame(data, piece_decode(keyframe), index, path)
+        check_jpeg_piece(data, page.jpegtables, piece_decode(keyframe), index, path)
     try:
         segment, _, _ = decode(data, index, **kwargs)
     except Exception as exc:  # decoding errors come from many codecs
@@ -274,49 +284,70 @@ def _decode_segment(
     return segment
 
 
-_SOF = {0xFFC0 + n for n in range(16)} - {0xFFC4, 0xFFC8, 0xFFCC}
-"""JPEG start-of-frame markers (not DHT, JPG or DAC, which share the range)."""
-
-
-def _check_jpeg_frame(
-    data: bytes, decode: PieceDecode, index: int, path: str | os.PathLike
+def check_jpeg_piece(
+    data: bytes,
+    tables: bytes | None,
+    decode: PieceDecode,
+    index: int,
+    path: str | os.PathLike,
 ) -> None:
     """Refuse a JPEG piece whose stream declares more than the piece, before decoding it.
 
     libjpeg sizes its buffers and the decoded array from the stream's frame header, not from
-    the TIFF header; the memory planned is the TIFF piece's (``window_memory``).
+    the TIFF header; the memory planned is the TIFF piece's (``window_memory``). The frame is
+    the one libjpeg reads (:mod:`.jpeg_stream`); a stream it could read otherwise is refused.
     """
-    frame = _jpeg_frame(data)
-    piece = (8, decode.rows, decode.columns, decode.samples)
-    if frame is not None and frame[0] == 8 and all(map(int.__le__, frame[1:], piece[1:])):
+    try:
+        if tables is not None:
+            jpeg_stream.check_tables(bytes(tables))
+        found = jpeg_stream.frame(data)
+    except jpeg_stream.JpegStreamError as exc:
+        raise PlaneReadError(f"Part {index} of a page of {path} cannot be read: {exc}.") from exc
+    piece = (decode.rows, decode.columns, decode.samples)
+    sizes = (found.rows, found.columns, found.components)
+    if found.precision == 8 and all(0 < a <= b for a, b in zip(sizes, piece, strict=True)):
         return
-    found = "no frame header"
-    if frame is not None:
-        found = f"{frame[0]}-bit samples, {frame[1]} × {frame[2]} pixels, {frame[3]} components"
     raise PlaneReadError(
-        f"Part {index} of a page of {path} cannot be read: its JPEG stream declares {found}, "
-        f"not 8-bit samples within the piece's {decode.rows} × {decode.columns} pixels and "
-        f"{decode.samples} samples."
+        f"Part {index} of a page of {path} cannot be read: its JPEG stream declares "
+        f"{found.precision}-bit samples, {found.rows} × {found.columns} pixels and "
+        f"{found.components} components, not 8-bit samples within the piece's "
+        f"{decode.rows} × {decode.columns} pixels and {decode.samples} samples."
     )
 
 
-def _jpeg_frame(data: bytes) -> tuple[int, int, int, int] | None:
-    """Return a JPEG stream's (precision, rows, columns, components), or None without one."""
-    i, size = 2, len(data)
-    while i + 4 <= size:
-        marker = int.from_bytes(data[i : i + 2], "big")
-        if marker in _SOF and i + 10 <= size:
-            precision, rows, columns, components = (
-                data[i + 4],
-                int.from_bytes(data[i + 5 : i + 7], "big"),
-                int.from_bytes(data[i + 7 : i + 9], "big"),
-                data[i + 9],
-            )
-            return precision, rows, columns, components
-        if marker in (0xFFDA, 0xFFD9) or marker >> 8 != 0xFF:
-            return None  # a scan or the end before any frame header: none
-        if 0xFFD0 <= marker <= 0xFFD8 or marker == 0xFF01:
-            i += 2  # markers without a length
-            continue
-        i += 2 + int.from_bytes(data[i + 2 : i + 4], "big")
-    return None
+def page_array(page: tifffile.TiffPage | tifffile.TiffFrame, path: str | os.PathLike) -> np.ndarray:
+    """Decode a whole page: a JPEG page with :func:`read_jpeg_page`, any other by tifffile."""
+    if page.keyframe.compression == JPEG:
+        return read_jpeg_page(page, path)
+    return page.asarray()
+
+
+def read_jpeg_page(
+    page: tifffile.TiffPage | tifffile.TiffFrame, path: str | os.PathLike
+) -> np.ndarray:
+    """Decode a JPEG page piece by piece, each checked before it is decoded, as tifffile does.
+
+    The same placement as ``TiffPage.asarray`` (its ``segments``): each strip or tile decoded
+    whole, clipped to the page and written into the page array, in tifffile's decoding threads
+    (``maxworkers``), a piece read under the file's lock; an empty piece is the fill value.
+    Returns the page as ``keyframe.shaped``.
+    """
+    keyframe = page.keyframe
+    result = np.empty(keyframe.shaped, dtype=keyframe.dtype)
+    depth, length, width = keyframe.imagedepth, keyframe.imagelength, keyframe.imagewidth
+
+    def place(index: int) -> None:
+        empty = int(page.dataoffsets[index]) == 0 or int(page.databytecounts[index]) == 0
+        segment = None if empty else _decode_segment(page, index, path, lock)
+        _, (s, d, h, w, _), shape = keyframe.decode(None, index)  # where the piece goes
+        where = (s, slice(d, d + shape[0]), slice(h, h + shape[1]), slice(w, w + shape[2]))
+        if segment is None:
+            result[where] = keyframe.nodata
+        else:
+            result[where] = segment[: depth - d, : length - h, : width - w]
+
+    pieces, lock = range(len(page.dataoffsets)), threading.Lock()  # one read at a time
+    with ThreadPoolExecutor(max(1, int(keyframe.maxworkers))) as pool:
+        for _ in pool.map(place, pieces):
+            pass
+    return result

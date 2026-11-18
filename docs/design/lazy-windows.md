@@ -116,7 +116,14 @@ table on 2026.3). Lowering any of these terms to zero fails a test; lowering the
 piece's libjpeg buffers (2 to 1) fails none, as that allocator state is rare. A JPEG page is read only in the
 measured form (`codec_bounds.jpeg_unmeasured`: 8-bit samples, greyscale or interleaved RGB or
 YCbCr, subsampled at most 2 × 2, no NDPI header); a JPEG piece whose stream declares more pixels
-than its tile is refused before libjpeg sees it (window and block reads). A YCbCr-subsampled
+than its tile is refused before libjpeg sees it, by every read of a JPEG TIFF (windows,
+blocks, every channel of a plane, a whole plane): `jpeg_stream` walks the piece's markers as
+libjpeg does (fill bytes, `FF 00`, lone markers, lengths, scans), takes the one frame header
+libjpeg reads and refuses any stream libjpeg could read otherwise (garbage or `FF 00` where a
+marker is expected, a second frame header, a frame type other than Huffman DCT, tables holding
+more than tables); a JPEG page is decoded piece by piece, each checked first
+(`tiff_pieces.read_jpeg_page`), never by tifffile's `asarray` (review of this PR, B1: one fill
+byte before a 40000² frame had let a 16² frame after the EOI pass a looser check). A YCbCr-subsampled
 JPEG is read in windows and blocks (the decoder upsamples a piece whole). imagecodecs is not a
 dependency (it is in the `dev` extra, so CI measures): without it tifffile cannot decode LZW or
 JPEG at all, and the reads fail as before.

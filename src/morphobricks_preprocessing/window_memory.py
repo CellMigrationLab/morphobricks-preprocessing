@@ -47,9 +47,9 @@ fresh process, and their native parts alone as the peak of the C heap during one
   sample (:data:`JPEG_COEFFICIENT_BYTES`). Which a piece is cannot be told from the TIFF
   header, so every JPEG piece is charged for both, and for the previous piece's too
   (:data:`JPEG_NATIVE_PIECES`), which the C allocator may still hold. libjpeg sizes
-  all of it from the piece's own JPEG stream, which TIFF requires to declare the piece's size:
-  a window or block read refuses a stream declaring more pixels before decoding it
-  (``tiff_pieces._decode_segment``).
+  all of it from the piece's own JPEG stream, so every read refuses a piece whose stream declares
+  more than the piece before libjpeg sees it, its markers walked as libjpeg walks them
+  (:mod:`.jpeg_stream`, ``tiff_pieces.check_jpeg_piece``).
 
 A codec outside that matrix (Zstandard, WebP, JPEG 2000... through imagecodecs) is refused
 before any pixel is read (:mod:`.codec_bounds`, issue #356): no bound is invented for it.

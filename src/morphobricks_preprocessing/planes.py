@@ -65,7 +65,7 @@ from morphobricks_normalization.ranges import HistogramSettings, RangeCheck
 from .axes import PLANE_ROLES, AxisMapping, AxisReview
 from .codec_bounds import FIX, READ, refusal_text, unbounded
 from .plane_errors import CompressionNotBoundedError, PlaneMemoryError, PlaneReadError
-from .tiff_pieces import _Blocking, _largest_piece, _read_tiff_box, _tiff_blocking
+from .tiff_pieces import _Blocking, _largest_piece, _read_tiff_box, _tiff_blocking, page_array
 from .validation import ValidationIssue, error, plural, warning
 from .window_memory import block_piece_work
 from .zarr_input import (
@@ -971,7 +971,7 @@ def _read_page(series: tifffile.TiffPageSeries, index: int, layout: PlaneLayout,
     if page is None:
         raise PlaneReadError(f"Page {index} of {path} is missing from the file.")
     try:
-        data = page.asarray()
+        data = page_array(page, path)  # a JPEG piece's stream is checked first (#356)
     except Exception as exc:  # decoding errors come from many codecs
         raise PlaneReadError(f"Page {index} of {path} cannot be decoded: {exc}") from exc
     return data.reshape(layout.page_shape)

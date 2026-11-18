@@ -23,11 +23,12 @@ held at a time. The memory checked before any pixel is read bounds that whole re
 This bound is measured for deflate, LZMA and uncompressed TIFF pages decoded by ``tifffile``
 itself and for LZW and JPEG pages decoded through imagecodecs (peak RSS); a page stored with
 any other codec (:data:`.codec_bounds.TIFF_BOUNDED`) is refused from its header before any
-pixel is read (:class:`.plane_errors.CompressionNotBoundedError`, issue #356). A JPEG piece is
-decoded here by tifffile, which checks the decoded size only after decoding: the bound holds
-for pieces whose JPEG stream declares the piece's size, as TIFF requires (window and block
-reads refuse any other before decoding it). The estimate of a single :func:`.planes.read_plane`
-call is unchanged.
+pixel is read (:class:`.plane_errors.CompressionNotBoundedError`, issue #356). A JPEG page is
+decoded piece by piece in tifffile's threads, each piece's stream checked before it is decoded
+(``tiff_pieces.read_jpeg_page``, through ``planes._read_page``): libjpeg sizes what it
+allocates from the stream, so a stream declaring more than its piece is refused, as window and
+block reads refuse it. The estimate of
+a single :func:`.planes.read_plane` call is unchanged.
 
 The values are those of :func:`.planes.read_plane`, channel by channel: the same selection
 of the same decoded page, oriented Y before X and converted to native byte order.
