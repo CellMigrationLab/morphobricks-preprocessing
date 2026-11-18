@@ -472,7 +472,9 @@ def _plan(
         box = (*rows, *cols)
         read = [[wanted[i] for i in group] for group in groups]
         encoded = source.encoded(position, box, read)
-        work = window_memory.tiff_piece_work(blocking.piece_nbytes, encoded, source.cached)
+        work = window_memory.tiff_piece_work(
+            blocking.piece_nbytes, encoded, source.cached, blocking.decode
+        )
     return WindowPlan(
         bounds=checked,
         level=LEVEL,

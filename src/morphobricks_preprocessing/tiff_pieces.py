@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from .plane_errors import PlaneReadError
+from .window_memory import JPEG, PieceDecode
 
 if TYPE_CHECKING:
     import os
@@ -59,6 +60,7 @@ class _Blocking:
     encoded_nbytes: int = 0
     row_nbytes: int = 0
     stored: tuple[tuple[int, int], ...] = ()  # TIFF: (series dimension, stored dimension)
+    decode: PieceDecode = PieceDecode(1)  # TIFF: how a piece is decoded (window_memory)
 
 
 def _tiff_blocking(
@@ -78,7 +80,9 @@ def _tiff_blocking(
     when it is None: a window's plan sizes the pieces of the pages it reads itself
     (``windows._plan``).
     """
-    if keyframe.is_subsampled or keyframe.jpegheader is not None or keyframe.dtype is None:
+    # Subsampled colour is upsampled by the JPEG decoder itself: a JPEG piece decodes whole.
+    subsampled = keyframe.is_subsampled and keyframe.compression != JPEG
+    if subsampled or keyframe.jpegheader is not None or keyframe.dtype is None:
         return None
     stored_shape = tuple(int(n) for n in keyframe.shaped)
     page_dims = [d for d in range(split, len(shape)) if shape[d] > 1]
@@ -112,7 +116,18 @@ def _tiff_blocking(
         encoded_nbytes=_largest(keyframe) if largest is None else largest,
         row_nbytes=unit[1] * samples * itemsize,
         stored=tuple(stored.items()),
+        decode=piece_decode(keyframe),
     )
+
+
+def piece_decode(keyframe: tifffile.TiffPage) -> PieceDecode:
+    """Return how one strip or tile of a page is decoded, from its header (window_memory)."""
+    _, depth, length, width, samples = (int(n) for n in keyframe.shaped)
+    if keyframe.is_tiled:
+        rows, columns = depth * keyframe.tilelength, keyframe.tilewidth
+    else:
+        rows, columns = min(keyframe.rowsperstrip, length), width
+    return PieceDecode(int(keyframe.compression), int(rows), int(columns), samples)
 
 
 def _largest_piece(series: tifffile.TiffPageSeries) -> int:
@@ -248,7 +263,60 @@ def _decode_segment(
         kwargs = {}
         if keyframe.compression in _JPEG_COMPRESSIONS:
             kwargs = {"jpegtables": page.jpegtables, "jpegheader": keyframe.jpegheader}
+    except Exception as exc:  # a short or unreadable file
+        raise PlaneReadError(f"Part {index} of a page of {path} cannot be read: {exc}") from exc
+    if keyframe.compression == JPEG:
+        _check_jpeg_frame(data, piece_decode(keyframe), index, path)
+    try:
         segment, _, _ = decode(data, index, **kwargs)
     except Exception as exc:  # decoding errors come from many codecs
         raise PlaneReadError(f"Part {index} of a page of {path} cannot be read: {exc}") from exc
     return segment
+
+
+_SOF = {0xFFC0 + n for n in range(16)} - {0xFFC4, 0xFFC8, 0xFFCC}
+"""JPEG start-of-frame markers (not DHT, JPG or DAC, which share the range)."""
+
+
+def _check_jpeg_frame(
+    data: bytes, decode: PieceDecode, index: int, path: str | os.PathLike
+) -> None:
+    """Refuse a JPEG piece whose stream declares more than the piece, before decoding it.
+
+    libjpeg sizes its buffers and the decoded array from the stream's frame header, not from
+    the TIFF header; the memory planned is the TIFF piece's (``window_memory``).
+    """
+    frame = _jpeg_frame(data)
+    piece = (8, decode.rows, decode.columns, decode.samples)
+    if frame is not None and frame[0] == 8 and all(map(int.__le__, frame[1:], piece[1:])):
+        return
+    found = "no frame header"
+    if frame is not None:
+        found = f"{frame[0]}-bit samples, {frame[1]} × {frame[2]} pixels, {frame[3]} components"
+    raise PlaneReadError(
+        f"Part {index} of a page of {path} cannot be read: its JPEG stream declares {found}, "
+        f"not 8-bit samples within the piece's {decode.rows} × {decode.columns} pixels and "
+        f"{decode.samples} samples."
+    )
+
+
+def _jpeg_frame(data: bytes) -> tuple[int, int, int, int] | None:
+    """Return a JPEG stream's (precision, rows, columns, components), or None without one."""
+    i, size = 2, len(data)
+    while i + 4 <= size:
+        marker = int.from_bytes(data[i : i + 2], "big")
+        if marker in _SOF and i + 10 <= size:
+            precision, rows, columns, components = (
+                data[i + 4],
+                int.from_bytes(data[i + 5 : i + 7], "big"),
+                int.from_bytes(data[i + 7 : i + 9], "big"),
+                data[i + 9],
+            )
+            return precision, rows, columns, components
+        if marker in (0xFFDA, 0xFFD9) or marker >> 8 != 0xFF:
+            return None  # a scan or the end before any frame header: none
+        if 0xFFD0 <= marker <= 0xFFD8 or marker == 0xFF01:
+            i += 2  # markers without a length
+            continue
+        i += 2 + int.from_bytes(data[i + 2 : i + 4], "big")
+    return None
