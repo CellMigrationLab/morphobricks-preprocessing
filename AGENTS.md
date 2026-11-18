@@ -245,6 +245,10 @@ src/morphobricks_preprocessing/
                     the verified code identity (RECORD digest, PEP 610); lineage_schema.py the
                     reader's dispatch by operation and the duplicate-key refusal;
                     cli_tissue_mask.py the command tissue-mask
+  he_tissue_array.py he_tissue_mask_array: the same rule on a uint8 (Y, X, 3) array with no
+                    run (K3; input refused before any computation, no lineage written; the
+                    record carries the rule, its SHA-256 and the code identities); light,
+                    the helper module imported only past the input checks
   mask_rules.py     Spec ADR 0005's one constructor per shared refusal: refuse_not_instances
                     (A_MASK_NOT_INSTANCES), refuse_binary_values (R_MASK_CONTRADICTS_REPRESENTATION)
                     called only by check_binary_values (binary = int/bool, {0, v}); pure.

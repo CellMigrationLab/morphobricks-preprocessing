@@ -1132,6 +1132,47 @@ are BM12 keys under a BM15 operation and the reverse, a `root` of `"experiment"`
 BM15 `source`, and a `rule_sha256` that is not its rule's digest. A key repeated in one JSON
 object at any depth is refused in both schemas (it was kept silently before).
 
+### 15.4 The H&E tissue mask of an array, with no run (roadmap K3)
+
+`he_tissue_mask_array(rgb, *, rule="he_tissue_v1") -> TissueMaskArray` (owner decision of
+17 November 2026: in preprocessing) computes §15.3's rule on one image array in memory, for
+users who have pixels but no MorphoBricks run (a script, another brick's folder command). **The
+rule is the same provisional `he_tissue_v1`**, and the computation is the run route's own: the
+array is moved to `(3, Y, X)` and given to the one function `RunInputs.he_tissue_mask` and
+`preview_he_tissue_mask` call after their read (`he_tissue_mask.rule_on_plane`), never a copy,
+so the mask is bitwise equal to the file the run route writes for the same pixels (tested on the
+synthetic image of the design, four PI-style images and the §1 boundary colours).
+
+**Inputs, refused before any computation**, nothing converted and no axis guessed: an input that
+is not a plain `numpy.ndarray` (a subclass such as a masked array, a list, `None`: `TypeError`);
+a pixel type other than `uint8`, or a shape other than `(Y, X, 3)` (R, G, B last) with `Y, X >= 1`
+(`ValueError` naming what was found); an unknown rule (`ValueError`); scikit-image missing
+(`ImportError` naming `pip install "morphobricks-preprocessing[he-mask]"`). The input checks
+import nothing of the extra; scikit-image, normalization's `stain` module and the helper's
+module are imported only past them, never by `import morphobricks_preprocessing`. Like the run
+route it takes no pixel size (sizes are pixels), no white (fixed at 255) and no thresholds.
+
+**Result.** `TissueMaskArray` (frozen): `mask`, boolean `(Y, X)`, `True` kept (a region, BM3;
+being boolean, an in-memory consumer refuses it as an object set, BM4); and `record`, a frozen
+`TissueMaskArrayRecord`: `rule_id` (`"he_tissue_v1"`), `operation` (`"he_tissue_mask"`),
+`rule_text` (the complete canonical rule record as JSON; `rule` returns it as a new dict, with
+`rule_version`, `status` `"provisional"` and `provisional`), `rule_sha256`, `code` (BM15's code
+identities of `preprocessing` and `normalization`, read-only, `verified` and `reason` as found),
+`code_verified` (both verified: the run route's `reusable`), `numpy_version`,
+`scikit_image_version`, `scipy_version`, `fractions` (`kept`, `nuclei`, `red_cells`,
+`background`, `od_floored`), `helper` `morphobricks_preprocessing.he_tissue_mask_array` and
+`helper_version`. These values equal the run route's lineage line in every key the two share
+(`operation`, `rule`, `rule_sha256`, `code`, the three library versions, `fractions`).
+`to_dict()` gives them as plain JSON values, keys in that order, for a caller to record.
+
+**Not a run artifact (Spec ADR 0005 BM15).** BM15 governs a derived region mask written in a
+run: a file in the masks folder with its lineage line, declared by the user and checked by the
+masks step. This function reads no run, writes nothing and makes no lineage line, so nothing it
+returns can be declared, checked or reused as a run's mask, and its record has no `source`,
+`output`, `image_type`, `rgb_header_override` or `pixel_size`. An unverified code identity is
+stated, not refused (nothing is reused in memory). **For MorphoBricks runs the run route
+(§15.3, with lineage) remains the route.**
+
 ## 16. Shared rules for other bricks (MorphoBricks D86)
 
 Rules every MorphoBricks brick applies in one way, so they live here as public functions

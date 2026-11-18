@@ -83,7 +83,10 @@ download installs from GitHub if needed (internet access and Git required).
 
 The optional `he-mask` extra installs scikit-image (through `morphobricks-normalization[histology]`)
 for the opt-in H&E tissue mask (`tissue-mask`, `RunInputs.he_tissue_mask`; rule `he_tissue_v1`,
-provisional); without it, nothing of that helper is imported.
+provisional); without it, nothing of that helper is imported. `he_tissue_mask_array(rgb)` computes
+the same mask on a `uint8` `(Y, X, 3)` array with no run and writes nothing (no lineage; for runs,
+use `tissue-mask`); see the [user guide](docs/user_guide.md#an-he-tissue-mask-optional) and
+[contract §15.4](docs/contract.md#154-the-he-tissue-mask-of-an-array-with-no-run-roadmap-k3).
 
 ### Notebook: Google Colab and JupyterLab
 

@@ -3,8 +3,9 @@
 In a fresh interpreter whose import of scikit-image is blocked (as without the ``he-mask``
 extra), importing the package, opening a run, resolving a request and the help of every command
 succeed and leave scikit-image, normalization's ``stain`` module and the helper's module out of
-``sys.modules``; the helper, the preview and ``tissue-mask`` each fail naming
-``pip install "morphobricks-preprocessing[he-mask]"`` and write nothing.
+``sys.modules``; the helper, the preview, ``tissue-mask`` and ``he_tissue_mask_array`` each fail
+naming ``pip install "morphobricks-preprocessing[he-mask]"`` and write nothing. The array
+function refuses an input it cannot take before that, still without importing them (K3).
 """
 
 from __future__ import annotations
@@ -26,8 +27,9 @@ class Blocked(importlib.abc.MetaPathFinder):
 
 sys.meta_path.insert(0, Blocked())
 sys.modules.pop("skimage", None)
+import numpy as np
 import morphobricks_preprocessing
-from morphobricks_preprocessing import MaskRequest, Request, RunInputs
+from morphobricks_preprocessing import MaskRequest, Request, RunInputs, he_tissue_mask_array
 from morphobricks_preprocessing.cli import main
 
 out, image = sys.argv[1], sys.argv[2]
@@ -44,9 +46,15 @@ watched = (
     "skimage", "morphobricks_normalization.stain", "morphobricks_preprocessing.he_tissue_mask"
 )
 found["loaded"] = [name for name in watched if name in sys.modules]
+try:
+    he_tissue_mask_array(np.zeros((4, 4, 3), np.uint16))
+except ValueError as exc:
+    found["array_input"] = str(exc)
+found["loaded_after_input"] = [name for name in watched if name in sys.modules]
 for name, call in (
     ("helper", lambda: run.he_tissue_mask(image, output_mask_id="HETissue")),
     ("preview", lambda: run.preview_he_tissue_mask(image)),
+    ("array", lambda: he_tissue_mask_array(np.zeros((4, 4, 3), np.uint8))),
 ):
     try:
         call()
@@ -73,7 +81,8 @@ def test_a_core_only_install_is_inert_and_names_the_extra(tmp_path):
     line = next(text for text in done.stdout.splitlines() if text.startswith("RESULT"))
     found = json.loads(line.removeprefix("RESULT"))
     assert set(found["helps"].values()) == {0} and len(found["helps"]) == 9
-    assert found["loaded"] == []
-    assert EXTRA in found["helper"] and EXTRA in found["preview"]
+    assert found["loaded"] == [] and found["loaded_after_input"] == []
+    assert "this array is uint16" in found["array_input"]
+    assert EXTRA in found["helper"] and EXTRA in found["preview"] and EXTRA in found["array"]
     assert found["cli"] == 1 and EXTRA in done.stdout
     assert tree(run.masks_root) == before

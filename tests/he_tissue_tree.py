@@ -122,6 +122,59 @@ def synthetic_he():
     return rgb, parts
 
 
+PI_STYLE = {
+    # name: (seed, nuclei, red cells, lumens): dense tissue like PI-1 and PI-2, sparse like PI-3
+    # and PI-4 (the presentation images themselves are not in this repository)
+    "pi1": (1, 60, 6, 1),
+    "pi2": (2, 50, 20, 2),
+    "pi3": (3, 6, 2, 1),
+    "pi4": (4, 4, 1, 3),
+}
+
+
+def pi_style(name: str, shape: tuple[int, int] = (160, 160)) -> np.ndarray:
+    """Return a seeded H&E-like ``(Y, X, 3)`` image in the manner of PI-1 to PI-4.
+
+    Noisy eosin stroma with paler fibre gaps, hematoxylin nuclei of varied size and shade, red
+    cells, near-white lumens (some over 1000 px) and per-pixel noise, so pixels fall on both
+    sides of every threshold. Not a model of real tissue: only inputs for equality tests.
+    """
+    seed, nuclei, red_cells, lumens = PI_STYLE[name]
+    rng = np.random.default_rng(seed)
+    rgb = np.empty((*shape, 3), np.float64)
+    rgb[...] = PINK
+    rows = (np.arange(shape[0]) + rng.integers(0, 7)) % 7 == 0
+    rgb[rows] += (8, 50, 25)  # paler fibre gaps
+    for count, colour, radii in (
+        (lumens, (238, 236, 240), (14, 24)),
+        (nuclei, NUCLEUS, (2, 6)),
+        (red_cells, RED_CELL, (2, 4)),
+    ):
+        for _ in range(count):
+            centre = tuple(int(rng.integers(0, n)) for n in shape)
+            radius = int(rng.integers(*radii))
+            shade = rng.normal(0, 12, 3)
+            rgb[disc(shape, centre, radius)] = np.add(colour, shade)
+    rgb += rng.normal(0, 9, rgb.shape)
+    return np.clip(np.rint(rgb), 0, 255).astype(np.uint8)
+
+
+def boundary_image() -> np.ndarray:
+    """Return a ``(Y, X, 3)`` image of design §1's boundary colours and uniform random pixels."""
+    colours = np.array(
+        [
+            (253, 101, 101), (253, 100, 100), (211, 84, 84), (211, 85, 85), (200, 79, 158),
+            (200, 79, 159), (141, 50, 112), (141, 50, 113), (0, 0, 0), (3, 0, 0), (2, 0, 0),
+            (255, 0, 0), (213, 213, 213), (212, 213, 213), (255, 255, 255), (255, 20, 147),
+        ],
+        np.uint8,
+    )  # fmt: skip
+    rgb = np.random.default_rng(5).integers(0, 256, (64, 64, 3), dtype=np.uint8)
+    for index, colour in enumerate(colours):
+        rgb[4 * (index // 4) : 4 * (index // 4) + 4, 4 * (index % 4) : 4 * (index % 4) + 4] = colour
+    return rgb
+
+
 def write_rgb(path: Path, rgb: np.ndarray, *, scanner: bool = False) -> None:
     """Write ``(Y, X, 3)`` RGB as a TIFF (``scanner``: three samples under MINISBLACK, RH1)."""
     path.parent.mkdir(parents=True, exist_ok=True)
