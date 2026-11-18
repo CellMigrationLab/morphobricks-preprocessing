@@ -14,6 +14,7 @@ plane, are sized from the series' largest piece.
 import json
 import subprocess
 import sys
+import zlib
 from pathlib import Path
 
 import numpy as np
@@ -139,3 +140,63 @@ def test_blocks_of_any_plane_are_sized_from_the_series_largest_piece(blank_then_
     layout = plane_layout(path, prefill_mapping(AXES), memory_limit=6 * 2**20)
     assert layout.in_blocks
     assert layout.blocking.encoded_nbytes == max(_largest(path, 0), _largest(path, 1))
+
+
+_PEAK_SCRIPT = """
+import json, sys, tracemalloc
+sys.path.insert(0, sys.argv[2])
+from window_peaks import force_intern_rebuild
+from morphobricks_preprocessing import prefill_mapping
+from morphobricks_preprocessing.windows import read_window, window_plan
+
+path, mapping, bounds = sys.argv[1], prefill_mapping("TYX"), (248, 264, 248, 264)
+read_window(path, mapping, bounds=(0, 1, 0, 1), channels=[0], t=1)  # imports, first use
+force_intern_rebuild()
+plan = window_plan(path, mapping, bounds=bounds, channels=[0]).memory_estimate  # any plane
+tracemalloc.start()
+start = tracemalloc.get_traced_memory()[0]
+window = read_window(path, mapping, bounds=bounds, channels=[0], t=1)
+print(json.dumps({"plan": plan, "peak": tracemalloc.get_traced_memory()[1] - start}))
+"""
+
+
+def test_a_later_page_of_larger_pieces_is_read_within_the_plan_of_any_plane(tmp_path):
+    # The review of this PR: with the keyframe's pieces (v0.7.0), a page whose stored pieces
+    # are larger overran its plan for real, not only in the plan's arithmetic. Here t=1's
+    # deflate tiles carry 1 MiB each beyond their stream (an encoder's fixed-size slots; the
+    # decoder reads the stream and the read holds every stored byte): the API of v0.7.0 alone
+    # (a plan for any plane, a read of t=1) peaked at 1.48 of that plan; sized from the
+    # series' largest piece it holds.
+    tile, padding = 256, 2**20
+    data = np.zeros((2, 2 * tile, 2 * tile), dtype=np.uint16)
+    data[1] = np.random.default_rng(1).integers(0, 2**16, data.shape[1:], dtype=np.uint16)
+    pieces = []
+    for t in range(2):
+        for r in range(2):
+            for c in range(2):
+                block = data[t, r * tile : (r + 1) * tile, c * tile : (c + 1) * tile]
+                stream = zlib.compress(np.ascontiguousarray(block).tobytes())
+                pieces.append(stream + (b"\0" * padding if t else b""))
+    path = tmp_path / "slots.ome.tif"
+    tifffile.imwrite(
+        path,
+        iter(pieces),
+        shape=data.shape,
+        dtype=np.uint16,
+        ome=True,
+        metadata={"axes": "TYX"},
+        tile=(tile, tile),
+        compression=8,
+        photometric="minisblack",
+    )
+    np.testing.assert_array_equal(tifffile.imread(path), data)
+    done = subprocess.run(
+        [sys.executable, "-c", _PEAK_SCRIPT, str(path), str(PEAKS.parent)],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert done.returncode == 0, done.stderr
+    measured = json.loads(done.stdout)
+    assert measured["peak"] > padding  # the stored bytes of t=1's pieces are held
+    assert measured["peak"] <= measured["plan"], measured
