@@ -46,13 +46,12 @@ from __future__ import annotations
 
 import math
 import os
-from collections.abc import Callable, Hashable, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
-import tifffile
 
 from . import window_memory
 from .axes import AxisMapping
@@ -60,38 +59,23 @@ from .planes import (
     DEFAULT_MEMORY_LIMIT,
     PlaneLayout,
     PlaneMemoryError,
-    PlaneReadError,
     _Binning,
     _Blocking,
-    _layout,
     _open,
     _open_zarr,
-    _page_index,
     _position,
-    _tiff_blocking,
     _tiff_piece_memory,
     _zarr_layout,
     _zarr_read,
     format_bytes,
 )
-from .tiff_pieces import _read_tiff_box
+from .window_source import Bounds, Cached, WindowError, _Source
+from .window_source import WindowLayoutError as WindowLayoutError
+from .window_tiff import _tiff_source
 from .zarr_input import NgffImage, is_zarr_store
 
 LEVEL = 0
 """The only resolution level read: full resolution (the declared level policy)."""
-
-Bounds = tuple[int, int, int, int]
-"""``(y0, y1, x0, x1)``: half-open ``pixel_edge`` bounds in the plane frame."""
-
-Cached = Callable[[Hashable, Callable[[], "np.ndarray | None"]], "np.ndarray | None"]
-"""``cached(key, decode)``: a decoded piece from a reader's cache, decoded only when missing.
-
-Keys are ``("tiff", page, piece)`` or ``("zarr", chunk grid position)``; the reader adds the
-image's identity, fingerprint and level (:class:`.window_reader.WindowReader`)."""
-
-
-class WindowError(PlaneReadError):
-    """Raised when a window cannot be read as asked."""
 
 
 class WindowBoundsError(WindowError, ValueError):
@@ -104,10 +88,6 @@ class WindowLevelError(WindowError, ValueError):
 
 class WindowChannelError(WindowError, ValueError):
     """The channels are not distinct C indices of the image, or none was asked."""
-
-
-class WindowLayoutError(WindowError):
-    """The image's pages are stored in a way that cannot be read in parts."""
 
 
 class WindowMemoryError(WindowError, PlaneMemoryError):
@@ -158,24 +138,6 @@ class WindowPlan:
     memory_estimate: int
     memory_limit: int
     reads: int
-
-
-@dataclass(frozen=True)
-class _Source:
-    """An open image: its layout (with how planes are stored) and a reader of stored boxes.
-
-    ``groups(channels)`` splits the channels asked into the groups read together, as tuples
-    of their places in ``channels``: channels that share stored pieces are one group.
-    ``read(position, box, group, targets)`` fills ``targets``, one ``(rows, cols)`` array per
-    channel of ``group`` in stored order, with the stored box of the plane at ``position``,
-    reading each piece the box intersects once for the whole group.
-    """
-
-    layout: PlaneLayout
-    groups: Callable[[Sequence[int]], tuple[tuple[int, ...], ...]]
-    read: Callable[[dict[int, int], Bounds, Sequence[int], Sequence[np.ndarray]], None]
-    extra: int = 0  # the open header and the codec's state (window_memory)
-    cached: bool = False
 
 
 def check_bounds(bounds: object, plane_shape: tuple[int, int]) -> Bounds:
@@ -233,12 +195,18 @@ def window_plan(
     *,
     bounds: Bounds,
     channels: Sequence[int],
+    z: int | None = None,
+    t: int | None = None,
     level: int = LEVEL,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> WindowPlan:
     """Work out from the header what reading a window touches; no pixel is read.
 
-    The arguments are those of :func:`read_window`; the plane's T and Z are not needed.
+    The arguments are those of :func:`read_window`. With ``z`` or ``t``, the plan is that of
+    the plane :func:`read_window` reads with them: a compressed TIFF's pieces are sized from
+    the headers of the pages and pieces that read decodes (pages can compress very
+    differently, issue #356). With neither, the plan holds for a window of any plane: they
+    are sized from the largest stored piece of the series.
 
     Raises
     ------
@@ -246,10 +214,26 @@ def window_plan(
         As :func:`read_window`.
     PlaneReadError
         If the file cannot be read under ``mapping``.
+    IndexError
+        If ``z`` or ``t`` is outside the image, or given for an axis it lacks.
     """
     check_level(level)
     with _source(path, mapping, memory_limit) as source:
-        return _plan(source, bounds, channels, memory_limit)
+        position = plane_position(source, mapping, z, t)
+        return _plan(source, bounds, channels, memory_limit, position)
+
+
+def plane_position(
+    source: _Source, mapping: AxisMapping, z: int | None, t: int | None
+) -> dict[int, int] | None:
+    """Return the plane a window plan is for: None (any plane) when neither z nor t is given.
+
+    Otherwise the index per dimension other than Y and X that :func:`read_window` reads
+    (C at 0; each group of channels is read at its own C).
+    """
+    if z is None and t is None:
+        return None
+    return _position(source.layout, mapping, {"Z": z, "T": t})
 
 
 def read_window(
@@ -327,18 +311,17 @@ def _read_source(
     :mod:`.masks.window`): the bounds, channels and memory are checked here, before any pixel
     is read.
     """
-    plan = _plan(source, bounds, channels, memory_limit)
+    # The plane read is the plane planned: the same pages and pieces (issue #356).
+    position = _position(source.layout, mapping, {"Z": z, "T": t})
+    plan = _plan(source, bounds, channels, memory_limit, position)
     if plan.memory_estimate > memory_limit:
         raise WindowMemoryError(_memory_text(plan, path))
-    c_dim = mapping.index_of("C")
     rows_are_y = source.layout.blocking.rows_are_y
     y0, y1, x0, x1 = plan.bounds
     box = (y0, y1, x0, x1) if rows_are_y else (x0, x1, y0, y1)
     out = np.empty(plan.shape, dtype=plan.dtype)
     # The pieces are written straight into the result, transposed for a plane stored X first.
     targets = out if rows_are_y else out.transpose(0, 2, 1)
-    wanted = {"Z": z, "C": None if c_dim is None else plan.channels[0], "T": t}
-    position = _position(source.layout, mapping, wanted)
     for group in source.groups(plan.channels):
         channels_read = [plan.channels[i] for i in group]
         source.read(position, box, channels_read, [targets[i] for i in group])
@@ -454,83 +437,17 @@ def _read_zarr_chunks(
                 ]
 
 
-def _tiff_source(
-    series: tifffile.TiffPageSeries,
-    mapping: AxisMapping,
-    path: str | os.PathLike,
-    memory_limit: int,
-    cached: Cached | None = None,
-) -> _Source:
-    """Return the source of an open TIFF series: only the strips or tiles read are decoded.
-
-    The file must stay open while the source is used. With ``cached``, compressed pieces are
-    taken from a reader's cache (keyed by page and piece) and decoded only when missing.
-    """
-    layout = _tiff_layout(series, mapping, path, memory_limit)
-    c_dim = mapping.index_of("C")
-    # Channels stored as contiguous samples (interleaved RGB) share every strip or tile.
-    interleaved = c_dim is not None and dict(layout.blocking.stored).get(c_dim) == 4
-
-    def groups(channels: Sequence[int]) -> tuple[tuple[int, ...], ...]:
-        if interleaved:
-            return (tuple(range(len(channels))),)
-        return tuple((i,) for i in range(len(channels)))
-
-    def read(
-        position: dict[int, int], box: Bounds, channels: Sequence[int], targets: Sequence
-    ) -> None:
-        if c_dim is not None:
-            position = {**position, c_dim: channels[0]}
-        index = _page_index(layout, position)
-        page = series.pages[index]
-        if page is None:
-            raise PlaneReadError(f"Page {index} of {path} is missing from the file.")
-        # The plane's index along the separate-sample, depth and contiguous-sample axes.
-        where = [0] * 5
-        for dim, stored in layout.blocking.stored:
-            if stored not in (2, 3):
-                where[stored] = position[dim]
-        samples = channels if interleaved else (where[4],)
-        fetch = None
-        if cached is not None:
-
-            def fetch(piece: int, decode: Callable[[], np.ndarray | None]) -> np.ndarray | None:
-                return cached(("tiff", index, piece), decode)
-
-        _read_tiff_box(
-            page, layout.blocking, (where[0], where[1]), samples, box, targets, path, fetch
-        )
-
-    keyframe = series.keyframe
-    extra = window_memory.header_bytes(len(series.pages), len(keyframe.dataoffsets))
-    extra += window_memory.codec_state(keyframe.compression)
-    return _Source(layout, groups, read, extra, cached is not None)
-
-
-def _tiff_layout(
-    series: tifffile.TiffPageSeries,
-    mapping: AxisMapping,
-    path: str | os.PathLike,
-    memory_limit: int,
-) -> PlaneLayout:
-    """Return a TIFF series' layout with how its pages are stored, or refuse it."""
-    layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
-    y, x = mapping.index_of("Y"), mapping.index_of("X")
-    blocking = _tiff_blocking(series.keyframe, layout.shape, layout.page_ndim, y, x)
-    if blocking is None:
-        raise WindowLayoutError(
-            f"A window of {Path(path).name} cannot be read: its pages are stored in a way that "
-            "cannot be read in parts (subsampled colour, an NDPI JPEG header, or a plane whose "
-            "axes are not the rows and columns of its pages). Save the image again as a tiled "
-            "TIFF or as OME-Zarr, or read whole planes."
-        )
-    return replace(layout, blocking=blocking)
-
-
 def _plan(
-    source: _Source, bounds: object, channels: Sequence[int], memory_limit: int
+    source: _Source,
+    bounds: object,
+    channels: Sequence[int],
+    memory_limit: int,
+    position: dict[int, int] | None = None,
 ) -> WindowPlan:
-    """Check a window against an image's layout and estimate what reading it costs."""
+    """Check a window against an image's layout and estimate what reading it costs.
+
+    ``position`` is the plane read (:func:`plane_position`); None plans for any plane.
+    """
     layout = source.layout
     checked = check_bounds(bounds, layout.plane_shape)
     wanted = _check_channels(channels, layout.channel_count)
@@ -550,8 +467,11 @@ def _plan(
     elif blocking.partial_rows:  # uncompressed rows read straight into the result
         work = _tiff_piece_memory(blocking, rows[1] - rows[0])
     else:  # one compressed strip or tile at a time, written straight into the result
-        piece, encoded = blocking.piece_nbytes, blocking.encoded_nbytes
-        work = window_memory.tiff_piece_work(piece, encoded, source.cached)
+        # Sized from the pieces the read decodes, not the keyframe's (issue #356).
+        box = (*rows, *cols)
+        read = [[wanted[i] for i in group] for group in groups]
+        encoded = source.encoded(position, box, read)
+        work = window_memory.tiff_piece_work(blocking.piece_nbytes, encoded, source.cached)
     return WindowPlan(
         bounds=checked,
         level=LEVEL,

@@ -276,8 +276,11 @@ class RunWindowReader:
         is over the reader's memory limit is :class:`.windows.WindowMemoryError`).
         """
         self._reader._check_open()  # a closed reader is refused before anything is read
-        _, indices, _ = self._inputs._window_request(self._fov, t, z, channels, level)
-        return self._reader.window_plan(bounds=bounds, channels=indices, level=level)
+        _, indices, plane = self._inputs._window_request(self._fov, t, z, channels, level)
+        # The plan of the plane read: its own pages and pieces (issue #356).
+        return self._reader._plane_plan(
+            bounds=bounds, channels=indices, level=level, z=plane.get("z"), t=plane.get("t")
+        )
 
     def stats(self) -> CacheStats:
         """Return the cache's decodes, hits and evictions so far, and what it holds."""

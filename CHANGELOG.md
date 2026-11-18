@@ -97,6 +97,22 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ### Fixed
 
+- **A window's plan sizes the pieces of the pages its read decodes** (#356, P1, external audit
+  of `6a3446b`). `window_plan` charged every compressed TIFF window the first page's (the
+  keyframe's) largest encoded strip or tile, while the read decodes the asked channel, T and Z's
+  own page, so a later page that compresses less was under-planned. The plan now takes the
+  largest encoded piece among exactly the pieces the read decodes, from their pages' headers;
+  the plan and the read name the same pages and pieces (`tiff_pieces._box_pieces`, shared by
+  both). `windows.window_plan` and `WindowReader.window_plan` gain `z` and `t` (the plane
+  `read_window` reads with them); with neither, the plan holds for a window of any plane, sized
+  from the series' largest piece. `RunWindowReader.window_plan` and `window_map.map_plan` plan
+  the plane they read (they passed no plane before). A mask window's plan (`mask_window_plan`,
+  no plane) is sized from the mask's largest piece. Planes over the memory limit read in blocks
+  (one layout for every plane) are sized from the series' largest piece too. A test writes a
+  tiled deflate `TCYX` image with a blank t=0 and a noisy t=1: the t=1 plan is higher by
+  exactly the difference of the pages' largest tiles, its fresh-process peak stays under it
+  (uncached and cached), and a limit one byte below it is refused before any piece is decoded,
+  uncached and through a cache. Only plans of files whose pages compress differently change.
 - **`he_tissue_mask_array` follow-ups from the #343 review** (#345). `record.rule_text` is now
   the rule record's canonical JSON (keys sorted, no spaces, `lineage_schema.canonical_rule_text`),
   the exact text `rule_sha256` is the digest of, so `sha256(rule_text) == rule_sha256`; it was

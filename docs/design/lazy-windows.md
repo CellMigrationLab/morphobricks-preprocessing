@@ -52,7 +52,11 @@ or clipped: bounds outside the plane are refused.
 **Memory for planning.** `window_plan` (and a reader's, which adds its `cache_bytes`) is an
 **upper bound** of a window read's peak working memory, taken from the header before any pixel
 is read, and a read over its limit is refused before any pixel is read
-(`window_memory`; review of this PR, finding 1). It counts the result, the pieces read, the
+(`window_memory`; review of this PR, finding 1). It is the plan of the plane read: a
+compressed TIFF window's pieces are sized from the headers of the pages and pieces that read
+decodes, not from the first page's (#356, P1: a blank first time point next to a noisy one was
+under-planned); a plan asked without a plane holds for any plane (the series' largest piece).
+It counts the result, the pieces read, the
 decode's buffers (five piece-sized buffers for a compressed TIFF piece, three for an OME-Zarr
 chunk), the codec's state (deflate 64 KiB; LZMA 66 MiB, for presets up to 9), the parsed header
 (256 KiB, 2 KiB a page, 80 B a piece) and, through a cache, the frozen copy of the piece being

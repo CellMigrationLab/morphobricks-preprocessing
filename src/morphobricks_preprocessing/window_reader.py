@@ -57,6 +57,7 @@ from .windows import (
     _Source,
     _source,
     check_level,
+    plane_position,
 )
 
 
@@ -189,17 +190,55 @@ class WindowReader:
         self._identity = os.path.realpath(self.path)
 
     def window_plan(
-        self, *, bounds: Bounds, channels: Sequence[int], level: int = LEVEL
+        self,
+        *,
+        bounds: Bounds,
+        channels: Sequence[int],
+        z: int | None = None,
+        t: int | None = None,
+        level: int = LEVEL,
     ) -> WindowPlan:
         """Work out from the header what reading a window touches, the cache included.
 
-        As :func:`.windows.window_plan`, with ``memory_estimate`` counting ``cache_bytes``.
+        As :func:`.windows.window_plan` (with ``z`` or ``t``, the plan of that plane's read;
+        with neither, of a window of any plane), with ``memory_estimate`` counting
+        ``cache_bytes``.
         """
+        return self._window_plan(
+            bounds, channels, level, lambda s: plane_position(s, self.mapping, z, t)
+        )
+
+    def _plane_plan(
+        self,
+        *,
+        bounds: Bounds,
+        channels: Sequence[int],
+        z: int | None,
+        t: int | None,
+        level: int = LEVEL,
+    ) -> WindowPlan:
+        """Return the plan of :meth:`read_window` with these arguments: the very plane it reads.
+
+        ``z`` and ``t`` are taken as :meth:`read_window` takes them (None is 0 for an axis the
+        image has), never as "any plane": a window map and a run's reader plan their reads.
+        """
+        return self._window_plan(
+            bounds, channels, level, lambda s: _position(s.layout, self.mapping, {"Z": z, "T": t})
+        )
+
+    def _window_plan(
+        self,
+        bounds: Bounds,
+        channels: Sequence[int],
+        level: int,
+        position: Callable[[_Source], dict[int, int] | None],
+    ) -> WindowPlan:
+        """Return a window's plan for the plane ``position(source)`` gives (closed refused)."""
         self._check_open()
         check_level(level)
         self._check()
         with _source(self.path, self.mapping, self.memory_limit, self._cached) as source:
-            return self._plan(source, bounds, channels)
+            return self._plan(source, bounds, channels, position(source))
 
     def read_window(
         self,
@@ -231,7 +270,9 @@ class WindowReader:
         check_level(level)
         self._check()
         with _source(self.path, self.mapping, self.memory_limit, self._cached) as source:
-            self._plan(source, bounds, channels)  # refuses a window over the limit
+            # refuses a window over the limit, planned for the plane read (issue #356)
+            plane = _position(source.layout, self.mapping, {"Z": z, "T": t})
+            self._plan(source, bounds, channels, plane)
             room = self.memory_limit - self.cache.max_bytes
             window = _read_source(source, self.mapping, self.path, bounds, channels, z, t, room)
         self._check()  # an image changed while it was read is refused, never kept
@@ -273,9 +314,15 @@ class WindowReader:
         with _source(self.path, self.mapping, self.memory_limit) as source:
             _position(source.layout, self.mapping, {"Z": z, "T": t})
 
-    def _plan(self, source: _Source, bounds: object, channels: Sequence[int]) -> WindowPlan:
+    def _plan(
+        self,
+        source: _Source,
+        bounds: object,
+        channels: Sequence[int],
+        position: dict[int, int] | None,
+    ) -> WindowPlan:
         """Return a window's plan with the cache in its estimate, refusing one over the limit."""
-        plan = _plan(source, bounds, channels, self.memory_limit)
+        plan = _plan(source, bounds, channels, self.memory_limit, position)
         plan = _with_cache(plan, self.cache.max_bytes)
         if plan.memory_estimate > self.memory_limit:
             raise WindowMemoryError(_memory_text(plan, self.path) + _CACHE_NOTE)

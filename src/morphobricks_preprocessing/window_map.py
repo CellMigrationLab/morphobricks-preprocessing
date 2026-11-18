@@ -399,7 +399,7 @@ def _calls(
         )
     if isinstance(reader, WindowReader):
         return (
-            lambda bounds: reader.window_plan(bounds=bounds, channels=channels),
+            lambda bounds: reader._plane_plan(bounds=bounds, channels=channels, t=t, z=z),
             lambda bounds: reader.read_window(bounds=bounds, channels=channels, t=t, z=z),
         )
     raise TypeError(

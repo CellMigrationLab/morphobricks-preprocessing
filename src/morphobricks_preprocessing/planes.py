@@ -64,7 +64,7 @@ from morphobricks_normalization.ranges import HistogramSettings, RangeCheck
 
 from .axes import PLANE_ROLES, AxisMapping, AxisReview
 from .plane_errors import PlaneMemoryError, PlaneReadError
-from .tiff_pieces import _read_tiff_box
+from .tiff_pieces import _Blocking, _largest_piece, _read_tiff_box, _tiff_blocking
 from .validation import ValidationIssue, error, plural, warning
 from .zarr_input import (
     NgffError,
@@ -267,28 +267,6 @@ class XycPlane:
             self.channel(c).histogram_with_check(bin_count, settings)
             for c in range(self.channel_count)
         )
-
-
-@dataclass(frozen=True)
-class _Blocking:
-    """How a plane can be split into blocks, in the order of its stored axes.
-
-    ``rows`` and ``cols`` are the stored dimensions of the plane's two axes, in
-    array order (``rows`` first); blocks are rectangles of rows and columns of
-    those, aligned to the stored pieces (``unit`` rows and columns). Pieces that
-    can be read a few rows at a time allow blocks of fewer rows than a piece.
-    """
-
-    kind: str  # "tiff" or "zarr"
-    rows: int
-    cols: int
-    rows_are_y: bool
-    unit: tuple[int, int]
-    partial_rows: bool
-    piece_nbytes: int
-    encoded_nbytes: int = 0
-    row_nbytes: int = 0
-    stored: tuple[tuple[int, int], ...] = ()  # TIFF: (series dimension, stored dimension)
 
 
 @dataclass(frozen=True)
@@ -750,6 +728,7 @@ def _layout(
     binning: _Binning,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> PlaneLayout:
+    """Work out from a TIFF series' header how its planes are read: whole, or in blocks."""
     shape = tuple(int(n) for n in series.shape)
     y, x = _check_fit(shape, str(series.axes), mapping, path)
     keyframe = series.keyframe
@@ -798,7 +777,10 @@ def _layout(
     )
     if memory <= memory_limit:
         return layout
-    return _with_blocks(layout, _tiff_blocking(keyframe, shape, split, y, x), binning)
+    # Blocks of any plane are read with this one layout: their pieces are sized from the
+    # largest stored piece of the series, not the first page's (issue #356).
+    blocking = _tiff_blocking(keyframe, shape, split, y, x, _largest_piece(series))
+    return _with_blocks(layout, blocking, binning)
 
 
 def _channel_count(shape: tuple[int, ...], mapping: AxisMapping) -> int:
@@ -1178,56 +1160,6 @@ def _whole_or_reduced(plane: Plane, layout: PlaneLayout) -> Plane:
 
 
 # TIFF blocks ---------------------------------------------------------------------------
-
-
-def _tiff_blocking(
-    keyframe: tifffile.TiffPage,
-    shape: tuple[int, ...],
-    split: int,
-    y: int,
-    x: int,
-) -> _Blocking | None:
-    """Work out how the pages of a series are stored in strips or tiles, if they can be split.
-
-    Each page is a normalised array (separate samples, depth, rows, columns,
-    contiguous samples). The page's own axes of the series must line up with
-    that array, with the plane's two axes on its rows and columns.
-    """
-    if keyframe.is_subsampled or keyframe.jpegheader is not None or keyframe.dtype is None:
-        return None
-    stored_shape = tuple(int(n) for n in keyframe.shaped)
-    page_dims = [d for d in range(split, len(shape)) if shape[d] > 1]
-    stored_dims = [i for i in range(5) if stored_shape[i] > 1]
-    if [shape[d] for d in page_dims] != [stored_shape[i] for i in stored_dims]:
-        return None
-    stored = dict(zip(page_dims, stored_dims, strict=True))
-    rows, cols = sorted((y, x))
-    if stored.get(rows) != 2 or stored.get(cols) != 3:
-        return None
-    itemsize = np.dtype(keyframe.dtype).itemsize
-    samples = stored_shape[4]
-    if keyframe.is_tiled:
-        depth, unit = keyframe.tiledepth, (keyframe.tilelength, keyframe.tilewidth)
-    else:
-        depth, unit = 1, (min(keyframe.rowsperstrip, stored_shape[2]), stored_shape[3])
-    uncompressed = (
-        keyframe.compression == 1
-        and keyframe.predictor == 1
-        and keyframe.fillorder == 1
-        and keyframe.bitspersample == itemsize * 8
-    )
-    return _Blocking(
-        kind="tiff",
-        rows=rows,
-        cols=cols,
-        rows_are_y=rows == y,
-        unit=unit,
-        partial_rows=uncompressed,
-        piece_nbytes=depth * unit[0] * unit[1] * samples * itemsize,
-        encoded_nbytes=max((int(n) for n in keyframe.databytecounts), default=0),
-        row_nbytes=unit[1] * samples * itemsize,
-        stored=tuple(stored.items()),
-    )
 
 
 def _tiff_reblock(series, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:  # noqa: ANN001

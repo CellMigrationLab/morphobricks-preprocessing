@@ -211,10 +211,10 @@ def test_a_mask_whose_header_names_x_before_y_is_refused_as_the_whole_read_refus
 
 
 def test_pages_that_cannot_be_read_in_parts_are_refused(small, tmp_path, monkeypatch):
-    from morphobricks_preprocessing import windows as windows_module
+    from morphobricks_preprocessing import window_tiff
 
     mask, _ = small
-    monkeypatch.setattr(windows_module, "_tiff_blocking", lambda *args: None)
+    monkeypatch.setattr(window_tiff, "_tiff_blocking", lambda *args: None)
     with pytest.raises(WindowLayoutError, match="cannot be read in parts"):
         read_mask_window(mask, tmp_path, tmp_path, bounds=(0, 4, 0, 4), t=0)
 

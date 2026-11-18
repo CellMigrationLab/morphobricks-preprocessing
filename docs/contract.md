@@ -412,10 +412,15 @@ It gives:
   pieces are read from the file as without a cache, never cached. There is no hidden or global
   cache: `read_window` keeps none. The same reader for a file outside a run is
   `window_reader.WindowReader(path, mapping, *, cache_bytes, memory_limit=..., fingerprint=None)`
-  (its `read_window(*, bounds, channels, z=None, t=None, level=0)` and `window_plan`).
+  (its `read_window(*, bounds, channels, z=None, t=None, level=0)` and `window_plan(*, bounds,
+  channels, z=None, t=None, level=0)`).
   `RunWindowReader.window_plan(*, t, z, bounds, channels, level=0)` (Unreleased) is the window's
   `windows.WindowPlan` from the header, with `read_window`'s checks, its `memory_estimate`
-  counting `cache_bytes`. A window's `memory_estimate` (Unreleased) is an upper bound of the
+  counting `cache_bytes`. A plan is the plan of the plane read (#356): a compressed TIFF window's
+  pieces are sized from the headers of the very pages and pieces the read decodes (its channels'
+  pages at its T and Z), never from the first page's; `windows.window_plan` and
+  `WindowReader.window_plan` given neither `z` nor `t` plan a window of any plane, sized from
+  the series' largest piece (so does `mask_window_plan`, which takes no plane). A window's `memory_estimate` (Unreleased) is an upper bound of the
   read's peak, checked by measurement for the codecs listed in `window_memory` (#342 for the
   others): the result, the pieces, the decode's buffers, the codec's state, the parsed header and,
   through a cache, the frozen copy of a kept piece. Both readers (Unreleased) have `close()`, `closed` and are context

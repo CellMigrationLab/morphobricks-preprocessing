@@ -13,12 +13,17 @@ A caller may pass ``fetch``, which gives a compressed piece from a cache of deco
 (:class:`.block_cache.BlockCache`, through :class:`.window_reader.WindowReader`) and decodes it
 only when the cache does not hold it. Uncompressed pieces are read straight from the file, only
 the rows needed, and are never cached.
+
+How a series' pages are stored (:class:`_Blocking`, :func:`_tiff_blocking`) is worked out here
+too, and :func:`_box_pieces` names the pieces a rectangle intersects, for the read and for a
+window's plan alike (issue #356).
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -30,10 +35,100 @@ if TYPE_CHECKING:
 
     import tifffile
 
-    from .planes import _Blocking
-
 # TIFF compression codes that need the JPEG tables of the file to decode a piece.
 _JPEG_COMPRESSIONS = {6, 7, 33007, 34892}
+
+
+@dataclass(frozen=True)
+class _Blocking:
+    """How a plane can be split into blocks, in the order of its stored axes.
+
+    ``rows`` and ``cols`` are the stored dimensions of the plane's two axes, in
+    array order (``rows`` first); blocks are rectangles of rows and columns of
+    those, aligned to the stored pieces (``unit`` rows and columns). Pieces that
+    can be read a few rows at a time allow blocks of fewer rows than a piece.
+    """
+
+    kind: str  # "tiff" or "zarr"
+    rows: int
+    cols: int
+    rows_are_y: bool
+    unit: tuple[int, int]
+    partial_rows: bool
+    piece_nbytes: int
+    encoded_nbytes: int = 0
+    row_nbytes: int = 0
+    stored: tuple[tuple[int, int], ...] = ()  # TIFF: (series dimension, stored dimension)
+
+
+def _tiff_blocking(
+    keyframe: tifffile.TiffPage,
+    shape: tuple[int, ...],
+    split: int,
+    y: int,
+    x: int,
+    largest: int | None = None,
+) -> _Blocking | None:
+    """Work out how the pages of a series are stored in strips or tiles, if they can be split.
+
+    Each page is a normalised array (separate samples, depth, rows, columns,
+    contiguous samples). The page's own axes of the series must line up with
+    that array, with the plane's two axes on its rows and columns. ``encoded_nbytes`` is
+    ``largest`` (the largest stored piece of the pages read), or the keyframe's largest piece
+    when it is None: a window's plan sizes the pieces of the pages it reads itself
+    (``windows._plan``).
+    """
+    if keyframe.is_subsampled or keyframe.jpegheader is not None or keyframe.dtype is None:
+        return None
+    stored_shape = tuple(int(n) for n in keyframe.shaped)
+    page_dims = [d for d in range(split, len(shape)) if shape[d] > 1]
+    stored_dims = [i for i in range(5) if stored_shape[i] > 1]
+    if [shape[d] for d in page_dims] != [stored_shape[i] for i in stored_dims]:
+        return None
+    stored = dict(zip(page_dims, stored_dims, strict=True))
+    rows, cols = sorted((y, x))
+    if stored.get(rows) != 2 or stored.get(cols) != 3:
+        return None
+    itemsize = np.dtype(keyframe.dtype).itemsize
+    samples = stored_shape[4]
+    if keyframe.is_tiled:
+        depth, unit = keyframe.tiledepth, (keyframe.tilelength, keyframe.tilewidth)
+    else:
+        depth, unit = 1, (min(keyframe.rowsperstrip, stored_shape[2]), stored_shape[3])
+    uncompressed = (
+        keyframe.compression == 1
+        and keyframe.predictor == 1
+        and keyframe.fillorder == 1
+        and keyframe.bitspersample == itemsize * 8
+    )
+    return _Blocking(
+        kind="tiff",
+        rows=rows,
+        cols=cols,
+        rows_are_y=rows == y,
+        unit=unit,
+        partial_rows=uncompressed,
+        piece_nbytes=depth * unit[0] * unit[1] * samples * itemsize,
+        encoded_nbytes=_largest(keyframe) if largest is None else largest,
+        row_nbytes=unit[1] * samples * itemsize,
+        stored=tuple(stored.items()),
+    )
+
+
+def _largest_piece(series: tifffile.TiffPageSeries) -> int:
+    """Return the largest stored strip or tile of every page of a series, from the headers.
+
+    Pages can compress very differently (a blank plane next to a noisy one, issue #356), so a
+    plan that holds for any plane is sized from the largest piece of all of them. A page
+    missing from the file counts as its keyframe (reading it is refused).
+    """
+    return max(_largest(series.keyframe if page is None else page) for page in series.pages)
+
+
+def _largest(page: tifffile.TiffPage | tifffile.TiffFrame) -> int:
+    """Return a page's largest stored strip or tile, in bytes (0 without any)."""
+    return max((int(n) for n in page.databytecounts), default=0)
+
 
 Fetch = Callable[[int, Callable[[], "np.ndarray | None"]], "np.ndarray | None"]
 """``fetch(piece_index, decode)``: a decoded piece of the page, from a cache or ``decode()``."""
@@ -59,6 +154,31 @@ def _read_tiff_box(
     """
     r0, r1, c0, c1 = box
     keyframe = page.keyframe
+    _, _, length, width, _ = (int(n) for n in keyframe.shaped)
+    unit_rows, unit_cols = blocking.unit
+    for index, top, left, z_in_piece in _box_pieces(keyframe, blocking, where, box):
+        a, b = max(r0, top) - top, min(r1, top + unit_rows, length) - top
+        ca, cb = max(c0, left) - left, min(c1, left + unit_cols, width) - left
+        piece = _read_segment(page, index, z_in_piece, (a, b), blocking, path, fetch)
+        for target, s in zip(targets, samples, strict=True):
+            region = target[top + a - r0 : top + b - r0, left + ca - c0 : left + cb - c0]
+            region[...] = keyframe.nodata if piece is None else piece[:, ca:cb, s]
+
+
+def _box_pieces(
+    keyframe: tifffile.TiffPage,
+    blocking: _Blocking,
+    where: tuple[int, int],
+    box: tuple[int, int, int, int],
+) -> Iterator[tuple[int, int, int, int]]:
+    """Yield each strip or tile a box of one plane intersects: ``(index, top, left, z)``.
+
+    ``index`` is the piece's index in the page's offsets and byte counts, ``top`` and
+    ``left`` its first row and column in the plane, ``z`` the plane's depth within the piece.
+    The same pieces are read (:func:`_read_tiff_box`) and sized for the window's plan
+    (``windows``, issue #356), so a plan and its read always name the same pieces.
+    """
+    r0, r1, c0, c1 = box
     _, depth, length, width, _ = (int(n) for n in keyframe.shaped)
     unit_rows, unit_cols = blocking.unit
     sample, z = where
@@ -72,16 +192,8 @@ def _read_tiff_box(
         first = (sample * depth + z) * down
         z_in_piece = 0
     for row in range(r0 // unit_rows, math.ceil(r1 / unit_rows)):
-        top = row * unit_rows
-        a, b = max(r0, top) - top, min(r1, top + unit_rows, length) - top
         for col in range(c0 // unit_cols, math.ceil(c1 / unit_cols)):
-            left = col * unit_cols
-            ca, cb = max(c0, left) - left, min(c1, left + unit_cols, width) - left
-            index = first + row * across + col
-            piece = _read_segment(page, index, z_in_piece, (a, b), blocking, path, fetch)
-            for target, s in zip(targets, samples, strict=True):
-                region = target[top + a - r0 : top + b - r0, left + ca - c0 : left + cb - c0]
-                region[...] = keyframe.nodata if piece is None else piece[:, ca:cb, s]
+            yield first + row * across + col, row * unit_rows, col * unit_cols, z_in_piece
 
 
 def _read_segment(

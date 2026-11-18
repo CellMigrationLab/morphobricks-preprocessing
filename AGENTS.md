@@ -213,11 +213,16 @@ src/morphobricks_preprocessing/
                     blocks of TIFF strips/tiles or zarr chunks (Plane.blocks, BlockReader), reduced
                     previews; plane_errors.py PlaneReadError, PlaneMemoryError
   tiff_pieces.py    the TIFF block reader: a rectangle of one plane from the strips/tiles it
-                    intersects, each read once for all the contiguous samples asked
+                    intersects, each read once for all the contiguous samples asked; how a
+                    series' pages are stored (_Blocking, _tiff_blocking), the pieces a box
+                    intersects (_box_pieces, shared by a read and its plan, #356)
   windows.py        read_window (issue #179): an exact window (y0, y1, x0, x1) of one plane, channels
                     chosen before decoding, only the TIFF strips/tiles or zarr chunks it touches
                     (tiff_pieces.py), each decoded once for the channels that share it (#294),
-                    level 0 only; window_plan (memory estimate, pieces, reads);
+                    level 0 only; window_plan (memory estimate, pieces, reads; sized from the
+                    pages and pieces the read decodes, #356); window_tiff.py the TIFF source of
+                    a window read; window_source.py Bounds, _Source, WindowError,
+                    WindowLayoutError (shared by both);
                     window_reader.py WindowReader (#304): many windows of one image through a
                     bounded, thread-safe block_cache.BlockCache of decoded pieces (opt-in),
                     RunInputs.window_reader -> RunWindowReader by channel IDs;
