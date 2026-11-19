@@ -434,7 +434,7 @@ GATES = {  # how the run-time check is made to fail, and what the refusal says
     ),
     "another decoder": (
         lambda m: m.setattr(codec_bounds, "DECODERS", {**codec_bounds.DECODERS, 8: ("nothing",)}),
-        "decoded by imagecodecs.deflate_decode (decoded only by imagecodecs",
+        "deflate_decode (decoded only by imagecodecs",  # imagecodecs._deflate on 2024.12.30
     ),
     "another libjpeg": (
         lambda m: m.setattr(codec_bounds, "LIBJPEG_MEASURED", "libjpeg 9"),
