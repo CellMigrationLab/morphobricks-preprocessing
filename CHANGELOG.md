@@ -6,7 +6,21 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
-## Unreleased
+## v0.7.1 (19 November 2026)
+
+**Lazy windows, measured codecs, and `imagecodecs` as a required dependency.** A patch release
+by owner decision, with no format change: run manifest version 5, `plane_histograms.csv` schema
+version 5, resolver contract version 3, `mask_relationships.json` report version 4,
+`mask_representation.json` version 1, conversion record version 4 and discovery report version 1
+are those of v0.7.0, whose runs are read as they are. It brings exact window reads of large
+tiled images for every consumer (#339, `docs/design/lazy-windows.md`) and `map_windows` (#346),
+`he_tissue_mask_array` (#343), the `max_ram` worker planner (#341), window memory estimates that
+hold as upper bounds (#349, #353, #355) and the review follow-ups (#347). Its last blocker (#356,
+merged as #357) sizes windows from the decoded pages and reads only codecs with a measured memory
+bound: LZW and JPEG are now read, decoded by imagecodecs alone (JPEG by libjpeg, with no LJPEG
+fallback), and any other codec is refused from its header with `compression_not_bounded`.
+`imagecodecs` moves from the `dev` extra to the core dependencies, so installing the package
+now installs it. Normalization stays pinned at v0.7.1 and the Spec pin stays at `bf68d30`.
 
 ### Breaking
 

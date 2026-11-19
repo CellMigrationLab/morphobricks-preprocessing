@@ -6,6 +6,35 @@ real run; a skip is never counted as a pass. Owner rulings of 8 November 2026 (i
 "no skips" applies to the Spec conformance modules (`tests/test_spec_*.py`); a skip elsewhere
 in the suite is listed as **not run**, with its reason.
 
+## Release record: v0.7.1 (19 November 2026)
+
+A G1-style record of the v0.7.1 release candidate, a patch release by owner decision: lazy windows
+(#339), `map_windows` (#346), `he_tissue_mask_array` (#343), the `max_ram` planner (#341), window
+memory estimates as upper bounds (#349, #353, #355), and #356 (merged as #357: windows sized from
+the decoded pages, the codec allow-list, JPEG by libjpeg alone, `imagecodecs` required). No format
+change. It does not decide a gate; deciding a gate is the owner's.
+
+| | |
+|---|---|
+| Release candidate | Measured on the tree of the v0.7.1 preparation commit A (branch `claude/release-0.7.1`, from `main` at `4e69fbd`: v0.7.0 plus #339 to #357) before this record was added; the record changes only this file. A keeps `RELEASE_REF` at v0.7.0's `a8ca7b3`. Commit B then points the notebook's `RELEASE_REF` at A and records the pair in `RELEASE_CALLS`. |
+| Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `bf68d3032a4548cd908e1d530296fdf22a1a9b7f` (unchanged; no commit since v0.7.0 touches `tests/spec_fixtures`) |
+| Environment | Linux, Python 3.13, `pip install --no-cache-dir -e '.[dev,notebook,zarr,he-mask]'` in a fresh venv (CI's extras; normalization 0.7.1, imagecodecs 2026.11.11, numpy 2.5.5, tifffile 2026.11.16, zarr 3.4.2, scikit-image 0.26.0); `PYTEST_ADDOPTS` unset; run as root on a case-sensitive file system |
+| Commands | `python tools/check.py` (the whole suite in one run); `python -m pytest -q -p no:cacheprovider -rsxX tests/test_notebook_setup.py tests/test_notebook_file.py tests/test_spec_*.py` |
+| `tools/check.py` | Ruff clean, Ruff format 565 files already formatted, pytest **6648 passed, 8 skipped** (not run, below), 0 failed, code rules passed (exit status 0) |
+| Spec modules (`tests/test_spec_*.py`) | **1934 passed, 0 skipped, 0 failed** |
+| Notebook pin and version tests | `test_notebook_setup.py` and `test_notebook_file.py`: **51 passed**, 0 skipped (run on the tree of A) |
+
+**Not run (8 skips, none in the Spec modules):** `tests/test_he_tissue_consumer_gate.py:25` (gate
+P3 needs fiberfeatures v0.7.0, not installed); `tests/test_cli_log.py:166`,
+`tests/test_folder_rules.py:199` and `:230` (they need a case-insensitive file system);
+`tests/test_discovery.py:665` (cannot run as root); and the three editable-install identity tests
+(`tests/test_code_identity.py:169`, `tests/test_he_tissue_array.py:286`,
+`tests/test_he_tissue_mask.py:500`), which CI's `wheel-identity` job runs on a wheel install with
+no skip allowed. The behaviours of these skips are **not verified by this run**.
+
+**Still the owner's:** the Colab and JupyterLab browser check (`docs/colab-release-check.md`),
+before tagging.
+
 ## Release record: v0.7.0 (17 November 2026)
 
 A G1-style record of the v0.7.0 release candidate, a minor release: the opt-in H&E tissue mask

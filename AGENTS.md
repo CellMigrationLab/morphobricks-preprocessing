@@ -1192,9 +1192,18 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 
 ---
 
-## 11. Status (current state, v0.7.0)
+## 11. Status (current state, v0.7.1)
 
-- **Released:** v0.7.0 (17 November 2026), a minor release (new public API and a new report
+- **Released:** v0.7.1 (19 November 2026), a patch release by owner decision (no format change;
+  the *Breaking* entries below are refusals of what was never measured): lazy windows (#339,
+  `docs/design/lazy-windows.md`) with `window_map` / `map_windows` (#346), the array H&E tissue
+  mask `he_tissue_mask_array` (#343), the `max_ram` worker planner (#341), window memory
+  estimates as upper bounds (#349, #353, #355) and, from #356 (#357), windows sized from the
+  decoded pages, a codec allow-list (`codec_bounds.TIFF_BOUNDED`; other codecs refused with
+  `compression_not_bounded`), JPEG decoded by libjpeg alone with no LJPEG fallback, LZW and
+  JPEG read with measured bounds, and `imagecodecs` a required dependency; normalization
+  pinned at v0.7.1, Spec at `bf68d30`.
+  v0.7.0 (17 November 2026), a minor release (new public API and a new report
   field; no format change): the opt-in H&E tissue mask (I1, Spec ADR 0005 BM15):
   `RunInputs.he_tissue_mask` / `preview_he_tissue_mask`, CLI `tissue-mask`, the notebook card
   **Make an H&E tissue mask**, the `he-mask` extra; rule `he_tissue_v1` **provisional** (not
