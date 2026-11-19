@@ -8,6 +8,8 @@ the reader, the physical checks and the layouts, never here.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from .channel_plan import channel_coverage, partial_repeats
 from .description import Description
 from .description_layouts import (
@@ -17,6 +19,8 @@ from .description_layouts import (
 )
 from .description_report import DescriptionIssue
 from .description_rules import Code
+from .fast_layout import FAST_LAYOUT_CONTRADICTION, contradiction_message
+from .fast_layout import FIX as FAST_FIX
 from .physical_check import (
     CHANNEL_COUNT_MISMATCH,
     HEADER_CONTRADICTION,
@@ -79,6 +83,43 @@ def physical_issue(issue: PhysicalIssue) -> ValidationIssue:
     """Return one physical check refusal as an error naming its code, unit and image."""
     paths = () if issue.path is None else (issue.path,)
     return error(issue.code, _what(issue), paths, _ACTIONS.get(issue.code, FIX))
+
+
+def fast_layout_issue(issues: Iterable[PhysicalIssue]) -> ValidationIssue:
+    """Return the one ``R_FAST_LAYOUT_CONTRADICTION`` naming every contradicting image (ADR 0006).
+
+    Every image of every fast unit is listed once, with its FOV key, path and every
+    contradiction found in it (kind, C index, expected and found), and the action names the
+    one fix: tag those units on their own, then run again.
+    """
+    listed = {
+        (fov_text(issue), issue.path): issue.contradictions
+        for issue in issues
+        if issue.code == FAST_LAYOUT_CONTRADICTION
+    }
+    units = sorted({unit_text(i.unit) for i in issues if i.code == FAST_LAYOUT_CONTRADICTION})
+    action = f"{FAST_FIX} Units: " + "; ".join(units) + "."
+    paths = [path for _, path in listed]
+    return error(FAST_LAYOUT_CONTRADICTION, contradiction_message(listed), paths, action)
+
+
+def fov_text(issue: PhysicalIssue) -> str:
+    """Name an image's FOV key: condition, repeat and acquisition folders, then position ID."""
+    unit = issue.unit
+    return f"{unit.condition}/{unit.biological_repeat}/{unit.technical_repeat}/{issue.fov}"
+
+
+def physical_issues(issues: Iterable[PhysicalIssue]) -> list[ValidationIssue]:
+    """Return the physical refusals, every fast-mode contradiction as one issue (ADR 0006).
+
+    One publication or run carries ``R_FAST_LAYOUT_CONTRADICTION`` at most once, with all
+    images, beside every other applicable code (AQ2); the others are one issue each.
+    """
+    issues = list(issues)
+    out = [physical_issue(i) for i in issues if i.code != FAST_LAYOUT_CONTRADICTION]
+    if any(i.code == FAST_LAYOUT_CONTRADICTION for i in issues):
+        out.append(fast_layout_issue(issues))
+    return out
 
 
 def reader_issue(issue: DescriptionIssue) -> ValidationIssue:

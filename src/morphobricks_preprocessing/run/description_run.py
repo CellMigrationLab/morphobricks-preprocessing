@@ -32,7 +32,7 @@ from ..description_record import description_record, unit_records
 from ..description_run_text import (
     coverage_issues,
     heterogeneous_issue,
-    physical_issue,
+    physical_issues,
     reader_issue,
 )
 from ..design import DesignTable
@@ -169,7 +169,7 @@ def check_description(
         roles={path: mapping.roles for path, mapping in roles.items()},
         mask_types=None if masks is None else masks.types,
     )
-    return replace(found, physical=report), [*units, *(physical_issue(i) for i in report.issues)]
+    return replace(found, physical=report), [*units, *physical_issues(report.issues)]
 
 
 GLOBAL_UNIT_CODES = frozenset({"mixed_dtypes", "inconsistent_dimensions"})
@@ -299,7 +299,8 @@ def unit_entries(found: RunDescription) -> list[dict[str, object]]:
     unnamed = {astuple(k): v for k, v in report.unnamed.items()}
     overridden = {astuple(k): v for k, v in report.image_type_overridden.items()}
     uses = {astuple(k): v for k, v in report.override_images.items()}
-    return unit_records(found.description, verified, unnamed, overridden, uses)
+    fast = {astuple(k): v for k, v in report.fast_images.items()}
+    return unit_records(found.description, verified, unnamed, overridden, uses, fast)
 
 
 def manifest_entry(

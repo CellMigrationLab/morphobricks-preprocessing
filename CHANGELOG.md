@@ -6,6 +6,46 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
+## Unreleased
+
+**Fast mode (Spec ADR 0006, owner decisions FC1-FC4), reader and image checks.** The Spec pin
+moves from `bf68d30` to `43d7a77` (MorphoBricks-Spec `main`, with the ADR 0006 amendment of
+experiment-v1). No format version changes: experiment-v1 stays version 1 (an amendment, like
+PL1 and RH1), the run manifest stays version 5 (additive unit keys). Drafts written under the
+old pin are refused with `spec_commit_mismatch`, as at every re-pin.
+
+### Added
+
+- **The description's fast mode** (experiment-v1 4.3a, 4.4): the optional top-level table
+  `channel_layout` (`channels`, `image_type`, `confirmed_on`) and the unit key `channels_from`
+  (`experiment` or `unit`) are read, validated (`E_FAST_LAYOUT_MISMATCH`,
+  `E_FAST_MARKER_WITHOUT_LAYOUT`, and `E_MISSING_FIELD`, `E_ENUM`, `E_UNKNOWN_CHANNEL`,
+  `E_DUPLICATE_CHANNEL_IN_UNIT`, `E_ID_NOT_NFC`, the RGB codes for the list itself) and written
+  in the canonical order (`channel_layout` after `channels`, `channels_from` after a unit's
+  `channels`). A file without the table is strict per-unit; no reader supplies it.
+  `channels_from` is in no section digest; a changed `channel_layout.confirmed_on` with an
+  unchanged list is `R_CONFIRMED_ON_CHANGED` (`t18`).
+- **`R_FAST_LAYOUT_CONTRADICTION`** (experiment-v1 section 8, "Fast-mode checks"): every image
+  of a unit with `channels_from = "experiment"` is compared with `channel_layout` from its header
+  only, before any pixel is read. One refusal lists every contradicting image (FOV key, path)
+  with every contradiction found in it (`image_type`, `channel_count`, `header_order`,
+  `header_names`, with C indices, expected and found) and names the fix: tag those units on
+  their own (`channels_from = "unit"`), then run again. In such units it replaces
+  `R_CHANNEL_COUNT_MISMATCH`, `R_HEADER_CONTRADICTION`, `R_IMAGE_TYPE_CONTRADICTS_HEADER` and the
+  channel parts of `R_UNIT_NOT_HOMOGENEOUS` (which stays for the other axes);
+  `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` keeps its priority. `PhysicalReport` carries each image's
+  structured contradictions (`PhysicalIssue.contradictions`). Units tagged `unit` keep the
+  strict codes. Experiments with extra channels in some images are refused, never converted.
+- **Run manifest:** each unit record of a fast-mode description has `channels_from`; a unit
+  following the list has `fast_layout_images` (per image: `path`, `fov_key`, `header_verified`,
+  and per channel the name as read and its evidence, `header` or `statement`).
+
+### Not in this change
+
+- The writer default of FC1 (the notebook and `describe` writing fast mode for a new
+  description) and the reconciliation drafting of new units with `channels_from = "experiment"`
+  (P38 (c), P40): later pull requests.
+
 ## v0.8.0 (19 November 2026)
 
 **Lazy windows, measured codecs, and `imagecodecs` as a required dependency.** A minor release

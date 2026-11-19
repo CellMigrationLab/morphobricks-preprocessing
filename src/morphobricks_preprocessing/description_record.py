@@ -10,12 +10,13 @@ from ``morphobricks.records.jsonl``. Every run has a published description (Spec
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from .channel_plan import channel_coverage
 from .description import Description
 from .description_unnamed import FIELD, checked_items, unnamed_items
 from .description_write import section_digests
+from .fast_layout import HEADER, STATEMENT
 from .rgb_override import HEADER_RGB, NO_INTERPRETATION, RGB, UNUSED, USED, OverrideUse
 
 KEY = "experiment_description"
@@ -28,6 +29,10 @@ DECLARED = "rgb_header_override"
 """The unit record's key of a unit declared ``rgb``: its declared ``rgb_header_override``."""
 OVERRIDE_IMAGES = "rgb_header_override_images"
 """The unit record's key of a unit declaring the override: what it did for each image."""
+CHANNELS_FROM = "channels_from"
+FAST_IMAGES = "fast_layout_images"
+"""A fast unit's per-image verification status (ADR 0006): path, FOV key, header_verified and,
+per index of the list, the channel, the header name as read and its evidence."""
 _USE_KEYS = frozenset({"image", "override", "header_photometric"})
 _FIELDS = (
     "sha256",
@@ -46,6 +51,7 @@ def unit_records(
     unnamed: Mapping[tuple[str, str, str], Mapping[str, tuple[int, ...]]] | None = None,
     overridden: Mapping[tuple[str, str, str], str] | None = None,
     override_images: Mapping[tuple[str, str, str], Mapping[str, OverrideUse]] | None = None,
+    fast_images: Mapping[tuple[str, str, str], Sequence[dict]] | None = None,
 ) -> list[dict[str, object]]:
     """Return every declared unit with whether its image type was checked against a header.
 
@@ -97,6 +103,10 @@ def unit_records(
                     record[OVERRIDE_IMAGES] = override_items(override_images[key])
                 if (unnamed or {}).get(key):
                     record[FIELD] = unnamed_items(unnamed[key], len(unit.channels))
+                if unit.channels_from is not None:
+                    record[CHANNELS_FROM] = unit.channels_from
+                if unit.follows_experiment:
+                    record[FAST_IMAGES] = [dict(item) for item in (fast_images or {}).get(key, ())]
                 out.append(record)
     return out
 
@@ -210,7 +220,49 @@ def recorded_description(value: object) -> dict | None:
             _checked_override_items(unit[OVERRIDE_IMAGES], f"{KEY}.units[{index}]")
         if isinstance(unit, dict):
             _checked_override_agreement(unit, f"{KEY}.units[{index}]")
+        if isinstance(unit, dict) and FAST_IMAGES in unit:
+            checked_fast_images(unit, f"{KEY}.units[{index}]")
     return value
+
+
+_FAST_KEYS = frozenset({"path", "fov_key", "header_verified", "channels"})
+_EVIDENCE_KEYS = frozenset({"c", "channel", "header_name", "evidence"})
+
+
+def checked_fast_images(unit: dict, where: str) -> None:
+    """Refuse a malformed ``fast_layout_images`` of one unit record (ADR 0006).
+
+    The unit says ``channels_from = "experiment"``; the items are sorted by distinct path; each
+    lists one entry per channel of the unit, in C order, with ``evidence`` ``header`` or
+    ``statement``; ``header_verified`` is true exactly when every entry is ``header``.
+    """
+    items = unit[FAST_IMAGES]
+    if unit.get(CHANNELS_FROM) != "experiment" or not isinstance(items, list):
+        raise ValueError(f"{where}.{FAST_IMAGES} needs {CHANNELS_FROM} = experiment and a list")
+    for item in items:
+        if not isinstance(item, dict) or set(item) != _FAST_KEYS:
+            raise ValueError(
+                f"{where}.{FAST_IMAGES} items must hold {', '.join(sorted(_FAST_KEYS))}"
+            )
+        entries = item["channels"]
+        if not isinstance(entries, list) or [
+            e.get("channel") if isinstance(e, dict) else None for e in entries
+        ] != list(unit.get("channels", ())):
+            raise ValueError(f"{where}.{FAST_IMAGES} channels must follow the unit's list")
+        for index, entry in enumerate(entries):
+            if (
+                set(entry) != _EVIDENCE_KEYS
+                or entry["c"] != index
+                or entry["evidence"] not in (HEADER, STATEMENT)
+                or not isinstance(entry["header_name"], str | None)
+            ):
+                raise ValueError(f"{where}.{FAST_IMAGES} holds a malformed channel entry")
+        verified = all(entry["evidence"] == HEADER for entry in entries)
+        if item["header_verified"] is not verified:
+            raise ValueError(f"{where}.{FAST_IMAGES}: header_verified disagrees with the evidence")
+    paths = [item["path"] for item in items]
+    if not all(isinstance(path, str) and path for path in paths) or paths != sorted(set(paths)):
+        raise ValueError(f"{where}.{FAST_IMAGES} paths must be sorted and distinct")
 
 
 def _checked_override_agreement(unit: dict, where: str) -> None:
