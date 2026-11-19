@@ -19,7 +19,7 @@ from there.
 
 ## Status
 
-Pre-alpha; the current release is v0.7.1 (what is planned next is in
+Pre-alpha; the current release is v0.8.0 (what is planned next is in
 [docs/roadmap.md](docs/roadmap.md)). Implemented and tested:
 
 - Folder discovery and validation, TIFF and OME-Zarr header inspection without reading pixels
@@ -66,7 +66,7 @@ contract version 3 and an objects use with `RunInputs.read_objects`. See the
 ## Installation
 
 ```bash
-pip install "git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.7.1"
+pip install "git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.8.0"
 ```
 
 For development, from a clone:
@@ -76,7 +76,7 @@ pip install -e ".[dev]"
 ```
 
 The optional `notebook` extra installs the widget dependencies for the notebook
-(`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.7.1"`).
+(`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.8.0"`).
 The notebook's first code cell (**1. Install**) can set this up automatically: it uses a compatible nearby
 checkout or installed package, and installs missing requirements into the active kernel. A standalone
 download installs from GitHub if needed (internet access and Git required).
@@ -242,7 +242,7 @@ ruff format .
 pytest
 ```
 
-Coding conventions are described in [docs/development.md](docs/development.md). Planned work after v0.7.1 is in [docs/roadmap.md](docs/roadmap.md).
+Coding conventions are described in [docs/development.md](docs/development.md). Planned work after v0.8.0 is in [docs/roadmap.md](docs/roadmap.md).
 
 ## License
 

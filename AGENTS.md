@@ -1192,10 +1192,10 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 
 ---
 
-## 11. Status (current state, v0.7.1)
+## 11. Status (current state, v0.8.0)
 
-- **Released:** v0.7.1 (19 November 2026), a patch release by owner decision (no format change;
-  the *Breaking* entries below are refusals of what was never measured): lazy windows (#339,
+- **Released:** v0.8.0 (19 November 2026), a minor release because of its breaking entries
+  (`imagecodecs` required, codecs without a measured bound refused; no format change): lazy windows (#339,
   `docs/design/lazy-windows.md`) with `window_map` / `map_windows` (#346), the array H&E tissue
   mask `he_tissue_mask_array` (#343), the `max_ram` worker planner (#341), window memory
   estimates as upper bounds (#349, #353, #355) and, from #356 (#357), windows sized from the

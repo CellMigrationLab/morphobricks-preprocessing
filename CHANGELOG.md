@@ -6,10 +6,13 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
-## v0.7.1 (19 November 2026)
+## v0.8.0 (19 November 2026)
 
-**Lazy windows, measured codecs, and `imagecodecs` as a required dependency.** A patch release
-by owner decision, with no format change: run manifest version 5, `plane_histograms.csv` schema
+**Lazy windows, measured codecs, and `imagecodecs` as a required dependency.** A minor release
+(semantic versioning before 1.0, `docs/development.md`: the minor version moves for a breaking
+change, here the *Breaking* entries below: `imagecodecs` is required and codecs without a
+measured memory bound are refused; owner decision of 19 November 2026, first prepared as
+v0.7.1), with no format change: run manifest version 5, `plane_histograms.csv` schema
 version 5, resolver contract version 3, `mask_relationships.json` report version 4,
 `mask_representation.json` version 1, conversion record version 4 and discovery report version 1
 are those of v0.7.0, whose runs are read as they are. It brings exact window reads of large
