@@ -216,6 +216,10 @@ src/morphobricks_preprocessing/
                     intersects, each read once for all the contiguous samples asked; how a
                     series' pages are stored (_Blocking, _tiff_blocking), the pieces a box
                     intersects (_box_pieces, shared by a read and its plan, #356)
+  jpeg_piece.py     decode_jpeg_piece: one JPEG strip or tile by imagecodecs' compiled libjpeg
+                    decoder alone (jpeg_decode from imagecodecs 2026.11, jpeg8_decode before),
+                    tifffile's arguments and reshape, never tifffile's decoder or an LJPEG
+                    fallback (#356, F1); libjpeg_decoder (the gate's check)
   codec_bounds.py   TIFF_BOUNDED: the (compression, predictor) pairs whose read memory is measured,
                     the only ones the bounded readers decode (#356; LZW and JPEG in the measured
                     form, jpeg_unmeasured); ZARR_MEASURED (record only); check_tiff_codec refuses

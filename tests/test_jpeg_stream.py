@@ -14,6 +14,7 @@ import pytest
 import tifffile
 
 from morphobricks_preprocessing import iter_planes, plane_layout, prefill_mapping
+from morphobricks_preprocessing.jpeg_piece import libjpeg_decoder
 from morphobricks_preprocessing.jpeg_stream import JpegStreamError, check_tables, frame
 from morphobricks_preprocessing.plane_channels import read_xyc_plane
 from morphobricks_preprocessing.plane_errors import PlaneReadError
@@ -172,7 +173,7 @@ def test_random_prefixes_never_hide_a_frame_from_the_check():
             continue
         accepted += 1
         try:
-            decoded = imagecodecs.jpeg_decode(candidate)
+            decoded = libjpeg_decoder()(candidate)  # the decoder the reads use, no fallback
         except Exception:  # noqa: BLE001  (libjpeg refusing a stream is fine)
             continue
         assert decoded.shape[:2] == (found.rows, found.columns), (noise, at)

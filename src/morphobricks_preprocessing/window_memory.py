@@ -37,7 +37,8 @@ fresh process, and their native parts alone as the peak of the C heap during one
   imagecodecs 2026.11; up to 2026.3 (the last for Python 3.11) 5120 entries and a string buffer
   of 64 KiB, which grows only when tifffile gives no output size (about 150 KiB measured, the
   same for blank, smooth and noisy pieces).
-- JPEG (libjpeg-turbo through ``imagecodecs.jpeg_decode``) decodes a piece into one new array
+- JPEG (libjpeg-turbo alone, imagecodecs' compiled decoder called directly: :mod:`.jpeg_piece`,
+  never retried with LJPEG) decodes a piece into one new array
   (:data:`JPEG_DECODE_COPIES`: it, and the previous piece still referenced). libjpeg's own
   memory is its state (pools, Huffman and quantisation tables: :data:`CODEC_STATE`) and, per
   piece (:func:`native_piece_work`), its row buffers (:data:`JPEG_ROWS` rows of the piece's

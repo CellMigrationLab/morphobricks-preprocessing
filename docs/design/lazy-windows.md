@@ -123,7 +123,10 @@ libjpeg reads and refuses any stream libjpeg could read otherwise (garbage or `F
 marker is expected, a second frame header, a frame type other than Huffman DCT, tables holding
 more than tables); a JPEG page is decoded piece by piece, each checked first
 (`tiff_pieces.read_jpeg_page`), never by tifffile's `asarray` (review of this PR, B1: one fill
-byte before a 40000² frame had let a 16² frame after the EOI pass a looser check). A YCbCr-subsampled
+byte before a 40000² frame had let a 16² frame after the EOI pass a looser check), and decoded
+by libjpeg alone (`jpeg_piece`: imagecodecs' compiled libjpeg decoder called directly), never
+retried with LJPEG, whose own marker walk can find a hidden frame far larger than the one
+checked (second review, F1: 8192² behind a 256² frame, 15.5 times a window's plan). A YCbCr-subsampled
 JPEG is read in windows and blocks (the decoder upsamples a piece whole).
 
 **One measured decoder: imagecodecs** (review of #357, B2; owner decision of 18 November 2026).

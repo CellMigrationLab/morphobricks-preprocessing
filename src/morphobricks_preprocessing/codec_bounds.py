@@ -36,6 +36,16 @@ compressible and noisy; on Python 3.13 with imagecodecs 2026.11 and on Python 3.
 (:func:`jpeg_unmeasured`): 8-bit samples, one (greyscale) or three (RGB or YCbCr) interleaved
 samples, subsampled at most 2 × 2, and no NDPI header. Old-style JPEG (code 6) is not measured.
 
+A JPEG piece is decoded by libjpeg alone (:mod:`.jpeg_piece`; issue #356, finding F1 of the
+second review): imagecodecs' compiled libjpeg decoder is called directly (``jpeg_decode`` from
+imagecodecs 2026.11, ``jpeg8_decode`` before), with tifffile's arguments and reshape, never
+through tifffile's ``TiffPage.decode`` (tifffile 2026.11) or imagecodecs' ``jpeg_decode``
+before 2026.11: both retry a stream libjpeg refuses with ``ljpeg_decode`` (liblj92), which
+reads the markers otherwise and can decode a hidden frame far larger than the one checked
+(``tiff_pieces.check_jpeg_piece``). A stream libjpeg refuses is refused (``PlaneReadError``);
+LJPEG is never measured and never decoded here. :func:`decoder_unmeasured` refuses an
+imagecodecs whose libjpeg decoder is not compiled (a Python wrapper may fall back).
+
 :data:`ZARR_MEASURED` lists the OME-Zarr codecs the same tests measure: the default
 compressors of the zarr versions the tests run under (``tests/zarr_tree.write_ngff``). It is
 the record of the evidence; OME-Zarr reads are not refused by codec here.
@@ -51,9 +61,11 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable
 from pathlib import Path
+from types import ModuleType
 
 import tifffile
 
+from . import jpeg_piece
 from .plane_errors import CompressionNotBoundedError
 
 TIFF_BOUNDED: dict[tuple[int, int], str] = {
@@ -99,11 +111,14 @@ IMAGECODECS_MEASURED = (2024, 12, 30)
 """The oldest imagecodecs whose decoders are measured (``tests/test_codec_memory.py``)."""
 LIBJPEG_MEASURED = "libjpeg_turbo 3."
 """The libjpeg imagecodecs must be built with (``imagecodecs.jpeg8_version()``)."""
-DECODERS = {5: ("lzw_decode",), 7: ("jpeg_decode",), 34925: ("lzma_decode",)}
+DECODERS = {5: ("lzw_decode",), 34925: ("lzma_decode",)}
 DECODERS |= dict.fromkeys((8, 32946), ("deflate_decode", "zlib_decode"))
 """The imagecodecs functions tifffile must decode each compressed codec with: the measured
 decoders. imagecodecs is a required dependency; without it tifffile would decode deflate and
-LZMA with the standard library's ``zlib`` and ``lzma`` (and not LZW or JPEG at all)."""
+LZMA with the standard library's ``zlib`` and ``lzma`` (and not LZW or JPEG at all). JPEG (7)
+is not decoded by tifffile in the bounded readers: its pieces go to imagecodecs' libjpeg
+decoder directly (:func:`.jpeg_piece.libjpeg_decoder`), never to tifffile's ``TiffPage.decode``
+or imagecodecs' ``jpeg_decode`` before 2026.11, which both fall back to ``ljpeg_decode``."""
 
 
 def tiff_codec(page: tifffile.TiffPage | tifffile.TiffFrame) -> tuple[int, int]:
@@ -170,26 +185,47 @@ def decoder_unmeasured(compression: int) -> str | None:
     """Return how the decoder tifffile would use differs from the measured one, or None.
 
     A compressed codec is measured as decoded by imagecodecs (:data:`IMAGECODECS_MEASURED` or
-    later; JPEG with libjpeg-turbo 3, :data:`LIBJPEG_MEASURED`), through the very functions of
-    :data:`DECODERS`. Anything else is refused, never decoded by another library instead.
+    later), through the very functions of :data:`DECODERS`; JPEG by imagecodecs' compiled
+    libjpeg decoder alone, built on libjpeg-turbo 3 (:data:`LIBJPEG_MEASURED`), with no
+    fallback to another decoder (:func:`_jpeg_decoder_unmeasured`). Anything else is refused,
+    never decoded by another library instead.
     """
-    if compression not in DECODERS:
+    if compression not in DECODERS and compression != 7:
         return None  # uncompressed: nothing decodes it
     need = "imagecodecs 2024.12.30 or later, a required dependency: install or upgrade it"
     try:
         import imagecodecs
     except ImportError:
         return f"without imagecodecs installed (decoded only by {need})"
-    found = tuple(int(n) for n in imagecodecs.__version__.split(".")[:3] if n.isdigit())
+    found = jpeg_piece.imagecodecs_version(imagecodecs.__version__)
     if found < IMAGECODECS_MEASURED:
         return f"with imagecodecs {imagecodecs.__version__} (decoded only by {need})"
-    if compression == 7 and not imagecodecs.jpeg8_version().startswith(LIBJPEG_MEASURED):
-        built = imagecodecs.jpeg8_version()
-        return f"with imagecodecs built on {built} (decoded only with libjpeg-turbo 3)"
+    if compression == 7:
+        return _jpeg_decoder_unmeasured(imagecodecs)
     decoder = tifffile.TIFF.DECOMPRESSORS[compression]
     if all(decoder is not getattr(imagecodecs, name, None) for name in DECODERS[compression]):
         name = f"{getattr(decoder, '__module__', '?')}.{getattr(decoder, '__name__', '?')}"
         return f"decoded by {name} (decoded only by {need})"
+    return None
+
+
+def _jpeg_decoder_unmeasured(imagecodecs: ModuleType) -> str | None:
+    """Return how imagecodecs' libjpeg decoder differs from the measured one, or None.
+
+    JPEG pieces are decoded by libjpeg-turbo 3 alone (:mod:`.jpeg_piece`): a build on another
+    libjpeg, or a ``jpeg_decode``/``jpeg8_decode`` that is a Python function (which may fall
+    back to ``ljpeg_decode``, as imagecodecs' ``jpeg_decode`` did before 2026.11), is refused.
+    """
+    built = imagecodecs.jpeg8_version()
+    if not built.startswith(LIBJPEG_MEASURED):
+        return f"with imagecodecs built on {built} (decoded only with libjpeg-turbo 3)"
+    if jpeg_piece.libjpeg_decoder() is None:
+        name = jpeg_piece.decoder_name(imagecodecs.__version__)
+        return (
+            f"with imagecodecs {imagecodecs.__version__}, whose {name} is not libjpeg's "
+            "compiled decoder (decoded only by libjpeg-turbo 3, never with another decoder "
+            "as a fallback)"
+        )
     return None
 
 

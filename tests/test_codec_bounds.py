@@ -347,9 +347,10 @@ def test_a_jpeg_piece_declaring_more_pixels_is_refused_before_it_is_decoded(tmp_
     )
     decoded = []
     monkeypatch.setattr(tifffile.TiffPage, "decode", property(lambda self: decoded.append(1)))
+    monkeypatch.setattr(tiff_pieces.jpeg_piece, "decode_jpeg_piece", lambda *a: decoded.append(2))
     with pytest.raises(PlaneReadError, match=r"declares 8-bit samples, 128 × 32 pixels"):
         read_window(path, prefill_mapping("YX"), bounds=(0, 8, 0, 8), channels=[0])
-    assert decoded == [1]  # the decoder was fetched, never called
+    assert decoded == [1]  # tifffile's decoder fetched (never called), libjpeg never reached
 
 
 JPEG_FORMS = {  # a JPEG page in a form whose memory is not measured, and its refusal
@@ -408,6 +409,8 @@ def test_tifffile_decodes_every_compressed_codec_with_the_measured_imagecodecs()
         assert any(decoder is getattr(imagecodecs, name) for name in names), (code, decoder)
         assert codec_bounds.decoder_unmeasured(code) is None
     assert codec_bounds.decoder_unmeasured(1) is None  # nothing decodes an uncompressed TIFF
+    # JPEG is not decoded by tifffile but by libjpeg directly, with no fallback (#356, F1)
+    assert 7 not in codec_bounds.DECODERS and codec_bounds.decoder_unmeasured(7) is None
     version = tuple(int(n) for n in imagecodecs.__version__.split(".")[:3])
     assert version >= codec_bounds.IMAGECODECS_MEASURED
     assert imagecodecs.jpeg8_version().startswith("libjpeg_turbo 3.")
@@ -437,7 +440,26 @@ GATES = {  # how the run-time check is made to fail, and what the refusal says
         lambda m: m.setattr(codec_bounds, "LIBJPEG_MEASURED", "libjpeg 9"),
         "(decoded only with libjpeg-turbo 3)",
     ),
+    "a libjpeg decoder with a fallback": (
+        lambda m: _wrap_libjpeg_decoder(m),
+        "is not libjpeg's compiled decoder (decoded only by libjpeg-turbo 3, never with another "
+        "decoder as a fallback)",
+    ),
 }
+JPEG_GATES = {"another libjpeg", "a libjpeg decoder with a fallback"}
+
+
+def _wrap_libjpeg_decoder(monkeypatch):
+    """Replace imagecodecs' libjpeg decoder with a Python function, as jpeg_decode was."""
+    import imagecodecs
+
+    name = tiff_pieces.jpeg_piece.decoder_name(imagecodecs.__version__)
+    compiled = getattr(imagecodecs, name)
+
+    def wrapper(data, **kwargs):  # where a fallback to ljpeg_decode could live
+        return compiled(data, **kwargs)
+
+    monkeypatch.setattr(imagecodecs, name, wrapper)
 
 
 @pytest.mark.parametrize("gate", sorted(GATES))
@@ -445,7 +467,7 @@ def test_a_decoder_other_than_the_measured_one_is_refused_before_any_pixel(
     tmp_path, gate, monkeypatch
 ):
     pytest.importorskip("imagecodecs")
-    jpeg = gate == "another libjpeg"
+    jpeg = gate in JPEG_GATES
     path = tmp_path / "a.tif"
     compression = {"compression": "jpeg"} if jpeg else {"compression": "zlib"}
     tifffile.imwrite(

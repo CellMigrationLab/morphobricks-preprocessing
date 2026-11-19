@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from . import jpeg_stream
+from . import jpeg_piece, jpeg_stream
 from .plane_errors import PlaneReadError
 from .window_memory import JPEG, PieceDecode
 
@@ -261,22 +261,35 @@ def _decode_segment(
 ) -> np.ndarray | None:
     """Decode one compressed strip or tile whole, as (depth, rows, columns, samples).
 
-    The piece is read under ``lock`` (default: the file handle's own).
+    The piece is read under ``lock`` (default: the file handle's own). A JPEG piece is checked
+    (:func:`check_jpeg_piece`), then decoded by libjpeg alone (:mod:`.jpeg_piece`): never by
+    tifffile's decoder, which retries a stream libjpeg refuses with another decoder (#356, F1).
     """
     keyframe = page.keyframe
     fh = page.parent.filehandle
+    jpeg = keyframe.compression == JPEG
     try:
         with fh.lock if lock is None else lock:
             fh.seek(int(page.dataoffsets[index]))
             data = fh.read(int(page.databytecounts[index]))
+            # tifffile reads the JFIF marker from the file: under the same lock, as is the
+            # decoder made (for a JPEG piece, only where it goes is asked of it, never pixels)
+            jfif = jpeg and int(keyframe.photometric) == jpeg_piece.RGB and keyframe.is_jfif
             decode = keyframe.decode
         kwargs = {}
         if keyframe.compression in _JPEG_COMPRESSIONS:
             kwargs = {"jpegtables": page.jpegtables, "jpegheader": keyframe.jpegheader}
     except Exception as exc:  # a short or unreadable file
         raise PlaneReadError(f"Part {index} of a page of {path} cannot be read: {exc}") from exc
-    if keyframe.compression == JPEG:
+    if jpeg:
         check_jpeg_piece(data, page.jpegtables, piece_decode(keyframe), index, path)
+        _, where, shape = decode(None, index)  # no data: nothing is decoded
+        try:
+            return jpeg_piece.decode_jpeg_piece(
+                keyframe, data, (where, shape), page.jpegtables, jfif
+            )
+        except ValueError as exc:  # refused by libjpeg, with nothing else tried
+            raise PlaneReadError(f"Part {index} of a page of {path} cannot be read: {exc}") from exc
     try:
         segment, _, _ = decode(data, index, **kwargs)
     except Exception as exc:  # decoding errors come from many codecs

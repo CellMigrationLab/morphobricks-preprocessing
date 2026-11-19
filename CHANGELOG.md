@@ -14,12 +14,14 @@ v0.5.1: no run before v0.5.1 is read.)
   bounded readers** (#356, review B2; owner decision of 18 November 2026). `imagecodecs>=
   2024.12.30` moves from the `dev` extra to the core dependencies. With it installed, tifffile
   decodes deflate (codes 8 and 32946) with `imagecodecs.deflate_decode` and LZMA with
-  `imagecodecs.lzma_decode` instead of the standard library's `zlib` and `lzma`, and LZW and JPEG
-  (which tifffile cannot decode without it) with `lzw_decode` and `jpeg_decode`: one measured
+  `imagecodecs.lzma_decode` instead of the standard library's `zlib` and `lzma`, and LZW (which
+  tifffile cannot decode without it) with `lzw_decode`; a JPEG piece is decoded by imagecodecs'
+  libjpeg decoder called directly, never through tifffile (see *Fixed*, F1): one measured
   decoder path. The bounded readers (windows, every channel of a plane, blocks) check it at run
   time, from the header and before any pixel is read (`codec_bounds.decoder_unmeasured`):
   imagecodecs missing, older than 2024.12.30, built on a libjpeg other than libjpeg-turbo 3 (for
-  JPEG), or a decoder other than imagecodecs' in tifffile's table, is refused with
+  JPEG), a libjpeg decoder that is not compiled (a Python wrapper, where a fallback could live),
+  or a decoder other than imagecodecs' in tifffile's table, is refused with
   `CompressionNotBoundedError` (`compression_not_bounded`) naming what was found and "install or
   upgrade imagecodecs"; nothing falls back to another decoder. Values are unchanged (the same
   deflate and LZMA streams decode to the same bytes). The deflate and LZMA bounds were measured
@@ -194,6 +196,35 @@ v0.5.1: no run before v0.5.1 is read.)
   CI's `wheel-identity` job also runs its tests from a wheel.
 
 ### Fixed
+
+- **A JPEG piece is decoded by libjpeg alone, never by LJPEG as a fallback** (#356; second
+  review of #357, finding F1). When libjpeg refuses a stream ("Bogus Huffman table definition",
+  "SOF type", "Unsupported JPEG data precision", "Unsupported color conversion"), tifffile
+  2026.11 (`TiffPage.decode`) and, before imagecodecs 2026.11, imagecodecs' own `jpeg_decode`
+  retry it with `imagecodecs.ljpeg_decode` (liblj92), which walks the markers otherwise (it reads
+  a fill byte `FF FF` as a marker with a length). A crafted tile showed `check_jpeg_piece` a
+  256² baseline frame while liblj92 decoded a hidden 8192² lossless frame (128 MiB of `uint16`
+  from an 8.4 MB tile): peak RSS 136.8 MiB against a window plan of 8.8 MiB (15.5×), 137.4
+  against 36.0 for every channel of a plane (3.8×) and 136.9 against 10.6 for blocks (12.9×), on
+  Python 3.13 (tifffile 2026.11.16, imagecodecs 2026.11.11) and 3.11 (imagecodecs 2026.3.6) alike;
+  the read failed only after the peak. The `decoder_unmeasured` gate checked
+  `TIFF.DECOMPRESSORS[7]`, which tifffile's JPEG path does not use. Every read of a JPEG TIFF
+  (windows, cached windows, every channel of a plane, blocks, a reduced preview, a whole plane)
+  now decodes a piece through the new `jpeg_piece`: imagecodecs' compiled libjpeg decoder
+  called directly (`jpeg_decode` from imagecodecs 2026.11, which has no fallback; `jpeg8_decode`
+  before, as `jpeg_decode` was then a Python wrapper with the fallback), with tifffile's
+  arguments (`JPEGTables`, the colour spaces of RGB and YCbCr pages, the piece's shape) and
+  tifffile's reshape. A stream libjpeg refuses is refused (`PlaneReadError`, "libjpeg cannot
+  decode it (...)"); nothing else is tried. `codec_bounds.decoder_unmeasured` refuses, before
+  any pixel is read, an imagecodecs whose libjpeg decoder is a Python function. The same tile
+  now peaks at 8.5 MiB (window, plan 8.8), 9.2 (plane, 36.0) and 8.8 (blocks, 10.6). Values of
+  valid JPEG TIFFs are unchanged: 21 files (greyscale, RGB and YCbCr 4:2:0 and 4:2:2 with
+  `JPEGTables`, baseline and progressive, tiles and strips with partial edges, JFIF and Aperio
+  RGB, OpenSlide's CMU-1-Small-Region.svs and its strip pages) read byte for byte as before
+  through windows, every channel of a plane, blocks and whole planes, and as `tifffile.imread`,
+  on Python 3.13 and on 3.11 with imagecodecs 2026.3.6 and 2024.12.30.
+  `tests/test_jpeg_no_fallback.py` writes the bypass tile (a 2048² hidden frame in a 256² tile)
+  and spies on `ljpeg_decode`: at `a6bc438` every path called it.
 
 - **A window's plan sizes the pieces of the pages its read decodes** (#356, P1, external audit
   of `6a3446b`). `window_plan` charged every compressed TIFF window the first page's (the
