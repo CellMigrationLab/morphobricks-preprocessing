@@ -1,0 +1,82 @@
+# Fixture v41_fast_layout
+# Expected: PASS
+# Source: ADR 0006 (owner decisions FC1-FC4, 16 November 2026)
+# Fast mode (the default for a new description): one ordered channel list for the experiment, `channel_layout`, stated once by the user on 2026-11-16 and materialised in every unit. Every unit says how its list was confirmed: `channels_from = "experiment"` (accepted because every image's header names match the confirmed `header_names` exactly, or the image has none) or `"unit"` (DrugA/rep2, tagged on its own after its header `Hoechst 33342` was confirmed as an alias; same list). Readers need no change: each unit still lists its channels. Homogeneous.
+schema = "morphobricks-experiment"
+schema_version = 1
+
+[conditions.CTRL]
+source_folder = "CTRL"
+display_name = "Control"
+
+[conditions.DrugA]
+source_folder = "DrugA"
+display_name = "Drug A"
+reference = "CTRL"
+
+[channels.DNA]
+display_name = "Nuclei stain"
+header_names = ["DAPI", "Hoechst 33342"]
+
+[channels.ACTIN]
+display_name = "F-actin"
+header_names = ["Phalloidin-488"]
+
+[channel_layout]
+channels = ["DNA", "ACTIN"]
+confirmed_on = "2026-11-16"
+
+[repeats.rep1]
+confirmed = true
+confirmed_on = "2026-11-16"
+
+[repeats.rep1.members.CTRL]
+source_repeat = "rep1"
+image_count = 12
+
+[repeats.rep1.members.CTRL.technical_repeats.acquisition_1]
+source_folder = "acquisition_1"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep1.members.CTRL.technical_repeats.acquisition_2]
+source_folder = "acquisition_2"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep1.members.DrugA]
+source_repeat = "rep1"
+image_count = 11
+
+[repeats.rep1.members.DrugA.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep2]
+confirmed = true
+confirmed_on = "2026-11-16"
+
+[repeats.rep2.members.CTRL]
+source_repeat = "rep2"
+image_count = 10
+
+[repeats.rep2.members.CTRL.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep2.members.DrugA]
+source_repeat = "rep2"
+image_count = 10
+
+[repeats.rep2.members.DrugA.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "unit"
+
+[used_ids]
+conditions = ["CTRL", "DrugA"]
+channels = ["ACTIN", "DNA"]
+repeats = ["rep1", "rep2"]
+technical_repeats = ["acquisition_1", "acquisition_2", "single"]

@@ -12,7 +12,15 @@ import unicodedata
 from collections.abc import Mapping
 
 from .description_report import Issues, key_path
-from .description_rules import OBJECT_SET_PART, RESERVED, SINGLE, TOKEN, Code, label_refused
+from .description_rules import (
+    CHANNEL_LAYOUT,
+    OBJECT_SET_PART,
+    RESERVED,
+    SINGLE,
+    TOKEN,
+    Code,
+    label_refused,
+)
 from .description_walk import Table, member_path, members, unit_path
 
 USED_KINDS = ("conditions", "channels", "repeats", "technical_repeats")
@@ -136,6 +144,12 @@ def _repeats(doc: Table, ids: Identities) -> None:
                     ids.out.add(Code.E_SINGLE_MISUSE, f"{path}.source_repeat", message)
 
 
+def _channel_layout(doc: Table, ids: Identities) -> None:
+    """Entries of the fast-mode list are channel references: NFC only (section 4.3a)."""
+    for index, channel in enumerate(doc.get(CHANNEL_LAYOUT, {}).get("channels", [])):
+        ids.nfc(channel, f"{CHANNEL_LAYOUT}.channels[{index}]")
+
+
 def _masks(doc: Table, ids: Identities) -> None:
     for identifier, table in doc.get("masks", {}).items():
         path = key_path("masks", identifier)
@@ -176,6 +190,7 @@ def check_identity(doc: Mapping[str, object]) -> Issues:
     _conditions(doc, ids)
     _channels(doc, ids)
     _repeats(doc, ids)
+    _channel_layout(doc, ids)
     _masks(doc, ids)
     _used_ids(doc, ids)
     ids.collisions()

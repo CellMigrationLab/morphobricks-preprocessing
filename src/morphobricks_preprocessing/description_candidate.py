@@ -23,7 +23,7 @@ from .description_file import sha256_hex
 from .description_read import read_description_bytes
 from .description_report import DescriptionIssue
 from .description_review import design_changes
-from .description_rules import Refusal
+from .description_rules import CHANNEL_LAYOUT, Refusal
 from .description_run_text import reader_issue, reader_warning
 from .description_transition import Reconfirmation
 from .description_write import canonical_bytes
@@ -49,6 +49,13 @@ _TRANSITION_TEXT = {
         "moved is confirmed on Channels, and so is a header name that changed.",
     ),
 }
+
+_LAYOUT_DATE_TEXT = (
+    "The date of the statement “every unit has the same channels in the same order” differs "
+    "from the saved one, but the list and image type are as saved, so the saved date stays "
+    "(experiment-v1 4.3a, ADR 0006).",
+    "Keep the saved date of the channel list; it changes only when the list changes.",
+)
 
 
 @dataclass(frozen=True)
@@ -87,10 +94,13 @@ def transition_issue(issue: DescriptionIssue) -> ValidationIssue:
     code, path = issue.code.value, issue.path
     base, _, key = path.partition(".")
     key = str(issue.value) if base == "used_ids" else key.strip('"')
-    message, action = _TRANSITION_TEXT.get(
-        issue.code,
-        ("Publication refuses this change.", "Undo the change it names."),
-    )
+    if base == CHANNEL_LAYOUT:
+        message, action = _LAYOUT_DATE_TEXT
+    else:
+        message, action = _TRANSITION_TEXT.get(
+            issue.code,
+            ("Publication refuses this change.", "Undo the change it names."),
+        )
     shown, todo = message.format(id=key, code=code, path=path), action.format(id=key)
     return error(code, f"Saving would be refused: {code} at {path}. {shown} {todo}", (), todo)
 

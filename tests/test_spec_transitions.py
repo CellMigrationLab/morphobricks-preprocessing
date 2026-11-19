@@ -26,13 +26,13 @@ from morphobricks_preprocessing.description_transition import (
     unwaived,
 )
 from spec_oracle import refval
-from spec_pin import fixtures
+from spec_pin import catalogue, fixtures
 from spec_text import section
 
 VALID = {item.name.split("_")[0]: item for item in fixtures("valid")}
 TRANSITIONS = fixtures("transitions")
 ALL = [*fixtures("valid"), *TRANSITIONS]
-PREDECESSOR = re.compile(r"predecessor valid/(v\d+)")
+PREDECESSOR = re.compile(r"valid/(v\d+)")
 
 
 def _codes(old, new) -> set[str]:
@@ -40,7 +40,8 @@ def _codes(old, new) -> set[str]:
 
 
 def _predecessor(item) -> str:
-    return PREDECESSOR.search(item.header["Expected"]).group(1)
+    """Return the predecessor the catalogue's row names (the header may leave it out, t17)."""
+    return PREDECESSOR.search(catalogue()[item.name][0]).group(1)
 
 
 @pytest.mark.parametrize("item", TRANSITIONS, ids=lambda item: item.name)

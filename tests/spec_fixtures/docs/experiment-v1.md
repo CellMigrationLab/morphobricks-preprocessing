@@ -18,6 +18,17 @@
   [ADR 0005](adr/0005-binary-masks.md)): a `binary` mask file holds values in {0, v} for one
   positive v over all its planes, stored as integers or booleans; all-zero and all-foreground files
   are accepted, two or more distinct positive values and float files are refused (§4.5, §4.5b, §8). It replaces "more than two distinct values".
+- **Amended** on 16 November 2026 to state the current rule (owner decision of 11 November 2026,
+  roadmap S3.3, Stage 3): units with **different ordered channel lists of one image type** are
+  processed and checked per unit; `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` now refuses only units of
+  **different image types** (RGB beside ordinary channel units, fixture `v29`) (§4.4b, §8). It
+  replaces "Stage 1-2 only: the units do not all have the same ordered list".
+- **Amended** on 16 November 2026 (owner decisions FC1-FC4,
+  [ADR 0006](adr/0006-fast-channel-layout.md), proposed): **fast mode**, one ordered channel list
+  stated once for the experiment in the optional top-level table `channel_layout`, materialised in
+  every unit, each unit saying how its list was confirmed (`channels_from`); a contradicting image is
+  refused before any pixel read (`R_FAST_LAYOUT_CONTRADICTION`). A file without the table is a strict
+  per-unit file, as before (§4.3a, §4.4, §6, §7, §8, §9, §10).
 - **Decisions:** [ADR 0001](adr/0001-experiment-description-v1.md).
 - **Fixtures:** [fixtures/README.md](../fixtures/README.md). **Conformance:**
   [conformance-plan.md](conformance-plan.md).
@@ -122,7 +133,7 @@ Time-lapses (T > 1) are allowed: the file has no T field, and the homogeneity of
 - **NFC.** Identities (the keys and identity fields of §3.1, and every entry of `used_ids`) are
   Unicode NFC. A writer MUST emit NFC. A reader MUST refuse an identity that is not NFC
   (`E_ID_NOT_NFC`, reported for every such identity, including `reference` values, members' keys,
-  `source_folder` values, unit `channels` entries and `source_channels` entries). The check of a reference is NFC only and
+  `source_folder` values, unit `channels` entries, `channel_layout.channels` entries and `source_channels` entries). The check of a reference is NFC only and
   belongs to phase 4, so a non-NFC channel reference is `E_ID_NOT_NFC` and never
   `E_UNKNOWN_CHANNEL` (AQ13). A reader never transforms an identity: no normalization, trimming, case folding, parsing
   or repair of any kind, and so it never resolves a reference through a transformed spelling.
@@ -193,6 +204,7 @@ real calendar day (`E_DATE_FORMAT`); a TOML date literal is `E_TYPE`. "Non-empty
 | `schema_version` | integer | yes | Exactly `1` (missing: `E_SCHEMA_VERSION_MISSING`; other integer: `E_SCHEMA_VERSION_UNSUPPORTED`) |
 | `conditions` | table of condition | yes | ≥ 1 entry |
 | `channels` | table of channel | yes | ≥ 1 entry |
+| `channel_layout` | table | no | Present: a **fast-mode** file, one channel list stated for the experiment (§4.3a). Absent: a **strict per-unit** file; never read as fast mode |
 | `repeats` | table of repeat | yes | ≥ 1 entry |
 | `masks` | table of mask | no | May be absent or empty |
 | `used_ids` | table of ID lists | yes | Append-only registry of every ID ever confirmed, per kind (§4.9) |
@@ -246,6 +258,45 @@ and compared. This holds even when the header
 name equals the channel ID or display name: aliases are only ever user-confirmed, never inferred from
 name similarity, case or pixels. An image without header names needs no evidence. The same header
 name MAY be evidence for different channels (fluorophores are reused across acquisitions).
+The rule is the same in a fast-mode file (§4.3a), where the list it is checked against is the
+experiment list and a failure is `R_FAST_LAYOUT_CONTRADICTION` (§8).
+
+### 4.3a `channel_layout`: fast mode (owner decisions FC1-FC4, ADR 0006)
+
+| Key | Type | Req | Rule |
+|---|---|---|---|
+| `channels` | array of channel IDs | yes | ≥ 1 entry; ordered: entry *i* is source channel C*i* of every unit that follows it; the rules of a unit's `channels` (§4.4): every entry declared (`E_UNKNOWN_CHANNEL`), no repeats (`E_DUPLICATE_CHANNEL_IN_UNIT`), NFC (`E_ID_NOT_NFC`), the RGB rules of §4.4b (`E_RGB_UNIT_CHANNELS`, `E_RGB_TOKEN_MISUSE`) |
+| `image_type` | text | no | Only `rgb` (`E_ENUM`); absent = an ordinary channel image; the rules of §4.4b |
+| `confirmed_on` | date | yes | Date of the user's statement; a user fact with the rules of §4.4a (never defaulted, inferred or refreshed) |
+
+- **The table is the user's statement (FC2).** A file with `channel_layout` is a fast-mode file. It
+  states: *every imaging unit whose `channels_from` is `experiment` has these channels, in this
+  order, of this image type.* The user makes it once, by tagging one unit (its order is the list,
+  its header names are confirmed as `header_names` entries). It is never written by a reader, never
+  inferred from header names, file names, pixels, a template or another description, and a reader
+  supplies no default for it.
+- **Absent = strict per-unit.** A file without the table is a strict per-unit file: every unit's
+  list was confirmed per unit (§4.4). This is the meaning of every file written before ADR 0006.
+- **Default (FC1).** The preprocessing notebook and the one-command CLI path of `describe` write a
+  **new** description in fast mode by default; the strict per-unit mode stays available. The default
+  is the writer's, never the reader's, and it never converts a published strict file (§10). Flag and
+  button names are preprocessing's.
+- **Materialised.** Every unit still carries its full `channels` list (and `image_type`), so a
+  reader that resolves channels per unit needs no change. A unit with `channels_from = "experiment"`
+  MUST list exactly `channel_layout.channels` with the same `image_type`, both absent or both `rgb`
+  (`E_FAST_LAYOUT_MISMATCH`).
+- **Every unit says how its list was confirmed** (`channels_from`, §4.4): required on every unit of a
+  fast-mode file (`E_MISSING_FIELD`), not allowed in a strict file (`E_FAST_MARKER_WITHOUT_LAYOUT`).
+  `experiment`: the unit follows the experiment list and is accepted by the header evidence of each
+  image, with no per-unit confirmation (FC3; §8, fast-mode checks). `unit`: the user tagged the unit
+  on its own (FC4); its list may be any list, the experiment's included, and it is checked as in a
+  strict file.
+- **Not in the table.** `header_names` stay on the channels (§4.3), so a saved alias is evidence in
+  every unit. `rgb_header_override` stays a per-unit declaration (§4.4b); in the table it is
+  `E_UNKNOWN_FIELD`.
+- **Images without header names** (or an empty name at C*i*) need no evidence there (§4.3) and follow
+  the list (FC3, "the one tagged unit's order"); their channel count and image type are still
+  checked (§8).
 
 ### 4.4 `repeats.<canonical repeat ID>`
 
@@ -272,6 +323,7 @@ condition; at most one per condition per repeat, guaranteed by TOML key uniquene
 | `source_folder` | text | yes | Exact technical-repeat folder label as read from disk, or `single` when the member has no such folder level (Label rules, NFC); a source value, **not an identity key**; not restricted by the reserved or forbidden names (§4.6a) |
 | `display_name` | non-empty text | no | Display only (§4.8); MAY be the folder label |
 | `channels` | array of channel IDs | yes | ≥ 1 entry; ordered: entry *i* is source channel C*i*; every entry declared (`E_UNKNOWN_CHANNEL`); no repeats (`E_DUPLICATE_CHANNEL_IN_UNIT`) |
+| `channels_from` | text | in a fast-mode file: yes; else not allowed | `experiment` or `unit` (`E_ENUM`: exact, lower case): how the unit's list was confirmed (§4.3a). Required on every unit of a file with `channel_layout` (`E_MISSING_FIELD`); in a file without it `E_FAST_MARKER_WITHOUT_LAYOUT`. `experiment`: `channels` and `image_type` equal `channel_layout`'s (`E_FAST_LAYOUT_MISMATCH`) |
 | `image_type` | text | no | Only the value `rgb` (`E_ENUM`: exact, lower case); absent = an ordinary channel image. User-declared, never inferred (§4.4b) |
 | `rgb_header_override` | boolean | no (default `false`) | Only on a unit with `image_type = "rgb"` (`E_RGB_OVERRIDE_WITHOUT_RGB`); `true` accepts a header whose colour interpretation contradicts `rgb` when every image of the unit has exactly three interleaved samples per pixel (§4.4b, amendment RH1) |
 
@@ -334,9 +386,10 @@ accepted, **declared** image type, per imaging unit:
   no other run: a run without a published description is refused with `A_DESCRIPTION_REQUIRED`
   before any capability is checked (ADR 0002 AR10, which supersedes owner decision RC1's clause
   that such runs keep working with a warning).
-- A file MAY hold RGB and non-RGB units; their lists differ, so that layout is heterogeneous
-  (`R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` in Stage 1-2). A unit's `image_type` is part of the
-  `repeats` section digest (§9.3).
+- A file MAY hold RGB and non-RGB units (valid, `v29`). A described run with units of different
+  image types is refused with `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` (§8): Stage 3 enabled different
+  channel lists of one image type, not mixed image types, which stay refused until the owner
+  decides otherwise. A unit's `image_type` is part of the `repeats` section digest (§9.3).
 
 **§4.4a `confirmed_on` is a user fact.** It is the calendar date of the user's confirmation
 action. A writer MUST NOT default, infer or refresh it (not from the write time, the read time,
@@ -722,17 +775,19 @@ for NFC only (phase 4) before it is resolved (phase 5).
 | 4 Identity | `E_ID_TEXT` | Label rule violated |
 | 4 | `E_ID_SYNTAX` | Token regular expression violated |
 | 4 | `E_ID_RESERVED` | Name on the reserved list of §3.2 (channel and mask IDs, and entries of `used_ids.channels`, §4.9), or a mask ID with an `in` part |
-| 4 | `E_ID_NOT_NFC` | An identity (key, reference, source repeat, `source_folder`, unit `channels` or `source_channels` entry, `used_ids` entry) is not Unicode NFC; never normalized |
+| 4 | `E_ID_NOT_NFC` | An identity (key, reference, source repeat, `source_folder`, unit `channels`, `channel_layout.channels` or `source_channels` entry, `used_ids` entry) is not Unicode NFC; never normalized |
 | 4 | `E_ID_CASE_COLLISION` | Two identities of one scope equal ignoring case (`used_ids` entries share the scope of their kind; source folders have their own scopes, §3.3) |
 | 4 | `E_SINGLE_MISUSE` | `single` in another case or not alone, or a technical repeat ID or condition ID `single` whose `source_folder` is not `single` (or the reverse) |
 | 5 Semantics | `E_UNKNOWN_CONDITION` | Member key is not a declared condition ID |
-| 5 | `E_UNKNOWN_CHANNEL` | Unit or `source_channels` names an undeclared channel ID |
-| 5 | `E_DUPLICATE_CHANNEL_IN_UNIT` | A channel twice in one unit |
+| 5 | `E_UNKNOWN_CHANNEL` | Unit, `channel_layout` or `source_channels` names an undeclared channel ID |
+| 5 | `E_DUPLICATE_CHANNEL_IN_UNIT` | A channel twice in one unit, or twice in `channel_layout.channels` |
 | 5 | `E_DUPLICATE_VALUE` | Duplicate in `header_names` (equal after NFC), `source_channels` or a `used_ids` list |
-| 5 | `E_RGB_UNIT_CHANNELS` | A unit with `image_type = "rgb"` whose `channels` is not exactly `["R", "G", "B"]` (§4.4b) |
-| 5 | `E_RGB_TOKEN_MISUSE` | A unit without `image_type = "rgb"` lists a channel whose case-folded ID is `r`, `g` or `b` (§4.4b) |
+| 5 | `E_RGB_UNIT_CHANNELS` | A unit (or `channel_layout`) with `image_type = "rgb"` whose `channels` is not exactly `["R", "G", "B"]` (§4.4b) |
+| 5 | `E_RGB_TOKEN_MISUSE` | A unit (or `channel_layout`) without `image_type = "rgb"` lists a channel whose case-folded ID is `r`, `g` or `b` (§4.4b) |
 | 5 | `E_RGB_ALIAS` | A channel whose case-folded ID is `r`, `g` or `b` has non-empty `header_names` (§4.4b) |
 | 5 | `E_RGB_OVERRIDE_WITHOUT_RGB` | A unit declares `rgb_header_override` without `image_type = "rgb"` (§4.4b, RH1) |
+| 5 | `E_FAST_LAYOUT_MISMATCH` | A unit with `channels_from = "experiment"` whose `channels` or `image_type` differs from `channel_layout`'s (§4.3a) |
+| 5 | `E_FAST_MARKER_WITHOUT_LAYOUT` | A unit declares `channels_from` in a file without `channel_layout` (§4.3a) |
 | 5 | `E_DISPLAY_NAME_COLLISION` | Two display names of one kind equal after NFC and case folding (§4.8) |
 | 5 | `E_USED_ID_MISSING` | A declared condition, channel, repeat or technical repeat ID is not in `used_ids` (§4.9) |
 | 5 | `E_SOURCE_FOLDER_REUSED` | One `source_folder` on two condition IDs, or on two technical repeat IDs (§4.6a) |
@@ -768,6 +823,14 @@ validation: a reader MUST NOT try to interpret fields of a version it does not s
   `rgb_header_override` (§4.4b) is an amendment of version 1, not a new version: every file valid
   before it stays valid with the same meaning (the key is absent there, which means `false`), and a
   reader pinned to an earlier Spec commit refuses the key as unknown, never misreads it.
+- **Amendment of v1 (owner decisions FC1-FC4, 16 November 2026, ADR 0006).** Adding the optional
+  top-level table `channel_layout` and the unit key `channels_from` (§4.3a) is an amendment of
+  version 1, not a new version: every file valid before stays valid with the same meaning (the table
+  is absent there, which means strict per-unit), and a reader pinned to an earlier Spec commit
+  refuses either key as unknown, never misreads it. Fast mode is the default of **writers** for a new
+  description (FC1), never of readers, so no field changes meaning. Under ADR 0002 AR10 nothing is
+  converted: a published strict file stays strict until the user adopts fast mode (§10), and strict
+  per-unit is a mode the owner kept, not compatibility code.
 - A migration between versions MUST be an explicit, recorded operation that writes a new file and
   never changes canonical identities silently.
 - **Repeat, condition, technical repeat and channel IDs are immutable** (§4.6) and never reused
@@ -803,7 +866,7 @@ Required preprocessing refusals (`R_*`):
 | `R_CONFIRMED_ID_CHANGED` | A confirmed ID was changed, or a declared ID names a changed entity (something it held was removed or reassigned, a `source_folder` included; adding is not a change), without a recorded re-confirmation (§4.6) |
 | `R_USED_ID_REUSED` | A candidate declares an ID that `used_ids` lists as retired (§4.9) |
 | `R_USED_ID_DROPPED` | A candidate omits an ID listed in `used_ids` of the file it replaces (§4.9) |
-| `R_CONFIRMED_ON_CHANGED` | `confirmed_on` of a repeat whose confirmation was not reopened differs from the published file (§4.4a) |
+| `R_CONFIRMED_ON_CHANGED` | `confirmed_on` of a repeat whose confirmation was not reopened differs from the published file (§4.4a), or `channel_layout.confirmed_on` changed while the table's `channels` and `image_type` did not (§4.3a, §10) |
 | `R_RECORDS_FILE_INVALID` | `morphobricks.records.jsonl` breaks the encoding, key set or value rules of §4.6; reasons `E_RECORDS_ENCODING`, `E_RECORDS_NO_FINAL_LF`, `E_RECORDS_NOT_JSON_OBJECT`, `E_RECORDS_UNKNOWN_TYPE`, `E_RECORDS_KEY_SET`, `E_RECORDS_KEY_ORDER`, `E_RECORDS_NON_ASCII_ESCAPED`, `E_RECORDS_VALUE`, `E_RECORDS_FORM` |
 | `R_PUBLISHED_FILE_CHANGED` | The SHA-256 of the published file at publication differs from the draft's recorded base (§10) |
 | `R_DRAFT_BASE_MISSING` | A draft has no recorded base SHA-256 (§10) |
@@ -815,7 +878,8 @@ Required preprocessing refusals (`R_*`):
 | `R_HEADER_CONTRADICTION` | A header name at C*i* is not, after NFC of both sides and with no trimming (§4.3), in the confirmed `header_names` of the unit's channel at *i* |
 | `R_IMAGE_TYPE_CONTRADICTS_HEADER` | A unit's declared image type (`rgb` or absent, §4.4b) contradicts the image header metadata, in either direction, and is not an accepted `rgb_header_override` (RH1); pixels are never examined; for a unit declared `rgb` the message names `rgb_header_override` when its images have three interleaved samples |
 | `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` | A unit declares `rgb_header_override = true` and one of its images does not have exactly three interleaved samples per pixel (§4.4b, RH1); pixels are never examined |
-| `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` | Stage 1–2 only: the units do not all have the same ordered list; names the units; lifted at Stage 3 |
+| `R_FAST_LAYOUT_CONTRADICTION` | Images of units with `channels_from = "experiment"` contradict `channel_layout` (§4.3a): a different image type (effective, after a valid RH1 override), a different channel count, header names in another order, or other header names (the §4.3 rule: NFC of both sides, no trimming). Checked from header metadata before any pixel is read; one refusal lists **every** contradicting image (FOV key, path) with **every** contradiction found in it (kind, C index, expected and found) and names the fix: tag those units on their own (`channels_from = "unit"`), then re-run. Nothing is reordered or guessed (ADR 0006) |
+| `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` | The units declare **different image types**: some `image_type = "rgb"`, some without it (`v29`); decided from the description alone, after preflight has read and bound the image headers and before any header check or pixel read; it is then the only issue reported (no header check follows); the issue's details and action name every unit with its layout; nothing processed. Units of one image type with different ordered channel lists (`v04`, `v05`, `v06`, `v17`) are **not** refused: since Stage 3 they are processed and each image is checked against its own unit (`R_UNIT_NOT_HOMOGENEOUS`, `R_CHANNEL_COUNT_MISMATCH`, `R_HEADER_CONTRADICTION`) (owner decision of 11 November 2026, roadmap S3.3; recorded in preprocessing `docs/plan.md` item 79 and `src/morphobricks_preprocessing/description_layouts.py` L1-12 at `ce650e3`). In Stages 1-2 this code refused any two different ordered lists. Lifting it for mixed image types needs a further owner decision |
 | `R_MASK_TYPE_NOT_DECLARED` | A discovered mask type has no `masks` entry |
 | `R_MASK_TYPE_NAME_INVALID` | A discovered mask type name breaks the Label rules (for example `NA`, ` cells`), so it cannot be a `source_type`; refused at discovery (AQ11) |
 | `R_MASK_CONTRADICTS_REPRESENTATION` | A file of a mask declared `binary` is stored as floats, or holds, over all its planes, two or more distinct positive values or a negative value (a `binary` file is integer or boolean and holds values in {0, v} for one v > 0; all-zero and all-foreground files are accepted, §4.5); raised by the mask step on each new batch, not at publication (§4.5a) |
@@ -826,15 +890,49 @@ are detected before channel identity is checked. In a unit that declares `rgb_he
 `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` is reported before `R_UNIT_NOT_HOMOGENEOUS`: it names the image
 that breaks the override's condition (owner answer of 14 November 2026).
 
+**Fast-mode checks (owner decisions FC3, FC4; ADR 0006).** For every unit with
+`channels_from = "experiment"`, preprocessing compares every included image with `channel_layout`
+from header metadata only (the channel count and channel names the format states, its colour
+interpretation and samples per pixel), before any pixel of any image is read and before anything is
+processed or published. Each image is checked for every kind that can be checked on it, and all that
+apply are reported for it: `image_type` (the test of
+`R_IMAGE_TYPE_CONTRADICTS_HEADER` against `channel_layout.image_type`, on the unit's effective type);
+`channel_count`; `header_order` (a non-empty name at C*i* fails the §4.3 rule for the list's channel
+at *i* and every such name is evidence for another channel of the list); `header_names` (some name is
+evidence for no channel of the list). `image_type` and `channel_count` are checked on every image;
+the two header kinds exclude each other and are checked at every index both the image and the list
+have, so a different count does not hide them. An image without header names, or with an empty name
+at C*i*, needs no evidence there. The run manifest records, per image of a fast unit
+(`fast_layout_images`, ADR 0006), `header_verified` and, per index of the list, the name as read and
+its `evidence`, `header` or `statement`; an image is header-verified only when every index is. Two images of one fast unit whose names at C*i*
+are different confirmed aliases of the same channel are both accepted. Every contradiction over all
+fast units is reported together as one `R_FAST_LAYOUT_CONTRADICTION`. In a unit with
+`channels_from = "experiment"` it is the only code for channel count, header names and image type: it
+replaces `R_CHANNEL_COUNT_MISMATCH`, `R_HEADER_CONTRADICTION`, `R_IMAGE_TYPE_CONTRADICTS_HEADER` and
+those parts of `R_UNIT_NOT_HOMOGENEOUS`, which stays for interpreted axes;
+`R_RGB_OVERRIDE_NOT_THREE_SAMPLES` keeps its priority and its image is not listed twice. For an
+image with three interleaved samples whose header contradicts `rgb`, the message also names
+`rgb_header_override` for its unit. A unit with `channels_from = "unit"` is checked as in a strict
+file, with the codes and precedence above.
+
 Undetectable by any layer: identical-shape, unnamed images with physically swapped fluorophores.
 Representative previews and explicit confirmation are the guard; image-based checks are advisory.
 
 Required analysis-layer refusals (`A_*`): `A_SCOPE_INCOMPLETE` (a requested canonical channel or
 mask is absent from part of the requested scope, **or from all of it**: one rule, one code, no
 separate code for "no image has it" (owner decision SI1); the refusal names the channel or mask and
-the images that lack it, as "present in k of n acquisitions" (`k` may be 0); refuse unless the user
+the images that lack it, as "present in k of n images" (`n` = the images in the requested scope,
+`k` may be 0); refuse unless the user
 selects and records an eligible subset; never drop FOVs, impute, re-weight technical repeats or
-change biological N);
+change biological N. *Amended 17 November 2026 ([ADR 0002](adr/0002-shared-request-resolver.md)
+AR12, resolver contract version 4):* the subset is the request's explicit `fov_subset`, a list of
+FOV keys (§3.4) the user chose, never positions and never inferred from channel or mask presence;
+the scope, the counts `k` and `n` and the per-repeat classification are those of the chosen images,
+so a subset without the images that lack a requested channel or mask is complete; a key the run does
+not have is `A_FOV_NOT_IN_RUN` (a resolver-contract code); every consumer records the chosen and
+excluded images and the per-repeat counts (`fov_scope`), also when no subset was given (`all`). A
+subset may leave out images or whole repeats only as that record shows: the bricks drop nothing
+else);
 `A_MASK_NOT_INSTANCES` (a `binary` mask requested as an object set without the explicit recorded per-request conversion of §4.5c, or a `parent_labels` mask requested as an object set, with or without `parent_labels_support`, §4.5b); `A_MASK_UNCHECKED` (a run uses a mask file whose representation check is `not yet checked`, §4.5a); `A_RGB_NOT_SUPPORTED` (a request on a described run includes the channels of an RGB unit, §4.4b, for a brick whose manifest does not declare `rgb_support = true`, or that does not declare it at all); `A_DRAFT_REFUSED` (§10: `RunInputs` given a draft or an unconfirmed file). Each biological repeat is
 classified **fully represented**, **partially represented** or **unavailable** per request and
 recorded in the run manifest. Consumers resolve channels by canonical ID per unit, never by C
@@ -846,13 +944,19 @@ in every key.
 ### 9.1 Canonical serialization (writers)
 
 Writers MUST produce deterministic bytes: UTF-8, no BOM, LF, a final newline, no comments.
-Order: `schema`, `schema_version`, then `conditions`, `channels`, `repeats`, `masks` (an empty
+Order: `schema`, `schema_version`, then `conditions`, `channels`, `channel_layout` (when present,
+§4.3a), `repeats`, `masks` (an empty
 optional table is omitted), `used_ids` (kinds in the order `conditions`, `channels`, `repeats`,
 `technical_repeats`; each array sorted in code point order, inline); identities are NFC. Entries of each table sorted by key in code
 point order; fields in the order of §4; each table as a standard `[header]`; arrays inline;
-`header_names`, `source_channels` and `used_ids` arrays sorted, unit `channels` in declared order; keys bare when
+`header_names`, `source_channels` and `used_ids` arrays sorted, unit and `channel_layout` `channels` in declared order; keys bare when
 they match `[A-Za-z0-9_-]+`, else basic quoted strings; strings as TOML basic strings with the
 minimal escapes.
+
+A writer MUST validate the whole candidate model against §6 (every phase) before writing. When any
+`E_*` applies it writes nothing (no file, no partial bytes) and reports every error with its path;
+for example a fast-mode model whose unit marked `experiment` lists another order is refused
+(`E_FAST_LAYOUT_MISMATCH`, `i142`; ADR 0006).
 
 ### 9.2 Round trip
 
@@ -872,9 +976,12 @@ before or after; a section with no tables (no `masks`) is the SHA-256 of the emp
 `source_folder` is part of the `conditions` and
 `repeats` digests (it fixes which folder an ID names; a reassignment changes them). Digests are computed with every `display_name`,
 `target` and `treatment_key` omitted (descriptive fields are never cache keys, §4.2a), and
-`used_ids` is not a section: a change to any of them MUST NOT change any digest, a change to `reference` MUST NOT
+`used_ids` is not a section, and `channels_from` is omitted from every digest (it records how a
+unit's list was confirmed, not what it is; ADR 0006): a change to any of them MUST NOT change any digest, a change to `reference` MUST NOT
 invalidate pixel-derived products; a change to a unit's channel list MUST invalidate the products
-that depend on that unit's channels.
+that depend on that unit's channels. `channel_layout` is not a section either: what products
+depend on is each unit's materialised list, so a changed experiment list changes the `repeats`
+digest through those lists, and adopting or giving up fast mode with unchanged lists changes none.
 
 Provenance from lab tools (for example LabChronicle: repository URL, commit SHA, experiment path
 and per-repeat lab-tool repeat codes) is an optional, user-supplied preprocessing input recorded
@@ -929,6 +1036,22 @@ silently; edits go to a separate draft and are published atomically after valida
   confirmation, which for an existing ID is a reassignment (§4.6). A published `source_folder`
   with no folder on disk is a removed folder, removed only on user confirmation like a removed
   member.
+- **Fast mode (ADR 0006).** New FOVs in a unit with `channels_from = "experiment"` are checked
+  against `channel_layout` (§8, fast-mode checks) at every reconciliation and run: those that satisfy
+  it reopen nothing (D6) and are reported and recorded; any that contradict it refuse publication and
+  the run with `R_FAST_LAYOUT_CONTRADICTION` naming them. A new unit discovered under a fast-mode
+  file is drafted with `channels_from = "experiment"` and the materialised list, is pending like any
+  new unit (its grouping confirmed by the user, its repeat reopened), and its images are checked the
+  same way. A draft never sets `channels_from = "unit"` on its own.
+- **Switching modes is a user action.** Adopting fast mode on a published strict file, giving it up
+  (the table and every `channels_from` removed, each unit's list then confirmed per unit by the
+  user), or moving a unit between `experiment` and `unit` is published as a new file on the user's
+  action; no reader or reconciliation switches on its own, and a strict file is never converted.
+  `channels_from` is not part of the confirmed layout: a switch alone reopens no repeat (a new
+  `confirmed_on` beside it is `R_CONFIRMED_ON_CHANGED`). A change of `channel_layout.channels` or
+  `image_type` changes the list of every unit that follows it and reopens those repeats; positions
+  that move are a changed entity (§4.6). `channel_layout.confirmed_on` is kept byte-identical unless
+  the table's `channels` or `image_type` change (`R_CONFIRMED_ON_CHANGED`, §4.4a).
 - A conflicting unit (`R_*`) blocks publication; no per-FOV exception is created.
 
 ## 11. Derived `experiment_design.csv` (compatibility output)

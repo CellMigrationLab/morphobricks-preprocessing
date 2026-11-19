@@ -45,12 +45,16 @@ FORBIDDEN = {
     "control", "roles", "experiment", "source_index", "channel_count", "retired_repeats",
     "replaced_by", "labchronicle", "provenance", "source_database",
 }
-TOP = ("schema", "schema_version", "conditions", "channels", "repeats", "masks", "used_ids")
+TOP = ("schema", "schema_version", "conditions", "channels", "channel_layout", "repeats", "masks",
+       "used_ids")
 COND = ("source_folder", "display_name", "reference", "target", "treatment_key")
 CHAN = ("display_name", "header_names")
 REP = ("display_name", "confirmed", "confirmed_on", "members")
 MEM = ("source_repeat", "image_count", "technical_repeats")
-UNIT = ("source_folder", "display_name", "channels", "image_type", "rgb_header_override")
+UNIT = ("source_folder", "display_name", "channels", "channels_from", "image_type",
+        "rgb_header_override")
+LAYOUT = ("channels", "image_type", "confirmed_on")  # fast mode, ADR 0006
+CHANNELS_FROM = ("experiment", "unit")  # ADR 0006
 MASK = ("source_type", "representation", "source_channels", "display_name")
 USED = ("conditions", "channels", "repeats", "technical_repeats")
 REPRESENTATIONS = ("instances", "binary", "parent_labels")  # parent_labels: owner decision PL1
@@ -206,9 +210,50 @@ def _id_table(parent: dict, k: str, path: str, r: Report, required: bool = True,
     return out
 
 
+def _date(tbl: dict, k: str, path: str, r: Report) -> None:
+    if k not in tbl:
+        return
+    v = tbl[k]
+    if not is_text(v):
+        r.e("E_TYPE", kpath(path, k), v)
+        return
+    ok = bool(DATE.fullmatch(v))
+    if ok:
+        try:
+            date.fromisoformat(v)
+        except ValueError:
+            ok = False
+    if not ok:
+        r.e("E_DATE_FORMAT", kpath(path, k), v)
+
+
+def _image_type(tbl: dict, path: str, r: Report) -> None:
+    if "image_type" in tbl:
+        v = tbl["image_type"]
+        if not is_text(v):
+            r.e("E_TYPE", path + ".image_type", v)
+        elif v != "rgb":
+            r.e("E_ENUM", path + ".image_type", v)
+
+
+def fast(doc: dict) -> bool:
+    """True when the file declares the fast-mode experiment channel list (ADR 0006)."""
+    return is_table(doc.get("channel_layout"))
+
+
 def phase3(doc: dict, r: Report) -> None:
     _fields(doc, TOP, "", r)
     _required(doc, ("conditions", "channels", "repeats", "used_ids"), "", r)
+    if "channel_layout" in doc:  # fast mode (ADR 0006)
+        lay = doc["channel_layout"]
+        if not is_table(lay):
+            r.e("E_TYPE", "channel_layout", lay)
+        else:
+            _fields(lay, LAYOUT, "channel_layout", r)
+            _required(lay, ("channels", "confirmed_on"), "channel_layout", r)
+            _text_array(lay, "channels", "channel_layout", r, min1=True)
+            _image_type(lay, "channel_layout", r)
+            _date(lay, "confirmed_on", "channel_layout", r)
     for cid, c in _id_table(doc, "conditions", "", r):
         p = kpath("conditions", cid)
         _fields(c, COND, p, r)
@@ -233,19 +278,7 @@ def phase3(doc: dict, r: Report) -> None:
                 r.e("E_TYPE", p + ".confirmed", rep["confirmed"])
             elif rep["confirmed"] is not True:
                 r.e("E_REPEAT_UNCONFIRMED", p + ".confirmed", False)
-        if "confirmed_on" in rep:
-            v = rep["confirmed_on"]
-            if not is_text(v):
-                r.e("E_TYPE", p + ".confirmed_on", v)
-            else:
-                ok = bool(DATE.fullmatch(v))
-                if ok:
-                    try:
-                        date.fromisoformat(v)
-                    except ValueError:
-                        ok = False
-                if not ok:
-                    r.e("E_DATE_FORMAT", p + ".confirmed_on", v)
+        _date(rep, "confirmed_on", p, r)
         for cid, m in _id_table(rep, "members", p, r):
             mp = kpath(p + ".members", cid)
             _fields(m, MEM, mp, r)
@@ -264,12 +297,15 @@ def phase3(doc: dict, r: Report) -> None:
                 _text(u, "source_folder", up, r)
                 _text(u, "display_name", up, r, nonempty=True)
                 _text_array(u, "channels", up, r, min1=True)
-                if "image_type" in u:
-                    v = u["image_type"]
+                if fast(doc) and "channels_from" not in u:
+                    r.e("E_MISSING_FIELD", up + ".channels_from")  # ADR 0006: every unit says
+                if "channels_from" in u:
+                    v = u["channels_from"]
                     if not is_text(v):
-                        r.e("E_TYPE", up + ".image_type", v)
-                    elif v != "rgb":
-                        r.e("E_ENUM", up + ".image_type", v)
+                        r.e("E_TYPE", up + ".channels_from", v)
+                    elif v not in CHANNELS_FROM:
+                        r.e("E_ENUM", up + ".channels_from", v)
+                _image_type(u, up, r)
                 if "rgb_header_override" in u and not isinstance(u["rgb_header_override"], bool):
                     r.e("E_TYPE", up + ".rgb_header_override", u["rgb_header_override"])  # RH1
     for mid, mk in _id_table(doc, "masks", "", r, required=False, min1=False):
@@ -383,6 +419,9 @@ def phase4(doc: dict, r: Report) -> None:
                 r.e("E_SINGLE_MISUSE", up + ".source_folder", u["source_folder"])
             for i, ch in enumerate(u["channels"]):
                 _nfc(ch, f"{up}.channels[{i}]", r)
+    if "channel_layout" in doc:
+        for i, ch in enumerate(doc["channel_layout"]["channels"]):
+            _nfc(ch, f"channel_layout.channels[{i}]", r)
     for cid, lst in cond_members.items():
         if any(s == "single" for s, _ in lst) and len(lst) > 1:
             for s, mp in lst:
@@ -435,8 +474,29 @@ def phase5(doc: dict, r: Report) -> None:
     for rid, cid, m in members(doc):
         if cid not in conds:
             r.e("E_UNKNOWN_CONDITION", kpath(kpath("repeats", rid) + ".members", cid), cid)
+    lay = doc.get("channel_layout")
+    if lay is not None:  # the fast-mode list follows the rules of a unit list (ADR 0006)
+        seen = set()
+        for i, ch in enumerate(lay["channels"]):
+            if ch not in chans:
+                r.e("E_UNKNOWN_CHANNEL", f"channel_layout.channels[{i}]", ch)
+            if ch in seen:
+                r.e("E_DUPLICATE_CHANNEL_IN_UNIT", f"channel_layout.channels[{i}]", ch)
+            seen.add(ch)
+        if lay.get("image_type") == "rgb":
+            if lay["channels"] != ["R", "G", "B"]:
+                r.e("E_RGB_UNIT_CHANNELS", "channel_layout.channels", lay["channels"])
+        else:
+            for i, ch in enumerate(lay["channels"]):
+                if ch.casefold() in ("r", "g", "b"):
+                    r.e("E_RGB_TOKEN_MISUSE", f"channel_layout.channels[{i}]", ch)
     for rid, cid, tid, u in units(doc):
         up = upath(rid, cid, tid)
+        if "channels_from" in u and lay is None:
+            r.e("E_FAST_MARKER_WITHOUT_LAYOUT", up + ".channels_from", u["channels_from"])
+        if lay is not None and u.get("channels_from") == "experiment" and (
+                u["channels"] != lay["channels"] or u.get("image_type") != lay.get("image_type")):
+            r.e("E_FAST_LAYOUT_MISMATCH", up, (u["channels"], u.get("image_type")))
         seen = set()
         for i, ch in enumerate(u["channels"]):
             if ch not in chans:
@@ -585,13 +645,31 @@ def validate(data: bytes) -> tuple[Report, dict | None]:
     if r.errors:
         r.phase = 1
         return r, None
+    return validate_model(doc, r), doc
+
+
+def validate_model(doc: object, r: Report | None = None) -> Report:
+    """Phases 2-5 and the warnings on a parsed document or a writer's candidate model.
+
+    A model that is not a table is ``E_TYPE`` at the root. A rule check that fails on a value of
+    an unexpected shape (``KeyError``, ``TypeError``, ``AttributeError``) is ``E_TYPE`` at
+    ``<model>``: the model is refused, never written.
+    """
+    r = Report() if r is None else r
+    if not is_table(doc):
+        r.e("E_TYPE", "<model>", type(doc).__name__)
+        r.phase = 2
+        return r
     for n, fn in ((2, phase2), (3, phase3), (4, phase4), (5, phase5)):
-        fn(doc, r)
+        try:
+            fn(doc, r)
+        except (KeyError, TypeError, AttributeError) as exc:
+            r.e("E_TYPE", "<model>", f"{type(exc).__name__}: {exc}")
         if r.errors:
             r.phase = n
-            return r, doc
+            return r
     warnings(doc, r)
-    return r, doc
+    return r
 
 
 # ------------------------------------------------------------------ canonical writer (section 9.1)
@@ -665,11 +743,52 @@ def section_lines(doc: dict, sec: str) -> list[str]:
     return out
 
 
+class WriteRefused(ValueError):
+    """The writer refused a model that breaks a rule of section 6; nothing was written."""
+
+    def __init__(self, errors: list[tuple[str, str, object]]) -> None:
+        super().__init__("; ".join(f"{c} at {p}" for c, p, _ in errors))
+        self.errors = errors
+
+
 def write(doc: dict) -> bytes:
-    """Canonical bytes of a valid document (experiment-v1 section 9.1)."""
+    """Canonical bytes of a valid document (experiment-v1 section 9.1).
+
+    The writer validates the candidate model itself (phases 2-5 of section 6, as the reader
+    validates a parsed document) before serialising, and raises :class:`WriteRefused` with every
+    error otherwise (experiment-v1 9.1; ADR 0006, `i142`). Validating only the serialised bytes
+    is not enough: serialisation drops unknown fields and writes what it can of a wrong type.
+    As a second check, the bytes must read back, valid, as the same model.
+    """
+    r = validate_model(doc)
+    if r.errors:
+        raise WriteRefused(r.errors)
+    try:
+        data = canonical_bytes(doc)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise WriteRefused([("E_TYPE", "<model>", f"{type(exc).__name__}: {exc}")]) from exc
+    back, parsed = validate(data)
+    if back.errors:
+        raise WriteRefused(back.errors)
+    if model(parsed) != model(doc):
+        raise WriteRefused([("E_TYPE", "<model>", "the written bytes read back as another model")])
+    return data
+
+
+def write_file(doc: dict, path: Path) -> None:
+    """Write ``doc`` to ``path`` only after :func:`write` accepted it: a refusal writes nothing."""
+    data = write(doc)
+    path.write_bytes(data)
+
+
+def canonical_bytes(doc: dict) -> bytes:
+    """The section 9.1 serialisation of a model, unchecked (the audit matrix serialises invalid
+    models on purpose, to read their codes back with :func:`validate`)."""
     out = [f"schema = {_str(doc['schema'])}", f"schema_version = {doc['schema_version']}", ""]
     for sec in ("conditions", "channels", "repeats", "masks"):
         out += section_lines(doc, sec)
+        if sec == "channels" and "channel_layout" in doc:  # not a section (ADR 0006)
+            out += _block("channel_layout", doc["channel_layout"], LAYOUT)
     out.append("[used_ids]")
     for k in USED:
         out.append(f"{k} = {_val(sorted(doc['used_ids'][k]))}")
@@ -691,11 +810,15 @@ def model(doc):
 
 # ------------------------------------------------------------------ digests (section 9.3)
 DESCRIPTIVE = {"display_name", "target", "treatment_key"}
+#: Omitted from every digest and from the layout compared for N35 reopening: how a unit's list
+#: was confirmed, never what it is (ADR 0006).
+CONFIRMATION_PROVENANCE = {"channels_from"}
 
 
 def _strip(x):
     if is_table(x):
-        return {k: _strip(v) for k, v in x.items() if k not in DESCRIPTIVE}
+        return {k: _strip(v) for k, v in x.items()
+                if k not in DESCRIPTIVE and k not in CONFIRMATION_PROVENANCE}
     if type(x) is list:
         return [_strip(v) for v in x]
     return x
@@ -833,11 +956,28 @@ def transition(old: dict, new: dict) -> set[str]:
         o, n = old["repeats"][rid], new["repeats"][rid]
         if layout(o) == layout(n) and o["confirmed_on"] != n["confirmed_on"]:
             codes.add("R_CONFIRMED_ON_CHANGED")
+    # confirmed_on of the fast-mode statement whose list and image type are unchanged (ADR 0006)
+    ol, nl = old.get("channel_layout"), new.get("channel_layout")
+    if ol is not None and nl is not None and ol["confirmed_on"] != nl["confirmed_on"] and \
+            (ol["channels"], ol.get("image_type")) == (nl["channels"], nl.get("image_type")):
+        codes.add("R_CONFIRMED_ON_CHANGED")
     return codes
 
 
 # ------------------------------------------------------------------ fixture catalogue
 CODE = re.compile(r"\b([EWR]_[A-Z_]+)\b")
+
+
+PATHS = re.compile(rb"^# Paths: (.+)$", re.M)
+
+
+def expected_paths(data: bytes) -> set[tuple[str, str]] | None:
+    """The exact error paths an invalid fixture states in its ``# Paths:`` header line, as
+    ``CODE path`` pairs separated by ``; ``; None when the fixture states none."""
+    m = PATHS.search(data)  # bytes: some invalid fixtures are not UTF-8
+    if m is None:
+        return None
+    return {tuple(item.split(" ", 1)) for item in m.group(1).decode("utf-8").split("; ")}
 
 
 def run_fixtures(root: Path) -> int:
@@ -866,6 +1006,12 @@ def run_fixtures(root: Path) -> int:
                 ok = r.codes == exp and not r.warnings and str(r.phase) == row[2]
                 got = f"phase={r.phase} {sorted(r.codes)}"
                 want = f"phase={row[2]} {sorted(exp)}"
+                paths = expected_paths(data)  # exact (code, path) pairs, when the file states them
+                if paths is not None:
+                    found = {(c, p) for c, p, _ in r.errors}
+                    ok = ok and found == paths
+                    got += f" paths={sorted(found)}"
+                    want += f" paths={sorted(paths)}"
             else:
                 cell = row[1] if sub == "valid" else row[2]
                 expw = {c for c in CODE.findall(cell) if c.startswith("W_")}
@@ -913,6 +1059,11 @@ def run_fixtures(root: Path) -> int:
         if section_digests(docs[k]) != section_digests(docs["v01"]):
             bad += 1
             print(f"MISMATCH {k} digests != v01")
+    # adopting fast mode changes no digest: `channels_from` is omitted, `channel_layout` is not a
+    # section (ADR 0006)
+    if "t16" in docs and section_digests(docs["t16"]) != section_digests(docs["v01"]):
+        bad += 1
+        print("MISMATCH t16 digests != v01")
     n_records, bad_records = refrecords.run_fixtures(root)  # the records goldens (section 4.6)
     bad += bad_records
     counts["records"] = n_records

@@ -14,9 +14,11 @@ from dataclasses import dataclass
 from datetime import date
 
 from .description import USED_KINDS, Description
-from .description_rules import Refusal
+from .description_rules import CHANNEL_LAYOUT, Refusal
 
 CONDITIONS, CHANNELS, REPEATS, TECHNICAL = USED_KINDS
+LAYOUT_KIND = CHANNEL_LAYOUT
+"""The ``kind`` of the one refusal about ``channel_layout`` itself (its ``confirmed_on``)."""
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
@@ -231,6 +233,21 @@ def _dates(old: Description, new: Description) -> list[TransitionIssue]:
     ]
 
 
+def _layout_date(old: Description, new: Description) -> list[TransitionIssue]:
+    """Section 4.3a, ADR 0006: the fast-mode statement's date is kept unless it changes.
+
+    ``channel_layout.confirmed_on`` is a user fact: it may change only together with the
+    table's ``channels`` or ``image_type``. Adopting or giving up fast mode compares nothing
+    here (one of the two files has no table).
+    """
+    before, after = old.channel_layout, new.channel_layout
+    if before is None or after is None or before.confirmed_on == after.confirmed_on:
+        return []
+    if (before.channels, before.image_type) != (after.channels, after.image_type):
+        return []
+    return [TransitionIssue(Refusal.R_CONFIRMED_ON_CHANGED, LAYOUT_KIND, "confirmed_on")]
+
+
 def transition_issues(old: Description, new: Description) -> tuple[TransitionIssue, ...]:
     """Return every refusal that applies to ``new`` offered over the published ``old``.
 
@@ -239,6 +256,7 @@ def transition_issues(old: Description, new: Description) -> tuple[TransitionIss
     is considered: the changed-entity refusals are accepted by :func:`unwaived`.
     """
     found = _used(old, new) + _renamed(old, new) + _lost(old, new) + _dates(old, new)
+    found += _layout_date(old, new)
     return tuple(sorted(set(found)))
 
 

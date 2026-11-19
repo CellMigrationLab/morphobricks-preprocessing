@@ -37,6 +37,7 @@ TABLES = {
     "4.1": (0, rules.TOP),
     "4.2": (0, rules.CONDITION),
     "4.3": (0, rules.CHANNEL),
+    "4.3a": (0, rules.LAYOUT),
     "4.4": (0, rules.REPEAT),
     "4.4 members": (1, rules.MEMBER),
     "4.4 units": (2, rules.UNIT),

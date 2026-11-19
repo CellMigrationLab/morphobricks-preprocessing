@@ -1,18 +1,20 @@
 """The canonical writer of ``morphobricks.toml`` and its section digests (experiment-v1 section 9).
 
 Writers produce deterministic bytes: UTF-8, no byte-order mark, LF, a final newline, no
-comments. Order: ``schema``, ``schema_version``, ``conditions``, ``channels``, ``repeats``,
-``masks`` (omitted when empty), ``used_ids``; entries of each table sorted by key in code point
-order; fields in the order of the Spec's tables (``description_rules``); every table a
-standard ``[header]``; arrays inline; keys bare when they match ``[A-Za-z0-9_-]+``, else
-basic quoted strings; strings basic strings with the minimal escapes. Nothing is normalized,
+comments. Order: ``schema``, ``schema_version``, ``conditions``, ``channels``,
+``channel_layout`` (fast mode only, ADR 0006), ``repeats``, ``masks`` (omitted when empty),
+``used_ids``; entries of each table sorted by key in code point order; fields in the order of
+the Spec's tables (``description_rules``); every table a standard ``[header]``; arrays inline;
+keys bare when they match ``[A-Za-z0-9_-]+``, else basic quoted strings; strings basic strings
+with the minimal escapes. Nothing is normalized,
 defaulted or added: ``confirmed_on`` is written as the model holds it (section 4.4a).
 
 A section digest is the SHA-256 of that section's tables written as above, with every
-``display_name``, ``target`` and ``treatment_key`` omitted (section 9.3). ``used_ids`` is not a
-section. Section 9.3 does not define the byte form of a section alone: here it is exactly the
-text the file holds for the section (its table blocks, each followed by a blank line), nothing
-else; an empty section is the empty byte string.
+``display_name``, ``target`` and ``treatment_key`` omitted (section 9.3), and with
+``channels_from`` omitted too (it records how a unit's list was confirmed, not what it is; ADR
+0006). ``used_ids`` and ``channel_layout`` are not sections. The bytes of a section are
+exactly the text the file holds for it (its table blocks, each followed by a blank line),
+nothing else; an empty section is the empty byte string.
 """
 
 from __future__ import annotations
@@ -22,11 +24,23 @@ import re
 from collections.abc import Callable, Iterable, Mapping
 
 from .description import USED_KINDS, Description
-from .description_rules import CHANNEL, CONDITION, MASK, MEMBER, REPEAT, UNIT
+from .description_rules import (
+    CHANNEL,
+    CHANNEL_LAYOUT,
+    CHANNELS_FROM,
+    CONDITION,
+    LAYOUT,
+    MASK,
+    MEMBER,
+    REPEAT,
+    UNIT,
+)
 
 BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
 DESCRIPTIVE = frozenset({"display_name", "target", "treatment_key"})
 """The fields no digest covers (experiment-v1 sections 4.2a and 9.3)."""
+UNDIGESTED = DESCRIPTIVE | {CHANNELS_FROM}
+"""Also omitted from every digest: confirmation provenance, never what a list is (ADR 0006)."""
 UNORDERED = frozenset({"header_names", "source_channels"})
 """Arrays whose order is not semantic: always written sorted (section 9.1)."""
 SECTIONS = ("conditions", "channels", "repeats", "masks")
@@ -79,7 +93,7 @@ def _block(header: str, item: object, order: Iterable[str], *, descriptive: bool
         value = getattr(item, name, None)
         if value is None or isinstance(value, Mapping):  # a table is its own block
             continue
-        if not descriptive and name in DESCRIPTIVE:
+        if not descriptive and name in UNDIGESTED:
             continue
         if name in UNORDERED:
             value = sorted(value)
@@ -148,6 +162,10 @@ def canonical_bytes(description: Description) -> bytes:
     ]
     for name in SECTIONS:
         lines += _section(name, description, True)
+        if name == "channels" and description.channel_layout is not None:
+            lines += _block(
+                CHANNEL_LAYOUT, description.channel_layout, LAYOUT.fields, descriptive=True
+            )
     lines.append("[used_ids]")
     for kind in USED_KINDS:
         lines.append(f"{kind} = {toml_value(sorted(description.used_ids[kind]))}")

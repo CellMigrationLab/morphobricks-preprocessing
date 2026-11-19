@@ -12,12 +12,18 @@ their section.
   (none unless stated).
 - For every file in `invalid/` it MUST report exactly the listed **set** of error codes, all from
   the first failing validation phase (experiment-v1 §6), and nothing from later phases.
+  A file whose header has a `# Paths:` line (`CODE path` pairs separated by `; `; the fast-mode
+  fixtures `i142`-`i151`, ADR 0006) states its exact error paths too: the fixture oracle
+  (`refval.py fixtures`) asserts that exact set of (code, path) pairs, not only the codes.
 - "Homogeneous: **no**" marks a valid file whose units have different ordered channel lists. The
-  spec accepts it; the Stage 1-2 runtime MUST refuse to process it with
-  `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED` (lifted at Stage 3).
+  spec accepts it. The Stage 1-2 runtime refused to process it with
+  `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`. Since Stage 3 (owner decision of 11 November 2026, roadmap
+  S3.3) the runtime processes different lists of one image type, checked per unit, and MUST still
+  refuse a file whose units have **different image types** (`v29`: RGB beside channel units) with
+  that code (experiment-v1 §8; conformance plan P04).
 - Physical cases that need images (within-unit divergence, header contradictions, mask pixel
   contradictions, reconciliation) cannot be expressed by a TOML file alone; they are listed as
-  scenarios P01-P35 in the [conformance plan](../docs/conformance-plan.md#3-physical-scenarios-preprocessing-owned),
+  scenarios P01-P40 in the [conformance plan](../docs/conformance-plan.md#3-physical-scenarios-preprocessing-owned),
   built on the valid files below.
 - `v18` MUST parse to the same model as `v01` (round trip); `v21` differs from `v01` only in
   `display_name`, `target` and `treatment_key` values and `v16` only in `display_name` values, so
@@ -29,7 +35,7 @@ their section.
   fixtures that do not exercise the rule it equals the ID (the key), `single` for `single`;
   `v33`, `v34` and `t10`-`t12` separate the two. The eight undecodable
   or unparsable phase-1 fixtures (`i01`-`i08`) are unchanged and fail before it matters.
-- `transitions/` holds fifteen files that are valid alone and are checked against a named published
+- `transitions/` holds twenty files that are valid alone and are checked against a named published
   predecessor: refused with an exact set of publication codes (`R_CONFIRMED_ID_CHANGED`,
   `R_USED_ID_REUSED`, `R_USED_ID_DROPPED`, `R_CONFIRMED_ON_CHANGED`; experiment-v1 §4.4a, §4.6,
   §4.9; a changed or reassigned `source_folder` counts, §4.6a) or, for `t06`, **accepted** (adding members is not a changed entity, §4.6). They need the
@@ -54,6 +60,14 @@ their section.
   image checks (three interleaved samples, the manifest record) are scenario P36 of the conformance plan.
   The owner's answers of 14 November 2026 (the key is part of the confirmed layout) add the transitions
   `t14` and `t15`.
+- **Fast channel layout (16 November 2026, owner decisions FC1-FC4, [ADR 0006](../docs/adr/0006-fast-channel-layout.md)).**
+  Adds `v41`-`v43`, `i142`-`i151` and `t16`-`t20`. A file with the top-level `channel_layout` table
+  is a fast-mode file: one ordered channel list stated once for the experiment, materialised in every
+  unit, and every unit carries `channels_from` (`experiment` or `unit`). A file without the table is
+  a strict per-unit file, as every fixture before `v41`. The image checks (header names against the
+  list, the refusal `R_FAST_LAYOUT_CONTRADICTION` listing every contradicting image, reopen and
+  append) are scenarios P37-P40 of the conformance plan. `t16` has the four section digests of
+  `v01`: adopting fast mode changes no digest.
 
 ## Syntax check (6 November 2026)
 
@@ -75,9 +89,9 @@ adds `v35`, `v36` and `i128`-`i130` for structures the catalogue lacked (a flat 
 biological-repeat folder named like a forbidden key, `single` rules for condition folders and
 members). The owner decisions of 7 November 2026 (ADR 0001, SQ6) add `i131`-`i133` (the
 `single` rules for conditions) and `i134` (a duplicate key inside an inline table); the owner decision of 7 November 2026 on reserved names in `used_ids` (UR1) adds `v37` and `i135`; the owner decision PL1 of 11 November 2026 moves `i111` to `v38` and adds `v39` and `i136`-`i139`. Its audit-only validator, [`tools/audit/refval.py`](../tools/audit/refval.py)
-(`python -I tools/audit/refval.py fixtures .`), accepts 40 of 40 valid files with exactly the
-listed warnings, refuses 140 of 140 invalid files with exactly the listed code set from the listed
-phase, gives the listed `R_*` set for 15 of 15 transitions, and round-trips every valid and
+(`python -I tools/audit/refval.py fixtures .`), accepts 43 of 43 valid files with exactly the
+listed warnings, refuses 150 of 150 invalid files with exactly the listed code set from the listed
+phase, gives the listed `R_*` set for 20 of 20 transitions, and round-trips every valid and
 transition file through the canonical writer. It is an audit tool, not a reader: the conformance
 plan's single reference reader stays preprocessing.
 
@@ -237,8 +251,9 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | RF5 | `technical_repeats` not empty; `old_image_count` differs from `new_image_count` | `ri28`, `ri29` |
 | RF6 | Line order within one publication stated; checked by writer tests, not by the file | P34, P35 |
 | PL1 | `representation = "parent_labels"` is a v1 value (amendment, not a new version): one group per non-zero value, pieces may be disconnected, never instances, never split; a brick reads the groups only by declaring `parent_labels_support`, any other brick uses it as a recorded area in the role `region`; no parent-mask field | `v38` (was `i111`), `v39`, `i136`-`i139`; conformance §4 "Parent labels" |
+| FC1-FC4 | Fast mode is the default; one experiment channel list stated once and recorded (`channel_layout`), materialised per unit with `channels_from`; headers that match exactly are trusted with no per-unit confirmation; a contradiction is refused before any pixel read, listing every image (`R_FAST_LAYOUT_CONTRADICTION`) | `v41`-`v43`, `i142`-`i151`, `t16`-`t20`; P37-P40 |
 
-## Valid fixtures (40)
+## Valid fixtures (43)
 
 | Fixture | Source | Expected | Homogeneous | Case |
 |---|---|---|---|---|
@@ -270,7 +285,7 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | [`v26_ids_kept_as_written`](valid/v26_ids_kept_as_written.toml) | Audit B1, B2, B11 | pass | yes | IDs `cl001`, `CL1000`, `R999`, `R1000`: no width, prefix or case rule; kept exactly as written. |
 | [`v27_descriptive_keys_collide`](valid/v27_descriptive_keys_collide.toml) | Owner decision Q4 | pass | yes | Identical and case-differing `target` / `treatment_key` values on different conditions: valid, no warning, no grouping. |
 | [`v28_rgb_units`](valid/v28_rgb_units.toml) | Owner decision AQ6 (supersedes D8) | pass | yes | An RGB experiment (e.g. H&E): every unit declares `image_type = "rgb"` with the fixed channels R, G, B in that order and no aliases. Valid and homogeneous. The scientific meaning is left to each brick: a brick that does not declare RGB support refuses a request on these units (A_RGB_NOT_SUPPORTED, P24); preprocessing compares the declaration with the image header and never with pixels (P13, P23). The `rgb_support` manifest key of experiment-v1 §4.4b (owner decision RC1) is a property of the receiving brick, not of the file, so no TOML fixture can express it; P24 states the four manifest cases to run against this one. |
-| [`v29_rgb_and_channels_mixed`](valid/v29_rgb_and_channels_mixed.toml) | Owner decision AQ6 | pass | **no** | One condition with an RGB brightfield unit and a two-channel fluorescence unit of the same biological repeat. Valid schema; heterogeneous (different lists), so the Stage 1-2 runtime refuses it (R_HETEROGENEOUS_LAYOUT_NOT_ENABLED). Both units stay ONE biological repeat. |
+| [`v29_rgb_and_channels_mixed`](valid/v29_rgb_and_channels_mixed.toml) | Owner decision AQ6 | pass | **no** | One condition with an RGB brightfield unit and a two-channel fluorescence unit of the same biological repeat. Valid schema; heterogeneous (different lists), so the Stage 1-2 runtime refuses it (R_HETEROGENEOUS_LAYOUT_NOT_ENABLED). Both units stay ONE biological repeat. Since Stage 3 it is the fixture of the case that stays refused: units of different image types (experiment-v1 §8, P04 (b)). |
 | [`v30_same_source_label_different_repeats`](valid/v30_same_source_label_different_repeats.toml) | Owner decision AQ5; S0.1 audit section 5 | pass | yes | Source folder label rep1 is in canonical repeat Day1 for CTRL and in Day2 for DrugA (and rep2 the other way round). Valid: no repeat ID equals another repeat's source label. The FOV key keeps the source label in `biological_repeat` and stays unique through the condition; the added `repeat_group` is Day1 or Day2, and grouping and pairing use it (experiment-v1 3.4, P25). |
 | [`v31_header_alias_whitespace_and_decomposed`](valid/v31_header_alias_whitespace_and_decomposed.toml) | Owner decision AQ7 | pass | yes | Header evidence is compared exactly after NFC of both sides, with no trimming. DNA lists the aliases "DAPI", " DAPI" (leading space) and "DAPI " (trailing space): outer whitespace needs its own confirmed alias, each is a distinct entry. ACTIN lists a decomposed alias (written with a TOML escape and stored as typed), which matches the header name "Caf\u00e9 488" after NFC of both sides (P26). header_names are not identities and are not NFC-checked. |
 | [`v32_reserved_name_near_misses`](valid/v32_reserved_name_near_misses.toml) | Owner decision AQ4 | pass | yes | Names next to the reserved list (experiment-v1 3.2) are valid: channels c1, t0, z2 and label, masks Patches and Labels. Only the exact names, compared case-folded, are reserved (t, z0, label_id, patch_id, ...). |
@@ -282,6 +297,9 @@ This is a check of the fixtures against the text, not a conformance claim for an
 | [`v38_parent_labels_mask`](valid/v38_parent_labels_mask.toml) | Owner decision PL1 (supersedes AQ8; was `i111`) | pass | yes | A `parent_labels` mask `Mito` beside an `instances` mask `Cells`: each non-zero value of `Mito` is one group (the mitochondria of one cell) in any number of pieces; 0 is background. Not an object set (`A_MASK_NOT_INSTANCES`), never split or relabelled; as a region, a brick without `parent_labels_support` reads it as an area with the recorded marker `parent_labels_as_area` (conformance §4 "Parent labels"). No field names the grouping mask (experiment-v1 4.5b). |
 | [`v39_parent_labels_only`](valid/v39_parent_labels_only.toml) | Owner decision PL1 | pass | yes | A `parent_labels` mask with no other mask in the file: the description never names the mask whose objects the values refer to; a consumer that reads a value as a parent's label names that parent in its own request (experiment-v1 4.5b). |
 | [`v40_rgb_header_override`](valid/v40_rgb_header_override.toml) | Owner decision RH1 | pass | yes | The CTRL units declare `rgb_header_override = true` beside `image_type = "rgb"` (scanner files whose TIFF header says MINISBLACK with three interleaved samples); the DrugA units do not. The key changes no channel ID; whether a header is overridden is checked against the images (P36), never by this file. |
+| [`v41_fast_layout`](valid/v41_fast_layout.toml) | Owner decisions FC1-FC4 (ADR 0006) | pass | yes | Fast mode: `channel_layout` states DNA, ACTIN once for the experiment (2026-11-16) and every unit lists it (materialised). Four units say `channels_from = "experiment"` (accepted because every image's header names match the confirmed `header_names` exactly after NFC, or the image has none); DrugA/rep2 says `"unit"` (tagged on its own after `Hoechst 33342` was confirmed as an alias; same list). Readers that only read unit lists need no change. |
+| [`v42_fast_layout_unit_tagged_other_order`](valid/v42_fast_layout_unit_tagged_other_order.toml) | Owner decision FC4 (ADR 0006) | pass | **no** | `v41` after DrugA/rep2 contradicted the list (header names in the other order, R_FAST_LAYOUT_CONTRADICTION) and the user tagged it on its own with ACTIN at C0. Valid schema; heterogeneous (different lists of one image type), so processed since Stage 3, each unit checked against its own list; R_HETEROGENEOUS_LAYOUT_NOT_ENABLED refuses only different image types (experiment-v1 §8). Nothing was reordered by the software. |
+| [`v43_fast_layout_rgb_override`](valid/v43_fast_layout_rgb_override.toml) | Owner decisions FC1-FC3 and RH1 (ADR 0006) | pass | yes | Fast mode for RGB: `channel_layout` has `image_type = "rgb"` with R, G, B, materialised in every unit. The CTRL units also declare `rgb_header_override = true` on their own: the RH1 key stays per unit, is never inferred and is not a field of `channel_layout` (`i148`). |
 
 ## Expected outputs (3)
 
@@ -294,7 +312,7 @@ named valid file by the stated rules; `tools/audit/refval.py` compares them.
 | [`v33_condition_folder_on_forbidden_list.experiment_design.csv`](expected/v33_condition_folder_on_forbidden_list.experiment_design.csv) | `valid/v33` | `condition` holds the folder label `control`, never the ID `ctrl`; `DrugA` sorts before `control` (code point order). |
 | [`v34_technical_repeat_folder_on_forbidden_list.experiment_design.csv`](expected/v34_technical_repeat_folder_on_forbidden_list.experiment_design.csv) | `valid/v34` | Two technical repeats (folders `files`, `overrides`) give `technical_repeat_count` 2; `rep2` has only `single`, so 0. |
 
-## Transition fixtures (15)
+## Transition fixtures (20)
 
 Valid alone; checked against the named published predecessor (refused with the listed set, or accepted).
 
@@ -315,8 +333,13 @@ Valid alone; checked against the named published predecessor (refused with the l
 | [`t13_confirmed_on_with_image_count_only`](transitions/t13_confirmed_on_with_image_count_only.toml) | `valid/v01` | `R_CONFIRMED_ON_CHANGED` (N35 not reopened) | Against v01 only CTRL/rep1 `image_count` (12 to 17, new FOVs) and rep1 `confirmed_on` (2026-11-07) change: new FOVs do not reopen the confirmation (experiment-v1 10), so the new date is refused. |
 | [`t14_rgb_header_override_added`](transitions/t14_rgb_header_override_added.toml) | `valid/v28` | no R_* code: accepted (against predecessor valid/v28, N35 reopened) | Against v28 the CTRL units of rep1 and rep2 gain `rgb_header_override = true`. The key is part of the confirmed layout (experiment-v1 10, RH1 answer of 14 November 2026), so both repeats are reopened and re-confirmed on 2026-11-07: the changed `confirmed_on` is not R_CONFIRMED_ON_CHANGED. |
 | [`t15_rgb_header_override_other_repeat_dated`](transitions/t15_rgb_header_override_other_repeat_dated.toml) | `valid/v28` | `R_CONFIRMED_ON_CHANGED` (rep2 not reopened) | Against v28 only rep1's CTRL unit gains `rgb_header_override = true` (rep1 reopened, re-confirmed on 2026-11-07); rep2's layout is unchanged, so its new `confirmed_on` (2026-11-07) is refused. |
+| [`t16_fast_mode_adopted`](transitions/t16_fast_mode_adopted.toml) | `valid/v01` | no R_* code: accepted (against predecessor valid/v01) | The user states the fast-mode assumption for a published strict file: `channel_layout` is added and every unit, whose list is unchanged, says `channels_from = "experiment"`. No list, image type or position changes, so nothing is a changed entity, no repeat is reopened (`confirmed_on` byte-identical) and the four section digests equal v01's. The statement has its own date. |
+| [`t17_fast_mode_adopted_repeat_redated`](transitions/t17_fast_mode_adopted_repeat_redated.toml) | `valid/v01` | `R_CONFIRMED_ON_CHANGED` (N35 not reopened) | As t16, and rep1's `confirmed_on` changes too: `channels_from` records how a list was confirmed, not what it is, so it is not part of the confirmed layout (experiment-v1 10) and the new date is refused. |
+| [`t18_fast_layout_confirmed_on_changed`](transitions/t18_fast_layout_confirmed_on_changed.toml) | `valid/v41` | `R_CONFIRMED_ON_CHANGED` (fast-mode list unchanged) | Only `channel_layout.confirmed_on` changes while its list and image type are unchanged: the date of the user's statement is a user fact (experiment-v1 4.3a, 4.4a). |
+| [`t19_fast_unit_appended`](transitions/t19_fast_unit_appended.toml) | `valid/v41` | no R_* code: accepted (against predecessor valid/v41) | A new repeat rep3 is appended whose units follow the experiment list (`channels_from = "experiment"`, the list materialised). Adding is not a changed entity; nothing existing is re-dated. Its images are checked against the list in scenario P38, never by this file. |
+| [`t20_fast_layout_order_changed`](transitions/t20_fast_layout_order_changed.toml) | `valid/v41` | `R_CONFIRMED_ID_CHANGED` (against predecessor valid/v41, without a recorded confirmation) | The fast-mode list is restated as ACTIN, DNA and materialised in every unit that follows it (repeats reopened and re-dated); DrugA/rep2, tagged on its own, keeps DNA, ACTIN. DNA and ACTIN lose positions they held: a changed entity (experiment-v1 4.6 c), accepted only with the recorded confirmation. Valid alone. |
 
-## Invalid fixtures (140)
+## Invalid fixtures (150)
 
 | Fixture | Source | Expected code(s) | Phase | Case |
 |---|---|---|---|---|
@@ -460,6 +483,16 @@ Valid alone; checked against the named published predecessor (refused with the l
 | [`i139_parent_labels_support_in_file`](invalid/i139_parent_labels_support_in_file.toml) | Owner decision PL1 | `E_UNKNOWN_FIELD` | 3 | `parent_labels_support = true` at the top level: support is a capability the receiving brick declares (experiment-v1 4.5b), never a statement of the description. |
 | [`i140_rgb_override_without_rgb`](invalid/i140_rgb_override_without_rgb.toml) | Owner decision RH1 | `E_RGB_OVERRIDE_WITHOUT_RGB` | 5 | A unit without `image_type` declares `rgb_header_override = true`: the override exists only for units declared `rgb` (experiment-v1 4.4b). |
 | [`i141_rgb_override_not_boolean`](invalid/i141_rgb_override_not_boolean.toml) | Owner decision RH1 | `E_TYPE` | 3 | `rgb_header_override = "true"`: a string is never read as a boolean. |
+| [`i142_fast_unit_order_differs`](invalid/i142_fast_unit_order_differs.toml) | Owner decisions FC1-FC4 (ADR 0006) | `E_FAST_LAYOUT_MISMATCH` | 5 | v41 with DrugA/rep1 marked `channels_from = "experiment"` but listing ACTIN, DNA: a unit that follows the experiment list must list it exactly (materialised); a unit with another order must be tagged on its own (`"unit"`). |
+| [`i143_fast_unit_image_type_differs`](invalid/i143_fast_unit_image_type_differs.toml) | Owner decisions FC1-FC4 (ADR 0006) | `E_FAST_LAYOUT_MISMATCH`, `E_RGB_TOKEN_MISUSE` | 5 | v43 with the DrugA/rep2 unit marked `"experiment"` but without `image_type = "rgb"`: the image type is part of the materialised list (E_FAST_LAYOUT_MISMATCH), and a unit that is not rgb may not list R, G, B (E_RGB_TOKEN_MISUSE). Two rules, two codes (AQ13). |
+| [`i144_fast_unit_marker_missing`](invalid/i144_fast_unit_marker_missing.toml) | Owner decisions FC1-FC4 (ADR 0006) | `E_MISSING_FIELD` | 3 | v41 with the `channels_from` key of CTRL/rep2 left out: in a file with `channel_layout` every unit states how its list was confirmed; there is no default inside a fast-mode file. |
+| [`i145_channels_from_without_layout`](invalid/i145_channels_from_without_layout.toml) | Owner decisions FC1-FC4 (ADR 0006) | `E_FAST_MARKER_WITHOUT_LAYOUT` | 5 | A strict per-unit file (no `channel_layout`) whose DrugA/rep2 unit says `channels_from = "experiment"`: there is no experiment list to follow. The marker exists only in a fast-mode file. |
+| [`i146_channels_from_case`](invalid/i146_channels_from_case.toml) | Owner decisions FC1-FC4 (ADR 0006) | `E_ENUM` | 3 | v41 with `channels_from = "Experiment"` on CTRL/rep2: the enumeration is exact and lower case (`experiment`, `unit`), never case-folded. |
+| [`i147_layout_unknown_channel`](invalid/i147_layout_unknown_channel.toml) | Owner decisions FC1-FC4 (ADR 0006) | `E_UNKNOWN_CHANNEL` | 5 | v41 whose `channel_layout` and every unit name `PHASE`, which is not a declared channel: the experiment list follows the rules of a unit list (every entry declared). |
+| [`i148_layout_rgb_override_field`](invalid/i148_layout_rgb_override_field.toml) | Owner decisions FC1-FC4 (ADR 0006) | `E_UNKNOWN_FIELD` | 3 | v43 with `rgb_header_override = true` in `channel_layout`: the RH1 override is declared per unit only (experiment-v1 4.4b), never experiment-wide. |
+| [`i149_layout_channels_empty`](invalid/i149_layout_channels_empty.toml) | Owner decisions FC1-FC4 (ADR 0006) | `E_EMPTY` | 3 | v41 whose `channel_layout.channels` is empty: the fast-mode statement needs at least one channel. |
+| [`i150_layout_confirmed_on_missing`](invalid/i150_layout_confirmed_on_missing.toml) | Owner decisions FC1-FC4 (ADR 0006) | `E_MISSING_FIELD` | 3 | v41 without `channel_layout.confirmed_on`: the date of the user's statement is a user fact and has no default (experiment-v1 4.4a). |
+| [`i151_layout_channel_not_nfc`](invalid/i151_layout_channel_not_nfc.toml) | Owner decisions FC1-FC4 (ADR 0006) | `E_ID_NOT_NFC` | 4 | v41 whose `channel_layout.channels` lists "ACTIN\u0301" (decomposed): an entry of the experiment list is a channel reference, checked for NFC in phase 4 and not reported as E_UNKNOWN_CHANNEL or E_FAST_LAYOUT_MISMATCH (phase 5); never normalized. |
 
 ## Records fixtures (37)
 

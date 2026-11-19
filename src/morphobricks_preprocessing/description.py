@@ -16,7 +16,7 @@ from typing import Any
 
 from .description_read import read_description_bytes
 from .description_report import DescriptionIssue
-from .description_rules import SCHEMA_ID, USED_IDS
+from .description_rules import CHANNEL_LAYOUT, CHANNELS_FROM, SCHEMA_ID, USED_IDS
 
 Table = Mapping[str, Any]
 USED_KINDS = USED_IDS.fields
@@ -61,6 +61,26 @@ class Unit:
     display_name: str | None = None
     image_type: str | None = None
     rgb_header_override: bool | None = None
+    channels_from: str | None = None
+    """``experiment`` or ``unit`` in a fast-mode file, None in a strict file (ADR 0006)."""
+
+    @property
+    def follows_experiment(self) -> bool:
+        """True if the unit follows the fast-mode experiment list (``channels_from``)."""
+        return self.channels_from == "experiment"
+
+
+@dataclass(frozen=True)
+class ChannelLayout:
+    """The fast-mode statement (section 4.3a, ADR 0006): one ordered list for the experiment.
+
+    Present only in a file that has the ``channel_layout`` table; no reader ever supplies it.
+    ``confirmed_on`` is the date of the user's statement, a user fact (section 4.4a).
+    """
+
+    channels: tuple[str, ...]
+    confirmed_on: str
+    image_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -94,7 +114,10 @@ class Mask:
 
 @dataclass(frozen=True)
 class Description:
-    """A whole experiment description. ``masks`` is empty when the file has none."""
+    """A whole experiment description. ``masks`` is empty when the file has none.
+
+    ``channel_layout`` is None for a strict per-unit file, the only meaning of its absence.
+    """
 
     conditions: Mapping[str, Condition]
     channels: Mapping[str, Channel]
@@ -103,6 +126,12 @@ class Description:
     masks: Mapping[str, Mask] = field(default_factory=dict)
     schema_version: int = 1
     schema: str = SCHEMA_ID
+    channel_layout: ChannelLayout | None = None
+
+    @property
+    def fast_mode(self) -> bool:
+        """True if the file is a fast-mode file (it has ``channel_layout``, ADR 0006)."""
+        return self.channel_layout is not None
 
 
 def _sorted(table: Table, key: str) -> tuple[str, ...] | None:
@@ -116,6 +145,7 @@ def _unit(table: Table) -> Unit:
         table.get("display_name"),
         table.get("image_type"),
         table.get("rgb_header_override"),
+        table.get(CHANNELS_FROM),
     )
 
 
@@ -164,6 +194,7 @@ def from_document(doc: Table) -> Description:
         )
         for key, value in doc.get("masks", {}).items()
     }
+    layout = doc.get(CHANNEL_LAYOUT)
     return Description(
         conditions,
         channels,
@@ -172,6 +203,11 @@ def from_document(doc: Table) -> Description:
         masks,
         doc["schema_version"],
         doc["schema"],
+        None
+        if layout is None
+        else ChannelLayout(
+            tuple(layout["channels"]), layout["confirmed_on"], layout.get("image_type")
+        ),
     )
 
 

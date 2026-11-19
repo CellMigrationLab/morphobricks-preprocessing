@@ -1,0 +1,79 @@
+# Fixture t16_fast_mode_adopted
+# Expected: no R_* code: accepted (against predecessor valid/v01)
+# Source: ADR 0006 (owner decisions FC1-FC4, 16 November 2026)
+# Against v01 the user states the fast-mode assumption: `channel_layout` (DNA, ACTIN, stated on 2026-11-16) is added and every unit, whose list is unchanged, says `channels_from = "experiment"`. No unit's list, image type or position changes, so nothing is a changed entity and no repeat is reopened: `confirmed_on` of rep1 and rep2 stays 2026-11-06 byte for byte. The statement carries its own date.
+schema = "morphobricks-experiment"
+schema_version = 1
+
+[conditions.CTRL]
+source_folder = "CTRL"
+display_name = "Control"
+
+[conditions.DrugA]
+source_folder = "DrugA"
+display_name = "Drug A"
+reference = "CTRL"
+target = "SRC"
+treatment_key = "saracatinib"
+
+[channels.DNA]
+display_name = "DAPI"
+header_names = ["DAPI"]
+
+[channels.ACTIN]
+display_name = "F-actin"
+header_names = ["Phalloidin-488"]
+
+[channel_layout]
+channels = ["DNA", "ACTIN"]
+confirmed_on = "2026-11-16"
+
+[repeats.rep1]
+confirmed = true
+confirmed_on = "2026-11-06"
+
+[repeats.rep1.members.CTRL]
+source_repeat = "rep1"
+image_count = 12
+
+[repeats.rep1.members.CTRL.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep1.members.DrugA]
+source_repeat = "rep1"
+image_count = 11
+
+[repeats.rep1.members.DrugA.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep2]
+confirmed = true
+confirmed_on = "2026-11-06"
+
+[repeats.rep2.members.CTRL]
+source_repeat = "rep2"
+image_count = 10
+
+[repeats.rep2.members.CTRL.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep2.members.DrugA]
+source_repeat = "rep2"
+image_count = 10
+
+[repeats.rep2.members.DrugA.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[used_ids]
+conditions = ["CTRL", "DrugA"]
+channels = ["ACTIN", "DNA"]
+repeats = ["rep1", "rep2"]
+technical_repeats = ["single"]
